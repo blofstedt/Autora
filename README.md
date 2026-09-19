@@ -56,7 +56,7 @@ curl localhost:8817/api/sessions/<id>/cast > session.cast && asciinema play sess
 |---|---|
 | **Timeline** | Every event, click to seek. It is a scrub bar over the session, not a log viewer. |
 | **Terminal** | A real PTY through xterm.js — colors, progress bars, the lot. |
-| **Browser** | Live CDP screencast, with a marker painted at each click so you can see the agent miss. |
+| **Browser** | Live CDP screencast, with a marker painted at each click so you can see the agent miss. The *agent* reads the page as an accessibility snapshot, not pixels — see below. |
 | **Files** | Every edit as a unified diff, the moment it lands. |
 | **Transcript** | What the agent said, with reasoning collapsed by default. |
 
@@ -84,6 +84,36 @@ so the shape of a session is readable before you scrub into it.
 The tab itself carries state: the favicon and title go violet while the agent
 works, amber when it is waiting on your approval. An approval that lands while
 the tab is in the background also chimes once.
+
+## How the agent sees a page
+
+Not by screenshot. `read` returns the accessibility tree — every interactive
+element with the role and name a screen reader would announce, numbered:
+
+```
+[0] textbox "Email address" value="ada@example.com"
+[1] textbox "Password" password empty
+[4] checkbox "Remember me" checked
+[7] button "Sign in"
+[9] link "Terms of service" -> /tos
+```
+
+Actions take those numbers: `click(ref=7)`, and `fill` takes a list, so a whole
+form is one round trip instead of one per field. Every action returns a freshly
+numbered page, so acting rarely needs a `read` first — and refs cannot go stale
+without saying so, because a ref that quietly pointed somewhere else is how an
+agent ends up clicking the wrong button.
+
+The accessibility tree rather than the DOM, because the DOM is wrapper soup: a
+button is six nested divs, and `innerText` cannot see a form field at all. The
+a11y layer is what the platform already computes for perceiving an interface
+without looking at it. That sign-in page above is ~110 tokens. A 1280×800
+screenshot of it is ~1,300, and you cannot click it.
+
+Screenshots remain, as the fallback they should be: for questions about how a
+page *looks* — a chart, a canvas, a broken layout. The human still gets the full
+video feed either way; the screencast is a separate channel from what the model
+reads.
 
 ## Approvals
 

@@ -9,6 +9,7 @@ SUITES = [
     ("event store + bus + policy", "test_core.py"),
     ("agent loop", "test_agent_loop.py"),
     ("context + compaction", "test_context.py"),
+    ("browser snapshot", "test_browser_snapshot.py"),
     ("narration", "test_narration.py"),
     ("voice loop", "test_voice_loop.py"),
     ("transport", "test_server_stream.py"),
