@@ -56,7 +56,23 @@ def build_voice(args, session, agent):
         return None
 
     # ── STT ──
-    if stt_name in ("whisper", "local", "auto"):
+    # If the user didn't specify an STT engine but DEEPGRAM_API_KEY is set,
+    # prefer Deepgram — true streaming, better barge-in, no local disk.
+    if stt_name in ("auto", "kokoro", "piper") and os.environ.get("DEEPGRAM_API_KEY"):
+        stt_name = "deepgram"
+
+    if stt_name == "deepgram":
+        try:
+            from .voice.adapters.deepgram_stt import DeepgramStt
+            stt = DeepgramStt()
+        except ImportError:
+            print("error: deepgram-sdk not installed. Run: pip install deepgram-sdk sounddevice",
+                  file=sys.stderr)
+            return None
+        except RuntimeError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return None
+    elif stt_name in ("whisper", "local", "auto"):
         try:
             from .voice.adapters.faster_whisper_stt import FasterWhisperStt
             stt = FasterWhisperStt(model_size=getattr(args, "stt_model", None) or "base.en")
@@ -71,7 +87,8 @@ def build_voice(args, session, agent):
     elif stt_name == "off":
         return None
     else:
-        print(f"error: unknown --stt {stt_name!r}. Choices: whisper, openai, off", file=sys.stderr)
+        print(f"error: unknown --stt {stt_name!r}. Choices: deepgram, whisper, openai, off",
+              file=sys.stderr)
         return None
 
     if tts is None or stt is None:
@@ -137,7 +154,12 @@ def cmd_up(args) -> int:
     app = create_app(harness, ui_dist=ui_dist if ui_dist.exists() else None)
 
     tts_label = getattr(args, "tts", None) or voice_name or "off"
-    stt_label = getattr(args, "stt", None) or voice_name or "off"
+    # Show effective STT: if Deepgram was auto-selected via env var, say so
+    explicit_stt = getattr(args, "stt", None)
+    if not explicit_stt and os.environ.get("DEEPGRAM_API_KEY") and voice_name and voice_name != "off":
+        stt_label = "deepgram (auto)"
+    else:
+        stt_label = explicit_stt or voice_name or "off"
 
     print(f"\n  Autora")
     print(f"  workdir   {workdir}")
@@ -263,7 +285,8 @@ def main(argv: list[str] | None = None) -> int:
              "Use --tts/--stt for independent control. (default: off)",
     )
     up.add_argument("--tts", choices=["kokoro", "piper", "off"], help="TTS engine override")
-    up.add_argument("--stt", choices=["whisper", "openai", "off"], help="STT engine override")
+    up.add_argument("--stt", choices=["deepgram", "whisper", "openai", "off"],
+                    help="STT engine override (default: deepgram if DEEPGRAM_API_KEY set, else whisper)")
     up.add_argument("--stt-model", default="base.en",
                     help="faster-whisper model: tiny.en, base.en (default), small.en")
     up.set_defaults(func=cmd_up)
