@@ -13,8 +13,9 @@ import { DesktopView } from "./components/DesktopView";
 import { DiffView } from "./components/DiffView";
 import { Approvals } from "./components/Approvals";
 import { Scrubber } from "./components/Scrubber";
+import { KnowledgeWeb } from "./components/KnowledgeWeb";
 import {
-  IconArrow, IconChevron, IconClock, IconFile, IconGlobe, IconMessage,
+  IconArrow, IconBrain, IconChevron, IconClock, IconFile, IconGlobe, IconMessage,
   IconMonitor, IconPlus, IconSpark, IconStop, IconTerminal,
 } from "./components/Icons";
 
@@ -45,6 +46,7 @@ export function App() {
   const [railOpen, setRailOpen] = useState(true);
   const [draft, setDraft] = useState("");
   const [mobileTab, setMobileTab] = useState<"stage" | "chat" | "timeline">("stage");
+  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const streamRef = useRef<SessionStream | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
 
@@ -251,6 +253,13 @@ export function App() {
           e.preventDefault();
           composerRef.current?.focus();
           break;
+        case "k":
+          e.preventDefault();
+          setKnowledgeOpen((open) => !open);
+          break;
+        case "Escape":
+          setKnowledgeOpen(false);
+          break;
       }
     };
     window.addEventListener("keydown", onKey);
@@ -319,6 +328,14 @@ export function App() {
           <span className="dot" />
           {badge.text}
         </span>
+        <button
+          className="btn icon ghost"
+          onClick={() => setKnowledgeOpen(true)}
+          title="What the agent knows"
+          aria-label="Open knowledge web"
+        >
+          <IconBrain size={15} />
+        </button>
         {live && view.busy && (
           <button className="btn danger" onClick={() => streamRef.current?.interrupt()}>
             <IconStop size={13} /> Stop
@@ -476,6 +493,8 @@ export function App() {
           Timeline
         </button>
       </nav>
+
+      {knowledgeOpen && <KnowledgeWeb onClose={() => setKnowledgeOpen(false)} />}
     </div>
   );
 }

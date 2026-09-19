@@ -24,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .agent import Agent, build_registry
 from .events import Kind
+from .memory import MemoryStore, project_scope
 from .policy import PolicyGate
 from .session import SessionRegistry
 from .tools.desktop import RelayBridge
@@ -42,8 +43,10 @@ class Harness:
         headless: bool = True,
         chrome_path: str | None = None,
         browser_profile_dir: str | None = None,
+        memory_db=None,
     ):
         self.sessions = SessionRegistry(root)
+        self.memory = MemoryStore(memory_db) if memory_db is not False else None
         self.gate = PolicyGate(auto_approve=auto_approve)
         self.workdir = workdir or Path.cwd()
         self.provider = provider
@@ -53,6 +56,7 @@ class Harness:
             chrome_path=chrome_path,
             profile_dir=browser_profile_dir,
             relay=self.relay,
+            memory=self.memory,
         )
         self.agents: dict[str, Agent] = {}
         self._turns: dict[str, asyncio.Task] = {}
@@ -61,12 +65,39 @@ class Harness:
         session = self.sessions.create(title=title, workdir=self.workdir)
         if self.provider is not None:
             self.agents[session.id] = Agent(
-                session, self.provider, self.tools, gate=self.gate
+                session, self.provider, self.tools, gate=self.gate,
+                memory=self.memory,
             )
         return session.id
 
     def agent_for(self, session_id: str) -> Agent | None:
         return self.agents.get(session_id)
+
+    def learn_from(self, session, task: asyncio.Task) -> None:
+        """After a turn lands, decide what was worth keeping.
+
+        Deliberately after, not during: distillation is a judgement about the
+        whole run, and the run is not finished until it is finished. It costs a
+        model call, so it is skipped for sessions that failed or were
+        interrupted -- a procedure learned from a broken run teaches the break.
+        """
+        if self.memory is None or self.provider is None:
+            return
+        if task.cancelled() or task.exception() is not None:
+            return
+
+        async def run() -> None:
+            from .distill import distill
+            try:
+                await distill(self.provider, self.memory, session,
+                              project_scope(session.workdir))
+            except Exception as exc:
+                # Learning is a bonus, never the thing that breaks a session.
+                session.emit(Kind.LOG, {"event": "distill.failed",
+                                        "error": f"{type(exc).__name__}: {exc}"},
+                             actor="system")
+
+        self._learning = asyncio.create_task(run())
 
 
 def create_app(harness: Harness, ui_dist: Path | None = None) -> FastAPI:
@@ -108,6 +139,63 @@ def create_app(harness: Harness, ui_dist: Path | None = None) -> FastAPI:
         return Response(data, media_type="image/jpeg",
                         headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
+    # -- knowledge ------------------------------------------------------
+    # The whole store, for the Knowledge Web. Memory you cannot see is memory
+    # you cannot correct, and a graph you can delete from is the only kind
+    # worth trusting.
+
+    @app.get("/api/memory")
+    async def list_memory(q: str = "", include_retired: bool = False) -> dict[str, Any]:
+        if harness.memory is None:
+            return {"records": [], "links": [], "enabled": False}
+        store = harness.memory
+        records = (store.search(q, scopes=_all_scopes(store), limit=200)
+                   if q else store.all(include_retired=include_retired))
+        return {
+            "records": [r.to_dict() for r in records],
+            "links": store.links(),
+            "enabled": True,
+        }
+
+    @app.get("/api/memory/{record_id}")
+    async def read_memory(record_id: str) -> dict[str, Any]:
+        if harness.memory is None:
+            raise HTTPException(404, "memory is disabled")
+        record = harness.memory.get(record_id)
+        if record is None:
+            raise HTTPException(404, "no such record")
+        return record.to_dict()
+
+    @app.patch("/api/memory/{record_id}")
+    async def edit_memory(record_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        """Pin, unpin, or correct a record by hand."""
+        if harness.memory is None:
+            raise HTTPException(404, "memory is disabled")
+        store = harness.memory
+        record = store.get(record_id)
+        if record is None:
+            raise HTTPException(404, "no such record")
+        fields, values = [], []
+        for key in ("title", "body", "status"):
+            if key in body:
+                fields.append(f"{key}=?")
+                values.append(body[key])
+        if "pinned" in body:
+            fields.append("pinned=?")
+            values.append(int(bool(body["pinned"])))
+        if fields:
+            store.db.execute(
+                f"UPDATE records SET {', '.join(fields)}, updated=? WHERE id=?",
+                (*values, time.time(), record_id))
+            store.db.commit()
+        return store.get(record_id).to_dict()   # type: ignore[union-attr]
+
+    @app.delete("/api/memory/{record_id}")
+    async def delete_memory(record_id: str, hard: bool = False) -> dict[str, Any]:
+        if harness.memory is None:
+            raise HTTPException(404, "memory is disabled")
+        return {"ok": harness.memory.forget(record_id, hard=hard)}
+
     @app.get("/api/sessions/{session_id}/cast")
     async def get_cast(session_id: str, span: str | None = None):
         """Terminal output as an asciinema v2 cast."""
@@ -146,6 +234,7 @@ def create_app(harness: Harness, ui_dist: Path | None = None) -> FastAPI:
         harness._turns[session_id] = task
         # Surface a crashed turn in the log instead of an asyncio warning on stderr.
         task.add_done_callback(lambda t: _report_turn_failure(session, t))
+        task.add_done_callback(lambda t: harness.learn_from(session, t))
         return {"ok": True, "queued": False}
 
     @app.post("/api/sessions/{session_id}/interrupt")
@@ -306,6 +395,11 @@ def create_app(harness: Harness, ui_dist: Path | None = None) -> FastAPI:
             )
 
     return app
+
+
+def _all_scopes(store) -> list[str]:
+    """Every scope present in the store, so a UI search is not scoped to one project."""
+    return [r[0] for r in store.db.execute("SELECT DISTINCT scope FROM records")]
 
 
 async def _send_batch(websocket: WebSocket, events) -> None:

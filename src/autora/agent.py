@@ -23,6 +23,7 @@ from typing import Any
 
 from .context import ContextPolicy, ContextState, compose, estimate_tokens
 from .events import Kind
+from .memory import GLOBAL, MemoryStore, project_scope
 from .policy import Decision, PolicyGate, _redact
 from .providers.base import (
     LLMProvider, TextDelta, ThinkingDelta, ToolCallRequest, TurnEnd,
@@ -67,6 +68,7 @@ class Agent:
         system: str = DEFAULT_SYSTEM,
         max_iterations: int = MAX_ITERATIONS,
         context_policy: ContextPolicy | None = None,
+        memory: MemoryStore | None = None,
     ):
         self.session = session
         self.provider = provider
@@ -76,6 +78,7 @@ class Agent:
         self.max_iterations = max_iterations
         self.context_policy = context_policy or ContextPolicy()
         self.context_state = ContextState()
+        self.memory = memory
         self._cancel = asyncio.Event()
         self._running = False
 
@@ -147,6 +150,7 @@ class Agent:
         self._cancel.clear()
         self._running = True
         self.session.emit(Kind.USER_MESSAGE, {"text": user_text}, actor="user")
+        self._recall(user_text)
 
         final_text = ""
         try:
@@ -191,6 +195,34 @@ class Agent:
             self.session.checkpoint()
 
         return final_text
+
+    @property
+    def scopes(self) -> list[str]:
+        """Global facts plus this project's. `pytest -x` is true of one repo."""
+        return [GLOBAL, project_scope(self.session.workdir)]
+
+    def _recall(self, prompt: str) -> None:
+        """Prime the turn with what is already known about this prompt.
+
+        Emitted rather than quietly prepended: the block is on the timeline, in
+        the transcript and in the recording, so you can see what the agent was
+        told before it answered. It reaches the model through the same fold as
+        everything else, which means it is cached and compacted by the same
+        rules and needs no special case anywhere downstream.
+        """
+        if self.memory is None:
+            return
+        from .recall import recall_for
+
+        found = recall_for(self.memory, prompt, scopes=self.scopes)
+        if not found.text:
+            return
+        self.memory.touch(found.ids)
+        self.session.emit(Kind.MEMORY_RECALL, {
+            "text": found.text,
+            "ids": found.ids,
+            "titles": [r.title for r in found.records],
+        }, actor="system")
 
     def _note(self, text: str) -> None:
         """Say something to the model, on the record.
@@ -336,11 +368,13 @@ def build_registry(
     chrome_path: str | None = None,
     profile_dir: str | None = None,
     relay=None,
+    memory: MemoryStore | None = None,
 ) -> ToolRegistry:
     """The default toolset."""
     from .tools.browser import BrowserTool
     from .tools.desktop import DesktopTool
     from .tools.files import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
+    from .tools.memory import MemoryTool
     from .tools.recall import RecallTool
     from .tools.terminal import TerminalTool
 
@@ -355,4 +389,7 @@ def build_registry(
         RecallTool(),
     ):
         registry.register(tool)
+    if memory is not None:
+        registry.register(MemoryTool(
+            memory, scope_for=lambda session: project_scope(session.workdir)))
     return registry

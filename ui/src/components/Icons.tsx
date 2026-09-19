@@ -146,3 +146,12 @@ export const IconArrowDown = ({ size = 16, className }: Props) => (
     <path d="m6 13 6 6 6-6" />
   </svg>
 );
+
+export const IconBrain = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <circle cx="7" cy="8" r="3" />
+    <circle cx="17" cy="8" r="3" />
+    <circle cx="12" cy="16.5" r="3" />
+    <path d="M9.6 9.9 10.9 14M14.4 9.9 13.1 14M10 8h4" />
+  </svg>
+);

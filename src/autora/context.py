@@ -91,9 +91,13 @@ def compose(
             messages.append({"role": "user", "content": payload.get("text", "")})
             open_assistant = None
 
-        elif kind == Kind.CONTEXT_NOTE:
-            messages.append({"role": "user", "content": payload.get("text", "")})
-            open_assistant = None
+        elif kind in (Kind.CONTEXT_NOTE, Kind.MEMORY_RECALL):
+            # Recalled memory enters context as an ordinary turn so it is folded,
+            # cached and compacted by exactly the same rules as everything else.
+            text = payload.get("text", "")
+            if text:
+                messages.append({"role": "user", "content": text})
+                open_assistant = None
 
         elif kind == Kind.AGENT_TEXT:
             if open_assistant is None:

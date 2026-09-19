@@ -165,6 +165,50 @@ from `15.5×` — most of it from the breakpoint, not the trimming. Real billing
 depends on actual cache hits; check `usage.cached` in the UI. Tuning lives in
 `ContextPolicy`.
 
+## Memory
+
+The agent keeps what it learns in `~/.autora/memory.db` — one SQLite file, no
+service, openable with any SQLite client. Four kinds of record: **preferences**
+(how you want things done), **procedures** (a how-to that worked — a skill, once
+you stop capitalising it), **facts**, and **episodes** (a notable outcome worth
+recalling).
+
+Two rules keep it from rotting:
+
+**Everything has provenance.** A record points back at the session and event
+that produced it. A memory system without that becomes a junk drawer — claims
+accumulate and a wrong one is indistinguishable from a right one. Being able to
+ask "why do you think that?" and delete the answer is what makes the rest
+trustworthy.
+
+**Nothing is confirmed on first sight.** Records written automatically land
+`provisional`, and are promoted only when a later session independently writes
+the same thing. Nothing is learned at all from a run that failed or was
+interrupted — a procedure learned from a broken run teaches the break.
+
+Retrieval is budgeted rather than dumped. A handful of pinned records are always
+present; the rest is searched per prompt (SQLite FTS5, BM25-ranked) and capped
+hard. Everything else stays one `memory(action="search")` away. In practice a
+store of 42 records puts about 130 tokens in front of the model. The block is
+emitted as an event, so it is on the timeline and in the recording: you can see
+exactly what the agent was primed with before it answered.
+
+Lexical search rather than embeddings is a deliberate choice, not a shortcut —
+for one person's memory the recall problem is small, and a BM25 hit you can
+explain beats a cosine distance you cannot. Embeddings are a later optimisation
+if recall proves insufficient.
+
+### The knowledge web
+
+Press `k`. Everything the agent knows, as a graph: colour by kind, size by how
+often it has been recalled, a ring for pinned, faded for provisional. Click a
+node for its content, its tags, and the session it came from. Pin it to load it
+every time, retire it, or delete it for good.
+
+The point is not the picture. Memory you cannot see is memory you cannot
+correct — an agent that has quietly decided something wrong about you will keep
+acting on it forever unless there is somewhere to go and say no.
+
 ## Configuration
 
 | Variable | Purpose |
@@ -172,7 +216,7 @@ depends on actual cache hits; check `usage.cached` in the UI. Tuning lives in
 | `ANTHROPIC_API_KEY` | Hosted provider |
 | `AUTORA_LLM_BASE_URL` | Local OpenAI-compatible endpoint |
 | `AUTORA_CHROME_PATH` | Use an existing Chromium instead of Playwright's pinned build |
-| `AUTORA_HOME` | State directory (default `~/.autora`) |
+| `AUTORA_HOME` | State directory (default `~/.autora`) — sessions and `memory.db` |
 
 ## Where sessions live
 
@@ -190,7 +234,8 @@ an accident.
 
 Working and tested: event store, bus backpressure, policy gate, PTY, file tools,
 browser screencast, agent loop, transport, web UI, replay, narration, context
-composition and compaction.
+composition and compaction, accessibility-tree page reading, memory with
+provenance, the knowledge web.
 
 Interfaces defined, adapters not shipped: speech-to-text and text-to-speech
 (`src/autora/voice/engine.py`), desktop control. The voice *logic* — barge-in,
