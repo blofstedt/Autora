@@ -287,7 +287,11 @@ class Agent:
         return result
 
 
-def build_registry(headless: bool = True, chrome_path: str | None = None) -> ToolRegistry:
+def build_registry(
+    headless: bool = True,
+    chrome_path: str | None = None,
+    profile_dir: str | None = None,
+) -> ToolRegistry:
     """The default toolset."""
     from .tools.browser import BrowserTool
     from .tools.files import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
@@ -297,7 +301,7 @@ def build_registry(headless: bool = True, chrome_path: str | None = None) -> Too
     for tool in (
         TerminalTool(),
         ReadFileTool(), WriteFileTool(), EditFileTool(), ListDirTool(),
-        BrowserTool(headless=headless, executable_path=chrome_path),
+        BrowserTool(headless=headless, executable_path=chrome_path, profile_dir=profile_dir),
     ):
         registry.register(tool)
     return registry

@@ -15,6 +15,15 @@ in a log tells you a selector; it does not tell you that the selector matched a
 cookie banner instead of the button. So before every click Autora paints a
 marker at the target coordinates into the page itself, which means it appears in
 the screencast and therefore in the recording. You watch the agent miss.
+
+Persistent auth: when a profile_dir is given, the browser uses
+`launch_persistent_context` so cookies, localStorage, and login state survive
+restarts. One profile can hold Gmail, Google Calendar, and anything else the user
+has signed into -- no re-auth required.
+
+Cursor visibility: a tiny red dot injected via `add_init_script` follows every
+`mousemove` event, so the CDP screencast shows where the agent's pointer is
+even though the OS cursor is not captured by the screencaster.
 """
 
 from __future__ import annotations
@@ -23,10 +32,36 @@ import asyncio
 import base64
 import os
 import time
+from pathlib import Path
 from typing import Any, AsyncIterator
 
 from ..events import Kind
 from .base import ToolResult
+
+#: Injected into every page via add_init_script: a red dot that tracks the
+#: mouse pointer. The OS cursor is not captured by CDP screencast, so this is
+#: the only way to show "where" the agent is looking without a second overlay
+#: that would be absent from recordings.
+_CURSOR_JS = """\
+(() => {
+  function _install() {
+    if (!document.body || document.getElementById('__autora_cur__')) return;
+    const c = document.createElement('div');
+    c.id = '__autora_cur__';
+    c.style.cssText =
+      'position:fixed;left:-999px;top:-999px;width:14px;height:14px;' +
+      'pointer-events:none;z-index:2147483646;background:rgba(255,59,107,.9);' +
+      'border-radius:50%;border:2px solid rgba(255,255,255,.85);' +
+      'box-shadow:0 1px 4px rgba(0,0,0,.55);transition:left .04s,top .04s;';
+    document.body.appendChild(c);
+    document.addEventListener('mousemove', e => {
+      c.style.left = (e.clientX - 7) + 'px';
+      c.style.top  = (e.clientY - 7) + 'px';
+    }, {passive: true});
+  }
+  if (document.body) _install(); else window.addEventListener('DOMContentLoaded', _install);
+})()
+"""
 
 #: JS injected before a click: a ring that fades over ~600ms at the click point.
 #: Painted into the page so the screencast captures it -- an overlay drawn in the
@@ -53,6 +88,12 @@ _MARKER_JS = """
 """
 
 
+_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
+)
+
+
 class BrowserSession:
     """Owns one Chromium instance and pipes its screencast into the event log."""
 
@@ -63,13 +104,16 @@ class BrowserSession:
         width: int = 1280,
         height: int = 800,
         executable_path: str | None = None,
+        profile_dir: str | None = None,
     ):
         self.session = session
         self.headless = headless
         self.width, self.height = width, height
         self.executable_path = executable_path or os.environ.get("AUTORA_CHROME_PATH")
+        self.profile_dir = profile_dir or os.environ.get("AUTORA_BROWSER_PROFILE")
         self._playwright = None
         self._browser = None
+        self._context = None
         self.page = None
         self._cdp = None
         self._frames = 0
@@ -88,27 +132,41 @@ class BrowserSession:
             ) from exc
 
         self._playwright = await async_playwright().start()
-        launch_args: dict[str, Any] = {
+        common_kwargs: dict[str, Any] = {
             "headless": self.headless,
             "args": ["--disable-blink-features=AutomationControlled"],
         }
-        # Respect an explicitly provided Chrome. Playwright pins an exact browser
-        # build per release, so a pip upgrade routinely orphans an already-working
-        # Chromium and demands a 150MB redownload. Sandboxes and CI images ship
-        # their own binary; let them say so instead of failing at launch.
         if self.executable_path:
-            launch_args["executable_path"] = self.executable_path
-        self._browser = await self._playwright.chromium.launch(**launch_args)
-        context = await self._browser.new_context(
-            viewport={"width": self.width, "height": self.height},
-            # A real UA: many sites serve a degraded page to obvious automation,
-            # and debugging that is a waste of an afternoon.
-            user_agent=(
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
-            ),
-        )
-        self.page = await context.new_page()
+            common_kwargs["executable_path"] = self.executable_path
+
+        if self.profile_dir:
+            # Persistent context: cookies/localStorage survive across restarts.
+            # The user signs in once to Gmail/Google Calendar/etc and the auth
+            # persists until they explicitly clear the profile.
+            Path(self.profile_dir).mkdir(parents=True, exist_ok=True)
+            context = await self._playwright.chromium.launch_persistent_context(
+                str(self.profile_dir),
+                viewport={"width": self.width, "height": self.height},
+                user_agent=_UA,
+                **common_kwargs,
+            )
+            self._context = context
+            # Persistent context may already have open pages from a previous run.
+            self.page = context.pages[0] if context.pages else await context.new_page()
+        else:
+            # Ephemeral context: clean slate every time -- fine for stateless tasks.
+            self._browser = await self._playwright.chromium.launch(**common_kwargs)
+            context = await self._browser.new_context(
+                viewport={"width": self.width, "height": self.height},
+                # A real UA: many sites serve a degraded page to obvious automation,
+                # and debugging that is a waste of an afternoon.
+                user_agent=_UA,
+            )
+            self._context = context
+            self.page = await context.new_page()
+
+        # Inject cursor tracker so the screencast shows where the pointer is.
+        await context.add_init_script(_CURSOR_JS)
         self._started = time.monotonic()
         await self._start_screencast()
         self.page.on("framenavigated", self._on_navigate)
@@ -167,6 +225,7 @@ class BrowserSession:
     async def close(self) -> None:
         for closer in (
             lambda: self._cdp.send("Page.stopScreencast") if self._cdp else None,
+            lambda: self._context.close() if self._context else None,
             lambda: self._browser.close() if self._browser else None,
             lambda: self._playwright.stop() if self._playwright else None,
         ):
@@ -176,7 +235,7 @@ class BrowserSession:
                     await result
             except Exception:
                 pass
-        self.page = self._browser = self._playwright = self._cdp = None
+        self.page = self._context = self._browser = self._playwright = self._cdp = None
 
 
 class BrowserTool:
@@ -211,15 +270,24 @@ class BrowserTool:
         "required": ["action"],
     }
 
-    def __init__(self, headless: bool = True, executable_path: str | None = None):
+    def __init__(
+        self,
+        headless: bool = True,
+        executable_path: str | None = None,
+        profile_dir: str | None = None,
+    ):
         self.headless = headless
         self.executable_path = executable_path
+        self.profile_dir = profile_dir
         self._browser: BrowserSession | None = None
 
     async def _session_for(self, session) -> BrowserSession:
         if self._browser is None:
             self._browser = BrowserSession(
-                session, headless=self.headless, executable_path=self.executable_path
+                session,
+                headless=self.headless,
+                executable_path=self.executable_path,
+                profile_dir=self.profile_dir,
             )
         await self._browser.ensure_started()
         return self._browser
@@ -280,7 +348,16 @@ class BrowserTool:
                     or any(w in field_name for w in ("password", "passwd", "secret",
                                                      "token", "cvv", "card"))
                 )
-                await locator.fill(args.get("text", ""))
+                text_val = args.get("text", "")
+                if sensitive:
+                    # Fast fill for credentials: no delay, nothing to see here.
+                    await locator.fill(text_val)
+                else:
+                    # Visible typing: character-by-character so the screencast
+                    # shows what the agent is writing, not just the final value.
+                    await locator.click()
+                    await locator.fill("")
+                    await locator.press_sequentially(text_val, delay=25)
                 session.emit(Kind.BROWSER_ACTION, {
                     "action": "type", "selector": args["selector"],
                     "length": len(args.get("text", "")),

@@ -1,0 +1,31 @@
+version: "3.7"
+
+services:
+  app:
+    image: ghcr.io/blofstedt/autora:latest
+    # When running from source (development / sideloading):
+    # build:
+    #   context: ../..
+    #   dockerfile: Dockerfile
+    restart: on-failure
+    ports:
+      - "${APP_PORT}:8817"
+    volumes:
+      # Browser profile + session recordings — persisted across restarts.
+      - "${APP_DATA_DIR}/data:/data"
+      # Full read-write access to the host filesystem so the agent can work
+      # anywhere on the server, not just inside the container.
+      - "/:/host:rw"
+    environment:
+      # Network
+      AUTORA_HOST: "0.0.0.0"
+      AUTORA_PORT: "8817"
+      # Agent defaults — full server access, no per-action prompts
+      AUTORA_WORKDIR: "/host"
+      AUTORA_AUTO_APPROVE: "1"
+      AUTORA_BROWSER_PROFILE: "/data/browser-profile"
+      # API keys — set these in Umbrel's app settings or via environment
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY:-}"
+      DEEPGRAM_API_KEY: "${DEEPGRAM_API_KEY:-}"
+      ASSEMBLYAI_API_KEY: "${ASSEMBLYAI_API_KEY:-}"

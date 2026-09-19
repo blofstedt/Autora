@@ -164,6 +164,7 @@ def cmd_up(args) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
+    browser_profile = getattr(args, "browser_profile", None) or os.environ.get("AUTORA_BROWSER_PROFILE")
     harness = Harness(
         root=Path(args.home) / "sessions" if args.home else None,
         provider=provider,
@@ -171,6 +172,7 @@ def cmd_up(args) -> int:
         auto_approve=args.yes,
         headless=not args.show_browser,
         chrome_path=args.chrome,
+        browser_profile_dir=browser_profile,
     )
     session_id = harness.create_session(title=args.title or f"session in {workdir.name}")
 
@@ -295,16 +297,24 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
 
     up = sub.add_parser("up", help="Start the harness and web UI", parents=[common])
-    up.add_argument("workdir", nargs="?", default=".", help="Project directory the agent works in")
-    up.add_argument("--host", default="127.0.0.1")
-    up.add_argument("--port", type=int, default=8817)
+    up.add_argument("workdir", nargs="?",
+                    default=os.environ.get("AUTORA_WORKDIR", "."),
+                    help="Project directory the agent works in (env: AUTORA_WORKDIR)")
+    up.add_argument("--host", default=os.environ.get("AUTORA_HOST", "127.0.0.1"))
+    up.add_argument("--port", type=int, default=int(os.environ.get("AUTORA_PORT", "8817")))
     up.add_argument("--provider", choices=["auto", "deepseek", "anthropic", "local"], default="auto")
     up.add_argument("--model")
     up.add_argument("--base-url", help="For --provider local (default http://localhost:8000/v1)")
     up.add_argument("--chrome", help="Path to a Chromium binary (else Playwright's)")
     up.add_argument("--show-browser", action="store_true", help="Run Chrome headed")
+    up.add_argument("--browser-profile",
+                    default=os.environ.get("AUTORA_BROWSER_PROFILE"),
+                    metavar="DIR",
+                    help="Persist browser cookies/auth across restarts (env: AUTORA_BROWSER_PROFILE)")
     up.add_argument("--title", help="Session title")
-    up.add_argument("--yes", action="store_true", help="Skip all approvals (dangerous)")
+    up.add_argument("--yes", action="store_true",
+                    default=os.environ.get("AUTORA_AUTO_APPROVE", "") in ("1", "true", "yes"),
+                    help="Skip all approvals — env AUTORA_AUTO_APPROVE=1 sets this (dangerous)")
     up.add_argument("--log-level", default="warning")
     up.add_argument(
         "--voice",

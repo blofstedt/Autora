@@ -39,12 +39,17 @@ class Harness:
         auto_approve: bool = False,
         headless: bool = True,
         chrome_path: str | None = None,
+        browser_profile_dir: str | None = None,
     ):
         self.sessions = SessionRegistry(root)
         self.gate = PolicyGate(auto_approve=auto_approve)
         self.workdir = workdir or Path.cwd()
         self.provider = provider
-        self.tools = build_registry(headless=headless, chrome_path=chrome_path)
+        self.tools = build_registry(
+            headless=headless,
+            chrome_path=chrome_path,
+            profile_dir=browser_profile_dir,
+        )
         self.agents: dict[str, Agent] = {}
         self._turns: dict[str, asyncio.Task] = {}
 
