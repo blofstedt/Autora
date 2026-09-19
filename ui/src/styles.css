@@ -527,3 +527,104 @@ body::before {
   .body { grid-template-columns: minmax(0, 1fr) var(--side); }
   .rail { display: none; }
 }
+
+/* The mobile nav sits in the flex column on small screens and is hidden on
+   desktop. It must be in the DOM always so React can toggle .on without
+   conditional rendering. */
+.mobile-nav { display: none; }
+
+/* ---------------------------------------------------------------- mobile -- */
+@media (max-width: 680px) {
+  /* ── header ── */
+  .top { padding: 0 12px; gap: 8px; }
+  /* hide rail toggle + token count — no room, not needed on one-panel layout */
+  .top .rail-toggle { display: none; }
+  .badge.tokens { display: none; }
+  /* let the session pill breathe a bit less */
+  .session-pill { max-width: 200px; }
+
+  /* ── body becomes a relative container; panels stack absolutely ── */
+  .body {
+    display: block !important;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .rail,
+  .center,
+  .side {
+    position: absolute;
+    inset: 0;
+    display: none;
+    width: 100%;
+    border: none;
+    border-radius: 0;
+    animation: none; /* avoid layout flicker on tab switch */
+  }
+
+  /* one visible panel at a time, driven by data-tab */
+  .body[data-tab="timeline"] .rail   { display: flex; }
+  .body[data-tab="stage"]    .center { display: flex; }
+  .body[data-tab="chat"]     .side   { display: flex; }
+
+  /* rail needs its own scroll on mobile (desktop hides it at 1040px) */
+  .rail { overflow-y: auto; overflow-x: hidden; }
+
+  /* tighter stage padding on a small screen */
+  .center { padding: 8px; gap: 8px; }
+
+  /* stage tabs slightly more compact */
+  .seg { padding: 5px 10px; font-size: 12px; }
+
+  /* composer text slightly smaller so the keyboard doesn't hide everything */
+  .composer textarea { font-size: 13px; }
+
+  /* ── bottom nav ── */
+  .mobile-nav {
+    display: flex;
+    flex: 0 0 auto;
+    height: 56px;
+    /* iOS safe-area pushes the bar above the home indicator */
+    padding-bottom: env(safe-area-inset-bottom, 0);
+    background: rgba(14, 16, 22, 0.92);
+    backdrop-filter: blur(12px);
+    border-top: 1px solid var(--border);
+    position: relative; /* for the approval dot */
+  }
+
+  .mob-tab {
+    flex: 1;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    background: none;
+    border: 0;
+    color: var(--text-3);
+    font-family: inherit;
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: color 0.15s var(--ease);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mob-tab:active { opacity: 0.65; }
+  .mob-tab.on { color: var(--accent); }
+
+  /* amber dot on the Chat tab when there's a pending approval */
+  .mob-tab .mob-alert {
+    position: absolute;
+    top: 7px;
+    right: calc(50% - 14px);
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--warn);
+    border: 2px solid var(--s1);
+    display: none;
+  }
+  .mob-tab.has-alert .mob-alert { display: block; }
+}

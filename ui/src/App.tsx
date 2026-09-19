@@ -9,8 +9,8 @@ import { BrowserView } from "./components/BrowserView";
 import { DiffView } from "./components/DiffView";
 import { Approvals } from "./components/Approvals";
 import {
-  IconArrow, IconChevron, IconFile, IconGlobe, IconPlus, IconSpark,
-  IconStop, IconTerminal,
+  IconArrow, IconChevron, IconClock, IconFile, IconGlobe, IconMessage,
+  IconPlus, IconSpark, IconStop, IconTerminal,
 } from "./components/Icons";
 
 type Stage = "terminal" | "browser" | "files";
@@ -34,6 +34,7 @@ export function App() {
   const [stagePinned, setStagePinned] = useState(false);
   const [railOpen, setRailOpen] = useState(true);
   const [draft, setDraft] = useState("");
+  const [mobileTab, setMobileTab] = useState<"stage" | "chat" | "timeline">("stage");
   const streamRef = useRef<SessionStream | null>(null);
 
   useEffect(() => {
@@ -73,6 +74,11 @@ export function App() {
   }, [events.length, following]);
 
   const view = useMemo(() => derive(events, cursor), [events, cursor]);
+
+  // On mobile, jump to Chat when an approval appears so it's never missed.
+  useEffect(() => {
+    if (view.approvals.length > 0) setMobileTab("chat");
+  }, [view.approvals.length]);
 
   // Follow the action by default; a deliberate pin must stick, or the UI fights
   // whoever is trying to look at something.
@@ -128,7 +134,7 @@ export function App() {
         </div>
 
         <button
-          className="btn icon ghost"
+          className="btn icon ghost rail-toggle"
           onClick={() => setRailOpen(!railOpen)}
           title={railOpen ? "Hide timeline" : "Show timeline"}
           style={{ transform: railOpen ? "rotate(180deg)" : undefined }}
@@ -173,7 +179,7 @@ export function App() {
         )}
       </header>
 
-      <div className={`body ${railOpen ? "" : "rail-closed"}`}>
+      <div className={`body ${railOpen ? "" : "rail-closed"}`} data-tab={mobileTab}>
         <aside className="rail">
           <div className="panel-head">
             <span className="panel-title">Timeline</span>
@@ -298,6 +304,32 @@ export function App() {
           </div>
         </aside>
       </div>
+
+      {/* Bottom tab bar — hidden on desktop via CSS, shown on mobile */}
+      <nav className="mobile-nav">
+        <button
+          className={`mob-tab ${mobileTab === "stage" ? "on" : ""}`}
+          onClick={() => setMobileTab("stage")}
+        >
+          <IconTerminal size={18} />
+          Stage
+        </button>
+        <button
+          className={`mob-tab ${mobileTab === "chat" ? "on" : ""}${view.approvals.length > 0 ? " has-alert" : ""}`}
+          onClick={() => setMobileTab("chat")}
+        >
+          <span className="mob-alert" />
+          <IconMessage size={18} />
+          Chat
+        </button>
+        <button
+          className={`mob-tab ${mobileTab === "timeline" ? "on" : ""}`}
+          onClick={() => setMobileTab("timeline")}
+        >
+          <IconClock size={18} />
+          Timeline
+        </button>
+      </nav>
     </div>
   );
 }

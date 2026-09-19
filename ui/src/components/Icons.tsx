@@ -120,3 +120,9 @@ export const IconClock = ({ size = 16, className }: Props) => (
     <path d="M12 7v5.2l3.2 2" />
   </svg>
 );
+
+export const IconMessage = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M20 4.5H4A1.5 1.5 0 0 0 2.5 6v9A1.5 1.5 0 0 0 4 16.5h2V20l4-3.5h10a1.5 1.5 0 0 0 1.5-1.5V6A1.5 1.5 0 0 0 20 4.5z" />
+  </svg>
+);
