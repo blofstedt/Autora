@@ -84,13 +84,20 @@ class Session:
         return span_id
 
     def close_span(
-        self, span_id: str, kind: str, payload: dict[str, Any], actor: str
+        self, span_id: str, kind: str, payload: dict[str, Any], actor: str,
+        blob: bytes | None = None,
     ) -> Event:
+        """Close a span, optionally parking a payload too big for the log.
+
+        Tool output goes in the blob rather than the event: a 200KB build log
+        inlined into JSONL makes the log unreadable and untailable, and the blob
+        store already dedupes, so a command run twice costs one copy.
+        """
         meta = self.open_spans.pop(span_id, None)
         duration = (time.time() - meta["started"]) if meta else None
         return self.emit(
             kind, {**payload, "duration_ms": round(duration * 1000, 1) if duration else None},
-            actor=actor, span=span_id,
+            actor=actor, span=span_id, blob=blob,
         )
 
     # -- subscription ----------------------------------------------------

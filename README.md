@@ -96,6 +96,45 @@ Rules live in `src/autora/policy.py` as readable patterns. Loosen them per
 project once you trust it. `--yes` skips confirmations entirely; don't point that
 at production credentials.
 
+## Context
+
+The model's context is a projection of the event log, the same way the UI is —
+`compose(events)` in `src/autora/context.py` folds the log into messages, so
+there is no second history to drift out of sync, and "what was in context at
+step 12" has an answer.
+
+That projection is where the cost lives. Two things it does:
+
+**Caches the conversation prefix.** The system prompt and tools were already
+cached; the history was not, so a forty-step turn re-sent an ever-growing
+conversation as fresh input on every step. A breakpoint on the tail means each
+turn is paid for once instead of once per remaining iteration.
+
+**Trims old tool output.** A 4000-line test run matters while the agent is
+acting on it and not ten steps later, so old results are demoted to a preview
+plus a pointer. The full text stays in the blob store — `recall(ref=…)` reads it
+back, and `recall(ref=…, search="…")` greps it. Lossy in context, lossless on
+disk.
+
+Compaction is batched and sticky rather than continuous, because rewriting
+history invalidates the cached prefix from the rewrite point on. Nothing is
+trimmed until the window crosses `trigger_tokens`; between compactions the
+context is strictly append-only.
+
+On a 30-step turn with 3KB of output per step, measured with
+`estimate_tokens`:
+
+| | final request | turn total |
+|---|---:|---:|
+| Before | 18,633 | 288,880 |
+| After | 6,052 | 136,460 |
+
+Applying Anthropic's published cache multipliers to those counts puts the turn
+at roughly `0.8×` the cost of a single uncached send of its final request, down
+from `15.5×` — most of it from the breakpoint, not the trimming. Real billing
+depends on actual cache hits; check `usage.cached` in the UI. Tuning lives in
+`ContextPolicy`.
+
 ## Configuration
 
 | Variable | Purpose |
@@ -120,7 +159,8 @@ an accident.
 ## Status
 
 Working and tested: event store, bus backpressure, policy gate, PTY, file tools,
-browser screencast, agent loop, transport, web UI, replay, narration.
+browser screencast, agent loop, transport, web UI, replay, narration, context
+composition and compaction.
 
 Interfaces defined, adapters not shipped: speech-to-text and text-to-speech
 (`src/autora/voice/engine.py`), desktop control. The voice *logic* — barge-in,

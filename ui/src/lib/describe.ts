@@ -29,6 +29,7 @@ export const LABELS: Record<string, string> = {
   [Kind.BrowserNav]: "navigated",
   [Kind.BrowserAction]: "browser",
   [Kind.DesktopAction]: "desktop",
+  [Kind.ContextNote]: "context",
   [Kind.FileEdit]: "edited",
   [Kind.Error]: "error",
 };
@@ -68,6 +69,7 @@ export function summarize(event: AutoraEvent): string {
     case Kind.BrowserNav: return p.url ?? "";
     case Kind.BrowserAction: return `${p.action} ${p.selector ?? p.url ?? ""}`;
     case Kind.DesktopAction: return `${p.action ?? ""} ${p.key ?? p.text ?? ""}`.trim();
+    case Kind.ContextNote: return p.text ?? "";
     case Kind.FileEdit: return `${basename(p.path ?? "")} +${p.added} −${p.removed}`;
     case Kind.AgentDone: return p.stop_reason ?? "";
     case Kind.SessionStarted: return basename(p.workdir ?? "");

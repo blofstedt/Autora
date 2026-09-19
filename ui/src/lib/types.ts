@@ -28,6 +28,7 @@ export const Kind = {
   BrowserAction: "browser.action",
   DesktopFrame: "desktop.frame",
   DesktopAction: "desktop.action",
+  ContextNote: "context.note",
   FileEdit: "file.edit",
   Log: "system.log",
   Error: "system.error",
