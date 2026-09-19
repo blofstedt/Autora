@@ -15,11 +15,25 @@ from pathlib import Path
 def build_provider(args):
     """Pick a provider from flags and environment.
 
-    Defaults to Anthropic when a key is present, and to a local
-    OpenAI-compatible endpoint otherwise, so a local-first setup needs no flags.
+    Priority (auto mode):
+      1. DeepSeek  — if DEEPSEEK_API_KEY is set
+      2. Anthropic — if ANTHROPIC_API_KEY is set
+      3. Local     — OpenAI-compatible endpoint (vLLM / Ollama / llama.cpp)
     """
-    if args.provider == "local" or (
-        args.provider == "auto" and not os.environ.get("ANTHROPIC_API_KEY")
+    explicit = args.provider  # "auto" | "deepseek" | "anthropic" | "local"
+
+    if explicit == "deepseek" or (
+        explicit == "auto" and os.environ.get("DEEPSEEK_API_KEY")
+    ):
+        from .providers.openai_compat import OpenAICompatProvider
+        return OpenAICompatProvider(
+            model=args.model or "deepseek-v4-flash",
+            base_url=args.base_url or "https://api.deepseek.com/v1",
+            api_key=os.environ.get("DEEPSEEK_API_KEY"),
+        )
+
+    if explicit == "local" or (
+        explicit == "auto" and not os.environ.get("ANTHROPIC_API_KEY")
     ):
         from .providers.openai_compat import OpenAICompatProvider
         return OpenAICompatProvider(model=args.model or "qwen3-coder", base_url=args.base_url)
@@ -284,7 +298,7 @@ def main(argv: list[str] | None = None) -> int:
     up.add_argument("workdir", nargs="?", default=".", help="Project directory the agent works in")
     up.add_argument("--host", default="127.0.0.1")
     up.add_argument("--port", type=int, default=8817)
-    up.add_argument("--provider", choices=["auto", "anthropic", "local"], default="auto")
+    up.add_argument("--provider", choices=["auto", "deepseek", "anthropic", "local"], default="auto")
     up.add_argument("--model")
     up.add_argument("--base-url", help="For --provider local (default http://localhost:8000/v1)")
     up.add_argument("--chrome", help="Path to a Chromium binary (else Playwright's)")
