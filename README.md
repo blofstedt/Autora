@@ -115,6 +115,51 @@ page *looks* — a chart, a canvas, a broken layout. The human still gets the fu
 video feed either way; the screencast is a separate channel from what the model
 reads.
 
+### Pointing at things
+
+Hit **Select** in the browser pane and click an element in the live video.
+Describing an element in prose and hoping the agent finds the same one is the
+slow way to ask for a change; pointing at it is not.
+
+A pick resolves what you actually meant — click the label inside a button and
+you get the button — and comes back with the element's snapshot ref, a stable
+selector, and only the styles *that element* sets, not the whole inherited
+cascade. Where the framework left a trail (React's dev fiber, a `data-source`
+attribute) it resolves to the file and line that rendered it; where it did not,
+it says so rather than guessing at a file. The pick lands on the timeline, so
+the agent sees that you pointed and at what.
+
+### 3D and canvas
+
+A `<canvas>` has no DOM to read, so the pick asks the engine instead. A scene
+graph is the accessibility tree of a 3D app — named objects in a hierarchy — and
+where the engine is reachable (three.js, Babylon) a click becomes a raycast and
+comes back as `player_torso (Mesh)` rather than a pixel.
+
+```
+3D engine: three
+Hit: player_torso (Mesh) at [-1.91, 0, 0.6], material MeshBasicMaterial
+
+Scene graph:
+  world  Scene
+    player_torso  Mesh
+    enemy_drone  Mesh
+    props  Group
+      crate_01  Mesh
+```
+
+Most apps keep their scene private, so the universal fallback is a tight crop of
+the click rather than a whole frame — ~136 tokens against ~1,365, and
+unambiguous about what is being asked about. If you want objects nameable,
+expose the scene as `window.scene`.
+
+### Guiding someone
+
+`highlight` spotlights a region of the page: a dimmed backdrop, a slowly
+breathing ring, a label. It is painted into the page inside a shadow root, so it
+survives into the screencast and the recording, cannot be restyled by the page,
+and never leaks its own text into what the agent reads back.
+
 ## Approvals
 
 Reads run freely. Deploys, migrations, history rewrites and installs pause and
@@ -234,8 +279,9 @@ an accident.
 
 Working and tested: event store, bus backpressure, policy gate, PTY, file tools,
 browser screencast, agent loop, transport, web UI, replay, narration, context
-composition and compaction, accessibility-tree page reading, memory with
-provenance, the knowledge web.
+composition and compaction, accessibility-tree page reading, visual element
+picking (DOM and 3D), guidance overlays, memory with provenance, the knowledge
+web.
 
 Interfaces defined, adapters not shipped: speech-to-text and text-to-speech
 (`src/autora/voice/engine.py`), desktop control. The voice *logic* — barge-in,

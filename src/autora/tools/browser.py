@@ -63,6 +63,432 @@ _CURSOR_JS = """\
 })()
 """
 
+#: What is under this point, and what could be edited about it.
+#:
+#: The numbered snapshot answers "what can I click". This answers "what *is*
+#: that" -- which element, from which component, styled with what. The second
+#: question is the one you have when you are looking at a thing you want
+#: changed, and pointing at it is a far more precise way to ask than describing
+#: it in prose and hoping the agent finds the same element.
+#:
+#: Three things make it precise rather than approximate: it retargets from the
+#: label you hit to the control you meant, it reports only the styles this
+#: element sets rather than the whole inherited cascade, and where the
+#: framework left a trail (React's dev fiber, a data-source attribute) it
+#: resolves back to the file that rendered it.
+_PICK_JS = r"""
+((x, y) => {
+  const el = document.elementFromPoint(x, y);
+  if (!el) return { ok: false, reason: 'nothing at that point' };
+  const clean = (s) => (s || '').replace(/\s+/g, ' ').trim();
+
+  // --- where did this come from in the source? ---------------------------
+  // The difference between "edit that element" and "guess which component
+  // rendered it". React's dev build carries the JSX source on the fiber; Vue
+  // and Svelte expose their own hooks. Nothing here works in a production
+  // build, which is the honest limitation -- so a fingerprint is always
+  // returned too, and that is greppable.
+  function source(node) {
+    for (let cur = node; cur; cur = cur.parentElement) {
+      const explicit = cur.getAttribute && (cur.getAttribute('data-source')
+        || cur.getAttribute('data-sourcefile'));
+      if (explicit) return { file: explicit, via: 'data-attribute',
+                             exact: cur === node };
+
+      const key = Object.keys(cur).find((k) => k.startsWith('__reactFiber$')
+        || k.startsWith('__reactInternalInstance$'));
+      if (key) {
+        let fiber = cur[key], hops = 0, component = null;
+        while (fiber && hops++ < 30) {
+          const t = fiber.elementType || fiber.type;
+          if (!component && typeof t === 'function' && t.name) component = t.name;
+          const src = fiber._debugSource;
+          if (src && src.fileName) {
+            return { file: src.fileName, line: src.lineNumber,
+                     column: src.columnNumber, component: component,
+                     via: 'react', exact: cur === node };
+          }
+          fiber = fiber._debugOwner || fiber.return;
+        }
+        if (component) return { component: component, via: 'react', exact: cur === node };
+      }
+
+      const vue = cur.__vueParentComponent;
+      if (vue && vue.type) {
+        return { component: vue.type.__name || vue.type.name,
+                 file: vue.type.__file, via: 'vue', exact: cur === node };
+      }
+    }
+    return null;
+  }
+
+  // --- a fingerprint that survives a production build --------------------
+  // Classes and text are what someone would grep for, so they are what we
+  // hand back when the framework tells us nothing.
+  function fingerprint(node) {
+    const classes = (node.getAttribute('class') || '').split(/\s+/).filter(Boolean);
+    return {
+      tag: node.tagName.toLowerCase(),
+      id: node.id || null,
+      classes: classes.slice(0, 8),
+      text: clean(node.innerText).slice(0, 80) || null,
+      testid: node.getAttribute('data-testid') || null,
+    };
+  }
+
+  // A selector that is stable enough to act on, preferring the things a human
+  // would have written deliberately over generated class soup.
+  function selectorFor(node) {
+    if (node.id) return '#' + CSS.escape(node.id);
+    const testid = node.getAttribute('data-testid');
+    if (testid) return '[data-testid="' + testid + '"]';
+    const parts = [];
+    for (let cur = node; cur && cur.nodeType === 1 && parts.length < 5;
+         cur = cur.parentElement) {
+      let part = cur.tagName.toLowerCase();
+      if (cur.id) { parts.unshift('#' + CSS.escape(cur.id)); break; }
+      const siblings = cur.parentElement
+        ? [].filter.call(cur.parentElement.children, (c) => c.tagName === cur.tagName)
+        : [];
+      if (siblings.length > 1) part += ':nth-of-type(' + (siblings.indexOf(cur) + 1) + ')';
+      parts.unshift(part);
+    }
+    return parts.join(' > ');
+  }
+
+  // --- the parameters worth editing --------------------------------------
+  // Computed style has ~340 properties and almost all of them are noise. These
+  // are the ones someone actually means when they say "make it bigger" or
+  // "soften that corner", grouped the way they would say them.
+  const GROUPS = {
+    layout: ['display', 'position', 'flex-direction', 'justify-content',
+             'align-items', 'gap', 'grid-template-columns'],
+    spacing: ['margin', 'padding'],
+    size: ['width', 'height', 'min-height', 'max-width'],
+    text: ['font-family', 'font-size', 'font-weight', 'line-height',
+           'letter-spacing', 'text-align', 'color', 'text-transform'],
+    surface: ['background-color', 'background-image', 'border', 'border-radius',
+              'box-shadow', 'opacity', 'backdrop-filter'],
+  };
+  //: Always worth stating outright, even when inherited -- "what colour is it"
+  //: is a question about the pixels, not about which rule won.
+  const ALWAYS = ['color', 'background-color', 'font-size', 'font-family'];
+
+  function params(node) {
+    const cs = getComputedStyle(node);
+    // A fresh element of the same tag, in the same parent, inherits everything
+    // this one inherits. Anything that still differs is this element's own
+    // doing -- which is what someone means when they ask what it is styled
+    // with. Comparing against a global default instead would report the whole
+    // inherited cascade as though the element had set it.
+    const probe = document.createElement(node.tagName);
+    probe.style.cssText = 'position:absolute!important;left:-99999px!important';
+    (node.parentElement || document.body).appendChild(probe);
+    const base = getComputedStyle(probe);
+
+    const out = {};
+    try {
+      for (const group of Object.keys(GROUPS)) {
+        const bag = {};
+        for (const prop of GROUPS[group]) {
+          const v = clean(cs.getPropertyValue(prop));
+          if (!v) continue;
+          const isDefault = v === clean(base.getPropertyValue(prop));
+          if (isDefault && ALWAYS.indexOf(prop) < 0) continue;
+          // Values that are 'unset' wearing a costume.
+          if (v === 'none' || v === 'normal' || v === 'auto'
+              || v === 'rgba(0, 0, 0, 0)' || v === '0px' || v === 'static'
+              || /^0px none/.test(v)) continue;
+          bag[prop] = v.length > 90 ? v.slice(0, 90) + '…' : v;
+        }
+        if (Object.keys(bag).length) out[group] = bag;
+      }
+    } finally {
+      probe.remove();
+    }
+    return out;
+  }
+
+  // --- which element did they actually mean? -----------------------------
+  // You click the label and you mean the button. So the target is the nearest
+  // ancestor that someone would name: one the snapshot already numbered, one
+  // the author gave an id or a test id, or one that draws a box of its own.
+  // The literal hit and the chain above it come back too, so stepping up or
+  // down costs no second round trip.
+  function meaningful(node) {
+    const refs = window.__autora_refs || [];
+    let best = node;
+    for (let cur = node, hops = 0; cur && cur !== document.body && hops < 6;
+         cur = cur.parentElement, hops++) {
+      if (refs.indexOf(cur) >= 0) return cur;
+      if (cur.id || cur.getAttribute('data-testid')) return cur;
+      if (best === node && cur !== node) {
+        const cs = getComputedStyle(cur);
+        const boxy = cs.backgroundColor !== 'rgba(0, 0, 0, 0)'
+          || cs.borderTopWidth !== '0px' || cs.boxShadow !== 'none';
+        if (boxy) best = cur;
+      }
+    }
+    return best;
+  }
+
+  function outline(node) {
+    const r = node.getBoundingClientRect();
+    return {
+      tag: node.tagName.toLowerCase(),
+      id: node.id || null,
+      testid: node.getAttribute('data-testid') || null,
+      classes: (node.getAttribute('class') || '').split(/\s+/).filter(Boolean).slice(0, 4),
+      ref: (window.__autora_refs || []).indexOf(node),
+      box: { x: Math.round(r.x), y: Math.round(r.y),
+             w: Math.round(r.width), h: Math.round(r.height) },
+    };
+  }
+
+  const target = meaningful(el);
+  const rect = target.getBoundingClientRect();
+  const refs = window.__autora_refs || [];
+
+  const chain = [];
+  for (let cur = target.parentElement, hops = 0;
+       cur && cur !== document.documentElement && hops < 4;
+       cur = cur.parentElement, hops++) {
+    chain.push(outline(cur));
+  }
+
+  const isCanvas = target.tagName.toLowerCase() === 'canvas';
+  return {
+    ok: true,
+    kind: isCanvas ? 'canvas' : 'dom',
+    ref: refs.indexOf(target) >= 0 ? refs.indexOf(target) : null,
+    retargeted: target !== el ? outline(el) : null,
+    selector: selectorFor(target),
+    fingerprint: fingerprint(target),
+    source: source(target),
+    params: params(target),
+    box: { x: Math.round(rect.x), y: Math.round(rect.y),
+           w: Math.round(rect.width), h: Math.round(rect.height) },
+    ancestors: chain,
+    canvas: isCanvas ? { w: target.width, h: target.height,
+                         dpr: window.devicePixelRatio || 1 } : null,
+  };
+})
+"""
+
+#: The same question, asked of a <canvas>, where the DOM has nothing to say.
+#:
+#: A 3D app has an accessibility tree too -- it is just called a scene graph,
+#: and only the engine can read it. Where the engine is reachable, a click
+#: becomes a raycast and comes back as a named object. Where it is not, the
+#: caller falls back to a cropped screenshot of the click, which is far cheaper
+#: than a whole frame and unambiguous about what is being asked about.
+_SCENE_JS = r"""
+((nx, ny) => {
+  // --- which engine is driving this canvas? ------------------------------
+  // There is no DOM under a <canvas>, so the only way to name what is on
+  // screen is to ask the engine that drew it. Each exposes a scene graph --
+  // which is the accessibility tree of a 3D app: named objects in a
+  // hierarchy, addressable as text instead of pixels.
+  const w = window;
+  const kind = w.BABYLON ? 'babylon'
+    : (w.THREE || w.__THREE__ || w.__THREE_DEVTOOLS__) ? 'three'
+    : w.Phaser ? 'phaser' : w.PIXI ? 'pixi' : null;
+  if (!kind) return { engine: null, reason: 'no known 3D engine on window' };
+
+  // Apps rarely hand their scene to the global namespace on purpose, so look
+  // in the places they conventionally end up before giving up.
+  function findBy(test) {
+    const roots = [w, w.app, w.game, w.viewer, w.experience, w.__app];
+    for (const root of roots) {
+      if (!root) continue;
+      for (const key of Object.keys(root)) {
+        try {
+          const value = root[key];
+          if (value && test(value)) return value;
+        } catch (e) { /* cross-origin or throwing getter */ }
+      }
+    }
+    return null;
+  }
+
+  function walk(node, depth, out, max) {
+    if (!node || out.length >= max) return out;
+    const name = node.name || (node.type || node.constructor && node.constructor.name);
+    const p = node.position;
+    out.push({
+      depth: depth,
+      name: name || '(unnamed)',
+      type: node.type || (node.constructor && node.constructor.name) || '?',
+      visible: node.visible !== false,
+      position: p ? [round(p.x), round(p.y), round(p.z)] : null,
+    });
+    const kids = node.children || [];
+    for (let i = 0; i < kids.length && out.length < max; i++) {
+      walk(kids[i], depth + 1, out, max);
+    }
+    return out;
+  }
+  const round = (n) => Math.round(n * 100) / 100;
+
+  if (kind === 'babylon') {
+    const scene = findBy((v) => v && v.getEngine && v.meshes);
+    if (!scene) return { engine: kind, reason: 'scene not reachable from window' };
+    const rect = scene.getEngine().getRenderingCanvas().getBoundingClientRect();
+    const hit = scene.pick(nx * rect.width, ny * rect.height);
+    return {
+      engine: kind,
+      picked: hit && hit.hit && hit.pickedMesh ? {
+        name: hit.pickedMesh.name,
+        type: hit.pickedMesh.getClassName && hit.pickedMesh.getClassName(),
+        point: hit.pickedPoint
+          ? [round(hit.pickedPoint.x), round(hit.pickedPoint.y), round(hit.pickedPoint.z)]
+          : null,
+        material: hit.pickedMesh.material && hit.pickedMesh.material.name,
+      } : null,
+      graph: walk(scene.rootNodes ? { children: scene.rootNodes } : scene, 0, [], 60),
+    };
+  }
+
+  const scene = findBy((v) => v && v.isScene);
+  const camera = findBy((v) => v && v.isCamera);
+  if (!scene) return { engine: kind, reason: 'scene not reachable from window' };
+
+  let picked = null;
+  const THREE = w.THREE;
+  if (camera && THREE && THREE.Raycaster) {
+    // Normalised device coordinates: the click, expressed the way a camera
+    // thinks about the screen.
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera({ x: nx * 2 - 1, y: -(ny * 2 - 1) }, camera);
+    const hits = ray.intersectObjects(scene.children, true);
+    if (hits.length) {
+      const h = hits[0];
+      picked = {
+        name: h.object.name || '(unnamed)',
+        type: h.object.type,
+        distance: round(h.distance),
+        point: [round(h.point.x), round(h.point.y), round(h.point.z)],
+        material: h.object.material && (h.object.material.name || h.object.material.type),
+      };
+    }
+  }
+  return {
+    engine: kind,
+    picked: picked,
+    reason: picked ? null : (camera ? 'ray hit nothing' : 'camera not reachable'),
+    graph: walk(scene, 0, [], 60),
+  };
+})
+"""
+
+#: The guidance overlay: a spotlight, a breathing ring, a label.
+#:
+#: Painted into the page rather than drawn over the video feed in the UI, for
+#: the same reason the click marker is -- an overlay drawn in the UI would be
+#: absent from the recording, so the person being guided and the person
+#: reviewing the session later would not see the same thing.
+_GUIDE_JS = r"""
+(() => {
+  const ID = '__autora_guide__';
+  const NS = 'http://www.w3.org/2000/svg';
+
+  function ensure() {
+    let host = document.getElementById(ID);
+    if (host) return host;
+    host = document.createElement('div');
+    host.id = ID;
+    host.setAttribute('aria-hidden', 'true');
+    host.style.cssText =
+      'position:fixed;inset:0;z-index:2147483600;pointer-events:none;' +
+      'opacity:0;transition:opacity .28s cubic-bezier(.32,.72,0,1)';
+    // A shadow root, so the overlay is genuinely outside the page rather than
+    // merely on top of it. Without one its label lands in the page's own
+    // innerText -- a `read` would return "Sign in selected" -- and the page's
+    // CSS can restyle the guidance. Neither is acceptable for something the
+    // harness paints over someone else's document.
+    host.__root = host.attachShadow({ mode: 'open' });
+    // Painted into the page rather than drawn over the video in the UI, so it
+    // survives into the screencast and therefore into the recording -- the
+    // person being guided and the person reviewing the session see the same
+    // thing.
+    host.__root.innerHTML =
+      '<div data-dim style="position:absolute;border-radius:10px;' +
+        'box-shadow:0 0 0 9999px rgba(6,7,10,.58);' +
+        'transition:all .42s cubic-bezier(.32,.72,0,1)"></div>' +
+      '<div data-ring style="position:absolute;border:2px solid #6e5bff;' +
+        'border-radius:12px;box-shadow:0 0 0 4px rgba(110,91,255,.22),' +
+        '0 8px 30px -6px rgba(110,91,255,.5);' +
+        'transition:all .42s cubic-bezier(.32,.72,0,1)"></div>' +
+      '<div data-chip style="position:absolute;padding:6px 11px;border-radius:8px;' +
+        'background:#6e5bff;color:#fff;font:600 12.5px/1.35 ui-sans-serif,system-ui,' +
+        'sans-serif;box-shadow:0 6px 20px -4px rgba(0,0,0,.6);max-width:320px;' +
+        'transition:all .42s cubic-bezier(.32,.72,0,1)"></div>';
+    document.documentElement.appendChild(host);
+
+    const style = document.createElement('style');
+    // A slow breath, not a strobe. This sits on screen while someone reads.
+    style.textContent =
+      '@keyframes breathe{0%,100%{box-shadow:0 0 0 4px rgba(110,91,255,.22),' +
+      '0 8px 30px -6px rgba(110,91,255,.5)}50%{box-shadow:0 0 0 10px rgba(110,91,255,0),' +
+      '0 8px 30px -6px rgba(110,91,255,.28)}}' +
+      '@media (prefers-reduced-motion:reduce){*{animation:none!important;' +
+      'transition:none!important}}';
+    host.__root.appendChild(style);
+    return host;
+  }
+
+  const api = {
+    show(spec) {
+      const host = ensure();
+      const box = spec.box;
+      const pad = spec.pad == null ? 6 : spec.pad;
+      const root = host.__root;
+      const dim = root.querySelector('[data-dim]');
+      const ring = root.querySelector('[data-ring]');
+      const chip = root.querySelector('[data-chip]');
+
+      const x = box.x - pad, y = box.y - pad;
+      const w = box.w + pad * 2, h = box.h + pad * 2;
+      for (const el of [dim, ring]) {
+        el.style.left = x + 'px'; el.style.top = y + 'px';
+        el.style.width = w + 'px'; el.style.height = h + 'px';
+      }
+      dim.style.display = spec.dim === false ? 'none' : 'block';
+      ring.style.animation = 'breathe 2.6s ease-in-out infinite';
+
+      if (spec.label) {
+        chip.textContent = spec.label;
+        chip.style.display = 'block';
+        // Above the target, unless that would fall off the top of the window.
+        const below = y < 52;
+        chip.style.left = Math.max(8, Math.min(x, innerWidth - 340)) + 'px';
+        chip.style.top = (below ? y + h + 10 : y - 40) + 'px';
+      } else {
+        chip.style.display = 'none';
+      }
+
+      requestAnimationFrame(() => { host.style.opacity = '1'; });
+      if (spec.ms) {
+        clearTimeout(api._t);
+        api._t = setTimeout(() => api.hide(), spec.ms);
+      }
+      return true;
+    },
+
+    hide() {
+      const host = document.getElementById(ID);
+      if (!host) return false;
+      host.style.opacity = '0';
+      clearTimeout(api._t);
+      return true;
+    },
+  };
+
+  window.__autora_guide = api;
+  return true;
+})
+"""
+
 #: The page as the model reads it: every interactive element, with the role and
 #: accessible name a screen reader would announce, plus a numeric ref to act on.
 #:
@@ -346,6 +772,8 @@ class BrowserSession:
 
         # Inject cursor tracker so the screencast shows where the pointer is.
         await context.add_init_script(_CURSOR_JS)
+        # Dormant until something calls it; costs nothing to have ready.
+        await context.add_init_script(f"({_GUIDE_JS})()")
         self._started = time.monotonic()
         await self._start_screencast()
         self.page.on("framenavigated", self._on_navigate)
@@ -399,6 +827,21 @@ class BrowserSession:
             # captured before the click navigates away.
             await asyncio.sleep(0.05)
         except Exception:
+            pass
+
+    async def guide(self, box: dict[str, Any], label: str = "",
+                    ms: float | None = None) -> None:
+        """Spotlight a region of the page for whoever is watching."""
+        if self.page is None:
+            return
+        try:
+            await self.page.evaluate(
+                "(spec) => window.__autora_guide && window.__autora_guide.show(spec)",
+                {"box": box, "label": label, "ms": ms},
+            )
+        except Exception:
+            # Guidance is decoration. A page that navigated mid-call must not
+            # take the turn down with it.
             pass
 
     async def close(self) -> None:
@@ -515,6 +958,120 @@ async def _is_sensitive(element, override: bool) -> bool:
                ("password", "passwd", "secret", "token", "cvv", "card", "ssn"))
 
 
+def _render_pick(hit: dict[str, Any]) -> str:
+    """The descriptor, as the model reads it."""
+    fp = hit.get("fingerprint") or {}
+    head = f"<{fp.get('tag', '?')}>"
+    if fp.get("id"):
+        head += f" #{fp['id']}"
+    if fp.get("classes"):
+        head += " ." + ".".join(fp["classes"])
+    lines = [f"Picked {head}"]
+    if hit.get("ref") is not None:
+        lines.append(f"Snapshot ref: [{hit['ref']}] — act on it with click(ref=…)")
+    if hit.get("retargeted"):
+        r = hit["retargeted"]
+        lines.append(f"(you pointed at a <{r['tag']}> inside it)")
+    if fp.get("text"):
+        lines.append(f"Text: {fp['text']!r}")
+    lines.append(f"Selector: {hit.get('selector')}")
+
+    source = hit.get("source")
+    if source:
+        where = source.get("file") or "(unknown file)"
+        if source.get("line"):
+            where += f":{source['line']}"
+        component = f" in <{source['component']}>" if source.get("component") else ""
+        lines.append(f"Source: {where}{component}  (via {source.get('via')})")
+    else:
+        # Say so plainly. A production build strips this, and an agent that
+        # assumes a file it cannot see will edit the wrong one.
+        lines.append("Source: not exposed by this build — search for the classes "
+                     "or text above to find where it is defined.")
+
+    box = hit.get("box") or {}
+    lines.append(f"Box: {box.get('w')}×{box.get('h')} at ({box.get('x')}, {box.get('y')})")
+
+    params = hit.get("params") or {}
+    if params:
+        lines.append("\nStyled with (only what this element sets):")
+        for group, values in params.items():
+            pairs = ", ".join(f"{k}: {v}" for k, v in values.items())
+            lines.append(f"  {group}: {pairs}")
+
+    ancestors = hit.get("ancestors") or []
+    if ancestors:
+        crumbs = " < ".join(
+            (a["tag"] + (f"#{a['id']}" if a.get("id") else "")
+             + (f"[{a['testid']}]" if a.get("testid") else ""))
+            for a in ancestors)
+        lines.append(f"\nInside: {crumbs}")
+    return "\n".join(lines)
+
+
+def _render_scene(graph: dict[str, Any]) -> str:
+    lines = [f"3D engine: {graph.get('engine')}"]
+    picked = graph.get("picked")
+    if picked:
+        lines.append(f"Hit: {picked.get('name')} ({picked.get('type')})"
+                     + (f" at {picked.get('point')}" if picked.get("point") else "")
+                     + (f", material {picked['material']}" if picked.get("material") else ""))
+    elif graph.get("reason"):
+        lines.append(f"No object picked: {graph['reason']}")
+    nodes = graph.get("graph") or []
+    if nodes:
+        lines.append("\nScene graph:")
+        for node in nodes:
+            lines.append("  " + "  " * node["depth"]
+                         + f"{node['name']}  {node['type']}"
+                         + ("" if node.get("visible", True) else "  (hidden)"))
+    return "\n".join(lines)
+
+
+#: How much of the canvas to crop around a click. Big enough to carry context,
+#: small enough that it is not just a screenshot with extra steps.
+CROP = 320
+
+
+async def _describe_canvas(page, session, span, hit, x: float, y: float) -> ToolResult:
+    """What is at this point on a <canvas>.
+
+    Two answers, best first. If the engine is reachable the click becomes a
+    raycast and comes back as a named object, which is text and can be reasoned
+    about. If it is not -- the usual case, since apps rarely publish their scene
+    -- a tight crop of the click is the honest fallback: far cheaper than a
+    whole frame, and unambiguous about what is being asked about.
+    """
+    box = hit.get("canvas") or {}
+    rect = hit.get("box") or {}
+    width = rect.get("w") or box.get("w") or 1
+    height = rect.get("h") or box.get("h") or 1
+    nx = (x - rect.get("x", 0)) / max(width, 1)
+    ny = (y - rect.get("y", 0)) / max(height, 1)
+
+    parts = [f"That point is on a <canvas> ({box.get('w')}×{box.get('h')}), "
+             f"at {nx:.3f}, {ny:.3f} of it."]
+    graph = await page.evaluate(f"({_SCENE_JS})({nx}, {ny})")
+    if graph.get("engine"):
+        parts.append(_render_scene(graph))
+    else:
+        parts.append("No 3D engine is reachable, so there is nothing to name. "
+                     "Cropped the click instead — it is in the recording.")
+
+    half = CROP // 2
+    clip = {
+        "x": max(x - half, 0), "y": max(y - half, 0),
+        "width": min(CROP, page.viewport_size["width"] - max(x - half, 0)),
+        "height": min(CROP, page.viewport_size["height"] - max(y - half, 0)),
+    }
+    shot = await page.screenshot(type="jpeg", quality=80, clip=clip)
+    session.emit_frame(Kind.BROWSER_FRAME, shot, stream="browser",
+                       explicit=True, crop=clip)
+    parts.append(f"Crop is {int(clip['width'])}×{int(clip['height'])} rather than the "
+                 f"full viewport.")
+    return ToolResult("\n\n".join(parts), display={"pick": hit, "clip": clip})
+
+
 class BrowserTool:
     name = "browser"
     description = (
@@ -525,9 +1082,15 @@ class BrowserTool:
         "that number. Every action returns a fresh numbered list, so you rarely "
         "need a second `read`.\n"
         "Use `fill` to complete a whole form in one call rather than typing "
-        "field by field. `screenshot` is a fallback for when a page is visual "
-        "(a chart, a canvas, a layout question) — it costs far more than `read` "
-        "and cannot be acted on."
+        "field by field.\n"
+        "`pick` answers what is at a point and how it is styled — use it when "
+        "the human points at something. On a <canvas> it asks the 3D engine "
+        "instead and returns the object it hit, plus a cropped image.\n"
+        "`highlight` draws a spotlight on the page to show someone where to "
+        "look. `scene` dumps the 3D scene graph.\n"
+        "`screenshot` is a fallback for when a page is visual (a chart, a "
+        "canvas, a layout question) — it costs far more than `read` and cannot "
+        "be acted on."
     )
     schema = {
         "type": "object",
@@ -535,7 +1098,7 @@ class BrowserTool:
             "action": {
                 "type": "string",
                 "enum": ["goto", "read", "click", "type", "fill", "scroll",
-                         "screenshot", "back", "wait"],
+                         "pick", "highlight", "scene", "screenshot", "back", "wait"],
             },
             "url": {"type": "string", "description": "For goto."},
             "ref": {
@@ -572,6 +1135,13 @@ class BrowserTool:
             },
             "amount": {"type": "integer", "description": "Pixels to scroll. Negative is up."},
             "seconds": {"type": "number", "description": "For wait."},
+            "x": {"type": "number", "description": "Viewport x, for pick."},
+            "y": {"type": "number", "description": "Viewport y, for pick."},
+            "label": {"type": "string",
+                      "description": "For highlight: the caption shown beside the ring."},
+            "ms": {"type": "number",
+                   "description": "For highlight: fade out after this many milliseconds. "
+                                  "Omit to leave it up until the next highlight."},
             "full_text": {
                 "type": "boolean",
                 "description": "For read: also return the page's prose. Default true. "
@@ -750,6 +1320,59 @@ class BrowserTool:
                 session.emit(Kind.BROWSER_ACTION, {"action": "scroll", "amount": amount},
                              actor="tool:browser", span=span)
                 yield await after(f"Scrolled {amount}px.")
+
+            elif action == "pick":
+                x, y = float(args.get("x") or 0), float(args.get("y") or 0)
+                # The snapshot first, so the descriptor can carry a ref the
+                # agent can already act on rather than a selector it must trust.
+                await _snapshot(page, SNAPSHOT_ON_READ)
+                hit = await page.evaluate(f"({_PICK_JS})({x}, {y})")
+                if not hit.get("ok"):
+                    yield ToolResult(f"Nothing at ({x:.0f}, {y:.0f}).", ok=False)
+                    return
+
+                session.emit(Kind.BROWSER_PICK, {
+                    "x": x, "y": y, "kind": hit["kind"], "ref": hit.get("ref"),
+                    "selector": hit.get("selector"), "source": hit.get("source"),
+                    "box": hit.get("box"),
+                }, actor="tool:browser", span=span)
+
+                if hit["kind"] == "canvas":
+                    yield await _describe_canvas(page, session, span, hit, x, y)
+                    return
+
+                await browser.guide(hit["box"], args.get("label") or "selected", ms=2500)
+                yield ToolResult(_render_pick(hit), display={"pick": hit})
+
+            elif action == "scene":
+                graph = await page.evaluate(f"({_SCENE_JS})(0.5, 0.5)")
+                if not graph.get("engine"):
+                    yield ToolResult(
+                        "No 3D engine found on this page. If the app keeps its scene "
+                        "private, expose it as window.scene to make objects nameable.",
+                        ok=False)
+                    return
+                yield ToolResult(_render_scene(graph))
+
+            elif action == "highlight":
+                box = args.get("box")
+                if box is None and (args.get("ref") is not None or args.get("selector")):
+                    element = await _target(page, args)
+                    box = await element.bounding_box()
+                if not box:
+                    yield ToolResult(
+                        "highlight needs a ref, a selector, or a box.", ok=False)
+                    return
+                spec = {"x": box.get("x", 0), "y": box.get("y", 0),
+                        "w": box.get("width", box.get("w", 0)),
+                        "h": box.get("height", box.get("h", 0))}
+                await browser.guide(spec, args.get("label") or "", ms=args.get("ms"))
+                session.emit(Kind.BROWSER_HIGHLIGHT, {
+                    "box": spec, "label": args.get("label") or "",
+                }, actor="tool:browser", span=span)
+                yield ToolResult(
+                    f"Highlighted {args.get('label') or 'the area'} on the page. "
+                    f"It is visible to whoever is watching, and in the recording.")
 
             elif action == "screenshot":
                 # The fallback, not the default. An image costs far more than a
