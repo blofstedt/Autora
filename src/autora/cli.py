@@ -39,7 +39,23 @@ def build_voice(args, session, agent):
     from .voice.engine import VoiceLoop
 
     # ── TTS ──
-    if tts_name in ("kokoro", "auto"):
+    # Auto-select Deepgram Aura when the key is present — same credit as STT,
+    # no extra setup, ~200ms first-audio latency.
+    if tts_name in ("auto", "whisper", "openai") and os.environ.get("DEEPGRAM_API_KEY"):
+        tts_name = "deepgram"
+
+    if tts_name == "deepgram":
+        try:
+            from .voice.adapters.deepgram_tts import DeepgramTts
+            tts = DeepgramTts()
+        except ImportError:
+            print("error: deepgram-sdk not installed. Run: pip install deepgram-sdk sounddevice",
+                  file=sys.stderr)
+            return None
+        except RuntimeError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return None
+    elif tts_name in ("kokoro", "auto"):
         try:
             from .voice.adapters.kokoro_tts import KokoroTts
             tts = KokoroTts()
@@ -52,7 +68,8 @@ def build_voice(args, session, agent):
     elif tts_name == "piper":
         tts = _fallback_piper()
     else:
-        print(f"error: unknown --tts {tts_name!r}. Choices: kokoro, piper, off", file=sys.stderr)
+        print(f"error: unknown --tts {tts_name!r}. Choices: deepgram, kokoro, piper, off",
+              file=sys.stderr)
         return None
 
     # ── STT ──
@@ -277,14 +294,15 @@ def main(argv: list[str] | None = None) -> int:
     up.add_argument("--log-level", default="warning")
     up.add_argument(
         "--voice",
-        choices=["kokoro", "piper", "whisper", "openai", "off"],
+        choices=["deepgram", "kokoro", "piper", "whisper", "openai", "off"],
         default="off",
         metavar="ENGINE",
         help="Enable voice I/O: 'kokoro' sets TTS=Kokoro + STT=faster-whisper, "
              "'piper' uses Piper TTS, 'openai' uses OpenAI Whisper API for STT. "
              "Use --tts/--stt for independent control. (default: off)",
     )
-    up.add_argument("--tts", choices=["kokoro", "piper", "off"], help="TTS engine override")
+    up.add_argument("--tts", choices=["deepgram", "kokoro", "piper", "off"],
+                    help="TTS engine override (default: deepgram if DEEPGRAM_API_KEY set, else kokoro)")
     up.add_argument("--stt", choices=["deepgram", "whisper", "openai", "off"],
                     help="STT engine override (default: deepgram if DEEPGRAM_API_KEY set, else whisper)")
     up.add_argument("--stt-model", default="base.en",

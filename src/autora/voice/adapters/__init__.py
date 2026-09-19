@@ -19,12 +19,13 @@ Fully local setup (Intel N95 or similar):
 
 from .assemblyai_stt import AssemblyAIStt
 from .deepgram_stt import DeepgramStt
+from .deepgram_tts import DeepgramTts
 from .faster_whisper_stt import FasterWhisperStt
 from .kokoro_tts import KokoroTts
 from .openai_whisper_stt import OpenAIWhisperStt
 from .piper_tts import PiperTts
 
 __all__ = [
-    "AssemblyAIStt", "DeepgramStt", "FasterWhisperStt",
+    "AssemblyAIStt", "DeepgramStt", "DeepgramTts", "FasterWhisperStt",
     "KokoroTts", "OpenAIWhisperStt", "PiperTts",
 ]
