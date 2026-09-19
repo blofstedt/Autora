@@ -21,7 +21,9 @@ import json
 import time
 from typing import Any
 
+from .context import ContextPolicy, ContextState, compose, estimate_tokens
 from .events import Kind
+from .memory import GLOBAL, MemoryStore, project_scope
 from .policy import Decision, PolicyGate, _redact
 from .providers.base import (
     LLMProvider, TextDelta, ThinkingDelta, ToolCallRequest, TurnEnd,
@@ -65,6 +67,8 @@ class Agent:
         gate: PolicyGate | None = None,
         system: str = DEFAULT_SYSTEM,
         max_iterations: int = MAX_ITERATIONS,
+        context_policy: ContextPolicy | None = None,
+        memory: MemoryStore | None = None,
     ):
         self.session = session
         self.provider = provider
@@ -72,9 +76,28 @@ class Agent:
         self.gate = gate or PolicyGate()
         self.system = system
         self.max_iterations = max_iterations
-        self.messages: list[dict[str, Any]] = []
+        self.context_policy = context_policy or ContextPolicy()
+        self.context_state = ContextState()
+        self.memory = memory
         self._cancel = asyncio.Event()
         self._running = False
+
+    @property
+    def messages(self) -> list[dict[str, Any]]:
+        """What the model sees, folded fresh from the log.
+
+        A property rather than a field: the history used to be built up
+        imperatively beside the log, which made the log a copy of the truth
+        rather than the truth. Folding on demand costs a pass over the events
+        and buys one source of truth, an auditable answer to "what was in
+        context at step N", and somewhere for the compaction policy to live.
+        """
+        return compose(
+            self.session.store.read(),
+            self.session.store.blobs,
+            self.context_policy,
+            self.context_state,
+        )
 
     # -- control ---------------------------------------------------------
 
@@ -127,7 +150,7 @@ class Agent:
         self._cancel.clear()
         self._running = True
         self.session.emit(Kind.USER_MESSAGE, {"text": user_text}, actor="user")
-        self.messages.append({"role": "user", "content": user_text})
+        self._recall(user_text)
 
         final_text = ""
         try:
@@ -136,16 +159,11 @@ class Agent:
                 text, thinking, calls, stop = await self._stream_once()
                 final_text = text or final_text
 
-                # Record the assistant turn in history before running tools, so
-                # an interruption mid-tool still leaves a well-formed history
-                # that the next turn can continue from.
-                entry: dict[str, Any] = {"role": "assistant", "content": text}
-                if calls:
-                    entry["tool_calls"] = [
-                        {"id": c.id, "name": c.name, "args": c.args} for c in calls
-                    ]
-                self.messages.append(entry)
-
+                # Nothing to record here: the assistant turn is already in the
+                # log as streamed AGENT_TEXT deltas, and each tool call lands as
+                # a TOOL_CALL event when it is invoked below. An interruption
+                # mid-tool therefore still leaves a well-formed history, because
+                # the history is whatever was durably logged.
                 if not calls:
                     self.session.emit(Kind.AGENT_DONE, {
                         "stop_reason": stop, "iterations": iteration + 1,
@@ -154,18 +172,14 @@ class Agent:
 
                 for call in calls:
                     self._check_cancelled()
-                    result = await self._invoke(call)
-                    self.messages.append({
-                        "role": "tool", "tool_call_id": call.id,
-                        "content": result.content, "ok": result.ok,
-                    })
+                    await self._invoke(call)
             else:
                 note = (
                     f"Stopped after {self.max_iterations} steps without finishing. "
                     f"This usually means a retry loop -- look at the timeline."
                 )
                 self.session.emit(Kind.ERROR, {"error": note}, actor="system")
-                self.messages.append({"role": "user", "content": note})
+                self._note(note)
                 return note
 
         except Interrupted:
@@ -174,16 +188,50 @@ class Agent:
             }, actor="agent")
             # Leave history consistent: the model must see that it was cut off,
             # or the next turn continues as though nothing happened.
-            self.messages.append({
-                "role": "user",
-                "content": "[The human interrupted you. Stop what you were doing and listen.]",
-            })
+            self._note("[The human interrupted you. Stop what you were doing and listen.]")
             return final_text
         finally:
             self._running = False
             self.session.checkpoint()
 
         return final_text
+
+    @property
+    def scopes(self) -> list[str]:
+        """Global facts plus this project's. `pytest -x` is true of one repo."""
+        return [GLOBAL, project_scope(self.session.workdir)]
+
+    def _recall(self, prompt: str) -> None:
+        """Prime the turn with what is already known about this prompt.
+
+        Emitted rather than quietly prepended: the block is on the timeline, in
+        the transcript and in the recording, so you can see what the agent was
+        told before it answered. It reaches the model through the same fold as
+        everything else, which means it is cached and compacted by the same
+        rules and needs no special case anywhere downstream.
+        """
+        if self.memory is None:
+            return
+        from .recall import recall_for
+
+        found = recall_for(self.memory, prompt, scopes=self.scopes)
+        if not found.text:
+            return
+        self.memory.touch(found.ids)
+        self.session.emit(Kind.MEMORY_RECALL, {
+            "text": found.text,
+            "ids": found.ids,
+            "titles": [r.title for r in found.records],
+        }, actor="system")
+
+    def _note(self, text: str) -> None:
+        """Say something to the model, on the record.
+
+        Anything injected into the context is logged, so the transcript shows
+        what the model was actually told -- and so the context can be rebuilt
+        from the log without the harness remembering anything on the side.
+        """
+        self.session.emit(Kind.CONTEXT_NOTE, {"text": text}, actor="system")
 
     async def _stream_once(self) -> tuple[str, str, list[ToolCallRequest], str]:
         """One provider round-trip, streamed into the event log as it arrives."""
@@ -192,10 +240,21 @@ class Agent:
         calls: list[ToolCallRequest] = []
         stop_reason = "end_turn"
 
+        # Folding here rather than at each call site means the compaction policy
+        # runs exactly once per request, against the whole log prefix.
+        before = set(self.context_state.demoted)
+        messages = self.messages
+        if self.context_state.demoted != before:
+            self.session.emit(Kind.LOG, {
+                "event": "context.compacted",
+                "demoted": len(self.context_state.demoted),
+                "approx_tokens": estimate_tokens(messages),
+            }, actor="system")
+
         try:
             stream = self.provider.stream(
                 system=self.system,
-                messages=self.messages,
+                messages=messages,
                 tools=self.registry.specs(),
             ).__aiter__()
             while True:
@@ -237,25 +296,32 @@ class Agent:
     async def _invoke(self, call: ToolCallRequest) -> ToolResult:
         """Authorize, run, and record one tool call."""
         tool = self.registry.get(call.name)
-        if tool is None:
-            available = ", ".join(t.name for t in self.registry)
-            return ToolResult(f"No such tool {call.name!r}. Available: {available}", ok=False)
-
-        # Redact before the args reach the log. The tool still receives the real
-        # values -- redaction is for the record, not the execution.
+        # Every path below opens a span and closes it with the exact text the
+        # model will read, stored as the closing event's blob. That is what lets
+        # the context be rebuilt from the log: a tool call that returned nothing
+        # to the record would be a hole in the history. It also means an unknown
+        # tool now shows up on the timeline instead of failing invisibly.
         span = self.session.open_span(
             call.name, Kind.TOOL_CALL,
+            # Redact before the args reach the log. The tool still receives the
+            # real values -- redaction is for the record, not the execution.
             {"args": _redact(call.args), "call_id": call.id},
             actor="agent",
         )
 
+        if tool is None:
+            available = ", ".join(t.name for t in self.registry)
+            return self._fail(span, f"No such tool {call.name!r}. Available: {available}",
+                              {"error": "unknown tool"})
+
         outcome = await self.gate.authorize(self.session, call.name, call.args)
         if outcome.decision is Decision.DENY:
-            self.session.close_span(span, Kind.TOOL_ERROR, {"denied": True,
-                                    "reason": outcome.reason}, actor="system")
-            return ToolResult(
+            return self._fail(
+                span,
                 f"Not permitted: {outcome.reason} Do not retry this; choose a "
-                f"different approach or ask the human.", ok=False)
+                f"different approach or ask the human.",
+                {"denied": True, "reason": outcome.reason},
+            )
 
         result = ToolResult("(tool produced no result)", ok=False)
 
@@ -268,23 +334,33 @@ class Agent:
         try:
             result = await self._cancellable(drain())
         except Interrupted:
-            self.session.close_span(span, Kind.TOOL_ERROR,
-                                    {"error": "interrupted by human"}, actor="system")
+            self._fail(span, "[interrupted by the human before this finished]",
+                       {"error": "interrupted by human"})
             raise
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
-            self.session.close_span(span, Kind.TOOL_ERROR, {"error": error}, actor="system")
-            return ToolResult(f"{call.name} raised {error}", ok=False)
+            return self._fail(span, f"{call.name} raised {error}", {"error": error})
 
+        content = result.content or "(tool produced no result)"
         self.session.close_span(span, Kind.TOOL_RESULT, {
             "ok": result.ok,
-            # A preview, not the payload: full tool output is already in the
-            # streamed TOOL_OUTPUT/PTY_OUTPUT events, and duplicating a 200KB
-            # build log into the result event would double the log for nothing.
-            "preview": (result.content or "")[:400],
+            # The payload keeps a preview for the timeline; the full text goes in
+            # the blob, which is what `recall` reads and what the composer folds
+            # back into context. Content-addressed, so a command run twice costs
+            # one copy and a 200KB build log never lands in the JSONL.
+            "preview": content[:400],
+            "bytes": len(content),
             "display": result.display,
-        }, actor=f"tool:{call.name}")
+        }, actor=f"tool:{call.name}", blob=content.encode("utf-8"))
         return result
+
+    def _fail(self, span: str, message: str, payload: dict[str, Any]) -> ToolResult:
+        """Close a span with the failure text the model will read."""
+        self.session.close_span(
+            span, Kind.TOOL_ERROR, {**payload, "preview": message[:400], "ok": False},
+            actor="system", blob=message.encode("utf-8"),
+        )
+        return ToolResult(message, ok=False)
 
 
 def build_registry(
@@ -292,11 +368,14 @@ def build_registry(
     chrome_path: str | None = None,
     profile_dir: str | None = None,
     relay=None,
+    memory: MemoryStore | None = None,
 ) -> ToolRegistry:
     """The default toolset."""
     from .tools.browser import BrowserTool
     from .tools.desktop import DesktopTool
     from .tools.files import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
+    from .tools.memory import MemoryTool
+    from .tools.recall import RecallTool
     from .tools.terminal import TerminalTool
 
     registry = ToolRegistry()
@@ -305,6 +384,12 @@ def build_registry(
         ReadFileTool(), WriteFileTool(), EditFileTool(), ListDirTool(),
         BrowserTool(headless=headless, executable_path=chrome_path, profile_dir=profile_dir),
         DesktopTool(relay),
+        # Pairs with context compaction: old tool output is trimmed out of the
+        # conversation, and this is how the model gets it back.
+        RecallTool(),
     ):
         registry.register(tool)
+    if memory is not None:
+        registry.register(MemoryTool(
+            memory, scope_for=lambda session: project_scope(session.workdir)))
     return registry

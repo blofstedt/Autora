@@ -7,6 +7,10 @@ import { IconCheck, IconShield, IconX } from "./Icons";
  * Shows the exact rendered command, never a summary. The whole value of an
  * approval prompt is being able to read precisely what is about to run; a prompt
  * that says "allow bash?" just trains you to click yes.
+ *
+ * The container is an assertive live region: this is the one moment the UI
+ * genuinely needs the reader, and a screen reader should say so without
+ * waiting to be asked.
  */
 export function Approvals({
   approvals, onDecide, readOnly,
@@ -19,7 +23,7 @@ export function Approvals({
   if (pending.length === 0) return null;
 
   return (
-    <div className="approvals">
+    <div className="approvals" role="alert" aria-live="assertive">
       {pending.map((approval) => (
         <div className="approval" key={approval.requestId}>
           <div className="approval-top">

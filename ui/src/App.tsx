@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SessionStream, type StreamStatus } from "./lib/stream";
 import { derive, inferStage } from "./lib/derive";
+import { HIDDEN_KINDS } from "./lib/describe";
+import { usePlayback } from "./lib/playback";
+import { chime, paintChrome, type Chrome } from "./lib/chrome";
 import type { AutoraEvent } from "./lib/types";
 import { Timeline } from "./components/Timeline";
 import { Transcript } from "./components/Transcript";
@@ -9,8 +12,10 @@ import { BrowserView } from "./components/BrowserView";
 import { DesktopView } from "./components/DesktopView";
 import { DiffView } from "./components/DiffView";
 import { Approvals } from "./components/Approvals";
+import { Scrubber } from "./components/Scrubber";
+import { KnowledgeWeb } from "./components/KnowledgeWeb";
 import {
-  IconArrow, IconChevron, IconClock, IconFile, IconGlobe, IconMessage,
+  IconArrow, IconBrain, IconChevron, IconClock, IconFile, IconGlobe, IconMessage,
   IconMonitor, IconPlus, IconSpark, IconStop, IconTerminal,
 } from "./components/Icons";
 
@@ -22,6 +27,10 @@ const STAGES: { id: Stage; label: string; icon: typeof IconTerminal }[] = [
   { id: "desktop", label: "Desktop", icon: IconMonitor },
   { id: "files", label: "Files", icon: IconFile },
 ];
+
+/** How often to re-read the session list, so sessions started elsewhere (or
+    from another tab) show up without a reload. */
+const SESSION_POLL_MS = 10_000;
 
 export function App() {
   const [sessionId, setSessionId] = useState<string | null>(
@@ -37,17 +46,30 @@ export function App() {
   const [railOpen, setRailOpen] = useState(true);
   const [draft, setDraft] = useState("");
   const [mobileTab, setMobileTab] = useState<"stage" | "chat" | "timeline">("stage");
+  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const streamRef = useRef<SessionStream | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    fetch("/api/sessions")
-      .then((r) => r.json())
-      .then((rows) => {
-        setSessions(rows);
-        if (!sessionId && rows.length > 0) setSessionId(rows[0].id);
-      })
-      .catch(() => undefined);
-  }, [sessionId]);
+    let alive = true;
+    const load = () =>
+      fetch("/api/sessions")
+        .then((r) => r.json())
+        .then((rows) => {
+          if (!alive) return;
+          setSessions(rows);
+          // Functional update so polling never needs `sessionId` as a dep --
+          // otherwise every session switch restarts the poll.
+          setSessionId((current) => current ?? (rows.length > 0 ? rows[0].id : null));
+        })
+        .catch(() => undefined);
+    load();
+    const timer = window.setInterval(load, SESSION_POLL_MS);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
+  }, []);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -77,17 +99,73 @@ export function App() {
 
   const view = useMemo(() => derive(events, cursor), [events, cursor]);
 
+  // ------------------------------------------------------------- playback --
+  // Replay moves the cursor but does not pin it: reaching the head hands
+  // control back to following, so a recording that catches up with a live
+  // session simply becomes a live session again.
+  const playbackSeek = useCallback((index: number) => {
+    setFollowing(false);
+    setCursor(index);
+  }, []);
+  const playback = usePlayback(
+    events,
+    cursor,
+    playbackSeek,
+    useCallback(() => setFollowing(true), []),
+  );
+
+  /** Any deliberate move by the reader: stops playback and stops following. */
+  const seek = useCallback(
+    (index: number) => {
+      playback.pause();
+      setFollowing(false);
+      setCursor(index);
+    },
+    [playback],
+  );
+
+  const jumpToNow = useCallback(() => {
+    playback.pause();
+    setFollowing(true);
+    setCursor(events.length - 1);
+  }, [playback, events.length]);
+
+  /** Step to the next/previous event the timeline actually shows, skipping the
+      streaming chatter -- otherwise ⇧→ walks through 400 PTY chunks. */
+  const step = useCallback(
+    (direction: 1 | -1, notable: boolean) => {
+      playback.pause();
+      setFollowing(false);
+      setCursor((current) => {
+        if (!notable) {
+          return Math.min(Math.max(current + direction, -1), events.length - 1);
+        }
+        for (let i = current + direction; i >= 0 && i < events.length; i += direction) {
+          if (!HIDDEN_KINDS.has(events[i].kind)) return i;
+        }
+        return direction > 0 ? events.length - 1 : -1;
+      });
+    },
+    [playback, events],
+  );
+
   // On mobile, jump to Chat when an approval appears so it's never missed.
+  const pending = useMemo(
+    () => view.approvals.filter((a) => !a.settled).length,
+    [view.approvals],
+  );
   useEffect(() => {
-    if (view.approvals.length > 0) setMobileTab("chat");
-  }, [view.approvals.length]);
+    if (pending > 0) setMobileTab("chat");
+  }, [pending]);
 
   // Follow the action by default; a deliberate pin must stick, or the UI fights
-  // whoever is trying to look at something.
+  // whoever is trying to look at something. Unpinned it tracks the cursor
+  // rather than the head, so replaying a session switches panes the same way
+  // watching it live did.
   useEffect(() => {
-    if (stagePinned || !following) return;
+    if (stagePinned) return;
     setStage(inferStage(events, cursor));
-  }, [events, cursor, stagePinned, following]);
+  }, [events, cursor, stagePinned]);
 
   const send = useCallback(async () => {
     const text = draft.trim();
@@ -115,7 +193,78 @@ export function App() {
   const live = status.state === "live";
   const readOnly = !live;
   const atHead = cursor >= events.length - 1;
-  const progress = events.length > 1 ? ((cursor + 1) / events.length) * 100 : 0;
+
+  // ---------------------------------------------------------- tab chrome --
+  const chromeState: Chrome = pending > 0
+    ? "approval"
+    : !live
+      ? status.state === "closed" ? "offline" : "idle"
+      : view.busy ? "working" : "live";
+
+  useEffect(() => {
+    paintChrome(chromeState, view.title);
+  }, [chromeState, view.title]);
+
+  // A chime only when the tab is in the background -- on screen, the amber card
+  // is already the loudest thing in the window.
+  const hadPending = useRef(0);
+  useEffect(() => {
+    if (pending > hadPending.current && document.hidden) chime();
+    hadPending.current = pending;
+  }, [pending]);
+
+  // ------------------------------------------------------------ shortcuts --
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const typing =
+        !!target &&
+        (target.isContentEditable ||
+          ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+
+      if (e.key === "Escape" && typing) {
+        target!.blur();
+        return;
+      }
+      if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+
+      switch (e.key) {
+        case " ":
+          e.preventDefault();
+          playback.toggle();
+          break;
+        case "ArrowLeft":
+          e.preventDefault();
+          step(-1, e.shiftKey);
+          break;
+        case "ArrowRight":
+          e.preventDefault();
+          step(1, e.shiftKey);
+          break;
+        case "Home":
+          e.preventDefault();
+          seek(-1);
+          break;
+        case "End":
+          e.preventDefault();
+          jumpToNow();
+          break;
+        case "/":
+          e.preventDefault();
+          composerRef.current?.focus();
+          break;
+        case "k":
+          e.preventDefault();
+          setKnowledgeOpen((open) => !open);
+          break;
+        case "Escape":
+          setKnowledgeOpen(false);
+          break;
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [playback, step, seek, jumpToNow]);
 
   const badge = view.busy && live
     ? { cls: "is-working", text: "working" }
@@ -139,6 +288,8 @@ export function App() {
           className="btn icon ghost rail-toggle"
           onClick={() => setRailOpen(!railOpen)}
           title={railOpen ? "Hide timeline" : "Show timeline"}
+          aria-label={railOpen ? "Hide timeline" : "Show timeline"}
+          aria-expanded={railOpen}
           style={{ transform: railOpen ? "rotate(180deg)" : undefined }}
         >
           <IconChevron size={14} />
@@ -147,6 +298,7 @@ export function App() {
         <div className="session-pill">
           <select
             value={sessionId ?? ""}
+            aria-label="Session"
             onChange={(e) => {
               history.replaceState(null, "", `?session=${e.target.value}`);
               setSessionId(e.target.value);
@@ -154,11 +306,13 @@ export function App() {
           >
             {sessions.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.live ? "● " : "○ "}{s.id}{s.title ? ` — ${s.title}` : ""}
+                {/* Title first: the id is a timestamp and a nonce, which is how
+                    you find a session again, not how you recognise one. */}
+                {s.live ? "● " : "○ "}{s.title ? `${s.title} · ${s.id}` : s.id}
               </option>
             ))}
           </select>
-          <button className="btn icon ghost" onClick={newSession} title="New session">
+          <button className="btn icon ghost" onClick={newSession} title="New session" aria-label="New session">
             <IconPlus size={14} />
           </button>
         </div>
@@ -170,10 +324,18 @@ export function App() {
             {fmt(view.tokens.in)} in · {fmt(view.tokens.out)} out · {fmt(view.tokens.cached)} cached
           </span>
         )}
-        <span className={`badge ${badge.cls}`}>
+        <span className={`badge status ${badge.cls}`}>
           <span className="dot" />
           {badge.text}
         </span>
+        <button
+          className="btn icon ghost"
+          onClick={() => setKnowledgeOpen(true)}
+          title="What the agent knows"
+          aria-label="Open knowledge web"
+        >
+          <IconBrain size={15} />
+        </button>
         {live && view.busy && (
           <button className="btn danger" onClick={() => streamRef.current?.interrupt()}>
             <IconStop size={13} /> Stop
@@ -187,22 +349,19 @@ export function App() {
             <span className="panel-title">Timeline</span>
             <span className="panel-title">{events.length}</span>
           </div>
-          <Timeline
-            events={events}
-            cursor={cursor}
-            onSeek={(index) => {
-              setFollowing(false);
-              setCursor(index);
-            }}
-          />
+          <Timeline events={events} cursor={cursor} onSeek={seek} />
         </aside>
 
         <main className="center">
           <div className="stage-bar">
-            <div className="segmented">
+            <div className="segmented" role="tablist" aria-label="Stage">
               {STAGES.map(({ id, label, icon: Icon }) => (
                 <button
                   key={id}
+                  role="tab"
+                  id={`tab-${id}`}
+                  aria-selected={stage === id}
+                  aria-controls={`pane-${id}`}
                   className={`seg ${stage === id ? "on" : ""}`}
                   onClick={() => { setStage(id); setStagePinned(true); }}
                 >
@@ -225,61 +384,44 @@ export function App() {
             )}
           </div>
 
+          {/* Every pane stays mounted. xterm replays its whole buffer on
+              remount, and the others keep their scroll position -- and panes
+              that exist can crossfade, where panes that unmount can only snap. */}
           <div className="stage">
-            {/* The terminal stays mounted across tab switches: xterm replays its
-                entire buffer on remount, which is slow and loses scroll position. */}
-            <div className={`pane ${stage === "terminal" ? "on" : ""}`}>
-              <TerminalView data={view.terminal} />
-            </div>
-            <div className={`pane ${stage === "browser" ? "on" : ""}`}>
-              {stage === "browser" && (
-                <BrowserView
-                  sessionId={sessionId ?? ""}
-                  frame={view.frame}
-                  url={view.url}
-                  lastAction={view.lastAction}
-                />
-              )}
-            </div>
-            <div className={`pane ${stage === "desktop" ? "on" : ""}`}>
-              {stage === "desktop" && (
-                <DesktopView
-                  sessionId={sessionId ?? ""}
-                  desktopFrame={view.desktopFrame}
-                />
-              )}
-            </div>
-            <div className={`pane ${stage === "files" ? "on" : ""}`}>
-              {stage === "files" && <DiffView files={view.files} />}
-            </div>
+            {STAGES.map(({ id }) => (
+              <div
+                key={id}
+                id={`pane-${id}`}
+                role="tabpanel"
+                aria-labelledby={`tab-${id}`}
+                className={`pane ${stage === id ? "on" : ""}`}
+              >
+                {id === "terminal" && <TerminalView data={view.terminal} />}
+                {id === "browser" && (
+                  <BrowserView
+                    sessionId={sessionId ?? ""}
+                    frame={view.frame}
+                    url={view.url}
+                    lastAction={view.lastAction}
+                  />
+                )}
+                {id === "desktop" && (
+                  <DesktopView sessionId={sessionId ?? ""} desktopFrame={view.desktopFrame} />
+                )}
+                {id === "files" && <DiffView files={view.files} />}
+              </div>
+            ))}
           </div>
 
-          <div className="scrub">
-            <div className="track">
-              <span className="fill" style={{ width: `${progress}%` }} />
-              <input
-                type="range"
-                min={-1}
-                max={Math.max(events.length - 1, 0)}
-                value={cursor}
-                onChange={(e) => {
-                  setFollowing(false);
-                  setCursor(Number(e.target.value));
-                }}
-              />
-            </div>
-            <span className="counter">{cursor + 1} / {events.length}</span>
-            {following && atHead ? (
-              <span className="badge is-live"><span className="dot" />following</span>
-            ) : (
-              <button
-                className="btn primary"
-                onClick={() => { setFollowing(true); setCursor(events.length - 1); }}
-              >
-                Jump to now <IconArrow size={13} />
-              </button>
-            )}
-          </div>
+          <Scrubber
+            events={events}
+            cursor={cursor}
+            playback={playback}
+            following={following}
+            atHead={atHead}
+            onSeek={seek}
+            onJumpToNow={jumpToNow}
+          />
         </main>
 
         <aside className="side">
@@ -295,8 +437,10 @@ export function App() {
           <div className="composer">
             <div className="composer-box">
               <textarea
+                ref={composerRef}
                 value={draft}
                 rows={2}
+                aria-label="Task"
                 placeholder={live ? "Describe a task…" : "This session is a recording."}
                 disabled={readOnly}
                 onChange={(e) => setDraft(e.target.value)}
@@ -319,8 +463,10 @@ export function App() {
       </div>
 
       {/* Bottom tab bar — hidden on desktop via CSS, shown on mobile */}
-      <nav className="mobile-nav">
+      <nav className="mobile-nav" role="tablist" aria-label="Panel">
         <button
+          role="tab"
+          aria-selected={mobileTab === "stage"}
           className={`mob-tab ${mobileTab === "stage" ? "on" : ""}`}
           onClick={() => setMobileTab("stage")}
         >
@@ -328,7 +474,9 @@ export function App() {
           Stage
         </button>
         <button
-          className={`mob-tab ${mobileTab === "chat" ? "on" : ""}${view.approvals.length > 0 ? " has-alert" : ""}`}
+          role="tab"
+          aria-selected={mobileTab === "chat"}
+          className={`mob-tab ${mobileTab === "chat" ? "on" : ""}${pending > 0 ? " has-alert" : ""}`}
           onClick={() => setMobileTab("chat")}
         >
           <span className="mob-alert" />
@@ -336,6 +484,8 @@ export function App() {
           Chat
         </button>
         <button
+          role="tab"
+          aria-selected={mobileTab === "timeline"}
           className={`mob-tab ${mobileTab === "timeline" ? "on" : ""}`}
           onClick={() => setMobileTab("timeline")}
         >
@@ -343,6 +493,8 @@ export function App() {
           Timeline
         </button>
       </nav>
+
+      {knowledgeOpen && <KnowledgeWeb onClose={() => setKnowledgeOpen(false)} />}
     </div>
   );
 }

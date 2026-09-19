@@ -81,6 +81,19 @@ class Kind:
     TTS_SPEAKING = "voice.tts.speaking"
     TTS_INTERRUPTED = "voice.tts.interrupted"
 
+    # Long-term memory. RECALL carries the block injected before a turn, so a
+    # session shows what the agent was primed with; WRITE records what a
+    # finished session decided was worth keeping. Memory that steers a run
+    # invisibly is the thing people are right to distrust.
+    MEMORY_RECALL = "memory.recall"
+    MEMORY_WRITE = "memory.write"
+
+    # Text the harness injects straight into the model's context -- an
+    # interruption notice, a loop-cap warning. It is logged rather than merely
+    # appended to the conversation so that what the model was told is part of
+    # the record, and so the context can be rebuilt from the log alone.
+    CONTEXT_NOTE = "context.note"
+
     # Anything the harness itself wants to say
     LOG = "system.log"
     ERROR = "system.error"

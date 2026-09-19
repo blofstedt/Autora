@@ -52,7 +52,7 @@ class AnthropicProvider:
                      # speculatively prefilling half-heard speech, it is
                      # deterministic and cannot be invalidated by a re-transcribe.
                      "cache_control": {"type": "ephemeral"}}],
-            messages=_to_anthropic(messages),
+            messages=_mark_tail(_to_anthropic(messages)),
             tools=payload_tools,
         ) as stream:
             tool_blocks: dict[int, dict[str, Any]] = {}
@@ -90,6 +90,43 @@ class AnthropicProvider:
                     cache_read_tokens=getattr(usage, "cache_read_input_tokens", 0) or 0,
                 ),
             )
+
+
+def _mark_tail(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Put a cache breakpoint on the last content block of the conversation.
+
+    The system prompt and tools already carry one, but they are the small half.
+    In an agent loop the history is what grows -- forty iterations re-send an
+    ever-larger conversation, and without a breakpoint in `messages` every one
+    of those tokens is billed as fresh input on every single step.
+
+    Marking the tail is the documented multi-turn placement: each request writes
+    an entry ending at the newest turn, and the next request reads it back and
+    extends it, so the cost is paid once per turn instead of once per turn per
+    remaining iteration. It works because the composer keeps history append-only
+    between compactions -- rewriting an earlier message invalidates everything
+    after it, which is exactly why compaction is batched and rare.
+
+    Explicit rather than the top-level auto-caching field: this project pins
+    `anthropic>=0.40`, and a per-block marker is understood by every SDK version
+    that supports caching at all.
+    """
+    if not blocks:
+        return blocks
+    content = blocks[-1].get("content")
+    if isinstance(content, str):
+        if not content:
+            # An empty text block is not a valid cache target -- and there is
+            # nothing to cache anyway.
+            return blocks
+        blocks[-1] = {**blocks[-1],
+                      "content": [{"type": "text", "text": content,
+                                   "cache_control": {"type": "ephemeral"}}]}
+    elif isinstance(content, list) and content:
+        content = list(content)
+        content[-1] = {**content[-1], "cache_control": {"type": "ephemeral"}}
+        blocks[-1] = {**blocks[-1], "content": content}
+    return blocks
 
 
 def _to_anthropic(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:

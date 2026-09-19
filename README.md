@@ -56,7 +56,7 @@ curl localhost:8817/api/sessions/<id>/cast > session.cast && asciinema play sess
 |---|---|
 | **Timeline** | Every event, click to seek. It is a scrub bar over the session, not a log viewer. |
 | **Terminal** | A real PTY through xterm.js — colors, progress bars, the lot. |
-| **Browser** | Live CDP screencast, with a marker painted at each click so you can see the agent miss. |
+| **Browser** | Live CDP screencast, with a marker painted at each click so you can see the agent miss. The *agent* reads the page as an accessibility snapshot, not pixels — see below. |
 | **Files** | Every edit as a unified diff, the moment it lands. |
 | **Transcript** | What the agent said, with reasoning collapsed by default. |
 
@@ -67,6 +67,53 @@ does not tell a CDN about it.
 
 The scrubber works during a live session. Scroll back to step 12 while the agent
 is on step 40; "jump to now" returns you to the head.
+
+Press play and it replays at the pace it happened — real gaps between events,
+clamped so a 40-second `npm install` does not become 40 seconds of dead air.
+Errors, approvals, prompts and edits are painted onto the track as tick marks,
+so the shape of a session is readable before you scrub into it.
+
+| Key | |
+|---|---|
+| `space` | play / pause |
+| `←` `→` | step one event |
+| `⇧←` `⇧→` | jump to the previous/next notable event |
+| `home` `end` | start of session / jump to now |
+| `/` | focus the composer |
+
+The tab itself carries state: the favicon and title go violet while the agent
+works, amber when it is waiting on your approval. An approval that lands while
+the tab is in the background also chimes once.
+
+## How the agent sees a page
+
+Not by screenshot. `read` returns the accessibility tree — every interactive
+element with the role and name a screen reader would announce, numbered:
+
+```
+[0] textbox "Email address" value="ada@example.com"
+[1] textbox "Password" password empty
+[4] checkbox "Remember me" checked
+[7] button "Sign in"
+[9] link "Terms of service" -> /tos
+```
+
+Actions take those numbers: `click(ref=7)`, and `fill` takes a list, so a whole
+form is one round trip instead of one per field. Every action returns a freshly
+numbered page, so acting rarely needs a `read` first — and refs cannot go stale
+without saying so, because a ref that quietly pointed somewhere else is how an
+agent ends up clicking the wrong button.
+
+The accessibility tree rather than the DOM, because the DOM is wrapper soup: a
+button is six nested divs, and `innerText` cannot see a form field at all. The
+a11y layer is what the platform already computes for perceiving an interface
+without looking at it. That sign-in page above is ~110 tokens. A 1280×800
+screenshot of it is ~1,300, and you cannot click it.
+
+Screenshots remain, as the fallback they should be: for questions about how a
+page *looks* — a chart, a canvas, a broken layout. The human still gets the full
+video feed either way; the screencast is a separate channel from what the model
+reads.
 
 ## Approvals
 
@@ -79,6 +126,89 @@ Rules live in `src/autora/policy.py` as readable patterns. Loosen them per
 project once you trust it. `--yes` skips confirmations entirely; don't point that
 at production credentials.
 
+## Context
+
+The model's context is a projection of the event log, the same way the UI is —
+`compose(events)` in `src/autora/context.py` folds the log into messages, so
+there is no second history to drift out of sync, and "what was in context at
+step 12" has an answer.
+
+That projection is where the cost lives. Two things it does:
+
+**Caches the conversation prefix.** The system prompt and tools were already
+cached; the history was not, so a forty-step turn re-sent an ever-growing
+conversation as fresh input on every step. A breakpoint on the tail means each
+turn is paid for once instead of once per remaining iteration.
+
+**Trims old tool output.** A 4000-line test run matters while the agent is
+acting on it and not ten steps later, so old results are demoted to a preview
+plus a pointer. The full text stays in the blob store — `recall(ref=…)` reads it
+back, and `recall(ref=…, search="…")` greps it. Lossy in context, lossless on
+disk.
+
+Compaction is batched and sticky rather than continuous, because rewriting
+history invalidates the cached prefix from the rewrite point on. Nothing is
+trimmed until the window crosses `trigger_tokens`; between compactions the
+context is strictly append-only.
+
+On a 30-step turn with 3KB of output per step, measured with
+`estimate_tokens`:
+
+| | final request | turn total |
+|---|---:|---:|
+| Before | 18,633 | 288,880 |
+| After | 6,052 | 136,460 |
+
+Applying Anthropic's published cache multipliers to those counts puts the turn
+at roughly `0.8×` the cost of a single uncached send of its final request, down
+from `15.5×` — most of it from the breakpoint, not the trimming. Real billing
+depends on actual cache hits; check `usage.cached` in the UI. Tuning lives in
+`ContextPolicy`.
+
+## Memory
+
+The agent keeps what it learns in `~/.autora/memory.db` — one SQLite file, no
+service, openable with any SQLite client. Four kinds of record: **preferences**
+(how you want things done), **procedures** (a how-to that worked — a skill, once
+you stop capitalising it), **facts**, and **episodes** (a notable outcome worth
+recalling).
+
+Two rules keep it from rotting:
+
+**Everything has provenance.** A record points back at the session and event
+that produced it. A memory system without that becomes a junk drawer — claims
+accumulate and a wrong one is indistinguishable from a right one. Being able to
+ask "why do you think that?" and delete the answer is what makes the rest
+trustworthy.
+
+**Nothing is confirmed on first sight.** Records written automatically land
+`provisional`, and are promoted only when a later session independently writes
+the same thing. Nothing is learned at all from a run that failed or was
+interrupted — a procedure learned from a broken run teaches the break.
+
+Retrieval is budgeted rather than dumped. A handful of pinned records are always
+present; the rest is searched per prompt (SQLite FTS5, BM25-ranked) and capped
+hard. Everything else stays one `memory(action="search")` away. In practice a
+store of 42 records puts about 130 tokens in front of the model. The block is
+emitted as an event, so it is on the timeline and in the recording: you can see
+exactly what the agent was primed with before it answered.
+
+Lexical search rather than embeddings is a deliberate choice, not a shortcut —
+for one person's memory the recall problem is small, and a BM25 hit you can
+explain beats a cosine distance you cannot. Embeddings are a later optimisation
+if recall proves insufficient.
+
+### The knowledge web
+
+Press `k`. Everything the agent knows, as a graph: colour by kind, size by how
+often it has been recalled, a ring for pinned, faded for provisional. Click a
+node for its content, its tags, and the session it came from. Pin it to load it
+every time, retire it, or delete it for good.
+
+The point is not the picture. Memory you cannot see is memory you cannot
+correct — an agent that has quietly decided something wrong about you will keep
+acting on it forever unless there is somewhere to go and say no.
+
 ## Configuration
 
 | Variable | Purpose |
@@ -86,7 +216,7 @@ at production credentials.
 | `ANTHROPIC_API_KEY` | Hosted provider |
 | `AUTORA_LLM_BASE_URL` | Local OpenAI-compatible endpoint |
 | `AUTORA_CHROME_PATH` | Use an existing Chromium instead of Playwright's pinned build |
-| `AUTORA_HOME` | State directory (default `~/.autora`) |
+| `AUTORA_HOME` | State directory (default `~/.autora`) — sessions and `memory.db` |
 
 ## Where sessions live
 
@@ -103,7 +233,9 @@ an accident.
 ## Status
 
 Working and tested: event store, bus backpressure, policy gate, PTY, file tools,
-browser screencast, agent loop, transport, web UI, replay, narration.
+browser screencast, agent loop, transport, web UI, replay, narration, context
+composition and compaction, accessibility-tree page reading, memory with
+provenance, the knowledge web.
 
 Interfaces defined, adapters not shipped: speech-to-text and text-to-speech
 (`src/autora/voice/engine.py`), desktop control. The voice *logic* — barge-in,
