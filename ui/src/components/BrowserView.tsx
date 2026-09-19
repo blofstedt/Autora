@@ -1,13 +1,8 @@
 import type { Derived } from "../lib/derive";
+import { Frame } from "./Frame";
 import { IconGlobe } from "./Icons";
 
-/**
- * The live browser feed.
- *
- * Frames are content-addressed, so each <img> src is immutable and the browser
- * caches it forever -- scrubbing back and forth costs no network traffic after
- * the first pass, which is what makes review feel instant.
- */
+/** The live browser feed. */
 export function BrowserView({
   sessionId, frame, url, lastAction,
 }: {
@@ -39,15 +34,10 @@ export function BrowserView({
     <div className="browser">
       <div className="browser-bar">
         <span className="lights"><i /><i /><i /></span>
-        <span className="omnibox">{url ?? "about:blank"}</span>
+        <span className="omnibox" title={url ?? undefined}>{url ?? "about:blank"}</span>
       </div>
       <div className="browser-stage">
-        <div className="frame-wrap">
-          <img
-            className="frame"
-            src={`/api/sessions/${sessionId}/blobs/${frame.blob}`}
-            alt="agent browser view"
-          />
+        <Frame src={`/api/sessions/${sessionId}/blobs/${frame.blob}`} alt="agent browser view">
           {showMarker && (
             <span
               className="marker"
@@ -59,7 +49,7 @@ export function BrowserView({
               }}
             />
           )}
-        </div>
+        </Frame>
       </div>
     </div>
   );

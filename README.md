@@ -68,6 +68,23 @@ does not tell a CDN about it.
 The scrubber works during a live session. Scroll back to step 12 while the agent
 is on step 40; "jump to now" returns you to the head.
 
+Press play and it replays at the pace it happened — real gaps between events,
+clamped so a 40-second `npm install` does not become 40 seconds of dead air.
+Errors, approvals, prompts and edits are painted onto the track as tick marks,
+so the shape of a session is readable before you scrub into it.
+
+| Key | |
+|---|---|
+| `space` | play / pause |
+| `←` `→` | step one event |
+| `⇧←` `⇧→` | jump to the previous/next notable event |
+| `home` `end` | start of session / jump to now |
+| `/` | focus the composer |
+
+The tab itself carries state: the favicon and title go violet while the agent
+works, amber when it is waiting on your approval. An approval that lands while
+the tab is in the background also chimes once.
+
 ## Approvals
 
 Reads run freely. Deploys, migrations, history rewrites and installs pause and

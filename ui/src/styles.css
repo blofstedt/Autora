@@ -157,6 +157,15 @@ body::before {
 .badge.is-recorded { color: var(--text-2); }
 .badge.is-closed { color: var(--danger); border-color: rgba(251, 113, 133, 0.3); }
 .badge.tokens { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); }
+/* The status badge swaps between words of different lengths every turn; a fixed
+   floor stops the whole header shuffling sideways each time it does. */
+.badge.status { min-width: 96px; justify-content: center; }
+
+/* Anything that counts up gets fixed-width figures, or it jitters as it ticks.
+   Inter's proportional numerals are the default and the wrong default here. */
+.badge.tokens, .counter, .stats, .tl-at, .peek-at, .scrub .speed {
+  font-variant-numeric: tabular-nums;
+}
 
 /* ---------------------------------------------------------------- layout -- */
 .body {
@@ -219,10 +228,19 @@ body::before {
    they ran together ("TOOLbash") and overflowed the rail instead of truncating,
    because text-overflow needs a block box with a constrained width. */
 .tl-body { min-width: 0; padding-top: 1px; display: grid; grid-template-rows: auto auto; }
+.tl-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .tl-label {
   display: block; font-size: 10px; font-weight: 650; letter-spacing: 0.07em;
   text-transform: uppercase; color: var(--text-3); line-height: 1.4;
 }
+/* Offset from the start of the session. Relative, because what you want from a
+   timeline is the pace and the gaps -- "+2:14" says that where a wall clock
+   makes you do arithmetic. */
+.tl-at {
+  flex: 0 0 auto; font-family: var(--mono); font-size: 9.5px;
+  color: var(--text-3); opacity: 0.7; transition: opacity 0.15s var(--ease);
+}
+.tl-row:hover .tl-at, .tl-row.is-current .tl-at { opacity: 1; }
 .tl-row.tone-you .tl-label { color: var(--accent-2); }
 .tl-row.tone-bad .tl-label { color: var(--danger); }
 .tl-row.tone-warn .tl-label { color: var(--warn); }
@@ -260,8 +278,22 @@ body::before {
   background: var(--s1); border: 1px solid var(--border);
   border-radius: var(--r-lg); box-shadow: var(--shadow);
 }
-.pane { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
-.pane.on { opacity: 1; pointer-events: auto; animation: fade 0.24s var(--ease); }
+/* Panes crossfade rather than cut. All four stay mounted, so the outgoing one
+   is still on screen to fade out underneath the incoming one -- a pane that
+   unmounts can only snap. `visibility` is what keeps a hidden pane out of the
+   tab order, and it is transitioned with a delay so it flips only once the fade
+   has finished. */
+.pane {
+  position: absolute; inset: 0;
+  opacity: 0; visibility: hidden; transform: scale(0.994);
+  pointer-events: none;
+  transition: opacity 0.2s var(--ease), transform 0.26s var(--ease),
+              visibility 0s linear 0.2s;
+}
+.pane.on {
+  opacity: 1; visibility: visible; transform: none; pointer-events: auto;
+  transition: opacity 0.2s var(--ease), transform 0.26s var(--ease), visibility 0s;
+}
 
 .terminal-host { height: 100%; width: 100%; padding: 12px 8px 12px 14px; }
 
@@ -275,6 +307,13 @@ body::before {
 }
 .empty h3 { margin: 4px 0 0; font-size: 14px; font-weight: 600; }
 .empty p { margin: 0; font-size: 12.5px; color: var(--text-3); max-width: 300px; }
+.empty .code-hint {
+  margin: 2px 0 0; padding: 9px 12px; max-width: 100%;
+  border-radius: var(--r-sm); background: #06070a; border: 1px solid var(--border);
+  font-family: var(--mono); font-size: 11px; line-height: 1.65;
+  color: var(--text-2); text-align: left; white-space: pre-wrap; overflow-x: auto;
+}
+.empty .empty-note { font-size: 11.5px; color: var(--text-3); max-width: 340px; }
 
 /* --------------------------------------------------------------- browser -- */
 .browser { height: 100%; display: flex; flex-direction: column; }
@@ -303,6 +342,11 @@ body::before {
   max-width: 100%; max-height: 100%; display: block;
   border-radius: var(--r); box-shadow: var(--shadow-lg);
 }
+/* Two layers: the last decoded frame holds the stage while the next one fades
+   in over it, so a screencast never flashes empty between frames. */
+.frame-under { position: absolute; inset: 0; width: 100%; height: 100%; }
+.frame-over { position: relative; opacity: 0; transition: opacity 0.14s var(--ease); }
+.frame-over.is-loaded { opacity: 1; }
 .marker {
   position: absolute; width: 34px; height: 34px; margin: -17px 0 0 -17px;
   border: 2px solid var(--accent); border-radius: 50%; pointer-events: none;
@@ -348,36 +392,108 @@ body::before {
 .l-meta { color: var(--text-3); }
 
 /* -------------------------------------------------------------- scrubber -- */
+/* A transport, not a slider. The track is layered: rail, fill, and the tick
+   marks that give the session a shape you can read before you touch it. The
+   range input sits on top of all of it with a transparent track of its own, so
+   it stays the real control and the thumb is never painted over. */
 .scrub {
-  display: flex; align-items: center; gap: 14px; flex: 0 0 auto;
-  padding: 10px 14px; background: var(--s1);
+  display: flex; align-items: center; gap: 10px; flex: 0 0 auto;
+  padding: 9px 12px; background: var(--s1);
   border: 1px solid var(--border); border-radius: var(--r);
 }
-.track { position: relative; flex: 1; height: 20px; display: flex; align-items: center; }
-.track input {
-  appearance: none; width: 100%; height: 4px; border-radius: 99px;
-  background: var(--s3); outline: none; cursor: pointer; margin: 0;
+.scrub .transport { flex: 0 0 auto; color: var(--text); }
+.scrub .speed {
+  flex: 0 0 auto; min-width: 42px; padding: 0 9px; justify-content: center;
+  font-family: var(--mono); font-size: 11.5px; font-variant-numeric: tabular-nums;
 }
+.scrub .speed.on { --btn-fg: var(--accent); --btn-bg: var(--accent-soft); }
+
+.track { position: relative; flex: 1; height: 22px; display: flex; align-items: center; }
+.track::before {
+  content: ""; position: absolute; left: 0; right: 0; height: 4px;
+  border-radius: 99px; background: var(--s3);
+}
+.track .fill {
+  position: absolute; left: 0; height: 4px; border-radius: 99px; z-index: 1;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  pointer-events: none;
+}
+
+.track input {
+  appearance: none; -webkit-appearance: none;
+  position: relative; z-index: 3;
+  width: 100%; height: 22px; margin: 0;
+  background: transparent; outline: none; cursor: pointer;
+}
+.track input::-webkit-slider-runnable-track { height: 4px; background: transparent; }
 .track input::-webkit-slider-thumb {
-  appearance: none; width: 14px; height: 14px; border-radius: 50%;
+  appearance: none; -webkit-appearance: none;
+  width: 14px; height: 14px; margin-top: -5px; border-radius: 50%;
   background: #fff; border: 3px solid var(--accent); cursor: grab;
   box-shadow: 0 0 0 4px rgba(110, 91, 255, 0.18);
   transition: transform 0.14s var(--ease);
 }
 .track input::-webkit-slider-thumb:hover { transform: scale(1.18); }
+.track input::-moz-range-track { height: 4px; background: transparent; }
 .track input::-moz-range-thumb {
   width: 14px; height: 14px; border-radius: 50%; background: #fff;
   border: 3px solid var(--accent); cursor: grab;
 }
-.track .fill {
-  position: absolute; left: 0; height: 4px; border-radius: 99px;
-  background: linear-gradient(90deg, var(--accent), var(--accent-2));
-  pointer-events: none;
+
+/* Notable moments, painted onto the rail. Errors, approvals, prompts and edits
+   only -- a mark for every event would just be a second fill. */
+.ticks { position: absolute; left: 0; right: 0; height: 4px; z-index: 2; pointer-events: none; }
+.tick {
+  position: absolute; top: -3px; width: 2px; height: 10px;
+  margin-left: -1px; border-radius: 2px; opacity: 0.9;
 }
+.tick.tone-bad { background: var(--danger); }
+.tick.tone-warn { background: var(--warn); }
+.tick.tone-good { background: var(--live); }
+.tick.tone-you { background: var(--accent-2); }
+
+.peek-line {
+  position: absolute; top: 0; bottom: 0; width: 1px; z-index: 2;
+  background: rgba(255, 255, 255, 0.24); pointer-events: none;
+}
+.peek {
+  position: absolute; bottom: calc(100% + 11px); transform: translateX(-50%);
+  z-index: 5; pointer-events: none;
+  display: grid; gap: 2px; min-width: 148px; max-width: 320px;
+  padding: 8px 11px; border-radius: var(--r-sm);
+  background: var(--s3); border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-lg);
+  animation: fade 0.12s var(--ease) both;
+}
+.peek b {
+  font-size: 9.5px; font-weight: 650; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-3);
+}
+.peek-text {
+  font-family: var(--mono); font-size: 11px; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.peek-at { font-family: var(--mono); font-size: 10px; color: var(--text-3); }
+
 .counter { font-family: var(--mono); font-size: 11px; color: var(--text-3); min-width: 74px; text-align: right; }
 
 /* ------------------------------------------------------------ transcript -- */
+.transcript-wrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .transcript { flex: 1; overflow-y: auto; padding: 16px 16px 6px; display: flex; flex-direction: column; gap: 16px; }
+
+/* Offered, not forced: the pane holds still once you scroll up to read, and
+   this is how you hand the live edge back. */
+.jump-pill {
+  position: absolute; left: 50%; bottom: 12px; z-index: 4;
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 27px; padding: 0 12px; border-radius: 99px;
+  background: var(--s4); border: 1px solid var(--border-strong); color: var(--text);
+  font-family: inherit; font-size: 11.5px; font-weight: 550; cursor: pointer;
+  box-shadow: var(--shadow-lg);
+  opacity: 0; transform: translate(-50%, 8px); pointer-events: none;
+  transition: opacity 0.18s var(--ease), transform 0.18s var(--ease);
+}
+.jump-pill.on { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
 
 .msg { display: flex; gap: 11px; animation: rise 0.3s var(--ease) both; }
 .avatar {
@@ -540,8 +656,12 @@ body::before {
   /* hide rail toggle + token count — no room, not needed on one-panel layout */
   .top .rail-toggle { display: none; }
   .badge.tokens { display: none; }
-  /* let the session pill breathe a bit less */
-  .session-pill { max-width: 200px; }
+  /* The header has one row and four things that want it. The pill yields first
+     (it can ellipsize), and the status badge drops the fixed floor it uses on
+     desktop to stop the layout twitching -- there is no room for it here. */
+  .session-pill { max-width: 46vw; }
+  .session-pill select { max-width: 100%; }
+  .badge.status { min-width: 0; padding: 0 9px; }
 
   /* ── body becomes a relative container; panels stack absolutely ── */
   .body {
@@ -578,6 +698,12 @@ body::before {
 
   /* composer text slightly smaller so the keyboard doesn't hide everything */
   .composer textarea { font-size: 13px; }
+
+  /* the transport keeps play, speed and the track; the counter is the first
+     thing to go, and a hover preview means nothing without a pointer */
+  .scrub { gap: 8px; padding: 8px 10px; }
+  .scrub .counter { display: none; }
+  .peek, .peek-line { display: none; }
 
   /* ── bottom nav ── */
   .mobile-nav {
@@ -627,4 +753,18 @@ body::before {
     display: none;
   }
   .mob-tab.has-alert .mob-alert { display: block; }
+}
+
+/* ------------------------------------------------------- reduced motion -- */
+/* Three animations here run forever by design -- the status halo, the click
+   ripple, the working sweep. Asked to stop, stop all of it: cut durations to
+   nothing rather than dropping the rules, so every end state still applies and
+   nothing is left mid-fade. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

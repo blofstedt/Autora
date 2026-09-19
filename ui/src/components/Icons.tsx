@@ -133,3 +133,16 @@ export const IconMonitor = ({ size = 16, className }: Props) => (
     <path d="M8.5 20.5h7M12 16.5v4" />
   </svg>
 );
+
+export const IconPause = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M9.5 5.5v13M14.5 5.5v13" />
+  </svg>
+);
+
+export const IconArrowDown = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M12 5v14" />
+    <path d="m6 13 6 6 6-6" />
+  </svg>
+);
