@@ -28,7 +28,80 @@ def build_provider(args):
     return AnthropicProvider(model=args.model or "claude-sonnet-5")
 
 
+def build_voice(args, session, agent):
+    """Build a VoiceLoop from --voice / --tts / --stt flags, or return None."""
+    tts_name = getattr(args, "tts", None) or getattr(args, "voice", None)
+    stt_name = getattr(args, "stt", None) or getattr(args, "voice", None)
+
+    if not tts_name or tts_name == "off":
+        return None
+
+    from .voice.engine import VoiceLoop
+
+    # ── TTS ──
+    if tts_name in ("kokoro", "auto"):
+        try:
+            from .voice.adapters.kokoro_tts import KokoroTts
+            tts = KokoroTts()
+        except ImportError:
+            if tts_name == "kokoro":
+                print("error: kokoro-onnx not installed. Run: pip install kokoro-onnx sounddevice",
+                      file=sys.stderr)
+                return None
+            tts = _fallback_piper()
+    elif tts_name == "piper":
+        tts = _fallback_piper()
+    else:
+        print(f"error: unknown --tts {tts_name!r}. Choices: kokoro, piper, off", file=sys.stderr)
+        return None
+
+    # ── STT ──
+    if stt_name in ("whisper", "local", "auto"):
+        try:
+            from .voice.adapters.faster_whisper_stt import FasterWhisperStt
+            stt = FasterWhisperStt(model_size=getattr(args, "stt_model", None) or "base.en")
+        except ImportError:
+            if stt_name == "whisper":
+                print("error: faster-whisper not installed. Run: pip install faster-whisper sounddevice",
+                      file=sys.stderr)
+                return None
+            stt = _fallback_openai_stt()
+    elif stt_name in ("openai", "api"):
+        stt = _fallback_openai_stt()
+    elif stt_name == "off":
+        return None
+    else:
+        print(f"error: unknown --stt {stt_name!r}. Choices: whisper, openai, off", file=sys.stderr)
+        return None
+
+    if tts is None or stt is None:
+        return None
+
+    return VoiceLoop(session, agent, stt=stt, tts=tts)
+
+
+def _fallback_piper():
+    try:
+        from .voice.adapters.piper_tts import PiperTts
+        return PiperTts()
+    except ImportError:
+        print("error: piper-tts not installed. Run: pip install piper-tts sounddevice",
+              file=sys.stderr)
+        return None
+
+
+def _fallback_openai_stt():
+    try:
+        from .voice.adapters.openai_whisper_stt import OpenAIWhisperStt
+        return OpenAIWhisperStt()
+    except ImportError:
+        print("error: openai not installed. Run: pip install openai sounddevice",
+              file=sys.stderr)
+        return None
+
+
 def cmd_up(args) -> int:
+    import asyncio
     import uvicorn
     from .server import Harness, create_app
 
@@ -53,20 +126,44 @@ def cmd_up(args) -> int:
     )
     session_id = harness.create_session(title=args.title or f"session in {workdir.name}")
 
+    voice_loop = None
+    voice_name = getattr(args, "voice", None)
+    if voice_name and voice_name != "off":
+        session = harness.sessions[session_id]
+        agent = harness.agents[session_id]
+        voice_loop = build_voice(args, session, agent)
+
     ui_dist = Path(__file__).resolve().parents[2] / "ui" / "dist"
     app = create_app(harness, ui_dist=ui_dist if ui_dist.exists() else None)
+
+    tts_label = getattr(args, "tts", None) or voice_name or "off"
+    stt_label = getattr(args, "stt", None) or voice_name or "off"
 
     print(f"\n  Autora")
     print(f"  workdir   {workdir}")
     print(f"  model     {provider.model} via {provider.name}")
     print(f"  approvals {'AUTO (everything allowed)' if args.yes else 'required'}")
+    print(f"  voice     TTS={tts_label}  STT={stt_label}")
     print(f"  session   {session_id}")
     print(f"\n  watch at  http://{args.host}:{args.port}/?session={session_id}\n")
     if args.yes:
         print("  warning: --yes skips every confirmation. Do not use this against\n"
               "           production credentials.\n")
 
-    uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level)
+    if voice_loop is not None:
+        import asyncio
+
+        async def _run_with_voice():
+            async with asyncio.TaskGroup() as tg:
+                tg.create_task(voice_loop.run())
+                tg.create_task(asyncio.to_thread(
+                    uvicorn.run, app,
+                    host=args.host, port=args.port, log_level=args.log_level,
+                ))
+
+        asyncio.run(_run_with_voice())
+    else:
+        uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level)
     return 0
 
 
@@ -156,6 +253,19 @@ def main(argv: list[str] | None = None) -> int:
     up.add_argument("--title", help="Session title")
     up.add_argument("--yes", action="store_true", help="Skip all approvals (dangerous)")
     up.add_argument("--log-level", default="warning")
+    up.add_argument(
+        "--voice",
+        choices=["kokoro", "piper", "whisper", "openai", "off"],
+        default="off",
+        metavar="ENGINE",
+        help="Enable voice I/O: 'kokoro' sets TTS=Kokoro + STT=faster-whisper, "
+             "'piper' uses Piper TTS, 'openai' uses OpenAI Whisper API for STT. "
+             "Use --tts/--stt for independent control. (default: off)",
+    )
+    up.add_argument("--tts", choices=["kokoro", "piper", "off"], help="TTS engine override")
+    up.add_argument("--stt", choices=["whisper", "openai", "off"], help="STT engine override")
+    up.add_argument("--stt-model", default="base.en",
+                    help="faster-whisper model: tiny.en, base.en (default), small.en")
     up.set_defaults(func=cmd_up)
 
     replay = sub.add_parser("replay", help="Print a recorded session", parents=[common])
