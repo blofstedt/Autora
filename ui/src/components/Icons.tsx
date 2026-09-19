@@ -126,3 +126,10 @@ export const IconMessage = ({ size = 16, className }: Props) => (
     <path d="M20 4.5H4A1.5 1.5 0 0 0 2.5 6v9A1.5 1.5 0 0 0 4 16.5h2V20l4-3.5h10a1.5 1.5 0 0 0 1.5-1.5V6A1.5 1.5 0 0 0 20 4.5z" />
   </svg>
 );
+
+export const IconMonitor = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <rect x="2.5" y="3.5" width="19" height="13" rx="1.5" />
+    <path d="M8.5 20.5h7M12 16.5v4" />
+  </svg>
+);

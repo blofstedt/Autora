@@ -194,13 +194,15 @@ def cmd_up(args) -> int:
     else:
         stt_label = explicit_stt or voice_name or "off"
 
+    host_display = args.host if args.host != "0.0.0.0" else "localhost"
     print(f"\n  Autora")
     print(f"  workdir   {workdir}")
     print(f"  model     {provider.model} via {provider.name}")
     print(f"  approvals {'AUTO (everything allowed)' if args.yes else 'required'}")
     print(f"  voice     TTS={tts_label}  STT={stt_label}")
     print(f"  session   {session_id}")
-    print(f"\n  watch at  http://{args.host}:{args.port}/?session={session_id}\n")
+    print(f"\n  watch at  http://{host_display}:{args.port}/?session={session_id}")
+    print(f"  relay     python -m autora.relay ws://{host_display}:{args.port}\n")
     if args.yes:
         print("  warning: --yes skips every confirmation. Do not use this against\n"
               "           production credentials.\n")

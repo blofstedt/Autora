@@ -26,6 +26,8 @@ export const Kind = {
   BrowserFrame: "browser.frame",
   BrowserNav: "browser.nav",
   BrowserAction: "browser.action",
+  DesktopFrame: "desktop.frame",
+  DesktopAction: "desktop.action",
   FileEdit: "file.edit",
   Log: "system.log",
   Error: "system.error",

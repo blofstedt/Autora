@@ -11,6 +11,7 @@ second serialization format. A recording is a session whose log stopped growing.
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import json
 import time
@@ -25,6 +26,7 @@ from .agent import Agent, build_registry
 from .events import Kind
 from .policy import PolicyGate
 from .session import SessionRegistry
+from .tools.desktop import RelayBridge
 from .tools.terminal import export_asciicast
 
 
@@ -45,10 +47,12 @@ class Harness:
         self.gate = PolicyGate(auto_approve=auto_approve)
         self.workdir = workdir or Path.cwd()
         self.provider = provider
+        self.relay = RelayBridge()
         self.tools = build_registry(
             headless=headless,
             chrome_path=chrome_path,
             profile_dir=browser_profile_dir,
+            relay=self.relay,
         )
         self.agents: dict[str, Agent] = {}
         self._turns: dict[str, asyncio.Task] = {}
@@ -219,6 +223,52 @@ def create_app(harness: Harness, ui_dist: Path | None = None) -> FastAPI:
             pass
         finally:
             session.detach(subscriber)
+
+    # -- desktop relay ------------------------------------------------
+
+    @app.websocket("/ws/desktop-relay")
+    async def desktop_relay_ws(websocket: WebSocket) -> None:
+        """The relay (on the controlled machine) connects here.
+
+        It sends continuous frames; the server broadcasts them to all live
+        sessions.  It also responds to typed command requests from DesktopTool.
+        """
+        await websocket.accept()
+        bridge = harness.relay
+        bridge.attach(websocket)
+        try:
+            while True:
+                raw = await websocket.receive_text()
+                try:
+                    msg = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+
+                if msg.get("type") == "frame":
+                    # Broadcast desktop frames to every live session so whoever
+                    # is watching sees the relay screen in real time.
+                    data = base64.b64decode(msg["data"])
+                    for session in harness.sessions.live.values():
+                        session.emit_frame(
+                            Kind.DESKTOP_FRAME, data, stream="desktop",
+                            t=round(time.time(), 3),
+                            w=msg.get("w"), h=msg.get("h"),
+                        )
+                elif msg.get("type") == "hello":
+                    # Log the relay connecting so the timeline shows it.
+                    for session in harness.sessions.live.values():
+                        session.emit(Kind.LOG, {
+                            "message": f"Desktop relay connected "
+                                       f"({msg.get('platform','?')} "
+                                       f"{msg.get('w','?')}×{msg.get('h','?')})",
+                        })
+                else:
+                    bridge.resolve(msg)
+
+        except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError):
+            pass
+        finally:
+            bridge.detach()
 
     # -- UI ------------------------------------------------------------
 

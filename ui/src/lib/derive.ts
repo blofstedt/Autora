@@ -47,6 +47,8 @@ export type Derived = {
   frame: { blob: string; seq: number } | null;
   url: string | null;
   lastAction: { action: string; x?: number; y?: number; seq: number } | null;
+  desktopFrame: { blob: string; seq: number; w?: number; h?: number } | null;
+  hasDesktop: boolean;
   terminal: string;
   busy: boolean;
   tokens: { in: number; out: number; cached: number };
@@ -80,6 +82,8 @@ export function derive(events: AutoraEvent[], cursor: number): Derived {
   let frame: Derived["frame"] = null;
   let url: string | null = null;
   let lastAction: Derived["lastAction"] = null;
+  let desktopFrame: Derived["desktopFrame"] = null;
+  let hasDesktop = false;
   let busy = false;
   let title = "";
   const tokens = { in: 0, out: 0, cached: 0 };
@@ -212,6 +216,16 @@ export function derive(events: AutoraEvent[], cursor: number): Derived {
         lastAction = { action: e.payload.action, x: e.payload.x, y: e.payload.y, seq: e.seq };
         break;
 
+      case Kind.DesktopFrame:
+        hasDesktop = true;
+        if (e.blob)
+          desktopFrame = { blob: e.blob, seq: e.seq, w: e.payload.w, h: e.payload.h };
+        break;
+
+      case Kind.DesktopAction:
+        hasDesktop = true;
+        break;
+
       case Kind.FileEdit:
         files.push({
           path: e.payload.path ?? "",
@@ -246,6 +260,8 @@ export function derive(events: AutoraEvent[], cursor: number): Derived {
     frame,
     url,
     lastAction,
+    desktopFrame,
+    hasDesktop,
     terminal: terminalChunks.join(""),
     busy,
     tokens,
@@ -257,13 +273,14 @@ export function derive(events: AutoraEvent[], cursor: number): Derived {
 export function inferStage(
   events: AutoraEvent[],
   cursor: number,
-): "terminal" | "browser" | "files" {
+): "terminal" | "browser" | "files" | "desktop" {
   const limit = Math.min(cursor + 1, events.length);
   for (let i = limit - 1; i >= 0; i--) {
     const kind = events[i].kind;
     if (kind === Kind.PtyOutput || kind === Kind.PtyExit) return "terminal";
     if (kind === Kind.BrowserFrame || kind === Kind.BrowserAction || kind === Kind.BrowserNav)
       return "browser";
+    if (kind === Kind.DesktopFrame || kind === Kind.DesktopAction) return "desktop";
     if (kind === Kind.FileEdit) return "files";
   }
   return "terminal";

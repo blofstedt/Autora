@@ -6,18 +6,20 @@ import { Timeline } from "./components/Timeline";
 import { Transcript } from "./components/Transcript";
 import { TerminalView } from "./components/TerminalView";
 import { BrowserView } from "./components/BrowserView";
+import { DesktopView } from "./components/DesktopView";
 import { DiffView } from "./components/DiffView";
 import { Approvals } from "./components/Approvals";
 import {
   IconArrow, IconChevron, IconClock, IconFile, IconGlobe, IconMessage,
-  IconPlus, IconSpark, IconStop, IconTerminal,
+  IconMonitor, IconPlus, IconSpark, IconStop, IconTerminal,
 } from "./components/Icons";
 
-type Stage = "terminal" | "browser" | "files";
+type Stage = "terminal" | "browser" | "files" | "desktop";
 
 const STAGES: { id: Stage; label: string; icon: typeof IconTerminal }[] = [
   { id: "terminal", label: "Terminal", icon: IconTerminal },
   { id: "browser", label: "Browser", icon: IconGlobe },
+  { id: "desktop", label: "Desktop", icon: IconMonitor },
   { id: "files", label: "Files", icon: IconFile },
 ];
 
@@ -209,6 +211,9 @@ export function App() {
                   {id === "files" && view.files.length > 0 && (
                     <em className="count">{view.files.length}</em>
                   )}
+                  {id === "desktop" && view.hasDesktop && (
+                    <em className="count">●</em>
+                  )}
                 </button>
               ))}
             </div>
@@ -233,6 +238,14 @@ export function App() {
                   frame={view.frame}
                   url={view.url}
                   lastAction={view.lastAction}
+                />
+              )}
+            </div>
+            <div className={`pane ${stage === "desktop" ? "on" : ""}`}>
+              {stage === "desktop" && (
+                <DesktopView
+                  sessionId={sessionId ?? ""}
+                  desktopFrame={view.desktopFrame}
                 />
               )}
             </div>

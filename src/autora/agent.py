@@ -291,9 +291,11 @@ def build_registry(
     headless: bool = True,
     chrome_path: str | None = None,
     profile_dir: str | None = None,
+    relay=None,
 ) -> ToolRegistry:
     """The default toolset."""
     from .tools.browser import BrowserTool
+    from .tools.desktop import DesktopTool
     from .tools.files import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
     from .tools.terminal import TerminalTool
 
@@ -302,6 +304,7 @@ def build_registry(
         TerminalTool(),
         ReadFileTool(), WriteFileTool(), EditFileTool(), ListDirTool(),
         BrowserTool(headless=headless, executable_path=chrome_path, profile_dir=profile_dir),
+        DesktopTool(relay),
     ):
         registry.register(tool)
     return registry
