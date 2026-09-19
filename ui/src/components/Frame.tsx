@@ -23,13 +23,17 @@ export function Frame({
   const [under, setUnder] = useState<string | null>(null);
   const loaded = loadedSrc === src;
 
-  // Promote the new frame to the backdrop once its fade has finished, so the
-  // layer underneath is always something fully decoded.
+  // The moment a new frame arrives, whatever was last fully decoded becomes the
+  // backdrop.
+  //
+  // Doing this on a timer instead looks right and is wrong: a live screencast
+  // emits a frame on every paint, so the next src lands before the timer fires,
+  // the timer is cancelled, and the backdrop is never set at all. Every frame
+  // then fades in over nothing and the stage strobes black. Deriving it from
+  // the src change has no window to miss.
   useEffect(() => {
-    if (!loaded) return;
-    const timer = window.setTimeout(() => setUnder(src), 180);
-    return () => window.clearTimeout(timer);
-  }, [loaded, src]);
+    if (loadedSrc && loadedSrc !== src) setUnder(loadedSrc);
+  }, [src, loadedSrc]);
 
   return (
     <div className="frame-wrap">

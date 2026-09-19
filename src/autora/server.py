@@ -139,6 +139,34 @@ def create_app(harness: Harness, ui_dist: Path | None = None) -> FastAPI:
         return Response(data, media_type="image/jpeg",
                         headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
+    @app.post("/api/sessions/{session_id}/pick")
+    async def pick(session_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        """What is at this point of the page, asked from the UI.
+
+        Pointing is a more precise way to ask than describing. The pick is
+        emitted to the log like any other event, so the agent sees that the
+        human pointed at something and at what -- the selection becomes part of
+        the conversation rather than a side channel.
+        """
+        session = harness.sessions.get(session_id)
+        if session is None:
+            raise HTTPException(404, "no such live session")
+        tool = harness.tools.get("browser")
+        if tool is None:
+            raise HTTPException(404, "browser tool is not available")
+
+        result = None
+        async for chunk in tool.run(
+            session,
+            {"action": "pick", "x": float(body.get("x", 0)),
+             "y": float(body.get("y", 0)), "label": body.get("label") or "selected"},
+            "ui-pick",
+        ):
+            result = chunk
+        if result is None or not result.ok:
+            return {"ok": False, "error": result.content if result else "no result"}
+        return {"ok": True, "text": result.content, **(result.display or {})}
+
     # -- knowledge ------------------------------------------------------
     # The whole store, for the Knowledge Web. Memory you cannot see is memory
     # you cannot correct, and a graph you can delete from is the only kind

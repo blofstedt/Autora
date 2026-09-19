@@ -67,6 +67,8 @@ class Kind:
     BROWSER_FRAME = "browser.frame"
     BROWSER_NAV = "browser.nav"
     BROWSER_ACTION = "browser.action"     # click/type, with coordinates for the overlay
+    BROWSER_PICK = "browser.pick"         # someone pointed at an element
+    BROWSER_HIGHLIGHT = "browser.highlight"  # the agent pointed at one back
 
     # Desktop control
     DESKTOP_FRAME = "desktop.frame"

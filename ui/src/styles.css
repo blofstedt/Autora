@@ -353,6 +353,52 @@ body::before {
   animation: ripple 1.1s var(--ease) infinite;
 }
 
+/* ------------------------------------------------------------ selection -- */
+.pickmode { flex: 0 0 auto; font-size: 11.5px; }
+.pickmode.on { --btn-fg: var(--accent); --btn-bg: var(--accent-soft); }
+/* A crosshair says the video has become a surface you can ask about. */
+.browser-stage.is-selecting { cursor: crosshair; }
+.browser-stage.is-selecting .frame { outline: 1px solid var(--accent-line); }
+
+.pickbox {
+  position: absolute; pointer-events: none;
+  border: 2px solid var(--accent); border-radius: 4px;
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+  animation: fade 0.18s var(--ease) both;
+}
+
+.pickpanel {
+  flex: 0 0 auto; max-height: 45%; overflow-y: auto;
+  padding: 11px 13px 13px; background: var(--s2);
+  border-top: 1px solid var(--border);
+  animation: rise 0.24s var(--ease) both;
+}
+.pp-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.pp-top b { font-size: 12.5px; font-weight: 650; }
+.pp-source {
+  font-family: var(--mono); font-size: 10.5px; color: var(--accent-2);
+  margin-bottom: 9px; overflow-wrap: anywhere;
+}
+.pp-source.muted { color: var(--text-3); }
+.pp-source code { color: var(--text-2); }
+.pp-params { display: flex; flex-wrap: wrap; gap: 10px; }
+.pp-group {
+  flex: 1 1 180px; min-width: 0; padding: 8px 10px;
+  background: var(--s1); border: 1px solid var(--border); border-radius: var(--r-sm);
+}
+.pp-glabel {
+  display: block; font-size: 9.5px; font-weight: 650; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-3); margin-bottom: 5px;
+}
+.pp-row {
+  display: flex; justify-content: space-between; gap: 10px;
+  font-family: var(--mono); font-size: 10.5px; line-height: 1.7;
+}
+.pp-row span { color: var(--text-3); }
+.pp-row em { font-style: normal; color: var(--text); overflow-wrap: anywhere; text-align: right; }
+.pp-hint { margin: 9px 0 0; font-size: 11px; color: var(--text-3); }
+
 /* ----------------------------------------------------------------- diffs -- */
 .diffs { height: 100%; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 .diff {
