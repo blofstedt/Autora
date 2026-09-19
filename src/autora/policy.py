@@ -149,6 +149,33 @@ def render_args(tool: str, args: dict[str, Any]) -> str:
     return " ".join(parts)
 
 
+def human_render(tool: str, args: dict[str, Any]) -> str:
+    """Render a call for a person to read and authorize.
+
+    Deliberately separate from `render_args`, which flattens everything into one
+    string so that patterns over-match (the safe direction for matching). That
+    same flattening makes the approval prompt read
+    `bash command=printf '\033[1;36m...'`, which is the single most important
+    sentence in the UI and must be legible -- an unreadable prompt trains you to
+    click through it, which defeats the gate entirely.
+    """
+    if tool == "bash":
+        return str(args.get("command", "")).strip()
+    if tool == "browser":
+        action = args.get("action", "")
+        target = args.get("url") or args.get("selector") or ""
+        return f"browser: {action} {target}".strip()
+    if tool in ("read_file", "write_file", "edit_file", "list_dir"):
+        return f"{tool.replace('_', ' ')}: {args.get('path', '')}"
+    if not args:
+        return tool
+    parts = ", ".join(
+        f"{k}={str(v)[:60]}" for k, v in sorted(args.items())
+        if isinstance(v, (str, int, float, bool))
+    )
+    return f"{tool}: {parts}" if parts else tool
+
+
 @dataclass
 class PolicyOutcome:
     decision: Decision
@@ -214,7 +241,7 @@ class PolicyGate:
 
         session.emit(Kind.POLICY_REQUEST, {
             "request_id": request_id, "tool": tool, "args": _redact(args),
-            "reason": outcome.reason, "rendered": render_args(tool, args),
+            "reason": outcome.reason, "rendered": human_render(tool, _redact(args)),
             "timeout_s": self.ask_timeout,
         }, actor="system")
 

@@ -1,16 +1,15 @@
 import type { Approval } from "../lib/derive";
+import { IconCheck, IconShield, IconX } from "./Icons";
 
 /**
  * Pending permission requests.
  *
- * Shows the exact rendered command, not a summary. The entire value of an
- * approval prompt is that you can read precisely what is about to run -- a
- * prompt saying "allow bash?" trains you to click yes.
+ * Shows the exact rendered command, never a summary. The whole value of an
+ * approval prompt is being able to read precisely what is about to run; a prompt
+ * that says "allow bash?" just trains you to click yes.
  */
 export function Approvals({
-  approvals,
-  onDecide,
-  readOnly,
+  approvals, onDecide, readOnly,
 }: {
   approvals: Approval[];
   onDecide: (requestId: string, approved: boolean) => void;
@@ -23,25 +22,26 @@ export function Approvals({
     <div className="approvals">
       {pending.map((approval) => (
         <div className="approval" key={approval.requestId}>
-          <div className="approval-head">
-            <strong>Approval needed</strong>
-            <span className="reason">{approval.reason}</span>
+          <div className="approval-top">
+            <IconShield size={14} />
+            <b>Approval needed</b>
           </div>
+          <div className="approval-why">{approval.reason}</div>
           <code className="approval-cmd">{approval.rendered}</code>
-          <div className="approval-actions">
+          <div className="approval-act">
             <button
               className="btn deny"
               disabled={readOnly}
               onClick={() => onDecide(approval.requestId, false)}
             >
-              Deny
+              <IconX size={13} /> Deny
             </button>
             <button
               className="btn allow"
               disabled={readOnly}
               onClick={() => onDecide(approval.requestId, true)}
             >
-              Run it
+              <IconCheck size={13} /> Run it
             </button>
           </div>
         </div>

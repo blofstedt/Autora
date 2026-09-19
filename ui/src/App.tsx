@@ -8,8 +8,18 @@ import { TerminalView } from "./components/TerminalView";
 import { BrowserView } from "./components/BrowserView";
 import { DiffView } from "./components/DiffView";
 import { Approvals } from "./components/Approvals";
+import {
+  IconArrow, IconChevron, IconFile, IconGlobe, IconPlus, IconSpark,
+  IconStop, IconTerminal,
+} from "./components/Icons";
 
 type Stage = "terminal" | "browser" | "files";
+
+const STAGES: { id: Stage; label: string; icon: typeof IconTerminal }[] = [
+  { id: "terminal", label: "Terminal", icon: IconTerminal },
+  { id: "browser", label: "Browser", icon: IconGlobe },
+  { id: "files", label: "Files", icon: IconFile },
+];
 
 export function App() {
   const [sessionId, setSessionId] = useState<string | null>(
@@ -18,14 +28,14 @@ export function App() {
   const [sessions, setSessions] = useState<any[]>([]);
   const [events, setEvents] = useState<AutoraEvent[]>([]);
   const [status, setStatus] = useState<StreamStatus>({ state: "connecting" });
-  const [cursor, setCursor] = useState<number>(-1);
+  const [cursor, setCursor] = useState(-1);
   const [following, setFollowing] = useState(true);
   const [stage, setStage] = useState<Stage>("terminal");
   const [stagePinned, setStagePinned] = useState(false);
+  const [railOpen, setRailOpen] = useState(true);
   const [draft, setDraft] = useState("");
   const streamRef = useRef<SessionStream | null>(null);
 
-  // -- session list ---------------------------------------------------
   useEffect(() => {
     fetch("/api/sessions")
       .then((r) => r.json())
@@ -36,7 +46,6 @@ export function App() {
       .catch(() => undefined);
   }, [sessionId]);
 
-  // -- connect --------------------------------------------------------
   useEffect(() => {
     if (!sessionId) return;
     setEvents([]);
@@ -46,7 +55,6 @@ export function App() {
       onEvents: (fresh) =>
         setEvents((prev) => {
           const next = [...prev, ...fresh];
-          // Keep the log ordered even if a resume overlaps a live delivery.
           next.sort((a, b) => a.seq - b.seq);
           return next;
         }),
@@ -60,16 +68,14 @@ export function App() {
     };
   }, [sessionId]);
 
-  // While following, the cursor tracks the head of the log.
   useEffect(() => {
     if (following) setCursor(events.length - 1);
   }, [events.length, following]);
 
   const view = useMemo(() => derive(events, cursor), [events, cursor]);
 
-  // Auto-switch panes to whatever the agent is doing, unless the viewer has
-  // deliberately pinned one. Following the action is the default; overriding it
-  // must stick, or the UI fights you.
+  // Follow the action by default; a deliberate pin must stick, or the UI fights
+  // whoever is trying to look at something.
   useEffect(() => {
     if (stagePinned || !following) return;
     setStage(inferStage(events, cursor));
@@ -101,55 +107,78 @@ export function App() {
   const live = status.state === "live";
   const readOnly = !live;
   const atHead = cursor >= events.length - 1;
+  const progress = events.length > 1 ? ((cursor + 1) / events.length) * 100 : 0;
+
+  const badge = view.busy && live
+    ? { cls: "is-working", text: "working" }
+    : live
+      ? { cls: "is-live", text: "live" }
+      : status.state === "recorded"
+        ? { cls: "is-recorded", text: "recording" }
+        : status.state === "connecting"
+          ? { cls: "", text: "connecting" }
+          : { cls: "is-closed", text: "offline" };
 
   return (
     <div className="app">
       <header className="top">
         <div className="brand">
-          Autora<span className="spark">●</span>
+          <span className="brand-mark"><IconSpark size={13} /></span>
+          Autora
         </div>
-        <select
-          className="session-select"
-          value={sessionId ?? ""}
-          onChange={(e) => {
-            history.replaceState(null, "", `?session=${e.target.value}`);
-            setSessionId(e.target.value);
-          }}
+
+        <button
+          className="btn icon ghost"
+          onClick={() => setRailOpen(!railOpen)}
+          title={railOpen ? "Hide timeline" : "Show timeline"}
+          style={{ transform: railOpen ? "rotate(180deg)" : undefined }}
         >
-          {sessions.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.live ? "● " : "○ "}
-              {s.id} {s.title ? `— ${s.title}` : ""}
-            </option>
-          ))}
-        </select>
-        <button className="btn ghost" onClick={newSession}>
-          new
+          <IconChevron size={14} />
         </button>
+
+        <div className="session-pill">
+          <select
+            value={sessionId ?? ""}
+            onChange={(e) => {
+              history.replaceState(null, "", `?session=${e.target.value}`);
+              setSessionId(e.target.value);
+            }}
+          >
+            {sessions.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.live ? "● " : "○ "}{s.id}{s.title ? ` — ${s.title}` : ""}
+              </option>
+            ))}
+          </select>
+          <button className="btn icon ghost" onClick={newSession} title="New session">
+            <IconPlus size={14} />
+          </button>
+        </div>
+
         <div className="spacer" />
-        <span className={`status ${status.state}`}>
-          {status.state === "live"
-            ? view.busy
-              ? "agent working"
-              : "live"
-            : status.state === "recorded"
-              ? "recording"
-              : status.state}
-        </span>
+
         {view.tokens.in > 0 && (
-          <span className="tokens" title="tokens in / out / cached">
-            {view.tokens.in}↓ {view.tokens.out}↑ {view.tokens.cached}⚡
+          <span className="badge tokens" title="tokens in / out / cached">
+            {fmt(view.tokens.in)} in · {fmt(view.tokens.out)} out · {fmt(view.tokens.cached)} cached
           </span>
         )}
+        <span className={`badge ${badge.cls}`}>
+          <span className="dot" />
+          {badge.text}
+        </span>
         {live && view.busy && (
-          <button className="btn stop" onClick={() => streamRef.current?.interrupt()}>
-            stop
+          <button className="btn danger" onClick={() => streamRef.current?.interrupt()}>
+            <IconStop size={13} /> Stop
           </button>
         )}
       </header>
 
-      <div className="body">
-        <aside className="left">
+      <div className={`body ${railOpen ? "" : "rail-closed"}`}>
+        <aside className="rail">
+          <div className="panel-head">
+            <span className="panel-title">Timeline</span>
+            <span className="panel-title">{events.length}</span>
+          </div>
           <Timeline
             events={events}
             cursor={cursor}
@@ -161,84 +190,83 @@ export function App() {
         </aside>
 
         <main className="center">
-          <div className="stage-tabs">
-            {(["terminal", "browser", "files"] as Stage[]).map((name) => (
-              <button
-                key={name}
-                className={`tab ${stage === name ? "on" : ""}`}
-                onClick={() => {
-                  setStage(name);
-                  setStagePinned(true);
-                }}
-              >
-                {name}
-                {name === "files" && view.files.length > 0 && (
-                  <em className="badge">{view.files.length}</em>
-                )}
-              </button>
-            ))}
+          <div className="stage-bar">
+            <div className="segmented">
+              {STAGES.map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  className={`seg ${stage === id ? "on" : ""}`}
+                  onClick={() => { setStage(id); setStagePinned(true); }}
+                >
+                  <Icon size={14} />
+                  {label}
+                  {id === "files" && view.files.length > 0 && (
+                    <em className="count">{view.files.length}</em>
+                  )}
+                </button>
+              ))}
+            </div>
+            <div className="spacer" />
             {stagePinned && (
-              <button className="tab unpin" onClick={() => setStagePinned(false)}>
-                auto
+              <button className="btn ghost" onClick={() => setStagePinned(false)}>
+                Follow agent
               </button>
             )}
           </div>
 
           <div className="stage">
             {/* The terminal stays mounted across tab switches: xterm replays its
-                whole buffer on remount, which would be slow and would lose the
-                viewer's scroll position. */}
+                entire buffer on remount, which is slow and loses scroll position. */}
             <div className={`pane ${stage === "terminal" ? "on" : ""}`}>
               <TerminalView data={view.terminal} />
             </div>
-            {stage === "browser" && (
-              <div className="pane on">
+            <div className={`pane ${stage === "browser" ? "on" : ""}`}>
+              {stage === "browser" && (
                 <BrowserView
                   sessionId={sessionId ?? ""}
                   frame={view.frame}
                   url={view.url}
                   lastAction={view.lastAction}
                 />
-              </div>
-            )}
-            {stage === "files" && (
-              <div className="pane on">
-                <DiffView files={view.files} />
-              </div>
-            )}
+              )}
+            </div>
+            <div className={`pane ${stage === "files" ? "on" : ""}`}>
+              {stage === "files" && <DiffView files={view.files} />}
+            </div>
           </div>
 
-          <div className="scrubber">
-            <input
-              type="range"
-              min={-1}
-              max={Math.max(events.length - 1, 0)}
-              value={cursor}
-              onChange={(e) => {
-                setFollowing(false);
-                setCursor(Number(e.target.value));
-              }}
-            />
-            <span className="scrub-label">
-              {cursor + 1} / {events.length}
-            </span>
-            {!atHead || !following ? (
-              <button
-                className="btn ghost"
-                onClick={() => {
-                  setFollowing(true);
-                  setCursor(events.length - 1);
+          <div className="scrub">
+            <div className="track">
+              <span className="fill" style={{ width: `${progress}%` }} />
+              <input
+                type="range"
+                min={-1}
+                max={Math.max(events.length - 1, 0)}
+                value={cursor}
+                onChange={(e) => {
+                  setFollowing(false);
+                  setCursor(Number(e.target.value));
                 }}
-              >
-                jump to now
-              </button>
+              />
+            </div>
+            <span className="counter">{cursor + 1} / {events.length}</span>
+            {following && atHead ? (
+              <span className="badge is-live"><span className="dot" />following</span>
             ) : (
-              <span className="dim">following</span>
+              <button
+                className="btn primary"
+                onClick={() => { setFollowing(true); setCursor(events.length - 1); }}
+              >
+                Jump to now <IconArrow size={13} />
+              </button>
             )}
           </div>
         </main>
 
-        <aside className="right">
+        <aside className="side">
+          <div className="panel-head">
+            <span className="panel-title">Conversation</span>
+          </div>
           <Transcript turns={view.transcript} busy={view.busy && atHead} />
           <Approvals
             approvals={view.approvals}
@@ -246,26 +274,32 @@ export function App() {
             onDecide={(id, approved) => streamRef.current?.approve(id, approved)}
           />
           <div className="composer">
-            <textarea
-              value={draft}
-              placeholder={
-                live ? "Tell the agent what to do…" : "This session is a recording."
-              }
-              disabled={readOnly}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  void send();
-                }
-              }}
-            />
-            <button className="btn send" disabled={readOnly || !draft.trim()} onClick={send}>
-              {view.busy ? "interrupt & send" : "send"}
-            </button>
+            <div className="composer-box">
+              <textarea
+                value={draft}
+                rows={2}
+                placeholder={live ? "Describe a task…" : "This session is a recording."}
+                disabled={readOnly}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    void send();
+                  }
+                }}
+              />
+              <div className="composer-foot">
+                <span className="hint"><kbd>↵</kbd> send · <kbd>⇧↵</kbd> newline</span>
+                <button className="btn primary" disabled={readOnly || !draft.trim()} onClick={send}>
+                  {view.busy ? "Interrupt & send" : "Send"} <IconArrow size={13} />
+                </button>
+              </div>
+            </div>
           </div>
         </aside>
       </div>
     </div>
   );
 }
+
+const fmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));

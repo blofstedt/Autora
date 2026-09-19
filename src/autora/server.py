@@ -218,11 +218,28 @@ def create_app(harness: Harness, ui_dist: Path | None = None) -> FastAPI:
     # -- UI ------------------------------------------------------------
 
     if ui_dist is not None and ui_dist.exists():
-        app.mount("/assets", StaticFiles(directory=ui_dist / "assets"), name="assets")
+        # Mount every top-level directory the build produced rather than
+        # hardcoding "assets". The bundle also emits /fonts, and hardcoding one
+        # name means a new static directory 404s silently at runtime.
+        for child in sorted(ui_dist.iterdir()):
+            if child.is_dir():
+                app.mount(f"/{child.name}", StaticFiles(directory=child), name=child.name)
 
         @app.get("/")
         async def index() -> FileResponse:
             return FileResponse(ui_dist / "index.html")
+
+        # Root-level static files the build emits (favicon, manifest, robots).
+        @app.get("/{filename}")
+        async def root_file(filename: str) -> FileResponse:
+            candidate = (ui_dist / filename).resolve()
+            if (
+                ui_dist.resolve() in candidate.parents
+                and candidate.is_file()
+                and not filename.startswith(".")
+            ):
+                return FileResponse(candidate)
+            raise HTTPException(404, "not found")
     else:
         @app.get("/")
         async def no_ui() -> HTMLResponse:

@@ -23,14 +23,23 @@ export function TerminalView({ data }: { data: string }) {
   useEffect(() => {
     if (!hostRef.current) return;
     const term = new Terminal({
-      fontSize: 12,
-      fontFamily:
-        "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace",
+      fontSize: 12.5,
+      fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace",
+      lineHeight: 1.45,
+      letterSpacing: 0.2,
       theme: {
-        background: "#0c0d11",
-        foreground: "#d7dae0",
-        cursor: "#ff3b6b",
-        selectionBackground: "#2a2f3a",
+        background: "#0e1016",
+        foreground: "#c8cedd",
+        cursor: "#6e5bff",
+        selectionBackground: "rgba(110,91,255,.28)",
+        black: "#0e1016", brightBlack: "#626a7e",
+        red: "#fb7185", brightRed: "#fda4af",
+        green: "#34d399", brightGreen: "#6ee7b7",
+        yellow: "#fbbf24", brightYellow: "#fcd34d",
+        blue: "#818cf8", brightBlue: "#a5b4fc",
+        magenta: "#c084fc", brightMagenta: "#d8b4fe",
+        cyan: "#22d3ee", brightCyan: "#67e8f9",
+        white: "#c8cedd", brightWhite: "#edeff5",
       },
       convertEol: true,
       scrollback: 20000,

@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import codecs
 import fcntl
+import re
 import json
 import os
 import pty
@@ -207,6 +208,42 @@ class TerminalTool:
         )
 
 
+#: CSI/OSC/charset escape sequences. The PTY stream keeps these -- xterm.js needs
+#: them to render colors and progress bars -- but the string handed back to the
+#: model does not: escape codes cost tokens, and a spinner that rewrote its line
+#: 400 times reads as garbage rather than as one line of output.
+_ANSI_RE = re.compile(
+    r"\x1b\[[0-?]*[ -/]*[@-~]"      # CSI (colors, cursor moves)
+    r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"  # OSC (window title, hyperlinks)
+    r"|\x1b[()][B0UK]"              # charset selection
+    r"|\x1b[=>]"                    # keypad mode
+    r"|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]"  # stray control bytes
+)
+
+
+def strip_ansi(text: str) -> str:
+    """Flatten terminal output into plain text for the model.
+
+    Carriage returns are resolved rather than deleted: a progress bar emits
+    `\r` between repaints, so keeping them would hand the model dozens of
+    overlapping variants of the same line. Taking the segment after the last
+    `\r` reproduces what the line actually ended up showing.
+    """
+    cleaned = _ANSI_RE.sub("", text)
+    # Normalize CRLF *first*. A PTY ends every line with "\r\n", so treating a
+    # trailing "\r" as a progress-bar repaint would take the segment after it --
+    # the empty string -- and blank every line of real output.
+    cleaned = cleaned.replace("\r\n", "\n")
+    lines = []
+    for line in cleaned.split("\n"):
+        if "\r" in line:
+            # A bare "\r" mid-line is a repaint: keep only what the line ended
+            # up showing.
+            line = line.split("\r")[-1]
+        lines.append(line.rstrip())
+    return "\n".join(lines)
+
+
 def _killpg(process) -> None:
     """SIGKILL the whole process group.
 
@@ -224,11 +261,11 @@ def _killpg(process) -> None:
 
 
 def _trim(raw: bytes, truncated: bool) -> str:
-    text = raw.decode("utf-8", "replace")
+    text = strip_ansi(raw.decode("utf-8", "replace"))
     if not truncated and len(raw) <= MAX_CAPTURE_BYTES:
         return text
-    head = raw[:HEAD_BYTES].decode("utf-8", "replace")
-    tail = raw[-TAIL_BYTES:].decode("utf-8", "replace")
+    head = strip_ansi(raw[:HEAD_BYTES].decode("utf-8", "replace"))
+    tail = strip_ansi(raw[-TAIL_BYTES:].decode("utf-8", "replace"))
     omitted = len(raw) - HEAD_BYTES - TAIL_BYTES
     return f"{head}\n\n... [{omitted} bytes elided] ...\n\n{tail}"
 

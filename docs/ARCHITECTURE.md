@@ -180,6 +180,39 @@ For v1: zero install, reachable from a phone, and the same surface as replay.
 Tauri makes sense later for an always-on desktop overlay, but it's a distribution
 choice, not an architecture one — it would consume the same websocket.
 
+## The interface
+
+The first version was a functional developer tool: 11px monospace everywhere,
+three fixed columns, no motion. It worked and it was ugly, which for a product
+whose entire pitch is *watching* is a real failure rather than a cosmetic one.
+
+The visual model is a broadcast console: one hero stage, quiet chrome, and
+motion spent only on things that are genuinely happening. Surfaces are layered
+rather than flat — elevation instead of boxes drawn around everything — and
+color is used semantically (amber means a decision is waiting on you, red means
+something failed) rather than decoratively.
+
+Three things the redesign shook out that were more than styling:
+
+- **The approval prompt was unreadable.** It rendered the same flattened string
+  the policy patterns match against, so authorizing a command meant reading
+  `bash command=printf '\033[1;36m...'`. Matching wants over-matching; a human
+  wants the command. They are now separate functions, and the one thing you must
+  actually read before clicking is legible.
+- **Hovering the primary button made it look disabled.** `.btn:hover:not(:disabled)`
+  outranks `.btn.primary`, so hover stripped the gradient. Variants now drive a
+  custom property, which takes specificity out of the question entirely.
+- **ANSI escapes were reaching the model.** The terminal needs them; the model
+  does not. Stripping them for the model-facing string collapsed a 200-frame
+  progress bar from 9,890 characters to 45. (The first attempt at this blanked
+  every line of output, because a PTY ends lines with CRLF and the
+  carriage-return rule took the empty segment after it. The agent-loop test
+  caught it.)
+
+Fonts are vendored rather than loaded from a CDN. This tool runs on localhost
+and should work on a plane; a webfont host also learns every time you open a
+session. Variable weights keep it to two files and 77KB.
+
 ## Choices I'd revisit
 
 - **Sequential tool execution.** Parallel calls would be faster, but watching two
@@ -191,5 +224,7 @@ choice, not an architecture one — it would consume the same websocket.
   containerized desktop (Xvfb + WebRTC, neko-style) so the UI can embed a live
   desktop you can also *take over* — human takeover being the thing Hermes most
   conspicuously lacks.
+- **The stage does not support side-by-side.** Watching the terminal and the
+  browser at once is occasionally what you want; today you switch tabs.
 - **The policy default is ASK**, which will annoy you. That is the correct
   starting point; loosen per project once you trust it.

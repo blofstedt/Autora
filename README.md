@@ -60,6 +60,11 @@ curl localhost:8817/api/sessions/<id>/cast > session.cast && asciinema play sess
 | **Files** | Every edit as a unified diff, the moment it lands. |
 | **Transcript** | What the agent said, with reasoning collapsed by default. |
 
+The interface is dark, keyboard-friendly, and has no third-party dependencies at
+runtime — fonts are vendored (Inter and JetBrains Mono, variable, Latin subset,
+77KB total), so it works offline and on an airgapped box, and opening a session
+does not tell a CDN about it.
+
 The scrubber works during a live session. Scroll back to step 12 while the agent
 is on step 40; "jump to now" returns you to the head.
 

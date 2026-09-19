@@ -97,8 +97,30 @@ async def test_auto_approve_never_overrides_deny():
         print("  auto-approve can't undo deny .. ok")
 
 
+def test_ansi_stripped_for_model_not_for_terminal():
+    """Escape codes belong in the PTY stream, not in the model's context."""
+    from autora.tools.terminal import strip_ansi
+
+    assert strip_ansi("\x1b[1;36mrunning\x1b[0m") == "running"
+    assert strip_ansi("\x1b]0;title\x07prompt$ ls") == "prompt$ ls"
+    # A progress bar repainting its line must collapse to its final state, not
+    # arrive as 200 overlapping variants.
+    bar = "".join(f"\x1b[2K\rBuild [{'=' * (i % 20)}] {i}%" for i in range(200))
+    cleaned = strip_ansi(bar)
+    assert cleaned == f"Build [{'=' * 19}] 199%", cleaned
+    assert len(cleaned) < len(bar) / 50
+
+    # The regression that matters: a PTY terminates lines with CRLF, and a naive
+    # carriage-return rule blanks every one of them.
+    assert strip_ansi("hello\r\nworld\r\n") == "hello\nworld\n"
+    assert strip_ansi("\x1b[32mpassed\x1b[0m\r\n") == "passed\n"
+    assert strip_ansi("plain") == "plain"
+    print("  ansi stripped for the model ... ok")
+
+
 async def main():
     test_store_survives_a_torn_write()
+    test_ansi_stripped_for_model_not_for_terminal()
     test_blob_dedup_and_traversal()
     await test_bus_coalesces_frames_not_results()
     await test_bus_evicts_on_lossless_overflow()
