@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SessionStream, type StreamStatus } from "./lib/stream";
-import { derive, inferStage } from "./lib/derive";
+import { derive, inferStage, isRunning } from "./lib/derive";
 import { HIDDEN_KINDS } from "./lib/describe";
 import { usePlayback } from "./lib/playback";
 import { chime, paintChrome, type Chrome } from "./lib/chrome";
@@ -196,14 +196,24 @@ export function App() {
 
   const live = status.state === "live";
   const readOnly = !live;
-  const atHead = cursor >= events.length - 1;
+  // Following means the cursor is pinned to the head by definition. Deriving
+  // this from the cursor alone lags by a render -- the cursor catches up in an
+  // effect -- so every arriving event briefly read as "not at the head" and
+  // the transport flickered between following and offering to jump there.
+  const atHead = following || cursor >= events.length - 1;
+
+  // Whether a turn is running now, as opposed to whether one was running at
+  // the cursor. Replay parks the cursor mid-turn on purpose; asking `view.busy`
+  // there would put up a Stop button and relabel Send as "Interrupt & send",
+  // which reads as the request having been sent again.
+  const running = useMemo(() => isRunning(events), [events]);
 
   // ---------------------------------------------------------- tab chrome --
   const chromeState: Chrome = pending > 0
     ? "approval"
     : !live
       ? status.state === "closed" ? "offline" : "idle"
-      : view.busy ? "working" : "live";
+      : running ? "working" : "live";
 
   useEffect(() => {
     paintChrome(chromeState, view.title);
@@ -275,7 +285,7 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [playback, step, seek, jumpToNow]);
 
-  const badge = view.busy && live
+  const badge = running && live
     ? { cls: "is-working", text: "working" }
     : live
       ? { cls: "is-live", text: "live" }
@@ -333,7 +343,7 @@ export function App() {
         >
           <IconGear size={15} />
         </button>
-        {live && view.busy && (
+        {live && running && (
           <button className="btn danger stop-btn" title="Stop"
                   onClick={() => streamRef.current?.interrupt()}>
             <IconStop size={13} />
@@ -435,7 +445,7 @@ export function App() {
             <div className="composer-foot">
               <span className="hint"><kbd>↵</kbd> send · <kbd>⇧↵</kbd> newline</span>
               <button className="btn primary" disabled={readOnly || !draft.trim()} onClick={send}>
-                {view.busy ? "Interrupt & send" : "Send"} <IconArrow size={13} />
+                {running ? "Interrupt & send" : "Send"} <IconArrow size={13} />
               </button>
             </div>
           </div>

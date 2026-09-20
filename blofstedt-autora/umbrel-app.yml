@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.5.0"
+version: "0.5.1"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -57,11 +57,12 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Memories and session recordings now live in the app's data folder, so
-  they survive updates — previously they were written inside the container
-  and discarded every time it was recreated. Settings also gains standing
-  instructions: house rules like 'be concise' or 'never guess' that are
-  added to the agent's prompt on every turn.
+  The memory strip is now the actual web — records as nodes, their links
+  drawn, blooming when written and tracing along their links when read —
+  and memories the agent writes through its tool finally appear there at
+  all. Fixes the stage tabs running off a phone screen, the transport
+  flickering between 'following' and 'jump to now' while a turn streams,
+  and replay offering to interrupt a turn that had already finished.
 dependencies: []
 path: ""
 defaultUsername: ""

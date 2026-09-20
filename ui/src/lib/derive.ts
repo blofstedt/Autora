@@ -351,6 +351,25 @@ export function derive(events: AutoraEvent[], cursor: number): Derived {
   };
 }
 
+/**
+ * Is the agent working *now*, regardless of where the cursor is parked.
+ *
+ * `Derived.busy` answers that question for the cursor, which is what the
+ * replay needs: scrubbed into an old turn it correctly says the agent was busy
+ * then. It is the wrong answer for anything describing the present -- a Stop
+ * button, or a Send button that offers to interrupt -- because replaying a
+ * finished turn would make the UI claim a turn is running and look for all the
+ * world like the request had been submitted again.
+ */
+export function isRunning(events: AutoraEvent[]): boolean {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const kind = events[i].kind;
+    if (kind === Kind.AgentDone || kind === Kind.SessionEnded) return false;
+    if (kind === Kind.UserMessage) return true;
+  }
+  return false;
+}
+
 /** Which pane to show, inferred from what the agent most recently did. */
 export function inferStage(
   events: AutoraEvent[],

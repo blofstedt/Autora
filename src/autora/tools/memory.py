@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any, AsyncIterator
 
+from ..events import Kind
 from ..memory import KINDS, MemoryStore
 from .base import ToolResult
 
@@ -53,6 +54,24 @@ class MemoryTool:
         # project it is in.
         self._scope_for = scope_for or (lambda session: "global")
 
+    @staticmethod
+    def _announce(session, kind: str, records) -> None:
+        """Put a read or a write on the log.
+
+        The UI folds these into the memory web: without them a record the agent
+        looked up or wrote leaves no trace anywhere, and the only memory traffic
+        the interface could see was end-of-session distillation -- which is the
+        rarest kind, so the web sat empty while memory was plainly being used.
+        """
+        records = [r for r in records if r is not None]
+        if not records:
+            return
+        session.emit(kind, {
+            "ids": [r.id for r in records],
+            "titles": [r.title for r in records],
+            "count": len(records),
+        }, actor="system")
+
     async def run(self, session, args: dict[str, Any], span: str) -> AsyncIterator[ToolResult]:
         action = args.get("action")
         scopes = ["global", self._scope_for(session)]
@@ -63,6 +82,7 @@ class MemoryTool:
                 yield ToolResult("Nothing remembered about that.")
                 return
             self.store.touch([h.id for h in hits])
+            self._announce(session, Kind.MEMORY_RECALL, hits)
             yield ToolResult("\n\n".join(
                 f"[{h.id}] {h.title}  ({h.kind}, {h.status})\n{h.body[:400]}"
                 for h in hits))
@@ -73,6 +93,7 @@ class MemoryTool:
                 yield ToolResult(f"No entry {args.get('id')!r}.", ok=False)
                 return
             self.store.touch([record.id])
+            self._announce(session, Kind.MEMORY_RECALL, [record])
             where = (f"\nRecorded in session {record.source_session}"
                      if record.source_session else "")
             yield ToolResult(
@@ -96,13 +117,17 @@ class MemoryTool:
                 source_seq=getattr(session.store, "count", None),
                 supersedes=args.get("supersedes") or None,
             )
+            self._announce(session, Kind.MEMORY_WRITE, [record])
             yield ToolResult(
                 f"Remembered [{record.id}] {record.title} ({record.status}, {scope})"
                 + (f", superseding {args['supersedes']}" if args.get("supersedes") else ""),
                 display={"record": record.to_dict()})
 
         elif action == "forget":
+            retired = self.store.get(args.get("id", ""))
             ok = self.store.forget(args.get("id", ""))
+            if ok and retired is not None:
+                self._announce(session, Kind.MEMORY_WRITE, [retired])
             yield ToolResult(f"Retired {args.get('id')}." if ok
                              else f"No entry {args.get('id')!r}.", ok=ok)
 

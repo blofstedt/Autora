@@ -1,21 +1,33 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MemoryMark } from "../lib/derive";
-import { IconBrain } from "./Icons";
+import { KIND_COLOR, fetchKnowledge, type Knowledge } from "../lib/memory";
+import { IconBrain, IconChevron } from "./Icons";
 
-/** How long a chip stays lit after the event that touched it. */
+/** How long a node stays lit after the event that touched it. */
 const GLOW_MS = 2600;
+/** Re-read the store this often; a write elsewhere should show up here too. */
+const POLL_MS = 20_000;
+
+// Nearly square, so the ring below is a ring rather than a flat line. A wide
+// viewBox squashes the vertical spread to almost nothing and a handful of
+// records end up drawn as a dash.
+const VIEW = { w: 300, h: 150 };
+
+type Placed = { id: string; x: number; y: number; r: number; record: Knowledge["records"][0] };
 
 /**
- * What the agent knows, above the conversation, always on.
+ * The memory web, above the conversation, always on.
  *
- * Memory used to live behind a button, which made it something you went and
- * checked rather than something you watched happen. Here it is a standing
- * strip, and the two things that actually occur to a memory are visible as
- * they occur: one written glows, one read gets a tracer run through it.
+ * A real graph rather than a list of names: the point of a web is that you can
+ * see what is connected to what, and the connections are most of what memory
+ * knows. It is small, so it shows the graph rather than its labels, and the
+ * full view with text and provenance is one tap away.
  *
- * Animations key on the sequence number of the event that caused them, not on
- * render. A fold that recomputes on every token would otherwise restart the
- * glow forty times a second and show a solid green bar.
+ * The two things that actually happen to a record are visible as they happen:
+ * one written blooms, one read gets a tracer along its links. Both key on the
+ * sequence number of the causing event rather than on render -- a fold that
+ * recomputes on every token would otherwise restart the animation forty times
+ * a second and show a solid green glow.
  */
 export function MemoryRibbon({
   memories, onOpen,
@@ -23,10 +35,26 @@ export function MemoryRibbon({
   memories: MemoryMark[];
   onOpen: () => void;
 }) {
-  // seq of the last event we have already animated, per memory.
+  const [web, setWeb] = useState<Knowledge>({ records: [], links: [], enabled: true });
   const seen = useRef(new Map<string, number>());
   const [lit, setLit] = useState<Map<string, "written" | "recalled">>(new Map());
-  const scroller = useRef<HTMLDivElement>(null);
+
+  const load = useCallback(() => {
+    void fetchKnowledge(false).then(setWeb).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    load();
+    const timer = window.setInterval(load, POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [load]);
+
+  // A write creates a record the store has not been asked about yet, so the
+  // graph is refetched when the log says something changed.
+  const latestSeq = memories.length ? memories[memories.length - 1].seq : 0;
+  useEffect(() => {
+    if (latestSeq) load();
+  }, [latestSeq, load]);
 
   useEffect(() => {
     const fresh: [string, "written" | "recalled"][] = [];
@@ -37,7 +65,6 @@ export function MemoryRibbon({
       }
     }
     if (fresh.length === 0) return;
-
     setLit((current) => {
       const next = new Map(current);
       for (const [id, kind] of fresh) next.set(id, kind);
@@ -53,36 +80,85 @@ export function MemoryRibbon({
     return () => window.clearTimeout(timer);
   }, [memories]);
 
-  // Follow the newest chip, which is the one that just did something.
-  useEffect(() => {
-    const el = scroller.current;
-    if (el) el.scrollTo({ left: el.scrollWidth, behavior: "smooth" });
-  }, [memories.length]);
+  // Laid out by hashing the id: stable across renders and refetches, so a node
+  // does not jump when its neighbour is written. A force simulation would look
+  // better and move things every time the set changes, which at this size reads
+  // as the graph twitching rather than as anything meaningful.
+  const placed = useMemo<Placed[]>(() => {
+    const rows = web.records.slice(0, 40);
+    return rows.map((record, index) => {
+      let hash = 0;
+      for (let i = 0; i < record.id.length; i++) hash = (hash * 31 + record.id.charCodeAt(i)) | 0;
+      // A jittered ring rather than a spiral. A spiral puts the first records
+      // near the middle, and with only a few of them they line up and the web
+      // reads as a dash; a ring is recognisably a web from the first node.
+      const golden = 2.399963;
+      const angle = index * golden + (hash % 100) / 300;
+      const spread = 0.6 + ((hash >>> 7) % 100) / 250;
+      return {
+        id: record.id,
+        x: VIEW.w / 2 + Math.cos(angle) * spread * (VIEW.w / 2 - 14),
+        y: VIEW.h / 2 + Math.sin(angle) * spread * (VIEW.h / 2 - 12),
+        r: record.pinned ? 7 : record.status === "provisional" ? 4 : 5.5,
+        record,
+      };
+    });
+  }, [web.records]);
+
+  const byId = useMemo(() => new Map(placed.map((p) => [p.id, p])), [placed]);
+  const edges = web.links
+    .map((l) => ({ a: byId.get(l.src), b: byId.get(l.dst) }))
+    .filter((e): e is { a: Placed; b: Placed } => !!e.a && !!e.b);
+
+  const newest = memories.length ? memories[memories.length - 1] : null;
 
   return (
-    <section className="ribbon" aria-label="What the agent remembers">
-      <button className="ribbon-tag" onClick={onOpen} title="Open the knowledge web">
+    <section className="web" aria-label="What the agent remembers">
+      <button className="web-tag" onClick={onOpen} title="Open the knowledge web">
         <IconBrain size={13} />
-        <span>Memory</span>
+        <span className="web-count">{web.records.length}</span>
+        <IconChevron size={11} />
       </button>
 
-      <div className="ribbon-track" ref={scroller}>
-        {memories.length === 0 ? (
-          <span className="ribbon-empty">
-            Nothing remembered yet — what the agent learns will appear here.
+      <div className="web-stage" onClick={onOpen} role="presentation">
+        {placed.length === 0 ? (
+          <span className="web-empty">
+            Nothing remembered yet — what the agent learns appears here.
           </span>
         ) : (
-          memories.map((m) => (
-            <span
-              key={m.id}
-              className={`mem ${lit.get(m.id) === "written" ? "is-new" : ""} ${
-                lit.get(m.id) === "recalled" ? "is-read" : ""
-              }`}
-              title={m.title}
-            >
-              {m.title}
-            </span>
-          ))
+          <svg viewBox={`0 0 ${VIEW.w} ${VIEW.h}`} preserveAspectRatio="xMidYMid meet"
+               className="web-svg" aria-hidden="true">
+            {edges.map((e, i) => {
+              const active = lit.has(e.a.id) || lit.has(e.b.id);
+              return (
+                <line
+                  key={i}
+                  x1={e.a.x} y1={e.a.y} x2={e.b.x} y2={e.b.y}
+                  className={`web-edge ${active ? "is-live" : ""}`}
+                />
+              );
+            })}
+            {placed.map((p) => {
+              const state = lit.get(p.id);
+              return (
+                <g key={p.id} className={`web-node ${state ? `is-${state}` : ""}`}>
+                  {state && <circle cx={p.x} cy={p.y} r={p.r} className="web-halo" />}
+                  <circle
+                    cx={p.x} cy={p.y} r={p.r}
+                    fill={KIND_COLOR[p.record.kind] ?? "var(--accent)"}
+                    fillOpacity={p.record.status === "provisional" ? 0.45 : 1}
+                  />
+                </g>
+              );
+            })}
+          </svg>
+        )}
+
+        {/* What just happened, in words, since the dots cannot say it. */}
+        {newest && (
+          <span className={`web-latest is-${newest.kind}`} key={newest.seq}>
+            {newest.kind === "written" ? "learned" : "recalled"} · {newest.title}
+          </span>
         )}
       </div>
     </section>
