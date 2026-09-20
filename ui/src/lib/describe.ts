@@ -74,7 +74,12 @@ export function summarize(event: AutoraEvent): string {
     case Kind.AgentDone: return p.stop_reason ?? "";
     case Kind.SessionStarted: return basename(p.workdir ?? "");
     case Kind.SessionEnded: return `${p.events ?? 0} events`;
-    case Kind.Error: return p.error ?? "";
+    // Which endpoint and model were in play is half of what makes a provider
+    // failure diagnosable, and it is not otherwise visible anywhere in the UI.
+    case Kind.Error:
+      return p.endpoint
+        ? `${p.error ?? ""}\n${p.model ?? "?"} @ ${p.endpoint}`
+        : (p.error ?? "");
     default: return JSON.stringify(p).slice(0, 110);
   }
 }

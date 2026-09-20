@@ -284,7 +284,9 @@ export function App() {
       <header className="top">
         <div className="brand">
           <span className="brand-mark"><IconSpark size={13} /></span>
-          Autora
+          {/* Wrapped so the wordmark can be dropped on a narrow screen, where
+              the mark alone still says whose app this is. */}
+          <span className="brand-word">Autora</span>
         </div>
 
         <button
@@ -327,9 +329,9 @@ export function App() {
             {fmt(view.tokens.in)} in · {fmt(view.tokens.out)} out · {fmt(view.tokens.cached)} cached
           </span>
         )}
-        <span className={`badge status ${badge.cls}`}>
+        <span className={`badge status ${badge.cls}`} title={badge.text}>
           <span className="dot" />
-          {badge.text}
+          <span className="badge-word">{badge.text}</span>
         </span>
         <button
           className="btn icon ghost sched-launch"
@@ -348,8 +350,10 @@ export function App() {
           <IconBrain size={15} />
         </button>
         {live && view.busy && (
-          <button className="btn danger" onClick={() => streamRef.current?.interrupt()}>
-            <IconStop size={13} /> Stop
+          <button className="btn danger stop-btn" title="Stop"
+                  onClick={() => streamRef.current?.interrupt()}>
+            <IconStop size={13} />
+            <span className="btn-word">Stop</span>
           </button>
         )}
       </header>

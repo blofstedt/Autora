@@ -260,7 +260,15 @@ body::before {
   line-height: 1.45; color: var(--text-2);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.tl-row.is-current .tl-text { color: var(--text); }
+/* The selected row shows its message in full. One line each keeps the rail
+   scannable, but a truncated error is the one thing you actually needed to
+   read, and selecting a row is already how you say "this one". */
+.tl-row.is-current .tl-text {
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow: visible;
+}
 
 /* ----------------------------------------------------------------- stage -- */
 .stage-bar { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
@@ -724,12 +732,28 @@ body::before {
   /* hide rail toggle + token count — no room, not needed on one-panel layout */
   .top .rail-toggle { display: none; }
   .badge.tokens { display: none; }
-  /* The header has one row and four things that want it. The pill yields first
-     (it can ellipsize), and the status badge drops the fixed floor it uses on
-     desktop to stop the layout twitching -- there is no room for it here. */
-  .session-pill { max-width: 46vw; }
-  .session-pill select { max-width: 100%; }
-  .badge.status { min-width: 0; padding: 0 9px; }
+  /* The header is one row, and on a phone it has more claimants than width:
+     brand, session pill, status, the knowledge launcher, and a Stop button
+     that only exists while the agent is working -- which is exactly when the
+     row is most crowded. Everything that can be said without words drops its
+     words, in order of how little is lost.
+
+     Words first: the wordmark (the mark still identifies the app) and the
+     status text (the coloured dot already carries the same state, and while
+     the agent is busy the Stop button says so twice over). Stop keeps its icon
+     and loses its label. The pill takes what is left rather than a fixed
+     share, so it grows when Stop is absent and yields when it appears. */
+  .brand-word, .badge-word, .stop-btn .btn-word { display: none; }
+  .stop-btn { width: 40px; padding: 0; justify-content: center; }
+  .badge.status { min-width: 0; padding: 0 8px; }
+  .session-pill { flex: 0 1 auto; min-width: 0; max-width: none; }
+  .session-pill select { max-width: 100%; min-width: 0; }
+  /* Nothing in the header may push a sibling off the row. The pill is the one
+     thing allowed to give, and inside it only the session name does -- squeeze
+     the new-session button and it stops being tappable. */
+  .top > * { flex-shrink: 0; }
+  .top .session-pill { flex-shrink: 1; }
+  .session-pill > .btn { flex: 0 0 auto; }
 
   /* ── body becomes a relative container; panels stack absolutely ── */
   .body {
