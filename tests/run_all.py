@@ -12,6 +12,7 @@ SUITES = [
     ("browser snapshot", "test_browser_snapshot.py"),
     ("pick + guide", "test_pick.py"),
     ("memory + distillation", "test_memory.py"),
+    ("entrypoint env parsing", "test_entrypoint_env.sh"),
     ("settings + provider choice", "test_settings.py"),
     ("scheduled tasks", "test_schedule.py"),
     ("narration", "test_narration.py"),
@@ -27,7 +28,8 @@ def main() -> int:
         if not path.exists():
             continue
         print(f"\n\033[1m{label}\033[0m  ({filename})")
-        result = subprocess.run([sys.executable, str(path)], timeout=180)
+        runner = ["sh"] if path.suffix == ".sh" else [sys.executable]
+        result = subprocess.run([*runner, str(path)], timeout=180)
         if result.returncode != 0:
             failures.append(label)
     print()

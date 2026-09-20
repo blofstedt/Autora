@@ -13,12 +13,43 @@ set -e
 #
 # Parsed rather than sourced: this only ever needs to set variables, and
 # sourcing would run whatever else the file happened to contain.
+#
+# Every line is validated before it is used, and a line that fails is skipped
+# rather than fatal. This script runs under `set -e` as PID 1: an `export` that
+# rejects its argument takes the whole container down before Python ever starts,
+# and the symptom is the app refusing connections with nothing in its own logs.
+# A file a person is invited to edit must never be able to do that -- and the
+# obvious things to write by hand (`export KEY=...`, an indented line) are
+# exactly what a naive parser chokes on.
 if [ -f /data/autora.env ]; then
     while IFS= read -r line || [ -n "$line" ]; do
+        # Leading whitespace and an optional `export `, in any combination and
+        # any order -- people write both, and neither is an error.
+        while :; do
+            case "$line" in
+                " "*|"	"*) line=${line#?} ;;
+                "export "*|"export	"*) line=${line#export} ;;
+                *) break ;;
+            esac
+        done
+
         case "$line" in
             ''|'#'*) continue ;;
-            *=*) export "$line" ;;
+            *=*) ;;
+            *) continue ;;
         esac
+
+        name=${line%%=*}
+        case "$name" in
+            ''|[!A-Za-z_]*|*[!A-Za-z0-9_]*)
+                echo "warning: /data/autora.env: skipping unusable name '$name'" >&2
+                continue
+                ;;
+        esac
+
+        # Belt and braces: the name is already known good, and even so this
+        # must not be the thing that stops the app from starting.
+        export "$name=${line#*=}" || true
     done < /data/autora.env
 fi
 
