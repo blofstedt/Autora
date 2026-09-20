@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.5.2"
+version: "0.5.3"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -57,11 +57,11 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Steps and reasoning are one disclosure now, under the agent rather than
-  the prompt. The record being read or written sits at the centre of the
-  memory web. Every stage tab keeps its name at every width, Stop moved
-  from the header down beside them, and following is a single control in
-  the transport that you can tap to stop and start.
+  Records about the same thing are connected now. Links were only ever
+  written when the agent asked for one, so related memories sat side by
+  side unconnected and the knowledge web was a scatter of dots; they are
+  inferred on write, and inferred once for memories written before this.
+  Also drops the record counter from the knowledge view.
 dependencies: []
 path: ""
 defaultUsername: ""

@@ -153,6 +153,7 @@ class MemoryStore:
         self.db.row_factory = sqlite3.Row
         self.db.executescript(_SCHEMA)
         self.db.commit()
+        self._backfill_links()
 
     # -- writing ---------------------------------------------------------
 
@@ -218,7 +219,68 @@ class MemoryStore:
                 (record.id, now, supersedes))
             self.link(supersedes, record.id, "superseded-by")
         self.db.commit()
+        # A record only becomes part of a web once something connects it.
+        self.relate(record)
         return record
+
+    def _backfill_links(self) -> None:
+        """Infer links once, for a store that predates inferring them.
+
+        Only when there are records and no links at all: that pairing means
+        nobody has linked anything, which before this existed was every store.
+        Guarded so it cannot run repeatedly, and skipped for large stores where
+        a startup pass would be felt.
+        """
+        try:
+            records = self.db.execute(
+                "SELECT COUNT(*) FROM records WHERE status != 'retired'").fetchone()[0]
+            links = self.db.execute("SELECT COUNT(*) FROM links").fetchone()[0]
+        except sqlite3.Error:
+            return
+        if records == 0 or links > 0 or records > 300:
+            return
+        self.relate_all()
+
+    def relate(self, record: Record, limit: int = 3) -> int:
+        """Connect a record to the ones it is plainly about.
+
+        Links were only ever created by an explicit request from the model or
+        by a supersede, so two facts about the same subject sat side by side
+        with nothing between them and the web was a scatter of unconnected
+        dots. The relationship was real; nothing was writing it down.
+
+        Relatedness is inferred from the same index that answers recall -- a
+        shared significant word, within one scope -- so it is wrong in the same
+        ways recall is wrong rather than in some new way of its own. A shared
+        word is required rather than trusting the ranking alone: BM25 will
+        always return something, and a graph that links everything to
+        everything says as little as one that links nothing.
+        """
+        own = set(_terms(f"{record.title} {' '.join(record.tags)}"))
+        if not own:
+            return 0
+        made = 0
+        for hit in self.search(record.title, scopes=[record.scope], limit=limit + 5):
+            if made >= limit:
+                break
+            if hit.id == record.id:
+                continue
+            if own & set(_terms(f"{hit.title} {' '.join(hit.tags)}")):
+                self.link(record.id, hit.id, "related")
+                made += 1
+        return made
+
+    def relate_all(self, cap: int = 300) -> int:
+        """Infer links across the whole store.
+
+        For records written before anything inferred links. Idempotent -- the
+        links table ignores duplicates -- so running it twice costs time and
+        changes nothing.
+        """
+        made = 0
+        for record in self.all()[:cap]:
+            made += self.relate(record)
+        return made
 
     def link(self, src: str, dst: str, rel: str = "related") -> None:
         if src == dst:

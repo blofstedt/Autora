@@ -98,9 +98,6 @@ export function KnowledgeWeb({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         <div className="spacer" />
-        <span className="panel-title">
-          {filtered ? `${filtered.records.length} of ${data?.records.length ?? 0}` : ""}
-        </span>
         <button className="btn icon ghost" onClick={onClose} aria-label="Close knowledge web">
           <IconX size={15} />
         </button>

@@ -12,6 +12,7 @@ SUITES = [
     ("browser snapshot", "test_browser_snapshot.py"),
     ("pick + guide", "test_pick.py"),
     ("memory + distillation", "test_memory.py"),
+    ("inferred links", "test_relate.py"),
     ("entrypoint env parsing", "test_entrypoint_env.sh"),
     ("entrypoint arguments", "test_entrypoint_args.sh"),
     ("settings + provider choice", "test_settings.py"),
