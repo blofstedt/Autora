@@ -5,8 +5,10 @@ import { HIDDEN_KINDS } from "./lib/describe";
 import { usePlayback } from "./lib/playback";
 import { chime, paintChrome, type Chrome } from "./lib/chrome";
 import type { AutoraEvent } from "./lib/types";
-import { Timeline } from "./components/Timeline";
-import { Transcript } from "./components/Transcript";
+import { Thread } from "./components/Thread";
+import { MemoryRibbon } from "./components/MemoryRibbon";
+import { StageDock, type Stage } from "./components/StageDock";
+import { Sessions, type SessionRow } from "./components/Sessions";
 import { TerminalView } from "./components/TerminalView";
 import { BrowserView } from "./components/BrowserView";
 import { DesktopView } from "./components/DesktopView";
@@ -17,18 +19,8 @@ import { KnowledgeWeb } from "./components/KnowledgeWeb";
 import { Schedule } from "./components/Schedule";
 import { Settings } from "./components/Settings";
 import {
-  IconArrow, IconBrain, IconChevron, IconClock, IconFile, IconGear, IconGlobe,
-  IconMessage, IconMonitor, IconPlus, IconRepeat, IconSpark, IconStop, IconTerminal,
+  IconArrow, IconChevron, IconGear, IconMessage, IconRepeat, IconSpark, IconStop,
 } from "./components/Icons";
-
-type Stage = "terminal" | "browser" | "files" | "desktop";
-
-const STAGES: { id: Stage; label: string; icon: typeof IconTerminal }[] = [
-  { id: "terminal", label: "Terminal", icon: IconTerminal },
-  { id: "browser", label: "Browser", icon: IconGlobe },
-  { id: "desktop", label: "Desktop", icon: IconMonitor },
-  { id: "files", label: "Files", icon: IconFile },
-];
 
 /** How often to re-read the session list, so sessions started elsewhere (or
     from another tab) show up without a reload. */
@@ -38,19 +30,20 @@ export function App() {
   const [sessionId, setSessionId] = useState<string | null>(
     () => new URLSearchParams(location.search).get("session"),
   );
-  const [sessions, setSessions] = useState<any[]>([]);
+  const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [events, setEvents] = useState<AutoraEvent[]>([]);
   const [status, setStatus] = useState<StreamStatus>({ state: "connecting" });
   const [cursor, setCursor] = useState(-1);
   const [following, setFollowing] = useState(true);
   const [stage, setStage] = useState<Stage>("terminal");
   const [stagePinned, setStagePinned] = useState(false);
-  const [railOpen, setRailOpen] = useState(true);
+  const [dockOpen, setDockOpen] = useState(true);
   const [draft, setDraft] = useState("");
-  const [mobileTab, setMobileTab] = useState<"stage" | "chat" | "timeline">("stage");
+  const [mobileTab, setMobileTab] = useState<"chat" | "tasks">("chat");
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sessionsOpen, setSessionsOpen] = useState(false);
   const streamRef = useRef<SessionStream | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
 
@@ -102,11 +95,9 @@ export function App() {
   }, [events.length, following]);
 
   const view = useMemo(() => derive(events, cursor), [events, cursor]);
+  const startedAt = events[0]?.ts ?? 0;
 
   // ------------------------------------------------------------- playback --
-  // Replay moves the cursor but does not pin it: reaching the head hands
-  // control back to following, so a recording that catches up with a live
-  // session simply becomes a live session again.
   const playbackSeek = useCallback((index: number) => {
     setFollowing(false);
     setCursor(index);
@@ -128,14 +119,21 @@ export function App() {
     [playback],
   );
 
+  /** A step row knows its sequence number, not its index. */
+  const seekToSeq = useCallback(
+    (targetSeq: number) => {
+      const index = events.findIndex((e) => e.seq === targetSeq);
+      if (index >= 0) seek(index);
+    },
+    [events, seek],
+  );
+
   const jumpToNow = useCallback(() => {
     playback.pause();
     setFollowing(true);
     setCursor(events.length - 1);
   }, [playback, events.length]);
 
-  /** Step to the next/previous event the timeline actually shows, skipping the
-      streaming chatter -- otherwise ⇧→ walks through 400 PTY chunks. */
   const step = useCallback(
     (direction: 1 | -1, notable: boolean) => {
       playback.pause();
@@ -153,19 +151,20 @@ export function App() {
     [playback, events],
   );
 
-  // On mobile, jump to Chat when an approval appears so it's never missed.
   const pending = useMemo(
     () => view.approvals.filter((a) => !a.settled).length,
     [view.approvals],
   );
+  // An approval is the one thing that must not be missed behind an overlay.
   useEffect(() => {
-    if (pending > 0) setMobileTab("chat");
+    if (pending > 0) {
+      setMobileTab("chat");
+      setScheduleOpen(false);
+    }
   }, [pending]);
 
   // Follow the action by default; a deliberate pin must stick, or the UI fights
-  // whoever is trying to look at something. Unpinned it tracks the cursor
-  // rather than the head, so replaying a session switches panes the same way
-  // watching it live did.
+  // whoever is trying to look at something.
   useEffect(() => {
     if (stagePinned) return;
     setStage(inferStage(events, cursor));
@@ -192,6 +191,7 @@ export function App() {
     const { id } = await res.json();
     history.replaceState(null, "", `?session=${id}`);
     setSessionId(id);
+    setSessionsOpen(false);
   }, []);
 
   const live = status.state === "live";
@@ -209,8 +209,6 @@ export function App() {
     paintChrome(chromeState, view.title);
   }, [chromeState, view.title]);
 
-  // A chime only when the tab is in the background -- on screen, the amber card
-  // is already the loudest thing in the window.
   const hadPending = useRef(0);
   useEffect(() => {
     if (pending > hadPending.current && document.hidden) chime();
@@ -261,10 +259,15 @@ export function App() {
           e.preventDefault();
           setKnowledgeOpen((open) => !open);
           break;
+        case "s":
+          e.preventDefault();
+          setDockOpen((open) => !open);
+          break;
         case "Escape":
           setKnowledgeOpen(false);
           setScheduleOpen(false);
           setSettingsOpen(false);
+          setSessionsOpen(false);
           break;
       }
     };
@@ -282,48 +285,34 @@ export function App() {
           ? { cls: "", text: "connecting" }
           : { cls: "is-closed", text: "offline" };
 
+  const currentName =
+    sessions.find((s) => s.id === sessionId)?.title?.trim() ||
+    view.title ||
+    "Untitled session";
+
+  const closeOverlays = () => {
+    setScheduleOpen(false);
+    setKnowledgeOpen(false);
+    setSettingsOpen(false);
+  };
+
   return (
     <div className="app">
       <header className="top">
         <div className="brand">
           <span className="brand-mark"><IconSpark size={13} /></span>
-          {/* Wrapped so the wordmark can be dropped on a narrow screen, where
-              the mark alone still says whose app this is. */}
           <span className="brand-word">Autora</span>
         </div>
 
         <button
-          className="btn icon ghost rail-toggle"
-          onClick={() => setRailOpen(!railOpen)}
-          title={railOpen ? "Hide timeline" : "Show timeline"}
-          aria-label={railOpen ? "Hide timeline" : "Show timeline"}
-          aria-expanded={railOpen}
-          style={{ transform: railOpen ? "rotate(180deg)" : undefined }}
+          className="session-btn"
+          onClick={() => setSessionsOpen(true)}
+          title="Switch session"
         >
-          <IconChevron size={14} />
+          <span className={`ses-dot ${live ? "is-live" : ""}`} />
+          <span className="session-name">{currentName}</span>
+          <IconChevron size={12} />
         </button>
-
-        <div className="session-pill">
-          <select
-            value={sessionId ?? ""}
-            aria-label="Session"
-            onChange={(e) => {
-              history.replaceState(null, "", `?session=${e.target.value}`);
-              setSessionId(e.target.value);
-            }}
-          >
-            {sessions.map((s) => (
-              <option key={s.id} value={s.id}>
-                {/* Title first: the id is a timestamp and a nonce, which is how
-                    you find a session again, not how you recognise one. */}
-                {s.live ? "● " : "○ "}{s.title ? `${s.title} · ${s.id}` : s.id}
-              </option>
-            ))}
-          </select>
-          <button className="btn icon ghost" onClick={newSession} title="New session" aria-label="New session">
-            <IconPlus size={14} />
-          </button>
-        </div>
 
         <div className="spacer" />
 
@@ -336,22 +325,6 @@ export function App() {
           <span className="dot" />
           <span className="badge-word">{badge.text}</span>
         </span>
-        <button
-          className="btn icon ghost sched-launch"
-          onClick={() => setScheduleOpen(true)}
-          title="Scheduled tasks"
-          aria-label="Open scheduled tasks"
-        >
-          <IconRepeat size={15} />
-        </button>
-        <button
-          className="btn icon ghost"
-          onClick={() => setKnowledgeOpen(true)}
-          title="What the agent knows"
-          aria-label="Open knowledge web"
-        >
-          <IconBrain size={15} />
-        </button>
         <button
           className="btn icon ghost"
           onClick={() => setSettingsOpen(true)}
@@ -369,144 +342,115 @@ export function App() {
         )}
       </header>
 
-      <div className={`body ${railOpen ? "" : "rail-closed"}`} data-tab={mobileTab}>
-        <aside className="rail">
-          <div className="panel-head">
-            <span className="panel-title">Timeline</span>
-            <span className="panel-title">{events.length}</span>
-          </div>
-          <Timeline events={events} cursor={cursor} onSeek={seek} />
-        </aside>
+      {/* Always on, above the conversation: what the agent knows, and what is
+          happening to it as it happens. */}
+      <MemoryRibbon memories={view.memories} onOpen={() => setKnowledgeOpen(true)} />
 
-        <main className="center">
-          <div className="stage-bar">
-            <div className="segmented" role="tablist" aria-label="Stage">
-              {STAGES.map(({ id, label, icon: Icon }) => (
-                <button
-                  key={id}
-                  role="tab"
-                  id={`tab-${id}`}
-                  aria-selected={stage === id}
-                  aria-controls={`pane-${id}`}
-                  className={`seg ${stage === id ? "on" : ""}`}
-                  onClick={() => { setStage(id); setStagePinned(true); }}
-                >
-                  <Icon size={14} />
-                  {label}
-                  {id === "files" && view.files.length > 0 && (
-                    <em className="count">{view.files.length}</em>
-                  )}
-                  {id === "desktop" && view.hasDesktop && (
-                    <em className="count">●</em>
-                  )}
-                </button>
-              ))}
-            </div>
-            <div className="spacer" />
-            {stagePinned && (
-              <button className="btn ghost" onClick={() => setStagePinned(false)}>
-                Follow agent
-              </button>
-            )}
-          </div>
+      <main className="page">
+        <Thread
+          buckets={view.buckets}
+          busy={view.busy && atHead}
+          startedAt={startedAt}
+          onSeek={seekToSeq}
+        />
 
-          {/* Every pane stays mounted. xterm replays its whole buffer on
-              remount, and the others keep their scroll position -- and panes
-              that exist can crossfade, where panes that unmount can only snap. */}
-          <div className="stage">
-            {STAGES.map(({ id }) => (
-              <div
-                key={id}
-                id={`pane-${id}`}
-                role="tabpanel"
-                aria-labelledby={`tab-${id}`}
-                className={`pane ${stage === id ? "on" : ""}`}
-              >
-                {id === "terminal" && <TerminalView data={view.terminal} />}
-                {id === "browser" && (
-                  <BrowserView
-                    sessionId={sessionId ?? ""}
-                    frame={view.frame}
-                    url={view.url}
-                    lastAction={view.lastAction}
-                  />
-                )}
-                {id === "desktop" && (
-                  <DesktopView sessionId={sessionId ?? ""} desktopFrame={view.desktopFrame} />
-                )}
-                {id === "files" && <DiffView files={view.files} />}
-              </div>
-            ))}
-          </div>
+        <Approvals
+          approvals={view.approvals}
+          readOnly={readOnly}
+          onDecide={(id, approved) => streamRef.current?.approve(id, approved)}
+        />
 
-          <Scrubber
-            events={events}
-            cursor={cursor}
-            playback={playback}
-            following={following}
-            atHead={atHead}
-            onSeek={seek}
-            onJumpToNow={jumpToNow}
-          />
-        </main>
-
-        <aside className="side">
-          <div className="panel-head">
-            <span className="panel-title">Conversation</span>
-          </div>
-          <Transcript turns={view.transcript} busy={view.busy && atHead} />
-          <Approvals
-            approvals={view.approvals}
-            readOnly={readOnly}
-            onDecide={(id, approved) => streamRef.current?.approve(id, approved)}
-          />
-          <div className="composer">
-            <div className="composer-box">
-              <textarea
-                ref={composerRef}
-                value={draft}
-                rows={2}
-                aria-label="Task"
-                placeholder={live ? "Describe a task…" : "This session is a recording."}
-                disabled={readOnly}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    void send();
-                  }
-                }}
-              />
-              <div className="composer-foot">
-                <span className="hint"><kbd>↵</kbd> send · <kbd>⇧↵</kbd> newline</span>
-                <button className="btn primary" disabled={readOnly || !draft.trim()} onClick={send}>
-                  {view.busy ? "Interrupt & send" : "Send"} <IconArrow size={13} />
-                </button>
-              </div>
-            </div>
-          </div>
-        </aside>
-      </div>
-
-      {/* Bottom tab bar — hidden on desktop via CSS, shown on mobile.
-          The panel tabs also dismiss an open overlay: the bar stays visible on
-          top of it, so tapping one has to mean "take me there". */}
-      <nav className="mobile-nav" role="tablist" aria-label="Panel">
-        <button
-          role="tab"
-          aria-selected={mobileTab === "stage" && !scheduleOpen}
-          className={`mob-tab ${mobileTab === "stage" && !scheduleOpen ? "on" : ""}`}
-          onClick={() => { setScheduleOpen(false); setKnowledgeOpen(false); setSettingsOpen(false); setMobileTab("stage"); }}
+        <StageDock
+          stage={stage}
+          open={dockOpen}
+          pinned={stagePinned}
+          counts={{ files: view.files.length }}
+          hasDesktop={view.hasDesktop}
+          onStage={(id) => { setStage(id); setStagePinned(true); }}
+          onToggle={() => setDockOpen((open) => !open)}
+          onUnpin={() => setStagePinned(false)}
+          scrubber={
+            <Scrubber
+              events={events}
+              cursor={cursor}
+              playback={playback}
+              following={following}
+              atHead={atHead}
+              onSeek={seek}
+              onJumpToNow={jumpToNow}
+            />
+          }
         >
-          <IconTerminal size={18} />
-          Stage
-        </button>
+          {/* Every pane stays mounted: xterm replays its whole buffer on
+              remount, and panes that exist can crossfade where panes that
+              unmount can only snap. */}
+          {[
+            { id: "terminal" as const, node: <TerminalView data={view.terminal} /> },
+            {
+              id: "browser" as const,
+              node: (
+                <BrowserView
+                  sessionId={sessionId ?? ""}
+                  frame={view.frame}
+                  url={view.url}
+                  lastAction={view.lastAction}
+                />
+              ),
+            },
+            {
+              id: "desktop" as const,
+              node: <DesktopView sessionId={sessionId ?? ""} desktopFrame={view.desktopFrame} />,
+            },
+            { id: "files" as const, node: <DiffView files={view.files} /> },
+          ].map(({ id, node }) => (
+            <div
+              key={id}
+              id={`pane-${id}`}
+              role="tabpanel"
+              aria-labelledby={`tab-${id}`}
+              className={`pane ${stage === id ? "on" : ""}`}
+            >
+              {node}
+            </div>
+          ))}
+        </StageDock>
+
+        <div className="composer">
+          <div className="composer-box">
+            <textarea
+              ref={composerRef}
+              value={draft}
+              rows={2}
+              aria-label="Task"
+              placeholder={live ? "Describe a task…" : "This session is a recording."}
+              disabled={readOnly}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void send();
+                }
+              }}
+            />
+            <div className="composer-foot">
+              <span className="hint"><kbd>↵</kbd> send · <kbd>⇧↵</kbd> newline</span>
+              <button className="btn primary" disabled={readOnly || !draft.trim()} onClick={send}>
+                {view.busy ? "Interrupt & send" : "Send"} <IconArrow size={13} />
+              </button>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      {/* Two tabs: the conversation, and the work scheduled against it. The
+          stage and the timeline used to be here and are now in the page. */}
+      <nav className="mobile-nav" role="tablist" aria-label="Panel">
         <button
           role="tab"
           aria-selected={mobileTab === "chat" && !scheduleOpen}
           className={`mob-tab ${mobileTab === "chat" && !scheduleOpen ? "on" : ""}${
             pending > 0 ? " has-alert" : ""}`}
-          onClick={() => { setScheduleOpen(false); setKnowledgeOpen(false); setSettingsOpen(false); setMobileTab("chat"); }}
+          onClick={() => { closeOverlays(); setMobileTab("chat"); }}
         >
           <span className="mob-alert" />
           <IconMessage size={18} />
@@ -514,32 +458,33 @@ export function App() {
         </button>
         <button
           role="tab"
-          aria-selected={mobileTab === "timeline" && !scheduleOpen}
-          className={`mob-tab ${mobileTab === "timeline" && !scheduleOpen ? "on" : ""}`}
-          onClick={() => { setScheduleOpen(false); setKnowledgeOpen(false); setSettingsOpen(false); setMobileTab("timeline"); }}
-        >
-          <IconClock size={18} />
-          Timeline
-        </button>
-        {/* Tasks is a launcher rather than a fourth panel: the three panels are
-            the live session, and a schedule is about sessions that do not exist
-            yet. It opens the same overlay the header button does. */}
-        <button
-          role="tab"
           aria-selected={scheduleOpen}
           className={`mob-tab ${scheduleOpen ? "on" : ""}`}
-          onClick={() => setScheduleOpen(true)}
+          onClick={() => { setMobileTab("tasks"); setScheduleOpen(true); }}
         >
           <IconRepeat size={18} />
           Tasks
         </button>
       </nav>
 
+      {sessionsOpen && (
+        <Sessions
+          sessions={sessions}
+          current={sessionId}
+          onPick={(id) => {
+            history.replaceState(null, "", `?session=${id}`);
+            setSessionId(id);
+            setSessionsOpen(false);
+          }}
+          onNew={newSession}
+          onClose={() => setSessionsOpen(false)}
+        />
+      )}
       {settingsOpen && <Settings onClose={() => setSettingsOpen(false)} />}
       {knowledgeOpen && <KnowledgeWeb onClose={() => setKnowledgeOpen(false)} />}
       {scheduleOpen && (
         <Schedule
-          onClose={() => setScheduleOpen(false)}
+          onClose={() => { setScheduleOpen(false); setMobileTab("chat"); }}
           onOpenSession={(id) => {
             history.replaceState(null, "", `?session=${id}`);
             setSessionId(id);

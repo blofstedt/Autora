@@ -137,6 +137,32 @@ class Session:
         self._write_meta()
         self.store.close()
 
+    def name_from(self, text: str) -> None:
+        """Take a name from the first thing asked of this session.
+
+        A session id is a timestamp and a nonce: perfect for finding a session
+        again, useless for recognising one in a list. The opening request is
+        what the session is actually about, so the first one names it.
+
+        Only when nothing better exists. A title passed in deliberately -- by a
+        scheduled task, or by whoever opened the session -- outranks a guess.
+        """
+        if self.title.strip() or not text.strip():
+            return
+
+        # First sentence or line, whichever comes first, clipped to something
+        # that fits a list row without a tooltip.
+        head = text.strip().splitlines()[0].strip()
+        for stop in (". ", "? ", "! "):
+            if stop in head:
+                head = head.split(stop)[0] + stop.strip()
+                break
+        if len(head) > 60:
+            head = head[:57].rstrip(" ,;:-") + "…"
+
+        self.title = head
+        self._write_meta()
+
     def _write_meta(self) -> None:
         """A sidecar so the session list can be built without parsing logs."""
         self._meta_path.write_text(json.dumps({

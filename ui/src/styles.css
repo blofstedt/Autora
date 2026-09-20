@@ -50,8 +50,6 @@
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
-  --rail: 292px;
-  --side: 404px;
 }
 
 * { box-sizing: border-box; }
@@ -136,20 +134,65 @@ body::before {
   box-shadow: 0 2px 10px rgba(110, 91, 255, 0.45);
 }
 
-.session-pill {
-  display: flex; align-items: center; gap: 8px;
-  background: var(--s2); border: 1px solid var(--border);
-  border-radius: 99px; padding: 5px 6px 5px 13px; max-width: 420px;
+/* A button that opens our own list, not an OS menu in an OS font. */
+.session-btn {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  height: 32px; padding: 0 11px; border-radius: 99px;
+  background: var(--s2); border: 1px solid var(--border); color: var(--text);
+  font-family: inherit; font-size: 12.5px; cursor: pointer;
   transition: border-color 0.18s var(--ease), background 0.18s var(--ease);
 }
-.session-pill:hover { border-color: var(--border-strong); background: var(--s3); }
-.session-pill select {
-  appearance: none; background: none; border: 0; color: var(--text);
-  font-family: var(--mono); font-size: 11.5px; padding-right: 4px;
-  max-width: 330px; cursor: pointer;
+.session-btn:hover { border-color: var(--border-strong); background: var(--s3); }
+.session-name {
+  min-width: 0; max-width: 260px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
 }
-.session-pill select:focus { outline: none; }
-.session-pill option { background: var(--s2); color: var(--text); }
+.session-btn svg { flex: 0 0 auto; color: var(--text-3); transform: rotate(90deg); }
+
+.ses-dot {
+  flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--text-3);
+}
+.ses-dot.is-live { background: var(--live); }
+
+/* ---------------------------------------------------------------- modals -- */
+.scrim {
+  position: fixed; inset: 0; z-index: 60;
+  display: grid; place-items: center; padding: 16px;
+  background: rgba(4, 5, 8, 0.66); backdrop-filter: blur(3px);
+  animation: fade 0.15s var(--ease) both;
+}
+.modal {
+  width: 100%; max-width: 460px; max-height: min(70vh, 560px);
+  display: flex; flex-direction: column;
+  background: var(--s1); border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
+  animation: rise 0.2s var(--ease) both; overflow: hidden;
+}
+.modal-top {
+  display: flex; align-items: center; gap: 8px; flex: 0 0 auto;
+  padding: 12px 12px 12px 16px; border-bottom: 1px solid var(--border);
+}
+.modal-top b { font-size: 13.5px; font-weight: 650; }
+.modal-body { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; }
+
+.ses-row {
+  display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
+  padding: 10px 11px; border-radius: var(--r-sm); border: 1px solid transparent;
+  background: none; color: var(--text); font-family: inherit; cursor: pointer;
+  transition: background 0.14s var(--ease);
+}
+.ses-row:hover { background: var(--s2); }
+.ses-row.on { background: var(--accent-soft); border-color: var(--accent-line); }
+.ses-main { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.ses-main b {
+  font-size: 13px; font-weight: 550; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.ses-main em {
+  font-style: normal; font-size: 11px; color: var(--text-3);
+}
+.ses-row > svg { flex: 0 0 auto; color: var(--accent); }
 
 .spacer { flex: 1; }
 
@@ -179,96 +222,167 @@ body::before {
 }
 
 /* ---------------------------------------------------------------- layout -- */
-.body {
-  display: grid;
-  grid-template-columns: var(--rail) minmax(0, 1fr) var(--side);
+/* One column everywhere. The three-pane split put the conversation, the work
+   and the history side by side and made you choose one to look at; the thread
+   now carries its own steps and the stage is docked beneath it, so there is a
+   single thing to read from top to bottom on any width. */
+.page {
   flex: 1; min-height: 0;
-  transition: grid-template-columns 0.32s var(--ease);
+  display: flex; flex-direction: column;
+  width: 100%; max-width: 940px; margin: 0 auto;
+  border-left: 1px solid var(--border); border-right: 1px solid var(--border);
+  background: var(--s1);
 }
-.body.rail-closed { --rail: 0px; }
+@media (max-width: 980px) { .page { border-left: 0; border-right: 0; } }
 
-.rail, .side { min-height: 0; display: flex; flex-direction: column; background: var(--s1); }
-.rail { border-right: 1px solid var(--border); overflow: hidden; }
-.side { border-left: 1px solid var(--border); }
-.center { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 14px; gap: 12px; }
-
-.panel-head {
-  display: flex; align-items: center; justify-content: space-between;
-  height: 42px; padding: 0 14px; flex: 0 0 auto;
-  border-bottom: 1px solid var(--border);
+/* ---------------------------------------------------------------- memory -- */
+.ribbon {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 10px;
+  padding: 7px 12px; min-height: 44px;
+  width: 100%; max-width: 940px; margin: 0 auto;
+  border-bottom: 1px solid var(--border); background: var(--bg);
 }
-.panel-title {
-  font-size: 10.5px; font-weight: 650; letter-spacing: 0.09em;
+.ribbon-tag {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px;
+  height: 26px; padding: 0 10px; border-radius: 99px;
+  background: var(--s2); border: 1px solid var(--border); color: var(--text-3);
+  font-family: inherit; font-size: 10.5px; font-weight: 650;
+  letter-spacing: 0.07em; text-transform: uppercase; cursor: pointer;
+  transition: color 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+.ribbon-tag:hover { color: var(--text); border-color: var(--border-strong); }
+.ribbon-track {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px;
+  overflow-x: auto; scrollbar-width: none;
+  /* The track scrolls to the newest chip, so an older one is usually cut off
+     at the left edge. Faded, that reads as "there is more this way"; hard
+     clipped it reads as a broken half-word. */
+  mask-image: linear-gradient(90deg, transparent 0, #000 18px, #000 calc(100% - 10px),
+                              transparent 100%);
+}
+.ribbon-track::-webkit-scrollbar { display: none; }
+.ribbon-empty { font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
+
+.mem {
+  flex: 0 0 auto; max-width: 210px; padding: 4px 11px; border-radius: 99px;
+  background: var(--s2); border: 1px solid var(--border);
+  color: var(--text-2); font-size: 11.5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  transition: color 0.3s var(--ease), border-color 0.3s var(--ease),
+              background 0.3s var(--ease), box-shadow 0.3s var(--ease);
+}
+/* Written: a soft green bloom that settles. Read: a tracer runs through it.
+   Two different events, so two different motions -- a single highlight for
+   both would say "something happened" and nothing more. */
+.mem.is-new {
+  color: var(--live); border-color: rgba(52, 211, 153, 0.5);
+  background: rgba(52, 211, 153, 0.12);
+  animation: mem-bloom 2.6s var(--ease) both;
+}
+.mem.is-read {
+  color: var(--live); border-color: rgba(52, 211, 153, 0.35);
+  position: relative; overflow: hidden;
+}
+.mem.is-read::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(100deg, transparent 0%, rgba(52, 211, 153, 0.42) 50%,
+                              transparent 100%);
+  animation: mem-trace 1.15s var(--ease) 2;
+}
+@keyframes mem-bloom {
+  0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); transform: scale(0.97); }
+  18% { box-shadow: 0 0 16px 3px rgba(52, 211, 153, 0.45); transform: scale(1); }
+  100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+}
+@keyframes mem-trace {
+  from { transform: translateX(-120%); }
+  to { transform: translateX(120%); }
+}
+
+/* ----------------------------------------------------------------- steps -- */
+/* The timeline lives inside the turn that produced it. Rows are dense and
+   monospaced so a run of them scans as a log, and each seeks the scrubber to
+   that moment, which is what the rail used to be for. */
+.steps {
+  margin: 8px 0 0 38px; border-left: 1px solid var(--border); padding-left: 11px;
+}
+.steps-toggle {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 0;
+  background: none; border: 0; color: var(--text-3); cursor: pointer;
+  font-family: inherit; font-size: 11.5px; font-weight: 550;
+  transition: color 0.15s var(--ease);
+}
+.steps-toggle:hover { color: var(--text-2); }
+.steps-toggle svg { transition: transform 0.2s var(--ease); }
+.steps.on .steps-toggle svg { transform: rotate(90deg); }
+/* A turn still running says so without a word. */
+.steps-live {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
+  animation: halo 1.1s ease-out infinite;
+}
+.steps-body {
+  display: flex; flex-direction: column; gap: 1px; padding: 4px 0 2px;
+  animation: fade 0.16s var(--ease) both;
+}
+
+.step {
+  display: grid; grid-template-columns: 64px 1fr auto; gap: 9px;
+  align-items: baseline; width: 100%; text-align: left;
+  padding: 5px 7px; border: 0; border-radius: var(--r-xs);
+  background: none; color: var(--text-2); cursor: pointer; font-family: inherit;
+  transition: background 0.14s var(--ease);
+}
+.step:hover { background: var(--s2); }
+.step-label {
+  font-size: 9.5px; font-weight: 650; letter-spacing: 0.07em;
   text-transform: uppercase; color: var(--text-3);
 }
-
-/* -------------------------------------------------------------- timeline -- */
-.timeline { overflow-y: auto; flex: 1; padding: 10px 10px 24px; }
-
-.tl-row {
-  position: relative; display: grid; grid-template-columns: 26px 1fr;
-  gap: 11px; width: 100%; text-align: left; background: none;
-  border: 0; color: var(--text); padding: 7px 9px; border-radius: var(--r-sm);
-  cursor: pointer; font-family: inherit;
-  transition: background 0.14s var(--ease), opacity 0.2s var(--ease);
-  animation: rise 0.28s var(--ease) both;
-}
-.tl-row:hover { background: var(--s2); }
-.tl-row.is-current { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
-.tl-row.is-future { opacity: 0.3; }
-
-/* The connector threads the icons into one vertical line, so the rail reads as
-   a sequence of moments rather than a table of rows. */
-.tl-row::before {
-  content: ""; position: absolute; left: 21.5px; top: 40px; bottom: -4px;
-  width: 1px; background: var(--border);
-}
-.tl-row:last-child::before { display: none; }
-
-.tl-icon {
-  width: 26px; height: 26px; border-radius: 50%;
-  display: grid; place-items: center; z-index: 1;
-  background: var(--s2); border: 1px solid var(--border-strong); color: var(--text-2);
-}
-.tl-row.tone-you .tl-icon { color: var(--accent-2); border-color: rgba(34, 211, 238, 0.35); background: rgba(34, 211, 238, 0.1); }
-.tl-row.tone-bad .tl-icon { color: var(--danger); border-color: rgba(251, 113, 133, 0.35); background: rgba(251, 113, 133, 0.1); }
-.tl-row.tone-warn .tl-icon { color: var(--warn); border-color: rgba(251, 191, 36, 0.35); background: rgba(251, 191, 36, 0.1); }
-.tl-row.tone-good .tl-icon { color: var(--live); border-color: rgba(52, 211, 153, 0.32); background: rgba(52, 211, 153, 0.1); }
-
-/* Grid so the two lines stack and the second can ellipsize. As inline spans
-   they ran together ("TOOLbash") and overflowed the rail instead of truncating,
-   because text-overflow needs a block box with a constrained width. */
-.tl-body { min-width: 0; padding-top: 1px; display: grid; grid-template-rows: auto auto; }
-.tl-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.tl-label {
-  display: block; font-size: 10px; font-weight: 650; letter-spacing: 0.07em;
-  text-transform: uppercase; color: var(--text-3); line-height: 1.4;
-}
-/* Offset from the start of the session. Relative, because what you want from a
-   timeline is the pace and the gaps -- "+2:14" says that where a wall clock
-   makes you do arithmetic. */
-.tl-at {
-  flex: 0 0 auto; font-family: var(--mono); font-size: 9.5px;
-  color: var(--text-3); opacity: 0.7; transition: opacity 0.15s var(--ease);
-}
-.tl-row:hover .tl-at, .tl-row.is-current .tl-at { opacity: 1; }
-.tl-row.tone-you .tl-label { color: var(--accent-2); }
-.tl-row.tone-bad .tl-label { color: var(--danger); }
-.tl-row.tone-warn .tl-label { color: var(--warn); }
-.tl-text {
-  display: block; min-width: 0; font-family: var(--mono); font-size: 11.5px;
-  line-height: 1.45; color: var(--text-2);
+.step-text {
+  min-width: 0; font-family: var(--mono); font-size: 11.5px; line-height: 1.45;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-/* The selected row shows its message in full. One line each keeps the rail
-   scannable, but a truncated error is the one thing you actually needed to
-   read, and selecting a row is already how you say "this one". */
-.tl-row.is-current .tl-text {
-  color: var(--text);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  overflow: visible;
+/* Opened, a step shows all of it -- a truncated error is the one you needed. */
+.step.is-open .step-text { white-space: pre-wrap; overflow-wrap: anywhere; overflow: visible; }
+.step-at {
+  font-family: var(--mono); font-size: 9.5px; color: var(--text-3); opacity: 0.7;
+  font-variant-numeric: tabular-nums;
 }
+.step.tone-bad .step-label, .step.tone-bad .step-text { color: var(--danger); }
+.step.tone-warn .step-label { color: var(--warn); }
+.step.tone-good .step-label { color: var(--live); }
+.step.tone-you .step-label { color: var(--accent-2); }
+
+/* ------------------------------------------------------------------ dock -- */
+/* The stage, docked under the thread. Collapsed it keeps its bar, so the
+   handle never goes missing and the panes stay mounted behind it. */
+.dock {
+  flex: 0 0 auto; display: flex; flex-direction: column;
+  border-top: 1px solid var(--border); background: var(--bg);
+  min-height: 0;
+}
+.dock.on { flex: 1 1 42%; }
+.dock-bar {
+  display: flex; align-items: center; gap: 8px; flex: 0 0 auto;
+  padding: 8px 12px;
+}
+.dock-grip {
+  flex: 0 0 auto; width: 28px; height: 28px; display: grid; place-items: center;
+  border-radius: var(--r-xs); background: none; border: 0;
+  color: var(--text-3); cursor: pointer;
+  transition: color 0.15s var(--ease), background 0.15s var(--ease);
+}
+.dock-grip:hover { color: var(--text); background: var(--s2); }
+.dock-grip svg { transition: transform 0.24s var(--ease); transform: rotate(-90deg); }
+.dock.on .dock-grip svg { transform: rotate(90deg); }
+.dock-body {
+  flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px;
+  padding: 0 12px 12px;
+  /* Collapsing hides the body without unmounting it: xterm replays its whole
+     buffer on remount and the browser pane would drop its last frame. */
+  overflow: hidden;
+}
+.dock:not(.on) .dock-body { display: none; }
+.dock-follow { flex: 0 0 auto; }
 
 /* ----------------------------------------------------------------- stage -- */
 .stage-bar { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
@@ -553,9 +667,12 @@ body::before {
 
 .counter { font-family: var(--mono); font-size: 11px; color: var(--text-3); min-width: 74px; text-align: right; }
 
-/* ------------------------------------------------------------ transcript -- */
-.transcript-wrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.transcript { flex: 1; overflow-y: auto; padding: 16px 16px 6px; display: flex; flex-direction: column; gap: 16px; }
+/* ---------------------------------------------------------------- thread -- */
+.thread-wrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.thread { flex: 1; overflow-y: auto; padding: 16px 16px 6px; display: flex; flex-direction: column; gap: 18px; }
+.turn { display: flex; flex-direction: column; gap: 2px; }
+.turn .msg + .msg { margin-top: 14px; }
+.turn .steps + .msg { margin-top: 14px; }
 
 /* Offered, not forced: the pane holds still once you scroll up to read, and
    this is how you hand the live edge back. */
@@ -714,11 +831,6 @@ body::before {
 }
 
 /* ------------------------------------------------------------ responsive -- */
-@media (max-width: 1280px) { :root { --rail: 248px; --side: 344px; } }
-@media (max-width: 1040px) {
-  .body { grid-template-columns: minmax(0, 1fr) var(--side); }
-  .rail { display: none; }
-}
 
 /* The mobile nav sits in the flex column on small screens and is hidden on
    desktop. It must be in the DOM always so React can toggle .on without
@@ -729,64 +841,42 @@ body::before {
 @media (max-width: 680px) {
   /* ── header ── */
   .top { padding: 0 12px; gap: 8px; }
-  /* hide rail toggle + token count — no room, not needed on one-panel layout */
-  .top .rail-toggle { display: none; }
   .badge.tokens { display: none; }
-  /* The header is one row, and on a phone it has more claimants than width:
-     brand, session pill, status, the knowledge launcher, and a Stop button
-     that only exists while the agent is working -- which is exactly when the
-     row is most crowded. Everything that can be said without words drops its
-     words, in order of how little is lost.
 
-     Words first: the wordmark (the mark still identifies the app) and the
-     status text (the coloured dot already carries the same state, and while
-     the agent is busy the Stop button says so twice over). Stop keeps its icon
-     and loses its label. The pill takes what is left rather than a fixed
-     share, so it grows when Stop is absent and yields when it appears. */
-  /* Scoped to the app header. An overlay's title bar has room for its name and
-     needs it -- a panel identified only by a small glyph is a panel you have
+  /* The header is one row, and on a phone it has more claimants than width:
+     brand, session name, status, settings, and a Stop button that only exists
+     while the agent is working -- which is exactly when the row is most
+     crowded. Everything that can be said without words drops its words, in
+     order of how little is lost: the wordmark (the mark still identifies the
+     app), the status text (the coloured dot carries the same state, and Stop
+     says "working" twice over), and Stop's own label.
+
+     Scoped to the app header -- an overlay's title bar has room for its name
+     and needs it, since a panel identified only by a glyph is a panel you have
      to open to identify. */
   .top .brand-word, .badge-word, .stop-btn .btn-word { display: none; }
   .stop-btn { width: 40px; padding: 0; justify-content: center; }
   .badge.status { min-width: 0; padding: 0 8px; }
-  .session-pill { flex: 0 1 auto; min-width: 0; max-width: none; }
-  .session-pill select { max-width: 100%; min-width: 0; }
-  /* Nothing in the header may push a sibling off the row. The pill is the one
-     thing allowed to give, and inside it only the session name does -- squeeze
-     the new-session button and it stops being tappable. */
+
+  /* Nothing in the header may push a sibling off the row; the session name is
+     the one thing allowed to give. */
   .top > * { flex-shrink: 0; }
-  .top .session-pill { flex-shrink: 1; }
-  .session-pill > .btn { flex: 0 0 auto; }
+  .top .session-btn { flex-shrink: 1; min-width: 0; }
+  .session-name { max-width: none; }
 
-  /* ── body becomes a relative container; panels stack absolutely ── */
-  .body {
-    display: block !important;
-    position: relative;
-    overflow: hidden;
-  }
+  /* ── one column, and the stage gets a smaller share of a short screen ── */
+  .page { border: 0; }
+  .dock.on { flex: 0 1 38%; min-height: 180px; }
+  .ribbon { padding: 6px 10px; }
+  .thread { padding: 12px 12px 4px; }
+  .steps { margin-left: 22px; }
+  /* The label column costs more than it earns at this width. */
+  .step { grid-template-columns: 1fr auto; }
+  .step .step-label { display: none; }
 
-  .rail,
-  .center,
-  .side {
-    position: absolute;
-    inset: 0;
-    display: none;
-    width: 100%;
-    border: none;
-    border-radius: 0;
-    animation: none; /* avoid layout flicker on tab switch */
-  }
-
-  /* one visible panel at a time, driven by data-tab */
-  .body[data-tab="timeline"] .rail   { display: flex; }
-  .body[data-tab="stage"]    .center { display: flex; }
-  .body[data-tab="chat"]     .side   { display: flex; }
-
-  /* rail needs its own scroll on mobile (desktop hides it at 1040px) */
-  .rail { overflow-y: auto; overflow-x: hidden; }
-
-  /* tighter stage padding on a small screen */
-  .center { padding: 8px; gap: 8px; }
+  /* tighter dock padding on a small screen */
+  .dock-bar { padding: 6px 8px; }
+  .dock-body { padding: 0 8px 8px; gap: 8px; }
 
   /* stage tabs slightly more compact */
   .seg { padding: 5px 10px; font-size: 12px; }

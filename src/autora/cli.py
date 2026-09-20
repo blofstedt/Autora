@@ -181,7 +181,9 @@ def cmd_up(args) -> int:
         chrome_path=args.chrome,
         browser_profile_dir=browser_profile,
     )
-    session_id = harness.create_session(title=args.title or f"session in {workdir.name}")
+    # Left unnamed on purpose when no title was asked for: the first message
+    # names it, which reads better in a list than "session in Autora".
+    session_id = harness.create_session(title=args.title or "")
 
     voice_loop = None
     voice_name = getattr(args, "voice", None)

@@ -150,6 +150,8 @@ class Agent:
         self._cancel.clear()
         self._running = True
         self.session.emit(Kind.USER_MESSAGE, {"text": user_text}, actor="user")
+        # An unnamed session takes its name from what was first asked of it.
+        self.session.name_from(user_text)
         self._recall(user_text)
 
         final_text = ""

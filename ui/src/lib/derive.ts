@@ -1,3 +1,4 @@
+import { HIDDEN_KINDS } from "./describe";
 import { Kind, type AutoraEvent } from "./types";
 
 export type SpanState = {
@@ -38,8 +39,38 @@ export type FileChange = {
   seq: number;
 };
 
+/** A memory, as the ribbon shows it: what it says, and what just happened to it. */
+export type MemoryMark = {
+  id: string;
+  title: string;
+  /** The event that last touched it, so the animation can key on something
+      that changes exactly once per occurrence rather than on every render. */
+  seq: number;
+  kind: "written" | "recalled";
+};
+
+/**
+ * One prompt and everything the agent did about it.
+ *
+ * The log is flat, but the conversation is not: a request, some work, an
+ * answer, then the next request. Bucketing restores that shape so each prompt
+ * can carry its own timeline instead of all of them sharing one rail, where
+ * finding which actions belonged to which question meant counting rows.
+ */
+export type Bucket = {
+  seq: number;
+  prompt: string;
+  /** Timeline rows for this prompt only, already filtered of streaming noise. */
+  steps: AutoraEvent[];
+  replies: TranscriptTurn[];
+  /** Still working on this one: the last bucket, while the agent runs. */
+  open: boolean;
+};
+
 export type Derived = {
   transcript: TranscriptTurn[];
+  buckets: Bucket[];
+  memories: MemoryMark[];
   spans: SpanState[];
   spansById: Map<string, SpanState>;
   approvals: Approval[];
@@ -72,6 +103,16 @@ export type Derived = {
 export function derive(events: AutoraEvent[], cursor: number): Derived {
   const spansById = new Map<string, SpanState>();
   const transcript: TranscriptTurn[] = [];
+  const buckets: Bucket[] = [];
+  // Anything before the first prompt -- the session opening, a recall, a
+  // scheduled task's own setup -- belongs to a bucket with no prompt, so it is
+  // still reachable rather than silently dropped.
+  let bucket: Bucket = { seq: -1, prompt: "", steps: [], replies: [], open: false };
+  buckets.push(bucket);
+
+  // Latest state per memory id: a record recalled twice should pulse twice but
+  // appear once, and one written then recalled reads as recalled.
+  const memoryById = new Map<string, MemoryMark>();
   // Text deltas coalesce into the current agent turn, but a tool call ends that
   // turn: the sentences before and after a tool ran are separate thoughts, and
   // running them together produces an unreadable paragraph.
@@ -98,9 +139,30 @@ export function derive(events: AutoraEvent[], cursor: number): Derived {
 
       case Kind.UserMessage:
         transcript.push({ role: "user", text: e.payload.text ?? "", seq: e.seq });
+        bucket = {
+          seq: e.seq, prompt: e.payload.text ?? "",
+          steps: [], replies: [], open: true,
+        };
+        buckets.push(bucket);
         openAgentTurn = null;
         busy = true;
         break;
+
+      case Kind.MemoryRecall:
+      case Kind.MemoryWrite: {
+        const written = e.kind === Kind.MemoryWrite;
+        const ids: string[] = e.payload.ids ?? [];
+        const titles: string[] = e.payload.titles ?? [];
+        ids.forEach((id, index) => {
+          memoryById.set(id, {
+            id,
+            title: titles[index] ?? memoryById.get(id)?.title ?? "a memory",
+            seq: e.seq,
+            kind: written ? "written" : "recalled",
+          });
+        });
+        break;
+      }
 
       case Kind.AgentText: {
         // Deltas coalesce into the current agent turn rather than creating a row
@@ -110,6 +172,7 @@ export function derive(events: AutoraEvent[], cursor: number): Derived {
         } else {
           openAgentTurn = { role: "agent", text: e.payload.text ?? "", seq: e.seq };
           transcript.push(openAgentTurn);
+          bucket.replies.push(openAgentTurn);
         }
         break;
       }
@@ -118,6 +181,7 @@ export function derive(events: AutoraEvent[], cursor: number): Derived {
         if (!openAgentTurn) {
           openAgentTurn = { role: "agent", text: "", seq: e.seq };
           transcript.push(openAgentTurn);
+          bucket.replies.push(openAgentTurn);
         }
         openAgentTurn.thinking = (openAgentTurn.thinking ?? "") + (e.payload.text ?? "");
         break;
@@ -125,6 +189,7 @@ export function derive(events: AutoraEvent[], cursor: number): Derived {
 
       case Kind.AgentDone:
         openAgentTurn = null;
+        bucket.open = false;
         busy = false;
         break;
 
@@ -246,13 +311,30 @@ export function derive(events: AutoraEvent[], cursor: number): Derived {
         break;
 
       case Kind.SessionEnded:
+        bucket.open = false;
         busy = false;
         break;
+    }
+
+    // After the switch, so a prompt's own events land in the bucket it just
+    // opened. The prompt itself is the bucket's heading, not a step in it, and
+    // the session opening says nothing the header does not already say -- left
+    // in, it puts a lone "1 step" above every conversation.
+    if (
+      !HIDDEN_KINDS.has(e.kind) &&
+      e.kind !== Kind.UserMessage &&
+      e.kind !== Kind.SessionStarted
+    ) {
+      bucket.steps.push(e);
     }
   }
 
   return {
     transcript,
+    // The leading bucket exists only to catch events that precede any prompt;
+    // drop it when nothing landed there, which is the usual case.
+    buckets: buckets.filter((b, index) => index > 0 || b.steps.length > 0),
+    memories: [...memoryById.values()].sort((a, b) => a.seq - b.seq),
     spans: [...spansById.values()],
     spansById,
     approvals,

@@ -29,6 +29,8 @@ export const Kind = {
   DesktopFrame: "desktop.frame",
   DesktopAction: "desktop.action",
   ContextNote: "context.note",
+  MemoryRecall: "memory.recall",
+  MemoryWrite: "memory.write",
   FileEdit: "file.edit",
   Log: "system.log",
   Error: "system.error",

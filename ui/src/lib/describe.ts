@@ -30,6 +30,8 @@ export const LABELS: Record<string, string> = {
   [Kind.BrowserAction]: "browser",
   [Kind.DesktopAction]: "desktop",
   [Kind.ContextNote]: "context",
+  [Kind.MemoryRecall]: "recalled",
+  [Kind.MemoryWrite]: "learned",
   [Kind.FileEdit]: "edited",
   [Kind.Error]: "error",
 };
@@ -44,6 +46,7 @@ export function toneOf(event: AutoraEvent): Tone {
   if (event.kind === Kind.PolicyDecision && event.payload.decision === "deny") return "bad";
   if (event.kind === Kind.UserMessage) return "you";
   if (event.kind === Kind.FileEdit) return "good";
+  if (event.kind === Kind.MemoryWrite) return "good";
   return "";
 }
 
@@ -70,6 +73,14 @@ export function summarize(event: AutoraEvent): string {
     case Kind.BrowserAction: return `${p.action} ${p.selector ?? p.url ?? ""}`;
     case Kind.DesktopAction: return `${p.action ?? ""} ${p.key ?? p.text ?? ""}`.trim();
     case Kind.ContextNote: return p.text ?? "";
+    // Without these the fallback prints the whole payload, so a recall reads as
+    // a wall of ids and quoted JSON where it should read as what was remembered.
+    case Kind.MemoryRecall:
+    case Kind.MemoryWrite: {
+      const titles: string[] = p.titles ?? [];
+      if (titles.length === 0) return `${p.count ?? p.ids?.length ?? 0} records`;
+      return titles.join(" · ");
+    }
     case Kind.FileEdit: return `${basename(p.path ?? "")} +${p.added} −${p.removed}`;
     case Kind.AgentDone: return p.stop_reason ?? "";
     case Kind.SessionStarted: return basename(p.workdir ?? "");
