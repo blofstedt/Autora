@@ -1,15 +1,15 @@
 version: "3.7"
 
 services:
+  # Umbrel's reverse proxy. APP_HOST follows <app-id>_<service-name>_1.
+  app_proxy:
+    environment:
+      APP_HOST: blofstedt-autora_app_1
+      APP_PORT: 8817
+
   app:
     image: ghcr.io/blofstedt/autora:latest
-    # When running from source (development / sideloading):
-    # build:
-    #   context: ../..
-    #   dockerfile: Dockerfile
     restart: on-failure
-    ports:
-      - "${APP_PORT}:8817"
     volumes:
       # Browser profile + session recordings — persisted across restarts.
       - "${APP_DATA_DIR}/data:/data"
@@ -24,7 +24,7 @@ services:
       AUTORA_WORKDIR: "/host"
       AUTORA_AUTO_APPROVE: "1"
       AUTORA_BROWSER_PROFILE: "/data/browser-profile"
-      # API keys — set these in Umbrel's app settings or via environment
+      # API keys — set these in ~/umbrel/app-data/blofstedt-autora/.env
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY:-}"
       DEEPGRAM_API_KEY: "${DEEPGRAM_API_KEY:-}"

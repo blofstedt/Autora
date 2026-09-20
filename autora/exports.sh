@@ -1,2 +1,0 @@
-export APP_AUTORA_IP="$APP_IP"
-export APP_AUTORA_PORT="$APP_PORT"
