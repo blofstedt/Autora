@@ -180,3 +180,26 @@ export const IconTrash = ({ size = 16, className }: Props) => (
     <path d="M10.5 11v5M13.5 11v5" />
   </svg>
 );
+
+export const IconMic = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <rect x="9" y="2.75" width="6" height="11" rx="3" />
+    <path d="M5.5 11a6.5 6.5 0 0 0 13 0" />
+    <path d="M12 17.5v3.75" />
+  </svg>
+);
+
+export const IconMicOff = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M9 5.6A3 3 0 0 1 15 6v3.4M15 13.1a3 3 0 0 1-4.6.4" />
+    <path d="M5.5 11a6.5 6.5 0 0 0 9.9 5.5M18.5 11v.6" />
+    <path d="M12 17.5v3.75M3.5 3.5l17 17" />
+  </svg>
+);
+
+/** Live voice: a waveform, since this is a conversation rather than a recording. */
+export const IconWave = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M3 11v2M7.5 7.5v9M12 4.5v15M16.5 7.5v9M21 11v2" />
+  </svg>
+);

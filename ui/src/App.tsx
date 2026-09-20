@@ -18,8 +18,11 @@ import { Scrubber } from "./components/Scrubber";
 import { KnowledgeWeb } from "./components/KnowledgeWeb";
 import { Schedule } from "./components/Schedule";
 import { Settings } from "./components/Settings";
+import { DictateButton } from "./components/DictateButton";
+import { LiveChat } from "./components/LiveChat";
+import { dictationSupported, speakable, splitSpeakable, useSpeech } from "./lib/voice";
 import {
-  IconArrow, IconChevron, IconGear, IconMessage, IconRepeat, IconSpark,
+  IconArrow, IconChevron, IconGear, IconMessage, IconRepeat, IconSpark, IconWave,
 } from "./components/Icons";
 
 /** How often to re-read the session list, so sessions started elsewhere (or
@@ -39,6 +42,7 @@ export function App() {
   const [stagePinned, setStagePinned] = useState(false);
   const [dockOpen, setDockOpen] = useState(true);
   const [draft, setDraft] = useState("");
+  const [liveOn, setLiveOn] = useState(false);
   const [mobileTab, setMobileTab] = useState<"chat" | "tasks">("chat");
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
@@ -46,6 +50,14 @@ export function App() {
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const streamRef = useRef<SessionStream | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const speech = useSpeech();
+  const { say, cancel: hush, prime, speaking, supported: canSpeak } = speech;
+  /** How much of each reply has been read out, so streaming text is spoken
+      once and in order rather than re-read from the top on every token. */
+  const narrated = useRef(new Map<number, number>());
+  /** Replies at or before this sequence predate live chat and are not read
+      aloud -- turning the microphone on should not recite the backlog. */
+  const narrateAfter = useRef(-1);
 
   useEffect(() => {
     let alive = true;
@@ -183,10 +195,12 @@ export function App() {
     }
   }, [turnCount]);
 
-  const send = useCallback(async () => {
-    const text = draft.trim();
+  const send = useCallback(async (spoken?: string) => {
+    const text = (spoken ?? draft).trim();
     if (!text || !sessionId) return;
-    setDraft("");
+    // Dictated turns never touched the box, so there is nothing to clear and
+    // clearing anyway would eat something half-typed.
+    if (spoken === undefined) setDraft("");
     setFollowing(true);
     await fetch(`/api/sessions/${sessionId}/message`, {
       method: "POST",
@@ -220,6 +234,73 @@ export function App() {
   // there would put up a Stop button and relabel Send as "Interrupt & send",
   // which reads as the request having been sent again.
   const running = useMemo(() => isRunning(events), [events]);
+
+  // ------------------------------------------------------------ live chat --
+  /** Turning it on has to happen inside the tap: iOS will not let a page speak
+      unless the first utterance descends from a gesture. */
+  const toggleLive = useCallback(() => {
+    if (liveOn) {
+      setLiveOn(false);
+      hush();
+      return;
+    }
+    prime();
+    narrated.current.clear();
+    narrateAfter.current = events[events.length - 1]?.seq ?? -1;
+    jumpToNow();
+    setLiveOn(true);
+  }, [liveOn, hush, prime, events, jumpToNow]);
+
+  // A recording has nothing to say back, and a session switch drops the thread
+  // the voice was holding. Either way, hang up rather than listen to a page
+  // that cannot answer.
+  useEffect(() => {
+    if (!liveOn) return;
+    if (!live) { setLiveOn(false); hush(); }
+  }, [live, liveOn, hush]);
+  useEffect(() => {
+    setLiveOn(false);
+    hush();
+  }, [sessionId, hush]);
+
+  // Read the agent's replies out loud, a sentence at a time as they stream --
+  // waiting for the whole answer is a silence as long as the answer, and
+  // speaking each token is a stutter. Only at the head: scrubbing back through
+  // a recording should not start narrating history.
+  useEffect(() => {
+    if (!liveOn || !canSpeak || !atHead) return;
+    for (const bucket of view.buckets) {
+      for (const reply of bucket.replies) {
+        if (reply.seq <= narrateAfter.current) continue;
+        const already = narrated.current.get(reply.seq) ?? 0;
+        const rest = reply.text.slice(already);
+        if (!rest) continue;
+        // Once the turn has landed there is no more text coming, so the tail
+        // is spoken whether or not it ends in a full stop.
+        const chunk = bucket.open ? splitSpeakable(rest)[0] : rest;
+        if (!chunk.trim()) continue;
+        // The offset counts raw characters; scrubbing changes the length.
+        narrated.current.set(reply.seq, already + chunk.length);
+        const prose = speakable(chunk);
+        if (prose) say(prose);
+      }
+    }
+  }, [liveOn, canSpeak, atHead, view.buckets, say]);
+
+  /** A spoken turn goes straight out: barge in over whatever is being said,
+      then send. */
+  const sendSpoken = useCallback((text: string) => {
+    hush();
+    void send(text);
+  }, [hush, send]);
+
+  const appendDictation = useCallback((text: string) => {
+    // No focus() -- on a phone that throws the keyboard over the thread you
+    // were watching, which is the thing dictation was meant to avoid.
+    setDraft((current) => (current ? `${current.replace(/\s+$/, "")} ${text}` : text));
+  }, []);
+
+  const voiceReady = dictationSupported && canSpeak;
 
   // ---------------------------------------------------------- tab chrome --
   const chromeState: Chrome = pending > 0
@@ -286,6 +367,10 @@ export function App() {
           e.preventDefault();
           setDockOpen((open) => !open);
           break;
+        case "v":
+          e.preventDefault();
+          if (!readOnly && voiceReady) toggleLive();
+          break;
         case "Escape":
           setKnowledgeOpen(false);
           setScheduleOpen(false);
@@ -296,7 +381,7 @@ export function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [playback, step, seek, jumpToNow]);
+  }, [playback, step, seek, jumpToNow, toggleLive, readOnly, voiceReady]);
 
   const currentName =
     sessions.find((s) => s.id === sessionId)?.title?.trim() ||
@@ -424,30 +509,62 @@ export function App() {
           ))}
         </StageDock>
 
-        <div className="composer">
-          <div className="composer-box">
-            <textarea
-              ref={composerRef}
-              value={draft}
-              rows={2}
-              aria-label="Task"
-              placeholder={live ? "Describe a task…" : "This session is a recording."}
+        {/* The screen above stays exactly as it was; only this strip changes,
+            because the point of talking to it is to keep watching it work. */}
+        <div className={`composer ${liveOn ? "is-live" : ""}`}>
+          {liveOn ? (
+            <LiveChat
+              onUtterance={sendSpoken}
+              onExit={toggleLive}
+              onInterrupt={hush}
+              agentSpeaking={speaking}
+              agentWorking={running}
               disabled={readOnly}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  void send();
-                }
-              }}
             />
-            <div className="composer-foot">
-              <span className="hint"><kbd>↵</kbd> send · <kbd>⇧↵</kbd> newline</span>
-              <button className="btn primary" disabled={readOnly || !draft.trim()} onClick={send}>
-                {running ? "Interrupt & send" : "Send"} <IconArrow size={13} />
-              </button>
+          ) : (
+            <div className="composer-box">
+              <textarea
+                ref={composerRef}
+                value={draft}
+                rows={2}
+                aria-label="Task"
+                placeholder={live ? "Describe a task…" : "This session is a recording."}
+                disabled={readOnly}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    void send();
+                  }
+                }}
+              />
+              <div className="composer-foot">
+                <span className="hint"><kbd>↵</kbd> send · <kbd>⇧↵</kbd> newline</span>
+                <div className="composer-acts">
+                  <DictateButton onText={appendDictation} disabled={readOnly} />
+                  {voiceReady && (
+                    <button
+                      className="btn ghost live-start"
+                      onClick={toggleLive}
+                      disabled={readOnly}
+                      title="Live voice chat"
+                      aria-label="Start live voice chat"
+                    >
+                      <IconWave size={14} />
+                      <span className="live-start-word">Live</span>
+                    </button>
+                  )}
+                  <button
+                    className="btn primary"
+                    disabled={readOnly || !draft.trim()}
+                    onClick={() => void send()}
+                  >
+                    {running ? "Interrupt & send" : "Send"} <IconArrow size={13} />
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </main>
 

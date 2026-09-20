@@ -133,6 +133,29 @@ boundaries only once a split would be less noticeable than the wait.
 Voice approvals fail safe: anything ambiguous is a no, and negatives are checked
 before affirmatives, so "yes — no, wait" denies.
 
+### The phone is a second voice client, not the same one
+
+`voice/engine.py` opens the *host* machine's microphone through sounddevice.
+That is right at a desk and useless from a phone, which is where watching an
+agent work actually happens — so the web UI has its own voice path built on the
+browser's speech stack (`ui/src/lib/voice.ts`), with nothing crossing the wire
+but the text.
+
+Two things carry across rather than being re-invented: the scrubber that keeps
+paths, code, hashes and JSON out of the audio, and the clause chunker's
+boundary rules, decimal and abbreviation guards included. The same reply read
+by the CLI and by a phone should sound the same, and both failure modes above
+are easy to walk straight back into.
+
+What differs is the failure surface. Recognition is the browser's, so it can be
+missing entirely (Firefox today), and the controls that depend on it do not
+render rather than appearing and not working. Safari ends recognition after
+every phrase, so continuous listening is a restart loop with a cap on it. iOS
+will not speak unless the first utterance descends from a user gesture, so live
+chat primes the synthesiser inside the tap that starts it. And the microphone
+closes while the agent talks: a phone speaker two inches from a phone
+microphone will otherwise transcribe the agent back to itself.
+
 ## On "iterative buffer prefilling"
 
 The blueprint's centerpiece: re-transcribe a growing audio buffer while the user
