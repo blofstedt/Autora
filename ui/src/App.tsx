@@ -20,7 +20,9 @@ import { Schedule } from "./components/Schedule";
 import { Settings } from "./components/Settings";
 import { DictateButton } from "./components/DictateButton";
 import { LiveChat } from "./components/LiveChat";
-import { dictationSupported, speakable, splitSpeakable, useSpeech } from "./lib/voice";
+import {
+  dictationSupported, secureOrigin, speakable, splitSpeakable, useSpeech,
+} from "./lib/voice";
 import {
   IconArrow, IconChevron, IconGear, IconMessage, IconRepeat, IconSpark, IconWave,
 } from "./components/Icons";
@@ -301,6 +303,10 @@ export function App() {
   }, []);
 
   const voiceReady = dictationSupported && canSpeak;
+  /* An http page cannot have voice, and silently dropping the controls leaves
+     you hunting for a microphone that was never going to appear. A browser
+     with no engine at all gets no note: there is nothing to act on. */
+  const voiceNote = !secureOrigin && !!canSpeak;
 
   // ---------------------------------------------------------- tab chrome --
   const chromeState: Chrome = pending > 0
@@ -539,7 +545,13 @@ export function App() {
                 }}
               />
               <div className="composer-foot">
-                <span className="hint"><kbd>↵</kbd> send · <kbd>⇧↵</kbd> newline</span>
+                {voiceNote ? (
+                  <span className="hint voice-note" title="Browsers only allow microphone access on a secure page.">
+                    Voice needs <code>https</code>
+                  </span>
+                ) : (
+                  <span className="hint"><kbd>↵</kbd> send · <kbd>⇧↵</kbd> newline</span>
+                )}
                 <div className="composer-acts">
                   <DictateButton onText={appendDictation} disabled={readOnly} />
                   {voiceReady && (

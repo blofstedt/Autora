@@ -42,6 +42,38 @@ autora up ~/code/my-project --provider local \
   --base-url http://localhost:8000/v1 --model qwen3-coder
 ```
 
+### Reaching it from a phone
+
+`autora up` speaks plain HTTP, which is fine over `localhost` and fine for
+reading the thread from another device. Two things need more than that:
+
+| Wants a secure page | Why |
+| --- | --- |
+| Install to the home screen | Browsers only install a PWA from an https origin |
+| Dictation and live voice chat | Microphone capture is gated on a secure context |
+
+A private network is not enough — `http://box.tailnet.ts.net:8817` is an
+insecure origin as far as the browser is concerned, and no amount of site
+settings changes that. On a tailnet, the shortest path to a real certificate is
+Tailscale's own proxy:
+
+```bash
+tailscale serve --bg 8817          # https://<machine>.<tailnet>.ts.net -> :8817
+tailscale serve status             # confirm, and see the URL to open
+tailscale serve --https=443 off    # undo
+```
+
+That needs MagicDNS and HTTPS Certificates enabled for the tailnet (admin
+console, Settings → Features). With a proxy in front you can also drop
+`--host 0.0.0.0` and go back to the default `127.0.0.1` bind: nothing has to
+listen on the tailnet interface itself. Open the `https://` URL it prints — no port —
+and both the install prompt and the microphone appear. Anything else that
+terminates TLS in front of the port works the same way: Caddy or nginx with a
+certificate from `tailscale cert`, or whatever your reverse proxy already uses.
+
+Until then the composer says `Voice needs https` where the microphone would be,
+rather than showing a button that cannot work.
+
 ### Other commands
 
 ```bash

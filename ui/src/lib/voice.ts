@@ -42,7 +42,20 @@ const Impl: (new () => Recognition) | undefined =
     ? undefined
     : (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
 
-export const dictationSupported = !!Impl;
+/**
+ * Whether the page is allowed to touch a microphone at all.
+ *
+ * Capture is a "powerful feature", so browsers gate it on a secure context:
+ * https, or localhost. Reaching a machine over a LAN or a tailnet by name on
+ * plain http is *not* one, however private the network is -- and the failure is
+ * worth naming, because the constructor still exists there. Starting it fails
+ * with `not-allowed`, which reads as a permission the user refused and sends
+ * them to site settings, where there is nothing to fix.
+ */
+export const secureOrigin =
+  typeof window === "undefined" ? true : window.isSecureContext;
+
+export const dictationSupported = !!Impl && secureOrigin;
 export const speechSupported =
   typeof window !== "undefined" && "speechSynthesis" in window;
 
@@ -52,9 +65,13 @@ export const speechSupported =
 const MAX_RESTARTS = 40;
 const RESTART_MS = 220;
 
+const BLOCKED = secureOrigin
+  ? "Microphone blocked. Allow it in your browser's site settings."
+  : "Voice needs an https page — site settings cannot unblock this.";
+
 const MESSAGES: Record<string, string> = {
-  "not-allowed": "Microphone blocked. Allow it in your browser's site settings.",
-  "service-not-allowed": "Microphone blocked. Allow it in your browser's site settings.",
+  "not-allowed": BLOCKED,
+  "service-not-allowed": BLOCKED,
   "audio-capture": "No microphone found.",
   network: "Speech service unreachable.",
 };
