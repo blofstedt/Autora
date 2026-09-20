@@ -105,7 +105,21 @@ export function MemoryRibbon({
     });
   }, [web.records]);
 
-  const byId = useMemo(() => new Map(placed.map((p) => [p.id, p])), [placed]);
+  // The record being touched right now sits in the middle, and the rest keep
+  // their places around it. A graph where the thing you are being told about
+  // could be anywhere -- including half off the edge -- makes you hunt for it.
+  const active = memories.length ? memories[memories.length - 1].id : null;
+  const centred = useMemo<Placed[]>(() => {
+    const focus = placed.find((p) => p.id === active);
+    if (!focus) return placed;
+    const dx = VIEW.w / 2 - focus.x;
+    const dy = VIEW.h / 2 - focus.y;
+    return placed.map((p) =>
+      p.id === active ? { ...p, x: VIEW.w / 2, y: VIEW.h / 2 } : { ...p, x: p.x + dx, y: p.y + dy },
+    );
+  }, [placed, active]);
+
+  const byId = useMemo(() => new Map(centred.map((p) => [p.id, p])), [centred]);
   const edges = web.links
     .map((l) => ({ a: byId.get(l.src), b: byId.get(l.dst) }))
     .filter((e): e is { a: Placed; b: Placed } => !!e.a && !!e.b);
@@ -121,7 +135,7 @@ export function MemoryRibbon({
       </button>
 
       <div className="web-stage" onClick={onOpen} role="presentation">
-        {placed.length === 0 ? (
+        {centred.length === 0 ? (
           <span className="web-empty">
             Nothing remembered yet — what the agent learns appears here.
           </span>
@@ -129,19 +143,20 @@ export function MemoryRibbon({
           <svg viewBox={`0 0 ${VIEW.w} ${VIEW.h}`} preserveAspectRatio="xMidYMid meet"
                className="web-svg" aria-hidden="true">
             {edges.map((e, i) => {
-              const active = lit.has(e.a.id) || lit.has(e.b.id);
+              const travelled = lit.has(e.a.id) || lit.has(e.b.id);
               return (
                 <line
                   key={i}
                   x1={e.a.x} y1={e.a.y} x2={e.b.x} y2={e.b.y}
-                  className={`web-edge ${active ? "is-live" : ""}`}
+                  className={`web-edge ${travelled ? "is-live" : ""}`}
                 />
               );
             })}
-            {placed.map((p) => {
+            {centred.map((p) => {
               const state = lit.get(p.id);
               return (
-                <g key={p.id} className={`web-node ${state ? `is-${state}` : ""}`}>
+                <g key={p.id} data-id={p.id}
+                   className={`web-node ${state ? `is-${state}` : ""} ${p.id === active ? "is-focus" : ""}`}>
                   {state && <circle cx={p.x} cy={p.y} r={p.r} className="web-halo" />}
                   <circle
                     cx={p.x} cy={p.y} r={p.r}

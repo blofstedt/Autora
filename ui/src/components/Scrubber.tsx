@@ -3,7 +3,7 @@ import type { AutoraEvent } from "../lib/types";
 import { elapsed, labelFor, summarize } from "../lib/describe";
 import { markersFor, positionOf } from "../lib/markers";
 import type { Playback } from "../lib/playback";
-import { IconArrow, IconPause, IconPlay } from "./Icons";
+import { IconPause, IconPlay } from "./Icons";
 
 /**
  * The transport: play, speed, and a track that shows what it is scrubbing.
@@ -13,7 +13,7 @@ import { IconArrow, IconPause, IconPlay } from "./Icons";
  * that happens to change a number.
  */
 export function Scrubber({
-  events, cursor, playback, following, atHead, onSeek, onJumpToNow,
+  events, cursor, playback, following, atHead, onSeek, onToggleFollow,
 }: {
   events: AutoraEvent[];
   cursor: number;
@@ -21,7 +21,7 @@ export function Scrubber({
   following: boolean;
   atHead: boolean;
   onSeek: (index: number) => void;
-  onJumpToNow: () => void;
+  onToggleFollow: () => void;
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [peek, setPeek] = useState<{ at: number; index: number } | null>(null);
@@ -118,16 +118,18 @@ export function Scrubber({
         {cursor + 1} / {events.length}
       </span>
 
-      {following && atHead ? (
-        <span className="badge is-live">
-          <span className="dot" />
-          following
-        </span>
-      ) : (
-        <button className="btn primary" onClick={onJumpToNow}>
-          Jump to now <IconArrow size={13} />
-        </button>
-      )}
+      {/* One control, two states. It used to be a label when following and a
+          different button when not, so the thing you wanted to press was never
+          in the same place twice. */}
+      <button
+        className={`follow ${following && atHead ? "on" : ""}`}
+        onClick={onToggleFollow}
+        aria-pressed={following && atHead}
+        title={following && atHead ? "Stop following the live edge" : "Follow the live edge"}
+      >
+        <span className="dot" />
+        {following && atHead ? "following" : "follow"}
+      </button>
     </div>
   );
 }

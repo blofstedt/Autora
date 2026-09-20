@@ -19,7 +19,7 @@ import { KnowledgeWeb } from "./components/KnowledgeWeb";
 import { Schedule } from "./components/Schedule";
 import { Settings } from "./components/Settings";
 import {
-  IconArrow, IconChevron, IconGear, IconMessage, IconRepeat, IconSpark, IconStop,
+  IconArrow, IconChevron, IconGear, IconMessage, IconRepeat, IconSpark,
 } from "./components/Icons";
 
 /** How often to re-read the session list, so sessions started elsewhere (or
@@ -163,12 +163,25 @@ export function App() {
     }
   }, [pending]);
 
-  // Follow the action by default; a deliberate pin must stick, or the UI fights
-  // whoever is trying to look at something.
+  // Follow the action by default; a deliberate choice of pane must stick, or
+  // the UI fights whoever is trying to look at something.
   useEffect(() => {
     if (stagePinned) return;
     setStage(inferStage(events, cursor));
   }, [events, cursor, stagePinned]);
+
+  // The pin releases itself when a new prompt starts. There is no button to
+  // release it -- the dock bar's width belongs to the pane names -- and a pin
+  // that could only be set would strand the stage on whatever was last tapped
+  // for the rest of the session.
+  const turnCount = view.buckets.length;
+  const lastTurn = useRef(turnCount);
+  useEffect(() => {
+    if (turnCount !== lastTurn.current) {
+      lastTurn.current = turnCount;
+      setStagePinned(false);
+    }
+  }, [turnCount]);
 
   const send = useCallback(async () => {
     const text = draft.trim();
@@ -285,16 +298,6 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [playback, step, seek, jumpToNow]);
 
-  const badge = running && live
-    ? { cls: "is-working", text: "working" }
-    : live
-      ? { cls: "is-live", text: "live" }
-      : status.state === "recorded"
-        ? { cls: "is-recorded", text: "recording" }
-        : status.state === "connecting"
-          ? { cls: "", text: "connecting" }
-          : { cls: "is-closed", text: "offline" };
-
   const currentName =
     sessions.find((s) => s.id === sessionId)?.title?.trim() ||
     view.title ||
@@ -331,10 +334,6 @@ export function App() {
             {fmt(view.tokens.in)} in · {fmt(view.tokens.out)} out · {fmt(view.tokens.cached)} cached
           </span>
         )}
-        <span className={`badge status ${badge.cls}`} title={badge.text}>
-          <span className="dot" />
-          <span className="badge-word">{badge.text}</span>
-        </span>
         <button
           className="btn icon ghost"
           onClick={() => setSettingsOpen(true)}
@@ -343,13 +342,6 @@ export function App() {
         >
           <IconGear size={15} />
         </button>
-        {live && running && (
-          <button className="btn danger stop-btn" title="Stop"
-                  onClick={() => streamRef.current?.interrupt()}>
-            <IconStop size={13} />
-            <span className="btn-word">Stop</span>
-          </button>
-        )}
       </header>
 
       {/* Always on, above the conversation: what the agent knows, and what is
@@ -373,12 +365,12 @@ export function App() {
         <StageDock
           stage={stage}
           open={dockOpen}
-          pinned={stagePinned}
           counts={{ files: view.files.length }}
           hasDesktop={view.hasDesktop}
           onStage={(id) => { setStage(id); setStagePinned(true); }}
           onToggle={() => setDockOpen((open) => !open)}
-          onUnpin={() => setStagePinned(false)}
+          running={live && running}
+          onStop={() => streamRef.current?.interrupt()}
           scrubber={
             <Scrubber
               events={events}
@@ -387,7 +379,14 @@ export function App() {
               following={following}
               atHead={atHead}
               onSeek={seek}
-              onJumpToNow={jumpToNow}
+              onToggleFollow={() => {
+                if (following) {
+                  playback.pause();
+                  setFollowing(false);
+                } else {
+                  jumpToNow();
+                }
+              }}
             />
           }
         >

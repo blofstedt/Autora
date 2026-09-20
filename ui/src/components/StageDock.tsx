@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { IconChevron, IconFile, IconGlobe, IconMonitor, IconTerminal } from "./Icons";
+import { IconChevron, IconFile, IconGlobe, IconMonitor, IconStop, IconTerminal } from "./Icons";
 
 export type Stage = "terminal" | "browser" | "files" | "desktop";
 
@@ -13,23 +13,27 @@ export const STAGES: { id: Stage; label: string; icon: typeof IconTerminal }[] =
 /**
  * What the agent is looking at, docked under the conversation.
  *
- * This used to be a tab you switched to, which meant watching the work and
- * reading the reply were mutually exclusive -- and the work is most of what
- * there is to see. It is open by default and collapses to its bar, so the
- * screen can be given over to the thread without losing the handle.
+ * Every pane keeps its name at every width. Hiding the labels of all but the
+ * selected tab made them fit and made the row unreadable -- an icon you have
+ * to tap to identify is not a label. The buttons share the row equally and
+ * shrink instead, which is the thing that is actually allowed to give.
+ *
+ * Stop lives here rather than in the header: it belongs with the live
+ * controls, and the header should not carry a button that exists only
+ * sometimes.
  */
 export function StageDock({
-  stage, open, pinned, counts, hasDesktop,
-  onStage, onToggle, onUnpin, children, scrubber,
+  stage, open, counts, hasDesktop, running,
+  onStage, onToggle, onStop, children, scrubber,
 }: {
   stage: Stage;
   open: boolean;
-  pinned: boolean;
   counts: { files: number };
   hasDesktop: boolean;
+  running: boolean;
   onStage: (stage: Stage) => void;
   onToggle: () => void;
-  onUnpin: () => void;
+  onStop: () => void;
   children: ReactNode;
   scrubber: ReactNode;
 }) {
@@ -66,9 +70,11 @@ export function StageDock({
           ))}
         </div>
 
-        <div className="spacer" />
-        {pinned && open && (
-          <button className="btn ghost dock-follow" onClick={onUnpin}>Follow agent</button>
+        {running && (
+          <button className="btn danger dock-stop" onClick={onStop} title="Stop"
+                  aria-label="Stop the agent">
+            <IconStop size={13} />
+          </button>
         )}
       </div>
 

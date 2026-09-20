@@ -294,11 +294,17 @@ body::before {
 }
 
 .web-latest {
-  position: absolute; left: 0; right: 0; bottom: -2px;
+  position: absolute; left: 50%; bottom: -3px; transform: translateX(-50%);
+  max-width: 100%; padding: 1px 8px; border-radius: 99px;
+  /* The graph is drawn behind this, so the caption carries its own ground --
+     read straight over the edges it was competing with them. */
+  background: var(--bg);
   text-align: center; font-size: 10.5px; color: var(--text-3);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   animation: fade 0.3s var(--ease) both;
 }
+/* The centred node is the one being talked about; say so quietly. */
+.web-node.is-focus circle:last-of-type { stroke: var(--text-2); stroke-width: 1.5; }
 .web-latest.is-written { color: var(--live); }
 
 /* ----------------------------------------------------------------- steps -- */
@@ -390,16 +396,23 @@ body::before {
 .stage-bar { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
 
 .segmented {
+  flex: 1; min-width: 0;
   display: flex; gap: 2px; padding: 3px;
   background: var(--s1); border: 1px solid var(--border); border-radius: var(--r);
 }
+/* Every pane keeps its name at every width. The buttons share the row and
+   shrink together instead -- an icon you have to tap to identify is not a
+   label, and hiding all but the selected one made the row unreadable. */
 .seg {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 6px 13px; border: 0; border-radius: var(--r-xs);
+  flex: 1 1 0; min-width: 0;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 6px 8px; border: 0; border-radius: var(--r-xs);
   background: none; color: var(--text-3); cursor: pointer;
   font-family: inherit; font-size: 12.5px; font-weight: 550;
   transition: color 0.16s var(--ease), background 0.16s var(--ease);
 }
+.seg svg { flex: 0 0 auto; }
+.seg-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .seg:hover { color: var(--text-2); }
 .seg.on { background: var(--s3); color: var(--text); box-shadow: var(--shadow-sm); }
 .seg .count {
@@ -880,17 +893,15 @@ body::before {
   .dock-bar { padding: 6px 8px; }
   .dock-body { padding: 0 8px 8px; gap: 8px; }
 
-  /* Four labelled tabs do not fit 390px, and the last one was being cut off
-     at the edge. Only the selected one keeps its word -- which is the one that
-     needs saying, since the others are identifiable by icon and reachable by
-     tapping. */
-  .dock-bar .segmented { flex: 1; min-width: 0; justify-content: space-between; }
-  .seg { padding: 0 10px; }
-  .seg .seg-label { display: none; }
-  .seg.on .seg-label { display: inline; }
+  /* The names stay; the type, the padding and the glyph give instead. Four
+     labels plus a Stop button on a 390px row leaves about 70px each, and
+     "Terminal" has to fit inside that without being cut. */
+  .seg { padding: 0 3px; gap: 3px; font-size: 9.5px; letter-spacing: -0.01em; }
+  .seg svg { width: 12px; height: 12px; }
+  .seg .count { display: none; }
+  .dock-bar { gap: 6px; }
+  .dock-grip { width: 24px; }
 
-  /* stage tabs slightly more compact */
-  .seg { padding: 5px 10px; font-size: 12px; }
 
   /* composer text slightly smaller so the keyboard doesn't hide everything */
   .composer textarea { font-size: 13px; }
@@ -958,7 +969,7 @@ body::before {
   /* A floor rather than padding: the height of this one depends on its icon,
      its label and sometimes a count badge, so stating it is the only way to
      know what you get. */
-  .seg { min-height: 42px; padding: 0 13px; font-size: 12.5px; }
+  .seg { min-height: 42px; }
   .scrub .btn.icon { width: 40px; height: 40px; }
   .job-switch { width: 46px; height: 28px; }
   .job-knob { width: 22px; height: 22px; }
@@ -1291,4 +1302,46 @@ body::before {
 .set-count {
   margin-top: 5px; text-align: right; font-size: 10.5px; color: var(--text-3);
   font-variant-numeric: tabular-nums;
+}
+
+/* Stop, with the live controls rather than in the header, where it would be a
+   button that exists only sometimes. */
+.dock-stop { flex: 0 0 auto; width: 38px; padding: 0; justify-content: center; }
+
+/* One control for following, in one place, in both states. It used to be a
+   label when following and a differently-shaped button when not, so the thing
+   you wanted to press was never twice in the same place. */
+.follow {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 7px;
+  height: 31px; padding: 0 13px; border-radius: 99px;
+  background: var(--s2); border: 1px solid var(--border); color: var(--text-3);
+  font-family: inherit; font-size: 11.5px; font-weight: 550; cursor: pointer;
+  transition: color 0.16s var(--ease), border-color 0.16s var(--ease),
+              background 0.16s var(--ease);
+}
+.follow .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.follow:hover { color: var(--text-2); border-color: var(--border-strong); }
+.follow.on {
+  color: var(--live); border-color: rgba(52, 211, 153, 0.3);
+  background: rgba(52, 211, 153, 0.09);
+}
+.follow.on .dot { animation: halo 2s ease-out infinite; }
+
+/* Reasoning now carries the steps too, so it says how many. */
+.reason-count {
+  font-style: normal; font-family: var(--mono); font-size: 10px;
+  padding: 1px 6px; border-radius: 99px; background: var(--s3); color: var(--text-3);
+}
+.reason-open { display: flex; flex-direction: column; gap: 6px; padding-top: 4px; }
+.reason-open .steps-body { padding: 0; }
+
+/* Recentring on the record being touched should read as the graph settling. */
+.web-node circle { transition: cx 0.45s var(--ease), cy 0.45s var(--ease), r 0.25s var(--ease); }
+.web-edge { transition: x1 0.45s var(--ease), y1 0.45s var(--ease),
+                        x2 0.45s var(--ease), y2 0.45s var(--ease),
+                        stroke 0.3s var(--ease), stroke-width 0.3s var(--ease); }
+
+@media (max-width: 680px) {
+  .follow { height: 40px; padding: 0 12px; }
+  .dock-stop { width: 40px; height: 40px; }
 }

@@ -126,29 +126,37 @@ function TurnBucket({
         </div>
       )}
 
-      {bucket.steps.length > 0 && (
-        <div className={`steps ${open ? "on" : ""}`}>
-          <button
-            className="steps-toggle"
-            onClick={() => setPinned(!open)}
-            aria-expanded={open}
-          >
-            <IconChevron size={11} />
-            {bucket.steps.length} step{bucket.steps.length === 1 ? "" : "s"}
-            {bucket.open && <em className="steps-live" />}
-          </button>
-
-          {open && (
-            <div className="steps-body">
-              {bucket.steps.map((e) => (
-                <StepRow key={e.seq} event={e} startedAt={startedAt} onSeek={onSeek} />
-              ))}
-            </div>
-          )}
-        </div>
+      {/* One disclosure per turn, carrying both what the agent thought and
+          what it did. They were two toggles in two places saying two halves of
+          the same thing, and the steps sat under the prompt as though the
+          person had taken them. */}
+      {bucket.replies.length > 0 ? (
+        bucket.replies.map((r, index) => (
+          <Reply
+            key={r.seq}
+            turn={r}
+            steps={index === 0 ? bucket.steps : []}
+            live={index === 0 && bucket.open}
+            open={index === 0 ? open : undefined}
+            onToggle={index === 0 ? () => setPinned(!open) : undefined}
+            startedAt={startedAt}
+            onSeek={onSeek}
+          />
+        ))
+      ) : (
+        // A turn that has acted but not yet spoken still has reasoning to show.
+        bucket.steps.length > 0 && (
+          <Reply
+            turn={{ role: "agent", text: "", seq: bucket.seq }}
+            steps={bucket.steps}
+            live={bucket.open}
+            open={open}
+            onToggle={() => setPinned(!open)}
+            startedAt={startedAt}
+            onSeek={onSeek}
+          />
+        )
       )}
-
-      {bucket.replies.map((r) => <Reply key={r.seq} turn={r} />)}
     </article>
   );
 }
@@ -175,24 +183,52 @@ function StepRow({
   );
 }
 
-function Reply({ turn }: { turn: TranscriptTurn }) {
-  const [open, setOpen] = useState(false);
+function Reply({
+  turn, steps = [], live = false, open, onToggle, startedAt = 0, onSeek,
+}: {
+  turn: TranscriptTurn;
+  steps?: AutoraEvent[];
+  live?: boolean;
+  /** Undefined for replies that carry no steps: those own their own state. */
+  open?: boolean;
+  onToggle?: () => void;
+  startedAt?: number;
+  onSeek?: (seq: number) => void;
+}) {
+  const [ownOpen, setOwnOpen] = useState(false);
+  const isOpen = open ?? ownOpen;
+  const toggle = onToggle ?? (() => setOwnOpen(!ownOpen));
+  const hasReasoning = !!turn.thinking || steps.length > 0;
+
   return (
     <div className="msg agent">
       <span className="avatar"><IconSpark size={14} /></span>
       <div className="msg-body">
         <div className="msg-who">autora</div>
-        {turn.thinking && (
+        {hasReasoning && (
           <>
             <button
-              className={`reason-toggle ${open ? "open" : ""}`}
-              onClick={() => setOpen(!open)}
-              aria-expanded={open}
+              className={`reason-toggle ${isOpen ? "open" : ""}`}
+              onClick={toggle}
+              aria-expanded={isOpen}
             >
               <IconChevron size={11} />
-              {open ? "hide reasoning" : "reasoning"}
+              {isOpen ? "hide reasoning" : "reasoning"}
+              {steps.length > 0 && <em className="reason-count">{steps.length}</em>}
+              {live && <em className="steps-live" />}
             </button>
-            {open && <pre className="reason-body">{turn.thinking}</pre>}
+            {isOpen && (
+              <div className="reason-open">
+                {turn.thinking && <pre className="reason-body">{turn.thinking}</pre>}
+                {steps.length > 0 && onSeek && (
+                  <div className="steps-body">
+                    {steps.map((e) => (
+                      <StepRow key={e.seq} event={e} startedAt={startedAt} onSeek={onSeek} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
         {turn.text && <div className="msg-text">{turn.text}</div>}
