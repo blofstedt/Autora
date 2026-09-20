@@ -69,6 +69,16 @@ def default_path() -> Path:
     return Path.home() / ".autora" / "autora.env"
 
 
+def prompt_path(env_file: Path | None = None) -> Path:
+    """Standing instructions, in a file of their own.
+
+    Not in the env file: that is one KEY=value per line, and a prompt is
+    paragraphs. A plain text file beside it is also the thing you would want to
+    edit by hand, which is half the point of it.
+    """
+    return (env_file or default_path()).with_name("system-prompt.txt")
+
+
 def mask(value: str) -> str:
     """Enough of a key to recognise it by, and no more."""
     value = value.strip()
@@ -89,12 +99,21 @@ def parse(text: str) -> dict[str, str]:
     return out
 
 
+#: A cap on the standing instructions. They ride every request of every turn,
+#: so an essay here is paid for continuously; this is generous for house rules
+#: and small enough to notice if someone pastes a document in.
+MAX_PROMPT_CHARS = 4000
+
+
 @dataclass
 class Settings:
     provider: str = "auto"
     model: str = ""
     base_url: str = ""
     credentials: dict[str, str] = field(default_factory=dict)
+    #: Operator instructions, added to the harness's own system prompt on every
+    #: turn. Empty means the default prompt stands alone.
+    system_prompt: str = ""
 
     # -- storage --------------------------------------------------------
 
@@ -114,11 +133,20 @@ class Settings:
         for name in CREDENTIALS:
             creds[name] = values.get(name) or os.environ.get(name, "")
 
+        prompt = ""
+        pfile = prompt_path(path)
+        if pfile.exists():
+            try:
+                prompt = pfile.read_text()
+            except OSError:
+                prompt = ""
+
         return cls(
             provider=values.get(PROVIDER_VAR) or os.environ.get(PROVIDER_VAR) or "auto",
             model=values.get(MODEL_VAR) or os.environ.get(MODEL_VAR) or "",
             base_url=values.get(BASE_URL_VAR) or os.environ.get(BASE_URL_VAR) or "",
             credentials={k: v for k, v in creds.items() if v},
+            system_prompt=prompt.strip(),
         )
 
     def save(self, path: Path | None = None) -> None:
@@ -147,6 +175,16 @@ class Settings:
         os.chmod(tmp, 0o600)
         tmp.replace(path)
 
+        # The prompt is prose, so it gets its own file. Cleared, the file goes
+        # rather than lingering empty and looking like it still says something.
+        pfile = prompt_path(path)
+        if self.system_prompt.strip():
+            ptmp = pfile.with_suffix(".tmp")
+            ptmp.write_text(self.system_prompt.strip() + "\n")
+            ptmp.replace(pfile)
+        elif pfile.exists():
+            pfile.unlink()
+
     def apply_to_env(self) -> None:
         """Push into the process environment, which is what the rest reads."""
         for name in CREDENTIALS:
@@ -171,6 +209,9 @@ class Settings:
             "model": self.model,
             "base_url": self.base_url,
             "providers": PROVIDERS,
+            # Not a secret, so it comes back in full -- it has to be editable.
+            "system_prompt": self.system_prompt,
+            "system_prompt_limit": MAX_PROMPT_CHARS,
             "credentials": [
                 {
                     "name": name,
@@ -197,6 +238,8 @@ class Settings:
             self.model = (body.get("model") or "").strip()
         if "base_url" in body:
             self.base_url = (body.get("base_url") or "").strip()
+        if "system_prompt" in body:
+            self.system_prompt = (body.get("system_prompt") or "").strip()[:MAX_PROMPT_CHARS]
 
         for name, value in (body.get("credentials") or {}).items():
             if name not in CREDENTIALS:

@@ -48,6 +48,27 @@ review. That shapes how you work:
 Some actions pause for human approval. That is normal, not an error. If an action
 is denied, do not retry it -- explain what you would need instead."""
 
+def compose_system(instructions: str = "") -> str:
+    """The harness's prompt, plus whatever the operator standing-orders on top.
+
+    Added rather than substituted. The default prompt is not style advice: it
+    is how the harness works -- narrate before acting, approvals are normal, a
+    denial is not a thing to retry -- and replacing it wholesale would break
+    behaviour the UI depends on. House rules belong after it, clearly attributed
+    so the model can tell an instruction from its own operating manual.
+    """
+    extra = (instructions or "").strip()
+    if not extra:
+        return DEFAULT_SYSTEM
+    return (
+        f"{DEFAULT_SYSTEM}\n\n"
+        "The person running this harness has standing instructions for you. "
+        "They apply to every turn, and they win where they conflict with your "
+        "own preferences:\n\n"
+        f"{extra}"
+    )
+
+
 #: Iteration cap per turn. A loop that has taken 40 tool calls without finishing
 #: is almost always stuck in a retry cycle, and letting it run burns money and
 #: fills the recording with noise.

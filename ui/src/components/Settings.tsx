@@ -15,6 +15,8 @@ type SettingsState = {
   model: string;
   base_url: string;
   providers: string[];
+  system_prompt: string;
+  system_prompt_limit: number;
   credentials: Credential[];
   active: {
     model: string | null;
@@ -56,6 +58,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
   const [provider, setProvider] = useState("auto");
   const [model, setModel] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
+  const [prompt, setPrompt] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -65,6 +68,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
     setProvider(next.provider);
     setModel(next.model);
     setBaseUrl(next.base_url);
+    setPrompt(next.system_prompt ?? "");
     setDrafts({});
   }, []);
 
@@ -89,6 +93,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
           provider,
           model,
           base_url: baseUrl,
+          system_prompt: prompt,
           credentials: drafts,
         }),
       });
@@ -104,7 +109,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
     } finally {
       setSaving(false);
     }
-  }, [provider, model, baseUrl, drafts, adopt]);
+  }, [provider, model, baseUrl, prompt, drafts, adopt]);
 
   if (!state) {
     return (
@@ -131,7 +136,8 @@ export function Settings({ onClose }: { onClose: () => void }) {
     Object.keys(drafts).length > 0 ||
     provider !== state.provider ||
     model !== state.model ||
-    baseUrl !== state.base_url;
+    baseUrl !== state.base_url ||
+    prompt !== (state.system_prompt ?? "");
 
   return (
     <div className="sched">
@@ -207,6 +213,27 @@ export function Settings({ onClose }: { onClose: () => void }) {
               />
             </label>
           )}
+        </section>
+
+        <section className="set-card">
+          <h3>Standing instructions</h3>
+          <p className="jf-hint">
+            Added to Autora's own instructions on every turn — house rules like
+            "be concise" or "never guess; say you do not know". Applies to open
+            sessions from their next turn.
+          </p>
+          <textarea
+            className="set-prompt"
+            value={prompt}
+            rows={6}
+            maxLength={state.system_prompt_limit ?? 4000}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder={"Be concise.\nDo not invent facts — say when you are unsure.\nAsk before anything destructive."}
+            aria-label="Standing instructions"
+          />
+          <div className="set-count">
+            {prompt.length} / {state.system_prompt_limit ?? 4000}
+          </div>
         </section>
 
         <section className="set-card">

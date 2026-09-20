@@ -11,7 +11,9 @@ services:
     image: ghcr.io/blofstedt/autora:latest
     restart: on-failure
     volumes:
-      # Browser profile + session recordings — persisted across restarts.
+      # The only directory that survives an update: memories, session
+      # recordings, the browser profile and the settings file all live here.
+      # AUTORA_HOME is pointed at it by the entrypoint.
       - "${APP_DATA_DIR}/data:/data"
       # Full read-write access to the host filesystem so the agent can work
       # anywhere on the server, not just inside the container.

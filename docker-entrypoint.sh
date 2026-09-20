@@ -53,6 +53,14 @@ if [ -f /data/autora.env ]; then
     done < /data/autora.env
 fi
 
+# Everything the harness keeps -- memories, session recordings -- lives under
+# AUTORA_HOME, which defaults to ~/.autora. Inside this container that is
+# /root/.autora, which is not a volume: it is part of the image layer and is
+# discarded every time the container is recreated, which is to say on every
+# update. /data is the one directory that survives, so that is where state goes.
+export AUTORA_HOME="${AUTORA_HOME:-/data}"
+mkdir -p "${AUTORA_HOME}"
+
 HOST="${AUTORA_HOST:-0.0.0.0}"
 PORT="${AUTORA_PORT:-8817}"
 WORKDIR="${AUTORA_WORKDIR:-/host}"

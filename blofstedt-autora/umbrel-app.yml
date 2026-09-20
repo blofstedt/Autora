@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.4.2"
+version: "0.5.0"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -57,11 +57,11 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Fixes the app failing to start after a Deepgram key was saved. The key
-  switched on voice, which crashed before the server began listening, so
-  the web UI refused connections — and only on the next restart, long
-  after the key was entered. Voice now needs AUTORA_VOICE set explicitly,
-  and can never stop the app from starting.
+  Memories and session recordings now live in the app's data folder, so
+  they survive updates — previously they were written inside the container
+  and discarded every time it was recreated. Settings also gains standing
+  instructions: house rules like 'be concise' or 'never guess' that are
+  added to the agent's prompt on every turn.
 dependencies: []
 path: ""
 defaultUsername: ""

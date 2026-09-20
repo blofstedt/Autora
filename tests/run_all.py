@@ -15,6 +15,7 @@ SUITES = [
     ("entrypoint env parsing", "test_entrypoint_env.sh"),
     ("entrypoint arguments", "test_entrypoint_args.sh"),
     ("settings + provider choice", "test_settings.py"),
+    ("persistence + instructions", "test_persistence.py"),
     ("scheduled tasks", "test_schedule.py"),
     ("narration", "test_narration.py"),
     ("voice loop", "test_voice_loop.py"),

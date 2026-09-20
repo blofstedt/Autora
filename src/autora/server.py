@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconn
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from .agent import Agent, build_registry
+from .agent import Agent, build_registry, compose_system
 from .events import Kind
 from .memory import MemoryStore, project_scope
 from .policy import PolicyGate
@@ -70,18 +70,33 @@ class Harness:
         self.schedule = Scheduler(
             self.sessions.root / "schedule.json", launch=self.launch_job
         )
+        #: Operator standing instructions, folded into every agent's prompt.
+        self.instructions = Settings.load().system_prompt
 
     def create_session(self, title: str = "") -> str:
         session = self.sessions.create(title=title, workdir=self.workdir)
         if self.provider is not None:
             self.agents[session.id] = Agent(
                 session, self.provider, self.tools, gate=self.gate,
-                memory=self.memory,
+                memory=self.memory, system=compose_system(self.instructions),
             )
         return session.id
 
     def agent_for(self, session_id: str) -> Agent | None:
         return self.agents.get(session_id)
+
+    def use_instructions(self, text: str) -> None:
+        """Change the standing instructions, including mid-session.
+
+        Same reasoning as the provider: an edit that only takes effect after a
+        restart is an edit most people will conclude did not work. The prompt
+        is read when a turn is composed, so an open session picks this up on
+        its next turn without losing its history.
+        """
+        self.instructions = (text or "").strip()
+        system = compose_system(self.instructions)
+        for agent in self.agents.values():
+            agent.system = system
 
     def use_provider(self, provider) -> None:
         """Swap the model client, including in sessions already open.
@@ -344,6 +359,7 @@ def create_app(harness: Harness, ui_dist: Path | None = None) -> FastAPI:
         # Rebuild against the new values. A bad combination must not leave the
         # harness without a working client, so the old one stays until the new
         # one is built.
+        harness.use_instructions(settings.system_prompt)
         try:
             harness.use_provider(build_provider(settings))
         except Exception as exc:
