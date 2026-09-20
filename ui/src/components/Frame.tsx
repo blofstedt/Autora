@@ -35,10 +35,15 @@ export function Frame({
     if (loadedSrc && loadedSrc !== src) setUnder(loadedSrc);
   }, [src, loadedSrc]);
 
+  // Derived once so the class and the element can never disagree: `solo` is
+  // exactly "no backdrop is rendered", and the CSS relies on that to know which
+  // layer is holding the wrap open.
+  const backdrop = under && under !== src ? under : null;
+
   return (
-    <div className="frame-wrap">
-      {under && under !== src && (
-        <img className="frame frame-under" src={under} alt="" aria-hidden="true" />
+    <div className={`frame-wrap ${backdrop ? "" : "solo"}`}>
+      {backdrop && (
+        <img className="frame frame-under" src={backdrop} alt="" aria-hidden="true" />
       )}
       <img
         // Keyed so each frame is its own element and starts transparent; without
