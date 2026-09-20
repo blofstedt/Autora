@@ -188,9 +188,21 @@ def cmd_up(args) -> int:
     voice_loop = None
     voice_name = getattr(args, "voice", None)
     if voice_name and voice_name != "off":
-        session = harness.sessions[session_id]
-        agent = harness.agents[session_id]
-        voice_loop = build_voice(args, session, agent)
+        # Voice is an enhancement, and the server has to come up without it.
+        # This used to index the registry, which has no __getitem__, so asking
+        # for voice raised a TypeError before anything started listening -- and
+        # on a headless box the first visible symptom is the port refusing
+        # connections, with no clue that voice was even involved.
+        try:
+            session = harness.sessions.get(session_id)
+            agent = harness.agent_for(session_id)
+            if session is None or agent is None:
+                raise RuntimeError("no live session to attach voice to")
+            voice_loop = build_voice(args, session, agent)
+        except Exception as exc:
+            print(f"warning: voice is off -- {type(exc).__name__}: {exc}",
+                  file=sys.stderr)
+            voice_loop = None
 
     ui_dist = Path(__file__).resolve().parents[2] / "ui" / "dist"
     app = create_app(harness, ui_dist=ui_dist if ui_dist.exists() else None)

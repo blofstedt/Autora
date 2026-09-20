@@ -74,9 +74,16 @@ if [ "${AUTORA_AUTO_APPROVE:-1}" = "1" ]; then
     set -- "$@" --yes
 fi
 
-# Voice: enable Deepgram when the API key is present.
-if [ -n "${DEEPGRAM_API_KEY}" ]; then
-    set -- "$@" --voice deepgram
+# Voice: only when asked for, never merely because a key exists.
+#
+# The adapters drive a local microphone and speaker through sounddevice, and
+# this container has neither -- so turning voice on here cannot work, and
+# inferring it from a key means saving that key in the settings panel silently
+# arms a broken startup path that only fires on the next restart.
+#
+# Set AUTORA_VOICE=deepgram to opt in deliberately.
+if [ -n "${AUTORA_VOICE:-}" ] && [ "${AUTORA_VOICE}" != "off" ]; then
+    set -- "$@" --voice "${AUTORA_VOICE}"
 fi
 
 exec autora "$@"

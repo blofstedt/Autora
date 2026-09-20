@@ -13,6 +13,7 @@ SUITES = [
     ("pick + guide", "test_pick.py"),
     ("memory + distillation", "test_memory.py"),
     ("entrypoint env parsing", "test_entrypoint_env.sh"),
+    ("entrypoint arguments", "test_entrypoint_args.sh"),
     ("settings + provider choice", "test_settings.py"),
     ("scheduled tasks", "test_schedule.py"),
     ("narration", "test_narration.py"),
