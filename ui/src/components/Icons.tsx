@@ -165,6 +165,13 @@ export const IconRepeat = ({ size = 16, className }: Props) => (
   </svg>
 );
 
+export const IconGear = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <circle cx="12" cy="12" r="3.2" />
+    <path d="M12 2.8v2.4M12 18.8v2.4M4.5 4.5l1.7 1.7M17.8 17.8l1.7 1.7M2.8 12h2.4M18.8 12h2.4M4.5 19.5l1.7-1.7M17.8 6.2l1.7-1.7" />
+  </svg>
+);
+
 export const IconTrash = ({ size = 16, className }: Props) => (
   <svg {...base(size)} className={className}>
     <path d="M4 7h16" />

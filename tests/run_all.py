@@ -12,6 +12,7 @@ SUITES = [
     ("browser snapshot", "test_browser_snapshot.py"),
     ("pick + guide", "test_pick.py"),
     ("memory + distillation", "test_memory.py"),
+    ("settings + provider choice", "test_settings.py"),
     ("scheduled tasks", "test_schedule.py"),
     ("narration", "test_narration.py"),
     ("voice loop", "test_voice_loop.py"),

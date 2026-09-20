@@ -13,47 +13,40 @@ from pathlib import Path
 
 
 def build_provider(args):
-    """Pick a provider from flags and environment.
+    """Pick a provider from the saved settings, with flags overriding them.
 
     Priority (auto mode):
-      1. DeepSeek  — if DEEPSEEK_API_KEY is set
-      2. Anthropic — if ANTHROPIC_API_KEY is set
+      1. DeepSeek  — if a DeepSeek key is set
+      2. Anthropic — if an Anthropic key is set
       3. Local     — OpenAI-compatible endpoint (vLLM / Ollama / llama.cpp)
     """
-    explicit = args.provider  # "auto" | "deepseek" | "anthropic" | "local"
+    from .settings import Settings
+    from .settings import build_provider as build
 
-    if explicit == "deepseek" or (
-        explicit == "auto" and os.environ.get("DEEPSEEK_API_KEY")
-    ):
-        from .providers.openai_compat import OpenAICompatProvider
-        return OpenAICompatProvider(
-            model=args.model or "deepseek-flash",
-            base_url=args.base_url or "https://api.deepseek.com/v1",
-            api_key=os.environ.get("DEEPSEEK_API_KEY"),
-        )
+    # The settings editor writes the same file this reads, so a key set in the
+    # UI and a key exported into the environment reach the same switch. Flags
+    # still win, since they were typed for this run specifically.
+    settings = Settings.load()
+    if getattr(args, "provider", "auto") != "auto":
+        settings.provider = args.provider
+    if getattr(args, "model", None):
+        settings.model = args.model
+    if getattr(args, "base_url", None):
+        settings.base_url = args.base_url
 
-    if explicit == "local" or (
-        explicit == "auto" and not os.environ.get("ANTHROPIC_API_KEY")
-    ):
-        from .providers.openai_compat import OpenAICompatProvider
-        provider = OpenAICompatProvider(
-            model=args.model or "qwen3-coder", base_url=args.base_url)
-        if explicit == "auto":
-            # Reaching here in auto mode means neither hosted key was set, so
-            # this is the last resort rather than a choice. Usually that is a
-            # key the container never received, and the symptom is a connection
-            # error against a local server nobody started -- which says nothing
-            # about the actual mistake unless we say it here.
-            provider.selected_because = (
-                "no ANTHROPIC_API_KEY or DEEPSEEK_API_KEY was set, so Autora fell back "
-                "to a local OpenAI-compatible server"
-            )
-            print(f"warning: {provider.selected_because} at {provider.base_url}",
-                  file=sys.stderr)
-        return provider
+    # Push back out, so anything reading a key directly later -- the voice
+    # adapters do -- sees what the file said.
+    settings.apply_to_env()
 
-    from .providers.anthropic_provider import AnthropicProvider
-    return AnthropicProvider(model=args.model or "claude-sonnet-5")
+    provider = build(settings)
+    if getattr(provider, "selected_because", None):
+        # Reaching the fallback in auto mode means no hosted key was found,
+        # which is usually a key the container never received. The symptom is a
+        # connection error against a local server nobody started, and that says
+        # nothing about the actual mistake unless we say it here.
+        print(f"warning: {provider.selected_because} at {provider.base_url}",
+              file=sys.stderr)
+    return provider
 
 
 def build_voice(args, session, agent):

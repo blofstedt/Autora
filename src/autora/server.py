@@ -29,6 +29,7 @@ from .memory import MemoryStore, project_scope
 from .policy import PolicyGate
 from .schedule import CronError, Job, Scheduler
 from .session import SessionRegistry
+from .settings import Settings, build_provider
 from .tools.desktop import RelayBridge
 from .tools.terminal import export_asciicast
 
@@ -81,6 +82,19 @@ class Harness:
 
     def agent_for(self, session_id: str) -> Agent | None:
         return self.agents.get(session_id)
+
+    def use_provider(self, provider) -> None:
+        """Swap the model client, including in sessions already open.
+
+        Editing a key is only useful if it takes effect; making someone restart
+        the app to pick up a corrected key is most of the reason the key was
+        wrong for so long. Agents hold their own reference, so they are updated
+        too -- an open session keeps its history and simply continues against
+        the new model.
+        """
+        self.provider = provider
+        for agent in self.agents.values():
+            agent.provider = provider
 
     async def launch_job(self, job: Job) -> str:
         """Open a session for a scheduled task and set the agent going in it.
@@ -301,6 +315,52 @@ def create_app(harness: Harness, ui_dist: Path | None = None) -> FastAPI:
         if agent is None:
             raise HTTPException(404, "no agent for session")
         return {"interrupted": agent.interrupt()}
+
+    # -- settings -------------------------------------------------------
+
+    @app.get("/api/settings")
+    async def get_settings() -> dict[str, Any]:
+        state = Settings.load().redacted()
+        # What is actually in use may differ from what is saved, if the file
+        # was edited by hand since boot. Report both rather than implying the
+        # editor's contents are live.
+        state["active"] = {
+            "model": getattr(harness.provider, "model", None),
+            "endpoint": getattr(harness.provider, "base_url", None),
+            "provider": getattr(harness.provider, "name", None),
+            "hint": getattr(harness.provider, "selected_because", None),
+        }
+        return state
+
+    @app.patch("/api/settings")
+    async def edit_settings(body: dict[str, Any]) -> dict[str, Any]:
+        settings = Settings.load().merge(body)
+        try:
+            settings.save()
+        except OSError as exc:
+            raise HTTPException(500, f"could not write settings: {exc}") from None
+        settings.apply_to_env()
+
+        # Rebuild against the new values. A bad combination must not leave the
+        # harness without a working client, so the old one stays until the new
+        # one is built.
+        try:
+            harness.use_provider(build_provider(settings))
+        except Exception as exc:
+            raise HTTPException(400, f"settings saved, but no usable model: {exc}") from None
+
+        state = settings.redacted()
+        state["active"] = {
+            "model": getattr(harness.provider, "model", None),
+            "endpoint": getattr(harness.provider, "base_url", None),
+            "provider": getattr(harness.provider, "name", None),
+            "hint": getattr(harness.provider, "selected_because", None),
+        }
+        # Voice is assembled once at startup and bound to a session, so a key
+        # for it is saved now and picked up on the next run. Say so rather than
+        # letting someone wonder why the microphone did not change.
+        state["restart_required_for"] = ["voice"]
+        return state
 
     # -- scheduled tasks -----------------------------------------------
 

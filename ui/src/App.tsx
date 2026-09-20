@@ -15,9 +15,10 @@ import { Approvals } from "./components/Approvals";
 import { Scrubber } from "./components/Scrubber";
 import { KnowledgeWeb } from "./components/KnowledgeWeb";
 import { Schedule } from "./components/Schedule";
+import { Settings } from "./components/Settings";
 import {
-  IconArrow, IconBrain, IconChevron, IconClock, IconFile, IconGlobe, IconMessage,
-  IconMonitor, IconPlus, IconRepeat, IconSpark, IconStop, IconTerminal,
+  IconArrow, IconBrain, IconChevron, IconClock, IconFile, IconGear, IconGlobe,
+  IconMessage, IconMonitor, IconPlus, IconRepeat, IconSpark, IconStop, IconTerminal,
 } from "./components/Icons";
 
 type Stage = "terminal" | "browser" | "files" | "desktop";
@@ -49,6 +50,7 @@ export function App() {
   const [mobileTab, setMobileTab] = useState<"stage" | "chat" | "timeline">("stage");
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const streamRef = useRef<SessionStream | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
 
@@ -262,6 +264,7 @@ export function App() {
         case "Escape":
           setKnowledgeOpen(false);
           setScheduleOpen(false);
+          setSettingsOpen(false);
           break;
       }
     };
@@ -348,6 +351,14 @@ export function App() {
           aria-label="Open knowledge web"
         >
           <IconBrain size={15} />
+        </button>
+        <button
+          className="btn icon ghost"
+          onClick={() => setSettingsOpen(true)}
+          title="Settings"
+          aria-label="Open settings"
+        >
+          <IconGear size={15} />
         </button>
         {live && view.busy && (
           <button className="btn danger stop-btn" title="Stop"
@@ -485,7 +496,7 @@ export function App() {
           role="tab"
           aria-selected={mobileTab === "stage" && !scheduleOpen}
           className={`mob-tab ${mobileTab === "stage" && !scheduleOpen ? "on" : ""}`}
-          onClick={() => { setScheduleOpen(false); setKnowledgeOpen(false); setMobileTab("stage"); }}
+          onClick={() => { setScheduleOpen(false); setKnowledgeOpen(false); setSettingsOpen(false); setMobileTab("stage"); }}
         >
           <IconTerminal size={18} />
           Stage
@@ -495,7 +506,7 @@ export function App() {
           aria-selected={mobileTab === "chat" && !scheduleOpen}
           className={`mob-tab ${mobileTab === "chat" && !scheduleOpen ? "on" : ""}${
             pending > 0 ? " has-alert" : ""}`}
-          onClick={() => { setScheduleOpen(false); setKnowledgeOpen(false); setMobileTab("chat"); }}
+          onClick={() => { setScheduleOpen(false); setKnowledgeOpen(false); setSettingsOpen(false); setMobileTab("chat"); }}
         >
           <span className="mob-alert" />
           <IconMessage size={18} />
@@ -505,7 +516,7 @@ export function App() {
           role="tab"
           aria-selected={mobileTab === "timeline" && !scheduleOpen}
           className={`mob-tab ${mobileTab === "timeline" && !scheduleOpen ? "on" : ""}`}
-          onClick={() => { setScheduleOpen(false); setKnowledgeOpen(false); setMobileTab("timeline"); }}
+          onClick={() => { setScheduleOpen(false); setKnowledgeOpen(false); setSettingsOpen(false); setMobileTab("timeline"); }}
         >
           <IconClock size={18} />
           Timeline
@@ -524,6 +535,7 @@ export function App() {
         </button>
       </nav>
 
+      {settingsOpen && <Settings onClose={() => setSettingsOpen(false)} />}
       {knowledgeOpen && <KnowledgeWeb onClose={() => setKnowledgeOpen(false)} />}
       {scheduleOpen && (
         <Schedule
