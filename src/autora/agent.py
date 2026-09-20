@@ -287,7 +287,9 @@ class Agent:
             # A provider failure is a visible event, not a traceback on stderr
             # that the person watching the UI never sees.
             self.session.emit(Kind.ERROR, {
-                "error": f"{type(exc).__name__}: {exc}", "where": "provider",
+                "error": describe_exception(exc), "where": "provider",
+                "model": self.provider.model,
+                "endpoint": getattr(self.provider, "base_url", None),
             }, actor="system")
             raise
 
@@ -393,3 +395,33 @@ def build_registry(
         registry.register(MemoryTool(
             memory, scope_for=lambda session: project_scope(session.workdir)))
     return registry
+
+
+def describe_exception(exc: BaseException, depth: int = 4) -> str:
+    """An exception plus what caused it, as one line.
+
+    The top of the chain is often the least informative part of it. An HTTP
+    client raising `APIConnectionError: Connection error.` does not say whether
+    the name failed to resolve, the certificate was rejected, or there is simply
+    no route -- and those want completely different fixes. The answer is a link
+    or two down, so report the chain rather than only its head.
+    """
+    parts: list[str] = []
+    seen: set[int] = set()
+    current: BaseException | None = exc
+
+    while current is not None and id(current) not in seen and len(parts) < depth:
+        seen.add(id(current))
+        text = str(current).strip()
+        parts.append(f"{type(current).__name__}: {text}" if text else type(current).__name__)
+        # An explicit `raise ... from ...` is the author telling us what caused
+        # this. Fall back to the implicit context only when nothing was chained
+        # deliberately and Python has not marked it as noise.
+        if current.__cause__ is not None:
+            current = current.__cause__
+        elif not current.__suppress_context__:
+            current = current.__context__
+        else:
+            current = None
+
+    return " <- ".join(parts)

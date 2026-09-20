@@ -27,7 +27,7 @@ def build_provider(args):
     ):
         from .providers.openai_compat import OpenAICompatProvider
         return OpenAICompatProvider(
-            model=args.model or "deepseek-v4-flash",
+            model=args.model or "deepseek-flash",
             base_url=args.base_url or "https://api.deepseek.com/v1",
             api_key=os.environ.get("DEEPSEEK_API_KEY"),
         )

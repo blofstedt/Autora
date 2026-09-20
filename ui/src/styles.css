@@ -57,6 +57,17 @@
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
 
+/* A phone's URL bar and tab strip are not part of 100% (or 100vh): the app is
+   laid out taller than what you can actually see, so the bottom nav sits off
+   screen and the page has to be panned to reach it. dvh is the viewport as it
+   actually is, and it retracks as that chrome slides away. */
+@supports (height: 100dvh) {
+  html, body, #root { height: 100dvh; }
+}
+/* Nothing here is meant to scroll sideways; if a panel ever overshoots, clip it
+   rather than letting the whole page pan. */
+html, body { max-width: 100%; overflow-x: hidden; overscroll-behavior: none; }
+
 body {
   background: var(--bg);
   color: var(--text);
@@ -810,6 +821,28 @@ body::before {
     display: none;
   }
   .mob-tab.has-alert .mob-alert { display: block; }
+
+  /* ── touch targets ── */
+  /* 31px is a comfortable mouse target and a poor thumb one. Grow the controls
+     that are tapped rather than every button, so the header does not swell. */
+  .btn { height: 40px; padding: 0 15px; }
+  .btn.icon { width: 40px; }
+  /* A floor rather than padding: the height of this one depends on its icon,
+     its label and sometimes a count badge, so stating it is the only way to
+     know what you get. */
+  .seg { min-height: 42px; padding: 0 13px; font-size: 12.5px; }
+  .scrub .btn.icon { width: 40px; height: 40px; }
+  .job-switch { width: 46px; height: 28px; }
+  .job-knob { width: 22px; height: 22px; }
+  .job-switch.on .job-knob { transform: translateX(18px); }
+  .reason-toggle { padding: 6px 0; }
+
+  /* The header now has two overlay launchers competing with the session pill,
+     and the bottom bar already carries one of them. Drop it here rather than
+     letting the row overflow and take the page sideways with it. */
+  .top .sched-launch { display: none; }
+
+  .mobile-nav { z-index: 60; }
 }
 
 /* --------------------------------------------------------- knowledge web -- */
@@ -956,9 +989,7 @@ body::before {
 }
 .sched-body {
   flex: 1; min-height: 0; overflow-y: auto;
-  padding: 16px; display: flex; flex-direction: column; gap: 12px;
-  /* Clears the mobile tab bar, so the last task is never trapped under it. */
-  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  padding: 16px 16px 24px; display: flex; flex-direction: column; gap: 12px;
 }
 
 .job {
@@ -1028,6 +1059,19 @@ body::before {
 .jf-hint { margin-top: -5px; font-size: 11.5px; color: var(--text-3); }
 .jf-presets { display: flex; flex-wrap: wrap; gap: 6px; }
 .jf-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2px; }
+
+/* Both overlays stop above the tab bar rather than covering it: the tabs are
+   how you leave, and an overlay that hides them reads as a dead end.
+   This has to sit after the .kweb/.sched rules above -- their `inset: 0` sets
+   `bottom` too, and equal specificity means whichever is written last wins,
+   media query or not. */
+@media (max-width: 680px) {
+  .kweb, .sched { bottom: calc(56px + env(safe-area-inset-bottom, 0px)); }
+  .sched-top, .kweb-top { padding: 0 12px; gap: 8px; }
+  /* A long task name must not push the close button off the row. */
+  .sched-top .brand { min-width: 0; overflow: hidden; text-overflow: ellipsis;
+                      white-space: nowrap; }
+}
 
 /* ------------------------------------------------------- reduced motion -- */
 /* Three animations here run forever by design -- the status halo, the click

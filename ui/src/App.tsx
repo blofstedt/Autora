@@ -332,7 +332,7 @@ export function App() {
           {badge.text}
         </span>
         <button
-          className="btn icon ghost"
+          className="btn icon ghost sched-launch"
           onClick={() => setScheduleOpen(true)}
           title="Scheduled tasks"
           aria-label="Open scheduled tasks"
@@ -473,22 +473,25 @@ export function App() {
         </aside>
       </div>
 
-      {/* Bottom tab bar — hidden on desktop via CSS, shown on mobile */}
+      {/* Bottom tab bar — hidden on desktop via CSS, shown on mobile.
+          The panel tabs also dismiss an open overlay: the bar stays visible on
+          top of it, so tapping one has to mean "take me there". */}
       <nav className="mobile-nav" role="tablist" aria-label="Panel">
         <button
           role="tab"
-          aria-selected={mobileTab === "stage"}
-          className={`mob-tab ${mobileTab === "stage" ? "on" : ""}`}
-          onClick={() => setMobileTab("stage")}
+          aria-selected={mobileTab === "stage" && !scheduleOpen}
+          className={`mob-tab ${mobileTab === "stage" && !scheduleOpen ? "on" : ""}`}
+          onClick={() => { setScheduleOpen(false); setKnowledgeOpen(false); setMobileTab("stage"); }}
         >
           <IconTerminal size={18} />
           Stage
         </button>
         <button
           role="tab"
-          aria-selected={mobileTab === "chat"}
-          className={`mob-tab ${mobileTab === "chat" ? "on" : ""}${pending > 0 ? " has-alert" : ""}`}
-          onClick={() => setMobileTab("chat")}
+          aria-selected={mobileTab === "chat" && !scheduleOpen}
+          className={`mob-tab ${mobileTab === "chat" && !scheduleOpen ? "on" : ""}${
+            pending > 0 ? " has-alert" : ""}`}
+          onClick={() => { setScheduleOpen(false); setKnowledgeOpen(false); setMobileTab("chat"); }}
         >
           <span className="mob-alert" />
           <IconMessage size={18} />
@@ -496,9 +499,9 @@ export function App() {
         </button>
         <button
           role="tab"
-          aria-selected={mobileTab === "timeline"}
-          className={`mob-tab ${mobileTab === "timeline" ? "on" : ""}`}
-          onClick={() => setMobileTab("timeline")}
+          aria-selected={mobileTab === "timeline" && !scheduleOpen}
+          className={`mob-tab ${mobileTab === "timeline" && !scheduleOpen ? "on" : ""}`}
+          onClick={() => { setScheduleOpen(false); setKnowledgeOpen(false); setMobileTab("timeline"); }}
         >
           <IconClock size={18} />
           Timeline

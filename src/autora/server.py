@@ -14,6 +14,7 @@ import asyncio
 import base64
 import contextlib
 import json
+import mimetypes
 import time
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,10 @@ from .schedule import CronError, Job, Scheduler
 from .session import SessionRegistry
 from .tools.desktop import RelayBridge
 from .tools.terminal import export_asciicast
+
+# Python does not know this one, and a manifest served as octet-stream is a
+# manifest the browser declines to install from.
+mimetypes.add_type("application/manifest+json", ".webmanifest")
 
 
 class Harness:
