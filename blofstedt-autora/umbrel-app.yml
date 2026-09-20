@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.2.0"
+version: "0.2.1"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -55,11 +55,10 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Scheduled tasks: give the agent a prompt and a cron expression and each run
-  opens its own session you can watch or replay. Installable to a phone's home
-  screen as a PWA. Fixes the browser stage flashing once per screencast frame,
-  the layout overflowing a phone screen, the tab bar disappearing behind the
-  Tasks panel, and tap targets being too small on mobile.
+  Selecting a timeline row now shows its message in full, so a truncated error
+  can actually be read, and provider errors name the model and endpoint they
+  were using. Fixes the header overflowing on a phone while the agent is
+  working, which clipped the Stop button off the screen.
 dependencies: []
 path: ""
 defaultUsername: ""
