@@ -36,7 +36,21 @@ def build_provider(args):
         explicit == "auto" and not os.environ.get("ANTHROPIC_API_KEY")
     ):
         from .providers.openai_compat import OpenAICompatProvider
-        return OpenAICompatProvider(model=args.model or "qwen3-coder", base_url=args.base_url)
+        provider = OpenAICompatProvider(
+            model=args.model or "qwen3-coder", base_url=args.base_url)
+        if explicit == "auto":
+            # Reaching here in auto mode means neither hosted key was set, so
+            # this is the last resort rather than a choice. Usually that is a
+            # key the container never received, and the symptom is a connection
+            # error against a local server nobody started -- which says nothing
+            # about the actual mistake unless we say it here.
+            provider.selected_because = (
+                "no ANTHROPIC_API_KEY or DEEPSEEK_API_KEY was set, so Autora fell back "
+                "to a local OpenAI-compatible server"
+            )
+            print(f"warning: {provider.selected_because} at {provider.base_url}",
+                  file=sys.stderr)
+        return provider
 
     from .providers.anthropic_provider import AnthropicProvider
     return AnthropicProvider(model=args.model or "claude-sonnet-5")

@@ -24,6 +24,12 @@ from .base import Delta, TextDelta, ThinkingDelta, ToolCallRequest, TurnEnd, Usa
 class OpenAICompatProvider:
     name = "openai-compat"
 
+    #: Why this provider was chosen, when it was chosen by falling back rather
+    #: than by being asked for. Reported alongside a failure, because "cannot
+    #: reach localhost:8000" is only baffling until you know nothing else was
+    #: configured. Set by the CLI; None when the choice was explicit.
+    selected_because: str | None = None
+
     def __init__(
         self,
         model: str = "qwen3-coder",

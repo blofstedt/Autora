@@ -290,6 +290,7 @@ class Agent:
                 "error": describe_exception(exc), "where": "provider",
                 "model": self.provider.model,
                 "endpoint": getattr(self.provider, "base_url", None),
+                "hint": getattr(self.provider, "selected_because", None),
             }, actor="system")
             raise
 

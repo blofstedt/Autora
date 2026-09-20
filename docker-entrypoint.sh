@@ -1,6 +1,27 @@
 #!/bin/sh
 set -e
 
+# Keys may also be left in the persistent data volume, one KEY=value per line.
+#
+# The compose file forwards ANTHROPIC_API_KEY and friends from the host, but
+# that substitution only happens if the value is present where the project is
+# run from -- miss that and the variable silently becomes an empty string, the
+# harness finds no key, and the first symptom is a connection error against a
+# local model server nobody started. A file inside the volume has no such
+# indirection: it is either there or it is not, it survives app updates, and it
+# is reachable without going near the compose file.
+#
+# Parsed rather than sourced: this only ever needs to set variables, and
+# sourcing would run whatever else the file happened to contain.
+if [ -f /data/autora.env ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            ''|'#'*) continue ;;
+            *=*) export "$line" ;;
+        esac
+    done < /data/autora.env
+fi
+
 HOST="${AUTORA_HOST:-0.0.0.0}"
 PORT="${AUTORA_PORT:-8817}"
 WORKDIR="${AUTORA_WORKDIR:-/host}"

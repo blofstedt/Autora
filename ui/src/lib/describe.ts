@@ -76,10 +76,14 @@ export function summarize(event: AutoraEvent): string {
     case Kind.SessionEnded: return `${p.events ?? 0} events`;
     // Which endpoint and model were in play is half of what makes a provider
     // failure diagnosable, and it is not otherwise visible anywhere in the UI.
-    case Kind.Error:
-      return p.endpoint
-        ? `${p.error ?? ""}\n${p.model ?? "?"} @ ${p.endpoint}`
-        : (p.error ?? "");
+    // The hint, when there is one, is the other half: it says why that endpoint
+    // is the one being called at all.
+    case Kind.Error: {
+      const lines = [p.error ?? ""];
+      if (p.endpoint) lines.push(`${p.model ?? "?"} @ ${p.endpoint}`);
+      if (p.hint) lines.push(p.hint);
+      return lines.join("\n");
+    }
     default: return JSON.stringify(p).slice(0, 110);
   }
 }
