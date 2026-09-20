@@ -2,14 +2,16 @@
 FROM node:20-alpine AS ui-builder
 WORKDIR /build
 COPY ui/package.json ui/pnpm-lock.yaml* ui/package-lock.json* ./
-RUN npm install -g pnpm 2>/dev/null; \
+RUN npm install -g pnpm@10.33.0 2>/dev/null; \
     if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; \
     else npm ci; fi
 COPY ui/ .
 RUN if [ -f pnpm-lock.yaml ]; then pnpm build; else npm run build; fi
 
 # ── stage 2: runtime ─────────────────────────────────────────────────────────
-FROM python:3.12-slim
+# Pinned to bookworm: trixie renames libasound2 to libasound2t64 and moves the
+# chromium binary, both of which this stage depends on below.
+FROM python:3.12-slim-bookworm
 
 # System deps for Chromium (Playwright's bundled build uses these)
 RUN apt-get update && apt-get install -y --no-install-recommends \
