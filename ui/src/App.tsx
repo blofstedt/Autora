@@ -14,9 +14,10 @@ import { DiffView } from "./components/DiffView";
 import { Approvals } from "./components/Approvals";
 import { Scrubber } from "./components/Scrubber";
 import { KnowledgeWeb } from "./components/KnowledgeWeb";
+import { Schedule } from "./components/Schedule";
 import {
   IconArrow, IconBrain, IconChevron, IconClock, IconFile, IconGlobe, IconMessage,
-  IconMonitor, IconPlus, IconSpark, IconStop, IconTerminal,
+  IconMonitor, IconPlus, IconRepeat, IconSpark, IconStop, IconTerminal,
 } from "./components/Icons";
 
 type Stage = "terminal" | "browser" | "files" | "desktop";
@@ -47,6 +48,7 @@ export function App() {
   const [draft, setDraft] = useState("");
   const [mobileTab, setMobileTab] = useState<"stage" | "chat" | "timeline">("stage");
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
   const streamRef = useRef<SessionStream | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
 
@@ -259,6 +261,7 @@ export function App() {
           break;
         case "Escape":
           setKnowledgeOpen(false);
+          setScheduleOpen(false);
           break;
       }
     };
@@ -328,6 +331,14 @@ export function App() {
           <span className="dot" />
           {badge.text}
         </span>
+        <button
+          className="btn icon ghost"
+          onClick={() => setScheduleOpen(true)}
+          title="Scheduled tasks"
+          aria-label="Open scheduled tasks"
+        >
+          <IconRepeat size={15} />
+        </button>
         <button
           className="btn icon ghost"
           onClick={() => setKnowledgeOpen(true)}
@@ -492,9 +503,32 @@ export function App() {
           <IconClock size={18} />
           Timeline
         </button>
+        {/* Tasks is a launcher rather than a fourth panel: the three panels are
+            the live session, and a schedule is about sessions that do not exist
+            yet. It opens the same overlay the header button does. */}
+        <button
+          role="tab"
+          aria-selected={scheduleOpen}
+          className={`mob-tab ${scheduleOpen ? "on" : ""}`}
+          onClick={() => setScheduleOpen(true)}
+        >
+          <IconRepeat size={18} />
+          Tasks
+        </button>
       </nav>
 
       {knowledgeOpen && <KnowledgeWeb onClose={() => setKnowledgeOpen(false)} />}
+      {scheduleOpen && (
+        <Schedule
+          onClose={() => setScheduleOpen(false)}
+          onOpenSession={(id) => {
+            history.replaceState(null, "", `?session=${id}`);
+            setSessionId(id);
+            setScheduleOpen(false);
+            setMobileTab("chat");
+          }}
+        />
+      )}
     </div>
   );
 }

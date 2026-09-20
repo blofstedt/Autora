@@ -155,3 +155,21 @@ export const IconBrain = ({ size = 16, className }: Props) => (
     <path d="M9.6 9.9 10.9 14M14.4 9.9 13.1 14M10 8h4" />
   </svg>
 );
+
+export const IconRepeat = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M4 9a5 5 0 0 1 5-5h9" />
+    <path d="m15 1.5 3 2.5-3 2.5" />
+    <path d="M20 15a5 5 0 0 1-5 5H6" />
+    <path d="m9 17.5-3 2.5 3 2.5" />
+  </svg>
+);
+
+export const IconTrash = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M4 7h16" />
+    <path d="M9 7V5h6v2" />
+    <path d="M6.5 7 7.5 20h9L17.5 7" />
+    <path d="M10.5 11v5M13.5 11v5" />
+  </svg>
+);

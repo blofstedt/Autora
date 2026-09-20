@@ -936,6 +936,99 @@ body::before {
   .kweb-filters { display: none; }
 }
 
+/* ------------------------------------------------------ scheduled tasks -- */
+.sched {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; flex-direction: column;
+  background: var(--bg);
+  animation: fade 0.18s var(--ease) both;
+}
+.sched-top {
+  display: flex; align-items: center; gap: 10px;
+  height: 58px; padding: 0 16px; flex: 0 0 auto;
+  background: linear-gradient(180deg, rgba(21, 24, 36, 0.9), rgba(14, 16, 22, 0.75));
+  border-bottom: 1px solid var(--border);
+}
+.sched-error {
+  flex: 0 0 auto; margin: 12px 16px 0; padding: 9px 12px; border-radius: var(--r-sm);
+  background: rgba(251, 113, 133, 0.12); border: 1px solid rgba(251, 113, 133, 0.3);
+  color: var(--danger); font-size: 12px;
+}
+.sched-body {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 16px; display: flex; flex-direction: column; gap: 12px;
+  /* Clears the mobile tab bar, so the last task is never trapped under it. */
+  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+}
+
+.job {
+  padding: 13px 14px; border-radius: var(--r); background: var(--s1);
+  border: 1px solid var(--border); animation: rise 0.24s var(--ease) both;
+}
+.job.is-off { opacity: 0.6; }
+.job-top { display: flex; align-items: center; gap: 9px; }
+.job-name { font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
+
+/* A switch, not a checkbox: enabling is the one control on this row people
+   reach for without reading, and it should look like the thing it does. */
+.job-switch {
+  flex: 0 0 auto; width: 34px; height: 20px; padding: 2px; border-radius: 99px;
+  background: var(--s3); border: 1px solid var(--border); cursor: pointer;
+  transition: background 0.16s var(--ease), border-color 0.16s var(--ease);
+}
+.job-switch.on { background: var(--accent-soft); border-color: var(--accent-line); }
+.job-knob {
+  display: block; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--text-3); transition: transform 0.16s var(--ease),
+                                          background 0.16s var(--ease);
+}
+.job-switch.on .job-knob { transform: translateX(14px); background: var(--accent); }
+
+.job-when { display: flex; align-items: center; gap: 9px; margin-top: 9px; flex-wrap: wrap; }
+.job-when code {
+  font-family: var(--mono); font-size: 11px; color: var(--text-2);
+  background: var(--s2); border: 1px solid var(--border);
+  border-radius: var(--r-sm); padding: 2px 7px;
+}
+.job-when span { font-size: 11.5px; color: var(--text-3); }
+.job-prompt {
+  margin: 9px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.job-foot {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-top: 10px; font-size: 11.5px; color: var(--text-3);
+}
+.job-foot .muted { color: var(--text-3); opacity: 0.75; }
+.job-bad { color: var(--danger); }
+.job-link {
+  background: none; border: 0; padding: 0; font: inherit; cursor: pointer;
+  color: var(--accent-2);
+}
+.job-link:hover { text-decoration: underline; }
+
+.jobform {
+  padding: 14px; border-radius: var(--r); background: var(--s1);
+  border: 1px solid var(--accent-line); animation: rise 0.24s var(--ease) both;
+  display: flex; flex-direction: column; gap: 11px;
+}
+.jf-row { display: flex; flex-direction: column; gap: 5px; }
+.jf-row > span { font-size: 11px; color: var(--text-3); font-weight: 600;
+                 letter-spacing: 0.04em; text-transform: uppercase; }
+.jf-row input, .jf-row textarea {
+  width: 100%; padding: 9px 11px; border-radius: var(--r-sm);
+  background: var(--s2); border: 1px solid var(--border); color: var(--text);
+  font-family: inherit; font-size: 13px; line-height: 1.5; resize: vertical;
+  transition: border-color 0.18s var(--ease);
+}
+.jf-row input:focus, .jf-row textarea:focus {
+  outline: none; border-color: var(--accent-line);
+}
+.jf-cron { font-family: var(--mono) !important; font-size: 12.5px !important; }
+.jf-hint { margin-top: -5px; font-size: 11.5px; color: var(--text-3); }
+.jf-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.jf-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2px; }
+
 /* ------------------------------------------------------- reduced motion -- */
 /* Three animations here run forever by design -- the status halo, the click
    ripple, the working sweep. Asked to stop, stop all of it: cut durations to

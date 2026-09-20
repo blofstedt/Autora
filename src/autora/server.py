@@ -26,6 +26,7 @@ from .agent import Agent, build_registry
 from .events import Kind
 from .memory import MemoryStore, project_scope
 from .policy import PolicyGate
+from .schedule import CronError, Job, Scheduler
 from .session import SessionRegistry
 from .tools.desktop import RelayBridge
 from .tools.terminal import export_asciicast
@@ -60,6 +61,9 @@ class Harness:
         )
         self.agents: dict[str, Agent] = {}
         self._turns: dict[str, asyncio.Task] = {}
+        self.schedule = Scheduler(
+            self.sessions.root / "schedule.json", launch=self.launch_job
+        )
 
     def create_session(self, title: str = "") -> str:
         session = self.sessions.create(title=title, workdir=self.workdir)
@@ -72,6 +76,27 @@ class Harness:
 
     def agent_for(self, session_id: str) -> Agent | None:
         return self.agents.get(session_id)
+
+    async def launch_job(self, job: Job) -> str:
+        """Open a session for a scheduled task and set the agent going in it.
+
+        Deliberately fire-and-forget: the scheduler's job is to start the run,
+        not to sit inside it. The session is live from this moment, so the run
+        is watchable in the UI exactly like one someone typed.
+        """
+        session_id = self.create_session(title=job.name)
+        session = self.sessions.get(session_id)
+        agent = self.agent_for(session_id)
+        if agent is None:
+            raise RuntimeError("no model provider configured")
+        session.emit(Kind.LOG, {"event": "schedule.fired", "job": job.id,
+                                "name": job.name, "cron": job.cron},
+                     actor="system")
+        task = asyncio.create_task(agent.run_turn(job.prompt))
+        self._turns[session_id] = task
+        task.add_done_callback(lambda t: _report_turn_failure(session, t))
+        task.add_done_callback(lambda t: self.learn_from(session, t))
+        return session_id
 
     def learn_from(self, session, task: asyncio.Task) -> None:
         """After a turn lands, decide what was worth keeping.
@@ -271,6 +296,63 @@ def create_app(harness: Harness, ui_dist: Path | None = None) -> FastAPI:
         if agent is None:
             raise HTTPException(404, "no agent for session")
         return {"interrupted": agent.interrupt()}
+
+    # -- scheduled tasks -----------------------------------------------
+
+    @app.get("/api/jobs")
+    async def list_jobs() -> list[dict[str, Any]]:
+        return harness.schedule.list()
+
+    @app.post("/api/jobs")
+    async def add_job(body: dict[str, Any]) -> dict[str, Any]:
+        try:
+            job = harness.schedule.add(
+                name=body.get("name", ""),
+                cron=(body.get("cron") or "").strip(),
+                prompt=(body.get("prompt") or "").strip(),
+                enabled=bool(body.get("enabled", True)),
+            )
+        except CronError as exc:
+            raise HTTPException(400, str(exc)) from None
+        if not job.prompt:
+            harness.schedule.remove(job.id)
+            raise HTTPException(400, "a task needs a prompt")
+        return {"id": job.id}
+
+    @app.patch("/api/jobs/{job_id}")
+    async def edit_job(job_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        try:
+            job = harness.schedule.update(job_id, **body)
+        except CronError as exc:
+            raise HTTPException(400, str(exc)) from None
+        if job is None:
+            raise HTTPException(404, "no such job")
+        return {"ok": True}
+
+    @app.delete("/api/jobs/{job_id}")
+    async def delete_job(job_id: str) -> dict[str, Any]:
+        if not harness.schedule.remove(job_id):
+            raise HTTPException(404, "no such job")
+        return {"ok": True}
+
+    @app.post("/api/jobs/{job_id}/run")
+    async def run_job_now(job_id: str) -> dict[str, Any]:
+        """Run a task immediately, without waiting for its slot."""
+        job = harness.schedule.jobs.get(job_id)
+        if job is None:
+            raise HTTPException(404, "no such job")
+        await harness.schedule.fire(job)
+        if job.last_error:
+            raise HTTPException(400, job.last_error)
+        return {"session": job.last_session}
+
+    @app.on_event("startup")
+    async def _start_schedule() -> None:
+        harness.schedule.start()
+
+    @app.on_event("shutdown")
+    async def _stop_schedule() -> None:
+        await harness.schedule.stop()
 
     @app.post("/api/policy/{request_id}")
     async def decide(request_id: str, body: dict[str, Any]) -> dict[str, Any]:
