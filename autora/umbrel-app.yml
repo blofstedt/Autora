@@ -3,7 +3,7 @@ id: autora
 category: productivity
 name: Autora
 tagline: An agentic AI harness you can watch in real time
-icon: https://raw.githubusercontent.com/blofstedt/autora/main/umbrel/autora/icon.svg
+icon: https://raw.githubusercontent.com/blofstedt/Autora/main/autora/icon.svg
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
