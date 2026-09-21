@@ -73,8 +73,14 @@ def test_thinking_alone_still_opens_the_turn():
         print("  thinking with nothing after it is still an assistant turn ... ok")
 
 
-def test_only_the_unfinished_turn_carries_it_back():
-    """A turn that called a tool is mid-flight; one that ended in prose is done."""
+def test_every_assistant_turn_carries_it_back():
+    """Not only the tool-calling one.
+
+    DeepSeek wants the reasoning behind every assistant message once the
+    conversation has made a tool call at all. Sending it on the turn in flight
+    alone fails with the same error as sending none, which is what made the
+    first attempt at this look correct.
+    """
     messages = [
         {"role": "user", "content": "hi"},
         {"role": "assistant", "content": "Listing it.", "reasoning": "ls is enough.",
@@ -85,11 +91,11 @@ def test_only_the_unfinished_turn_carries_it_back():
 
     sent = _to_openai(messages, reasoning=True)
     assert sent[1]["reasoning_content"] == "ls is enough.", sent[1]
-    assert "reasoning_content" not in sent[3], sent[3]
+    assert sent[3]["reasoning_content"] == "that is all of it", sent[3]
 
     withheld = _to_openai(messages, reasoning=False)
     assert all("reasoning_content" not in m for m in withheld), withheld
-    print("  sent on the tool-calling turn, never on the finished one ... ok")
+    print("  sent on every assistant turn, withheld entirely when off ... ok")
 
 
 def test_the_endpoint_gets_a_guess_and_the_last_word():
@@ -178,7 +184,7 @@ if __name__ == "__main__":
 
     test_the_fold_keeps_the_thinking()
     test_thinking_alone_still_opens_the_turn()
-    test_only_the_unfinished_turn_carries_it_back()
+    test_every_assistant_turn_carries_it_back()
     test_the_endpoint_gets_a_guess_and_the_last_word()
     asyncio.run(test_a_rejection_is_answered_by_one_retry())
     print("\nall reasoning round-trip tests passed")

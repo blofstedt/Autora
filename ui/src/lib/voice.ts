@@ -104,15 +104,12 @@ export type Dictation = {
 export function useDictation({
   onPhrase,
   continuous = false,
-  meter = false,
   lang,
 }: {
   /** A settled phrase. Called once per utterance the engine commits to. */
   onPhrase?: (text: string) => void;
   /** Keep listening across phrases, rather than stopping after the first. */
   continuous?: boolean;
-  /** Also open an analyser, so `level` tracks the voice. */
-  meter?: boolean;
   lang?: string;
 } = {}): Dictation {
   const [listening, setListening] = useState(false);
@@ -126,81 +123,59 @@ export function useDictation({
   const phraseRef = useRef(onPhrase);
   phraseRef.current = onPhrase;
 
-  // Audio plumbing for the meter, kept out of state: it changes 60 times a
-  // second and none of it belongs in a render.
-  const media = useRef<MediaStream | null>(null);
-  const audio = useRef<AudioContext | null>(null);
-  const frame = useRef(0);
-  /** Set once an audio failure suggests the second mic stream is the problem;
-      from then on we listen without a meter rather than not at all. */
-  const meterBlocked = useRef(false);
+  /** Decays on a timer, bumped whenever the engine reports hearing something.
+   *
+   * This used to be a real analyser: a second `getUserMedia` stream, an
+   * AudioContext, an honest RMS of your actual voice. It had to go, and the
+   * reason is worth writing down because the meter is the more attractive
+   * design and it does not work.
+   *
+   * On Android the speech engine is a separate system service with its own
+   * claim on the microphone. Holding a second capture stream open beside it
+   * does not fail -- it starves it. Recognition starts, reports no error,
+   * fires `onstart`, and then simply never returns a phrase. Meanwhile the
+   * analyser has the audio and the ring moves beautifully, so the interface
+   * says "listening" with total confidence while the thing that transcribes is
+   * deaf. That failure is indistinguishable from dictation not being
+   * implemented, and it cost a long evening to find.
+   *
+   * So the level follows the engine rather than the microphone. It rises when
+   * a phrase lands and falls when nothing is arriving, which is what it was
+   * being read for anyway.
+   */
+  const decay = useRef(0);
 
-  const stopMeter = useCallback(() => {
-    cancelAnimationFrame(frame.current);
-    media.current?.getTracks().forEach((t) => t.stop());
-    media.current = null;
-    void audio.current?.close().catch(() => undefined);
-    audio.current = null;
-    setLevel(0);
+  const bump = useCallback(() => {
+    setLevel(0.8);
+    window.clearInterval(decay.current);
+    decay.current = window.setInterval(() => {
+      setLevel((current) => {
+        const next = current - 0.08;
+        if (next <= 0.05) {
+          window.clearInterval(decay.current);
+          return 0.05;
+        }
+        return next;
+      });
+    }, 90);
   }, []);
 
-  const startMeter = useCallback(async () => {
-    if (!meter || meterBlocked.current || media.current) return;
-    if (!navigator.mediaDevices?.getUserMedia) return;
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      if (!wanted.current) {
-        stream.getTracks().forEach((t) => t.stop());
-        return;
-      }
-      media.current = stream;
-      const ctx = new (window.AudioContext ?? (window as any).webkitAudioContext)();
-      audio.current = ctx;
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 512;
-      analyser.smoothingTimeConstant = 0.75;
-      ctx.createMediaStreamSource(stream).connect(analyser);
-      const buffer = new Uint8Array(analyser.frequencyBinCount);
-
-      let last = 0;
-      const tick = () => {
-        frame.current = requestAnimationFrame(tick);
-        analyser.getByteTimeDomainData(buffer);
-        let sum = 0;
-        for (const sample of buffer) {
-          const centred = (sample - 128) / 128;
-          sum += centred * centred;
-        }
-        // Speech sits low in a linear RMS; the curve spends the range on the
-        // part a voice actually occupies instead of on the top half nothing
-        // ever reaches.
-        const next = Math.min(1, Math.sqrt(sum / buffer.length) * 3.2);
-        // Re-rendering on every frame to move a ring by a pixel is not worth
-        // it; a visible step is.
-        if (Math.abs(next - last) > 0.035) {
-          last = next;
-          setLevel(next);
-        }
-      };
-      tick();
-    } catch {
-      // No meter is a cosmetic loss. Listening still works.
-      meterBlocked.current = true;
-      stopMeter();
-    }
-  }, [meter, stopMeter]);
+  const settle = useCallback(() => {
+    window.clearInterval(decay.current);
+    setLevel(0);
+  }, []);
 
   const stop = useCallback(() => {
     wanted.current = false;
     restarts.current = 0;
     setInterim("");
-    stopMeter();
+    settle();
     try {
       recognition.current?.stop();
     } catch {
       // Stopping something that never started is not an error worth surfacing.
     }
-  }, [stopMeter]);
+  }, [settle]);
 
   const start = useCallback(() => {
     if (!Impl || wanted.current) return;
@@ -217,7 +192,6 @@ export function useDictation({
 
     engine.onstart = () => {
       setListening(true);
-      void startMeter();
     };
 
     engine.onresult = (event) => {
@@ -236,6 +210,9 @@ export function useDictation({
         }
       }
       setInterim(live.trim());
+      // Anything at all coming back means the engine is hearing you, which is
+      // the one thing the ring is there to say.
+      bump();
     };
 
     engine.onerror = (event) => {
@@ -243,13 +220,6 @@ export function useDictation({
       // Silence between phrases is not a failure; the restart in onend covers
       // it and saying so would flash an error every time someone pauses.
       if (event.error === "no-speech") return;
-      if (event.error === "audio-capture" && meter && !meterBlocked.current) {
-        // Two open microphones is the likeliest cause. Drop ours and let the
-        // restart try again without it.
-        meterBlocked.current = true;
-        stopMeter();
-        return;
-      }
       setError(MESSAGES[event.error] ?? `Speech input failed (${event.error}).`);
       wanted.current = false;
     };
@@ -271,7 +241,7 @@ export function useDictation({
       if (wanted.current) setError("Speech input keeps dropping out.");
       wanted.current = false;
       setListening(false);
-      stopMeter();
+      settle();
     };
 
     try {
@@ -280,7 +250,7 @@ export function useDictation({
       wanted.current = false;
       setError("Could not start the microphone.");
     }
-  }, [continuous, lang, meter, startMeter, stopMeter]);
+  }, [bump, continuous, lang, settle]);
 
   const toggle = useCallback(() => {
     if (wanted.current) stop();
@@ -295,8 +265,8 @@ export function useDictation({
     } catch {
       // Nothing to abort.
     }
-    stopMeter();
-  }, [stopMeter]);
+    window.clearInterval(decay.current);
+  }, []);
 
   return {
     supported: dictationSupported,

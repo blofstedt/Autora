@@ -183,12 +183,21 @@ def _to_openai(
                     for c in msg["tool_calls"]
                 ],
             }
-            # Only on a turn that called a tool. That is the turn the model is
-            # still in the middle of -- it thought, it acted, and it is about to
-            # be shown the result -- and it is the one DeepSeek's thinking mode
-            # insists on getting back intact. A turn that ended in prose is
-            # finished, and re-sending its reasoning is both wasted tokens and
-            # the thing DeepSeek's reasoner rejects.
+            if reasoning and msg.get("reasoning"):
+                turn["reasoning_content"] = msg["reasoning"]
+            out.append(turn)
+        elif role == "assistant":
+            turn = {"role": "assistant", "content": msg.get("content") or ""}
+            # Every assistant turn, not only the ones that called a tool.
+            #
+            # That distinction was the first guess and it was wrong: once a
+            # conversation has made a single tool call, DeepSeek wants the
+            # reasoning back on *all* of the assistant messages behind it, not
+            # just the one mid-flight. Sending it on the tool-calling turn
+            # alone fails exactly as loudly as sending none, and the error text
+            # is identical, which is what made the first fix look like it had
+            # worked until a session got long enough to have an ordinary reply
+            # in it.
             if reasoning and msg.get("reasoning"):
                 turn["reasoning_content"] = msg["reasoning"]
             out.append(turn)

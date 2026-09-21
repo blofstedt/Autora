@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.5.9"
+version: "0.6.0"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -64,25 +64,27 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Stop actually stops now. The button sent its message over the live
-  connection only, and that connection quietly drops while a phone is
-  asleep -- so after the screen had been off, Stop did nothing and said
-  nothing, and the agent kept going. It now also asks the server directly,
-  and tells you if there was nothing running to stop.
+  Dictation and live chat actually transcribe now. The ring that pulses
+  while you speak was opening its own microphone to measure your voice,
+  and on Android that quietly starves the speech engine: it starts,
+  reports no error, and never returns a word. So the interface said
+  "listening" with complete confidence while nothing was being heard,
+  which is indistinguishable from the feature not existing. The ring
+  follows the words now instead of the microphone, and there is only one
+  thing holding the mic.
 
 
-  Microphone problems are visible instead of silent. Anything that went
-  wrong with dictation was reported through a tooltip, which a phone has
-  no way to show, so a microphone that failed looked exactly like one that
-  was never built. Failures are now written where you are already looking.
+  Live chat also sends when you stop talking rather than waiting for the
+  engine to declare your sentence finished -- on Android it often never
+  does, so a pause now sends what it heard.
 
 
-  Worth knowing if voice is not working for you: a browser will not open a
-  microphone on a page whose certificate it does not trust. Clicking
-  through the warning gets you the page but not the microphone -- so
-  dictation, live chat and installing to the home screen all need the
-  certificate from Settings to be installed on the device first. That is
-  one requirement, not three separate problems.
+  And DeepSeek can get through a conversation with tools in it. Once a
+  chat has made a single tool call, DeepSeek wants the model's reasoning
+  attached to every assistant message after it, not just the one that
+  called the tool. Sending it on only that one failed with exactly the
+  same error as sending none, which is why the previous fix looked like it
+  had worked.
 dependencies: []
 path: ""
 defaultUsername: ""

@@ -35,7 +35,6 @@ export function DictateButton({
   textRef.current = onText;
 
   const dictation = useDictation({
-    meter: true,
     onPhrase: useCallback((phrase: string) => textRef.current(phrase), []),
   });
 

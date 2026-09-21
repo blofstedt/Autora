@@ -51,32 +51,57 @@ export function LiveChat({
   disabled?: boolean;
 }) {
   const [caption, setCaption] = useState("");
+  /** Phrases the engine has committed to. */
   const pending = useRef("");
+  /** The phrase still forming, which may never be committed to at all. */
+  const live = useRef("");
   const timer = useRef(0);
   const utteranceRef = useRef(onUtterance);
   utteranceRef.current = onUtterance;
 
+  /**
+   * Send what we have, settled or not.
+   *
+   * Including the unsettled part is the whole fix. Chrome on Android, in
+   * continuous mode, will happily stream interim results for a whole sentence
+   * and then never mark any of it final -- so a loop that waits for `isFinal`
+   * waits forever, and the interface sits there captioning your words back to
+   * you while sending nothing. A pause is the signal to act on; whether the
+   * engine has made up its mind by then is its business.
+   */
   const flush = useCallback(() => {
-    const text = pending.current.trim();
+    const text = `${pending.current} ${live.current}`.trim();
     pending.current = "";
+    live.current = "";
     setCaption("");
     if (text.length >= MIN_CHARS) utteranceRef.current(text);
   }, []);
 
-  const onPhrase = useCallback((phrase: string) => {
-    pending.current = `${pending.current} ${phrase}`.trim();
-    setCaption(pending.current);
+  /** Restart the quiet-for-long-enough clock. Talking keeps resetting it. */
+  const schedule = useCallback(() => {
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(flush, SETTLE_MS);
   }, [flush]);
 
-  const dictation = useDictation({ onPhrase, continuous: true, meter: true });
+  const onPhrase = useCallback((phrase: string) => {
+    pending.current = `${pending.current} ${phrase}`.trim();
+    // Settled, so it is no longer in flight -- keeping both would say it twice.
+    live.current = "";
+    setCaption(pending.current);
+    schedule();
+  }, [schedule]);
+
+  const dictation = useDictation({ onPhrase, continuous: true });
   const { start, stop, listening, interim, error, level, supported } = dictation;
 
-  // Show the words forming, not just the ones that have landed.
+  // Show the words forming, not just the ones that have landed -- and count
+  // them as something to send, since they may be all we ever get.
   useEffect(() => {
-    if (interim) setCaption(`${pending.current} ${interim}`.trim());
-  }, [interim]);
+    if (!interim) return;
+    live.current = interim;
+    setCaption(`${pending.current} ${interim}`.trim());
+    schedule();
+  }, [interim, schedule]);
 
   // Hold the microphone shut while the agent has the floor, and take it back
   // the moment it stops.
