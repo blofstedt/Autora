@@ -36,6 +36,11 @@ MANIFEST = "blofstedt-autora/umbrel-app.yml"
 #: ignore.
 WATCHED = (
     "src/",
+    # The TypeScript server the console is built on: server.ts plus server/.
+    "server/",
+    "server.ts",
+    "package.json",
+    "public/",
     "ui/src/",
     # Icons, the manifest and the service worker. Copied into the image
     # verbatim, so they reach a phone exactly as much as the code does -- this

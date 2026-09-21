@@ -1,0 +1,89 @@
+manifestVersion: 1
+id: blofstedt-autora
+name: Autora
+tagline: An agentic AI harness you can watch in real time
+icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
+category: ai
+version: "0.7.1"
+port: 8817
+description: >-
+  Autora is a local AI agent that you can watch while it works. Point it at
+  your server (or any directory) and give it a task in plain English — it opens
+  a browser, runs terminal commands, edits files, and narrates what it's doing
+  in a live web UI optimised for both desktop and mobile.
+
+
+  Key features:
+
+
+  • Real-time browser view — watch the cursor move, text appear, and pages load
+  exactly as the agent drives them.
+
+
+  • Persistent browser auth — sign in once to Gmail, Google Calendar, or any
+  site; auth is preserved across restarts in a dedicated profile.
+
+
+  • Live terminal with colour output, progress bars, and scrollback.
+
+
+  • File diff viewer showing every edit the agent makes.
+
+
+  • Full server access — the agent works in / by default (fully automated, no
+  per-action prompts required).
+
+
+  • Voice interface (optional) — Deepgram STT+TTS when DEEPGRAM_API_KEY is set.
+
+
+  • Supports Anthropic Claude, DeepSeek, and any local model (vLLM / Ollama).
+
+
+  • All sessions are recorded and replayable.
+
+
+  Setup: after installing, put your API key in
+  ~/umbrel/app-data/blofstedt-autora/data/autora.env, one KEY=value per line —
+  ANTHROPIC_API_KEY=sk-ant-... or DEEPSEEK_API_KEY=sk-... — then restart the
+  app. Without a key Autora falls back to a local OpenAI-compatible model
+  server on port 8000, and says so if it cannot reach one.
+
+
+  Voice from a phone: browsers only open a microphone on a secure page, and an
+  http address on your home network is not one. Set AUTORA_TLS=1 in the same
+  file and Autora also serves https on port 8818 — open that, click through the
+  certificate warning once, and dictation and live chat appear. Note that 8818
+  is published directly, so it does not go through Umbrel's login.
+
+developer: blofstedt
+website: https://github.com/blofstedt/Autora
+submitter: blofstedt
+submission: https://github.com/blofstedt/Autora
+repo: https://github.com/blofstedt/Autora
+support: https://github.com/blofstedt/Autora/issues
+gallery: []
+releaseNotes: >-
+  Autora now tells you when the page you are looking at is older than the
+  version installed.
+
+
+  An update can arrive and leave no trace: the browser keeps a copy of the
+  app, and a page opened while the container was restarting -- which is
+  exactly what an update does -- keeps running the old copy. Everything
+  works, nothing errors, and the only symptom is that the change you were
+  told had shipped is not there.
+
+
+  The page is now stamped with the version that served it and compares
+  that with what the server reports. When they differ, a bar across the
+  top says so and offers one button that clears the cache and loads the
+  new one. Settings opens with the version as well, so "did my update
+  arrive" is answerable in one look rather than from a line buried in the
+  microphone check.
+
+
+dependencies: []
+path: ""
+defaultUsername: ""
+defaultPassword: ""
