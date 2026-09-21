@@ -62,8 +62,22 @@ const DEFAULT_PROMPT =
     so the lifetime figure stays right even once detail is dropped. */
 const MAX_USAGE = 5000;
 
-const STATE_DIR =
-  (process.env.AUTORA_STATE_DIR || "").trim() || path.join(process.cwd(), ".autora");
+/**
+ * Where the settings file lives.
+ *
+ * AUTORA_STATE_DIR names it outright. Failing that, AUTORA_HOME -- which in
+ * the container points at the one directory Umbrel keeps across an update --
+ * so keys and the spend ledger survive the thing most likely to erase them.
+ * Everything inside the image is replaced on every update; state written there
+ * is state you lose without being told.
+ */
+const STATE_DIR = (() => {
+  const named = (process.env.AUTORA_STATE_DIR || "").trim();
+  if (named) return named;
+  const home = (process.env.AUTORA_HOME || "").trim();
+  if (home) return path.join(home, "settings");
+  return path.join(process.cwd(), ".autora");
+})();
 const STATE_FILE = path.join(STATE_DIR, "settings.json");
 
 /** Spend that has aged out of the ledger, kept so lifetime totals survive it. */

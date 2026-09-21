@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.7.1"
+version: "0.7.2"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -37,17 +37,24 @@ description: >-
   • Voice interface (optional) — Deepgram STT+TTS when DEEPGRAM_API_KEY is set.
 
 
-  • Supports Anthropic Claude, DeepSeek, and any local model (vLLM / Ollama).
+  • Bring your own model — OpenAI, Google Gemini, Anthropic Claude, DeepSeek,
+  OpenRouter, or any local OpenAI-compatible server (vLLM / Ollama). Pick one
+  in Settings and choose its model from a priced list.
+
+
+  • Billing — what you have spent this month, today and all time, broken down
+  by provider and model, counted from the tokens each vendor reports.
 
 
   • All sessions are recorded and replayable.
 
 
-  Setup: after installing, put your API key in
-  ~/umbrel/app-data/blofstedt-autora/data/autora.env, one KEY=value per line —
-  ANTHROPIC_API_KEY=sk-ant-... or DEEPSEEK_API_KEY=sk-... — then restart the
-  app. Without a key Autora falls back to a local OpenAI-compatible model
-  server on port 8000, and says so if it cannot reach one.
+  Setup: after installing, open the app, go to Settings, add an API key for
+  whichever provider you want and pick a model. Keys are saved to the app's
+  data directory, so they survive updates. Keys can also be set in
+  ~/umbrel/app-data/blofstedt-autora/.env instead, one KEY=value per line.
+  Without any key Autora still runs and says so, answering with local
+  fallbacks.
 
 
   Voice from a phone: browsers only open a microphone on a secure page, and an
@@ -64,24 +71,35 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Autora now tells you when the page you are looking at is older than the
-  version installed.
+  Autora now connects to any of the major AI providers, and shows what they
+  cost.
 
 
-  An update can arrive and leave no trace: the browser keeps a copy of the
-  app, and a page opened while the container was restarting -- which is
-  exactly what an update does -- keeps running the old copy. Everything
-  works, nothing errors, and the only symptom is that the change you were
-  told had shipped is not there.
+  Settings takes an API key for OpenAI, Google Gemini, Anthropic, DeepSeek or
+  OpenRouter -- or points at a local OpenAI-compatible server -- and offers
+  that vendor's models in a list, each quoted with its price per million
+  tokens. Each provider keeps its own key, model and endpoint, so switching
+  between them costs nothing. "Check key" asks the vendor whether the key
+  works before you rely on it, and fills the model list from the same call;
+  OpenRouter's catalogue and prices are fetched live.
 
 
-  The page is now stamped with the version that served it and compares
-  that with what the server reports. When they differ, a bar across the
-  top says so and offers one button that clears the cache and loads the
-  new one. Settings opens with the version as well, so "did my update
-  arrive" is answerable in one look rather than from a line buried in the
-  microphone check.
+  A billing card counts what you have spent: this month, today and all time,
+  with a thirty-day chart and a breakdown by provider and model down to
+  individual turns. It is counted here from the tokens each vendor reports, so
+  it is a running estimate rather than an invoice, and it says so. An optional
+  monthly budget warns as it fills, and does not block.
 
+
+  Keys and the ledger are written to the app's data directory, so they survive
+  an update rather than resetting with the container. Keys set in the
+  environment still work and are never written there.
+
+
+  Also fixes the container image, which had not built since the rewrite: it now
+  builds the TypeScript server and the web UI, listens on the port Umbrel
+  gives it, and stamps the page with its version again, so the "you are
+  looking at an older copy" banner works.
 
 dependencies: []
 path: ""

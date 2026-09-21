@@ -22,6 +22,7 @@ why in the same place a reviewer is already looking.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import pathlib
 import re
@@ -50,8 +51,6 @@ WATCHED = (
     "ui/index.html",
     "ui/package.json",
     "Dockerfile",
-    "docker-entrypoint.sh",
-    "pyproject.toml",
     "blofstedt-autora/docker-compose.yml",
 )
 
@@ -134,17 +133,24 @@ def newer(head: str, base: str) -> bool:
     return head_parts > base_parts
 
 
-VERSION_ATTR = re.compile(r'^__version__\s*=\s*"([^"]+)"', re.MULTILINE)
-
-
 def running_version() -> str:
-    """What the server will report as its own version, or "" if unreadable."""
+    """What the server will report as its own version, or "" if unreadable.
+
+    package.json, since the rewrite: the server reads its version out of that
+    file, stamps it into the page it serves and answers /api/origin with it.
+    This used to read src/autora/__init__.py, which the rewrite deleted -- so
+    the check quietly stopped comparing anything, which is the failure mode it
+    exists to prevent, one level up.
+    """
     try:
-        source = pathlib.Path("src/autora/__init__.py").read_text(encoding="utf-8")
+        source = pathlib.Path("package.json").read_text(encoding="utf-8")
     except OSError:
         return ""
-    found = VERSION_ATTR.search(source)
-    return found.group(1).strip() if found else ""
+    try:
+        found = json.loads(source).get("version")
+    except ValueError:
+        return ""
+    return found.strip() if isinstance(found, str) else ""
 
 
 def opted_out(title: str, body: str) -> bool:

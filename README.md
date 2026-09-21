@@ -32,7 +32,8 @@ npm run dev
 
 Open <http://localhost:3000>. Type a task. Watch it work.
 
-For production, `npm run build` then `npm start`.
+For production, `npm run build` then `npm start`. The container is the same
+two steps: `docker build -t autora . && docker run -p 8817:8817 -v autora-data:/data autora`.
 
 ### Connecting a model
 
@@ -442,10 +443,11 @@ acting on it forever unless there is somewhere to go and say no.
 | `OPENROUTER_API_KEY` | OpenRouter key |
 | `GEMINI_MODEL` | Starting model for Gemini (default `gemini-flash-latest`, the rolling free-Flash alias); a model chosen in Settings wins |
 | `GEMINI_THINKING_BUDGET` | Thinking tokens (default `0` for a responsive console; `-1` lets the model decide) |
-| `AUTORA_STATE_DIR` | Where settings, keys and the spend ledger are written (default `.autora/` beside the app) |
+| `AUTORA_STATE_DIR` | Where settings, keys and the spend ledger are written (default: `$AUTORA_HOME/settings`, else `.autora/` beside the app) |
+| `AUTORA_PORT` / `AUTORA_HOST` | Where to listen (default `3000` on `0.0.0.0`; the container uses `8817`) |
 | `AUTORA_LLM_BASE_URL` | Local OpenAI-compatible endpoint |
 | `AUTORA_CHROME_PATH` | Use an existing Chromium instead of Playwright's pinned build |
-| `AUTORA_HOME` | State directory (default `~/.autora`) — sessions and `memory.db` |
+| `AUTORA_HOME` | State directory (default `~/.autora`; `/data` in the container) — the one place that survives an update |
 
 ## Where sessions live
 
