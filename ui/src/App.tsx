@@ -52,6 +52,7 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [securePort, setSecurePort] = useState<number | null>(null);
+  const [hasCertificate, setHasCertificate] = useState(false);
   const [voiceHelp, setVoiceHelp] = useState(false);
   const streamRef = useRef<SessionStream | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -92,7 +93,10 @@ export function App() {
     if (secureOrigin) return;
     fetch("/api/origin")
       .then((r) => r.json())
-      .then((d) => setSecurePort(typeof d?.secure_port === "number" ? d.secure_port : null))
+      .then((d) => {
+        setSecurePort(typeof d?.secure_port === "number" ? d.secure_port : null);
+        setHasCertificate(!!d?.certificate);
+      })
       .catch(() => undefined);
   }, []);
 
@@ -562,6 +566,14 @@ export function App() {
                       the certificate. That is expected: the certificate is your
                       own server's. Tap <b>Advanced</b>, then <b>Proceed</b>.
                     </em>
+                    {hasCertificate && (
+                      <em className="voice-help-trust">
+                        Rather not see that warning — or install this to your home
+                        screen? <a href="/autora-ca.crt" download>Install the
+                        certificate</a>, and this becomes an ordinary trusted
+                        site on this device. Settings explains where it goes.
+                      </em>
+                    )}
                   </>
                 ) : (
                   <>

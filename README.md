@@ -85,12 +85,26 @@ autora up ~/code/my-project --tls        # http on 8817, https on 8818
 ```
 
 Nothing moves — the plain port serves what it always did, and the http page
-offers a link across. But the certificate is one nobody else trusts, so every
-device shows a warning the first time, and the new port has whatever
-authentication Autora itself has, which is none. That is fine on a network you
-control and a poor thing to expose anywhere else, which is why it is off by
-default in the Umbrel app (`AUTORA_TLS=1` to turn it on) and why a real
-certificate in front is worth the one command.
+offers a link across.
+
+That certificate is signed by a small authority Autora generates and keeps, and
+the authority is offered for download at `/autora-ca.crt` (Settings → **Trust
+this server** has it, with the steps for Android and iPhone). Install it on a
+device and the warning stops, the microphone works, and the page installs to
+the home screen as a real app — three complaints that are one fact underneath:
+nothing on that device had vouched for the certificate. Leaves are issued per
+hostname during the handshake, from the name the browser asks for, so reaching
+the box by tailnet name, `.local` or bare IP all match.
+
+Install it only on devices you own: an authority you trust can vouch for any
+site to that device, and this one is worth exactly what the server holding its
+key is. Skipping it costs nothing but the warning — clicking through still
+opens the microphone, it just will not install to a home screen.
+
+The listener itself has whatever authentication Autora has, which is none. That
+is fine on a network you control and a poor thing to expose anywhere else,
+which is why it is off by default in the Umbrel app (`AUTORA_TLS=1` to turn it
+on) and why a real certificate in front is better still.
 
 Until then the microphone and `Live` are still in the composer, greyed, and
 tapping either says what is in the way and offers the secure page if one is

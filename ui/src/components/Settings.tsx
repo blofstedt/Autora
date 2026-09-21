@@ -257,6 +257,8 @@ export function Settings({ onClose }: { onClose: () => void }) {
                       onReset={() => setDrafts(({ [c.name]: _drop, ...rest }) => rest)} />
           ))}
         </section>
+
+        <TrustThisServer />
       </div>
     </div>
   );
@@ -298,5 +300,59 @@ function KeyField({
         </button>
       )}
     </div>
+  );
+}
+
+
+/**
+ * The certificate, offered where someone would go looking for it.
+ *
+ * Three separate-looking complaints -- the browser warning, the missing
+ * microphone, and "this app cannot be installed" -- are one fact: nothing on
+ * this device vouches for the server. Installing what signed it answers all
+ * three at once, so they are named together rather than left to be discovered
+ * as three unrelated disappointments.
+ *
+ * Absent entirely where Autora is not running its own authority, because then
+ * there is nothing to install and whoever set up the real certificate does not
+ * need advice from here.
+ */
+function TrustThisServer() {
+  const [offered, setOffered] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/origin")
+      .then((r) => r.json())
+      .then((d) => setOffered(!!d?.certificate))
+      .catch(() => undefined);
+  }, []);
+
+  if (!offered) return null;
+
+  return (
+    <section className="set-card">
+      <h3>Trust this server</h3>
+      <p className="jf-hint">
+        Your devices do not know this server, so they warn about it, refuse it a
+        microphone, and will not install it to a home screen. Install the
+        certificate below on a device and all three stop: it becomes an ordinary
+        trusted site there.
+      </p>
+      <a className="btn primary set-ca" href="/autora-ca.crt" download>
+        Download certificate
+      </a>
+      <p className="jf-hint set-ca-how">
+        <b>Android:</b> Settings → Security → More security settings → Encryption
+        &amp; credentials → Install a certificate → CA certificate.{" "}
+        <b>iPhone:</b> open the file, then Settings → General → VPN &amp; Device
+        Management to install it, then Settings → General → About → Certificate
+        Trust Settings to switch it on.
+      </p>
+      <p className="set-warn">
+        Install it only on devices you own. A certificate you trust can vouch for
+        any site to that device, so this one is worth exactly as much as the
+        server holding its key.
+      </p>
+    </section>
   );
 }

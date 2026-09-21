@@ -223,12 +223,20 @@ def cmd_up(args) -> int:
     # the secure page is somewhere to go for the one thing http cannot do.
     secure_port = (args.tls_port or args.port + 1) if ssl_options else None
 
+    # Only when the certificate is ours to vouch for. Someone serving a real
+    # certificate has nothing to install and should not be offered anything.
+    tls_directory = (
+        tls_dir(args) if ssl_options and not (args.tls_cert and args.tls_key) else None
+    )
+
     ui_dist = Path(__file__).resolve().parents[2] / "ui" / "dist"
     app = create_app(
         harness,
         ui_dist=ui_dist if ui_dist.exists() else None,
         # The plain page cannot have a microphone, but it can say where one is.
         secure_port=secure_port,
+        # And it can hand over what makes the secure one trusted.
+        tls_dir=tls_directory,
     )
 
     tts_label = getattr(args, "tts", None) or voice_name or "off"
@@ -269,10 +277,38 @@ def cmd_up(args) -> int:
     listeners = [uvicorn.Config(app, host=args.host, port=args.port,
                                 log_level=args.log_level)]
     if ssl_options:
-        listeners.append(uvicorn.Config(app, host=args.host, port=secure_port,
-                                        log_level=args.log_level, **ssl_options))
+        secure = uvicorn.Config(app, host=args.host, port=secure_port,
+                                log_level=args.log_level, **ssl_options)
+        _teach_sni(secure, tls_directory)
+        listeners.append(secure)
     asyncio.run(_serve(listeners, voice_loop))
     return 0
+
+
+def _teach_sni(config, tls_dir: Path | None) -> None:
+    """Issue a certificate for whatever hostname the browser asks about.
+
+    Only where Autora owns the authority. A certificate handed to us belongs to
+    whoever issued it, and minting alongside it would be answering for names
+    nobody asked us to answer for.
+
+    Loading the config here rather than leaving it to `serve()` is deliberate:
+    uvicorn builds its SSL context inside `load()`, and the callback has to be
+    attached to that object. `load()` guards itself, so serving later is a
+    no-op rather than a second build.
+    """
+    if tls_dir is None:
+        return
+    from .tls import sni_context
+
+    try:
+        config.load()
+        if config.ssl is not None:
+            sni_context(tls_dir, config.ssl)
+    except Exception as exc:
+        # The listener still works; it just answers with the default
+        # certificate for every name, which is where we were before.
+        print(f"warning: one certificate for all names -- {exc}", file=sys.stderr)
 
 
 def _listener(config):
@@ -349,10 +385,16 @@ def _tls_options(args) -> dict[str, str]:
 
     from .tls import ensure_cert
 
+    directory = tls_dir(args)
+    generated_cert, generated_key = ensure_cert(directory)
+    return {"ssl_certfile": str(generated_cert), "ssl_keyfile": str(generated_key)}
+
+
+def tls_dir(args) -> Path:
+    """Where the authority and the certificates it signs live."""
     home = Path(args.home) if args.home else Path(
         os.environ.get("AUTORA_HOME", Path.home() / ".autora"))
-    generated_cert, generated_key = ensure_cert(home / "tls")
-    return {"ssl_certfile": str(generated_cert), "ssl_keyfile": str(generated_key)}
+    return home / "tls"
 
 
 def cmd_replay(args) -> int:

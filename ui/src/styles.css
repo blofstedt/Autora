@@ -817,6 +817,16 @@ button.hint.voice-note:hover { text-decoration: underline; }
   background: rgba(251, 191, 36, 0.14); border-radius: 4px; padding: 1px 4px;
 }
 .voice-help .btn.primary { text-decoration: none; }
+.voice-help-trust {
+  display: block; margin-top: 6px; font-size: 11.5px; color: var(--text-3);
+}
+.voice-help-trust a { color: var(--warn); }
+
+/* Trust this server. The button is a download, so it is a link that has to
+   look like the buttons beside it. */
+.set-ca { display: inline-flex; text-decoration: none; margin: 4px 0 10px; }
+.set-ca-how { line-height: 1.6; }
+.set-ca-how b { color: var(--text-2); }
 .hint kbd {
   font-family: var(--mono); font-size: 10px; background: var(--s3);
   border: 1px solid var(--border-strong); border-bottom-width: 2px;

@@ -159,15 +159,29 @@ class Harness:
         self._learning = asyncio.create_task(run())
 
 
+#: What Android looks for before it offers to install a downloaded file as a
+#: certificate. Served as bytes with this type rather than as a static file,
+#: because a `.crt` handed over as octet-stream lands in Downloads and does
+#: nothing, which looks exactly like the link being broken.
+CA_MEDIA_TYPE = "application/x-x509-ca-cert"
+
+
 def create_app(
-    harness: Harness, ui_dist: Path | None = None, secure_port: int | None = None
+    harness: Harness,
+    ui_dist: Path | None = None,
+    secure_port: int | None = None,
+    tls_dir: Path | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Autora")
     app.state.harness = harness
 
+    def ca_file() -> Path | None:
+        candidate = (tls_dir / "ca.crt") if tls_dir else None
+        return candidate if candidate and candidate.exists() else None
+
     @app.get("/api/origin")
     async def origin() -> dict[str, Any]:
-        """Where a secure copy of this page is listening, if one is.
+        """Where a secure copy of this page is listening, and how to trust it.
 
         The page can tell for itself whether it is a secure context -- it just
         cannot tell where to find one. Without this, an http page reached from a
@@ -178,7 +192,26 @@ def create_app(
         this listener is the one that will reach the other, and it is the only
         one the client is known to have a route to.
         """
-        return {"secure_port": secure_port}
+        return {"secure_port": secure_port, "certificate": ca_file() is not None}
+
+    @app.get("/autora-ca.crt")
+    async def certificate_authority() -> Response:
+        """The authority that signs this server's certificate.
+
+        Public half only -- this is the part that is meant to be copied around.
+        Installing it on a device is what turns the warning, the missing
+        microphone and the refusal to install to a home screen into an ordinary
+        trusted site, because all three are the same fact: nothing had vouched
+        for the certificate.
+        """
+        path = ca_file()
+        if path is None:
+            raise HTTPException(404, "this server is not running its own authority")
+        return Response(
+            content=path.read_bytes(),
+            media_type=CA_MEDIA_TYPE,
+            headers={"Content-Disposition": 'attachment; filename="autora-ca.crt"'},
+        )
 
     # -- sessions ------------------------------------------------------
 
