@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.5.6"
+version: "0.5.7"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -64,27 +64,25 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Clearer about the one thing standing between you and the microphone.
-  Dictation and live voice chat are built and working; browsers simply
-  refuse to open a microphone on a page that is not secure, and an address
-  on your own network is not secure as far as a browser is concerned. No
-  setting in the browser can change that, so the app used to say so and
-  stop there.
+  The home screen and browser tab icons are the Autora spark now, not the
+  ring-and-dot from an older version of the mark. Nothing in the running
+  app had drawn that shape in a long time, so the one place the icon is
+  seen at full size was the one place it was wrong.
 
 
-  It now tells you what actually fixes it. If your server is on a tailnet,
-  running `tailscale serve --bg 8817` on that machine — one line, once —
-  gives this app a proper web address with a real certificate. Open that
-  address instead and the microphone and Live buttons simply work, with no
-  warnings, no port number, and your Umbrel login still in front of
-  everything. Any other reverse proxy with a certificate does the same.
+  The tab icon still tells you what the agent is doing while you are
+  looking elsewhere, it just does it by colouring the tile behind the
+  spark rather than by replacing the middle of it: violet while it works,
+  green on a live voice session, amber when it is waiting for you to
+  approve something.
 
 
-  If you have nothing in front of your server, AUTORA_TLS=1 in
-  ~/umbrel/app-data/blofstedt-autora/data/autora.env makes the app serve
-  its own secure page on port 8818. That works too, but each device shows
-  a certificate warning once, and port 8818 does not ask for your Umbrel
-  login — so it stays off unless you choose it.
+  Note that "Add to home screen" will only offer a plain shortcut, not a
+  real installed app, unless the page has a certificate your phone
+  trusts. That is the browser's rule and no setting changes it. A
+  self-signed certificate -- what AUTORA_TLS=1 generates -- is enough for
+  the microphone but not for installing. A proxy with a real certificate
+  in front of port 8817 gets you both.
 dependencies: []
 path: ""
 defaultUsername: ""

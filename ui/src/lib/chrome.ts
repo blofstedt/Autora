@@ -16,14 +16,25 @@ const DOT: Record<Chrome, string> = {
   offline: "#626a7e",
 };
 
-/** The brand mark from the header, with a status pip in the middle. */
-const svg = (color: string) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+/** The brand mark from the header -- the spark -- on a tile the state colours.
+ *
+ * The state used to be a pip in the middle of a ring, and the mark used to be
+ * that ring: a shape the app had stopped drawing everywhere else. Carrying the
+ * spark instead put the state somewhere, and a pip in the corner is the
+ * obvious answer until you look at it at 16 pixels, where it sits on top of
+ * the spark's lower point and leaves both illegible.
+ *
+ * So the tile carries the state and the spark stays whole. It reads as a
+ * colour change at any size a tab strip will ever give it, which is the whole
+ * job: idle is the brand gradient, everything else is flat and unmistakable.
+ */
+const svg = (color: string, gradient: boolean) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
 <defs><linearGradient id="a" x1="0" y1="0" x2="1" y2="1">
 <stop offset="0" stop-color="#6e5bff"/><stop offset="1" stop-color="#22d3ee"/>
 </linearGradient></defs>
-<rect x="2" y="2" width="28" height="28" rx="9.5" fill="url(#a)"/>
-<circle cx="16" cy="16" r="6.5" fill="#08090d"/>
-<circle cx="16" cy="16" r="3.4" fill="${color}"/>
+<rect x="1" y="1" width="30" height="30" rx="9" fill="${gradient ? "url(#a)" : color}"/>
+<path d="M16 7l2.45 6.55L25 16l-6.55 2.45L16 25l-2.45-6.55L7 16l6.55-2.45z" fill="#fff"/>
 </svg>`;
 
 const PREFIX: Record<Chrome, string> = {
@@ -51,7 +62,11 @@ export function paintChrome(state: Chrome, label: string) {
     document.head.appendChild(link);
   }
   link.type = "image/svg+xml";
-  link.href = `data:image/svg+xml,${encodeURIComponent(svg(DOT[state]))}`;
+  // Idle is the brand as it is everywhere else; a state worth noticing
+  // replaces it, which is what makes it noticeable.
+  link.href = `data:image/svg+xml,${encodeURIComponent(
+    svg(DOT[state], state === "idle"),
+  )}`;
 }
 
 /**
