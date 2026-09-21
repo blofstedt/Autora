@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { IconCheck, IconGear, IconX } from "./Icons";
 import { VoiceCheck } from "./VoiceCheck";
 import { RelaySetup } from "./RelaySetup";
+import { useServerVersion, versions } from "./UpdateNotice";
 
 type Credential = {
   name: string;
@@ -56,6 +57,7 @@ const PROVIDER_NOTE: Record<string, string> = {
  */
 export function Settings({ onClose }: { onClose: () => void }) {
   const [state, setState] = useState<SettingsState | null>(null);
+  const serverVersion = useServerVersion();
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [provider, setProvider] = useState("auto");
   const [model, setModel] = useState("");
@@ -205,6 +207,11 @@ export function Settings({ onClose }: { onClose: () => void }) {
       <div className="sched-body">
         {/* What is actually running, which is the question people open this to
             answer -- and the one the error messages could not answer before. */}
+        {/* First thing in the panel, because "did my update arrive" is the
+            question people open this to answer, and it used to be answerable
+            only from a line buried in the microphone check. */}
+        <VersionCard server={serverVersion} />
+
         <section className="set-card set-active">
           <h3>Currently using</h3>
           <div className="set-active-row">
@@ -304,6 +311,26 @@ export function Settings({ onClose }: { onClose: () => void }) {
         <TrustThisServer />
       </div>
     </div>
+  );
+}
+
+/** Which Autora is installed, and whether this page is that Autora. */
+function VersionCard({ server }: { server: string | null }) {
+  const { page, stale } = versions(server);
+  return (
+    <section className="set-card set-version-card">
+      <h3>Version</h3>
+      <div className="set-active-row">
+        <code>{server ?? "…"}</code>
+        <span>{stale ? `this page is running ${page}` : "installed and running"}</span>
+      </div>
+      {stale && (
+        <p className="set-warn">
+          Your browser is holding an older copy of the app. Reload the page —
+          the banner at the top does it properly, clearing the cache first.
+        </p>
+      )}
+    </section>
   );
 }
 

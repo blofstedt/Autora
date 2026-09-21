@@ -14,6 +14,7 @@ import { Settings } from "./components/Settings";
 import { DictateButton } from "./components/DictateButton";
 import { LiveChat } from "./components/LiveChat";
 import { useRelay } from "./components/RelaySetup";
+import { UpdateNotice } from "./components/UpdateNotice";
 import {
   dictationSupported, recognitionAvailable, secureOrigin, speakable,
   splitSpeakable, useSpeech,
@@ -354,6 +355,10 @@ export function App() {
       />
 
       <div className="shell">
+        {/* Above everything, including the header: an app running code that is
+            two releases old is not a detail to mention further down. */}
+        <UpdateNotice />
+
         <header className="top">
           <div className="brand in-top">
             <span className="brand-mark"><IconSpark size={13} /></span>

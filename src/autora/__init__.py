@@ -7,7 +7,7 @@ subscribes to that log; a recording is the same log read back.
 #: Kept in step with the version Umbrel reads, and reported to the UI so that
 #: "did the update land?" has an answer you can read off the screen rather than
 #: infer from whether a fix appears to work.
-__version__ = "0.7.0"
+__version__ = "0.7.1"
 
 from .events import Event, EventStore, Kind
 from .session import Session, SessionRegistry

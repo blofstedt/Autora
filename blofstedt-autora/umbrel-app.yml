@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.7.0"
+version: "0.7.1"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -64,44 +64,23 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The terminal, browser, desktop and file panes have moved into the
-  conversation, and the desktop relay now works at all.
+  Autora now tells you when the page you are looking at is older than the
+  version installed.
 
 
-  Each command, page, desktop and edit now appears in the thread at the
-  point the agent reached for it, with its own output, its own frames and
-  its own diff. Nothing scrolls away into a pane that only ever shows the
-  newest thing, so reviewing a session is scrolling back through it --
-  which is what the recording controls were for. They are gone, along with
-  the scrub bar and follow toggle.
+  An update can arrive and leave no trace: the browser keeps a copy of the
+  app, and a page opened while the container was restarting -- which is
+  exactly what an update does -- keeps running the old copy. Everything
+  works, nothing errors, and the only symptom is that the change you were
+  told had shipped is not there.
 
 
-  The desktop relay never connected. Its address on the server sat behind
-  the route that serves a session, so every relay that ever connected was
-  read as a request to watch a session called "desktop-relay", told there
-  was no such session, and hung up -- for ever, saying only that it had
-  been disconnected.
-
-
-  Getting a relay running is also no longer a guess. The script is served
-  by this server with its address already in it, so the machine with the
-  screen needs a download rather than an Autora install: Settings ->
-  Desktop relay has the three commands with your own address in them, says
-  whether a relay is connected, and lists what to check when one is not.
-  `autora relay HOST:PORT` covers the case where Autora is installed
-  there, and any form of the address now works.
-
-
-  A connected but idle relay no longer fills the conversation with
-  screenshots of a desktop nobody asked about; frames are recorded while a
-  session is using the desktop, and Settings shows a live preview the rest
-  of the time.
-
-
-  On a desktop screen the session list now lives in a rail down the side
-  rather than behind a sheet, and the reading column widens with the
-  window, so screenshots and diffs are readable at their own size. The
-  phone layout is unchanged.
+  The page is now stamped with the version that served it and compares
+  that with what the server reports. When they differ, a bar across the
+  top says so and offers one button that clears the cache and loads the
+  new one. Settings opens with the version as well, so "did my update
+  arrive" is answerable in one look rather than from a line buried in the
+  microphone check.
 
 
 dependencies: []

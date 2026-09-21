@@ -736,8 +736,25 @@ def create_app(
                 app.mount(f"/{child.name}", StaticFiles(directory=child), name=child.name)
 
         @app.get("/")
-        async def index() -> FileResponse:
-            return FileResponse(ui_dist / "index.html")
+        async def index() -> HTMLResponse:
+            """The page, stamped with the version that served it.
+
+            A page can be several releases behind the server holding it: the
+            browser keeps the shell in a cache, and a launch while the server
+            was restarting -- which is exactly what an update is -- pins it
+            there. Everything then works while running old code, and the only
+            symptom is that the change you were told shipped is not there.
+
+            So the version goes into the HTML, and the page compares it with
+            what /api/origin reports. Never cached, because a stamp that can
+            go stale is the fault it exists to catch.
+            """
+            from . import __version__
+
+            html = (ui_dist / "index.html").read_text("utf-8")
+            html = html.replace('name="autora-version" content="dev"',
+                                f'name="autora-version" content="{__version__}"', 1)
+            return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
         # Root-level static files the build emits (favicon, manifest, robots).
         @app.get("/{filename}")

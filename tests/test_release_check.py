@@ -8,6 +8,7 @@ have agreed with all of them.
 
 import importlib.util
 import pathlib
+import re
 import subprocess
 import tempfile
 
@@ -208,6 +209,26 @@ def test_the_real_manifest_is_readable():
     print(f"  the shipped manifest reads as {version} with real notes ... ok")
 
 
+def test_the_two_versions_agree():
+    """The store's version and the app's own version are the same string.
+
+    They answer the same question in two places: Umbrel reads the manifest to
+    decide an update exists, and the app reports `__version__` to whoever asks
+    whether their update arrived -- the page banner, Settings, the relay's
+    probe. Drift between them makes the app deny a release the store has
+    already shipped, which is precisely the confusion the banner exists to end.
+    """
+    manifest = (ROOT / "blofstedt-autora" / "umbrel-app.yml").read_text()
+    shipped = check_release.version_of(manifest)
+    source = (ROOT / "src" / "autora" / "__init__.py").read_text()
+    match = re.search(r'__version__\s*=\s*"([^"]+)"', source)
+    assert match, "no __version__ in src/autora/__init__.py"
+    assert match.group(1) == shipped, (
+        f"__init__.py says {match.group(1)}, the manifest says {shipped}"
+    )
+    print(f"  manifest and __version__ both say {shipped} ... ok")
+
+
 if __name__ == "__main__":
     test_the_exact_bug_is_caught()
     test_a_proper_release_passes()
@@ -218,4 +239,5 @@ if __name__ == "__main__":
     test_main_moving_underneath_is_not_this_branch_s_problem()
     test_version_ordering_is_numeric()
     test_the_real_manifest_is_readable()
+    test_the_two_versions_agree()
     print("\nall release check tests passed")
