@@ -826,6 +826,8 @@ button.hint.voice-note:hover { text-decoration: underline; }
    look like the buttons beside it. */
 .set-ca { display: inline-flex; text-decoration: none; margin: 4px 0 10px; }
 .set-retry { margin-top: 12px; }
+.set-version { margin-top: 10px; }
+.set-version b { color: var(--text-2); font-family: var(--mono); }
 .set-ca-how { line-height: 1.6; }
 .set-ca-how b { color: var(--text-2); }
 

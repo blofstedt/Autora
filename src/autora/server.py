@@ -192,7 +192,13 @@ def create_app(
         this listener is the one that will reach the other, and it is the only
         one the client is known to have a route to.
         """
-        return {"secure_port": secure_port, "certificate": ca_file() is not None}
+        from . import __version__
+
+        return {
+            "secure_port": secure_port,
+            "certificate": ca_file() is not None,
+            "version": __version__,
+        }
 
     @app.get("/autora-ca.crt")
     async def certificate_authority() -> Response:

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import pathlib
 import re
 import subprocess
 import sys
@@ -128,6 +129,19 @@ def newer(head: str, base: str) -> bool:
     return head_parts > base_parts
 
 
+VERSION_ATTR = re.compile(r'^__version__\s*=\s*"([^"]+)"', re.MULTILINE)
+
+
+def running_version() -> str:
+    """What the server will report as its own version, or "" if unreadable."""
+    try:
+        source = pathlib.Path("src/autora/__init__.py").read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    found = VERSION_ATTR.search(source)
+    return found.group(1).strip() if found else ""
+
+
 def opted_out(title: str, body: str) -> bool:
     return OPT_OUT in f"{title}\n{body}".lower()
 
@@ -202,6 +216,17 @@ def main(argv: list[str] | None = None) -> int:
             f"`version` went from {old_version} to {new_version}, which Umbrel\n"
             f"will not read as an upgrade. It offers an update only for a higher\n"
             f"version, so this ships as quietly as no bump at all.",
+            file=sys.stderr,
+        )
+        return 1
+
+    running = running_version()
+    if running and running != new_version:
+        print(
+            f"`version` is {new_version} but src/autora/__init__.py reports\n"
+            f"{running}. The app shows that second number in Settings as the\n"
+            f"version actually answering, so a stale one does not just drift --\n"
+            f"it tells someone their update did not land when it did.",
             file=sys.stderr,
         )
         return 1

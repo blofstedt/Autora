@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { recognitionAvailable, secureOrigin, speechEngine } from "../lib/voice";
 
 /**
@@ -20,6 +20,15 @@ import { recognitionAvailable, secureOrigin, speechEngine } from "../lib/voice";
 export function VoiceCheck() {
   const [lines, setLines] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
+  /** Which build is actually answering, which has been the harder question. */
+  const [version, setVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/origin")
+      .then((r) => r.json())
+      .then((d) => setVersion(typeof d?.version === "string" ? d.version : null))
+      .catch(() => undefined);
+  }, []);
   const engine = useRef<InstanceType<NonNullable<ReturnType<typeof speechEngine>>> | null>(null);
 
   const log = useCallback((text: string) => {
@@ -119,6 +128,13 @@ export function VoiceCheck() {
       </div>
       {lines.length > 0 && (
         <pre className="voice-check-log">{lines.join("\n")}</pre>
+      )}
+      {version && (
+        <p className="jf-hint set-version">
+          Server version <b>{version}</b>. If that is older than the release you
+          just installed, this page is a cached copy — pull down to reload, or
+          clear this site&apos;s data once.
+        </p>
       )}
     </section>
   );

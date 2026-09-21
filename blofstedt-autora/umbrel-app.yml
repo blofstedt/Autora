@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.6.3"
+version: "0.6.4"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -64,27 +64,27 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Settings now says what went wrong instead of "Could not read settings",
-  and offers a Try again button. The old message covered every possible
-  cause with the same four words and never retried -- so opening Settings
-  while the app was still restarting after an update left it dead until
-  you closed and reopened it, with nothing on screen to suggest that.
+  The app now updates itself instead of serving you an old copy.
 
 
-  If you saw that message: the app was unreachable at that moment. The
-  page itself loads from an offline cache, so a server that is down does
-  not announce itself -- the app appears, and only the parts needing the
-  server fail quietly.
+  If you reach Autora at two addresses -- say the plain one and the
+  secure one on 8818 -- your browser treats them as two unrelated sites,
+  each with its own offline cache. Updating the app updated one of them.
+  The other kept serving whatever it had cached, looking completely
+  normal while running old code, which made shipped fixes look like they
+  had never shipped. Every page now asks for a fresh copy on load and
+  reloads itself once when one arrives.
 
 
-  That same cache could also pin a phone to an old copy of the app after
-  an update, which made shipped fixes look like they had not shipped. This
-  release clears it. If anything still looks stale, open Chrome's site
-  settings for this address and clear its data once.
+  Settings also shows which version is actually answering, at the bottom
+  of the Microphone check panel. If it disagrees with what you just
+  installed, that page is a cached copy and you can stop wondering.
 
 
-  The Microphone check panel now also appears when the browser has no
-  speech recognition at all, which is the case it was most needed for.
+  To get onto this one, since it is the version that fixes being stuck on
+  old versions: open the address that did not update and pull down to
+  reload. If it still shows an old version, clear that site's data once in
+  Chrome's site settings.
 dependencies: []
 path: ""
 defaultUsername: ""
