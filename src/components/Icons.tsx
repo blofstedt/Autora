@@ -214,3 +214,13 @@ export const IconGrip = ({ size = 14, className }: Props) => (
     <circle cx="16" cy="17" r="1.2" fill="currentColor" />
   </svg>
 );
+
+/** Money, for the billing card: a coin rather than a dollar sign, because the
+    page is also read where the bill is not in dollars. */
+export const IconCoin = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <circle cx="12" cy="12" r="8.4" />
+    <path d="M14.4 9.3a3 3 0 0 0-2.4-1.1c-1.4 0-2.4.8-2.4 1.9 0 2.5 4.8 1.3 4.8 3.8 0 1.1-1 1.9-2.4 1.9a3 3 0 0 1-2.4-1.1" />
+    <path d="M12 6.6v1.6M12 15.8v1.6" />
+  </svg>
+);

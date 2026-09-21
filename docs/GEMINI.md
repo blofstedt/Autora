@@ -1,9 +1,15 @@
 # Connecting Gemini
 
 Autora talks to Google's Gemini API from the server, never from the browser.
-The key lives in the server's environment and is not sent to the page, is not
-written into the repository, and is not exposed by any endpoint -- `/api/settings`
-reports only whether a key is set, never its value.
+The key lives in the server's environment, or is saved by the settings panel to
+`.autora/settings.json` (owner-readable only). Either way it is not sent to the
+page, not written into the repository, and not exposed by any endpoint --
+`/api/settings` reports whether a key is set and four characters of it, never
+its value.
+
+Gemini is one of several providers: OpenAI, Anthropic, DeepSeek, OpenRouter and
+any OpenAI-compatible local server are connected the same way, from Settings.
+This page is the Gemini specifics; the README covers the rest.
 
 ## 1. Get a key
 
@@ -50,8 +56,11 @@ fallback reply arrives all at once and begins "No model is connected yet".
 
 `gemini-flash-latest` is a rolling alias that follows Google's current free
 Flash, so the app does not break the day a dated model retires. To pin one
-instead, either set `GEMINI_MODEL` in the environment or type a model name into
-Settings -> Model, which takes effect on the next turn without a restart.
+instead, choose it in Settings -> Providers and models -> Google Gemini, where
+the list is priced and **Refresh models** re-asks Google for what your key can
+reach. It takes effect on the next turn without a restart. `GEMINI_MODEL` still
+works as a starting value for an install that already sets it, but a model
+chosen in the panel wins.
 
 To list what your key can reach:
 

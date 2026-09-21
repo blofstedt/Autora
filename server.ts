@@ -3,7 +3,16 @@ import path from "node:path";
 import express, { type Request, type Response } from "express";
 import { WebSocketServer, WebSocket } from "ws";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI } from "@google/genai";
+import {
+  AUTO_ORDER, PRICES_CHECKED, PROVIDERS, costOf, isPriced, modelsFor,
+  rememberModels,
+} from "./server/providers";
+import {
+  baseUrlFor, clearUsage, keyFor, keySource, maskKey, modelFor, recordUsage,
+  resolveProvider, save, setKey, state, stateFilePath,
+} from "./server/state";
+import { ProviderError, listModels, streamChat, type ChatMessage } from "./server/llm";
+import { billingSummary } from "./server/billing";
 
 const PORT = 3000;
 const HOST = "0.0.0.0";
@@ -249,14 +258,11 @@ const jobs: Job[] = [
   },
 ];
 
-let appSettings = {
-  provider: "auto",
-  // Follows Google's current free Flash unless the environment pins one.
-  // Kept in step with DEFAULT_GEMINI_MODEL below.
-  model: (process.env.GEMINI_MODEL || "").trim() || "gemini-flash-latest",
-  baseUrl: "",
-  systemPrompt: "You are Autora, an autonomous AI execution console and agent workspace.",
-};
+// Settings used to live here, in a module-level object that lasted exactly as
+// long as the process. They now live in ./server/state, on disk, because a key
+// you paste into the panel should survive the next deploy -- and so should the
+// record of what you have spent. See that module for the file and its
+// permissions.
 
 // Seed an initial session with welcoming events
 function createInitialSession(): Session {
@@ -363,12 +369,7 @@ function broadcastLiveStatus(session: Session) {
   }
 }
 
-// ------------------------------------------------------------------ gemini --
-
-/** The free tier's rolling Flash alias. Pinning a dated model means the app
-    stops working the day that model retires; the alias follows Google's
-    current free Flash and needs no release of ours to keep up. */
-const DEFAULT_GEMINI_MODEL = "gemini-flash-latest";
+// ---------------------------------------------------------------- models --
 
 /** How many past turns of this session to hand the model. Enough for the
     conversation to hold together, bounded so a long session does not grow the
@@ -385,115 +386,65 @@ const THINKING_BUDGET = (() => {
   return Number.isFinite(n) ? n : 0;
 })();
 
-const geminiKey = () => (process.env.GEMINI_API_KEY || "").trim();
-
-/** The model actually asked for: the setting if it names one, else the env
-    override, else the rolling alias. */
-function geminiModel(): string {
-  return (
-    appSettings.model.trim() ||
-    (process.env.GEMINI_MODEL || "").trim() ||
-    DEFAULT_GEMINI_MODEL
-  );
-}
-
-/** Lazy client, rebuilt if the key changes underneath us. */
-let geminiClient: GoogleGenAI | null = null;
-let geminiClientKey = "";
-function getGemini(): GoogleGenAI | null {
-  const key = geminiKey();
-  if (!key) {
-    geminiClient = null;
-    geminiClientKey = "";
-    return null;
+/** GEMINI_MODEL used to be the only way to pin a model, so an install that
+    still sets it should keep working -- but only as a starting value. Once a
+    model has been chosen in the panel, that choice is the one that stands;
+    otherwise saving a setting would appear to do nothing. */
+(() => {
+  const pinned = (process.env.GEMINI_MODEL || "").trim();
+  if (pinned && !state.models.gemini) {
+    state.models.gemini = pinned;
+    save();
   }
-  if (!geminiClient || geminiClientKey !== key) {
-    geminiClient = new GoogleGenAI({ apiKey: key });
-    geminiClientKey = key;
-  }
-  return geminiClient;
-}
-
-type GeminiTurn = { role: "user" | "model"; parts: { text: string }[] };
+})();
 
 /**
- * This session's conversation, in the shape Gemini wants.
+ * This session's conversation, in the vendor-neutral shape ./server/llm takes.
  *
  * Built from the event log rather than a second transcript kept alongside it,
  * so what the model sees is what the thread shows -- including the turn just
  * posted, which the caller has already emitted by the time we get here.
  *
- * Two details the API cares about: consecutive turns from the same speaker are
- * merged (streamed replies arrive as many `turn.agent.text` deltas, and forty
- * one-word model turns is not a conversation), and a history may not open on
- * the model, so any leading model turns are dropped.
+ * Two details every vendor cares about: consecutive turns from the same
+ * speaker are merged (streamed replies arrive as many `turn.agent.text`
+ * deltas, and forty one-word model turns is not a conversation), and a history
+ * may not open on the assistant, so any leading assistant turns are dropped.
  */
-function conversationFor(session: Session): GeminiTurn[] {
-  const turns: GeminiTurn[] = [];
+function historyFor(session: Session): ChatMessage[] {
+  const turns: ChatMessage[] = [];
 
   for (const event of session.events) {
-    let role: "user" | "model" | null = null;
+    let role: "user" | "assistant" | null = null;
     if (event.kind === "turn.user") role = "user";
-    else if (event.kind === "turn.agent.text") role = "model";
+    else if (event.kind === "turn.agent.text") role = "assistant";
     if (!role) continue;
 
     const text = String(event.payload?.text ?? "");
     if (!text) continue;
 
     const last = turns[turns.length - 1];
-    if (last && last.role === role) last.parts[0].text += text;
-    else turns.push({ role, parts: [{ text }] });
+    if (last && last.role === role) last.text += text;
+    else turns.push({ role, text });
   }
 
-  while (turns.length > 0 && turns[0].role === "model") turns.shift();
+  while (turns.length > 0 && turns[0].role === "assistant") turns.shift();
   return turns.slice(-HISTORY_TURNS);
 }
 
 /** How many times to re-ask after a transient refusal, and how long to wait.
-    Flash on the free tier answers 503 "high demand" often enough that one
-    spike would otherwise read, in the thread, as the app being broken. */
-const GEMINI_RETRIES = 3;
+    Free tiers answer 503 "high demand" often enough that one spike would
+    otherwise read, in the thread, as the app being broken. */
+const MODEL_RETRIES = 3;
 const RETRY_BACKOFF_MS = [600, 1500, 3200];
 
 /** Codes worth asking again for: rate limits, overload, and the generic 500. */
 const TRANSIENT = new Set([429, 500, 502, 503, 504]);
 
-/**
- * The readable sentence inside a Gemini error.
- *
- * The SDK hands back a message that is itself a JSON document with another
- * JSON document quoted inside it, so the useful sentence arrives buried two
- * levels deep behind escaped newlines. Shown raw it is a wall of braces, which
- * tells the reader nothing about whether their key is wrong or Google is busy.
- */
-function describeGeminiError(err: any): { text: string; status: number | null } {
-  const raw = err?.message ?? String(err);
-  let status: number | null = typeof err?.status === "number" ? err.status : null;
-  let text = String(raw);
-
-  // Unwrap as far as the nesting goes, keeping the innermost message.
-  for (let depth = 0; depth < 3; depth += 1) {
-    const start = text.indexOf("{");
-    if (start < 0) break;
-    try {
-      const parsed = JSON.parse(text.slice(start));
-      const inner = parsed?.error ?? parsed;
-      if (typeof inner?.code === "number") status = inner.code;
-      if (typeof inner?.message !== "string") break;
-      text = inner.message;
-    } catch {
-      break;
-    }
-  }
-
-  return { text: text.trim().replace(/\s+/g, " ") || "no detail given", status };
-}
-
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** What the model is told it is, and what it knows, before the conversation. */
 function systemInstructionFor(recalled: MemoryRecord[]): string {
-  const lines = [appSettings.systemPrompt.trim()];
+  const lines = [state.systemPrompt.trim()];
 
   if (recalled.length > 0) {
     lines.push(
@@ -771,49 +722,76 @@ async function startServer() {
           emitEvent(session, "tool.result", "agent", { ok: true, id: newMem.id }, spanId);
         }
 
-        // Generate the reply with Gemini, streaming it so the thread fills as
-        // the model writes rather than sitting empty and then blinking a
-        // paragraph into place.
-        const gemini = getGemini();
+        // Generate the reply with whichever provider is configured, streaming
+        // it so the thread fills as the model writes rather than sitting empty
+        // and then blinking a paragraph into place.
+        const active = resolveProvider();
+        const connected = Boolean(active.provider) && !active.problem;
         let streamed = 0;
 
-        if (gemini) {
-          const model = geminiModel();
-          const request = {
-            model,
-            contents: conversationFor(session),
-            config: {
-              systemInstruction: systemInstructionFor(uniqueAccessed),
-              temperature: 0.7,
-              maxOutputTokens: 2048,
-              thinkingConfig: { thinkingBudget: THINKING_BUDGET },
-            },
+        if (connected) {
+          const call = {
+            provider: active.provider,
+            model: active.model,
+            key: active.key,
+            baseUrl: active.baseUrl,
+            system: systemInstructionFor(uniqueAccessed),
+            messages: historyFor(session),
+            temperature: 0.7,
+            maxTokens: 2048,
+            thinkingBudget: THINKING_BUDGET,
           };
 
-          for (let attempt = 0; attempt <= GEMINI_RETRIES; attempt += 1) {
+          for (let attempt = 0; attempt <= MODEL_RETRIES; attempt += 1) {
             try {
-              const stream = await gemini.models.generateContentStream(request);
-
-              for await (const chunk of stream) {
-                const piece = chunk.text;
-                if (!piece) continue;
+              const usage = await streamChat(call, (piece) => {
                 // The client coalesces these deltas into one reply (see
                 // derive.ts), so a chunk per emit is a sentence appearing,
                 // not forty cards.
                 emitEvent(session, "turn.agent.text", "agent", { text: piece });
                 streamed += piece.length;
-              }
+              });
+
+              // What the turn cost, written down at the moment it happened.
+              // Prices move, so re-pricing an old turn later from today's
+              // table would quietly rewrite history; the ledger keeps the
+              // figure that was in force when the call was made.
+              const priced = isPriced(active.provider, active.model);
+              const cost = costOf(active.provider, active.model, usage.input, usage.output);
+              recordUsage({
+                ts: Math.floor(Date.now() / 1000),
+                session: session.id,
+                provider: active.provider,
+                model: active.model,
+                input: usage.input,
+                output: usage.output,
+                cost,
+                priced,
+                estimated: usage.estimated,
+              });
+              emitEvent(session, "usage.turn", "system", {
+                provider: active.provider,
+                model: active.model,
+                input_tokens: usage.input,
+                output_tokens: usage.output,
+                cost_usd: cost,
+                priced,
+                estimated: usage.estimated,
+              });
               break;
             } catch (err: any) {
-              const { text: detail, status } = describeGeminiError(err);
-              console.warn(`[gemini] ${model} attempt ${attempt + 1}: ${detail}`);
+              const detail = err?.message ?? String(err);
+              const status = err instanceof ProviderError ? err.status : null;
+              console.warn(
+                `[model] ${active.provider}/${active.model} attempt ${attempt + 1}: ${detail}`,
+              );
 
               // Only worth another go while nothing has reached the thread --
               // re-running a half-delivered reply would say the first half
               // twice.
               const retryable =
                 streamed === 0 &&
-                attempt < GEMINI_RETRIES &&
+                attempt < MODEL_RETRIES &&
                 (status === null || TRANSIENT.has(status));
 
               if (retryable) {
@@ -824,24 +802,26 @@ async function startServer() {
               // Said out loud rather than swallowed: a canned reply in place
               // of a real one is indistinguishable from the model working,
               // and what people need to know is whether their key is wrong or
-              // Google is simply busy.
+              // the vendor is simply busy.
+              const vendor = PROVIDERS.find((p) => p.id === active.provider)?.label ?? active.provider;
               emitEvent(session, "system.error", "system", {
-                error: `Gemini (${model}) did not answer: ${detail}`,
+                error: `${vendor} (${active.model}) did not answer: ${detail}`,
               });
               break;
             }
           }
         }
 
-        // Nothing came back -- no key configured, or the call failed. Say
+        // Nothing came back -- no provider configured, or the call failed. Say
         // something useful rather than leaving the turn blank.
         if (streamed === 0) {
           let reply: string;
-          if (!gemini) {
+          if (!connected) {
             reply =
               "No model is connected yet, so I am running on local responses only. " +
-              "Set GEMINI_API_KEY in the server environment and restart to bring " +
-              "Gemini online; everything else in the console works without it.";
+              `${active.problem ?? ""} Open Settings, add a key for OpenAI, Google, ` +
+              "Anthropic, DeepSeek, or OpenRouter, and pick a model; everything else " +
+              "in the console works without one.";
           } else if (lower.includes("hello") || lower.includes("hi")) {
             reply = "Hello! Autora is active. You can prompt me to run tasks, manage memories, monitor live agent sessions, or configure automation schedules.";
           } else if (lower.includes("status")) {
@@ -1083,43 +1063,90 @@ async function startServer() {
   /** One payload for both reads and writes -- two hand-kept copies drifted,
       and the PATCH one had already lost the Anthropic row. */
   const settingsPayload = () => {
-    const connected = Boolean(geminiKey());
+    const active = resolveProvider();
+    const activeSpec = PROVIDERS.find((p) => p.id === active.provider);
+
+    /** What the running model charges, per million tokens. */
+    const activePrice = () => {
+      const models = modelsFor(active.provider);
+      const spec = models.find((m) => m.id === active.model);
+      if (!spec || spec.priced === false) {
+        return `No published price for ${active.model} — its turns are counted but not billed.`;
+      }
+      return `$${spec.input} in / $${spec.output} out per 1M tokens`;
+    };
+
+    /* Every vendor Autora can talk to, with its key state and its models, so
+       the panel can be built from one fetch. The key itself never leaves the
+       server: what travels is whether one is set, where it came from, and
+       four characters of it -- enough to recognise the key you meant to use,
+       useless to anyone who intercepts it. */
+    const catalog = PROVIDERS.map((spec) => {
+      const source = keySource(spec.id);
+      return {
+        id: spec.id,
+        label: spec.label,
+        note: spec.note,
+        kind: spec.kind,
+        key_hint: spec.keyHint,
+        keys_url: spec.keysUrl,
+        base_url: baseUrlFor(spec.id),
+        default_base_url: spec.baseUrl,
+        default_model: spec.defaultModel,
+        listable: spec.listable,
+        open_ended: Boolean(spec.openEnded),
+        needs_key: spec.id !== "local",
+        key: {
+          set: Boolean(keyFor(spec.id)),
+          source,
+          masked: maskKey(keyFor(spec.id)),
+          env_names: spec.envKeys,
+        },
+        model: modelFor(spec.id),
+        models: modelsFor(spec.id),
+      };
+    });
+
     return {
-      provider: appSettings.provider,
-      model: appSettings.model,
-      base_url: appSettings.baseUrl,
-      providers: ["auto", "gemini", "anthropic", "deepseek", "local"],
-      system_prompt: appSettings.systemPrompt,
+      provider: state.provider,
+      // The legacy single-model field still answers "what will run", which is
+      // what older clients did with it.
+      model: active.model,
+      base_url: active.provider ? baseUrlFor(active.provider) : "",
+      providers: ["auto", ...PROVIDERS.map((p) => p.id)],
+      auto_order: AUTO_ORDER,
+      system_prompt: state.systemPrompt,
       system_prompt_limit: 8000,
-      credentials: [
-        {
-          name: "gemini",
-          label: "Google Gemini",
-          note: "Google AI Studio API key, read from GEMINI_API_KEY",
-          role: "model",
-          set: connected,
-          hint: connected
-            ? "Connected (server environment)"
-            : "Set GEMINI_API_KEY and restart",
-        },
-        {
-          name: "anthropic",
-          label: "Anthropic Claude",
-          note: "Claude API Key",
-          role: "model",
-          set: Boolean(process.env.ANTHROPIC_API_KEY),
-          hint: "sk-ant-...",
-        },
-      ],
+      catalog,
+      prices_checked: PRICES_CHECKED,
+      budget_usd: state.budgetUsd,
+      state_file: stateFilePath(),
+      credentials: PROVIDERS.filter((spec) => spec.id !== "local").map((spec) => {
+        const source = keySource(spec.id);
+        return {
+          name: spec.id,
+          label: spec.label,
+          note: spec.note,
+          role: "model" as const,
+          set: source !== null,
+          hint:
+            source === "app"
+              ? `Saved in app (${maskKey(keyFor(spec.id))})`
+              : source === "env"
+                ? "From the server environment"
+                : spec.keyHint,
+        };
+      }),
       active: {
         // What the next turn will actually call, rather than a name written
         // down once and left behind by every model change since.
-        model: geminiModel(),
-        endpoint: appSettings.baseUrl || null,
-        provider: "Gemini",
-        hint: connected
-          ? `Google ${geminiModel()}`
-          : "No key set -- replies are local fallbacks",
+        model: active.model || null,
+        endpoint: active.provider ? baseUrlFor(active.provider) : null,
+        provider: activeSpec?.label ?? null,
+        // Not the name again -- that is already on the line above. What is
+        // worth saying here is what this choice costs, which is the fact the
+        // billing card is about to be counting with.
+        hint: active.problem ?? activePrice(),
       },
     };
   };
@@ -1129,12 +1156,146 @@ async function startServer() {
   });
 
   app.patch("/api/settings", (req: Request, res: Response) => {
-    if (req.body.provider !== undefined) appSettings.provider = req.body.provider;
-    if (req.body.model !== undefined) appSettings.model = req.body.model;
-    if (req.body.base_url !== undefined) appSettings.baseUrl = req.body.base_url;
-    if (req.body.system_prompt !== undefined) appSettings.systemPrompt = req.body.system_prompt;
+    const body = req.body ?? {};
+    const known = new Set(["auto", ...PROVIDERS.map((p) => p.id)]);
 
+    if (body.provider !== undefined) {
+      if (!known.has(body.provider)) {
+        return res.status(400).json({ detail: `Unknown provider "${body.provider}".` });
+      }
+      state.provider = body.provider;
+    }
+
+    // Per-provider choices. The flat `model` / `base_url` fields still work and
+    // apply to whichever provider is selected, so an older client that knows
+    // nothing about the catalogue can still change the model it is using.
+    const target = state.provider === "auto" ? resolveProvider().provider : state.provider;
+
+    if (body.models && typeof body.models === "object") {
+      for (const [id, model] of Object.entries(body.models)) {
+        if (!known.has(id) || typeof model !== "string") continue;
+        state.models[id] = model.trim();
+      }
+    } else if (typeof body.model === "string" && target) {
+      state.models[target] = body.model.trim();
+    }
+
+    if (body.base_urls && typeof body.base_urls === "object") {
+      for (const [id, url] of Object.entries(body.base_urls)) {
+        if (!known.has(id) || typeof url !== "string") continue;
+        state.baseUrls[id] = url.trim();
+      }
+    } else if (typeof body.base_url === "string" && target) {
+      state.baseUrls[target] = body.base_url.trim();
+    }
+
+    if (typeof body.system_prompt === "string") {
+      state.systemPrompt = body.system_prompt.slice(0, 8000);
+    }
+
+    // A key arrives only when someone typed one: an untouched field sends
+    // nothing, and an empty string means "remove it", not "save a blank".
+    if (body.credentials && typeof body.credentials === "object") {
+      for (const [name, value] of Object.entries(body.credentials)) {
+        if (typeof value !== "string") continue;
+        setKey(name, value);
+      }
+    }
+
+    if (body.budget_usd !== undefined) {
+      const raw = body.budget_usd;
+      const amount = raw === null || raw === "" ? null : Number(raw);
+      if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
+        return res.status(400).json({ detail: "The monthly budget must be a positive amount." });
+      }
+      state.budgetUsd = amount;
+    }
+
+    save();
     res.json(settingsPayload());
+  });
+
+  // 10b. Provider models and key checks
+
+  /**
+   * The models a vendor says it has.
+   *
+   * Refreshing asks the vendor directly, which is the only way to keep up with
+   * a catalogue that changes weekly -- and for OpenRouter, the only practical
+   * way to offer it at all. Whatever comes back is remembered for pricing, so
+   * a model discovered here is billed from the vendor's own numbers rather
+   * than from nothing.
+   */
+  app.get("/api/providers/:id/models", async (req: Request, res: Response) => {
+    const id = req.params.id;
+    const spec = PROVIDERS.find((p) => p.id === id);
+    if (!spec) return res.status(404).json({ detail: `Unknown provider "${id}".` });
+
+    if (req.query.refresh !== "1") {
+      return res.json({ provider: id, models: modelsFor(id), refreshed: false });
+    }
+    if (!spec.listable) {
+      return res.status(400).json({ detail: `${spec.label} does not publish a model list.` });
+    }
+
+    // No key requirement here: OpenRouter publishes its catalogue (and its
+    // prices) to anyone, which is exactly when browsing the list is most
+    // useful -- before signing up. Vendors that do want a key say so
+    // themselves, and their refusal is more accurate than our guess at it.
+    const key = keyFor(id);
+
+    try {
+      const models = await listModels(id, key, baseUrlFor(id));
+      rememberModels(id, models);
+      res.json({ provider: id, models: modelsFor(id), refreshed: true, found: models.length });
+    } catch (err: any) {
+      res.status(502).json({ detail: `Could not reach ${spec.label}: ${err?.message ?? err}` });
+    }
+  });
+
+  /** Does this key work? Checked before it is trusted with a conversation, so
+      a typo is found here rather than as a failed turn ten minutes later. */
+  app.post("/api/providers/:id/test", async (req: Request, res: Response) => {
+    const id = req.params.id;
+    const spec = PROVIDERS.find((p) => p.id === id);
+    if (!spec) return res.status(404).json({ detail: `Unknown provider "${id}".` });
+
+    // A key typed but not yet saved can be tested as it stands, so nobody has
+    // to save a guess to find out whether it was right.
+    const candidate =
+      typeof req.body?.key === "string" && req.body.key.trim()
+        ? req.body.key.trim()
+        : keyFor(id);
+    if (!candidate && id !== "local") {
+      return res.status(400).json({ detail: `No ${spec.label} key to check.` });
+    }
+
+    try {
+      // The catalogue is public information whichever key asked for it, so a
+      // successful check doubles as a model refresh -- which is what someone
+      // pasting a key is about to want anyway.
+      const models = await listModels(id, candidate, baseUrlFor(id));
+      rememberModels(id, models);
+      res.json({ ok: true, models: models.length });
+    } catch (err: any) {
+      res.status(400).json({ ok: false, detail: err?.message ?? String(err) });
+    }
+  });
+
+  // 10c. Billing
+
+  /** What has been spent, and on what. Read-only: the ledger is written by
+      the turns themselves, one row each, as they finish. */
+  app.get("/api/usage", (req: Request, res: Response) => {
+    res.json(billingSummary());
+  });
+
+  /** Start the count again -- after settling a bill, or after a spell of
+      testing that should not colour the month. Deliberately a separate call
+      rather than a settings field, because it throws away history. */
+  app.post("/api/usage/reset", (req: Request, res: Response) => {
+    clearUsage();
+    res.json(billingSummary());
   });
 
   // 11. Relay API

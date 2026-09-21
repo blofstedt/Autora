@@ -2721,3 +2721,181 @@ button.hint.voice-note:hover { text-decoration: underline; }
   .amark.is-live .amark-wash { opacity: 0.45; transform: scale(0.72); }
   .amark.is-working .amark-orbit { opacity: 0.6; }
 }
+
+/* --------------------------------------------------------- providers --- */
+/* Six vendors, one of which you care about today. Collapsed rows keep the
+   panel scannable, and the two facts worth knowing without opening anything --
+   is there a key, which model -- sit in the header. */
+.prov {
+  border-top: 1px solid var(--border);
+}
+.prov:first-of-type { border-top: 0; }
+.prov.is-live .prov-head b { color: var(--live); }
+
+.prov-head {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 11px 0; background: none; border: 0; cursor: pointer;
+  font-family: inherit; color: var(--text-2); text-align: left;
+}
+.prov-head b { font-size: 13px; font-weight: 600; color: var(--text); }
+.prov-head .set-badge { flex: 0 0 auto; }
+.prov-caret {
+  flex: 0 0 auto; color: var(--text-3);
+  transition: transform 0.16s var(--ease);
+}
+.prov-caret.is-open { transform: rotate(90deg); }
+.prov-model {
+  margin-left: auto; font-family: var(--mono); font-size: 11px;
+  color: var(--text-3); overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; max-width: 45%;
+}
+
+.prov-body {
+  padding: 2px 0 14px; display: flex; flex-direction: column; gap: 10px;
+  animation: rise 0.2s var(--ease) both;
+}
+.prov-body .set-key { padding-top: 0; border-top: 0; }
+.prov-body .jf-hint { margin-top: -6px; }
+.prov-body a { color: var(--accent-2); }
+.prov-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+.prov-ok { margin: 0; font-size: 12px; line-height: 1.5; color: var(--live); }
+.prov-price {
+  margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Native select, dressed to match the text inputs beside it: the model list is
+   long enough that a bespoke menu would be worse than the one the platform
+   already scrolls well on a phone. */
+.set-select {
+  width: 100%; padding: 9px 11px; border-radius: var(--r-sm);
+  background: var(--s2); border: 1px solid var(--border); color: var(--text);
+  font-family: inherit; font-size: 13px; line-height: 1.5;
+  appearance: none; cursor: pointer;
+}
+.set-select:focus { outline: none; border-color: var(--accent-line); }
+
+.set-providers-hint { margin-bottom: 4px; }
+.set-where { margin: 12px 0 0; padding-top: 11px; border-top: 1px solid var(--border); }
+.set-where code { font-family: var(--mono); font-size: 11px; overflow-wrap: anywhere; }
+
+/* ----------------------------------------------------------- billing --- */
+.bill-head { display: flex; align-items: center; gap: 8px; }
+.bill-head h3 { display: flex; align-items: center; gap: 6px; margin-bottom: 11px; }
+.bill-refresh { margin: 0 0 11px auto; }
+
+/* The headline is three numbers, and the month is the one people came for. */
+.bill-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.bill-tile {
+  display: grid; gap: 3px; padding: 10px 11px; border-radius: var(--r-sm);
+  background: var(--s2); border: 1px solid var(--border);
+}
+.bill-tile.is-lead { border-color: var(--accent-line); background: var(--accent-soft); }
+.bill-tile-label {
+  font-size: 10px; font-weight: 650; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--text-3);
+}
+.bill-tile-value {
+  font-family: var(--mono); font-size: 16px; font-weight: 650; color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.bill-tile-sub { font-size: 10.5px; color: var(--text-3); }
+
+.bill-budget { margin-top: 13px; display: grid; gap: 7px; }
+.bill-meter {
+  height: 6px; border-radius: 99px; background: var(--s3); overflow: hidden;
+}
+.bill-meter-fill {
+  display: block; height: 100%; border-radius: 99px; background: var(--accent);
+  transition: width 0.3s var(--ease);
+}
+.bill-meter-fill.is-near { background: var(--warn); }
+.bill-meter-fill.is-over { background: var(--danger); }
+
+.bill-chart-head {
+  display: flex; align-items: baseline; gap: 8px; margin: 16px 0 7px;
+}
+.bill-chart-head h4 {
+  margin: 0; font-size: 11px; font-weight: 650; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--text-3);
+}
+.bill-chart-head span {
+  margin-left: auto; font-size: 11px; color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+/* Bars sit on the baseline and keep a hairline of surface between them, so a
+   busy run of days reads as separate days rather than one block. */
+.bill-chart {
+  display: flex; align-items: flex-end; gap: 2px; height: 64px;
+  padding-bottom: 1px; border-bottom: 1px solid var(--border);
+}
+.bill-bar {
+  flex: 1; min-width: 0; border-radius: 3px 3px 0 0; background: var(--s3);
+  transition: background 0.15s var(--ease);
+}
+.bill-bar.has-spend { background: var(--accent); }
+.bill-bar:hover { background: var(--accent-2); }
+.bill-axis {
+  display: flex; justify-content: space-between; margin-top: 5px;
+  font-size: 10.5px; color: var(--text-3);
+}
+
+.bill-rows { margin-top: 14px; display: grid; gap: 2px; }
+.bill-row {
+  display: flex; align-items: baseline; gap: 9px; width: 100%;
+  padding: 8px 0; background: none; border: 0; cursor: pointer;
+  font-family: inherit; text-align: left; color: var(--text-2);
+  border-top: 1px solid var(--border);
+}
+.bill-row-group:first-child .bill-row { border-top: 0; }
+.bill-row b { font-size: 12.5px; font-weight: 600; color: var(--text); }
+.bill-row-meta {
+  font-size: 11px; color: var(--text-3); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.bill-row em, .bill-submodel em, .bill-turn em {
+  margin-left: auto; font-style: normal; font-family: var(--mono);
+  font-size: 12px; color: var(--text); font-variant-numeric: tabular-nums;
+}
+.bill-submodel {
+  display: flex; align-items: baseline; gap: 9px; padding: 5px 0 5px 14px;
+  font-size: 11px; color: var(--text-3);
+}
+.bill-submodel code {
+  font-family: var(--mono); font-size: 11px; color: var(--text-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bill-submodel em { font-size: 11px; color: var(--text-2); }
+
+.bill-empty { margin: 14px 0 0; }
+
+.bill-recent { margin-top: 14px; }
+.bill-recent summary {
+  font-size: 11.5px; color: var(--text-2); cursor: pointer; padding: 4px 0;
+}
+.bill-turn {
+  display: flex; align-items: baseline; gap: 9px; padding: 5px 0;
+  border-top: 1px solid var(--border); font-size: 11px; color: var(--text-3);
+}
+.bill-turn code {
+  font-family: var(--mono); font-size: 11px; color: var(--text-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bill-turn-when { flex: 0 0 auto; }
+.bill-turn-tokens { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+.bill-turn em { font-size: 11px; }
+
+.bill-caveat {
+  margin: 14px 0 10px; font-size: 11px; line-height: 1.55; color: var(--text-3);
+}
+.bill-confirm {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 12px; color: var(--warn);
+}
+.bill-reset { color: var(--text-3); }
+
+@media (max-width: 520px) {
+  .bill-tiles { grid-template-columns: 1fr; }
+  .prov-model { max-width: 32%; }
+  .bill-turn-when { display: none; }
+}

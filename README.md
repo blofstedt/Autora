@@ -26,7 +26,7 @@ are the same code path.
 git clone https://github.com/blofstedt/Autora && cd Autora
 npm install
 
-export GEMINI_API_KEY=...        # from https://aistudio.google.com/apikey
+export GEMINI_API_KEY=...        # optional -- keys can also be added in Settings
 npm run dev
 ```
 
@@ -34,27 +34,59 @@ Open <http://localhost:3000>. Type a task. Watch it work.
 
 For production, `npm run build` then `npm start`.
 
-### Connecting Gemini
+### Connecting a model
 
-Replies come from Google's Gemini API, called from the server -- the key never
-reaches the browser. Get one free at
-[Google AI Studio](https://aistudio.google.com/apikey), then either put it in a
-`.env` file beside `package.json`:
+Replies come from whichever provider you connect, called from the server -- the
+key never reaches the browser. Open Settings (the gear, top right), pick a
+vendor, paste a key, and choose a model from the list:
 
-```
-GEMINI_API_KEY=your-key-here
-```
+| Provider | Get a key | Notes |
+| --- | --- | --- |
+| OpenAI | <https://platform.openai.com/api-keys> | GPT-5, GPT-4.1, GPT-4o, o3/o4-mini |
+| Google Gemini | <https://aistudio.google.com/apikey> | Free tier covers Flash |
+| Anthropic Claude | <https://console.anthropic.com/settings/keys> | Sonnet, Haiku, Opus |
+| DeepSeek | <https://platform.deepseek.com/api_keys> | Cheapest of the hosted options |
+| OpenRouter | <https://openrouter.ai/keys> | One key, hundreds of models; list and prices fetched live |
+| Local server | — | Anything speaking the OpenAI API: vLLM, Ollama, llama.cpp |
 
-or pass it for a single run: `GEMINI_API_KEY=... npm run dev`. The key is read
-at startup, so restart after setting it.
+Each provider keeps its own key, model and endpoint, so switching between them
+costs nothing. **Which provider answers** picks one, or leave it on *Automatic*
+and the first connected provider is used, in the order shown in the panel.
 
-Without a key the console still runs -- every panel, the event stream, memory,
-approvals and the schedule all work -- but the agent answers with local
-fallbacks and says so. Settings (the gear, top right) shows whether a key is
-connected and which model the next turn will call.
+Every model in the picker is quoted with its price per million tokens, and
+those are the same numbers the [billing card](#billing) counts with. **Check
+key** asks the vendor whether the key works before you rely on it, and fills
+the model list from the same call; **Refresh models** re-asks later, which is
+how the OpenRouter catalogue stays current.
 
-**[docs/GEMINI.md](docs/GEMINI.md)** covers choosing a model, the thinking
-budget, and what each error in the thread means.
+Keys pasted into the panel are saved on the server in `.autora/settings.json`,
+created readable only by the account Autora runs as. Keys set in the
+environment (`GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
+`DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`) are still honoured and are never
+written to that file -- they are the fallback when the app has no key of its
+own, and the panel says which of the two is in force.
+
+Without any key the console still runs -- every panel, the event stream,
+memory, approvals and the schedule all work -- but the agent answers with local
+fallbacks and says so.
+
+**[docs/GEMINI.md](docs/GEMINI.md)** covers the Gemini specifics: choosing a
+model, the thinking budget, and what each error in the thread means.
+
+### Billing
+
+Settings carries a billing card: this month, today, and all time, with a
+thirty-day chart and a breakdown by provider and model down to individual
+turns. It is counted locally -- every turn records the tokens the vendor
+reported and prices them from the table the model picker quoted -- so it is an
+accurate running estimate, not an invoice. It cannot see usage from outside
+this app, nor a vendor's own discounts, cache credits or minimums, and a turn
+whose vendor reported no token count is marked as estimated rather than
+silently averaged in.
+
+An optional monthly budget draws a meter and warns as it fills. It does not
+block: a console that stops answering mid-sentence because of a number typed
+weeks ago is a worse surprise than the bill it was meant to prevent.
 
 ### Running fully local
 
@@ -403,10 +435,14 @@ acting on it forever unless there is somewhere to go and say no.
 
 | Variable | Purpose |
 |---|---|
-| `GEMINI_API_KEY` | Google Gemini key — without it, replies are local fallbacks |
-| `GEMINI_MODEL` | Model to call (default `gemini-flash-latest`, the rolling free-Flash alias) |
+| `GEMINI_API_KEY` | Google Gemini key — or add one in Settings instead |
+| `OPENAI_API_KEY` | OpenAI key |
+| `ANTHROPIC_API_KEY` | Anthropic Claude key |
+| `DEEPSEEK_API_KEY` | DeepSeek key |
+| `OPENROUTER_API_KEY` | OpenRouter key |
+| `GEMINI_MODEL` | Starting model for Gemini (default `gemini-flash-latest`, the rolling free-Flash alias); a model chosen in Settings wins |
 | `GEMINI_THINKING_BUDGET` | Thinking tokens (default `0` for a responsive console; `-1` lets the model decide) |
-| `ANTHROPIC_API_KEY` | Hosted provider |
+| `AUTORA_STATE_DIR` | Where settings, keys and the spend ledger are written (default `.autora/` beside the app) |
 | `AUTORA_LLM_BASE_URL` | Local OpenAI-compatible endpoint |
 | `AUTORA_CHROME_PATH` | Use an existing Chromium instead of Playwright's pinned build |
 | `AUTORA_HOME` | State directory (default `~/.autora`) — sessions and `memory.db` |
