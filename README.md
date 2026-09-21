@@ -2,16 +2,17 @@
 
 An agentic harness you can **watch**.
 
-The agent's browser, terminal, and file edits stream to a web UI in real time.
-Every session records itself, and you replay it by scrubbing the same UI you
-watched it in. Actions that matter pause for your approval, showing you the
-exact command before it runs.
+The agent's browser, terminal, desktop and file edits stream into the
+conversation in real time — each command, page and edit shown at the point it
+happened, and still there to scroll back to afterwards. Every session records
+itself, and reading one back is reading the thread. Actions that matter pause
+for your approval, showing you the exact command before it runs.
 
 Built on one idea: **the event log is the product.** Everything the agent does
 emits a typed event to an append-only log. The live view is a subscriber to that
 log. A recording is that log read back. There is no separate recording pipeline
-to bolt on, and no way for the live view and the replay to disagree — they are
-the same code path.
+to bolt on, and no way for the live view and the recording to disagree — they
+are the same code path.
 
 ```
   agent ──emit──> event log (jsonl + blobs) ──┬──> websocket ──> live UI
@@ -120,6 +121,47 @@ built.
 The Umbrel app publishes 8818 for this and ships with `AUTORA_TLS: "0"`. Put a
 proxy in front if you can; set it to `1` if you cannot.
 
+### Controlling a desktop
+
+Autora can drive a real computer's screen — click, type, scroll — through a
+small relay that runs on that computer. The relay connects *out* to Autora, so
+nothing has to be opened up on the machine with the screen, and it is a single
+file with no Autora imports, so that machine does not need Autora installed.
+
+Get it from the server you want it to reach, which fills the address in for
+you:
+
+```bash
+# on the machine you want the agent to control
+curl -O http://YOUR-SERVER:8817/relay.py      # Windows: curl.exe -O ...
+pip install websockets mss pyautogui pillow   # Windows: py -m pip install ...
+python relay.py                               # Windows: py relay.py
+```
+
+**Settings → Desktop relay** in the UI has those same three commands with your
+server's own address already in them, says whether a relay is connected, and
+lists what to check when one will not connect.
+
+Where Autora *is* installed on that machine, `autora relay 192.168.1.5:8817`
+does the same thing. Any form of the address works — `host:port`,
+`http://host:port`, `ws://host` — and https with Autora's own certificate needs
+`--insecure` or the certificate installed there.
+
+Two things catch people out. `autora up` binds to `127.0.0.1` unless told
+otherwise, so start it with `--host 0.0.0.0` if the relay is on another
+machine. And `python -m autora.relay` only works where Autora is installed —
+on a PC that has never had it, that command reports `No module named autora`,
+which is the download above missing rather than anything being broken.
+
+Frames reach the conversation only while a session is using the desktop; a
+connected but idle relay is not an hour of screenshots in your transcript. The
+live preview in Settings tells you it is alive in the meantime.
+
+macOS needs Accessibility permission for the terminal you run it from (System
+Settings → Privacy & Security → Accessibility) — capture works without it,
+clicking and typing do not. Linux needs an X display, so install XWayland under
+Wayland. Windows needs nothing special.
+
 ### Other commands
 
 ```bash
@@ -130,34 +172,38 @@ curl localhost:8817/api/sessions/<id>/cast > session.cast && asciinema play sess
 
 ## What you see
 
-| Pane | Shows |
+One column: the conversation, with the work inside it.
+
+| In the thread | Shows |
 |---|---|
-| **Timeline** | Every event, click to seek. It is a scrub bar over the session, not a log viewer. |
-| **Terminal** | A real PTY through xterm.js — colors, progress bars, the lot. |
-| **Browser** | Live CDP screencast, with a marker painted at each click so you can see the agent miss. The *agent* reads the page as an accessibility snapshot, not pixels — see below. |
-| **Files** | Every edit as a unified diff, the moment it lands. |
-| **Transcript** | What the agent said, with reasoning collapsed by default. |
+| **A command** | The shell call where the agent ran it, its own output under it, colours and progress bars intact, with the exit code and how long it took. |
+| **A page** | Every frame of that stretch of browsing, with a marker painted where each click landed. Drag its strip to move through them. The *agent* reads the page as an accessibility snapshot, not pixels — see below. |
+| **A desktop** | The same, for the machine the relay is running on. |
+| **An edit** | The unified diff, the moment it lands. |
+| **Everything else** | One line each — a lookup, a read, a memory write — openable for the detail. |
+
+Nothing is hidden behind a tab, and nothing scrolls away: the terminal from
+three questions ago is still three questions up, next to the question that
+caused it. Reviewing a session is scrolling back through it, which is also how
+you review the session someone else ran — there is no separate recording mode
+to enter, because the transcript *is* the recording.
 
 The interface is dark, keyboard-friendly, and has no third-party dependencies at
 runtime — fonts are vendored (Inter and JetBrains Mono, variable, Latin subset,
 77KB total), so it works offline and on an airgapped box, and opening a session
 does not tell a CDN about it.
 
-The scrubber works during a live session. Scroll back to step 12 while the agent
-is on step 40; "jump to now" returns you to the head.
-
-Press play and it replays at the pace it happened — real gaps between events,
-clamped so a 40-second `npm install` does not become 40 seconds of dead air.
-Errors, approvals, prompts and edits are painted onto the track as tick marks,
-so the shape of a session is readable before you scrub into it.
+It is one app at every size. On a phone it is a single column with the
+conversation and a tab for scheduled tasks. On a desktop the session list comes
+out into a rail on the left, the reading column widens, and screenshots and
+diffs get room to be read at a useful size rather than shrunk into a pane.
 
 | Key | |
 |---|---|
-| `space` | play / pause |
-| `←` `→` | step one event |
-| `⇧←` `⇧→` | jump to the previous/next notable event |
-| `home` `end` | start of session / jump to now |
 | `/` | focus the composer |
+| `k` | the knowledge web |
+| `v` | live voice chat |
+| `esc` | close whatever is open |
 
 The tab itself carries state: the favicon and title go violet while the agent
 works, amber when it is waiting on your approval. An approval that lands while
@@ -204,8 +250,8 @@ you get the button — and comes back with the element's snapshot ref, a stable
 selector, and only the styles *that element* sets, not the whole inherited
 cascade. Where the framework left a trail (React's dev fiber, a `data-source`
 attribute) it resolves to the file and line that rendered it; where it did not,
-it says so rather than guessing at a file. The pick lands on the timeline, so
-the agent sees that you pointed and at what.
+it says so rather than guessing at a file. The pick is an event like any other,
+so it lands in the thread: the agent sees that you pointed and at what.
 
 ### 3D and canvas
 
@@ -313,7 +359,7 @@ Retrieval is budgeted rather than dumped. A handful of pinned records are always
 present; the rest is searched per prompt (SQLite FTS5, BM25-ranked) and capped
 hard. Everything else stays one `memory(action="search")` away. In practice a
 store of 42 records puts about 130 tokens in front of the model. The block is
-emitted as an event, so it is on the timeline and in the recording: you can see
+emitted as an event, so it is in the thread and in the recording: you can see
 exactly what the agent was primed with before it answered.
 
 Lexical search rather than embeddings is a deliberate choice, not a shortcut —

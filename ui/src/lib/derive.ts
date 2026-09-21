@@ -1,4 +1,3 @@
-import { HIDDEN_KINDS } from "./describe";
 import { Kind, type AutoraEvent } from "./types";
 
 export type SpanState = {
@@ -49,19 +48,52 @@ export type MemoryMark = {
   kind: "written" | "recalled";
 };
 
+/** One captured frame, with the click it was showing, if any. */
+export type Shot = {
+  blob: string;
+  seq: number;
+  ts: number;
+  mark?: { x: number; y: number };
+};
+
+/**
+ * One thing that happened, in the place in the conversation where it happened.
+ *
+ * The stage used to be a dock under the thread: four tabs, one live pane each,
+ * showing only the newest state. You could watch it, but you could not read
+ * back through it -- the terminal from three questions ago had scrolled away
+ * and the page the agent looked at had been replaced by the next one. So the
+ * panes moved into the transcript. A command appears where it was run, with
+ * its own output under it; a page appears where it was opened, with every
+ * frame it produced; and scrolling up is how you review, which is what a
+ * recording was for.
+ */
+export type Cell =
+  | { kind: "reply"; seq: number; turn: TranscriptTurn }
+  | {
+      kind: "terminal"; seq: number; span: string; command: string;
+      output: string; status: SpanState["status"];
+      exitCode: number | null; durationMs: number | null;
+    }
+  | {
+      kind: "screen"; seq: number; source: "browser" | "desktop";
+      url: string | null; shots: Shot[]; actions: string[]; live: boolean;
+    }
+  | { kind: "file"; seq: number; file: FileChange }
+  | { kind: "tool"; seq: number; span: SpanState }
+  | { kind: "note"; seq: number; tone: "bad" | "warn" | "plain"; text: string };
+
 /**
  * One prompt and everything the agent did about it.
  *
  * The log is flat, but the conversation is not: a request, some work, an
- * answer, then the next request. Bucketing restores that shape so each prompt
- * can carry its own timeline instead of all of them sharing one rail, where
- * finding which actions belonged to which question meant counting rows.
+ * answer, then the next request. Bucketing restores that shape, and each
+ * bucket's cells keep the order the work actually happened in.
  */
 export type Bucket = {
   seq: number;
   prompt: string;
-  /** Timeline rows for this prompt only, already filtered of streaming noise. */
-  steps: AutoraEvent[];
+  cells: Cell[];
   replies: TranscriptTurn[];
   /** Still working on this one: the last bucket, while the agent runs. */
   open: boolean;
@@ -71,67 +103,84 @@ export type Derived = {
   transcript: TranscriptTurn[];
   buckets: Bucket[];
   memories: MemoryMark[];
-  spans: SpanState[];
   spansById: Map<string, SpanState>;
   approvals: Approval[];
   files: FileChange[];
-  frame: { blob: string; seq: number } | null;
+  /** The page the browser is on now, for the element picker. */
   url: string | null;
-  lastAction: { action: string; x?: number; y?: number; seq: number } | null;
-  desktopFrame: { blob: string; seq: number; w?: number; h?: number } | null;
+  /** The newest browser cell, which is the only one still pointing at a live
+      page -- picking an element in an older one would resolve against
+      whatever is on screen now, which is not what it shows. */
+  liveBrowserSeq: number | null;
   hasDesktop: boolean;
-  terminal: string;
   busy: boolean;
   tokens: { in: number; out: number; cached: number };
   title: string;
 };
 
+/** Terminal tools, whose PTY output belongs in the card their call opened. */
+const SHELL_TOOLS = new Set(["bash", "terminal", "shell"]);
+
+/** Tools whose whole story is told by a cell of their own. */
+const STAGED_TOOLS = new Set(["browser", "desktop", "edit", "write", "patch"]);
+
 /**
- * Fold an event prefix into renderable state.
+ * Fold the log into the conversation it records.
  *
- * This is the function that makes live and replay the same thing: it is a pure
- * reduction over `events[0..cursor]`, so scrubbing the timeline back to step 12
- * produces byte-for-byte what was on screen at step 12. There is no separate
- * "replay mode" that can drift from the live view, because there is no separate
- * code path.
- *
- * Folding from zero on every scrub is O(n) per frame, which is fine up to tens
- * of thousands of events and keeps this honest -- no incremental cache to get
- * subtly wrong. If a session ever outgrows that, memoize on checkpoints rather
- * than mutating state in place.
+ * A pure reduction over the events, so what you read is exactly what the log
+ * says and nothing is held anywhere else. It runs from zero on every change,
+ * which is O(n) per render and fine into the tens of thousands of events; if a
+ * session ever outgrows that, memoize on checkpoints rather than mutating
+ * state in place.
  */
-export function derive(events: AutoraEvent[], cursor: number): Derived {
+export function derive(events: AutoraEvent[]): Derived {
   const spansById = new Map<string, SpanState>();
   const transcript: TranscriptTurn[] = [];
   const buckets: Bucket[] = [];
   // Anything before the first prompt -- the session opening, a recall, a
   // scheduled task's own setup -- belongs to a bucket with no prompt, so it is
   // still reachable rather than silently dropped.
-  let bucket: Bucket = { seq: -1, prompt: "", steps: [], replies: [], open: false };
+  let bucket: Bucket = { seq: -1, prompt: "", cells: [], replies: [], open: false };
   buckets.push(bucket);
 
-  // Latest state per memory id: a record recalled twice should pulse twice but
-  // appear once, and one written then recalled reads as recalled.
   const memoryById = new Map<string, MemoryMark>();
-  // Text deltas coalesce into the current agent turn, but a tool call ends that
-  // turn: the sentences before and after a tool ran are separate thoughts, and
-  // running them together produces an unreadable paragraph.
   let openAgentTurn: TranscriptTurn | null = null;
   const approvals: Approval[] = [];
   const files: FileChange[] = [];
-  const terminalChunks: string[] = [];
-  let frame: Derived["frame"] = null;
   let url: string | null = null;
-  let lastAction: Derived["lastAction"] = null;
-  let desktopFrame: Derived["desktopFrame"] = null;
   let hasDesktop = false;
   let busy = false;
   let title = "";
   const tokens = { in: 0, out: 0, cached: 0 };
 
-  const limit = Math.min(cursor + 1, events.length);
-  for (let i = 0; i < limit; i++) {
-    const e = events[i];
+  /** The cell still being added to, so consecutive work of one kind stays one
+      card instead of becoming one card per frame. */
+  let open: Cell | null = null;
+  /** Read through a function: assignments happen inside `push`, which the
+      compiler cannot see, so reading the variable directly narrows it to
+      whatever was last assigned in plain sight and then disbelieves every
+      other kind. */
+  const current = (): Cell | null => open;
+  /** Terminal cells by span: output can arrive after something else spoke. */
+  const shells = new Map<string, Extract<Cell, { kind: "terminal" }>>();
+  let pendingMark: { x: number; y: number } | null = null;
+
+  const push = (cell: Cell): Cell => {
+    bucket.cells.push(cell);
+    open = cell;
+    return cell;
+  };
+
+  const screenCell = (source: "browser" | "desktop", seq: number) => {
+    const cell = current();
+    if (cell && cell.kind === "screen" && cell.source === source) return cell;
+    return push({
+      kind: "screen", seq, source, url: source === "browser" ? url : null,
+      shots: [], actions: [], live: false,
+    }) as Extract<Cell, { kind: "screen" }>;
+  };
+
+  for (const e of events) {
     switch (e.kind) {
       case Kind.SessionStarted:
         title = e.payload.title || "";
@@ -141,10 +190,11 @@ export function derive(events: AutoraEvent[], cursor: number): Derived {
         transcript.push({ role: "user", text: e.payload.text ?? "", seq: e.seq });
         bucket = {
           seq: e.seq, prompt: e.payload.text ?? "",
-          steps: [], replies: [], open: true,
+          cells: [], replies: [], open: true,
         };
         buckets.push(bucket);
         openAgentTurn = null;
+        open = null;
         busy = true;
         break;
 
@@ -165,23 +215,25 @@ export function derive(events: AutoraEvent[], cursor: number): Derived {
       }
 
       case Kind.AgentText: {
-        // Deltas coalesce into the current agent turn rather than creating a row
-        // each -- otherwise a streamed sentence becomes 40 transcript entries.
-        if (openAgentTurn) {
+        // Deltas coalesce into the current reply rather than creating a cell
+        // each -- otherwise a streamed sentence becomes 40 cards.
+        if (openAgentTurn && current()?.kind === "reply") {
           openAgentTurn.text += e.payload.text ?? "";
         } else {
           openAgentTurn = { role: "agent", text: e.payload.text ?? "", seq: e.seq };
           transcript.push(openAgentTurn);
           bucket.replies.push(openAgentTurn);
+          push({ kind: "reply", seq: e.seq, turn: openAgentTurn });
         }
         break;
       }
 
       case Kind.AgentThinking: {
-        if (!openAgentTurn) {
+        if (!openAgentTurn || current()?.kind !== "reply") {
           openAgentTurn = { role: "agent", text: "", seq: e.seq };
           transcript.push(openAgentTurn);
           bucket.replies.push(openAgentTurn);
+          push({ kind: "reply", seq: e.seq, turn: openAgentTurn });
         }
         openAgentTurn.thinking = (openAgentTurn.thinking ?? "") + (e.payload.text ?? "");
         break;
@@ -189,26 +241,43 @@ export function derive(events: AutoraEvent[], cursor: number): Derived {
 
       case Kind.AgentDone:
         openAgentTurn = null;
+        open = null;
         bucket.open = false;
         busy = false;
         break;
 
-      case Kind.ToolCall:
+      case Kind.ToolCall: {
         openAgentTurn = null;
-        if (e.span) {
-          spansById.set(e.span, {
-            id: e.span,
-            name: e.payload.name ?? "tool",
-            args: e.payload.args ?? {},
-            status: "running",
-            output: "",
-            preview: "",
-            durationMs: null,
-            exitCode: null,
-            seq: e.seq,
-          });
+        const name = e.payload.name ?? "tool";
+        const span: SpanState = {
+          id: e.span ?? `seq-${e.seq}`,
+          name,
+          args: e.payload.args ?? {},
+          status: "running",
+          output: "",
+          preview: "",
+          durationMs: null,
+          exitCode: null,
+          seq: e.seq,
+        };
+        spansById.set(span.id, span);
+        if (SHELL_TOOLS.has(name)) {
+          const cell = push({
+            kind: "terminal", seq: e.seq, span: span.id,
+            command: String(span.args.command ?? ""),
+            output: "", status: "running", exitCode: null, durationMs: null,
+          }) as Extract<Cell, { kind: "terminal" }>;
+          shells.set(span.id, cell);
+        } else if (!STAGED_TOOLS.has(name)) {
+          // Everything else gets a quiet one-liner, so nothing the agent did
+          // is missing from the transcript -- the screencast and diff cells
+          // say more about the staged tools than their arguments would.
+          push({ kind: "tool", seq: e.seq, span });
+        } else {
+          open = null;
         }
         break;
+      }
 
       case Kind.ToolOutput:
         if (e.span && spansById.has(e.span)) {
@@ -226,27 +295,76 @@ export function derive(events: AutoraEvent[], cursor: number): Derived {
           if (e.payload.display?.exit_code !== undefined) {
             span.exitCode = e.payload.display.exit_code;
           }
+          const shell = shells.get(e.span);
+          if (shell) {
+            shell.status = span.status;
+            shell.durationMs = span.durationMs;
+            if (span.exitCode !== null) shell.exitCode = span.exitCode;
+          }
         }
         break;
 
-      case Kind.ToolError:
-        if (e.span && spansById.has(e.span)) {
-          const span = spansById.get(e.span)!;
+      case Kind.ToolError: {
+        const span = e.span ? spansById.get(e.span) : undefined;
+        if (span) {
           span.status = e.payload.denied ? "denied" : "error";
           span.preview = e.payload.error ?? e.payload.reason ?? "failed";
           span.durationMs = e.payload.duration_ms ?? span.durationMs;
+          const shell = shells.get(span.id);
+          if (shell) shell.status = span.status;
+        }
+        // A staged tool carries no cell of its own until it produces a frame
+        // or a diff, so a browser call that failed outright would otherwise
+        // fail silently -- which is the one outcome that must never be quiet.
+        if (!span || (STAGED_TOOLS.has(span.name) && !shells.has(span.id))) {
+          push({
+            kind: "note", seq: e.seq,
+            tone: e.payload.denied ? "warn" : "bad",
+            text: `${span?.name ?? "tool"}: ${
+              e.payload.error ?? e.payload.reason ?? "failed"}`,
+          });
         }
         break;
+      }
 
-      case Kind.PtyOutput:
-        terminalChunks.push(e.payload.data ?? "");
+      case Kind.PtyOutput: {
+        const shell = e.span ? shells.get(e.span) : undefined;
+        const cell = current();
+        if (shell) {
+          shell.output += e.payload.data ?? "";
+          open = shell;
+        } else if (cell && cell.kind === "terminal") {
+          cell.output += e.payload.data ?? "";
+        } else {
+          // Output with no call in front of it (a resumed log, a tool that
+          // opened a PTY of its own) still belongs somewhere visible.
+          const cell = push({
+            kind: "terminal", seq: e.seq, span: e.span ?? `seq-${e.seq}`,
+            command: "", output: e.payload.data ?? "", status: "running",
+            exitCode: null, durationMs: null,
+          }) as Extract<Cell, { kind: "terminal" }>;
+          if (e.span) shells.set(e.span, cell);
+        }
         break;
+      }
 
-      case Kind.PtyExit:
+      case Kind.PtyExit: {
+        const shell = e.span ? shells.get(e.span) : undefined;
+        const live = current();
+        const target = shell
+          ?? (live && live.kind === "terminal" ? live : null);
+        if (target) {
+          target.exitCode = e.payload.exit_code ?? null;
+          target.durationMs = e.payload.duration_ms ?? target.durationMs;
+          if (target.status === "running") {
+            target.status = (e.payload.exit_code ?? 0) === 0 ? "ok" : "error";
+          }
+        }
         if (e.span && spansById.has(e.span)) {
           spansById.get(e.span)!.exitCode = e.payload.exit_code ?? null;
         }
         break;
+      }
 
       case Kind.PolicyRequest:
         approvals.push({
@@ -265,44 +383,110 @@ export function derive(events: AutoraEvent[], cursor: number): Derived {
           match.settled = true;
           match.approved = e.payload.decision === "allow";
         }
+        if (e.payload.decision === "deny") {
+          push({
+            kind: "note", seq: e.seq, tone: "warn",
+            text: `You declined ${match?.rendered || match?.tool || "an action"}.`,
+          });
+        }
         break;
       }
 
       case Kind.BrowserFrame:
-        if (e.blob) frame = { blob: e.blob, seq: e.seq };
+        if (e.blob) {
+          const cell = screenCell("browser", e.seq);
+          cell.url = url;
+          cell.shots.push({
+            blob: e.blob, seq: e.seq, ts: e.ts,
+            ...(pendingMark ? { mark: pendingMark } : {}),
+          });
+          pendingMark = null;
+        }
         break;
 
-      case Kind.BrowserNav:
+      case Kind.BrowserNav: {
         url = e.payload.url ?? url;
+        const cell = screenCell("browser", e.seq);
+        cell.url = url;
+        if (e.payload.url) cell.actions.push(`open ${e.payload.url}`);
         break;
+      }
 
-      case Kind.BrowserAction:
+      case Kind.BrowserAction: {
         if (e.payload.url) url = e.payload.url;
-        lastAction = { action: e.payload.action, x: e.payload.x, y: e.payload.y, seq: e.seq };
+        const cell = screenCell("browser", e.seq);
+        cell.url = url;
+        cell.actions.push(
+          `${e.payload.action}${e.payload.selector ? ` ${e.payload.selector}` : ""}`.trim(),
+        );
+        if (e.payload.x != null && e.payload.y != null) {
+          pendingMark = { x: e.payload.x, y: e.payload.y };
+        }
         break;
+      }
 
-      case Kind.DesktopFrame:
+      case Kind.DesktopFrame: {
         hasDesktop = true;
-        if (e.blob)
-          desktopFrame = { blob: e.blob, seq: e.seq, w: e.payload.w, h: e.payload.h };
+        if (e.blob) {
+          const cell = screenCell("desktop", e.seq);
+          cell.shots.push({
+            blob: e.blob, seq: e.seq, ts: e.ts,
+            ...(pendingMark ? { mark: pendingMark } : {}),
+          });
+          pendingMark = null;
+        }
         break;
+      }
 
-      case Kind.DesktopAction:
+      case Kind.DesktopAction: {
         hasDesktop = true;
+        const cell = screenCell("desktop", e.seq);
+        const p = e.payload;
+        cell.actions.push(
+          `${p.action ?? ""}${p.key ? ` ${p.key}` : ""}${
+            p.length ? ` ${p.length} chars` : ""}`.trim(),
+        );
+        if (p.x != null && p.y != null) pendingMark = { x: p.x, y: p.y };
         break;
+      }
 
-      case Kind.FileEdit:
-        files.push({
+      case Kind.FileEdit: {
+        const file: FileChange = {
           path: e.payload.path ?? "",
           diff: e.payload.diff ?? "",
           added: e.payload.added ?? 0,
           removed: e.payload.removed ?? 0,
           created: !!e.payload.created,
           seq: e.seq,
-        });
+        };
+        files.push(file);
+        push({ kind: "file", seq: e.seq, file });
+        break;
+      }
+
+      case Kind.ContextNote:
+        if (e.payload.text) {
+          push({ kind: "note", seq: e.seq, tone: "plain", text: e.payload.text });
+        }
         break;
 
+      case Kind.Error: {
+        const lines = [e.payload.error ?? "Something failed."];
+        if (e.payload.endpoint) lines.push(`${e.payload.model ?? "?"} @ ${e.payload.endpoint}`);
+        if (e.payload.hint) lines.push(e.payload.hint);
+        push({ kind: "note", seq: e.seq, tone: "bad", text: lines.join("\n") });
+        break;
+      }
+
       case Kind.Log:
+        // Most log entries are bookkeeping -- token counts, compaction -- and
+        // belong in the header, not the conversation. One kind is addressed to
+        // the person: anything that arrives with a message, such as a desktop
+        // relay connecting, which is otherwise invisible until something uses
+        // it.
+        if (typeof e.payload.message === "string" && e.payload.message) {
+          push({ kind: "note", seq: e.seq, tone: "plain", text: e.payload.message });
+        }
         if (e.payload.usage) {
           tokens.in += e.payload.usage.in ?? 0;
           tokens.out += e.payload.usage.out ?? 0;
@@ -315,36 +499,40 @@ export function derive(events: AutoraEvent[], cursor: number): Derived {
         busy = false;
         break;
     }
+  }
 
-    // After the switch, so a prompt's own events land in the bucket it just
-    // opened. The prompt itself is the bucket's heading, not a step in it, and
-    // the session opening says nothing the header does not already say -- left
-    // in, it puts a lone "1 step" above every conversation.
-    if (
-      !HIDDEN_KINDS.has(e.kind) &&
-      e.kind !== Kind.UserMessage &&
-      e.kind !== Kind.SessionStarted
-    ) {
-      bucket.steps.push(e);
+  // The newest browser cell is the only one whose page is still on screen.
+  let liveBrowserSeq: number | null = null;
+  for (let b = buckets.length - 1; b >= 0 && liveBrowserSeq === null; b--) {
+    for (let c = buckets[b].cells.length - 1; c >= 0; c--) {
+      const cell = buckets[b].cells[c];
+      if (cell.kind === "screen" && cell.source === "browser") {
+        liveBrowserSeq = cell.seq;
+        break;
+      }
     }
+  }
+
+  // Anything still streaming marks itself, so a card can say so without the
+  // components having to know what the tail of the log looks like.
+  const tail = buckets[buckets.length - 1];
+  if (tail?.open) {
+    const last = tail.cells[tail.cells.length - 1];
+    if (last?.kind === "screen") last.live = true;
   }
 
   return {
     transcript,
     // The leading bucket exists only to catch events that precede any prompt;
     // drop it when nothing landed there, which is the usual case.
-    buckets: buckets.filter((b, index) => index > 0 || b.steps.length > 0),
+    buckets: buckets.filter((b, index) => index > 0 || b.cells.length > 0),
     memories: [...memoryById.values()].sort((a, b) => a.seq - b.seq),
-    spans: [...spansById.values()],
     spansById,
     approvals,
     files,
-    frame,
     url,
-    lastAction,
-    desktopFrame,
+    liveBrowserSeq,
     hasDesktop,
-    terminal: terminalChunks.join(""),
     busy,
     tokens,
     title,
@@ -352,14 +540,10 @@ export function derive(events: AutoraEvent[], cursor: number): Derived {
 }
 
 /**
- * Is the agent working *now*, regardless of where the cursor is parked.
+ * Is the agent working now?
  *
- * `Derived.busy` answers that question for the cursor, which is what the
- * replay needs: scrubbed into an old turn it correctly says the agent was busy
- * then. It is the wrong answer for anything describing the present -- a Stop
- * button, or a Send button that offers to interrupt -- because replaying a
- * finished turn would make the UI claim a turn is running and look for all the
- * world like the request had been submitted again.
+ * Read from the tail of the log rather than from a flag, so a reload mid-turn
+ * comes back knowing a turn is in flight.
  */
 export function isRunning(events: AutoraEvent[]): boolean {
   for (let i = events.length - 1; i >= 0; i--) {
@@ -368,21 +552,4 @@ export function isRunning(events: AutoraEvent[]): boolean {
     if (kind === Kind.UserMessage) return true;
   }
   return false;
-}
-
-/** Which pane to show, inferred from what the agent most recently did. */
-export function inferStage(
-  events: AutoraEvent[],
-  cursor: number,
-): "terminal" | "browser" | "files" | "desktop" {
-  const limit = Math.min(cursor + 1, events.length);
-  for (let i = limit - 1; i >= 0; i--) {
-    const kind = events[i].kind;
-    if (kind === Kind.PtyOutput || kind === Kind.PtyExit) return "terminal";
-    if (kind === Kind.BrowserFrame || kind === Kind.BrowserAction || kind === Kind.BrowserNav)
-      return "browser";
-    if (kind === Kind.DesktopFrame || kind === Kind.DesktopAction) return "desktop";
-    if (kind === Kind.FileEdit) return "files";
-  }
-  return "terminal";
 }

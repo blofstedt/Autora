@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { IconCheck, IconGear, IconX } from "./Icons";
 import { VoiceCheck } from "./VoiceCheck";
+import { RelaySetup } from "./RelaySetup";
 
 type Credential = {
   name: string;
@@ -297,6 +298,8 @@ export function Settings({ onClose }: { onClose: () => void }) {
         </section>
 
         <VoiceCheck />
+
+        <RelaySetup />
 
         <TrustThisServer />
       </div>

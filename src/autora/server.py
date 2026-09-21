@@ -15,6 +15,7 @@ import base64
 import contextlib
 import json
 import mimetypes
+import re
 import socket
 import time
 from pathlib import Path
@@ -220,6 +221,89 @@ def create_app(
             "certificate": ca_file() is not None,
             "version": __version__,
         }
+
+    # -- desktop relay setup -------------------------------------------
+
+    def _relay_origin(request: Request) -> tuple[str, str]:
+        """(websocket URL, http origin) for the address this request arrived on.
+
+        Built from what reached us rather than from what we bound to, for the
+        same reason /api/origin does it: whatever name the browser used is the
+        one name the person is known to have a route to, and it is the one they
+        will retype on the other machine. Proxy headers win where a proxy set
+        them, or every relay command handed out behind Tailscale or Caddy would
+        name the private port nobody can reach.
+        """
+        forwarded_host = request.headers.get("x-forwarded-host", "")
+        host = forwarded_host.split(",")[0].strip() or request.headers.get("host", "")
+        proto = (request.headers.get("x-forwarded-proto", "").split(",")[0].strip()
+                 or request.url.scheme)
+        if not host:
+            host = f"127.0.0.1:{request.url.port or 8817}"
+        secure = proto in ("https", "wss")
+        return (f"{'wss' if secure else 'ws'}://{host}/ws/desktop-relay",
+                f"{'https' if secure else 'http'}://{host}")
+
+    @app.get("/relay.py")
+    async def relay_script(request: Request) -> Response:
+        """The desktop relay, as one file, addressed to this server.
+
+        The relay has to run on the machine with the screen, which is usually
+        not the machine Autora is installed on -- so `python -m autora.relay`,
+        the documented command, answers "No module named autora" on the one
+        machine where it matters. There was no other way to get the file.
+
+        Now there is: the script is served here with its default server address
+        rewritten to wherever this request came from, so it is download, install
+        four packages, run. Nothing to type, nothing to get wrong.
+        """
+        source = (Path(__file__).parent / "relay" / "__main__.py").read_text("utf-8")
+        ws_url, _ = _relay_origin(request)
+        stamped, count = re.subn(
+            r'^DEFAULT_SERVER = ""$',
+            f'DEFAULT_SERVER = {ws_url!r}',
+            source,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        if count == 0:  # the constant was renamed; better honest than silent
+            raise HTTPException(500, "relay script has no DEFAULT_SERVER to fill in")
+        return Response(
+            content=stamped,
+            media_type="text/x-python",
+            headers={"Content-Disposition": 'attachment; filename="relay.py"'},
+        )
+
+    @app.get("/api/relay")
+    async def relay_status(request: Request) -> dict[str, Any]:
+        """Whether a desktop relay is connected, and what to run if not."""
+        bridge = harness.relay
+        ws_url, http_origin = _relay_origin(request)
+        return {
+            "connected": bridge.connected,
+            "platform": bridge.platform,
+            "screen": {"w": bridge.width, "h": bridge.height},
+            "since": bridge.since,
+            "ws_url": ws_url,
+            "download": f"{http_origin}/relay.py",
+            "install": "pip install websockets mss pyautogui pillow",
+            "run": "python relay.py",
+        }
+
+    @app.get("/api/relay/frame")
+    async def relay_frame() -> Response:
+        """The relay's most recent frame, for a preview that is not the log.
+
+        Idle relay frames are deliberately kept out of sessions -- an hour of
+        connected-but-unused desktop should not be an hour of screenshots in
+        the conversation -- so this is how the UI can still show that the thing
+        is alive and pointed at the right screen.
+        """
+        frame = harness.relay.last_frame
+        if frame is None:
+            raise HTTPException(404, "no relay frame yet")
+        return Response(content=frame, media_type="image/jpeg",
+                        headers={"Cache-Control": "no-store"})
 
     @app.get("/autora-ca.crt")
     async def certificate_authority() -> Response:
@@ -520,8 +604,68 @@ def create_app(
             raise HTTPException(404, "unknown or already-settled request")
         return {"ok": True, "approved": approved}
 
+    # -- desktop relay ------------------------------------------------
+
+    @app.websocket("/ws/desktop-relay")
+    async def desktop_relay_ws(websocket: WebSocket) -> None:
+        """The relay (on the controlled machine) connects here.
+
+        It sends continuous frames; the server broadcasts them to all live
+        sessions.  It also responds to typed command requests from DesktopTool.
+        """
+        await websocket.accept()
+        bridge = harness.relay
+        bridge.attach(websocket)
+        try:
+            while True:
+                raw = await websocket.receive_text()
+                try:
+                    msg = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+
+                if msg.get("type") == "frame":
+                    data = base64.b64decode(msg["data"])
+                    bridge.note_frame(data, msg.get("w"), msg.get("h"))
+                    # Only into sessions that are actually using the desktop.
+                    # The relay streams whenever it is connected, so recording
+                    # every frame everywhere buried each conversation under
+                    # screenshots of an idle desktop nobody asked about -- and
+                    # the UI shows desktop work where it happened now, which
+                    # makes frames from no desktop work nothing but noise.
+                    for session in harness.sessions.live.values():
+                        if not bridge.interested(session.id):
+                            continue
+                        session.emit_frame(
+                            Kind.DESKTOP_FRAME, data, stream="desktop",
+                            t=round(time.time(), 3),
+                            w=msg.get("w"), h=msg.get("h"),
+                        )
+                elif msg.get("type") == "hello":
+                    bridge.note_hello(msg)
+                    # Log the relay connecting so the timeline shows it.
+                    for session in harness.sessions.live.values():
+                        session.emit(Kind.LOG, {
+                            "message": f"Desktop relay connected "
+                                       f"({msg.get('platform','?')} "
+                                       f"{msg.get('w','?')}×{msg.get('h','?')})",
+                        })
+                else:
+                    bridge.resolve(msg)
+
+        except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError):
+            pass
+        finally:
+            bridge.detach()
+
     # -- the live stream -----------------------------------------------
 
+    # Declared after the relay, and that is load-bearing: routes match
+    # in the order they are declared, so with the session route first every
+    # relay that ever connected was read as a request to watch a session called
+    # "desktop-relay", answered with "no such session", and hung up. The relay
+    # then retried for ever, saying only that it had been disconnected, and the
+    # feature could not be made to work from the other end at all.
     @app.websocket("/ws/{session_id}")
     async def stream(websocket: WebSocket, session_id: str) -> None:
         """Replay from `from_seq`, then tail live.
@@ -580,52 +724,6 @@ def create_app(
             pass
         finally:
             session.detach(subscriber)
-
-    # -- desktop relay ------------------------------------------------
-
-    @app.websocket("/ws/desktop-relay")
-    async def desktop_relay_ws(websocket: WebSocket) -> None:
-        """The relay (on the controlled machine) connects here.
-
-        It sends continuous frames; the server broadcasts them to all live
-        sessions.  It also responds to typed command requests from DesktopTool.
-        """
-        await websocket.accept()
-        bridge = harness.relay
-        bridge.attach(websocket)
-        try:
-            while True:
-                raw = await websocket.receive_text()
-                try:
-                    msg = json.loads(raw)
-                except json.JSONDecodeError:
-                    continue
-
-                if msg.get("type") == "frame":
-                    # Broadcast desktop frames to every live session so whoever
-                    # is watching sees the relay screen in real time.
-                    data = base64.b64decode(msg["data"])
-                    for session in harness.sessions.live.values():
-                        session.emit_frame(
-                            Kind.DESKTOP_FRAME, data, stream="desktop",
-                            t=round(time.time(), 3),
-                            w=msg.get("w"), h=msg.get("h"),
-                        )
-                elif msg.get("type") == "hello":
-                    # Log the relay connecting so the timeline shows it.
-                    for session in harness.sessions.live.values():
-                        session.emit(Kind.LOG, {
-                            "message": f"Desktop relay connected "
-                                       f"({msg.get('platform','?')} "
-                                       f"{msg.get('w','?')}×{msg.get('h','?')})",
-                        })
-                else:
-                    bridge.resolve(msg)
-
-        except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError):
-            pass
-        finally:
-            bridge.detach()
 
     # -- UI ------------------------------------------------------------
 

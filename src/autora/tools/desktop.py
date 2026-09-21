@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import time
 from typing import Any, AsyncIterator
 
 from ..events import Kind
@@ -62,15 +63,22 @@ class DesktopTool:
         if not self.relay.connected:
             yield ToolResult(
                 "Desktop relay not connected.\n\n"
-                "On the machine to control, run:\n"
+                "On the machine with the screen (not necessarily this one), run:\n"
+                "  curl -O http://THIS_SERVER:PORT/relay.py\n"
                 "  pip install websockets mss pyautogui pillow\n"
-                "  python -m autora.relay ws://THIS_SERVER:PORT\n\n"
+                "  python relay.py\n\n"
+                "The downloaded copy already knows this server's address. "
+                "Settings → Desktop relay in the UI shows the exact commands.\n"
                 "macOS: also grant Accessibility permission to your Terminal in\n"
                 "  System Settings → Privacy & Security → Accessibility.",
                 ok=False,
             )
             return
 
+        # Frames only reach a session's log while it is using the desktop, so
+        # say so on the way in -- including for actions that take no
+        # screenshot, since watching a click land is the point.
+        self.relay.note_interest(session.id)
         action = args["action"]
         try:
             if action == "screenshot":
@@ -174,10 +182,26 @@ class RelayBridge:
     the relay are dispatched via `on_frame`.
     """
 
+    #: How long after a desktop action a session still counts as watching.
+    #: Long enough to cover a screenshot, a look, and a follow-up click;
+    #: short enough that a session which moved on stops collecting frames.
+    INTEREST_SECONDS = 120.0
+
     def __init__(self) -> None:
         self._ws = None          # FastAPI WebSocket
         self._pending: dict[str, asyncio.Future] = {}
         self._msg_counter = 0
+        #: Last known facts about the machine on the other end, so the UI can
+        #: say "connected, 1920x1080, windows" instead of leaving someone to
+        #: guess from an empty pane whether their relay is running at all.
+        self.platform: str | None = None
+        self.width: int | None = None
+        self.height: int | None = None
+        self.since: float | None = None
+        #: The newest frame, kept in memory only. Previewing the relay is not
+        #: the same as recording it: this never enters a session log.
+        self.last_frame: bytes | None = None
+        self._interest: dict[str, float] = {}
 
     @property
     def connected(self) -> bool:
@@ -185,18 +209,45 @@ class RelayBridge:
 
     def attach(self, ws) -> None:
         self._ws = ws
+        self.since = time.time()
 
     def detach(self) -> None:
         self._ws = None
+        self.platform = self.width = self.height = None
+        self.since = None
+        self.last_frame = None
         for fut in list(self._pending.values()):
             if not fut.done():
                 fut.cancel()
         self._pending.clear()
 
+    # -- what the relay tells us about itself ----------------------------
+
+    def note_hello(self, msg: dict) -> None:
+        self.platform = msg.get("platform")
+        self.width = msg.get("w")
+        self.height = msg.get("h")
+
+    def note_frame(self, data: bytes, w: int | None, h: int | None) -> None:
+        self.last_frame = data
+        if w:
+            self.width, self.height = w, h
+
+    # -- who is watching -------------------------------------------------
+
+    def note_interest(self, session_id: str) -> None:
+        """A session just used the desktop, so its log should carry frames."""
+        self._interest[session_id] = time.time()
+
+    def interested(self, session_id: str) -> bool:
+        seen = self._interest.get(session_id)
+        return seen is not None and (time.time() - seen) < self.INTEREST_SECONDS
+
     async def request(self, msg: dict, timeout: float = 30.0) -> dict:
         if not self._ws:
             raise RuntimeError(
-                "no desktop relay connected — run: python -m autora.relay ws://SERVER:PORT"
+                "no desktop relay connected — download relay.py from this server "
+                "and run it on the machine with the screen"
             )
         import uuid
         msg_id = uuid.uuid4().hex[:10]

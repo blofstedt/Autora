@@ -209,8 +209,8 @@ The first version was a functional developer tool: 11px monospace everywhere,
 three fixed columns, no motion. It worked and it was ugly, which for a product
 whose entire pitch is *watching* is a real failure rather than a cosmetic one.
 
-The visual model is a broadcast console: one hero stage, quiet chrome, and
-motion spent only on things that are genuinely happening. Surfaces are layered
+The visual model is a broadcast console: quiet chrome, and motion spent only on
+things that are genuinely happening. Surfaces are layered
 rather than flat — elevation instead of boxes drawn around everything — and
 color is used semantically (amber means a decision is waiting on you, red means
 something failed) rather than decoratively.
@@ -240,14 +240,21 @@ session. Variable weights keep it to two files and 77KB.
 
 - **Sequential tool execution.** Parallel calls would be faster, but watching two
   things happen at once is much harder to follow, and legibility is the point.
-- **Fold-from-zero in the UI.** O(n) per scrub keeps it honest with no
+- **Fold-from-zero in the UI.** O(n) per render keeps it honest with no
   incremental cache to get subtly wrong. Fine to tens of thousands of events;
   past that, memoize on checkpoints.
-- **Desktop control** is specified but unimplemented. The right shape is a
-  containerized desktop (Xvfb + WebRTC, neko-style) so the UI can embed a live
-  desktop you can also *take over* — human takeover being the thing Hermes most
-  conspicuously lacks.
-- **The stage does not support side-by-side.** Watching the terminal and the
-  browser at once is occasionally what you want; today you switch tabs.
+- **Desktop control is a relay, not a container.** A single file on the machine
+  with the screen, connecting out, is what makes "control my actual PC" a
+  download rather than an install. The richer shape is still a containerized
+  desktop (Xvfb + WebRTC, neko-style) that the UI can embed and a human can
+  *take over* — human takeover being the thing Hermes most conspicuously lacks.
+- **The work lives in the transcript, not in a stage.** A docked stage showed
+  only the newest state of each kind, so the command you wanted to re-read had
+  scrolled away and the page the agent looked at had been replaced. Each call
+  now keeps its own output, its own frames and its own diff where it happened,
+  and reviewing is scrolling. The cost is that two things happening at once are
+  read one after the other rather than side by side, and that a session of
+  thousands of frames is a long page; the frames are content-addressed and the
+  cards fold, which has been enough so far.
 - **The policy default is ASK**, which will annoy you. That is the correct
   starting point; loosen per project once you trust it.

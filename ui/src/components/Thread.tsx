@@ -1,38 +1,42 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { Bucket, TranscriptTurn } from "../lib/derive";
-import { elapsed, labelFor, summarize, toneOf } from "../lib/describe";
-import type { AutoraEvent } from "../lib/types";
-import { IconArrowDown, IconChevron, IconSpark, IconUser } from "./Icons";
+import type { Bucket, Cell } from "../lib/derive";
+import { IconAlert, IconArrowDown, IconChevron, IconSpark, IconUser } from "./Icons";
+import { TerminalCell } from "./TerminalCell";
+import { ScreencastCell } from "./ScreencastCell";
+import { FileCell } from "./FileCell";
+import { ToolCell } from "./ToolCell";
 
 /** Within this many pixels of the bottom counts as "watching the live edge". */
 const STICK_ZONE = 80;
 
 /**
- * The conversation, one prompt at a time.
+ * The conversation, and the work, in one column.
  *
- * Each request carries the work it caused: the steps fold away under the
- * prompt that produced them, so the thread reads as a conversation and the
- * detail is one tap down rather than in a separate rail you had to correlate
- * by eye. Every turn starts folded, the one in flight included: the reply is
- * what you came for, and reasoning that unfolds itself is reasoning that
- * shoves the reply off the screen while you are reading it.
+ * There is no stage under this and no scrubber beside it. A command, a page,
+ * a desktop and a diff each appear inline at the point the agent reached for
+ * them, so reading the thread from the top is reviewing the session -- and
+ * reviewing does not mean putting the whole app into the past, which was the
+ * old model's real cost: you could not look back at step 12 while the agent
+ * carried on at step 300.
  */
 export function Thread({
-  buckets, busy, startedAt, onSeek,
+  buckets, busy, sessionId, liveBrowserSeq, live,
 }: {
   buckets: Bucket[];
   busy: boolean;
-  startedAt: number;
-  onSeek: (seq: number) => void;
+  sessionId: string;
+  liveBrowserSeq: number | null;
+  live: boolean;
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const [stuck, setStuck] = useState(true);
   const [unread, setUnread] = useState(false);
 
   const count = buckets.length;
   const tail = buckets[buckets.length - 1];
   const tailLength =
-    (tail?.replies.reduce((n, r) => n + r.text.length, 0) ?? 0) + (tail?.steps.length ?? 0);
+    (tail?.replies.reduce((n, r) => n + r.text.length, 0) ?? 0) + (tail?.cells.length ?? 0);
   const prevCount = useRef(count);
 
   const toBottom = useCallback((behavior: ScrollBehavior) => {
@@ -54,28 +58,54 @@ export function Thread({
     toBottom(isNewTurn ? "smooth" : "auto");
   }, [count, tailLength, busy, stuck, toBottom]);
 
+  /** Where the scroller was last time, so a scroll that was not the reader's
+      doing can be told from one that was. */
+  const lastTop = useRef(0);
+
   const onScroll = useCallback(() => {
     const el = scrollerRef.current;
     if (!el) return;
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= STICK_ZONE;
-    setStuck(atBottom);
-    if (atBottom) setUnread(false);
+    const wentUp = el.scrollTop < lastTop.current;
+    lastTop.current = el.scrollTop;
+    if (atBottom) { setStuck(true); setUnread(false); return; }
+    // Only scrolling up lets go of the live edge. A smooth scroll to the
+    // bottom reports every frame on the way down as "not at the bottom", and
+    // unsticking on those meant the thread stopped following itself halfway
+    // through the animation -- then an image decoded, the content grew, and
+    // the reader was left a card behind with a New messages pill they never
+    // asked for.
+    if (wentUp) setStuck(false);
   }, []);
 
+  // Watch the content, not just the viewport: a screenshot decoding a beat
+  // after its card renders grows the thread under whoever is reading the live
+  // edge, and without this they are quietly left an image behind.
+  // `count` is in the deps for a reason that is not obvious: the first render
+  // of an empty session returns the placeholder, so there is no scroller to
+  // observe yet, and an effect keyed only on `stuck` never runs again to find
+  // one. The thread then never followed anything it had not laid out by the
+  // time the first event arrived -- which, once cards carried images, was most
+  // of it.
   useEffect(() => {
     const el = scrollerRef.current;
+    const content = contentRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => { if (stuck) toBottom("auto"); });
     observer.observe(el);
+    if (content) observer.observe(content);
     return () => observer.disconnect();
-  }, [stuck, toBottom]);
+  }, [stuck, toBottom, count]);
 
   if (buckets.length === 0 && !busy) {
     return (
       <div className="empty">
         <span className="empty-ring"><IconSpark size={20} /></span>
         <h3>Ready</h3>
-        <p>Describe a task below. You will see every step as it happens.</p>
+        <p>
+          Describe a task below. Every command, page and edit appears here as it
+          happens, and stays here to read back.
+        </p>
       </div>
     );
   }
@@ -83,10 +113,18 @@ export function Thread({
   return (
     <div className="thread-wrap">
       <div className="thread" ref={scrollerRef} onScroll={onScroll}>
+        <div className="thread-content" ref={contentRef}>
         {buckets.map((b) => (
-          <TurnBucket key={b.seq} bucket={b} startedAt={startedAt} onSeek={onSeek} />
+          <TurnBucket
+            key={b.seq}
+            bucket={b}
+            sessionId={sessionId}
+            liveBrowserSeq={liveBrowserSeq}
+            live={live}
+          />
         ))}
         {busy && <div className="working"><span className="bar" />working</div>}
+        </div>
       </div>
 
       <button
@@ -103,19 +141,13 @@ export function Thread({
 }
 
 function TurnBucket({
-  bucket, startedAt, onSeek,
+  bucket, sessionId, liveBrowserSeq, live,
 }: {
   bucket: Bucket;
-  startedAt: number;
-  onSeek: (seq: number) => void;
+  sessionId: string;
+  liveBrowserSeq: number | null;
+  live: boolean;
 }) {
-  // Collapsed until someone asks for it, live turn included. Reasoning is the
-  // detail behind the answer rather than the answer, and a panel that opens
-  // itself every turn pushes the reply off a phone screen exactly as it lands.
-  // The live pip on the toggle is how you can tell there is something in there
-  // without it taking the screen to say so.
-  const [open, setOpen] = useState(false);
-
   return (
     <article className="turn">
       {bucket.prompt && (
@@ -128,112 +160,100 @@ function TurnBucket({
         </div>
       )}
 
-      {/* One disclosure per turn, carrying both what the agent thought and
-          what it did. They were two toggles in two places saying two halves of
-          the same thing, and the steps sat under the prompt as though the
-          person had taken them. */}
-      {bucket.replies.length > 0 ? (
-        bucket.replies.map((r, index) => (
-          <Reply
-            key={r.seq}
-            turn={r}
-            steps={index === 0 ? bucket.steps : []}
-            live={index === 0 && bucket.open}
-            open={index === 0 ? open : undefined}
-            onToggle={index === 0 ? () => setOpen(!open) : undefined}
-            startedAt={startedAt}
-            onSeek={onSeek}
+      <div className="work">
+        {bucket.cells.map((cell, index) => (
+          <CellView
+            key={`${cell.kind}-${cell.seq}-${index}`}
+            cell={cell}
+            sessionId={sessionId}
+            liveBrowserSeq={liveBrowserSeq}
+            live={live}
+            open={bucket.open}
           />
-        ))
-      ) : (
-        // A turn that has acted but not yet spoken still has reasoning to show.
-        bucket.steps.length > 0 && (
-          <Reply
-            turn={{ role: "agent", text: "", seq: bucket.seq }}
-            steps={bucket.steps}
-            live={bucket.open}
-            open={open}
-            onToggle={() => setOpen(!open)}
-            startedAt={startedAt}
-            onSeek={onSeek}
-          />
-        )
-      )}
+        ))}
+      </div>
     </article>
   );
 }
 
-function StepRow({
-  event, startedAt, onSeek,
+function CellView({
+  cell, sessionId, liveBrowserSeq, live, open,
 }: {
-  event: AutoraEvent;
-  startedAt: number;
-  onSeek: (seq: number) => void;
+  cell: Cell;
+  sessionId: string;
+  liveBrowserSeq: number | null;
+  live: boolean;
+  open: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  const tone = toneOf(event);
-  return (
-    <button
-      className={`step ${tone ? `tone-${tone}` : ""} ${open ? "is-open" : ""}`}
-      onClick={() => { setOpen(!open); onSeek(event.seq); }}
-      title={`seq ${event.seq}`}
-    >
-      <span className="step-label">{labelFor(event)}</span>
-      <span className="step-text">{summarize(event)}</span>
-      <span className="step-at">+{elapsed(event.ts, startedAt)}</span>
-    </button>
-  );
+  switch (cell.kind) {
+    case "reply":
+      return <Reply text={cell.turn.text} thinking={cell.turn.thinking} />;
+    case "terminal":
+      return (
+        <TerminalCell
+          command={cell.command}
+          output={cell.output}
+          status={cell.status}
+          exitCode={cell.exitCode}
+          durationMs={cell.durationMs}
+          live={open && cell.status === "running"}
+        />
+      );
+    case "screen":
+      return (
+        <ScreencastCell
+          sessionId={sessionId}
+          source={cell.source}
+          url={cell.url}
+          shots={cell.shots}
+          actions={cell.actions}
+          live={cell.live}
+          pickable={live && cell.source === "browser" && cell.seq === liveBrowserSeq}
+        />
+      );
+    case "file":
+      return <FileCell file={cell.file} />;
+    case "tool":
+      return <ToolCell span={cell.span} />;
+    case "note":
+      return (
+        <div className={`cell-note tone-${cell.tone}`}>
+          {cell.tone !== "plain" && <IconAlert size={13} />}
+          <span>{cell.text}</span>
+        </div>
+      );
+  }
 }
 
-function Reply({
-  turn, steps = [], live = false, open, onToggle, startedAt = 0, onSeek,
-}: {
-  turn: TranscriptTurn;
-  steps?: AutoraEvent[];
-  live?: boolean;
-  /** Undefined for replies that carry no steps: those own their own state. */
-  open?: boolean;
-  onToggle?: () => void;
-  startedAt?: number;
-  onSeek?: (seq: number) => void;
-}) {
-  const [ownOpen, setOwnOpen] = useState(false);
-  const isOpen = open ?? ownOpen;
-  const toggle = onToggle ?? (() => setOwnOpen(!ownOpen));
-  const hasReasoning = !!turn.thinking || steps.length > 0;
+/**
+ * What the agent said, with its reasoning one tap away.
+ *
+ * Folded by default, live turn included: the reply is what you came for, and
+ * reasoning that unfolds itself shoves the reply off the screen as it lands.
+ */
+function Reply({ text, thinking }: { text: string; thinking?: string }) {
+  const [open, setOpen] = useState(false);
+  if (!text && !thinking) return null;
 
   return (
     <div className="msg agent">
       <span className="avatar"><IconSpark size={14} /></span>
       <div className="msg-body">
         <div className="msg-who">autora</div>
-        {hasReasoning && (
+        {thinking && (
           <>
             <button
-              className={`reason-toggle ${isOpen ? "open" : ""}`}
-              onClick={toggle}
-              aria-expanded={isOpen}
+              className={`reason-toggle ${open ? "open" : ""}`}
+              onClick={() => setOpen(!open)}
+              aria-expanded={open}
             >
               <IconChevron size={11} />
-              {isOpen ? "hide reasoning" : "reasoning"}
-              {steps.length > 0 && <em className="reason-count">{steps.length}</em>}
-              {live && <em className="steps-live" />}
+              {open ? "hide reasoning" : "reasoning"}
             </button>
-            {isOpen && (
-              <div className="reason-open">
-                {turn.thinking && <pre className="reason-body">{turn.thinking}</pre>}
-                {steps.length > 0 && onSeek && (
-                  <div className="steps-body">
-                    {steps.map((e) => (
-                      <StepRow key={e.seq} event={e} startedAt={startedAt} onSeek={onSeek} />
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+            {open && <pre className="reason-body">{thinking}</pre>}
           </>
         )}
-        {turn.text && <div className="msg-text">{turn.text}</div>}
+        {text && <div className="msg-text">{text}</div>}
       </div>
     </div>
   );

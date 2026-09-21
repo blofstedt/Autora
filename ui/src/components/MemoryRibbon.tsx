@@ -126,6 +126,11 @@ export function MemoryRibbon({
 
   const newest = memories.length ? memories[memories.length - 1] : null;
 
+  // Nothing to show is not worth a band across the top of every screen. It
+  // reappears the moment there is a record or a recall, and the rail's Memory
+  // button is where you go looking for it in the meantime.
+  if (centred.length === 0 && !newest) return null;
+
   return (
     <section className="web" aria-label="What the agent remembers">
       <button className="web-tag" onClick={onOpen} title="Open the knowledge web">

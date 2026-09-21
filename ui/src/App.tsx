@@ -1,31 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SessionStream, type StreamStatus } from "./lib/stream";
-import { derive, inferStage, isRunning } from "./lib/derive";
-import { HIDDEN_KINDS } from "./lib/describe";
-import { usePlayback } from "./lib/playback";
+import { derive, isRunning } from "./lib/derive";
 import { chime, paintChrome, type Chrome } from "./lib/chrome";
 import type { AutoraEvent } from "./lib/types";
 import { Thread } from "./components/Thread";
 import { MemoryRibbon } from "./components/MemoryRibbon";
-import { StageDock, type Stage } from "./components/StageDock";
+import { Rail } from "./components/Rail";
 import { Sessions, type SessionRow } from "./components/Sessions";
-import { TerminalView } from "./components/TerminalView";
-import { BrowserView } from "./components/BrowserView";
-import { DesktopView } from "./components/DesktopView";
-import { DiffView } from "./components/DiffView";
 import { Approvals } from "./components/Approvals";
-import { Scrubber } from "./components/Scrubber";
 import { KnowledgeWeb } from "./components/KnowledgeWeb";
 import { Schedule } from "./components/Schedule";
 import { Settings } from "./components/Settings";
 import { DictateButton } from "./components/DictateButton";
 import { LiveChat } from "./components/LiveChat";
+import { useRelay } from "./components/RelaySetup";
 import {
   dictationSupported, recognitionAvailable, secureOrigin, speakable,
   splitSpeakable, useSpeech,
 } from "./lib/voice";
 import {
-  IconArrow, IconChevron, IconGear, IconMessage, IconRepeat, IconSpark, IconWave, IconX,
+  IconArrow, IconChevron, IconGear, IconMessage, IconRepeat, IconSpark, IconStop,
+  IconWave, IconX,
 } from "./components/Icons";
 
 /** How often to re-read the session list, so sessions started elsewhere (or
@@ -39,11 +34,6 @@ export function App() {
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [events, setEvents] = useState<AutoraEvent[]>([]);
   const [status, setStatus] = useState<StreamStatus>({ state: "connecting" });
-  const [cursor, setCursor] = useState(-1);
-  const [following, setFollowing] = useState(true);
-  const [stage, setStage] = useState<Stage>("terminal");
-  const [stagePinned, setStagePinned] = useState(false);
-  const [dockOpen, setDockOpen] = useState(true);
   const [draft, setDraft] = useState("");
   const [liveOn, setLiveOn] = useState(false);
   const [mobileTab, setMobileTab] = useState<"chat" | "tasks">("chat");
@@ -62,6 +52,7 @@ export function App() {
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const speech = useSpeech();
   const { say, cancel: hush, prime, speaking, supported: canSpeak } = speech;
+  const relay = useRelay();
   /** How much of each reply has been read out, so streaming text is spoken
       once and in order rather than re-read from the top on every token. */
   const narrated = useRef(new Map<number, number>());
@@ -107,8 +98,6 @@ export function App() {
   useEffect(() => {
     if (!sessionId) return;
     setEvents([]);
-    setCursor(-1);
-    setFollowing(true);
     const stream = new SessionStream(sessionId, {
       onEvents: (fresh) =>
         setEvents((prev) => {
@@ -126,66 +115,7 @@ export function App() {
     };
   }, [sessionId]);
 
-  useEffect(() => {
-    if (following) setCursor(events.length - 1);
-  }, [events.length, following]);
-
-  const view = useMemo(() => derive(events, cursor), [events, cursor]);
-  const startedAt = events[0]?.ts ?? 0;
-
-  // ------------------------------------------------------------- playback --
-  const playbackSeek = useCallback((index: number) => {
-    setFollowing(false);
-    setCursor(index);
-  }, []);
-  const playback = usePlayback(
-    events,
-    cursor,
-    playbackSeek,
-    useCallback(() => setFollowing(true), []),
-  );
-
-  /** Any deliberate move by the reader: stops playback and stops following. */
-  const seek = useCallback(
-    (index: number) => {
-      playback.pause();
-      setFollowing(false);
-      setCursor(index);
-    },
-    [playback],
-  );
-
-  /** A step row knows its sequence number, not its index. */
-  const seekToSeq = useCallback(
-    (targetSeq: number) => {
-      const index = events.findIndex((e) => e.seq === targetSeq);
-      if (index >= 0) seek(index);
-    },
-    [events, seek],
-  );
-
-  const jumpToNow = useCallback(() => {
-    playback.pause();
-    setFollowing(true);
-    setCursor(events.length - 1);
-  }, [playback, events.length]);
-
-  const step = useCallback(
-    (direction: 1 | -1, notable: boolean) => {
-      playback.pause();
-      setFollowing(false);
-      setCursor((current) => {
-        if (!notable) {
-          return Math.min(Math.max(current + direction, -1), events.length - 1);
-        }
-        for (let i = current + direction; i >= 0 && i < events.length; i += direction) {
-          if (!HIDDEN_KINDS.has(events[i].kind)) return i;
-        }
-        return direction > 0 ? events.length - 1 : -1;
-      });
-    },
-    [playback, events],
-  );
+  const view = useMemo(() => derive(events), [events]);
 
   const pending = useMemo(
     () => view.approvals.filter((a) => !a.settled).length,
@@ -199,33 +129,12 @@ export function App() {
     }
   }, [pending]);
 
-  // Follow the action by default; a deliberate choice of pane must stick, or
-  // the UI fights whoever is trying to look at something.
-  useEffect(() => {
-    if (stagePinned) return;
-    setStage(inferStage(events, cursor));
-  }, [events, cursor, stagePinned]);
-
-  // The pin releases itself when a new prompt starts. There is no button to
-  // release it -- the dock bar's width belongs to the pane names -- and a pin
-  // that could only be set would strand the stage on whatever was last tapped
-  // for the rest of the session.
-  const turnCount = view.buckets.length;
-  const lastTurn = useRef(turnCount);
-  useEffect(() => {
-    if (turnCount !== lastTurn.current) {
-      lastTurn.current = turnCount;
-      setStagePinned(false);
-    }
-  }, [turnCount]);
-
   const send = useCallback(async (spoken?: string) => {
     const text = (spoken ?? draft).trim();
     if (!text || !sessionId) return;
     // Dictated turns never touched the box, so there is nothing to clear and
     // clearing anyway would eat something half-typed.
     if (spoken === undefined) setDraft("");
-    setFollowing(true);
     await fetch(`/api/sessions/${sessionId}/message`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -266,18 +175,17 @@ export function App() {
     setSessionsOpen(false);
   }, []);
 
+  const pickSession = useCallback((id: string) => {
+    history.replaceState(null, "", `?session=${id}`);
+    setSessionId(id);
+    setSessionsOpen(false);
+  }, []);
+
   const live = status.state === "live";
   const readOnly = !live;
-  // Following means the cursor is pinned to the head by definition. Deriving
-  // this from the cursor alone lags by a render -- the cursor catches up in an
-  // effect -- so every arriving event briefly read as "not at the head" and
-  // the transport flickered between following and offering to jump there.
-  const atHead = following || cursor >= events.length - 1;
 
-  // Whether a turn is running now, as opposed to whether one was running at
-  // the cursor. Replay parks the cursor mid-turn on purpose; asking `view.busy`
-  // there would put up a Stop button and relabel Send as "Interrupt & send",
-  // which reads as the request having been sent again.
+  // Whether a turn is running now, read from the tail of the log so a reload
+  // mid-turn comes back knowing one is in flight.
   const running = useMemo(() => isRunning(events), [events]);
 
   // ------------------------------------------------------------ live chat --
@@ -292,9 +200,8 @@ export function App() {
     prime();
     narrated.current.clear();
     narrateAfter.current = events[events.length - 1]?.seq ?? -1;
-    jumpToNow();
     setLiveOn(true);
-  }, [liveOn, hush, prime, events, jumpToNow]);
+  }, [liveOn, hush, prime, events]);
 
   // A recording has nothing to say back, and a session switch drops the thread
   // the voice was holding. Either way, hang up rather than listen to a page
@@ -310,10 +217,9 @@ export function App() {
 
   // Read the agent's replies out loud, a sentence at a time as they stream --
   // waiting for the whole answer is a silence as long as the answer, and
-  // speaking each token is a stutter. Only at the head: scrubbing back through
-  // a recording should not start narrating history.
+  // speaking each token is a stutter.
   useEffect(() => {
-    if (!liveOn || !canSpeak || !atHead) return;
+    if (!liveOn || !canSpeak) return;
     for (const bucket of view.buckets) {
       for (const reply of bucket.replies) {
         if (reply.seq <= narrateAfter.current) continue;
@@ -324,13 +230,12 @@ export function App() {
         // is spoken whether or not it ends in a full stop.
         const chunk = bucket.open ? splitSpeakable(rest)[0] : rest;
         if (!chunk.trim()) continue;
-        // The offset counts raw characters; scrubbing changes the length.
         narrated.current.set(reply.seq, already + chunk.length);
         const prose = speakable(chunk);
         if (prose) say(prose);
       }
     }
-  }, [liveOn, canSpeak, atHead, view.buckets, say]);
+  }, [liveOn, canSpeak, view.buckets, say]);
 
   /** A spoken turn goes straight out: barge in over whatever is being said,
       then send. */
@@ -396,26 +301,6 @@ export function App() {
       if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
 
       switch (e.key) {
-        case " ":
-          e.preventDefault();
-          playback.toggle();
-          break;
-        case "ArrowLeft":
-          e.preventDefault();
-          step(-1, e.shiftKey);
-          break;
-        case "ArrowRight":
-          e.preventDefault();
-          step(1, e.shiftKey);
-          break;
-        case "Home":
-          e.preventDefault();
-          seek(-1);
-          break;
-        case "End":
-          e.preventDefault();
-          jumpToNow();
-          break;
         case "/":
           e.preventDefault();
           composerRef.current?.focus();
@@ -423,10 +308,6 @@ export function App() {
         case "k":
           e.preventDefault();
           setKnowledgeOpen((open) => !open);
-          break;
-        case "s":
-          e.preventDefault();
-          setDockOpen((open) => !open);
           break;
         case "v":
           e.preventDefault();
@@ -444,7 +325,7 @@ export function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [playback, step, seek, jumpToNow, toggleLive, readOnly, voiceReady, voiceBlocked]);
+  }, [toggleLive, readOnly, voiceReady, voiceBlocked]);
 
   const currentName =
     sessions.find((s) => s.id === sessionId)?.title?.trim() ||
@@ -459,292 +340,255 @@ export function App() {
 
   return (
     <div className="app">
-      <header className="top">
-        <div className="brand">
-          <span className="brand-mark"><IconSpark size={13} /></span>
-          <span className="brand-word">Autora</span>
-        </div>
+      {/* Wide screens get the session list in the margin instead of behind a
+          sheet; narrow ones never render it at all. */}
+      <Rail
+        sessions={sessions}
+        current={sessionId}
+        relayOn={!!relay?.connected}
+        onPick={pickSession}
+        onNew={newSession}
+        onTasks={() => { closeOverlays(); setScheduleOpen(true); }}
+        onMemory={() => { closeOverlays(); setKnowledgeOpen(true); }}
+        onSettings={() => { closeOverlays(); setSettingsOpen(true); }}
+      />
 
-        <button
-          className="session-btn"
-          onClick={() => setSessionsOpen(true)}
-          title="Switch session"
-        >
-          <span className={`ses-dot ${live ? "is-live" : ""}`} />
-          <span className="session-name">{currentName}</span>
-          <IconChevron size={12} />
-        </button>
+      <div className="shell">
+        <header className="top">
+          <div className="brand in-top">
+            <span className="brand-mark"><IconSpark size={13} /></span>
+            <span className="brand-word">Autora</span>
+          </div>
 
-        <div className="spacer" />
+          <button
+            className="session-btn"
+            onClick={() => setSessionsOpen(true)}
+            title="Switch session"
+          >
+            <span className={`ses-dot ${live ? "is-live" : ""}`} />
+            <span className="session-name">{currentName}</span>
+            <IconChevron size={12} />
+          </button>
 
-        {view.tokens.in > 0 && (
-          <span className="badge tokens" title="tokens in / out / cached">
-            {fmt(view.tokens.in)} in · {fmt(view.tokens.out)} out · {fmt(view.tokens.cached)} cached
-          </span>
-        )}
-        <button
-          className="btn icon ghost"
-          onClick={() => setSettingsOpen(true)}
-          title="Settings"
-          aria-label="Open settings"
-        >
-          <IconGear size={15} />
-        </button>
-      </header>
+          <div className="spacer" />
 
-      {/* Always on, above the conversation: what the agent knows, and what is
-          happening to it as it happens. */}
-      <MemoryRibbon memories={view.memories} onOpen={() => setKnowledgeOpen(true)} />
-
-      <main className="page">
-        <Thread
-          buckets={view.buckets}
-          busy={view.busy && atHead}
-          startedAt={startedAt}
-          onSeek={seekToSeq}
-        />
-
-        <Approvals
-          approvals={view.approvals}
-          readOnly={readOnly}
-          onDecide={(id, approved) => streamRef.current?.approve(id, approved)}
-        />
-
-        <StageDock
-          stage={stage}
-          open={dockOpen}
-          counts={{ files: view.files.length }}
-          hasDesktop={view.hasDesktop}
-          onStage={(id) => { setStage(id); setStagePinned(true); }}
-          onToggle={() => setDockOpen((open) => !open)}
-          running={live && running}
-          onStop={() => void stopTurn()}
-          scrubber={
-            <Scrubber
-              events={events}
-              cursor={cursor}
-              playback={playback}
-              following={following}
-              atHead={atHead}
-              onSeek={seek}
-              onToggleFollow={() => {
-                if (following) {
-                  playback.pause();
-                  setFollowing(false);
-                } else {
-                  jumpToNow();
-                }
-              }}
-            />
-          }
-        >
-          {/* Every pane stays mounted: xterm replays its whole buffer on
-              remount, and panes that exist can crossfade where panes that
-              unmount can only snap. */}
-          {[
-            { id: "terminal" as const, node: <TerminalView data={view.terminal} /> },
-            {
-              id: "browser" as const,
-              node: (
-                <BrowserView
-                  sessionId={sessionId ?? ""}
-                  frame={view.frame}
-                  url={view.url}
-                  lastAction={view.lastAction}
-                />
-              ),
-            },
-            {
-              id: "desktop" as const,
-              node: <DesktopView sessionId={sessionId ?? ""} desktopFrame={view.desktopFrame} />,
-            },
-            { id: "files" as const, node: <DiffView files={view.files} /> },
-          ].map(({ id, node }) => (
-            <div
-              key={id}
-              id={`pane-${id}`}
-              role="tabpanel"
-              aria-labelledby={`tab-${id}`}
-              className={`pane ${stage === id ? "on" : ""}`}
-            >
-              {node}
-            </div>
-          ))}
-        </StageDock>
-
-        {/* The screen above stays exactly as it was; only this strip changes,
-            because the point of talking to it is to keep watching it work. */}
-        <div className={`composer ${liveOn ? "is-live" : ""}`}>
-          {/* Said here rather than in a settings page nobody opens: the button
-              that did not work is two inches below it. */}
-          {voiceHelp && !liveOn && (
-            <div className="voice-help" role="status">
-              <div className="voice-help-text">
-                {secureUrl ? (
-                  <>
-                    <b>Voice lives on the secure page.</b> Browsers only open a
-                    microphone over a secure connection, and this page is not one.
-                    The same session is running on one — open it and the
-                    microphone appears.
-                    <em className="voice-help-aside">
-                      Your browser will warn you once that it does not recognise
-                      the certificate. That is expected: the certificate is your
-                      own server's. Tap <b>Advanced</b>, then <b>Proceed</b>.
-                    </em>
-                    {hasCertificate && (
-                      <em className="voice-help-trust">
-                        Rather not see that warning — or install this to your home
-                        screen? <a href="/autora-ca.crt" download>Install the
-                        certificate</a>, and this becomes an ordinary trusted
-                        site on this device. Settings explains where it goes.
-                      </em>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <b>Voice needs a secure page.</b> Browsers only open a
-                    microphone over a secure connection, and this page is not one
-                    — no site setting can change that, because the restriction is
-                    not about trusting this site.
-                    <em className="voice-help-aside">
-                      The fix is in front of the server, not in the browser. On a
-                      tailnet, <code>tailscale serve --bg {location.port || 80}</code>{" "}
-                      on the machine running Autora gives this page a real
-                      certificate and a secure address; any reverse proxy with a
-                      certificate does the same. See the README.
-                    </em>
-                  </>
-                )}
-              </div>
-              {secureUrl && (
-                <a className="btn primary" href={secureUrl}>
-                  Open the secure page <IconArrow size={13} />
-                </a>
-              )}
-              <button
-                className="btn icon ghost"
-                onClick={() => setVoiceHelp(false)}
-                aria-label="Dismiss"
-              >
-                <IconX size={14} />
-              </button>
-            </div>
+          {view.tokens.in > 0 && (
+            <span className="badge tokens" title="tokens in / out / cached">
+              {fmt(view.tokens.in)} in · {fmt(view.tokens.out)} out ·{" "}
+              {fmt(view.tokens.cached)} cached
+            </span>
           )}
-          {liveOn ? (
-            <LiveChat
-              onUtterance={sendSpoken}
-              onExit={toggleLive}
-              onInterrupt={hush}
-              agentSpeaking={speaking}
-              agentWorking={running}
-              disabled={readOnly}
-            />
-          ) : (
-            <div className="composer-box">
-              <textarea
-                ref={composerRef}
-                value={draft}
-                rows={2}
-                aria-label="Task"
-                placeholder={live ? "Describe a task…" : "This session is a recording."}
-                disabled={readOnly}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    void send();
-                  }
-                }}
-              />
-              <div className="composer-foot">
-                {notice ? (
-                  <button
-                    className="hint voice-note"
-                    onClick={() => setNotice(null)}
-                    title="Dismiss"
-                  >
-                    {notice}
-                  </button>
-                ) : voiceBlocked ? (
-                  <button
-                    className="hint voice-note"
-                    onClick={() => setVoiceHelp(true)}
-                    title="Browsers only allow microphone access on a secure page."
-                  >
-                    Voice needs <code>https</code>
-                  </button>
-                ) : (
-                  <span className="hint"><kbd>↵</kbd> send · <kbd>⇧↵</kbd> newline</span>
-                )}
-                <div className="composer-acts">
-                  <DictateButton
-                    onText={appendDictation}
-                    disabled={readOnly}
-                    onBlocked={() => setVoiceHelp(true)}
-                    onTrouble={setNotice}
-                  />
-                  {(voiceReady || voiceBlocked) && (
-                    <button
-                      className={`btn ghost live-start ${voiceReady ? "" : "is-blocked"}`}
-                      onClick={voiceReady ? toggleLive : () => setVoiceHelp(true)}
-                      disabled={readOnly}
-                      title={voiceReady ? "Live voice chat" : "Live voice chat needs an https page"}
-                      aria-label={
-                        voiceReady ? "Start live voice chat" : "Why live voice chat is unavailable"
-                      }
-                    >
-                      <IconWave size={14} />
-                      <span className="live-start-word">Live</span>
-                    </button>
+          <button
+            className="btn icon ghost in-top"
+            onClick={() => setSettingsOpen(true)}
+            title="Settings"
+            aria-label="Open settings"
+          >
+            <IconGear size={15} />
+          </button>
+        </header>
+
+        {/* Always on, above the conversation: what the agent knows, and what is
+            happening to it as it happens. */}
+        <MemoryRibbon memories={view.memories} onOpen={() => setKnowledgeOpen(true)} />
+
+        <main className="page">
+          <Thread
+            buckets={view.buckets}
+            busy={view.busy}
+            sessionId={sessionId ?? ""}
+            liveBrowserSeq={view.liveBrowserSeq}
+            live={live}
+          />
+
+          <Approvals
+            approvals={view.approvals}
+            readOnly={readOnly}
+            onDecide={(id, approved) => streamRef.current?.approve(id, approved)}
+          />
+
+          {/* The screen above stays exactly as it was; only this strip changes,
+              because the point of talking to it is to keep watching it work. */}
+          <div className={`composer ${liveOn ? "is-live" : ""}`}>
+            {/* Said here rather than in a settings page nobody opens: the button
+                that did not work is two inches below it. */}
+            {voiceHelp && !liveOn && (
+              <div className="voice-help" role="status">
+                <div className="voice-help-text">
+                  {secureUrl ? (
+                    <>
+                      <b>Voice lives on the secure page.</b> Browsers only open a
+                      microphone over a secure connection, and this page is not one.
+                      The same session is running on one — open it and the
+                      microphone appears.
+                      <em className="voice-help-aside">
+                        Your browser will warn you once that it does not recognise
+                        the certificate. That is expected: the certificate is your
+                        own server's. Tap <b>Advanced</b>, then <b>Proceed</b>.
+                      </em>
+                      {hasCertificate && (
+                        <em className="voice-help-trust">
+                          Rather not see that warning — or install this to your home
+                          screen? <a href="/autora-ca.crt" download>Install the
+                          certificate</a>, and this becomes an ordinary trusted
+                          site on this device. Settings explains where it goes.
+                        </em>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <b>Voice needs a secure page.</b> Browsers only open a
+                      microphone over a secure connection, and this page is not one
+                      — no site setting can change that, because the restriction is
+                      not about trusting this site.
+                      <em className="voice-help-aside">
+                        The fix is in front of the server, not in the browser. On a
+                        tailnet, <code>tailscale serve --bg {location.port || 80}</code>{" "}
+                        on the machine running Autora gives this page a real
+                        certificate and a secure address; any reverse proxy with a
+                        certificate does the same. See the README.
+                      </em>
+                    </>
                   )}
-                  <button
-                    className="btn primary"
-                    disabled={readOnly || !draft.trim()}
-                    onClick={() => void send()}
-                  >
-                    {running ? "Interrupt & send" : "Send"} <IconArrow size={13} />
-                  </button>
+                </div>
+                {secureUrl && (
+                  <a className="btn primary" href={secureUrl}>
+                    Open the secure page <IconArrow size={13} />
+                  </a>
+                )}
+                <button
+                  className="btn icon ghost"
+                  onClick={() => setVoiceHelp(false)}
+                  aria-label="Dismiss"
+                >
+                  <IconX size={14} />
+                </button>
+              </div>
+            )}
+            {liveOn ? (
+              <LiveChat
+                onUtterance={sendSpoken}
+                onExit={toggleLive}
+                onInterrupt={hush}
+                agentSpeaking={speaking}
+                agentWorking={running}
+                disabled={readOnly}
+              />
+            ) : (
+              <div className="composer-box">
+                <textarea
+                  ref={composerRef}
+                  value={draft}
+                  rows={2}
+                  aria-label="Task"
+                  placeholder={live ? "Describe a task…" : "This session is a recording."}
+                  disabled={readOnly}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      void send();
+                    }
+                  }}
+                />
+                <div className="composer-foot">
+                  {notice ? (
+                    <button
+                      className="hint voice-note"
+                      onClick={() => setNotice(null)}
+                      title="Dismiss"
+                    >
+                      {notice}
+                    </button>
+                  ) : voiceBlocked ? (
+                    <button
+                      className="hint voice-note"
+                      onClick={() => setVoiceHelp(true)}
+                      title="Browsers only allow microphone access on a secure page."
+                    >
+                      Voice needs <code>https</code>
+                    </button>
+                  ) : (
+                    <span className="hint"><kbd>↵</kbd> send · <kbd>⇧↵</kbd> newline</span>
+                  )}
+                  <div className="composer-acts">
+                    {/* Stop lived on the stage bar, which no longer exists --
+                        and it belongs next to Send anyway, since the two are
+                        the same decision. */}
+                    {live && running && (
+                      <button
+                        className="btn danger"
+                        onClick={() => void stopTurn()}
+                        title="Stop the agent"
+                      >
+                        <IconStop size={13} />
+                        <span className="stop-word">Stop</span>
+                      </button>
+                    )}
+                    <DictateButton
+                      onText={appendDictation}
+                      disabled={readOnly}
+                      onBlocked={() => setVoiceHelp(true)}
+                      onTrouble={setNotice}
+                    />
+                    {(voiceReady || voiceBlocked) && (
+                      <button
+                        className={`btn ghost live-start ${voiceReady ? "" : "is-blocked"}`}
+                        onClick={voiceReady ? toggleLive : () => setVoiceHelp(true)}
+                        disabled={readOnly}
+                        title={voiceReady ? "Live voice chat" : "Live voice chat needs an https page"}
+                        aria-label={
+                          voiceReady ? "Start live voice chat" : "Why live voice chat is unavailable"
+                        }
+                      >
+                        <IconWave size={14} />
+                        <span className="live-start-word">Live</span>
+                      </button>
+                    )}
+                    <button
+                      className="btn primary"
+                      disabled={readOnly || !draft.trim()}
+                      onClick={() => void send()}
+                    >
+                      {running ? "Interrupt & send" : "Send"} <IconArrow size={13} />
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
-        </div>
-      </main>
+            )}
+          </div>
+        </main>
 
-      {/* Two tabs: the conversation, and the work scheduled against it. The
-          stage and the timeline used to be here and are now in the page. */}
-      <nav className="mobile-nav" role="tablist" aria-label="Panel">
-        <button
-          role="tab"
-          aria-selected={mobileTab === "chat" && !scheduleOpen}
-          className={`mob-tab ${mobileTab === "chat" && !scheduleOpen ? "on" : ""}${
-            pending > 0 ? " has-alert" : ""}`}
-          onClick={() => { closeOverlays(); setMobileTab("chat"); }}
-        >
-          <span className="mob-alert" />
-          <IconMessage size={18} />
-          Chat
-        </button>
-        <button
-          role="tab"
-          aria-selected={scheduleOpen}
-          className={`mob-tab ${scheduleOpen ? "on" : ""}`}
-          onClick={() => { setMobileTab("tasks"); setScheduleOpen(true); }}
-        >
-          <IconRepeat size={18} />
-          Tasks
-        </button>
-      </nav>
+        {/* Two tabs: the conversation, and the work scheduled against it. */}
+        <nav className="mobile-nav" role="tablist" aria-label="Panel">
+          <button
+            role="tab"
+            aria-selected={mobileTab === "chat" && !scheduleOpen}
+            className={`mob-tab ${mobileTab === "chat" && !scheduleOpen ? "on" : ""}${
+              pending > 0 ? " has-alert" : ""}`}
+            onClick={() => { closeOverlays(); setMobileTab("chat"); }}
+          >
+            <span className="mob-alert" />
+            <IconMessage size={18} />
+            Chat
+          </button>
+          <button
+            role="tab"
+            aria-selected={scheduleOpen}
+            className={`mob-tab ${scheduleOpen ? "on" : ""}`}
+            onClick={() => { setMobileTab("tasks"); setScheduleOpen(true); }}
+          >
+            <IconRepeat size={18} />
+            Tasks
+          </button>
+        </nav>
+      </div>
 
       {sessionsOpen && (
         <Sessions
           sessions={sessions}
           current={sessionId}
-          onPick={(id) => {
-            history.replaceState(null, "", `?session=${id}`);
-            setSessionId(id);
-            setSessionsOpen(false);
-          }}
+          onPick={pickSession}
           onNew={newSession}
           onClose={() => setSessionsOpen(false)}
         />
@@ -755,8 +599,7 @@ export function App() {
         <Schedule
           onClose={() => { setScheduleOpen(false); setMobileTab("chat"); }}
           onOpenSession={(id) => {
-            history.replaceState(null, "", `?session=${id}`);
-            setSessionId(id);
+            pickSession(id);
             setScheduleOpen(false);
             setMobileTab("chat");
           }}
