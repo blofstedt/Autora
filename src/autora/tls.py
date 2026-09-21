@@ -52,9 +52,20 @@ from pathlib import Path
 if typing.TYPE_CHECKING:
     import ssl
 
-#: Browsers cap self-signed lifetimes well below the old 10-year habit; Safari
-#: rejects anything over 825 days outright.
-VALID_DAYS = 820
+#: Under Chrome's 398-day ceiling rather than near Safari's 825.
+#:
+#: The ceiling is documented as applying to publicly trusted roots, with
+#: locally installed ones exempt, so 820 days should have been fine. "Should
+#: have been" is the problem: a certificate rejected for being too long-lived
+#: and one rejected because the authority is not trusted both present as a
+#: browser refusing the page, and ruling this out costs nothing while guessing
+#: about it has cost plenty.
+VALID_DAYS = 397
+
+#: Bumped whenever anything about how a certificate is built changes. It is
+#: mixed into the cache key, so a policy change re-mints instead of serving the
+#: certificate it was meant to replace -- which would make a fix look inert.
+ISSUE_POLICY = "2"
 
 
 def local_names() -> tuple[list[str], list[str]]:
@@ -182,7 +193,9 @@ def issue(
     issued = directory / "issued"
     issued.mkdir(parents=True, exist_ok=True)
 
-    stem = hashlib.sha256("\n".join([*names, *addresses]).encode()).hexdigest()[:16]
+    stem = hashlib.sha256(
+        "\n".join([ISSUE_POLICY, *names, *addresses]).encode()
+    ).hexdigest()[:16]
     cert_path, key_path = issued / f"{stem}.crt", issued / f"{stem}.key"
     if cert_path.exists() and key_path.exists():
         return cert_path, key_path
@@ -214,6 +227,10 @@ def issue(
         )
         .add_extension(
             x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key()),
+            critical=False,
+        )
+        .add_extension(
+            x509.SubjectKeyIdentifier.from_public_key(private.public_key()),
             critical=False,
         )
         .sign(ca_key, hashes.SHA256())

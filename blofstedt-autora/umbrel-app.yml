@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.6.5"
+version: "0.6.6"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -64,21 +64,21 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The plain page can now tell you whether the secure page is actually
-  running.
+  Certificates are now issued for under 400 days instead of 820, and
+  re-issued automatically so the change takes effect.
 
 
-  A secure page that will not load looks identical from a phone whether
-  the listener has died, the port is blocked on the network, or the
-  certificate is being refused -- and those need completely different
-  fixes. The server can distinguish the first from the others, because it
-  can try the port from the inside, so it does. Open Settings on the
-  plain address and the Microphone check panel now says whether anything
-  is answering on the secure port.
+  Chrome refuses certificates valid for more than 398 days. That limit is
+  documented as applying only to publicly trusted authorities, with ones
+  you install yourself exempt, so the old figure should have been fine --
+  but a certificate refused for being too long-lived and one refused
+  because the authority is not trusted look identical from a phone, and
+  ruling it out costs nothing.
 
 
-  No change to the secure page itself, which is tested and working. This
-  is about being able to tell which half of it is broken when it is not.
+  If your browser still refuses the secure page after this, the authority
+  itself is not being trusted, and the error Chrome names on that page
+  ("NET::ERR_CERT_...") says which of the two it is.
 dependencies: []
 path: ""
 defaultUsername: ""
