@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.6.6"
+version: "0.6.7"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -64,21 +64,25 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Certificates are now issued for under 400 days instead of 820, and
-  re-issued automatically so the change takes effect.
+  Settings you add by hand to autora.env are no longer deleted when you
+  press Save in the settings panel.
 
 
-  Chrome refuses certificates valid for more than 398 days. That limit is
-  documented as applying only to publicly trusted authorities, with ones
-  you install yourself exempt, so the old figure should have been fine --
-  but a certificate refused for being too long-lived and one refused
-  because the authority is not trusted look identical from a phone, and
-  ruling it out costs nothing.
+  The file says at the top that it is safe to edit by hand. It was not:
+  the editor rebuilt it from the handful of names it knows about, so
+  anything else you had put there vanished the next time you saved a key
+  or changed a model -- silently, with nothing to notice. Whatever that
+  setting switched on simply stopped happening.
 
 
-  If your browser still refuses the secure page after this, the authority
-  itself is not being trusted, and the error Chrome names on that page
-  ("NET::ERR_CERT_...") says which of the two it is.
+  This is what turned the https listener off. AUTORA_TLS=1 was added by
+  hand, a later Save removed it, and the secure page went from working to
+  refusing connections. That looks exactly like a certificate being
+  rejected, and was chased as one for a long time.
+
+
+  The editor now keeps every line it does not recognise, under a comment
+  saying so.
 dependencies: []
 path: ""
 defaultUsername: ""

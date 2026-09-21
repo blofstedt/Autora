@@ -130,3 +130,34 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
+def test_a_hand_added_setting_survives_a_save():
+    """The file says it is safe to edit by hand, so it has to be.
+
+    `AUTORA_TLS=1` was added here to turn the https listener on, and a later
+    Save in the settings panel silently removed it -- rebuilding the file from
+    the names the editor knows about. The listener stopped, and the symptom was
+    a browser refusing the secure page, which is indistinguishable from a
+    certificate being rejected. It was debugged as the latter, for hours.
+    """
+    import pathlib as _pathlib
+    import tempfile as _tempfile
+
+    with _tempfile.TemporaryDirectory() as tmp:
+        env = _pathlib.Path(tmp) / "autora.env"
+        env.write_text(
+            "AUTORA_PROVIDER=deepseek\n"
+            "DEEPSEEK_API_KEY=sk-old\n"
+            "AUTORA_TLS=1\n"
+            "AUTORA_TLS_PORT=8818\n"
+        )
+        settings = Settings.load(env)
+        settings.credentials["DEEPSEEK_API_KEY"] = "sk-new"
+        settings.save(env)
+
+        written = env.read_text()
+        assert "AUTORA_TLS=1" in written, written
+        assert "AUTORA_TLS_PORT=8818" in written, written
+        assert "sk-new" in written and "sk-old" not in written, written
+        print("  a setting the editor does not know about is kept ... ok")

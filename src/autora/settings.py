@@ -150,11 +150,45 @@ class Settings:
         )
 
     def save(self, path: Path | None = None) -> None:
+        """Write the settings, keeping anything here that is not ours.
+
+        This file says "safe to edit by hand" at the top, and until now that
+        was a lie: the editor rebuilt it from the handful of names it knows
+        about, so any other setting put here by hand vanished the next time
+        anyone pressed Save. Nothing announced it. The setting simply stopped
+        existing, and whatever it switched on quietly stopped happening.
+
+        That is not hypothetical. `AUTORA_TLS=1` was added here to turn on the
+        https listener, a later Save in the settings panel removed it, and the
+        result was an app answering on one port and refusing connections on the
+        other -- debugged, at length, as a certificate problem, because a port
+        with nothing listening and a certificate nobody trusts both present as
+        a browser that will not open the page.
+
+        So: read what is there, keep every line whose name we do not manage,
+        and write ours underneath. A file that invites hand editing has to
+        survive it.
+        """
         path = path or default_path()
         path.parent.mkdir(parents=True, exist_ok=True)
+
+        managed = {PROVIDER_VAR, MODEL_VAR, BASE_URL_VAR, *CREDENTIALS}
+        kept: list[str] = []
+        try:
+            for raw in path.read_text().splitlines():
+                line = raw.strip()
+                # Comments are the editor's own header, rewritten below.
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                if line.split("=", 1)[0].strip() not in managed:
+                    kept.append(line)
+        except OSError:
+            pass
+
         lines = [
             "# Autora settings. One KEY=value per line.",
-            "# Written by the settings editor; safe to edit by hand.",
+            "# Written by the settings editor, which keeps anything it does not",
+            "# recognise -- so settings added by hand survive a Save here.",
             "",
         ]
         if self.provider and self.provider != "auto":
@@ -167,6 +201,8 @@ class Settings:
             value = self.credentials.get(name, "")
             if value:
                 lines.append(f"{name}={value}")
+        if kept:
+            lines.extend(["", "# Added by hand, kept as found.", *kept])
 
         tmp = path.with_suffix(".tmp")
         tmp.write_text("\n".join(lines) + "\n")
