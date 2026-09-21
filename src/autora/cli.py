@@ -459,6 +459,45 @@ def cmd_sessions(args) -> int:
     return 0
 
 
+def cmd_relay(args) -> int:
+    """Run the desktop relay from an installed Autora.
+
+    The same thing as `python -m autora.relay`, under a name people guess.
+    Note which machine this belongs on: the relay controls the screen of the
+    computer it runs on, which is usually not the one running `autora up`. If
+    Autora is not installed there, download relay.py from the server instead --
+    that copy has the address already filled in.
+    """
+    import asyncio
+
+    # Imported here rather than at the top of the module: loading the relay
+    # checks for mss and pyautogui and exits saying how to install them, which
+    # is the right answer for `autora relay` and the wrong one for `autora up`.
+    from .relay.__main__ import DEFAULT_SERVER, relay_url, run
+
+    server = args.server or DEFAULT_SERVER
+    if not server:
+        print("autora relay: say where Autora is, e.g.\n"
+              "    autora relay 192.168.1.100:8817\n\n"
+              "Running the relay on a machine without Autora? Download the "
+              "single-file version from the server, address included:\n"
+              "    curl -O http://192.168.1.100:8817/relay.py",
+              file=sys.stderr)
+        return 2
+
+    try:
+        url = relay_url(server)
+    except ValueError as exc:
+        print(f"autora relay: {exc}: {server!r}", file=sys.stderr)
+        return 2
+    print(f"Autora desktop relay → {url}")
+    try:
+        asyncio.run(run(server, fps=args.fps, insecure=args.insecure))
+    except KeyboardInterrupt:
+        print("\nRelay stopped.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     # `--home` is accepted both before and after the subcommand. Requiring one
     # specific position is the kind of small friction that makes a tool feel
@@ -531,6 +570,20 @@ def main(argv: list[str] | None = None) -> int:
 
     ls = sub.add_parser("sessions", help="List recorded sessions", parents=[common])
     ls.set_defaults(func=cmd_sessions)
+
+    relay = sub.add_parser(
+        "relay",
+        help="Run the desktop relay, so the agent can drive this machine's screen",
+        parents=[common],
+    )
+    relay.add_argument("server", metavar="SERVER", nargs="?",
+                       help="Where Autora is, e.g. 192.168.1.100:8817 or "
+                            "http://box.local:8817")
+    relay.add_argument("--fps", type=int, default=3,
+                       help="Screen capture rate in frames/s (default: 3)")
+    relay.add_argument("--insecure", action="store_true",
+                       help="Accept an https server with a self-signed certificate")
+    relay.set_defaults(func=cmd_relay)
 
     args = parser.parse_args(argv)
     return args.func(args)

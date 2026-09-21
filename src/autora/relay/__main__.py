@@ -1,13 +1,31 @@
 """Desktop relay — run this on the machine you want the agent to control.
 
+The quickest way to get this file
+---------------------------------
+It is served by the Autora server you want to connect to, with the address
+already filled in, so there is nothing to type and nothing to install first:
+
+    # Windows (PowerShell)
+    curl.exe -O http://YOUR-SERVER:8817/relay.py
+    py -m pip install websockets mss pyautogui pillow
+    py relay.py
+
+    # macOS / Linux
+    curl -O http://YOUR-SERVER:8817/relay.py
+    python3 -m pip install websockets mss pyautogui pillow
+    python3 relay.py
+
+`python -m autora.relay` works too, but only where Autora itself is installed.
+If that is your server and not the machine with the screen, download the file
+above instead -- the relay is a single file and deliberately has no Autora
+imports, so it runs anywhere Python does.
+
 Usage
 -----
-    # If Autora is installed on this machine:
-    python -m autora.relay ws://192.168.1.100:8817
-
-    # Standalone (just copy this file):
-    pip install websockets mss pyautogui pillow
-    python relay.py ws://192.168.1.100:8817
+    python relay.py                        # server baked in by the download
+    python relay.py 192.168.1.100:8817     # or say where it is
+    python relay.py http://box.local:8817  # http/https are accepted too
+    python relay.py wss://box.ts.net --insecure   # self-signed https
 
 The relay connects OUT to the Autora server — no inbound port is opened on
 this machine, so corporate firewalls that block inbound connections are not
@@ -34,33 +52,135 @@ import hashlib
 import io
 import json
 import platform
+import ssl
 import sys
 import time
+import urllib.error
+import urllib.request
 from typing import Any
+
+#: Where to connect when no server is given on the command line.
+#:
+#: A copy downloaded from a running server has this filled in with that
+#: server's address (see `GET /relay.py`), which is the whole point: the person
+#: running the relay is usually on a different machine from the one they are
+#: reading the docs on, and retyping an address is where this goes wrong.
+DEFAULT_SERVER = ""
+
+#: The port `autora up` listens on unless told otherwise.
+DEFAULT_PORT = 8817
+
+#: The path on the server that accepts relay connections.
+RELAY_PATH = "/ws/desktop-relay"
+
 
 # ── optional dependency check ─────────────────────────────────────────────
 
-def _need(pkg: str, install: str) -> Any:
-    try:
-        return __import__(pkg)
-    except ImportError:
-        print(f"Missing: {pkg}.  Install with:  pip install {install}", file=sys.stderr)
-        sys.exit(1)
+def _check_dependencies() -> None:
+    """Name every missing package at once, with a command that works here.
 
-_need("websockets", "websockets>=10")
-_need("mss",        "mss")
-_need("pyautogui",  "pyautogui pillow")
-_need("PIL",        "pillow")
+    One at a time meant four rounds of "install this, now install this", and
+    `pip` is not on PATH on a default Windows install -- which reads as the
+    relay being broken rather than as one word being wrong.
+    """
+    wanted = [("websockets", "websockets"), ("mss", "mss"),
+              ("pyautogui", "pyautogui"), ("PIL", "pillow")]
+    missing = []
+    for module, package in wanted:
+        try:
+            __import__(module)
+        except ImportError:
+            missing.append(package)
+    if not missing:
+        return
+    runner = "py" if sys.platform == "win32" else sys.executable
+    print("The relay needs a few packages that are not installed here:",
+          file=sys.stderr)
+    for package in missing:
+        print(f"  · {package}", file=sys.stderr)
+    print(f"\nInstall them with:\n\n  {runner} -m pip install {' '.join(missing)}\n",
+          file=sys.stderr)
+    sys.exit(1)
 
-import mss as _mss                     # type: ignore
-import pyautogui as _pag               # type: ignore
-from PIL import Image                  # type: ignore
+
+_check_dependencies()
+
+import mss as _mss                     # noqa: E402  type: ignore
+import pyautogui as _pag               # noqa: E402  type: ignore
+from PIL import Image                  # noqa: E402  type: ignore
 
 # Disable pyautogui's corner-of-screen abort.  In a relay context the agent
 # may legitimately move to any screen position; the failsafe causes spurious
 # crashes rather than protecting anything.
 _pag.FAILSAFE = False
 _pag.PAUSE    = 0.0   # no inter-call sleep — the relay manages its own pacing
+
+
+# ── where the server is ───────────────────────────────────────────────────
+
+def relay_url(server: str) -> str:
+    """Turn whatever the person typed into the websocket URL to connect to.
+
+    Everything that identifies the server is accepted, because every one of
+    them is something a reasonable person types: the address bar's
+    `http://box:8817`, the bare `box:8817` from the terminal that started it,
+    `ws://box` with the default port left off, and the full websocket path
+    copied out of the docs.  Rejecting four of those five and saying only
+    "connection failed" is most of why this step goes wrong.
+    """
+    text = server.strip().strip('"').strip("'")
+    if not text:
+        raise ValueError("no server address")
+    if "://" not in text:
+        text = "ws://" + text
+    scheme, _, rest = text.partition("://")
+    scheme = {"http": "ws", "https": "wss"}.get(scheme.lower(), scheme.lower())
+    if scheme not in ("ws", "wss"):
+        raise ValueError(f"cannot connect to a {scheme!r} address")
+
+    authority, slash, path = rest.partition("/")
+    path = (slash + path).rstrip("/")
+    if not authority:
+        raise ValueError("no host in the address")
+    # A host with no port is the common case, and the default is not 80.
+    host_has_port = authority.rpartition(":")[2].isdigit() and ":" in authority
+    if not host_has_port and scheme == "ws":
+        authority = f"{authority}:{DEFAULT_PORT}"
+    if not path.endswith(RELAY_PATH):
+        path = path + RELAY_PATH
+    return f"{scheme}://{authority}{path}"
+
+
+def _probe(url: str, insecure: bool) -> str | None:
+    """Ask the server whether it is there and whether it is Autora.
+
+    A websocket failure says almost nothing on its own: refused, 404 and a
+    certificate the machine does not trust all arrive as "could not connect".
+    One plain HTTP request to a known endpoint separates them, and the answer
+    is the difference between "the address is wrong" and "the address is right
+    and something else is".
+    """
+    http = url.replace("ws://", "http://", 1).replace("wss://", "https://", 1)
+    origin = http[: -len(RELAY_PATH)] + "/api/origin"
+    context = None
+    if insecure:
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+    try:
+        with urllib.request.urlopen(origin, timeout=6, context=context) as response:
+            body = json.loads(response.read().decode("utf-8", "replace"))
+        version = body.get("version")
+        return f"Autora {version}" if version else "Autora"
+    except urllib.error.HTTPError as exc:
+        return f"reachable, but answered {exc.code} — is that really Autora?"
+    except ssl.SSLCertVerificationError:
+        return ("reachable over https, but this machine does not trust its "
+                "certificate — add --insecure, or install the server's "
+                "certificate from /autora-ca.crt")
+    except Exception as exc:               # noqa: BLE001 — diagnosis, not control flow
+        reason = getattr(exc, "reason", exc)
+        return f"not reachable: {reason}"
 
 
 # ── screen capture ────────────────────────────────────────────────────────
@@ -196,18 +316,26 @@ async def _handle(ws, msg: dict) -> None:
 
 # ── main loop ─────────────────────────────────────────────────────────────
 
-async def run(server_url: str, fps: int = 3) -> None:
-    url = server_url.rstrip("/") + "/ws/desktop-relay"
+async def run(server_url: str, fps: int = 3, insecure: bool = False) -> None:
+    url = relay_url(server_url)
     interval = 1.0 / fps
     backoff  = 2.0
     plat     = platform.system().lower()
+    kwargs: dict[str, Any] = {"max_size": 16 * 1024 * 1024,
+                              "ping_interval": 20, "ping_timeout": 30}
+    if url.startswith("wss://") and insecure:
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        kwargs["ssl"] = context
 
+    first = True
     while True:
         print(f"Connecting to {url} …", flush=True)
         try:
-            async with _ws_connect(url, max_size=16 * 1024 * 1024,
-                                   ping_interval=20, ping_timeout=30) as ws:
+            async with _ws_connect(url, **kwargs) as ws:
                 backoff = 2.0
+                first = False
                 jpeg, w, h = _capture()
                 await ws.send(json.dumps({"type": "hello", "platform": plat, "w": w, "h": h}))
                 print(f"  Connected.  Screen: {w}×{h}  Stream: {fps}fps  Ctrl+C to stop.")
@@ -247,26 +375,66 @@ async def run(server_url: str, fps: int = 3) -> None:
         except KeyboardInterrupt:
             raise
         except Exception as exc:
-            print(f"  Disconnected: {exc}")
+            print(f"  Disconnected: {type(exc).__name__}: {exc}")
+            # Only on the first failure: once it has connected, the address is
+            # known to be right and a reconnect loop should not lecture about it.
+            if first:
+                verdict = await asyncio.to_thread(_probe, url, insecure)
+                print(f"  The server at that address is {verdict}")
+                _advise(url, insecure)
+                first = False
             print(f"  Retrying in {backoff:.0f}s …", flush=True)
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 30.0)
 
 
+def _advise(url: str, insecure: bool) -> None:
+    """What to check, in the order it is usually wrong."""
+    print("\n  Things worth checking:")
+    print("   · Is Autora running, and is this the address you open its page at?")
+    print("   · `autora up` listens on 127.0.0.1 by default, which no other")
+    print("     machine can reach. Start it with --host 0.0.0.0.")
+    print("   · A firewall on the server may be blocking the port.")
+    if url.startswith("wss://") and not insecure:
+        print("   · Self-signed https: add --insecure, or install the server's")
+        print("     certificate (downloadable at /autora-ca.crt).")
+    print()
+
+
 def main() -> None:
     import argparse
     p = argparse.ArgumentParser(
+        prog="autora relay",
         description="Desktop relay for Autora — run on the machine to control.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    p.add_argument("server", metavar="ws://HOST:PORT",
-                   help="Autora server URL (e.g. ws://192.168.1.100:8817)")
+    p.add_argument("server", metavar="SERVER", nargs="?", default=DEFAULT_SERVER or None,
+                   help="Where Autora is, e.g. 192.168.1.100:8817 or "
+                        "http://box.local:8817. Optional in a copy downloaded "
+                        "from the server itself.")
     p.add_argument("--fps", type=int, default=3,
                    help="Screen capture rate in frames/s (default: 3)")
+    p.add_argument("--insecure", action="store_true",
+                   help="Accept an https server whose certificate this machine "
+                        "does not trust (Autora's own self-signed one)")
     args = p.parse_args()
+    if not args.server:
+        p.error(
+            "no server address.\n\n"
+            "Either pass one:\n"
+            "    python relay.py 192.168.1.100:8817\n\n"
+            "or download this file from the Autora server you want to reach, "
+            "which fills the address in:\n"
+            "    curl -O http://192.168.1.100:8817/relay.py"
+        )
     try:
-        asyncio.run(run(args.server, fps=args.fps))
+        url = relay_url(args.server)
+    except ValueError as exc:
+        p.error(f"{exc}: {args.server!r}")
+    print(f"Autora desktop relay → {url}")
+    try:
+        asyncio.run(run(args.server, fps=args.fps, insecure=args.insecure))
     except KeyboardInterrupt:
         print("\nRelay stopped.")
 

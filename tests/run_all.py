@@ -21,6 +21,7 @@ SUITES = [
     ("narration", "test_narration.py"),
     ("voice loop", "test_voice_loop.py"),
     ("transport", "test_server_stream.py"),
+    ("desktop relay", "test_relay.py"),
 ]
 
 def main() -> int:

@@ -59,7 +59,7 @@ class Kind:
     POLICY_REQUEST = "policy.request"
     POLICY_DECISION = "policy.decision"
 
-    # Terminal (raw PTY bytes -- rendered by xterm.js, replayable as asciinema)
+    # Terminal (raw PTY bytes -- rendered in the UI, replayable as asciinema)
     PTY_OUTPUT = "pty.output"
     PTY_EXIT = "pty.exit"
 

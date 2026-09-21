@@ -8,9 +8,10 @@ two minutes and then getting a wall of text, which is precisely the experience
 this project exists to fix.
 
 With a PTY you get the same bytes your own terminal would get, so the UI can
-render them with xterm.js and the recording replays as the real thing -- spinner
-frames, cursor moves, colors and all. It also makes the output asciinema-
-compatible for free, which is a better recording format than anything custom.
+render them as the real thing -- colors, overwritten progress lines and all --
+in the card belonging to the command that produced them. It also makes the
+output asciinema-compatible for free, which is a better recording format than
+anything custom.
 """
 
 from __future__ import annotations
@@ -208,7 +209,7 @@ class TerminalTool:
         )
 
 
-#: CSI/OSC/charset escape sequences. The PTY stream keeps these -- xterm.js needs
+#: CSI/OSC/charset escape sequences. The PTY stream keeps these -- the UI needs
 #: them to render colors and progress bars -- but the string handed back to the
 #: model does not: escape codes cost tokens, and a spinner that rewrote its line
 #: 400 times reads as garbage rather than as one line of output.
