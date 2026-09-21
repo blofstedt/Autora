@@ -123,7 +123,7 @@ const bare = (word: string): string => word.toLowerCase().replace(EDGES, "");
  * word both versions agree on. A phrase the engine has walked backwards
  * contributes nothing.
  */
-function unsaid(said: string, text: string): string {
+export function unsaid(said: string, text: string): string {
   if (!said) return text;
   if (text.startsWith(said)) return text.slice(said.length).trim();
   const before = words(said);
@@ -192,6 +192,31 @@ export function useDictation({
   const handed = useRef<Map<number, string>>(new Map());
   const heard = useRef<Map<number, string>>(new Map());
 
+  /**
+   * The same watermark, kept across engine restarts rather than sessions.
+   *
+   * `handed` dies with the session that filled it, and that is the hole the
+   * repeats came back through. Safari hangs up after every phrase and `onend`
+   * restarts it; so does a stretch of silence, on every engine. A restart
+   * that lands mid-utterance does not always begin a new utterance -- the
+   * engine picks the old one up from the top and re-reports the whole
+   * hypothesis so far, into a session whose marks were just cleared. Every
+   * such restart then handed the caller the entire phrase over again, and a
+   * caller that appends -- live chat does -- built a staircase out of it:
+   * "this this is this is just this is just a test", one rung per restart.
+   *
+   * So this one outlives the session. Only the result a new session opens on
+   * is compared against it, because that is where a replay lands; a later
+   * result is genuinely new, and measuring it against the start of an earlier
+   * phrase is how "Open the file" followed by "Open the folder" would come
+   * out as "folder".
+   */
+  const spent = useRef("");
+
+  /** The index the session in hand opened on, or null before its first
+      result. */
+  const resumed = useRef<number | null>(null);
+
   /** Move the watermark up, never down.
    *
    * A shorter text is the engine revising words already handed over, and
@@ -204,6 +229,7 @@ export function useDictation({
     if (before === undefined || words(text).length >= words(before).length) {
       handed.current.set(index, text);
     }
+    if (words(text).length >= words(spent.current).length) spent.current = text;
   }, []);
 
   /**
@@ -280,6 +306,9 @@ export function useDictation({
     if (!Impl || wanted.current) return;
     wanted.current = true;
     restarts.current = 0;
+    // A run the reader asked for, rather than a restart: nothing said before
+    // it has any claim on what gets handed over now.
+    spent.current = "";
     setError(null);
 
     const engine = new Impl();
@@ -290,14 +319,17 @@ export function useDictation({
     engine.maxAlternatives = 1;
 
     engine.onstart = () => {
-      // A new session numbers its results from zero again, so anything held
-      // from the last one describes a session that is over.
+      // A new session numbers its results from zero again, so the per-index
+      // marks from the last one describe results that no longer exist.
+      // `spent` is deliberately not cleared here -- see above.
       handed.current.clear();
       heard.current.clear();
+      resumed.current = null;
       setListening(true);
     };
 
     engine.onresult = (event) => {
+      if (resumed.current === null) resumed.current = event.resultIndex;
       let live = "";
       for (let i = event.resultIndex; i < event.results.length; i += 1) {
         const phrase = event.results[i];
@@ -306,7 +338,12 @@ export function useDictation({
         // Both kinds go through the watermark. An interim that repeats words
         // already sent is the same double as a final that does, and captioning
         // them back is how it looks from the outside.
-        const fresh = unsaid(handed.current.get(i) ?? "", text);
+        // A session that has marked this index is the authority on it. One
+        // that has not just started, and if this is the result it started on,
+        // the engine may be replaying what the last session already gave out.
+        const known = handed.current.get(i)
+          ?? (i === resumed.current ? spent.current : "");
+        const fresh = unsaid(known, text);
         if (phrase.isFinal) {
           mark(i, text);
           if (fresh) phraseRef.current?.(fresh);
