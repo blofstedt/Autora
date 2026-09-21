@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.5.3"
+version: "0.5.4"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -57,11 +57,20 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Records about the same thing are connected now. Links were only ever
-  written when the agent asked for one, so related memories sat side by
-  side unconnected and the knowledge web was a scatter of dots; they are
-  inferred on write, and inferred once for memories written before this.
-  Also drops the record counter from the knowledge view.
+  You can talk to it now. A microphone in the composer dictates into the
+  box, so what you said is still text you can fix before it goes; the Live
+  button next to it skips the typing altogether — speak, pause, and it
+  sends, then reads the reply back a sentence at a time while you watch
+  the work happen above. Nothing else on the screen moves.
+
+
+  Browsers only allow a microphone on a secure page, so if you reach this
+  over plain http the composer now says so in place of the controls rather
+  than offering a button that cannot work. Putting https in front (on a
+  tailnet, `tailscale serve`) also makes the app installable to a home
+  screen.
+
+
 dependencies: []
 path: ""
 defaultUsername: ""
