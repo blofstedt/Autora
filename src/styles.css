@@ -307,13 +307,22 @@ body::before {
 .web-node.is-focus circle:last-of-type { stroke: var(--text-2); stroke-width: 1.5; }
 .web-latest.is-written { color: var(--live); }
 
+/* `height: 100%` alone left this sitting at the top of the column: the empty
+   state is a flex child of .page, and a percentage height against a parent
+   whose own height comes out of flex layout is not something to rely on. Being
+   the flex child that takes the leftover space is, and that is what centring
+   vertically actually needs. */
 .empty {
-  height: 100%; display: flex; flex-direction: column;
+  flex: 1; min-height: 0; height: auto;
+  display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 10px; text-align: center;
+  padding: 24px 16px;
 }
 .empty-ring {
-  width: 54px; height: 54px; border-radius: 50%; display: grid; place-items: center;
-  background: var(--s2); border: 1px solid var(--border-strong); color: var(--text-3);
+  width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--s2); border: 1px solid rgba(110, 91, 255, 0.28);
+  color: var(--text-3);
+  box-shadow: 0 0 34px -10px rgba(110, 91, 255, 0.6);
 }
 .empty h3 { margin: 4px 0 0; font-size: 14px; font-weight: 600; }
 .empty p { margin: 0; font-size: 12.5px; color: var(--text-3); max-width: 300px; }
@@ -462,9 +471,24 @@ body::before {
   display: grid; place-items: center; margin-top: 1px;
 }
 .msg.user .avatar { background: rgba(34, 211, 238, 0.13); color: var(--accent-2); }
+
+/* The agent's side of the conversation is signed with the mark rather than a
+   glyph on a gradient: the tile goes dark and quiet so the mark's own colour
+   is what you see, and so it has somewhere to glow while the reply is being
+   written. */
 .msg.agent .avatar {
-  background: linear-gradient(145deg, var(--accent), var(--accent-2));
-  color: #fff; box-shadow: 0 2px 8px rgba(110, 91, 255, 0.35);
+  background: rgba(110, 91, 255, 0.11);
+  border: 1px solid rgba(110, 91, 255, 0.26);
+  box-shadow: 0 2px 8px rgba(110, 91, 255, 0.2);
+  transition:
+    background 0.5s var(--ease),
+    border-color 0.5s var(--ease),
+    box-shadow 0.5s var(--ease);
+}
+.msg.agent.is-working .avatar {
+  background: rgba(168, 85, 247, 0.17);
+  border-color: rgba(192, 132, 252, 0.55);
+  box-shadow: 0 0 20px -3px rgba(168, 85, 247, 0.6);
 }
 .msg-body { min-width: 0; flex: 1; }
 .msg-who { font-size: 10.5px; font-weight: 650; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-3); margin-bottom: 3px; }
@@ -909,48 +933,112 @@ button.hint.voice-note:hover { text-decoration: underline; }
 }
 .mob-tab.has-alert .mob-alert { display: block; }
 
-/* Live icon (without text) at the bottom middle between chat and tasks */
+/* The live control, between Chat and Tasks.
+ *
+ * It used to carry a small green light that blinked whenever the session was
+ * up -- which is almost always, so it blinked at you through every
+ * conversation while meaning nothing you did not already know. The button now
+ * says the same thing with the mark inside it: the glow warms and turns as the
+ * conversation moves, and settles when the agent stops. */
 .mob-live-btn {
-  width: 38px;
-  height: 38px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
-  background: rgba(168, 85, 247, 0.12);
-  border: 1px solid rgba(168, 85, 247, 0.35);
-  color: #c084fc;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background: transparent;
+  border: 1px solid rgba(110, 91, 255, 0.3);
+  display: grid;
+  place-items: center;
   cursor: pointer;
   position: relative;
-  transition: all 0.2s var(--ease);
+  isolation: isolate;
   margin: 0 16px;
   flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background 0.45s var(--ease),
+    border-color 0.45s var(--ease),
+    box-shadow 0.45s var(--ease),
+    transform 0.25s var(--ease);
 }
-.mob-live-btn:hover {
-  background: rgba(168, 85, 247, 0.24);
-  border-color: rgba(192, 132, 252, 0.6);
-  transform: scale(1.06);
-  box-shadow: 0 0 14px rgba(168, 85, 247, 0.35);
-}
-.mob-live-btn.is-active {
-  background: rgba(52, 211, 153, 0.18);
-  border-color: rgba(52, 211, 153, 0.5);
-  color: var(--live);
-  box-shadow: 0 0 14px rgba(52, 211, 153, 0.35);
-}
-.mob-live-dot {
+/* Three layers, and the order is the whole trick.
+ *
+ * The glow is a child, so it paints over the button's own background no
+ * matter what that background is -- which is why a tinted button washed the
+ * mark out into a pale smudge on a bright circle. The dark disc has to be its
+ * own layer, above the blur and below the mark. Then the halo reads as light
+ * spilling from behind the button, and the logo keeps its edge against it. */
+.mob-live-btn::after {
+  content: "";
   position: absolute;
-  top: 3px;
-  right: 3px;
-  width: 6px;
-  height: 6px;
+  inset: 0;
+  z-index: 1;
   border-radius: 50%;
-  background: #a855f7;
+  background: radial-gradient(circle at 50% 40%, #241d45, #0c0d14 78%);
+  transition: background 0.5s var(--ease);
 }
-.mob-live-dot.is-live {
-  background: var(--live);
-  box-shadow: 0 0 6px var(--live);
-  animation: pulseSkills 1.6s infinite;
+.mob-live-btn.is-working::after {
+  background: radial-gradient(circle at 50% 40%, #33215c, #0e0d18 78%);
+}
+.mob-live-btn > .amark { z-index: 2; }
+
+/* Brighter than the mark is elsewhere: it is read at 22px against its own
+   halo, so the star needs more light than it does beside a line of text. */
+.mob-live-btn .amark-star { filter: drop-shadow(0 0 4px rgba(192, 132, 252, 0.9)); }
+.mob-live-btn.is-working .amark-star { filter: drop-shadow(0 0 9px rgba(214, 171, 255, 1)); }
+.mob-live-btn .amark-wash { opacity: 0.5; }
+.mob-live-btn.is-working .amark-wash { opacity: 0.95; }
+.mob-live-btn:hover { transform: scale(1.06); }
+.mob-live-btn:active { transform: scale(0.96); }
+
+/* The glow itself: a conic sweep of the brand's colours, blurred back under
+   the mark so what shows through the button's edge is light rather than a
+   ring. It turns slowly at rest and quickly while the agent writes. */
+.mob-live-glow {
+  position: absolute;
+  inset: -7px;
+  z-index: 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    rgba(110, 91, 255, 0.75),
+    rgba(34, 211, 238, 0.75),
+    rgba(168, 85, 247, 0.75),
+    rgba(110, 91, 255, 0.75)
+  );
+  filter: blur(7px);
+  opacity: 0;
+  transition: opacity 0.55s var(--ease);
+  animation: liveGlowTurn 14s linear infinite;
+  pointer-events: none;
+}
+
+.mob-live-btn.is-live {
+  border-color: rgba(168, 85, 247, 0.5);
+  box-shadow: 0 0 18px -2px rgba(110, 91, 255, 0.5);
+}
+.mob-live-btn.is-live .mob-live-glow { opacity: 0.5; animation-duration: 9s; }
+
+.mob-live-btn.is-working {
+  border-color: rgba(192, 132, 252, 0.7);
+  box-shadow: 0 0 26px -2px rgba(168, 85, 247, 0.65);
+}
+.mob-live-btn.is-working .mob-live-glow { opacity: 0.88; animation-duration: 3.4s; }
+
+/* The finish: the glow falls away over the same beat as the mark's bloom
+   rather than snapping off with it. */
+.mob-live-btn.is-settle {
+  border-color: rgba(168, 85, 247, 0.4);
+  box-shadow: 0 0 20px -4px rgba(110, 91, 255, 0.45);
+}
+.mob-live-btn.is-settle .mob-live-glow { opacity: 0.3; animation-duration: 9s; }
+
+.mob-live-btn.is-rest:hover { border-color: rgba(168, 85, 247, 0.55); }
+.mob-live-btn.is-rest:hover .mob-live-glow { opacity: 0.35; }
+
+@keyframes liveGlowTurn { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .mob-live-glow { animation: none; }
 }
 
 /* ---------------------------------------------------------------- mobile -- */
@@ -2537,3 +2625,99 @@ button.hint.voice-note:hover { text-decoration: underline; }
   margin-top: 16px;
 }
 
+
+/* ============================================================================
+   The Autora mark
+
+   One animated signature, used wherever the app identifies itself. What it is
+   doing is said by how it moves: still at rest, breathing while the microphone
+   is open, turning and warming while the model writes, and blooming once as
+   the work lands. See components/AutoraMark.tsx -- the shape morphing lives
+   there, because SVG path interpolation is not something CSS can do portably.
+   ============================================================================ */
+
+.amark {
+  /* Kept in step with SETTLE_MS in AutoraMark.tsx. */
+  --settle-ms: 900ms;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  line-height: 0;
+}
+.amark svg { display: block; overflow: visible; }
+
+/* --- the wash: the mark's own light, not a halo drawn around it --- */
+.amark-wash {
+  transform-origin: 16px 16px;
+  transform: scale(0.52);
+  opacity: 0.22;
+  transition:
+    opacity 0.5s var(--ease),
+    transform 0.5s var(--ease);
+}
+.amark.is-live .amark-wash { opacity: 0.4; animation: amarkBreathe 3.4s var(--ease) infinite; }
+.amark.is-working .amark-wash { opacity: 0.62; animation: amarkSwell 2.1s var(--ease) infinite; }
+.amark.is-settle .amark-wash { animation: amarkBloom var(--settle-ms) var(--ease) 1; }
+
+/* --- the orbiting thread: only while there is something to say --- */
+.amark-orbit {
+  transform-origin: 16px 16px;
+  opacity: 0;
+  transform: rotate(0deg) scale(0.9);
+  transition: opacity 0.45s var(--ease), transform 0.45s var(--ease);
+}
+.amark.is-working .amark-orbit {
+  opacity: 0.9;
+  animation: amarkOrbit 2.6s linear infinite;
+}
+.amark.is-live .amark-orbit { opacity: 0.35; animation: amarkOrbit 9s linear infinite; }
+.amark.is-settle .amark-orbit { opacity: 0; transform: rotate(150deg) scale(1.22); }
+
+/* --- the star itself --- */
+.amark-star {
+  transform-origin: 16px 16px;
+  transition: filter 0.5s var(--ease), transform 0.5s var(--ease);
+  filter: drop-shadow(0 0 2px rgba(110, 91, 255, 0.45));
+}
+.amark.is-live .amark-star { filter: drop-shadow(0 0 5px rgba(110, 91, 255, 0.6)); }
+.amark.is-working .amark-star {
+  filter: drop-shadow(0 0 7px rgba(168, 85, 247, 0.75));
+  animation: amarkTurn 7s linear infinite;
+}
+.amark.is-settle .amark-star { animation: amarkLand var(--settle-ms) var(--ease) 1; }
+
+@keyframes amarkBreathe {
+  0%, 100% { transform: scale(0.52); opacity: 0.32; }
+  50%      { transform: scale(0.72); opacity: 0.5; }
+}
+@keyframes amarkSwell {
+  0%, 100% { transform: scale(0.6); opacity: 0.48; }
+  50%      { transform: scale(0.95); opacity: 0.78; }
+}
+@keyframes amarkBloom {
+  0%   { transform: scale(0.72); opacity: 0.78; }
+  45%  { transform: scale(1.1); opacity: 0.6; }
+  100% { transform: scale(0.52); opacity: 0.22; }
+}
+@keyframes amarkOrbit {
+  to { transform: rotate(360deg) scale(1); }
+}
+@keyframes amarkTurn {
+  to { transform: rotate(360deg); }
+}
+@keyframes amarkLand {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.14); }
+  100% { transform: scale(1); }
+}
+
+/* Reduced motion: the mark still reads, it simply stops moving. The component
+   also drops the SVG morphing, which CSS cannot reach. */
+@media (prefers-reduced-motion: reduce) {
+  .amark-wash,
+  .amark-orbit,
+  .amark-star { animation: none !important; }
+  .amark.is-working .amark-wash,
+  .amark.is-live .amark-wash { opacity: 0.45; transform: scale(0.72); }
+  .amark.is-working .amark-orbit { opacity: 0.6; }
+}

@@ -251,7 +251,9 @@ const jobs: Job[] = [
 
 let appSettings = {
   provider: "auto",
-  model: "gemini-2.5-flash",
+  // Follows Google's current free Flash unless the environment pins one.
+  // Kept in step with DEFAULT_GEMINI_MODEL below.
+  model: (process.env.GEMINI_MODEL || "").trim() || "gemini-flash-latest",
   baseUrl: "",
   systemPrompt: "You are Autora, an autonomous AI execution console and agent workspace.",
 };
@@ -361,13 +363,153 @@ function broadcastLiveStatus(session: Session) {
   }
 }
 
-// Lazy Gemini client helper
+// ------------------------------------------------------------------ gemini --
+
+/** The free tier's rolling Flash alias. Pinning a dated model means the app
+    stops working the day that model retires; the alias follows Google's
+    current free Flash and needs no release of ours to keep up. */
+const DEFAULT_GEMINI_MODEL = "gemini-flash-latest";
+
+/** How many past turns of this session to hand the model. Enough for the
+    conversation to hold together, bounded so a long session does not grow the
+    prompt (and the bill, and the latency) without limit. */
+const HISTORY_TURNS = 24;
+
+/** Thinking costs tokens and seconds before a single word appears. This is a
+    console you watch, so the default is off; set GEMINI_THINKING_BUDGET to a
+    token count (or -1 for "let the model decide") to trade speed for depth. */
+const THINKING_BUDGET = (() => {
+  const raw = (process.env.GEMINI_THINKING_BUDGET || "").trim();
+  if (!raw) return 0;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) ? n : 0;
+})();
+
+const geminiKey = () => (process.env.GEMINI_API_KEY || "").trim();
+
+/** The model actually asked for: the setting if it names one, else the env
+    override, else the rolling alias. */
+function geminiModel(): string {
+  return (
+    appSettings.model.trim() ||
+    (process.env.GEMINI_MODEL || "").trim() ||
+    DEFAULT_GEMINI_MODEL
+  );
+}
+
+/** Lazy client, rebuilt if the key changes underneath us. */
 let geminiClient: GoogleGenAI | null = null;
+let geminiClientKey = "";
 function getGemini(): GoogleGenAI | null {
-  if (!geminiClient && process.env.GEMINI_API_KEY) {
-    geminiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const key = geminiKey();
+  if (!key) {
+    geminiClient = null;
+    geminiClientKey = "";
+    return null;
+  }
+  if (!geminiClient || geminiClientKey !== key) {
+    geminiClient = new GoogleGenAI({ apiKey: key });
+    geminiClientKey = key;
   }
   return geminiClient;
+}
+
+type GeminiTurn = { role: "user" | "model"; parts: { text: string }[] };
+
+/**
+ * This session's conversation, in the shape Gemini wants.
+ *
+ * Built from the event log rather than a second transcript kept alongside it,
+ * so what the model sees is what the thread shows -- including the turn just
+ * posted, which the caller has already emitted by the time we get here.
+ *
+ * Two details the API cares about: consecutive turns from the same speaker are
+ * merged (streamed replies arrive as many `turn.agent.text` deltas, and forty
+ * one-word model turns is not a conversation), and a history may not open on
+ * the model, so any leading model turns are dropped.
+ */
+function conversationFor(session: Session): GeminiTurn[] {
+  const turns: GeminiTurn[] = [];
+
+  for (const event of session.events) {
+    let role: "user" | "model" | null = null;
+    if (event.kind === "turn.user") role = "user";
+    else if (event.kind === "turn.agent.text") role = "model";
+    if (!role) continue;
+
+    const text = String(event.payload?.text ?? "");
+    if (!text) continue;
+
+    const last = turns[turns.length - 1];
+    if (last && last.role === role) last.parts[0].text += text;
+    else turns.push({ role, parts: [{ text }] });
+  }
+
+  while (turns.length > 0 && turns[0].role === "model") turns.shift();
+  return turns.slice(-HISTORY_TURNS);
+}
+
+/** How many times to re-ask after a transient refusal, and how long to wait.
+    Flash on the free tier answers 503 "high demand" often enough that one
+    spike would otherwise read, in the thread, as the app being broken. */
+const GEMINI_RETRIES = 3;
+const RETRY_BACKOFF_MS = [600, 1500, 3200];
+
+/** Codes worth asking again for: rate limits, overload, and the generic 500. */
+const TRANSIENT = new Set([429, 500, 502, 503, 504]);
+
+/**
+ * The readable sentence inside a Gemini error.
+ *
+ * The SDK hands back a message that is itself a JSON document with another
+ * JSON document quoted inside it, so the useful sentence arrives buried two
+ * levels deep behind escaped newlines. Shown raw it is a wall of braces, which
+ * tells the reader nothing about whether their key is wrong or Google is busy.
+ */
+function describeGeminiError(err: any): { text: string; status: number | null } {
+  const raw = err?.message ?? String(err);
+  let status: number | null = typeof err?.status === "number" ? err.status : null;
+  let text = String(raw);
+
+  // Unwrap as far as the nesting goes, keeping the innermost message.
+  for (let depth = 0; depth < 3; depth += 1) {
+    const start = text.indexOf("{");
+    if (start < 0) break;
+    try {
+      const parsed = JSON.parse(text.slice(start));
+      const inner = parsed?.error ?? parsed;
+      if (typeof inner?.code === "number") status = inner.code;
+      if (typeof inner?.message !== "string") break;
+      text = inner.message;
+    } catch {
+      break;
+    }
+  }
+
+  return { text: text.trim().replace(/\s+/g, " ") || "no detail given", status };
+}
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** What the model is told it is, and what it knows, before the conversation. */
+function systemInstructionFor(recalled: MemoryRecord[]): string {
+  const lines = [appSettings.systemPrompt.trim()];
+
+  if (recalled.length > 0) {
+    lines.push(
+      "",
+      "What you already know about this workspace (from the memory graph):",
+      ...recalled.map((m) => `- [${m.kind}] ${m.title}: ${m.body}`),
+    );
+  }
+
+  lines.push(
+    "",
+    "Answer as the console itself: direct, concrete, and short enough to read",
+    "between steps. Plain prose -- no headings, and no markdown emphasis.",
+  );
+
+  return lines.join("\n");
 }
 
 async function startServer() {
@@ -629,42 +771,87 @@ async function startServer() {
           emitEvent(session, "tool.result", "agent", { ok: true, id: newMem.id }, spanId);
         }
 
-        // Generate response with Gemini if available, else standard fallback
-        let reply = "";
+        // Generate the reply with Gemini, streaming it so the thread fills as
+        // the model writes rather than sitting empty and then blinking a
+        // paragraph into place.
         const gemini = getGemini();
+        let streamed = 0;
 
         if (gemini) {
-          try {
-            const response = await gemini.models.generateContent({
-              model: "gemini-2.5-flash",
-              contents: [
-                {
-                  role: "user",
-                  parts: [
-                    {
-                      text: `You are Autora, an autonomous AI execution console and agent workspace. Standing prompt: ${appSettings.systemPrompt}\nUser says: ${text}`,
-                    },
-                  ],
-                },
-              ],
-            });
-            reply = response.text || "";
-          } catch (err: any) {
-            console.warn("[Gemini API Warning]", err?.message || err);
+          const model = geminiModel();
+          const request = {
+            model,
+            contents: conversationFor(session),
+            config: {
+              systemInstruction: systemInstructionFor(uniqueAccessed),
+              temperature: 0.7,
+              maxOutputTokens: 2048,
+              thinkingConfig: { thinkingBudget: THINKING_BUDGET },
+            },
+          };
+
+          for (let attempt = 0; attempt <= GEMINI_RETRIES; attempt += 1) {
+            try {
+              const stream = await gemini.models.generateContentStream(request);
+
+              for await (const chunk of stream) {
+                const piece = chunk.text;
+                if (!piece) continue;
+                // The client coalesces these deltas into one reply (see
+                // derive.ts), so a chunk per emit is a sentence appearing,
+                // not forty cards.
+                emitEvent(session, "turn.agent.text", "agent", { text: piece });
+                streamed += piece.length;
+              }
+              break;
+            } catch (err: any) {
+              const { text: detail, status } = describeGeminiError(err);
+              console.warn(`[gemini] ${model} attempt ${attempt + 1}: ${detail}`);
+
+              // Only worth another go while nothing has reached the thread --
+              // re-running a half-delivered reply would say the first half
+              // twice.
+              const retryable =
+                streamed === 0 &&
+                attempt < GEMINI_RETRIES &&
+                (status === null || TRANSIENT.has(status));
+
+              if (retryable) {
+                await wait(RETRY_BACKOFF_MS[Math.min(attempt, RETRY_BACKOFF_MS.length - 1)]);
+                continue;
+              }
+
+              // Said out loud rather than swallowed: a canned reply in place
+              // of a real one is indistinguishable from the model working,
+              // and what people need to know is whether their key is wrong or
+              // Google is simply busy.
+              emitEvent(session, "system.error", "system", {
+                error: `Gemini (${model}) did not answer: ${detail}`,
+              });
+              break;
+            }
           }
         }
 
-        if (!reply) {
-          if (lower.includes("hello") || lower.includes("hi")) {
+        // Nothing came back -- no key configured, or the call failed. Say
+        // something useful rather than leaving the turn blank.
+        if (streamed === 0) {
+          let reply: string;
+          if (!gemini) {
+            reply =
+              "No model is connected yet, so I am running on local responses only. " +
+              "Set GEMINI_API_KEY in the server environment and restart to bring " +
+              "Gemini online; everything else in the console works without it.";
+          } else if (lower.includes("hello") || lower.includes("hi")) {
             reply = "Hello! Autora is active. You can prompt me to run tasks, manage memories, monitor live agent sessions, or configure automation schedules.";
           } else if (lower.includes("status")) {
             reply = "All systems operational. Connected to workspace host on port 3000. Session stream is live.";
           } else {
             reply = `Received: "${text}". I have processed your instruction, updated the execution graph, and recorded all output to this session's telemetry log.`;
           }
+          emitEvent(session, "turn.agent.text", "agent", { text: reply });
         }
 
-        emitEvent(session, "turn.agent.text", "agent", { text: reply });
         emitEvent(session, "turn.agent.done", "agent", {});
       } catch (err: any) {
         emitEvent(session, "system.error", "system", {
@@ -892,8 +1079,12 @@ async function startServer() {
   });
 
   // 10. Settings API
-  app.get("/api/settings", (req: Request, res: Response) => {
-    res.json({
+
+  /** One payload for both reads and writes -- two hand-kept copies drifted,
+      and the PATCH one had already lost the Anthropic row. */
+  const settingsPayload = () => {
+    const connected = Boolean(geminiKey());
+    return {
       provider: appSettings.provider,
       model: appSettings.model,
       base_url: appSettings.baseUrl,
@@ -904,10 +1095,12 @@ async function startServer() {
         {
           name: "gemini",
           label: "Google Gemini",
-          note: "AI Studio built-in Gemini API",
+          note: "Google AI Studio API key, read from GEMINI_API_KEY",
           role: "model",
-          set: Boolean(process.env.GEMINI_API_KEY),
-          hint: process.env.GEMINI_API_KEY ? "Connected (Server Environment)" : "Configured via AI Studio",
+          set: connected,
+          hint: connected
+            ? "Connected (server environment)"
+            : "Set GEMINI_API_KEY and restart",
         },
         {
           name: "anthropic",
@@ -919,12 +1112,20 @@ async function startServer() {
         },
       ],
       active: {
-        model: appSettings.model,
+        // What the next turn will actually call, rather than a name written
+        // down once and left behind by every model change since.
+        model: geminiModel(),
         endpoint: appSettings.baseUrl || null,
         provider: "Gemini",
-        hint: "Google Gemini 2.5 Flash",
+        hint: connected
+          ? `Google ${geminiModel()}`
+          : "No key set -- replies are local fallbacks",
       },
-    });
+    };
+  };
+
+  app.get("/api/settings", (req: Request, res: Response) => {
+    res.json(settingsPayload());
   });
 
   app.patch("/api/settings", (req: Request, res: Response) => {
@@ -933,30 +1134,7 @@ async function startServer() {
     if (req.body.base_url !== undefined) appSettings.baseUrl = req.body.base_url;
     if (req.body.system_prompt !== undefined) appSettings.systemPrompt = req.body.system_prompt;
 
-    res.json({
-      provider: appSettings.provider,
-      model: appSettings.model,
-      base_url: appSettings.baseUrl,
-      providers: ["auto", "gemini", "anthropic", "deepseek", "local"],
-      system_prompt: appSettings.systemPrompt,
-      system_prompt_limit: 8000,
-      credentials: [
-        {
-          name: "gemini",
-          label: "Google Gemini",
-          note: "AI Studio built-in Gemini API",
-          role: "model",
-          set: Boolean(process.env.GEMINI_API_KEY),
-          hint: "Connected",
-        },
-      ],
-      active: {
-        model: appSettings.model,
-        endpoint: null,
-        provider: "Gemini",
-        hint: "Google Gemini 2.5 Flash",
-      },
-    });
+    res.json(settingsPayload());
   });
 
   // 11. Relay API
