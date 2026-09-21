@@ -781,11 +781,32 @@ body::before {
 .composer textarea::placeholder { color: var(--text-3); }
 .composer-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
 .hint { font-size: 11px; color: var(--text-3); }
-.hint.voice-note { color: var(--warn); }
+/* A fault you can act on, so it is a button rather than a label. */
+button.hint.voice-note {
+  color: var(--warn); background: none; border: 0; padding: 0;
+  font: inherit; font-size: 11px; cursor: pointer; text-align: left;
+}
+button.hint.voice-note:hover { text-decoration: underline; }
 .hint.voice-note code {
   font-family: var(--mono); font-size: 10.5px;
   background: rgba(251, 191, 36, 0.12); border-radius: 4px; padding: 1px 4px;
 }
+
+/* The explanation for a control that is present but cannot work. Above the
+   composer, because that is where the control it explains is. */
+.voice-help {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 8px; padding: 10px 12px;
+  background: rgba(251, 191, 36, 0.07);
+  border: 1px solid rgba(251, 191, 36, 0.28); border-radius: 10px;
+}
+.voice-help-text { flex: 1 1 220px; font-size: 12px; line-height: 1.5; color: var(--text-2); }
+.voice-help-text b { color: var(--text-1); }
+.voice-help code {
+  font-family: var(--mono); font-size: 11px;
+  background: rgba(251, 191, 36, 0.14); border-radius: 4px; padding: 1px 4px;
+}
+.voice-help .btn.primary { text-decoration: none; }
 .hint kbd {
   font-family: var(--mono); font-size: 10px; background: var(--s3);
   border: 1px solid var(--border-strong); border-bottom-width: 2px;
@@ -819,6 +840,12 @@ body::before {
   --btn-border: rgba(34, 211, 238, 0.4);
 }
 .mic-btn.has-error { --btn-fg: var(--danger); }
+/* Present, visibly not armed. A control that vanishes tells you nothing; one
+   that is there and greyed tells you the feature exists and something is in
+   the way -- and it has somewhere to send you. */
+.mic-btn.is-blocked, .live-start.is-blocked { --btn-fg: var(--text-3); opacity: 0.75; }
+.mic-btn.is-blocked:hover:not(:disabled),
+.live-start.is-blocked:hover:not(:disabled) { --btn-fg: var(--warn); opacity: 1; }
 .mic-halo {
   position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
   opacity: 0; transition: opacity 0.2s var(--ease);
@@ -1097,6 +1124,7 @@ body::before {
   /* The exception: the one hint that is a fault to fix rather than a keyboard
      tip, and the reason the microphone is missing. */
   .composer-foot .hint.voice-note { display: inline; }
+  .voice-help { padding: 9px 10px; }
   .composer-foot { justify-content: flex-end; }
   .composer-acts { gap: 6px; }
 

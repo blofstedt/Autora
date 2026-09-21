@@ -49,6 +49,13 @@ description: >-
   app. Without a key Autora falls back to a local OpenAI-compatible model
   server on port 8000, and says so if it cannot reach one.
 
+
+  Voice from a phone: browsers only open a microphone on a secure page, and an
+  http address on your home network is not one. Set AUTORA_TLS=1 in the same
+  file and Autora also serves https on port 8818 — open that, click through the
+  certificate warning once, and dictation and live chat appear. Note that 8818
+  is published directly, so it does not go through Umbrel's login.
+
 developer: blofstedt
 website: https://github.com/blofstedt/Autora
 submitter: blofstedt

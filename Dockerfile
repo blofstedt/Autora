@@ -33,14 +33,17 @@ ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
 WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src/ src/
-RUN pip install --no-cache-dir -e ".[anthropic,local,browser,voice-deepgram]"
+RUN pip install --no-cache-dir -e ".[anthropic,local,browser,voice-deepgram,tls]"
 
 COPY --from=ui-builder /build/dist ui/dist/
 
 COPY docker-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-EXPOSE 8817
+# 8817 is the app; 8818 is the same app over https, which is the only way a
+# browser will open a microphone for a page reached by IP address. It listens
+# only when AUTORA_TLS=1.
+EXPOSE 8817 8818
 
 # /data  → browser profile + session logs (persistent volume)
 # /host  → the host filesystem mounted read-write so the agent can work on it

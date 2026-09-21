@@ -7,6 +7,8 @@ harness you have to orchestrate by hand is not that.
 from __future__ import annotations
 
 import argparse
+import asyncio
+import contextlib
 import os
 import sys
 from pathlib import Path
@@ -156,8 +158,8 @@ def _fallback_openai_stt():
 
 
 def cmd_up(args) -> int:
-    import asyncio
     import uvicorn
+
     from .server import Harness, create_app
 
     workdir = Path(args.workdir).resolve()
@@ -204,8 +206,30 @@ def cmd_up(args) -> int:
                   file=sys.stderr)
             voice_loop = None
 
+    try:
+        ssl_options = _tls_options(args)
+    except RuntimeError as exc:
+        # A certificate named by hand and missing is a typo worth stopping for.
+        # A certificate that could not be *generated* is not: https is an extra
+        # listener, and refusing to start over it would take the whole app down
+        # for a feature it was doing without a minute ago.
+        if args.tls_cert or args.tls_key:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        print(f"warning: serving http only -- {exc}", file=sys.stderr)
+        ssl_options = {}
+    # Alongside http rather than instead of it. Anything already pointed at the
+    # plain port -- a bookmark, a reverse proxy, the relay -- keeps working, and
+    # the secure page is somewhere to go for the one thing http cannot do.
+    secure_port = (args.tls_port or args.port + 1) if ssl_options else None
+
     ui_dist = Path(__file__).resolve().parents[2] / "ui" / "dist"
-    app = create_app(harness, ui_dist=ui_dist if ui_dist.exists() else None)
+    app = create_app(
+        harness,
+        ui_dist=ui_dist if ui_dist.exists() else None,
+        # The plain page cannot have a microphone, but it can say where one is.
+        secure_port=secure_port,
+    )
 
     tts_label = getattr(args, "tts", None) or voice_name or "off"
     # Show effective STT: if Deepgram was auto-selected via env var, say so
@@ -223,26 +247,112 @@ def cmd_up(args) -> int:
     print(f"  voice     TTS={tts_label}  STT={stt_label}")
     print(f"  session   {session_id}")
     print(f"\n  watch at  http://{host_display}:{args.port}/?session={session_id}")
+    if secure_port:
+        print(f"  with mic  https://{host_display}:{secure_port}/?session={session_id}")
     print(f"  relay     python -m autora.relay ws://{host_display}:{args.port}\n")
+    if secure_port and not (args.tls_cert and args.tls_key):
+        print("  note: that certificate is self-signed, so the first visit from each\n"
+              "        device shows a warning. Proceed past it once -- the page is\n"
+              "        then a secure origin, which is the only way a browser will\n"
+              "        open a microphone for dictation and live chat.\n")
     if args.yes:
         print("  warning: --yes skips every confirmation. Do not use this against\n"
               "           production credentials.\n")
 
-    if voice_loop is not None:
-        import asyncio
-
-        async def _run_with_voice():
-            async with asyncio.TaskGroup() as tg:
-                tg.create_task(voice_loop.run())
-                tg.create_task(asyncio.to_thread(
-                    uvicorn.run, app,
-                    host=args.host, port=args.port, log_level=args.log_level,
-                ))
-
-        asyncio.run(_run_with_voice())
-    else:
+    # The plain path stays the plain path: one listener, uvicorn's own runner,
+    # its own signal handling. Only a second listener or the voice loop needs
+    # the loop opened by hand.
+    if voice_loop is None and not ssl_options:
         uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level)
+        return 0
+
+    listeners = [uvicorn.Config(app, host=args.host, port=args.port,
+                                log_level=args.log_level)]
+    if ssl_options:
+        listeners.append(uvicorn.Config(app, host=args.host, port=secure_port,
+                                        log_level=args.log_level, **ssl_options))
+    asyncio.run(_serve(listeners, voice_loop))
     return 0
+
+
+def _listener(config):
+    """A uvicorn server that leaves the signals alone.
+
+    Several listeners in one process cannot each install their own handler:
+    whichever captured last is the only one that hears Ctrl-C, and the others
+    keep the process alive after it. So signals are handled once, in `_serve`,
+    and this no-ops both spellings uvicorn has used for the hook -- the project
+    pins `uvicorn>=0.27`, which spans the rename.
+    """
+    import uvicorn
+
+    class Quiet(uvicorn.Server):
+        def install_signal_handlers(self) -> None:  # uvicorn < 0.29
+            return None
+
+        @contextlib.contextmanager
+        def capture_signals(self):                  # uvicorn >= 0.29
+            yield
+
+    return Quiet(config)
+
+
+async def _serve(configs, voice_loop) -> None:
+    """Run every listener, and the voice loop if there is one, until signalled."""
+    import signal
+
+    servers = [_listener(config) for config in configs]
+
+    def shut_down() -> None:
+        for server in servers:
+            server.should_exit = True
+
+    loop = asyncio.get_running_loop()
+    for name in ("SIGINT", "SIGTERM"):
+        sig = getattr(signal, name, None)
+        if sig is None:
+            continue
+        try:
+            loop.add_signal_handler(sig, shut_down)
+        except NotImplementedError:
+            # Windows. The default KeyboardInterrupt still ends the process.
+            pass
+
+    try:
+        async with asyncio.TaskGroup() as tg:
+            if voice_loop is not None:
+                tg.create_task(voice_loop.run())
+            for server in servers:
+                tg.create_task(server.serve())
+    except* KeyboardInterrupt:
+        shut_down()
+
+
+def _tls_options(args) -> dict[str, str]:
+    """Uvicorn's ssl arguments, or an empty dict for plain http.
+
+    A certificate supplied by hand wins: if you already terminate TLS properly
+    -- Tailscale's proxy, Caddy, anything with a real certificate -- that is
+    still the better answer, and this should not quietly replace it with a
+    self-signed one.
+    """
+    cert, key = getattr(args, "tls_cert", None), getattr(args, "tls_key", None)
+    if bool(cert) != bool(key):
+        raise RuntimeError("--tls-cert and --tls-key go together")
+    if cert and key:
+        for path in (cert, key):
+            if not Path(path).exists():
+                raise RuntimeError(f"{path} does not exist")
+        return {"ssl_certfile": cert, "ssl_keyfile": key}
+    if not getattr(args, "tls", False):
+        return {}
+
+    from .tls import ensure_cert
+
+    home = Path(args.home) if args.home else Path(
+        os.environ.get("AUTORA_HOME", Path.home() / ".autora"))
+    generated_cert, generated_key = ensure_cert(home / "tls")
+    return {"ssl_certfile": str(generated_cert), "ssl_keyfile": str(generated_key)}
 
 
 def cmd_replay(args) -> int:
@@ -335,6 +445,21 @@ def main(argv: list[str] | None = None) -> int:
                     metavar="DIR",
                     help="Persist browser cookies/auth across restarts (env: AUTORA_BROWSER_PROFILE)")
     up.add_argument("--title", help="Session title")
+    up.add_argument("--tls", action="store_true",
+                    default=os.environ.get("AUTORA_TLS", "") in ("1", "true", "yes"),
+                    help="Serve https with a self-signed certificate, so phones on the "
+                         "LAN get a secure context and the microphone works "
+                         "(env: AUTORA_TLS=1)")
+    up.add_argument("--tls-cert", metavar="FILE",
+                    default=os.environ.get("AUTORA_TLS_CERT"),
+                    help="Serve https with this certificate instead of a generated one")
+    up.add_argument("--tls-key", metavar="FILE",
+                    default=os.environ.get("AUTORA_TLS_KEY"),
+                    help="Private key for --tls-cert")
+    up.add_argument("--tls-port", type=int,
+                    default=int(os.environ.get("AUTORA_TLS_PORT", "0")) or None,
+                    help="Port for the https listener (default: --port + 1). The plain "
+                         "http port keeps working either way (env: AUTORA_TLS_PORT)")
     up.add_argument("--yes", action="store_true",
                     default=os.environ.get("AUTORA_AUTO_APPROVE", "") in ("1", "true", "yes"),
                     help="Skip all approvals — env AUTORA_AUTO_APPROVE=1 sets this (dangerous)")

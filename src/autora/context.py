@@ -105,6 +105,20 @@ def compose(
                 messages.append(open_assistant)
             open_assistant["content"] += payload.get("text", "")
 
+        elif kind == Kind.AGENT_THINKING:
+            # Reasoning is folded back in because some providers require it
+            # back: a model that thinks, calls a tool, and is then handed its
+            # own tool_calls with the thinking stripped out is being shown a
+            # turn it did not take. DeepSeek rejects that outright ("the
+            # reasoning_content in the thinking mode must be passed back"), and
+            # every adapter that does not want it simply drops the key.
+            if open_assistant is None:
+                open_assistant = {"role": "assistant", "content": ""}
+                messages.append(open_assistant)
+            open_assistant["reasoning"] = (
+                open_assistant.get("reasoning", "") + payload.get("text", "")
+            )
+
         elif kind == Kind.TOOL_CALL:
             call_id = payload.get("call_id") or event.span or ""
             if event.span:
@@ -146,6 +160,7 @@ def estimate_tokens(messages: list[dict[str, Any]]) -> int:
     total = 0
     for message in messages:
         total += len(message.get("content") or "")
+        total += len(message.get("reasoning") or "")
         for call in message.get("tool_calls", ()):
             total += len(str(call.get("args", "")))
     return total // CHARS_PER_TOKEN

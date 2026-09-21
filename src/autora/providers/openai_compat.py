@@ -36,11 +36,23 @@ class OpenAICompatProvider:
         base_url: str | None = None,
         api_key: str | None = None,
         reasoning_effort: str | None = None,
+        send_reasoning: bool | None = None,
     ):
         self.model = model
         self.base_url = base_url or os.environ.get("AUTORA_LLM_BASE_URL", "http://localhost:8000/v1")
         self._api_key = api_key or os.environ.get("AUTORA_LLM_API_KEY", "local")
         self.reasoning_effort = reasoning_effort
+        #: Whether assistant turns go back out carrying the thinking that
+        #: produced them. There is no agreement to follow here: DeepSeek's
+        #: thinking mode rejects a tool-calling turn whose reasoning has been
+        #: stripped, its own reasoner rejects one that still has it, and most
+        #: servers ignore the field either way. So: a guess from the endpoint,
+        #: an env override for when the guess is wrong, and -- because a guess
+        #: about an API nobody has standardised will be wrong -- a correction
+        #: from whichever 400 comes back. See `_flip_on_complaint`.
+        self.send_reasoning = (
+            send_reasoning if send_reasoning is not None else _default_send_reasoning(self.base_url)
+        )
         self._client = None
 
     def _ensure_client(self):
@@ -70,15 +82,31 @@ class OpenAICompatProvider:
         if self.reasoning_effort:
             extra["reasoning_effort"] = self.reasoning_effort
 
-        stream = await client.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "system", "content": system}, *_to_openai(messages)],
-            tools=payload_tools or None,
-            max_tokens=max_tokens,
-            stream=True,
-            stream_options={"include_usage": True},
-            **({"extra_body": extra} if extra else {}),
-        )
+        async def open_stream(with_reasoning: bool):
+            return await client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system},
+                    *_to_openai(messages, reasoning=with_reasoning),
+                ],
+                tools=payload_tools or None,
+                max_tokens=max_tokens,
+                stream=True,
+                stream_options={"include_usage": True},
+                **({"extra_body": extra} if extra else {}),
+            )
+
+        # The request is rejected before a single chunk arrives, which is what
+        # makes one retry here cheap and invisible rather than a half-streamed
+        # turn that has to be unwound.
+        try:
+            stream = await open_stream(self.send_reasoning)
+        except Exception as exc:
+            wanted = _flip_on_complaint(exc, self.send_reasoning)
+            if wanted is None:
+                raise
+            self.send_reasoning = wanted
+            stream = await open_stream(wanted)
 
         # Tool calls arrive as fragments indexed by position, and the id may
         # appear on any fragment, so accumulate rather than assuming the first.
@@ -136,7 +164,9 @@ class OpenAICompatProvider:
         yield TurnEnd(stop_reason, usage)
 
 
-def _to_openai(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _to_openai(
+    messages: list[dict[str, Any]], reasoning: bool = False
+) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for msg in messages:
         role = msg["role"]
@@ -144,7 +174,7 @@ def _to_openai(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
             out.append({"role": "tool", "tool_call_id": msg["tool_call_id"],
                         "content": msg.get("content") or "(no output)"})
         elif role == "assistant" and msg.get("tool_calls"):
-            out.append({
+            turn: dict[str, Any] = {
                 "role": "assistant",
                 "content": msg.get("content") or None,
                 "tool_calls": [
@@ -152,7 +182,57 @@ def _to_openai(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
                      "function": {"name": c["name"], "arguments": json.dumps(c["args"])}}
                     for c in msg["tool_calls"]
                 ],
-            })
+            }
+            # Only on a turn that called a tool. That is the turn the model is
+            # still in the middle of -- it thought, it acted, and it is about to
+            # be shown the result -- and it is the one DeepSeek's thinking mode
+            # insists on getting back intact. A turn that ended in prose is
+            # finished, and re-sending its reasoning is both wasted tokens and
+            # the thing DeepSeek's reasoner rejects.
+            if reasoning and msg.get("reasoning"):
+                turn["reasoning_content"] = msg["reasoning"]
+            out.append(turn)
         else:
             out.append({"role": role, "content": msg.get("content") or ""})
     return out
+
+
+#: Endpoints known to want the thinking back. Everything else starts off
+#: assuming not, and gets corrected by its own error message if that is wrong.
+_WANTS_REASONING = ("deepseek",)
+
+
+def _default_send_reasoning(base_url: str) -> bool:
+    override = os.environ.get("AUTORA_SEND_REASONING")
+    if override is not None:
+        return override.strip().lower() not in ("", "0", "false", "no", "off")
+    host = (base_url or "").lower()
+    return any(name in host for name in _WANTS_REASONING)
+
+
+def _flip_on_complaint(exc: BaseException, sending: bool) -> bool | None:
+    """Read a rejection for an opinion about `reasoning_content`.
+
+    Returns what to send instead, or None if the error was about something else.
+    Both complaints exist in the wild and say so plainly:
+
+        "The `reasoning_content` in the thinking mode must be passed back"
+        "reasoning_content is not allowed / should not be passed"
+
+    So rather than maintaining a table of which endpoint wants which, take the
+    endpoint's word for it and retry once. The answer sticks for the session,
+    so a given server is asked at most once.
+    """
+    if getattr(exc, "status_code", None) not in (400, 422):
+        return None
+    message = str(exc).lower()
+    if "reasoning_content" not in message and "reasoning content" not in message:
+        return None
+    wants_it_back = "must" in message or "required" in message
+    if wants_it_back and not sending:
+        return True
+    if not wants_it_back and sending:
+        return False
+    # It is complaining about the field in the state we are already in, so
+    # flipping would only trade one rejection for the other. Let it through.
+    return None

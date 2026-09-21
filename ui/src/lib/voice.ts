@@ -55,7 +55,17 @@ const Impl: (new () => Recognition) | undefined =
 export const secureOrigin =
   typeof window === "undefined" ? true : window.isSecureContext;
 
-export const dictationSupported = !!Impl && secureOrigin;
+/** Whether the browser has a recognition engine at all, secure page or not.
+ *
+ * Kept apart from `dictationSupported` because the two failures want opposite
+ * treatment. Firefox has no engine, so there is nothing to offer and nothing
+ * the reader could do about it -- those buttons stay hidden. An http page in
+ * Chrome or Safari has the engine and lacks only a secure origin, which *is*
+ * fixable, and hiding the button there is what made voice look unimplemented
+ * rather than unreachable. */
+export const recognitionAvailable = !!Impl;
+
+export const dictationSupported = recognitionAvailable && secureOrigin;
 export const speechSupported =
   typeof window !== "undefined" && "speechSynthesis" in window;
 

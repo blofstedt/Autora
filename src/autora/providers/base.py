@@ -77,5 +77,9 @@ class LLMProvider(Protocol):
           {"role": "user"|"assistant", "content": str}
           {"role": "assistant", "tool_calls": [{"id","name","args"}], "content": str}
           {"role": "tool", "tool_call_id": str, "content": str, "ok": bool}
+
+        An assistant message may also carry "reasoning": the thinking that
+        produced it. Adapters send it back where the provider wants it and drop
+        it where it does not -- see OpenAICompatProvider, which has to do both.
         """
         ...

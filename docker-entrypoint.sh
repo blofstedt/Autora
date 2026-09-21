@@ -64,7 +64,12 @@ mkdir -p "${AUTORA_HOME}"
 HOST="${AUTORA_HOST:-0.0.0.0}"
 PORT="${AUTORA_PORT:-8817}"
 WORKDIR="${AUTORA_WORKDIR:-/host}"
-TITLE="${AUTORA_TITLE:-Autora}"
+# Deliberately empty by default. A title given here is the title of *every*
+# session the container ever opens, which is how a session list ends up as a
+# column of identical names -- and it also outranks the name a session takes
+# from its first message, so naming them costs nothing and buys nothing. Set
+# AUTORA_TITLE only if you actually want one fixed label.
+TITLE="${AUTORA_TITLE:-}"
 BROWSER_PROFILE="${AUTORA_BROWSER_PROFILE:-/data/browser-profile}"
 
 # Ensure the browser profile directory exists so Playwright can write to it.
@@ -73,8 +78,32 @@ mkdir -p "${BROWSER_PROFILE}"
 set -- up "${WORKDIR}" \
     --host "${HOST}" \
     --port "${PORT}" \
-    --title "${TITLE}" \
     --browser-profile "${BROWSER_PROFILE}"
+
+if [ -n "${TITLE}" ]; then
+    set -- "$@" --title "${TITLE}"
+fi
+
+# https on a second port, so a phone on the LAN gets a microphone.
+#
+# Browsers only allow audio capture from a secure context, and an IP address on
+# plain http is not one -- which is why dictation and live chat had nowhere to
+# appear when the app was opened from another device. A self-signed certificate
+# is enough: click through the warning once per device and the origin is
+# secure. The certificate lives in /data, so that warning is a one-time cost
+# per device rather than one per restart.
+#
+# Alongside http, never instead of it: 8817 keeps serving exactly what it
+# served before, so a reverse proxy in front of it (Umbrel's app_proxy, say)
+# is unaffected, and the http page can simply link to the secure one. Publish
+# 8818 to reach it. Set AUTORA_TLS=0 to skip it entirely, or point
+# AUTORA_TLS_CERT and AUTORA_TLS_KEY at a real certificate if you have one.
+if [ -n "${AUTORA_TLS_CERT:-}" ] && [ -n "${AUTORA_TLS_KEY:-}" ]; then
+    set -- "$@" --tls-cert "${AUTORA_TLS_CERT}" --tls-key "${AUTORA_TLS_KEY}"
+elif [ "${AUTORA_TLS:-1}" = "1" ]; then
+    set -- "$@" --tls-port "${AUTORA_TLS_PORT:-8818}"
+    set -- "$@" --tls
+fi
 
 # Auto-approve: default ON for the Umbrel server use-case (the user is the
 # sole operator; approvals are available via the web UI regardless).

@@ -13,8 +13,9 @@ const STICK_ZONE = 80;
  * Each request carries the work it caused: the steps fold away under the
  * prompt that produced them, so the thread reads as a conversation and the
  * detail is one tap down rather than in a separate rail you had to correlate
- * by eye. The steps for the turn in flight are open, because that is the one
- * you are watching; finished turns collapse to a single line.
+ * by eye. Every turn starts folded, the one in flight included: the reply is
+ * what you came for, and reasoning that unfolds itself is reasoning that
+ * shoves the reply off the screen while you are reading it.
  */
 export function Thread({
   buckets, busy, startedAt, onSeek,
@@ -108,11 +109,12 @@ function TurnBucket({
   startedAt: number;
   onSeek: (seq: number) => void;
 }) {
-  // Undefined means "follow the turn": open while it runs, shut once it lands.
-  // A deliberate toggle pins it, so a turn finishing does not close something
-  // being read.
-  const [pinned, setPinned] = useState<boolean | undefined>(undefined);
-  const open = pinned ?? bucket.open;
+  // Collapsed until someone asks for it, live turn included. Reasoning is the
+  // detail behind the answer rather than the answer, and a panel that opens
+  // itself every turn pushes the reply off a phone screen exactly as it lands.
+  // The live pip on the toggle is how you can tell there is something in there
+  // without it taking the screen to say so.
+  const [open, setOpen] = useState(false);
 
   return (
     <article className="turn">
@@ -138,7 +140,7 @@ function TurnBucket({
             steps={index === 0 ? bucket.steps : []}
             live={index === 0 && bucket.open}
             open={index === 0 ? open : undefined}
-            onToggle={index === 0 ? () => setPinned(!open) : undefined}
+            onToggle={index === 0 ? () => setOpen(!open) : undefined}
             startedAt={startedAt}
             onSeek={onSeek}
           />
@@ -151,7 +153,7 @@ function TurnBucket({
             steps={bucket.steps}
             live={bucket.open}
             open={open}
-            onToggle={() => setPinned(!open)}
+            onToggle={() => setOpen(!open)}
             startedAt={startedAt}
             onSeek={onSeek}
           />
