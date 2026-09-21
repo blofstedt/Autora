@@ -21,10 +21,11 @@ import { Settings } from "./components/Settings";
 import { DictateButton } from "./components/DictateButton";
 import { LiveChat } from "./components/LiveChat";
 import {
-  dictationSupported, secureOrigin, speakable, splitSpeakable, useSpeech,
+  dictationSupported, recognitionAvailable, secureOrigin, speakable,
+  splitSpeakable, useSpeech,
 } from "./lib/voice";
 import {
-  IconArrow, IconChevron, IconGear, IconMessage, IconRepeat, IconSpark, IconWave,
+  IconArrow, IconChevron, IconGear, IconMessage, IconRepeat, IconSpark, IconWave, IconX,
 } from "./components/Icons";
 
 /** How often to re-read the session list, so sessions started elsewhere (or
@@ -50,6 +51,8 @@ export function App() {
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sessionsOpen, setSessionsOpen] = useState(false);
+  const [securePort, setSecurePort] = useState<number | null>(null);
+  const [voiceHelp, setVoiceHelp] = useState(false);
   const streamRef = useRef<SessionStream | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const speech = useSpeech();
@@ -80,6 +83,17 @@ export function App() {
       alive = false;
       window.clearInterval(timer);
     };
+  }, []);
+
+  // Where the https copy of this page is listening, if the server put one up.
+  // Only interesting on a page that is not itself secure, which is the page
+  // that cannot have a microphone.
+  useEffect(() => {
+    if (secureOrigin) return;
+    fetch("/api/origin")
+      .then((r) => r.json())
+      .then((d) => setSecurePort(typeof d?.secure_port === "number" ? d.secure_port : null))
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -303,10 +317,22 @@ export function App() {
   }, []);
 
   const voiceReady = dictationSupported && canSpeak;
-  /* An http page cannot have voice, and silently dropping the controls leaves
-     you hunting for a microphone that was never going to appear. A browser
-     with no engine at all gets no note: there is nothing to act on. */
-  const voiceNote = !secureOrigin && !!canSpeak;
+  /* An http page cannot have voice. The controls stay anyway, disabled, and
+     say what is wrong -- dropping them left people hunting for a microphone
+     that was never going to appear, and concluding it had not been built. A
+     browser with no engine at all still gets nothing: that one has no fix. */
+  const voiceBlocked = !secureOrigin && (recognitionAvailable || !!canSpeak);
+
+  /** The same page over https, where the microphone is allowed. Built from the
+      address that already worked: whatever name reached the http listener is
+      the one this browser is known to have a route to. */
+  const secureUrl = useMemo(() => {
+    if (secureOrigin || !securePort) return null;
+    const url = new URL(location.href);
+    url.protocol = "https:";
+    url.port = String(securePort);
+    return url.toString();
+  }, [securePort]);
 
   // ---------------------------------------------------------- tab chrome --
   const chromeState: Chrome = pending > 0
@@ -375,7 +401,9 @@ export function App() {
           break;
         case "v":
           e.preventDefault();
-          if (!readOnly && voiceReady) toggleLive();
+          if (readOnly) break;
+          if (voiceReady) toggleLive();
+          else if (voiceBlocked) setVoiceHelp(true);
           break;
         case "Escape":
           setKnowledgeOpen(false);
@@ -387,7 +415,7 @@ export function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [playback, step, seek, jumpToNow, toggleLive, readOnly, voiceReady]);
+  }, [playback, step, seek, jumpToNow, toggleLive, readOnly, voiceReady, voiceBlocked]);
 
   const currentName =
     sessions.find((s) => s.id === sessionId)?.title?.trim() ||
@@ -518,6 +546,34 @@ export function App() {
         {/* The screen above stays exactly as it was; only this strip changes,
             because the point of talking to it is to keep watching it work. */}
         <div className={`composer ${liveOn ? "is-live" : ""}`}>
+          {/* Said here rather than in a settings page nobody opens: the button
+              that did not work is two inches below it. */}
+          {voiceHelp && !liveOn && (
+            <div className="voice-help" role="status">
+              <div className="voice-help-text">
+                <b>Voice needs a secure page.</b> Browsers only open a microphone
+                on <code>https</code> or <code>localhost</code>, and an address on
+                a home network is neither — no site setting changes that.
+                {!secureUrl && (
+                  <> Start Autora with <code>--tls</code> (or set{" "}
+                  <code>AUTORA_TLS=1</code>) and it will serve one alongside this
+                  page.</>
+                )}
+              </div>
+              {secureUrl && (
+                <a className="btn primary" href={secureUrl}>
+                  Open the secure page <IconArrow size={13} />
+                </a>
+              )}
+              <button
+                className="btn icon ghost"
+                onClick={() => setVoiceHelp(false)}
+                aria-label="Dismiss"
+              >
+                <IconX size={14} />
+              </button>
+            </div>
+          )}
           {liveOn ? (
             <LiveChat
               onUtterance={sendSpoken}
@@ -545,22 +601,32 @@ export function App() {
                 }}
               />
               <div className="composer-foot">
-                {voiceNote ? (
-                  <span className="hint voice-note" title="Browsers only allow microphone access on a secure page.">
+                {voiceBlocked ? (
+                  <button
+                    className="hint voice-note"
+                    onClick={() => setVoiceHelp(true)}
+                    title="Browsers only allow microphone access on a secure page."
+                  >
                     Voice needs <code>https</code>
-                  </span>
+                  </button>
                 ) : (
                   <span className="hint"><kbd>↵</kbd> send · <kbd>⇧↵</kbd> newline</span>
                 )}
                 <div className="composer-acts">
-                  <DictateButton onText={appendDictation} disabled={readOnly} />
-                  {voiceReady && (
+                  <DictateButton
+                    onText={appendDictation}
+                    disabled={readOnly}
+                    onBlocked={() => setVoiceHelp(true)}
+                  />
+                  {(voiceReady || voiceBlocked) && (
                     <button
-                      className="btn ghost live-start"
-                      onClick={toggleLive}
+                      className={`btn ghost live-start ${voiceReady ? "" : "is-blocked"}`}
+                      onClick={voiceReady ? toggleLive : () => setVoiceHelp(true)}
                       disabled={readOnly}
-                      title="Live voice chat"
-                      aria-label="Start live voice chat"
+                      title={voiceReady ? "Live voice chat" : "Live voice chat needs an https page"}
+                      aria-label={
+                        voiceReady ? "Start live voice chat" : "Why live voice chat is unavailable"
+                      }
                     >
                       <IconWave size={14} />
                       <span className="live-start-word">Live</span>

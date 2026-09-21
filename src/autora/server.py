@@ -159,9 +159,26 @@ class Harness:
         self._learning = asyncio.create_task(run())
 
 
-def create_app(harness: Harness, ui_dist: Path | None = None) -> FastAPI:
+def create_app(
+    harness: Harness, ui_dist: Path | None = None, secure_port: int | None = None
+) -> FastAPI:
     app = FastAPI(title="Autora")
     app.state.harness = harness
+
+    @app.get("/api/origin")
+    async def origin() -> dict[str, Any]:
+        """Where a secure copy of this page is listening, if one is.
+
+        The page can tell for itself whether it is a secure context -- it just
+        cannot tell where to find one. Without this, an http page reached from a
+        phone can only say that voice needs https and leave you to work out the
+        rest; with it, the same page can offer the link.
+
+        The host is deliberately not included: whatever name or address reached
+        this listener is the one that will reach the other, and it is the only
+        one the client is known to have a route to.
+        """
+        return {"secure_port": secure_port}
 
     # -- sessions ------------------------------------------------------
 

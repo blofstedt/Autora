@@ -23,10 +23,14 @@ voice-assemblyai = ["numpy>=1.26", "sounddevice>=0.4", "assemblyai>=0.24"]
 # Dependencies for the desktop relay (install on the machine to be controlled,
 # not necessarily on the Autora server itself):
 relay = ["websockets>=10", "mss>=9", "pyautogui>=0.9", "pillow>=10"]
+# For `autora up --tls`, which serves https so a browser will allow the
+# microphone. Optional: the openssl binary does the same job where it exists.
+tls = ["cryptography>=42"]
 all = [
     "anthropic>=0.40", "openai>=1.40", "playwright>=1.44",
     "numpy>=1.26", "sounddevice>=0.4",
     "kokoro-onnx>=0.3", "piper-tts>=1.2", "faster-whisper>=1.0",
+    "cryptography>=42",
 ]
 
 [project.scripts]

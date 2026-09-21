@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import { useDictation } from "../lib/voice";
+import { recognitionAvailable, secureOrigin, useDictation } from "../lib/voice";
 import { IconMic } from "./Icons";
 
 /**
@@ -12,14 +12,20 @@ import { IconMic } from "./Icons";
  *
  * It renders nothing at all where the browser has no recognition engine, on
  * the grounds that a microphone that cannot hear you is worse than no
- * microphone.
+ * microphone. An http page is not that case: the engine is right there and
+ * only the origin is wrong, so the button stays, disabled, and says so. It
+ * having silently vanished is what made voice look unbuilt rather than one
+ * redirect away.
  */
 export function DictateButton({
-  onText, disabled,
+  onText, disabled, onBlocked,
 }: {
   /** A settled phrase, to append to whatever is already typed. */
   onText: (text: string) => void;
   disabled?: boolean;
+  /** Tapped on an insecure page, where there is a microphone but no permission
+      to open it. The composer knows where the secure page is; this does not. */
+  onBlocked?: () => void;
 }) {
   const textRef = useRef(onText);
   textRef.current = onText;
@@ -35,7 +41,23 @@ export function DictateButton({
     if (disabled && listening) stop();
   }, [disabled, listening, stop]);
 
-  if (!dictation.supported) return null;
+  if (!recognitionAvailable) return null;
+
+  if (!secureOrigin) {
+    const why = "Dictation needs an https page — tap to see why";
+    return (
+      <button
+        type="button"
+        className="btn icon ghost mic-btn is-blocked"
+        onClick={onBlocked}
+        disabled={disabled || !onBlocked}
+        title={why}
+        aria-label={why}
+      >
+        <IconMic size={15} />
+      </button>
+    );
+  }
 
   const title = dictation.error ?? (listening ? "Stop dictating" : "Dictate");
 

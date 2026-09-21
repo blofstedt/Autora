@@ -27,6 +27,42 @@ def default_root() -> Path:
     return Path(os.environ.get("AUTORA_HOME", Path.home() / ".autora")) / "sessions"
 
 
+#: Titles that are not names. "Autora" is the application, not a session, and
+#: for a long time the container passed it as `--title` on every start -- which
+#: produced a session list that was a column of the same word, and, worse, took
+#: precedence over the name each session would otherwise have taken from its
+#: opening request. Treated as absent so those sessions can still name
+#: themselves, retroactively for the ones already on disk.
+PLACEHOLDER_TITLES = {"autora", "untitled session", "session", "new session"}
+
+#: A list row is one line on a phone. Past this it is a paragraph.
+TITLE_CHARS = 60
+
+
+def is_placeholder(title: str | None) -> bool:
+    """Whether a title is doing no work distinguishing one session from another."""
+    return (title or "").strip().casefold() in PLACEHOLDER_TITLES or not (title or "").strip()
+
+
+def title_from(text: str) -> str:
+    """A list-row name for a session, from the request that opened it.
+
+    First sentence or first line, whichever comes first, clipped to something
+    that fits a row without a tooltip.
+    """
+    head = (text or "").strip()
+    if not head:
+        return ""
+    head = head.splitlines()[0].strip()
+    for stop in (". ", "? ", "! "):
+        if stop in head:
+            head = head.split(stop)[0] + stop.strip()
+            break
+    if len(head) > TITLE_CHARS:
+        head = head[: TITLE_CHARS - 3].rstrip(" ,;:-") + "…"
+    return head
+
+
 class Session:
     """Owns the log, the bus, and the live state of one agent run."""
 
@@ -145,21 +181,15 @@ class Session:
         what the session is actually about, so the first one names it.
 
         Only when nothing better exists. A title passed in deliberately -- by a
-        scheduled task, or by whoever opened the session -- outranks a guess.
+        scheduled task, or by whoever opened the session -- outranks a guess,
+        unless it is one of the labels that names every session equally, which
+        is to say names none of them.
         """
-        if self.title.strip() or not text.strip():
+        if not is_placeholder(self.title) or not text.strip():
             return
-
-        # First sentence or line, whichever comes first, clipped to something
-        # that fits a list row without a tooltip.
-        head = text.strip().splitlines()[0].strip()
-        for stop in (". ", "? ", "! "):
-            if stop in head:
-                head = head.split(stop)[0] + stop.strip()
-                break
-        if len(head) > 60:
-            head = head[:57].rstrip(" ,;:-") + "…"
-
+        head = title_from(text)
+        if not head:
+            return
         self.title = head
         self._write_meta()
 
@@ -211,6 +241,56 @@ class SessionRegistry:
                     meta = {"id": d.name}
             else:
                 meta = {"id": d.name}
-            meta["live"] = d.name in self.live
+            live = d.name in self.live
+            if is_placeholder(meta.get("title")):
+                meta["title"] = _name_from_log(d)
+                # Cached back so the scan happens once per session rather than
+                # on every poll of the list. Not for a live session: it owns
+                # its meta file and will rewrite it on the next checkpoint.
+                if meta["title"] and not live:
+                    _restore_title(meta_path, meta)
+            meta["live"] = live
             out.append(meta)
         return out
+
+
+#: Far enough in to find the opening request, near enough that a long log with
+#: no user message in it costs nothing to give up on.
+_TITLE_SCAN_LINES = 500
+
+
+def _name_from_log(session_dir: Path) -> str:
+    """Recover a name for a session that was never given one.
+
+    The log already holds the answer -- the first thing asked of the session is
+    what the session is about -- so a session recorded before it could name
+    itself is not condemned to its timestamp.
+    """
+    path = session_dir / "events.jsonl"
+    try:
+        with path.open(encoding="utf-8") as handle:
+            for index, line in enumerate(handle):
+                if index >= _TITLE_SCAN_LINES:
+                    break
+                if '"turn.user"' not in line:
+                    continue
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if event.get("kind") != Kind.USER_MESSAGE:
+                    continue
+                return title_from(event.get("payload", {}).get("text", ""))
+    except OSError:
+        return ""
+    return ""
+
+
+def _restore_title(meta_path: Path, meta: dict[str, Any]) -> None:
+    try:
+        meta_path.write_text(json.dumps({k: v for k, v in meta.items() if k != "live"},
+                                        indent=2))
+    except OSError:
+        # A read-only recording still lists correctly; it just re-derives the
+        # name next time. Not worth failing the whole listing over.
+        pass

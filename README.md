@@ -54,7 +54,24 @@ reading the thread from another device. Two things need more than that:
 
 A private network is not enough — `http://box.tailnet.ts.net:8817` is an
 insecure origin as far as the browser is concerned, and no amount of site
-settings changes that. On a tailnet, the shortest path to a real certificate is
+settings changes that.
+
+The shortest way to a microphone is `--tls`, which puts an https listener on
+the next port up with a certificate Autora generates and keeps:
+
+```bash
+autora up ~/code/my-project --tls        # http on 8817, https on 8818
+```
+
+Nothing moves: the plain port serves exactly what it served before, so
+bookmarks, reverse proxies and the relay are unaffected, and the http page
+offers a link across to the secure one. The certificate is self-signed, so the
+first visit from each device shows a warning — proceed past it once and the
+origin is secure, which is all the browser was waiting for. You still do not
+get the install-to-home-screen prompt, which wants a certificate someone else
+trusts.
+
+For that, and on a tailnet, the shortest path to a real certificate is
 Tailscale's own proxy:
 
 ```bash
@@ -71,8 +88,21 @@ and both the install prompt and the microphone appear. Anything else that
 terminates TLS in front of the port works the same way: Caddy or nginx with a
 certificate from `tailscale cert`, or whatever your reverse proxy already uses.
 
-Until then the composer says `Voice needs https` where the microphone would be,
-rather than showing a button that cannot work.
+Until then the microphone and `Live` are still in the composer, greyed, and
+tapping either says what is in the way and offers the secure page if one is
+running — rather than vanishing and leaving you to conclude voice was never
+built.
+
+| Flag | Env | |
+| --- | --- | --- |
+| `--tls` | `AUTORA_TLS=1` | Also serve https, with a generated certificate |
+| `--tls-port` | `AUTORA_TLS_PORT` | Where (default: `--port` + 1) |
+| `--tls-cert` / `--tls-key` | `AUTORA_TLS_CERT` / `AUTORA_TLS_KEY` | Use a real certificate instead |
+
+In the Docker image this is on by default and the https listener is on 8818;
+publish it (`-p 8818:8818`) to reach it. The Umbrel app ships with
+`AUTORA_TLS: "0"` instead, because that port is published straight past
+Umbrel's login — set it to `1` when you want the microphone on a phone.
 
 ### Other commands
 

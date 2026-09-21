@@ -58,6 +58,26 @@ expect "serves on the configured port" "--port 8817" run
 expect "auto-approves by default" "--yes" run
 
 echo
+echo "titles"
+# Every session carrying the same title is a session list with no names in it,
+# and a title given here also outranks the one a session takes from its first
+# message -- so the container must not invent one.
+refute "no title is passed by default" "--title" run
+expect "AUTORA_TITLE is still honoured when asked for" "--title Nightly" \
+    run AUTORA_TITLE=Nightly
+
+echo
+echo "tls"
+# Voice is unreachable without a secure page, and the secure page is a second
+# listener rather than a replacement: the plain port has to keep serving.
+expect "https is on by default" "--tls" run
+expect "and on its own port" "--tls-port 8818" run
+expect "with http still on the configured port" "--port 8817" run
+refute "AUTORA_TLS=0 turns it off" "--tls" run AUTORA_TLS=0
+expect "a real certificate wins over the generated one" "--tls-cert /c.pem" \
+    run AUTORA_TLS_CERT=/c.pem AUTORA_TLS_KEY=/k.pem
+
+echo
 echo "voice"
 refute "a Deepgram key alone does not enable voice" "--voice" \
     run DEEPGRAM_API_KEY=dg-somekey-123
