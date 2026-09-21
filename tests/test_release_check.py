@@ -62,7 +62,7 @@ def _repo(stack):
     return repo, manifest
 
 
-def _run(repo, monkey=None):
+def _run(repo, monkey=None, base="main", head="work"):
     """Run the check inside `repo`, as CI would, returning its exit code."""
     import contextlib
     import io
@@ -75,7 +75,7 @@ def _run(repo, monkey=None):
     os.environ.update(environ)
     try:
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            return check_release.main(["--base", "main", "--head", "work"])
+            return check_release.main(["--base", base, "--head", head])
     finally:
         os.chdir(old_cwd)
         for key, value in old_env.items():
@@ -169,6 +169,24 @@ def test_main_moving_underneath_is_not_this_branch_s_problem():
 
         assert _run(repo) == 0
         print("  a docs branch is not failed by main's commits ... ok")
+
+
+def test_a_push_to_main_is_checked_too():
+    """Work lands on main directly here, so the push event has to work."""
+    import contextlib
+    with contextlib.ExitStack() as stack:
+        repo, _ = _repo(stack)
+        _git(repo, "checkout", "-q", "main")
+        before = _git(repo, "rev-parse", "HEAD").strip()
+        (repo / "src" / "autora" / "agent.py").write_text("x = 2\n")
+        _commit(repo, "straight to main, no bump")
+        assert _run(repo, base="main~1", head="main") == 1
+
+        # And the case a push event cannot answer: no `before` to compare to.
+        assert _run(repo, base=check_release.EMPTY_SHA, head="main") == 1
+        assert _run(repo, base="", head="main") == 1
+        assert before  # the commit it should have fallen back to
+        print("  a push straight to main is caught, with or without a base ... ok")
 
 
 def test_version_ordering_is_numeric():

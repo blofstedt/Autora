@@ -127,14 +127,35 @@ def opted_out(title: str, body: str) -> bool:
     return OPT_OUT in f"{title}\n{body}".lower()
 
 
+#: What a push event sends for `before` when there is nothing before it -- a
+#: new branch, or the first push after a force. Not a commit, so not a base.
+EMPTY_SHA = "0" * 40
+
+
+def resolve_base(base: str, head: str) -> str:
+    """The commit to compare against, given what the event handed us.
+
+    A push to main carries the tip main had beforehand, which is exactly right.
+    It can also carry nothing at all, and `git` would rather fail than guess --
+    so fall back to the commit's own first parent, which for both an ordinary
+    commit and a merge is the main line this landed on.
+    """
+    if base and base != EMPTY_SHA:
+        try:
+            return git("merge-base", base, head)
+        except subprocess.CalledProcessError:
+            pass
+    return git("rev-parse", f"{head}^")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base", default=os.environ.get("BASE_REF", "origin/main"))
-    parser.add_argument("--head", default=os.environ.get("HEAD_REF", "HEAD"))
+    parser.add_argument("--base", default=os.environ.get("BASE_REF") or "origin/main")
+    parser.add_argument("--head", default=os.environ.get("HEAD_REF") or "HEAD")
     args = parser.parse_args(argv)
 
-    base = git("merge-base", args.base, args.head)
     head = git("rev-parse", args.head)
+    base = resolve_base(args.base, head)
 
     app_files = touches_the_app(changed_files(base, head))
     if not app_files:

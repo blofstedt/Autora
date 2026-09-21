@@ -56,23 +56,10 @@ A private network is not enough — `http://box.tailnet.ts.net:8817` is an
 insecure origin as far as the browser is concerned, and no amount of site
 settings changes that.
 
-The shortest way to a microphone is `--tls`, which puts an https listener on
-the next port up with a certificate Autora generates and keeps:
-
-```bash
-autora up ~/code/my-project --tls        # http on 8817, https on 8818
-```
-
-Nothing moves: the plain port serves exactly what it served before, so
-bookmarks, reverse proxies and the relay are unaffected, and the http page
-offers a link across to the secure one. The certificate is self-signed, so the
-first visit from each device shows a warning — proceed past it once and the
-origin is secure, which is all the browser was waiting for. You still do not
-get the install-to-home-screen prompt, which wants a certificate someone else
-trusts.
-
-For that, and on a tailnet, the shortest path to a real certificate is
-Tailscale's own proxy:
+**On a tailnet, this is one command and it is the best answer there is.**
+Tailscale issues a real certificate, so there is no warning to click through,
+no port number to remember, and whatever was guarding the plain port — Umbrel's
+login, say — still guards it. On the machine running Autora:
 
 ```bash
 tailscale serve --bg 8817          # https://<machine>.<tailnet>.ts.net -> :8817
@@ -80,13 +67,30 @@ tailscale serve status             # confirm, and see the URL to open
 tailscale serve --https=443 off    # undo
 ```
 
-That needs MagicDNS and HTTPS Certificates enabled for the tailnet (admin
-console, Settings → Features). With a proxy in front you can also drop
-`--host 0.0.0.0` and go back to the default `127.0.0.1` bind: nothing has to
-listen on the tailnet interface itself. Open the `https://` URL it prints — no port —
-and both the install prompt and the microphone appear. Anything else that
-terminates TLS in front of the port works the same way: Caddy or nginx with a
-certificate from `tailscale cert`, or whatever your reverse proxy already uses.
+Open the `https://` URL it prints — no port on the end — and the microphone,
+the install prompt and everything else appear. It needs MagicDNS and HTTPS
+Certificates enabled for the tailnet, both in the admin console under **DNS**;
+`tailscale serve` will tell you if they are off. With a proxy in front you can
+also drop `--host 0.0.0.0` and go back to the default `127.0.0.1` bind, so
+nothing has to listen on the tailnet interface at all.
+
+Anything else that terminates TLS works the same way: Caddy or nginx with a
+certificate from `tailscale cert`, or whatever reverse proxy you already run.
+
+**With nothing in front of it**, `--tls` is the fallback. Autora puts an https
+listener on the next port up with a certificate it generates and keeps:
+
+```bash
+autora up ~/code/my-project --tls        # http on 8817, https on 8818
+```
+
+Nothing moves — the plain port serves what it always did, and the http page
+offers a link across. But the certificate is one nobody else trusts, so every
+device shows a warning the first time, and the new port has whatever
+authentication Autora itself has, which is none. That is fine on a network you
+control and a poor thing to expose anywhere else, which is why it is off by
+default in the Umbrel app (`AUTORA_TLS=1` to turn it on) and why a real
+certificate in front is worth the one command.
 
 Until then the microphone and `Live` are still in the composer, greyed, and
 tapping either says what is in the way and offers the secure page if one is
@@ -99,10 +103,8 @@ built.
 | `--tls-port` | `AUTORA_TLS_PORT` | Where (default: `--port` + 1) |
 | `--tls-cert` / `--tls-key` | `AUTORA_TLS_CERT` / `AUTORA_TLS_KEY` | Use a real certificate instead |
 
-In the Docker image this is on by default and the https listener is on 8818;
-publish it (`-p 8818:8818`) to reach it. The Umbrel app ships with
-`AUTORA_TLS: "0"` instead, because that port is published straight past
-Umbrel's login — set it to `1` when you want the microphone on a phone.
+The Umbrel app publishes 8818 for this and ships with `AUTORA_TLS: "0"`. Put a
+proxy in front if you can; set it to `1` if you cannot.
 
 ### Other commands
 

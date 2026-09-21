@@ -12,10 +12,7 @@ services:
     restart: on-failure
     # The https listener, published directly rather than through app_proxy,
     # because the proxy speaks http to the backend and the browser needs the
-    # certificate to be the one it is talking to. Nothing listens here unless
-    # AUTORA_TLS is set to 1 below -- and note that a port published this way
-    # skips Umbrel's login, so turn it on when you want the microphone on a
-    # phone and leave it off otherwise.
+    # certificate to be the one it is talking to.
     ports:
       - "8818:8818"
     volumes:
@@ -30,11 +27,22 @@ services:
       # Network
       AUTORA_HOST: "0.0.0.0"
       AUTORA_PORT: "8817"
+      # Off, and staying off, because the better answer costs one command.
+      #
       # Dictation and live voice chat need a secure page -- browsers will not
-      # open a microphone for http://<ip>, whatever the site settings say. Set
-      # this to 1 and Autora also serves https on 8818 with a self-signed
-      # certificate: click through the warning once per device and the
-      # microphone appears. http on 8817 is unaffected either way.
+      # open a microphone for http://<host>, whatever the site settings say.
+      # Setting this to 1 gets you one: Autora serves https on 8818 with a
+      # certificate it generates, and you click through a warning once per
+      # device. It works, and it is the only option on a network with nothing
+      # in front of it.
+      #
+      # But 8818 is published straight to the network, so unlike 8817 it does
+      # not go through Umbrel's login -- and this app auto-approves everything
+      # with the whole filesystem mounted. That is not a default to hand
+      # somebody. A proxy with a real certificate is better on every count: no
+      # warning at all, no second port, and the login still in front. On a
+      # tailnet that is `tailscale serve --bg 8817`, one line, once. See the
+      # README.
       AUTORA_TLS: "0"
       # Agent defaults — full server access, no per-action prompts
       AUTORA_WORKDIR: "/host"

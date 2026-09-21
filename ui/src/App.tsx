@@ -551,13 +551,32 @@ export function App() {
           {voiceHelp && !liveOn && (
             <div className="voice-help" role="status">
               <div className="voice-help-text">
-                <b>Voice needs a secure page.</b> Browsers only open a microphone
-                on <code>https</code> or <code>localhost</code>, and an address on
-                a home network is neither — no site setting changes that.
-                {!secureUrl && (
-                  <> Start Autora with <code>--tls</code> (or set{" "}
-                  <code>AUTORA_TLS=1</code>) and it will serve one alongside this
-                  page.</>
+                {secureUrl ? (
+                  <>
+                    <b>Voice lives on the secure page.</b> Browsers only open a
+                    microphone over a secure connection, and this page is not one.
+                    The same session is running on one — open it and the
+                    microphone appears.
+                    <em className="voice-help-aside">
+                      Your browser will warn you once that it does not recognise
+                      the certificate. That is expected: the certificate is your
+                      own server's. Tap <b>Advanced</b>, then <b>Proceed</b>.
+                    </em>
+                  </>
+                ) : (
+                  <>
+                    <b>Voice needs a secure page.</b> Browsers only open a
+                    microphone over a secure connection, and this page is not one
+                    — no site setting can change that, because the restriction is
+                    not about trusting this site.
+                    <em className="voice-help-aside">
+                      The fix is in front of the server, not in the browser. On a
+                      tailnet, <code>tailscale serve --bg {location.port || 80}</code>{" "}
+                      on the machine running Autora gives this page a real
+                      certificate and a secure address; any reverse proxy with a
+                      certificate does the same. See the README.
+                    </em>
+                  </>
                 )}
               </div>
               {secureUrl && (

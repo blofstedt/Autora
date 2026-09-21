@@ -3,9 +3,16 @@ name: Release version
 # A change that reaches the container has to move the one string Umbrel reads,
 # or it ships to a store that will never offer it. See .github/scripts for the
 # reasoning; this file only supplies the two commits to compare.
+#
+# Both events, because work lands here both ways. On a pull request this can
+# stop the merge; on a push straight to main it can only say so afterwards --
+# which is still the difference between finding out now and finding out from
+# someone asking why their update never arrived.
 
 on:
   pull_request:
+    branches: [main]
+  push:
     branches: [main]
 
 jobs:
@@ -14,15 +21,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # The check diffs the branch against the merge base, so it needs the
-          # history either side of it rather than the single commit a default
-          # checkout leaves behind.
+          # The check diffs against the merge base, so it needs the history
+          # either side of it rather than the single commit a default checkout
+          # leaves behind.
           fetch-depth: 0
 
       - name: The manifest says what changed
         env:
-          BASE_REF: ${{ github.event.pull_request.base.sha }}
-          HEAD_REF: ${{ github.event.pull_request.head.sha }}
+          # On a push there is no pull request; `before` is the tip main had
+          # until this push, which is the right thing to compare against.
+          BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_REF: ${{ github.event.pull_request.head.sha || github.sha }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
         run: python3 .github/scripts/check_release.py
