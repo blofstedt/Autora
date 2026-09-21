@@ -35,6 +35,14 @@ interface Recognition {
   onresult: ((e: ResultEvent) => void) | null;
   onerror: ((e: ErrorEvent_) => void) | null;
   onend: (() => void) | null;
+  /* The chain between "started" and "heard a word", which is where this goes
+     wrong silently. Each one that fires narrows the fault: audio reaching the
+     engine, sound in that audio, speech in that sound. */
+  onaudiostart: (() => void) | null;
+  onsoundstart: (() => void) | null;
+  onspeechstart: (() => void) | null;
+  onspeechend: (() => void) | null;
+  onaudioend: (() => void) | null;
 }
 
 const Impl: (new () => Recognition) | undefined =
@@ -64,6 +72,14 @@ export const secureOrigin =
  * fixable, and hiding the button there is what made voice look unimplemented
  * rather than unreachable. */
 export const recognitionAvailable = !!Impl;
+
+/** The raw constructor, for the diagnostic to drive without this hook in the
+    way. Whether the fault is the browser or this file is the first thing worth
+    knowing, and it cannot be answered through an abstraction that might be
+    causing it. */
+export function speechEngine(): (new () => Recognition) | undefined {
+  return Impl;
+}
 
 export const dictationSupported = recognitionAvailable && secureOrigin;
 export const speechSupported =

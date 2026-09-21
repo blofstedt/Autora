@@ -827,6 +827,16 @@ button.hint.voice-note:hover { text-decoration: underline; }
 .set-ca { display: inline-flex; text-decoration: none; margin: 4px 0 10px; }
 .set-ca-how { line-height: 1.6; }
 .set-ca-how b { color: var(--text-2); }
+
+/* The microphone check's output. Meant to be screenshotted and sent, so it
+   wraps rather than scrolls sideways: a log you have to swipe through loses
+   the half that mattered. */
+.voice-check-log {
+  margin-top: 10px; padding: 9px 10px; max-height: 320px; overflow-y: auto;
+  background: var(--s1); border: 1px solid var(--border); border-radius: 8px;
+  font-family: var(--mono); font-size: 10.5px; line-height: 1.65;
+  color: var(--text-2); white-space: pre-wrap; word-break: break-word;
+}
 .hint kbd {
   font-family: var(--mono); font-size: 10px; background: var(--s3);
   border: 1px solid var(--border-strong); border-bottom-width: 2px;

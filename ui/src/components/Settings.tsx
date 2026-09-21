@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { IconCheck, IconGear, IconX } from "./Icons";
+import { VoiceCheck } from "./VoiceCheck";
 
 type Credential = {
   name: string;
@@ -257,6 +258,8 @@ export function Settings({ onClose }: { onClose: () => void }) {
                       onReset={() => setDrafts(({ [c.name]: _drop, ...rest }) => rest)} />
           ))}
         </section>
+
+        <VoiceCheck />
 
         <TrustThisServer />
       </div>
