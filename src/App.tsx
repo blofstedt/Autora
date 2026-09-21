@@ -15,13 +15,14 @@ import { DictateButton } from "./components/DictateButton";
 import { LiveChat } from "./components/LiveChat";
 import { useRelay } from "./components/RelaySetup";
 import { UpdateNotice } from "./components/UpdateNotice";
+import { AutoraMark, type MarkState } from "./components/AutoraMark";
 import {
   dictationSupported, recognitionAvailable, secureOrigin, speakable,
   splitSpeakable, useSpeech,
 } from "./lib/voice";
 import {
   IconArrow, IconChevron, IconGear, IconMessage, IconRepeat, IconSpark, IconStop,
-  IconWave, IconX,
+  IconX,
 } from "./components/Icons";
 
 /** How often to re-read the session list, so sessions started elsewhere (or
@@ -280,6 +281,17 @@ export function App() {
   useEffect(() => {
     paintChrome(chromeState, view.title);
   }, [chromeState, view.title]);
+
+  /** What the mark on the live button is doing.
+   *
+   *  Working while the agent is writing or talking -- which is when there is
+   *  something to watch -- breathing while the microphone is open and it is
+   *  our turn, and still otherwise. The falling edge is what matters: the mark
+   *  plays its own ending when this drops back, so nothing here has to time
+   *  the finish. */
+  const liveState: MarkState = running || speaking
+    ? "working"
+    : liveOn ? "live" : "rest";
 
   const hadPending = useRef(0);
   useEffect(() => {
@@ -604,10 +616,13 @@ export function App() {
             Chat
           </button>
 
-          {/* Live icon (without text) placed at the bottom middle between chat and tasks */}
+          {/* The live control, between Chat and Tasks. It carries its own state
+              in the mark rather than in an indicator beside it: the button
+              glows and the logo morphs through the conversation, and settles
+              when the agent stops. */}
           <button
             type="button"
-            className={`mob-live-btn ${liveOn ? "is-active" : ""} ${live ? "is-live" : ""}`}
+            className={`mob-live-btn is-${liveState}`}
             onClick={voiceReady ? toggleLive : () => setVoiceHelp(true)}
             title={
               liveOn
@@ -617,9 +632,10 @@ export function App() {
                 : "Live voice requires https"
             }
             aria-label="Live voice chat"
+            aria-pressed={liveOn}
           >
-            <span className={`mob-live-dot ${live ? "is-live" : ""}`} />
-            <IconWave size={18} />
+            <span className="mob-live-glow" aria-hidden="true" />
+            <AutoraMark state={liveState} size={23} />
           </button>
 
           <button

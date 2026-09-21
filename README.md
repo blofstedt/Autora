@@ -24,16 +24,37 @@ are the same code path.
 
 ```bash
 git clone https://github.com/blofstedt/Autora && cd Autora
-pip install -e ".[all]"          # or: uv pip install -e ".[all]"
-playwright install chromium      # skip if you already have one; see AUTORA_CHROME_PATH
+npm install
 
-cd ui && pnpm install && pnpm build && cd ..
-
-export ANTHROPIC_API_KEY=sk-...  # or run fully local, below
-autora up ~/code/my-project
+export GEMINI_API_KEY=...        # from https://aistudio.google.com/apikey
+npm run dev
 ```
 
-Open the URL it prints. Type a task. Watch it work.
+Open <http://localhost:3000>. Type a task. Watch it work.
+
+For production, `npm run build` then `npm start`.
+
+### Connecting Gemini
+
+Replies come from Google's Gemini API, called from the server -- the key never
+reaches the browser. Get one free at
+[Google AI Studio](https://aistudio.google.com/apikey), then either put it in a
+`.env` file beside `package.json`:
+
+```
+GEMINI_API_KEY=your-key-here
+```
+
+or pass it for a single run: `GEMINI_API_KEY=... npm run dev`. The key is read
+at startup, so restart after setting it.
+
+Without a key the console still runs -- every panel, the event stream, memory,
+approvals and the schedule all work -- but the agent answers with local
+fallbacks and says so. Settings (the gear, top right) shows whether a key is
+connected and which model the next turn will call.
+
+**[docs/GEMINI.md](docs/GEMINI.md)** covers choosing a model, the thinking
+budget, and what each error in the thread means.
 
 ### Running fully local
 
@@ -382,6 +403,9 @@ acting on it forever unless there is somewhere to go and say no.
 
 | Variable | Purpose |
 |---|---|
+| `GEMINI_API_KEY` | Google Gemini key — without it, replies are local fallbacks |
+| `GEMINI_MODEL` | Model to call (default `gemini-flash-latest`, the rolling free-Flash alias) |
+| `GEMINI_THINKING_BUDGET` | Thinking tokens (default `0` for a responsive console; `-1` lets the model decide) |
 | `ANTHROPIC_API_KEY` | Hosted provider |
 | `AUTORA_LLM_BASE_URL` | Local OpenAI-compatible endpoint |
 | `AUTORA_CHROME_PATH` | Use an existing Chromium instead of Playwright's pinned build |

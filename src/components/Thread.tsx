@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Bucket, Cell, KanbanTask } from "../lib/derive";
-import { IconAlert, IconArrowDown, IconChevron, IconSpark, IconUser } from "./Icons";
+import { IconAlert, IconArrowDown, IconChevron, IconUser } from "./Icons";
+import { AutoraMark } from "./AutoraMark";
 import { TerminalCell } from "./TerminalCell";
 import { ScreencastCell } from "./ScreencastCell";
 import { FileCell } from "./FileCell";
@@ -110,7 +111,7 @@ export function Thread({
   if (buckets.length === 0 && !busy) {
     return (
       <div className="empty">
-        <span className="empty-ring"><IconSpark size={20} /></span>
+        <span className="empty-ring"><AutoraMark size={30} state="live" /></span>
         <h3>Ready</h3>
         <p>
           Describe a task below. Every command, page and edit appears here as it
@@ -167,6 +168,13 @@ function TurnBucket({
   onPermissionDecide?: (requestId: string, approved: boolean, response?: string) => void;
   onRunAutonomous?: (task: KanbanTask) => void;
 }) {
+  // The agent's mark animates on its current utterance for as long as the turn
+  // runs. Keyed to the last *reply* rather than the last cell: a tool card
+  // landing after the reply does not mean the agent has stopped, and anchoring
+  // to the last cell made the mark settle the moment one appeared -- a finish
+  // in the middle of the work.
+  const speaking = bucket.cells.map((c) => c.kind).lastIndexOf("reply");
+
   return (
     <article className="turn">
       {bucket.prompt && (
@@ -188,6 +196,7 @@ function TurnBucket({
             liveBrowserSeq={liveBrowserSeq}
             live={live}
             open={bucket.open}
+            active={bucket.open && index === speaking}
             onPermissionDecide={onPermissionDecide}
             onRunAutonomous={onRunAutonomous}
           />
@@ -203,6 +212,7 @@ function CellView({
   liveBrowserSeq,
   live,
   open,
+  active,
   onPermissionDecide,
   onRunAutonomous,
 }: {
@@ -211,12 +221,13 @@ function CellView({
   liveBrowserSeq: number | null;
   live: boolean;
   open: boolean;
+  active: boolean;
   onPermissionDecide?: (requestId: string, approved: boolean, response?: string) => void;
   onRunAutonomous?: (task: KanbanTask) => void;
 }) {
   switch (cell.kind) {
     case "reply":
-      return <Reply text={cell.turn.text} thinking={cell.turn.thinking} />;
+      return <Reply text={cell.turn.text} thinking={cell.turn.thinking} working={active} />;
     case "terminal":
       return (
         <TerminalCell
@@ -280,13 +291,26 @@ function CellView({
  * Folded by default, live turn included: the reply is what you came for, and
  * reasoning that unfolds itself shoves the reply off the screen as it lands.
  */
-function Reply({ text, thinking }: { text: string; thinking?: string }) {
+function Reply({
+  text,
+  thinking,
+  working,
+}: {
+  text: string;
+  thinking?: string;
+  /** Still being written. The mark animates while this holds and plays its
+      own ending when it drops, so the reply visibly lands rather than just
+      stopping. */
+  working?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   if (!text && !thinking) return null;
 
   return (
-    <div className="msg agent">
-      <span className="avatar"><IconSpark size={14} /></span>
+    <div className={`msg agent ${working ? "is-working" : ""}`.trim()}>
+      <span className="avatar">
+        <AutoraMark size={17} state={working ? "working" : "rest"} />
+      </span>
       <div className="msg-body">
         <div className="msg-who">autora</div>
         {thinking && (
