@@ -16,9 +16,9 @@ services:
     ports:
       - "8818:8818"
     volumes:
-      # The only directory that survives an update: memories, session
-      # recordings, the browser profile and the settings file all live here.
-      # AUTORA_HOME is pointed at it by the entrypoint.
+      # The only directory that survives an update: the settings file, the
+      # API keys saved from the panel and the spend ledger behind the billing
+      # card all live here. AUTORA_HOME points at it from the image.
       - "${APP_DATA_DIR}/data:/data"
       # Full read-write access to the host filesystem so the agent can work
       # anywhere on the server, not just inside the container.
@@ -48,8 +48,15 @@ services:
       AUTORA_WORKDIR: "/host"
       AUTORA_AUTO_APPROVE: "1"
       AUTORA_BROWSER_PROFILE: "/data/browser-profile"
-      # API keys — set these in ~/umbrel/app-data/blofstedt-autora/.env
+      # API keys — set these in ~/umbrel/app-data/blofstedt-autora/.env, or
+      # paste them into Settings, which saves them under /data and so keeps
+      # them across an update. A key set here wins nothing and loses nothing:
+      # it is what the app falls back to when it has none of its own, and the
+      # panel says which of the two is in force.
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY:-}"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
       DEEPGRAM_API_KEY: "${DEEPGRAM_API_KEY:-}"
       ASSEMBLYAI_API_KEY: "${ASSEMBLYAI_API_KEY:-}"

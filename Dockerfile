@@ -1,52 +1,53 @@
-# ── stage 1: build the UI ────────────────────────────────────────────────────
-FROM node:20-alpine AS ui-builder
+# ── stage 1: build ───────────────────────────────────────────────────────────
+# The app is a Vite bundle and an esbuild'd Express server. Both come out of
+# `npm run build` into dist/, so one build stage produces everything the
+# runtime needs and none of the toolchain that produced it.
+FROM node:22-alpine AS builder
 WORKDIR /build
-COPY ui/package.json ui/pnpm-lock.yaml* ui/package-lock.json* ./
-RUN npm install -g pnpm@10.33.0 2>/dev/null; \
-    if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; \
-    else npm ci; fi
-COPY ui/ .
-RUN if [ -f pnpm-lock.yaml ]; then pnpm build; else npm run build; fi
+
+# Dependencies first, from the lockfile alone: this layer is then reused on
+# every build that did not change what we depend on, which is most of them.
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY tsconfig.json tsconfig.server.json vite.config.ts index.html ./
+COPY public/ public/
+COPY src/ src/
+COPY server.ts ./
+COPY server/ server/
+
+# Typecheck both halves before building either. A container that builds and
+# then fails at runtime on something the compiler already knew is a wasted
+# round trip through the registry and an update on somebody's box.
+RUN npm run lint && npm run build
+
+# The runtime needs express, ws and the Gemini SDK -- not vite, esbuild or
+# typescript. Pruning here rather than reinstalling in the next stage keeps it
+# to one npm run and one lockfile.
+RUN npm prune --omit=dev
 
 # ── stage 2: runtime ─────────────────────────────────────────────────────────
-# Pinned to bookworm: trixie renames libasound2 to libasound2t64 and moves the
-# chromium binary, both of which this stage depends on below.
-FROM python:3.12-slim-bookworm
-
-# System deps for Chromium (Playwright's bundled build uses these)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        chromium \
-        fonts-liberation \
-        libnss3 \
-        libatk-bridge2.0-0 \
-        libgtk-3-0 \
-        libgbm1 \
-        libasound2 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Tell Playwright to use the system Chromium and skip its own download.
-# The binary is at /usr/bin/chromium on Debian bookworm; pass it via env so
-# BrowserSession picks it up without requiring a flag on every invocation.
-ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
-    AUTORA_CHROME_PATH=/usr/bin/chromium
-
+FROM node:22-alpine
 WORKDIR /app
-COPY pyproject.toml README.md ./
-COPY src/ src/
-RUN pip install --no-cache-dir -e ".[anthropic,local,browser,voice-deepgram,tls]"
 
-COPY --from=ui-builder /build/dist ui/dist/
+ENV NODE_ENV=production \
+    # Umbrel's compose file publishes 8817 and app_proxy points at it.
+    AUTORA_PORT=8817 \
+    AUTORA_HOST=0.0.0.0 \
+    # The one directory that survives an update, so the keys pasted into
+    # Settings and the spend ledger behind the billing card outlive it.
+    AUTORA_HOME=/data
 
-COPY docker-entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY --from=builder /build/node_modules node_modules/
+COPY --from=builder /build/dist dist/
+# The server reads its own version out of this to stamp the page and answer
+# /api/origin, so it is a runtime file rather than a build artefact.
+COPY package.json ./
 
-# 8817 is the app; 8818 is the same app over https, which is the only way a
-# browser will open a microphone for a page reached by IP address. It listens
-# only when AUTORA_TLS=1.
-EXPOSE 8817 8818
+EXPOSE 8817
 
-# /data  → browser profile + session logs (persistent volume)
-# /host  → the host filesystem mounted read-write so the agent can work on it
-VOLUME ["/data", "/host"]
+# /data → settings, keys and the spend ledger (persistent volume)
+# /host → the host filesystem, mounted read-write so the agent can work on it
+VOLUME ["/data"]
 
-ENTRYPOINT ["/entrypoint.sh"]
+CMD ["node", "dist/server.cjs"]

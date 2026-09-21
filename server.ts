@@ -1,8 +1,8 @@
+import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import express, { type Request, type Response } from "express";
 import { WebSocketServer, WebSocket } from "ws";
-import { createServer as createViteServer } from "vite";
 import {
   AUTO_ORDER, PRICES_CHECKED, PROVIDERS, costOf, isPriced, modelsFor,
   rememberModels,
@@ -14,8 +14,40 @@ import {
 import { ProviderError, listModels, streamChat, type ChatMessage } from "./server/llm";
 import { billingSummary } from "./server/billing";
 
-const PORT = 3000;
-const HOST = "0.0.0.0";
+/* Where to listen. Umbrel's compose file publishes 8817 and passes it in, so
+   these cannot be constants; 3000 stays the default because that is what
+   `npm run dev` and every link in the README say. */
+const PORT = Number(process.env.AUTORA_PORT || process.env.PORT || 3000);
+const HOST = (process.env.AUTORA_HOST || "").trim() || "0.0.0.0";
+
+/**
+ * What this build is, read from package.json.
+ *
+ * One string, in one place, and it is the one Umbrel compares to decide an
+ * update exists. The app reports it at /api/origin and stamps it into the page
+ * it serves, so "which version am I actually looking at" is answerable from
+ * the app rather than from the store -- which is the whole point, since the
+ * failure this guards against is a browser quietly running yesterday's bundle
+ * while the container runs today's.
+ */
+const VERSION = (() => {
+  /* Two places, because the working directory is not guaranteed to be the
+     app's: in the container it is, but `node /somewhere/dist/server.cjs` from
+     elsewhere is a normal thing to do. argv[1] is the bundle itself, and its
+     parent is where package.json sits beside dist/. */
+  const beside = process.argv[1] ? path.dirname(path.dirname(process.argv[1])) : "";
+  for (const dir of [process.cwd(), beside].filter(Boolean)) {
+    try {
+      const raw = fs.readFileSync(path.join(dir, "package.json"), "utf8");
+      const found = JSON.parse(raw)?.version;
+      if (typeof found === "string" && found) return found;
+    } catch {
+      // Try the next place; a build that cannot find its own package.json
+      // should still start.
+    }
+  }
+  return "dev";
+})();
 
 // --- Types ---
 interface AutoraEvent {
@@ -475,7 +507,7 @@ async function startServer() {
       secure_port: null,
       secure_listening: false,
       certificate: false,
-      version: "0.1.0",
+      version: VERSION,
     });
   });
 
@@ -1400,6 +1432,10 @@ async function startServer() {
 
   // 13. Vite Integration (Development middleware / Production static serving)
   if (process.env.NODE_ENV !== "production") {
+    // Imported here rather than at the top of the file: Vite is a build-time
+    // dependency, and a static import would drag it into the production
+    // container, where it is both absent and unwanted.
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -1407,14 +1443,43 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
+
+    /* The page is stamped with the version that served it, and handed over
+       with no-store.
+
+       An update can otherwise arrive and leave no trace: the browser keeps the
+       shell in a cache, a page opened while the container was restarting --
+       which is exactly what an update is -- stays pinned to the previous
+       bundle, and the app then works perfectly while running old code. The
+       page compares this stamp with what /api/origin reports and says so when
+       they differ, which only works if the stamp itself is never cached. */
+      const page = (() => {
+        let html = "";
+        try {
+          html = fs.readFileSync(path.join(distPath, "index.html"), "utf8");
+        } catch {
+          return null;
+        }
+        return html.replace(
+          /<meta name="autora-version" content="[^"]*"\s*\/?>/,
+          `<meta name="autora-version" content="${VERSION}" />`,
+        );
+      })();
+
+    const serveIndex = (req: Request, res: Response) => {
+      if (page === null) return res.status(503).send("The UI has not been built yet.");
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.setHeader("Cache-Control", "no-store");
+      res.send(page);
+    };
+
+    app.get("/", serveIndex);
     app.use(express.static(distPath));
-    app.get("*", (req: Request, res: Response) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
+    app.get("*", serveIndex);
   }
 
   server.listen(PORT, HOST, () => {
-    console.log(`Autora server running on http://${HOST}:${PORT}`);
+    console.log(`Autora ${VERSION} running on http://${HOST}:${PORT}`);
   });
 }
 
