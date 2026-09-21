@@ -139,6 +139,37 @@ export function useDictation({
   const phraseRef = useRef(onPhrase);
   phraseRef.current = onPhrase;
 
+  /** What each engine result has already handed over, and the part that is new.
+   *
+   * Chromium's result list is indexed and append-only: a final arrives once,
+   * complete. The Android system recogniser does something the spec does not
+   * describe -- it returns the whole utterance so far as a single result and
+   * re-fires it as final every time the hypothesis moves, and it sometimes
+   * walks a word back. Appending every final then says everything again and
+   * again: "testing 1 2 3" arrived as "testing" nine times, then "testing 1",
+   * then the whole phrase.
+   *
+   * So each index keeps a watermark of what it has contributed, and only the
+   * new suffix is passed on. A repeat or a backwards step contributes nothing,
+   * and the watermark never shrinks: a shorter text is the engine revising
+   * words we have already handed over, and treating it as progress would hand
+   * over the words in between for a second time.
+   */
+  const committed = useRef<Map<number, string>>(new Map());
+  const takeNew = useCallback((index: number, text: string): string => {
+    const seen = committed.current;
+    const before = seen.get(index);
+    if (before === undefined) {
+      seen.set(index, text);
+      return text;
+    }
+    if (text.startsWith(before)) {
+      seen.set(index, text);
+      return text.slice(before.length).trim();
+    }
+    return "";
+  }, []);
+
   /** Decays on a timer, bumped whenever the engine reports hearing something.
    *
    * This used to be a real analyser: a second `getUserMedia` stream, an
@@ -207,6 +238,9 @@ export function useDictation({
     engine.maxAlternatives = 1;
 
     engine.onstart = () => {
+      // A new session numbers its results from zero again, so anything held
+      // from the last one describes a session that is over.
+      committed.current.clear();
       setListening(true);
     };
 
@@ -216,7 +250,7 @@ export function useDictation({
         const phrase = event.results[i];
         const text = phrase[0]?.transcript ?? "";
         if (phrase.isFinal) {
-          const settled = text.trim();
+          const settled = takeNew(i, text.trim());
           if (settled) phraseRef.current?.(settled);
           // A phrase landing means the engine is healthy, whatever it had to
           // restart through to get here.

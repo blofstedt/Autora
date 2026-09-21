@@ -85,7 +85,10 @@ export function VoiceCheck() {
       for (let i = event.resultIndex; i < event.results.length; i += 1) {
         const phrase = event.results[i];
         const text = phrase[0]?.transcript ?? "";
-        log(`EVENT result       ${phrase.isFinal ? "final" : "interim"}: "${text}"`);
+        log(
+          `EVENT result       [${i} of ${event.results.length}, ri=${event.resultIndex}] ` +
+            `${phrase.isFinal ? "final" : "interim"}: "${text}"`,
+        );
       }
     };
     recogniser.onerror = (event) => log(`EVENT error        ${event.error}`);
