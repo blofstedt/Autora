@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.6.1"
+version: "0.6.2"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -64,22 +64,18 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Adds a microphone check, in Settings, for when dictation does nothing.
+  The microphone check in Settings now appears even when the browser has
+  no speech recognition at all -- which was exactly the case it was most
+  needed for, and exactly the case where it hid itself. "There is nothing
+  in Settings" is a far worse answer than "this browser cannot do speech
+  recognition", and it was giving the first one.
 
 
-  Speech recognition fails silently: it starts, reports no error, and
-  simply never returns a word, which from the outside looks exactly like
-  the feature not being built. Several quite different causes produce that
-  same nothing -- a permission the browser remembers as denied, a speech
-  service the phone does not have, audio that never reaches the engine --
-  and they need opposite fixes.
-
-
-  So Settings now has Microphone check. Tap Run check, say a sentence, and
-  it prints every step the browser's own speech engine takes: whether it
-  started, whether audio reached it, whether it found speech in that
-  audio, and what it transcribed or what error it gave. Where the list
-  stops is the answer.
+  If you are hunting a microphone that does nothing: Settings, Microphone
+  check, Run check, then say a sentence. It prints every step the browser
+  takes and stops where the fault is. Note that reading replies aloud and
+  transcribing what you say are two unrelated browser features -- one
+  working tells you nothing about the other.
 dependencies: []
 path: ""
 defaultUsername: ""

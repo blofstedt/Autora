@@ -101,6 +101,13 @@ export function VoiceCheck() {
         Runs the browser's own speech recognition and prints every step. Tap
         below, then say a sentence out loud.
       </p>
+      {!recognitionAvailable && (
+        <p className="set-warn">
+          This browser has no speech recognition, so dictation and live chat
+          cannot work in it whatever else is configured. Reading replies aloud
+          is a different feature and is unaffected.
+        </p>
+      )}
       <div className="set-choices">
         <button className="btn primary" onClick={() => void run()} disabled={running}>
           {running ? "Listening…" : "Run check"}
