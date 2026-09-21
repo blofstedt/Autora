@@ -92,8 +92,11 @@ export function VoiceCheck() {
     setRunning(false);
   }, []);
 
-  if (!recognitionAvailable) return null;
-
+  // Deliberately still rendered when there is no engine. Hiding the
+  // controls that depend on speech is defensible; hiding the panel whose
+  // entire job is to explain why they do not work is the same instinct one
+  // level up, and it turns a useful answer into "there is nothing in
+  // Settings".
   return (
     <section className="set-card">
       <h3>Microphone check</h3>

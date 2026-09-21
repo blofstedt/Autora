@@ -73,12 +73,42 @@ export function Settings({ onClose }: { onClose: () => void }) {
     setDrafts({});
   }, []);
 
-  useEffect(() => {
+  /**
+   * Read the settings, and be honest about not managing to.
+   *
+   * This used to run once and report every possible failure as the same four
+   * words. Two things were wrong with that. The message named no cause, so a
+   * server that was simply still restarting looked identical to a corrupt
+   * file. And there was no way to try again: one failed fetch -- which is
+   * guaranteed for anyone who opens this while the container is coming back up
+   * after an update -- left the panel dead until it was closed and reopened,
+   * with nothing on screen suggesting that would help.
+   *
+   * It matters more here than it looks, because the page itself is served by a
+   * service worker out of cache. A server that is down therefore does not
+   * announce itself: the app appears, and only the parts that need the server
+   * quietly fail.
+   */
+  const load = useCallback(() => {
+    setError(null);
     void fetch("/api/settings")
-      .then((r) => r.json())
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`the server answered ${response.status}`);
+        return response.json();
+      })
       .then(adopt)
-      .catch(() => setError("Could not read settings."));
+      .catch((cause: unknown) =>
+        setError(
+          cause instanceof TypeError
+            ? "Could not reach the server. It may still be starting up after an update."
+            : `Could not read settings: ${
+                cause instanceof Error ? cause.message : String(cause)
+              }.`,
+        ),
+      );
   }, [adopt]);
+
+  useEffect(load, [load]);
 
   const save = useCallback(async () => {
     setSaving(true);
@@ -126,7 +156,14 @@ export function Settings({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         <div className="sched-body">
-          {error ? <div className="sched-error">{error}</div> : <p className="jf-hint">Loading…</p>}
+          {error ? (
+            <>
+              <div className="sched-error">{error}</div>
+              <button className="btn primary set-retry" onClick={load}>Try again</button>
+            </>
+          ) : (
+            <p className="jf-hint">Loading…</p>
+          )}
         </div>
       </div>
     );

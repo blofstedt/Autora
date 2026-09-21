@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.6.2"
+version: "0.6.3"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -64,18 +64,27 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The microphone check in Settings now appears even when the browser has
-  no speech recognition at all -- which was exactly the case it was most
-  needed for, and exactly the case where it hid itself. "There is nothing
-  in Settings" is a far worse answer than "this browser cannot do speech
-  recognition", and it was giving the first one.
+  Settings now says what went wrong instead of "Could not read settings",
+  and offers a Try again button. The old message covered every possible
+  cause with the same four words and never retried -- so opening Settings
+  while the app was still restarting after an update left it dead until
+  you closed and reopened it, with nothing on screen to suggest that.
 
 
-  If you are hunting a microphone that does nothing: Settings, Microphone
-  check, Run check, then say a sentence. It prints every step the browser
-  takes and stops where the fault is. Note that reading replies aloud and
-  transcribing what you say are two unrelated browser features -- one
-  working tells you nothing about the other.
+  If you saw that message: the app was unreachable at that moment. The
+  page itself loads from an offline cache, so a server that is down does
+  not announce itself -- the app appears, and only the parts needing the
+  server fail quietly.
+
+
+  That same cache could also pin a phone to an old copy of the app after
+  an update, which made shipped fixes look like they had not shipped. This
+  release clears it. If anything still looks stale, open Chrome's site
+  settings for this address and clear its data once.
+
+
+  The Microphone check panel now also appears when the browser has no
+  speech recognition at all, which is the case it was most needed for.
 dependencies: []
 path: ""
 defaultUsername: ""

@@ -10,9 +10,21 @@
  * Everything live is deliberately untouched. /api/ and /ws/ go straight to the
  * network every time; a cached session list or a replayed event stream would be
  * worse than no service worker at all.
+ *
+ * The cost of the offline shell, which is worth knowing about: load the page
+ * while the server is briefly down -- which is exactly what an app update
+ * does -- and you get the *previous* shell out of cache, pointing at the
+ * previous hashed bundle, which is also cached. The app then appears to work
+ * while running old code, and the only symptom is that changes you were told
+ * shipped are not there. It heals on the next load with the server up, but
+ * until then it is genuinely confusing, and it wasted several rounds of
+ * debugging by making fixes look like they had not worked.
  */
 
-const CACHE = "autora-v1";
+/* Bumping this name is how the old cache gets thrown away: `activate` deletes
+   every cache that is not this one. It is bumped here because a shell cached
+   under the old name could pin a device to an old bundle -- see below. */
+const CACHE = "autora-v2";
 
 self.addEventListener("install", () => {
   // Take over as soon as the new worker is ready rather than waiting for every

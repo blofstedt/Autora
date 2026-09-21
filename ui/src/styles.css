@@ -825,6 +825,7 @@ button.hint.voice-note:hover { text-decoration: underline; }
 /* Trust this server. The button is a download, so it is a link that has to
    look like the buttons beside it. */
 .set-ca { display: inline-flex; text-decoration: none; margin: 4px 0 10px; }
+.set-retry { margin-top: 12px; }
 .set-ca-how { line-height: 1.6; }
 .set-ca-how b { color: var(--text-2); }
 
