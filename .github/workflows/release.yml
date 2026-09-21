@@ -1,0 +1,28 @@
+name: Release version
+
+# A change that reaches the container has to move the one string Umbrel reads,
+# or it ships to a store that will never offer it. See .github/scripts for the
+# reasoning; this file only supplies the two commits to compare.
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The check diffs the branch against the merge base, so it needs the
+          # history either side of it rather than the single commit a default
+          # checkout leaves behind.
+          fetch-depth: 0
+
+      - name: The manifest says what changed
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha }}
+          HEAD_REF: ${{ github.event.pull_request.head.sha }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: python3 .github/scripts/check_release.py

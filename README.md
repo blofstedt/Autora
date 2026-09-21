@@ -337,6 +337,23 @@ acting on it forever unless there is somewhere to go and say no.
 `tail -f ~/.autora/sessions/<id>/events.jsonl` is a supported debugging path, not
 an accident.
 
+## Releasing to the Umbrel store
+
+Umbrel decides whether an update exists by comparing one string: `version` in
+`blofstedt-autora/umbrel-app.yml`. Not the image digest, not the commit. A
+change can be merged, built and pushed to the registry, and every installed
+copy will still report itself up to date — removing and re-adding the community
+store re-fetches the same manifest and reaches the same conclusion.
+
+So a change that reaches the container ships with a higher `version` and
+rewritten `releaseNotes`, which Umbrel shows on the update. CI enforces this on
+every pull request; a change with no user-facing effect opts out with
+`[no release]` in the pull request title or body.
+
+```bash
+python3 .github/scripts/check_release.py --base origin/main   # the same check, locally
+```
+
 ## Status
 
 Working and tested: event store, bus backpressure, policy gate, PTY, file tools,
