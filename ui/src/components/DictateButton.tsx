@@ -18,7 +18,7 @@ import { IconMic } from "./Icons";
  * redirect away.
  */
 export function DictateButton({
-  onText, disabled, onBlocked,
+  onText, disabled, onBlocked, onTrouble,
 }: {
   /** A settled phrase, to append to whatever is already typed. */
   onText: (text: string) => void;
@@ -26,6 +26,10 @@ export function DictateButton({
   /** Tapped on an insecure page, where there is a microphone but no permission
       to open it. The composer knows where the secure page is; this does not. */
   onBlocked?: () => void;
+  /** Said out loud rather than parked in a `title` nobody on a phone can
+      hover. A microphone that fails silently is indistinguishable from one
+      that was never built, which is how this went unnoticed. */
+  onTrouble?: (message: string) => void;
 }) {
   const textRef = useRef(onText);
   textRef.current = onText;
@@ -35,7 +39,12 @@ export function DictateButton({
     onPhrase: useCallback((phrase: string) => textRef.current(phrase), []),
   });
 
-  const { listening, stop } = dictation;
+  const { listening, stop, error } = dictation;
+  const troubleRef = useRef(onTrouble);
+  troubleRef.current = onTrouble;
+  useEffect(() => {
+    if (error) troubleRef.current?.(error);
+  }, [error]);
   // A composer that has gone read-only mid-phrase should not keep the mic open.
   useEffect(() => {
     if (disabled && listening) stop();

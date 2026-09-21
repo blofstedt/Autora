@@ -53,6 +53,10 @@ export function App() {
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [securePort, setSecurePort] = useState<number | null>(null);
   const [hasCertificate, setHasCertificate] = useState(false);
+  /** Something that went wrong where the reader was looking, said in
+      words. A phone has no tooltips and no console, so anything reported
+      only through `title` is reported to nobody. */
+  const [notice, setNotice] = useState<string | null>(null);
   const [voiceHelp, setVoiceHelp] = useState(false);
   const streamRef = useRef<SessionStream | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -228,6 +232,27 @@ export function App() {
       body: JSON.stringify({ text }),
     }).catch(() => undefined);
   }, [draft, sessionId]);
+
+  /** Stop the turn in flight.
+   *
+   * Both paths, because the websocket alone was not enough: a phone that has
+   * been asleep comes back holding a socket that reports itself OPEN and is
+   * not, and `send` drops anything it cannot deliver without a word -- so Stop
+   * did nothing, said nothing, and left the agent running. The fetch is the
+   * one that can fail loudly, and interrupting twice is free: it sets a flag
+   * the loop is already watching.
+   */
+  const stopTurn = useCallback(async () => {
+    streamRef.current?.interrupt();
+    if (!sessionId) return;
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}/interrupt`, { method: "POST" });
+      const body = await res.json();
+      if (!body?.interrupted) setNotice("Nothing was running to stop.");
+    } catch {
+      setNotice("Could not reach the server to stop it.");
+    }
+  }, [sessionId]);
 
   const newSession = useCallback(async () => {
     const res = await fetch("/api/sessions", {
@@ -493,7 +518,7 @@ export function App() {
           onStage={(id) => { setStage(id); setStagePinned(true); }}
           onToggle={() => setDockOpen((open) => !open)}
           running={live && running}
-          onStop={() => streamRef.current?.interrupt()}
+          onStop={() => void stopTurn()}
           scrubber={
             <Scrubber
               events={events}
@@ -632,7 +657,15 @@ export function App() {
                 }}
               />
               <div className="composer-foot">
-                {voiceBlocked ? (
+                {notice ? (
+                  <button
+                    className="hint voice-note"
+                    onClick={() => setNotice(null)}
+                    title="Dismiss"
+                  >
+                    {notice}
+                  </button>
+                ) : voiceBlocked ? (
                   <button
                     className="hint voice-note"
                     onClick={() => setVoiceHelp(true)}
@@ -648,6 +681,7 @@ export function App() {
                     onText={appendDictation}
                     disabled={readOnly}
                     onBlocked={() => setVoiceHelp(true)}
+                    onTrouble={setNotice}
                   />
                   {(voiceReady || voiceBlocked) && (
                     <button

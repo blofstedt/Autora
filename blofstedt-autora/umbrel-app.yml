@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.5.8"
+version: "0.5.9"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -64,31 +64,25 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Your phone can trust this server now. The browser warning, the
-  microphone being unavailable, and "this app cannot be installed" were
-  never three problems -- they were one: nothing on your device vouched
-  for this server's certificate.
+  Stop actually stops now. The button sent its message over the live
+  connection only, and that connection quietly drops while a phone is
+  asleep -- so after the screen had been off, Stop did nothing and said
+  nothing, and the agent kept going. It now also asks the server directly,
+  and tells you if there was nothing running to stop.
 
 
-  So Autora runs a small certificate authority of its own, and offers it
-  for you to install. Open Settings and there is a Trust this server
-  section with a download and instructions for Android and iPhone. Install
-  it once per device and the warning stops, dictation and Live work, and
-  Add to home screen installs a real app with the Autora icon rather than
-  a bookmark.
+  Microphone problems are visible instead of silent. Anything that went
+  wrong with dictation was reported through a tooltip, which a phone has
+  no way to show, so a microphone that failed looked exactly like one that
+  was never built. Failures are now written where you are already looking.
 
 
-  Certificates are also issued for whatever address you actually use, at
-  the moment your browser asks -- tailnet name, .local, a bare IP,
-  anything -- so "the certificate is for the wrong name" cannot happen.
-
-
-  Install it only on devices you own. A certificate authority you trust
-  can vouch for any site to that device, and this one is worth exactly as
-  much as the server holding its key. If you would rather not, everything
-  works as before: click through the warning and the microphone still
-  opens. And if you already have a real certificate in front of Autora,
-  none of this appears.
+  Worth knowing if voice is not working for you: a browser will not open a
+  microphone on a page whose certificate it does not trust. Clicking
+  through the warning gets you the page but not the microphone -- so
+  dictation, live chat and installing to the home screen all need the
+  certificate from Settings to be installed on the device first. That is
+  one requirement, not three separate problems.
 dependencies: []
 path: ""
 defaultUsername: ""
