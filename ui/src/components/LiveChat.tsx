@@ -6,6 +6,16 @@ import { IconX } from "./Icons";
     Short enough not to feel like waiting, long enough to think mid-sentence. */
 const SETTLE_MS = 1100;
 
+/** And this long when the tail is still unsettled.
+ *
+ * A final means the engine decided you had stopped; an interim that has simply
+ * gone quiet means it is still chewing, and on Chrome for Android that is the
+ * only kind of result a whole sentence ever gets. Sending on the same short
+ * pause there cuts people off mid-sentence -- which is what the words landing
+ * twice looked like from the outside, half a sentence going out and then the
+ * whole of it. */
+const UNSETTLED_MS = 1800;
+
 /** Single stray syllables are usually the room, not a request. */
 const MIN_CHARS = 2;
 
@@ -58,6 +68,9 @@ export function LiveChat({
   const timer = useRef(0);
   const utteranceRef = useRef(onUtterance);
   utteranceRef.current = onUtterance;
+  /** Set once the hook below exists; sending unsettled words is only half the
+      job without it -- see `accept` in lib/voice. */
+  const acceptRef = useRef<() => void>(() => {});
 
   /**
    * Send what we have, settled or not.
@@ -74,13 +87,16 @@ export function LiveChat({
     pending.current = "";
     live.current = "";
     setCaption("");
+    // These words are spent, settled or not. Without this the engine's
+    // eventual final still carries the ones just sent, and they go out again.
+    acceptRef.current();
     if (text.length >= MIN_CHARS) utteranceRef.current(text);
   }, []);
 
   /** Restart the quiet-for-long-enough clock. Talking keeps resetting it. */
-  const schedule = useCallback(() => {
+  const schedule = useCallback((quiet: number) => {
     window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(flush, SETTLE_MS);
+    timer.current = window.setTimeout(flush, quiet);
   }, [flush]);
 
   const onPhrase = useCallback((phrase: string) => {
@@ -88,11 +104,12 @@ export function LiveChat({
     // Settled, so it is no longer in flight -- keeping both would say it twice.
     live.current = "";
     setCaption(pending.current);
-    schedule();
+    schedule(SETTLE_MS);
   }, [schedule]);
 
   const dictation = useDictation({ onPhrase, continuous: true });
   const { start, stop, listening, interim, error, level, supported } = dictation;
+  acceptRef.current = dictation.accept;
 
   // Show the words forming, not just the ones that have landed -- and count
   // them as something to send, since they may be all we ever get.
@@ -100,7 +117,7 @@ export function LiveChat({
     if (!interim) return;
     live.current = interim;
     setCaption(`${pending.current} ${interim}`.trim());
-    schedule();
+    schedule(UNSETTLED_MS);
   }, [interim, schedule]);
 
   // Hold the microphone shut while the agent has the floor, and take it back

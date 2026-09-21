@@ -104,6 +104,36 @@ const MESSAGES: Record<string, string> = {
 
 // -- words in ----------------------------------------------------------------
 
+const words = (text: string): string[] => text.trim().split(/\s+/).filter(Boolean);
+
+/** A word with the punctuation an engine sprinkles on a final taken off, so
+    that "test" and "test." compare as the same word. */
+const EDGES = /^["'“”‘’(\[]+|[.,!?;:"'“”‘’)\]…]+$/g;
+const bare = (word: string): string => word.toLowerCase().replace(EDGES, "");
+
+/**
+ * The part of `text` that `said` has not already given out.
+ *
+ * The plain case is a growing phrase, where the old text is a prefix of the
+ * new one. The awkward case is a final that restates words already handed
+ * over in a tidied-up form -- "this is just" becoming "This is just a test."
+ * -- where a prefix test fails and handing over the whole final would say the
+ * first three words twice. So the comparison falls back to matching word by
+ * word, ignoring case and punctuation, and keeps only the tail past the last
+ * word both versions agree on. A phrase the engine has walked backwards
+ * contributes nothing.
+ */
+function unsaid(said: string, text: string): string {
+  if (!said) return text;
+  if (text.startsWith(said)) return text.slice(said.length).trim();
+  const before = words(said);
+  const now = words(text);
+  let same = 0;
+  while (same < before.length && same < now.length
+         && bare(before[same]) === bare(now[same])) same += 1;
+  return now.slice(same).join(" ");
+}
+
 export type Dictation = {
   supported: boolean;
   listening: boolean;
@@ -115,6 +145,9 @@ export type Dictation = {
   start: () => void;
   stop: () => void;
   toggle: () => void;
+  /** Mark everything heard so far as handed over, for a caller that acted on
+      an unsettled phrase rather than waiting for the engine to settle it. */
+  accept: () => void;
 };
 
 export function useDictation({
@@ -149,26 +182,45 @@ export function useDictation({
    * again: "testing 1 2 3" arrived as "testing" nine times, then "testing 1",
    * then the whole phrase.
    *
-   * So each index keeps a watermark of what it has contributed, and only the
-   * new suffix is passed on. A repeat or a backwards step contributes nothing,
-   * and the watermark never shrinks: a shorter text is the engine revising
-   * words we have already handed over, and treating it as progress would hand
-   * over the words in between for a second time.
+   * So each index keeps a watermark of what it has handed over, and only the
+   * part past it is passed on. `heard` is the other half: the latest text for
+   * each index whether or not the engine has settled on it, so that a caller
+   * which acted on an unsettled phrase can mark it spent -- see `accept`. Both
+   * are refs rather than state because they are read inside engine callbacks
+   * that close over whatever render created them.
    */
-  const committed = useRef<Map<number, string>>(new Map());
-  const takeNew = useCallback((index: number, text: string): string => {
-    const seen = committed.current;
-    const before = seen.get(index);
-    if (before === undefined) {
-      seen.set(index, text);
-      return text;
+  const handed = useRef<Map<number, string>>(new Map());
+  const heard = useRef<Map<number, string>>(new Map());
+
+  /** Move the watermark up, never down.
+   *
+   * A shorter text is the engine revising words already handed over, and
+   * lowering the mark for it would hand over the words in between a second
+   * time. Counted in words, because a final is often the same phrase
+   * re-punctuated and a capital letter is not progress.
+   */
+  const mark = useCallback((index: number, text: string) => {
+    const before = handed.current.get(index);
+    if (before === undefined || words(text).length >= words(before).length) {
+      handed.current.set(index, text);
     }
-    if (text.startsWith(before)) {
-      seen.set(index, text);
-      return text.slice(before.length).trim();
-    }
-    return "";
   }, []);
+
+  /**
+   * Treat everything the engine has produced so far as already handed over.
+   *
+   * For callers that cannot wait for `isFinal`. Live chat is one: Chrome on
+   * Android will stream a whole sentence as interim results and never settle
+   * on any of it, so a pause has to be enough to send. Sending the interim
+   * text is not the whole job though -- the engine keeps that same result
+   * open, and its eventual final still holds the words that were sent, so
+   * they came back and went out a second time. That is the "repeated words"
+   * everyone hit: not the engine hearing you twice, us saying it twice.
+   */
+  const accept = useCallback(() => {
+    heard.current.forEach((text, index) => mark(index, text));
+    setInterim("");
+  }, [mark]);
 
   /** Decays on a timer, bumped whenever the engine reports hearing something.
    *
@@ -240,7 +292,8 @@ export function useDictation({
     engine.onstart = () => {
       // A new session numbers its results from zero again, so anything held
       // from the last one describes a session that is over.
-      committed.current.clear();
+      handed.current.clear();
+      heard.current.clear();
       setListening(true);
     };
 
@@ -248,15 +301,20 @@ export function useDictation({
       let live = "";
       for (let i = event.resultIndex; i < event.results.length; i += 1) {
         const phrase = event.results[i];
-        const text = phrase[0]?.transcript ?? "";
+        const text = (phrase[0]?.transcript ?? "").trim();
+        heard.current.set(i, text);
+        // Both kinds go through the watermark. An interim that repeats words
+        // already sent is the same double as a final that does, and captioning
+        // them back is how it looks from the outside.
+        const fresh = unsaid(handed.current.get(i) ?? "", text);
         if (phrase.isFinal) {
-          const settled = takeNew(i, text.trim());
-          if (settled) phraseRef.current?.(settled);
+          mark(i, text);
+          if (fresh) phraseRef.current?.(fresh);
           // A phrase landing means the engine is healthy, whatever it had to
           // restart through to get here.
           restarts.current = 0;
-        } else {
-          live += text;
+        } else if (fresh) {
+          live = live ? `${live} ${fresh}` : fresh;
         }
       }
       setInterim(live.trim());
@@ -300,7 +358,7 @@ export function useDictation({
       wanted.current = false;
       setError("Could not start the microphone.");
     }
-  }, [bump, continuous, lang, settle]);
+  }, [bump, continuous, lang, mark, settle]);
 
   const toggle = useCallback(() => {
     if (wanted.current) stop();
@@ -327,6 +385,7 @@ export function useDictation({
     start,
     stop,
     toggle,
+    accept,
   };
 }
 
