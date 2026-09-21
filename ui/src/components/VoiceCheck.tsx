@@ -22,11 +22,22 @@ export function VoiceCheck() {
   const [running, setRunning] = useState(false);
   /** Which build is actually answering, which has been the harder question. */
   const [version, setVersion] = useState<string | null>(null);
+  /** What the server says about its own secure listener, which is the one
+      question a page that will not load cannot answer for itself. */
+  const [secure, setSecure] = useState<
+    { port: number | null; listening: boolean } | null
+  >(null);
 
   useEffect(() => {
     fetch("/api/origin")
       .then((r) => r.json())
-      .then((d) => setVersion(typeof d?.version === "string" ? d.version : null))
+      .then((d) => {
+        setVersion(typeof d?.version === "string" ? d.version : null);
+        setSecure({
+          port: typeof d?.secure_port === "number" ? d.secure_port : null,
+          listening: !!d?.secure_listening,
+        });
+      })
       .catch(() => undefined);
   }, []);
   const engine = useRef<InstanceType<NonNullable<ReturnType<typeof speechEngine>>> | null>(null);
@@ -128,6 +139,15 @@ export function VoiceCheck() {
       </div>
       {lines.length > 0 && (
         <pre className="voice-check-log">{lines.join("\n")}</pre>
+      )}
+      {secure && !secureOrigin && (
+        <p className={secure.listening ? "jf-hint set-version" : "set-warn"}>
+          {secure.port === null
+            ? "This server is not offering a secure page, so dictation cannot work from here. Set AUTORA_TLS=1 and restart."
+            : secure.listening
+              ? `A secure page is running on port ${secure.port}. Open it there for the microphone and to install to a home screen.`
+              : `A secure page is configured on port ${secure.port} but nothing is answering on it, so the fault is on the server rather than in your browser.`}
+        </p>
       )}
       {version && (
         <p className="jf-hint set-version">

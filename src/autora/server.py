@@ -15,6 +15,7 @@ import base64
 import contextlib
 import json
 import mimetypes
+import socket
 import time
 from pathlib import Path
 from typing import Any
@@ -179,6 +180,25 @@ def create_app(
         candidate = (tls_dir / "ca.crt") if tls_dir else None
         return candidate if candidate and candidate.exists() else None
 
+    def secure_listening() -> bool:
+        """Whether anything is actually answering on the https port.
+
+        Configured and running are different states, and from a phone they are
+        indistinguishable: a secure page that will not load looks the same
+        whether the listener died, the port is blocked, or the certificate is
+        refused. The plain page can at least rule the first one in or out, by
+        opening a socket to it from inside the server -- which is the one
+        vantage point that can tell "not running" from "not reachable from
+        where you are standing".
+        """
+        if not secure_port:
+            return False
+        try:
+            with socket.create_connection(("127.0.0.1", secure_port), timeout=0.5):
+                return True
+        except OSError:
+            return False
+
     @app.get("/api/origin")
     async def origin() -> dict[str, Any]:
         """Where a secure copy of this page is listening, and how to trust it.
@@ -196,6 +216,7 @@ def create_app(
 
         return {
             "secure_port": secure_port,
+            "secure_listening": secure_listening(),
             "certificate": ca_file() is not None,
             "version": __version__,
         }

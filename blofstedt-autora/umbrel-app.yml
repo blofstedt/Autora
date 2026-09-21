@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.6.4"
+version: "0.6.5"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -64,27 +64,21 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The app now updates itself instead of serving you an old copy.
+  The plain page can now tell you whether the secure page is actually
+  running.
 
 
-  If you reach Autora at two addresses -- say the plain one and the
-  secure one on 8818 -- your browser treats them as two unrelated sites,
-  each with its own offline cache. Updating the app updated one of them.
-  The other kept serving whatever it had cached, looking completely
-  normal while running old code, which made shipped fixes look like they
-  had never shipped. Every page now asks for a fresh copy on load and
-  reloads itself once when one arrives.
+  A secure page that will not load looks identical from a phone whether
+  the listener has died, the port is blocked on the network, or the
+  certificate is being refused -- and those need completely different
+  fixes. The server can distinguish the first from the others, because it
+  can try the port from the inside, so it does. Open Settings on the
+  plain address and the Microphone check panel now says whether anything
+  is answering on the secure port.
 
 
-  Settings also shows which version is actually answering, at the bottom
-  of the Microphone check panel. If it disagrees with what you just
-  installed, that page is a cached copy and you can stop wondering.
-
-
-  To get onto this one, since it is the version that fixes being stuck on
-  old versions: open the address that did not update and pull down to
-  reload. If it still shows an old version, clear that site's data once in
-  Chrome's site settings.
+  No change to the secure page itself, which is tested and working. This
+  is about being able to tell which half of it is broken when it is not.
 dependencies: []
 path: ""
 defaultUsername: ""
