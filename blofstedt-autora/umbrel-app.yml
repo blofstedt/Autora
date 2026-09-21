@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.5.4"
+version: "0.5.5"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -64,18 +64,36 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  You can talk to it now. A microphone in the composer dictates into the
-  box, so what you said is still text you can fix before it goes; the Live
-  button next to it skips the typing altogether — speak, pause, and it
-  sends, then reads the reply back a sentence at a time while you watch
-  the work happen above. Nothing else on the screen moves.
+  Reasoning stays folded. Every reply used to arrive behind the thinking
+  that produced it, which on a phone pushed the answer off the screen as
+  it was being written. Turns start collapsed now, the live one included —
+  tap to open it.
 
 
-  Browsers only allow a microphone on a secure page, so if you reach this
-  over plain http the composer now says so in place of the controls rather
-  than offering a button that cannot work. Putting https in front (on a
-  tailnet, `tailscale serve`) also makes the app installable to a home
-  screen.
+  Sessions have names. The app was passing its own name as the title of
+  every session it opened, so the switcher was a column of identical rows,
+  and that title also outranked the name a session takes from its first
+  message. It passes none now, and sessions already recorded under it
+  recover a name from the first thing you asked them.
+
+
+  DeepSeek can hold a conversation again. Its thinking mode refuses a turn
+  whose reasoning has been stripped out, which was every turn here — so
+  once a session had used a tool, every later message failed with a 400
+  and the session could not continue. The reasoning is kept and sent back
+  now, and an endpoint that wants the opposite is taken at its word.
+
+
+  Voice is reachable from a phone. Browsers only open a microphone on a
+  secure page, and no site setting makes an http address on your own
+  network into one. Set AUTORA_TLS=1 in
+  ~/umbrel/app-data/blofstedt-autora/data/autora.env and restart: port
+  8817 keeps working exactly as before, and the app also serves https on
+  8818. Open that, click through the certificate warning once per device,
+  and dictation and Live appear. On http they are still in the composer,
+  greyed, and say what is in the way. Note that 8818 is published
+  directly, so it does not go through Umbrel's login — leave AUTORA_TLS
+  unset if you would rather it stayed that way.
 
 
 dependencies: []
