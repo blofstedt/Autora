@@ -25,7 +25,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 from autora.context import compose
 from autora.events import Kind
 from autora.providers.openai_compat import (
-    _default_send_reasoning, _flip_on_complaint, _to_openai,
+    _default_send_reasoning,
+    _flip_on_complaint,
+    _to_openai,
 )
 from autora.session import Session
 
