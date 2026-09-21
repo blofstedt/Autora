@@ -1,0 +1,10 @@
+{
+  "name": "Autora",
+  "description": "Autonomous AI agent console and live execution workspace",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
