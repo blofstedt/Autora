@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.8.1"
+version: "0.9.0"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -30,8 +30,10 @@ description: >-
   • File diff viewer showing every edit the agent makes.
 
 
-  • Full server access — the agent works in / by default (fully automated, no
-  per-action prompts required).
+  • Real tools, listed in Settings — a shell on this machine, the browser it
+  drives, control of another computer over a small relay, and a memory that
+  outlives the session. Each can be switched off, and each decides for itself
+  how much asks you first: the terminal shows you every command before it runs.
 
 
   • Voice interface (optional) — Deepgram STT+TTS when DEEPGRAM_API_KEY is set.
@@ -53,8 +55,8 @@ description: >-
   whichever provider you want and pick a model. Keys are saved to the app's
   data directory, so they survive updates. Keys can also be set in
   ~/umbrel/app-data/blofstedt-autora/.env instead, one KEY=value per line.
-  Without any key Autora still runs and says so, answering with local
-  fallbacks.
+  Without a key every panel still works, but nothing answers: the thread says
+  which key is missing rather than improvising a reply.
 
 
   Voice from a phone: browsers only open a microphone on a secure page, and an
@@ -71,28 +73,44 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Autora knows which model is answering you.
+  The agent has real tools now, instead of a description of some.
 
 
-  Ask which provider is running and you now get the right answer, because
-  every turn carries it: the provider and model you picked in Settings are
-  stated up front. Nothing said so before, so the model answered from
-  whatever the conversation contained -- and what it often contained was the
-  notice this console writes when no model is connected yet.
+  Autora advertised a terminal, a browser it could navigate, and control of
+  your computer. Two of those three did not exist, the third it could not
+  steer, and it was told about none of them -- so it answered questions about
+  its own abilities by guessing. Ask whether it could run a command and it said
+  no, correctly, because there was no code anywhere that could run one. Ask it
+  to run one and the console drew a terminal, printed output, and reported exit
+  code 0, all of it written in advance by the app rather than by anything that
+  had happened.
 
 
-  That notice went into the transcript looking exactly like something the
-  model had written. So once you added a key, the model read it back as its
-  own earlier words and stayed consistent with them: explaining in confident
-  detail that it was running on local fallbacks only, while visibly streaming
-  from the provider you had just configured. The console's own text is now
-  marked as the console's. You still see it in the conversation, where it is
-  true at the moment it is written, but it is no longer replayed to the model
-  as something the model said.
+  Settings now has a Tools section listing four things, each of them real. A
+  terminal: a shell on the machine Autora is installed on, with output
+  streaming into the thread as it arrives and the exit code the command
+  actually returned. The browser: the Chromium that was always there, now
+  something the agent can open pages with, read, click, fill in and scroll,
+  rather than only be handed a page you named yourself. Computer control: a
+  working relay, and a working relay.py to download -- the file this app served
+  until now was a two-line stub that printed "ready" and exited, which is why
+  the desktop has never once connected. And memory, as something the agent
+  chooses to write rather than something triggered by the word "save"
+  appearing in your message.
 
 
-  Two questions in a row also used to run together into one sentence on their
-  way to the model. They now arrive as two.
+  Each group can be switched off, and each says whether it can be used at all
+  -- no browser installed on the server, no relay dialled in -- in a sentence
+  that names the reason. The agent is told the same thing, from the same place,
+  so it can tell you which of the two it is instead of guessing again.
+
+
+  Approvals have teeth. A command now stops and waits for you, showing exactly
+  what will run; declining abandons it for good and the agent is told not to
+  ask twice. Those cards were decorative before: the reply went nowhere,
+  because nothing was waiting on it. Stop works too -- it used to kill the
+  shell and leave whatever the shell had started running to completion behind a
+  console that said it had stopped.
 
 dependencies: []
 path: ""
