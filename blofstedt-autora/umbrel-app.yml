@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.8.0"
+version: "0.8.1"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -71,40 +71,28 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  You can now watch Autora browse.
+  Autora knows which model is answering you.
 
 
-  The agent drives a real Chromium and streams it back to you as video: name
-  an address in a message and the page opens in the conversation, where you
-  watch the pointer travel to a link and the click land as it happens. The
-  pointer is drawn into the page and the click is then a real mouse event at
-  those coordinates, so what you see is what the page received. The agent
-  itself reads the page as text -- every interactive element numbered the way
-  a screen reader would announce it -- which is what makes it good at
-  browsing; the video is for you. Frames are never written to the recording,
-  so a long session stays a transcript rather than becoming a video file, and
-  the card keeps one frame from each step to scroll back through.
+  Ask which provider is running and you now get the right answer, because
+  every turn carries it: the provider and model you picked in Settings are
+  stated up front. Nothing said so before, so the model answered from
+  whatever the conversation contained -- and what it often contained was the
+  notice this console writes when no model is connected yet.
 
 
-  Browsing keeps its own profile, so signing in to something is something you
-  do once. It survives restarts and updates along with your keys.
+  That notice went into the transcript looking exactly like something the
+  model had written. So once you added a key, the model read it back as its
+  own earlier words and stayed consistent with them: explaining in confident
+  detail that it was running on local fallbacks only, while visibly streaming
+  from the provider you had just configured. The console's own text is now
+  marked as the console's. You still see it in the conversation, where it is
+  true at the moment it is written, but it is no longer replayed to the model
+  as something the model said.
 
 
-  Pictures now appear in the conversation. A screenshot you asked for, a chart
-  the agent made, or an image it wrote into a sentence is drawn where it
-  belongs, at a size you can read and one tap from full screen. Previously
-  there was nowhere for an image to be served from, so every one of them was a
-  broken image -- that is fixed, along with the element picker, which had
-  never done anything and now tells you what you pointed at, down to the file
-  and line that rendered it.
-
-
-  Settings had three cards where a line of text ran through a button. Fixed,
-  and there is a new card saying whether browsing is available and what is
-  missing if it is not.
-
-
-  Browsing needs Chromium, which this image now ships.
+  Two questions in a row also used to run together into one sentence on their
+  way to the model. They now arrive as two.
 
 dependencies: []
 path: ""
