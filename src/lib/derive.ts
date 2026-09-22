@@ -92,6 +92,25 @@ export type Shot = {
 };
 
 /**
+ * A picture the agent is showing you.
+ *
+ * Distinct from a `Shot`, which is a frame of something the agent was looking
+ * at: this is the agent handing you an image because the image is the answer.
+ * It carries either a blob the server is holding or a plain URL the agent
+ * wrote, and both end up in the same card.
+ */
+export type Picture = {
+  seq: number;
+  /** One of these two is set. */
+  blob: string | null;
+  url: string | null;
+  alt: string;
+  caption: string | null;
+  width: number | null;
+  height: number | null;
+};
+
+/**
  * One thing that happened, in the place in the conversation where it happened.
  *
  * The stage used to be a dock under the thread: four tabs, one live pane each,
@@ -114,6 +133,7 @@ export type Cell =
       kind: "screen"; seq: number; source: "browser" | "desktop";
       url: string | null; shots: Shot[]; actions: string[]; live: boolean;
     }
+  | { kind: "images"; seq: number; pictures: Picture[] }
   | { kind: "file"; seq: number; file: FileChange }
   | { kind: "tool"; seq: number; span: SpanState }
   | { kind: "note"; seq: number; tone: "bad" | "warn" | "plain"; text: string }
@@ -482,6 +502,26 @@ export function derive(events: AutoraEvent[]): Derived {
             board: boardData,
           });
         }
+        break;
+      }
+
+      /* Images the agent hands over. Consecutive ones become one card: three
+         screenshots in a row is a contact sheet, not three sections of the
+         conversation. */
+      case Kind.MediaImage: {
+        const picture: Picture = {
+          seq: e.seq,
+          blob: e.blob,
+          url: typeof e.payload.url === "string" ? e.payload.url : null,
+          alt: String(e.payload.alt ?? "image"),
+          caption: e.payload.caption ? String(e.payload.caption) : null,
+          width: typeof e.payload.w === "number" ? e.payload.w : null,
+          height: typeof e.payload.h === "number" ? e.payload.h : null,
+        };
+        if (!picture.blob && !picture.url) break;
+        const cell = current();
+        if (cell && cell.kind === "images") cell.pictures.push(picture);
+        else push({ kind: "images", seq: e.seq, pictures: [picture] });
         break;
       }
 

@@ -1377,7 +1377,22 @@ button.hint.voice-note:hover { text-decoration: underline; }
   outline: none; border-color: var(--accent-line);
 }
 .jf-cron { font-family: var(--mono) !important; font-size: 12.5px !important; }
-.jf-hint { margin-top: -5px; font-size: 11.5px; color: var(--text-3); }
+/* The tuck exists to cancel the bottom margin of the label or heading a hint
+   sits under: without it the gap reads as a paragraph break rather than as a
+   caption belonging to the thing above.
+
+   It only works where there is a bottom margin to cancel. After a row of
+   buttons, a value line or a list -- none of which have one -- it pulled the
+   text up into whatever was above and the two overlapped, which in Settings
+   meant three cards with a sentence running through a control. So the tuck is
+   now claimed by the cases that want it rather than applied to every hint and
+   corrected afterwards. */
+.jf-hint { margin-top: 9px; font-size: 11.5px; color: var(--text-3); }
+.jf-row + .jf-hint,
+h3 + .jf-hint,
+h4 + .jf-hint,
+p + .jf-hint,
+label + .jf-hint { margin-top: -5px; }
 .jf-presets { display: flex; flex-wrap: wrap; gap: 6px; }
 .jf-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2px; }
 
@@ -1585,6 +1600,28 @@ button.hint.voice-note:hover { text-decoration: underline; }
 .shot-stage.is-big .frame { max-height: 78vh; }
 .shot-stage.is-selecting { cursor: crosshair; }
 .shot-stage.is-selecting .frame { outline: 1px solid var(--accent-line); }
+
+/* Watching, as opposed to reviewing. The card is showing frames that are
+   arriving now, so it gets a live edge rather than the quiet border a stored
+   screenshot has. */
+.cell-chip.is-watching { background: rgba(52, 211, 153, 0.14); color: var(--live); }
+.watch-dot {
+  width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+  animation: halo 1.8s ease-out infinite;
+}
+.shot-stage.is-watching { box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.25); }
+
+/* What it is doing, over the picture of it doing it. Bottom-left, because the
+   top of a page is where the page's own chrome is and covering that is how you
+   lose the address you were trying to read. */
+.shot-caption {
+  position: absolute; left: 10px; bottom: 10px; max-width: calc(100% - 20px);
+  padding: 4px 10px; border-radius: 99px;
+  background: rgba(8, 9, 13, 0.82); border: 1px solid var(--border-strong);
+  color: var(--text); font-family: var(--mono); font-size: 11px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  animation: rise 0.2s var(--ease) both; pointer-events: none;
+}
 
 .shot-strip {
   display: flex; align-items: center; gap: 10px; padding: 6px 11px;
@@ -2898,4 +2935,95 @@ button.hint.voice-note:hover { text-decoration: underline; }
   .bill-tiles { grid-template-columns: 1fr; }
   .prov-model { max-width: 32%; }
   .bill-turn-when { display: none; }
+}
+
+/* ============================================================================
+   PICTURES
+   An image the agent produced is an answer, not an attachment: it belongs in
+   the conversation at a size you can read, and one tap from a size you can
+   study. Two shapes -- a card, for images handed over deliberately, and an
+   inline one for a picture written into the middle of a sentence.
+   ============================================================================ */
+
+.cell.pics .cell-top { border-bottom: 1px solid var(--border); }
+.pics-grid {
+  display: grid; gap: 8px; padding: 10px;
+  background: radial-gradient(70% 70% at 50% 0%, rgba(110, 91, 255, 0.06), transparent 70%), #06070a;
+}
+/* More than one and they become a contact sheet, which is what several
+   screenshots in a row actually are. */
+.cell.pics.is-sheet .pics-grid {
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+}
+.pic { margin: 0; display: grid; gap: 5px; min-width: 0; }
+.pic-open {
+  display: block; padding: 0; border: 0; background: none; cursor: zoom-in;
+  border-radius: var(--r-sm); overflow: hidden; line-height: 0;
+}
+.pic-open img {
+  display: block; width: 100%; height: auto; max-height: 340px;
+  object-fit: contain; background: #06070a;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  transition: border-color 0.16s var(--ease);
+}
+.pic-open:hover img { border-color: var(--border-strong); }
+.pic-open:focus-visible img { outline: 2px solid var(--accent-line); outline-offset: 2px; }
+.cell.pics.is-sheet .pic-open img { max-height: 170px; object-fit: cover; }
+.pic figcaption {
+  font-family: var(--mono); font-size: 10.5px; color: var(--text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* A picture inside a paragraph. Deliberately quiet and deliberately capped:
+   it is part of the sentence, and a sentence should not be six inches tall. */
+.pic-inline {
+  display: block; margin: 8px 0; padding: 0; border: 0; background: none;
+  cursor: zoom-in; line-height: 0; max-width: 100%;
+}
+.pic-inline img {
+  display: block; max-width: 100%; max-height: 300px; width: auto; height: auto;
+  border-radius: var(--r-sm); border: 1px solid var(--border);
+  background: #06070a;
+}
+.pic-fallback { color: var(--accent-2); text-decoration: underline; }
+
+/* Full size. Over everything, dismissed by clicking anywhere or by escape --
+   there is nothing to decide here, so every way out is the same way out. */
+.pic-full {
+  position: fixed; inset: 0; z-index: 120;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 12px; padding: 24px;
+  background: rgba(4, 5, 8, 0.92); backdrop-filter: blur(6px);
+  animation: fade 0.16s var(--ease) both; cursor: zoom-out;
+}
+.pic-full img {
+  max-width: 100%; max-height: 82vh; object-fit: contain; cursor: default;
+  border-radius: var(--r-sm); box-shadow: var(--shadow-lg);
+}
+.pic-full-cap {
+  margin: 0; max-width: 680px; text-align: center;
+  font-size: 12px; color: var(--text-2); overflow-wrap: anywhere;
+}
+.pic-close { position: absolute; top: 14px; right: 14px; }
+
+/* A page is open somewhere up the thread, said in the header because the card
+   holding it scrolls away. */
+.badge.browsing {
+  gap: 6px; padding-right: 5px; font-family: var(--mono); font-size: 10.5px;
+  color: var(--live); border-color: rgba(52, 211, 153, 0.28);
+  background: rgba(52, 211, 153, 0.09);
+  max-width: 190px; overflow: hidden; text-overflow: ellipsis;
+}
+.badge-x {
+  display: inline-grid; place-items: center; width: 18px; height: 18px;
+  padding: 0; border: 0; border-radius: 50%; cursor: pointer;
+  background: none; color: inherit; opacity: 0.65;
+  transition: opacity 0.14s var(--ease), background 0.14s var(--ease);
+}
+.badge-x:hover { opacity: 1; background: rgba(255, 255, 255, 0.08); }
+
+@media (max-width: 680px) {
+  .badge.browsing { max-width: 132px; }
+  .pic-full { padding: 14px; }
+  .cell.pics.is-sheet .pics-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
 }

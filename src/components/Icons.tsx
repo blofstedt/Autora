@@ -33,6 +33,14 @@ export const IconGlobe = ({ size = 16, className }: Props) => (
   </svg>
 );
 
+export const IconImage = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+    <circle cx="8.75" cy="9.75" r="1.5" />
+    <path d="m4 17 4.5-4.5a1.8 1.8 0 0 1 2.5 0L15 16.5m-1.5-1.5 1.75-1.75a1.8 1.8 0 0 1 2.5 0L20 15" />
+  </svg>
+);
+
 export const IconFile = ({ size = 16, className }: Props) => (
   <svg {...base(size)} className={className}>
     <path d="M13.5 3.5H7a1.5 1.5 0 0 0-1.5 1.5v14A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5V8.5z" />

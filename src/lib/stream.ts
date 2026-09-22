@@ -1,8 +1,13 @@
-import type { AutoraEvent } from "./types";
+import type { AutoraEvent, BrowserState, LiveFrame } from "./types";
 
 type Handlers = {
   onEvents: (events: AutoraEvent[]) => void;
   onStatus: (status: StreamStatus) => void;
+  /** A frame of live video. Ephemeral: not part of the log, never replayed,
+      and dropped on the floor if nothing is showing it. */
+  onFrame?: (frame: LiveFrame) => void;
+  /** Whether there is a page open to watch, and where it is. */
+  onBrowser?: (state: BrowserState) => void;
 };
 
 export type StreamStatus =
@@ -56,6 +61,20 @@ export class SessionStream {
         case "live":
           this.retry = 0;
           this.handlers.onStatus({ state: "live", busy: !!msg.busy });
+          break;
+        case "frame":
+          // Deliberately not run through `accept`: a frame has no seq and is
+          // not deduped or resumed. Missing one costs a sixth of a second of
+          // video and nothing else.
+          this.handlers.onFrame?.({
+            source: msg.source === "desktop" ? "desktop" : "browser",
+            data: String(msg.data ?? ""),
+            mime: String(msg.mime ?? "image/jpeg"),
+            ts: Number(msg.ts ?? Date.now()),
+          });
+          break;
+        case "browser":
+          this.handlers.onBrowser?.(msg.state);
           break;
         case "end":
           this.handlers.onStatus({ state: "recorded", length: msg.length });

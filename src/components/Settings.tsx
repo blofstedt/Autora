@@ -393,6 +393,8 @@ export function Settings({ onClose }: { onClose: () => void }) {
           </section>
         )}
 
+        <BrowserCard />
+
         <VoiceCheck />
 
         <RelaySetup />
@@ -625,6 +627,64 @@ function ProviderRow({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Whether the agent can open a page, and what is missing when it cannot.
+ *
+ * Browsing needs two things that are not part of the app -- the Playwright
+ * driver and a Chromium to drive -- and when either is absent the only
+ * symptom is that asking it to open a page quietly does not work. Said here
+ * because this is where someone goes to find out why, and said with the fix
+ * in it, because "unavailable" on its own is not a diagnosis.
+ */
+function BrowserCard() {
+  const [state, setState] = useState<
+    { available: boolean; open: boolean; url: string | null; detail: string | null } | null
+  >(null);
+
+  useEffect(() => {
+    // Any session will do: the driver and the binary are the machine's, not
+    // the session's. The first one in the list is the cheapest to ask.
+    fetch("/api/sessions")
+      .then((r) => r.json())
+      .then((rows) =>
+        rows?.[0]?.id
+          ? fetch(`/api/sessions/${rows[0].id}/browser`).then((r) => r.json())
+          : null,
+      )
+      .then((found) => setState(found))
+      .catch(() => undefined);
+  }, []);
+
+  if (!state) return null;
+
+  return (
+    <section className="set-card">
+      <h3>Browsing</h3>
+      {state.available ? (
+        <>
+          <p className="jf-hint">
+            A real Chromium, driven by the agent and streamed back to you: name
+            an address in a message and the page opens in the thread, where you
+            watch the pointer move and the clicks land as they happen. The agent
+            itself reads the page as text — the video is for you.
+          </p>
+          <div className="set-active-row">
+            <code>{state.open ? (state.url ?? "a page is open") : "ready"}</code>
+            <span>{state.open ? "open now" : "nothing open"}</span>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="set-warn">{state.detail ?? "No browser is available."}</p>
+          <p className="jf-hint">
+            Everything else works without it; only opening pages does not.
+          </p>
+        </>
+      )}
+    </section>
   );
 }
 
