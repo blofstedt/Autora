@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.7.2"
+version: "0.8.0"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -71,35 +71,40 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Autora now connects to any of the major AI providers, and shows what they
-  cost.
+  You can now watch Autora browse.
 
 
-  Settings takes an API key for OpenAI, Google Gemini, Anthropic, DeepSeek or
-  OpenRouter -- or points at a local OpenAI-compatible server -- and offers
-  that vendor's models in a list, each quoted with its price per million
-  tokens. Each provider keeps its own key, model and endpoint, so switching
-  between them costs nothing. "Check key" asks the vendor whether the key
-  works before you rely on it, and fills the model list from the same call;
-  OpenRouter's catalogue and prices are fetched live.
+  The agent drives a real Chromium and streams it back to you as video: name
+  an address in a message and the page opens in the conversation, where you
+  watch the pointer travel to a link and the click land as it happens. The
+  pointer is drawn into the page and the click is then a real mouse event at
+  those coordinates, so what you see is what the page received. The agent
+  itself reads the page as text -- every interactive element numbered the way
+  a screen reader would announce it -- which is what makes it good at
+  browsing; the video is for you. Frames are never written to the recording,
+  so a long session stays a transcript rather than becoming a video file, and
+  the card keeps one frame from each step to scroll back through.
 
 
-  A billing card counts what you have spent: this month, today and all time,
-  with a thirty-day chart and a breakdown by provider and model down to
-  individual turns. It is counted here from the tokens each vendor reports, so
-  it is a running estimate rather than an invoice, and it says so. An optional
-  monthly budget warns as it fills, and does not block.
+  Browsing keeps its own profile, so signing in to something is something you
+  do once. It survives restarts and updates along with your keys.
 
 
-  Keys and the ledger are written to the app's data directory, so they survive
-  an update rather than resetting with the container. Keys set in the
-  environment still work and are never written there.
+  Pictures now appear in the conversation. A screenshot you asked for, a chart
+  the agent made, or an image it wrote into a sentence is drawn where it
+  belongs, at a size you can read and one tap from full screen. Previously
+  there was nowhere for an image to be served from, so every one of them was a
+  broken image -- that is fixed, along with the element picker, which had
+  never done anything and now tells you what you pointed at, down to the file
+  and line that rendered it.
 
 
-  Also fixes the container image, which had not built since the rewrite: it now
-  builds the TypeScript server and the web UI, listens on the port Umbrel
-  gives it, and stamps the page with its version again, so the "you are
-  looking at an older copy" banner works.
+  Settings had three cards where a line of text ran through a button. Fixed,
+  and there is a new card saying whether browsing is available and what is
+  missing if it is not.
+
+
+  Browsing needs Chromium, which this image now ships.
 
 dependencies: []
 path: ""

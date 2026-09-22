@@ -30,13 +30,15 @@
  */
 
 import fs from "node:fs";
+import path from "node:path";
+
+import { stateFilePath } from "./state";
 
 /* Playwright's types are not imported: the package is optional, and a type
    import would make the server half fail to compile wherever it is not
    installed. The surface used here is small enough to name locally. */
 type Page = any;
 type BrowserContext = any;
-type Browser = any;
 type CDPSession = any;
 
 export interface BrowserStatus {
@@ -141,6 +143,25 @@ function systemBrowser(): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Where the browser keeps its profile.
+ *
+ * Beside the settings file, so it lands in whatever directory this
+ * installation already treats as the one worth keeping -- `/data` in the
+ * container, `.autora/` beside the app otherwise. Cookies and logins are as
+ * sensitive as the API keys next door, so the directory is owner-only for the
+ * same reason that one is.
+ */
+function profileDir(): string {
+  const dir = path.join(path.dirname(stateFilePath()), "browser-profile");
+  try {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  } catch {
+    // Chrome will say so more precisely than we can guess at here.
+  }
+  return dir;
 }
 
 /**
@@ -447,7 +468,6 @@ const PICK_SCRIPT = (x: number, y: number) => `
 
 /** One page, one screencast, one session's worth of browsing. */
 export class LiveBrowser {
-  private browser: Browser | null = null;
   private context: BrowserContext | null = null;
   private page: Page | null = null;
   private cdp: CDPSession | null = null;
@@ -478,9 +498,19 @@ export class LiveBrowser {
   private currentUrl: string | null = null;
   private currentTitle: string | null = null;
 
-  /** Start Chrome, if it is not already running. Headed when asked: on a
-      desktop that means a real window you can watch beside the app, which is
-      sometimes exactly what someone wants and costs nothing to allow. */
+  /**
+   * Start Chrome, if it is not already running.
+   *
+   * A persistent profile rather than a fresh one each time, because the
+   * alternative is signing in to everything again on every restart -- and an
+   * agent that cannot stay signed in to your mail is an agent that cannot
+   * read your mail. The profile lives beside the settings file, which in the
+   * container is the one directory that survives an update.
+   *
+   * Headed when asked: on a desktop that means a real window you can watch
+   * beside the app, which is sometimes exactly what someone wants and costs
+   * nothing to allow.
+   */
   private async ensure(): Promise<Page> {
     if (this.page) return this.page;
 
@@ -489,20 +519,21 @@ export class LiveBrowser {
 
     const { chromium } = await import("playwright-core");
     const executablePath = systemBrowser();
-    this.browser = await chromium.launch({
+    this.context = await chromium.launchPersistentContext(profileDir(), {
       headless: process.env.AUTORA_BROWSER_HEADED !== "1",
       ...(executablePath ? { executablePath } : {}),
-      // Containers usually cannot give Chrome its sandbox, and the alternative
-      // to these flags is a browser that refuses to start with a message about
-      // namespaces that nobody should have to decode.
-      args: ["--no-sandbox", "--disable-dev-shm-usage", "--hide-scrollbars"],
-    });
-    this.context = await this.browser.newContext({
       viewport: VIEWPORT,
       deviceScaleFactor: 1,
+      // Containers usually cannot give Chrome its sandbox, and the
+      // alternative to these flags is a browser that refuses to start with a
+      // message about namespaces that nobody should have to decode.
+      args: ["--no-sandbox", "--disable-dev-shm-usage", "--hide-scrollbars"],
     });
     await this.context.addInitScript(CURSOR_SCRIPT);
-    this.page = await this.context.newPage();
+    // A persistent context opens with a page already in it; taking that one
+    // rather than adding a second avoids leaving an orphan about:blank behind
+    // that the screencast would happily photograph.
+    this.page = this.context.pages()[0] ?? (await this.context.newPage());
 
     this.page.on("framenavigated", (frame: any) => {
       if (frame !== this.page?.mainFrame()) return;
@@ -590,16 +621,19 @@ export class LiveBrowser {
 
   async close() {
     this.closing = true;
-    const browser = this.browser;
+    // The context owns the browser when it is a persistent one, so closing it
+    // is what actually stops Chrome -- and it is also what flushes the profile
+    // to disk, which is the whole point of having one.
+    const context = this.context;
     this.page = null;
     this.context = null;
     this.cdp = null;
-    this.browser = null;
     this.streaming = false;
+    this.announced = "";
     this.currentUrl = null;
     this.currentTitle = null;
     this.refs = [];
-    await browser?.close().catch(() => undefined);
+    await context?.close().catch(() => undefined);
     this.closing = false;
   }
 
