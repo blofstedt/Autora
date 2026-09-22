@@ -178,8 +178,15 @@ export type Derived = {
 /** Terminal tools, whose PTY output belongs in the card their call opened. */
 const SHELL_TOOLS = new Set(["bash", "terminal", "shell"]);
 
-/** Tools whose whole story is told by a cell of their own. */
-const STAGED_TOOLS = new Set(["browser", "desktop", "edit", "write", "patch"]);
+/** Tools whose whole story is told by a cell of their own -- the screencast of
+    the page or desktop they acted on, or the diff they produced. Matched by
+    prefix as well as by name, because the real registry names them for what
+    they do (`browser_click`, `computer_type`) and a one-line "tool called
+    browser_click" card beside the video of that click is noise. */
+const STAGED_TOOLS = new Set(["browser", "desktop", "computer", "edit", "write", "patch"]);
+
+const isStaged = (name: string) =>
+  STAGED_TOOLS.has(name) || STAGED_TOOLS.has(name.split("_")[0]);
 
 /**
  * Fold the log into the conversation it records.
@@ -325,7 +332,7 @@ export function derive(events: AutoraEvent[]): Derived {
             output: "", status: "running", exitCode: null, durationMs: null,
           }) as Extract<Cell, { kind: "terminal" }>;
           shells.set(span.id, cell);
-        } else if (!STAGED_TOOLS.has(name)) {
+        } else if (!isStaged(name)) {
           // Everything else gets a quiet one-liner, so nothing the agent did
           // is missing from the transcript -- the screencast and diff cells
           // say more about the staged tools than their arguments would.
@@ -373,7 +380,7 @@ export function derive(events: AutoraEvent[]): Derived {
         // A staged tool carries no cell of its own until it produces a frame
         // or a diff, so a browser call that failed outright would otherwise
         // fail silently -- which is the one outcome that must never be quiet.
-        if (!span || (STAGED_TOOLS.has(span.name) && !shells.has(span.id))) {
+        if (!span || (isStaged(span.name) && !shells.has(span.id))) {
           push({
             kind: "note", seq: e.seq,
             tone: e.payload.denied ? "warn" : "bad",

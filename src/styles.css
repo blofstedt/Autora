@@ -1818,6 +1818,85 @@ label + .jf-hint { margin-top: -5px; }
   .term-body { max-height: 460px; }
 }
 
+/* ----------------------------------------------------------------- tools -- */
+/* One row per capability. The row is the whole story: what it is, whether it
+   can be used, how tightly it is held, and the tools it actually contributes
+   to the model's schema. A group that is on but unusable stays visible and
+   says why -- hiding it is what left people guessing. */
+/* minmax(0, 1fr) rather than the default auto track: an `auto` column sizes
+   to its widest item, so one long approval label ("Only when it changes
+   something") pushed every row 150px past the card and gave the whole panel a
+   horizontal scrollbar on a phone. The explicit zero minimum lets the track be
+   narrower than its content, which is what makes the wrapping below work. */
+.tool-rows { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+.tool-row {
+  min-width: 0; padding: 12px 0; border-top: 1px solid var(--border);
+}
+.tool-row:first-child { border-top: 0; padding-top: 2px; }
+.tool-head { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.tool-head b { font-size: 13.5px; font-weight: 600; }
+.tool-icon {
+  display: grid; place-items: center; width: 24px; height: 24px;
+  border-radius: var(--r-sm); background: var(--s2);
+  border: 1px solid var(--border); color: var(--text-3);
+}
+.tool-row.on .tool-icon {
+  background: var(--accent-soft); border-color: var(--accent-line);
+  color: var(--accent);
+}
+.tool-state {
+  font-family: var(--mono); font-size: 10.5px; padding: 2px 8px;
+  border-radius: 99px; background: var(--s2); color: var(--text-3);
+}
+.tool-state.ok { background: rgba(52, 211, 153, 0.13); color: var(--live); }
+.tool-state.warn { background: rgba(251, 191, 36, 0.13); color: var(--warn); }
+.tool-row .jf-hint, .tool-row .set-warn { margin: 8px 0 0; }
+
+.tool-approve {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 10px;
+}
+.tool-label {
+  font-size: 11px; font-weight: 650; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--text-3);
+}
+/* The approval modes are three short mutually exclusive choices, so they sit
+   on one line rather than as the stacked blocks .set-choice draws elsewhere. */
+.set-choice.inline {
+  display: inline-block; padding: 5px 10px; font-size: 11.5px;
+}
+
+.tool-opts { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.tool-opt { display: grid; gap: 5px; flex: 1 1 200px; }
+.tool-opt.narrow { flex: 0 1 150px; }
+.tool-opt input {
+  /* min-width: 0 so the field can shrink with its flex track; an input's
+     default intrinsic width is wider than a phone's gutter allows. */
+  min-width: 0; width: 100%; box-sizing: border-box;
+  padding: 7px 10px; border-radius: var(--r-sm); background: var(--s2);
+  border: 1px solid var(--border); color: var(--text);
+  font-family: var(--mono); font-size: 12px;
+}
+.tool-opt input:focus-visible { outline: none; border-color: var(--accent-line); }
+.tool-unit { font-size: 11px; color: var(--text-3); }
+
+.tool-names {
+  display: flex; gap: 5px; flex-wrap: wrap; margin: 10px 0 0;
+}
+.tool-names code {
+  font-family: var(--mono); font-size: 10.5px; color: var(--text-3);
+  background: var(--s2); border: 1px solid var(--border);
+  border-radius: var(--r-sm); padding: 2px 6px;
+}
+
+.tool-row .set-card {
+  margin-top: 10px; background: var(--s2); animation: none;
+}
+
+@media (max-width: 560px) {
+  .tool-opts { flex-direction: column; }
+  .tool-opt, .tool-opt.narrow { flex: 1 1 auto; }
+}
+
 /* ------------------------------------------------------------ relay setup -- */
 .relay-state {
   display: flex; align-items: center; gap: 9px; margin-bottom: 10px;

@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { IconCheck, IconChevron, IconGear, IconRepeat, IconX } from "./Icons";
+import {
+  IconBrain, IconCheck, IconChevron, IconGear, IconGlobe, IconMonitor, IconRepeat,
+  IconTerminal, IconX,
+} from "./Icons";
 import { VoiceCheck } from "./VoiceCheck";
 import { RelaySetup } from "./RelaySetup";
 import { Billing } from "./Billing";
@@ -47,6 +50,28 @@ type ProviderCard = {
   models: ModelOption[];
 };
 
+export type ToolGroupName = "terminal" | "browser" | "computer" | "memory";
+export type ApprovalMode = "always" | "risky" | "never";
+
+/** What the server says about one group of tools: whether it is on, whether it
+    can actually be used, and in one sentence why not when it cannot. */
+type ToolGroupState = {
+  group: ToolGroupName;
+  label: string;
+  enabled: boolean;
+  available: boolean;
+  detail: string;
+  approval: ApprovalMode;
+  tools: string[];
+};
+
+type ToolConfig = {
+  terminal: { enabled: boolean; cwd: string; timeout: number; approval: ApprovalMode };
+  browser: { enabled: boolean; approval: ApprovalMode };
+  computer: { enabled: boolean; approval: ApprovalMode };
+  memory: { enabled: boolean; approval: ApprovalMode };
+};
+
 type SettingsState = {
   provider: string;
   model: string;
@@ -60,6 +85,7 @@ type SettingsState = {
   budget_usd: number | null;
   state_file: string;
   credentials: Credential[];
+  tools: { config: ToolConfig; groups: ToolGroupState[] };
   active: {
     model: string | null;
     endpoint: string | null;
@@ -348,6 +374,8 @@ export function Settings({ onClose }: { onClose: () => void }) {
           </p>
         </section>
 
+        <ToolsCard tools={state.tools} onSaved={adopt} />
+
         <Billing budget={budget} onBudget={setBudget} />
 
         <section className="set-card">
@@ -393,11 +421,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
           </section>
         )}
 
-        <BrowserCard />
-
         <VoiceCheck />
-
-        <RelaySetup />
 
         <TrustThisServer />
       </div>
@@ -631,60 +655,219 @@ function ProviderRow({
 }
 
 /**
- * Whether the agent can open a page, and what is missing when it cannot.
+ * What the agent can actually do, and how tightly each part of it is held.
  *
- * Browsing needs two things that are not part of the app -- the Playwright
- * driver and a Chromium to drive -- and when either is absent the only
- * symptom is that asking it to open a page quietly does not work. Said here
- * because this is where someone goes to find out why, and said with the fix
- * in it, because "unavailable" on its own is not a diagnosis.
+ * This is the panel the console was missing. Before it, the three capabilities
+ * were configured nowhere, described in a memory graph that could not be
+ * edited, and -- in two cases out of three -- not implemented at all. The agent
+ * was told none of it, so it answered questions about its own abilities by
+ * guessing, and guessed wrong in both directions.
+ *
+ * Every row is the same registry the model's tool schemas are built from (see
+ * server/tools.ts), so what this panel says is what the agent gets. Turning a
+ * group off removes those tools from the model's next request entirely and
+ * changes the sentence it is given about that group; it is not a UI preference.
+ *
+ * Changes apply on their own rather than waiting for Save at the top: a
+ * capability switch that needs a second click somewhere else to take effect is
+ * how you end up believing the terminal is off when it is not.
  */
-function BrowserCard() {
-  const [state, setState] = useState<
-    { available: boolean; open: boolean; url: string | null; detail: string | null } | null
-  >(null);
+function ToolsCard({
+  tools, onSaved,
+}: {
+  tools: { config: ToolConfig; groups: ToolGroupState[] };
+  onSaved: (next: SettingsState) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Any session will do: the driver and the binary are the machine's, not
-    // the session's. The first one in the list is the cheapest to ask.
-    fetch("/api/sessions")
-      .then((r) => r.json())
-      .then((rows) =>
-        rows?.[0]?.id
-          ? fetch(`/api/sessions/${rows[0].id}/browser`).then((r) => r.json())
-          : null,
-      )
-      .then((found) => setState(found))
-      .catch(() => undefined);
-  }, []);
+  /** Send one group's change and adopt whatever the server says the state is
+      now -- including availability, which only it can answer. */
+  const patch = useCallback(
+    async (group: ToolGroupName, change: Record<string, unknown>) => {
+      setBusy(true);
+      setError(null);
+      try {
+        const res = await fetch("/api/settings", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tools: { [group]: change } }),
+        });
+        const body = await res.json();
+        if (!res.ok) {
+          setError(body.detail ?? "Could not change that.");
+          return;
+        }
+        onSaved(body);
+      } catch {
+        setError("Could not reach the server.");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [onSaved],
+  );
 
-  if (!state) return null;
+  const icons: Record<ToolGroupName, JSX.Element> = {
+    terminal: <IconTerminal size={14} />,
+    browser: <IconGlobe size={14} />,
+    computer: <IconMonitor size={14} />,
+    memory: <IconBrain size={14} />,
+  };
 
   return (
     <section className="set-card">
-      <h3>Browsing</h3>
-      {state.available ? (
-        <>
-          <p className="jf-hint">
-            A real Chromium, driven by the agent and streamed back to you: name
-            an address in a message and the page opens in the thread, where you
-            watch the pointer move and the clicks land as they happen. The agent
-            itself reads the page as text — the video is for you.
-          </p>
-          <div className="set-active-row">
-            <code>{state.open ? (state.url ?? "a page is open") : "ready"}</code>
-            <span>{state.open ? "open now" : "nothing open"}</span>
-          </div>
-        </>
-      ) : (
-        <>
-          <p className="set-warn">{state.detail ?? "No browser is available."}</p>
-          <p className="jf-hint">
-            Everything else works without it; only opening pages does not.
-          </p>
-        </>
-      )}
+      <h3>Tools</h3>
+      <p className="jf-hint">
+        What the agent can reach. Each of these is real: the terminal runs
+        commands on the machine Autora is installed on, the browser opens real
+        pages, computer control drives whichever machine is running the relay,
+        and memory outlives the session. Turning one off removes it from the
+        model's tools entirely — the agent is then told that group is switched
+        off, rather than left to work out why it cannot do something.
+      </p>
+
+      {error && <p className="set-warn">{error}</p>}
+
+      <div className="tool-rows">
+        {tools.groups.map((group) => {
+          const config = tools.config[group.group];
+          return (
+            <div className={`tool-row ${group.available ? "on" : ""}`} key={group.group}>
+              <div className="tool-head">
+                <span className="tool-icon">{icons[group.group]}</span>
+                <b>{group.label}</b>
+                <span className={`tool-state ${
+                  group.available ? "ok" : group.enabled ? "warn" : ""}`}
+                >
+                  {group.available ? "ready" : group.enabled ? "not usable" : "off"}
+                </span>
+                <div className="spacer" />
+                <button
+                  className={`job-switch ${config.enabled ? "on" : ""}`}
+                  role="switch"
+                  aria-checked={config.enabled}
+                  aria-label={`${group.label}: ${config.enabled ? "on" : "off"}`}
+                  disabled={busy}
+                  onClick={() => patch(group.group, { enabled: !config.enabled })}
+                >
+                  <span className="job-knob" />
+                </button>
+              </div>
+
+              <p className={group.enabled && !group.available ? "set-warn" : "jf-hint"}>
+                {group.detail}
+              </p>
+
+              {config.enabled && (
+                <>
+                  <div className="tool-approve">
+                    <span className="tool-label">Ask me first</span>
+                    {([
+                      ["always", "Every time"],
+                      ["risky", "Only when it changes something"],
+                      ["never", "Never"],
+                    ] as [ApprovalMode, string][]).map(([mode, label]) => (
+                      <button
+                        key={mode}
+                        className={`set-choice inline ${config.approval === mode ? "on" : ""}`}
+                        aria-pressed={config.approval === mode}
+                        disabled={busy}
+                        onClick={() => patch(group.group, { approval: mode })}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {group.group === "terminal" && (
+                    <TerminalOptions
+                      cwd={tools.config.terminal.cwd}
+                      timeout={tools.config.terminal.timeout}
+                      busy={busy}
+                      onChange={(change) => patch("terminal", change)}
+                    />
+                  )}
+
+                  {group.available && (
+                    <p className="tool-names">
+                      {group.tools.map((name) => <code key={name}>{name}</code>)}
+                    </p>
+                  )}
+                </>
+              )}
+
+              {/* The relay is the only part of any of this that has to be
+                  installed somewhere else, so its instructions belong on its
+                  own row rather than in a card further down the panel where
+                  the connection between the two is left to be inferred. */}
+              {group.group === "computer" && config.enabled && !group.available && (
+                <RelaySetup />
+              )}
+            </div>
+          );
+        })}
+      </div>
     </section>
+  );
+}
+
+/**
+ * Where commands run, and how long they may take.
+ *
+ * Committed on blur and on Enter rather than per keystroke: each of these is a
+ * PATCH, and saving a working directory letter by letter would leave the agent
+ * pointed at `/ho` for a moment.
+ */
+function TerminalOptions({
+  cwd, timeout, busy, onChange,
+}: {
+  cwd: string;
+  timeout: number;
+  busy: boolean;
+  onChange: (change: Record<string, unknown>) => void;
+}) {
+  const [dir, setDir] = useState(cwd);
+  const [secs, setSecs] = useState(String(timeout));
+
+  // Adopt what the server came back with, so a rejected or clamped value
+  // (a timeout of 9000 becomes 1800) is visible rather than silently kept.
+  useEffect(() => { setDir(cwd); }, [cwd]);
+  useEffect(() => { setSecs(String(timeout)); }, [timeout]);
+
+  return (
+    <div className="tool-opts">
+      <label className="tool-opt">
+        <span className="tool-label">Working directory</span>
+        <input
+          type="text"
+          value={dir}
+          placeholder="the server's own directory"
+          disabled={busy}
+          onChange={(e) => setDir(e.target.value)}
+          onBlur={() => { if (dir !== cwd) onChange({ cwd: dir }); }}
+          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+        />
+      </label>
+      <label className="tool-opt narrow">
+        <span className="tool-label">Give up after</span>
+        <input
+          type="number"
+          min={5}
+          max={1800}
+          value={secs}
+          disabled={busy}
+          onChange={(e) => setSecs(e.target.value)}
+          onBlur={() => {
+            const value = Number(secs);
+            if (Number.isFinite(value) && value !== timeout) onChange({ timeout: value });
+            else setSecs(String(timeout));
+          }}
+          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+        />
+        <span className="tool-unit">seconds</span>
+      </label>
+    </div>
   );
 }
 

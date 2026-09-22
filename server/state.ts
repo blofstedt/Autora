@@ -20,6 +20,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { AUTO_ORDER, PROVIDERS, providerSpec } from "./providers";
+/* Type-only, deliberately: ./tools reads this module for the saved settings,
+   and a value import here would close that loop at startup. The shape lives
+   with the registry that defines it; the defaults live below, because they are
+   what this module writes into a fresh file. */
+import type { ToolSettings } from "./tools";
 
 export interface UsageEntry {
   ts: number;
@@ -52,10 +57,80 @@ export interface PersistedState {
       refuse -- a console that silently stops answering is a support ticket. */
   budgetUsd: number | null;
   usage: UsageEntry[];
+  /** Which of the agent's groups of tools are on, and how tightly each is
+      gated. See ./tools for what each group actually is. */
+  tools: ToolSettings;
 }
 
 const DEFAULT_PROMPT =
   "You are Autora, an autonomous AI execution console and agent workspace.";
+
+/**
+ * What the tools do before anybody visits Settings.
+ *
+ * Capable, and gated. Every group is on, so the agent that ships is the agent
+ * described -- but the terminal asks before every single command, and the ones
+ * that touch a page or a desktop ask before anything that changes rather than
+ * reads. A shell on the host is only a reasonable default under a prompt that
+ * shows you the exact command first, which is the promise this console was
+ * built on.
+ *
+ * Turning a group off is a real answer too: it removes the tools from the
+ * model's schema entirely and the agent is told, in words, that the group is
+ * off rather than left to guess why it cannot do something.
+ */
+function defaultTools(): ToolSettings {
+  return {
+    terminal: { enabled: true, cwd: "", timeout: 120, approval: "always" },
+    browser: { enabled: true, approval: "risky" },
+    computer: { enabled: true, approval: "risky" },
+    /* Unattended: writing a note down is not destructive, and an approval
+       prompt for every remembered fact is how people learn to click yes
+       without reading -- which is the prompt that matters going unread. */
+    memory: { enabled: true, approval: "never" },
+  };
+}
+
+/**
+ * Fold a patch of tool settings into the live ones, field by field.
+ *
+ * The same function serves the settings file and the PATCH handler, because
+ * they need identical trust: a file hand-edited into nonsense and a request
+ * body from a stale client both arrive as arbitrary JSON, and neither should be
+ * able to leave a group with no approval mode or a timeout of NaN. Anything
+ * unrecognised is left at whatever it already was rather than cleared.
+ */
+export function mergeTools(into: ToolSettings, patch: any): ToolSettings {
+  if (!patch || typeof patch !== "object") return into;
+  const modes = new Set(["always", "risky", "never"]);
+  const bool = (value: any, fallback: boolean) =>
+    typeof value === "boolean" ? value : fallback;
+  const mode = (value: any, fallback: ToolSettings["browser"]["approval"]) =>
+    modes.has(value) ? value : fallback;
+
+  if (patch.terminal && typeof patch.terminal === "object") {
+    into.terminal.enabled = bool(patch.terminal.enabled, into.terminal.enabled);
+    into.terminal.approval = mode(patch.terminal.approval, into.terminal.approval);
+    if (typeof patch.terminal.cwd === "string") {
+      into.terminal.cwd = patch.terminal.cwd.trim();
+    }
+    if (patch.terminal.timeout !== undefined) {
+      const seconds = Number(patch.terminal.timeout);
+      // A minute is not always enough (installs, builds); half an hour of a
+      // held turn is past the point anybody meant.
+      if (Number.isFinite(seconds)) {
+        into.terminal.timeout = Math.min(1800, Math.max(5, Math.round(seconds)));
+      }
+    }
+  }
+  for (const group of ["browser", "computer", "memory"] as const) {
+    const given = patch[group];
+    if (!given || typeof given !== "object") continue;
+    into[group].enabled = bool(given.enabled, into[group].enabled);
+    into[group].approval = mode(given.approval, into[group].approval);
+  }
+  return into;
+}
 
 /** How many turns of spend history to keep. Enough for a month of heavy use;
     the running totals are folded into `carried` as entries fall off the end,
@@ -92,6 +167,7 @@ function blank(): PersistedState {
     keys: {},
     budgetUsd: null,
     usage: [],
+    tools: defaultTools(),
   };
 }
 
@@ -106,6 +182,12 @@ function read(): PersistedState {
     if (raw.keys && typeof raw.keys === "object") state.keys = { ...raw.keys };
     if (typeof raw.budgetUsd === "number") state.budgetUsd = raw.budgetUsd;
     if (Array.isArray(raw.usage)) state.usage = raw.usage.filter(sane);
+    /* Field by field, so a settings file written by an older build -- which
+       has no `tools` key at all -- comes up with the defaults rather than with
+       an undefined the tool layer would then dereference. Same reason each
+       group is merged rather than replaced: a group added in a later release
+       must not be missing from a file saved before it existed. */
+    if (raw.tools) mergeTools(state.tools, raw.tools);
     if (raw.carried && typeof raw.carried === "object") {
       carried = {
         cost: Number(raw.carried.cost) || 0,

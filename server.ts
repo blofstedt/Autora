@@ -11,10 +11,21 @@ import {
   baseUrlFor, clearUsage, keyFor, keySource, maskKey, modelFor, recordUsage,
   resolveProvider, save, setKey, state, stateFilePath, type Resolved,
 } from "./server/state";
-import { ProviderError, listModels, streamChat, type ChatMessage } from "./server/llm";
+import {
+  ProviderError, listModels, streamChat,
+  type ChatMessage, type ChatTurn, type ToolReply,
+} from "./server/llm";
 import { billingSummary } from "./server/billing";
 import { dropSession, fromDataUrl, getBlob, putBlob } from "./server/blobs";
 import { LiveBrowser, VIEWPORT, probeBrowser, type PageRead } from "./server/browser";
+import {
+  attachRelay, relayClientSource, relayStatus, watchDesktop,
+} from "./server/desktop";
+import {
+  availableTools, capabilityBriefing, findTool, groupStates, needsApproval,
+  renderCall, runTool, toolSettings, updateToolSettings,
+  type ToolContext, type ToolGroup,
+} from "./server/tools";
 
 /* Where to listen. Umbrel's compose file publishes 8817 and passes it in, so
    these cannot be constants; 3000 stays the default because that is what
@@ -171,7 +182,7 @@ const memoryRecords: MemoryRecord[] = [
     kind: "skill",
     scope: "workspace",
     title: "Web Browsing & DOM Inspection",
-    body: "Headless Chromium navigation, DOM selector targeting, screenshot screencast streaming, and interactive form submissions.",
+    body: "Open a page with browser_open, read it as numbered elements with browser_read, then browser_click, browser_fill and browser_scroll. Every step is screencast to whoever is watching.",
     tags: ["skill", "browser", "automation", "dom"],
     status: "confirmed",
     pinned: true,
@@ -188,7 +199,7 @@ const memoryRecords: MemoryRecord[] = [
     kind: "skill",
     scope: "workspace",
     title: "Terminal & Shell Orchestration",
-    body: "Direct PTY execution, streaming command output chunks, exit code monitoring, and non-blocking process management.",
+    body: "Run a command with the terminal tool: bash -lc on this host, output streamed as it arrives, exit code reported. Pipes rather than a TTY, so interactive programs are not usable.",
     tags: ["skill", "terminal", "bash", "cli"],
     status: "confirmed",
     pinned: true,
@@ -205,7 +216,7 @@ const memoryRecords: MemoryRecord[] = [
     kind: "skill",
     scope: "workspace",
     title: "Autonomous Kanban Task Management",
-    body: "Deconstruct multi-step goals into backlog cards, autonomously progress items through Doing, and verify Done criteria with tools.",
+    body: "Break a multi-step goal into backlog cards on the board. The board is edited from the app; moving a card is not itself an action the agent can take.",
     tags: ["skill", "kanban", "planning", "autonomy"],
     status: "confirmed",
     pinned: true,
@@ -222,7 +233,7 @@ const memoryRecords: MemoryRecord[] = [
     kind: "skill",
     scope: "workspace",
     title: "Policy Gating & Permission Elevations",
-    body: "Present interactive approval cards in the chat transcript with parameter input and security validation prior to sensitive execution.",
+    body: "A tool call that changes something stops and shows the exact command as an approval card in the transcript. It does not run until somebody answers, and a decline is final for that call.",
     tags: ["skill", "security", "permissions", "policy"],
     status: "confirmed",
     pinned: false,
@@ -342,15 +353,12 @@ function createInitialSession(): Session {
       { id: "t-4", title: "Verify permission elevation card interactions", status: "todo", tag: "security" },
     ],
   });
-  add("permission.request", "agent", {
-    requestId: "req-init-1",
-    tool: "terminal.bash",
-    rendered: "npm run lint && git status --short",
-    reason: "Run syntax diagnostics and inspect workspace modification trees.",
-    inputType: "boolean",
-    settled: false,
-  });
-  add("turn.agent.text", "agent", { local: true, text: "I have initialized the workspace Kanban board and registered your active skill modules in memory. The memory ribbon at the top reflects neural synaptic connections, and interactive permissions cards are surfaced in-stream when elevation or inputs are needed." });
+  /* No approval card here any more. This session is seeded before anything
+     has been asked for, so a card in it was waiting on nothing: clicking it
+     released no tool call, because there was none, and the only thing it
+     demonstrated was that the prompt could be drawn. Real ones now appear
+     where a real call is parked on the answer. */
+  add("turn.agent.text", "agent", { local: true, text: "Autora is running. What I can reach — a shell on this host, a browser I drive, and a desktop if you run the relay — is listed under Tools in Settings, along with how much of it asks you first. Type a task and it happens in this thread: every command, page and keystroke shown where it occurred." });
   add("turn.agent.done", "agent", {});
 
   return session;
@@ -469,6 +477,121 @@ function browserFor(session: Session): LiveBrowser {
   return live;
 }
 
+// ------------------------------------------------------ approvals & turns --
+
+/**
+ * Turns that are running, and how to stop them.
+ *
+ * A turn can now take minutes -- a build, a page that will not load, an
+ * approval nobody has looked at yet -- so interrupting it has to reach further
+ * than a flag. Each running tool registers a way to be killed, and Stop calls
+ * all of them.
+ */
+type RunningTurn = { stopped: boolean; cancels: Set<() => void> };
+const running = new Map<string, RunningTurn>();
+
+function stopTurn(sessionId: string) {
+  const turn = running.get(sessionId);
+  if (!turn) return;
+  turn.stopped = true;
+  for (const cancel of turn.cancels) {
+    try {
+      cancel();
+    } catch {
+      // A kill that fails because the thing already exited is not news.
+    }
+  }
+  turn.cancels.clear();
+}
+
+/**
+ * Approvals that are actually waiting on an answer.
+ *
+ * The permission card in the transcript used to be decorative: it was emitted,
+ * the reply was broadcast, and nothing anywhere was blocked on it. Now the tool
+ * call genuinely stops here until somebody clicks, which is the only reading of
+ * that card that is not a lie.
+ */
+type PendingApproval = {
+  sessionId: string;
+  settle: (decision: { approved: boolean; response?: string }) => void;
+  timer: NodeJS.Timeout;
+};
+const awaitingApproval = new Map<string, PendingApproval>();
+
+/** Long enough to walk away and come back; short enough that a forgotten
+    prompt does not hold a session busy overnight. */
+const APPROVAL_TIMEOUT_MS = 15 * 60 * 1000;
+
+function settleApproval(
+  requestId: string,
+  decision: { approved: boolean; response?: string },
+) {
+  const pending = awaitingApproval.get(requestId);
+  if (!pending) return false;
+  clearTimeout(pending.timer);
+  awaitingApproval.delete(requestId);
+  pending.settle(decision);
+  return true;
+}
+
+/**
+ * Ask the person, and wait.
+ *
+ * Emits the card into the session it belongs to -- not to every session, which
+ * is what the old broadcast did -- and resolves when the answer arrives, when
+ * the turn is stopped, or when nobody has answered for a quarter of an hour.
+ */
+function askPermission(
+  session: Session,
+  what: { tool: string; rendered: string; reason: string },
+): Promise<{ approved: boolean; response?: string }> {
+  const requestId = `req-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+
+  emitEvent(session, "permission.request", "agent", {
+    request_id: requestId,
+    requestId,
+    tool: what.tool,
+    rendered: what.rendered,
+    reason: what.reason,
+    inputType: "boolean",
+    settled: false,
+  });
+
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (decision: { approved: boolean; response?: string }) => {
+      if (done) return;
+      done = true;
+      resolve(decision);
+    };
+
+    const timer = setTimeout(() => {
+      if (!awaitingApproval.delete(requestId)) return;
+      emitEvent(session, "policy.decision", "system", {
+        request_id: requestId,
+        decision: "deny",
+        approved: false,
+        who: "timeout",
+        reason: "Nobody answered within 15 minutes.",
+      });
+      finish({ approved: false });
+    }, APPROVAL_TIMEOUT_MS);
+    timer.unref?.();
+
+    awaitingApproval.set(requestId, { sessionId: session.id, settle: finish, timer });
+
+    // Stop should not leave a turn parked on a question nobody is going to
+    // answer, so the kill switch settles it too.
+    running.get(session.id)?.cancels.add(() => {
+      if (awaitingApproval.delete(requestId)) {
+        clearTimeout(timer);
+        finish({ approved: false });
+      }
+    });
+  });
+}
+
 /** Tell the watchers whether there is a live page to watch, so the card can
     show a feed rather than the last screenshot -- and stop when there is not. */
 function broadcastBrowserState(session: Session) {
@@ -478,6 +601,81 @@ function broadcastBrowserState(session: Session) {
     session: session.id,
     state: live ? live.status() : { available: false, open: false, url: null, title: null, detail: null, fps: 0, viewport: VIEWPORT },
   });
+}
+
+// ---------------------------------------------------------------- desktop --
+
+/**
+ * Which session the desktop feed is pointed at.
+ *
+ * There is one relay and therefore one desktop, but any number of sessions
+ * could ask about it. The one that most recently touched it is the one whose
+ * thread the frames belong in; pointing them at all of them would put a video
+ * of somebody's screen into conversations that never asked for it.
+ */
+let desktopSession: string | null = null;
+
+/** The last frame kept as an event, so the desktop cell has something to show
+    on replay rather than an empty box where a live feed used to be. */
+let lastDesktopKeyframe = 0;
+const DESKTOP_KEYFRAME_MS = 15_000;
+
+function watchDesktopFor(session: Session) {
+  if (desktopSession === session.id) return;
+  desktopSession = session.id;
+  watchDesktop((base64, mime) => {
+    sendEphemeral(session.id, {
+      type: "frame",
+      session: session.id,
+      source: "desktop",
+      mime,
+      data: base64,
+      ts: Date.now(),
+    });
+
+    // One every so often becomes part of the record. The feed is ephemeral by
+    // design -- see sendEphemeral -- but a session with no stored frame at all
+    // replays as a desktop cell that shows nothing.
+    const now = Date.now();
+    if (now - lastDesktopKeyframe < DESKTOP_KEYFRAME_MS) return;
+    lastDesktopKeyframe = now;
+    const relay = relayStatus();
+    const blob = putBlob(session.id, Buffer.from(base64, "base64"), mime);
+    emitEvent(
+      session, "desktop.frame", "agent",
+      { w: relay.screen.w, h: relay.screen.h }, null, blob,
+    );
+  });
+}
+
+/** Stop the relay capturing when the session it was feeding has no watchers
+    left -- a relay on somebody's laptop should not be shipping JPEGs because a
+    tab was open an hour ago. */
+function releaseDesktopIfIdle(sessionId: string) {
+  if (desktopSession !== sessionId) return;
+  if ((sessionSockets.get(sessionId)?.size ?? 0) > 0) return;
+  desktopSession = null;
+  watchDesktop(null);
+}
+
+/**
+ * A relay connected, disconnected, or changed resolution.
+ *
+ * Logged rather than pushed at the browser: the settings card and the rail
+ * indicator both poll `/api/relay` already, which reads the same status this
+ * would carry. A second delivery path for one boolean would be two things to
+ * keep in agreement in exchange for eight seconds of latency on a screen
+ * somebody is looking at while they start the relay by hand.
+ */
+function noteRelayChange() {
+  const state = relayStatus();
+  console.log(
+    state.connected
+      ? `[relay] connected: ${state.platform ?? "unknown platform"} ${
+          state.screen.w ?? "?"}x${state.screen.h ?? "?"}${
+          state.canControl ? "" : " (capture only)"}`
+      : `[relay] ${state.detail ?? "disconnected"}`,
+  );
 }
 
 // ---------------------------------------------------------------- models --
@@ -569,26 +767,19 @@ const RETRY_BACKOFF_MS = [600, 1500, 3200];
 /** Codes worth asking again for: rate limits, overload, and the generic 500. */
 const TRANSIENT = new Set([429, 500, 502, 503, 504]);
 
-const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
 /**
- * A web address in what somebody typed, if there is one.
+ * How many rounds of tool calls one prompt may take.
  *
- * The trigger for actually opening a browser is deliberately a written-down
- * address rather than a guess at intent: "check the deploy" could mean six
- * things, but a message with `example.com/status` in it means that page, and
- * an agent that opens a real browser should do so for a reason you can point
- * at afterwards. A bare domain counts -- nobody types the scheme -- but a
- * bare word does not, or every mention of a file would launch Chrome.
+ * Each round is a billed call to the model, and a model that has talked itself
+ * into a loop -- re-reading the same page, re-running a command that will fail
+ * the same way -- will spend every round it is given. Twelve is enough for real
+ * multi-step work (open a page, read it, click through, run a command, check
+ * the output, report) and cheap enough to hit by accident without it mattering.
+ * Running out is reported in the thread rather than passed over in silence.
  */
-const URL_PATTERN =
-  /\b((?:https?:\/\/|www\.)[^\s<>"')]+|(?:localhost|\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?(?:\/[^\s<>"')]*)?|[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9][a-z0-9-]*)*\.(?:com|org|net|io|dev|app|ai|co|uk|edu|gov|so|sh|me|xyz|info|news)(?::\d+)?(?:\/[^\s<>"')]*)?)/i;
+const MAX_TOOL_STEPS = 12;
 
-/** Sentences that are about looking at a page, rather than merely containing
-    something that resembles an address. `npm.io` in a paragraph about
-    packages is not a request to browse; "open npm.io" is. */
-const BROWSE_VERBS =
-  /\b(open|go to|goto|visit|browse|navigate|load|fetch|check|look at|read|screenshot|show me|see|what(?:'s| is) on)\b/i;
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Keep whole images out of the prose, without giving up streaming.
@@ -670,23 +861,84 @@ class DataUrlSieve {
   }
 }
 
-function browseTarget(text: string): string | null {
-  const found = URL_PATTERN.exec(text);
-  if (!found) return null;
-  const candidate = found[1].replace(/[.,;:]+$/, "");
-  // An explicit scheme is a request on its own; anything looser needs a verb
-  // in front of it saying what to do with it.
-  if (/^https?:\/\//i.test(candidate)) return candidate;
-  return BROWSE_VERBS.test(text) ? candidate : null;
+/** How many past tool calls to recap. Enough to cover the work behind a
+    follow-up question, bounded so a long session does not push the whole
+    prompt out on the digest alone. */
+const RECAP_CALLS = 30;
+
+/**
+ * What the agent did earlier in this session, read back out of the log.
+ *
+ * One line per call: the tool, the essential argument, and how it turned out.
+ * Paired by span, which is how the log already ties a call to its result --
+ * the same relation the transcript is built from, so this cannot describe a
+ * call the person cannot also see.
+ */
+function pastToolCalls(sessionId: string): string[] {
+  const session = sessions.get(sessionId);
+  if (!session) return [];
+
+  const calls = new Map<string, { name: string; args: any; outcome: string }>();
+  for (const event of session.events) {
+    if (!event.span) continue;
+    if (event.kind === "tool.call") {
+      calls.set(event.span, {
+        name: String(event.payload?.name ?? "tool"),
+        args: event.payload?.args ?? {},
+        outcome: "did not finish",
+      });
+      continue;
+    }
+    const found = calls.get(event.span);
+    if (!found) continue;
+    if (event.kind === "tool.result") {
+      const code = event.payload?.display?.exit_code;
+      found.outcome =
+        code !== undefined
+          ? `exit ${code}`
+          : event.payload?.ok === false
+            ? "failed"
+            : `ok${event.payload?.preview ? ` -- ${String(event.payload.preview).slice(0, 80)}` : ""}`;
+    } else if (event.kind === "tool.error") {
+      found.outcome = event.payload?.denied
+        ? "declined by the person"
+        : `failed: ${String(event.payload?.error ?? "unknown").slice(0, 80)}`;
+    }
+  }
+
+  const essential = (name: string, args: any): string => {
+    if (name === "terminal") return String(args.command ?? "");
+    if (name === "browser_open") return String(args.url ?? "");
+    if (name === "memory_write") return String(args.title ?? "");
+    if (name === "memory_search") return String(args.query ?? "");
+    const keys = Object.keys(args ?? {});
+    return keys.length > 0 ? JSON.stringify(args).slice(0, 80) : "";
+  };
+
+  return [...calls.values()]
+    .slice(-RECAP_CALLS)
+    .map((c) => {
+      const what = essential(c.name, c.args);
+      return `- ${c.name}${what ? ` (${what})` : ""} -> ${c.outcome}`;
+    });
 }
 
 /** What the model is told it is, and what it knows, before the conversation. */
-function systemInstructionFor(
+async function systemInstructionFor(
+  sessionId: string,
   recalled: MemoryRecord[],
-  page?: PageRead | null,
   active?: Resolved | null,
-): string {
+): Promise<string> {
   const lines = [state.systemPrompt.trim()];
+
+  /* What it can actually do, generated from the tool registry rather than
+     written down here. This is the section whose absence made the console
+     dishonest in both directions: with no inventory the model denied having a
+     terminal it was about to be given one of, and with the memory graph's
+     skill records as the only nearby claim it confabulated command output to
+     match. See server/tools.ts -- the schemas the model receives and this
+     prose come from the same array, so they cannot drift. */
+  lines.push("", await capabilityBriefing());
 
   /* Which vendor is answering, said plainly.
      Nothing else in the prompt carries it, so a model asked "which provider
@@ -715,22 +967,38 @@ function systemInstructionFor(
     );
   }
 
-  /* The page as text, which is the channel the model reads. The person
-     watching is getting the video feed of the same page at the same moment
-     from a different channel entirely -- see server/browser.ts. */
-  if (page) {
+  /* The open page used to be pasted in here on every turn, because reading it
+     was the only thing the agent could do with a browser and it had no way to
+     ask. It can ask now -- browser_read returns the same text, on demand and
+     at the point it is wanted -- so this says only that a page is open, and
+     the six thousand characters of it are fetched if they turn out to matter. */
+  const open = browsers.get(sessionId)?.status();
+  if (open?.open && open.url) {
     lines.push(
       "",
-      `You have a browser open at ${page.url} ("${page.title}"). You are looking`,
-      "at it now. Its interactive elements, numbered as a screen reader would",
-      "announce them:",
-      page.outline || "(nothing interactive on this page)",
+      `A browser is already open at ${open.url}${
+        open.title ? ` ("${open.title}")` : ""}. Call browser_read to see what ` +
+        "is on it; the numbered elements it returns are what browser_click and " +
+        "browser_fill take.",
+    );
+  }
+
+  /* What it did earlier in this session.
+     The chat history rebuilds from the event log on every turn (see
+     historyFor) and carries only words, so without this the agent forgets
+     every command it ran the moment the turn ends -- and then answers "what
+     was that exit code?" by guessing. The tool calls themselves are not
+     replayed as tool_use/tool_result pairs on purpose: vendors validate that
+     pairing strictly, and a call whose result went missing across a restart
+     would fail the whole request. A digest is stated as what it is, so
+     nothing here can be mistaken for something the model said. */
+  const done = pastToolCalls(sessionId);
+  if (done.length > 0) {
+    lines.push(
       "",
-      "And its readable text:",
-      page.text.slice(0, 4000),
-      "",
-      "Answer from what is actually on that page. Say so plainly if it does not",
-      "contain what was asked for.",
+      "What you have already done in this session, oldest first:",
+      ...done,
+      "These happened. Do not repeat one to find out what it returned.",
     );
   }
 
@@ -921,8 +1189,9 @@ async function startServer() {
     // 1. Emit user message
     emitEvent(session, "turn.user", "user", { text });
 
-    // 2. Mark busy
+    // 2. Mark busy, and open a fresh cancellation slate for this turn
     session.busy = true;
+    running.set(session.id, { stopped: false, cancels: new Set() });
     broadcastLiveStatus(session);
     res.json({ ok: true, queued: false });
 
@@ -968,8 +1237,26 @@ async function startServer() {
           if (archFact) accessedRecords.push(archFact);
         }
 
+        /* A skill record is a claim about what this agent can do, and it is
+           injected into the system prompt under "what you already know about
+           this workspace". While the tool layer did not exist, mem-skill-2 --
+           "Direct PTY execution, streaming command output chunks, exit code
+           monitoring" -- was told to a model holding no tools at all, which is
+           how a console with no shell came to narrate command output. Now that
+           the tools are real, the claim is only made where the tool behind it
+           is actually available; the briefing above says what is off and why. */
+        const BACKED_BY: Record<string, ToolGroup> = {
+          "mem-skill-1": "browser",
+          "mem-skill-2": "terminal",
+        };
+        const usable = new Set(
+          (await groupStates()).filter((g) => g.available).map((g) => g.group),
+        );
+
         const uniqueAccessed = accessedRecords.filter(
-          (item, idx, self) => self.findIndex((r) => r.id === item.id) === idx
+          (item, idx, self) =>
+            self.findIndex((r) => r.id === item.id) === idx &&
+            (!BACKED_BY[item.id] || usable.has(BACKED_BY[item.id])),
         );
         if (uniqueAccessed.length > 0) {
           emitEvent(session, "memory.recall", "agent", {
@@ -978,291 +1265,353 @@ async function startServer() {
           });
         }
 
-        // Determine if user is requesting a tool-like action (e.g. command, memory, search, kanban, permission)
-        const spanId = `span-${Date.now().toString(36)}`;
+        // ------------------------------------------------------ the turn --
 
-        if (lower.includes("kanban") || lower.includes("task") || lower.includes("autonomously execute")) {
-          // Autonomous Kanban Task Execution
-          const kanbanEvents = session.events.filter((e) => e.kind === "kanban.update");
-          const lastBoard = kanbanEvents.length > 0 ? kanbanEvents[kanbanEvents.length - 1].payload : null;
-          let boardTasks: any[] = lastBoard?.tasks ? JSON.parse(JSON.stringify(lastBoard.tasks)) : [
-            { id: "t-1", title: "Verify container ingress on port 3000", status: "done", tag: "network" },
-            { id: "t-2", title: "Mount neural synaptic tracers in memory ribbon", status: "doing", tag: "visual" },
-            { id: "t-3", title: "Register autonomous skills in memory graph", status: "todo", tag: "skills" },
-            { id: "t-4", title: "Verify permission elevation card interactions", status: "todo", tag: "security" },
-          ];
-
-          // Find task to execute
-          let targetTask = boardTasks.find((t) => lower.includes(t.title.toLowerCase())) ||
-                           boardTasks.find((t) => t.status === "doing") ||
-                           boardTasks.find((t) => t.status === "todo");
-
-          if (targetTask) {
-            targetTask.status = "doing";
-            emitEvent(session, "kanban.update", "agent", {
-              id: lastBoard?.id || "board-main",
-              title: lastBoard?.title || "Project Autonomy Board",
-              autonomous: true,
-              tasks: boardTasks,
-              activeTaskId: targetTask.id,
-            });
-
-            // Simulate execution steps
-            emitEvent(session, "tool.call", "agent", {
-              tool: "autonomous_executor",
-              args: { task: targetTask.title, mode: "autonomous" },
-            }, spanId);
-
-            emitEvent(session, "pty.output", "agent", {
-              text: `$ run-task --autonomous "${targetTask.title}"\n[autora] resolving skill dependencies...\n[autora] executing task validation...\n[autora] verification passed: exit 0\n`,
-            }, spanId);
-
-            emitEvent(session, "tool.result", "agent", { ok: true, taskId: targetTask.id }, spanId);
-
-            // Mark task done
-            targetTask.status = "done";
-            emitEvent(session, "kanban.update", "agent", {
-              id: lastBoard?.id || "board-main",
-              title: lastBoard?.title || "Project Autonomy Board",
-              autonomous: true,
-              tasks: boardTasks,
-            });
-
-            // Trigger memory association for completed task
-            emitEvent(session, "memory.recall", "agent", {
-              ids: ["mem-skill-3", "mem-3"],
-              titles: ["Autonomous Kanban Task Management", "Autora Broadcast Architecture"],
-            });
-          }
-        } else if (lower.includes("permission") || lower.includes("elevat") || lower.includes("sudo") || lower.includes("deploy")) {
-          // Interactive Permission Request card
-          emitEvent(session, "permission.request", "agent", {
-            requestId: `req-${Date.now().toString(36)}`,
-            tool: lower.includes("deploy") ? "deploy.production" : "terminal.bash",
-            rendered: lower.includes("deploy") ? "docker compose up --build -d" : "npm run build && git push origin main",
-            reason: "Elevated execution requires explicit confirmation before proceeding.",
-            inputType: lower.includes("target") || lower.includes("branch") ? "text" : "boolean",
-            placeholder: "Enter target deployment branch...",
-            settled: false,
-          });
-        } else if (lower.includes("skill") || lower.includes("procedure")) {
-          // Highlight skill library & synaptic memory
-          const skills = memoryRecords.filter((m) => m.kind === "skill");
-          emitEvent(session, "memory.recall", "agent", {
-            ids: skills.slice(0, 3).map((s) => s.id),
-            titles: skills.slice(0, 3).map((s) => s.title),
-          });
-        } else if (lower.includes("bash") || lower.includes("terminal") || lower.includes("run") || lower.includes("ls") || lower.includes("git")) {
-          emitEvent(session, "tool.call", "agent", {
-            tool: "terminal",
-            args: { command: "echo '[autora] executing scheduled workspace task'" },
-          }, spanId);
-
-          emitEvent(session, "pty.output", "agent", {
-            text: "$ echo '[autora] executing scheduled workspace task'\n[autora] executing scheduled workspace task\n",
-          }, spanId);
-
-          emitEvent(session, "tool.output", "agent", {
-            output: "[autora] executing scheduled workspace task\nExit code: 0",
-          }, spanId);
-
-          emitEvent(session, "tool.result", "agent", { ok: true }, spanId);
-        } else if (lower.includes("remember") || lower.includes("memory") || lower.includes("save")) {
-          emitEvent(session, "tool.call", "agent", {
-            tool: "memory",
-            args: { action: "write", content: text },
-          }, spanId);
-
-          const newMem: MemoryRecord = {
-            id: `mem-${Date.now().toString(36)}`,
-            kind: "fact",
-            scope: "user",
-            title: text.slice(0, 35),
-            body: text,
-            tags: ["user-authored", "session-note"],
-            status: "confirmed",
-            pinned: false,
-            source_session: session.id,
-            source_seq: session.seqCounter,
-            created: Math.floor(Date.now() / 1000),
-            updated: Math.floor(Date.now() / 1000),
-            uses: 1,
-            last_used: Math.floor(Date.now() / 1000),
-            superseded_by: null,
-          };
-          memoryRecords.push(newMem);
-
-          emitEvent(session, "memory.write", "agent", {
-            id: newMem.id,
-            title: newMem.title,
-            kind: newMem.kind,
-          });
-
-          emitEvent(session, "tool.result", "agent", { ok: true, id: newMem.id }, spanId);
-        }
-
-        /* If an address was named, actually go there -- in a real browser,
-           with the screencast running, so the page is watched being opened
-           rather than reported as having been. What comes back is text; what
-           the person gets is the video feed of the same page. */
-        let page: PageRead | null = null;
-        const target = browseTarget(text);
-        if (target) {
-          const browseSpan = `span-web-${Date.now().toString(36)}`;
-          emitEvent(session, "tool.call", "agent", {
-            tool: "browser",
-            args: { action: "open", url: target },
-          }, browseSpan);
-          try {
-            const { ok, detail } = await probeBrowser();
-            if (!ok) throw new Error(detail ?? "No browser available.");
-            const live = browserFor(session);
-            page = await live.goto(target);
-            broadcastBrowserState(session);
-            emitEvent(session, "tool.result", "agent", {
-              ok: true,
-              url: page.url,
-              title: page.title,
-              elements: page.refs.length,
-            }, browseSpan);
-
-            /* Asked what it *looks* like, rather than what it says: that is
-               the one question the text channel genuinely cannot answer, so
-               the picture goes into the conversation as a picture. */
-            if (/\b(screenshot|show me|what does it look|looks? like|see it|picture|image)\b/i.test(text)) {
-              const png = await live.capture();
-              emitEvent(session, "media.image", "agent", {
-                alt: `${page.title || page.url}`,
-                caption: page.url,
-                w: VIEWPORT.width,
-                h: VIEWPORT.height,
-              }, null, putBlob(session.id, png, "image/png"));
-            }
-          } catch (err: any) {
-            emitEvent(session, "tool.error", "agent", {
-              error: err?.message ?? String(err),
-            }, browseSpan);
-            emitEvent(session, "system.error", "system", {
-              error: `Could not open ${target}: ${err?.message ?? err}`,
-            });
-          }
-        }
-
-        // Generate the reply with whichever provider is configured, streaming
-        // it so the thread fills as the model writes rather than sitting empty
-        // and then blinking a paragraph into place.
         const active = resolveProvider();
         const connected = Boolean(active.provider) && !active.problem;
         let streamed = 0;
+        /* Whether any tool actually ran this turn. The two ways a turn ends
+           with no words are not the same thing: the provider never answered
+           (an error is already in the log), or tools ran and the model simply
+           never wrote a closing line. Pointing at work that did not happen is
+           its own small lie. */
+        let ranSomething = false;
         /* One per turn, and outside the retry loop on purpose: a retry only
            happens when nothing has been said yet, so the sieve is empty, and
            a fresh one per attempt would be the same object with more steps. */
         const sieve = new DataUrlSieve();
 
         if (connected) {
-          const call = {
-            provider: active.provider,
-            model: active.model,
-            key: active.key,
-            baseUrl: active.baseUrl,
-            system: systemInstructionFor(uniqueAccessed, page, active),
-            messages: historyFor(session),
-            temperature: 0.7,
-            maxTokens: 2048,
-            thinkingBudget: THINKING_BUDGET,
+          const tools = await availableTools();
+          const messages = historyFor(session);
+
+          /** An image inlined into the reply becomes a card where it was
+              written, rather than a screenful of base64. */
+          const show = (found: string[]) => {
+            for (const raw of found) {
+              const decoded = fromDataUrl(raw);
+              if (!decoded || !decoded.mime.startsWith("image/")) continue;
+              emitEvent(session, "media.image", "agent", {
+                alt: "image from the reply",
+                caption: null,
+                inline: true,
+              }, null, putBlob(session.id, decoded.data, decoded.mime));
+            }
           };
 
-          for (let attempt = 0; attempt <= MODEL_RETRIES; attempt += 1) {
-            try {
-              /** An image inlined into the reply becomes a card where it was
-                  written, rather than a screenful of base64. */
-              const show = (found: string[]) => {
-                for (const raw of found) {
-                  const decoded = fromDataUrl(raw);
-                  if (!decoded || !decoded.mime.startsWith("image/")) continue;
-                  emitEvent(session, "media.image", "agent", {
-                    alt: "image from the reply",
-                    caption: null,
-                    inline: true,
-                  }, null, putBlob(session.id, decoded.data, decoded.mime));
+          /**
+           * One call to the model, retried while nothing has reached the thread.
+           *
+           * Returns what it said and what it wants run, or null once the
+           * failure has been reported and there is no point going again.
+           */
+          const askModel = async (system: string): Promise<ChatTurn | null> => {
+            // Across attempts, not within one: a second attempt after half a
+            // sentence has been delivered would say that half twice.
+            let delivered = 0;
+
+            for (let attempt = 0; attempt <= MODEL_RETRIES; attempt += 1) {
+              try {
+                const turn = await streamChat({
+                  provider: active.provider,
+                  model: active.model,
+                  key: active.key,
+                  baseUrl: active.baseUrl,
+                  system,
+                  messages,
+                  temperature: 0.7,
+                  maxTokens: 2048,
+                  thinkingBudget: THINKING_BUDGET,
+                  tools: tools.map((t) => ({
+                    name: t.name,
+                    description: t.description,
+                    parameters: t.parameters,
+                  })),
+                }, (piece) => {
+                  // The client coalesces these deltas into one reply (see
+                  // derive.ts), so a chunk per emit is a sentence appearing,
+                  // not forty cards.
+                  const { text: clean, images } = sieve.feed(piece);
+                  if (clean) {
+                    emitEvent(session, "turn.agent.text", "agent", { text: clean });
+                    delivered += clean.length;
+                    streamed += clean.length;
+                  }
+                  show(images);
+                });
+
+                const tail = sieve.flush();
+                if (tail.text) {
+                  emitEvent(session, "turn.agent.text", "agent", { text: tail.text });
+                  delivered += tail.text.length;
+                  streamed += tail.text.length;
                 }
+                show(tail.images);
+
+                // What the turn cost, written down at the moment it happened.
+                // Prices move, so re-pricing an old turn later from today's
+                // table would quietly rewrite history; the ledger keeps the
+                // figure that was in force when the call was made. One entry
+                // per model call, so a turn that used six tools is billed as
+                // the six calls it actually was.
+                const priced = isPriced(active.provider, active.model);
+                const cost = costOf(
+                  active.provider, active.model, turn.usage.input, turn.usage.output,
+                );
+                recordUsage({
+                  ts: Math.floor(Date.now() / 1000),
+                  session: session.id,
+                  provider: active.provider,
+                  model: active.model,
+                  input: turn.usage.input,
+                  output: turn.usage.output,
+                  cost,
+                  priced,
+                  estimated: turn.usage.estimated,
+                });
+                emitEvent(session, "usage.turn", "system", {
+                  provider: active.provider,
+                  model: active.model,
+                  input_tokens: turn.usage.input,
+                  output_tokens: turn.usage.output,
+                  cost_usd: cost,
+                  priced,
+                  estimated: turn.usage.estimated,
+                });
+
+                return turn;
+              } catch (err: any) {
+                const detail = err?.message ?? String(err);
+                const status = err instanceof ProviderError ? err.status : null;
+                console.warn(
+                  `[model] ${active.provider}/${active.model} attempt ${attempt + 1}: ${detail}`,
+                );
+
+                const retryable =
+                  delivered === 0 &&
+                  attempt < MODEL_RETRIES &&
+                  (status === null || TRANSIENT.has(status));
+
+                if (retryable) {
+                  await wait(RETRY_BACKOFF_MS[Math.min(attempt, RETRY_BACKOFF_MS.length - 1)]);
+                  continue;
+                }
+
+                // Said out loud rather than swallowed: a canned reply in place
+                // of a real one is indistinguishable from the model working,
+                // and what people need to know is whether their key is wrong or
+                // the vendor is simply busy.
+                const vendor =
+                  PROVIDERS.find((p) => p.id === active.provider)?.label ?? active.provider;
+                emitEvent(session, "system.error", "system", {
+                  error: `${vendor} (${active.model}) did not answer: ${detail}`,
+                });
+                return null;
+              }
+            }
+            return null;
+          };
+
+          /** Everything a tool needs from this session, handed in rather than
+              imported, so server/tools.ts knows nothing about sessions. */
+          const contextFor = (span: string): ToolContext => ({
+            onOutput: (chunk) =>
+              emitEvent(session, "pty.output", "agent", { data: chunk }, span),
+            putBlob: (data, mime) => putBlob(session.id, data, mime),
+            showImage: (blob, alt, caption, size) =>
+              emitEvent(session, "media.image", "agent", {
+                alt, caption, ...(size ? { w: size.w, h: size.h } : {}),
+              }, null, blob),
+            browser: () => browserFor(session),
+            browserChanged: () => broadcastBrowserState(session),
+            watchDesktop: () => watchDesktopFor(session),
+            cancelled: () => Boolean(running.get(session.id)?.stopped),
+            onCancel: (stop) => { running.get(session.id)?.cancels.add(stop); },
+            memory: {
+              write: ({ title, body, kind }) => {
+                const record: MemoryRecord = {
+                  id: `mem-${Date.now().toString(36)}`,
+                  kind: kind as MemoryRecord["kind"],
+                  scope: "workspace",
+                  title,
+                  body,
+                  tags: ["agent-authored"],
+                  status: "confirmed",
+                  pinned: false,
+                  source_session: session.id,
+                  source_seq: session.seqCounter,
+                  created: Math.floor(Date.now() / 1000),
+                  updated: Math.floor(Date.now() / 1000),
+                  uses: 1,
+                  last_used: Math.floor(Date.now() / 1000),
+                  superseded_by: null,
+                };
+                memoryRecords.push(record);
+                emitEvent(session, "memory.write", "agent", {
+                  id: record.id, title: record.title, kind: record.kind,
+                });
+                return { id: record.id };
+              },
+              search: (query) => {
+                const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+                const hits = memoryRecords.filter((m) => {
+                  const haystack =
+                    `${m.title} ${m.body} ${m.tags.join(" ")}`.toLowerCase();
+                  return terms.some((t) => haystack.includes(t));
+                });
+                if (hits.length > 0) {
+                  // A search is a recall, and the ribbon should light up for it
+                  // exactly as it does for the automatic kind.
+                  emitEvent(session, "memory.recall", "agent", {
+                    ids: hits.slice(0, 8).map((m) => m.id),
+                    titles: hits.slice(0, 8).map((m) => m.title),
+                  });
+                }
+                return hits.slice(0, 8).map((m) => ({
+                  kind: m.kind, title: m.title, body: m.body,
+                }));
+              },
+            },
+          });
+
+          /**
+           * The agent loop.
+           *
+           * Ask, run whatever came back, tell the model what happened, ask
+           * again -- until it stops asking for tools, or the step budget runs
+           * out. The budget exists because a model that has got itself into a
+           * loop will happily spend a hundred calls on it, and every one of
+           * those is billed.
+           */
+          let spans = 0;
+          for (let step = 0; step < MAX_TOOL_STEPS; step += 1) {
+            if (running.get(session.id)?.stopped) break;
+
+            const turn = await askModel(
+              await systemInstructionFor(session.id, uniqueAccessed, active),
+            );
+            if (!turn || turn.calls.length === 0) break;
+
+            messages.push({ role: "assistant", text: turn.text, calls: turn.calls });
+            const replies: ToolReply[] = [];
+
+            for (const use of turn.calls) {
+              const span = `span-${session.id}-${session.seqCounter}-${spans++}`;
+              const reply = (ok: boolean, result: string): void => {
+                replies.push({ id: use.id, name: use.name, ok, result });
               };
 
-              const usage = await streamChat(call, (piece) => {
-                // The client coalesces these deltas into one reply (see
-                // derive.ts), so a chunk per emit is a sentence appearing,
-                // not forty cards.
-                const { text: clean, images } = sieve.feed(piece);
-                if (clean) {
-                  emitEvent(session, "turn.agent.text", "agent", { text: clean });
-                  streamed += clean.length;
-                }
-                show(images);
-              });
-
-              const tail = sieve.flush();
-              if (tail.text) {
-                emitEvent(session, "turn.agent.text", "agent", { text: tail.text });
-                streamed += tail.text.length;
-              }
-              show(tail.images);
-
-              // What the turn cost, written down at the moment it happened.
-              // Prices move, so re-pricing an old turn later from today's
-              // table would quietly rewrite history; the ledger keeps the
-              // figure that was in force when the call was made.
-              const priced = isPriced(active.provider, active.model);
-              const cost = costOf(active.provider, active.model, usage.input, usage.output);
-              recordUsage({
-                ts: Math.floor(Date.now() / 1000),
-                session: session.id,
-                provider: active.provider,
-                model: active.model,
-                input: usage.input,
-                output: usage.output,
-                cost,
-                priced,
-                estimated: usage.estimated,
-              });
-              emitEvent(session, "usage.turn", "system", {
-                provider: active.provider,
-                model: active.model,
-                input_tokens: usage.input,
-                output_tokens: usage.output,
-                cost_usd: cost,
-                priced,
-                estimated: usage.estimated,
-              });
-              break;
-            } catch (err: any) {
-              const detail = err?.message ?? String(err);
-              const status = err instanceof ProviderError ? err.status : null;
-              console.warn(
-                `[model] ${active.provider}/${active.model} attempt ${attempt + 1}: ${detail}`,
-              );
-
-              // Only worth another go while nothing has reached the thread --
-              // re-running a half-delivered reply would say the first half
-              // twice.
-              const retryable =
-                streamed === 0 &&
-                attempt < MODEL_RETRIES &&
-                (status === null || TRANSIENT.has(status));
-
-              if (retryable) {
-                await wait(RETRY_BACKOFF_MS[Math.min(attempt, RETRY_BACKOFF_MS.length - 1)]);
+              if (running.get(session.id)?.stopped) {
+                reply(false, "The person stopped the turn before this ran.");
                 continue;
               }
 
-              // Said out loud rather than swallowed: a canned reply in place
-              // of a real one is indistinguishable from the model working,
-              // and what people need to know is whether their key is wrong or
-              // the vendor is simply busy.
-              const vendor = PROVIDERS.find((p) => p.id === active.provider)?.label ?? active.provider;
-              emitEvent(session, "system.error", "system", {
-                error: `${vendor} (${active.model}) did not answer: ${detail}`,
+              const spec = findTool(use.name);
+              /* Offered tools are the available ones, so an unknown name here
+                 means the model invented it -- or asked for something from a
+                 group that is switched off. Naming what it does have is more
+                 use to it than "unknown tool". */
+              if (!spec || !tools.some((t) => t.name === use.name)) {
+                emitEvent(session, "tool.call", "agent", {
+                  name: use.name, args: use.args,
+                }, span);
+                const known = tools.map((t) => t.name).join(", ") || "none";
+                const why = spec
+                  ? `"${use.name}" exists but its group is not available right now.`
+                  : `There is no tool called "${use.name}".`;
+                emitEvent(session, "tool.error", "agent", { error: why }, span);
+                reply(false, `${why} The tools you have are: ${known}.`);
+                continue;
+              }
+
+              emitEvent(session, "tool.call", "agent", {
+                name: spec.name, args: use.args,
+              }, span);
+
+              if (needsApproval(spec)) {
+                const decision = await askPermission(session, {
+                  tool: spec.name,
+                  rendered: renderCall(spec, use.args),
+                  reason: turn.text.trim()
+                    // The model's own words for why, when it gave any: far more
+                    // use on the card than a fixed sentence about elevation.
+                    ? turn.text.trim().slice(0, 300)
+                    : `${spec.name} needs your approval before it runs.`,
+                });
+                if (!decision.approved) {
+                  emitEvent(session, "tool.error", "agent", {
+                    denied: true, reason: "The person declined this.",
+                  }, span);
+                  reply(
+                    false,
+                    "The person declined this. Do not retry it. Either find " +
+                      "another way, or tell them what you needed it for and why.",
+                  );
+                  continue;
+                }
+                if (decision.response) {
+                  emitEvent(session, "context.note", "user", {
+                    text: `You answered the approval with: ${decision.response}`,
+                  });
+                }
+              }
+
+              const started = Date.now();
+              ranSomething = true;
+              const outcome = await runTool(spec, use.args, contextFor(span));
+              const durationMs = Date.now() - started;
+
+              if (spec.group === "terminal") {
+                // The terminal cell reads its exit code from here, and the
+                // pipes are closed by the time this lands.
+                emitEvent(session, "pty.exit", "agent", {
+                  exit_code: outcome.exitCode ?? null,
+                  duration_ms: durationMs,
+                }, span);
+              }
+
+              if (outcome.ok) {
+                emitEvent(session, "tool.result", "agent", {
+                  ok: true,
+                  preview: outcome.preview ?? "",
+                  duration_ms: durationMs,
+                  ...(outcome.exitCode !== undefined
+                    ? { display: { exit_code: outcome.exitCode } }
+                    : {}),
+                }, span);
+              } else {
+                /* A command that exits non-zero is a result, not a broken
+                   tool: the model needs to read it and decide. Only a tool
+                   that could not run at all is an error. */
+                if (outcome.exitCode !== undefined) {
+                  emitEvent(session, "tool.result", "agent", {
+                    ok: false,
+                    preview: outcome.preview ?? "",
+                    duration_ms: durationMs,
+                    display: { exit_code: outcome.exitCode },
+                  }, span);
+                } else {
+                  emitEvent(session, "tool.error", "agent", {
+                    error: outcome.summary,
+                    duration_ms: durationMs,
+                  }, span);
+                }
+              }
+
+              reply(outcome.ok, outcome.summary);
+            }
+
+            messages.push({ role: "tool", replies });
+
+            if (step === MAX_TOOL_STEPS - 1) {
+              /* Out of budget with the model still working. Said in the log
+                 rather than silently stopping, because a turn that ends
+                 mid-task with no explanation looks like a crash. */
+              emitEvent(session, "system.log", "system", {
+                message:
+                  `Stopped after ${MAX_TOOL_STEPS} rounds of tool calls. Ask ` +
+                  "again to carry on from here.",
               });
-              break;
             }
           }
         }
@@ -1271,26 +1620,28 @@ async function startServer() {
         // something useful rather than leaving the turn blank.
         if (streamed === 0) {
           let reply: string;
-          if (page) {
-            // Something real did happen, model or no model: a page was opened
-            // and read. Say what is on it rather than apologising.
+          if (!connected) {
             reply =
-              `Opened ${page.url} — "${page.title}". It has ${page.refs.length} ` +
-              `interactive element${page.refs.length === 1 ? "" : "s"}; the live view above ` +
-              "is the page itself, and the card keeps a frame from each step." +
-              (connected ? "" : " Connect a model in Settings and I can tell you what it says.");
-          } else if (!connected) {
-            reply =
-              "No model is connected yet, so I am running on local responses only. " +
+              "No model is connected yet, so nothing can answer you. " +
               `${active.problem ?? ""} Open Settings, add a key for OpenAI, Google, ` +
-              "Anthropic, DeepSeek, or OpenRouter, and pick a model; everything else " +
-              "in the console works without one.";
-          } else if (lower.includes("hello") || lower.includes("hi")) {
-            reply = "Hello! Autora is active. You can prompt me to run tasks, manage memories, monitor live agent sessions, or configure automation schedules.";
-          } else if (lower.includes("status")) {
-            reply = "All systems operational. Connected to workspace host on port 3000. Session stream is live.";
+              "Anthropic, DeepSeek, or OpenRouter, and pick a model. The tools — " +
+              "terminal, browser, computer control — are configured in Settings too, " +
+              "but it takes a model to decide to use them.";
+          } else if (running.get(session.id)?.stopped) {
+            reply = "Stopped.";
+          } else if (ranSomething) {
+            /* Tools ran and the model never wrote a closing word. The work is
+               in the transcript above, so point at it rather than inventing a
+               summary of it. */
+            reply =
+              "That turn ended without a written answer. What ran is above, " +
+              "with its output.";
           } else {
-            reply = `Received: "${text}". I have processed your instruction, updated the execution graph, and recorded all output to this session's telemetry log.`;
+            /* Nothing ran and nothing was said, which means the model call
+               itself failed -- and that failure is already in the log as a
+               system error naming the vendor and the reason. Repeating it here
+               in vaguer words would only bury it. */
+            reply = "Nothing came back that turn. The error above says why.";
           }
           /* `local` keeps this out of the history the model is shown next
              turn -- see historyFor. */
@@ -1304,6 +1655,15 @@ async function startServer() {
         });
       } finally {
         session.busy = false;
+        // Nothing from this turn is still cancellable, and anything left in
+        // the set holds a reference to a process that has exited.
+        running.delete(session.id);
+        /* If the turn touched the desktop but nobody is watching this session,
+           stop the relay capturing. Without this a single computer_screenshot
+           left a relay on somebody's laptop shipping JPEGs at two a second
+           indefinitely, because the only thing that turned it off was a
+           websocket closing and there had never been one. */
+        releaseDesktopIfIdle(session.id);
         broadcastLiveStatus(session);
       }
     })();
@@ -1316,6 +1676,12 @@ async function startServer() {
       return res.status(404).json({ error: "Session not found" });
     }
     const wasBusy = session.busy;
+    /* Stop now reaches the work rather than just the flag: a running command
+       is killed, an approval nobody answered is settled as declined, and the
+       agent loop checks before every further step. Clearing `busy` alone left
+       a `npm install` running to completion behind a UI that said it had
+       stopped. */
+    stopTurn(session.id);
     session.busy = false;
     broadcastLiveStatus(session);
     emitEvent(session, "system.log", "system", { message: "Turn interrupted by user" });
@@ -1368,18 +1734,45 @@ async function startServer() {
   });
 
   // 7. Policy Approvals
+  /**
+   * Yes or no to a waiting tool call.
+   *
+   * The decision is emitted into the one session that asked, and the call that
+   * is parked on it is released. It used to be broadcast to every session --
+   * which put an answer to somebody else's question into your transcript --
+   * and released nothing, because nothing was waiting.
+   */
   app.post("/api/policy/:requestId", (req: Request, res: Response) => {
+    const requestId = req.params.requestId;
     const approved = Boolean(req.body?.approved);
     const who = req.body?.who || "user";
-    const response = req.body?.response;
+    const response = typeof req.body?.response === "string" ? req.body.response : undefined;
 
-    for (const session of sessions.values()) {
+    const pending = awaitingApproval.get(requestId);
+    const session = pending ? sessions.get(pending.sessionId) : null;
+
+    if (session) {
       emitEvent(session, "policy.decision", "user", {
-        request_id: req.params.requestId,
+        request_id: requestId,
+        requestId,
         decision: approved ? "allow" : "deny",
         approved,
         who,
         response,
+      });
+    }
+
+    const released = settleApproval(requestId, { approved, response });
+
+    /* An id nothing is waiting on is not an error: the card is still in the
+       transcript after a restart, or after the prompt timed out, and clicking
+       it then should say so rather than appear to work. */
+    if (!released) {
+      return res.json({
+        ok: false,
+        approved,
+        who,
+        detail: "Nothing is waiting on that request any more.",
       });
     }
 
@@ -1655,11 +2048,22 @@ async function startServer() {
     };
   };
 
-  app.get("/api/settings", (req: Request, res: Response) => {
-    res.json(settingsPayload());
+  /* The tool section is assembled separately because availability is asked of
+     the world -- is Chromium installed, is a relay dialled in -- which is
+     async, and the rest of the payload is not. */
+  const settingsWithTools = async () => ({
+    ...settingsPayload(),
+    tools: {
+      config: toolSettings(),
+      groups: await groupStates(),
+    },
   });
 
-  app.patch("/api/settings", (req: Request, res: Response) => {
+  app.get("/api/settings", async (req: Request, res: Response) => {
+    res.json(await settingsWithTools());
+  });
+
+  app.patch("/api/settings", async (req: Request, res: Response) => {
     const body = req.body ?? {};
     const known = new Set(["auto", ...PROVIDERS.map((p) => p.id)]);
 
@@ -1715,8 +2119,17 @@ async function startServer() {
       state.budgetUsd = amount;
     }
 
+    /* Which tools the agent has, and how tightly each is gated. Turning a
+       group off here removes its tools from the model's schema on the very
+       next turn and changes what the agent is told it can do -- both come from
+       the one registry, so the panel cannot promise something the schema does
+       not deliver. */
+    if (body.tools && typeof body.tools === "object") {
+      updateToolSettings(body.tools);
+    }
+
     save();
-    res.json(settingsPayload());
+    res.json(await settingsWithTools());
   });
 
   // 10b. Provider models and key checks
@@ -1803,27 +2216,41 @@ async function startServer() {
   });
 
   // 11. Relay API
-  app.get("/api/relay", (req: Request, res: Response) => {
-    const host = req.headers["host"] || "127.0.0.1:3000";
+  /** Where this server can be reached from the machine being relayed, worked
+      out from the request rather than guessed, so the download it hands out
+      already knows its own address. */
+  const relayAddress = (req: Request) => {
+    const host = req.headers["host"] || `127.0.0.1:${PORT}`;
     const proto = req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
-    const wsProto = proto === "https" ? "wss" : "ws";
+    return {
+      ws: `${proto === "https" ? "wss" : "ws"}://${host}/ws/desktop-relay`,
+      http: `${proto}://${host}`,
+    };
+  };
 
+  app.get("/api/relay", (req: Request, res: Response) => {
+    const where = relayAddress(req);
     res.json({
-      connected: false,
-      platform: null,
-      screen: { w: null, h: null },
-      since: null,
-      ws_url: `${wsProto}://${host}/ws/desktop-relay`,
-      download: `${proto}://${host}/relay.py`,
+      ...relayStatus(),
+      ws_url: where.ws,
+      download: `${where.http}/relay.py`,
       install: "pip install websockets mss pyautogui pillow",
       run: "python relay.py",
     });
   });
 
+  /**
+   * The relay client itself.
+   *
+   * This was a two-line stub that printed "ready" and exited, which is why the
+   * desktop has never worked: the instructions were real, the websocket route
+   * dropped the connection, and the file at the end of the curl was a joke.
+   * See server/desktop.ts for the source and the protocol it speaks.
+   */
   app.get("/relay.py", (req: Request, res: Response) => {
     res.setHeader("Content-Type", "text/x-python");
     res.setHeader("Content-Disposition", 'attachment; filename="relay.py"');
-    res.send(`# Autora Desktop Relay Stub\nprint("Autora desktop relay client ready")\n`);
+    res.send(relayClientSource(relayAddress(req).ws));
   });
 
   // 12. Create HTTP Server & WebSocket Server
@@ -1837,9 +2264,17 @@ async function startServer() {
     // Route: /ws/:sessionId
     if (pathname.startsWith("/ws/")) {
       const sessionId = pathname.replace("/ws/", "").split("/")[0].trim();
-      if (!sessionId || sessionId === "desktop-relay") {
+
+      /* The relay is not a session. This path used to `return` here, leaving
+         the socket open and unread -- so a correctly configured relay
+         connected, sent its hello into nothing, and the app went on reporting
+         that no desktop was available. */
+      if (sessionId === "desktop-relay") {
+        attachRelay(ws, noteRelayChange);
         return;
       }
+
+      if (!sessionId) return;
 
       const session = sessions.get(sessionId);
       if (!session) {
@@ -1894,13 +2329,23 @@ async function startServer() {
           if (msg.type === "ping") {
             ws.send(JSON.stringify({ type: "pong", t: Date.now() / 1000 }));
           } else if (msg.type === "interrupt") {
+            stopTurn(session.id);
             session.busy = false;
             broadcastLiveStatus(session);
           } else if (msg.type === "policy") {
-            emitEvent(session, "policy.decision", "system", {
+            // Same gate as POST /api/policy: emit the decision, then release
+            // the tool call that is parked on it.
+            emitEvent(session, "policy.decision", "user", {
+              request_id: msg.request_id,
               requestId: msg.request_id,
+              decision: msg.approved ? "allow" : "deny",
               approved: Boolean(msg.approved),
               who: msg.who || "user",
+              response: typeof msg.response === "string" ? msg.response : undefined,
+            });
+            settleApproval(String(msg.request_id), {
+              approved: Boolean(msg.approved),
+              response: typeof msg.response === "string" ? msg.response : undefined,
             });
           }
         } catch {
@@ -1914,6 +2359,9 @@ async function startServer() {
           set.delete(ws);
           if (set.size === 0) sessionSockets.delete(sessionId);
         }
+        // Nobody left watching: stop asking the relay for pictures of
+        // somebody's screen.
+        releaseDesktopIfIdle(sessionId);
       });
     }
   });
