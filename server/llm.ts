@@ -16,9 +16,46 @@
 import { GoogleGenAI } from "@google/genai";
 import { type ModelSpec, providerSpec } from "./providers";
 
+/** A tool the model may call, in the one shape all three vendors accept once
+    it has been wrapped in their own envelope. */
+export interface ToolDef {
+  name: string;
+  description: string;
+  parameters: { type: "object"; properties: Record<string, any>; required?: string[] };
+}
+
+/** The model asking for a tool to be run. */
+export interface ToolUse {
+  /** The vendor's own id for this call, which its tool result must quote back.
+      Gemini issues none, so one is made up and kept only on our side. */
+  id: string;
+  name: string;
+  args: Record<string, any>;
+}
+
+/** What came back, on its way to the model. */
+export interface ToolReply {
+  id: string;
+  name: string;
+  result: string;
+  ok: boolean;
+}
+
+/**
+ * One turn of the conversation.
+ *
+ * Three shapes in one interface rather than a union, because the great majority
+ * of messages are still plain text and every existing caller builds them that
+ * way. `calls` only ever appears on an assistant message; `replies` only on a
+ * tool one.
+ */
 export interface ChatMessage {
-  role: "user" | "assistant";
-  text: string;
+  role: "user" | "assistant" | "tool";
+  text?: string;
+  /** Assistant only: tools this turn asked for. */
+  calls?: ToolUse[];
+  /** Tool only: what those calls returned. */
+  replies?: ToolReply[];
 }
 
 export interface ChatCall {
@@ -32,6 +69,10 @@ export interface ChatCall {
   maxTokens?: number;
   /** Gemini only: tokens of thinking allowed before the first word. */
   thinkingBudget?: number;
+  /** What the model may call this turn. Omitted or empty means text only, and
+      the request then carries no tool field at all -- some local servers 400
+      on an empty array. */
+  tools?: ToolDef[];
 }
 
 export interface ChatUsage {
@@ -39,6 +80,13 @@ export interface ChatUsage {
   output: number;
   /** True when the counts are our arithmetic rather than the vendor's. */
   estimated: boolean;
+}
+
+/** What one call to a model produced: words, and whatever it wants run. */
+export interface ChatTurn {
+  usage: ChatUsage;
+  text: string;
+  calls: ToolUse[];
 }
 
 /** An error with the HTTP status kept, so the caller can tell a busy vendor
@@ -54,9 +102,40 @@ export class ProviderError extends Error {
 
 const roughTokens = (text: string) => Math.max(1, Math.round(text.length / 4));
 
+/** Everything in a message that costs tokens, text or not: a page of tool
+    output is the bulk of an agentic turn and leaving it out of the estimate
+    would under-report the expensive turns by an order of magnitude. */
+function weigh(message: ChatMessage): string {
+  return [
+    message.text ?? "",
+    ...(message.calls ?? []).map((c) => c.name + JSON.stringify(c.args)),
+    ...(message.replies ?? []).map((r) => r.result),
+  ].join("");
+}
+
 function estimate(call: ChatCall, reply: string): ChatUsage {
-  const prompt = call.system + call.messages.map((m) => m.text).join("");
+  const prompt = call.system + call.messages.map(weigh).join("");
   return { input: roughTokens(prompt), output: roughTokens(reply), estimated: true };
+}
+
+/**
+ * The arguments a model streamed, as an object.
+ *
+ * Arguments arrive as a JSON string assembled from deltas, and a model that
+ * stopped mid-object leaves that string unparseable. An empty object is the
+ * right answer there: the tool then reports its own missing-argument error into
+ * the thread, which the model can read and retry, where a thrown parse error
+ * would end the turn with a stack trace.
+ */
+function parseArgs(raw: string): Record<string, any> {
+  const text = raw.trim();
+  if (!text) return {};
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 /** The readable sentence inside a vendor's error body, which is variously a
@@ -144,7 +223,52 @@ function openAiHeaders(call: ChatCall): Record<string, string> {
   return headers;
 }
 
-async function streamOpenAi(call: ChatCall, onDelta: (text: string) => void): Promise<ChatUsage> {
+/**
+ * The history, in OpenAI's shape.
+ *
+ * A tool message per reply rather than per turn: the API pairs each result with
+ * the `tool_call_id` it answers, and batching several into one message loses
+ * that pairing -- which a model then notices as a call it never got an answer
+ * for.
+ */
+function openAiMessages(call: ChatCall): any[] {
+  const out: any[] = [];
+  if (call.system) out.push({ role: "system", content: call.system });
+
+  for (const message of call.messages) {
+    if (message.role === "tool") {
+      for (const reply of message.replies ?? []) {
+        out.push({ role: "tool", tool_call_id: reply.id, content: reply.result });
+      }
+      continue;
+    }
+    if (message.role === "assistant") {
+      const calls = message.calls ?? [];
+      out.push({
+        role: "assistant",
+        // Null rather than "" when a turn was nothing but tool calls: some
+        // gateways reject an assistant message with both an empty string and
+        // tool_calls set.
+        content: message.text || (calls.length > 0 ? null : ""),
+        ...(calls.length > 0
+          ? {
+              tool_calls: calls.map((c) => ({
+                id: c.id,
+                type: "function",
+                function: { name: c.name, arguments: JSON.stringify(c.args) },
+              })),
+            }
+          : {}),
+      });
+      continue;
+    }
+    out.push({ role: "user", content: message.text ?? "" });
+  }
+
+  return out;
+}
+
+async function streamOpenAi(call: ChatCall, onDelta: (text: string) => void): Promise<ChatTurn> {
   const res = await request(`${trimSlash(call.baseUrl)}/chat/completions`, {
     method: "POST",
     headers: openAiHeaders(call),
@@ -154,13 +278,20 @@ async function streamOpenAi(call: ChatCall, onDelta: (text: string) => void): Pr
       stream_options: { include_usage: true },
       temperature: call.temperature ?? 0.7,
       max_tokens: call.maxTokens ?? 2048,
-      messages: [
-        ...(call.system ? [{ role: "system", content: call.system }] : []),
-        ...call.messages.map((m) => ({
-          role: m.role === "assistant" ? "assistant" : "user",
-          content: m.text,
-        })),
-      ],
+      messages: openAiMessages(call),
+      ...(call.tools?.length
+        ? {
+            tools: call.tools.map((t) => ({
+              type: "function",
+              function: {
+                name: t.name,
+                description: t.description,
+                parameters: t.parameters,
+              },
+            })),
+            tool_choice: "auto",
+          }
+        : {}),
     }),
   });
 
@@ -168,6 +299,11 @@ async function streamOpenAi(call: ChatCall, onDelta: (text: string) => void): Pr
 
   let reply = "";
   let usage: ChatUsage | null = null;
+  /* Tool calls arrive as deltas keyed by position, not by id: the first chunk
+     for a slot carries the id and name, and every chunk after it carries more
+     of the argument JSON. So they are assembled by index and only parsed once
+     the stream is done. */
+  const building = new Map<number, { id: string; name: string; args: string }>();
 
   for await (const payload of sse(res)) {
     let chunk: any;
@@ -179,11 +315,22 @@ async function streamOpenAi(call: ChatCall, onDelta: (text: string) => void): Pr
     // Some gateways deliver an error mid-stream with a 200 on the envelope.
     if (chunk.error) throw new ProviderError(chunk.error.message ?? "stream failed", null);
 
-    const piece = chunk.choices?.[0]?.delta?.content;
+    const delta = chunk.choices?.[0]?.delta;
+    const piece = delta?.content;
     if (typeof piece === "string" && piece) {
       reply += piece;
       onDelta(piece);
     }
+
+    for (const part of delta?.tool_calls ?? []) {
+      const slot = Number(part.index ?? 0);
+      const found = building.get(slot) ?? { id: "", name: "", args: "" };
+      if (part.id) found.id = String(part.id);
+      if (part.function?.name) found.name += String(part.function.name);
+      if (part.function?.arguments) found.args += String(part.function.arguments);
+      building.set(slot, found);
+    }
+
     if (chunk.usage) {
       usage = {
         input: chunk.usage.prompt_tokens ?? 0,
@@ -193,12 +340,60 @@ async function streamOpenAi(call: ChatCall, onDelta: (text: string) => void): Pr
     }
   }
 
-  return usage ?? estimate(call, reply);
+  const calls: ToolUse[] = [...building.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .filter(([, found]) => found.name)
+    .map(([slot, found]) => ({
+      // A local server that omits ids still needs something stable to pair the
+      // result against.
+      id: found.id || `call_${slot}`,
+      name: found.name,
+      args: parseArgs(found.args),
+    }));
+
+  return { usage: usage ?? estimate(call, reply), text: reply, calls };
 }
 
 // ------------------------------------------------------------- anthropic --
 
-async function streamAnthropic(call: ChatCall, onDelta: (text: string) => void): Promise<ChatUsage> {
+/**
+ * The history, in Anthropic's shape.
+ *
+ * Tool results are a *user* message here, not a role of their own, and all of
+ * one turn's results belong in a single message -- the API rejects an assistant
+ * turn whose tool_use blocks are not all answered before the next assistant
+ * turn. Empty text blocks are dropped rather than sent: a content block with an
+ * empty string is a 400, and a turn that was nothing but tool calls has exactly
+ * that.
+ */
+function anthropicMessages(call: ChatCall): any[] {
+  return call.messages.map((message) => {
+    if (message.role === "tool") {
+      return {
+        role: "user",
+        content: (message.replies ?? []).map((reply) => ({
+          type: "tool_result",
+          tool_use_id: reply.id,
+          content: reply.result,
+          ...(reply.ok ? {} : { is_error: true }),
+        })),
+      };
+    }
+
+    const content: any[] = [];
+    if (message.text) content.push({ type: "text", text: message.text });
+    for (const use of message.calls ?? []) {
+      content.push({ type: "tool_use", id: use.id, name: use.name, input: use.args });
+    }
+    return {
+      role: message.role,
+      // Never an empty array, which is also a 400.
+      content: content.length > 0 ? content : [{ type: "text", text: "(no content)" }],
+    };
+  });
+}
+
+async function streamAnthropic(call: ChatCall, onDelta: (text: string) => void): Promise<ChatTurn> {
   const res = await request(`${trimSlash(call.baseUrl)}/v1/messages`, {
     method: "POST",
     headers: {
@@ -212,10 +407,16 @@ async function streamAnthropic(call: ChatCall, onDelta: (text: string) => void):
       max_tokens: call.maxTokens ?? 2048,
       temperature: call.temperature ?? 0.7,
       system: call.system || undefined,
-      messages: call.messages.map((m) => ({
-        role: m.role,
-        content: [{ type: "text", text: m.text }],
-      })),
+      messages: anthropicMessages(call),
+      ...(call.tools?.length
+        ? {
+            tools: call.tools.map((t) => ({
+              name: t.name,
+              description: t.description,
+              input_schema: t.parameters,
+            })),
+          }
+        : {}),
     }),
   });
 
@@ -224,6 +425,10 @@ async function streamAnthropic(call: ChatCall, onDelta: (text: string) => void):
   let reply = "";
   const usage: ChatUsage = { input: 0, output: 0, estimated: false };
   let counted = false;
+  /* Blocks are addressed by index across the whole message: a tool_use opens
+     at some index, its arguments arrive as partial JSON against that index, and
+     text blocks are interleaved at other indices. */
+  const building = new Map<number, { id: string; name: string; args: string }>();
 
   for await (const payload of sse(res)) {
     let event: any;
@@ -238,11 +443,27 @@ async function streamAnthropic(call: ChatCall, onDelta: (text: string) => void):
     if (event.type === "message_start") {
       usage.input = event.message?.usage?.input_tokens ?? 0;
       counted = true;
+    } else if (event.type === "content_block_start" && event.content_block?.type === "tool_use") {
+      building.set(Number(event.index ?? 0), {
+        id: String(event.content_block.id ?? ""),
+        name: String(event.content_block.name ?? ""),
+        // A tool with no arguments sends no input_json_delta at all, so the
+        // starting input is what it gets.
+        args: JSON.stringify(event.content_block.input ?? {}),
+      });
     } else if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
       const piece = String(event.delta.text ?? "");
       if (piece) {
         reply += piece;
         onDelta(piece);
+      }
+    } else if (event.type === "content_block_delta" && event.delta?.type === "input_json_delta") {
+      const found = building.get(Number(event.index ?? 0));
+      if (found) {
+        // The first delta replaces the "{}" the block opened with; every one
+        // after it appends.
+        if (found.args === "{}") found.args = "";
+        found.args += String(event.delta.partial_json ?? "");
       }
     } else if (event.type === "message_delta" && event.usage) {
       usage.output = event.usage.output_tokens ?? usage.output;
@@ -250,7 +471,12 @@ async function streamAnthropic(call: ChatCall, onDelta: (text: string) => void):
     }
   }
 
-  return counted ? usage : estimate(call, reply);
+  const calls: ToolUse[] = [...building.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .filter(([, found]) => found.name && found.id)
+    .map(([, found]) => ({ id: found.id, name: found.name, args: parseArgs(found.args) }));
+
+  return { usage: counted ? usage : estimate(call, reply), text: reply, calls };
 }
 
 // ---------------------------------------------------------------- gemini --
@@ -287,32 +513,114 @@ function fromSdk(err: any): ProviderError {
   return new ProviderError(parsed.message, status ?? parsed.status);
 }
 
-async function streamGemini(call: ChatCall, onDelta: (text: string) => void): Promise<ChatUsage> {
+/**
+ * The history, in Gemini's shape.
+ *
+ * Gemini names no ids: a functionResponse is matched to its functionCall by
+ * name alone. So the ids the rest of this module relies on are ours, invented
+ * at parse time, and dropped again here.
+ */
+function geminiContents(call: ChatCall): any[] {
+  return call.messages.map((message) => {
+    if (message.role === "tool") {
+      return {
+        role: "user",
+        parts: (message.replies ?? []).map((reply) => ({
+          functionResponse: {
+            name: reply.name,
+            // The payload must be an object; the string goes inside it. A
+            // failure travels as an `error` key so the model can tell a tool
+            // that reported a problem from one that returned prose about one.
+            response: reply.ok ? { result: reply.result } : { error: reply.result },
+          },
+        })),
+      };
+    }
+
+    const parts: any[] = [];
+    if (message.text) parts.push({ text: message.text });
+    for (const use of message.calls ?? []) {
+      parts.push({ functionCall: { name: use.name, args: use.args } });
+    }
+    return {
+      role: message.role === "assistant" ? "model" : "user",
+      parts: parts.length > 0 ? parts : [{ text: "(no content)" }],
+    };
+  });
+}
+
+async function streamGemini(call: ChatCall, onDelta: (text: string) => void): Promise<ChatTurn> {
   const client = gemini(call.key, call.baseUrl);
   const stream = await client.models.generateContentStream({
     model: call.model,
-    contents: call.messages.map((m) => ({
-      role: m.role === "assistant" ? "model" : "user",
-      parts: [{ text: m.text }],
-    })),
+    contents: geminiContents(call),
     config: {
       systemInstruction: call.system || undefined,
       temperature: call.temperature ?? 0.7,
       maxOutputTokens: call.maxTokens ?? 2048,
       thinkingConfig: { thinkingBudget: call.thinkingBudget ?? 0 },
+      ...(call.tools?.length
+        ? {
+            tools: [{
+              functionDeclarations: call.tools.map((t) => ({
+                name: t.name,
+                description: t.description,
+                /* Not `parameters`, which wants Google's own Schema type with
+                   its uppercase Type enum. This field takes JSON Schema
+                   verbatim, which is the one shape all three vendors share --
+                   so the registry needs no per-vendor translation. */
+                parametersJsonSchema: t.parameters,
+              })),
+            }],
+          }
+        : {}),
     },
   });
 
   let reply = "";
   const usage: ChatUsage = { input: 0, output: 0, estimated: false };
   let counted = false;
+  const calls: ToolUse[] = [];
 
   for await (const chunk of stream) {
-    const piece = chunk.text;
+    /* `chunk.text` throws rather than returning undefined when the chunk holds
+       a function call instead of prose, which would otherwise abort the stream
+       on the very turn the tool was requested. */
+    let piece: string | undefined;
+    try {
+      piece = chunk.text;
+    } catch {
+      piece = undefined;
+    }
     if (piece) {
       reply += piece;
       onDelta(piece);
     }
+
+    /* Function calls arrive whole -- there is no partial-argument streaming to
+       reassemble -- but they can arrive on either the convenience getter or in
+       the raw parts, depending on SDK version. Reading both and keyed
+       de-duplication is cheaper than pinning a version. */
+    const found: any[] = [];
+    try {
+      for (const fn of (chunk as any).functionCalls ?? []) found.push(fn);
+    } catch {
+      // Same getter problem as above.
+    }
+    for (const part of (chunk as any).candidates?.[0]?.content?.parts ?? []) {
+      if (part?.functionCall) found.push(part.functionCall);
+    }
+    for (const fn of found) {
+      const name = String(fn?.name ?? "");
+      if (!name) continue;
+      const args = fn?.args && typeof fn.args === "object" ? fn.args : {};
+      const id = `${name}-${calls.length}`;
+      if (calls.some((c) => c.name === name && JSON.stringify(c.args) === JSON.stringify(args))) {
+        continue;
+      }
+      calls.push({ id, name, args });
+    }
+
     const meta = (chunk as any).usageMetadata;
     if (meta) {
       // Gemini reports cumulative counts, so the last word wins rather than
@@ -323,16 +631,21 @@ async function streamGemini(call: ChatCall, onDelta: (text: string) => void): Pr
     }
   }
 
-  return counted ? usage : estimate(call, reply);
+  return { usage: counted ? usage : estimate(call, reply), text: reply, calls };
 }
 
 /**
- * Ask the configured model, streaming the answer through `onDelta`.
+ * Ask the configured model, streaming the words through `onDelta`.
+ *
+ * Returns what the model said *and* whatever it wants run. Running those, and
+ * deciding whether to go round again, belongs to the caller: the agent loop
+ * needs the session, the event log and the approval gate, none of which this
+ * module should know about.
  *
  * Throws ProviderError on refusal; the caller decides whether that is worth
  * another attempt and what to tell the reader.
  */
-export function streamChat(call: ChatCall, onDelta: (text: string) => void): Promise<ChatUsage> {
+export function streamChat(call: ChatCall, onDelta: (text: string) => void): Promise<ChatTurn> {
   const kind = providerSpec(call.provider)?.kind ?? "openai";
   // The Gemini SDK throws its own error shape rather than returning a
   // response, so unwrapping happens here rather than at the fetch.

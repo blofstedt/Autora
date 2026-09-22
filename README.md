@@ -68,11 +68,48 @@ written to that file -- they are the fallback when the app has no key of its
 own, and the panel says which of the two is in force.
 
 Without any key the console still runs -- every panel, the event stream,
-memory, approvals and the schedule all work -- but the agent answers with local
-fallbacks and says so.
+memory, approvals and the schedule all work -- but nothing answers, and the
+thread says which key is missing rather than improvising a reply.
 
 **[docs/GEMINI.md](docs/GEMINI.md)** covers the Gemini specifics: choosing a
 model, the thinking budget, and what each error in the thread means.
+
+### Tools
+
+A model decides; tools are what it decides *with*. **Settings -> Tools** lists
+the four groups, says whether each can actually be used right now, and sets how
+tightly each is held:
+
+| Group | What it is | Asks first, by default |
+| --- | --- | --- |
+| Terminal | A real shell on the machine Autora runs on, via `bash -lc`. Output streams into the thread as it arrives. | Every command |
+| Web browser | The Chromium the agent drives: open, read, click, fill, scroll, screenshot. | Anything that changes the page |
+| Computer control | Somebody's actual desktop, over [the relay](#controlling-a-desktop). | Anything but looking |
+| Memory | The workspace graph, which outlives the session. | Never |
+
+The same list generates three things that used to be written down separately:
+the tool schemas the model receives, the sentence the agent is told about what
+it can do, and this panel. They cannot disagree, which is the point -- an agent
+that has been told it has a terminal it does not have will narrate command
+output rather than admit it, and one told nothing will deny having a shell it
+is holding.
+
+A group can be **off** (you turned it off, and the agent is told so) or
+**unusable** (on, but the thing it needs is absent -- no Chromium on the
+server, no relay dialled in). Those are different sentences, and the agent
+gets the one that is true, because "I cannot browse" and "Chromium is not
+installed on the server" send you to two very different places.
+
+Approval is real: a gated call stops, shows you the exact command, and does not
+run until you answer. Declining is final for that call, and the agent is told
+not to retry it. Stop kills the whole process group, so `sleep 300` inside a
+command dies with the command rather than outliving it.
+
+The terminal is a shell, not a terminal emulator: there is no TTY, so `vim`,
+`top` and anything that pages will hang rather than work. Use non-interactive
+flags. `sudo` works wherever the account Autora runs as can use it -- in the
+Umbrel container that is usually root, where it is unnecessary rather than
+unavailable.
 
 ### Billing
 
@@ -387,14 +424,25 @@ and never leaks its own text into what the agent reads back.
 
 ## Approvals
 
-Reads run freely. Deploys, migrations, history rewrites and installs pause and
-ask, showing the exact rendered command. A few things (piping curl into a shell,
-`rm -rf /`, force-pushing to main, reading private keys) are refused outright and
-cannot be approved — including under `--yes`.
+A gated tool call stops before it runs, puts the exact rendered command in the
+thread, and waits. Nothing happens until you answer — the call is genuinely
+parked on your click, not merely announced. Decline and it is abandoned, and
+the agent is told so and told not to retry it; a prompt nobody answers for
+fifteen minutes is treated as declined rather than holding the session open.
 
-Rules live in `src/autora/policy.py` as readable patterns. Loosen them per
-project once you trust it. `--yes` skips confirmations entirely; don't point that
-at production credentials.
+What is gated is set per group of tools in **Settings -> Tools**, not by a
+pattern list: *every time*, *only when it changes something*, or *never*. The
+terminal defaults to asking every time, because a shell on the host is only a
+reasonable thing to ship enabled under a prompt that shows you the command
+first.
+
+There is deliberately no list of commands refused outright. Judgement about a
+particular `rm -rf` belongs to the person reading the approval card, who can
+see the whole command and knows what the machine is for, and a denylist that
+catches the obvious spellings mostly teaches you to trust it. If you want that
+for your own deployment, it belongs in `needsApproval` in
+[`server/tools.ts`](server/tools.ts), next to the code that already decides
+what pauses.
 
 ## Context
 
