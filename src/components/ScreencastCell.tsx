@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Shot } from "../lib/derive";
+import type { LiveFrame } from "../lib/types";
 import { Frame } from "./Frame";
 import { IconChevron, IconGlobe, IconMonitor, IconX } from "./Icons";
 
@@ -34,7 +35,7 @@ type Pick = {
  * moving it does not drag the rest of the app back in time with it.
  */
 export function ScreencastCell({
-  sessionId, source, url, shots, actions, live, pickable,
+  sessionId, source, url, shots, actions, live, feed, pickable,
 }: {
   sessionId: string;
   source: "browser" | "desktop";
@@ -42,6 +43,10 @@ export function ScreencastCell({
   shots: Shot[];
   actions: string[];
   live: boolean;
+  /** The video, if this is the card whose page is still open. Frames arrive
+      several times a second and are never stored, so this is the one thing on
+      the card that is happening rather than having happened. */
+  feed: LiveFrame | null;
   /** Only the newest browser card looks at a page that still exists. */
   pickable: boolean;
 }) {
@@ -91,10 +96,22 @@ export function ScreencastCell({
     }
   }, [selecting, busy, sessionId]);
 
-  if (shots.length === 0 && actions.length === 0) return null;
+  if (shots.length === 0 && actions.length === 0 && !feed) return null;
 
   const box = picked?.pick?.box;
   const Icon = source === "browser" ? IconGlobe : IconMonitor;
+
+  /* Watching, rather than reviewing. The feed only ever reaches the card whose
+     page is still open, and taking hold of the frame strip is what says "stop
+     following, I want to look at something that already happened" -- the same
+     gesture that already meant that for stored frames. */
+  const watching = !!feed && !held;
+  const stageSrc = watching
+    ? `data:${feed.mime};base64,${feed.data}`
+    : shot
+      ? `/api/sessions/${sessionId}/blobs/${shot.blob}`
+      : null;
+  const latest = actions[actions.length - 1];
 
   return (
     <section className={`cell shot ${live ? "is-live" : ""}`}>
@@ -104,8 +121,23 @@ export function ScreencastCell({
           {source === "browser" ? (url ?? "about:blank") : "Desktop"}
         </span>
         <div className="spacer" />
-        {live && <em className="cell-chip is-running">live</em>}
-        {shots.length > 0 && (
+        {/* Two different claims, deliberately worded differently: "watching"
+            means frames are arriving right now, "live" means this is the
+            newest card in a turn that has not finished. The first is the one
+            worth trusting. */}
+        {watching ? (
+          <em className="cell-chip is-watching" title={`${feed ? "streaming" : ""}`}>
+            <span className="watch-dot" aria-hidden="true" />
+            watching
+          </em>
+        ) : feed ? (
+          <button className="cell-act" onClick={() => { setHeld(false); setAt(shots.length - 1); }}>
+            back to live
+          </button>
+        ) : live ? (
+          <em className="cell-chip is-running">live</em>
+        ) : null}
+        {(shots.length > 0 || feed) && (
           <button
             className={`cell-act ${big ? "on" : ""}`}
             onClick={() => setBig((v) => !v)}
@@ -114,7 +146,7 @@ export function ScreencastCell({
             {big ? "shrink" : "expand"}
           </button>
         )}
-        {pickable && shots.length > 0 && (
+        {pickable && (shots.length > 0 || feed) && (
           <button
             className={`cell-act ${selecting ? "on" : ""}`}
             aria-pressed={selecting}
@@ -126,16 +158,25 @@ export function ScreencastCell({
         )}
       </header>
 
-      {shot && (
+      {stageSrc && (
         <div
-          className={`shot-stage ${selecting ? "is-selecting" : ""} ${big ? "is-big" : ""}`}
+          className={`shot-stage ${selecting ? "is-selecting" : ""} ${big ? "is-big" : ""} ${
+            watching ? "is-watching" : ""}`}
           onClick={onPick}
         >
           <Frame
-            src={`/api/sessions/${sessionId}/blobs/${shot.blob}`}
-            alt={source === "browser" ? "page the agent saw" : "desktop the agent saw"}
+            src={stageSrc}
+            alt={
+              watching
+                ? "the page, live"
+                : source === "browser" ? "page the agent saw" : "desktop the agent saw"
+            }
           >
-            {shot.mark && (
+            {/* A stored frame gets a painted marker where the click landed. A
+                live one does not need one: the pointer is drawn into the page
+                itself, so the click is visible in the picture rather than
+                annotated on top of it. */}
+            {!watching && shot?.mark && (
               <span
                 className="marker"
                 style={{
@@ -144,7 +185,7 @@ export function ScreencastCell({
                 }}
               />
             )}
-            {box && at === shots.length - 1 && (
+            {box && !watching && at === shots.length - 1 && (
               <span
                 className="pickbox"
                 style={{
@@ -155,6 +196,8 @@ export function ScreencastCell({
                 }}
               />
             )}
+            {/* What it is doing, over the picture of it doing it. */}
+            {watching && latest && <span className="shot-caption">{latest}</span>}
           </Frame>
         </div>
       )}

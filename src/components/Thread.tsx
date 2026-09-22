@@ -8,6 +8,9 @@ import { FileCell } from "./FileCell";
 import { ToolCell } from "./ToolCell";
 import { KanbanCell } from "./KanbanCell";
 import { PermissionCell } from "./PermissionCell";
+import { ImageCell, InlineImage } from "./ImageCell";
+import { splitImages } from "../lib/images";
+import type { LiveFrame } from "../lib/types";
 
 /** Within this many pixels of the bottom counts as "watching the live edge". */
 const STICK_ZONE = 80;
@@ -27,6 +30,7 @@ export function Thread({
   busy,
   sessionId,
   liveBrowserSeq,
+  liveFrame,
   live,
   onPermissionDecide,
   onRunAutonomous,
@@ -35,6 +39,8 @@ export function Thread({
   busy: boolean;
   sessionId: string;
   liveBrowserSeq: number | null;
+  /** The newest frame off the browser, if one is open and being watched. */
+  liveFrame: LiveFrame | null;
   live: boolean;
   onPermissionDecide?: (requestId: string, approved: boolean, response?: string) => void;
   onRunAutonomous?: (task: KanbanTask) => void;
@@ -131,6 +137,7 @@ export function Thread({
             bucket={b}
             sessionId={sessionId}
             liveBrowserSeq={liveBrowserSeq}
+            liveFrame={liveFrame}
             live={live}
             onPermissionDecide={onPermissionDecide}
             onRunAutonomous={onRunAutonomous}
@@ -157,6 +164,7 @@ function TurnBucket({
   bucket,
   sessionId,
   liveBrowserSeq,
+  liveFrame,
   live,
   onPermissionDecide,
   onRunAutonomous,
@@ -164,6 +172,7 @@ function TurnBucket({
   bucket: Bucket;
   sessionId: string;
   liveBrowserSeq: number | null;
+  liveFrame: LiveFrame | null;
   live: boolean;
   onPermissionDecide?: (requestId: string, approved: boolean, response?: string) => void;
   onRunAutonomous?: (task: KanbanTask) => void;
@@ -194,6 +203,7 @@ function TurnBucket({
             cell={cell}
             sessionId={sessionId}
             liveBrowserSeq={liveBrowserSeq}
+            liveFrame={liveFrame}
             live={live}
             open={bucket.open}
             active={bucket.open && index === speaking}
@@ -210,6 +220,7 @@ function CellView({
   cell,
   sessionId,
   liveBrowserSeq,
+  liveFrame,
   live,
   open,
   active,
@@ -219,6 +230,7 @@ function CellView({
   cell: Cell;
   sessionId: string;
   liveBrowserSeq: number | null;
+  liveFrame: LiveFrame | null;
   live: boolean;
   open: boolean;
   active: boolean;
@@ -248,9 +260,17 @@ function CellView({
           shots={cell.shots}
           actions={cell.actions}
           live={cell.live}
+          // Only the newest browser card is looking at a page that still
+          // exists, so it is the only one the live feed belongs to -- an older
+          // card showing the current page would be a lie about what happened.
+          feed={
+            cell.source === "browser" && cell.seq === liveBrowserSeq ? liveFrame : null
+          }
           pickable={live && cell.source === "browser" && cell.seq === liveBrowserSeq}
         />
       );
+    case "images":
+      return <ImageCell sessionId={sessionId} pictures={cell.pictures} />;
     case "file":
       return <FileCell file={cell.file} />;
     case "tool":
@@ -283,6 +303,31 @@ function CellView({
         </div>
       );
   }
+}
+
+/**
+ * A reply, with anything it pointed at drawn where it pointed.
+ *
+ * The agent writes an image the way anyone writes one -- a markdown link, or
+ * just the address -- and that used to render as the address. Now the
+ * sentence keeps its shape and the picture appears in it, which is what was
+ * meant by writing it there. Prose with no pictures in it takes the fast path
+ * and comes out as one text node, exactly as before.
+ */
+function Prose({ text }: { text: string }) {
+  const pieces = splitImages(text);
+  if (pieces.length === 1 && pieces[0].kind === "text") return <>{pieces[0].text}</>;
+  return (
+    <>
+      {pieces.map((piece, i) =>
+        piece.kind === "text" ? (
+          <span key={i}>{piece.text}</span>
+        ) : (
+          <InlineImage key={i} url={piece.url} alt={piece.alt} />
+        ),
+      )}
+    </>
+  );
 }
 
 /**
@@ -326,7 +371,7 @@ function Reply({
             {open && <pre className="reason-body">{thinking}</pre>}
           </>
         )}
-        {text && <div className="msg-text">{text}</div>}
+        {text && <div className="msg-text"><Prose text={text} /></div>}
       </div>
     </div>
   );

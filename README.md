@@ -231,8 +231,9 @@ One column: the conversation, with the work inside it.
 | In the thread | Shows |
 |---|---|
 | **A command** | The shell call where the agent ran it, its own output under it, colours and progress bars intact, with the exit code and how long it took. |
-| **A page** | Every frame of that stretch of browsing, with a marker painted where each click landed. Drag its strip to move through them. The *agent* reads the page as an accessibility snapshot, not pixels — see below. |
+| **A page** | The page itself, live, while it is open: you watch the pointer travel and the clicks land. Once it has moved on, every frame of that stretch stays with the card, with a marker painted where each click went — drag its strip to move through them. The *agent* reads the page as text, not pixels — see below. |
 | **A desktop** | The same, for the machine the relay is running on. |
+| **An image** | Drawn in the conversation, at a size you can read and one tap from full screen — a screenshot it was asked for, a chart it made, or a picture it wrote into a sentence. |
 | **An edit** | The unified diff, the moment it lands. |
 | **Everything else** | One line each — a lookup, a read, a memory write — openable for the detail. |
 
@@ -265,8 +266,8 @@ the tab is in the background also chimes once.
 
 ## How the agent sees a page
 
-Not by screenshot. `read` returns the accessibility tree — every interactive
-element with the role and name a screen reader would announce, numbered:
+Not by screenshot. `read` returns every interactive element on the page with
+the role and name a screen reader would announce it by, numbered:
 
 ```
 [0] textbox "Email address" value="ada@example.com"
@@ -292,6 +293,52 @@ Screenshots remain, as the fallback they should be: for questions about how a
 page *looks* — a chart, a canvas, a broken layout. The human still gets the full
 video feed either way; the screencast is a separate channel from what the model
 reads.
+
+Name an address in a message and a real Chromium opens it. A bare domain needs
+a verb in front of it — `open example.com`, not every passing mention of
+`npm.io` — because launching a browser should be something you can point at
+afterwards and say why it happened.
+
+### Watching it work
+
+Reading a page as text is what makes an agent good at browsing. Not being able
+to see what it did is what makes it impossible to trust. So the two are
+separate channels out of the same page, and you get both:
+
+- **The model gets text.** The numbered outline above, and the page's readable
+  prose. No pixels.
+- **You get video.** Chrome's own screencast, frame by frame over the session
+  socket, at six frames a second by default.
+
+The pointer is real. Before a click, it travels to the target and a ring plays
+where it lands — drawn into the page inside a shadow root so the page cannot
+restyle it and it never appears in what the agent reads — and then the click is
+dispatched as an ordinary mouse event at those coordinates. The agent is not
+miming for the camera; it is clicking there, and the camera is pointed at it.
+
+The feed is deliberately not part of the record. Frames go out over the socket
+and are never written to the event log: a browsing session would otherwise be a
+video file in the transcript, replayed in full to every tab that reconnects.
+What the log keeps is keyframes — one after each navigation and each action —
+which is what the card shows once the page has moved on. The card says
+**watching** while frames are arriving and **back to live** once you have
+scrolled back through them.
+
+Nothing is encoded while nobody is looking: the stream stops when the last tab
+closes and a fresh tab is handed one frame immediately, because a page sitting
+still emits none of its own.
+
+| | |
+|---|---|
+| `open <url>` | Go there. |
+| `click(ref)` | Click the numbered element, visibly. |
+| `fill([{ref, text}], submit)` | A whole form in one round trip. |
+| `scroll(dy)` · `back()` · `read()` | The rest of it. |
+| `shot()` | A picture of the page, into the conversation. |
+
+The same calls are on `POST /api/sessions/:id/browser`, so a person can drive
+the page too — which is what turns the card from a recording into something you
+can take over.
 
 ### Pointing at things
 
@@ -446,7 +493,9 @@ acting on it forever unless there is somewhere to go and say no.
 | `AUTORA_STATE_DIR` | Where settings, keys and the spend ledger are written (default: `$AUTORA_HOME/settings`, else `.autora/` beside the app) |
 | `AUTORA_PORT` / `AUTORA_HOST` | Where to listen (default `3000` on `0.0.0.0`; the container uses `8817`) |
 | `AUTORA_LLM_BASE_URL` | Local OpenAI-compatible endpoint |
-| `AUTORA_CHROME_PATH` | Use an existing Chromium instead of Playwright's pinned build |
+| `AUTORA_BROWSER_PATH` | The Chromium to drive (default: the usual system paths; `/usr/bin/chromium-browser` in the container) |
+| `AUTORA_BROWSER_HEADED` | `1` shows a real browser window instead of running headless |
+| `AUTORA_BROWSER_FPS` / `AUTORA_BROWSER_QUALITY` / `AUTORA_BROWSER_STREAM_WIDTH` | How much live video to send (default `6` fps, quality `50`, scaled to `960` wide) |
 | `AUTORA_HOME` | State directory (default `~/.autora`; `/data` in the container) — the one place that survives an update |
 
 ## Where sessions live

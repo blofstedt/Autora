@@ -13,6 +13,8 @@ import {
 } from "./server/state";
 import { ProviderError, listModels, streamChat, type ChatMessage } from "./server/llm";
 import { billingSummary } from "./server/billing";
+import { dropSession, fromDataUrl, getBlob, putBlob } from "./server/blobs";
+import { LiveBrowser, VIEWPORT, probeBrowser, type PageRead } from "./server/browser";
 
 /* Where to listen. Umbrel's compose file publishes 8817 and passes it in, so
    these cannot be constants; 3000 stays the default because that is what
@@ -401,6 +403,83 @@ function broadcastLiveStatus(session: Session) {
   }
 }
 
+/**
+ * Something for the watchers that is not part of the record.
+ *
+ * Live video frames go this way rather than through `emitEvent`. An event is
+ * replayed on every reconnect, kept for the life of the session and folded
+ * into the transcript; a frame from four seconds ago is worth none of that.
+ * So the socket carries two kinds of traffic -- the log, which is durable and
+ * resumable, and the feed, which is whatever is happening now and is gone if
+ * you were not looking.
+ */
+function sendEphemeral(sessionId: string, message: Record<string, unknown>) {
+  const sockets = sessionSockets.get(sessionId);
+  if (!sockets || sockets.size === 0) return;
+  const raw = JSON.stringify(message);
+  for (const ws of sockets) {
+    // Never queue video behind a slow reader: a phone that has gone to sleep
+    // would come back to a minute of stale frames ahead of everything real.
+    if (ws.readyState === WebSocket.OPEN && ws.bufferedAmount < 2 * 1024 * 1024) {
+      ws.send(raw);
+    }
+  }
+}
+
+// ---------------------------------------------------------------- browser --
+
+/** One browser per session, made on first use and kept until the session is
+    done with it. */
+const browsers = new Map<string, LiveBrowser>();
+
+function browserFor(session: Session): LiveBrowser {
+  const existing = browsers.get(session.id);
+  if (existing) return existing;
+
+  const live = new LiveBrowser({
+    watchers: () => sessionSockets.get(session.id)?.size ?? 0,
+    onFrame: (jpegBase64) =>
+      sendEphemeral(session.id, {
+        type: "frame",
+        session: session.id,
+        source: "browser",
+        mime: "image/jpeg",
+        data: jpegBase64,
+        w: VIEWPORT.width,
+        h: VIEWPORT.height,
+        ts: Date.now(),
+      }),
+    onKeyframe: (jpeg, url) => {
+      const blob = putBlob(session.id, jpeg, "image/jpeg");
+      emitEvent(session, "browser.frame", "agent", { url, w: VIEWPORT.width, h: VIEWPORT.height }, null, blob);
+    },
+    onNav: (url, title) => {
+      emitEvent(session, "browser.nav", "agent", { url, title });
+    },
+    onAction: (action, at, url) => {
+      emitEvent(session, "browser.action", "agent", {
+        action,
+        url,
+        ...(at ? { x: at.x, y: at.y } : {}),
+      });
+    },
+  });
+
+  browsers.set(session.id, live);
+  return live;
+}
+
+/** Tell the watchers whether there is a live page to watch, so the card can
+    show a feed rather than the last screenshot -- and stop when there is not. */
+function broadcastBrowserState(session: Session) {
+  const live = browsers.get(session.id);
+  sendEphemeral(session.id, {
+    type: "browser",
+    session: session.id,
+    state: live ? live.status() : { available: false, open: false, url: null, title: null, detail: null, fps: 0, viewport: VIEWPORT },
+  });
+}
+
 // ---------------------------------------------------------------- models --
 
 /** How many past turns of this session to hand the model. Enough for the
@@ -474,8 +553,117 @@ const TRANSIENT = new Set([429, 500, 502, 503, 504]);
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * A web address in what somebody typed, if there is one.
+ *
+ * The trigger for actually opening a browser is deliberately a written-down
+ * address rather than a guess at intent: "check the deploy" could mean six
+ * things, but a message with `example.com/status` in it means that page, and
+ * an agent that opens a real browser should do so for a reason you can point
+ * at afterwards. A bare domain counts -- nobody types the scheme -- but a
+ * bare word does not, or every mention of a file would launch Chrome.
+ */
+const URL_PATTERN =
+  /\b((?:https?:\/\/|www\.)[^\s<>"')]+|(?:localhost|\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?(?:\/[^\s<>"')]*)?|[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9][a-z0-9-]*)*\.(?:com|org|net|io|dev|app|ai|co|uk|edu|gov|so|sh|me|xyz|info|news)(?::\d+)?(?:\/[^\s<>"')]*)?)/i;
+
+/** Sentences that are about looking at a page, rather than merely containing
+    something that resembles an address. `npm.io` in a paragraph about
+    packages is not a request to browse; "open npm.io" is. */
+const BROWSE_VERBS =
+  /\b(open|go to|goto|visit|browse|navigate|load|fetch|check|look at|read|screenshot|show me|see|what(?:'s| is) on)\b/i;
+
+/**
+ * Keep whole images out of the prose, without giving up streaming.
+ *
+ * A model asked for a picture sometimes answers with one: a `data:` URL,
+ * inline, in the middle of a sentence. Left alone that is two hundred
+ * kilobytes of base64 across the conversation -- in the thread, in the event
+ * log, and replayed to every tab that reconnects for the rest of the session.
+ *
+ * It cannot be cleaned up afterwards, because by then it has already been
+ * streamed. So it is caught on the way past: text flows through untouched
+ * until a `data:image/` appears, everything from there is held back until the
+ * address ends, and what comes out the other side is the image itself, lifted
+ * into a card of its own where it was written. The sentence closes over the
+ * gap and the picture appears in it.
+ *
+ * The holdback is the length of the marker, so a `data:image/` split across
+ * two deltas -- which is the normal case, not the edge one -- is still seen.
+ */
+const MARKER = "data:image/";
+/** What ends a URL in prose. Base64 uses none of these. */
+const URL_END = /[\s<>"'`)\]}\\]/;
+
+class DataUrlSieve {
+  private buffer = "";
+  private inside = false;
+
+  /** Text safe to say, and any whole images found in what was held back. */
+  feed(piece: string): { text: string; images: string[] } {
+    this.buffer += piece;
+    return this.drain(false);
+  }
+
+  /** The stream is over: whatever is still held back is decided now. */
+  flush(): { text: string; images: string[] } {
+    return this.drain(true);
+  }
+
+  private drain(final: boolean): { text: string; images: string[] } {
+    let text = "";
+    const images: string[] = [];
+
+    for (;;) {
+      if (this.inside) {
+        const end = URL_END.exec(this.buffer);
+        if (!end) {
+          if (!final) return { text, images };
+          images.push(this.buffer);
+          this.buffer = "";
+          this.inside = false;
+          return { text, images };
+        }
+        images.push(this.buffer.slice(0, end.index));
+        this.buffer = this.buffer.slice(end.index);
+        this.inside = false;
+        continue;
+      }
+
+      const at = this.buffer.indexOf(MARKER);
+      if (at >= 0) {
+        text += this.buffer.slice(0, at);
+        this.buffer = this.buffer.slice(at);
+        this.inside = true;
+        continue;
+      }
+
+      if (final) {
+        text += this.buffer;
+        this.buffer = "";
+        return { text, images };
+      }
+      // Hold back just enough that a marker split across two deltas is still
+      // recognised when the rest of it lands.
+      const keep = Math.min(this.buffer.length, MARKER.length - 1);
+      text += this.buffer.slice(0, this.buffer.length - keep);
+      this.buffer = this.buffer.slice(this.buffer.length - keep);
+      return { text, images };
+    }
+  }
+}
+
+function browseTarget(text: string): string | null {
+  const found = URL_PATTERN.exec(text);
+  if (!found) return null;
+  const candidate = found[1].replace(/[.,;:]+$/, "");
+  // An explicit scheme is a request on its own; anything looser needs a verb
+  // in front of it saying what to do with it.
+  if (/^https?:\/\//i.test(candidate)) return candidate;
+  return BROWSE_VERBS.test(text) ? candidate : null;
+}
+
 /** What the model is told it is, and what it knows, before the conversation. */
-function systemInstructionFor(recalled: MemoryRecord[]): string {
+function systemInstructionFor(recalled: MemoryRecord[], page?: PageRead | null): string {
   const lines = [state.systemPrompt.trim()];
 
   if (recalled.length > 0) {
@@ -483,6 +671,25 @@ function systemInstructionFor(recalled: MemoryRecord[]): string {
       "",
       "What you already know about this workspace (from the memory graph):",
       ...recalled.map((m) => `- [${m.kind}] ${m.title}: ${m.body}`),
+    );
+  }
+
+  /* The page as text, which is the channel the model reads. The person
+     watching is getting the video feed of the same page at the same moment
+     from a different channel entirely -- see server/browser.ts. */
+  if (page) {
+    lines.push(
+      "",
+      `You have a browser open at ${page.url} ("${page.title}"). You are looking`,
+      "at it now. Its interactive elements, numbered as a screen reader would",
+      "announce them:",
+      page.outline || "(nothing interactive on this page)",
+      "",
+      "And its readable text:",
+      page.text.slice(0, 4000),
+      "",
+      "Answer from what is actually on that page. Say so plainly if it does not",
+      "contain what was asked for.",
     );
   }
 
@@ -552,6 +759,105 @@ async function startServer() {
     const limit = parseInt((req.query.limit as string) || "5000", 10);
     const slice = session.events.filter((e) => e.seq >= fromSeq).slice(0, limit);
     res.json(slice);
+  });
+
+  /**
+   * 3b. The bytes behind a picture.
+   *
+   * Events carry an id; this hands over what it stands for. Ids are minted
+   * once and never reused, so the answer for a given one can never change and
+   * the response says so -- a session with four hundred frames in it is then
+   * four hundred requests once, and none of them ever again.
+   */
+  app.get("/api/sessions/:id/blobs/:blob", (req: Request, res: Response) => {
+    const blob = getBlob(req.params.blob);
+    if (!blob || blob.session !== req.params.id) {
+      return res.status(404).json({ error: "No such image" });
+    }
+    res.setHeader("Content-Type", blob.mime);
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    res.setHeader("Content-Length", String(blob.data.byteLength));
+    res.end(blob.data);
+  });
+
+  // 3c. The browser: what it is doing, and telling it to do something.
+
+  /** Whether there is a browser at all, and whether a page is open in it. */
+  app.get("/api/sessions/:id/browser", async (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    await probeBrowser();
+    res.json(browserFor(session).status());
+  });
+
+  /**
+   * Drive the page.
+   *
+   * The same calls the agent makes, exposed so a person can make them too --
+   * which is what turns the browser card from a recording into something you
+   * can take over. Every one of them emits its own events, so whatever drove
+   * it, the transcript reads the same afterwards.
+   */
+  app.post("/api/sessions/:id/browser", async (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+
+    const { ok, detail } = await probeBrowser();
+    if (!ok) return res.status(503).json({ error: detail });
+
+    const live = browserFor(session);
+    const action = String(req.body?.action ?? "read");
+
+    try {
+      let read: PageRead | null = null;
+      switch (action) {
+        case "open":
+          if (!req.body?.url) return res.status(400).json({ error: "Nowhere to go." });
+          read = await live.goto(String(req.body.url));
+          break;
+        case "click":
+          read = await live.click(Number(req.body?.ref));
+          break;
+        case "fill":
+          read = await live.fill(
+            Array.isArray(req.body?.values) ? req.body.values : [],
+            Boolean(req.body?.submit),
+          );
+          break;
+        case "scroll":
+          read = await live.scroll(Number(req.body?.dy ?? 600));
+          break;
+        case "back":
+          read = await live.back();
+          break;
+        case "shot": {
+          const png = await live.capture();
+          const blob = putBlob(session.id, png, "image/png");
+          emitEvent(session, "media.image", "agent", {
+            alt: "the page as it looks now",
+            caption: live.status().url ?? "",
+            w: VIEWPORT.width,
+            h: VIEWPORT.height,
+          }, null, blob);
+          broadcastBrowserState(session);
+          return res.json({ ok: true, blob });
+        }
+        case "close":
+          await live.close();
+          browsers.delete(session.id);
+          emitEvent(session, "browser.action", "agent", { action: "close", url: "" });
+          broadcastBrowserState(session);
+          return res.json({ ok: true, closed: true });
+        default:
+          read = await live.snapshot();
+      }
+      broadcastBrowserState(session);
+      res.json({ ok: true, ...read });
+    } catch (err: any) {
+      const message = err?.message ?? String(err);
+      emitEvent(session, "system.error", "system", { error: `Browser: ${message}` });
+      res.status(400).json({ error: message });
+    }
   });
 
   // 4. Send Message / Agent Turn
@@ -754,12 +1060,63 @@ async function startServer() {
           emitEvent(session, "tool.result", "agent", { ok: true, id: newMem.id }, spanId);
         }
 
+        /* If an address was named, actually go there -- in a real browser,
+           with the screencast running, so the page is watched being opened
+           rather than reported as having been. What comes back is text; what
+           the person gets is the video feed of the same page. */
+        let page: PageRead | null = null;
+        const target = browseTarget(text);
+        if (target) {
+          const browseSpan = `span-web-${Date.now().toString(36)}`;
+          emitEvent(session, "tool.call", "agent", {
+            tool: "browser",
+            args: { action: "open", url: target },
+          }, browseSpan);
+          try {
+            const { ok, detail } = await probeBrowser();
+            if (!ok) throw new Error(detail ?? "No browser available.");
+            const live = browserFor(session);
+            page = await live.goto(target);
+            broadcastBrowserState(session);
+            emitEvent(session, "tool.result", "agent", {
+              ok: true,
+              url: page.url,
+              title: page.title,
+              elements: page.refs.length,
+            }, browseSpan);
+
+            /* Asked what it *looks* like, rather than what it says: that is
+               the one question the text channel genuinely cannot answer, so
+               the picture goes into the conversation as a picture. */
+            if (/\b(screenshot|show me|what does it look|looks? like|see it|picture|image)\b/i.test(text)) {
+              const png = await live.capture();
+              emitEvent(session, "media.image", "agent", {
+                alt: `${page.title || page.url}`,
+                caption: page.url,
+                w: VIEWPORT.width,
+                h: VIEWPORT.height,
+              }, null, putBlob(session.id, png, "image/png"));
+            }
+          } catch (err: any) {
+            emitEvent(session, "tool.error", "agent", {
+              error: err?.message ?? String(err),
+            }, browseSpan);
+            emitEvent(session, "system.error", "system", {
+              error: `Could not open ${target}: ${err?.message ?? err}`,
+            });
+          }
+        }
+
         // Generate the reply with whichever provider is configured, streaming
         // it so the thread fills as the model writes rather than sitting empty
         // and then blinking a paragraph into place.
         const active = resolveProvider();
         const connected = Boolean(active.provider) && !active.problem;
         let streamed = 0;
+        /* One per turn, and outside the retry loop on purpose: a retry only
+           happens when nothing has been said yet, so the sieve is empty, and
+           a fresh one per attempt would be the same object with more steps. */
+        const sieve = new DataUrlSieve();
 
         if (connected) {
           const call = {
@@ -767,7 +1124,7 @@ async function startServer() {
             model: active.model,
             key: active.key,
             baseUrl: active.baseUrl,
-            system: systemInstructionFor(uniqueAccessed),
+            system: systemInstructionFor(uniqueAccessed, page),
             messages: historyFor(session),
             temperature: 0.7,
             maxTokens: 2048,
@@ -776,13 +1133,38 @@ async function startServer() {
 
           for (let attempt = 0; attempt <= MODEL_RETRIES; attempt += 1) {
             try {
+              /** An image inlined into the reply becomes a card where it was
+                  written, rather than a screenful of base64. */
+              const show = (found: string[]) => {
+                for (const raw of found) {
+                  const decoded = fromDataUrl(raw);
+                  if (!decoded || !decoded.mime.startsWith("image/")) continue;
+                  emitEvent(session, "media.image", "agent", {
+                    alt: "image from the reply",
+                    caption: null,
+                    inline: true,
+                  }, null, putBlob(session.id, decoded.data, decoded.mime));
+                }
+              };
+
               const usage = await streamChat(call, (piece) => {
                 // The client coalesces these deltas into one reply (see
                 // derive.ts), so a chunk per emit is a sentence appearing,
                 // not forty cards.
-                emitEvent(session, "turn.agent.text", "agent", { text: piece });
-                streamed += piece.length;
+                const { text: clean, images } = sieve.feed(piece);
+                if (clean) {
+                  emitEvent(session, "turn.agent.text", "agent", { text: clean });
+                  streamed += clean.length;
+                }
+                show(images);
               });
+
+              const tail = sieve.flush();
+              if (tail.text) {
+                emitEvent(session, "turn.agent.text", "agent", { text: tail.text });
+                streamed += tail.text.length;
+              }
+              show(tail.images);
 
               // What the turn cost, written down at the moment it happened.
               // Prices move, so re-pricing an old turn later from today's
@@ -848,7 +1230,15 @@ async function startServer() {
         // something useful rather than leaving the turn blank.
         if (streamed === 0) {
           let reply: string;
-          if (!connected) {
+          if (page) {
+            // Something real did happen, model or no model: a page was opened
+            // and read. Say what is on it rather than apologising.
+            reply =
+              `Opened ${page.url} — "${page.title}". It has ${page.refs.length} ` +
+              `interactive element${page.refs.length === 1 ? "" : "s"}; the live view above ` +
+              "is the page itself, and the card keeps a frame from each step." +
+              (connected ? "" : " Connect a model in Settings and I can tell you what it says.");
+          } else if (!connected) {
             reply =
               "No model is connected yet, so I am running on local responses only. " +
               `${active.problem ?? ""} Open Settings, add a key for OpenAI, Google, ` +
@@ -889,10 +1279,49 @@ async function startServer() {
     res.json({ interrupted: wasBusy });
   });
 
-  // 6. UI Element Pick
-  app.post("/api/sessions/:id/pick", (req: Request, res: Response) => {
-    const label = req.body?.label || "element";
-    res.json({ ok: true, text: `Selected UI target (${label})` });
+  /**
+   * 6. UI Element Pick
+   *
+   * You click a spot on the live page and this says what is there. The pick
+   * lands in the thread as an event of its own, so the agent sees that you
+   * pointed and at what -- which is the whole point: describing an element in
+   * prose and hoping the agent finds the same one is the slow way to ask.
+   */
+  app.post("/api/sessions/:id/pick", async (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+
+    const live = browsers.get(session.id);
+    if (!live?.status().open) {
+      return res.json({ ok: false, error: "No page is open to point at." });
+    }
+
+    const x = Number(req.body?.x);
+    const y = Number(req.body?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      return res.json({ ok: false, error: "That is not a point on the page." });
+    }
+
+    try {
+      const found = await live.pickAt(x, y);
+      if (found?.ok && found.pick) {
+        const f = found.pick.fingerprint;
+        const name = f?.text ? `“${f.text}”` : `<${f?.tag ?? "element"}>`;
+        emitEvent(session, "context.note", "user", {
+          text:
+            `You pointed at ${name}` +
+            (found.pick.ref != null ? ` — element [${found.pick.ref}]` : "") +
+            (found.pick.source?.file
+              ? `, rendered by ${found.pick.source.file}${
+                  found.pick.source.line ? `:${found.pick.source.line}` : ""}`
+              : `, selector ${found.pick.selector}`) +
+            ".",
+        });
+      }
+      res.json(found);
+    } catch (err: any) {
+      res.json({ ok: false, error: err?.message ?? "Could not read that point." });
+    }
   });
 
   // 7. Policy Approvals
@@ -1399,6 +1828,22 @@ async function startServer() {
         }),
       );
 
+      /* Whether there is a page to watch. Sent on connect because the feed is
+         ephemeral: a tab that opens halfway through a browsing session would
+         otherwise see nothing until the next frame, and show the last
+         screenshot as though that were the live view. */
+      const openBrowser = browsers.get(sessionId);
+      if (openBrowser) {
+        ws.send(JSON.stringify({
+          type: "browser",
+          session: sessionId,
+          state: openBrowser.status(),
+        }));
+        // And one frame to start with, because a page that is sitting still
+        // produces none on its own and this tab has never seen it.
+        void openBrowser.nudge();
+      }
+
       // Handle incoming messages
       ws.on("message", (data: string) => {
         try {
@@ -1477,6 +1922,26 @@ async function startServer() {
     app.use(express.static(distPath));
     app.get("*", serveIndex);
   }
+
+  /* Chrome outlives its parent if nobody tells it not to, and a container
+     restarted a few times then has several headless browsers in it holding
+     memory for pages nobody can see. */
+  const shutdown = async () => {
+    for (const [id, live] of browsers) {
+      await live.close().catch(() => undefined);
+      dropSession(id);
+    }
+    browsers.clear();
+    process.exit(0);
+  };
+  process.once("SIGINT", () => void shutdown());
+  process.once("SIGTERM", () => void shutdown());
+
+  // Asked once, at startup, so the settings panel and the browser card can
+  // both say what is missing without every caller paying for the import.
+  void probeBrowser().then(({ ok, detail }) => {
+    console.log(ok ? "[browser] ready" : `[browser] unavailable: ${detail}`);
+  });
 
   server.listen(PORT, HOST, () => {
     console.log(`Autora ${VERSION} running on http://${HOST}:${PORT}`);

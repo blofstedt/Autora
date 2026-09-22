@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SessionStream, type StreamStatus } from "./lib/stream";
 import { derive, isRunning, type KanbanTask } from "./lib/derive";
 import { chime, paintChrome, type Chrome } from "./lib/chrome";
-import type { AutoraEvent } from "./lib/types";
+import type { AutoraEvent, BrowserState, LiveFrame } from "./lib/types";
 import { Thread } from "./components/Thread";
 import { MemoryRibbon } from "./components/MemoryRibbon";
 import { Rail } from "./components/Rail";
@@ -36,6 +36,12 @@ export function App() {
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [events, setEvents] = useState<AutoraEvent[]>([]);
   const [status, setStatus] = useState<StreamStatus>({ state: "connecting" });
+  /** The newest frame off the session's browser, and whether there is one at
+      all. Held here rather than in the card because the socket is here; it is
+      one frame at a time and never accumulates, so re-rendering on it costs a
+      picture swap and nothing else. */
+  const [liveFrame, setLiveFrame] = useState<LiveFrame | null>(null);
+  const [browser, setBrowser] = useState<BrowserState | null>(null);
   const [draft, setDraft] = useState("");
   const [liveOn, setLiveOn] = useState(false);
   const [mobileTab, setMobileTab] = useState<"chat" | "tasks">("chat");
@@ -101,6 +107,8 @@ export function App() {
   useEffect(() => {
     if (!sessionId) return;
     setEvents([]);
+    setLiveFrame(null);
+    setBrowser(null);
     const stream = new SessionStream(sessionId, {
       onEvents: (fresh) =>
         setEvents((prev) => {
@@ -109,6 +117,8 @@ export function App() {
           return next;
         }),
       onStatus: setStatus,
+      onFrame: setLiveFrame,
+      onBrowser: setBrowser,
     });
     streamRef.current = stream;
     stream.connect();
@@ -119,6 +129,26 @@ export function App() {
   }, [sessionId]);
 
   const view = useMemo(() => derive(events), [events]);
+
+  // A page that has been closed has no more frames coming, and the last one
+  // to arrive would otherwise sit on the card claiming to be live forever.
+  useEffect(() => {
+    if (browser && !browser.open) setLiveFrame(null);
+  }, [browser]);
+
+  /** Shut the page. Worth a control of its own rather than leaving it to the
+      agent: a browser left open is a browser still holding the last thing you
+      were looking at, and closing it is the sort of thing you want to be able
+      to do yourself. */
+  const closeBrowser = useCallback(async () => {
+    if (!sessionId) return;
+    setLiveFrame(null);
+    await fetch(`/api/sessions/${sessionId}/browser`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "close" }),
+    }).catch(() => undefined);
+  }, [sessionId]);
 
   const pending = useMemo(
     () => view.approvals.filter((a) => !a.settled).length,
@@ -421,6 +451,23 @@ export function App() {
 
           <div className="spacer" />
 
+          {/* A page is open somewhere up the thread. Said here because the
+              card carrying it scrolls away, and a browser you have forgotten
+              is open is the one worth mentioning. */}
+          {browser?.open && (
+            <span className="badge browsing" title={browser.url ?? "a page is open"}>
+              <span className="watch-dot" aria-hidden="true" />
+              {hostOf(browser.url)}
+              <button
+                className="badge-x"
+                onClick={() => void closeBrowser()}
+                aria-label="Close the page"
+                title="Close the page"
+              >
+                <IconX size={10} />
+              </button>
+            </span>
+          )}
           {view.tokens.in > 0 && (
             <span className="badge tokens" title="tokens in / out / cached">
               {fmt(view.tokens.in)} in · {fmt(view.tokens.out)} out ·{" "}
@@ -451,6 +498,7 @@ export function App() {
             busy={view.busy}
             sessionId={sessionId ?? ""}
             liveBrowserSeq={view.liveBrowserSeq}
+            liveFrame={liveFrame}
             live={live}
             onPermissionDecide={handlePermissionDecide}
             onRunAutonomous={handleRunAutonomous}
@@ -681,3 +729,13 @@ export function App() {
 }
 
 const fmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+
+/** Just the site, for a badge with room for about fifteen characters. */
+function hostOf(url: string | null): string {
+  if (!url) return "a page";
+  try {
+    return new URL(url).host.replace(/^www\./, "");
+  } catch {
+    return url.slice(0, 24);
+  }
+}

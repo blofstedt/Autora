@@ -21,14 +21,32 @@ COPY server/ server/
 # round trip through the registry and an update on somebody's box.
 RUN npm run lint && npm run build
 
-# The runtime needs express, ws and the Gemini SDK -- not vite, esbuild or
-# typescript. Pruning here rather than reinstalling in the next stage keeps it
-# to one npm run and one lockfile.
+# The runtime needs express, ws, the Gemini SDK and the Playwright driver --
+# not vite, esbuild or typescript. Pruning here rather than reinstalling in the
+# next stage keeps it to one npm run and one lockfile.
+#
+# `playwright-core` survives the prune because it is an optional dependency
+# rather than a dev one: it is the driver, it downloads nothing, and it is a
+# couple of megabytes. The browser it drives is the system package installed
+# below.
 RUN npm prune --omit=dev
 
 # ── stage 2: runtime ─────────────────────────────────────────────────────────
 FROM node:22-alpine
 WORKDIR /app
+
+# Chromium, for the browser the agent drives and you watch. Alpine's own
+# package rather than a Playwright download: Playwright does not publish
+# musl builds, and the system one is both smaller and patched by the distro.
+# The fonts are not decoration -- without them every page renders as boxes,
+# which makes the screencast useless and the screenshots misleading.
+RUN apk add --no-cache \
+      chromium \
+      nss \
+      freetype \
+      harfbuzz \
+      ttf-freefont \
+      font-noto-emoji
 
 ENV NODE_ENV=production \
     # Umbrel's compose file publishes 8817 and app_proxy points at it.
@@ -36,7 +54,10 @@ ENV NODE_ENV=production \
     AUTORA_HOST=0.0.0.0 \
     # The one directory that survives an update, so the keys pasted into
     # Settings and the spend ledger behind the billing card outlive it.
-    AUTORA_HOME=/data
+    AUTORA_HOME=/data \
+    # Where the browser is. Set explicitly rather than left to the search:
+    # a wrong guess here is a feature that silently does nothing.
+    AUTORA_BROWSER_PATH=/usr/bin/chromium-browser
 
 COPY --from=builder /build/node_modules node_modules/
 COPY --from=builder /build/dist dist/
