@@ -41,6 +41,9 @@ WORKDIR /app
 # The fonts are not decoration -- without them every page renders as boxes,
 # which makes the screencast useless and the screenshots misleading.
 RUN apk add --no-cache \
+      bash \
+      curl \
+      git \
       chromium \
       nss \
       freetype \

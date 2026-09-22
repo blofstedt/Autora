@@ -44,6 +44,7 @@ export function App() {
   const [browser, setBrowser] = useState<BrowserState | null>(null);
   const [draft, setDraft] = useState("");
   const [liveOn, setLiveOn] = useState(false);
+  const [userSpeaking, setUserSpeaking] = useState(false);
   const [mobileTab, setMobileTab] = useState<"chat" | "tasks">("chat");
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const [knowledgeInitialKind, setKnowledgeInitialKind] = useState<"skill" | "all">("all");
@@ -314,14 +315,14 @@ export function App() {
 
   /** What the mark on the live button is doing.
    *
-   *  Working while the agent is writing or talking -- which is when there is
-   *  something to watch -- breathing while the microphone is open and it is
-   *  our turn, and still otherwise. The falling edge is what matters: the mark
-   *  plays its own ending when this drops back, so nothing here has to time
-   *  the finish. */
-  const liveState: MarkState = running || speaking
-    ? "working"
-    : liveOn ? "live" : "rest";
+   *  The icon in the bottom middle should NOT light up when the agent is just
+   *  working as normal. It should only light up like that whenever the person
+   *  is talking in live mode. When in live mode and listening quietly, it sits
+   *  in "live" state as the active indicator. When live mode is off, it stays
+   *  quietly in "rest". */
+  const liveState: MarkState = liveOn
+    ? (userSpeaking ? "working" : "live")
+    : "rest";
 
   const hadPending = useRef(0);
   useEffect(() => {

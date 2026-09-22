@@ -20,11 +20,24 @@
 import fs from "node:fs";
 import path from "node:path";
 import { AUTO_ORDER, PROVIDERS, providerSpec } from "./providers";
-/* Type-only, deliberately: ./tools reads this module for the saved settings,
-   and a value import here would close that loop at startup. The shape lives
-   with the registry that defines it; the defaults live below, because they are
-   what this module writes into a fresh file. */
-import type { ToolSettings } from "./tools";
+
+export type ApprovalMode = "always" | "risky" | "never";
+
+export interface ToolSettings {
+  terminal: {
+    enabled: boolean;
+    /** Where commands run. Empty means the server's own working directory. */
+    cwd: string;
+    /** Seconds before a command is killed. */
+    timeout: number;
+    approval: ApprovalMode;
+    /** Optional shell override, e.g. /bin/bash, /bin/sh. Defaults to auto-detection. */
+    shell?: string;
+  };
+  browser: { enabled: boolean; approval: ApprovalMode };
+  computer: { enabled: boolean; approval: ApprovalMode };
+  memory: { enabled: boolean; approval: ApprovalMode };
+}
 
 export interface UsageEntry {
   ts: number;
@@ -53,6 +66,8 @@ export interface PersistedState {
   systemPrompt: string;
   /** Provider id (or voice credential name) -> secret. */
   keys: Record<string, string>;
+  /** Secure workspace secrets (e.g. GITHUB_TOKEN, API keys) injected into terminal & tools. */
+  secrets: Record<string, string>;
   /** Monthly ceiling in USD, or null for none. Advisory: it warns, it does not
       refuse -- a console that silently stops answering is a support ticket. */
   budgetUsd: number | null;
@@ -81,7 +96,7 @@ const DEFAULT_PROMPT =
  */
 function defaultTools(): ToolSettings {
   return {
-    terminal: { enabled: true, cwd: "", timeout: 120, approval: "always" },
+    terminal: { enabled: true, cwd: "", timeout: 120, approval: "always", shell: "" },
     browser: { enabled: true, approval: "risky" },
     computer: { enabled: true, approval: "risky" },
     /* Unattended: writing a note down is not destructive, and an approval
@@ -113,6 +128,9 @@ export function mergeTools(into: ToolSettings, patch: any): ToolSettings {
     into.terminal.approval = mode(patch.terminal.approval, into.terminal.approval);
     if (typeof patch.terminal.cwd === "string") {
       into.terminal.cwd = patch.terminal.cwd.trim();
+    }
+    if (typeof patch.terminal.shell === "string") {
+      into.terminal.shell = patch.terminal.shell.trim();
     }
     if (patch.terminal.timeout !== undefined) {
       const seconds = Number(patch.terminal.timeout);
@@ -165,6 +183,7 @@ function blank(): PersistedState {
     baseUrls: {},
     systemPrompt: DEFAULT_PROMPT,
     keys: {},
+    secrets: {},
     budgetUsd: null,
     usage: [],
     tools: defaultTools(),
@@ -180,6 +199,7 @@ function read(): PersistedState {
     if (raw.baseUrls && typeof raw.baseUrls === "object") state.baseUrls = { ...raw.baseUrls };
     if (typeof raw.systemPrompt === "string") state.systemPrompt = raw.systemPrompt;
     if (raw.keys && typeof raw.keys === "object") state.keys = { ...raw.keys };
+    if (raw.secrets && typeof raw.secrets === "object") state.secrets = { ...raw.secrets };
     if (typeof raw.budgetUsd === "number") state.budgetUsd = raw.budgetUsd;
     if (Array.isArray(raw.usage)) state.usage = raw.usage.filter(sane);
     /* Field by field, so a settings file written by an older build -- which
@@ -285,6 +305,194 @@ export function setKey(name: string, value: string) {
   if (trimmed) state.keys[name] = trimmed;
   else delete state.keys[name];
   save();
+}
+
+// ---------------------------------------------------------------- secrets --
+
+/** Retrieve a secret: checks workspace stored secrets first, then process.env. */
+export function secretFor(name: string): string {
+  const saved = (state.secrets?.[name] || "").trim();
+  if (saved) return saved;
+  const envVal = (process.env[name] || "").trim();
+  if (envVal) return envVal;
+  return "";
+}
+
+/** Save or update a workspace secret. */
+export function setSecret(name: string, value: string) {
+  if (!state.secrets) state.secrets = {};
+  const trimmed = value.trim();
+  if (trimmed) state.secrets[name] = trimmed;
+  else delete state.secrets[name];
+  save();
+}
+
+/** Remove a workspace secret. */
+export function deleteSecret(name: string) {
+  if (state.secrets) {
+    delete state.secrets[name];
+    save();
+  }
+}
+
+/** Get raw secret value if stored in workspace. */
+export function getSecret(name: string): string | null {
+  if (state.secrets?.[name]) return state.secrets[name];
+  if (process.env[name]) return process.env[name]!;
+  return null;
+}
+
+/** Return all available secrets (from environment and workspace store). */
+export function allSecrets(): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const k of [
+    "GITHUB_TOKEN",
+    "GH_TOKEN",
+    "BRAVE_SEARCH_API_KEY",
+    "TAVILY_API_KEY",
+    "SERPER_API_KEY",
+    "GEMINI_API_KEY",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "SLACK_BOT_TOKEN",
+  ]) {
+    if (process.env[k]?.trim()) result[k] = process.env[k]!.trim();
+  }
+  if (state.secrets) {
+    for (const [k, v] of Object.entries(state.secrets)) {
+      if (v?.trim()) result[k] = v.trim();
+    }
+  }
+  return result;
+}
+
+/** Known presets for UI suggestions */
+export const SECRET_PRESETS: Record<string, { label: string; description: string; placeholder: string }> = {
+  GITHUB_TOKEN: {
+    label: "GitHub Token",
+    description: "Personal access token for GitHub CLI, API requests, and private repo operations.",
+    placeholder: "ghp_...",
+  },
+  TAVILY_API_KEY: {
+    label: "Tavily Search Key",
+    description: "Search API key for high-speed web browsing and automated research.",
+    placeholder: "tvly-...",
+  },
+  BRAVE_SEARCH_API_KEY: {
+    label: "Brave Search Key",
+    description: "Search API key for independent web indexing and SERP queries.",
+    placeholder: "BSA...",
+  },
+  OPENAI_API_KEY: {
+    label: "OpenAI API Key",
+    description: "API key for OpenAI models, embeddings, and completions.",
+    placeholder: "sk-...",
+  },
+  ANTHROPIC_API_KEY: {
+    label: "Anthropic API Key",
+    description: "API key for Claude models.",
+    placeholder: "sk-ant-...",
+  },
+  SLACK_BOT_TOKEN: {
+    label: "Slack Bot Token",
+    description: "Bot user OAuth token for Slack notifications and integrations.",
+    placeholder: "xoxb-...",
+  },
+  AWS_ACCESS_KEY_ID: {
+    label: "AWS Access Key ID",
+    description: "Access key ID for AWS CLI and SDK calls.",
+    placeholder: "AKIA...",
+  },
+  AWS_SECRET_ACCESS_KEY: {
+    label: "AWS Secret Access Key",
+    description: "Secret access key for AWS CLI and SDK calls.",
+    placeholder: "wJalrXUtnFEMI/...",
+  },
+};
+
+/** List configured secrets with masked values for UI display. */
+export function listSecrets(): {
+  name: string;
+  source: "app" | "env";
+  masked: string;
+  length: number;
+  preset?: { label: string; description: string };
+}[] {
+  const map = new Map<string, {
+    name: string;
+    source: "app" | "env";
+    masked: string;
+    length: number;
+    preset?: { label: string; description: string };
+  }>();
+
+  for (const k of [
+    "GITHUB_TOKEN",
+    "GH_TOKEN",
+    "BRAVE_SEARCH_API_KEY",
+    "TAVILY_API_KEY",
+    "SERPER_API_KEY",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+  ]) {
+    const val = process.env[k]?.trim();
+    if (val) {
+      map.set(k, {
+        name: k,
+        source: "env",
+        masked: maskKey(val),
+        length: val.length,
+        preset: SECRET_PRESETS[k] ? { label: SECRET_PRESETS[k].label, description: SECRET_PRESETS[k].description } : undefined,
+      });
+    }
+  }
+
+  if (state.secrets) {
+    for (const [k, v] of Object.entries(state.secrets)) {
+      const val = v?.trim();
+      if (val) {
+        map.set(k, {
+          name: k,
+          source: "app",
+          masked: maskKey(val),
+          length: val.length,
+          preset: SECRET_PRESETS[k] ? { label: SECRET_PRESETS[k].label, description: SECRET_PRESETS[k].description } : undefined,
+        });
+      }
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Scrub all sensitive secret and API key values from any text before
+ * sending it to the model transcript, event logs, or UI streams.
+ */
+export function redactSecrets(text: string): string {
+  if (!text || typeof text !== "string") return text;
+  let sanitized = text;
+
+  // 1. Scrub workspace and env secrets
+  const secrets = allSecrets();
+  for (const [name, val] of Object.entries(secrets)) {
+    if (val && val.length >= 4) {
+      sanitized = sanitized.split(val).join(`[REDACTED_${name}]`);
+    }
+  }
+
+  // 2. Scrub provider API keys
+  if (state.keys) {
+    for (const [prov, key] of Object.entries(state.keys)) {
+      if (key && key.length >= 4) {
+        sanitized = sanitized.split(key).join(`[REDACTED_${prov.toUpperCase()}_KEY]`);
+      }
+    }
+  }
+
+  return sanitized;
 }
 
 // ------------------------------------------------------------- selection --

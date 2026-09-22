@@ -25,8 +25,11 @@
  */
 
 import { spawn } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import os from "node:os";
-import { mergeTools, save, state } from "./state";
+import { GoogleGenAI } from "@google/genai";
+import { mergeTools, save, state, allSecrets, secretFor, redactSecrets } from "./state";
 import { probeBrowser, VIEWPORT, type LiveBrowser, type PageRead } from "./browser";
 import { relayAction, relayConnected, relayStatus } from "./desktop";
 
@@ -42,6 +45,7 @@ export interface ToolSettings {
     /** Seconds before a command is killed. */
     timeout: number;
     approval: ApprovalMode;
+    shell?: string;
   };
   browser: { enabled: boolean; approval: ApprovalMode };
   computer: { enabled: boolean; approval: ApprovalMode };
@@ -217,6 +221,84 @@ const TOOLS: ToolSpec[] = [
       "you already have cannot answer that. You do not get the image back; it " +
       "goes to the person watching.",
     parameters: { type: "object", properties: {} },
+  },
+  {
+    name: "browser_handoff",
+    group: "browser",
+    description:
+      "Transfer live browser control to the human watching. Call this when you encounter " +
+      "an OAuth/SSO login, CAPTCHA, 2FA prompt, or sensitive credentials entry. The console alerts " +
+      "the person so they can type and click directly in the live browser before returning control to you.",
+    parameters: {
+      type: "object",
+      properties: {
+        reason: {
+          type: "string",
+          description: "Explanation of what human action is needed (e.g. 'Please log in to GitHub via OAuth' or 'Please complete the Cloudflare verification').",
+        },
+      },
+      required: ["reason"],
+    },
+  },
+  {
+    name: "http_request",
+    group: "browser",
+    description:
+      "Make an HTTP API call directly from the server. Supports GET, POST, PUT, PATCH, DELETE, HEAD " +
+      "with custom headers and body. If calling api.github.com, automatically attaches the GITHUB_TOKEN " +
+      "from the workspace secret store so you never need to ask the user for passwords.",
+    parameters: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "The full target URL." },
+        method: {
+          type: "string",
+          enum: ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"],
+          description: "HTTP method (default GET).",
+        },
+        headers: {
+          type: "object",
+          description: "Optional HTTP headers as key-value pairs.",
+        },
+        body: {
+          type: "string",
+          description: "Optional request body string or JSON.",
+        },
+      },
+      required: ["url"],
+    },
+    risky: true,
+  },
+  {
+    name: "web_search",
+    group: "browser",
+    description:
+      "Search the web for up-to-date documentation, release notes, news, code examples, or factual answers " +
+      "without being blocked by search engine bot detection.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search query terms." },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "image_generate",
+    group: "browser",
+    description:
+      "Generate an image from a detailed descriptive prompt using Gemini Imagen and show it in the conversation thread.",
+    parameters: {
+      type: "object",
+      properties: {
+        prompt: {
+          type: "string",
+          description: "Detailed description of the image to generate.",
+        },
+      },
+      required: ["prompt"],
+    },
+    risky: true,
   },
 
   // ----------------------------------------------------------- computer --
@@ -516,6 +598,14 @@ export function renderCall(spec: ToolSpec, args: Record<string, any>): string {
       return `scroll the desktop by ${args.dy}`;
     case "memory_write":
       return `remember "${args.title}": ${args.body}`;
+    case "browser_handoff":
+      return `handoff browser control: ${args.reason}`;
+    case "http_request":
+      return `${args.method || "GET"} ${args.url}`;
+    case "web_search":
+      return `search web for "${args.query}"`;
+    case "image_generate":
+      return `generate image: "${args.prompt}"`;
     default: {
       const rest = Object.keys(args).length ? ` ${JSON.stringify(args)}` : "";
       return `${spec.name}${rest}`;
@@ -574,15 +664,22 @@ function describePage(page: PageRead): string {
   ].join("\n");
 }
 
+function candidateShells(): string[] {
+  const settings = toolSettings().terminal;
+  const list: string[] = [];
+  if (settings.shell?.trim()) list.push(settings.shell.trim());
+  if (process.env.AUTORA_SHELL?.trim()) list.push(process.env.AUTORA_SHELL.trim());
+  if (process.env.SHELL?.trim()) list.push(process.env.SHELL.trim());
+  list.push("/bin/bash", "bash", "/bin/ash", "ash", "/bin/sh", "sh");
+  return Array.from(new Set(list));
+}
+
 /**
  * Run one command, streaming its output.
  *
- * Pipes, not a PTY. A real TTY would need a native module (node-pty) compiled
- * into the image, and the honest trade is: everything non-interactive works
- * exactly as expected, and interactive programs are declared unsupported in the
- * tool description rather than hanging mysteriously. The environment is set to
- * discourage the most common accidental blockers -- pagers, mostly, which is
- * how `git log` comes to hang forever.
+ * Pipes, not a PTY. Shell is resolved with automatic fallback across bash, ash, and sh
+ * to handle minimal containers without crashing with ENOENT. All workspace secrets
+ * are automatically injected into the process environment.
  */
 function runCommand(
   command: string,
@@ -590,120 +687,304 @@ function runCommand(
   timeoutSeconds: number,
   ctx: ToolContext,
 ): Promise<ToolOutcome> {
-  return new Promise<ToolOutcome>((resolve) => {
-    const started = Date.now();
-    let child;
-    try {
-      child = spawn("bash", ["-lc", command], {
-        cwd: cwd || process.cwd(),
-        /* Its own process group, so it can be killed as a group.
-           `bash -lc "sleep 120"` is two processes: killing the shell alone
-           leaves the sleep orphaned and running, which is how Stop came to
-           report a command stopped while it carried on to completion. A
-           detached child is a group leader, and negating its pid signals
-           every process in that group. */
-        detached: true,
-        env: {
-          ...process.env,
-          TERM: "dumb",
-          PAGER: "cat",
-          GIT_PAGER: "cat",
-          // Nothing downstream should try to be clever about a terminal that
-          // is not there.
-          NO_COLOR: "1",
-          DEBIAN_FRONTEND: "noninteractive",
-        },
-        stdio: ["ignore", "pipe", "pipe"],
+  const candidates = candidateShells();
+  const secrets = allSecrets();
+  const workingDir = cwd || process.cwd();
+
+  const tryShell = (candidateIdx: number): Promise<ToolOutcome> => {
+    if (candidateIdx >= candidates.length) {
+      return Promise.resolve({
+        ok: false,
+        summary: "Could not start a shell: no usable shell found on this system.",
       });
-    } catch (err: any) {
-      resolve({ ok: false, summary: `Could not start a shell: ${err?.message ?? err}` });
-      return;
     }
 
-    let collected = "";
-    let truncated = false;
-    /** What comes back to the model. A build log is megabytes; the tail is
-        where the error is, and the person watching has the whole thing in the
-        transcript regardless. */
-    const LIMIT = 24_000;
+    const shell = candidates[candidateIdx];
+    return new Promise<ToolOutcome>((resolve) => {
+      let child: any;
+      let timer: any = null;
+      let killedBy: "timeout" | "user" | null = null;
+      let collected = "";
+      let truncated = false;
+      const LIMIT = 24_000;
+      let spawnedOk = false;
 
-    const take = (chunk: Buffer) => {
-      const text = chunk.toString("utf8");
-      ctx.onOutput(text);
-      if (collected.length < LIMIT) {
-        collected += text;
-        if (collected.length >= LIMIT) {
-          collected = collected.slice(0, LIMIT);
+      const killGroup = () => {
+        if (!child?.pid) return;
+        try {
+          process.kill(-child.pid, "SIGKILL");
+        } catch {
+          try {
+            child.kill("SIGKILL");
+          } catch {}
+        }
+      };
+
+      try {
+        child = spawn(shell, ["-lc", command], {
+          cwd: workingDir,
+          detached: true,
+          env: {
+            ...process.env,
+            ...secrets,
+            PATH: process.env.PATH || "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            TERM: "dumb",
+            PAGER: "cat",
+            GIT_PAGER: "cat",
+            NO_COLOR: "1",
+            DEBIAN_FRONTEND: "noninteractive",
+          },
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+      } catch (err: any) {
+        return resolve(tryShell(candidateIdx + 1));
+      }
+
+      timer = setTimeout(() => {
+        killedBy = "timeout";
+        killGroup();
+      }, timeoutSeconds * 1000);
+      timer.unref?.();
+
+      ctx.onCancel(() => {
+        if (killedBy) return;
+        killedBy = "user";
+        killGroup();
+      });
+
+      const take = (chunk: Buffer) => {
+        spawnedOk = true;
+        const text = chunk.toString("utf8");
+        const safeText = redactSecrets(text);
+        ctx.onOutput(safeText);
+        if (collected.length < LIMIT) {
+          collected += safeText;
+          if (collected.length >= LIMIT) {
+            collected = collected.slice(0, LIMIT);
+            truncated = true;
+          }
+        } else {
           truncated = true;
         }
-      } else {
-        truncated = true;
+      };
+
+      child.stdout?.on("data", take);
+      child.stderr?.on("data", take);
+
+      child.on("error", (err: any) => {
+        clearTimeout(timer);
+        if (!spawnedOk && (err.code === "ENOENT" || String(err?.message ?? "").includes("ENOENT"))) {
+          // Fallback to next shell candidate
+          return resolve(tryShell(candidateIdx + 1));
+        }
+        resolve({ ok: false, summary: `Could not run that: ${redactSecrets(err?.message ?? err)}` });
+      });
+
+      child.on("close", (code: number | null, signal: string | null) => {
+        clearTimeout(timer);
+        const exit = code ?? (signal ? 128 : 0);
+        const body = redactSecrets(collected.trim());
+        const note =
+          killedBy === "timeout"
+            ? `\n\n[killed after ${timeoutSeconds}s -- it had not finished]`
+            : killedBy === "user"
+              ? "\n\n[stopped by the person watching]"
+              : truncated
+                ? "\n\n[output truncated; the full output is in the transcript]"
+                : "";
+
+        resolve({
+          ok: killedBy === null && exit === 0,
+          exitCode: exit,
+          summary:
+            `Exit code ${exit}${killedBy === "timeout" ? " (timed out)" : ""}\n\n` +
+            (body || "(no output)") +
+            note,
+          preview: redactSecrets(body.split("\n").slice(-1)[0]?.slice(0, 120) || `exit ${exit}`),
+        });
+      });
+    });
+  };
+
+  return tryShell(0);
+}
+
+async function searchWeb(query: string): Promise<string> {
+  const tavilyKey = secretFor("TAVILY_API_KEY") || process.env.TAVILY_API_KEY;
+  if (tavilyKey) {
+    try {
+      const res = await fetch("https://api.tavily.com/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ api_key: tavilyKey, query, max_results: 6 }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as any;
+        return (data.results || [])
+          .map((r: any) => `### [${r.title}](${r.url})\n${r.content}`)
+          .join("\n\n");
       }
-    };
+    } catch {}
+  }
 
-    child.stdout?.on("data", take);
-    child.stderr?.on("data", take);
+  const braveKey = secretFor("BRAVE_SEARCH_API_KEY") || process.env.BRAVE_SEARCH_API_KEY;
+  if (braveKey) {
+    try {
+      const res = await fetch(
+        `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=6`,
+        { headers: { "X-Subscription-Token": braveKey } },
+      );
+      if (res.ok) {
+        const data = (await res.json()) as any;
+        return (data.web?.results || [])
+          .map((r: any) => `### [${r.title}](${r.url})\n${r.description}`)
+          .join("\n\n");
+      }
+    } catch {}
+  }
 
-    let killedBy: "timeout" | "user" | null = null;
-
-    /** Kill the whole group, not just the shell. Falls back to the single
-        child if the group is already gone, which is the normal race when a
-        command finishes a moment before Stop is pressed. */
-    const killGroup = () => {
-      try {
-        if (child.pid) process.kill(-child.pid, "SIGKILL");
-      } catch {
-        try {
-          child.kill("SIGKILL");
-        } catch {
-          // Already reaped.
+  // Fallback web search using DuckDuckGo Instant Answers
+  try {
+    const res = await fetch(
+      `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`,
+      { headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64)" } },
+    );
+    if (res.ok) {
+      const data = (await res.json()) as any;
+      const results: string[] = [];
+      if (data.AbstractText) {
+        results.push(`### ${data.Heading || query}\n${data.AbstractText}\nSource: ${data.AbstractURL || ""}`);
+      }
+      for (const t of data.RelatedTopics || []) {
+        if (t.Text && t.FirstURL) {
+          results.push(`- [${t.Text}](${t.FirstURL})`);
         }
       }
+      if (results.length > 0) return results.join("\n\n");
+    }
+  } catch {}
+
+  // Fallback html snippet search
+  try {
+    const res = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      },
+    });
+    if (res.ok) {
+      const html = await res.text();
+      const snippets: string[] = [];
+      const matches = html.matchAll(
+        /<a class="result__snippet[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gi,
+      );
+      for (const m of matches) {
+        const cleanText = m[2].replace(/<[^>]+>/g, "").trim();
+        if (cleanText) snippets.push(cleanText);
+        if (snippets.length >= 5) break;
+      }
+      if (snippets.length > 0) return snippets.join("\n\n");
+    }
+  } catch {}
+
+  return `Search for "${query}" completed. No immediate web snippets found.`;
+}
+
+async function runHttpRequest(args: {
+  url: string;
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+}): Promise<ToolOutcome> {
+  const url = String(args.url || "").trim();
+  const method = (args.method || "GET").toUpperCase();
+  const headers: Record<string, string> = { ...args.headers };
+
+  // If calling GitHub API and GITHUB_TOKEN exists in secret store, inject Authorization
+  if (url.includes("api.github.com") && !headers["Authorization"] && !headers["authorization"]) {
+    const ghToken = secretFor("GITHUB_TOKEN") || process.env.GITHUB_TOKEN;
+    if (ghToken) {
+      headers["Authorization"] = `Bearer ${ghToken}`;
+      if (!headers["User-Agent"] && !headers["user-agent"]) {
+        headers["User-Agent"] = "Autora-Agent";
+      }
+      if (!headers["Accept"] && !headers["accept"]) {
+        headers["Accept"] = "application/vnd.github.v3+json";
+      }
+    }
+  }
+
+  if (!headers["User-Agent"] && !headers["user-agent"]) {
+    headers["User-Agent"] = "Autora/1.0";
+  }
+
+  try {
+    const res = await fetch(url, {
+      method,
+      headers,
+      body: ["GET", "HEAD"].includes(method) ? undefined : args.body,
+    });
+
+    const status = res.status;
+    const statusText = res.statusText;
+    const text = await res.text();
+
+    const preview = redactSecrets(`${method} ${url} → ${status} ${statusText}`);
+    let summary = `HTTP ${status} ${statusText}\n`;
+    summary += `Content-Type: ${res.headers.get("content-type") || "unknown"}\n\n`;
+    summary += text.length > 20_000 ? text.slice(0, 20_000) + "\n\n[response truncated]" : text;
+
+    return {
+      ok: res.ok,
+      summary: redactSecrets(summary),
+      preview,
     };
+  } catch (err: any) {
+    return { ok: false, summary: `HTTP request failed: ${redactSecrets(err?.message ?? err)}` };
+  }
+}
 
-    const timer = setTimeout(() => {
-      killedBy = "timeout";
-      killGroup();
-    }, timeoutSeconds * 1000);
-    timer.unref?.();
+async function generateImageTool(prompt: string, ctx: ToolContext): Promise<ToolOutcome> {
+  const apiKey =
+    process.env.GEMINI_API_KEY ||
+    secretFor("GEMINI_API_KEY") ||
+    secretFor("GOOGLE_API_KEY");
+  if (!apiKey) {
+    return {
+      ok: false,
+      summary: "Cannot generate image: GEMINI_API_KEY is not set in environment or secret store.",
+    };
+  }
 
-    ctx.onCancel(() => {
-      if (killedBy) return;
-      killedBy = "user";
-      killGroup();
+  try {
+    const ai = new GoogleGenAI({ apiKey });
+    const response = await ai.models.generateImages({
+      model: "imagen-3.0-generate-002",
+      prompt,
+      config: {
+        numberOfImages: 1,
+        outputMimeType: "image/jpeg",
+        aspectRatio: "1:1",
+      },
     });
 
-    child.on("error", (err: any) => {
-      clearTimeout(timer);
-      resolve({ ok: false, summary: `Could not run that: ${err?.message ?? err}` });
-    });
+    const base64 = response.generatedImages?.[0]?.image?.imageBytes;
+    if (!base64) {
+      return { ok: false, summary: "The image model returned no image bytes." };
+    }
 
-    child.on("close", (code: number | null, signal: string | null) => {
-      clearTimeout(timer);
-      const exit = code ?? (signal ? 128 : 0);
-      const body = collected.trim();
-      const note =
-        killedBy === "timeout"
-          ? `\n\n[killed after ${timeoutSeconds}s -- it had not finished]`
-          : killedBy === "user"
-            ? "\n\n[stopped by the person watching]"
-            : truncated
-              ? "\n\n[output truncated; the full output is in the transcript]"
-              : "";
+    const buffer = Buffer.from(base64, "base64");
+    const blob = ctx.putBlob(buffer, "image/jpeg");
+    ctx.showImage(blob, prompt, `Generated: ${prompt}`, { w: 1024, h: 1024 });
 
-      resolve({
-        ok: killedBy === null && exit === 0,
-        exitCode: exit,
-        summary:
-          `Exit code ${exit}${killedBy === "timeout" ? " (timed out)" : ""}\n\n` +
-          (body || "(no output)") +
-          note,
-        preview: body.split("\n").slice(-1)[0]?.slice(0, 120) || `exit ${exit}`,
-        // The duration is the caller's to report; it has the span.
-      });
-      void started;
-    });
-  });
+    return {
+      ok: true,
+      summary: `Generated image for prompt: "${prompt}". It is now displayed in the conversation for the person to see.`,
+      preview: `Generated image: ${prompt.slice(0, 80)}`,
+    };
+  } catch (err: any) {
+    return { ok: false, summary: `Image generation failed: ${err?.message ?? err}` };
+  }
 }
 
 /**
@@ -811,6 +1092,47 @@ export async function runTool(
             "if you need to say what is on it.",
           preview: status.url ?? "screenshot",
         };
+      }
+
+      case "browser_handoff": {
+        const reason = String(args.reason ?? "Human intervention requested.");
+        const live = ctx.browser();
+        live.setControl("human", reason);
+        ctx.browserChanged();
+        return {
+          ok: true,
+          summary:
+            `Browser control transferred to the person watching.\nReason: ${reason}\n\n` +
+            "The person can now directly click, type credentials, and solve CAPTCHAs/SSO in the live browser card. " +
+            "Wait for them to respond or finish before proceeding.",
+          preview: `handoff to human: ${reason}`,
+        };
+      }
+
+      case "http_request": {
+        return await runHttpRequest({
+          url: args.url,
+          method: args.method,
+          headers: args.headers,
+          body: args.body,
+        });
+      }
+
+      case "web_search": {
+        const query = String(args.query ?? "").trim();
+        if (!query) return { ok: false, summary: "No search query was provided." };
+        const results = await searchWeb(query);
+        return {
+          ok: true,
+          summary: `Web search results for "${query}":\n\n${results}`,
+          preview: `search: ${query.slice(0, 60)}`,
+        };
+      }
+
+      case "image_generate": {
+        const prompt = String(args.prompt ?? "").trim();
+        if (!prompt) return { ok: false, summary: "No image prompt was provided." };
+        return await generateImageTool(prompt, ctx);
       }
 
       // ------------------------------------------------------- computer --

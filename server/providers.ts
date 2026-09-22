@@ -165,6 +165,29 @@ export const PROVIDERS: ProviderSpec[] = [
     ],
   },
   {
+    id: "orcarouter",
+    label: "Orca Router",
+    kind: "openai",
+    note: "Adaptive LLM routing across 200+ models with auto-failover, zero token markup, and intelligent complexity matching.",
+    envKeys: ["ORCA_ROUTER_API_KEY", "ORCA_API_KEY"],
+    keyHint: "orca-... or sk-...",
+    keysUrl: "https://orcarouter.ai",
+    baseUrl: "https://api.orcarouter.ai/v1",
+    defaultModel: "orca-auto",
+    listable: true,
+    openEnded: true,
+    models: [
+      { id: "orca-auto", label: "Orca Auto Router", input: 0.15, output: 0.6, note: "Dynamically routes to the best model for cost and performance" },
+      { id: "anthropic/claude-sonnet-4.5", label: "Anthropic Claude Sonnet 4.5", input: 3, output: 15 },
+      { id: "anthropic/claude-haiku-4.5", label: "Anthropic Claude Haiku 4.5", input: 1, output: 5 },
+      { id: "openai/gpt-5-mini", label: "OpenAI GPT-5 mini", input: 0.25, output: 2 },
+      { id: "openai/gpt-4o", label: "OpenAI GPT-4o", input: 2.5, output: 10 },
+      { id: "deepseek/deepseek-chat", label: "DeepSeek Chat", input: 0.27, output: 1.1 },
+      { id: "google/gemini-2.5-flash", label: "Google Gemini 2.5 Flash", input: 0.3, output: 2.5 },
+      { id: "meta-llama/llama-3.3-70b-instruct", label: "Llama 3.3 70B Instruct", input: 0.12, output: 0.3 },
+    ],
+  },
+  {
     id: "local",
     label: "Local server",
     kind: "openai",
@@ -183,7 +206,7 @@ export const PROVIDERS: ProviderSpec[] = [
 /** Which provider "Automatic" reaches for first. Cheap and likely-configured
     before expensive and exotic; a local server last, because a forgotten
     Ollama on the box should not quietly outrank a key you just pasted. */
-export const AUTO_ORDER = ["openrouter", "openai", "gemini", "anthropic", "deepseek", "local"];
+export const AUTO_ORDER = ["orcarouter", "openrouter", "openai", "gemini", "anthropic", "deepseek", "local"];
 
 export function providerSpec(id: string): ProviderSpec | undefined {
   return PROVIDERS.find((p) => p.id === id);

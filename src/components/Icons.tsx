@@ -232,3 +232,90 @@ export const IconCoin = ({ size = 16, className }: Props) => (
     <path d="M12 6.6v1.6M12 15.8v1.6" />
   </svg>
 );
+
+export const IconKey = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="m21 2-2 2m-1.5 1.5L14 9l-1.5-1.5-3 3L8 9l-1.5 1.5" />
+    <circle cx="7.5" cy="15.5" r="4.5" />
+  </svg>
+);
+
+export const IconLock = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <rect x="5" y="11" width="14" height="10" rx="2" />
+    <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+  </svg>
+);
+
+export const IconEye = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+
+export const IconEyeOff = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
+    <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
+    <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
+    <line x1="2" x2="22" y1="2" y2="22" />
+  </svg>
+);
+
+export const IconCopy = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <rect width="13" height="13" x="8" y="8" rx="2" ry="2" />
+    <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+  </svg>
+);
+
+export const IconSearch = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <circle cx="11" cy="11" r="7" />
+    <path d="m21 21-4.3-4.3" />
+  </svg>
+);
+
+export const IconBot = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <rect x="3" y="11" width="18" height="10" rx="2" />
+    <circle cx="12" cy="5" r="2" />
+    <path d="M12 7v4" />
+    <line x1="8" y1="16" x2="8.01" y2="16" strokeWidth={2} />
+    <line x1="16" y1="16" x2="16.01" y2="16" strokeWidth={2} />
+  </svg>
+);
+
+export const IconMousePointer = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="m3 3 7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
+    <path d="m13 13 6 6" />
+  </svg>
+);
+
+export const IconKeyboard = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <rect width="20" height="14" x="2" y="5" rx="2" />
+    <line x1="6" y1="9" x2="6.01" y2="9" strokeWidth={2} />
+    <line x1="10" y1="9" x2="10.01" y2="9" strokeWidth={2} />
+    <line x1="14" y1="9" x2="14.01" y2="9" strokeWidth={2} />
+    <line x1="18" y1="9" x2="18.01" y2="9" strokeWidth={2} />
+    <line x1="8" y1="13" x2="16" y2="13" />
+  </svg>
+);
+
+export const IconArrowLeft = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="m12 19-7-7 7-7" />
+    <path d="M19 12H5" />
+  </svg>
+);
+
+export const IconRotateCcw = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+    <path d="M3 3v5h5" />
+  </svg>
+);
+

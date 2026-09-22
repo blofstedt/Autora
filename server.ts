@@ -10,6 +10,7 @@ import {
 import {
   baseUrlFor, clearUsage, keyFor, keySource, maskKey, modelFor, recordUsage,
   resolveProvider, save, setKey, state, stateFilePath, type Resolved,
+  listSecrets, setSecret, deleteSecret, getSecret, SECRET_PRESETS, redactSecrets,
 } from "./server/state";
 import {
   ProviderError, listModels, streamChat,
@@ -370,13 +371,30 @@ sessions.set(defaultSession.id, defaultSession);
 // Broadcast an event to all connected websockets for a session
 function emitEvent(session: Session, kind: string, actor: string, payload: Record<string, any>, span: string | null = null, blob: string | null = null): AutoraEvent {
   session.seqCounter += 1;
+
+  // Sanitize any potential secret leakages from payload fields
+  const safePayload: Record<string, any> = {};
+  for (const [k, v] of Object.entries(payload || {})) {
+    if (typeof v === "string") {
+      safePayload[k] = redactSecrets(v);
+    } else if (v && typeof v === "object" && !Array.isArray(v)) {
+      const subObj: Record<string, any> = {};
+      for (const [subK, subV] of Object.entries(v)) {
+        subObj[subK] = typeof subV === "string" ? redactSecrets(subV) : subV;
+      }
+      safePayload[k] = subObj;
+    } else {
+      safePayload[k] = v;
+    }
+  }
+
   const event: AutoraEvent = {
     seq: session.seqCounter,
     ts: Math.floor(Date.now() / 1000),
     kind,
     actor,
     span,
-    payload,
+    payload: safePayload,
     blob,
   };
   session.events.push(event);
@@ -1733,6 +1751,170 @@ async function startServer() {
     }
   });
 
+  // 6b. Live Browser Direct Interaction & Handoff
+  app.get("/api/sessions/:id/browser/status", (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    const live = browsers.get(session.id);
+    if (!live) return res.json({ open: false, control: { holder: "agent" } });
+    res.json(live.status());
+  });
+
+  app.post("/api/sessions/:id/browser/control", (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    const live = browsers.get(session.id);
+    if (!live) return res.status(400).json({ error: "No browser active" });
+
+    const holder = req.body?.holder === "human" ? "human" : req.body?.holder === "shared" ? "shared" : "agent";
+    const reason = req.body?.reason ? String(req.body.reason) : null;
+    live.setControl(holder, reason);
+
+    broadcastBrowserState(session);
+
+    emitEvent(session, "browser.control", "user", {
+      holder,
+      reason,
+      by: "user",
+    });
+
+    res.json({ ok: true, control: live.status().control });
+  });
+
+  app.post("/api/sessions/:id/browser/scroll", async (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    const live = browsers.get(session.id);
+    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
+
+    const dx = Number(req.body?.dx ?? 0);
+    const dy = Number(req.body?.dy ?? 0);
+    try {
+      await live.mouseWheel(dx, dy);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message ?? "Scroll failed" });
+    }
+  });
+
+  app.post("/api/sessions/:id/browser/reload", async (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    const live = browsers.get(session.id);
+    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
+
+    try {
+      const page = await live.reload();
+      res.json({ ok: true, url: page.url, title: page.title });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message ?? "Reload failed" });
+    }
+  });
+
+  app.post("/api/sessions/:id/browser/back", async (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    const live = browsers.get(session.id);
+    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
+
+    try {
+      const page = await live.goBack();
+      res.json({ ok: true, url: page?.url, title: page?.title });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message ?? "Back navigation failed" });
+    }
+  });
+
+  app.post("/api/sessions/:id/browser/click", async (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    const live = browsers.get(session.id);
+    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
+
+    const x = Number(req.body?.x);
+    const y = Number(req.body?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      return res.status(400).json({ error: "Invalid click coordinates." });
+    }
+
+    try {
+      const button = req.body?.button === "right" ? "right" : req.body?.button === "middle" ? "middle" : "left";
+      await live.mouseClick(x, y, button, !!req.body?.double);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message ?? "Click failed" });
+    }
+  });
+
+  app.post("/api/sessions/:id/browser/move", async (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    const live = browsers.get(session.id);
+    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
+
+    const x = Number(req.body?.x);
+    const y = Number(req.body?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      return res.status(400).json({ error: "Invalid move coordinates." });
+    }
+
+    try {
+      await live.mouseMove(x, y);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message ?? "Move failed" });
+    }
+  });
+
+  app.post("/api/sessions/:id/browser/type", async (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    const live = browsers.get(session.id);
+    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
+
+    const text = String(req.body?.text ?? "");
+    try {
+      await live.keyboardType(text);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message ?? "Type failed" });
+    }
+  });
+
+  app.post("/api/sessions/:id/browser/key", async (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    const live = browsers.get(session.id);
+    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
+
+    const key = String(req.body?.key ?? "");
+    if (!key) return res.status(400).json({ error: "No key specified." });
+
+    try {
+      await live.keyboardPress(key);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message ?? "Key press failed" });
+    }
+  });
+
+  app.post("/api/sessions/:id/browser/navigate", async (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    const live = browsers.get(session.id);
+    if (!live) return res.status(400).json({ error: "No browser active." });
+
+    const url = String(req.body?.url ?? "").trim();
+    if (!url) return res.status(400).json({ error: "No URL specified." });
+
+    try {
+      const page = await live.goto(url);
+      res.json({ ok: true, url: page.url, title: page.title });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message ?? "Navigation failed" });
+    }
+  });
+
   // 7. Policy Approvals
   /**
    * Yes or no to a waiting tool call.
@@ -2130,6 +2312,45 @@ async function startServer() {
 
     save();
     res.json(await settingsWithTools());
+  });
+
+  // 10a. Secrets Store Management
+  app.get("/api/secrets", (req: Request, res: Response) => {
+    res.json(listSecrets());
+  });
+
+  app.get("/api/secrets/presets", (req: Request, res: Response) => {
+    res.json(SECRET_PRESETS);
+  });
+
+  app.post("/api/secrets/reveal", (req: Request, res: Response) => {
+    const name = String(req.body?.name ?? "").trim();
+    if (!name) return res.status(400).json({ error: "Secret name is required" });
+    const value = getSecret(name);
+    if (value === null) return res.status(404).json({ error: "Secret not found" });
+    res.json({ ok: true, name, value });
+  });
+
+  app.post("/api/secrets", (req: Request, res: Response) => {
+    const name = String(req.body?.name ?? "").trim().toUpperCase();
+    const value = String(req.body?.value ?? "");
+    if (!name) return res.status(400).json({ error: "Secret variable name is required" });
+    if (!/^[A-Z_][A-Z0-9_]*$/i.test(name)) {
+      return res.status(400).json({ error: "Name must be a valid environment variable identifier (letters, digits, and underscores, starting with a letter or underscore)" });
+    }
+    if (!value && value !== "") {
+      return res.status(400).json({ error: "Secret value is required" });
+    }
+    setSecret(name, value);
+    save();
+    res.json({ ok: true, secrets: listSecrets() });
+  });
+
+  app.delete("/api/secrets/:name", (req: Request, res: Response) => {
+    const name = req.params.name;
+    deleteSecret(name);
+    save();
+    res.json({ ok: true, secrets: listSecrets() });
   });
 
   // 10b. Provider models and key checks

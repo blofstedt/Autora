@@ -1658,6 +1658,172 @@ label + .jf-hint { margin-top: -5px; }
   font-family: var(--mono); font-size: 11px; line-height: 1.7; color: var(--text-2);
 }
 
+/* ------------------------------------------- browser control handoff & modes -- */
+.browser-control-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+  transition: all 0.2s var(--ease);
+  user-select: none;
+}
+.browser-control-indicator.is-agent {
+  background: rgba(99, 102, 241, 0.12);
+  border-color: rgba(99, 102, 241, 0.3);
+  color: #a5b4fc;
+}
+.browser-control-indicator.is-human {
+  background: rgba(245, 158, 11, 0.16);
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #fcd34d;
+}
+.browser-control-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.browser-control-indicator.is-human .browser-control-dot {
+  box-shadow: 0 0 6px #f59e0b;
+  animation: halo 1.5s infinite;
+}
+
+.browser-handoff-alert {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: rgba(245, 158, 11, 0.14);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.3);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.browser-handoff-alert.is-active {
+  background: rgba(99, 102, 241, 0.12);
+  border-bottom-color: rgba(99, 102, 241, 0.3);
+}
+.browser-handoff-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex: 1;
+}
+.browser-handoff-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: rgba(245, 158, 11, 0.25);
+  color: #fbbf24;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.browser-handoff-tag.is-active {
+  background: rgba(99, 102, 241, 0.25);
+  color: #c7d2fe;
+}
+.browser-handoff-desc {
+  flex: 1;
+  color: var(--text-2);
+}
+.browser-handoff-desc strong {
+  color: var(--text);
+}
+.browser-handoff-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.browser-handoff-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s var(--ease);
+}
+.browser-handoff-btn.take-control {
+  background: #f59e0b;
+  color: #1a1003;
+}
+.browser-handoff-btn.take-control:hover {
+  background: #fbbf24;
+}
+.browser-handoff-btn.hand-back {
+  background: #4f46e5;
+  color: #ffffff;
+}
+.browser-handoff-btn.hand-back:hover {
+  background: #6366f1;
+}
+
+.browser-interactive-bar {
+  padding: 8px 12px;
+  background: rgba(10, 12, 18, 0.95);
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.browser-interactive-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.browser-interactive-hint kbd {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-2);
+}
+
+.click-ripple {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  margin-left: -12px;
+  margin-top: -12px;
+  border-radius: 50%;
+  border: 2px solid #f59e0b;
+  background: rgba(245, 158, 11, 0.25);
+  pointer-events: none;
+  animation: clickRipple 0.6s cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
+  z-index: 10;
+}
+@keyframes clickRipple {
+  0% {
+    transform: scale(0.3);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
 /* ------------------------------------------------------------- one-liners -- */
 /* The small stuff -- a lookup, a read, a memory write -- named but not framed.
    It belongs in the record; it does not belong in a card. */

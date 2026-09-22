@@ -6,6 +6,7 @@ import {
 import { VoiceCheck } from "./VoiceCheck";
 import { RelaySetup } from "./RelaySetup";
 import { Billing } from "./Billing";
+import { SecretStore } from "./SecretStore";
 import { useServerVersion, versions } from "./UpdateNotice";
 
 type Credential = {
@@ -375,6 +376,8 @@ export function Settings({ onClose }: { onClose: () => void }) {
         </section>
 
         <ToolsCard tools={state.tools} onSaved={adopt} />
+
+        <SecretStore />
 
         <Billing budget={budget} onBudget={setBudget} />
 
@@ -779,6 +782,12 @@ function ToolsCard({
                       </button>
                     ))}
                   </div>
+
+                  {group.group === "browser" && (
+                    <div className="set-note" style={{ marginTop: "8px", fontSize: "12px", background: "rgba(255,255,255,0.03)", padding: "8px 12px", borderRadius: "6px" }}>
+                      <strong>Browser &amp; OAuth notice:</strong> Most identity providers (Google, GitHub, Cloudflare) block automated Chromium browsers from completing interactive OAuth / SSO logins. When encountering a login or CAPTCHA, click <em>&ldquo;take control&rdquo;</em> on the browser card to type directly, or provide an API token via the <strong>Workspace Secrets</strong> store below.
+                    </div>
+                  )}
 
                   {group.group === "terminal" && (
                     <TerminalOptions

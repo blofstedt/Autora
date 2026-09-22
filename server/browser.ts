@@ -53,6 +53,8 @@ export interface BrowserStatus {
   /** Live frames per second currently being sent. */
   fps: number;
   viewport: { width: number; height: number };
+  /** Who currently holds control of the browser (agent, human, or shared). */
+  control: { holder: "agent" | "human" | "shared"; reason: string | null };
 }
 
 /** One numbered, clickable thing on the page. */
@@ -466,6 +468,28 @@ const PICK_SCRIPT = (x: number, y: number) => `
 })();
 `;
 
+const STEALTH_SCRIPT = `
+(() => {
+  try {
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    window.chrome = {
+      runtime: {},
+      app: {},
+      csi: () => {},
+      loadTimes: () => {}
+    };
+    Object.defineProperty(navigator, 'plugins', {
+      get: () => [
+        { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+        { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
+        { name: 'Native Client', filename: 'internal-nacl-plugin', description: '' }
+      ]
+    });
+    Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+  } catch {}
+})();
+`;
+
 /** One page, one screencast, one session's worth of browsing. */
 export class LiveBrowser {
   private context: BrowserContext | null = null;
@@ -475,6 +499,10 @@ export class LiveBrowser {
   private lastFrameAt = 0;
   private refs: Ref[] = [];
   private closing = false;
+  private control: { holder: "agent" | "human" | "shared"; reason: string | null } = {
+    holder: "agent",
+    reason: null,
+  };
   /** Serialises actions: two clicks racing on one page is a bug report that
       is impossible to read afterwards. */
   private queue: Promise<unknown> = Promise.resolve();
@@ -492,7 +520,16 @@ export class LiveBrowser {
       detail: probed?.detail ?? null,
       fps: this.streaming ? LIVE_FPS : 0,
       viewport: VIEWPORT,
+      control: this.control,
     };
+  }
+
+  getControl() {
+    return this.control;
+  }
+
+  setControl(holder: "agent" | "human" | "shared", reason: string | null = null) {
+    this.control = { holder, reason: reason ?? null };
   }
 
   private currentUrl: string | null = null;
@@ -524,11 +561,22 @@ export class LiveBrowser {
       ...(executablePath ? { executablePath } : {}),
       viewport: VIEWPORT,
       deviceScaleFactor: 1,
-      // Containers usually cannot give Chrome its sandbox, and the
-      // alternative to these flags is a browser that refuses to start with a
-      // message about namespaces that nobody should have to decode.
-      args: ["--no-sandbox", "--disable-dev-shm-usage", "--hide-scrollbars"],
+      userAgent:
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+      locale: "en-US",
+      timezoneId: "America/New_York",
+      ignoreDefaultArgs: ["--enable-automation"],
+      args: [
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--hide-scrollbars",
+        "--disable-blink-features=AutomationControlled",
+        "--disable-features=IsolateOrigins,site-per-process",
+        "--disable-infobars",
+        `--window-size=${VIEWPORT.width},${VIEWPORT.height}`,
+      ],
     });
+    await this.context.addInitScript(STEALTH_SCRIPT);
     await this.context.addInitScript(CURSOR_SCRIPT);
     // A persistent context opens with a page already in it; taking that one
     // rather than adding a second avoids leaving an orphan about:blank behind
@@ -799,6 +847,104 @@ export class LiveBrowser {
     return this.run(async () => {
       await this.ensure();
       return this.read();
+    });
+  }
+
+  /** Direct mouse click from user or agent at screen coordinates */
+  mouseClick(
+    x: number,
+    y: number,
+    button: "left" | "right" | "middle" = "left",
+    double = false,
+  ): Promise<PageRead> {
+    return this.run(async () => {
+      const page = await this.ensure();
+      const clampedX = Math.max(0, Math.min(VIEWPORT.width, Math.round(x)));
+      const clampedY = Math.max(0, Math.min(VIEWPORT.height, Math.round(y)));
+      await this.showCursor(clampedX, clampedY, true);
+      this.hooks.onAction(
+        `${double ? "double-click" : "click"} at ${clampedX},${clampedY}`,
+        { x: clampedX, y: clampedY },
+        this.currentUrl ?? "",
+      );
+      if (double) {
+        await page.mouse.dblclick(clampedX, clampedY, { button });
+      } else {
+        await page.mouse.click(clampedX, clampedY, { button });
+      }
+      await this.settle(600);
+      const read = await this.read();
+      await this.keyframe();
+      return read;
+    });
+  }
+
+  /** Direct mouse move from user */
+  mouseMove(x: number, y: number): Promise<void> {
+    return this.run(async () => {
+      const page = await this.ensure();
+      const clampedX = Math.max(0, Math.min(VIEWPORT.width, Math.round(x)));
+      const clampedY = Math.max(0, Math.min(VIEWPORT.height, Math.round(y)));
+      await this.showCursor(clampedX, clampedY, false);
+      await page.mouse.move(clampedX, clampedY);
+    });
+  }
+
+  /** Direct typing from user into focused element */
+  keyboardType(text: string): Promise<void> {
+    return this.run(async () => {
+      const page = await this.ensure();
+      this.hooks.onAction(`typed text (${text.length} chars)`, null, this.currentUrl ?? "");
+      await page.keyboard.type(text, { delay: 15 });
+      await this.settle(200);
+      await this.keyframe();
+    });
+  }
+
+  /** Direct keystroke from user (Enter, Tab, Escape, Backspace, etc.) */
+  keyboardPress(key: string): Promise<void> {
+    return this.run(async () => {
+      const page = await this.ensure();
+      this.hooks.onAction(`press key ${key}`, null, this.currentUrl ?? "");
+      await page.keyboard.press(key);
+      await this.settle(300);
+      await this.keyframe();
+    });
+  }
+
+  /** Direct mouse wheel scrolling from user */
+  mouseWheel(deltaX: number, deltaY: number): Promise<void> {
+    return this.run(async () => {
+      const page = await this.ensure();
+      await page.mouse.wheel(deltaX, deltaY);
+      await this.settle(150);
+      await this.keyframe();
+    });
+  }
+
+  /** Reload current page */
+  reload(): Promise<PageRead> {
+    return this.run(async () => {
+      const page = await this.ensure();
+      this.hooks.onAction("reloaded page", null, this.currentUrl ?? "");
+      await page.reload({ waitUntil: "domcontentloaded", timeout: 30_000 }).catch(() => undefined);
+      await this.settle();
+      const read = await this.read();
+      await this.keyframe();
+      return read;
+    });
+  }
+
+  /** Go back in browser history */
+  goBack(): Promise<PageRead | null> {
+    return this.run(async () => {
+      const page = await this.ensure();
+      this.hooks.onAction("navigated back", null, this.currentUrl ?? "");
+      await page.goBack({ waitUntil: "domcontentloaded", timeout: 15_000 }).catch(() => undefined);
+      await this.settle();
+      const read = await this.read();
+      await this.keyframe();
+      return read;
     });
   }
 

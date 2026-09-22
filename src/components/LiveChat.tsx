@@ -50,47 +50,60 @@ const HINT: Record<State, string> = {
  * sentence is expected rather than rude.
  */
 export function LiveChat({
-  onUtterance, onExit, onInterrupt, agentSpeaking, agentWorking, disabled,
+  onUtterance,
+  onExit: _onExit,
+  onInterrupt: _onInterrupt,
+  agentSpeaking,
+  agentWorking: _agentWorking,
+  disabled,
+  onSpeakingChange,
 }: {
   onUtterance: (text: string) => void;
-  onExit: () => void;
+  onExit?: () => void;
   /** Stop the agent talking, for barge-in. */
-  onInterrupt: () => void;
+  onInterrupt?: () => void;
   agentSpeaking: boolean;
-  agentWorking: boolean;
+  agentWorking?: boolean;
   disabled?: boolean;
+  /** Report when the user is actively speaking in live mode. */
+  onSpeakingChange?: (speaking: boolean) => void;
 }) {
-  const [caption, setCaption] = useState("");
   /** Phrases the engine has committed to. */
   const pending = useRef("");
   /** The phrase still forming, which may never be committed to at all. */
   const live = useRef("");
   const timer = useRef(0);
+  const speakingTimer = useRef<number>(0);
   const utteranceRef = useRef(onUtterance);
   utteranceRef.current = onUtterance;
+  const speakingCbRef = useRef(onSpeakingChange);
+  speakingCbRef.current = onSpeakingChange;
+
   /** Set once the hook below exists; sending unsettled words is only half the
       job without it -- see `accept` in lib/voice. */
   const acceptRef = useRef<() => void>(() => {});
 
+  const markSpeaking = useCallback(() => {
+    speakingCbRef.current?.(true);
+    window.clearTimeout(speakingTimer.current);
+    speakingTimer.current = window.setTimeout(() => {
+      speakingCbRef.current?.(false);
+    }, 850);
+  }, []);
+
   /**
    * Send what we have, settled or not.
-   *
-   * Including the unsettled part is the whole fix. Chrome on Android, in
-   * continuous mode, will happily stream interim results for a whole sentence
-   * and then never mark any of it final -- so a loop that waits for `isFinal`
-   * waits forever, and the interface sits there captioning your words back to
-   * you while sending nothing. A pause is the signal to act on; whether the
-   * engine has made up its mind by then is its business.
    */
   const flush = useCallback(() => {
     const text = `${pending.current} ${live.current}`.trim();
     pending.current = "";
     live.current = "";
-    setCaption("");
     // These words are spent, settled or not. Without this the engine's
     // eventual final still carries the ones just sent, and they go out again.
     acceptRef.current();
-    if (text.length >= MIN_CHARS) utteranceRef.current(text);
+    if (text.length >= MIN_CHARS) {
+      utteranceRef.current(text);
+    }
   }, []);
 
   /** Restart the quiet-for-long-enough clock. Talking keeps resetting it. */
@@ -100,25 +113,31 @@ export function LiveChat({
   }, [flush]);
 
   const onPhrase = useCallback((phrase: string) => {
+    markSpeaking();
     pending.current = `${pending.current} ${phrase}`.trim();
     // Settled, so it is no longer in flight -- keeping both would say it twice.
     live.current = "";
-    setCaption(pending.current);
     schedule(SETTLE_MS);
-  }, [schedule]);
+  }, [schedule, markSpeaking]);
 
   const dictation = useDictation({ onPhrase, continuous: true });
-  const { start, stop, listening, interim, error, level, supported } = dictation;
+  const { start, stop, interim, level, supported } = dictation;
   acceptRef.current = dictation.accept;
 
-  // Show the words forming, not just the ones that have landed -- and count
-  // them as something to send, since they may be all we ever get.
+  // Show the words forming and mark speech active as interim results stream in
   useEffect(() => {
     if (!interim) return;
+    markSpeaking();
     live.current = interim;
-    setCaption(`${pending.current} ${interim}`.trim());
     schedule(UNSETTLED_MS);
-  }, [interim, schedule]);
+  }, [interim, schedule, markSpeaking]);
+
+  // Audio loudness level detection
+  useEffect(() => {
+    if (level > 0.12) {
+      markSpeaking();
+    }
+  }, [level, markSpeaking]);
 
   // Hold the microphone shut while the agent has the floor, and take it back
   // the moment it stops.
@@ -128,61 +147,13 @@ export function LiveChat({
     else start();
   }, [agentSpeaking, disabled, supported, start, stop]);
 
-  useEffect(() => () => window.clearTimeout(timer.current), []);
+  useEffect(() => () => {
+    window.clearTimeout(timer.current);
+    window.clearTimeout(speakingTimer.current);
+    speakingCbRef.current?.(false);
+  }, []);
 
-  const state: State = !supported || error
-    ? "blocked"
-    : agentSpeaking
-      ? "speaking"
-      : agentWorking ? "thinking" : "listening";
-
-  return (
-    <div
-      className={`live-bar ${listening ? "is-hearing" : ""}`}
-      data-state={state}
-      style={{ "--level": listening ? level : 0 } as React.CSSProperties}
-      role="region"
-      aria-label="Live voice chat"
-    >
-      <button
-        type="button"
-        className="live-orb"
-        onClick={() => { if (agentSpeaking) onInterrupt(); }}
-        aria-label={agentSpeaking ? "Interrupt" : HEADING[state]}
-      >
-        <span className="orb-wash" aria-hidden="true" />
-        <span className="orb-ring ring-1" aria-hidden="true" />
-        <span className="orb-ring ring-2" aria-hidden="true" />
-        <span className="orb-core" aria-hidden="true" />
-      </button>
-
-      <div className="live-mid">
-        <span className="live-state">
-          {HEADING[state]}
-          <em className="live-pips" aria-hidden="true"><i /><i /><i /></em>
-        </span>
-        {/* Polite: the caption rewrites itself several times a second, and an
-            assertive region would read every revision over the top of itself. */}
-        <span className="live-caption" aria-live="polite">
-          {error ?? caption ?? ""}
-          {!error && !caption && <em className="live-hint">{HINT[state]}</em>}
-        </span>
-      </div>
-
-      <span className="live-eq" aria-hidden="true">
-        <i /><i /><i /><i /><i />
-      </span>
-
-      <button
-        type="button"
-        className="btn ghost live-end"
-        onClick={onExit}
-        title="End live chat"
-        aria-label="End live chat"
-      >
-        <IconX size={14} />
-        <span className="live-end-word">End</span>
-      </button>
-    </div>
-  );
+  // Headless voice coordinator: no separate popup bubble renders.
+  // The bottom-middle live button is the indicator of live mode.
+  return null;
 }
