@@ -113,6 +113,13 @@ function weigh(message: ChatMessage): string {
   ].join("");
 }
 
+/** What a prompt of this system text and history would cost, roughly. The
+    context engine uses it to decide when to compact; the same rule as the
+    billing estimate, so the two never disagree about what "large" means. */
+export function estimateTokens(system: string, messages: readonly ChatMessage[]): number {
+  return roughTokens(system + messages.map(weigh).join(""));
+}
+
 function estimate(call: ChatCall, reply: string): ChatUsage {
   const prompt = call.system + call.messages.map(weigh).join("");
   return { input: roughTokens(prompt), output: roughTokens(reply), estimated: true };

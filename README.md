@@ -530,6 +530,11 @@ acting on it forever unless there is somewhere to go and say no.
 | `AUTORA_PORT` / `AUTORA_HOST` | Where to listen (default `3000` on `0.0.0.0`; the container uses `8817`) |
 | `AUTORA_LLM_BASE_URL` | Local OpenAI-compatible endpoint |
 | `AUTORA_BROWSER_PATH` | The Chromium to drive (default: the usual system paths; `/usr/bin/chromium-browser` in the container) |
+| `AUTORA_CONTEXT_TOKENS` | The context window the prompt is kept inside (default `100000`; set it to your model's window for small local models) |
+| `AUTORA_COMPACT_AT` | Fraction of that window at which older turns are folded into working memory in the background (default `0.75`) |
+| `AUTORA_PROTECTED_TURNS` | Most recent messages that are never summarised (default `6`) |
+| `AUTORA_MAX_TOOL_TOKENS` | Tool output longer than this is kept in the session vault, with its start and end left in the prompt (default `3000`) |
+| `AUTORA_COMPACTION_MODEL` | A cheaper model of the same provider to write the working memory with (default: the chat model) |
 | `AUTORA_BROWSER_HEADED` | `1` shows a real browser window instead of running headless |
 | `AUTORA_BROWSER_FPS` / `AUTORA_BROWSER_QUALITY` / `AUTORA_BROWSER_STREAM_WIDTH` | How much live video to send (default `6` fps, quality `50`, scaled to `960` wide) |
 | `AUTORA_HOME` | State directory (default `~/.autora`; `/data` in the container) — the one place that survives an update |
