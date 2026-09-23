@@ -99,9 +99,8 @@ export function App() {
     const tab = params.get("tab");
     return isSystemTab(tab) ? tab : "status";
   });
-  /** Which of the Mind's buckets to open on. An object so asking for the
-      same bucket twice still takes you back to it. */
-  const [mindBucket, setMindBucket] = useState<{ kind: Bucket }>(
+  /** Which of the Mind's buckets to open on: Skills for a ?page=skills link. */
+  const [mindBucket] = useState<{ kind: Bucket }>(
     () => ({ kind: new URLSearchParams(location.search).get("page") === "skills" ? "skill" : "preference" }),
   );
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -497,7 +496,6 @@ export function App() {
     view.title ||
     "Untitled session";
 
-  const openSkills = useCallback(() => { setMindBucket({ kind: "skill" }); navigate("mind"); }, [navigate]);
   const openKnowledge = useCallback(() => navigate("mind"), [navigate]);
 
   const refreshSessions = useCallback(() => {
@@ -547,15 +545,11 @@ export function App() {
               if (next === "system") setSystemTab("status");
               navigate(next);
             }}
-            sessions={sessions}
-            current={sessionId}
             relayOn={!!relay?.connected}
             alert={pending > 0}
-            onPick={openSession}
             onNew={() => { void newSession(); navigate("chat"); }}
             appearance={appearance}
             onAppearance={changeAppearance}
-            onOpenKeys={() => { setConfigJump({ tab: "keys" }); navigate("config"); }}
             drawer={kind === "drawer"}
             onClose={() => setDrawerOpen(false)}
             // On a desktop the memory graph lives here, square, under the
@@ -565,7 +559,6 @@ export function App() {
               <MemoryRibbon
                 memories={view.memories}
                 onOpen={openKnowledge}
-                onOpenSkills={openSkills}
                 pane
               />
             ) : undefined}
@@ -667,7 +660,6 @@ export function App() {
           <MemoryRibbon
             memories={view.memories}
             onOpen={openKnowledge}
-            onOpenSkills={openSkills}
             collapsed={!ribbonOpen}
             onToggle={toggleRibbon}
           />
@@ -876,6 +868,19 @@ export function App() {
           onPick={pickSession}
           onNew={newSession}
           onClose={() => setSessionsOpen(false)}
+          onChanged={refreshSessions}
+          onDeleted={(id, remaining) => {
+            if (id !== sessionId) return;
+            // The open session is gone: move to the next one, or a fresh one,
+            // and leave the list open so the tidying can carry on.
+            const next = remaining[0]?.id;
+            if (next) {
+              history.replaceState(null, "", `?session=${next}`);
+              setSessionId(next);
+            } else {
+              void newSession().then(() => setSessionsOpen(true));
+            }
+          }}
         />
       )}
     </div>

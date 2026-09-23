@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.9.15"
+version: "0.9.16"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -74,14 +74,28 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  New Artifacts page in the left menu, with two sections. "Made by Autora"
-  holds what the agent creates: every image it generates is kept there, and
-  it can save documents and other files it makes for you. "Uploaded by you"
-  holds your own documents, photos and other files: upload them with the
-  button or drop them anywhere on the page. You can open, download or delete
-  any file, and the agent can list and read both sections, so it can work
-  with what you give it. Files are kept on disk and survive restarts and
-  updates.
+  DeepSeek usage now shows what it cost instead of "unpriced". DeepSeek
+  renamed its models (now deepseek-flash and deepseek-v4-pro), and Autora's
+  price list only knew the old names. Both are now priced at DeepSeek's
+  published rates, including the half-price off-peak hours. Turns recorded
+  before this update keep their "unpriced" mark.
+
+  The left menu is simpler. The Settings button at the bottom is now called
+  Themes and sits at the end of the page list, just above the memory graph;
+  it holds only the theme and font choices. Config and System are still in
+  the page list, and API keys are on the Config page. The "Recent" sessions
+  list is gone from the menu; open past sessions from the Sessions page.
+
+
+  The memory map now has a legend across the top showing the colour for
+  preferences, procedures, facts and skills, in place of the memory and
+  skills counters. Tapping the map anywhere opens the Mind page and selects
+  it in the menu, on desktop and on phones.
+
+
+  The sessions list that opens from the session name at the top of the chat
+  can now search sessions by title, pin a session so it stays at the top,
+  and delete a session (tap the bin, then Delete to confirm).
 dependencies: []
 path: ""
 defaultUsername: ""

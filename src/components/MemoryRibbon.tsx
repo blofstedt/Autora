@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MemoryMark } from "../lib/derive";
-import { KIND_COLOR, fetchKnowledge, onKnowledgeChange, type Knowledge } from "../lib/memory";
-import { IconBrain, IconChevron } from "./Icons";
+import { BUCKETS, KIND_COLOR, fetchKnowledge, onKnowledgeChange, type Knowledge } from "../lib/memory";
+import { IconChevron } from "./Icons";
 import { useThemeColors } from "../lib/theme";
 
 /** How long a node stays lit after the event that touched it - fades slowly */
@@ -51,15 +51,14 @@ type LingeringPulse = {
 export function MemoryRibbon({
   memories,
   onOpen,
-  onOpenSkills,
   collapsed = false,
   onToggle,
   pane = false,
 }: {
   memories: MemoryMark[];
+  /** Opens the Mind page: a tap anywhere on the map, folded or not. */
   onOpen: () => void;
-  onOpenSkills?: () => void;
-  /** Folded to one line: the counts and the newest event, no graph. */
+  /** Folded to one line: the newest event, no graph. */
   collapsed?: boolean;
   onToggle?: () => void;
   /** Drawn at the foot of the desktop rail rather than above the chat: always
@@ -364,33 +363,43 @@ export function MemoryRibbon({
   }, [activeTracer]);
 
   const newest = memories.length ? memories[memories.length - 1] : null;
-  const skillsCount = web.records.filter((r) => r.kind === "skill").length;
 
   if (placed.length === 0 && !newest) return null;
 
   const now = performance.now();
 
-  const tags = (
-    <>
-      <button className="web-tag neural-tag" onClick={onOpen} title="Open the Mind">
-        <IconBrain size={13} />
-        <span className="web-count">{web.records.length}</span>
-        <IconChevron size={11} />
-      </button>
-      {skillsCount > 0 && (
-        <button className="web-tag skills-tag" onClick={onOpenSkills || onOpen} title="Open skills in the Mind">
-          <span className="skills-dot" />
-          <span className="web-count">{skillsCount} skills</span>
-        </button>
-      )}
-    </>
+  // What each node colour means, in the Mind page's order.
+  const legend = (
+    <div className="web-legend" aria-label="Legend">
+      {BUCKETS.map((b) => (
+        <span key={b.kind} className="web-legend-item">
+          <i style={{ background: KIND_COLOR[b.kind] }} />
+          {b.label}
+        </span>
+      ))}
+    </div>
   );
+
+  // The whole map is one big button to the Mind page. The fold toggle and the
+  // nodes keep their own behaviour on top of it.
+  const open = {
+    role: "button" as const,
+    tabIndex: 0,
+    title: "Open the Mind",
+    "aria-label": "Memory map: open the Mind",
+    onClick: onOpen,
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+        e.preventDefault();
+        onOpen();
+      }
+    },
+  };
 
   if (collapsed) {
     return (
-      <section className="web neural-web is-collapsed" aria-label="Memory">
+      <section className="web neural-web is-collapsed" {...open}>
         <div className="web-bar">
-          {tags}
           <span className="web-bar-latest" key={newest?.seq}>
             {newest && <span className="neural-pulse-dot" />}
             {newest
@@ -398,7 +407,7 @@ export function MemoryRibbon({
               : "memory"}
           </span>
           {onToggle && (
-            <button className="web-toggle" onClick={onToggle} aria-expanded={false} aria-label="Show the memory graph" title="Show the memory graph">
+            <button className="web-toggle" onClick={(e) => { e.stopPropagation(); onToggle(); }} aria-expanded={false} aria-label="Show the memory graph" title="Show the memory graph">
               <IconChevron size={13} />
             </button>
           )}
@@ -408,13 +417,13 @@ export function MemoryRibbon({
   }
 
   return (
-    <section className={`web neural-web${pane ? " is-pane" : ""}`} aria-label="Neural memory web">
+    <section className={`web neural-web${pane ? " is-pane" : ""}`} {...open}>
       {onToggle && !pane && (
-        <button className="web-toggle is-open" onClick={onToggle} aria-expanded={true} aria-label="Hide the memory graph" title="Hide the memory graph">
+        <button className="web-toggle is-open" onClick={(e) => { e.stopPropagation(); onToggle(); }} aria-expanded={true} aria-label="Hide the memory graph" title="Hide the memory graph">
           <IconChevron size={13} />
         </button>
       )}
-      <div className="web-tag-group">{tags}</div>
+      {legend}
 
       <div className="web-stage neural-stage" role="presentation">
         {placed.length === 0 ? (
@@ -612,9 +621,9 @@ export function MemoryRibbon({
                     p.id === active ? "is-focus" : ""
                   }`}
                   style={{ cursor: "pointer" }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    // Click on a node to inspect its authentic synaptic links
+                  onClick={() => {
+                    // A node fires along one of its links, then the tap carries
+                    // on to the map and opens the Mind like anywhere else.
                     const connected = edges
                       .filter((ed) => ed.a.id === p.id || ed.b.id === p.id)
                       .map((ed) => (ed.a.id === p.id ? ed.b : ed.a));

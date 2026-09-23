@@ -207,14 +207,41 @@ body::before {
 .modal-top b { font-size: 13.5px; font-weight: 650; }
 .modal-body { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; }
 
-.ses-row {
-  display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
-  padding: 10px 11px; border-radius: var(--r-sm); border: 1px solid transparent;
-  background: none; color: var(--text); font-family: inherit; cursor: pointer;
+/* One session: the row that opens it, then pin and delete beside it. */
+.ses-entry {
+  display: flex; align-items: center; gap: 2px; padding-right: 4px;
+  border-radius: var(--r-sm); border: 1px solid transparent;
   transition: background 0.14s var(--ease);
 }
-.ses-row:hover { background: var(--s2); }
-.ses-row.on { background: var(--accent-soft); border-color: var(--accent-line); }
+.ses-entry:hover { background: var(--s2); }
+.ses-entry.on { background: var(--accent-soft); border-color: var(--accent-line); }
+.ses-row {
+  display: flex; align-items: center; gap: 11px; flex: 1; min-width: 0; text-align: left;
+  padding: 10px 11px; border-radius: var(--r-sm); border: 0;
+  background: none; color: var(--text); font-family: inherit; cursor: pointer;
+}
+.ses-act {
+  flex: 0 0 auto; display: grid; place-items: center; min-width: 32px; height: 32px;
+  padding: 0 6px; border: 0; border-radius: var(--r-sm); cursor: pointer;
+  background: none; color: var(--text-3); font: inherit; font-size: 12px; font-weight: 600;
+  transition: background 0.14s var(--ease), color 0.14s var(--ease);
+}
+.ses-act:hover { background: var(--s3); color: var(--text); }
+.ses-act.is-pinned { color: var(--accent); }
+.ses-act.is-confirm, .ses-act.is-confirm:hover {
+  padding: 0 10px; color: var(--danger); background: rgba(251, 113, 133, 0.14);
+}
+.ses-search {
+  display: flex; align-items: center; gap: 8px; flex: 0 0 auto;
+  margin: 10px 12px 2px; padding: 0 12px; height: 36px; border-radius: 99px;
+  background: var(--s2); border: 1px solid var(--border); color: var(--text-3);
+}
+.ses-search:focus-within { border-color: var(--accent-line); }
+.ses-search input {
+  flex: 1; min-width: 0; height: 100%; border: 0; outline: none; background: none;
+  color: var(--text); font: inherit; font-size: 13px;
+}
+.ses-error { margin: 2px 6px 8px; }
 .ses-main { display: grid; gap: 1px; min-width: 0; flex: 1; }
 .ses-main b {
   font-size: 13px; font-weight: 550; overflow: hidden;
@@ -1682,27 +1709,8 @@ label + .jf-hint { margin-top: -5px; }
   border-bottom: 1px solid var(--border);
 }
 .rail-new { margin: 10px 12px; justify-content: center; }
-.rail-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 8px 8px; }
 .rail-empty { margin: 8px 6px; font-size: 12px; color: var(--text-3); }
-.rail-row {
-  display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
-  padding: 8px 9px; margin-bottom: 2px; border: 0; border-radius: var(--r-sm);
-  background: none; color: var(--text-2); font-family: inherit; cursor: pointer;
-  transition: background 0.14s var(--ease), color 0.14s var(--ease);
-}
-.rail-row:hover { background: var(--s2); color: var(--text); }
-.rail-row.on { background: var(--s3); color: var(--text); }
-.rail-row-main { min-width: 0; display: flex; flex-direction: column; }
-.rail-row-main b {
-  font-size: 12.5px; font-weight: 550;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.rail-row-main em { font-style: normal; font-size: 10.5px; color: var(--text-3); }
 
-.rail-foot {
-  flex: 0 0 auto; display: flex; flex-direction: column; gap: 2px;
-  padding: 8px; border-top: 1px solid var(--border);
-}
 .rail-act {
   display: flex; align-items: center; gap: 9px; padding: 8px 10px;
   border: 0; border-radius: var(--r-sm); background: none; color: var(--text-3);
@@ -1904,36 +1912,18 @@ label + .jf-hint { margin-top: -5px; }
   overflow: hidden;
 }
 
-.web-tag-group {
-  position: absolute;
-  top: 10px;
-  left: 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  z-index: 10;
+/* What each node colour means, across the top of the map. */
+.web-legend {
+  position: absolute; top: 10px; left: 12px; right: 52px; z-index: 10;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px;
+  font-size: 11px; font-weight: 600; color: var(--glow-text);
+  pointer-events: none;
 }
-
-.neural-tag {
-  background: rgba(var(--glow-deep-rgb),  0.22);
-  border: 1px solid rgba(var(--glow-rgb),  0.45);
-  color: var(--glow-text);
-  border-radius: 99px;
-  padding: 3px 10px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
-  font-weight: 600;
-  backdrop-filter: blur(8px);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-.neural-tag:hover {
-  background: rgba(var(--glow-deep-rgb),  0.35);
-  border-color: rgba(var(--glow-light-rgb),  0.6);
-  box-shadow: 0 0 12px rgba(var(--glow-rgb),  0.4);
-}
+.neural-web.is-pane .web-legend { right: 12px; }
+.web-legend-item { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.web-legend-item i { width: 8px; height: 8px; border-radius: 50%; }
+.neural-web[role="button"] { cursor: pointer; }
+.neural-web:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 .skills-tag {
   background: rgba(var(--glow-rgb),  0.18);
@@ -1955,15 +1945,7 @@ label + .jf-hint { margin-top: -5px; }
   border-color: var(--glow-light);
   box-shadow: 0 0 10px rgba(var(--glow-light-rgb),  0.35);
 }
-.skills-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--glow-light);
-  box-shadow: 0 0 6px var(--glow-light);
-  display: inline-block;
-  animation: pulseSkills 2.2s infinite ease-in-out;
-}
+
 @keyframes pulseSkills {
   0%, 100% { opacity: 0.6; transform: scale(0.9); }
   50% { opacity: 1; transform: scale(1.2); }
@@ -3066,7 +3048,7 @@ label + .jf-hint { margin-top: -5px; }
   /* The memory graph is ambient, not the thing you came to read. At 145px it
      took a fifth of a phone screen away from the conversation. */
   .neural-stage { height: 92px; }
-  .web-tag-group { top: 8px; left: 10px; gap: 6px; }
+  .web-legend { top: 8px; left: 10px; }
   .neural-latest { bottom: 6px; right: 10px; max-width: 70%; }
 
   /* Reading size. The body copy was 13.5px, which is a desktop size held at
@@ -3106,9 +3088,9 @@ label + .jf-hint { margin-top: -5px; }
   .web-tag { height: 34px; }
   .jump-pill { height: 36px; padding: 0 16px; font-size: 12.5px; }
   .badge-x { width: 28px; height: 28px; }
-  .rail-row { padding: 11px 10px; }
   .rail-act { padding: 11px 10px; }
   .ses-row { padding: 13px 12px; }
+  .ses-act { min-width: 40px; height: 40px; }
   .shot-strip input { height: 32px; }
   .shot-strip input::-webkit-slider-thumb { width: 20px; height: 20px; margin-top: -9px; }
   .shot-strip input::-moz-range-thumb { width: 20px; height: 20px; }
@@ -3155,8 +3137,6 @@ label + .jf-hint { margin-top: -5px; }
 
   /* Wide enough for the memory graph docked square at its foot. */
   .rail-slot { flex-basis: clamp(300px, 22vw, 340px); }
-  .rail-row-main b { font-size: 13.5px; }
-  .rail-row-main em { font-size: 11px; }
   .rail-act { font-size: 13px; }
 }
 
@@ -3505,9 +3485,6 @@ label + .jf-hint { margin-top: -5px; }
 @media (min-width: 1180px) {
   .rail { background: var(--s1); border-right-color: var(--border); }
   .rail-top { height: 52px; }
-  .rail-row.on { background: var(--s2); box-shadow: inset 2px 0 0 var(--accent); }
-  .rail-row:hover { background: var(--s2); }
-  .rail-foot { border-top-color: var(--border); }
 }
 @media (pointer: coarse) {
   .composer-tools .btn.icon, .composer-send, .composer-stop { width: 40px; height: 40px; }
@@ -3723,25 +3700,10 @@ html[data-font="mono"] body { font-size: 13.5px; }
   margin-left: auto; width: 7px; height: 7px; border-radius: 50%;
   background: var(--warn); animation: halo 1.6s ease-out infinite;
 }
-.rail-section {
-  margin: 16px 10px 6px; font-size: 10.5px; font-weight: 650; letter-spacing: 0.08em;
-  text-transform: uppercase; color: var(--text-3);
-}
-.rail-list { flex: none; overflow: visible; padding: 0; }
-.rail-foot { position: relative; padding: 8px; border-top: 1px solid var(--border); }
-.rail-settings {
-  display: flex; align-items: center; gap: 11px; width: 100%; padding: 9px 10px;
-  border: 0; border-radius: var(--r-sm); cursor: pointer; background: none;
-  color: var(--text-2); font: inherit; font-size: 13.5px; font-weight: 550;
-  transition: background 0.14s var(--ease), color 0.14s var(--ease);
-}
-.rail-settings:hover, .rail-settings.on { background: var(--s2); color: var(--text); }
-
-/* The settings menu: opens upward from the bottom-left corner. */
+/* The Themes panel: unfolds in the list, under the Themes item. */
 .settings-menu {
-  position: absolute; left: 8px; right: 8px; bottom: calc(100% - 2px); z-index: 30;
-  padding: 12px; border-radius: 14px; max-height: min(70vh, 560px); overflow-y: auto;
-  background: var(--s2); border: 1px solid var(--border-strong); box-shadow: var(--shadow-lg);
+  margin: 6px 0 0; padding: 12px; border-radius: 14px;
+  background: var(--s2); border: 1px solid var(--border-strong);
   animation: rise 0.18s var(--ease) both;
 }
 .sm-head {
@@ -3772,15 +3734,6 @@ html[data-font="mono"] body { font-size: 13.5px; }
 }
 .sm-font:hover { color: var(--text); border-color: var(--border-strong); }
 .sm-font.on { border-color: var(--accent-line); background: var(--accent-soft); color: var(--text); }
-.sm-links {
-  display: flex; flex-direction: column; gap: 1px; margin-top: 12px; padding-top: 8px;
-  border-top: 1px solid var(--border);
-}
-.sm-links button {
-  display: flex; align-items: center; gap: 9px; padding: 7px 8px; border-radius: var(--r-sm);
-  border: 0; background: none; cursor: pointer; color: var(--text-2); font: inherit; font-size: 12.5px;
-}
-.sm-links button:hover { background: var(--s3); color: var(--text); }
 
 /* The phone's drawer: the same rail, slid in over a dimmed app. */
 .drawer-scrim {
@@ -3795,7 +3748,7 @@ html[data-font="mono"] body { font-size: 13.5px; }
 }
 @keyframes drawer-in { from { transform: translateX(-100%); } to { transform: none; } }
 @media (pointer: coarse) {
-  .rail-nav-item, .rail-settings { padding: 12px 12px; font-size: 15px; }
+  .rail-nav-item { padding: 12px 12px; font-size: 15px; }
   .rail-icon-btn { width: 38px; height: 38px; }
   .sm-theme { padding: 10px 10px; font-size: 14px; }
   .sm-font { padding: 11px 8px; font-size: 14px; }
@@ -3988,7 +3941,7 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 .neural-web.is-pane {
   width: 100%; max-width: none; margin: 0; border-bottom: 0; box-shadow: none;
 }
-.neural-web.is-pane .web-tag-group { top: 12px; left: 12px; right: 12px; flex-wrap: wrap; }
+.neural-web.is-pane .web-legend { top: 12px; }
 
 /* ============================================================================
    The Mind: preferences, procedures, facts and skills, as four buckets

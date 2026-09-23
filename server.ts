@@ -95,6 +95,8 @@ interface Session {
   live: boolean;
   createdAt: number;
   busy: boolean;
+  /** Kept at the top of the session lists. */
+  pinned?: boolean;
   events: AutoraEvent[];
   seqCounter: number;
 }
@@ -1574,6 +1576,7 @@ async function startServer() {
         title: s.title || `Session ${s.id.slice(-6)}`,
         live: s.live,
         busy: s.busy,
+        pinned: !!s.pinned,
         created_at: s.createdAt,
         updated_at: s.events.length ? s.events[s.events.length - 1].ts : s.createdAt,
         events: s.events.length,
@@ -1582,18 +1585,25 @@ async function startServer() {
         tokens: cost ? cost.input + cost.output : 0,
       };
     });
-    // Most recent first
-    list.sort((a, b) => b.created_at - a.created_at);
+    // Pinned first, then most recent first
+    list.sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.created_at - a.created_at);
     res.json(list);
   });
 
   app.patch("/api/sessions/:id", (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
-    const title = typeof req.body?.title === "string" ? req.body.title.trim().slice(0, 120) : "";
-    if (!title) return res.status(400).json({ error: "A title is required." });
-    session.title = title;
-    res.json({ ok: true, title });
+    const { title: rawTitle, pinned } = req.body ?? {};
+    if (rawTitle === undefined && typeof pinned !== "boolean") {
+      return res.status(400).json({ error: "Nothing to change." });
+    }
+    if (rawTitle !== undefined) {
+      const title = typeof rawTitle === "string" ? rawTitle.trim().slice(0, 120) : "";
+      if (!title) return res.status(400).json({ error: "A title is required." });
+      session.title = title;
+    }
+    if (typeof pinned === "boolean") session.pinned = pinned;
+    res.json({ ok: true, title: session.title, pinned: !!session.pinned });
   });
 
   /** Gone for good: its log, its pictures, and its browser. */

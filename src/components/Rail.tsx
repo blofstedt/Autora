@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import type { SessionRow } from "./Sessions";
+import { useEffect, useState, type ReactNode } from "react";
 import {
-  IconBrain, IconChart, IconClock, IconFolder, IconGear, IconKey, IconList, IconMessage,
+  IconBrain, IconChart, IconClock, IconFolder, IconList, IconMessage,
   IconMonitor, IconPalette, IconPlug, IconPlus, IconServer, IconSliders,
   IconSpark, IconX, IconCheck,
 } from "./Icons";
@@ -26,51 +25,31 @@ export const PAGES: { id: PageId; label: string; icon: ReactNode }[] = [
 
 export const pageLabel = (id: PageId) => PAGES.find((p) => p.id === id)?.label ?? "Chat";
 
-function when(ts: number | undefined): string {
-  if (!ts) return "";
-  const seconds = Math.round(Date.now() / 1000 - ts);
-  if (seconds < 90) return "just now";
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 90) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 36) return `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  if (days < 14) return `${days}d ago`;
-  return new Date(ts * 1000).toLocaleDateString();
-}
-
 /**
- * The sidebar: every page of the app, the sessions you were last in, and a
- * settings menu at the bottom for how the app looks.
+ * The sidebar: every page of the app, then Themes, for how the app looks.
  *
  * On a desktop it sits in the margin. On a phone the same component opens as
  * a drawer from the menu button, so there is one list of places to go, not
  * two that drift apart.
  */
 export function Rail({
-  page, onNavigate, sessions, current, relayOn, alert, onPick, onNew,
-  appearance, onAppearance, drawer = false, onClose, onOpenKeys, mind,
+  page, onNavigate, relayOn, alert, onNew,
+  appearance, onAppearance, drawer = false, onClose, mind,
 }: {
   page: PageId;
   onNavigate: (page: PageId) => void;
-  sessions: SessionRow[];
-  current: string | null;
   relayOn: boolean;
   /** Something in the chat is waiting on you. */
   alert: boolean;
-  onPick: (id: string) => void;
   onNew: () => void;
   appearance: Appearance;
   onAppearance: (next: Appearance) => void;
   drawer?: boolean;
   onClose?: () => void;
-  /** Config, opened on its API Keys section. */
-  onOpenKeys: () => void;
   /** The memory graph, docked square at the foot of the rail (desktop). */
   mind?: ReactNode;
 }) {
   const [menu, setMenu] = useState(false);
-  const recent = sessions.slice(0, 8);
 
   return (
     <aside className={`rail ${drawer ? "is-drawer" : ""}`} aria-label="Navigation">
@@ -102,90 +81,51 @@ export function Rail({
               {p.id === "chat" && alert && <i className="rail-alert" title="Waiting on you" />}
             </button>
           ))}
+          <button
+            className={`rail-nav-item ${menu ? "on" : ""}`}
+            onClick={() => setMenu((m) => !m)}
+            aria-expanded={menu}
+          >
+            <IconPalette size={16} />
+            <span>Themes</span>
+            {relayOn && (
+              <em className="rail-relay" title="A desktop relay is connected">
+                <IconMonitor size={12} />
+              </em>
+            )}
+          </button>
         </nav>
-
-        {recent.length > 0 && (
-          <>
-            <div className="rail-section">Recent</div>
-            <div className="rail-list">
-              {recent.map((s) => (
-                <button
-                  key={s.id}
-                  className={`rail-row ${s.id === current && page === "chat" ? "on" : ""}`}
-                  onClick={() => onPick(s.id)}
-                  aria-current={s.id === current}
-                >
-                  <span className={`ses-dot ${s.live ? "is-live" : ""}`} />
-                  <span className="rail-row-main">
-                    <b>{s.title?.trim() || "Untitled session"}</b>
-                    <em>{when(s.created_at)}{s.events ? ` · ${s.events} events` : ""}</em>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-
-      {mind && <div className="rail-mind">{mind}</div>}
-
-      <div className="rail-foot">
-        <button
-          className={`rail-settings ${menu ? "on" : ""}`}
-          onClick={() => setMenu((m) => !m)}
-          aria-expanded={menu}
-          aria-haspopup="menu"
-        >
-          <IconGear size={16} />
-          <span>Settings</span>
-          {relayOn && (
-            <em className="rail-relay" title="A desktop relay is connected">
-              <IconMonitor size={12} />
-            </em>
-          )}
-        </button>
         {menu && (
-          <SettingsMenu
+          <ThemesMenu
             appearance={appearance}
             onAppearance={onAppearance}
-            onNavigate={(p) => { setMenu(false); onNavigate(p); }}
-            onKeys={() => { setMenu(false); onOpenKeys(); }}
             onClose={() => setMenu(false)}
           />
         )}
       </div>
+
+      {mind && <div className="rail-mind">{mind}</div>}
     </aside>
   );
 }
 
-/** The menu at the bottom-left: how the app looks, and the settings pages. */
-function SettingsMenu({
-  appearance, onAppearance, onNavigate, onKeys, onClose,
+/** Theme and font, opened in place under the Themes item. It unfolds inside
+    the list rather than floating over it, so the scrolling rail cannot clip it. */
+function ThemesMenu({
+  appearance, onAppearance, onClose,
 }: {
   appearance: Appearance;
   onAppearance: (next: Appearance) => void;
-  onNavigate: (page: PageId) => void;
-  onKeys: () => void;
   onClose: () => void;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const away = (e: PointerEvent) => {
-      const target = e.target as Node;
-      if (ref.current && !ref.current.contains(target) &&
-          !(target as HTMLElement).closest?.(".rail-settings")) onClose();
-    };
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("pointerdown", away);
     document.addEventListener("keydown", esc);
-    return () => {
-      document.removeEventListener("pointerdown", away);
-      document.removeEventListener("keydown", esc);
-    };
+    return () => document.removeEventListener("keydown", esc);
   }, [onClose]);
 
   return (
-    <div className="settings-menu" ref={ref} role="menu">
+    <div className="settings-menu">
       <div className="sm-head"><IconPalette size={14} /> Theme</div>
       <div className="sm-themes">
         {THEMES.map((t) => (
@@ -221,11 +161,6 @@ function SettingsMenu({
         ))}
       </div>
 
-      <div className="sm-links">
-        <button onClick={() => onNavigate("config")}><IconSliders size={14} /> Config</button>
-        <button onClick={onKeys}><IconKey size={14} /> API Keys</button>
-        <button onClick={() => onNavigate("system")}><IconServer size={14} /> System</button>
-      </div>
     </div>
   );
 }

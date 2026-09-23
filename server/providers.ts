@@ -136,11 +136,16 @@ export const PROVIDERS: ProviderSpec[] = [
     keyHint: "sk-...",
     keysUrl: "https://platform.deepseek.com/api_keys",
     baseUrl: "https://api.deepseek.com/v1",
-    defaultModel: "deepseek-chat",
+    defaultModel: "deepseek-flash",
     listable: true,
+    // Peak-hour list prices; see deepseekOffPeak for the half-price hours.
+    // DeepSeek's /models names its models but does not price them, so a
+    // model missing here shows as unpriced on the billing page.
     models: [
-      { id: "deepseek-chat", label: "DeepSeek Chat", input: 0.27, output: 1.1, note: "General purpose" },
-      { id: "deepseek-reasoner", label: "DeepSeek Reasoner", input: 0.55, output: 2.19, note: "Thinks before answering" },
+      { id: "deepseek-flash", label: "DeepSeek Flash", input: 0.3, output: 1.2, note: "Fast and very cheap" },
+      { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro", input: 1.32, output: 3.96, note: "Most capable" },
+      // Retired name DeepSeek still accepts, served and billed as Flash.
+      { id: "deepseek-v4-flash", label: "DeepSeek V4 Flash (legacy name)", input: 0.3, output: 1.2 },
     ],
   },
   {
@@ -258,6 +263,18 @@ export function modelSpec(providerId: string, modelId: string): ModelSpec | unde
 }
 
 /**
+ * DeepSeek charges half its list price outside peak hours: 01:00-04:00 and
+ * 06:00-10:00 UTC, Monday to Friday. (Chinese public holidays are off-peak
+ * too; we don't track those, so a holiday turn is overstated, never under.)
+ */
+export function deepseekOffPeak(at: Date): boolean {
+  const day = at.getUTCDay();
+  if (day === 0 || day === 6) return true;
+  const hour = at.getUTCHours();
+  return !((hour >= 1 && hour < 4) || (hour >= 6 && hour < 10));
+}
+
+/**
  * What a turn cost, in dollars.
  *
  * An unknown model prices at zero rather than at a guess. A made-up number
@@ -270,10 +287,12 @@ export function costOf(
   modelId: string,
   inputTokens: number,
   outputTokens: number,
+  at: Date = new Date(),
 ): number {
   const spec = modelSpec(providerId, modelId);
   if (!spec || spec.priced === false) return 0;
-  return (inputTokens * spec.input + outputTokens * spec.output) / 1_000_000;
+  const list = (inputTokens * spec.input + outputTokens * spec.output) / 1_000_000;
+  return providerId === "deepseek" && deepseekOffPeak(at) ? list / 2 : list;
 }
 
 export function isPriced(providerId: string, modelId: string): boolean {
