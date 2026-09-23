@@ -30,6 +30,7 @@
  */
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 import { stateFilePath } from "./state";
@@ -520,6 +521,160 @@ const STEALTH_SCRIPT = `
 })();
 `;
 
+/**
+ * Clear a profile lock nobody is holding.
+ *
+ * Chrome marks a profile in use with `SingletonLock`, a symlink to
+ * `<hostname>-<pid>`. A container that was restarted or recreated leaves that
+ * behind with the old container's hostname, and Chrome then refuses the
+ * profile outright ("in use by another Chromium process on another computer")
+ * and exits. A browser left running by an earlier run of this server holds it
+ * for real; that one is an orphan nobody can reach, so it is stopped. Either
+ * way nothing else should be using this profile: it is Autora's.
+ */
+function clearStaleLock(dir: string) {
+  const lock = path.join(dir, "SingletonLock");
+  let target: string;
+  try {
+    target = fs.readlinkSync(lock);
+  } catch {
+    return; // No lock, or not a symlink: nothing to clear.
+  }
+  const dash = target.lastIndexOf("-");
+  const host = dash > 0 ? target.slice(0, dash) : "";
+  const pid = Number(target.slice(dash + 1));
+  if (host === os.hostname() && Number.isInteger(pid) && pid > 0 && pid !== process.pid) {
+    let alive = false;
+    try {
+      process.kill(pid, 0);
+      alive = true;
+    } catch {
+      // Gone already.
+    }
+    if (alive) {
+      let ours = false;
+      try {
+        ours = fs.readFileSync(`/proc/${pid}/cmdline`, "utf8").includes(dir);
+      } catch {
+        // No /proc (not Linux): leave a live process alone.
+      }
+      if (!ours) return;
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // Exited between the two calls.
+      }
+    }
+  }
+  for (const name of ["SingletonLock", "SingletonCookie", "SingletonSocket"]) {
+    try {
+      fs.rmSync(path.join(dir, name), { force: true });
+    } catch {
+      // Chrome will say so if it still minds.
+    }
+  }
+}
+
+/**
+ * The one Chrome every session shares.
+ *
+ * A persistent profile can be open in one browser at a time, so a browser per
+ * session meant the second conversation to open a page found the profile
+ * locked by the first and failed. Instead there is one browser on the profile
+ * -- one set of sign-ins -- and each session gets a tab of its own in it. It
+ * stays up while any session has a tab and closes, flushing the profile, when
+ * the last one lets go.
+ */
+let shared: { context: BrowserContext; users: number } | null = null;
+let launching: Promise<BrowserContext> | null = null;
+/** Pages some session has taken, so the tab Chrome opens with is handed out
+    once rather than to everyone. */
+const claimed = new WeakSet<object>();
+
+async function launchShared(): Promise<BrowserContext> {
+  const { chromium } = await import("playwright-core");
+  const executablePath = systemBrowser();
+  const dir = profileDir();
+  const launch = () =>
+    chromium.launchPersistentContext(dir, {
+      headless: process.env.AUTORA_BROWSER_HEADED !== "1",
+      ...(executablePath ? { executablePath } : {}),
+      viewport: VIEWPORT,
+      deviceScaleFactor: 1,
+      userAgent:
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+      locale: "en-US",
+      timezoneId: "America/New_York",
+      ignoreDefaultArgs: ["--enable-automation"],
+      args: [
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--hide-scrollbars",
+        "--disable-blink-features=AutomationControlled",
+        "--disable-features=IsolateOrigins,site-per-process",
+        "--disable-infobars",
+        `--window-size=${VIEWPORT.width},${VIEWPORT.height}`,
+      ],
+    });
+  clearStaleLock(dir);
+  let context: BrowserContext;
+  try {
+    context = await launch();
+  } catch (err) {
+    // Once more after clearing again: a browser that was still shutting down
+    // a moment ago may have released the profile by now.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    clearStaleLock(dir);
+    try {
+      context = await launch();
+    } catch {
+      throw new Error(`The browser would not start: ${firstLine(err)}`);
+    }
+  }
+  await context.addInitScript(STEALTH_SCRIPT);
+  await context.addInitScript(CURSOR_SCRIPT);
+  context.on("close", () => {
+    if (shared?.context === context) shared = null;
+  });
+  return context;
+}
+
+/** Playwright's launch errors carry the whole command line and browser log;
+    the first line is the part worth reading. */
+function firstLine(err: unknown): string {
+  const text = err instanceof Error ? err.message : String(err);
+  return text.split("\n")[0].trim();
+}
+
+async function acquireContext(): Promise<BrowserContext> {
+  if (!shared) {
+    if (!launching) {
+      launching = launchShared()
+        .then((context) => {
+          shared = { context, users: 0 };
+          return context;
+        })
+        .finally(() => {
+          launching = null;
+        });
+    }
+    await launching;
+  }
+  if (!shared) throw new Error("The browser closed while it was starting.");
+  shared.users += 1;
+  return shared.context;
+}
+
+async function releaseContext(context: BrowserContext) {
+  if (!shared || shared.context !== context) return;
+  shared.users -= 1;
+  if (shared.users > 0) return;
+  // The last tab is gone: closing the context is what stops Chrome and
+  // flushes the profile to disk.
+  shared = null;
+  await context.close().catch(() => undefined);
+}
+
 /** One page, one screencast, one session's worth of browsing. */
 export class LiveBrowser {
   private context: BrowserContext | null = null;
@@ -595,34 +750,35 @@ export class LiveBrowser {
     const { ok, detail } = await probeBrowser();
     if (!ok) throw new Error(detail ?? "No browser available.");
 
-    const { chromium } = await import("playwright-core");
-    const executablePath = systemBrowser();
-    this.context = await chromium.launchPersistentContext(profileDir(), {
-      headless: process.env.AUTORA_BROWSER_HEADED !== "1",
-      ...(executablePath ? { executablePath } : {}),
-      viewport: VIEWPORT,
-      deviceScaleFactor: 1,
-      userAgent:
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-      locale: "en-US",
-      timezoneId: "America/New_York",
-      ignoreDefaultArgs: ["--enable-automation"],
-      args: [
-        "--no-sandbox",
-        "--disable-dev-shm-usage",
-        "--hide-scrollbars",
-        "--disable-blink-features=AutomationControlled",
-        "--disable-features=IsolateOrigins,site-per-process",
-        "--disable-infobars",
-        `--window-size=${VIEWPORT.width},${VIEWPORT.height}`,
-      ],
+    const context = await acquireContext();
+    this.context = context;
+    // Chrome opens with a tab already in it; the first session to arrive
+    // takes that one rather than leaving an orphan about:blank behind.
+    const idle = context.pages().find((p: Page) => !claimed.has(p));
+    try {
+      this.page = idle ?? (await context.newPage());
+    } catch (err) {
+      this.context = null;
+      await releaseContext(context);
+      throw err;
+    }
+    claimed.add(this.page);
+    const page = this.page;
+
+    // A link that opens a new tab is still the same browsing: follow it in
+    // this tab, which is the one being watched, rather than losing it to a
+    // tab nobody can see.
+    page.on("popup", (popup: Page) => {
+      void (async () => {
+        claimed.add(popup);
+        await popup.waitForLoadState("commit").catch(() => undefined);
+        const next = popup.url();
+        await popup.close().catch(() => undefined);
+        if (next && next !== "about:blank" && this.page === page) {
+          await page.goto(next, { waitUntil: "domcontentloaded" }).catch(() => undefined);
+        }
+      })();
     });
-    await this.context.addInitScript(STEALTH_SCRIPT);
-    await this.context.addInitScript(CURSOR_SCRIPT);
-    // A persistent context opens with a page already in it; taking that one
-    // rather than adding a second avoids leaving an orphan about:blank behind
-    // that the screencast would happily photograph.
-    this.page = this.context.pages()[0] ?? (await this.context.newPage());
 
     this.page.on("framenavigated", (frame: any) => {
       if (frame !== this.page?.mainFrame()) return;
@@ -630,8 +786,14 @@ export class LiveBrowser {
       void this.announceNav();
     });
     this.page.on("close", () => {
+      if (this.page !== page) return;
       this.page = null;
       this.streaming = false;
+      // The tab went on its own (Chrome crashed, or the page closed itself):
+      // let go of the browser so it is not held open for nobody.
+      const held = this.context;
+      this.context = null;
+      if (held) void releaseContext(held);
     });
 
     await this.startStream();
@@ -729,10 +891,11 @@ export class LiveBrowser {
 
   async close() {
     this.closing = true;
-    // The context owns the browser when it is a persistent one, so closing it
-    // is what actually stops Chrome -- and it is also what flushes the profile
-    // to disk, which is the whole point of having one.
+    // This session's tab, and its hold on the shared browser. The browser
+    // itself stops when the last session lets go.
     const context = this.context;
+    const page = this.page;
+    const cdp = this.cdp;
     this.page = null;
     this.context = null;
     this.cdp = null;
@@ -744,7 +907,9 @@ export class LiveBrowser {
     this.currentUrl = null;
     this.currentTitle = null;
     this.refs = [];
-    await context?.close().catch(() => undefined);
+    await cdp?.detach().catch(() => undefined);
+    await page?.close().catch(() => undefined);
+    if (context) await releaseContext(context);
     this.closing = false;
   }
 

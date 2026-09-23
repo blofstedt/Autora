@@ -4098,8 +4098,17 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
   display: flex; flex-direction: column; gap: 8px;
   padding: 10px 12px; border-top: 1px solid var(--border); background: var(--s1);
 }
-.shot-log .msg { gap: 8px; }
+.shot-log .msg { gap: 8px; align-items: flex-start; }
 .shot-log .msg .avatar { width: 22px; height: 22px; }
 .shot-log .msg-who { display: none; }
+/* Said while working the page, so shown as a chat thread about it: each
+   message its own bubble, the way a side conversation reads in a team chat. */
+.shot-log .msg-body {
+  flex: 0 1 auto; max-width: 100%;
+  padding: 7px 11px; border-radius: 4px var(--r-lg) var(--r-lg) var(--r-lg);
+  background: var(--s3); border: 1px solid var(--border);
+}
 .shot-log .msg-text { font-size: 13px; line-height: 1.5; }
+.shot-log .msg-text > :first-child { margin-top: 0; }
+.shot-log .msg-text > :last-child { margin-bottom: 0; }
 @media (min-width: 1000px) { .shot-log { max-height: 260px; } }

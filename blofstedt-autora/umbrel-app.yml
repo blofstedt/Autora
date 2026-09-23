@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.9.12"
+version: "0.9.13"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -74,10 +74,14 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  On a phone or tablet the bar along the bottom of the screen is gone. Its
-  Chat and Tasks buttons are still in the menu (Tasks as Cron), and the live voice button
-  now floats just above Send, so the conversation gets the full height of
-  the screen.
+  The browser stays in one box. Going to another page, running a command in
+  between, or asking a follow-up now moves the same box along instead of
+  opening a new one, and it only ends when the browser is closed. What the
+  agent says while it works a page or the desktop shows up inside that box as
+  a chat thread. Opening the browser in a second conversation no longer fails
+  with a long "profile appears to be in use" error: every conversation now
+  gets its own tab in one shared browser, and a lock left behind by a
+  restarted container is cleared automatically.
 
 
   New pages. Status shows the whole installation at a glance. Sessions lets
