@@ -13,7 +13,7 @@ import {
   listSecrets, setSecret, deleteSecret, getSecret, SECRET_PRESETS, redactSecrets,
   mergeJev, mergeAppearance, saneMcp, THEMES, FONTS, recordToolFeed, type CostParts,
 } from "./server/state";
-import { decide, lastDecision, supportFor, type JevOutcome, type JevTask } from "./server/jev/router";
+import { decide, lastDecision, resetHealth, supportFor, type JevOutcome, type JevTask } from "./server/jev/router";
 import type { JevTarget } from "./server/jev/engine";
 import { guardWorthy } from "./server/jev/guard";
 import { captureConsole, log, readLogs, type LogLevel } from "./server/logs";
@@ -689,9 +689,26 @@ function askPermission(
 
 // ---------------------------------------------------------------- jev mode --
 
-/** The model the next turn will call, in the shape Jev scores against, or
-    null when nothing usable is connected. */
+/** The hosted Jev API key: saved in Settings, or from the environment. */
+function jevKey(): { key: string; source: "app" | "env" | null } {
+  if (state.jev.key) return { key: state.jev.key, source: "app" };
+  const env = (process.env.TYPESAFE_API_KEY || process.env.JEV_API_KEY || "").trim();
+  return env ? { key: env, source: "env" } : { key: "", source: null };
+}
+
+/** Where Jev decisions go: the hosted Jev API when a key for it is set,
+    otherwise the model the next turn will call, scored by its token
+    probabilities. Null when neither is usable. */
 function jevTarget(): JevTarget | null {
+  const hosted = jevKey();
+  if (hosted.key) {
+    return {
+      provider: "typesafe", kind: "typesafe",
+      baseUrl: (process.env.TYPESAFE_API_BASE || "").trim() || "https://api.typesafe.ai",
+      key: hosted.key,
+      model: (process.env.JEV_MODEL || "").trim() || "jev-latest",
+    };
+  }
   const active = resolveProvider();
   if (!active.provider || active.problem) return null;
   const spec = providerSpec(active.provider);
@@ -1271,9 +1288,29 @@ function historyFor(session: Session, sinceSeq = 0): { message: ChatMessage; seq
 
 /** How many times to re-ask after a transient refusal, and how long to wait.
     Free tiers answer 503 "high demand" often enough that one spike would
-    otherwise read, in the thread, as the app being broken. */
-const MODEL_RETRIES = 3;
-const RETRY_BACKOFF_MS = [600, 1500, 3200];
+    otherwise read, in the thread, as the app being broken.
+    A long agent turn makes dozens of calls in a few minutes, which is exactly
+    what trips a per-minute rate limit, so the waits stretch to most of a
+    minute before the turn gives up. */
+const MODEL_RETRIES = 5;
+const RETRY_BACKOFF_MS = [1000, 3000, 8000, 15000, 25000];
+
+/** Output tokens per step of the agent loop. 2048 was too few: a tool call
+    that writes a file carries the whole file in its arguments, and one cut off
+    at the limit either ran with no arguments or ended the turn. A model that
+    refuses this much is retried at FALLBACK_OUTPUT_TOKENS. */
+const MAX_OUTPUT_TOKENS = (() => {
+  const n = Number.parseInt((process.env.AUTORA_MAX_OUTPUT_TOKENS || "").trim(), 10);
+  return Number.isFinite(n) && n >= 256 ? n : 8192;
+})();
+const FALLBACK_OUTPUT_TOKENS = 2048;
+
+/** A 400 that is the vendor saying the output limit asked for is too high. */
+const OUTPUT_LIMIT_REFUSED = /max_tokens|max_completion_tokens|maxOutputTokens|max_output_tokens|output token/i;
+
+/** How many times in a row a turn is told to carry on after a step came back
+    empty or cut off, before it is allowed to end there. */
+const MAX_NUDGES = 3;
 
 /** Codes worth asking again for: rate limits, overload, and the generic 500. */
 const TRANSIENT = new Set([429, 500, 502, 503, 504]);
@@ -2067,6 +2104,9 @@ async function startServer() {
             }
           };
 
+          /** Lowered for the rest of the turn if the model refuses the default. */
+          let outputTokens = MAX_OUTPUT_TOKENS;
+
           /**
            * One call to the model, retried while nothing has reached the thread.
            *
@@ -2077,6 +2117,9 @@ async function startServer() {
             // Across attempts, not within one: a second attempt after half a
             // sentence has been delivered would say that half twice.
             let delivered = 0;
+            // Retrying on a transient error spends an attempt; retrying at a
+            // lower output limit does not, since that one is our mistake.
+            let limitRetried = false;
 
             for (let attempt = 0; attempt <= MODEL_RETRIES; attempt += 1) {
               try {
@@ -2094,7 +2137,7 @@ async function startServer() {
                   system,
                   messages: context.messagesFor(system),
                   temperature: 0.7,
-                  maxTokens: 2048,
+                  maxTokens: outputTokens,
                   thinkingBudget: THINKING_BUDGET,
                   tools: tools.map((t) => ({
                     name: t.name,
@@ -2165,6 +2208,16 @@ async function startServer() {
                 console.warn(
                   `[model] ${active.provider}/${active.model} attempt ${attempt + 1}: ${detail}`,
                 );
+
+                if (
+                  delivered === 0 && !limitRetried && status === 400 &&
+                  outputTokens > FALLBACK_OUTPUT_TOKENS && OUTPUT_LIMIT_REFUSED.test(detail)
+                ) {
+                  outputTokens = FALLBACK_OUTPUT_TOKENS;
+                  limitRetried = true;
+                  attempt -= 1;
+                  continue;
+                }
 
                 const retryable =
                   delivered === 0 &&
@@ -2341,6 +2394,10 @@ async function startServer() {
             if (verdict.stop) loopStop = verdict.stop;
             return verdict.note ? `${shown}\n\n${verdict.note}` : shown;
           };
+          /** Steps in a row that came back empty or cut off, each answered by
+              telling the model to carry on. Reset by any step that asks for
+              a tool. */
+          let nudges = 0;
           for (;;) {
             if (running.get(session.id)?.stopped) break;
 
@@ -2350,7 +2407,39 @@ async function startServer() {
             context.maybeCompact(pinned, summarize, compacted);
 
             const turn = await askModel(pinned);
-            if (!turn || turn.calls.length === 0) break;
+            if (!turn) break;
+            if (turn.calls.length === 0) {
+              /* A step with no tool calls normally means the model is done.
+                 Two cases where it is not, and where ending the turn left the
+                 person to type "continue": the reply hit the output limit
+                 mid-sentence, or it came back empty partway through the work.
+                 Either way the model is told so and asked again. */
+              const empty = !turn.text.trim();
+              const stalled = turn.cutOff || (empty && ranSomething);
+              if (!stalled || nudges >= MAX_NUDGES || running.get(session.id)?.stopped) break;
+              nudges += 1;
+              if (!empty) {
+                context.append({ role: "assistant", text: turn.text }, session.seqCounter);
+              }
+              const why = turn.cutOff
+                ? "Your last reply was cut off at the output limit."
+                : "Your last reply was empty.";
+              context.append({
+                role: "user",
+                text:
+                  `(Autora: ${why} The task is not finished unless you say it is. ` +
+                  "Carry on from exactly where you stopped, using tools as needed. " +
+                  "Keep each tool call small -- write a long file in several parts. " +
+                  "If everything is done, say briefly what was done.)",
+              }, session.seqCounter);
+              emitEvent(session, "system.log", "system", {
+                message: turn.cutOff
+                  ? "The model's reply hit the output limit; asked it to carry on."
+                  : "The model returned an empty reply mid-task; asked it to carry on.",
+              });
+              continue;
+            }
+            nudges = 0;
 
             context.append(
               { role: "assistant", text: turn.text, calls: turn.calls },
@@ -2366,6 +2455,21 @@ async function startServer() {
 
               if (running.get(session.id)?.stopped) {
                 reply(false, "The person stopped the turn before this ran.");
+                continue;
+              }
+
+              /* Cut off before its arguments were complete. Run with `{}` it
+                 fails in a confusing way or, worse, does something; either
+                 way the model repeats it at the same length and hits the
+                 same wall. Saying why lets it split the work instead. */
+              if (use.incomplete) {
+                emitEvent(session, "tool.call", "agent", { name: use.name, args: {} }, span);
+                const said =
+                  `Not run: this ${use.name} call was cut off at the output limit before ` +
+                  "its arguments were complete. Make it again with less in it -- " +
+                  "for a long file, write it in several smaller parts.";
+                emitEvent(session, "tool.error", "agent", { error: said }, span);
+                reply(false, said);
                 continue;
               }
 
@@ -3148,7 +3252,14 @@ async function startServer() {
     ...settingsPayload(),
     appearance: { ...state.appearance, themes: THEMES, fonts: FONTS },
     jev: {
-      ...state.jev,
+      enabled: state.jev.enabled,
+      threshold: state.jev.threshold,
+      // Never the key itself: whether one is set, and where it came from.
+      key: (() => {
+        const { key, source } = jevKey();
+        return { set: Boolean(key), source, masked: maskKey(key) };
+      })(),
+      backend: jevKey().key ? "hosted" : "model",
       support: supportFor(jevTarget()),
       last: lastDecision(),
     },
@@ -3245,7 +3356,11 @@ async function startServer() {
     if (body.tools && typeof body.tools === "object") {
       updateToolSettings(body.tools);
     }
-    if (body.jev && typeof body.jev === "object") mergeJev(state.jev, body.jev);
+    if (body.jev && typeof body.jev === "object") {
+      mergeJev(state.jev, body.jev);
+      // A new key is a new backend: forget what the old one taught us.
+      if (typeof body.jev.key === "string") resetHealth();
+    }
     if (body.appearance && typeof body.appearance === "object") mergeAppearance(state.appearance, body.appearance);
 
     save();

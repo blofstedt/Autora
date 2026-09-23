@@ -763,6 +763,9 @@ function ProviderRow({
 type JevState = {
   enabled: boolean;
   threshold: number;
+  /** The hosted Jev API key: whether one is set, never the key itself. */
+  key?: { set: boolean; source: "app" | "env" | null; masked: string };
+  backend?: "hosted" | "model";
   support: { state: "yes" | "no" | "unknown"; reason?: string };
   last: {
     task: string; mode: "jev" | "fallback"; ms: number; fields: number;
@@ -781,9 +784,10 @@ type JevState = {
 function JevCard({ jev, onSaved }: { jev: JevState; onSaved: (next: SettingsState) => void }) {
   const [threshold, setThreshold] = useState(jev.threshold);
   const [error, setError] = useState<string | null>(null);
+  const [keyDraft, setKeyDraft] = useState("");
   useEffect(() => setThreshold(jev.threshold), [jev.threshold]);
 
-  const patch = async (change: Partial<Pick<JevState, "enabled" | "threshold">>) => {
+  const patch = async (change: { enabled?: boolean; threshold?: number; key?: string }) => {
     setError(null);
     try {
       const res = await fetch("/api/settings", {
@@ -793,6 +797,7 @@ function JevCard({ jev, onSaved }: { jev: JevState; onSaved: (next: SettingsStat
       });
       const body = await res.json();
       if (!res.ok) { setError(body.detail ?? "Could not change that."); return; }
+      if (change.key !== undefined) setKeyDraft("");
       onSaved(body);
     } catch {
       setError("Could not reach the server.");
@@ -834,6 +839,36 @@ function JevCard({ jev, onSaved }: { jev: JevState; onSaved: (next: SettingsStat
         something, whether it looks destructive and unasked-for — in which case
         the agent must ask you before it runs.
       </p>
+      <p className="jf-hint">
+        {jev.backend === "hosted"
+          ? "Decisions go to the hosted Jev API (TypeSafe), whatever chat model you use."
+          : "No Jev API key is set, so decisions are scored by the chat model itself, " +
+            "which only works for models that return token probabilities (not Anthropic's)."}
+      </p>
+      <div className="jf-row" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <input
+          type="password"
+          autoComplete="off"
+          spellCheck={false}
+          placeholder={jev.key?.set
+            ? (jev.key.source === "env" ? "Jev key from the server environment" : `Jev key saved (${jev.key.masked})`)
+            : "Jev API key (jev_...)"}
+          value={keyDraft}
+          onChange={(e) => setKeyDraft(e.target.value)}
+          aria-label="Jev API key"
+          style={{ flex: "1 1 220px", minWidth: 0 }}
+        />
+        <button
+          className="btn"
+          disabled={!keyDraft.trim()}
+          onClick={() => void patch({ key: keyDraft.trim() })}
+        >
+          Save key
+        </button>
+        {jev.key?.source === "app" && (
+          <button className="btn" onClick={() => void patch({ key: "" })}>Remove</button>
+        )}
+      </div>
       {jev.enabled && jev.support.state === "no" && jev.support.reason && (
         <p className="set-warn">{jev.support.reason} Autora uses its normal path instead.</p>
       )}
