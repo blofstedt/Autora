@@ -89,6 +89,19 @@ export type Ask = {
   answer?: { cancelled: boolean; choices: string[]; text: string; who: string };
 };
 
+/** A decision Jev Mode scored (or declined to), as the thread shows it. */
+export type JevDecision = {
+  task: string;
+  mode: "jev" | "fallback";
+  ms: number;
+  threshold: number;
+  min: number | null;
+  reason: string | null;
+  model: string | null;
+  cachedTokens: number;
+  fields: { name: string; value: unknown; confidence: number; coverage: number }[];
+};
+
 /** A memory, as the ribbon shows it: what it says, and what just happened to it. */
 export type MemoryMark = {
   id: string;
@@ -155,7 +168,8 @@ export type Cell =
   | { kind: "note"; seq: number; tone: "bad" | "warn" | "plain"; text: string }
   | { kind: "kanban"; seq: number; board: KanbanBoard }
   | { kind: "permission"; seq: number; prompt: PermissionPrompt }
-  | { kind: "ask"; seq: number; ask: Ask };
+  | { kind: "ask"; seq: number; ask: Ask }
+  | { kind: "jev"; seq: number; decision: JevDecision };
 
 /**
  * One prompt and everything the agent did about it.
@@ -535,6 +549,25 @@ export function derive(events: AutoraEvent[]): Derived {
         };
         asks.set(id, ask);
         push({ kind: "ask", seq: e.seq, ask });
+        break;
+      }
+
+      case Kind.JevDecision: {
+        push({
+          kind: "jev",
+          seq: e.seq,
+          decision: {
+            task: String(e.payload.task ?? "decision"),
+            mode: e.payload.mode === "jev" ? "jev" : "fallback",
+            ms: Number(e.payload.ms) || 0,
+            threshold: Number(e.payload.threshold) || 0.75,
+            min: typeof e.payload.min === "number" ? e.payload.min : null,
+            reason: e.payload.reason ? String(e.payload.reason) : null,
+            model: e.payload.model ? String(e.payload.model) : null,
+            cachedTokens: Number(e.payload.cached_tokens) || 0,
+            fields: Array.isArray(e.payload.fields) ? e.payload.fields : [],
+          },
+        });
         break;
       }
 

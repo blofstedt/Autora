@@ -87,6 +87,7 @@ type SettingsState = {
   state_file: string;
   credentials: Credential[];
   tools: { config: ToolConfig; groups: ToolGroupState[] };
+  jev?: JevState;
   active: {
     model: string | null;
     endpoint: string | null;
@@ -376,6 +377,8 @@ export function Settings({ onClose }: { onClose: () => void }) {
         </section>
 
         <ToolsCard tools={state.tools} onSaved={adopt} />
+
+        {state.jev && <JevCard jev={state.jev} onSaved={adopt} />}
 
         <SecretStore />
 
@@ -675,6 +678,105 @@ function ProviderRow({
  * capability switch that needs a second click somewhere else to take effect is
  * how you end up believing the terminal is off when it is not.
  */
+type JevState = {
+  enabled: boolean;
+  threshold: number;
+  support: { state: "yes" | "no" | "unknown"; reason?: string };
+  last: {
+    task: string; mode: "jev" | "fallback"; ms: number; fields: number;
+    min: number | null; reason?: string; at: number;
+  } | null;
+};
+
+/**
+ * Jev Mode: fast, scored decisions.
+ *
+ * Says plainly whether the current model can do it -- most reasoning models
+ * and Anthropic's API cannot, because they do not return token probabilities
+ * -- and what the last decision did, so "is this doing anything?" has an
+ * answer on the page.
+ */
+function JevCard({ jev, onSaved }: { jev: JevState; onSaved: (next: SettingsState) => void }) {
+  const [threshold, setThreshold] = useState(jev.threshold);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => setThreshold(jev.threshold), [jev.threshold]);
+
+  const patch = async (change: Partial<Pick<JevState, "enabled" | "threshold">>) => {
+    setError(null);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jev: change }),
+      });
+      const body = await res.json();
+      if (!res.ok) { setError(body.detail ?? "Could not change that."); return; }
+      onSaved(body);
+    } catch {
+      setError("Could not reach the server.");
+    }
+  };
+
+  const support = !jev.enabled
+    ? { cls: "", text: "off" }
+    : jev.support.state === "yes"
+      ? { cls: "ok", text: "active" }
+      : jev.support.state === "no"
+        ? { cls: "warn", text: "not supported" }
+        : { cls: "", text: "ready" };
+
+  return (
+    <section className="set-card">
+      <div className="tool-head">
+        <h3 style={{ margin: 0 }}>Jev Mode</h3>
+        <span className={`tool-state ${support.cls}`}>{support.text}</span>
+        <div className="spacer" />
+        <button
+          className={`job-switch ${jev.enabled ? "on" : ""}`}
+          role="switch"
+          aria-checked={jev.enabled}
+          aria-label={`Jev Mode: ${jev.enabled ? "on" : "off"}`}
+          onClick={() => void patch({ enabled: !jev.enabled })}
+        >
+          <span className="job-knob" />
+        </button>
+      </div>
+      <p className="jf-hint">
+        Quick decisions with a fixed set of answers are scored all at once
+        instead of written out: every option's probability is read in one
+        parallel pass, and the answer is taken only if each part of it clears
+        the confidence threshold. Anything less certain goes to the model's
+        normal reasoning, exactly as before. Today this decides which memories
+        each turn recalls.
+      </p>
+      {jev.enabled && jev.support.state === "no" && jev.support.reason && (
+        <p className="set-warn">{jev.support.reason} Autora uses its normal path instead.</p>
+      )}
+      <label className="jf-row">
+        <span>Confidence threshold · {threshold.toFixed(2)}</span>
+        <input
+          type="range" min={0.5} max={0.99} step={0.01}
+          value={threshold}
+          onChange={(e) => setThreshold(Number(e.target.value))}
+          onPointerUp={() => void patch({ threshold })}
+          onKeyUp={() => void patch({ threshold })}
+          aria-label="Confidence threshold"
+        />
+      </label>
+      {jev.last && (
+        <p className="jf-hint">
+          Last: {jev.last.task} ·{" "}
+          {jev.last.mode === "jev"
+            ? `fast path, ${jev.last.fields} fields in ${jev.last.ms} ms, lowest confidence ${
+                (jev.last.min ?? 0).toFixed(2)}`
+            : `fell back (${jev.last.reason ?? "unknown"})`}
+        </p>
+      )}
+      {error && <p className="set-warn">{error}</p>}
+    </section>
+  );
+}
+
 function ToolsCard({
   tools, onSaved,
 }: {

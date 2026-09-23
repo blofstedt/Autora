@@ -5,13 +5,16 @@ import express, { type Request, type Response } from "express";
 import { WebSocketServer, WebSocket } from "ws";
 import {
   AUTO_ORDER, PRICES_CHECKED, PROVIDERS, costOf, isPriced, modelsFor,
-  rememberModels,
+  providerSpec, rememberModels,
 } from "./server/providers";
 import {
   baseUrlFor, clearUsage, keyFor, keySource, maskKey, modelFor, recordUsage,
   resolveProvider, save, setKey, state, stateFilePath, type Resolved,
   listSecrets, setSecret, deleteSecret, getSecret, SECRET_PRESETS, redactSecrets,
+  mergeJev,
 } from "./server/state";
+import { decide, lastDecision, supportFor, type JevOutcome, type JevTask } from "./server/jev/router";
+import type { JevTarget } from "./server/jev/engine";
 import {
   ProviderError, listModels, streamChat,
   type ChatMessage, type ChatTurn, type ToolReply,
@@ -609,6 +612,111 @@ function askPermission(
       }
     });
   });
+}
+
+// ---------------------------------------------------------------- jev mode --
+
+/** The model the next turn will call, in the shape Jev scores against, or
+    null when nothing usable is connected. */
+function jevTarget(): JevTarget | null {
+  const active = resolveProvider();
+  if (!active.provider || active.problem) return null;
+  const spec = providerSpec(active.provider);
+  if (!spec) return null;
+  return {
+    provider: active.provider, kind: spec.kind,
+    baseUrl: active.baseUrl, key: active.key, model: active.model,
+  };
+}
+
+/**
+ * Run a decision through Jev, bill it, and say in the thread what happened.
+ *
+ * Reported only when something was actually tried: a model that cannot score
+ * falls back silently every turn, and a note saying so each time is noise.
+ */
+async function jevDecide(session: Session | null, task: JevTask): Promise<JevOutcome> {
+  const target = jevTarget();
+  const outcome = await decide(task, target, state.jev);
+  const usage = outcome.usage;
+  if (target && usage && (usage.input || usage.output)) {
+    recordUsage({
+      ts: Math.floor(Date.now() / 1000),
+      session: session?.id ?? "jev",
+      provider: target.provider,
+      model: target.model,
+      input: usage.input,
+      output: usage.output,
+      cost: costOf(target.provider, target.model, usage.input, usage.output),
+      priced: isPriced(target.provider, target.model),
+      estimated: false,
+    });
+  }
+  if (session && (outcome.mode === "jev" || outcome.attempted)) {
+    emitEvent(session, "jev.decision", "system", {
+      task: task.name,
+      mode: outcome.mode,
+      ms: outcome.ms,
+      threshold: state.jev.threshold,
+      min: outcome.mode === "jev" ? outcome.min : null,
+      reason: outcome.mode === "fallback" ? outcome.reason : null,
+      model: target?.model ?? null,
+      cached_tokens: usage?.cached ?? 0,
+      fields: (outcome.fields ?? []).map((f) => ({
+        name: task.labels?.[f.name] ?? f.name,
+        value: f.value, confidence: f.confidence, coverage: f.coverage,
+      })),
+    });
+  }
+  return outcome;
+}
+
+/**
+ * Which memories bear on this request, scored rather than keyword-matched.
+ *
+ * One yes/no field per memory: independent of each other, two values each --
+ * exactly the shape Jev is for. Returns null to mean "fall back to the
+ * keyword recall", which is what happens whenever Jev is off, the model
+ * cannot score, or any memory's call is too close to make.
+ */
+async function jevRecall(session: Session, request: string): Promise<MemoryRecord[] | null> {
+  const candidates = memoryRecords
+    .filter((m) => !m.superseded_by)
+    .sort((a, b) => b.uses - a.uses)
+    .slice(0, 20);
+  if (candidates.length === 0) return null;
+
+  const properties: Record<string, any> = {};
+  const labels: Record<string, string> = {};
+  const byField = new Map<string, MemoryRecord>();
+  candidates.forEach((m, i) => {
+    const field = `memory_${i + 1}`;
+    byField.set(field, m);
+    labels[field] = m.title;
+    properties[field] = {
+      type: "boolean",
+      description: `${m.title} -- ${m.body.replace(/\s+/g, " ").slice(0, 180)}`,
+    };
+  });
+
+  const outcome = await jevDecide(session, {
+    name: "memory recall",
+    context: `The person's request:\n${request.slice(0, 2000)}`,
+    instructions:
+      "Each field is one stored memory. Answer true if knowing it would help " +
+      "with the request, false if it is unrelated.",
+    schema: { type: "object", properties },
+    labels,
+    timeoutMs: 5000,
+  });
+  if (outcome.mode !== "jev") return null;
+
+  const picked = candidates.filter((m) => m.pinned);
+  for (const [field, value] of Object.entries(outcome.values)) {
+    const m = byField.get(field);
+    if (m && value === true && !picked.includes(m)) picked.push(m);
+  }
+  return picked;
 }
 
 // ------------------------------------------------------- asking the person --
@@ -1375,6 +1483,12 @@ async function startServer() {
         const usable = new Set(
           (await groupStates()).filter((g) => g.available).map((g) => g.group),
         );
+
+        /* Jev Mode: when the model can score, which memories this turn gets
+           is decided by the model, per memory, with a confidence each. The
+           keyword rules above stay as the fallback for everything else. */
+        const scored = await jevRecall(session, text);
+        if (scored) accessedRecords.splice(0, accessedRecords.length, ...scored);
 
         const uniqueAccessed = accessedRecords.filter(
           (item, idx, self) =>
@@ -2450,10 +2564,34 @@ async function startServer() {
      async, and the rest of the payload is not. */
   const settingsWithTools = async () => ({
     ...settingsPayload(),
+    jev: {
+      ...state.jev,
+      support: supportFor(jevTarget()),
+      last: lastDecision(),
+    },
     tools: {
       config: toolSettings(),
       groups: await groupStates(),
     },
+  });
+
+  /**
+   * Score a decision directly: `{ context, schema, instructions? }` in, the
+   * outcome out -- the programmatic payload with a confidence per field, or
+   * the reason it fell back. For scripts, and for checking a backend.
+   */
+  app.post("/api/jev/evaluate", async (req: Request, res: Response) => {
+    const body = req.body ?? {};
+    if (!body.schema || typeof body.schema !== "object") {
+      return res.status(400).json({ error: "A JSON schema is required." });
+    }
+    const outcome = await jevDecide(null, {
+      name: String(body.name ?? "api"),
+      context: String(body.context ?? ""),
+      schema: body.schema,
+      instructions: typeof body.instructions === "string" ? body.instructions : undefined,
+    });
+    res.json(outcome);
   });
 
   app.get("/api/settings", async (req: Request, res: Response) => {
@@ -2524,6 +2662,7 @@ async function startServer() {
     if (body.tools && typeof body.tools === "object") {
       updateToolSettings(body.tools);
     }
+    if (body.jev && typeof body.jev === "object") mergeJev(state.jev, body.jev);
 
     save();
     res.json(await settingsWithTools());

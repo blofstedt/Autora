@@ -20,6 +20,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { AUTO_ORDER, PROVIDERS, providerSpec } from "./providers";
+import { DEFAULT_JEV, clampThreshold, type JevSettings } from "./jev/router";
 
 export type ApprovalMode = "always" | "risky" | "never";
 
@@ -75,6 +76,8 @@ export interface PersistedState {
   /** Which of the agent's groups of tools are on, and how tightly each is
       gated. See ./tools for what each group actually is. */
   tools: ToolSettings;
+  /** Jev Mode: fast scored decisions where the model supports them. */
+  jev: JevSettings;
 }
 
 const DEFAULT_PROMPT =
@@ -145,6 +148,14 @@ export function mergeTools(into: ToolSettings, patch: any): ToolSettings {
   return into;
 }
 
+/** Same trust as mergeTools: arbitrary JSON in, sane settings out. */
+export function mergeJev(into: JevSettings, patch: any): JevSettings {
+  if (!patch || typeof patch !== "object") return into;
+  if (typeof patch.enabled === "boolean") into.enabled = patch.enabled;
+  if (patch.threshold !== undefined) into.threshold = clampThreshold(patch.threshold);
+  return into;
+}
+
 /** How many turns of spend history to keep. Enough for a month of heavy use;
     the running totals are folded into `carried` as entries fall off the end,
     so the lifetime figure stays right even once detail is dropped. */
@@ -182,6 +193,7 @@ function blank(): PersistedState {
     budgetUsd: null,
     usage: [],
     tools: defaultTools(),
+    jev: { ...DEFAULT_JEV },
   };
 }
 
@@ -203,6 +215,7 @@ function read(): PersistedState {
        group is merged rather than replaced: a group added in a later release
        must not be missing from a file saved before it existed. */
     if (raw.tools) mergeTools(state.tools, raw.tools);
+    if (raw.jev && typeof raw.jev === "object") mergeJev(state.jev, raw.jev);
     if (raw.carried && typeof raw.carried === "object") {
       carried = {
         cost: Number(raw.carried.cost) || 0,

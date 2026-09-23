@@ -11,6 +11,7 @@ import { PermissionCell } from "./PermissionCell";
 import { ImageCell } from "./ImageCell";
 import { AskCell } from "./AskCell";
 import { Markdown } from "./Markdown";
+import { JevCell } from "./JevCell";
 import type { LiveFrame } from "../lib/types";
 
 /** Within this many pixels of the bottom counts as "watching the live edge". */
@@ -300,6 +301,8 @@ function CellView({
         />
       );
     }
+    case "jev":
+      return <JevCell decision={cell.decision} />;
     case "ask":
       return <AskCell ask={cell.ask} sessionId={sessionId} readOnly={!live} />;
     case "images":

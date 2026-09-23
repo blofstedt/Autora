@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.9.7"
+version: "0.9.8"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -74,27 +74,25 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  A cleaner desktop. The side panel for the live browser is gone: the page
-  now sits in the conversation on every screen size, where you click and type
-  in it directly, and the conversation itself is wider. The sessions list,
-  header, memory bar and conversation now share one surface instead of three
-  different shades.
+  New: Jev Mode, fast scored decisions. Where a decision has a fixed set of
+  answers, every option's probability is read in one parallel pass instead
+  of the answer being written out, and it is accepted only if each part
+  clears a confidence threshold (0.75 by default, adjustable in Settings).
+  Anything less certain goes to the normal path, exactly as before.
 
 
-  The message box has been redesigned: one rounded box that grows as you
-  write, voice controls on the left, a round Send button that lights up when
-  there is something to send, and Stop beside it while the agent works.
+  Its first job is memory recall: with a model that returns token
+  probabilities -- a local server (vLLM, llama.cpp, Ollama), GPT-4o/4.1,
+  DeepSeek, some Gemini models -- each memory is now judged relevant or not
+  to your request, with a confidence you can see in the thread, instead of
+  by keyword. Anthropic models and reasoning models (GPT-5, o-series) do not
+  return probabilities, so on those nothing changes. Jev can be switched off
+  in Settings.
 
 
-  The full memory graph now looks like the memory bar above the chat -- the
-  same violet field, glowing nodes and purple links -- and marks the memories
-  this session has recalled or written, with the latest one pulsing.
-
-
-  Earlier in this series: the live browser is used directly (no take-control
-  toolbar), the agent asks questions and hands over sign-ins with cards,
-  replies are formatted, the memory bar folds to one line, and phones no
-  longer scroll sideways.
+  Also in this release: a one-surface desktop layout, a redesigned message
+  box, the live browser used directly in the chat, question cards, formatted
+  replies, and a memory graph that folds to one line.
 
 dependencies: []
 path: ""
