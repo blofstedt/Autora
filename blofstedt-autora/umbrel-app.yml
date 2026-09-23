@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.9.10"
+version: "0.9.11"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -74,10 +74,10 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  A new sidebar, modelled on the Hermes dashboard: Status, Chat, Config,
-  API Keys, Sessions, Logs, Analytics, Cron, Skills, Memory, MCP and System,
-  with your recent sessions under it. On a phone the same list opens as a
-  drawer from the menu button at the top left.
+  On a desktop the memory graph now has its own pane on the right of the
+  chat, the full height of the window, so the whole graph is always in view
+  without opening the Memory page. Phones and narrower windows keep the
+  banner above the conversation.
 
 
   New pages. Status shows the whole installation at a glance. Sessions lets

@@ -33,6 +33,22 @@ import {
 } from "./components/Icons";
 
 const RIBBON_KEY = "autora.ribbon";
+/** Where the rail comes out (see styles.css). From here up there is room for
+    the memory graph as its own pane on the right instead of a banner. */
+const DESKTOP_QUERY = "(min-width: 1180px)";
+
+/** Whether a media query matches, kept current as the window resizes. */
+function useMedia(query: string): boolean {
+  const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const list = window.matchMedia(query);
+    const onChange = () => setMatches(list.matches);
+    onChange();
+    list.addEventListener("change", onChange);
+    return () => list.removeEventListener("change", onChange);
+  }, [query]);
+  return matches;
+}
 
 /** How often to re-read the session list, so sessions started elsewhere (or
     from another tab) show up without a reload. */
@@ -80,6 +96,7 @@ export function App() {
     } catch { /* storage blocked: fall through to the default */ }
     return !window.matchMedia("(max-width: 680px)").matches;
   });
+  const desktop = useMedia(DESKTOP_QUERY);
   const toggleRibbon = useCallback(() => {
     setRibbonOpen((open) => {
       try { localStorage.setItem(RIBBON_KEY, open ? "closed" : "open"); } catch { /* ignore */ }
@@ -597,14 +614,17 @@ export function App() {
         <div className="chat-view" hidden={page !== "chat"}>
 
         {/* Always on, above the conversation: what the agent knows, and what is
-            happening to it as it happens. */}
-        <MemoryRibbon
-          memories={view.memories}
-          onOpen={openKnowledge}
-          onOpenSkills={openSkills}
-          collapsed={!ribbonOpen}
-          onToggle={toggleRibbon}
-        />
+            happening to it as it happens. On a desktop it has its own pane on
+            the right instead. */}
+        {!desktop && (
+          <MemoryRibbon
+            memories={view.memories}
+            onOpen={openKnowledge}
+            onOpenSkills={openSkills}
+            collapsed={!ribbonOpen}
+            onToggle={toggleRibbon}
+          />
+        )}
 
         <main className="page">
           <Thread
@@ -830,6 +850,19 @@ export function App() {
           </button>
         </nav>
       </div>
+
+      {/* The third pane on a desktop: the whole memory graph beside the
+          conversation, tall enough to see it all without opening anything. */}
+      {desktop && page === "chat" && (
+        <aside className="mind-slot" aria-label="Memory">
+          <MemoryRibbon
+            memories={view.memories}
+            onOpen={openKnowledge}
+            onOpenSkills={openSkills}
+            pane
+          />
+        </aside>
+      )}
 
       {sessionsOpen && (
         <Sessions

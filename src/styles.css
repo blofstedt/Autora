@@ -4070,3 +4070,34 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
   .logs-toolbar .page-select { flex: 1 1 40%; }
   .logs-toolbar .page-search { flex: 1 1 50%; }
 }
+
+/* ============================================================================
+   The memory graph as the third pane (desktop)
+
+   Rail on the left, conversation in the middle, the whole graph on the right --
+   a little wider than the rail, and the full height of the window, so nothing
+   needs opening to see it.
+   ============================================================================ */
+.mind-slot { display: none; }
+@media (min-width: 1180px) {
+  .mind-slot {
+    display: flex; flex: 0 0 300px; min-width: 0; min-height: 0;
+    border-left: 1px solid var(--border);
+  }
+  .neural-web.is-pane {
+    flex: 1; max-width: none; margin: 0; padding: 52px 12px 44px;
+    border-bottom: 0; box-shadow: none;
+  }
+  .neural-web.is-pane .neural-stage { height: auto; min-height: 0; }
+  .neural-web.is-pane .web-tag-group { top: 12px; left: 12px; right: 12px; flex-wrap: wrap; }
+  .neural-web.is-pane .neural-latest {
+    display: block; left: 0; right: 0; bottom: -32px; max-width: none; transform: none;
+    text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .neural-web.is-pane .neural-latest .neural-pulse-dot {
+    display: inline-block; margin-right: 6px; vertical-align: middle;
+  }
+}
+@media (min-width: 1500px) {
+  .mind-slot { flex-basis: 340px; }
+}
