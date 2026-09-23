@@ -547,15 +547,11 @@ export function App() {
               if (next === "system") setSystemTab("status");
               navigate(next);
             }}
-            sessions={sessions}
-            current={sessionId}
             relayOn={!!relay?.connected}
             alert={pending > 0}
-            onPick={openSession}
             onNew={() => { void newSession(); navigate("chat"); }}
             appearance={appearance}
             onAppearance={changeAppearance}
-            onOpenKeys={() => { setConfigJump({ tab: "keys" }); navigate("config"); }}
             drawer={kind === "drawer"}
             onClose={() => setDrawerOpen(false)}
             // On a desktop the memory graph lives here, square, under the
