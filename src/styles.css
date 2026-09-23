@@ -1885,36 +1885,18 @@ label + .jf-hint { margin-top: -5px; }
   overflow: hidden;
 }
 
-.web-tag-group {
-  position: absolute;
-  top: 10px;
-  left: 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  z-index: 10;
+/* What each node colour means, across the top of the map. */
+.web-legend {
+  position: absolute; top: 10px; left: 12px; right: 52px; z-index: 10;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px;
+  font-size: 11px; font-weight: 600; color: var(--glow-text);
+  pointer-events: none;
 }
-
-.neural-tag {
-  background: rgba(var(--glow-deep-rgb),  0.22);
-  border: 1px solid rgba(var(--glow-rgb),  0.45);
-  color: var(--glow-text);
-  border-radius: 99px;
-  padding: 3px 10px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
-  font-weight: 600;
-  backdrop-filter: blur(8px);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-.neural-tag:hover {
-  background: rgba(var(--glow-deep-rgb),  0.35);
-  border-color: rgba(var(--glow-light-rgb),  0.6);
-  box-shadow: 0 0 12px rgba(var(--glow-rgb),  0.4);
-}
+.neural-web.is-pane .web-legend { right: 12px; }
+.web-legend-item { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.web-legend-item i { width: 8px; height: 8px; border-radius: 50%; }
+.neural-web[role="button"] { cursor: pointer; }
+.neural-web:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 .skills-tag {
   background: rgba(var(--glow-rgb),  0.18);
@@ -1936,15 +1918,7 @@ label + .jf-hint { margin-top: -5px; }
   border-color: var(--glow-light);
   box-shadow: 0 0 10px rgba(var(--glow-light-rgb),  0.35);
 }
-.skills-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--glow-light);
-  box-shadow: 0 0 6px var(--glow-light);
-  display: inline-block;
-  animation: pulseSkills 2.2s infinite ease-in-out;
-}
+
 @keyframes pulseSkills {
   0%, 100% { opacity: 0.6; transform: scale(0.9); }
   50% { opacity: 1; transform: scale(1.2); }
@@ -3047,7 +3021,7 @@ label + .jf-hint { margin-top: -5px; }
   /* The memory graph is ambient, not the thing you came to read. At 145px it
      took a fifth of a phone screen away from the conversation. */
   .neural-stage { height: 92px; }
-  .web-tag-group { top: 8px; left: 10px; gap: 6px; }
+  .web-legend { top: 8px; left: 10px; }
   .neural-latest { bottom: 6px; right: 10px; max-width: 70%; }
 
   /* Reading size. The body copy was 13.5px, which is a desktop size held at
@@ -3939,7 +3913,7 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 .neural-web.is-pane {
   width: 100%; max-width: none; margin: 0; border-bottom: 0; box-shadow: none;
 }
-.neural-web.is-pane .web-tag-group { top: 12px; left: 12px; right: 12px; flex-wrap: wrap; }
+.neural-web.is-pane .web-legend { top: 12px; }
 
 /* ============================================================================
    The Mind: preferences, procedures, facts and skills, as four buckets

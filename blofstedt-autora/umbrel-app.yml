@@ -85,6 +85,12 @@ releaseNotes: >-
   it holds only the theme and font choices. Config and System are still in
   the page list, and API keys are on the Config page. The "Recent" sessions
   list is gone from the menu; open past sessions from the Sessions page.
+
+
+  The memory map now has a legend across the top showing the colour for
+  preferences, procedures, facts and skills, in place of the memory and
+  skills counters. Tapping the map anywhere opens the Mind page and selects
+  it in the menu, on desktop and on phones.
 dependencies: []
 path: ""
 defaultUsername: ""
