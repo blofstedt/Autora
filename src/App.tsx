@@ -9,6 +9,7 @@ import { Rail, pageLabel, PAGES, type PageId } from "./components/Rail";
 import { SessionsPage } from "./components/pages/SessionsPage";
 import { SystemPage, isSystemTab, type SystemTab } from "./components/pages/SystemPage";
 import { McpPage } from "./components/pages/McpPage";
+import { ArtifactsPage } from "./components/pages/ArtifactsPage";
 import { MindPage } from "./components/pages/MindPage";
 import type { Bucket } from "./lib/memory";
 import {
@@ -646,6 +647,7 @@ export function App() {
             {page === "sessions" && (
               <SessionsPage current={sessionId} onOpen={openSession} onChanged={refreshSessions} />
             )}
+            {page === "artifacts" && <ArtifactsPage sessions={sessions} onOpenSession={openSession} />}
             {page === "mcp" && <McpPage />}
             {page === "cron" && <Schedule embedded onOpenSession={openSession} />}
             {page === "mind" && (

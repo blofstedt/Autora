@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.9.14"
+version: "0.9.15"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -74,14 +74,14 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Dictation no longer repeats itself. On Android, speaking "this is a test"
-  could fill the box with "this this is this is a this is a test", because the
-  phone reports every step of a sentence as a new, finished phrase; each word
-  now goes in once. The memory graph is now a square everywhere, so it has the
-  same shape on a phone and a desktop. On a desktop it sits at the bottom of a
-  slightly wider left menu instead of in its own column on the right, which
-  gives the conversation more room. On a phone it still folds to one line and
-  opens as a square.
+  New Artifacts page in the left menu, with two sections. "Made by Autora"
+  holds what the agent creates: every image it generates is kept there, and
+  it can save documents and other files it makes for you. "Uploaded by you"
+  holds your own documents, photos and other files: upload them with the
+  button or drop them anywhere on the page. You can open, download or delete
+  any file, and the agent can list and read both sections, so it can work
+  with what you give it. Files are kept on disk and survive restarts and
+  updates.
 dependencies: []
 path: ""
 defaultUsername: ""

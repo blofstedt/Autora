@@ -29,6 +29,9 @@ import {
 } from "./server/llm";
 import { billingSummary } from "./server/billing";
 import { dropSession, fromDataUrl, getBlob, putBlob } from "./server/blobs";
+import {
+  MAX_ARTIFACT_BYTES, deleteArtifact, getArtifact, listArtifacts, readArtifact, saveArtifact,
+} from "./server/artifacts";
 import { ContextEngine, type CompactionReport } from "./server/context";
 import { LiveBrowser, VIEWPORT, probeBrowser, type PageRead } from "./server/browser";
 import {
@@ -1742,6 +1745,67 @@ async function startServer() {
     res.end(blob.data);
   });
 
+  // 3b'. Artifacts: what the agent made and what you uploaded, kept on disk.
+
+  app.get("/api/artifacts", (_req: Request, res: Response) => {
+    res.json({ artifacts: listArtifacts(), max: MAX_ARTIFACT_BYTES });
+  });
+
+  /** The body is the file itself, sent as octet-stream so the JSON parser
+      above leaves it alone; its name and type ride in headers, so there is no
+      multipart parser to add for the one form that needs one. */
+  app.post(
+    "/api/artifacts",
+    express.raw({ type: () => true, limit: MAX_ARTIFACT_BYTES }),
+    (req: Request, res: Response) => {
+      const data = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+      if (data.byteLength === 0) return res.status(400).json({ error: "The file is empty." });
+      let name = "upload";
+      try {
+        name = decodeURIComponent(String(req.headers["x-file-name"] || "upload"));
+      } catch {
+        // A malformed name is not worth refusing the file over.
+      }
+      try {
+        const artifact = saveArtifact({
+          origin: "user", name, data, mime: String(req.headers["x-file-type"] || ""),
+        });
+        log("info", "artifacts", `uploaded ${artifact.name} (${artifact.size} bytes)`);
+        res.json({ artifact });
+      } catch (err: any) {
+        res.status(400).json({ error: err?.message ?? "Could not save the file." });
+      }
+    },
+  );
+
+  app.get("/api/artifacts/:id", (req: Request, res: Response) => {
+    const meta = getArtifact(req.params.id);
+    const data = meta ? readArtifact(meta.id) : null;
+    if (!meta || !data) return res.status(404).json({ error: "No such artifact" });
+    const download = req.query.download !== undefined;
+    // Uploaded HTML or SVG opened inline would run with this app's origin;
+    // only pictures and PDFs are shown in place, everything else downloads.
+    const inline = !download && (
+      (meta.mime.startsWith("image/") && meta.mime !== "image/svg+xml") ||
+      meta.mime === "application/pdf" || meta.mime === "text/plain" ||
+      meta.mime.startsWith("audio/") || meta.mime.startsWith("video/"));
+    res.setHeader("Content-Type", inline ? meta.mime : "application/octet-stream");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Content-Security-Policy", "sandbox");
+    res.setHeader(
+      "Content-Disposition",
+      `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(meta.name)}`,
+    );
+    res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
+    res.setHeader("Content-Length", String(data.byteLength));
+    res.end(data);
+  });
+
+  app.delete("/api/artifacts/:id", (req: Request, res: Response) => {
+    if (!deleteArtifact(req.params.id)) return res.status(404).json({ error: "No such artifact" });
+    res.json({ ok: true });
+  });
+
   // 3c. The browser: what it is doing, and telling it to do something.
 
   /** Whether there is a browser at all, and whether a page is open in it. */
@@ -2205,6 +2269,7 @@ async function startServer() {
               },
             },
             vault: (id) => context.vault.get(id),
+            session: session.id,
             ask: (request) => askPerson(session, request),
           });
 

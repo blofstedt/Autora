@@ -4108,3 +4108,46 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 .shot-log .msg-text > :first-child { margin-top: 0; }
 .shot-log .msg-text > :last-child { margin-bottom: 0; }
 @media (min-width: 1000px) { .shot-log { max-height: 260px; } }
+
+/* Artifacts */
+.art-lede { margin: 0; }
+.art-section { display: flex; flex-direction: column; gap: 10px; }
+.art-head { display: flex; align-items: center; gap: 9px; min-height: 36px; }
+.art-head h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.art-count {
+  font-size: 11.5px; font-family: var(--mono); color: var(--text-3);
+  padding: 1px 7px; border-radius: 99px; background: var(--s2); border: 1px solid var(--border);
+}
+.art-empty { margin: 0; padding: 18px 16px; border-radius: var(--r); border: 1px dashed var(--border); }
+.art-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+.art-card {
+  display: flex; flex-direction: column; min-width: 0; overflow: hidden;
+  border-radius: var(--r); background: var(--s2); border: 1px solid var(--border);
+  transition: border-color 0.15s var(--ease);
+}
+.art-card:hover { border-color: var(--accent-line); }
+.art-thumb {
+  display: flex; align-items: center; justify-content: center; aspect-ratio: 4 / 3;
+  background: var(--sink); color: var(--text-3); text-decoration: none; overflow: hidden;
+}
+.art-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.art-kind { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.art-kind b { font-size: 11px; font-weight: 650; letter-spacing: 0.08em; color: var(--text-2); }
+.art-meta { display: flex; flex-direction: column; gap: 2px; padding: 9px 11px 4px; min-width: 0; }
+.art-meta b { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.art-meta em { font-style: normal; font-size: 11.5px; color: var(--text-3); }
+.art-note {
+  font-size: 11.5px; color: var(--text-2); overflow: hidden;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.art-session {
+  align-self: flex-start; max-width: 100%; padding: 0; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: 11.5px; color: var(--accent-light); text-align: left;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.art-session:hover { text-decoration: underline; }
+.art-acts { display: flex; justify-content: flex-end; gap: 2px; padding: 0 6px 6px; margin-top: auto; }
+.art-dragging { outline: 2px dashed var(--accent-line); outline-offset: -8px; }
+@media (max-width: 680px) {
+  .art-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+}

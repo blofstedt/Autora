@@ -423,3 +423,15 @@ export const IconEdit = ({ size = 16, className }: Props) => (
     <path d="M14.5 5.5l4 4L9 19H5v-4z" />
   </svg>
 );
+
+export const IconFolder = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M3.5 7A1.5 1.5 0 0 1 5 5.5h4l2 2.25h8A1.5 1.5 0 0 1 20.5 9.25V17A1.5 1.5 0 0 1 19 18.5H5A1.5 1.5 0 0 1 3.5 17z" />
+  </svg>
+);
+
+export const IconUpload = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M12 15.5V4.5M7 9l5-5 5 5M5 19.5h14" />
+  </svg>
+);

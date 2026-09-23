@@ -34,6 +34,10 @@ import { mergeTools, save, state, allSecrets, secretFor, redactSecrets } from ".
 import { describeCaptchas, probeBrowser, VIEWPORT, type LiveBrowser, type PageRead } from "./browser";
 import { relayAction, relayConnected, relayStatus } from "./desktop";
 import { CONTEXT_CONFIG, readVault } from "./context";
+import {
+  artifactPath, formatSize, getArtifact, isText, listArtifacts, readArtifact, saveArtifact,
+  MAX_ARTIFACT_BYTES,
+} from "./artifacts";
 
 // --------------------------------------------------------------- settings --
 
@@ -89,8 +93,9 @@ export type AskAnswer = { cancelled: boolean; choices: string[]; text: string; w
 
 export interface ToolSpec {
   name: string;
-  /** "person" is not a setting: asking is always possible. */
-  group: ToolGroup | "person" | "mcp";
+  /** "person" and "files" are not settings: asking is always possible, and
+      so is handing over or reading back an artifact. */
+  group: ToolGroup | "person" | "files" | "mcp";
   /** What the model is told this does. Written for the model, not the UI. */
   description: string;
   /** JSON Schema for the arguments. Every vendor accepts this shape. */
@@ -489,6 +494,67 @@ const TOOLS: ToolSpec[] = [
     },
   },
 
+  // ---------------------------------------------------------- artifacts --
+  {
+    name: "artifact_save",
+    group: "files",
+    description:
+      "Save a file you made as an artifact, so the person can find, open and " +
+      "download it on the Artifacts page long after this conversation. Use it " +
+      "for deliverables -- a report, a document, a spreadsheet, a script, an " +
+      "export -- not for scratch output. Give either `content` (the text of " +
+      "the file) or `path` (a file on this host, e.g. one you built with the " +
+      "terminal). Images from image_generate are saved automatically.",
+    parameters: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description: "File name with extension, e.g. q3-report.md or data.csv.",
+        },
+        content: { type: "string", description: "The file's text." },
+        path: { type: "string", description: "Absolute path of a file on this host to save instead." },
+        note: { type: "string", description: "One line on what it is." },
+      },
+      required: ["name"],
+    },
+  },
+  {
+    name: "artifact_list",
+    group: "files",
+    description:
+      "List the artifacts in the workspace: files the person uploaded for you " +
+      "(documents, photos, spreadsheets) and files you made earlier. When the " +
+      "person mentions something they uploaded, look here first.",
+    parameters: {
+      type: "object",
+      properties: {
+        origin: {
+          type: "string",
+          enum: ["all", "user", "agent"],
+          description: "user = uploaded by the person, agent = made by you. Default all.",
+        },
+      },
+    },
+  },
+  {
+    name: "artifact_read",
+    group: "files",
+    description:
+      "Read an artifact by id. Text files come back as text (use offset and " +
+      "length for long ones); images are shown in the conversation; anything " +
+      "else is reported with the path on this host, so the terminal can open it.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The artifact id, e.g. file_0123456789abcdef." },
+        offset: { type: "number", description: "Character to start from. Defaults to 0." },
+        length: { type: "number", description: "How many characters to return." },
+      },
+      required: ["id"],
+    },
+  },
+
   // --------------------------------------------------------------- memory --
   {
     name: "memory_write",
@@ -668,7 +734,8 @@ export async function availableTools(): Promise<ToolSpec[]> {
   const groups = await groupStates();
   const usable = new Set(groups.filter((g) => g.available).map((g) => g.group));
   return [
-    ...TOOLS.filter((t) => t.group === "person" || usable.has(t.group as ToolGroup)),
+    ...TOOLS.filter((t) =>
+      t.group === "person" || t.group === "files" || usable.has(t.group as ToolGroup)),
     ...mcpSpecs(),
   ];
 }
@@ -742,6 +809,10 @@ export function renderCall(spec: ToolSpec, args: Record<string, any>): string {
       return `search web for "${args.query}"`;
     case "image_generate":
       return `generate image: "${args.prompt}"`;
+    case "artifact_save":
+      return `save artifact ${args.name}`;
+    case "artifact_read":
+      return `read artifact ${args.id}`;
     default: {
       const rest = Object.keys(args).length ? ` ${JSON.stringify(args)}` : "";
       return `${spec.name}${rest}`;
@@ -777,6 +848,8 @@ export interface ToolContext {
   };
   /** A tool output this session kept out of the prompt, by artifact id. */
   vault: (id: string) => string | null;
+  /** The session the call runs in, so what it makes can say where from. */
+  session: string;
   /** Put a question to the person and wait for the answer. */
   ask: (request: AskRequest) => Promise<AskAnswer>;
 }
@@ -1085,6 +1158,19 @@ async function runHttpRequest(args: {
   }
 }
 
+/** A file name from a sentence: a few lowercase words, hyphenated. */
+function slug(text: string): string {
+  const words = text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(" ").slice(0, 6);
+  return words.join("-").slice(0, 60) || "image";
+}
+
+function artifactLine(a: { id: string; origin: string; name: string; mime: string; size: number; ts: number; note?: string }) {
+  const who = a.origin === "user" ? "uploaded by the person" : "made by you";
+  const when = new Date(a.ts).toISOString().slice(0, 16).replace("T", " ");
+  return `- ${a.id}  ${a.name}  (${a.mime}, ${formatSize(a.size)}, ${who}, ${when})${
+    a.note ? ` -- ${a.note.replace(/\s+/g, " ").slice(0, 120)}` : ""}`;
+}
+
 async function generateImageTool(prompt: string, ctx: ToolContext): Promise<ToolOutcome> {
   const apiKey =
     process.env.GEMINI_API_KEY ||
@@ -1118,9 +1204,21 @@ async function generateImageTool(prompt: string, ctx: ToolContext): Promise<Tool
     const blob = ctx.putBlob(buffer, "image/jpeg");
     ctx.showImage(blob, prompt, `Generated: ${prompt}`, { w: 1024, h: 1024 });
 
+    // Kept as an artifact too: the blob goes when the process does.
+    let saved = "";
+    try {
+      const art = saveArtifact({
+        origin: "agent", name: `${slug(prompt)}.jpg`, data: buffer,
+        mime: "image/jpeg", session: ctx.session, note: prompt,
+      });
+      saved = ` Saved as artifact ${art.id}.`;
+    } catch {
+      // The picture is still in the thread; losing the copy is not a failure.
+    }
+
     return {
       ok: true,
-      summary: `Generated image for prompt: "${prompt}". It is now displayed in the conversation for the person to see.`,
+      summary: `Generated image for prompt: "${prompt}". It is now displayed in the conversation for the person to see.${saved}`,
       preview: `Generated image: ${prompt.slice(0, 80)}`,
     };
   } catch (err: any) {
@@ -1451,6 +1549,84 @@ export async function runTool(
           : { ok: false, summary: result.error ?? "The scroll failed." };
       }
 
+      // ------------------------------------------------------ artifacts --
+      case "artifact_save": {
+        const name = String(args.name ?? "").trim();
+        if (!name) return { ok: false, summary: "An artifact needs a file name." };
+        const from = String(args.path ?? "").trim();
+        let data: Buffer;
+        if (from) {
+          const stat = fs.statSync(from);
+          if (!stat.isFile()) return { ok: false, summary: `${from} is not a file.` };
+          if (stat.size > MAX_ARTIFACT_BYTES) {
+            return { ok: false, summary: `${from} is ${formatSize(stat.size)}; artifacts are capped at ${formatSize(MAX_ARTIFACT_BYTES)}.` };
+          }
+          data = fs.readFileSync(from);
+        } else if (typeof args.content === "string") {
+          data = Buffer.from(args.content, "utf8");
+        } else {
+          return { ok: false, summary: "Give either the file's content or a path to it." };
+        }
+        const art = saveArtifact({
+          origin: "agent", name, data, session: ctx.session,
+          note: String(args.note ?? "").trim() || undefined,
+        });
+        return {
+          ok: true,
+          summary: `Saved as artifact ${art.id} (${art.name}, ${formatSize(art.size)}). The person can open and download it from the Artifacts page.`,
+          preview: `${art.name} · ${formatSize(art.size)}`,
+        };
+      }
+
+      case "artifact_list": {
+        const origin = String(args.origin ?? "all");
+        const all = listArtifacts().filter((a) => origin === "all" || a.origin === origin);
+        if (all.length === 0) {
+          return { ok: true, summary: "There are no artifacts yet.", preview: "0 artifacts" };
+        }
+        return {
+          ok: true,
+          summary: all.slice(0, 200).map(artifactLine).join("\n"),
+          preview: `${all.length} artifact${all.length === 1 ? "" : "s"}`,
+        };
+      }
+
+      case "artifact_read": {
+        const id = String(args.id ?? "").trim();
+        const meta = getArtifact(id);
+        const data = meta ? readArtifact(id) : null;
+        if (!meta || !data) return { ok: false, summary: `There is no artifact "${id}". Use artifact_list to see what there is.` };
+        if (meta.mime.startsWith("image/") && meta.mime !== "image/svg+xml") {
+          const blob = ctx.putBlob(data, meta.mime);
+          ctx.showImage(blob, meta.name, meta.name);
+          return {
+            ok: true,
+            summary: `${artifactLine(meta)}\nThe image is now shown in the conversation.`,
+            preview: meta.name,
+          };
+        }
+        if (!isText(meta.mime)) {
+          return {
+            ok: true,
+            summary: `${artifactLine(meta)}\nNot a text file. It is on this host at ${
+              artifactPath(meta.id)} if the terminal can read it (pdftotext, unzip, python...).`,
+            preview: meta.name,
+          };
+        }
+        const text = data.toString("utf8");
+        const room = CONTEXT_CONFIG.maxToolTokens * 4 - 200;
+        const offset = Math.max(0, Number(args.offset) || 0);
+        const length = Math.min(room, Math.max(1, Number(args.length) || room));
+        const part = text.slice(offset, offset + length);
+        const rest = text.length - (offset + part.length);
+        return {
+          ok: true,
+          summary: `${meta.name} (${text.length} characters${offset ? `, from ${offset}` : ""}):\n\n${part}${
+            rest > 0 ? `\n\n[${rest} more characters -- read on with offset ${offset + part.length}]` : ""}`,
+          preview: meta.name,
+        };
+      }
+
       // --------------------------------------------------------- memory --
       case "memory_write": {
         const title = String(args.title ?? "").trim();
@@ -1554,6 +1730,12 @@ export async function capabilityBriefing(): Promise<string> {
         "named mcp__<server>__<tool>. Use them like any other tool.",
     );
   }
+  lines.push(
+    "- Artifacts: always available. Tools: artifact_list, artifact_read, " +
+      "artifact_save. Files the person uploaded (documents, photos...) are " +
+      "there for you to read; save the deliverables you make with " +
+      "artifact_save so they can be found and downloaded later.",
+  );
   lines.push(
     "- Asking the person: always available. Tool: ask_user. When you are " +
       "genuinely stuck on something only they can settle, ask with a short " +
