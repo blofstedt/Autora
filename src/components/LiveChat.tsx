@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useDictation } from "../lib/voice";
-import { IconX } from "./Icons";
 
 /** Quiet for this long after a phrase settles and the thought is finished.
     Short enough not to feel like waiting, long enough to think mid-sentence. */
@@ -18,22 +17,6 @@ const UNSETTLED_MS = 1800;
 
 /** Single stray syllables are usually the room, not a request. */
 const MIN_CHARS = 2;
-
-type State = "listening" | "thinking" | "speaking" | "blocked";
-
-const HEADING: Record<State, string> = {
-  listening: "Listening",
-  thinking: "Working",
-  speaking: "Speaking",
-  blocked: "Voice unavailable",
-};
-
-const HINT: Record<State, string> = {
-  listening: "Say what you need. It sends when you stop.",
-  thinking: "Working on it — keep talking to interrupt.",
-  speaking: "Tap the orb to cut in.",
-  blocked: "",
-};
 
 /**
  * Live voice, in place of the composer.

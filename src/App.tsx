@@ -44,7 +44,7 @@ export function App() {
   const [browser, setBrowser] = useState<BrowserState | null>(null);
   const [draft, setDraft] = useState("");
   const [liveOn, setLiveOn] = useState(false);
-  const [userSpeaking, setUserSpeaking] = useState(false);
+  const [userSpeaking] = useState(false);
   const [mobileTab, setMobileTab] = useState<"chat" | "tasks">("chat");
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const [knowledgeInitialKind, setKnowledgeInitialKind] = useState<"skill" | "all">("all");

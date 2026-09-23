@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.9.0"
+version: "0.9.1"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -73,44 +73,19 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The agent has real tools now, instead of a description of some.
+  Four new tools, and they run. Web search, HTTP requests, image
+  generation, and a browser handoff that stops the agent mid-task and
+  lets you finish a login yourself before it carries on.
 
 
-  Autora advertised a terminal, a browser it could navigate, and control of
-  your computer. Two of those three did not exist, the third it could not
-  steer, and it was told about none of them -- so it answered questions about
-  its own abilities by guessing. Ask whether it could run a command and it said
-  no, correctly, because there was no code anywhere that could run one. Ask it
-  to run one and the console drew a terminal, printed output, and reported exit
-  code 0, all of it written in advance by the app rather than by anything that
-  had happened.
+  Settings gains a secrets store. Paste a token once -- GITHUB_TOKEN,
+  TAVILY_API_KEY, whatever a tool asks for -- and it is injected into the
+  commands and tools that need it rather than typed into the task text.
 
 
-  Settings now has a Tools section listing four things, each of them real. A
-  terminal: a shell on the machine Autora is installed on, with output
-  streaming into the thread as it arrives and the exit code the command
-  actually returned. The browser: the Chromium that was always there, now
-  something the agent can open pages with, read, click, fill in and scroll,
-  rather than only be handed a page you named yourself. Computer control: a
-  working relay, and a working relay.py to download -- the file this app served
-  until now was a two-line stub that printed "ready" and exited, which is why
-  the desktop has never once connected. And memory, as something the agent
-  chooses to write rather than something triggered by the word "save"
-  appearing in your message.
+  The container now ships bash, curl and git, so a command the agent runs
+  lands in the same kind of shell you would use yourself.
 
-
-  Each group can be switched off, and each says whether it can be used at all
-  -- no browser installed on the server, no relay dialled in -- in a sentence
-  that names the reason. The agent is told the same thing, from the same place,
-  so it can tell you which of the two it is instead of guessing again.
-
-
-  Approvals have teeth. A command now stops and waits for you, showing exactly
-  what will run; declining abandons it for good and the agent is told not to
-  ask twice. Those cards were decorative before: the reply went nowhere,
-  because nothing was waiting on it. Stop works too -- it used to kill the
-  shell and leave whatever the shell had started running to completion behind a
-  console that said it had stopped.
 
 dependencies: []
 path: ""
