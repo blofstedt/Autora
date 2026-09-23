@@ -744,7 +744,7 @@ export function derive(events: AutoraEvent[]): Derived {
     }
   }
 
-  for (const b of buckets) gatherScreenWork(b);
+  gatherScreenWork(buckets);
 
   // The newest browser cell is the only one whose page is still on screen.
   let liveBrowserSeq: number | null = null;
@@ -805,12 +805,11 @@ export function isRunning(events: AutoraEvent[]): boolean {
 
 type ScreenCell = Extract<Cell, { kind: "screen" }>;
 
-/** Said while the agent works a page, and so shown in the page's card. */
-const NARRATION = new Set<Cell["kind"]>(["reply", "jev", "note", "tool"]);
-/** Ends a stretch of screen work: something with a card of its own that
-    is not about the page. Asks and pictures sit beside the card without
-    ending it -- a sign-in is part of working the page. */
-const BREAKS = new Set<Cell["kind"]>(["terminal", "file", "kanban", "permission"]);
+/** Stay in the conversation even while a page is being worked: things the
+    person has to answer or act on, and the pictures handed over. They sit
+    beside the card without ending it -- a sign-in is part of working the
+    page. Everything else said or done meanwhile is shown inside the card. */
+const KEPT_OUT = new Set<Cell["kind"]>(["ask", "permission", "kanban", "images"]);
 
 /** The screen card a still-running turn is working in, if it is in one. */
 const openBoxes = new WeakMap<Bucket, ScreenCell>();
@@ -819,50 +818,82 @@ function runningBox(bucket: Bucket): ScreenCell | null {
 }
 
 /**
- * Keep a stretch of page or desktop work in one card, and keep what the agent
- * says during it inside that card.
+ * One card per open browser (and one for the desktop), with what the agent
+ * says while it works there shown inside that card.
  *
- * Without this every sentence the agent wrote between two clicks ended the
- * card: the words landed under it, the next frame opened a new card under
- * them, and the page you were watching slid up the screen a paragraph at a
- * time. Now the card stays where it is and the narration scrolls inside it.
+ * The browser is one window: going to a second page is that window moving
+ * on, not a new window. So every stretch of work on the page -- later in the
+ * same turn, after a command in between, or several prompts later -- lands in
+ * the card that already shows it, and that card moves down to where the work
+ * is happening now, carrying its history with it. Only closing the browser
+ * ends the card; the next page after that gets a new one.
  *
- * What the agent says after its last action on the page is the answer, not
- * narration: once the turn is over it goes back in the conversation. While the
- * turn is still running there is no telling yet, so it stays in the card.
+ * What the agent says while a card is being worked is a side conversation
+ * about that page and scrolls inside the card, like a chat thread, so the page
+ * you are watching stays put. What it says after its last action on the page
+ * is the answer, not narration: once the turn is over it goes back in the
+ * conversation. While the turn is still running there is no telling yet, so
+ * it stays in the card.
  */
-function gatherScreenWork(bucket: Bucket) {
-  const out: Cell[] = [];
-  const moved = new Set<Cell>();
-  let box: ScreenCell | null = null;
-  /** Narration since the box's last action: in the box if the page is used
-      again, in the conversation if it is not. */
-  let pending: Cell[] = [];
+function gatherScreenWork(buckets: Bucket[]) {
+  /** The card each screen is shown in, until the browser closes. */
+  const boxes: Record<ScreenCell["source"], ScreenCell | null> = { browser: null, desktop: null };
+  /** Which bucket each card currently sits in, so it can be moved on. */
+  const home = new Map<ScreenCell, Cell[]>();
 
-  for (const cell of bucket.cells) {
-    if (cell.kind === "screen") {
-      if (box && box.source === cell.source) {
-        for (const c of pending) { box.log.push(c); moved.add(c); }
+  for (const bucket of buckets) {
+    const out: Cell[] = [];
+    const moved = new Set<Cell>();
+    /** The card being worked in this bucket. A new prompt starts outside
+        any card: what is said before the page is touched again is not about
+        the page. */
+    let box = null as ScreenCell | null;
+    /** Said since the box's last action: in the box if the page is used
+        again, in the conversation if it is not. */
+    let pending: Cell[] = [];
+
+    for (const cell of bucket.cells) {
+      if (cell.kind === "screen") {
+        const prior = boxes[cell.source];
+        if (prior) {
+          if (box === prior) {
+            for (const c of pending) { prior.log.push(c); moved.add(c); }
+          }
+          prior.shots.push(...cell.shots);
+          prior.actions.push(...cell.actions);
+          if (cell.url) prior.url = cell.url;
+          const from = home.get(prior);
+          if (from !== out) {
+            // Worked again in a later turn: bring the card down to here.
+            if (from) from.splice(from.indexOf(prior), 1);
+            out.push(prior);
+            home.set(prior, out);
+          }
+          box = prior;
+        } else {
+          box = cell;
+          boxes[cell.source] = cell;
+          home.set(cell, out);
+          out.push(cell);
+        }
         pending = [];
-        box.shots.push(...cell.shots);
-        box.actions.push(...cell.actions);
-        if (cell.url) box.url = cell.url;
+        // Closed: the page is gone, and the next one is a new window.
+        if (cell.actions.includes("close")) boxes[cell.source] = null;
         continue;
       }
-      box = cell;
-      pending = [];
       out.push(cell);
-      continue;
+      if (box && !KEPT_OUT.has(cell.kind)) pending.push(cell);
     }
-    out.push(cell);
-    if (!box) continue;
-    if (NARRATION.has(cell.kind)) pending.push(cell);
-    else if (BREAKS.has(cell.kind)) { box = null; pending = []; }
-  }
 
-  if (box && bucket.open) {
-    for (const c of pending) { box.log.push(c); moved.add(c); }
-    openBoxes.set(bucket, box);
+    if (box && bucket.open) {
+      for (const c of pending) { box.log.push(c); moved.add(c); }
+      openBoxes.set(bucket, box);
+    }
+    if (moved.size) {
+      const kept = out.filter((c) => !moved.has(c));
+      out.length = 0;
+      out.push(...kept);
+    }
+    bucket.cells = out;
   }
-  bucket.cells = moved.size ? out.filter((c) => !moved.has(c)) : out;
 }

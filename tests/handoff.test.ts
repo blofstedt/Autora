@@ -57,14 +57,46 @@ async function main() {
     assert.equal(card.log.length, 1, "narration between actions stays in the card");
   });
 
-  await test("a terminal command ends the stretch of page work", () => {
+  await test("a terminal command in between does not open a second card", () => {
     const [bucket] = derive([
       ...working,
       ev(Kind.ToolCall, { name: "bash", args: { command: "ls" } }),
       say("Listed it."),
       frame(),
     ]).buckets;
-    assert.deepEqual(bucket.cells.map((c) => c.kind), ["screen", "reply", "terminal", "reply", "screen"]);
+    assert.deepEqual(bucket.cells.map((c) => c.kind), ["screen"]);
+    const card = bucket.cells[0];
+    if (card.kind !== "screen") return;
+    assert.equal(card.shots.length, 3);
+    assert.deepEqual(card.log.map((c) => c.kind), ["reply", "reply", "terminal", "reply"]);
+  });
+
+  await test("a later prompt on the same browser moves the one card down to it", () => {
+    const buckets = derive([
+      ...working,
+      ev(Kind.AgentDone),
+      ev(Kind.UserMessage, { text: "now the other one" }),
+      say("Going there."),
+      ev(Kind.BrowserNav, { url: "https://example.org" }), frame(),
+      ev(Kind.AgentDone),
+    ]).buckets;
+    assert.deepEqual(buckets.map((b) => b.cells.map((c) => c.kind)), [["reply"], ["reply", "screen"]]);
+    const card = buckets[1].cells[1];
+    if (card.kind !== "screen") return;
+    assert.equal(card.shots.length, 3, "the earlier pages stay in the card's history");
+    assert.equal(card.url, "https://example.org");
+  });
+
+  await test("closing the browser ends the card", () => {
+    const buckets = derive([
+      ...working,
+      ev(Kind.BrowserAction, { action: "close", url: "" }),
+      ev(Kind.AgentDone),
+      ev(Kind.UserMessage, { text: "again" }),
+      ev(Kind.BrowserNav, { url: "https://example.org" }), frame(),
+    ]).buckets;
+    assert.equal(buckets[0].cells.filter((c) => c.kind === "screen").length, 1);
+    assert.equal(buckets[1].cells.filter((c) => c.kind === "screen").length, 1);
   });
 
   console.log("captcha handoff");
