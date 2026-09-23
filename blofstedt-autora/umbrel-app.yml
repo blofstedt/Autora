@@ -94,6 +94,12 @@ releaseNotes: >-
   line (folded by default on phones), and replies are formatted: headings,
   lists, tables, links and code blocks with a copy button.
 
+
+  Also in this release: the conversation no longer scrolls sideways on
+  phones (tapping the message box no longer zooms the page), text and tap
+  targets are larger, and on desktops the session name shows at the top and
+  live voice sits next to Send.
+
 dependencies: []
 path: ""
 defaultUsername: ""
