@@ -914,62 +914,7 @@ button.hint.voice-note:hover { text-decoration: underline; }
 
 /* ------------------------------------------------------------ responsive -- */
 
-/* Bottom navigation bar with Chat, Live icon, and Tasks */
-.mobile-nav {
-  display: flex;
-  flex: 0 0 auto;
-  height: 50px;
-  align-items: center;
-  justify-content: center;
-  padding: 0 16px;
-  padding-bottom: env(safe-area-inset-bottom, 0);
-  background: rgba(var(--s1-rgb),  0.95);
-  backdrop-filter: blur(12px);
-  border-top: 1px solid var(--border);
-  position: relative;
-  z-index: 40;
-}
-
-.mob-tab {
-  flex: 1;
-  max-width: 140px;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  background: none;
-  border: 0;
-  color: var(--text-3);
-  font-family: inherit;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: color 0.15s var(--ease);
-  -webkit-tap-highlight-color: transparent;
-  padding: 4px 0;
-}
-.mob-tab:hover { color: var(--text-2); }
-.mob-tab:active { opacity: 0.65; }
-.mob-tab.on { color: var(--accent); }
-
-/* amber dot on the Chat tab when there's a pending approval */
-.mob-tab .mob-alert {
-  position: absolute;
-  top: 4px;
-  right: calc(50% - 14px);
-  width: 7px; height: 7px;
-  border-radius: 50%;
-  background: var(--warn);
-  border: 2px solid var(--s1);
-  display: none;
-}
-.mob-tab.has-alert .mob-alert { display: block; }
-
-/* The live control, between Chat and Tasks.
+/* The live control, floating just above Send on a phone or tablet.
  *
  * It used to carry a small green light that blinked whenever the session was
  * up -- which is almost always, so it blinked at you through every
@@ -1133,55 +1078,6 @@ button.hint.voice-note:hover { text-decoration: underline; }
   .live-end-word { display: none; }
 
 
-  /* ── bottom nav ── */
-  .mobile-nav {
-    display: flex;
-    flex: 0 0 auto;
-    height: 56px;
-    /* iOS safe-area pushes the bar above the home indicator */
-    padding-bottom: env(safe-area-inset-bottom, 0);
-    background: rgba(var(--s1-rgb),  0.92);
-    backdrop-filter: blur(12px);
-    border-top: 1px solid var(--border);
-    position: relative; /* for the approval dot */
-  }
-
-  .mob-tab {
-    flex: 1;
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 3px;
-    background: none;
-    border: 0;
-    color: var(--text-3);
-    font-family: inherit;
-    font-size: 9.5px;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition: color 0.15s var(--ease);
-    -webkit-tap-highlight-color: transparent;
-  }
-  .mob-tab:active { opacity: 0.65; }
-  .mob-tab.on { color: var(--accent); }
-
-  /* amber dot on the Chat tab when there's a pending approval */
-  .mob-tab .mob-alert {
-    position: absolute;
-    top: 7px;
-    right: calc(50% - 14px);
-    width: 7px; height: 7px;
-    border-radius: 50%;
-    background: var(--warn);
-    border: 2px solid var(--s1);
-    display: none;
-  }
-  .mob-tab.has-alert .mob-alert { display: block; }
-
   /* ── touch targets ── */
   /* 31px is a comfortable mouse target and a poor thumb one. Grow the controls
      that are tapped rather than every button, so the header does not swell. */
@@ -1192,12 +1088,6 @@ button.hint.voice-note:hover { text-decoration: underline; }
   .job-switch.on .job-knob { transform: translateX(18px); }
   .reason-toggle { padding: 6px 0; }
 
-  /* The header now has two overlay launchers competing with the session pill,
-     and the bottom bar already carries one of them. Drop it here rather than
-     letting the row overflow and take the page sideways with it. */
-  .top .sched-launch { display: none; }
-
-  .mobile-nav { z-index: 60; }
 }
 
 /* --------------------------------------------------------- knowledge web -- */
@@ -1491,13 +1381,7 @@ label + .jf-hint { margin-top: -5px; }
 }
 .set-key-edit input:focus { outline: none; border-color: var(--accent-line); }
 
-/* Both overlays stop above the tab bar rather than covering it: the tabs are
-   how you leave, and an overlay that hides them reads as a dead end.
-   This has to sit after the .kweb/.sched rules above -- their `inset: 0` sets
-   `bottom` too, and equal specificity means whichever is written last wins,
-   media query or not. */
 @media (max-width: 680px) {
-  .kweb, .sched { bottom: calc(56px + env(safe-area-inset-bottom, 0px)); }
   .sched-top, .kweb-top { padding: 0 12px; gap: 8px; }
   /* A long task name must not push the close button off the row. */
   .sched-top .brand { min-width: 0; overflow: hidden; text-overflow: ellipsis;
@@ -3197,12 +3081,6 @@ label + .jf-hint { margin-top: -5px; }
   .session-btn { height: 38px; font-size: 13.5px; padding: 0 13px; }
   .top .btn.icon.in-top svg { width: 20px; height: 20px; }
 
-  /* ── bottom nav: bigger glyphs, readable labels, a thumb-sized live button ── */
-  .mobile-nav { height: calc(64px + env(safe-area-inset-bottom, 0px)); }
-  .mob-tab { font-size: 11px; gap: 4px; min-height: 52px; }
-  .mob-tab svg { width: 23px; height: 23px; }
-  .mob-live-btn { width: 50px; height: 50px; }
-  .kweb, .sched { bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
 }
 
 /* ── touch ──
@@ -3236,8 +3114,22 @@ label + .jf-hint { margin-top: -5px; }
   .shot-strip input::-moz-range-thumb { width: 20px; height: 20px; }
 }
 
-/* The live voice control, for widths where the bottom bar is gone. */
+/* The live voice control floats just above Send, its centre over Send's
+   centre, below desktop width. The thread keeps room beneath its last line so
+   the button never sits over it. On a desktop it moves into the row beside
+   the microphone instead. */
 .composer-live { display: none; }
+.composer-box { position: relative; --send: 36px; --float: 40px; }
+@media (pointer: coarse) { .composer-box { --send: 40px; } }
+@media (max-width: 680px) { .composer-box { --float: 50px; } }
+.mob-live-btn.composer-float {
+  position: absolute; z-index: 5; margin: 0;
+  width: var(--float); height: var(--float);
+  bottom: calc(100% + 14px);
+  right: calc(10px + var(--send) / 2 - var(--float) / 2);
+}
+.mob-live-btn.composer-float:disabled { opacity: 0.5; cursor: default; transform: none; }
+@media (max-width: 1179px) { .thread { padding-bottom: 72px; } }
 
 /* ── desktop ── */
 @media (min-width: 1000px) {
@@ -3249,7 +3141,7 @@ label + .jf-hint { margin-top: -5px; }
 @media (min-width: 1180px) {
   /* The rail already carries Tasks, and live voice moves next to Send. A tab
      bar pinned to the bottom of a monitor is a phone habit. */
-  .mobile-nav { display: none; }
+  .mob-live-btn.composer-float { display: none; }
   .composer-live { display: inline-flex; }
 
   /* The session you are in, said at the top of the column rather than only

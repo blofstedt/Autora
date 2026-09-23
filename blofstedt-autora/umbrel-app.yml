@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.9.11"
+version: "0.9.12"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -74,24 +74,10 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Memory and Skills are now one page in the sidebar, Mind. It sorts
-  everything the agent keeps into four buckets (preferences, procedures,
-  facts and skills), with a count for each and the connections between them.
-  You can edit any record, add new ones, or move them to another bucket.
-  On a desktop the memory graph now has its own pane on the right, the full
-  height of the window, on every page. On a phone the graph is under Map on
-  the Mind page, and the strip above the chat stays as it was.
-  Status and Logs have moved into System, which now has three sections:
-  Status, Logs and Host. API Keys is now a section of Config, next to
-  Model & tools, and one Save covers both.
-  Jev Mode: when the model cannot score, it now says "jev unavailable" once
-  per turn instead of twice under "jev → slow", and the agent is told what
-  Jev did each turn, so asking whether it used Jev gets a factual answer.
-  While the agent works a web page or the desktop, what it says now appears
-  inside that page's box instead of below it, so the page stays in place;
-  its final answer still lands in the chat. When it hands you a CAPTCHA, it
-  carries on by itself as soon as the page shows the CAPTCHA passed, with no
-  need to tell it you are done.
+  On a phone or tablet the bar along the bottom of the screen is gone. Its
+  Chat and Tasks buttons are still in the menu (Tasks as Cron), and the live voice button
+  now floats just above Send, so the conversation gets the full height of
+  the screen.
 
 
   New pages. Status shows the whole installation at a glance. Sessions lets
