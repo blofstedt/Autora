@@ -48,7 +48,7 @@ function when(ts: number | undefined): string {
  */
 export function Rail({
   page, onNavigate, sessions, current, relayOn, alert, onPick, onNew,
-  appearance, onAppearance, drawer = false, onClose, onOpenKeys,
+  appearance, onAppearance, drawer = false, onClose, onOpenKeys, mind,
 }: {
   page: PageId;
   onNavigate: (page: PageId) => void;
@@ -65,6 +65,8 @@ export function Rail({
   onClose?: () => void;
   /** Config, opened on its API Keys section. */
   onOpenKeys: () => void;
+  /** The memory graph, docked square at the foot of the rail (desktop). */
+  mind?: ReactNode;
 }) {
   const [menu, setMenu] = useState(false);
   const recent = sessions.slice(0, 8);
@@ -123,6 +125,8 @@ export function Rail({
           </>
         )}
       </div>
+
+      {mind && <div className="rail-mind">{mind}</div>}
 
       <div className="rail-foot">
         <button

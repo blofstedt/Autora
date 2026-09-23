@@ -557,6 +557,17 @@ export function App() {
             onOpenKeys={() => { setConfigJump({ tab: "keys" }); navigate("config"); }}
             drawer={kind === "drawer"}
             onClose={() => setDrawerOpen(false)}
+            // On a desktop the memory graph lives here, square, under the
+            // pages and sessions -- not in a third pane, which cost the
+            // conversation a column and drew the web as a tall sliver.
+            mind={desktop && kind === "rail" ? (
+              <MemoryRibbon
+                memories={view.memories}
+                onOpen={openKnowledge}
+                onOpenSkills={openSkills}
+                pane
+              />
+            ) : undefined}
           />
         </div>
       ))}
@@ -648,8 +659,8 @@ export function App() {
         <div className="chat-view" hidden={page !== "chat"}>
 
         {/* Always on, above the conversation: what the agent knows, and what is
-            happening to it as it happens. On a desktop it has its own pane on
-            the right instead. */}
+            happening to it as it happens. On a desktop it sits at the foot of
+            the rail instead. */}
         {!desktop && (
           <MemoryRibbon
             memories={view.memories}
@@ -855,19 +866,6 @@ export function App() {
         </div>
 
       </div>
-
-      {/* The third pane on a desktop: the whole memory graph, beside whatever
-          page is open, tall enough to see it all without opening anything. */}
-      {desktop && (
-        <aside className="mind-slot" aria-label="Memory">
-          <MemoryRibbon
-            memories={view.memories}
-            onOpen={openKnowledge}
-            onOpenSkills={openSkills}
-            pane
-          />
-        </aside>
-      )}
 
       {sessionsOpen && (
         <Sessions

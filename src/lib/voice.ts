@@ -112,26 +112,74 @@ const EDGES = /^["'“”‘’(\[]+|[.,!?;:"'“”‘’)\]…]+$/g;
 const bare = (word: string): string => word.toLowerCase().replace(EDGES, "");
 
 /**
- * The part of `text` that `said` has not already given out.
+ * What has already been handed over in one run of the microphone.
  *
- * The plain case is a growing phrase, where the old text is a prefix of the
- * new one. The awkward case is a final that restates words already handed
- * over in a tidied-up form -- "this is just" becoming "This is just a test."
- * -- where a prefix test fails and handing over the whole final would say the
- * first three words twice. So the comparison falls back to matching word by
- * word, ignoring case and punctuation, and keeps only the tail past the last
- * word both versions agree on. A phrase the engine has walked backwards
- * contributes nothing.
+ * `last` is the longest hypothesis handed over for the utterance in hand, in
+ * bare words; `at` is when it was committed. Kept per run rather than per
+ * engine result index, and that is the whole fix for the repeats.
+ *
+ * The earlier version kept a watermark per result index, on the reading that
+ * each index is one phrase. The Android recogniser does not keep to that: it
+ * opens a *new* index for every step of the same utterance, each one holding
+ * the whole utterance so far and each one final -- "this", "this is",
+ * "this is a", "this is a test". A fresh index had no watermark, so every step
+ * went out whole and the composer filled with a staircase: "this this is this
+ * is a this is a test". Comparing against the last thing handed over, whatever
+ * index it came from, catches that and the restart replays alike.
  */
-export function unsaid(said: string, text: string): string {
-  if (!said) return text;
-  if (text.startsWith(said)) return text.slice(said.length).trim();
-  const before = words(said);
-  const now = words(text);
+export type Ledger = { last: string[]; at: number };
+
+export const newLedger = (): Ledger => ({ last: [], at: 0 });
+
+/** How long after a commit a result that restates it is taken as the engine
+    repeating itself rather than you saying the same words again. Android's
+    steps arrive a few hundred milliseconds apart, a restart replay within a
+    second or two; saying "yes" twice takes longer than this to matter. */
+const REPLAY_MS = 4000;
+
+/** How long after a commit a result that agrees on all but the last word is
+    taken as the engine changing its mind about that word. Short, because
+    "Open the file" followed by "Open the folder" is two requests, and saying
+    the second one takes longer than this. */
+const REVISE_MS = 1500;
+
+/**
+ * The part of `text` not already handed over, given what the ledger holds.
+ *
+ * - A restatement of what went out, or a shorter version of it (the engine
+ *   walking a word back), contributes nothing.
+ * - A longer version of what went out contributes only the new tail.
+ * - A version that agrees on everything but the last word, arriving right
+ *   away, is a revision: only what follows the agreement goes out.
+ * - Anything else is a new phrase and goes out whole.
+ */
+export function unsaid(ledger: Ledger, text: string, now: number): string {
+  const said = words(text);
+  const heard = said.map(bare);
+  const last = ledger.last;
+  const since = now - ledger.at;
   let same = 0;
-  while (same < before.length && same < now.length
-         && bare(before[same]) === bare(now[same])) same += 1;
-  return now.slice(same).join(" ");
+  while (same < last.length && same < heard.length && last[same] === heard[same]) same += 1;
+  if (last.length > 0 && since < REPLAY_MS) {
+    if (same === heard.length) return "";
+    if (same === last.length) return said.slice(same).join(" ");
+  }
+  if (same >= 2 && same >= last.length - 1 && since < REVISE_MS) {
+    return said.slice(same).join(" ");
+  }
+  return said.join(" ");
+}
+
+/** Hand `text` over: returns the part that is new and moves the ledger up.
+    A shorter restatement never lowers it, or the words in between would go
+    out a second time. */
+export function commit(ledger: Ledger, text: string, now: number): string {
+  const fresh = unsaid(ledger, text, now);
+  const heard = words(text).map(bare);
+  const shorter = fresh === "" && heard.length <= ledger.last.length;
+  if (!shorter) ledger.last = heard;
+  ledger.at = now;
+  return fresh;
 }
 
 export type Dictation = {
@@ -172,81 +220,32 @@ export function useDictation({
   const phraseRef = useRef(onPhrase);
   phraseRef.current = onPhrase;
 
-  /** What each engine result has already handed over, and the part that is new.
-   *
-   * Chromium's result list is indexed and append-only: a final arrives once,
-   * complete. The Android system recogniser does something the spec does not
-   * describe -- it returns the whole utterance so far as a single result and
-   * re-fires it as final every time the hypothesis moves, and it sometimes
-   * walks a word back. Appending every final then says everything again and
-   * again: "testing 1 2 3" arrived as "testing" nine times, then "testing 1",
-   * then the whole phrase.
-   *
-   * So each index keeps a watermark of what it has handed over, and only the
-   * part past it is passed on. `heard` is the other half: the latest text for
-   * each index whether or not the engine has settled on it, so that a caller
-   * which acted on an unsettled phrase can mark it spent -- see `accept`. Both
-   * are refs rather than state because they are read inside engine callbacks
-   * that close over whatever render created them.
-   */
-  const handed = useRef<Map<number, string>>(new Map());
+  /** What this run has handed over -- see `Ledger`. A ref, because it is
+      read inside engine callbacks that close over whatever render created
+      them, and it deliberately outlives engine restarts: Safari hangs up after
+      every phrase, every engine does after a silence, and a restart that lands
+      mid-utterance re-reports the whole of it. */
+  const ledger = useRef<Ledger>(newLedger());
+
+  /** The latest text for each result in the session in hand, settled or not,
+      so a caller that acted on an unsettled phrase can mark it spent. */
   const heard = useRef<Map<number, string>>(new Map());
-
-  /**
-   * The same watermark, kept across engine restarts rather than sessions.
-   *
-   * `handed` dies with the session that filled it, and that is the hole the
-   * repeats came back through. Safari hangs up after every phrase and `onend`
-   * restarts it; so does a stretch of silence, on every engine. A restart
-   * that lands mid-utterance does not always begin a new utterance -- the
-   * engine picks the old one up from the top and re-reports the whole
-   * hypothesis so far, into a session whose marks were just cleared. Every
-   * such restart then handed the caller the entire phrase over again, and a
-   * caller that appends -- live chat does -- built a staircase out of it:
-   * "this this is this is just this is just a test", one rung per restart.
-   *
-   * So this one outlives the session. Only the result a new session opens on
-   * is compared against it, because that is where a replay lands; a later
-   * result is genuinely new, and measuring it against the start of an earlier
-   * phrase is how "Open the file" followed by "Open the folder" would come
-   * out as "folder".
-   */
-  const spent = useRef("");
-
-  /** The index the session in hand opened on, or null before its first
-      result. */
-  const resumed = useRef<number | null>(null);
-
-  /** Move the watermark up, never down.
-   *
-   * A shorter text is the engine revising words already handed over, and
-   * lowering the mark for it would hand over the words in between a second
-   * time. Counted in words, because a final is often the same phrase
-   * re-punctuated and a capital letter is not progress.
-   */
-  const mark = useCallback((index: number, text: string) => {
-    const before = handed.current.get(index);
-    if (before === undefined || words(text).length >= words(before).length) {
-      handed.current.set(index, text);
-    }
-    if (words(text).length >= words(spent.current).length) spent.current = text;
-  }, []);
 
   /**
    * Treat everything the engine has produced so far as already handed over.
    *
    * For callers that cannot wait for `isFinal`. Live chat is one: Chrome on
    * Android will stream a whole sentence as interim results and never settle
-   * on any of it, so a pause has to be enough to send. Sending the interim
-   * text is not the whole job though -- the engine keeps that same result
-   * open, and its eventual final still holds the words that were sent, so
-   * they came back and went out a second time. That is the "repeated words"
-   * everyone hit: not the engine hearing you twice, us saying it twice.
+   * on any of it, so a pause has to be enough to send. The engine keeps that
+   * result open though, and its eventual final still holds the words that
+   * were sent -- without this they would go out a second time.
    */
   const accept = useCallback(() => {
-    heard.current.forEach((text, index) => mark(index, text));
+    const now = Date.now();
+    [...heard.current.keys()].sort((x, y) => x - y)
+      .forEach((index) => commit(ledger.current, heard.current.get(index) ?? "", now));
     setInterim("");
-  }, [mark]);
+  }, []);
 
   /** Decays on a timer, bumped whenever the engine reports hearing something.
    *
@@ -308,7 +307,7 @@ export function useDictation({
     restarts.current = 0;
     // A run the reader asked for, rather than a restart: nothing said before
     // it has any claim on what gets handed over now.
-    spent.current = "";
+    ledger.current = newLedger();
     setError(null);
 
     const engine = new Impl();
@@ -319,39 +318,30 @@ export function useDictation({
     engine.maxAlternatives = 1;
 
     engine.onstart = () => {
-      // A new session numbers its results from zero again, so the per-index
-      // marks from the last one describe results that no longer exist.
-      // `spent` is deliberately not cleared here -- see above.
-      handed.current.clear();
+      // A new session numbers its results from zero again. The ledger is
+      // deliberately kept -- see above.
       heard.current.clear();
-      resumed.current = null;
       setListening(true);
     };
 
     engine.onresult = (event) => {
-      if (resumed.current === null) resumed.current = event.resultIndex;
+      const now = Date.now();
       let live = "";
       for (let i = event.resultIndex; i < event.results.length; i += 1) {
         const phrase = event.results[i];
         const text = (phrase[0]?.transcript ?? "").trim();
         heard.current.set(i, text);
-        // Both kinds go through the watermark. An interim that repeats words
-        // already sent is the same double as a final that does, and captioning
-        // them back is how it looks from the outside.
-        // A session that has marked this index is the authority on it. One
-        // that has not just started, and if this is the result it started on,
-        // the engine may be replaying what the last session already gave out.
-        const known = handed.current.get(i)
-          ?? (i === resumed.current ? spent.current : "");
-        const fresh = unsaid(known, text);
         if (phrase.isFinal) {
-          mark(i, text);
+          const fresh = commit(ledger.current, text, now);
           if (fresh) phraseRef.current?.(fresh);
           // A phrase landing means the engine is healthy, whatever it had to
           // restart through to get here.
           restarts.current = 0;
-        } else if (fresh) {
-          live = live ? `${live} ${fresh}` : fresh;
+        } else {
+          // An interim that repeats words already sent is the same double as
+          // a final that does, and captioning it back is how it looks.
+          const fresh = unsaid(ledger.current, text, now);
+          if (fresh) live = live ? `${live} ${fresh}` : fresh;
         }
       }
       setInterim(live.trim());
@@ -395,7 +385,7 @@ export function useDictation({
       wanted.current = false;
       setError("Could not start the microphone.");
     }
-  }, [bump, continuous, lang, mark, settle]);
+  }, [bump, continuous, lang, settle]);
 
   const toggle = useCallback(() => {
     if (wanted.current) stop();

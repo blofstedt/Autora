@@ -1744,7 +1744,7 @@ label + .jf-hint { margin-top: -5px; }
 @media (min-width: 1180px) {
   .app { flex-direction: row; }
   .rail-slot {
-    display: flex; flex: 0 0 256px; min-height: 0;
+    display: flex; flex: 0 0 300px; min-height: 0;
     border-right: 1px solid var(--border);
   }
   /* The header's job is done by the rail on this width: the wordmark, the
@@ -3153,7 +3153,8 @@ label + .jf-hint { margin-top: -5px; }
   .top .session-btn:hover { background: var(--s2); border-color: var(--border); }
   .session-name { max-width: 520px; }
 
-  .rail-slot { flex-basis: 256px; }
+  /* Wide enough for the memory graph docked square at its foot. */
+  .rail-slot { flex-basis: clamp(300px, 22vw, 340px); }
   .rail-row-main b { font-size: 13.5px; }
   .rail-row-main em { font-size: 11px; }
   .rail-act { font-size: 13px; }
@@ -3964,35 +3965,30 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 }
 
 /* ============================================================================
-   The memory graph as the third pane (desktop)
+   The memory graph, square
 
-   Rail on the left, conversation in the middle, the whole graph on the right --
-   a little wider than the rail, and the full height of the window, so nothing
-   needs opening to see it.
+   The same square wherever it is drawn -- above the chat on a phone once
+   unfolded, and at the foot of the rail on a desktop -- so a memory keeps its
+   shape between the two instead of being squashed flat on one and pulled tall
+   on the other. The tags sit along the top edge, the latest event along the
+   bottom, and the web fills what is between.
    ============================================================================ */
-.mind-slot { display: none; }
-@media (min-width: 1180px) {
-  .mind-slot {
-    display: flex; flex: 0 0 300px; min-width: 0; min-height: 0;
-    border-left: 1px solid var(--border);
-  }
-  .neural-web.is-pane {
-    flex: 1; max-width: none; margin: 0; padding: 52px 12px 44px;
-    border-bottom: 0; box-shadow: none;
-  }
-  .neural-web.is-pane .neural-stage { height: auto; min-height: 0; }
-  .neural-web.is-pane .web-tag-group { top: 12px; left: 12px; right: 12px; flex-wrap: wrap; }
-  .neural-web.is-pane .neural-latest {
-    display: block; left: 0; right: 0; bottom: -32px; max-width: none; transform: none;
-    text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
-  .neural-web.is-pane .neural-latest .neural-pulse-dot {
-    display: inline-block; margin-right: 6px; vertical-align: middle;
-  }
+.neural-web:not(.is-collapsed) {
+  display: block; padding: 0; aspect-ratio: 1 / 1;
+  /* A tablet column is wider than a screen is tall. */
+  max-width: min(var(--col), 60vh);
 }
-@media (min-width: 1500px) {
-  .mind-slot { flex-basis: 340px; }
+.neural-web:not(.is-collapsed) .neural-stage {
+  position: absolute; inset: 48px 12px 38px; height: auto; min-height: 0;
 }
+.neural-web:not(.is-collapsed) .neural-latest {
+  bottom: -29px; left: 50%; right: auto; transform: translateX(-50%); max-width: 100%;
+}
+.rail-mind { flex: none; border-top: 1px solid var(--border); }
+.neural-web.is-pane {
+  width: 100%; max-width: none; margin: 0; border-bottom: 0; box-shadow: none;
+}
+.neural-web.is-pane .web-tag-group { top: 12px; left: 12px; right: 12px; flex-wrap: wrap; }
 
 /* ============================================================================
    The Mind: preferences, procedures, facts and skills, as four buckets
