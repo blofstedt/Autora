@@ -15,6 +15,7 @@ import {
 } from "./server/state";
 import { decide, lastDecision, supportFor, type JevOutcome, type JevTask } from "./server/jev/router";
 import type { JevTarget } from "./server/jev/engine";
+import { guardWorthy } from "./server/jev/guard";
 import {
   ProviderError, listModels, streamChat,
   type ChatMessage, type ChatTurn, type ToolReply,
@@ -719,6 +720,157 @@ async function jevRecall(session: Session, request: string): Promise<MemoryRecor
   return picked;
 }
 
+/**
+ * Which kind of request this is, decided before the turn starts.
+ *
+ * One field, three values: answer from what the agent knows, act with tools,
+ * or clarify first. The answer is a line in the system instructions -- the
+ * tools stay on offer either way -- so a misjudged route costs a nudge, not a
+ * capability. Returns null (no hint, the turn runs as it always has) whenever
+ * Jev cannot decide confidently.
+ */
+async function jevRoute(session: Session, request: string): Promise<string | null> {
+  const previous = previousAgentReply(session);
+  const outcome = await jevDecide(session, {
+    name: "question routing",
+    context:
+      (previous ? `The agent's previous reply:\n${previous.slice(-800)}\n\n` : "") +
+      `The person's new message:\n${request.slice(0, 2000)}`,
+    instructions: "Decide how the agent should handle the person's new message.",
+    schema: {
+      type: "object",
+      properties: {
+        route: {
+          description: "How to handle the message",
+          oneOf: [
+            { const: "answer", description: "answer directly from knowledge; a question, explanation or conversation that needs no tools" },
+            { const: "act", description: "do something with tools: run commands, browse, edit files, look things up" },
+            { const: "clarify", description: "too ambiguous to act on safely; ask one clarifying question first" },
+          ],
+        },
+      },
+    },
+    timeoutMs: 5000,
+  });
+  if (outcome.mode !== "jev") return null;
+  switch (outcome.values.route) {
+    case "answer":
+      return "Routing: this message looks answerable directly. Reply from what you know; " +
+        "use tools only if the answer genuinely depends on something you must check.";
+    case "act":
+      return "Routing: this message needs action. Start working with your tools rather " +
+        "than describing what you would do.";
+    case "clarify":
+      return "Routing: this message is ambiguous. Before acting, ask the person one short " +
+        "clarifying question with ask_user, offering concrete options.";
+    default:
+      return null;
+  }
+}
+
+/** What the agent said last, so "yes, do it" can be routed with its antecedent. */
+function previousAgentReply(session: Session): string {
+  let seenUser = 0;
+  const parts: string[] = [];
+  for (let i = session.events.length - 1; i >= 0; i--) {
+    const e = session.events[i];
+    if (e.kind === "turn.user") {
+      seenUser += 1;
+      if (seenUser === 2) break;
+      continue;
+    }
+    if (seenUser === 1 && e.kind === "turn.agent.text" && !e.payload?.local) {
+      parts.unshift(String(e.payload?.text ?? ""));
+    }
+  }
+  return parts.join("").trim();
+}
+
+/* ---- the tool guard -------------------------------------------------------
+
+   Autora runs in yolo mode, and the guard does not change that for ordinary
+   work: it looks only at calls that could plausibly destroy something, and
+   stops one only when Jev is confident it is destructive AND that the person
+   did not ask for it. Then the call does not run; the agent is told why and
+   must ask the person with ask_user. Once they have answered, the same call
+   goes through. Everything the guard is unsure about runs, as before. */
+
+/** Answers the person has given, per session: a held call is let through
+    once this has moved on since it was held. */
+const answeredAsks = new Map<string, number>();
+/** The words of the most recent answer, per session, to read a yes from a no. */
+const lastAnswer = new Map<string, string>();
+/** Held calls, by session and exact rendering, with the count at hold time. */
+const heldCalls = new Map<string, number>();
+
+async function jevGuard(
+  session: Session,
+  spec: { name: string },
+  args: Record<string, any>,
+  request: string,
+  reason: string,
+): Promise<string | null> {
+  if (!guardWorthy(spec.name, args)) return null;
+  const rendered = renderCall(spec as any, args);
+  const key = `${session.id}\u0000${spec.name}\u0000${rendered}`;
+  const answered = answeredAsks.get(session.id) ?? 0;
+  const heldAt = heldCalls.get(key);
+  if (heldAt !== undefined && answered > heldAt) {
+    heldCalls.delete(key);
+    // Asked and answered. Through, unless the answer was a clear no -- the
+    // agent was told not to retry after a refusal, but that is a promise,
+    // and this is the check that does not depend on it.
+    const said = lastAnswer.get(session.id) ?? "";
+    const verdict = await jevDecide(session, {
+      name: "tool guard · your answer",
+      context:
+        `The action:\n${rendered.slice(0, 1000)}\n\n` +
+        `The person's answer when asked about it:\n${said.slice(0, 1000)}`,
+      schema: {
+        type: "object",
+        properties: {
+          approved: { type: "boolean", description: "The person agreed to this action going ahead." },
+        },
+      },
+      timeoutMs: 5000,
+    });
+    if (verdict.mode === "jev" && verdict.values.approved === false) {
+      heldCalls.set(key, answered);
+      return "Held by the guard: the person declined this when asked.";
+    }
+    return null;
+  }
+
+  const outcome = await jevDecide(session, {
+    name: "tool guard",
+    context:
+      `The person's request:\n${request.slice(0, 1500)}\n\n` +
+      (reason ? `The agent's stated reason:\n${reason.slice(0, 600)}\n\n` : "") +
+      `The action about to run (${spec.name}):\n${rendered.slice(0, 1500)}`,
+    instructions: "Judge the action about to run, strictly.",
+    schema: {
+      type: "object",
+      properties: {
+        destructive: {
+          type: "boolean",
+          description: "It could permanently delete, overwrite or break data, systems or accounts in a way that cannot easily be undone.",
+        },
+        requested: {
+          type: "boolean",
+          description: "The person explicitly asked for this specific destructive action, not merely for a task it might help with.",
+        },
+      },
+    },
+    timeoutMs: 5000,
+  });
+  if (outcome.mode !== "jev") return null;
+  if (outcome.values.destructive !== true || outcome.values.requested !== false) return null;
+
+  heldCalls.set(key, answered);
+  const sure = Math.min(outcome.confidence.destructive, outcome.confidence.requested);
+  return `Held by the guard: this looks destructive and the person did not ask for it (confidence ${sure.toFixed(2)}).`;
+}
+
 // ------------------------------------------------------- asking the person --
 
 /**
@@ -760,6 +912,10 @@ function settleAsk(askId: string, answer: AskAnswer): boolean {
   clearTimeout(pending.timer);
   awaitingAsk.delete(askId);
   const session = sessions.get(pending.sessionId);
+  if (!answer.cancelled && answer.who === "user") {
+    answeredAsks.set(pending.sessionId, (answeredAsks.get(pending.sessionId) ?? 0) + 1);
+    lastAnswer.set(pending.sessionId, [...answer.choices, answer.text].filter(Boolean).join(" -- "));
+  }
   if (session) {
     emitEvent(session, "ask.answer", answer.who === "user" ? "user" : "system", {
       ask_id: askId,
@@ -1159,8 +1315,11 @@ async function systemInstructionFor(
   sessionId: string,
   recalled: MemoryRecord[],
   active?: Resolved | null,
+  /** Jev's reading of what kind of request this is, when it had one. */
+  routeHint?: string | null,
 ): Promise<string> {
   const lines = [state.systemPrompt.trim()];
+  if (routeHint) lines.push("", routeHint);
 
   /* What it can actually do, generated from the tool registry rather than
      written down here. This is the section whose absence made the console
@@ -1487,7 +1646,11 @@ async function startServer() {
         /* Jev Mode: when the model can score, which memories this turn gets
            is decided by the model, per memory, with a confidence each. The
            keyword rules above stay as the fallback for everything else. */
-        const scored = await jevRecall(session, text);
+        // Both at once: two small decisions, one wait.
+        const [scored, routeHint] = await Promise.all([
+          jevRecall(session, text),
+          jevRoute(session, text),
+        ]);
         if (scored) accessedRecords.splice(0, accessedRecords.length, ...scored);
 
         const uniqueAccessed = accessedRecords.filter(
@@ -1794,7 +1957,7 @@ async function startServer() {
           for (let step = 0; step < MAX_TOOL_STEPS; step += 1) {
             if (running.get(session.id)?.stopped) break;
 
-            const pinned = await systemInstructionFor(session.id, uniqueAccessed, active);
+            const pinned = await systemInstructionFor(session.id, uniqueAccessed, active, routeHint);
             /* Past the high-water mark this starts a background fold of the
                older turns and returns at once. It is never awaited: this
                step's call goes out now, on the history as it stands. */
@@ -1868,6 +2031,21 @@ async function startServer() {
                     text: `You answered the approval with: ${decision.response}`,
                   });
                 }
+              }
+
+              const held = await jevGuard(session, spec, use.args, text, turn.text.trim());
+              if (held) {
+                emitEvent(session, "tool.error", "agent", {
+                  guarded: true, denied: true, error: held,
+                }, span);
+                reply(
+                  false,
+                  `${held} It did not run. Ask the person with ask_user first -- say ` +
+                    "exactly what it will do and what cannot be undone. If they agree, " +
+                    "make the same call again and it will go through. If they decline, " +
+                    "find another way or stop.",
+                );
+                continue;
               }
 
               const started = Date.now();

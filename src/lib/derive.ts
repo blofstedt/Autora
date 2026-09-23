@@ -425,7 +425,10 @@ export function derive(events: AutoraEvent[]): Derived {
         // A staged tool carries no cell of its own until it produces a frame
         // or a diff, so a browser call that failed outright would otherwise
         // fail silently -- which is the one outcome that must never be quiet.
-        if (!span || (isStaged(span.name) && !shells.has(span.id))) {
+        // The guard stopping a call is said in words wherever the call was.
+        if (e.payload.guarded) {
+          push({ kind: "note", seq: e.seq, tone: "warn", text: String(e.payload.error ?? "Held by the guard.") });
+        } else if (!span || (isStaged(span.name) && !shells.has(span.id))) {
           push({
             kind: "note", seq: e.seq,
             tone: e.payload.denied ? "warn" : "bad",

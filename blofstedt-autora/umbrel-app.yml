@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.9.8"
+version: "0.9.9"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -74,25 +74,29 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  New: Jev Mode, fast scored decisions. Where a decision has a fixed set of
-  answers, every option's probability is read in one parallel pass instead
-  of the answer being written out, and it is accepted only if each part
-  clears a confidence threshold (0.75 by default, adjustable in Settings).
-  Anything less certain goes to the normal path, exactly as before.
+  Jev Mode now does two more jobs, on models that return token
+  probabilities (local servers, GPT-4o/4.1, DeepSeek, some Gemini models).
 
 
-  Its first job is memory recall: with a model that returns token
-  probabilities -- a local server (vLLM, llama.cpp, Ollama), GPT-4o/4.1,
-  DeepSeek, some Gemini models -- each memory is now judged relevant or not
-  to your request, with a confidence you can see in the thread, instead of
-  by keyword. Anthropic models and reasoning models (GPT-5, o-series) do not
-  return probabilities, so on those nothing changes. Jev can be switched off
-  in Settings.
+  A tool guard. Commands that could destroy something -- rm, force pushes,
+  hard resets, DROP TABLE, piping a download into a shell, and the like, plus
+  any HTTP request that writes -- get a quick check first: is this
+  destructive, and did you ask for it? If it is confidently both destructive
+  and unasked-for, it does not run; the agent has to ask you with a question
+  card. Say yes and the same command goes through; say no and it stays held.
+  Everything the check is unsure about runs as before, and ordinary commands
+  are never checked at all.
 
 
-  Also in this release: a one-surface desktop layout, a redesigned message
-  box, the live browser used directly in the chat, question cards, formatted
-  replies, and a memory graph that folds to one line.
+  Question routing. Each message is read as needing a direct answer, action
+  with tools, or a clarifying question first, and the agent is told which
+  before it starts. The tools stay available either way.
+
+
+  Both run alongside memory recall, in parallel, and every decision shows in
+  the thread with its confidence. Earlier in this series: Jev Mode itself,
+  a one-surface desktop layout, a redesigned message box, the live browser
+  used directly in the chat, question cards and formatted replies.
 
 dependencies: []
 path: ""

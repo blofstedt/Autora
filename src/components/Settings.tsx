@@ -746,8 +746,11 @@ function JevCard({ jev, onSaved }: { jev: JevState; onSaved: (next: SettingsStat
         instead of written out: every option's probability is read in one
         parallel pass, and the answer is taken only if each part of it clears
         the confidence threshold. Anything less certain goes to the model's
-        normal reasoning, exactly as before. Today this decides which memories
-        each turn recalls.
+        normal reasoning, exactly as before. It decides three things: which
+        memories each turn recalls; whether a message needs an answer, action,
+        or a clarifying question first; and, for commands that could destroy
+        something, whether it looks destructive and unasked-for — in which case
+        the agent must ask you before it runs.
       </p>
       {jev.enabled && jev.support.state === "no" && jev.support.reason && (
         <p className="set-warn">{jev.support.reason} Autora uses its normal path instead.</p>
