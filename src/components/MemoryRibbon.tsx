@@ -51,10 +51,15 @@ export function MemoryRibbon({
   memories,
   onOpen,
   onOpenSkills,
+  collapsed = false,
+  onToggle,
 }: {
   memories: MemoryMark[];
   onOpen: () => void;
   onOpenSkills?: () => void;
+  /** Folded to one line: the counts and the newest event, no graph. */
+  collapsed?: boolean;
+  onToggle?: () => void;
 }) {
   const [web, setWeb] = useState<Knowledge>({ records: [], links: [], enabled: true });
   const seen = useRef(new Map<string, number>());
@@ -382,26 +387,51 @@ export function MemoryRibbon({
 
   const now = performance.now();
 
+  const tags = (
+    <>
+      <button className="web-tag neural-tag" onClick={onOpen} title="Open knowledge graph">
+        <IconBrain size={13} />
+        <span className="web-count">{web.records.length}</span>
+        <IconChevron size={11} />
+      </button>
+      {skillsCount > 0 && (
+        <button className="web-tag skills-tag" onClick={onOpenSkills || onOpen} title="Open Skills Library">
+          <span className="skills-dot" />
+          <span className="web-count">{skillsCount} skills</span>
+        </button>
+      )}
+    </>
+  );
+
+  if (collapsed) {
+    return (
+      <section className="web neural-web is-collapsed" aria-label="Memory">
+        <div className="web-bar">
+          {tags}
+          <span className="web-bar-latest" key={newest?.seq}>
+            {newest && <span className="neural-pulse-dot" />}
+            {newest
+              ? `${newest.kind === "written" ? "learned" : "recalled"} · ${newest.title}`
+              : "memory"}
+          </span>
+          {onToggle && (
+            <button className="web-toggle" onClick={onToggle} aria-expanded={false} aria-label="Show the memory graph" title="Show the memory graph">
+              <IconChevron size={13} />
+            </button>
+          )}
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="web neural-web" aria-label="Neural memory web">
-      <div className="web-tag-group">
-        <button className="web-tag neural-tag" onClick={onOpen} title="Open knowledge graph">
-          <IconBrain size={13} />
-          <span className="web-count">{web.records.length}</span>
-          <IconChevron size={11} />
+      {onToggle && (
+        <button className="web-toggle is-open" onClick={onToggle} aria-expanded={true} aria-label="Hide the memory graph" title="Hide the memory graph">
+          <IconChevron size={13} />
         </button>
-
-        {skillsCount > 0 && (
-          <button
-            className="web-tag skills-tag"
-            onClick={onOpenSkills || onOpen}
-            title="Open Skills Library"
-          >
-            <span className="skills-dot" />
-            <span className="web-count">{skillsCount} skills</span>
-          </button>
-        )}
-      </div>
+      )}
+      <div className="web-tag-group">{tags}</div>
 
       <div className="web-stage neural-stage" role="presentation">
         {placed.length === 0 ? (

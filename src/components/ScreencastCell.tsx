@@ -3,51 +3,42 @@ import type { Shot } from "../lib/derive";
 import type { LiveFrame } from "../lib/types";
 import { Frame } from "./Frame";
 import {
-  IconArrowLeft,
-  IconBot,
-  IconChevron,
-  IconGlobe,
-  IconKeyboard,
-  IconLock,
-  IconMonitor,
-  IconMousePointer,
-  IconRotateCcw,
-  IconUser,
-  IconX,
+  IconChevron, IconGlobe, IconMaximize, IconMinimize, IconMonitor, IconPanelRight,
+  IconStop,
 } from "./Icons";
 
 /** The viewport the browser harness captures. Frame pixels map 1:1 to page
     pixels, so a click at 640,400 is the middle of the picture. */
 const VIEWPORT = { w: 1280, h: 800 };
 
-type Pick = {
-  ok: boolean;
-  text?: string;
-  error?: string;
-  pick?: {
-    kind: string;
-    ref: number | null;
-    selector: string;
-    box: { x: number; y: number; w: number; h: number };
-    source: { file?: string; line?: number; component?: string; via?: string } | null;
-    fingerprint: { tag: string; id: string | null; classes: string[]; text: string | null };
-    params: Record<string, Record<string, string>>;
-    retargeted: { tag: string } | null;
-  };
-};
+/** Kept in the keyboard sink so a phone's backspace has something to delete:
+    Android reports soft-keyboard keys as "Unidentified", and the only reliable
+    sign of a backspace is the field getting shorter. */
+const SENTINEL = "\u200b";
+
+/** Keys that are keys rather than text, forwarded by name. */
+const NAMED_KEYS = new Set([
+  "Enter", "Tab", "Backspace", "Delete", "Escape", "ArrowUp", "ArrowDown",
+  "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown",
+]);
 
 /**
- * A stretch of screen work — a page, or the relayed desktop — kept where it
+ * A stretch of screen work -- a page, or the relayed desktop -- kept where it
  * happened.
  *
- * Every frame the agent produced during this stretch stays with the card, so
- * the way to review what it did on a page is to scroll back to it and move
- * through its own frames. That is what the session scrubber was for, except
- * that this one is already pointed at the thing you wanted to re-watch, and
- * moving it does not drag the rest of the app back in time with it.
+ * The page the agent is on now is also a page you can use. There are no
+ * controls for that: click or tap the picture and the click lands on the
+ * page, type and the keys go to whatever you clicked into, scroll and it
+ * scrolls. It is locked while the agent is driving -- two pairs of hands on
+ * one page is how a sign-in ends up half typed by each -- and unlocks when the
+ * agent finishes, stops, or asks you to take over.
+ *
+ * Older cards are the record: every frame the agent produced stays with the
+ * card, and the strip under it moves through them.
  */
 export function ScreencastCell({
-  sessionId, source, url, shots, actions, live, feed, pickable,
+  sessionId, source, url, shots, actions, live, feed, current = false,
+  driving = false, waitingOnYou = false, variant = "inline", onStop,
 }: {
   sessionId: string;
   source: "browser" | "desktop";
@@ -55,445 +46,321 @@ export function ScreencastCell({
   shots: Shot[];
   actions: string[];
   live: boolean;
-  /** The video, if this is the card whose page is still open. Frames arrive
-      several times a second and are never stored, so this is the one thing on
-      the card that is happening rather than having happened. */
+  /** The video, if this is the card whose page is still open. */
   feed: LiveFrame | null;
-  /** Only the newest browser card looks at a page that still exists. */
-  pickable: boolean;
+  /** The newest browser card: the only one looking at a page that exists. */
+  current?: boolean;
+  /** The agent is at the wheel, so the page is not yours to touch. */
+  driving?: boolean;
+  /** The agent has handed the page to you and is waiting. */
+  waitingOnYou?: boolean;
+  /** "panel" fills the side dock; "stub" is the thread's pointer to it. */
+  variant?: "inline" | "panel" | "stub";
+  onStop?: () => void;
 }) {
   const [at, setAt] = useState(shots.length - 1);
   const [held, setHeld] = useState(false);
-  const [selecting, setSelecting] = useState(false);
-  const [picked, setPicked] = useState<Pick | null>(null);
-  const [busy, setBusy] = useState(false);
   const [showActions, setShowActions] = useState(false);
-  /** Big while the agent is driving the page right now, inline otherwise. A
-      finished card at full size is two thirds of a laptop screen and makes a
-      conversation you cannot skim; the page the agent is working in *now* is
-      the thing you are there to watch. Either toggle overrides it. */
+  /** Big while the agent is driving the page right now, inline otherwise;
+      either way the corner button overrides it. */
   const [bigChoice, setBigChoice] = useState<boolean | null>(null);
-  const [interactive, setInteractive] = useState(false);
-  const [controlHolder, setControlHolder] = useState<"agent" | "human">("agent");
-  const [handoffReason, setHandoffReason] = useState<string | null>(null);
-  const [typeInput, setTypeInput] = useState("");
-  const [maskPassword, setMaskPassword] = useState(false);
-  const [navUrl, setNavUrl] = useState(url ?? "");
-  const [navBusy, setNavBusy] = useState(false);
-  const [clickRipples, setClickRipples] = useState<Array<{ id: number; x: number; y: number }>>([]);
-  const [hoverCoords, setHoverCoords] = useState<{ x: number; y: number } | null>(null);
+  const [max, setMax] = useState(false);
+  const [nudge, setNudge] = useState<{ text: string; stop?: boolean } | null>(null);
+  const [ripples, setRipples] = useState<Array<{ id: number; x: number; y: number }>>([]);
+  const [typing, setTyping] = useState(false);
   const holdRef = useRef(held);
   holdRef.current = held;
+  const stageRef = useRef<HTMLDivElement>(null);
+  const sinkRef = useRef<HTMLTextAreaElement>(null);
+  /** Every input goes out in order, one after another: a click that lands
+      after the text meant for the field it focuses is a lost password. */
+  const chain = useRef<Promise<unknown>>(Promise.resolve());
+  const pointer = useRef<{ x: number; y: number; lastY: number; moved: boolean; type: string } | null>(null);
+  const scrollAccum = useRef({ dx: 0, dy: 0, timer: 0 });
 
-  const wheelTimerRef = useRef<number | null>(null);
-  const wheelAccumRef = useRef<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
-
-  // Poll browser control status for handoff requests and external changes
-  useEffect(() => {
-    if (source !== "browser" || (!feed && !live)) return;
-    const checkControl = async () => {
-      try {
-        const res = await fetch(`/api/sessions/${sessionId}/browser/status`);
-        if (res.ok) {
-          const status = await res.json();
-          const holder = status?.control?.holder === "human" ? "human" : "agent";
-          setControlHolder(holder);
-          setInteractive(holder === "human");
-          if (status?.control?.reason) {
-            setHandoffReason(status.control.reason);
-          } else if (holder === "agent") {
-            setHandoffReason(null);
-          }
-          if (status?.url && !navUrl) {
-            setNavUrl(status.url);
-          }
-        }
-      } catch {}
-    };
-    checkControl();
-    const interval = setInterval(checkControl, 1500);
-    return () => clearInterval(interval);
-  }, [sessionId, source, feed, live, navUrl]);
-
-  const setControlMode = async (target: "agent" | "human", reason?: string) => {
-    const isHuman = target === "human";
-    setInteractive(isHuman);
-    setControlHolder(target);
-    if (!isHuman) {
-      setHandoffReason(null);
-    }
-    try {
-      await fetch(`/api/sessions/${sessionId}/browser/control`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          holder: target,
-          reason: reason ?? (isHuman ? "Human manual takeover" : null),
-        }),
-      });
-    } catch {}
-  };
-
-  const toggleInteractive = () => {
-    if (interactive) {
-      setControlMode("agent");
-    } else {
-      setControlMode("human", handoffReason || "Manual user takeover");
-    }
-  };
-
-  const sendClick = async (x: number, y: number, button = "left", double = false) => {
-    try {
-      await fetch(`/api/sessions/${sessionId}/browser/click`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ x, y, button, double }),
-      });
-    } catch {}
-  };
-
-  const sendType = async (text: string) => {
-    if (!text) return;
-    try {
-      await fetch(`/api/sessions/${sessionId}/browser/type`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
-    } catch {}
-  };
-
-  const sendKey = async (key: string) => {
-    try {
-      await fetch(`/api/sessions/${sessionId}/browser/key`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key }),
-      });
-    } catch {}
-  };
-
-  const sendReload = async () => {
-    setNavBusy(true);
-    try {
-      const res = await fetch(`/api/sessions/${sessionId}/browser/reload`, { method: "POST" });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.url) setNavUrl(data.url);
-      }
-    } catch {} finally {
-      setNavBusy(false);
-    }
-  };
-
-  const sendBack = async () => {
-    setNavBusy(true);
-    try {
-      const res = await fetch(`/api/sessions/${sessionId}/browser/back`, { method: "POST" });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.url) setNavUrl(data.url);
-      }
-    } catch {} finally {
-      setNavBusy(false);
-    }
-  };
-
-  const onWheel = useCallback((e: React.WheelEvent) => {
-    if (!interactive || source !== "browser") return;
-    wheelAccumRef.current.dx += e.deltaX;
-    wheelAccumRef.current.dy += e.deltaY;
-    if (!wheelTimerRef.current) {
-      wheelTimerRef.current = window.setTimeout(async () => {
-        const { dx, dy } = wheelAccumRef.current;
-        wheelAccumRef.current = { dx: 0, dy: 0 };
-        wheelTimerRef.current = null;
-        try {
-          await fetch(`/api/sessions/${sessionId}/browser/scroll`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ dx, dy }),
-          });
-        } catch {}
-      }, 60);
-    }
-  }, [interactive, source, sessionId]);
-
-  const onStageKeyDown = (e: React.KeyboardEvent) => {
-    if (!interactive || source !== "browser") return;
-    const target = e.target as HTMLElement;
-    if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT") {
-      return;
-    }
-    if (e.key === "Tab") {
-      e.preventDefault();
-      sendKey("Tab");
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      sendKey("Enter");
-    } else if (e.key === "Backspace") {
-      e.preventDefault();
-      sendKey("Backspace");
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      sendKey("Escape");
-    } else if (e.key === "ArrowDown") {
-      e.preventDefault();
-      sendKey("ArrowDown");
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      sendKey("ArrowUp");
-    } else if (e.key === "ArrowLeft") {
-      e.preventDefault();
-      sendKey("ArrowLeft");
-    } else if (e.key === "ArrowRight") {
-      e.preventDefault();
-      sendKey("ArrowRight");
-    } else if (e.key === " ") {
-      e.preventDefault();
-      sendKey("Space");
-    } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      e.preventDefault();
-      sendType(e.key);
-    }
-  };
-
-  const pasteClipboard = async () => {
-    try {
-      const text = await navigator.clipboard.readText();
-      if (text) {
-        await sendType(text);
-      }
-    } catch {
-      // Fallback: prompt user if browser clipboard access is blocked
-      const text = window.prompt("Paste credentials or text to send directly to the browser:");
-      if (text) await sendType(text);
-    }
-  };
-
-  const onNavigate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!navUrl.trim()) return;
-    setNavBusy(true);
-    try {
-      await fetch(`/api/sessions/${sessionId}/browser/navigate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: navUrl.trim() }),
-      });
-    } catch {} finally {
-      setNavBusy(false);
-    }
-  };
-
-  // Follow the newest frame unless someone has taken hold of the strip, which
-  // is the whole point of being able to take hold of it.
   useEffect(() => {
     if (!holdRef.current) setAt(shots.length - 1);
   }, [shots.length]);
 
-  const shot = shots[Math.min(Math.max(at, 0), shots.length - 1)];
+  useEffect(() => {
+    if (!nudge) return;
+    const timer = window.setTimeout(() => setNudge(null), 3200);
+    return () => window.clearTimeout(timer);
+  }, [nudge]);
 
-  const onPick = useCallback(async (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!selecting || busy) return;
-    const img = (e.currentTarget.querySelector("img.frame-over")
-      ?? e.currentTarget.querySelector("img")) as HTMLImageElement | null;
-    if (!img) return;
-    const box = img.getBoundingClientRect();
-    const x = ((e.clientX - box.left) / box.width) * VIEWPORT.w;
-    const y = ((e.clientY - box.top) / box.height) * VIEWPORT.h;
-    if (x < 0 || y < 0 || x > VIEWPORT.w || y > VIEWPORT.h) return;
+  useEffect(() => {
+    if (!max) return;
+    const onKey = (e: KeyboardEvent) => {
+      // Escape inside the page belongs to the page.
+      if (e.key === "Escape" && e.target !== sinkRef.current) setMax(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [max]);
 
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/sessions/${sessionId}/pick`, {
+  const watching = !!feed && !held;
+  const canUse = source === "browser" && current && watching && !driving;
+
+  // Losing the page (the agent took it back, or it closed) drops the keyboard;
+  // getting it back retires the note saying it was taken.
+  useEffect(() => {
+    if (canUse) setNudge(null);
+    else if (document.activeElement === sinkRef.current) sinkRef.current?.blur();
+  }, [canUse]);
+
+  // Handed the page: bring it into view, since the card asking you to use it
+  // sits below it and the page may have scrolled off the top.
+  const handedOver = waitingOnYou && canUse && variant === "inline";
+  useEffect(() => {
+    if (!handedOver) return;
+    // After the thread has finished laying out the card that asked, or its
+    // own jump to the bottom lands after this one. The thread only:
+    // scrollIntoView also scrolls the document, which on a phone slides the
+    // whole app up under the status bar.
+    const frame = requestAnimationFrame(() => requestAnimationFrame(() => {
+      const stage = stageRef.current;
+      const scroller = stage?.closest(".thread");
+      if (!stage || !scroller) return;
+      const top = stage.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+      scroller.scrollTo({ top: scroller.scrollTop + top - 12 });
+    }));
+    return () => cancelAnimationFrame(frame);
+  }, [handedOver]);
+
+  const send = useCallback((path: string, body: unknown): Promise<any> => {
+    // Anything that is not more typing goes out after the typing before it.
+    if (path !== "type" && pendingText.current) flushText();
+    return enqueue(path, body);
+  }, [sessionId]);
+
+  /** Keystrokes are gathered for a moment and sent as one: a request per
+      character made a fast typist wait on a round trip for every letter. */
+  const pendingText = useRef("");
+  const textTimer = useRef(0);
+  const flushText = () => {
+    window.clearTimeout(textTimer.current);
+    textTimer.current = 0;
+    const text = pendingText.current;
+    pendingText.current = "";
+    if (text) void enqueue("type", { text });
+  };
+  const typeText = (text: string) => {
+    pendingText.current += text;
+    if (!textTimer.current) textTimer.current = window.setTimeout(flushText, 90);
+  };
+
+  const enqueue = (path: string, body: unknown): Promise<any> => {
+    const next = chain.current.then(async () => {
+      const res = await fetch(`/api/sessions/${sessionId}/browser/${path}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ x, y }),
+        body: JSON.stringify(body),
       });
-      setPicked(await res.json());
-    } catch {
-      setPicked({ ok: false, error: "Could not reach the page." });
-    } finally {
-      setBusy(false);
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 409) setNudge({ text: data?.error ?? "The agent is using the browser.", stop: true });
+      return data;
+    }).catch(() => ({}));
+    chain.current = next;
+    return next;
+  };
+
+  /** Client pixels to page pixels, against the picture actually drawn. */
+  const toPage = (clientX: number, clientY: number) => {
+    const img = (stageRef.current?.querySelector("img.frame-over")
+      ?? stageRef.current?.querySelector("img")) as HTMLImageElement | null;
+    if (!img) return null;
+    const b = img.getBoundingClientRect();
+    const x = ((clientX - b.left) / b.width) * VIEWPORT.w;
+    const y = ((clientY - b.top) / b.height) * VIEWPORT.h;
+    if (x < 0 || y < 0 || x > VIEWPORT.w || y > VIEWPORT.h) return null;
+    return { x: Math.round(x), y: Math.round(y), scale: VIEWPORT.w / b.width };
+  };
+
+  const flushScroll = useCallback(() => {
+    const { dx, dy } = scrollAccum.current;
+    scrollAccum.current.dx = 0;
+    scrollAccum.current.dy = 0;
+    scrollAccum.current.timer = 0;
+    if (Math.abs(dx) + Math.abs(dy) >= 1) void send("scroll", { dx, dy });
+  }, [send]);
+
+  const queueScroll = useCallback((dx: number, dy: number) => {
+    scrollAccum.current.dx += dx;
+    scrollAccum.current.dy += dy;
+    if (!scrollAccum.current.timer) {
+      scrollAccum.current.timer = window.setTimeout(flushScroll, 70);
     }
-  }, [selecting, busy, sessionId]);
+  }, [flushScroll]);
+
+  // The wheel has to be a native listener: React's is passive, and a wheel
+  // over the page that also scrolls the conversation behind it is useless.
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el || !canUse) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      queueScroll(e.deltaX, e.deltaY);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [canUse, queueScroll]);
+
+  /** Whether a drag on the stage scrolls the page. Inline on a phone it
+      scrolls the conversation instead -- otherwise a page in the middle of the
+      thread is a wall you cannot scroll past -- and the expanded view is where
+      you scroll the page itself. */
+  const dragScrollsPage = max || variant === "panel";
+
+  const refuse = () => {
+    if (driving) setNudge({ text: "The agent is using the browser.", stop: !!onStop });
+  };
+
+  const click = (clientX: number, clientY: number, button: "left" | "right", touch: boolean) => {
+    if (!canUse) { refuse(); return; }
+    const at = toPage(clientX, clientY);
+    if (!at) return;
+    // Focus inside the gesture: iOS only raises the keyboard for a focus
+    // that descends from a tap.
+    const sink = sinkRef.current;
+    if (sink) {
+      sink.value = SENTINEL;
+      sink.focus({ preventScroll: true });
+    }
+    const id = Date.now() + Math.random();
+    setRipples((prev) => [...prev, { id, x: at.x, y: at.y }]);
+    window.setTimeout(() => setRipples((prev) => prev.filter((r) => r.id !== id)), 600);
+    void send("click", { x: at.x, y: at.y, button }).then((result: any) => {
+      // Tapped something that is not a field: put the phone's keyboard away.
+      if (touch && result && result.editable === false) sink?.blur();
+    });
+  };
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    // A touch is followed by emulated mouse events, and that mousedown lands
+    // on the stage -- which is not focusable -- and blurs the keyboard sink
+    // the tap just focused. Cancelling here suppresses them. Scrolling is
+    // governed by touch-action, not by this.
+    if (canUse) e.preventDefault();
+    pointer.current = { x: e.clientX, y: e.clientY, lastY: e.clientY, moved: false, type: e.pointerType };
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    const p = pointer.current;
+    if (!p) return;
+    if (Math.hypot(e.clientX - p.x, e.clientY - p.y) > 10) p.moved = true;
+    if (canUse && p.type !== "mouse" && dragScrollsPage && p.moved) {
+      const scale = toPage(e.clientX, e.clientY)?.scale ?? 1;
+      queueScroll(0, (p.lastY - e.clientY) * scale);
+      p.lastY = e.clientY;
+    }
+  };
+  const onPointerUp = (e: React.PointerEvent) => {
+    const p = pointer.current;
+    pointer.current = null;
+    if (!p || p.moved || e.button === 2) return;
+    click(e.clientX, e.clientY, "left", p.type !== "mouse");
+  };
+
+  const onSinkKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!canUse) return;
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && e.key.length === 1) {
+      if (e.key.toLowerCase() === "v") return; // the paste event carries it
+      e.preventDefault();
+      void send("key", { key: `Control+${e.key.toLowerCase()}` });
+      return;
+    }
+    if (NAMED_KEYS.has(e.key)) {
+      e.preventDefault();
+      if (e.key === "Escape" && max) setMax(false);
+      void send("key", { key: e.key });
+    }
+  };
+
+  const onSinkInput = (e: React.FormEvent<HTMLTextAreaElement>) => {
+    const sink = e.currentTarget;
+    const value = sink.value;
+    sink.value = SENTINEL;
+    if (!canUse) return;
+    if (!value.includes(SENTINEL) && value.length === 0) {
+      void send("key", { key: "Backspace" });
+      return;
+    }
+    const text = value.split(SENTINEL).join("");
+    if (text) typeText(text);
+  };
+
+  const onSinkPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    e.preventDefault();
+    const text = e.clipboardData.getData("text");
+    if (canUse && text) typeText(text);
+  };
+
+  if (variant === "stub") {
+    return (
+      <div className="shot-stub">
+        <IconPanelRight size={14} />
+        <span className="shot-stub-where">{url ?? "about:blank"}</span>
+        <span className="shot-stub-note">in the panel</span>
+      </div>
+    );
+  }
 
   if (shots.length === 0 && actions.length === 0 && !feed) return null;
 
-  const box = picked?.pick?.box;
+  const shot = shots[Math.min(Math.max(at, 0), shots.length - 1)];
   const Icon = source === "browser" ? IconGlobe : IconMonitor;
-
-  /* Watching, rather than reviewing. The feed only ever reaches the card whose
-     page is still open, and taking hold of the frame strip is what says "stop
-     following, I want to look at something that already happened" -- the same
-     gesture that already meant that for stored frames. */
-  const watching = !!feed && !held;
   const stageSrc = watching
     ? `data:${feed.mime};base64,${feed.data}`
     : shot
       ? `/api/sessions/${sessionId}/blobs/${shot.blob}`
       : null;
   const latest = actions[actions.length - 1];
-  const big = bigChoice ?? (source === "browser" && live && (watching || !stageSrc));
-  /* The card appears the moment the agent says what it is opening, which is
-     before Chrome has painted anything. Showing the stage anyway, with the
-     step in words, means you are looking at the right place when the first
-     frame lands rather than at a header that grows a picture later. */
+  const big = variant === "panel" || (bigChoice ?? (source === "browser" && live && (watching || !stageSrc)));
   const waiting = !stageSrc && source === "browser" && live;
 
+  const state: { label: string; tone: string } | null =
+    waitingOnYou && canUse ? { label: "your turn", tone: "is-yours" }
+      : canUse ? { label: "live · yours to use", tone: "is-open" }
+        : watching && driving ? { label: "agent driving", tone: "is-driving" }
+          : watching ? { label: "live", tone: "is-open" }
+            : live ? { label: "live", tone: "is-driving" }
+              : null;
+
   return (
-    <section className={`cell shot ${live ? "is-live" : ""}`}>
+    <section
+      className={`cell shot ${live ? "is-live" : ""} ${variant === "panel" ? "is-panel" : ""} ${
+        max ? "is-max" : ""} ${waitingOnYou && canUse ? "is-yours" : ""}`}
+    >
       <header className="cell-top">
         <Icon size={13} />
         <span className="shot-where" title={url ?? undefined}>
           {source === "browser" ? (url ?? "about:blank") : "Desktop"}
         </span>
-
-        {/* Clear UI indicator for who holds browser control */}
-        {source === "browser" && (
-          controlHolder === "human" ? (
-            <div
-              className="browser-control-indicator is-human"
-              title="Human in Control: Keystrokes, mouse pointer, and wheel scrolling are forwarded directly to the page."
-            >
-              <span className="browser-control-dot" />
-              <IconUser size={12} />
-              <span>Human in Control</span>
-            </div>
-          ) : (
-            <div
-              className="browser-control-indicator is-agent"
-              title="Autonomous Mode: AI Agent operates the browser automatically."
-            >
-              <span className="browser-control-dot" />
-              <IconBot size={12} />
-              <span>Agent in Control</span>
-            </div>
-          )
-        )}
-
-        <div className="spacer" />
-
-        {/* Two different claims, deliberately worded differently: "watching"
-            means frames are arriving right now, "live" means this is the
-            newest card in a turn that has not finished. The first is the one
-            worth trusting. */}
-        {watching ? (
-          <em className="cell-chip is-watching" title={`${feed ? "streaming" : ""}`}>
+        {state && (
+          <em className={`cell-chip shot-state ${state.tone}`}>
             <span className="watch-dot" aria-hidden="true" />
-            watching
+            {state.label}
           </em>
-        ) : feed ? (
+        )}
+        {held && feed && (
           <button className="cell-act" onClick={() => { setHeld(false); setAt(shots.length - 1); }}>
             back to live
           </button>
-        ) : live ? (
-          <em className="cell-chip is-running">live</em>
-        ) : null}
-        {(shots.length > 0 || feed) && (
-          <button
-            className={`cell-act ${big ? "on" : ""}`}
-            onClick={() => setBigChoice(!big)}
-            aria-pressed={big}
-          >
-            {big ? "shrink" : "expand"}
-          </button>
         )}
-        {pickable && (shots.length > 0 || feed) && (
+        {stageSrc && (
           <button
-            className={`cell-act ${selecting ? "on" : ""}`}
-            aria-pressed={selecting}
-            onClick={() => { setSelecting((v) => !v); setPicked(null); }}
-            title="Click an element on the page to ask about it"
+            className="shot-corner"
+            onClick={() => {
+              if (variant === "inline" && !max && !big) { setBigChoice(true); return; }
+              setMax((m) => !m);
+            }}
+            aria-label={max ? "Leave full screen" : "Enlarge"}
+            title={max ? "Leave full screen (Esc)" : "Enlarge"}
           >
-            {selecting ? "selecting…" : "select"}
-          </button>
-        )}
-        {source === "browser" && (watching || live) && (
-          <button
-            className={`cell-act ${interactive ? "on" : ""}`}
-            onClick={toggleInteractive}
-            title={interactive ? "Return control to AI agent" : "Take direct control of keyboard and pointer"}
-            style={interactive ? { background: "#4f46e5", color: "#fff", borderColor: "transparent" } : undefined}
-          >
-            {interactive ? (
-              <>
-                <IconBot size={12} />
-                <span>hand back</span>
-              </>
-            ) : (
-              <>
-                <IconUser size={12} />
-                <span>take control</span>
-              </>
-            )}
+            {max ? <IconMinimize size={15} /> : <IconMaximize size={15} />}
           </button>
         )}
       </header>
-
-      {/* Prominent Handoff Banner: shows when handoff is requested (e.g. SSO login, CAPTCHA) */}
-      {source === "browser" && handoffReason && (
-        <div className={`browser-handoff-alert ${interactive ? "is-active" : ""}`}>
-          <div className="browser-handoff-main">
-            <span className={`browser-handoff-tag ${interactive ? "is-active" : ""}`}>
-              {interactive ? "Handoff Active" : "Action Needed"}
-            </span>
-            <div className="browser-handoff-desc">
-              <strong>{interactive ? "Human in Control: " : "Agent Requested Intervention: "}</strong>
-              {handoffReason}
-              <div style={{ fontSize: "11px", color: "var(--text-3)", marginTop: "2px" }}>
-                Keystrokes &amp; SSO passwords entered here are forwarded directly to Chrome and never saved to chat logs.
-              </div>
-            </div>
-          </div>
-          <div className="browser-handoff-actions">
-            {interactive ? (
-              <button
-                type="button"
-                className="browser-handoff-btn hand-back"
-                onClick={() => setControlMode("agent")}
-              >
-                <IconBot size={13} />
-                <span>Done / Hand Back</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="browser-handoff-btn take-control"
-                onClick={() => setControlMode("human", handoffReason)}
-              >
-                <IconUser size={13} />
-                <span>Take Control &amp; Sign In</span>
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* When interactive takeover is on without a specific handoff reason */}
-      {source === "browser" && interactive && !handoffReason && (
-        <div className="browser-handoff-alert is-active">
-          <div className="browser-handoff-main">
-            <span className="browser-handoff-tag is-active">
-              <IconUser size={11} /> Human Active
-            </span>
-            <div className="browser-handoff-desc">
-              <strong>You have direct keyboard and pointer control.</strong> Click the page to focus, scroll with mouse wheel, or type credentials below.
-            </div>
-          </div>
-          <div className="browser-handoff-actions">
-            <button
-              type="button"
-              className="browser-handoff-btn hand-back"
-              onClick={() => setControlMode("agent")}
-            >
-              <IconBot size={13} />
-              <span>Hand Back to Agent</span>
-            </button>
-          </div>
-        </div>
-      )}
 
       {waiting && (
         <div className="shot-stage is-waiting">
@@ -504,237 +371,75 @@ export function ScreencastCell({
 
       {stageSrc && (
         <div
-          tabIndex={interactive ? 0 : undefined}
-          className={`shot-stage ${selecting ? "is-selecting" : ""} ${big ? "is-big" : ""} ${
-            watching ? "is-watching" : ""}`}
-          style={interactive ? { cursor: "crosshair", outline: "none" } : undefined}
-          onWheel={onWheel}
-          onKeyDown={onStageKeyDown}
+          ref={stageRef}
+          className={`shot-stage ${big ? "is-big" : ""} ${watching ? "is-watching" : ""} ${
+            canUse ? "is-usable" : ""} ${canUse && dragScrollsPage ? "is-dragging-page" : ""} ${
+            driving && watching ? "is-locked" : ""}`}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={() => { pointer.current = null; }}
           onContextMenu={(e) => {
-            if (interactive) e.preventDefault();
-          }}
-          onMouseMove={(e) => {
-            if (!interactive || source !== "browser") return;
-            const img = (e.currentTarget.querySelector("img.frame-over")
-              ?? e.currentTarget.querySelector("img")) as HTMLImageElement | null;
-            if (!img) return;
-            const b = img.getBoundingClientRect();
-            const x = Math.round(((e.clientX - b.left) / b.width) * VIEWPORT.w);
-            const y = Math.round(((e.clientY - b.top) / b.height) * VIEWPORT.h);
-            if (x >= 0 && y >= 0 && x <= VIEWPORT.w && y <= VIEWPORT.h) {
-              setHoverCoords({ x, y });
-            }
-          }}
-          onMouseLeave={() => setHoverCoords(null)}
-          onClick={(e) => {
-            if (selecting) {
-              onPick(e);
-              return;
-            }
-            if (!interactive || source !== "browser") return;
-            const img = (e.currentTarget.querySelector("img.frame-over")
-              ?? e.currentTarget.querySelector("img")) as HTMLImageElement | null;
-            if (!img) return;
-            const b = img.getBoundingClientRect();
-            const x = Math.round(((e.clientX - b.left) / b.width) * VIEWPORT.w);
-            const y = Math.round(((e.clientY - b.top) / b.height) * VIEWPORT.h);
-            if (x < 0 || y < 0 || x > VIEWPORT.w || y > VIEWPORT.h) return;
-
-            // Transient visual click ripple
-            const rippleId = Date.now() + Math.random();
-            setClickRipples((prev) => [...prev, { id: rippleId, x, y }]);
-            setTimeout(() => {
-              setClickRipples((prev) => prev.filter((r) => r.id !== rippleId));
-            }, 600);
-
-            sendClick(x, y, e.button === 2 ? "right" : "left", e.detail === 2);
+            if (!canUse) return;
+            e.preventDefault();
+            click(e.clientX, e.clientY, "right", false);
           }}
         >
           <Frame
             src={stageSrc}
-            alt={
-              watching
-                ? "the page, live"
-                : source === "browser" ? "page the agent saw" : "desktop the agent saw"
-            }
+            alt={watching ? "the page, live" : source === "browser" ? "page the agent saw" : "desktop the agent saw"}
           >
-            {/* User click ripples */}
-            {interactive && clickRipples.map((r) => (
+            {ripples.map((r) => (
               <span
                 key={r.id}
                 className="click-ripple"
-                style={{
-                  left: `${(r.x / VIEWPORT.w) * 100}%`,
-                  top: `${(r.y / VIEWPORT.h) * 100}%`,
-                }}
+                style={{ left: `${(r.x / VIEWPORT.w) * 100}%`, top: `${(r.y / VIEWPORT.h) * 100}%` }}
               />
             ))}
-
-            {/* A stored frame gets a painted marker where the click landed. */}
             {!watching && shot?.mark && (
               <span
                 className="marker"
-                style={{
-                  left: `${(shot.mark.x / VIEWPORT.w) * 100}%`,
-                  top: `${(shot.mark.y / VIEWPORT.h) * 100}%`,
-                }}
+                style={{ left: `${(shot.mark.x / VIEWPORT.w) * 100}%`, top: `${(shot.mark.y / VIEWPORT.h) * 100}%` }}
               />
             )}
-            {box && !watching && at === shots.length - 1 && (
-              <span
-                className="pickbox"
-                style={{
-                  left: `${(box.x / VIEWPORT.w) * 100}%`,
-                  top: `${(box.y / VIEWPORT.h) * 100}%`,
-                  width: `${(box.w / VIEWPORT.w) * 100}%`,
-                  height: `${(box.h / VIEWPORT.h) * 100}%`,
-                }}
-              />
-            )}
-            {/* What it is doing, over the picture of it doing it. */}
-            {watching && latest && !interactive && <span className="shot-caption">{latest}</span>}
-
-            {/* Interactive mode status tag on stage */}
-            {interactive && hoverCoords && (
-              <span className="shot-caption" style={{ left: "auto", right: "10px" }}>
-                {hoverCoords.x}, {hoverCoords.y}
-              </span>
-            )}
+            {watching && driving && latest && <span className="shot-caption">{latest}</span>}
+            {canUse && typing && <span className="shot-caption is-typing">typing into the page</span>}
           </Frame>
+
+          {nudge && (
+            <div className="shot-nudge" role="status" onPointerUp={(e) => e.stopPropagation()}>
+              <span>{nudge.text}</span>
+              {nudge.stop && onStop && (
+                <button className="shot-nudge-stop" onClick={() => { setNudge(null); onStop(); }}>
+                  <IconStop size={12} /> Stop it
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Where keys go. Invisible and under the tap, so the keyboard a
+              phone raises for it appears exactly as if the page's own field
+              had been tapped. */}
+          <textarea
+            ref={sinkRef}
+            className="kbd-sink"
+            aria-label="Type into the page"
+            autoCapitalize="off"
+            autoCorrect="off"
+            autoComplete="off"
+            spellCheck={false}
+            defaultValue={SENTINEL}
+            onKeyDown={onSinkKeyDown}
+            onInput={onSinkInput}
+            onPaste={onSinkPaste}
+            onFocus={() => setTyping(true)}
+            onBlur={() => setTyping(false)}
+            tabIndex={canUse ? 0 : -1}
+          />
         </div>
       )}
 
-      {/* Interactive Control Panel */}
-      {source === "browser" && interactive && (
-        <div className="browser-interactive-bar">
-          {/* Address & Navigation bar */}
-          <form onSubmit={onNavigate} style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-            <button
-              type="button"
-              className="cell-act"
-              onClick={sendBack}
-              disabled={navBusy}
-              title="Navigate back"
-            >
-              <IconArrowLeft size={12} />
-              <span>Back</span>
-            </button>
-            <button
-              type="button"
-              className="cell-act"
-              onClick={sendReload}
-              disabled={navBusy}
-              title="Reload current page"
-            >
-              <IconRotateCcw size={12} />
-              <span>Reload</span>
-            </button>
-            <input
-              type="text"
-              value={navUrl}
-              onChange={(e) => setNavUrl(e.target.value)}
-              placeholder="https://..."
-              style={{
-                flex: 1,
-                padding: "5px 9px",
-                fontSize: "12px",
-                borderRadius: "4px",
-                border: "1px solid rgba(255,255,255,0.15)",
-                background: "rgba(0,0,0,0.4)",
-                color: "#fff",
-              }}
-            />
-            <button type="submit" className="cell-act" disabled={navBusy}>
-              {navBusy ? "Going…" : "Go"}
-            </button>
-          </form>
-
-          {/* Direct typing and keyboard shortcuts */}
-          <div style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }}>
-            <input
-              type={maskPassword ? "password" : "text"}
-              value={typeInput}
-              onChange={(e) => setTypeInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  sendType(typeInput);
-                  sendKey("Enter");
-                  setTypeInput("");
-                }
-              }}
-              placeholder={maskPassword ? "Type password / token then press Enter…" : "Type credentials or text here, then press Enter…"}
-              style={{
-                flex: "1 1 220px",
-                padding: "5px 9px",
-                fontSize: "12px",
-                borderRadius: "4px",
-                border: "1px solid rgba(255,255,255,0.15)",
-                background: "rgba(0,0,0,0.4)",
-                color: "#fff",
-              }}
-            />
-            <button
-              type="button"
-              className={`cell-act ${maskPassword ? "on" : ""}`}
-              onClick={() => setMaskPassword((v) => !v)}
-              title={maskPassword ? "Click to reveal typed characters" : "Click to mask typed characters"}
-            >
-              <IconLock size={12} />
-              <span>{maskPassword ? "Masked" : "Mask"}</span>
-            </button>
-            <button
-              type="button"
-              className="cell-act"
-              onClick={() => {
-                if (typeInput) {
-                  sendType(typeInput);
-                  setTypeInput("");
-                }
-              }}
-            >
-              Type
-            </button>
-            <button
-              type="button"
-              className="cell-act"
-              onClick={pasteClipboard}
-              title="Paste text from clipboard directly into focused browser input"
-            >
-              Paste Clipboard
-            </button>
-            <button type="button" className="cell-act" onClick={() => sendKey("Enter")}>
-              Enter ↵
-            </button>
-            <button type="button" className="cell-act" onClick={() => sendKey("Tab")}>
-              Tab ⇥
-            </button>
-            <button type="button" className="cell-act" onClick={() => sendKey("Backspace")}>
-              ⌫
-            </button>
-            <button type="button" className="cell-act" onClick={() => sendKey("Escape")}>
-              Esc
-            </button>
-            <button type="button" className="cell-act" onClick={() => sendKey("Space")}>
-              Space
-            </button>
-          </div>
-
-          <div className="browser-interactive-hint">
-            <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-              <IconMousePointer size={12} />
-              <IconKeyboard size={12} />
-              <span>
-                <strong>Tip:</strong> Click the screen to focus fields, or type directly with your physical keyboard (<kbd>Tab</kbd>, <kbd>Enter</kbd>, <kbd>Backspace</kbd>, letters). Mouse wheel scrolls.
-              </span>
-            </span>
-            <span style={{ fontFamily: "var(--mono)", fontSize: "10.5px" }}>
-              1280 × 800
-            </span>
-          </div>
-        </div>
-      )}
-
-      {shots.length > 1 && (
+      {shots.length > 1 && !max && (
         <div className="shot-strip">
           <input
             type="range"
@@ -747,18 +452,18 @@ export function ScreencastCell({
           <span className="shot-count">
             {Math.min(at, shots.length - 1) + 1} / {shots.length}
           </span>
-          {held && (
-            <button
-              className="cell-act"
-              onClick={() => { setHeld(false); setAt(shots.length - 1); }}
-            >
-              latest
-            </button>
-          )}
         </div>
       )}
 
-      {actions.length > 0 && (
+      {variant === "panel" && !max && actions.length > 0 && (
+        <ol className="shot-log" aria-label="Recent steps">
+          {actions.slice(-8).reverse().map((a, i) => (
+            <li key={actions.length - i} className={i === 0 ? "is-latest" : undefined}>{a}</li>
+          ))}
+        </ol>
+      )}
+
+      {actions.length > 0 && !max && variant === "inline" && (
         <div className="shot-acts">
           <button
             className={`shot-acts-toggle ${showActions ? "on" : ""}`}
@@ -775,60 +480,6 @@ export function ScreencastCell({
           )}
         </div>
       )}
-
-      {picked && (
-        <aside className="pickpanel">
-          <div className="pp-top">
-            <b>{picked.ok ? describe(picked) : "Nothing there"}</b>
-            <div className="spacer" />
-            <button className="btn icon ghost" onClick={() => setPicked(null)}
-                    aria-label="Dismiss selection">
-              <IconX size={13} />
-            </button>
-          </div>
-          {picked.ok && picked.pick ? (
-            <>
-              {picked.pick.source?.file ? (
-                <div className="pp-source">
-                  {picked.pick.source.file}
-                  {picked.pick.source.line ? `:${picked.pick.source.line}` : ""}
-                  {picked.pick.source.component ? ` · <${picked.pick.source.component}>` : ""}
-                </div>
-              ) : (
-                <div className="pp-source muted">
-                  source not exposed by this build — selector{" "}
-                  <code>{picked.pick.selector}</code>
-                </div>
-              )}
-              <div className="pp-params">
-                {Object.entries(picked.pick.params).map(([group, values]) => (
-                  <div className="pp-group" key={group}>
-                    <span className="pp-glabel">{group}</span>
-                    {Object.entries(values).map(([k, v]) => (
-                      <div className="pp-row" key={k}>
-                        <span>{k}</span>
-                        <em>{v}</em>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-              <p className="pp-hint">
-                The agent has been told what you picked — say what you want changed.
-              </p>
-            </>
-          ) : (
-            <p className="pp-hint">{picked.error}</p>
-          )}
-        </aside>
-      )}
     </section>
   );
-}
-
-function describe(p: Pick): string {
-  const f = p.pick?.fingerprint;
-  if (!f) return "Selected";
-  const name = f.text ? `“${f.text.slice(0, 40)}”` : `<${f.tag}>`;
-  return p.pick?.ref != null ? `[${p.pick.ref}] ${name}` : name;
 }

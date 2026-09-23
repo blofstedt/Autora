@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.9.5"
+version: "0.9.6"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -17,7 +17,8 @@ description: >-
 
 
   • Real-time browser view — watch the cursor move, text appear, and pages load
-  exactly as the agent drives them.
+  exactly as the agent drives them, then click and type in the page yourself
+  when it hands over (sign-ins, CAPTCHAs) or once it has finished.
 
 
   • Persistent browser auth — sign in once to Gmail, Google Calendar, or any
@@ -73,20 +74,25 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  A layout pass for phones and desktops. On a phone the conversation no
-  longer drags sideways: tapping the message box no longer zooms the page
-  in, and long links, paths and code in the thread wrap or scroll inside
-  their own card. Text is larger, and card buttons, the bottom bar and the
-  live voice button are bigger and easier to tap. The memory graph takes
-  less of the screen, and the browser card's controls (including Take
-  control) wrap onto their own row instead of being cut off.
+  The live browser is now something you simply use. Click or tap the page and
+  the click lands there; tap into a field and type, and the keys go to the
+  page (a phone raises its own keyboard); scroll with the wheel, or drag in
+  the enlarged view. The old take-control toolbar and buttons are gone. The
+  page is locked while the agent is driving -- tap it and you are offered
+  Stop -- and unlocks when it finishes or hands the page to you.
 
 
-  On a desktop the memory graph lines up with the conversation, the
-  current session's name shows at the top, screenshots and text are
-  larger, and the phone-style bottom bar is gone -- live voice now sits
-  next to Send.
+  When the agent needs you it now asks with a card: the question, a few
+  answers to tap, and room for your own words. Sign-ins work the same way:
+  the agent hands you the page with a card saying what is needed, waits,
+  and carries on when you tap I'm done.
 
+
+  On wide screens the live page sits in a panel beside the conversation,
+  with the last few steps listed under it. Any browser page can go full
+  screen from its corner button. The memory graph folds down to a single
+  line (folded by default on phones), and replies are formatted: headings,
+  lists, tables, links and code blocks with a copy button.
 
 dependencies: []
 path: ""

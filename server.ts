@@ -26,7 +26,7 @@ import {
 import {
   availableTools, capabilityBriefing, findTool, groupStates, needsApproval,
   renderCall, runTool, toolSettings, updateToolSettings,
-  type ToolContext, type ToolGroup,
+  type ToolContext, type ToolGroup, type AskRequest, type AskAnswer,
 } from "./server/tools";
 
 /* Where to listen. Umbrel's compose file publishes 8817 and passes it in, so
@@ -607,6 +607,87 @@ function askPermission(
         clearTimeout(timer);
         finish({ approved: false });
       }
+    });
+  });
+}
+
+// ------------------------------------------------------- asking the person --
+
+/**
+ * A question the agent has put to the person, parked until they answer.
+ *
+ * Unlike an approval this is the agent's own choice to stop: it has hit
+ * something only the person can settle -- a preference, an ambiguity, a
+ * sign-in -- and the turn waits here, visibly, on a card in the thread.
+ */
+type PendingAsk = {
+  sessionId: string;
+  settle: (answer: AskAnswer) => void;
+  timer: NodeJS.Timeout;
+};
+const awaitingAsk = new Map<string, PendingAsk>();
+
+/** Longer than an approval: signing in somewhere can mean finding a phone. */
+const ASK_TIMEOUT_MS = 30 * 60 * 1000;
+
+/** Whether the turn in this session is stopped on the person rather than
+    working. While it is, the browser belongs to them. */
+function waitingOnPerson(sessionId: string): boolean {
+  for (const pending of awaitingAsk.values()) {
+    if (pending.sessionId === sessionId) return true;
+  }
+  return false;
+}
+
+/** The agent is at the wheel: a turn is running and it is not waiting on the
+    person. User input to the browser is refused while this holds, so two
+    pairs of hands never fight over one page. */
+function agentDriving(session: Session): boolean {
+  return session.busy && !waitingOnPerson(session.id);
+}
+
+function settleAsk(askId: string, answer: AskAnswer): boolean {
+  const pending = awaitingAsk.get(askId);
+  if (!pending) return false;
+  clearTimeout(pending.timer);
+  awaitingAsk.delete(askId);
+  const session = sessions.get(pending.sessionId);
+  if (session) {
+    emitEvent(session, "ask.answer", answer.who === "user" ? "user" : "system", {
+      ask_id: askId,
+      cancelled: answer.cancelled,
+      choices: answer.choices,
+      text: answer.text,
+      who: answer.who,
+    });
+  }
+  pending.settle(answer);
+  return true;
+}
+
+function askPerson(session: Session, request: AskRequest): Promise<AskAnswer> {
+  const askId = `ask-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+
+  emitEvent(session, "ask.request", "agent", {
+    ask_id: askId,
+    kind: request.kind,
+    title: request.title,
+    detail: request.detail ?? "",
+    options: request.options,
+    multi: request.multi,
+    allow_text: request.allowText,
+    placeholder: request.placeholder ?? "",
+  });
+
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      settleAsk(askId, { cancelled: true, choices: [], text: "", who: "timeout" });
+    }, ASK_TIMEOUT_MS);
+    timer.unref?.();
+    awaitingAsk.set(askId, { sessionId: session.id, settle: resolve, timer });
+    // Stop releases the question too; nobody is going to answer it.
+    running.get(session.id)?.cancels.add(() => {
+      settleAsk(askId, { cancelled: true, choices: [], text: "", who: "stopped" });
     });
   });
 }
@@ -1583,6 +1664,7 @@ async function startServer() {
               },
             },
             vault: (id) => context.vault.get(id),
+            ask: (request) => askPerson(session, request),
           });
 
           /**
@@ -1856,6 +1938,27 @@ async function startServer() {
   });
 
   // 6b. Live Browser Direct Interaction & Handoff
+  const DRIVING =
+    "The agent is using the browser. Wait until it finishes or asks you, or stop it.";
+
+  /** An answer to a question the agent asked. */
+  app.post("/api/sessions/:id/ask/:askId", (req: Request, res: Response) => {
+    const pending = awaitingAsk.get(req.params.askId);
+    if (!pending || pending.sessionId !== req.params.id) {
+      return res.status(404).json({ error: "That question is no longer waiting." });
+    }
+    const choices = Array.isArray(req.body?.choices)
+      ? req.body.choices.map((c: unknown) => String(c)).slice(0, 20)
+      : [];
+    const text = typeof req.body?.text === "string" ? req.body.text.slice(0, 4000) : "";
+    settleAsk(req.params.askId, {
+      cancelled: Boolean(req.body?.cancelled),
+      choices,
+      text,
+      who: "user",
+    });
+    res.json({ ok: true });
+  });
   app.get("/api/sessions/:id/browser/status", (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
@@ -1888,6 +1991,7 @@ async function startServer() {
   app.post("/api/sessions/:id/browser/scroll", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
+    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
     const live = browsers.get(session.id);
     if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
 
@@ -1904,6 +2008,7 @@ async function startServer() {
   app.post("/api/sessions/:id/browser/reload", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
+    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
     const live = browsers.get(session.id);
     if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
 
@@ -1918,6 +2023,7 @@ async function startServer() {
   app.post("/api/sessions/:id/browser/back", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
+    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
     const live = browsers.get(session.id);
     if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
 
@@ -1932,6 +2038,7 @@ async function startServer() {
   app.post("/api/sessions/:id/browser/click", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
+    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
     const live = browsers.get(session.id);
     if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
 
@@ -1943,8 +2050,8 @@ async function startServer() {
 
     try {
       const button = req.body?.button === "right" ? "right" : req.body?.button === "middle" ? "middle" : "left";
-      await live.mouseClick(x, y, button, !!req.body?.double);
-      res.json({ ok: true });
+      const { editable } = await live.userClick(x, y, button, !!req.body?.double);
+      res.json({ ok: true, editable });
     } catch (err: any) {
       res.status(500).json({ error: err?.message ?? "Click failed" });
     }
@@ -1953,6 +2060,7 @@ async function startServer() {
   app.post("/api/sessions/:id/browser/move", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
+    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
     const live = browsers.get(session.id);
     if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
 
@@ -1973,6 +2081,7 @@ async function startServer() {
   app.post("/api/sessions/:id/browser/type", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
+    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
     const live = browsers.get(session.id);
     if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
 
@@ -1988,6 +2097,7 @@ async function startServer() {
   app.post("/api/sessions/:id/browser/key", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
+    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
     const live = browsers.get(session.id);
     if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
 
@@ -2005,6 +2115,7 @@ async function startServer() {
   app.post("/api/sessions/:id/browser/navigate", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
+    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
     const live = browsers.get(session.id);
     if (!live) return res.status(400).json({ error: "No browser active." });
 

@@ -366,52 +366,6 @@ body::before {
   animation: ripple 1.1s var(--ease) infinite;
 }
 
-/* ------------------------------------------------------------ selection -- */
-.pickmode { flex: 0 0 auto; font-size: 11.5px; }
-.pickmode.on { --btn-fg: var(--accent); --btn-bg: var(--accent-soft); }
-/* A crosshair says the video has become a surface you can ask about. */
-.browser-stage.is-selecting { cursor: crosshair; }
-.browser-stage.is-selecting .frame { outline: 1px solid var(--accent-line); }
-
-.pickbox {
-  position: absolute; pointer-events: none;
-  border: 2px solid var(--accent); border-radius: 4px;
-  background: var(--accent-soft);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
-  animation: fade 0.18s var(--ease) both;
-}
-
-.pickpanel {
-  flex: 0 0 auto; max-height: 45%; overflow-y: auto;
-  padding: 11px 13px 13px; background: var(--s2);
-  border-top: 1px solid var(--border);
-  animation: rise 0.24s var(--ease) both;
-}
-.pp-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-.pp-top b { font-size: 12.5px; font-weight: 650; }
-.pp-source {
-  font-family: var(--mono); font-size: 10.5px; color: var(--accent-2);
-  margin-bottom: 9px; overflow-wrap: anywhere;
-}
-.pp-source.muted { color: var(--text-3); }
-.pp-source code { color: var(--text-2); }
-.pp-params { display: flex; flex-wrap: wrap; gap: 10px; }
-.pp-group {
-  flex: 1 1 180px; min-width: 0; padding: 8px 10px;
-  background: var(--s1); border: 1px solid var(--border); border-radius: var(--r-sm);
-}
-.pp-glabel {
-  display: block; font-size: 9.5px; font-weight: 650; letter-spacing: 0.08em;
-  text-transform: uppercase; color: var(--text-3); margin-bottom: 5px;
-}
-.pp-row {
-  display: flex; justify-content: space-between; gap: 10px;
-  font-family: var(--mono); font-size: 10.5px; line-height: 1.7;
-}
-.pp-row span { color: var(--text-3); }
-.pp-row em { font-style: normal; color: var(--text); overflow-wrap: anywhere; text-align: right; }
-.pp-hint { margin: 9px 0 0; font-size: 11px; color: var(--text-3); }
-
 /* ----------------------------------------------------------------- diffs -- */
 .diff {
   border: 1px solid var(--border); border-radius: var(--r);
@@ -1613,8 +1567,6 @@ label + .jf-hint { margin-top: -5px; }
 }
 .shot-stage .frame { border-radius: var(--r-sm); max-height: 300px; }
 .shot-stage.is-big .frame { max-height: 78vh; }
-.shot-stage.is-selecting { cursor: crosshair; }
-.shot-stage.is-selecting .frame { outline: 1px solid var(--accent-line); }
 
 /* Watching, as opposed to reviewing. The card is showing frames that are
    arriving now, so it gets a live edge rather than the quiet border a stored
@@ -1677,148 +1629,6 @@ label + .jf-hint { margin-top: -5px; }
 .shot-acts-list {
   margin: 0; padding: 0 12px 9px 30px; list-style: decimal;
   font-family: var(--mono); font-size: 11px; line-height: 1.7; color: var(--text-2);
-}
-
-/* ------------------------------------------- browser control handoff & modes -- */
-.browser-control-indicator {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 8px;
-  border-radius: 99px;
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  border: 1px solid transparent;
-  transition: all 0.2s var(--ease);
-  user-select: none;
-}
-.browser-control-indicator.is-agent {
-  background: rgba(99, 102, 241, 0.12);
-  border-color: rgba(99, 102, 241, 0.3);
-  color: #a5b4fc;
-}
-.browser-control-indicator.is-human {
-  background: rgba(245, 158, 11, 0.16);
-  border-color: rgba(245, 158, 11, 0.4);
-  color: #fcd34d;
-}
-.browser-control-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-}
-.browser-control-indicator.is-human .browser-control-dot {
-  box-shadow: 0 0 6px #f59e0b;
-  animation: halo 1.5s infinite;
-}
-
-.browser-handoff-alert {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 14px;
-  background: rgba(245, 158, 11, 0.14);
-  border-bottom: 1px solid rgba(245, 158, 11, 0.3);
-  color: var(--text);
-  font-size: 12px;
-  line-height: 1.45;
-}
-.browser-handoff-alert.is-active {
-  background: rgba(99, 102, 241, 0.12);
-  border-bottom-color: rgba(99, 102, 241, 0.3);
-}
-.browser-handoff-main {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  flex: 1;
-}
-.browser-handoff-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 7px;
-  border-radius: 4px;
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  background: rgba(245, 158, 11, 0.25);
-  color: #fbbf24;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.browser-handoff-tag.is-active {
-  background: rgba(99, 102, 241, 0.25);
-  color: #c7d2fe;
-}
-.browser-handoff-desc {
-  flex: 1;
-  color: var(--text-2);
-}
-.browser-handoff-desc strong {
-  color: var(--text);
-}
-.browser-handoff-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-.browser-handoff-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 12px;
-  border-radius: 6px;
-  font-size: 11.5px;
-  font-weight: 600;
-  cursor: pointer;
-  border: 1px solid transparent;
-  transition: all 0.15s var(--ease);
-}
-.browser-handoff-btn.take-control {
-  background: #f59e0b;
-  color: #1a1003;
-}
-.browser-handoff-btn.take-control:hover {
-  background: #fbbf24;
-}
-.browser-handoff-btn.hand-back {
-  background: #4f46e5;
-  color: #ffffff;
-}
-.browser-handoff-btn.hand-back:hover {
-  background: #6366f1;
-}
-
-.browser-interactive-bar {
-  padding: 8px 12px;
-  background: rgba(10, 12, 18, 0.95);
-  border-top: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.browser-interactive-hint {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 11px;
-  color: var(--text-3);
-}
-.browser-interactive-hint kbd {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 3px;
-  padding: 1px 4px;
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--text-2);
 }
 
 .click-ripple {
@@ -3304,27 +3114,9 @@ label + .jf-hint { margin-top: -5px; }
    specificity the later rule wins.
    ============================================================================ */
 
-/* The browser card's header carries an address, a control indicator and up to
-   four actions. On a phone that is wider than the card, and `overflow: hidden`
-   on the card quietly cut the last buttons off -- Take control was the one you
-   could not reach. It wraps instead: the address keeps the first row, the
-   controls take the second. */
-.browser-control-indicator { white-space: nowrap; flex: 0 0 auto; }
-.browser-handoff-alert { flex-wrap: wrap; }
-.browser-handoff-main { min-width: 0; flex: 1 1 240px; }
-.browser-interactive-bar input { min-width: 0; }
-.browser-interactive-hint { flex-wrap: wrap; }
 .kanban-card-title, .kanban-task-title, .perm-reason, .job-name { overflow-wrap: anywhere; }
 
 @media (max-width: 680px) {
-  .cell.shot .cell-top { flex-wrap: wrap; row-gap: 8px; }
-  .cell.shot .shot-where { flex: 1 1 calc(100% - 24px); }
-  .cell.shot .cell-top .spacer { display: none; }
-  /* The dot and the glyph say who is driving; the words do not fit. */
-  .browser-control-indicator > span:last-child { display: none; }
-  .browser-handoff-actions { flex: 1 1 100%; }
-  .browser-handoff-btn { flex: 1; justify-content: center; min-height: 40px; }
-
   /* The memory graph is ambient, not the thing you came to read. At 145px it
      took a fifth of a phone screen away from the conversation. */
   .neural-stage { height: 92px; }
@@ -3414,3 +3206,374 @@ label + .jf-hint { margin-top: -5px; }
   .rail-row-main em { font-size: 11px; }
   .rail-act { font-size: 13px; }
 }
+
+/* ============================================================================
+   The live page, used directly
+
+   No toolbar: the picture is the page. Its state is one chip in the header,
+   and the only button is the corner one that makes it bigger.
+   ============================================================================ */
+.cell.shot .shot-where { flex: 1 1 auto; }
+.shot-state { gap: 6px; white-space: nowrap; }
+.shot-state.is-open { background: rgba(52, 211, 153, 0.12); color: var(--live); }
+.shot-state.is-yours { background: rgba(52, 211, 153, 0.2); color: #6ee7b7; }
+.shot-state.is-driving { background: var(--accent-soft); color: #b4a7ff; }
+.shot-state.is-driving .watch-dot { animation-duration: 1.1s; }
+
+.shot-corner {
+  flex: 0 0 auto; display: inline-grid; place-items: center;
+  width: 30px; height: 30px; margin: -4px -4px -4px 0; padding: 0;
+  border: 1px solid transparent; border-radius: var(--r-sm);
+  background: none; color: var(--text-3); cursor: pointer;
+  transition: color 0.15s var(--ease), background 0.15s var(--ease);
+}
+.shot-corner:hover { color: var(--text); background: var(--s3); }
+
+/* Usable: an ordinary arrow, as over any page. Locked: say so on hover. */
+.shot-stage { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: pan-y; }
+.shot-stage.is-usable { cursor: default; }
+.shot-stage.is-usable .frame { outline: 1px solid rgba(52, 211, 153, 0.35); }
+.shot-stage.is-dragging-page { touch-action: none; }
+.shot-stage.is-locked { cursor: not-allowed; }
+
+/* The agent handed the page to you: the whole card lights up. */
+.cell.shot.is-yours {
+  border-color: rgba(52, 211, 153, 0.55);
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.12), 0 12px 40px -16px rgba(52, 211, 153, 0.5);
+  animation: yours-in 0.4s var(--ease) both;
+}
+@keyframes yours-in { from { box-shadow: 0 0 0 10px rgba(52, 211, 153, 0.25); } }
+
+.shot-caption.is-typing { color: var(--live); border-color: rgba(52, 211, 153, 0.4); }
+
+/* Where your keys go: a real field, invisible, so a phone raises its keyboard
+   for it exactly as for the page's own. */
+.kbd-sink {
+  position: absolute; left: 50%; top: 50%; width: 1px; height: 1px;
+  padding: 0; border: 0; margin: 0; resize: none; overflow: hidden;
+  opacity: 0; pointer-events: none; background: transparent;
+  color: transparent; caret-color: transparent; font-size: 16px;
+}
+
+.shot-nudge {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+  display: inline-flex; align-items: center; gap: 10px; max-width: calc(100% - 24px);
+  padding: 6px 6px 6px 14px; border-radius: 99px;
+  background: rgba(8, 9, 13, 0.92); border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-lg); color: var(--text); font-size: 12.5px;
+  animation: rise 0.2s var(--ease) both; z-index: 3;
+}
+.shot-nudge span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shot-nudge-stop {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px;
+  height: 30px; padding: 0 12px; border-radius: 99px; cursor: pointer;
+  background: rgba(251, 113, 133, 0.16); border: 1px solid rgba(251, 113, 133, 0.45);
+  color: var(--danger); font: inherit; font-size: 12px; font-weight: 600;
+}
+
+/* Full screen: the page and nothing else. */
+.cell.shot.is-max {
+  position: fixed; inset: 0; z-index: 115; border-radius: 0; border: 0;
+  display: flex; flex-direction: column; background: #06070a;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.cell.shot.is-max .cell-top { padding: 10px 14px; }
+.cell.shot.is-max .shot-stage { flex: 1; min-height: 0; padding: 12px; }
+.cell.shot.is-max .shot-stage .frame { max-height: calc(100dvh - 90px); }
+
+/* ── the side panel ── */
+.dock {
+  flex: 0 0 clamp(460px, 44vw, 920px); min-width: 0; min-height: 0;
+  display: flex; flex-direction: column; padding: 14px;
+  background: var(--bg); border-left: 1px solid var(--border);
+  animation: dock-in 0.3s var(--ease) both;
+}
+@keyframes dock-in { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+.cell.shot.is-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; animation: none; }
+.cell.shot.is-panel .shot-stage { flex: 1; min-height: 0; }
+.cell.shot.is-panel .shot-stage .frame { max-height: calc(100dvh - 170px); }
+
+/* What stays in the thread when the page has moved to the panel. */
+.shot-stub {
+  display: flex; align-items: center; gap: 9px; min-width: 0;
+  padding: 10px 12px; border-radius: var(--r);
+  background: var(--s2); border: 1px dashed var(--border-strong); color: var(--text-3);
+  font-size: 12px;
+}
+.shot-stub-where {
+  flex: 1; min-width: 0; font-family: var(--mono); font-size: 11.5px; color: var(--text-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.shot-stub-note { flex: 0 0 auto; }
+.shot-stub-note::after { content: " →"; }
+
+/* ============================================================================
+   Asking the person
+
+   The one moment the conversation turns round and waits. It gets its own
+   surface and its own light, and answers are things you tap.
+   ============================================================================ */
+.ask {
+  position: relative; overflow: hidden; isolation: isolate;
+  padding: 18px 18px 14px; border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(110, 91, 255, 0.13), rgba(21, 24, 36, 0) 55%),
+    var(--s2);
+  border: 1px solid rgba(140, 120, 255, 0.45);
+  box-shadow: 0 0 0 4px rgba(110, 91, 255, 0.07), 0 20px 50px -20px rgba(110, 91, 255, 0.6);
+  animation: ask-in 0.45s var(--ease) both;
+}
+@keyframes ask-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+.ask-glow {
+  position: absolute; z-index: -1; top: -70%; left: -15%; width: 75%; height: 160%;
+  background: radial-gradient(closest-side, rgba(110, 91, 255, 0.28), transparent);
+  pointer-events: none;
+}
+.ask.is-browser {
+  --ask-tint: 52, 211, 153;
+  background:
+    linear-gradient(180deg, rgba(52, 211, 153, 0.12), rgba(21, 24, 36, 0) 55%),
+    var(--s2);
+  border-color: rgba(52, 211, 153, 0.45);
+  box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.07), 0 20px 50px -20px rgba(52, 211, 153, 0.5);
+}
+.ask.is-browser .ask-glow { background: radial-gradient(closest-side, rgba(52, 211, 153, 0.22), transparent); }
+
+.ask-head { display: flex; align-items: center; gap: 10px; }
+.ask-badge {
+  width: 30px; height: 30px; border-radius: 10px; flex: 0 0 auto;
+  display: grid; place-items: center;
+  background: rgba(110, 91, 255, 0.16); border: 1px solid rgba(140, 120, 255, 0.4);
+  color: #c4b5fd;
+}
+.ask.is-browser .ask-badge {
+  background: rgba(52, 211, 153, 0.14); border-color: rgba(52, 211, 153, 0.4); color: var(--live);
+}
+.ask-kicker {
+  font-size: 11px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase;
+  color: #c4b5fd;
+}
+.ask.is-browser .ask-kicker { color: #6ee7b7; }
+.ask-waiting {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--text-3); white-space: nowrap;
+}
+.ask-waiting i {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--warn);
+  animation: halo 1.6s ease-out infinite;
+}
+.ask-title {
+  margin: 14px 0 4px; font-size: 18px; line-height: 1.35; font-weight: 620;
+  letter-spacing: -0.012em; color: var(--text); overflow-wrap: anywhere;
+}
+.ask-detail { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--text-2); overflow-wrap: anywhere; }
+.ask-where { margin: 12px 0 0; font-size: 13px; color: #6ee7b7; }
+
+.ask-options { display: grid; gap: 8px; margin-top: 16px; }
+@media (min-width: 700px) {
+  .ask-options.is-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.ask-option {
+  display: flex; align-items: flex-start; gap: 12px; min-width: 0; min-height: 54px;
+  padding: 13px 14px; border-radius: 12px; text-align: left; cursor: pointer;
+  background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-strong);
+  color: var(--text); font-family: inherit;
+  transition: border-color 0.15s var(--ease), background 0.15s var(--ease),
+              transform 0.15s var(--ease), box-shadow 0.15s var(--ease);
+}
+.ask-option:hover:not(:disabled) {
+  border-color: var(--accent-line); background: var(--accent-soft); transform: translateY(-1px);
+}
+.ask-option:active:not(:disabled) { transform: none; }
+.ask-option.on {
+  border-color: var(--accent); background: rgba(110, 91, 255, 0.2);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.ask-option:disabled { cursor: default; opacity: 0.6; }
+.ask-tick {
+  flex: 0 0 auto; width: 24px; height: 24px; margin-top: -1px; border-radius: 50%;
+  display: grid; place-items: center;
+  border: 1px solid var(--border-strong); background: var(--s1); color: #fff;
+}
+.ask-tick.is-box { border-radius: 7px; }
+.ask-tick em { font-style: normal; font-family: var(--mono); font-size: 11px; color: var(--text-3); }
+.ask-option.on .ask-tick { background: var(--accent); border-color: var(--accent); }
+.ask-option-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ask-option-text b { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.ask-option-text span { font-size: 12.5px; line-height: 1.45; color: var(--text-3); overflow-wrap: anywhere; }
+
+.ask-compose {
+  display: flex; align-items: flex-end; gap: 8px; margin-top: 12px;
+  padding: 6px 6px 6px 14px; border-radius: 12px;
+  background: var(--s1); border: 1px solid var(--border-strong);
+  transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
+}
+.ask-compose:focus-within { border-color: var(--accent-line); box-shadow: 0 0 0 3px rgba(110, 91, 255, 0.12); }
+.ask-compose textarea {
+  flex: 1; min-width: 0; min-height: 24px; max-height: 160px; padding: 7px 0;
+  background: none; border: 0; resize: none; color: var(--text);
+  font-family: inherit; font-size: 14px; line-height: 1.45;
+}
+.ask-compose textarea:focus { outline: none; }
+.ask-compose textarea::placeholder { color: var(--text-3); }
+.ask-send {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 36px; min-width: 36px; padding: 0 10px; margin-left: auto; border-radius: 9px;
+  border: 0; cursor: pointer; color: #fff; font: inherit; font-size: 13px; font-weight: 600;
+  background: linear-gradient(145deg, var(--accent), #5a48e8);
+  box-shadow: 0 2px 10px rgba(110, 91, 255, 0.35);
+}
+.ask-send:disabled { opacity: 0.35; cursor: default; box-shadow: none; }
+
+.ask-foot { display: flex; margin-top: 10px; }
+.ask-skip {
+  padding: 6px 0; background: none; border: 0; cursor: pointer;
+  color: var(--text-3); font: inherit; font-size: 12.5px;
+}
+.ask-skip:hover:not(:disabled) { color: var(--text-2); text-decoration: underline; }
+
+.ask-actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+.ask-primary, .ask-secondary {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 46px; padding: 0 18px; border-radius: 12px; cursor: pointer;
+  font: inherit; font-size: 14.5px; font-weight: 600;
+}
+.ask-primary {
+  flex: 1 1 180px; border: 0; color: #04211a;
+  background: linear-gradient(145deg, var(--live), #22b583);
+  box-shadow: 0 4px 16px -4px rgba(52, 211, 153, 0.55);
+}
+.ask-secondary {
+  flex: 0 1 auto; background: transparent; color: var(--text-2);
+  border: 1px solid var(--border-strong);
+}
+.ask-secondary:hover:not(:disabled) { color: var(--text); background: var(--s3); }
+.ask-primary:disabled, .ask-secondary:disabled { opacity: 0.5; cursor: default; }
+.ask-error { margin: 10px 0 0; font-size: 12px; color: var(--danger); }
+
+/* Answered: folded to the question and what you said. */
+.ask.is-settled {
+  display: flex; align-items: center; gap: 11px; padding: 10px 13px; border-radius: 12px;
+  background: var(--s2); border: 1px solid var(--border); box-shadow: none; animation: none;
+}
+.ask-settled-mark {
+  flex: 0 0 auto; width: 24px; height: 24px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--s3); color: var(--text-3);
+}
+.ask.is-answered .ask-settled-mark { background: rgba(52, 211, 153, 0.15); color: var(--live); }
+.ask-settled-body { display: flex; flex-direction: column; min-width: 0; }
+.ask-settled-q {
+  font-size: 12px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ask-settled-a { font-size: 13.5px; font-weight: 550; color: var(--text); overflow-wrap: anywhere; }
+
+@media (max-width: 680px) {
+  .ask { padding: 16px 14px 12px; border-radius: 16px; }
+  .ask-title { font-size: 17px; }
+  .ask-waiting { display: none; }
+  .ask-option { min-height: 58px; }
+  .ask-secondary { flex: 1 1 100%; }
+}
+
+/* ============================================================================
+   Replies, as Markdown
+   ============================================================================ */
+.msg-text.is-md { white-space: normal; }
+.md > * { margin: 0; }
+.md > * + * { margin-top: 10px; }
+.md h3, .md h4, .md h5, .md h6 { line-height: 1.35; font-weight: 650; letter-spacing: -0.01em; }
+.md > h3, .md > h4 { margin-top: 18px; }
+.md h3 { font-size: 1.14em; }
+.md h4 { font-size: 1.05em; }
+.md h5, .md h6 { font-size: 0.86em; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-2); }
+.md ul, .md ol { padding-left: 1.4em; }
+.md li + li { margin-top: 4px; }
+.md li::marker { color: var(--text-3); }
+.md li.is-task { list-style: none; margin-left: -1.3em; display: flex; gap: 8px; }
+.md-check {
+  flex: 0 0 auto; width: 15px; height: 15px; margin-top: 0.3em; border-radius: 4px;
+  display: grid; place-items: center; border: 1px solid var(--border-strong); color: #fff;
+}
+.md-check.on { background: var(--live); border-color: var(--live); color: #04211a; }
+.md strong { font-weight: 650; color: #fff; }
+.md a { color: var(--accent-2); text-decoration: underline; text-decoration-color: rgba(34, 211, 238, 0.4); text-underline-offset: 2px; }
+.md a:hover { text-decoration-color: currentColor; }
+.md :not(pre) > code {
+  font-family: var(--mono); font-size: 0.86em; padding: 1px 5px; border-radius: 5px;
+  background: rgba(255, 255, 255, 0.07); border: 1px solid var(--border);
+  color: #e6e1ff; overflow-wrap: anywhere;
+}
+.md blockquote {
+  padding: 2px 0 2px 14px; border-left: 3px solid var(--accent-line); color: var(--text-2);
+}
+.md hr { border: 0; border-top: 1px solid var(--border-strong); margin: 16px 0; }
+.md-code {
+  border-radius: 10px; overflow: hidden; border: 1px solid var(--border); background: #06070a;
+}
+.md-code-top {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 5px 6px 5px 12px; background: var(--s2); border-bottom: 1px solid var(--border);
+  font-family: var(--mono); font-size: 11px; color: var(--text-3);
+}
+.md-copy {
+  display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px;
+  border-radius: 6px; border: 0; background: none; cursor: pointer;
+  color: var(--text-3); font: inherit; font-size: 11px;
+}
+.md-copy:hover { color: var(--text); background: var(--s3); }
+.md-code pre {
+  margin: 0; padding: 12px 14px; overflow-x: auto;
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.6; color: #d6dcea;
+}
+.md-table { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; }
+.md table { width: 100%; border-collapse: collapse; font-size: 0.92em; }
+.md th, .md td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+.md th { background: var(--s2); color: var(--text-2); font-weight: 600; white-space: nowrap; }
+.md tr:last-child td { border-bottom: 0; }
+
+/* ============================================================================
+   The memory ribbon, folded
+   ============================================================================ */
+.neural-web.is-collapsed { padding: 7px 12px; }
+.web-bar { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; }
+.web-bar-latest {
+  flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 7px;
+  font-size: 12px; color: #d8ccff; animation: fade 0.3s var(--ease) both;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.web-toggle {
+  flex: 0 0 auto; width: 30px; height: 30px; padding: 0; border-radius: 50%;
+  display: grid; place-items: center; cursor: pointer;
+  background: rgba(139, 92, 246, 0.16); border: 1px solid rgba(168, 85, 247, 0.4);
+  color: #e9d5ff;
+}
+.web-toggle svg { transform: rotate(90deg); transition: transform 0.2s var(--ease); }
+.web-toggle.is-open { position: absolute; top: 10px; right: 12px; z-index: 10; }
+.web-toggle.is-open svg { transform: rotate(-90deg); }
+@media (pointer: coarse) { .web-toggle { width: 34px; height: 34px; } }
+.cell.shot.is-panel .shot-stage { place-items: start center; }
+
+/* The panel has height to spare under the page: the last few steps, newest
+   first, so what just happened is readable without scrolling the thread. */
+.shot-log {
+  flex: 0 0 auto; margin: 0; padding: 10px 14px 12px; list-style: none;
+  border-top: 1px solid var(--border); background: var(--s1);
+  display: flex; flex-direction: column; gap: 4px; max-height: 30%; overflow-y: auto;
+}
+.shot-log li {
+  font-family: var(--mono); font-size: 11.5px; color: var(--text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.shot-log li::before { content: "·"; margin-right: 8px; color: var(--text-3); }
+.shot-log li.is-latest { color: var(--text); }
+.shot-log li.is-latest::before { content: "›"; color: var(--accent); }
+.cell.shot.is-panel .shot-stage { flex: 0 1 auto; }
+.cell.shot.is-panel .shot-log { flex: 1; max-height: none; }
+.md p { margin: 0; }
+.md blockquote > * + * { margin-top: 8px; }
+/* Inside the frame wrap, whose line-height is zero to keep the picture flush. */
+.shot-caption { line-height: 1.5; }

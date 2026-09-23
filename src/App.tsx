@@ -16,6 +16,7 @@ import { LiveChat } from "./components/LiveChat";
 import { useRelay } from "./components/RelaySetup";
 import { UpdateNotice } from "./components/UpdateNotice";
 import { AutoraMark, type MarkState } from "./components/AutoraMark";
+import { ScreencastCell } from "./components/ScreencastCell";
 import {
   dictationSupported, recognitionAvailable, secureOrigin, speakable,
   splitSpeakable, useSpeech,
@@ -24,6 +25,23 @@ import {
   IconArrow, IconChevron, IconGear, IconMessage, IconRepeat, IconSpark, IconStop,
   IconX,
 } from "./components/Icons";
+
+/** Wide enough for the live page to sit beside the conversation rather than
+    inside it. Below this the side panel would squeeze the thread to a strip. */
+const DOCK_QUERY = "(min-width: 1280px)";
+
+function useMedia(query: string): boolean {
+  const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const list = window.matchMedia(query);
+    const on = () => setMatches(list.matches);
+    list.addEventListener("change", on);
+    return () => list.removeEventListener("change", on);
+  }, [query]);
+  return matches;
+}
+
+const RIBBON_KEY = "autora.ribbon";
 
 /** How often to re-read the session list, so sessions started elsewhere (or
     from another tab) show up without a reload. */
@@ -58,6 +76,23 @@ export function App() {
       only through `title` is reported to nobody. */
   const [notice, setNotice] = useState<string | null>(null);
   const [voiceHelp, setVoiceHelp] = useState(false);
+  /** The memory graph, folded to a line or open. Remembered per browser, and
+      folded by default on a phone, where it was a fifth of the screen. */
+  const [ribbonOpen, setRibbonOpen] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem(RIBBON_KEY);
+      if (saved === "open") return true;
+      if (saved === "closed") return false;
+    } catch { /* storage blocked: fall through to the default */ }
+    return !window.matchMedia("(max-width: 680px)").matches;
+  });
+  const toggleRibbon = useCallback(() => {
+    setRibbonOpen((open) => {
+      try { localStorage.setItem(RIBBON_KEY, open ? "closed" : "open"); } catch { /* ignore */ }
+      return !open;
+    });
+  }, []);
+  const wide = useMedia(DOCK_QUERY);
   const streamRef = useRef<SessionStream | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const speech = useSpeech();
@@ -151,15 +186,17 @@ export function App() {
     }).catch(() => undefined);
   }, [sessionId]);
 
+  // A question from the agent counts: it is the turn waiting on you.
   const pending = useMemo(
-    () => view.approvals.filter((a) => !a.settled).length,
-    [view.approvals],
+    () => view.approvals.filter((a) => !a.settled).length + (view.asking ? 1 : 0),
+    [view.approvals, view.asking],
   );
   // An approval is the one thing that must not be missed behind an overlay.
   useEffect(() => {
     if (pending > 0) {
       setMobileTab("chat");
       setScheduleOpen(false);
+      setKnowledgeOpen(false);
     }
   }, [pending]);
 
@@ -221,6 +258,24 @@ export function App() {
   // Whether a turn is running now, read from the tail of the log so a reload
   // mid-turn comes back knowing one is in flight.
   const running = useMemo(() => isRunning(events), [events]);
+
+  /** The agent has its hands on things: a turn is running and it is not
+      stopped on a question for you. The browser is locked while this holds. */
+  const driving = live && running && !view.asking;
+  const browserHandedOver = view.asking?.kind === "browser";
+
+  /** The card whose page is still open. On a wide screen it moves out of the
+      thread into a panel beside it, where it stays in view however far the
+      conversation scrolls. */
+  const liveBrowserCell = useMemo(() => {
+    for (const b of view.buckets) {
+      for (const c of b.cells) {
+        if (c.kind === "screen" && c.seq === view.liveBrowserSeq) return c;
+      }
+    }
+    return null;
+  }, [view.buckets, view.liveBrowserSeq]);
+  const docked = wide && live && !!liveFrame && !!liveBrowserCell && !!browser?.open;
 
   // ------------------------------------------------------------ live chat --
   /** Turning it on has to happen inside the tap: iOS will not let a page speak
@@ -491,18 +546,25 @@ export function App() {
           memories={view.memories}
           onOpen={openKnowledge}
           onOpenSkills={openSkills}
+          collapsed={!ribbonOpen}
+          onToggle={toggleRibbon}
         />
 
         <main className="page">
           <Thread
             buckets={view.buckets}
-            busy={view.busy}
+            // Stopped on a question is not working; the card says what it is.
+            busy={view.busy && !view.asking}
             sessionId={sessionId ?? ""}
             liveBrowserSeq={view.liveBrowserSeq}
             liveFrame={liveFrame}
             live={live}
             onPermissionDecide={handlePermissionDecide}
             onRunAutonomous={handleRunAutonomous}
+            driving={driving}
+            browserHandedOver={browserHandedOver}
+            docked={docked}
+            onStop={() => void stopTurn()}
           />
 
           <Approvals
@@ -709,6 +771,25 @@ export function App() {
           </button>
         </nav>
       </div>
+
+      {docked && liveBrowserCell && liveBrowserCell.kind === "screen" && (
+        <aside className="dock" aria-label="Live browser">
+          <ScreencastCell
+            sessionId={sessionId ?? ""}
+            source="browser"
+            url={browser?.url ?? liveBrowserCell.url}
+            shots={liveBrowserCell.shots}
+            actions={liveBrowserCell.actions}
+            live={liveBrowserCell.live}
+            feed={liveFrame}
+            current
+            driving={driving}
+            waitingOnYou={browserHandedOver}
+            variant="panel"
+            onStop={() => void stopTurn()}
+          />
+        </aside>
+      )}
 
       {sessionsOpen && (
         <Sessions

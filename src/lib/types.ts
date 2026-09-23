@@ -66,6 +66,9 @@ export const Kind = {
   KanbanUpdate: "kanban.update",
   PermissionRequest: "permission.request",
   PermissionDecision: "permission.decision",
+  /** The agent stopped to ask the person something; and the answer. */
+  AskRequest: "ask.request",
+  AskAnswer: "ask.answer",
   Log: "system.log",
   Error: "system.error",
 } as const;

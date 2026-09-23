@@ -319,3 +319,22 @@ export const IconRotateCcw = ({ size = 16, className }: Props) => (
   </svg>
 );
 
+
+export const IconMaximize = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M14.5 4.5h5v5M9.5 19.5h-5v-5M19.5 4.5l-6 6M4.5 19.5l6-6" />
+  </svg>
+);
+
+export const IconMinimize = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M19.5 9.5h-5v-5M4.5 14.5h5v5M14.5 9.5l6-6M9.5 14.5l-6 6" />
+  </svg>
+);
+
+export const IconPanelRight = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+    <path d="M14 4.5v15" />
+  </svg>
+);

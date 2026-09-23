@@ -69,9 +69,23 @@ export function updateToolSettings(patch: any): ToolSettings {
 
 export type ToolGroup = "terminal" | "browser" | "computer" | "memory";
 
+/** A question for the person, drawn as a card in the thread. */
+export type AskRequest = {
+  /** "browser" is a sign-in or similar handed over in the live page. */
+  kind: "question" | "browser";
+  title: string;
+  detail?: string;
+  options: { label: string; detail?: string }[];
+  multi: boolean;
+  allowText: boolean;
+  placeholder?: string;
+};
+export type AskAnswer = { cancelled: boolean; choices: string[]; text: string; who: string };
+
 export interface ToolSpec {
   name: string;
-  group: ToolGroup;
+  /** "person" is not a setting: asking is always possible. */
+  group: ToolGroup | "person";
   /** What the model is told this does. Written for the model, not the UI. */
   description: string;
   /** JSON Schema for the arguments. Every vendor accepts this shape. */
@@ -239,10 +253,12 @@ const TOOLS: ToolSpec[] = [
     name: "browser_handoff",
     group: "browser",
     description:
-      "Transfer live browser control to the human watching. Call this when you encounter " +
-      "an OAuth/SSO login, a CAPTCHA that browser_captcha could not pass (e.g. a picture " +
-      "challenge), a 2FA prompt, or sensitive credentials entry. The console alerts " +
-      "the person so they can type and click directly in the live browser before returning control to you.",
+      "Hand the live browser to the person watching and wait for them. Call this when you " +
+      "reach a sign-in (OAuth/SSO, a password, a 2FA code), a CAPTCHA that browser_captcha " +
+      "could not pass, or anything on the page only they should do. They get a card " +
+      "explaining what is needed and can then tap and type directly in the page. This " +
+      "call returns when they say they are done (with the page as it is then) or that " +
+      "they cannot do it.",
     parameters: {
       type: "object",
       properties: {
@@ -411,6 +427,60 @@ const TOOLS: ToolSpec[] = [
       required: ["dy"],
     },
     risky: true,
+  },
+
+  // --------------------------------------------------------------- person --
+  {
+    name: "ask_user",
+    group: "person",
+    description:
+      "Stop and ask the person a question, shown to them as a card they answer " +
+      "with a tap. The turn waits until they answer. Use it when you genuinely " +
+      "cannot proceed well without them: a real ambiguity in what they want, a " +
+      "choice between approaches with different costs, missing information only " +
+      "they have, or confirmation before something irreversible. Do not use it " +
+      "for things you can find out yourself, and do not ask for passwords here " +
+      "(use browser_handoff so they type them into the page). Prefer offering " +
+      "2-5 concrete options, each with a short label and a one-line detail; keep " +
+      "allow_text on so they can answer in their own words.",
+    parameters: {
+      type: "object",
+      properties: {
+        question: {
+          type: "string",
+          description: "The question itself, one short sentence.",
+        },
+        context: {
+          type: "string",
+          description: "Optional: one or two sentences on why you are asking or what you found.",
+        },
+        options: {
+          type: "array",
+          description: "Suggested answers. Omit for an open question.",
+          items: {
+            type: "object",
+            properties: {
+              label: { type: "string", description: "A few words." },
+              detail: { type: "string", description: "Optional one-line explanation." },
+            },
+            required: ["label"],
+          },
+        },
+        multi_select: {
+          type: "boolean",
+          description: "Let them pick more than one option. Default false.",
+        },
+        allow_text: {
+          type: "boolean",
+          description: "Let them type their own answer. Default true.",
+        },
+        placeholder: {
+          type: "string",
+          description: "Hint text for the typed answer.",
+        },
+      },
+      required: ["question"],
+    },
   },
 
   // --------------------------------------------------------------- memory --
@@ -591,7 +661,7 @@ export async function groupStates(): Promise<GroupState[]> {
 export async function availableTools(): Promise<ToolSpec[]> {
   const groups = await groupStates();
   const usable = new Set(groups.filter((g) => g.available).map((g) => g.group));
-  return TOOLS.filter((t) => usable.has(t.group));
+  return TOOLS.filter((t) => t.group === "person" || usable.has(t.group as ToolGroup));
 }
 
 export function findTool(name: string): ToolSpec | undefined {
@@ -688,6 +758,8 @@ export interface ToolContext {
   };
   /** A tool output this session kept out of the prompt, by artifact id. */
   vault: (id: string) => string | null;
+  /** Put a question to the person and wait for the answer. */
+  ask: (request: AskRequest) => Promise<AskAnswer>;
 }
 
 export interface ToolOutcome {
@@ -1165,17 +1237,78 @@ export async function runTool(
       }
 
       case "browser_handoff": {
-        const reason = String(args.reason ?? "Human intervention requested.");
+        const reason = String(args.reason ?? "Your help is needed in the browser.");
         const live = ctx.browser();
         live.setControl("human", reason);
         ctx.browserChanged();
+        const answer = await ctx.ask({
+          kind: "browser",
+          title: reason,
+          detail: "Tap and type in the page below. Nothing you type there is saved to the chat.",
+          options: [],
+          multi: false,
+          allowText: false,
+        });
+        live.setControl("agent", null);
+        ctx.browserChanged();
+        if (answer.cancelled) {
+          return {
+            ok: false,
+            summary:
+              answer.who === "user"
+                ? "The person said they cannot do this. Tell them what you were " +
+                  "trying to reach, and ask how they would like to proceed."
+                : "Nobody took over the browser. Stop here and say what is needed.",
+            preview: "handoff: not done",
+          };
+        }
+        const page = await live.snapshot();
         return {
           ok: true,
           summary:
-            `Browser control transferred to the person watching.\nReason: ${reason}\n\n` +
-            "The person can now directly click, type credentials, and solve CAPTCHAs/SSO in the live browser card. " +
-            "Wait for them to respond or finish before proceeding.",
-          preview: `handoff to human: ${reason}`,
+            "The person says they are done in the browser" +
+            (answer.text ? ` and added: ${answer.text}` : "") +
+            ".\n\n" + describePage(page),
+          preview: "handoff: done",
+        };
+      }
+
+      case "ask_user": {
+        const question = String(args.question ?? "").trim();
+        if (!question) return { ok: false, summary: "No question was given." };
+        const options = Array.isArray(args.options)
+          ? args.options
+              .map((o: any) => typeof o === "string"
+                ? { label: o }
+                : { label: String(o?.label ?? "").trim(), detail: o?.detail ? String(o.detail) : undefined })
+              .filter((o: { label: string }) => o.label)
+              .slice(0, 8)
+          : [];
+        const answer = await ctx.ask({
+          kind: "question",
+          title: question,
+          detail: args.context ? String(args.context) : undefined,
+          options,
+          multi: Boolean(args.multi_select),
+          allowText: args.allow_text !== false || options.length === 0,
+          placeholder: args.placeholder ? String(args.placeholder) : undefined,
+        });
+        if (answer.cancelled) {
+          return {
+            ok: false,
+            summary: answer.who === "user"
+              ? "The person dismissed the question without answering. Use your best judgement, and say what you assumed."
+              : "The question went unanswered. Stop and say what you need.",
+            preview: "no answer",
+          };
+        }
+        const parts: string[] = [];
+        if (answer.choices.length) parts.push(`chose: ${answer.choices.join("; ")}`);
+        if (answer.text) parts.push(`wrote: ${answer.text}`);
+        return {
+          ok: true,
+          summary: `The person answered. They ${parts.join(", and ")}.`,
+          preview: answer.choices.join(", ") || answer.text.slice(0, 80),
         };
       }
 
@@ -1371,6 +1504,13 @@ export async function capabilityBriefing(): Promise<string> {
       lines.push("  These run straight away -- nothing waits on the person's approval.");
     }
   }
+
+  lines.push(
+    "- Asking the person: always available. Tool: ask_user. When you are " +
+      "genuinely stuck on something only they can settle, ask with a short " +
+      "question and a few concrete options rather than guessing or stopping " +
+      "with a question in prose. Sign-ins go through browser_handoff instead.",
+  );
 
   const off = groups.filter((g) => !g.available);
   if (off.length > 0) {
