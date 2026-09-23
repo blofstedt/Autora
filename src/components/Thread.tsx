@@ -8,8 +8,10 @@ import { FileCell } from "./FileCell";
 import { ToolCell } from "./ToolCell";
 import { KanbanCell } from "./KanbanCell";
 import { PermissionCell } from "./PermissionCell";
-import { ImageCell, InlineImage } from "./ImageCell";
-import { splitImages } from "../lib/images";
+import { ImageCell } from "./ImageCell";
+import { AskCell } from "./AskCell";
+import { Markdown } from "./Markdown";
+import { JevCell } from "./JevCell";
 import type { LiveFrame } from "../lib/types";
 
 /** Within this many pixels of the bottom counts as "watching the live edge". */
@@ -34,6 +36,7 @@ export function Thread({
   live,
   onPermissionDecide,
   onRunAutonomous,
+  ...work
 }: {
   buckets: Bucket[];
   busy: boolean;
@@ -44,11 +47,20 @@ export function Thread({
   live: boolean;
   onPermissionDecide?: (requestId: string, approved: boolean, response?: string) => void;
   onRunAutonomous?: (task: KanbanTask) => void;
-}) {
+} & WorkState) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const [stuck, setStuck] = useState(true);
   const [unread, setUnread] = useState(false);
+  // While the page in the thread is yours to use, the thread holds still:
+  // following the live edge would slide the page out from under your finger
+  // every time it repaints.
+  const handsOn = work.browserHandedOver;
+  const handsOnRef = useRef(handsOn);
+  handsOnRef.current = handsOn;
+  useEffect(() => {
+    if (handsOn) setStuck(false);
+  }, [handsOn]);
 
   const count = buckets.length;
   const tail = buckets[buckets.length - 1];
@@ -85,7 +97,7 @@ export function Thread({
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= STICK_ZONE;
     const wentUp = el.scrollTop < lastTop.current;
     lastTop.current = el.scrollTop;
-    if (atBottom) { setStuck(true); setUnread(false); return; }
+    if (atBottom && !handsOnRef.current) { setStuck(true); setUnread(false); return; }
     // Only scrolling up lets go of the live edge. A smooth scroll to the
     // bottom reports every frame on the way down as "not at the bottom", and
     // unsticking on those meant the thread stopped following itself halfway
@@ -141,6 +153,7 @@ export function Thread({
             live={live}
             onPermissionDecide={onPermissionDecide}
             onRunAutonomous={onRunAutonomous}
+            {...work}
           />
         ))}
         {busy && <div className="working"><span className="bar" />working</div>}
@@ -160,6 +173,15 @@ export function Thread({
   );
 }
 
+/** What the thread needs to know about who is at the wheel right now. */
+type WorkState = {
+  /** The agent is working and not waiting on the person. */
+  driving: boolean;
+  /** The agent handed the browser over and is waiting for them. */
+  browserHandedOver: boolean;
+  onStop: () => void;
+};
+
 function TurnBucket({
   bucket,
   sessionId,
@@ -168,6 +190,7 @@ function TurnBucket({
   live,
   onPermissionDecide,
   onRunAutonomous,
+  ...work
 }: {
   bucket: Bucket;
   sessionId: string;
@@ -176,7 +199,7 @@ function TurnBucket({
   live: boolean;
   onPermissionDecide?: (requestId: string, approved: boolean, response?: string) => void;
   onRunAutonomous?: (task: KanbanTask) => void;
-}) {
+} & WorkState) {
   // The agent's mark animates on its current utterance for as long as the turn
   // runs. Keyed to the last *reply* rather than the last cell: a tool card
   // landing after the reply does not mean the agent has stopped, and anchoring
@@ -209,6 +232,7 @@ function TurnBucket({
             active={bucket.open && index === speaking}
             onPermissionDecide={onPermissionDecide}
             onRunAutonomous={onRunAutonomous}
+            {...work}
           />
         ))}
       </div>
@@ -226,6 +250,9 @@ function CellView({
   active,
   onPermissionDecide,
   onRunAutonomous,
+  driving,
+  browserHandedOver,
+  onStop,
 }: {
   cell: Cell;
   sessionId: string;
@@ -236,7 +263,7 @@ function CellView({
   active: boolean;
   onPermissionDecide?: (requestId: string, approved: boolean, response?: string) => void;
   onRunAutonomous?: (task: KanbanTask) => void;
-}) {
+} & WorkState) {
   switch (cell.kind) {
     case "reply":
       return <Reply text={cell.turn.text} thinking={cell.turn.thinking} working={active} />;
@@ -251,7 +278,8 @@ function CellView({
           live={open && cell.status === "running"}
         />
       );
-    case "screen":
+    case "screen": {
+      const current = cell.source === "browser" && cell.seq === liveBrowserSeq;
       return (
         <ScreencastCell
           sessionId={sessionId}
@@ -266,9 +294,17 @@ function CellView({
           feed={
             cell.source === "browser" && cell.seq === liveBrowserSeq ? liveFrame : null
           }
-          pickable={live && cell.source === "browser" && cell.seq === liveBrowserSeq}
+          current={live && current}
+          driving={driving}
+          waitingOnYou={browserHandedOver}
+          onStop={onStop}
         />
       );
+    }
+    case "jev":
+      return <JevCell decision={cell.decision} />;
+    case "ask":
+      return <AskCell ask={cell.ask} sessionId={sessionId} readOnly={!live} />;
     case "images":
       return <ImageCell sessionId={sessionId} pictures={cell.pictures} />;
     case "file":
@@ -303,31 +339,6 @@ function CellView({
         </div>
       );
   }
-}
-
-/**
- * A reply, with anything it pointed at drawn where it pointed.
- *
- * The agent writes an image the way anyone writes one -- a markdown link, or
- * just the address -- and that used to render as the address. Now the
- * sentence keeps its shape and the picture appears in it, which is what was
- * meant by writing it there. Prose with no pictures in it takes the fast path
- * and comes out as one text node, exactly as before.
- */
-function Prose({ text }: { text: string }) {
-  const pieces = splitImages(text);
-  if (pieces.length === 1 && pieces[0].kind === "text") return <>{pieces[0].text}</>;
-  return (
-    <>
-      {pieces.map((piece, i) =>
-        piece.kind === "text" ? (
-          <span key={i}>{piece.text}</span>
-        ) : (
-          <InlineImage key={i} url={piece.url} alt={piece.alt} />
-        ),
-      )}
-    </>
-  );
 }
 
 /**
@@ -371,7 +382,7 @@ function Reply({
             {open && <pre className="reason-body">{thinking}</pre>}
           </>
         )}
-        {text && <div className="msg-text"><Prose text={text} /></div>}
+        {text && <div className="msg-text is-md"><Markdown text={text} /></div>}
       </div>
     </div>
   );

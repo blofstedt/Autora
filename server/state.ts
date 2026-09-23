@@ -20,6 +20,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import { AUTO_ORDER, PROVIDERS, providerSpec } from "./providers";
+import { DEFAULT_JEV, clampThreshold, type JevSettings } from "./jev/router";
+import type { McpServerConfig } from "./mcp";
+
+export const THEMES = ["violet", "teal", "nous-blue", "midnight", "ember", "mono", "cyberpunk", "rose"] as const;
+export const FONTS = ["inter", "system", "rounded", "mono"] as const;
+export interface Appearance {
+  theme: (typeof THEMES)[number];
+  font: (typeof FONTS)[number];
+}
 
 export type ApprovalMode = "always" | "risky" | "never";
 
@@ -75,6 +84,12 @@ export interface PersistedState {
   /** Which of the agent's groups of tools are on, and how tightly each is
       gated. See ./tools for what each group actually is. */
   tools: ToolSettings;
+  /** Jev Mode: fast scored decisions where the model supports them. */
+  jev: JevSettings;
+  /** MCP servers whose tools are offered to the agent. */
+  mcpServers: McpServerConfig[];
+  /** Theme and font, kept here so they follow you between devices. */
+  appearance: Appearance;
 }
 
 const DEFAULT_PROMPT =
@@ -145,6 +160,46 @@ export function mergeTools(into: ToolSettings, patch: any): ToolSettings {
   return into;
 }
 
+export function mergeAppearance(into: Appearance, patch: any): Appearance {
+  if (!patch || typeof patch !== "object") return into;
+  if ((THEMES as readonly string[]).includes(patch.theme)) into.theme = patch.theme;
+  if ((FONTS as readonly string[]).includes(patch.font)) into.font = patch.font;
+  return into;
+}
+
+/** An MCP server entry from the file or a request, or null if it is not one. */
+export function saneMcp(raw: any): McpServerConfig | null {
+  if (!raw || typeof raw !== "object") return null;
+  const name = String(raw.name ?? "").trim().slice(0, 40);
+  if (!name) return null;
+  const transport = raw.transport === "http" ? "http" : "stdio";
+  const strings = (v: any) => Array.isArray(v) ? v.map((x) => String(x)) : [];
+  const record = (v: any) => {
+    const out: Record<string, string> = {};
+    if (v && typeof v === "object") for (const [k, val] of Object.entries(v)) if (k.trim()) out[k.trim()] = String(val);
+    return out;
+  };
+  return {
+    id: String(raw.id || `mcp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`),
+    name,
+    transport,
+    command: transport === "stdio" ? String(raw.command ?? "").trim() : undefined,
+    args: transport === "stdio" ? strings(raw.args) : undefined,
+    env: transport === "stdio" ? record(raw.env) : undefined,
+    url: transport === "http" ? String(raw.url ?? "").trim() : undefined,
+    headers: transport === "http" ? record(raw.headers) : undefined,
+    enabled: raw.enabled !== false,
+  };
+}
+
+/** Same trust as mergeTools: arbitrary JSON in, sane settings out. */
+export function mergeJev(into: JevSettings, patch: any): JevSettings {
+  if (!patch || typeof patch !== "object") return into;
+  if (typeof patch.enabled === "boolean") into.enabled = patch.enabled;
+  if (patch.threshold !== undefined) into.threshold = clampThreshold(patch.threshold);
+  return into;
+}
+
 /** How many turns of spend history to keep. Enough for a month of heavy use;
     the running totals are folded into `carried` as entries fall off the end,
     so the lifetime figure stays right even once detail is dropped. */
@@ -182,6 +237,9 @@ function blank(): PersistedState {
     budgetUsd: null,
     usage: [],
     tools: defaultTools(),
+    jev: { ...DEFAULT_JEV },
+    mcpServers: [],
+    appearance: { theme: "violet", font: "inter" },
   };
 }
 
@@ -203,6 +261,11 @@ function read(): PersistedState {
        group is merged rather than replaced: a group added in a later release
        must not be missing from a file saved before it existed. */
     if (raw.tools) mergeTools(state.tools, raw.tools);
+    if (raw.jev && typeof raw.jev === "object") mergeJev(state.jev, raw.jev);
+    if (Array.isArray(raw.mcpServers)) {
+      state.mcpServers = raw.mcpServers.map(saneMcp).filter(Boolean) as McpServerConfig[];
+    }
+    if (raw.appearance) mergeAppearance(state.appearance, raw.appearance);
     if (raw.carried && typeof raw.carried === "object") {
       carried = {
         cost: Number(raw.carried.cost) || 0,

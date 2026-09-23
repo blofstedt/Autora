@@ -941,6 +941,49 @@ export class LiveBrowser {
     });
   }
 
+  /**
+   * A click from the person's own hand, on the picture of the page.
+   *
+   * Lighter than the agent's click -- no page read, a short settle -- because
+   * someone tapping through a sign-in feels every hundred milliseconds. Says
+   * whether the tap landed in something you type into, so a phone knows
+   * whether to keep its keyboard up.
+   */
+  userClick(
+    x: number,
+    y: number,
+    button: "left" | "right" | "middle" = "left",
+    double = false,
+  ): Promise<{ editable: boolean }> {
+    return this.run(async () => {
+      const page = await this.ensure();
+      const cx = Math.max(0, Math.min(VIEWPORT.width, Math.round(x)));
+      const cy = Math.max(0, Math.min(VIEWPORT.height, Math.round(y)));
+      this.pointer = { x: cx, y: cy };
+      await this.showCursor(cx, cy, true);
+      this.hooks.onAction(`you clicked at ${cx},${cy}`, { x: cx, y: cy }, this.currentUrl ?? "");
+      if (double) await page.mouse.dblclick(cx, cy, { button });
+      else await page.mouse.click(cx, cy, { button });
+      await this.settle(150);
+      // A string, because this file is compiled without the DOM's types.
+      const editable: boolean = await page
+        .evaluate(`(() => {
+          const el = document.activeElement;
+          if (!el || el === document.body) return false;
+          if (el.isContentEditable) return true;
+          const tag = el.tagName;
+          if (tag === "TEXTAREA" || tag === "IFRAME") return true;
+          if (tag !== "INPUT") return false;
+          const type = (el.type || "text").toLowerCase();
+          return !["button", "submit", "reset", "checkbox", "radio", "range",
+            "color", "file", "image", "hidden"].includes(type);
+        })()`)
+        .catch(() => false);
+      await this.keyframe();
+      return { editable };
+    });
+  }
+
   /** Direct mouse move from user */
   mouseMove(x: number, y: number): Promise<void> {
     return this.run(async () => {
@@ -959,7 +1002,7 @@ export class LiveBrowser {
       const page = await this.ensure();
       this.hooks.onAction(`typed text (${text.length} chars)`, null, this.currentUrl ?? "");
       await page.keyboard.type(text, { delay: 15 });
-      await this.settle(200);
+      await this.settle(80);
       await this.keyframe();
     });
   }

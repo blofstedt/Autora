@@ -98,10 +98,12 @@ function ago(ts: number): string {
  * else, and the newest run is one tap away from its row.
  */
 export function Schedule({
-  onClose, onOpenSession,
+  onClose, onOpenSession, embedded = false,
 }: {
-  onClose: () => void;
+  onClose?: () => void;
   onOpenSession: (id: string) => void;
+  /** Shown as a page rather than a full-screen sheet. */
+  embedded?: boolean;
 }) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [editing, setEditing] = useState<Job | "new" | null>(null);
@@ -171,19 +173,21 @@ export function Schedule({
   }, [load, onOpenSession]);
 
   return (
-    <div className="sched">
+    <div className={`sched ${embedded ? "is-embedded" : ""}`}>
       <div className="sched-top">
         <div className="brand">
           <span className="brand-mark"><IconRepeat size={13} /></span>
-          Scheduled tasks
+          {embedded ? "Cron" : "Scheduled tasks"}
         </div>
         <div className="spacer" />
         <button className="btn primary" onClick={() => { setError(null); setEditing("new"); }}>
           <IconPlus size={13} /> New task
         </button>
-        <button className="btn icon ghost" onClick={onClose} aria-label="Close scheduled tasks">
-          <IconX size={14} />
-        </button>
+        {onClose && !embedded && (
+          <button className="btn icon ghost" onClick={onClose} aria-label="Close scheduled tasks">
+            <IconX size={14} />
+          </button>
+        )}
       </div>
 
       {error && <div className="sched-error">{error}</div>}

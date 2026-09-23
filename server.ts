@@ -5,13 +5,24 @@ import express, { type Request, type Response } from "express";
 import { WebSocketServer, WebSocket } from "ws";
 import {
   AUTO_ORDER, PRICES_CHECKED, PROVIDERS, costOf, isPriced, modelsFor,
-  rememberModels,
+  providerSpec, rememberModels,
 } from "./server/providers";
 import {
   baseUrlFor, clearUsage, keyFor, keySource, maskKey, modelFor, recordUsage,
   resolveProvider, save, setKey, state, stateFilePath, type Resolved,
   listSecrets, setSecret, deleteSecret, getSecret, SECRET_PRESETS, redactSecrets,
+  mergeJev, mergeAppearance, saneMcp, THEMES, FONTS,
 } from "./server/state";
+import { decide, lastDecision, supportFor, type JevOutcome, type JevTask } from "./server/jev/router";
+import type { JevTarget } from "./server/jev/engine";
+import { guardWorthy } from "./server/jev/guard";
+import { captureConsole, log, readLogs, type LogLevel } from "./server/logs";
+import {
+  MCP_CATALOG, connect as connectMcp, disconnect as disconnectMcp, statusOf as mcpStatus,
+} from "./server/mcp";
+import os from "node:os";
+
+captureConsole();
 import {
   ProviderError, listModels, streamChat,
   type ChatMessage, type ChatTurn, type ToolReply,
@@ -26,7 +37,7 @@ import {
 import {
   availableTools, capabilityBriefing, findTool, groupStates, needsApproval,
   renderCall, runTool, toolSettings, updateToolSettings,
-  type ToolContext, type ToolGroup,
+  type ToolContext, type ToolGroup, type AskRequest, type AskAnswer,
 } from "./server/tools";
 
 /* Where to listen. Umbrel's compose file publishes 8817 and passes it in, so
@@ -410,7 +421,63 @@ function emitEvent(session: Session, kind: string, actor: string, payload: Recor
     }
   }
 
+  logEvent(session, event);
   return event;
+}
+
+/** Tool calls in flight, by span, so a result can say how long it took. */
+const spanLog = new Map<string, { name: string; started: number }>();
+
+/**
+ * The agent's activity, as log lines for the Logs page. Only what someone
+ * debugging would look for -- turns, tool calls and their outcomes, errors,
+ * decisions -- not every streamed token.
+ */
+function logEvent(session: Session, e: AutoraEvent) {
+  const p = e.payload ?? {};
+  const short = (t: unknown, n = 120) => {
+    const s = String(t ?? "").replace(/\s+/g, " ").trim();
+    return s.length > n ? `${s.slice(0, n)}…` : s;
+  };
+  const at = (level: LogLevel, component: string, message: string) =>
+    log(level, component, message, session.id);
+  switch (e.kind) {
+    case "turn.user": at("info", "agent", `turn started: "${short(p.text, 80)}"`); break;
+    case "turn.agent.done": at("info", "agent", "turn finished"); break;
+    case "tool.call":
+      if (e.span) spanLog.set(e.span, { name: String(p.name ?? "tool"), started: Date.now() });
+      at("info", "tools", `${p.name} ${short(JSON.stringify(p.args ?? {}), 160)}`);
+      break;
+    case "tool.result": {
+      const span = e.span ? spanLog.get(e.span) : undefined;
+      const exit = p.display?.exit_code;
+      at(p.ok === false ? "warn" : "info", "tools",
+        `${span?.name ?? "tool"} ${p.ok === false ? "failed" : "ok"}` +
+        (exit !== undefined ? ` (exit ${exit})` : "") +
+        (p.duration_ms != null ? ` in ${p.duration_ms} ms` : ""));
+      if (e.span) spanLog.delete(e.span);
+      break;
+    }
+    case "tool.error": {
+      const span = e.span ? spanLog.get(e.span) : undefined;
+      at("warn", p.guarded ? "guard" : "tools", `${span?.name ?? "tool"}: ${short(p.error ?? p.reason, 300)}`);
+      if (e.span) spanLog.delete(e.span);
+      break;
+    }
+    case "system.error": at("error", "agent", short(p.error ?? "error", 400)); break;
+    case "jev.decision":
+      at(p.mode === "jev" ? "info" : "debug", "jev", p.mode === "jev"
+        ? `${p.task}: fast path, ${(p.fields ?? []).length} fields in ${p.ms} ms, lowest ${Number(p.min ?? 0).toFixed(2)}`
+        : `${p.task}: fell back (${short(p.reason, 200)})`);
+      break;
+    case "ask.request": at("info", "agent", `asked the person: "${short(p.title, 120)}"`); break;
+    case "ask.answer": at("info", "agent", p.cancelled ? `question ${p.who === "user" ? "skipped" : p.who}` : "question answered"); break;
+    case "memory.write": at("info", "memory", `wrote "${short(p.title, 100)}"`); break;
+    case "browser.nav": at("info", "browser", `open ${short(p.url, 200)}`); break;
+    case "usage.turn":
+      at("debug", "provider", `${p.provider}/${p.model}: ${p.input_tokens ?? 0} in, ${p.output_tokens ?? 0} out`);
+      break;
+  }
 }
 
 function broadcastLiveStatus(session: Session) {
@@ -607,6 +674,347 @@ function askPermission(
         clearTimeout(timer);
         finish({ approved: false });
       }
+    });
+  });
+}
+
+// ---------------------------------------------------------------- jev mode --
+
+/** The model the next turn will call, in the shape Jev scores against, or
+    null when nothing usable is connected. */
+function jevTarget(): JevTarget | null {
+  const active = resolveProvider();
+  if (!active.provider || active.problem) return null;
+  const spec = providerSpec(active.provider);
+  if (!spec) return null;
+  return {
+    provider: active.provider, kind: spec.kind,
+    baseUrl: active.baseUrl, key: active.key, model: active.model,
+  };
+}
+
+/**
+ * Run a decision through Jev, bill it, and say in the thread what happened.
+ *
+ * Reported only when something was actually tried: a model that cannot score
+ * falls back silently every turn, and a note saying so each time is noise.
+ */
+async function jevDecide(session: Session | null, task: JevTask): Promise<JevOutcome> {
+  const target = jevTarget();
+  const outcome = await decide(task, target, state.jev);
+  const usage = outcome.usage;
+  if (target && usage && (usage.input || usage.output)) {
+    recordUsage({
+      ts: Math.floor(Date.now() / 1000),
+      session: session?.id ?? "jev",
+      provider: target.provider,
+      model: target.model,
+      input: usage.input,
+      output: usage.output,
+      cost: costOf(target.provider, target.model, usage.input, usage.output),
+      priced: isPriced(target.provider, target.model),
+      estimated: false,
+    });
+  }
+  if (session && (outcome.mode === "jev" || outcome.attempted)) {
+    emitEvent(session, "jev.decision", "system", {
+      task: task.name,
+      mode: outcome.mode,
+      ms: outcome.ms,
+      threshold: state.jev.threshold,
+      min: outcome.mode === "jev" ? outcome.min : null,
+      reason: outcome.mode === "fallback" ? outcome.reason : null,
+      model: target?.model ?? null,
+      cached_tokens: usage?.cached ?? 0,
+      fields: (outcome.fields ?? []).map((f) => ({
+        name: task.labels?.[f.name] ?? f.name,
+        value: f.value, confidence: f.confidence, coverage: f.coverage,
+      })),
+    });
+  }
+  return outcome;
+}
+
+/**
+ * Which memories bear on this request, scored rather than keyword-matched.
+ *
+ * One yes/no field per memory: independent of each other, two values each --
+ * exactly the shape Jev is for. Returns null to mean "fall back to the
+ * keyword recall", which is what happens whenever Jev is off, the model
+ * cannot score, or any memory's call is too close to make.
+ */
+async function jevRecall(session: Session, request: string): Promise<MemoryRecord[] | null> {
+  const candidates = memoryRecords
+    .filter((m) => !m.superseded_by)
+    .sort((a, b) => b.uses - a.uses)
+    .slice(0, 20);
+  if (candidates.length === 0) return null;
+
+  const properties: Record<string, any> = {};
+  const labels: Record<string, string> = {};
+  const byField = new Map<string, MemoryRecord>();
+  candidates.forEach((m, i) => {
+    const field = `memory_${i + 1}`;
+    byField.set(field, m);
+    labels[field] = m.title;
+    properties[field] = {
+      type: "boolean",
+      description: `${m.title} -- ${m.body.replace(/\s+/g, " ").slice(0, 180)}`,
+    };
+  });
+
+  const outcome = await jevDecide(session, {
+    name: "memory recall",
+    context: `The person's request:\n${request.slice(0, 2000)}`,
+    instructions:
+      "Each field is one stored memory. Answer true if knowing it would help " +
+      "with the request, false if it is unrelated.",
+    schema: { type: "object", properties },
+    labels,
+    timeoutMs: 5000,
+  });
+  if (outcome.mode !== "jev") return null;
+
+  const picked = candidates.filter((m) => m.pinned);
+  for (const [field, value] of Object.entries(outcome.values)) {
+    const m = byField.get(field);
+    if (m && value === true && !picked.includes(m)) picked.push(m);
+  }
+  return picked;
+}
+
+/**
+ * Which kind of request this is, decided before the turn starts.
+ *
+ * One field, three values: answer from what the agent knows, act with tools,
+ * or clarify first. The answer is a line in the system instructions -- the
+ * tools stay on offer either way -- so a misjudged route costs a nudge, not a
+ * capability. Returns null (no hint, the turn runs as it always has) whenever
+ * Jev cannot decide confidently.
+ */
+async function jevRoute(session: Session, request: string): Promise<string | null> {
+  const previous = previousAgentReply(session);
+  const outcome = await jevDecide(session, {
+    name: "question routing",
+    context:
+      (previous ? `The agent's previous reply:\n${previous.slice(-800)}\n\n` : "") +
+      `The person's new message:\n${request.slice(0, 2000)}`,
+    instructions: "Decide how the agent should handle the person's new message.",
+    schema: {
+      type: "object",
+      properties: {
+        route: {
+          description: "How to handle the message",
+          oneOf: [
+            { const: "answer", description: "answer directly from knowledge; a question, explanation or conversation that needs no tools" },
+            { const: "act", description: "do something with tools: run commands, browse, edit files, look things up" },
+            { const: "clarify", description: "too ambiguous to act on safely; ask one clarifying question first" },
+          ],
+        },
+      },
+    },
+    timeoutMs: 5000,
+  });
+  if (outcome.mode !== "jev") return null;
+  switch (outcome.values.route) {
+    case "answer":
+      return "Routing: this message looks answerable directly. Reply from what you know; " +
+        "use tools only if the answer genuinely depends on something you must check.";
+    case "act":
+      return "Routing: this message needs action. Start working with your tools rather " +
+        "than describing what you would do.";
+    case "clarify":
+      return "Routing: this message is ambiguous. Before acting, ask the person one short " +
+        "clarifying question with ask_user, offering concrete options.";
+    default:
+      return null;
+  }
+}
+
+/** What the agent said last, so "yes, do it" can be routed with its antecedent. */
+function previousAgentReply(session: Session): string {
+  let seenUser = 0;
+  const parts: string[] = [];
+  for (let i = session.events.length - 1; i >= 0; i--) {
+    const e = session.events[i];
+    if (e.kind === "turn.user") {
+      seenUser += 1;
+      if (seenUser === 2) break;
+      continue;
+    }
+    if (seenUser === 1 && e.kind === "turn.agent.text" && !e.payload?.local) {
+      parts.unshift(String(e.payload?.text ?? ""));
+    }
+  }
+  return parts.join("").trim();
+}
+
+/* ---- the tool guard -------------------------------------------------------
+
+   Autora runs in yolo mode, and the guard does not change that for ordinary
+   work: it looks only at calls that could plausibly destroy something, and
+   stops one only when Jev is confident it is destructive AND that the person
+   did not ask for it. Then the call does not run; the agent is told why and
+   must ask the person with ask_user. Once they have answered, the same call
+   goes through. Everything the guard is unsure about runs, as before. */
+
+/** Answers the person has given, per session: a held call is let through
+    once this has moved on since it was held. */
+const answeredAsks = new Map<string, number>();
+/** The words of the most recent answer, per session, to read a yes from a no. */
+const lastAnswer = new Map<string, string>();
+/** Held calls, by session and exact rendering, with the count at hold time. */
+const heldCalls = new Map<string, number>();
+
+async function jevGuard(
+  session: Session,
+  spec: { name: string },
+  args: Record<string, any>,
+  request: string,
+  reason: string,
+): Promise<string | null> {
+  if (!guardWorthy(spec.name, args)) return null;
+  const rendered = renderCall(spec as any, args);
+  const key = `${session.id}\u0000${spec.name}\u0000${rendered}`;
+  const answered = answeredAsks.get(session.id) ?? 0;
+  const heldAt = heldCalls.get(key);
+  if (heldAt !== undefined && answered > heldAt) {
+    heldCalls.delete(key);
+    // Asked and answered. Through, unless the answer was a clear no -- the
+    // agent was told not to retry after a refusal, but that is a promise,
+    // and this is the check that does not depend on it.
+    const said = lastAnswer.get(session.id) ?? "";
+    const verdict = await jevDecide(session, {
+      name: "tool guard · your answer",
+      context:
+        `The action:\n${rendered.slice(0, 1000)}\n\n` +
+        `The person's answer when asked about it:\n${said.slice(0, 1000)}`,
+      schema: {
+        type: "object",
+        properties: {
+          approved: { type: "boolean", description: "The person agreed to this action going ahead." },
+        },
+      },
+      timeoutMs: 5000,
+    });
+    if (verdict.mode === "jev" && verdict.values.approved === false) {
+      heldCalls.set(key, answered);
+      return "Held by the guard: the person declined this when asked.";
+    }
+    return null;
+  }
+
+  const outcome = await jevDecide(session, {
+    name: "tool guard",
+    context:
+      `The person's request:\n${request.slice(0, 1500)}\n\n` +
+      (reason ? `The agent's stated reason:\n${reason.slice(0, 600)}\n\n` : "") +
+      `The action about to run (${spec.name}):\n${rendered.slice(0, 1500)}`,
+    instructions: "Judge the action about to run, strictly.",
+    schema: {
+      type: "object",
+      properties: {
+        destructive: {
+          type: "boolean",
+          description: "It could permanently delete, overwrite or break data, systems or accounts in a way that cannot easily be undone.",
+        },
+        requested: {
+          type: "boolean",
+          description: "The person explicitly asked for this specific destructive action, not merely for a task it might help with.",
+        },
+      },
+    },
+    timeoutMs: 5000,
+  });
+  if (outcome.mode !== "jev") return null;
+  if (outcome.values.destructive !== true || outcome.values.requested !== false) return null;
+
+  heldCalls.set(key, answered);
+  const sure = Math.min(outcome.confidence.destructive, outcome.confidence.requested);
+  return `Held by the guard: this looks destructive and the person did not ask for it (confidence ${sure.toFixed(2)}).`;
+}
+
+// ------------------------------------------------------- asking the person --
+
+/**
+ * A question the agent has put to the person, parked until they answer.
+ *
+ * Unlike an approval this is the agent's own choice to stop: it has hit
+ * something only the person can settle -- a preference, an ambiguity, a
+ * sign-in -- and the turn waits here, visibly, on a card in the thread.
+ */
+type PendingAsk = {
+  sessionId: string;
+  settle: (answer: AskAnswer) => void;
+  timer: NodeJS.Timeout;
+};
+const awaitingAsk = new Map<string, PendingAsk>();
+
+/** Longer than an approval: signing in somewhere can mean finding a phone. */
+const ASK_TIMEOUT_MS = 30 * 60 * 1000;
+
+/** Whether the turn in this session is stopped on the person rather than
+    working. While it is, the browser belongs to them. */
+function waitingOnPerson(sessionId: string): boolean {
+  for (const pending of awaitingAsk.values()) {
+    if (pending.sessionId === sessionId) return true;
+  }
+  return false;
+}
+
+/** The agent is at the wheel: a turn is running and it is not waiting on the
+    person. User input to the browser is refused while this holds, so two
+    pairs of hands never fight over one page. */
+function agentDriving(session: Session): boolean {
+  return session.busy && !waitingOnPerson(session.id);
+}
+
+function settleAsk(askId: string, answer: AskAnswer): boolean {
+  const pending = awaitingAsk.get(askId);
+  if (!pending) return false;
+  clearTimeout(pending.timer);
+  awaitingAsk.delete(askId);
+  const session = sessions.get(pending.sessionId);
+  if (!answer.cancelled && answer.who === "user") {
+    answeredAsks.set(pending.sessionId, (answeredAsks.get(pending.sessionId) ?? 0) + 1);
+    lastAnswer.set(pending.sessionId, [...answer.choices, answer.text].filter(Boolean).join(" -- "));
+  }
+  if (session) {
+    emitEvent(session, "ask.answer", answer.who === "user" ? "user" : "system", {
+      ask_id: askId,
+      cancelled: answer.cancelled,
+      choices: answer.choices,
+      text: answer.text,
+      who: answer.who,
+    });
+  }
+  pending.settle(answer);
+  return true;
+}
+
+function askPerson(session: Session, request: AskRequest): Promise<AskAnswer> {
+  const askId = `ask-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+
+  emitEvent(session, "ask.request", "agent", {
+    ask_id: askId,
+    kind: request.kind,
+    title: request.title,
+    detail: request.detail ?? "",
+    options: request.options,
+    multi: request.multi,
+    allow_text: request.allowText,
+    placeholder: request.placeholder ?? "",
+  });
+
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      settleAsk(askId, { cancelled: true, choices: [], text: "", who: "timeout" });
+    }, ASK_TIMEOUT_MS);
+    timer.unref?.();
+    awaitingAsk.set(askId, { sessionId: session.id, settle: resolve, timer });
+    // Stop releases the question too; nobody is going to answer it.
+    running.get(session.id)?.cancels.add(() => {
+      settleAsk(askId, { cancelled: true, choices: [], text: "", who: "stopped" });
     });
   });
 }
@@ -970,8 +1378,11 @@ async function systemInstructionFor(
   sessionId: string,
   recalled: MemoryRecord[],
   active?: Resolved | null,
+  /** Jev's reading of what kind of request this is, when it had one. */
+  routeHint?: string | null,
 ): Promise<string> {
   const lines = [state.systemPrompt.trim()];
+  if (routeHint) lines.push("", routeHint);
 
   /* What it can actually do, generated from the tool registry rather than
      written down here. This is the section whose absence made the console
@@ -1057,6 +1468,30 @@ async function startServer() {
   const app = express();
   app.use(express.json());
 
+  // Failed API calls, for the Logs page: the request and what it answered.
+  app.use((req, res, next) => {
+    if (!req.path.startsWith("/api/") || req.path === "/api/logs") return next();
+    const started = Date.now();
+    res.on("finish", () => {
+      if (res.statusCode < 400) return;
+      log(res.statusCode >= 500 ? "error" : "warn", "http",
+        `${req.method} ${req.path} -> ${res.statusCode} (${Date.now() - started} ms)`);
+    });
+    next();
+  });
+
+  app.get("/api/logs", (req: Request, res: Response) => {
+    const level = ["debug", "info", "warn", "error"].includes(String(req.query.level))
+      ? (String(req.query.level) as LogLevel) : undefined;
+    res.json(readLogs({
+      level,
+      component: req.query.component ? String(req.query.component) : undefined,
+      q: req.query.q ? String(req.query.q) : undefined,
+      after: req.query.after !== undefined ? Number(req.query.after) : undefined,
+      limit: req.query.limit !== undefined ? Number(req.query.limit) : undefined,
+    }));
+  });
+
   // --- API Routes ---
 
   // 1. Origin & Runtime Info
@@ -1071,16 +1506,146 @@ async function startServer() {
 
   // 2. Sessions List & Creation
   app.get("/api/sessions", (req: Request, res: Response) => {
-    const list = Array.from(sessions.values()).map((s) => ({
-      id: s.id,
-      title: s.title || `Session ${s.id.slice(-6)}`,
-      live: s.live,
-      created_at: s.createdAt,
-      events: s.events.length,
-    }));
+    // Spend per session, from the ledger, in one pass.
+    const spend = new Map<string, { cost: number; input: number; output: number }>();
+    for (const u of state.usage) {
+      const row = spend.get(u.session) ?? { cost: 0, input: 0, output: 0 };
+      row.cost += u.cost; row.input += u.input; row.output += u.output;
+      spend.set(u.session, row);
+    }
+    const list = Array.from(sessions.values()).map((s) => {
+      let turns = 0, tools = 0, errors = 0;
+      for (const e of s.events) {
+        if (e.kind === "turn.user") turns += 1;
+        else if (e.kind === "tool.call") tools += 1;
+        else if (e.kind === "tool.error" || e.kind === "system.error") errors += 1;
+      }
+      const cost = spend.get(s.id);
+      return {
+        id: s.id,
+        title: s.title || `Session ${s.id.slice(-6)}`,
+        live: s.live,
+        busy: s.busy,
+        created_at: s.createdAt,
+        updated_at: s.events.length ? s.events[s.events.length - 1].ts : s.createdAt,
+        events: s.events.length,
+        turns, tools, errors,
+        cost: cost?.cost ?? 0,
+        tokens: cost ? cost.input + cost.output : 0,
+      };
+    });
     // Most recent first
     list.sort((a, b) => b.created_at - a.created_at);
     res.json(list);
+  });
+
+  app.patch("/api/sessions/:id", (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    const title = typeof req.body?.title === "string" ? req.body.title.trim().slice(0, 120) : "";
+    if (!title) return res.status(400).json({ error: "A title is required." });
+    session.title = title;
+    res.json({ ok: true, title });
+  });
+
+  /** Gone for good: its log, its pictures, and its browser. */
+  app.delete("/api/sessions/:id", async (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    if (session.busy) return res.status(409).json({ error: "Stop the session before deleting it." });
+    const live = browsers.get(session.id);
+    if (live) { await live.close().catch(() => undefined); browsers.delete(session.id); }
+    dropSession(session.id);
+    for (const ws of sessionSockets.get(session.id) ?? []) ws.close();
+    sessionSockets.delete(session.id);
+    sessions.delete(session.id);
+    log("info", "sessions", `deleted "${session.title}"`);
+    res.json({ ok: true });
+  });
+
+  /** The host, for the System and Status pages. */
+  app.get("/api/system", (_req: Request, res: Response) => {
+    const mem = process.memoryUsage();
+    res.json({
+      version: VERSION,
+      node: process.version,
+      platform: `${os.type()} ${os.release()} (${os.arch()})`,
+      hostname: os.hostname(),
+      uptime_s: Math.round(process.uptime()),
+      host_uptime_s: Math.round(os.uptime()),
+      cpus: os.cpus().length,
+      load: os.loadavg(),
+      memory: { rss: mem.rss, heap: mem.heapUsed, total: os.totalmem(), free: os.freemem() },
+      sessions: sessions.size,
+      busy: Array.from(sessions.values()).filter((s) => s.busy).length,
+      browsers: browsers.size,
+      state_file: stateFilePath(),
+      cwd: process.cwd(),
+    });
+  });
+
+  // ------------------------------------------------------------------ mcp --
+  const MASK = "••••••";
+  const mcpView = () => state.mcpServers.map((cfg) => ({
+    ...cfg,
+    // Values of env vars and headers are usually secrets: shown masked, and a
+    // masked value sent back means "keep what you have".
+    env: cfg.env ? Object.fromEntries(Object.keys(cfg.env).map((k) => [k, MASK])) : undefined,
+    headers: cfg.headers ? Object.fromEntries(Object.keys(cfg.headers).map((k) => [k, MASK])) : undefined,
+    ...mcpStatus(cfg.id),
+  }));
+  const keepMasked = (next: Record<string, string> | undefined, prev: Record<string, string> | undefined) => {
+    if (!next) return next;
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(next)) out[k] = v === MASK ? (prev?.[k] ?? "") : v;
+    return out;
+  };
+
+  app.get("/api/mcp", (_req: Request, res: Response) => {
+    res.json({ servers: mcpView(), catalog: MCP_CATALOG });
+  });
+
+  app.post("/api/mcp", async (req: Request, res: Response) => {
+    const cfg = saneMcp({ ...req.body, id: undefined });
+    if (!cfg) return res.status(400).json({ error: "A server needs a name." });
+    if (state.mcpServers.some((s) => s.name.toLowerCase() === cfg.name.toLowerCase())) {
+      return res.status(400).json({ error: `There is already a server called "${cfg.name}".` });
+    }
+    state.mcpServers.push(cfg);
+    save();
+    await connectMcp(cfg);
+    res.json({ servers: mcpView(), catalog: MCP_CATALOG });
+  });
+
+  app.patch("/api/mcp/:id", async (req: Request, res: Response) => {
+    const index = state.mcpServers.findIndex((s) => s.id === req.params.id);
+    if (index < 0) return res.status(404).json({ error: "No such server." });
+    const prev = state.mcpServers[index];
+    const next = saneMcp({ ...prev, ...req.body, id: prev.id });
+    if (!next) return res.status(400).json({ error: "A server needs a name." });
+    next.env = keepMasked(next.env, prev.env);
+    next.headers = keepMasked(next.headers, prev.headers);
+    state.mcpServers[index] = next;
+    save();
+    await connectMcp(next);
+    res.json({ servers: mcpView(), catalog: MCP_CATALOG });
+  });
+
+  app.post("/api/mcp/:id/reconnect", async (req: Request, res: Response) => {
+    const cfg = state.mcpServers.find((s) => s.id === req.params.id);
+    if (!cfg) return res.status(404).json({ error: "No such server." });
+    await connectMcp(cfg);
+    res.json({ servers: mcpView(), catalog: MCP_CATALOG });
+  });
+
+  app.delete("/api/mcp/:id", async (req: Request, res: Response) => {
+    const cfg = state.mcpServers.find((s) => s.id === req.params.id);
+    if (!cfg) return res.status(404).json({ error: "No such server." });
+    await disconnectMcp(cfg.id);
+    state.mcpServers = state.mcpServers.filter((s) => s.id !== cfg.id);
+    save();
+    log("info", "mcp", `${cfg.name}: removed`);
+    res.json({ servers: mcpView(), catalog: MCP_CATALOG });
   });
 
   app.post("/api/sessions", (req: Request, res: Response) => {
@@ -1294,6 +1859,16 @@ async function startServer() {
         const usable = new Set(
           (await groupStates()).filter((g) => g.available).map((g) => g.group),
         );
+
+        /* Jev Mode: when the model can score, which memories this turn gets
+           is decided by the model, per memory, with a confidence each. The
+           keyword rules above stay as the fallback for everything else. */
+        // Both at once: two small decisions, one wait.
+        const [scored, routeHint] = await Promise.all([
+          jevRecall(session, text),
+          jevRoute(session, text),
+        ]);
+        if (scored) accessedRecords.splice(0, accessedRecords.length, ...scored);
 
         const uniqueAccessed = accessedRecords.filter(
           (item, idx, self) =>
@@ -1583,6 +2158,7 @@ async function startServer() {
               },
             },
             vault: (id) => context.vault.get(id),
+            ask: (request) => askPerson(session, request),
           });
 
           /**
@@ -1598,7 +2174,7 @@ async function startServer() {
           for (let step = 0; step < MAX_TOOL_STEPS; step += 1) {
             if (running.get(session.id)?.stopped) break;
 
-            const pinned = await systemInstructionFor(session.id, uniqueAccessed, active);
+            const pinned = await systemInstructionFor(session.id, uniqueAccessed, active, routeHint);
             /* Past the high-water mark this starts a background fold of the
                older turns and returns at once. It is never awaited: this
                step's call goes out now, on the history as it stands. */
@@ -1672,6 +2248,21 @@ async function startServer() {
                     text: `You answered the approval with: ${decision.response}`,
                   });
                 }
+              }
+
+              const held = await jevGuard(session, spec, use.args, text, turn.text.trim());
+              if (held) {
+                emitEvent(session, "tool.error", "agent", {
+                  guarded: true, denied: true, error: held,
+                }, span);
+                reply(
+                  false,
+                  `${held} It did not run. Ask the person with ask_user first -- say ` +
+                    "exactly what it will do and what cannot be undone. If they agree, " +
+                    "make the same call again and it will go through. If they decline, " +
+                    "find another way or stop.",
+                );
+                continue;
               }
 
               const started = Date.now();
@@ -1856,6 +2447,27 @@ async function startServer() {
   });
 
   // 6b. Live Browser Direct Interaction & Handoff
+  const DRIVING =
+    "The agent is using the browser. Wait until it finishes or asks you, or stop it.";
+
+  /** An answer to a question the agent asked. */
+  app.post("/api/sessions/:id/ask/:askId", (req: Request, res: Response) => {
+    const pending = awaitingAsk.get(req.params.askId);
+    if (!pending || pending.sessionId !== req.params.id) {
+      return res.status(404).json({ error: "That question is no longer waiting." });
+    }
+    const choices = Array.isArray(req.body?.choices)
+      ? req.body.choices.map((c: unknown) => String(c)).slice(0, 20)
+      : [];
+    const text = typeof req.body?.text === "string" ? req.body.text.slice(0, 4000) : "";
+    settleAsk(req.params.askId, {
+      cancelled: Boolean(req.body?.cancelled),
+      choices,
+      text,
+      who: "user",
+    });
+    res.json({ ok: true });
+  });
   app.get("/api/sessions/:id/browser/status", (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
@@ -1888,6 +2500,7 @@ async function startServer() {
   app.post("/api/sessions/:id/browser/scroll", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
+    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
     const live = browsers.get(session.id);
     if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
 
@@ -1904,6 +2517,7 @@ async function startServer() {
   app.post("/api/sessions/:id/browser/reload", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
+    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
     const live = browsers.get(session.id);
     if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
 
@@ -1918,6 +2532,7 @@ async function startServer() {
   app.post("/api/sessions/:id/browser/back", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
+    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
     const live = browsers.get(session.id);
     if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
 
@@ -1932,6 +2547,7 @@ async function startServer() {
   app.post("/api/sessions/:id/browser/click", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
+    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
     const live = browsers.get(session.id);
     if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
 
@@ -1943,8 +2559,8 @@ async function startServer() {
 
     try {
       const button = req.body?.button === "right" ? "right" : req.body?.button === "middle" ? "middle" : "left";
-      await live.mouseClick(x, y, button, !!req.body?.double);
-      res.json({ ok: true });
+      const { editable } = await live.userClick(x, y, button, !!req.body?.double);
+      res.json({ ok: true, editable });
     } catch (err: any) {
       res.status(500).json({ error: err?.message ?? "Click failed" });
     }
@@ -1953,6 +2569,7 @@ async function startServer() {
   app.post("/api/sessions/:id/browser/move", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
+    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
     const live = browsers.get(session.id);
     if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
 
@@ -1973,6 +2590,7 @@ async function startServer() {
   app.post("/api/sessions/:id/browser/type", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
+    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
     const live = browsers.get(session.id);
     if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
 
@@ -1988,6 +2606,7 @@ async function startServer() {
   app.post("/api/sessions/:id/browser/key", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
+    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
     const live = browsers.get(session.id);
     if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
 
@@ -2005,6 +2624,7 @@ async function startServer() {
   app.post("/api/sessions/:id/browser/navigate", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
+    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
     const live = browsers.get(session.id);
     if (!live) return res.status(400).json({ error: "No browser active." });
 
@@ -2339,10 +2959,35 @@ async function startServer() {
      async, and the rest of the payload is not. */
   const settingsWithTools = async () => ({
     ...settingsPayload(),
+    appearance: { ...state.appearance, themes: THEMES, fonts: FONTS },
+    jev: {
+      ...state.jev,
+      support: supportFor(jevTarget()),
+      last: lastDecision(),
+    },
     tools: {
       config: toolSettings(),
       groups: await groupStates(),
     },
+  });
+
+  /**
+   * Score a decision directly: `{ context, schema, instructions? }` in, the
+   * outcome out -- the programmatic payload with a confidence per field, or
+   * the reason it fell back. For scripts, and for checking a backend.
+   */
+  app.post("/api/jev/evaluate", async (req: Request, res: Response) => {
+    const body = req.body ?? {};
+    if (!body.schema || typeof body.schema !== "object") {
+      return res.status(400).json({ error: "A JSON schema is required." });
+    }
+    const outcome = await jevDecide(null, {
+      name: String(body.name ?? "api"),
+      context: String(body.context ?? ""),
+      schema: body.schema,
+      instructions: typeof body.instructions === "string" ? body.instructions : undefined,
+    });
+    res.json(outcome);
   });
 
   app.get("/api/settings", async (req: Request, res: Response) => {
@@ -2413,6 +3058,8 @@ async function startServer() {
     if (body.tools && typeof body.tools === "object") {
       updateToolSettings(body.tools);
     }
+    if (body.jev && typeof body.jev === "object") mergeJev(state.jev, body.jev);
+    if (body.appearance && typeof body.appearance === "object") mergeAppearance(state.appearance, body.appearance);
 
     save();
     res.json(await settingsWithTools());
@@ -2748,10 +3395,15 @@ async function startServer() {
       dropSession(id);
     }
     browsers.clear();
+    // stdio MCP servers are child processes; do not leave them running.
+    await Promise.all(state.mcpServers.map((cfg) => disconnectMcp(cfg.id).catch(() => undefined)));
     process.exit(0);
   };
   process.once("SIGINT", () => void shutdown());
   process.once("SIGTERM", () => void shutdown());
+
+  // MCP servers connect in the background: a slow one must not hold up the UI.
+  for (const cfg of state.mcpServers) void connectMcp(cfg);
 
   // Asked once, at startup, so the settings panel and the browser card can
   // both say what is missing without every caller paying for the import.

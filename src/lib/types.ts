@@ -66,6 +66,11 @@ export const Kind = {
   KanbanUpdate: "kanban.update",
   PermissionRequest: "permission.request",
   PermissionDecision: "permission.decision",
+  /** The agent stopped to ask the person something; and the answer. */
+  AskRequest: "ask.request",
+  AskAnswer: "ask.answer",
+  /** A decision scored by Jev Mode, or handed back to normal reasoning. */
+  JevDecision: "jev.decision",
   Log: "system.log",
   Error: "system.error",
 } as const;

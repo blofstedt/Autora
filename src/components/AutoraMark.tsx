@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { useThemeColors, type ThemeColors } from "../lib/theme";
 
 /**
  * The Autora mark, alive.
@@ -66,8 +67,8 @@ const BLOOM = [REST, spark(10.4, 4.6, 0.09), spark(9.2, 3.0, 0.02), REST].join("
 
 /** Brand violet, cyan and orchid, turning through each other. The green that
     used to mean "live" is deliberately absent -- state is carried by motion. */
-const WARM = "#6e5bff;#22d3ee;#a855f7;#6e5bff";
-const COOL = "#22d3ee;#a855f7;#6e5bff;#22d3ee";
+const warm = (c: ThemeColors) => [c.accent, c.accent2, c.glow, c.accent].join(";");
+const cool = (c: ThemeColors) => [c.accent2, c.glow, c.accent, c.accent2].join(";");
 
 /** Someone who has asked for less motion gets a still mark, not a slower one. */
 function useStillness(): boolean {
@@ -122,6 +123,7 @@ export function AutoraMark({
   // page is one gradient, and the second mark would quietly inherit the
   // first's animation.
   const uid = useId().replace(/:/g, "");
+  const colors = useThemeColors();
 
   const moving = !still && (shown === "working" || shown === "settle" || shown === "live");
   const morphing = !still && (shown === "working" || shown === "settle");
@@ -141,21 +143,21 @@ export function AutoraMark({
       <svg viewBox="0 0 32 32" width={size} height={size} role="presentation">
         <defs>
           <linearGradient id={`g${uid}`} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#6e5bff">
+            <stop offset="0" stopColor={colors.accent}>
               {moving && (
                 <animate
                   attributeName="stop-color"
-                  values={WARM}
+                  values={warm(colors)}
                   dur="6s"
                   repeatCount="indefinite"
                 />
               )}
             </stop>
-            <stop offset="1" stopColor="#22d3ee">
+            <stop offset="1" stopColor={colors.accent2}>
               {moving && (
                 <animate
                   attributeName="stop-color"
-                  values={COOL}
+                  values={cool(colors)}
                   dur="6s"
                   repeatCount="indefinite"
                 />
@@ -166,8 +168,8 @@ export function AutoraMark({
           {/* The wash behind the mark: the same colours, spread and faded, so
               the glow is the mark's own light rather than a grey halo. */}
           <radialGradient id={`w${uid}`}>
-            <stop offset="0" stopColor="#a855f7" stopOpacity="0.85" />
-            <stop offset="1" stopColor="#6e5bff" stopOpacity="0" />
+            <stop offset="0" stopColor={colors.glow} stopOpacity="0.85" />
+            <stop offset="1" stopColor={colors.accent} stopOpacity="0" />
           </radialGradient>
         </defs>
 

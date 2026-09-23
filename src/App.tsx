@@ -1,11 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { SessionStream, type StreamStatus } from "./lib/stream";
 import { derive, isRunning, type KanbanTask } from "./lib/derive";
 import { chime, paintChrome, type Chrome } from "./lib/chrome";
 import type { AutoraEvent, BrowserState, LiveFrame } from "./lib/types";
 import { Thread } from "./components/Thread";
 import { MemoryRibbon } from "./components/MemoryRibbon";
-import { Rail } from "./components/Rail";
+import { Rail, pageLabel, PAGES, type PageId } from "./components/Rail";
+import { StatusPage } from "./components/pages/StatusPage";
+import { SessionsPage } from "./components/pages/SessionsPage";
+import { LogsPage } from "./components/pages/LogsPage";
+import { McpPage } from "./components/pages/McpPage";
+import {
+  applyAppearance, cachedAppearance, saveAppearance, type Appearance,
+} from "./lib/theme";
 import { Sessions, type SessionRow } from "./components/Sessions";
 import { Approvals } from "./components/Approvals";
 import { KnowledgeWeb } from "./components/KnowledgeWeb";
@@ -21,9 +28,11 @@ import {
   splitSpeakable, useSpeech,
 } from "./lib/voice";
 import {
-  IconArrow, IconChevron, IconGear, IconMessage, IconRepeat, IconSpark, IconStop,
+  IconArrow, IconArrowUp, IconChevron, IconMenu, IconMessage, IconRepeat, IconStop,
   IconX,
 } from "./components/Icons";
+
+const RIBBON_KEY = "autora.ribbon";
 
 /** How often to re-read the session list, so sessions started elsewhere (or
     from another tab) show up without a reload. */
@@ -45,11 +54,14 @@ export function App() {
   const [draft, setDraft] = useState("");
   const [liveOn, setLiveOn] = useState(false);
   const [userSpeaking] = useState(false);
-  const [mobileTab, setMobileTab] = useState<"chat" | "tasks">("chat");
-  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
-  const [knowledgeInitialKind, setKnowledgeInitialKind] = useState<"skill" | "all">("all");
-  const [scheduleOpen, setScheduleOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  /** Which page of the app is showing. Chat is the conversation; the rest
+      are the sidebar's pages. Kept in the address so a reload stays put. */
+  const [page, setPage] = useState<PageId>(() => {
+    const asked = new URLSearchParams(location.search).get("page");
+    return PAGES.some((p) => p.id === asked) ? (asked as PageId) : "chat";
+  });
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [appearance, setAppearance] = useState<Appearance>(cachedAppearance);
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [securePort, setSecurePort] = useState<number | null>(null);
   const [hasCertificate, setHasCertificate] = useState(false);
@@ -58,6 +70,22 @@ export function App() {
       only through `title` is reported to nobody. */
   const [notice, setNotice] = useState<string | null>(null);
   const [voiceHelp, setVoiceHelp] = useState(false);
+  /** The memory graph, folded to a line or open. Remembered per browser, and
+      folded by default on a phone, where it was a fifth of the screen. */
+  const [ribbonOpen, setRibbonOpen] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem(RIBBON_KEY);
+      if (saved === "open") return true;
+      if (saved === "closed") return false;
+    } catch { /* storage blocked: fall through to the default */ }
+    return !window.matchMedia("(max-width: 680px)").matches;
+  });
+  const toggleRibbon = useCallback(() => {
+    setRibbonOpen((open) => {
+      try { localStorage.setItem(RIBBON_KEY, open ? "closed" : "open"); } catch { /* ignore */ }
+      return !open;
+    });
+  }, []);
   const streamRef = useRef<SessionStream | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const speech = useSpeech();
@@ -79,8 +107,12 @@ export function App() {
           if (!alive) return;
           setSessions(rows);
           // Functional update so polling never needs `sessionId` as a dep --
-          // otherwise every session switch restarts the poll.
-          setSessionId((current) => current ?? (rows.length > 0 ? rows[0].id : null));
+          // otherwise every session switch restarts the poll. A session that
+          // has been deleted gives way to the newest one.
+          setSessionId((current) =>
+            current && rows.some((r: SessionRow) => r.id === current)
+              ? current
+              : rows.length > 0 ? rows[0].id : null);
         })
         .catch(() => undefined);
     load();
@@ -89,6 +121,36 @@ export function App() {
       alive = false;
       window.clearInterval(timer);
     };
+  }, []);
+
+  // The theme saved on the server wins over this browser's cached copy, so a
+  // choice made on the desktop shows up on the phone.
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((d) => {
+        const saved = d?.appearance;
+        if (!saved?.theme || !saved?.font) return;
+        const next = { theme: saved.theme, font: saved.font } as Appearance;
+        setAppearance(next);
+        applyAppearance(next);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const changeAppearance = useCallback((next: Appearance) => {
+    setAppearance(next);
+    void saveAppearance(next);
+  }, []);
+
+  const navigate = useCallback((next: PageId) => {
+    setPage(next);
+    setDrawerOpen(false);
+    setSessionsOpen(false);
+    const url = new URL(location.href);
+    if (next === "chat") url.searchParams.delete("page");
+    else url.searchParams.set("page", next);
+    history.replaceState(null, "", url.toString());
   }, []);
 
   // Where the https copy of this page is listening, if the server put one up.
@@ -151,17 +213,25 @@ export function App() {
     }).catch(() => undefined);
   }, [sessionId]);
 
+  // A question from the agent counts: it is the turn waiting on you.
   const pending = useMemo(
-    () => view.approvals.filter((a) => !a.settled).length,
-    [view.approvals],
+    () => view.approvals.filter((a) => !a.settled).length + (view.asking ? 1 : 0),
+    [view.approvals, view.asking],
   );
   // An approval is the one thing that must not be missed behind an overlay.
   useEffect(() => {
-    if (pending > 0) {
-      setMobileTab("chat");
-      setScheduleOpen(false);
-    }
-  }, [pending]);
+    if (pending > 0) navigate("chat");
+  }, [pending, navigate]);
+
+  // The box grows with what is in it, up to a limit, and shrinks back when
+  // it is sent -- a one-line box you have to scroll inside is the thing that
+  // made it feel like a form field.
+  useLayoutEffect(() => {
+    const box = composerRef.current;
+    if (!box) return;
+    box.style.height = "auto";
+    box.style.height = `${Math.min(box.scrollHeight, 240)}px`;
+  }, [draft]);
 
   const send = useCallback(async (spoken?: string) => {
     const text = (spoken ?? draft).trim();
@@ -221,6 +291,12 @@ export function App() {
   // Whether a turn is running now, read from the tail of the log so a reload
   // mid-turn comes back knowing one is in flight.
   const running = useMemo(() => isRunning(events), [events]);
+
+  /** The agent has its hands on things: a turn is running and it is not
+      stopped on a question for you. The browser is locked while this holds. */
+  const driving = live && running && !view.asking;
+  const browserHandedOver = view.asking?.kind === "browser";
+
 
   // ------------------------------------------------------------ live chat --
   /** Turning it on has to happen inside the tap: iOS will not let a page speak
@@ -352,7 +428,7 @@ export function App() {
           break;
         case "k":
           e.preventDefault();
-          setKnowledgeOpen((open) => !open);
+          navigate(page === "memory" ? "chat" : "memory");
           break;
         case "v":
           e.preventDefault();
@@ -361,40 +437,31 @@ export function App() {
           else if (voiceBlocked) setVoiceHelp(true);
           break;
         case "Escape":
-          setKnowledgeOpen(false);
-          setScheduleOpen(false);
-          setSettingsOpen(false);
           setSessionsOpen(false);
+          setDrawerOpen(false);
           break;
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [toggleLive, readOnly, voiceReady, voiceBlocked]);
+  }, [toggleLive, readOnly, voiceReady, voiceBlocked, navigate, page]);
 
   const currentName =
     sessions.find((s) => s.id === sessionId)?.title?.trim() ||
     view.title ||
     "Untitled session";
 
-  const closeOverlays = () => {
-    setScheduleOpen(false);
-    setKnowledgeOpen(false);
-    setSettingsOpen(false);
-    setSessionsOpen(false);
-  };
+  const openSkills = useCallback(() => navigate("skills"), [navigate]);
+  const openKnowledge = useCallback(() => navigate("memory"), [navigate]);
 
-  const openSkills = useCallback(() => {
-    closeOverlays();
-    setKnowledgeInitialKind("skill");
-    setKnowledgeOpen(true);
+  const refreshSessions = useCallback(() => {
+    fetch("/api/sessions").then((r) => r.json()).then(setSessions).catch(() => undefined);
   }, []);
 
-  const openKnowledge = useCallback(() => {
-    closeOverlays();
-    setKnowledgeInitialKind("all");
-    setKnowledgeOpen(true);
-  }, []);
+  const openSession = useCallback((id: string) => {
+    pickSession(id);
+    navigate("chat");
+  }, [navigate, pickSession]);
 
   const handlePermissionDecide = useCallback(async (requestId: string, approved: boolean, response?: string) => {
     await fetch(`/api/policy/${requestId}`, {
@@ -417,17 +484,31 @@ export function App() {
     <div className="app">
       {/* Wide screens get the session list in the margin instead of behind a
           sheet; narrow ones never render it at all. */}
-      <Rail
-        sessions={sessions}
-        current={sessionId}
-        relayOn={!!relay?.connected}
-        onPick={pickSession}
-        onNew={newSession}
-        onTasks={() => { closeOverlays(); setScheduleOpen(true); }}
-        onSkills={openSkills}
-        onMemory={openKnowledge}
-        onSettings={() => { closeOverlays(); setSettingsOpen(true); }}
-      />
+      {/* The sidebar: in the margin on a desktop, a drawer on a phone. */}
+      {(["rail", "drawer"] as const).map((kind) => kind === "drawer" && !drawerOpen ? null : (
+        <div
+          key={kind}
+          className={kind === "drawer" ? "drawer-scrim" : "rail-slot"}
+          onClick={kind === "drawer"
+            ? (e) => { if (e.target === e.currentTarget) setDrawerOpen(false); }
+            : undefined}
+        >
+          <Rail
+            page={page}
+            onNavigate={navigate}
+            sessions={sessions}
+            current={sessionId}
+            relayOn={!!relay?.connected}
+            alert={pending > 0}
+            onPick={openSession}
+            onNew={() => { void newSession(); navigate("chat"); }}
+            appearance={appearance}
+            onAppearance={changeAppearance}
+            drawer={kind === "drawer"}
+            onClose={() => setDrawerOpen(false)}
+          />
+        </div>
+      ))}
 
       <div className="shell">
         {/* Above everything, including the header: an app running code that is
@@ -435,11 +516,18 @@ export function App() {
         <UpdateNotice />
 
         <header className="top">
-          <div className="brand in-top">
-            <span className="brand-mark"><IconSpark size={13} /></span>
-            <span className="brand-word">Autora</span>
-          </div>
+          <button
+            className="btn icon ghost menu-btn"
+            onClick={() => setDrawerOpen(true)}
+            aria-label="Open the menu"
+            title="Menu"
+          >
+            <IconMenu size={18} />
+          </button>
 
+          {page !== "chat" ? (
+            <h1 className="top-title">{pageLabel(page)}</h1>
+          ) : (
           <button
             className="session-btn"
             onClick={() => setSessionsOpen(true)}
@@ -449,6 +537,7 @@ export function App() {
             <span className="session-name">{currentName}</span>
             <IconChevron size={12} />
           </button>
+          )}
 
           <div className="spacer" />
 
@@ -475,15 +564,37 @@ export function App() {
               {fmt(view.tokens.cached)} cached
             </span>
           )}
-          <button
-            className="btn icon ghost in-top"
-            onClick={() => setSettingsOpen(true)}
-            title="Settings"
-            aria-label="Open settings"
-          >
-            <IconGear size={15} />
-          </button>
         </header>
+
+        {page !== "chat" && (
+          <div className="page-host">
+            {page === "status" && (
+              <StatusPage sessions={sessions} onOpenSession={openSession} onNavigate={navigate} />
+            )}
+            {page === "config" && <Settings key="config" section="config" embedded />}
+            {page === "keys" && <Settings key="keys" section="keys" embedded />}
+            {page === "analytics" && <Settings key="analytics" section="analytics" embedded />}
+            {page === "system" && <Settings key="system" section="system" embedded />}
+            {page === "sessions" && (
+              <SessionsPage current={sessionId} onOpen={openSession} onChanged={refreshSessions} />
+            )}
+            {page === "logs" && <LogsPage />}
+            {page === "mcp" && <McpPage />}
+            {page === "cron" && <Schedule embedded onOpenSession={openSession} />}
+            {(page === "memory" || page === "skills") && (
+              <KnowledgeWeb
+                key={page}
+                embedded
+                initialKind={page === "skills" ? "skill" : "all"}
+                recent={view.memories}
+              />
+            )}
+          </div>
+        )}
+
+        {/* The conversation stays mounted under the other pages, so leaving
+            it and coming back keeps your place in the thread. */}
+        <div className="chat-view" hidden={page !== "chat"}>
 
         {/* Always on, above the conversation: what the agent knows, and what is
             happening to it as it happens. */}
@@ -491,18 +602,24 @@ export function App() {
           memories={view.memories}
           onOpen={openKnowledge}
           onOpenSkills={openSkills}
+          collapsed={!ribbonOpen}
+          onToggle={toggleRibbon}
         />
 
         <main className="page">
           <Thread
             buckets={view.buckets}
-            busy={view.busy}
+            // Stopped on a question is not working; the card says what it is.
+            busy={view.busy && !view.asking}
             sessionId={sessionId ?? ""}
             liveBrowserSeq={view.liveBrowserSeq}
             liveFrame={liveFrame}
             live={live}
             onPermissionDecide={handlePermissionDecide}
             onRunAutonomous={handleRunAutonomous}
+            driving={driving}
+            browserHandedOver={browserHandedOver}
+            onStop={() => void stopTurn()}
           />
 
           <Approvals
@@ -579,86 +696,101 @@ export function App() {
                 disabled={readOnly}
               />
             ) : (
-              <div className="composer-box">
-                <textarea
-                  ref={composerRef}
-                  value={draft}
-                  rows={1}
-                  aria-label="Task"
-                  placeholder={live ? "Describe a task…" : "This session is a recording."}
-                  disabled={readOnly}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      void send();
-                    }
-                  }}
-                />
-                <div className="composer-foot">
-                  {notice ? (
-                    <button
-                      className="hint voice-note"
-                      onClick={() => setNotice(null)}
-                      title="Dismiss"
-                    >
-                      {notice}
-                    </button>
-                  ) : voiceBlocked ? (
-                    <button
-                      className="hint voice-note"
-                      onClick={() => setVoiceHelp(true)}
-                      title="Browsers only allow microphone access on a secure page."
-                    >
-                      Voice needs <code>https</code>
-                    </button>
-                  ) : (
-                    <span className="hint"><kbd>↵</kbd> send · <kbd>⇧↵</kbd> newline</span>
-                  )}
-                  <div className="composer-acts">
-                    {/* Stop lived on the stage bar, which no longer exists --
-                        and it belongs next to Send anyway, since the two are
-                        the same decision. */}
-                    {live && running && (
+              <>
+                <div className={`composer-box ${draft.trim() ? "has-text" : ""}`}>
+                  <textarea
+                    ref={composerRef}
+                    value={draft}
+                    rows={1}
+                    aria-label="Task"
+                    placeholder={live ? "Ask Autora to do something…" : "This session is a recording."}
+                    disabled={readOnly}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        void send();
+                      }
+                    }}
+                  />
+                  <div className="composer-foot">
+                    <div className="composer-tools">
+                      <DictateButton
+                        onText={appendDictation}
+                        disabled={readOnly}
+                        onBlocked={() => setVoiceHelp(true)}
+                        onTrouble={setNotice}
+                      />
+                      {/* Only shown where the bottom bar, which normally
+                          carries this, is hidden. */}
                       <button
-                        className="btn danger icon"
-                        onClick={() => void stopTurn()}
-                        title="Stop the agent"
-                        aria-label="Stop the agent"
+                        className="btn icon ghost composer-live"
+                        onClick={voiceReady ? toggleLive : () => setVoiceHelp(true)}
+                        disabled={readOnly}
+                        title={voiceReady ? "Start live voice chat (v)" : "Live voice requires https"}
+                        aria-label="Live voice chat"
                       >
-                        <IconStop size={13} />
+                        <AutoraMark state="rest" size={18} />
                       </button>
-                    )}
-                    <DictateButton
-                      onText={appendDictation}
-                      disabled={readOnly}
-                      onBlocked={() => setVoiceHelp(true)}
-                      onTrouble={setNotice}
-                    />
-                    <button
-                      className="btn primary icon composer-send-btn"
-                      disabled={readOnly || !draft.trim()}
-                      onClick={() => void send()}
-                      title={running ? "Interrupt & send" : "Send"}
-                      aria-label={running ? "Interrupt & send" : "Send"}
-                    >
-                      <IconArrow size={14} />
-                    </button>
+                      {notice ? (
+                        <button
+                          className="hint voice-note"
+                          onClick={() => setNotice(null)}
+                          title="Dismiss"
+                        >
+                          {notice}
+                        </button>
+                      ) : voiceBlocked ? (
+                        <button
+                          className="hint voice-note"
+                          onClick={() => setVoiceHelp(true)}
+                          title="Browsers only allow microphone access on a secure page."
+                        >
+                          Voice needs <code>https</code>
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="composer-acts">
+                      {/* Stop sits with Send: they are the same decision. */}
+                      {live && running && (
+                        <button
+                          className="composer-stop"
+                          onClick={() => void stopTurn()}
+                          title="Stop the agent"
+                          aria-label="Stop the agent"
+                        >
+                          <IconStop size={14} />
+                        </button>
+                      )}
+                      <button
+                        className="composer-send"
+                        disabled={readOnly || !draft.trim()}
+                        onClick={() => void send()}
+                        title={running ? "Interrupt & send" : "Send"}
+                        aria-label={running ? "Interrupt & send" : "Send"}
+                      >
+                        <IconArrowUp size={17} />
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
+                <p className="composer-hint">
+                  <kbd>Enter</kbd> to send · <kbd>Shift</kbd> + <kbd>Enter</kbd> for a new line
+                </p>
+              </>
             )}
           </div>
         </main>
+        </div>
 
         {/* Navigation bar with Chat, Live Icon in middle, and Tasks */}
         <nav className="mobile-nav" role="tablist" aria-label="Panel">
           <button
             role="tab"
-            aria-selected={mobileTab === "chat" && !scheduleOpen}
-            className={`mob-tab ${mobileTab === "chat" && !scheduleOpen ? "on" : ""}${
+            aria-selected={page === "chat"}
+            className={`mob-tab ${page === "chat" ? "on" : ""}${
               pending > 0 ? " has-alert" : ""}`}
-            onClick={() => { closeOverlays(); setMobileTab("chat"); }}
+            onClick={() => navigate("chat")}
           >
             <span className="mob-alert" />
             <IconMessage size={18} />
@@ -689,9 +821,9 @@ export function App() {
 
           <button
             role="tab"
-            aria-selected={scheduleOpen}
-            className={`mob-tab ${scheduleOpen ? "on" : ""}`}
-            onClick={() => { setMobileTab("tasks"); setScheduleOpen(true); }}
+            aria-selected={page === "cron"}
+            className={`mob-tab ${page === "cron" ? "on" : ""}`}
+            onClick={() => navigate("cron")}
           >
             <IconRepeat size={18} />
             Tasks
@@ -706,23 +838,6 @@ export function App() {
           onPick={pickSession}
           onNew={newSession}
           onClose={() => setSessionsOpen(false)}
-        />
-      )}
-      {settingsOpen && <Settings onClose={() => setSettingsOpen(false)} />}
-      {knowledgeOpen && (
-        <KnowledgeWeb
-          initialKind={knowledgeInitialKind}
-          onClose={() => setKnowledgeOpen(false)}
-        />
-      )}
-      {scheduleOpen && (
-        <Schedule
-          onClose={() => { setScheduleOpen(false); setMobileTab("chat"); }}
-          onOpenSession={(id) => {
-            pickSession(id);
-            setScheduleOpen(false);
-            setMobileTab("chat");
-          }}
         />
       )}
     </div>

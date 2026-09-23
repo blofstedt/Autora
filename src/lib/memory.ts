@@ -28,7 +28,7 @@ export const KIND_COLOR: Record<MemoryRecord["kind"], string> = {
   preference: "var(--accent-2)",
   procedure: "var(--live)",
   fact: "var(--accent)",
-  skill: "#c084fc",
+  skill: "var(--glow-light)",
 };
 
 export async function fetchKnowledge(): Promise<Knowledge> {

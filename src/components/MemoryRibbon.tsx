@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MemoryMark } from "../lib/derive";
 import { KIND_COLOR, fetchKnowledge, type Knowledge } from "../lib/memory";
 import { IconBrain, IconChevron } from "./Icons";
+import { useThemeColors } from "../lib/theme";
 
 /** How long a node stays lit after the event that touched it - fades slowly */
 const GLOW_MS = 4800;
@@ -51,12 +52,18 @@ export function MemoryRibbon({
   memories,
   onOpen,
   onOpenSkills,
+  collapsed = false,
+  onToggle,
 }: {
   memories: MemoryMark[];
   onOpen: () => void;
   onOpenSkills?: () => void;
+  /** Folded to one line: the counts and the newest event, no graph. */
+  collapsed?: boolean;
+  onToggle?: () => void;
 }) {
   const [web, setWeb] = useState<Knowledge>({ records: [], links: [], enabled: true });
+  const colors = useThemeColors();
   const seen = useRef(new Map<string, number>());
   const [lit, setLit] = useState<Map<string, "written" | "recalled">>(new Map());
   const [activeTracer, setActiveTracer] = useState<NeuralTracerState | null>(null);
@@ -382,26 +389,51 @@ export function MemoryRibbon({
 
   const now = performance.now();
 
+  const tags = (
+    <>
+      <button className="web-tag neural-tag" onClick={onOpen} title="Open knowledge graph">
+        <IconBrain size={13} />
+        <span className="web-count">{web.records.length}</span>
+        <IconChevron size={11} />
+      </button>
+      {skillsCount > 0 && (
+        <button className="web-tag skills-tag" onClick={onOpenSkills || onOpen} title="Open Skills Library">
+          <span className="skills-dot" />
+          <span className="web-count">{skillsCount} skills</span>
+        </button>
+      )}
+    </>
+  );
+
+  if (collapsed) {
+    return (
+      <section className="web neural-web is-collapsed" aria-label="Memory">
+        <div className="web-bar">
+          {tags}
+          <span className="web-bar-latest" key={newest?.seq}>
+            {newest && <span className="neural-pulse-dot" />}
+            {newest
+              ? `${newest.kind === "written" ? "learned" : "recalled"} · ${newest.title}`
+              : "memory"}
+          </span>
+          {onToggle && (
+            <button className="web-toggle" onClick={onToggle} aria-expanded={false} aria-label="Show the memory graph" title="Show the memory graph">
+              <IconChevron size={13} />
+            </button>
+          )}
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="web neural-web" aria-label="Neural memory web">
-      <div className="web-tag-group">
-        <button className="web-tag neural-tag" onClick={onOpen} title="Open knowledge graph">
-          <IconBrain size={13} />
-          <span className="web-count">{web.records.length}</span>
-          <IconChevron size={11} />
+      {onToggle && (
+        <button className="web-toggle is-open" onClick={onToggle} aria-expanded={true} aria-label="Hide the memory graph" title="Hide the memory graph">
+          <IconChevron size={13} />
         </button>
-
-        {skillsCount > 0 && (
-          <button
-            className="web-tag skills-tag"
-            onClick={onOpenSkills || onOpen}
-            title="Open Skills Library"
-          >
-            <span className="skills-dot" />
-            <span className="web-count">{skillsCount} skills</span>
-          </button>
-        )}
-      </div>
+      )}
+      <div className="web-tag-group">{tags}</div>
 
       <div className="web-stage neural-stage" role="presentation">
         {placed.length === 0 ? (
@@ -436,23 +468,23 @@ export function MemoryRibbon({
               {/* Soft ethereal radial gradient for the neural pulse */}
               <radialGradient id="neural-pulse-glow" cx="50%" cy="50%" r="50%">
                 <stop offset="0%" stopColor="#ffffff" stopOpacity="0.95" />
-                <stop offset="35%" stopColor="#e9d5ff" stopOpacity="0.75" />
-                <stop offset="70%" stopColor="#c084fc" stopOpacity="0.35" />
-                <stop offset="100%" stopColor="#9333ea" stopOpacity="0" />
+                <stop offset="35%" stopColor={colors.glowText} stopOpacity="0.75" />
+                <stop offset="70%" stopColor={colors.glowLight} stopOpacity="0.35" />
+                <stop offset="100%" stopColor={colors.glowDeep} stopOpacity="0" />
               </radialGradient>
 
               {/* Atmospheric aura gradient */}
               <radialGradient id="neural-aura-glow" cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stopColor="#c084fc" stopOpacity="0.5" />
-                <stop offset="60%" stopColor="#a855f7" stopOpacity="0.2" />
-                <stop offset="100%" stopColor="#581c87" stopOpacity="0" />
+                <stop offset="0%" stopColor={colors.glowLight} stopOpacity="0.5" />
+                <stop offset="60%" stopColor={colors.glow} stopOpacity="0.2" />
+                <stop offset="100%" stopColor={colors.glowDeep} stopOpacity="0" />
               </radialGradient>
             </defs>
 
             {/* Neural background grid dots covering viewBox */}
             <g className="neural-bg-dots" opacity="0.16">
               {bgDots.map((pt, i) => (
-                <circle key={i} cx={pt.x} cy={pt.y} r="0.8" fill="#a855f7" />
+                <circle key={i} cx={pt.x} cy={pt.y} r="0.8" fill={colors.glow} />
               ))}
             </g>
 
@@ -492,7 +524,7 @@ export function MemoryRibbon({
                     y1={ge.y1}
                     x2={ge.x2}
                     y2={ge.y2}
-                    stroke="#a855f7"
+                    stroke={colors.glow}
                     strokeWidth="4.8"
                     strokeOpacity={opacity * 0.45}
                     strokeLinecap="round"
@@ -504,7 +536,7 @@ export function MemoryRibbon({
                     y1={ge.y1}
                     x2={ge.x2}
                     y2={ge.y2}
-                    stroke="#e9d5ff"
+                    stroke={colors.glowText}
                     strokeWidth="2.2"
                     strokeOpacity={opacity * 0.85}
                     strokeLinecap="round"
@@ -575,7 +607,7 @@ export function MemoryRibbon({
                     cy={activeTracer.target.y}
                     r={activeTracer.target.r + 3 + tracerProgress.arrivalRipple * 16}
                     fill="none"
-                    stroke="#c084fc"
+                    stroke={colors.glowLight}
                     strokeWidth={2 * (1 - tracerProgress.arrivalRipple)}
                     opacity={0.85 * (1 - tracerProgress.arrivalRipple)}
                     filter="url(#neural-glow)"
@@ -634,7 +666,7 @@ export function MemoryRibbon({
                     r={p.r}
                     fill={KIND_COLOR[p.record.kind] ?? "var(--accent)"}
                     fillOpacity={p.record.status === "provisional" ? 0.5 : 0.95}
-                    stroke={isSkill ? "#c084fc" : p.record.pinned ? "#fff" : "rgba(255,255,255,0.2)"}
+                    stroke={isSkill ? colors.glowLight : p.record.pinned ? "#fff" : "rgba(255,255,255,0.2)"}
                     strokeWidth={isSkill ? 1.5 : p.record.pinned ? 1.2 : 0.8}
                     filter={state ? "url(#neural-glow)" : undefined}
                   />

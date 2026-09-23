@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.9.4"
+version: "0.9.10"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -17,7 +17,8 @@ description: >-
 
 
   • Real-time browser view — watch the cursor move, text appear, and pages load
-  exactly as the agent drives them.
+  exactly as the agent drives them, then click and type in the page yourself
+  when it hands over (sign-ins, CAPTCHAs) or once it has finished.
 
 
   • Persistent browser auth — sign in once to Gmail, Google Calendar, or any
@@ -73,23 +74,25 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  You can now watch every browser step as it happens. The live page opens
-  large in the conversation while the agent is driving it, with the step it
-  is taking captioned over the picture, and a placeholder shows what is
-  loading before the first frame arrives. The feed no longer freezes one
-  step behind: the last frame of every change is always delivered, and it
-  runs at 10 frames a second by default. The pointer now visibly travels
-  to what it is about to click.
+  A new sidebar, modelled on the Hermes dashboard: Status, Chat, Config,
+  API Keys, Sessions, Logs, Analytics, Cron, Skills, Memory, MCP and System,
+  with your recent sessions under it. On a phone the same list opens as a
+  drawer from the menu button at the top left.
 
 
-  The agent can now tick checkbox CAPTCHAs -- reCAPTCHA's "I'm not a
-  robot", hCaptcha and Cloudflare Turnstile. They sit in iframes the agent
-  could not see before; it now spots them, and the new browser_captcha tool
-  clicks them with humanlike movement: curved paths, varying speed, the
-  odd overshoot, off-centre landings and natural press timing. Ordinary
-  clicks and typing use the same movement and uneven key timing. If the box
-  escalates to a picture puzzle, the agent hands the browser to you.
+  New pages. Status shows the whole installation at a glance. Sessions lets
+  you search, rename, export and delete sessions, with what each one did
+  and cost. Logs shows what the server and agent have been doing -- turns,
+  tool calls, errors, failed requests -- with filters and a live tail. MCP
+  connects Model Context Protocol servers (a local command or a URL) and
+  offers their tools to the agent, with one-click presets. System shows the
+  host: uptime, memory, load and where settings live.
 
+
+  Themes. A Settings menu at the bottom of the sidebar switches between
+  Autora Violet, Hermes Teal, Nous Blue, Midnight, Ember, Mono, Cyberpunk
+  and Rose, and between four fonts (Inter, System, Rounded, Mono). The
+  choice is saved on the server, so it follows you between devices.
 
 dependencies: []
 path: ""

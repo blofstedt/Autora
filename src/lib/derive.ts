@@ -73,6 +73,35 @@ export type PermissionPrompt = {
   response?: string;
 };
 
+/** A question the agent put to the person, and where it stands. */
+export type Ask = {
+  id: string;
+  kind: "question" | "browser";
+  title: string;
+  detail: string;
+  options: { label: string; detail?: string }[];
+  multi: boolean;
+  allowText: boolean;
+  placeholder: string;
+  seq: number;
+  /** Unanswered, and the turn is parked on it. */
+  open: boolean;
+  answer?: { cancelled: boolean; choices: string[]; text: string; who: string };
+};
+
+/** A decision Jev Mode scored (or declined to), as the thread shows it. */
+export type JevDecision = {
+  task: string;
+  mode: "jev" | "fallback";
+  ms: number;
+  threshold: number;
+  min: number | null;
+  reason: string | null;
+  model: string | null;
+  cachedTokens: number;
+  fields: { name: string; value: unknown; confidence: number; coverage: number }[];
+};
+
 /** A memory, as the ribbon shows it: what it says, and what just happened to it. */
 export type MemoryMark = {
   id: string;
@@ -138,7 +167,9 @@ export type Cell =
   | { kind: "tool"; seq: number; span: SpanState }
   | { kind: "note"; seq: number; tone: "bad" | "warn" | "plain"; text: string }
   | { kind: "kanban"; seq: number; board: KanbanBoard }
-  | { kind: "permission"; seq: number; prompt: PermissionPrompt };
+  | { kind: "permission"; seq: number; prompt: PermissionPrompt }
+  | { kind: "ask"; seq: number; ask: Ask }
+  | { kind: "jev"; seq: number; decision: JevDecision };
 
 /**
  * One prompt and everything the agent did about it.
@@ -171,6 +202,8 @@ export type Derived = {
   liveBrowserSeq: number | null;
   hasDesktop: boolean;
   busy: boolean;
+  /** The question the turn is waiting on, if it is waiting on one. */
+  asking: Ask | null;
   tokens: { in: number; out: number; cached: number };
   title: string;
 };
@@ -210,6 +243,7 @@ export function derive(events: AutoraEvent[]): Derived {
   const memoryById = new Map<string, MemoryMark>();
   let openAgentTurn: TranscriptTurn | null = null;
   const approvals: Approval[] = [];
+  const asks = new Map<string, Ask>();
   const files: FileChange[] = [];
   let url: string | null = null;
   let hasDesktop = false;
@@ -238,6 +272,15 @@ export function derive(events: AutoraEvent[]): Derived {
   const screenCell = (source: "browser" | "desktop", seq: number) => {
     const cell = current();
     if (cell && cell.kind === "screen" && cell.source === source) return cell;
+    // While the agent waits on a sign-in, what the person does in the page
+    // belongs to the page the card points at -- not to a new card below it,
+    // which would move the page out from under their finger on first tap.
+    if (cell && cell.kind === "ask" && cell.ask.open && source === "browser") {
+      for (let i = bucket.cells.length - 1; i >= 0; i--) {
+        const prior = bucket.cells[i];
+        if (prior.kind === "screen" && prior.source === "browser") return prior;
+      }
+    }
     return push({
       kind: "screen", seq, source, url: source === "browser" ? url : null,
       shots: [], actions: [], live: false,
@@ -304,6 +347,8 @@ export function derive(events: AutoraEvent[]): Derived {
       }
 
       case Kind.AgentDone:
+        // A finished turn is waiting on nobody.
+        for (const ask of asks.values()) ask.open = false;
         openAgentTurn = null;
         open = null;
         bucket.open = false;
@@ -380,7 +425,10 @@ export function derive(events: AutoraEvent[]): Derived {
         // A staged tool carries no cell of its own until it produces a frame
         // or a diff, so a browser call that failed outright would otherwise
         // fail silently -- which is the one outcome that must never be quiet.
-        if (!span || (isStaged(span.name) && !shells.has(span.id))) {
+        // The guard stopping a call is said in words wherever the call was.
+        if (e.payload.guarded) {
+          push({ kind: "note", seq: e.seq, tone: "warn", text: String(e.payload.error ?? "Held by the guard.") });
+        } else if (!span || (isStaged(span.name) && !shells.has(span.id))) {
           push({
             kind: "note", seq: e.seq,
             tone: e.payload.denied ? "warn" : "bad",
@@ -484,6 +532,58 @@ export function derive(events: AutoraEvent[]): Derived {
             kind: "note", seq: e.seq, tone: "warn",
             text: `You declined ${match?.rendered || match?.tool || "an action"}.`,
           });
+        }
+        break;
+      }
+
+      case Kind.AskRequest: {
+        const id = String(e.payload.ask_id ?? `ask-${e.seq}`);
+        const ask: Ask = {
+          id,
+          kind: e.payload.kind === "browser" ? "browser" : "question",
+          title: String(e.payload.title ?? ""),
+          detail: String(e.payload.detail ?? ""),
+          options: Array.isArray(e.payload.options) ? e.payload.options : [],
+          multi: Boolean(e.payload.multi),
+          allowText: e.payload.allow_text !== false,
+          placeholder: String(e.payload.placeholder ?? ""),
+          seq: e.seq,
+          open: true,
+        };
+        asks.set(id, ask);
+        push({ kind: "ask", seq: e.seq, ask });
+        break;
+      }
+
+      case Kind.JevDecision: {
+        push({
+          kind: "jev",
+          seq: e.seq,
+          decision: {
+            task: String(e.payload.task ?? "decision"),
+            mode: e.payload.mode === "jev" ? "jev" : "fallback",
+            ms: Number(e.payload.ms) || 0,
+            threshold: Number(e.payload.threshold) || 0.75,
+            min: typeof e.payload.min === "number" ? e.payload.min : null,
+            reason: e.payload.reason ? String(e.payload.reason) : null,
+            model: e.payload.model ? String(e.payload.model) : null,
+            cachedTokens: Number(e.payload.cached_tokens) || 0,
+            fields: Array.isArray(e.payload.fields) ? e.payload.fields : [],
+          },
+        });
+        break;
+      }
+
+      case Kind.AskAnswer: {
+        const ask = asks.get(String(e.payload.ask_id));
+        if (ask) {
+          ask.open = false;
+          ask.answer = {
+            cancelled: Boolean(e.payload.cancelled),
+            choices: Array.isArray(e.payload.choices) ? e.payload.choices : [],
+            text: String(e.payload.text ?? ""),
+            who: String(e.payload.who ?? "user"),
+          };
         }
         break;
       }
@@ -674,6 +774,8 @@ export function derive(events: AutoraEvent[]): Derived {
     liveBrowserSeq,
     hasDesktop,
     busy,
+    // Only the tail can still be waiting: a turn that ended released it.
+    asking: [...asks.values()].reverse().find((a) => a.open && tail?.open) ?? null,
     tokens,
     title,
   };
