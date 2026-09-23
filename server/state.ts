@@ -322,6 +322,12 @@ export function stateFilePath(): string {
   return STATE_FILE;
 }
 
+/** The directory the settings file lives in, which Umbrel keeps across an
+    update -- the place for anything else that must outlive the image. */
+export function stateDir(): string {
+  return STATE_DIR;
+}
+
 // ------------------------------------------------------------------ keys --
 
 /** The key to use for a provider: the one saved in the app, else the first of
