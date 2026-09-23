@@ -127,6 +127,23 @@ releaseNotes: >-
   their spacing removed, leaving every value intact. And the agent keeps its
   messages between steps to a line or less, while its final answer to you is
   still written out in full.
+
+
+  The agent now sees whole web pages. Before, it only ever got the first
+  60 buttons and links and the first stretch of text on a page, however far
+  it scrolled, so it could not reach anything further down and would scroll
+  in circles. Now it reads a page's main content (the article, not the menus
+  around it) a part at a time, sees the buttons and links that are actually
+  on screen, and each one keeps its number wherever the page is scrolled.
+  Clicking one it saw earlier scrolls it back into view first.
+
+
+  You still watch every page the agent opens, with the moving cursor and
+  typing, at no extra cost: the live view never went to the model. When
+  nobody is watching, the agent skips the human-like pointer movement and
+  finishes faster (CAPTCHAs still get it). Fetching a web page with
+  http_request now returns its readable text instead of raw HTML, and the
+  agent is told to use the browser for websites and http_request for APIs.
 dependencies: []
 path: ""
 defaultUsername: ""

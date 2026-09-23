@@ -7,7 +7,8 @@
 import assert from "node:assert/strict";
 import { ContextEngine, pageSnapshotAt } from "../server/context";
 import { costOf } from "../server/providers";
-import { compactJson } from "../server/pages";
+import { compactJson, htmlToText, textParts } from "../server/pages";
+import { outlineOf, type Ref } from "../server/browser";
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -107,7 +108,7 @@ test("a click that changes nothing says so", () => {
   const first = engine.ingest("browser_read", snap("https://shop.test/a", nav, body), true);
   engine.append({ role: "tool", replies: [{ id: "1", name: "browser_read", ok: true, result: first }] }, 2);
   const again = engine.ingest("browser_click", snap("https://shop.test/a", nav, body), true);
-  assert.match(again, /Interactive elements: unchanged\./);
+  assert.match(again, /Interactive elements on screen: unchanged\./);
   assert.match(again, /Text: unchanged\./);
 });
 
@@ -145,6 +146,68 @@ test("once the base is gone, the next read is whole again", () => {
   // Never appended: as if compaction had folded it away.
   engine.append({ role: "tool", replies: [] }, 2);
   assert.match(engine.ingest("browser_read", snap("https://shop.test/a", nav, body), true), /Snapshot: #2/);
+});
+
+test("scrolling lists what came on screen and names what left, by number", () => {
+  const engine = new ContextEngine();
+  engine.load([{ message: { role: "user", text: "go" }, seq: 1 }]);
+  const top = nav.slice(0, 20);
+  const lower = [...nav.slice(5, 20), `[31] button "Buy"`];
+  const first = engine.ingest("browser_read", snap("https://shop.test/a", top, body), true);
+  engine.append({ role: "tool", replies: [{ id: "1", name: "browser_read", ok: true, result: first }] }, 2);
+  const scrolled = engine.ingest("browser_scroll", snap("https://shop.test/a", lower, body), true);
+  assert.match(scrolled, /new or changed:\n\[31\] button "Buy"/);
+  assert.match(scrolled, /No longer on screen, or gone: \[1\], \[2\], \[3\], \[4\], \[5\]\./);
+});
+
+test("a different part of the text is sent whole", () => {
+  const engine = new ContextEngine();
+  engine.load([{ message: { role: "user", text: "go" }, seq: 1 }]);
+  const one = snap("https://shop.test/a", nav, body).replace("\n\nText:\n", "\n\nText (part 1 of 2; browser_read with part 2 for the next):\n");
+  const two = snap("https://shop.test/a", nav, body).replace("\n\nText:\n", "\n\nText (part 2 of 2, the last):\n");
+  const first = engine.ingest("browser_read", one, true);
+  engine.append({ role: "tool", replies: [{ id: "1", name: "browser_read", ok: true, result: first }] }, 2);
+  assert.match(engine.ingest("browser_read", two, true), /Snapshot: #2/);
+});
+
+console.log("reading pages");
+
+const ref = (n: number, name: string, inView: boolean): Ref => ({
+  ref: n, role: "link", name, value: null, x: 0, y: inView ? 100 : 2000, w: 10, h: 10,
+  href: null, checked: null, disabled: false, inView,
+});
+
+test("the outline lists what is on screen and counts the rest", () => {
+  const refs = [ref(0, "Top", false), ref(1, "Home", false), ref(2, "Read more", true), ref(3, "Next", true), ref(4, "Footer", false)];
+  const outline = outlineOf(refs);
+  assert.match(outline, /^\[2\] link "Read more"\n\[3\] link "Next"/);
+  assert.ok(!outline.includes("Home"));
+  assert.match(outline, /2 more above and 1 more below/);
+});
+
+test("long text comes in parts that break at lines, and nothing is lost", () => {
+  const text = Array.from({ length: 400 }, (_, i) => `Line ${i} of the article.`).join("\n");
+  const parts = textParts(text, 1000);
+  assert.ok(parts.length > 5);
+  assert.ok(parts.every((p) => p.length <= 1000));
+  assert.ok(parts.every((p) => /^Line \d+/.test(p) && /article\.$/.test(p)));
+  assert.equal(parts.join("\n"), text);
+});
+
+test("a web page's HTML becomes the article's text, links kept", () => {
+  const html = `<!doctype html><html><head><title>x</title><style>body{color:red}</style>
+    <script>var tracking = 1;</script></head><body>
+    <nav><a href="/">Home</a> <a href="/about">About</a></nav>
+    <main><h1>Hello &amp; welcome</h1><p>First paragraph with a <a href="/docs">link to docs</a>.</p>
+    <ul><li>One</li><li>Two</li></ul>${"<p>More words in the article body.</p>".repeat(20)}
+    <pre>  indented
+    code</pre></main><footer>Copyright</footer></body></html>`;
+  const text = htmlToText(html, "https://site.test/page");
+  assert.match(text, /^# Hello & welcome/);
+  assert.match(text, /link to docs \(https:\/\/site.test\/docs\)/);
+  assert.match(text, /- One\n- Two/);
+  assert.match(text, /  indented\n    code/);
+  for (const gone of ["tracking", "color:red", "About", "Copyright"]) assert.ok(!text.includes(gone), gone);
 });
 
 console.log("json");

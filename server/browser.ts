@@ -78,6 +78,9 @@ export interface Ref {
   href: string | null;
   checked: boolean | null;
   disabled: boolean;
+  /** On screen (or within a little of it) when the page was read. The model
+      is shown these; the rest are counted, keeping their numbers. */
+  inView?: boolean;
 }
 
 export interface PageRead {
@@ -86,7 +89,9 @@ export interface PageRead {
   /** The numbered outline the model acts on. */
   outline: string;
   refs: Ref[];
-  /** Readable prose, trimmed, for questions the outline cannot answer. */
+  /** The page's main content as readable text -- the article rather than
+      the menus around it -- whole, up to a generous cap. The model reads it
+      a part at a time (see textParts). */
   text: string;
   /** Checkbox CAPTCHAs on the page. They live in cross-origin iframes the
       outline cannot see into, so they are found separately. */
@@ -332,6 +337,8 @@ const SCAN_SCRIPT = `
     const role = roleOf(el);
     if (!name && role !== "textbox" && role !== "password") continue;
     const ref = refs.length;
+    const inView = box.bottom > -40 && box.top < innerHeight + 40 &&
+      box.right > 0 && box.left < innerWidth;
     refs.push({
       ref,
       role,
@@ -344,17 +351,52 @@ const SCAN_SCRIPT = `
       href: el.tagName === "A" ? (el.getAttribute("href") || null) : null,
       checked: typeof el.checked === "boolean" ? el.checked : null,
       disabled: !!el.disabled,
+      inView,
     });
     elements.push(el);
   }
   window.__autoraRefs = elements;
 
+  /* The main content rather than the whole body: a site's menus, header and
+     footer are the same on every page and are most of the text on many. A
+     <main> or <article> that holds a fair share of the page is taken as it
+     is; otherwise the body with its navigation, header, footer and asides
+     cut out -- unless that leaves almost nothing, when the body it is. */
   const body = document.body ? (document.body.innerText || "") : "";
+  const MENU_WORDS = /(^|[\\s_-])(nav|navbar|navigation|menu|sidebar|breadcrumbs?|toc|lang|languages|footer|cookie|cookies|skip)([\\s_-]|$)/i;
+  const menuish = (el, outside) =>
+    el.tagName === "NAV" || el.tagName === "ASIDE" || el.tagName === "FOOTER" ||
+    (outside && el.tagName === "HEADER") ||
+    /^(navigation|banner|contentinfo|complementary|search)$/i.test(el.getAttribute("role") || "") ||
+    MENU_WORDS.test((el.getAttribute("class") || "") + " " + (el.id || ""));
+  /* The root's text with its menus, language lists, tables of contents and
+     the like taken out -- each once, as its outermost element. */
+  const withoutMenus = (root, outside) => {
+    let text = root.innerText || "";
+    const cut = new Set();
+    for (const el of root.querySelectorAll("*")) {
+      if (!menuish(el, outside)) continue;
+      let up = el.parentElement, nested = false;
+      while (up && up !== root) { if (cut.has(up)) { nested = true; break; } up = up.parentElement; }
+      if (nested) continue;
+      cut.add(el);
+      const chunk = (el.innerText || "").trim();
+      if (chunk) text = text.replace(chunk, "");
+    }
+    return text.trim().length >= 200 ? text : (root.innerText || "");
+  };
+  const mainText = (() => {
+    if (!document.body) return "";
+    const main = document.querySelector("main, [role=main]") || document.querySelector("article");
+    const own = main ? (main.innerText || "") : "";
+    if (main && own.trim().length >= Math.min(400, body.length * 0.3)) return withoutMenus(main, false);
+    return withoutMenus(document.body, true);
+  })();
   return {
     url: location.href,
     title: document.title,
     refs,
-    text: body.replace(/[ \\t]+/g, " ").replace(/\\n{3,}/g, "\\n\\n").trim().slice(0, 6000),
+    text: mainText.replace(/[ \\t]+/g, " ").replace(/\\n{3,}/g, "\\n\\n").trim().slice(0, 150000),
   };
 })();
 `;
@@ -1037,7 +1079,7 @@ export class LiveBrowser {
         { x: target.x, y: target.y },
         this.currentUrl ?? "",
       );
-      await this.humanClickAt(pointIn(boxOf(target)));
+      await this.humanClickAt(pointIn(await this.aim(target)));
       await this.settle(700);
       const read = await this.read();
       await this.keyframe();
@@ -1059,9 +1101,12 @@ export class LiveBrowser {
           { x: target.x, y: target.y },
           this.currentUrl ?? "",
         );
-        await this.humanClickAt(pointIn(boxOf(target)));
+        await this.humanClickAt(pointIn(await this.aim(target)));
         await page.keyboard.press("ControlOrMeta+A").catch(() => undefined);
-        await humanType(page, text);
+        // A person's typing rhythm for whoever is watching; nobody watching,
+        // it is typed straight in.
+        if (this.hooks.watchers() > 0) await humanType(page, text);
+        else await page.keyboard.type(text);
       }
       if (submit) {
         await page.keyboard.press("Enter");
@@ -1292,11 +1337,41 @@ export class LiveBrowser {
     });
   }
 
+  /**
+   * Where an element is now, scrolled into view first if it is off screen.
+   *
+   * Elements keep their numbers wherever the page is scrolled, so the agent
+   * can click one it saw several screens ago; the box recorded then is no
+   * longer where it is. Falls back to that box if the element is gone.
+   */
+  private async aim(target: Ref): Promise<{ x: number; y: number; w: number; h: number }> {
+    const page = this.page;
+    const fresh = page && await page.evaluate(`(() => {
+      const el = (window.__autoraRefs || [])[${Number(target.ref)}];
+      if (!el || !el.isConnected) return null;
+      let b = el.getBoundingClientRect();
+      if (b.top < 0 || b.bottom > innerHeight || b.left < 0 || b.right > innerWidth) {
+        el.scrollIntoView({ block: "center", inline: "center" });
+        b = el.getBoundingClientRect();
+      }
+      return { x: b.left, y: b.top, w: b.width, h: b.height, moved: true };
+    })()`).catch(() => null);
+    if (!fresh || fresh.w < 1 || fresh.h < 1) return boxOf(target);
+    return { x: fresh.x, y: fresh.y, w: fresh.w, h: fresh.h };
+  }
+
   /** Travel to a point the way a hand would and click there, with the ring
-      played at the moment the button goes down. */
-  private async humanClickAt(to: Point) {
+      played at the moment the button goes down. With nobody watching there
+      is no one to show the journey to, so the click goes straight there --
+      unless `always` asks for the hand regardless, as a CAPTCHA does. */
+  private async humanClickAt(to: Point, always = false) {
     const page = this.page;
     if (!page) return;
+    if (!always && this.hooks.watchers() === 0) {
+      await page.mouse.click(to.x, to.y);
+      this.pointer = to;
+      return;
+    }
     await this.showCursor(this.pointer.x, this.pointer.y, false);
     this.pointer = await humanClick(page, this.pointer, to, {
       before: () => this.showCursor(to.x, to.y, true),
@@ -1486,7 +1561,7 @@ export class LiveBrowser {
       this.hooks.onAction(`captcha: tick the ${labelOf(target.kind)} checkbox`, aim, this.currentUrl ?? "");
       await this.showCursor(this.pointer.x, this.pointer.y, false);
       this.pointer = await wander(page, this.pointer, VIEWPORT);
-      await this.humanClickAt(aim);
+      await this.humanClickAt(aim, true);
 
       // Give the widget time to decide. It usually does within a couple of
       // seconds; Turnstile and a slow connection can take longer.
@@ -1580,8 +1655,15 @@ export function describeCaptchas(captchas: PageRead["captchas"]): string {
  * forty are the ones anybody acts on; the count is printed so the model knows
  * it is looking at the top of a list rather than all of it.
  */
-export function outlineOf(refs: Ref[], limit = 60): string {
-  const lines = refs.slice(0, limit).map((r) => {
+export function outlineOf(refs: Ref[], limit = 80): string {
+  // What is on screen, by the numbers every element keeps wherever the page
+  // is scrolled. A read made before this was tracked shows everything.
+  const shown = refs.some((r) => r.inView !== undefined) ? refs.filter((r) => r.inView) : refs;
+  const firstShown = shown[0]?.ref ?? Infinity;
+  const lastShown = shown[shown.length - 1]?.ref ?? -Infinity;
+  const above = refs.filter((r) => !r.inView && r.ref < firstShown).length;
+  const below = refs.filter((r) => !r.inView && r.ref > lastShown).length;
+  const lines = shown.slice(0, limit).map((r) => {
     const bits = [`[${r.ref}]`, r.role];
     if (r.name) bits.push(JSON.stringify(r.name));
     if (r.value) bits.push(`value=${JSON.stringify(r.value)}`);
@@ -1590,8 +1672,15 @@ export function outlineOf(refs: Ref[], limit = 60): string {
     if (r.href) bits.push(`-> ${r.href}`);
     return bits.join(" ");
   });
-  if (refs.length > limit) {
-    lines.push(`… ${refs.length - limit} more elements below; scroll to reach them.`);
+  if (shown.length > limit) {
+    lines.push(`… ${shown.length - limit} more on screen after these.`);
+  }
+  if (above > 0 || below > 0) {
+    lines.push(
+      `(${above} more above and ${below} more below, off screen. Scroll to list them; ` +
+        "every element keeps its number wherever the page is scrolled, and clicking " +
+        "one you saw earlier scrolls it into view first.)",
+    );
   }
   return lines.join("\n");
 }
