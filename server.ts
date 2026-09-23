@@ -695,6 +695,26 @@ function jevTarget(): JevTarget | null {
   };
 }
 
+/** What Jev did before this turn started, per session, so the model can
+    answer "did you use Jev?" from fact rather than guess. Cleared per turn. */
+const jevThisTurn = new Map<string, string[]>();
+
+/** The lines the model is told about Jev for this turn. */
+function jevBriefing(sessionId: string): string {
+  const notes = jevThisTurn.get(sessionId) ?? [];
+  return [
+    "Jev Mode is a fast path for small internal decisions made before and",
+    "during your turn: which memories to load, how to route the message, and",
+    "whether a risky tool call needs the person's go-ahead. It scores lettered",
+    "options from the model's token probabilities. It never writes your",
+    "replies or answers the person's questions -- you do, every time.",
+    notes.length
+      ? `This turn: ${notes.join("; ")}.`
+      : `This turn: Jev made no decisions${state.jev.enabled ? "" : " (it is switched off)"}.`,
+    "If asked whether Jev was used, answer from this, not from memory.",
+  ].join(" ");
+}
+
 /**
  * Run a decision through Jev, bill it, and say in the thread what happened.
  *
@@ -704,6 +724,13 @@ function jevTarget(): JevTarget | null {
 async function jevDecide(session: Session | null, task: JevTask): Promise<JevOutcome> {
   const target = jevTarget();
   const outcome = await decide(task, target, state.jev);
+  if (session) {
+    const notes = jevThisTurn.get(session.id) ?? [];
+    notes.push(outcome.mode === "jev"
+      ? `${task.name}: decided by Jev in ${outcome.ms} ms (lowest confidence ${outcome.min.toFixed(2)})`
+      : `${task.name}: not decided by Jev -- ${outcome.reason}`);
+    jevThisTurn.set(session.id, notes);
+  }
   const usage = outcome.usage;
   if (target && usage && (usage.input || usage.output)) {
     recordUsage({
@@ -1394,6 +1421,7 @@ async function systemInstructionFor(
      match. See server/tools.ts -- the schemas the model receives and this
      prose come from the same array, so they cannot drift. */
   lines.push("", await capabilityBriefing());
+  lines.push("", jevBriefing(sessionId));
 
   /* Which vendor is answering, said plainly.
      Nothing else in the prompt carries it, so a model asked "which provider
@@ -1561,6 +1589,7 @@ async function startServer() {
     for (const ws of sessionSockets.get(session.id) ?? []) ws.close();
     sessionSockets.delete(session.id);
     sessions.delete(session.id);
+    jevThisTurn.delete(session.id);
     log("info", "sessions", `deleted "${session.title}"`);
     res.json({ ok: true });
   });
@@ -1866,6 +1895,7 @@ async function startServer() {
            is decided by the model, per memory, with a confidence each. The
            keyword rules above stay as the fallback for everything else. */
         // Both at once: two small decisions, one wait.
+        jevThisTurn.delete(session.id);
         const [scored, routeHint] = await Promise.all([
           jevRecall(session, text),
           jevRoute(session, text),

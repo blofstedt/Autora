@@ -12,16 +12,20 @@ import { IconChevron } from "./Icons";
 export function JevCell({ decision: d }: { decision: JevDecision }) {
   const [open, setOpen] = useState(false);
   const fast = d.mode === "jev";
+  /* A model that cannot score is not Jev being slow: it is Jev not running,
+     and the decision made the ordinary way. Said as such. */
+  const unavailable = !fast && /cannot score|no model|paused/i.test(d.reason ?? "");
   const summary = fast
     ? `${d.fields.length} field${d.fields.length === 1 ? "" : "s"} in ${d.ms} ms · lowest ${
         (d.min ?? 0).toFixed(2)}`
-    : `to full reasoning — ${d.reason ?? "fell back"}`;
+    : `${unavailable ? "decided the normal way" : "not sure enough, decided the normal way"} — ${
+        d.reason ?? "fell back"}`;
 
   return (
     <div className={`cell-line jev-line ${fast ? "is-fast" : "is-fallback"} ${open ? "is-open" : ""}`}>
       <button className="cell-line-top" onClick={() => setOpen(!open)} aria-expanded={open}>
         <IconChevron size={11} />
-        <b>{fast ? "jev" : "jev → slow"}</b>
+        <b>{fast ? "jev" : unavailable ? "jev unavailable" : "jev → normal"}</b>
         <span className="cell-line-text">{d.task} · {summary}</span>
       </button>
       {open && d.fields.length > 0 && (

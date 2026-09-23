@@ -82,7 +82,11 @@ releaseNotes: >-
   height of the window, on every page. On a phone the graph is under Map on
   the Mind page, and the strip above the chat stays as it was.
   Status and Logs have moved into System, which now has three sections:
-  Status, Logs and Host.
+  Status, Logs and Host. API Keys is now a section of Config, next to
+  Model & tools, and one Save covers both.
+  Jev Mode: when the model cannot score, it now says "jev unavailable" once
+  per turn instead of twice under "jev → slow", and the agent is told what
+  Jev did each turn, so asking whether it used Jev gets a factual answer.
 
 
   New pages. Status shows the whole installation at a glance. Sessions lets

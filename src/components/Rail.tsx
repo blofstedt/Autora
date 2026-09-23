@@ -8,14 +8,13 @@ import {
 import { FONTS, THEMES, type Appearance } from "../lib/theme";
 
 export type PageId =
-  | "chat" | "config" | "keys" | "sessions" | "analytics"
+  | "chat" | "config" | "sessions" | "analytics"
   | "cron" | "mind" | "mcp" | "system";
 
 /** The sidebar, in Hermes' order, less the pages Autora has nothing behind. */
 export const PAGES: { id: PageId; label: string; icon: ReactNode }[] = [
   { id: "chat", label: "Chat", icon: <IconMessage size={16} /> },
   { id: "config", label: "Config", icon: <IconSliders size={16} /> },
-  { id: "keys", label: "API Keys", icon: <IconKey size={16} /> },
   { id: "sessions", label: "Sessions", icon: <IconList size={16} /> },
   { id: "analytics", label: "Analytics", icon: <IconChart size={16} /> },
   { id: "cron", label: "Cron", icon: <IconClock size={16} /> },
@@ -49,7 +48,7 @@ function when(ts: number | undefined): string {
  */
 export function Rail({
   page, onNavigate, sessions, current, relayOn, alert, onPick, onNew,
-  appearance, onAppearance, drawer = false, onClose,
+  appearance, onAppearance, drawer = false, onClose, onOpenKeys,
 }: {
   page: PageId;
   onNavigate: (page: PageId) => void;
@@ -64,6 +63,8 @@ export function Rail({
   onAppearance: (next: Appearance) => void;
   drawer?: boolean;
   onClose?: () => void;
+  /** Config, opened on its API Keys section. */
+  onOpenKeys: () => void;
 }) {
   const [menu, setMenu] = useState(false);
   const recent = sessions.slice(0, 8);
@@ -143,6 +144,7 @@ export function Rail({
             appearance={appearance}
             onAppearance={onAppearance}
             onNavigate={(p) => { setMenu(false); onNavigate(p); }}
+            onKeys={() => { setMenu(false); onOpenKeys(); }}
             onClose={() => setMenu(false)}
           />
         )}
@@ -153,11 +155,12 @@ export function Rail({
 
 /** The menu at the bottom-left: how the app looks, and the settings pages. */
 function SettingsMenu({
-  appearance, onAppearance, onNavigate, onClose,
+  appearance, onAppearance, onNavigate, onKeys, onClose,
 }: {
   appearance: Appearance;
   onAppearance: (next: Appearance) => void;
   onNavigate: (page: PageId) => void;
+  onKeys: () => void;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -215,7 +218,7 @@ function SettingsMenu({
 
       <div className="sm-links">
         <button onClick={() => onNavigate("config")}><IconSliders size={14} /> Config</button>
-        <button onClick={() => onNavigate("keys")}><IconKey size={14} /> API Keys</button>
+        <button onClick={onKeys}><IconKey size={14} /> API Keys</button>
         <button onClick={() => onNavigate("system")}><IconServer size={14} /> System</button>
       </div>
     </div>

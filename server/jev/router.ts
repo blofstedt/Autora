@@ -78,6 +78,11 @@ type Health = {
   openUntil: number;
 };
 const health = new Map<string, Health>();
+/** A first request to a backend not yet known to score, per backend. Other
+    decisions made at the same moment wait for it rather than each finding out
+    for themselves -- two decisions run side by side on every turn, and without
+    this a model that cannot score was reported twice. */
+const probing = new Map<string, Promise<unknown>>();
 
 type Last = {
   task: string; mode: "jev" | "fallback"; ms: number; fields: number;
@@ -137,22 +142,32 @@ export async function decide(
 
   if (!settings.enabled) return bail("Jev Mode is off.");
   if (!target) return bail("No model is connected.");
-  const support = supportFor(target);
-  if (support.state === "no") return bail(support.reason ?? "This model cannot score.");
-
   const parsed = parseSchema(task.schema);
   if (!parsed.eligible) {
     return bail(`Not a fast decision: ${parsed.reasons.join("; ") || "no scorable fields"}.`);
   }
 
+  const inFlight = probing.get(keyOf(target));
+  if (inFlight) await inFlight.catch(() => undefined);
+  const support = supportFor(target);
+  if (support.state === "no") return bail(support.reason ?? "This model cannot score.");
+
   const h = healthOf(target);
   let result;
   try {
-    result = await evaluateFields(target, parsed.fields, task.context, {
+    const run = evaluateFields(target, parsed.fields, task.context, {
       instructions: task.instructions,
       timeoutMs: task.timeoutMs,
       probe: support.state === "unknown",
     });
+    if (support.state === "unknown" && !probing.has(keyOf(target))) {
+      const key = keyOf(target);
+      probing.set(key, run);
+      void run.catch(() => undefined).finally(() => {
+        if (probing.get(key) === run) probing.delete(key);
+      });
+    }
+    result = await run;
   } catch (err: any) {
     if (err instanceof JevUnsupported) {
       h.unsupported = { reason: err.message, until: Date.now() + UNSUPPORTED_TTL_MS };
@@ -219,5 +234,6 @@ export function fieldsOf(schema: JsonSchema): JevField[] {
 /** For tests: forget every backend's history. */
 export function resetHealth() {
   health.clear();
+  probing.clear();
   last = null;
 }

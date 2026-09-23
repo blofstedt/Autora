@@ -161,6 +161,20 @@ async function main() {
     assert.equal(seen.length, asked, "no further requests once known unsupported");
     assert.equal(supportFor(target).state, "no");
   });
+  await test("decisions made together find out a backend cannot score only once", async () => {
+    resetHealth();
+    seen.length = 0;
+    reply = () => ({ body: { choices: [{ message: { content: "A" } }] } });
+    const [a, b] = await Promise.all([
+      decide({ name: "a", context: "", schema }, target, on),
+      decide({ name: "b", context: "", schema }, target, on),
+    ]);
+    assert.equal(a.mode, "fallback");
+    assert.equal(b.mode, "fallback");
+    assert.equal(seen.length, 1, "one probe between them");
+    const attempted = [a, b].filter((o) => o.mode === "fallback" && o.attempted).length;
+    assert.equal(attempted, 1, "reported in the thread once, not twice");
+  });
   await test("repeated failures open the breaker", async () => {
     resetHealth();
     reply = () => ({ status: 500, body: { error: { message: "boom" } } });

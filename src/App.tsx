@@ -17,7 +17,7 @@ import {
 import { Sessions, type SessionRow } from "./components/Sessions";
 import { Approvals } from "./components/Approvals";
 import { Schedule } from "./components/Schedule";
-import { Settings } from "./components/Settings";
+import { Settings, type ConfigTab } from "./components/Settings";
 import { DictateButton } from "./components/DictateButton";
 import { LiveChat } from "./components/LiveChat";
 import { useRelay } from "./components/RelaySetup";
@@ -76,12 +76,22 @@ export function App() {
     const asked = new URLSearchParams(location.search).get("page");
     // Memory and Skills were folded into the Mind; old links still land there.
     if (asked === "memory" || asked === "skills") return "mind";
+    // API Keys is a section of Config now.
+    if (asked === "keys") return "config";
     // Status and Logs are sections of System now.
     if (asked === "status" || asked === "logs") return "system";
     return PAGES.some((p) => p.id === asked) ? (asked as PageId) : "chat";
   });
+  /** Which half of Config to open on. An object so asking for the keys
+      again, from anywhere, takes you back to them. */
+  const [configJump, setConfigJump] = useState<{ tab: ConfigTab }>(() => {
+    const params = new URLSearchParams(location.search);
+    const keys = params.get("page") === "keys" ||
+      (params.get("page") === "config" && params.get("tab") === "keys");
+    return { tab: keys ? "keys" : "general" };
+  });
   /** Which section of System to open on, from the address. */
-  const [systemTab] = useState<SystemTab>(() => {
+  const [systemTab, setSystemTab] = useState<SystemTab>(() => {
     const params = new URLSearchParams(location.search);
     const asked = params.get("page");
     if (asked === "status" || asked === "logs") return asked;
@@ -530,7 +540,12 @@ export function App() {
         >
           <Rail
             page={page}
-            onNavigate={navigate}
+            onNavigate={(next) => {
+              // From the menu, a page opens on its first section.
+              if (next === "config") setConfigJump({ tab: "general" });
+              if (next === "system") setSystemTab("status");
+              navigate(next);
+            }}
             sessions={sessions}
             current={sessionId}
             relayOn={!!relay?.connected}
@@ -539,6 +554,7 @@ export function App() {
             onNew={() => { void newSession(); navigate("chat"); }}
             appearance={appearance}
             onAppearance={changeAppearance}
+            onOpenKeys={() => { setConfigJump({ tab: "keys" }); navigate("config"); }}
             drawer={kind === "drawer"}
             onClose={() => setDrawerOpen(false)}
           />
@@ -603,11 +619,13 @@ export function App() {
 
         {page !== "chat" && (
           <div className="page-host">
-            {page === "config" && <Settings key="config" section="config" embedded />}
-            {page === "keys" && <Settings key="keys" section="keys" embedded />}
+            {page === "config" && (
+              <Settings key={`config-${configJump.tab}`} section="config" embedded initialTab={configJump.tab} />
+            )}
             {page === "analytics" && <Settings key="analytics" section="analytics" embedded />}
             {page === "system" && (
               <SystemPage
+                key={systemTab}
                 initialTab={systemTab}
                 sessions={sessions}
                 onOpenSession={openSession}
