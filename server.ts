@@ -981,6 +981,8 @@ const awaitingAsk = new Map<string, PendingAsk>();
 
 /** Longer than an approval: signing in somewhere can mean finding a phone. */
 const ASK_TIMEOUT_MS = 30 * 60 * 1000;
+/** How often a watched question looks at the page for its own answer. */
+const ASK_WATCH_MS = 1000;
 
 /** Whether the turn in this session is stopped on the person rather than
     working. While it is, the browser belongs to them. */
@@ -1041,6 +1043,19 @@ function askPerson(session: Session, request: AskRequest): Promise<AskAnswer> {
     }, ASK_TIMEOUT_MS);
     timer.unref?.();
     awaitingAsk.set(askId, { sessionId: session.id, settle: resolve, timer });
+    // Something the page itself can answer -- a CAPTCHA passing -- settles
+    // the question the moment it does, rather than waiting to be told.
+    const watch = request.watch;
+    if (watch) {
+      const look = async () => {
+        if (!awaitingAsk.has(askId)) return;
+        const done = await watch().catch(() => null);
+        if (!awaitingAsk.has(askId)) return;
+        if (done) settleAsk(askId, { cancelled: false, choices: [], text: done, who: "auto" });
+        else setTimeout(look, ASK_WATCH_MS).unref?.();
+      };
+      setTimeout(look, ASK_WATCH_MS).unref?.();
+    }
     // Stop releases the question too; nobody is going to answer it.
     running.get(session.id)?.cancels.add(() => {
       settleAsk(askId, { cancelled: true, choices: [], text: "", who: "stopped" });

@@ -87,6 +87,11 @@ releaseNotes: >-
   Jev Mode: when the model cannot score, it now says "jev unavailable" once
   per turn instead of twice under "jev → slow", and the agent is told what
   Jev did each turn, so asking whether it used Jev gets a factual answer.
+  While the agent works a web page or the desktop, what it says now appears
+  inside that page's box instead of below it, so the page stays in place;
+  its final answer still lands in the chat. When it hands you a CAPTCHA, it
+  carries on by itself as soon as the page shows the CAPTCHA passed, with no
+  need to tell it you are done.
 
 
   New pages. Status shows the whole installation at a glance. Sessions lets

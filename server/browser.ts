@@ -1204,6 +1204,25 @@ export class LiveBrowser {
    * it throws up a picture puzzle, or it thinks about it. Each is reported as
    * what it is, because a picture puzzle is the person's to solve.
    */
+  /**
+   * Whether the page carries a CAPTCHA, and whether every one on it has passed.
+   *
+   * Read-only and deliberately outside the action queue: it is what watches a
+   * page the person is working in, so it must neither wait behind their clicks
+   * nor move anything on the page.
+   */
+  async captchaStatus(): Promise<{ present: boolean; passed: boolean; url: string | null }> {
+    const hits = await this.findCaptchas().catch(() => [] as CaptchaHit[]);
+    const loading = this.loadingCaptchas.length > 0;
+    let url: string | null = null;
+    try { url = this.page?.url?.() ?? null; } catch { /* closing */ }
+    return {
+      present: hits.length > 0 || loading,
+      passed: hits.length > 0 && !loading && hits.every((h) => h.solved),
+      url,
+    };
+  }
+
   solveCaptcha(): Promise<CaptchaResult> {
     return this.run(async () => {
       const page = await this.ensure();

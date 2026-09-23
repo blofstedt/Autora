@@ -4198,3 +4198,16 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 .system-body > .sched.is-embedded {
   position: absolute; inset: 0; z-index: auto; animation: none; background: var(--s1);
 }
+
+/* What the agent says while it works a page or the desktop, inside the card:
+   the page stays where it is and the words scroll under it. */
+.shot-log {
+  max-height: 220px; overflow-y: auto; overscroll-behavior: contain;
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px 12px; border-top: 1px solid var(--border); background: var(--s1);
+}
+.shot-log .msg { gap: 8px; }
+.shot-log .msg .avatar { width: 22px; height: 22px; }
+.shot-log .msg-who { display: none; }
+.shot-log .msg-text { font-size: 13px; line-height: 1.5; }
+@media (min-width: 1000px) { .shot-log { max-height: 260px; } }

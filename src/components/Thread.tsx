@@ -298,7 +298,26 @@ function CellView({
           driving={driving}
           waitingOnYou={browserHandedOver}
           onStop={onStop}
-        />
+        >
+          {cell.log.length > 0 && cell.log.map((inner, index) => (
+            <CellView
+              key={`${inner.kind}-${inner.seq}-${index}`}
+              cell={inner}
+              sessionId={sessionId}
+              liveBrowserSeq={liveBrowserSeq}
+              liveFrame={liveFrame}
+              live={live}
+              open={open}
+              // The newest thing said, while the page is still being worked.
+              active={cell.live && index === cell.log.length - 1}
+              onPermissionDecide={onPermissionDecide}
+              onRunAutonomous={onRunAutonomous}
+              driving={driving}
+              browserHandedOver={browserHandedOver}
+              onStop={onStop}
+            />
+          ))}
+        </ScreencastCell>
       );
     }
     case "jev":

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Children, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { Shot } from "../lib/derive";
 import type { LiveFrame } from "../lib/types";
 import { Frame } from "./Frame";
@@ -37,7 +37,7 @@ const NAMED_KEYS = new Set([
  */
 export function ScreencastCell({
   sessionId, source, url, shots, actions, live, feed, current = false,
-  driving = false, waitingOnYou = false, onStop,
+  driving = false, waitingOnYou = false, onStop, children,
 }: {
   sessionId: string;
   source: "browser" | "desktop";
@@ -54,7 +54,13 @@ export function ScreencastCell({
   /** The agent has handed the page to you and is waiting. */
   waitingOnYou?: boolean;
   onStop?: () => void;
+  /** What the agent said while it worked this screen, shown in the card so
+      the page stays put rather than being pushed up by each sentence. */
+  children?: ReactNode;
 }) {
+  const logRef = useRef<HTMLDivElement>(null);
+  const logFollows = useRef(true);
+  const logCount = Children.count(children);
   const [at, setAt] = useState(shots.length - 1);
   const [held, setHeld] = useState(false);
   const [showActions, setShowActions] = useState(false);
@@ -313,6 +319,12 @@ export function ScreencastCell({
             : live ? { label: "live", tone: "is-driving" }
               : null;
 
+  // The narration follows its newest line, unless the reader scrolled up in it.
+  useLayoutEffect(() => {
+    const el = logRef.current;
+    if (el && logFollows.current) el.scrollTop = el.scrollHeight;
+  });
+
   return (
     <section
       className={`cell shot ${live ? "is-live" : ""} ${
@@ -423,6 +435,20 @@ export function ScreencastCell({
             onBlur={() => setTyping(false)}
             tabIndex={canUse ? 0 : -1}
           />
+        </div>
+      )}
+
+      {logCount > 0 && !max && (
+        <div
+          ref={logRef}
+          className="shot-log"
+          aria-label="What the agent said while working here"
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            logFollows.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+          }}
+        >
+          {children}
         </div>
       )}
 
