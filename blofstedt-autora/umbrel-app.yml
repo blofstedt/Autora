@@ -90,6 +90,16 @@ releaseNotes: >-
   The agent is no longer stopped after 12 rounds of tool calls with a note
   asking you to tell it to carry on. It now keeps working until the task is
   done or you press Stop.
+
+
+  In place of that limit, Autora now watches for the agent going in circles.
+  When it runs the same thing and gets the same result three times, fails at
+  the same step three times, or keeps getting back only results it has
+  already seen, it is told plainly to try something different or to stop and
+  say what is blocking it, and a note appears in the chat. Every 20 rounds it
+  is also asked to check its progress against your request. If it repeats
+  the same thing eight times anyway, the turn is stopped and the chat says
+  why.
 dependencies: []
 path: ""
 defaultUsername: ""

@@ -34,6 +34,7 @@ import {
 } from "./server/artifacts";
 import { ContextEngine, type CompactionReport } from "./server/context";
 import { LiveBrowser, VIEWPORT, probeBrowser, type PageRead } from "./server/browser";
+import { LoopWatch } from "./server/loopwatch";
 import {
   attachRelay, relayClientSource, relayStatus, watchDesktop,
 } from "./server/desktop";
@@ -2279,8 +2280,20 @@ async function startServer() {
            * again -- until it stops asking for tools, or you press Stop. There
            * is no cap on the number of rounds: a turn that stopped halfway to
            * ask whether to carry on was the wrong default for a long task.
+           * What there is instead is a loop watch: repeats get called out in
+           * the results the model reads, and a turn that keeps repeating
+           * after being told is stopped.
            */
           let spans = 0;
+          const watch = new LoopWatch();
+          let loopStop: string | null = null;
+          /** Run a call's result past the loop watch before the model reads it. */
+          const watched = (name: string, args: unknown, ok: boolean, raw: string, shown: string) => {
+            const verdict = watch.record(name, args, ok, raw);
+            if (verdict.log) emitEvent(session, "system.log", "system", { message: verdict.log });
+            if (verdict.stop) loopStop = verdict.stop;
+            return verdict.note ? `${shown}\n\n${verdict.note}` : shown;
+          };
           for (;;) {
             if (running.get(session.id)?.stopped) break;
 
@@ -2324,7 +2337,8 @@ async function startServer() {
                   ? `"${use.name}" exists but its group is not available right now.`
                   : `There is no tool called "${use.name}".`;
                 emitEvent(session, "tool.error", "agent", { error: why }, span);
-                reply(false, `${why} The tools you have are: ${known}.`);
+                const said = `${why} The tools you have are: ${known}.`;
+                reply(false, watched(use.name, use.args, false, said, said));
                 continue;
               }
 
@@ -2421,10 +2435,32 @@ async function startServer() {
                  anything still too long kept whole in the vault with its head
                  and tail left in the prompt. The thread already showed it
                  all, live; this is only what the model reads. */
-              reply(outcome.ok, context.ingest(spec.name, outcome.summary, canReadVault));
+              reply(outcome.ok, watched(
+                spec.name, use.args, outcome.ok, outcome.summary,
+                context.ingest(spec.name, outcome.summary, canReadVault),
+              ));
+              if (loopStop) break;
             }
 
+            /* The loop watch stopped the turn partway through the calls: the
+               ones it never reached still need an answer, or the provider
+               rejects the history. */
+            if (loopStop) {
+              for (const use of turn.calls) {
+                if (replies.some((r) => r.id === use.id)) continue;
+                replies.push({ id: use.id, name: use.name, ok: false, result: "Not run: the turn was stopped." });
+              }
+            }
+            const checkpoint = watch.endRound();
+            const last = replies[replies.length - 1];
+            if (checkpoint && last) last.result += `\n\n${checkpoint}`;
+
             context.append({ role: "tool", replies }, session.seqCounter);
+
+            if (loopStop) {
+              emitEvent(session, "system.log", "system", { message: loopStop });
+              break;
+            }
           }
         }
 
