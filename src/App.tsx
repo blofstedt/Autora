@@ -28,7 +28,7 @@ import {
   splitSpeakable, useSpeech,
 } from "./lib/voice";
 import {
-  IconArrow, IconArrowUp, IconChevron, IconMenu, IconMessage, IconRepeat, IconStop,
+  IconArrow, IconArrowUp, IconChevron, IconMenu, IconStop,
   IconX,
 } from "./components/Icons";
 
@@ -752,6 +752,23 @@ export function App() {
             ) : (
               <>
                 <div className={`composer-box ${draft.trim() ? "has-text" : ""}`}>
+                  {/* On a phone or tablet the live control floats just above
+                      Send, where the thumb already is. It steps aside while
+                      the voice note above is up, so it does not cover it. */}
+                  {!voiceHelp && (
+                  <button
+                    type="button"
+                    className={`mob-live-btn composer-float is-${liveState}`}
+                    onClick={voiceReady ? toggleLive : () => setVoiceHelp(true)}
+                    disabled={readOnly}
+                    title={voiceReady ? "Start live voice chat" : "Live voice requires https"}
+                    aria-label="Live voice chat"
+                    aria-pressed={liveOn}
+                  >
+                    <span className="mob-live-glow" aria-hidden="true" />
+                    <AutoraMark state={liveState} size={23} />
+                  </button>
+                  )}
                   <textarea
                     ref={composerRef}
                     value={draft}
@@ -775,8 +792,8 @@ export function App() {
                         onBlocked={() => setVoiceHelp(true)}
                         onTrouble={setNotice}
                       />
-                      {/* Only shown where the bottom bar, which normally
-                          carries this, is hidden. */}
+                      {/* Only shown on a desktop, where the control floating
+                          above Send is hidden. */}
                       <button
                         className="btn icon ghost composer-live"
                         onClick={voiceReady ? toggleLive : () => setVoiceHelp(true)}
@@ -837,52 +854,6 @@ export function App() {
         </main>
         </div>
 
-        {/* Navigation bar with Chat, Live Icon in middle, and Tasks */}
-        <nav className="mobile-nav" role="tablist" aria-label="Panel">
-          <button
-            role="tab"
-            aria-selected={page === "chat"}
-            className={`mob-tab ${page === "chat" ? "on" : ""}${
-              pending > 0 ? " has-alert" : ""}`}
-            onClick={() => navigate("chat")}
-          >
-            <span className="mob-alert" />
-            <IconMessage size={18} />
-            Chat
-          </button>
-
-          {/* The live control, between Chat and Tasks. It carries its own state
-              in the mark rather than in an indicator beside it: the button
-              glows and the logo morphs through the conversation, and settles
-              when the agent stops. */}
-          <button
-            type="button"
-            className={`mob-live-btn is-${liveState}`}
-            onClick={voiceReady ? toggleLive : () => setVoiceHelp(true)}
-            title={
-              liveOn
-                ? "Live voice chat active (click to exit)"
-                : voiceReady
-                ? "Start live voice chat"
-                : "Live voice requires https"
-            }
-            aria-label="Live voice chat"
-            aria-pressed={liveOn}
-          >
-            <span className="mob-live-glow" aria-hidden="true" />
-            <AutoraMark state={liveState} size={23} />
-          </button>
-
-          <button
-            role="tab"
-            aria-selected={page === "cron"}
-            className={`mob-tab ${page === "cron" ? "on" : ""}`}
-            onClick={() => navigate("cron")}
-          >
-            <IconRepeat size={18} />
-            Tasks
-          </button>
-        </nav>
       </div>
 
       {/* The third pane on a desktop: the whole memory graph, beside whatever
