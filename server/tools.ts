@@ -80,6 +80,10 @@ export type AskRequest = {
   multi: boolean;
   allowText: boolean;
   placeholder?: string;
+  /** Checked about once a second while the question is open. A string back
+      settles it without the person: the thing they were asked to do has
+      visibly been done, and saying so would only be a second chore. */
+  watch?: () => Promise<string | null>;
 };
 export type AskAnswer = { cancelled: boolean; choices: string[]; text: string; who: string };
 
@@ -259,7 +263,8 @@ const TOOLS: ToolSpec[] = [
       "could not pass, or anything on the page only they should do. They get a card " +
       "explaining what is needed and can then tap and type directly in the page. This " +
       "call returns when they say they are done (with the page as it is then) or that " +
-      "they cannot do it.",
+      "they cannot do it. For a CAPTCHA it also returns by itself the moment the page " +
+      "shows it passed, so never ask the person whether they have finished one.",
     parameters: {
       type: "object",
       properties: {
@@ -1255,13 +1260,17 @@ export async function runTool(
         const live = ctx.browser();
         live.setControl("human", reason);
         ctx.browserChanged();
+        const watch = await captchaWatch(live, reason);
         const answer = await ctx.ask({
           kind: "browser",
           title: reason,
-          detail: "Tap and type in the page below. Nothing you type there is saved to the chat.",
+          detail: watch
+            ? "Solve it in the page below. Autora carries on by itself as soon as it passes."
+            : "Tap and type in the page below. Nothing you type there is saved to the chat.",
           options: [],
           multi: false,
           allowText: false,
+          watch,
         });
         live.setControl("agent", null);
         ctx.browserChanged();
@@ -1277,6 +1286,16 @@ export async function runTool(
           };
         }
         const page = await live.snapshot();
+        if (answer.who === "auto") {
+          return {
+            ok: true,
+            summary:
+              "The CAPTCHA passed while the person had the browser -- detected on the page, " +
+              "not reported by them. Carry straight on with the task; do not ask whether " +
+              "they finished it.\n\n" + describePage(page),
+            preview: "handoff: captcha passed",
+          };
+        }
         return {
           ok: true,
           summary:
@@ -1564,4 +1583,42 @@ export async function capabilityBriefing(): Promise<string> {
   }
 
   return lines.join("\n");
+}
+
+/** How long a passed CAPTCHA must stay passed before the turn carries on:
+    two looks, so a checkbox that flickers ticked on its way to a picture
+    challenge does not hand the page back mid-puzzle. */
+const CAPTCHA_STEADY_POLLS = 2;
+
+/**
+ * A watch for a handoff that is about a CAPTCHA: settles it as soon as the
+ * page shows the check passed, so the person solves the puzzle and the agent
+ * simply carries on -- nobody has to come back and say "done".
+ *
+ * Only armed when there is a CAPTCHA to watch: on the page now, or named in
+ * the reason (a Cloudflare page can take a moment to draw its widget). A
+ * sign-in has no such signal and still waits for the person to say so.
+ */
+export async function captchaWatch(
+  live: { captchaStatus(): Promise<{ present: boolean; passed: boolean; url: string | null }> },
+  reason: string,
+): Promise<(() => Promise<string | null>) | undefined> {
+  const first = await live.captchaStatus().catch(() => null);
+  if (!first) return undefined;
+  const named = /captcha|recaptcha|hcaptcha|turnstile|cloudflare|verif|robot|human/i.test(reason);
+  if (first.passed || (!first.present && !named)) return undefined;
+
+  let seen = first.present;
+  let steady = 0;
+  return async () => {
+    const now = await live.captchaStatus().catch(() => null);
+    if (!now) return null;
+    if (now.present) seen = true;
+    // Passed on the page, or gone from it after being there (a Cloudflare
+    // interstitial lets you through by leaving).
+    const through = now.passed || (seen && !now.present);
+    steady = through ? steady + 1 : 0;
+    if (steady < CAPTCHA_STEADY_POLLS) return null;
+    return now.passed ? "CAPTCHA passed — carrying on" : "Verification cleared — carrying on";
+  };
 }

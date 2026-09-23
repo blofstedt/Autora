@@ -4070,3 +4070,144 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
   .logs-toolbar .page-select { flex: 1 1 40%; }
   .logs-toolbar .page-search { flex: 1 1 50%; }
 }
+
+/* ============================================================================
+   The memory graph as the third pane (desktop)
+
+   Rail on the left, conversation in the middle, the whole graph on the right --
+   a little wider than the rail, and the full height of the window, so nothing
+   needs opening to see it.
+   ============================================================================ */
+.mind-slot { display: none; }
+@media (min-width: 1180px) {
+  .mind-slot {
+    display: flex; flex: 0 0 300px; min-width: 0; min-height: 0;
+    border-left: 1px solid var(--border);
+  }
+  .neural-web.is-pane {
+    flex: 1; max-width: none; margin: 0; padding: 52px 12px 44px;
+    border-bottom: 0; box-shadow: none;
+  }
+  .neural-web.is-pane .neural-stage { height: auto; min-height: 0; }
+  .neural-web.is-pane .web-tag-group { top: 12px; left: 12px; right: 12px; flex-wrap: wrap; }
+  .neural-web.is-pane .neural-latest {
+    display: block; left: 0; right: 0; bottom: -32px; max-width: none; transform: none;
+    text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .neural-web.is-pane .neural-latest .neural-pulse-dot {
+    display: inline-block; margin-right: 6px; vertical-align: middle;
+  }
+}
+@media (min-width: 1500px) {
+  .mind-slot { flex-basis: 340px; }
+}
+
+/* ============================================================================
+   The Mind: preferences, procedures, facts and skills, as four buckets
+   ============================================================================ */
+.mind-page { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.mind-page > .page-scroll { position: relative; flex: 1; min-height: 0; }
+.mind-switch { flex: 0 0 auto; display: flex; justify-content: center; padding: 10px 12px 0; }
+.mind-page > .kweb.is-embedded {
+  position: relative; inset: auto; z-index: auto; flex: 1; min-height: 0; animation: none;
+}
+
+.mind-buckets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 760px) { .mind-buckets { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.mind-bucket {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0;
+  padding: 12px 14px; border-radius: var(--r); cursor: pointer; text-align: left;
+  background: var(--s1); border: 1px solid var(--border); color: var(--text);
+  font: inherit; transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
+}
+.mind-bucket:hover { border-color: var(--border-strong); }
+.mind-bucket.on {
+  background: var(--s2); border-color: var(--chip);
+  box-shadow: inset 0 0 0 1px var(--chip);
+}
+.mind-bucket-top { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; }
+.mind-bucket-top i,
+.mind-item-title i { width: 8px; height: 8px; border-radius: 50%; background: var(--chip); flex: 0 0 auto; }
+.mind-bucket-count {
+  font-family: var(--mono); font-size: 24px; font-weight: 650; line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.mind-bucket-blurb { font-size: 11.5px; color: var(--text-3); line-height: 1.35; }
+
+.mind-bridges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.mind-bridges-label {
+  font-size: 11px; color: var(--text-3); font-weight: 600;
+  letter-spacing: 0.04em; text-transform: uppercase; margin-right: 2px;
+}
+.mind-bridge {
+  display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px;
+  border-radius: 99px; background: var(--s2); border: 1px solid var(--border);
+  font-size: 12px; color: var(--text-2);
+}
+.mind-bridge i, .mind-rel i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.mind-bridge em { font-style: normal; font-family: var(--mono); font-weight: 650; color: var(--text); margin-left: 2px; }
+
+.mind-list-head { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.mind-list-head h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.mind-list { display: flex; flex-direction: column; gap: 8px; }
+.mind-item { padding: 0; border-left: 3px solid var(--chip); }
+.mind-item.is-open { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.mind-edit { display: flex; flex-direction: column; gap: 10px; }
+.mind-item-main {
+  display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 12px 14px;
+  background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer;
+  border-radius: var(--r);
+}
+.mind-item-main:hover { background: var(--s2); }
+.mind-item-title { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13.5px; }
+.mind-item-title b { font-weight: 600; overflow-wrap: anywhere; }
+.mind-flag {
+  font-size: 10.5px; color: var(--text-3); padding: 1px 7px; border-radius: 99px;
+  border: 1px solid var(--border); white-space: nowrap;
+}
+.mind-item-body {
+  font-size: 12.5px; color: var(--text-2); line-height: 1.5; white-space: pre-wrap;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.mind-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.mind-tags em {
+  font-style: normal; font-family: var(--mono); font-size: 10.5px; color: var(--text-3);
+  padding: 1px 6px; border-radius: 4px; background: var(--s2);
+}
+.mind-related {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 5px;
+  padding: 0 14px 12px;
+}
+.mind-item.is-open .mind-related { padding: 0; }
+.mind-related > span { font-size: 11px; color: var(--text-3); margin-right: 2px; }
+.mind-rel {
+  display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px;
+  border-radius: 99px; background: var(--s2); border: 1px solid var(--border);
+  color: var(--text-2); font: inherit; font-size: 11.5px; cursor: pointer; max-width: 100%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mind-rel:hover { border-color: var(--border-strong); color: var(--text); }
+.mind-rel em { font-style: normal; color: var(--text-3); font-size: 10.5px; }
+.mind-kinds { display: flex; flex-wrap: wrap; gap: 5px; }
+.mind-edit-actions { align-items: center; }
+
+/* System: Status, Logs and Host as sections of one page. */
+.system-page { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.system-tabs { flex: 0 0 auto; display: flex; justify-content: center; padding: 12px 12px 0; }
+.system-body { position: relative; flex: 1; min-height: 0; }
+.system-body > .sched.is-embedded {
+  position: absolute; inset: 0; z-index: auto; animation: none; background: var(--s1);
+}
+
+/* What the agent says while it works a page or the desktop, inside the card:
+   the page stays where it is and the words scroll under it. */
+.shot-log {
+  max-height: 220px; overflow-y: auto; overscroll-behavior: contain;
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px 12px; border-top: 1px solid var(--border); background: var(--s1);
+}
+.shot-log .msg { gap: 8px; }
+.shot-log .msg .avatar { width: 22px; height: 22px; }
+.shot-log .msg-who { display: none; }
+.shot-log .msg-text { font-size: 13px; line-height: 1.5; }
+@media (min-width: 1000px) { .shot-log { max-height: 260px; } }

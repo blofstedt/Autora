@@ -53,7 +53,7 @@ export function AskCell({
       : a.cancelled
         ? a.who === "user" ? (isBrowser ? "You couldn't do this one" : "Skipped") : "Went unanswered"
         : isBrowser
-          ? "Done in the browser"
+          ? a.who === "auto" ? (a.text || "Passed — carrying on") : "Done in the browser"
           : [...a.choices, a.text].filter(Boolean).join(" · ");
     return (
       <div className={`ask is-settled ${a && !a.cancelled ? "is-answered" : ""}`}>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MemoryMark } from "../lib/derive";
-import { KIND_COLOR, fetchKnowledge, type Knowledge } from "../lib/memory";
+import { KIND_COLOR, fetchKnowledge, onKnowledgeChange, type Knowledge } from "../lib/memory";
 import { IconBrain, IconChevron } from "./Icons";
 import { useThemeColors } from "../lib/theme";
 
@@ -54,6 +54,7 @@ export function MemoryRibbon({
   onOpenSkills,
   collapsed = false,
   onToggle,
+  pane = false,
 }: {
   memories: MemoryMark[];
   onOpen: () => void;
@@ -61,6 +62,9 @@ export function MemoryRibbon({
   /** Folded to one line: the counts and the newest event, no graph. */
   collapsed?: boolean;
   onToggle?: () => void;
+  /** Drawn as a tall column beside the chat (desktop) rather than a wide
+      banner above it, so the nodes spread tall to fill the pane. */
+  pane?: boolean;
 }) {
   const [web, setWeb] = useState<Knowledge>({ records: [], links: [], enabled: true });
   const colors = useThemeColors();
@@ -90,7 +94,8 @@ export function MemoryRibbon({
   useEffect(() => {
     load();
     const timer = window.setInterval(load, POLL_MS);
-    return () => window.clearInterval(timer);
+    const stop = onKnowledgeChange(load);
+    return () => { window.clearInterval(timer); stop(); };
   }, [load]);
 
   const latestSeq = memories.length ? memories[memories.length - 1].seq : 0;
@@ -105,7 +110,7 @@ export function MemoryRibbon({
     if (rows.length === 0) {
       return {
         placed: [] as Placed[],
-        viewBox: "-170 -72.5 340 145",
+        viewBox: pane ? "-100 -170 200 340" : "-170 -72.5 340 145",
         bgDots: [] as { x: number; y: number }[],
       };
     }
@@ -117,9 +122,10 @@ export function MemoryRibbon({
       const angle = index * golden + ((hash % 100) / 400);
       // Concentric elliptic layout around (0, 0)
       const radius = index === 0 ? 0 : 28 + Math.sqrt(index) * 26 + ((hash >>> 5) % 12);
-      // Oval spread matching the wide ribbon banner aspect ratio ~2.35:1
-      const x = Math.cos(angle) * radius * 1.45;
-      const y = Math.sin(angle) * radius * 0.68;
+      // Oval spread matching the shape it is drawn in: a wide banner above the
+      // chat (~2.35:1), or a tall column beside it.
+      const x = Math.cos(angle) * radius * (pane ? 0.8 : 1.45);
+      const y = Math.sin(angle) * radius * (pane ? 1.35 : 0.68);
       const r = record.kind === "skill" ? 6 : record.pinned ? 7 : record.status === "provisional" ? 4.2 : 5.5;
 
       return {
@@ -145,12 +151,14 @@ export function MemoryRibbon({
     }
 
     // Add padding around all extremities so nodes always have breathing space and are never cut off
-    const padX = 32;
-    const padY = 24;
-    let spanW = Math.max(340, (maxX - minX) + padX * 2);
-    let spanH = Math.max(145, (maxY - minY) + padY * 2);
+    const padX = pane ? 24 : 32;
+    const padY = pane ? 40 : 24;
+    const minW = pane ? 200 : 340;
+    const minH = pane ? 340 : 145;
+    let spanW = Math.max(minW, (maxX - minX) + padX * 2);
+    let spanH = Math.max(minH, (maxY - minY) + padY * 2);
 
-    const targetAspect = 340 / 145; // ~2.345
+    const targetAspect = minW / minH; // banner ~2.345, pane ~0.59
     if (spanW / spanH < targetAspect) {
       spanW = spanH * targetAspect;
     } else {
@@ -179,7 +187,7 @@ export function MemoryRibbon({
       viewBox: `${vbX} ${vbY} ${spanW} ${spanH}`,
       bgDots: dots,
     };
-  }, [web.records]);
+  }, [web.records, pane]);
 
   const active = memories.length ? memories[memories.length - 1].id : null;
   const byId = useMemo(() => new Map(placed.map((p) => [p.id, p])), [placed]);
@@ -391,13 +399,13 @@ export function MemoryRibbon({
 
   const tags = (
     <>
-      <button className="web-tag neural-tag" onClick={onOpen} title="Open knowledge graph">
+      <button className="web-tag neural-tag" onClick={onOpen} title="Open the Mind">
         <IconBrain size={13} />
         <span className="web-count">{web.records.length}</span>
         <IconChevron size={11} />
       </button>
       {skillsCount > 0 && (
-        <button className="web-tag skills-tag" onClick={onOpenSkills || onOpen} title="Open Skills Library">
+        <button className="web-tag skills-tag" onClick={onOpenSkills || onOpen} title="Open skills in the Mind">
           <span className="skills-dot" />
           <span className="web-count">{skillsCount} skills</span>
         </button>
@@ -427,8 +435,8 @@ export function MemoryRibbon({
   }
 
   return (
-    <section className="web neural-web" aria-label="Neural memory web">
-      {onToggle && (
+    <section className={`web neural-web${pane ? " is-pane" : ""}`} aria-label="Neural memory web">
+      {onToggle && !pane && (
         <button className="web-toggle is-open" onClick={onToggle} aria-expanded={true} aria-label="Hide the memory graph" title="Hide the memory graph">
           <IconChevron size={13} />
         </button>

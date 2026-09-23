@@ -123,15 +123,35 @@ function price(model: ModelOption): string {
 /** Which part of the settings a page shows. The full panel is all of them. */
 export type SettingsSection = "config" | "keys" | "analytics" | "system";
 
+/** Config's two halves: the model, tools and instructions, and the keys. */
+export type ConfigTab = "general" | "keys";
+
 export function Settings({
-  onClose, section, embedded = false,
+  onClose, section, embedded = false, initialTab = "general",
 }: {
   onClose?: () => void;
   section?: SettingsSection;
   /** Rendered as a page inside the app rather than as a full-screen sheet. */
   embedded?: boolean;
+  /** On Config, which half to open on. */
+  initialTab?: ConfigTab;
 }) {
-  const shows = (s: SettingsSection) => !section || section === s;
+  /* API Keys is a section of Config rather than a page of its own. One
+     component, so a key typed on one tab and a model picked on the other are
+     saved together by the one Save button. */
+  const [tab, setTab] = useState<ConfigTab>(initialTab);
+  useEffect(() => {
+    if (section !== "config" || !embedded) return;
+    const url = new URL(location.href);
+    url.searchParams.set("page", "config");
+    if (tab === "general") url.searchParams.delete("tab");
+    else url.searchParams.set("tab", tab);
+    history.replaceState(null, "", url.toString());
+  }, [tab, section, embedded]);
+  const shows = (s: SettingsSection) =>
+    section === "config"
+      ? (s === "config" && tab === "general") || (s === "keys" && tab === "keys")
+      : !section || section === s;
   const title = section === "config" ? "Config"
     : section === "keys" ? "API Keys"
       : section === "analytics" ? "Analytics"
@@ -291,6 +311,14 @@ export function Settings({
           <span className="brand-mark"><IconGear size={13} /></span>
           <span className="brand-word">{title}</span>
         </div>
+        {section === "config" && (
+          <div className="seg" role="tablist" aria-label="Config sections">
+            <button role="tab" aria-selected={tab === "general"} className={tab === "general" ? "on" : ""}
+                    onClick={() => setTab("general")}>Model &amp; tools</button>
+            <button role="tab" aria-selected={tab === "keys"} className={tab === "keys" ? "on" : ""}
+                    onClick={() => setTab("keys")}>API Keys</button>
+          </div>
+        )}
         <div className="spacer" />
         {saveable && (
           <button className="btn primary" onClick={save} disabled={!dirty || saving}>
@@ -406,12 +434,12 @@ export function Settings({
         {state.jev && <JevCard jev={state.jev} onSaved={adopt} />}
         </>}
 
-        {section === "keys" && (
+        {section && shows("keys") && (
           <section className="set-card">
             <h3>Model providers</h3>
             <p className="jf-hint">
               One key per vendor. Typing replaces the saved key; clearing it
-              removes it. Which provider and model answer is chosen on Config.
+              removes it. Which provider and model answer is chosen under Model &amp; tools.
             </p>
             {state.credentials.filter((c) => c.role === "model").map((c) => (
               <KeyField

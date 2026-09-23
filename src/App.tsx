@@ -6,18 +6,18 @@ import type { AutoraEvent, BrowserState, LiveFrame } from "./lib/types";
 import { Thread } from "./components/Thread";
 import { MemoryRibbon } from "./components/MemoryRibbon";
 import { Rail, pageLabel, PAGES, type PageId } from "./components/Rail";
-import { StatusPage } from "./components/pages/StatusPage";
 import { SessionsPage } from "./components/pages/SessionsPage";
-import { LogsPage } from "./components/pages/LogsPage";
+import { SystemPage, isSystemTab, type SystemTab } from "./components/pages/SystemPage";
 import { McpPage } from "./components/pages/McpPage";
+import { MindPage } from "./components/pages/MindPage";
+import type { Bucket } from "./lib/memory";
 import {
   applyAppearance, cachedAppearance, saveAppearance, type Appearance,
 } from "./lib/theme";
 import { Sessions, type SessionRow } from "./components/Sessions";
 import { Approvals } from "./components/Approvals";
-import { KnowledgeWeb } from "./components/KnowledgeWeb";
 import { Schedule } from "./components/Schedule";
-import { Settings } from "./components/Settings";
+import { Settings, type ConfigTab } from "./components/Settings";
 import { DictateButton } from "./components/DictateButton";
 import { LiveChat } from "./components/LiveChat";
 import { useRelay } from "./components/RelaySetup";
@@ -33,6 +33,22 @@ import {
 } from "./components/Icons";
 
 const RIBBON_KEY = "autora.ribbon";
+/** Where the rail comes out (see styles.css). From here up there is room for
+    the memory graph as its own pane on the right instead of a banner. */
+const DESKTOP_QUERY = "(min-width: 1180px)";
+
+/** Whether a media query matches, kept current as the window resizes. */
+function useMedia(query: string): boolean {
+  const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const list = window.matchMedia(query);
+    const onChange = () => setMatches(list.matches);
+    onChange();
+    list.addEventListener("change", onChange);
+    return () => list.removeEventListener("change", onChange);
+  }, [query]);
+  return matches;
+}
 
 /** How often to re-read the session list, so sessions started elsewhere (or
     from another tab) show up without a reload. */
@@ -58,8 +74,35 @@ export function App() {
       are the sidebar's pages. Kept in the address so a reload stays put. */
   const [page, setPage] = useState<PageId>(() => {
     const asked = new URLSearchParams(location.search).get("page");
+    // Memory and Skills were folded into the Mind; old links still land there.
+    if (asked === "memory" || asked === "skills") return "mind";
+    // API Keys is a section of Config now.
+    if (asked === "keys") return "config";
+    // Status and Logs are sections of System now.
+    if (asked === "status" || asked === "logs") return "system";
     return PAGES.some((p) => p.id === asked) ? (asked as PageId) : "chat";
   });
+  /** Which half of Config to open on. An object so asking for the keys
+      again, from anywhere, takes you back to them. */
+  const [configJump, setConfigJump] = useState<{ tab: ConfigTab }>(() => {
+    const params = new URLSearchParams(location.search);
+    const keys = params.get("page") === "keys" ||
+      (params.get("page") === "config" && params.get("tab") === "keys");
+    return { tab: keys ? "keys" : "general" };
+  });
+  /** Which section of System to open on, from the address. */
+  const [systemTab, setSystemTab] = useState<SystemTab>(() => {
+    const params = new URLSearchParams(location.search);
+    const asked = params.get("page");
+    if (asked === "status" || asked === "logs") return asked;
+    const tab = params.get("tab");
+    return isSystemTab(tab) ? tab : "status";
+  });
+  /** Which of the Mind's buckets to open on. An object so asking for the
+      same bucket twice still takes you back to it. */
+  const [mindBucket, setMindBucket] = useState<{ kind: Bucket }>(
+    () => ({ kind: new URLSearchParams(location.search).get("page") === "skills" ? "skill" : "preference" }),
+  );
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [appearance, setAppearance] = useState<Appearance>(cachedAppearance);
   const [sessionsOpen, setSessionsOpen] = useState(false);
@@ -80,6 +123,7 @@ export function App() {
     } catch { /* storage blocked: fall through to the default */ }
     return !window.matchMedia("(max-width: 680px)").matches;
   });
+  const desktop = useMedia(DESKTOP_QUERY);
   const toggleRibbon = useCallback(() => {
     setRibbonOpen((open) => {
       try { localStorage.setItem(RIBBON_KEY, open ? "closed" : "open"); } catch { /* ignore */ }
@@ -148,6 +192,7 @@ export function App() {
     setDrawerOpen(false);
     setSessionsOpen(false);
     const url = new URL(location.href);
+    url.searchParams.delete("tab");
     if (next === "chat") url.searchParams.delete("page");
     else url.searchParams.set("page", next);
     history.replaceState(null, "", url.toString());
@@ -428,7 +473,7 @@ export function App() {
           break;
         case "k":
           e.preventDefault();
-          navigate(page === "memory" ? "chat" : "memory");
+          navigate(page === "mind" ? "chat" : "mind");
           break;
         case "v":
           e.preventDefault();
@@ -451,8 +496,8 @@ export function App() {
     view.title ||
     "Untitled session";
 
-  const openSkills = useCallback(() => navigate("skills"), [navigate]);
-  const openKnowledge = useCallback(() => navigate("memory"), [navigate]);
+  const openSkills = useCallback(() => { setMindBucket({ kind: "skill" }); navigate("mind"); }, [navigate]);
+  const openKnowledge = useCallback(() => navigate("mind"), [navigate]);
 
   const refreshSessions = useCallback(() => {
     fetch("/api/sessions").then((r) => r.json()).then(setSessions).catch(() => undefined);
@@ -495,7 +540,12 @@ export function App() {
         >
           <Rail
             page={page}
-            onNavigate={navigate}
+            onNavigate={(next) => {
+              // From the menu, a page opens on its first section.
+              if (next === "config") setConfigJump({ tab: "general" });
+              if (next === "system") setSystemTab("status");
+              navigate(next);
+            }}
             sessions={sessions}
             current={sessionId}
             relayOn={!!relay?.connected}
@@ -504,6 +554,7 @@ export function App() {
             onNew={() => { void newSession(); navigate("chat"); }}
             appearance={appearance}
             onAppearance={changeAppearance}
+            onOpenKeys={() => { setConfigJump({ tab: "keys" }); navigate("config"); }}
             drawer={kind === "drawer"}
             onClose={() => setDrawerOpen(false)}
           />
@@ -568,26 +619,26 @@ export function App() {
 
         {page !== "chat" && (
           <div className="page-host">
-            {page === "status" && (
-              <StatusPage sessions={sessions} onOpenSession={openSession} onNavigate={navigate} />
+            {page === "config" && (
+              <Settings key={`config-${configJump.tab}`} section="config" embedded initialTab={configJump.tab} />
             )}
-            {page === "config" && <Settings key="config" section="config" embedded />}
-            {page === "keys" && <Settings key="keys" section="keys" embedded />}
             {page === "analytics" && <Settings key="analytics" section="analytics" embedded />}
-            {page === "system" && <Settings key="system" section="system" embedded />}
+            {page === "system" && (
+              <SystemPage
+                key={systemTab}
+                initialTab={systemTab}
+                sessions={sessions}
+                onOpenSession={openSession}
+                onNavigate={navigate}
+              />
+            )}
             {page === "sessions" && (
               <SessionsPage current={sessionId} onOpen={openSession} onChanged={refreshSessions} />
             )}
-            {page === "logs" && <LogsPage />}
             {page === "mcp" && <McpPage />}
             {page === "cron" && <Schedule embedded onOpenSession={openSession} />}
-            {(page === "memory" || page === "skills") && (
-              <KnowledgeWeb
-                key={page}
-                embedded
-                initialKind={page === "skills" ? "skill" : "all"}
-                recent={view.memories}
-              />
+            {page === "mind" && (
+              <MindPage jump={mindBucket} showMap={!desktop} recent={view.memories} />
             )}
           </div>
         )}
@@ -597,14 +648,17 @@ export function App() {
         <div className="chat-view" hidden={page !== "chat"}>
 
         {/* Always on, above the conversation: what the agent knows, and what is
-            happening to it as it happens. */}
-        <MemoryRibbon
-          memories={view.memories}
-          onOpen={openKnowledge}
-          onOpenSkills={openSkills}
-          collapsed={!ribbonOpen}
-          onToggle={toggleRibbon}
-        />
+            happening to it as it happens. On a desktop it has its own pane on
+            the right instead. */}
+        {!desktop && (
+          <MemoryRibbon
+            memories={view.memories}
+            onOpen={openKnowledge}
+            onOpenSkills={openSkills}
+            collapsed={!ribbonOpen}
+            onToggle={toggleRibbon}
+          />
+        )}
 
         <main className="page">
           <Thread
@@ -830,6 +884,19 @@ export function App() {
           </button>
         </nav>
       </div>
+
+      {/* The third pane on a desktop: the whole memory graph, beside whatever
+          page is open, tall enough to see it all without opening anything. */}
+      {desktop && (
+        <aside className="mind-slot" aria-label="Memory">
+          <MemoryRibbon
+            memories={view.memories}
+            onOpen={openKnowledge}
+            onOpenSkills={openSkills}
+            pane
+          />
+        </aside>
+      )}
 
       {sessionsOpen && (
         <Sessions
