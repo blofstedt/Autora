@@ -57,6 +57,10 @@ export interface BrowserStatus {
   viewport: { width: number; height: number };
   /** Who currently holds control of the browser (agent, human, or shared). */
   control: { holder: "agent" | "human" | "shared"; reason: string | null };
+  /** Where the page's typeable fields are, as [x, y, w, h] in page pixels, so
+      a phone can raise its keyboard for a tap on one -- and only on one --
+      without waiting for the click to come back. */
+  fields: Array<[number, number, number, number]>;
 }
 
 /** One numbered, clickable thing on the page. */
@@ -115,6 +119,8 @@ export interface BrowserHooks {
   onNav: (url: string, title: string) => void;
   /** Something the agent did, with where it did it when that is meaningful. */
   onAction: (action: string, at: { x: number; y: number } | null, url: string) => void;
+  /** The typeable fields on the page moved, appeared or went. */
+  onFields: () => void;
   /** Whether anyone is watching. The screencast is stopped while nobody is,
       because encoding JPEGs for an empty room is just heat. */
   watchers: () => number;
@@ -133,6 +139,8 @@ const num = (value: string | undefined, fallback: number) => {
 /** How often live frames go out. Chrome offers about sixty a second; a LAN is
     not a video codec, and ten is enough to follow the pointer travelling to
     what it is about to click. */
+/** How long typing has to stop before it is logged and a frame is kept. */
+const TYPING_PAUSE_MS = 1200;
 const LIVE_FPS = Math.min(num(process.env.AUTORA_BROWSER_FPS, 10), 30);
 const LIVE_QUALITY = Math.min(num(process.env.AUTORA_BROWSER_QUALITY, 50), 100);
 /** Frames are sent narrower than the page is rendered: the picture is for
@@ -717,6 +725,7 @@ export class LiveBrowser {
       fps: this.streaming ? LIVE_FPS : 0,
       viewport: VIEWPORT,
       control: this.control,
+      fields: this.page ? this.fields : [],
     };
   }
 
@@ -907,6 +916,9 @@ export class LiveBrowser {
     this.currentUrl = null;
     this.currentTitle = null;
     this.refs = [];
+    this.fields = [];
+    if (this.typed.timer) clearTimeout(this.typed.timer);
+    this.typed = { chars: 0, keys: [], timer: null };
     await cdp?.detach().catch(() => undefined);
     await page?.close().catch(() => undefined);
     if (context) await releaseContext(context);
@@ -933,6 +945,42 @@ export class LiveBrowser {
       // A page that navigated out from under the shot is not an error worth
       // reporting; the next action takes another one.
     }
+    await this.mapFields();
+  }
+
+  /** Last known typeable fields, for `status()`. */
+  private fields: Array<[number, number, number, number]> = [];
+
+  /** Find the fields you can type into, and tell the watchers if they moved.
+      Taken alongside every kept frame, which is after every action. */
+  private async mapFields() {
+    if (!this.page || this.closing) return;
+    // A string, because this file is compiled without the DOM's types.
+    const found: Array<[number, number, number, number]> = await this.page
+      .evaluate(`(() => {
+        const skip = ["button", "submit", "reset", "checkbox", "radio", "range",
+          "color", "file", "image", "hidden"];
+        const out = [];
+        const vw = window.innerWidth, vh = window.innerHeight;
+        for (const el of document.querySelectorAll("input, textarea, [contenteditable], iframe")) {
+          if (el.tagName === "INPUT" && skip.includes((el.type || "text").toLowerCase())) continue;
+          if (el.hasAttribute("contenteditable") && !el.isContentEditable) continue;
+          if (el.disabled || el.readOnly) continue;
+          const r = el.getBoundingClientRect();
+          if (r.width < 2 || r.height < 2) continue;
+          if (r.bottom < 0 || r.right < 0 || r.top > vh || r.left > vw) continue;
+          const style = getComputedStyle(el);
+          if (style.visibility === "hidden" || style.display === "none") continue;
+          out.push([Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)]);
+          if (out.length >= 400) break;
+        }
+        return out;
+      })()`)
+      .catch(() => null);
+    if (!found) return;
+    if (JSON.stringify(found) === JSON.stringify(this.fields)) return;
+    this.fields = found;
+    this.hooks.onFields();
   }
 
   /** Let whatever the action started finish painting before we photograph it.
@@ -1161,14 +1209,17 @@ export class LiveBrowser {
     });
   }
 
-  /** Direct typing from user into focused element */
+  /** Direct typing from user into focused element.
+
+      No per-letter delay, no settle and no screenshot: the live feed already
+      shows each letter land, and waiting on any of those held up the next
+      keys behind it, which is what made typing into the page lag. The log
+      gets one entry and one kept frame once the typing stops. */
   keyboardType(text: string): Promise<void> {
     return this.run(async () => {
       const page = await this.ensure();
-      this.hooks.onAction(`typed text (${text.length} chars)`, null, this.currentUrl ?? "");
-      await page.keyboard.type(text, { delay: 15 });
-      await this.settle(80);
-      await this.keyframe();
+      await page.keyboard.type(text);
+      this.noteTyping(text.length, null);
     });
   }
 
@@ -1176,11 +1227,33 @@ export class LiveBrowser {
   keyboardPress(key: string): Promise<void> {
     return this.run(async () => {
       const page = await this.ensure();
-      this.hooks.onAction(`press key ${key}`, null, this.currentUrl ?? "");
       await page.keyboard.press(key);
-      await this.settle(300);
-      await this.keyframe();
+      this.noteTyping(0, key);
     });
+  }
+
+  /** What a run of typing adds up to, logged once it pauses. */
+  private typed = { chars: 0, keys: [] as string[], timer: null as NodeJS.Timeout | null };
+
+  private noteTyping(chars: number, key: string | null) {
+    this.typed.chars += chars;
+    if (key) this.typed.keys.push(key);
+    if (this.typed.timer) clearTimeout(this.typed.timer);
+    this.typed.timer = setTimeout(() => {
+      const { chars: count, keys } = this.typed;
+      this.typed = { chars: 0, keys: [], timer: null };
+      const parts: string[] = [];
+      if (count > 0) parts.push(`typed text (${count} chars)`);
+      const named = [...new Set(keys)];
+      if (named.length > 0) parts.push(`pressed ${named.join(", ")}`);
+      if (parts.length === 0) return;
+      void this.run(async () => {
+        if (!this.page || this.closing) return;
+        this.hooks.onAction(parts.join("; "), null, this.currentUrl ?? "");
+        await this.keyframe();
+      });
+    }, TYPING_PAUSE_MS);
+    this.typed.timer.unref?.();
   }
 
   /** Direct mouse wheel scrolling from user */

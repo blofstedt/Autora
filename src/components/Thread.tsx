@@ -12,7 +12,6 @@ import { ImageCell } from "./ImageCell";
 import { AskCell } from "./AskCell";
 import { Markdown } from "./Markdown";
 import { JevCell } from "./JevCell";
-import type { LiveFrame } from "../lib/types";
 
 /** Within this many pixels of the bottom counts as "watching the live edge". */
 const STICK_ZONE = 80;
@@ -32,7 +31,6 @@ export function Thread({
   busy,
   sessionId,
   liveBrowserSeq,
-  liveFrame,
   live,
   onPermissionDecide,
   onRunAutonomous,
@@ -42,8 +40,6 @@ export function Thread({
   busy: boolean;
   sessionId: string;
   liveBrowserSeq: number | null;
-  /** The newest frame off the browser, if one is open and being watched. */
-  liveFrame: LiveFrame | null;
   live: boolean;
   onPermissionDecide?: (requestId: string, approved: boolean, response?: string) => void;
   onRunAutonomous?: (task: KanbanTask) => void;
@@ -149,7 +145,6 @@ export function Thread({
             bucket={b}
             sessionId={sessionId}
             liveBrowserSeq={liveBrowserSeq}
-            liveFrame={liveFrame}
             live={live}
             onPermissionDecide={onPermissionDecide}
             onRunAutonomous={onRunAutonomous}
@@ -186,7 +181,6 @@ function TurnBucket({
   bucket,
   sessionId,
   liveBrowserSeq,
-  liveFrame,
   live,
   onPermissionDecide,
   onRunAutonomous,
@@ -195,7 +189,6 @@ function TurnBucket({
   bucket: Bucket;
   sessionId: string;
   liveBrowserSeq: number | null;
-  liveFrame: LiveFrame | null;
   live: boolean;
   onPermissionDecide?: (requestId: string, approved: boolean, response?: string) => void;
   onRunAutonomous?: (task: KanbanTask) => void;
@@ -226,7 +219,6 @@ function TurnBucket({
             cell={cell}
             sessionId={sessionId}
             liveBrowserSeq={liveBrowserSeq}
-            liveFrame={liveFrame}
             live={live}
             open={bucket.open}
             active={bucket.open && index === speaking}
@@ -244,7 +236,6 @@ function CellView({
   cell,
   sessionId,
   liveBrowserSeq,
-  liveFrame,
   live,
   open,
   active,
@@ -257,7 +248,6 @@ function CellView({
   cell: Cell;
   sessionId: string;
   liveBrowserSeq: number | null;
-  liveFrame: LiveFrame | null;
   live: boolean;
   open: boolean;
   active: boolean;
@@ -291,9 +281,7 @@ function CellView({
           // Only the newest browser card is looking at a page that still
           // exists, so it is the only one the live feed belongs to -- an older
           // card showing the current page would be a lie about what happened.
-          feed={
-            cell.source === "browser" && cell.seq === liveBrowserSeq ? liveFrame : null
-          }
+          followsFeed={current}
           current={live && current}
           driving={driving}
           waitingOnYou={browserHandedOver}
@@ -305,8 +293,7 @@ function CellView({
               cell={inner}
               sessionId={sessionId}
               liveBrowserSeq={liveBrowserSeq}
-              liveFrame={liveFrame}
-              live={live}
+                live={live}
               open={open}
               // The newest thing said, while the page is still being worked.
               active={cell.live && index === cell.log.length - 1}

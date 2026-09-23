@@ -557,6 +557,7 @@ function browserFor(session: Session): LiveBrowser {
     onNav: (url, title) => {
       emitEvent(session, "browser.nav", "agent", { url, title });
     },
+    onFields: () => broadcastBrowserState(session),
     onAction: (action, at, url) => {
       emitEvent(session, "browser.action", "agent", {
         action,
@@ -1075,7 +1076,7 @@ function broadcastBrowserState(session: Session) {
   sendEphemeral(session.id, {
     type: "browser",
     session: session.id,
-    state: live ? live.status() : { available: false, open: false, url: null, title: null, detail: null, fps: 0, viewport: VIEWPORT },
+    state: live ? live.status() : { available: false, open: false, url: null, title: null, detail: null, fps: 0, viewport: VIEWPORT, fields: [] },
   });
 }
 
@@ -1265,18 +1266,6 @@ const RETRY_BACKOFF_MS = [600, 1500, 3200];
 
 /** Codes worth asking again for: rate limits, overload, and the generic 500. */
 const TRANSIENT = new Set([429, 500, 502, 503, 504]);
-
-/**
- * How many rounds of tool calls one prompt may take.
- *
- * Each round is a billed call to the model, and a model that has talked itself
- * into a loop -- re-reading the same page, re-running a command that will fail
- * the same way -- will spend every round it is given. Twelve is enough for real
- * multi-step work (open a page, read it, click through, run a command, check
- * the output, report) and cheap enough to hit by accident without it mattering.
- * Running out is reported in the thread rather than passed over in silence.
- */
-const MAX_TOOL_STEPS = 12;
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -2287,13 +2276,12 @@ async function startServer() {
            * The agent loop.
            *
            * Ask, run whatever came back, tell the model what happened, ask
-           * again -- until it stops asking for tools, or the step budget runs
-           * out. The budget exists because a model that has got itself into a
-           * loop will happily spend a hundred calls on it, and every one of
-           * those is billed.
+           * again -- until it stops asking for tools, or you press Stop. There
+           * is no cap on the number of rounds: a turn that stopped halfway to
+           * ask whether to carry on was the wrong default for a long task.
            */
           let spans = 0;
-          for (let step = 0; step < MAX_TOOL_STEPS; step += 1) {
+          for (;;) {
             if (running.get(session.id)?.stopped) break;
 
             const pinned = await systemInstructionFor(session.id, uniqueAccessed, active, routeHint);
@@ -2437,17 +2425,6 @@ async function startServer() {
             }
 
             context.append({ role: "tool", replies }, session.seqCounter);
-
-            if (step === MAX_TOOL_STEPS - 1) {
-              /* Out of budget with the model still working. Said in the log
-                 rather than silently stopping, because a turn that ends
-                 mid-task with no explanation looks like a crash. */
-              emitEvent(session, "system.log", "system", {
-                message:
-                  `Stopped after ${MAX_TOOL_STEPS} rounds of tool calls. Ask ` +
-                  "again to carry on from here.",
-              });
-            }
           }
         }
 
