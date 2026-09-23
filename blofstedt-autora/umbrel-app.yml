@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.9.16"
+version: "0.9.17"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -74,28 +74,76 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  DeepSeek usage now shows what it cost instead of "unpriced". DeepSeek
-  renamed its models (now deepseek-flash and deepseek-v4-pro), and Autora's
-  price list only knew the old names. Both are now priced at DeepSeek's
-  published rates, including the half-price off-peak hours. Turns recorded
-  before this update keep their "unpriced" mark.
-
-  The left menu is simpler. The Settings button at the bottom is now called
-  Themes and sits at the end of the page list, just above the memory graph;
-  it holds only the theme and font choices. Config and System are still in
-  the page list, and API keys are on the Config page. The "Recent" sessions
-  list is gone from the menu; open past sessions from the Sessions page.
+  Typing into the browser inside Autora is much faster. The live picture of
+  the page no longer redraws the whole app ten times a second, so the phone
+  stays free to handle your keys. Keys you type are sent on right away
+  instead of waiting for the page to settle and be photographed after each
+  batch. The step log now gets one "typed text" entry when you pause, not
+  one per few letters.
 
 
-  The memory map now has a legend across the top showing the colour for
-  preferences, procedures, facts and skills, in place of the memory and
-  skills counters. Tapping the map anywhere opens the Mind page and selects
-  it in the menu, on desktop and on phones.
+  Tapping a button or link on the page no longer flashes the phone keyboard
+  up and back down. The keyboard now only comes up when you tap a field you
+  can type into.
 
 
-  The sessions list that opens from the session name at the top of the chat
-  can now search sessions by title, pin a session so it stays at the top,
-  and delete a session (tap the bin, then Delete to confirm).
+  The agent is no longer stopped after 12 rounds of tool calls with a note
+  asking you to tell it to carry on. It now keeps working until the task is
+  done or you press Stop.
+
+
+  In place of that limit, Autora now watches for the agent going in circles.
+  When it runs the same thing and gets the same result three times, fails at
+  the same step three times, or keeps getting back only results it has
+  already seen, it is told plainly to try something different or to stop and
+  say what is blocking it, and a note appears in the chat. Every 20 rounds it
+  is also asked to check its progress against your request. If it repeats
+  the same thing eight times anyway, the turn is stopped and the chat says
+  why.
+
+
+  Long agent turns cost much less. Every round of tool calls sends the whole
+  conversation to the model again, and providers charge far less for the
+  part they have seen before (DeepSeek about a fiftieth), but only when the
+  start of the request is exactly the same as last time. Autora's
+  instructions changed on every round, so that discount almost never
+  applied. They now stay the same for the whole turn, with the per-turn
+  details moved to the end. Claude models now use Anthropic's prompt cache
+  too. Old page snapshots from the in-app browser are shrunk to one line
+  once a newer one exists; the full text is kept and the agent can read it
+  back.
+
+
+  The Billing page now shows how much of your input came from the
+  provider's cache, and cached tokens are priced at the cheaper cached rate.
+  It also splits this month's spend into new input, cached input and output,
+  and lists which tools' output the model has been reading the most.
+
+
+  The agent is sent less without losing anything. When it clicks or types on
+  a page it has already read, it now gets only what changed (with the
+  current numbers of any buttons or links that moved) instead of the whole
+  page again, and "nothing changed" when nothing did. JSON results have
+  their spacing removed, leaving every value intact. And the agent keeps its
+  messages between steps to a line or less, while its final answer to you is
+  still written out in full.
+
+
+  The agent now sees whole web pages. Before, it only ever got the first
+  60 buttons and links and the first stretch of text on a page, however far
+  it scrolled, so it could not reach anything further down and would scroll
+  in circles. Now it reads a page's main content (the article, not the menus
+  around it) a part at a time, sees the buttons and links that are actually
+  on screen, and each one keeps its number wherever the page is scrolled.
+  Clicking one it saw earlier scrolls it back into view first.
+
+
+  You still watch every page the agent opens, with the moving cursor and
+  typing, at no extra cost: the live view never went to the model. When
+  nobody is watching, the agent skips the human-like pointer movement and
+  finishes faster (CAPTCHAs still get it). Fetching a web page with
+  http_request now returns its readable text instead of raw HTML, and the
+  agent is told to use the browser for websites and http_request for APIs.
 dependencies: []
 path: ""
 defaultUsername: ""

@@ -4,14 +4,14 @@ import path from "node:path";
 import express, { type Request, type Response } from "express";
 import { WebSocketServer, WebSocket } from "ws";
 import {
-  AUTO_ORDER, PRICES_CHECKED, PROVIDERS, costOf, isPriced, modelsFor,
+  AUTO_ORDER, PRICES_CHECKED, PROVIDERS, costParts, isPriced, modelsFor,
   providerSpec, rememberModels,
 } from "./server/providers";
 import {
   baseUrlFor, clearUsage, keyFor, keySource, maskKey, modelFor, recordUsage,
   resolveProvider, save, setKey, state, stateFilePath, type Resolved,
   listSecrets, setSecret, deleteSecret, getSecret, SECRET_PRESETS, redactSecrets,
-  mergeJev, mergeAppearance, saneMcp, THEMES, FONTS,
+  mergeJev, mergeAppearance, saneMcp, THEMES, FONTS, recordToolFeed, type CostParts,
 } from "./server/state";
 import { decide, lastDecision, supportFor, type JevOutcome, type JevTask } from "./server/jev/router";
 import type { JevTarget } from "./server/jev/engine";
@@ -27,13 +27,14 @@ import {
   ProviderError, listModels, streamChat,
   type ChatMessage, type ChatTurn, type ToolReply,
 } from "./server/llm";
-import { billingSummary } from "./server/billing";
+import { billingSummary, dayKey } from "./server/billing";
 import { dropSession, fromDataUrl, getBlob, putBlob } from "./server/blobs";
 import {
   MAX_ARTIFACT_BYTES, deleteArtifact, getArtifact, listArtifacts, readArtifact, saveArtifact,
 } from "./server/artifacts";
 import { ContextEngine, type CompactionReport } from "./server/context";
 import { LiveBrowser, VIEWPORT, probeBrowser, type PageRead } from "./server/browser";
+import { LoopWatch } from "./server/loopwatch";
 import {
   attachRelay, relayClientSource, relayStatus, watchDesktop,
 } from "./server/desktop";
@@ -557,6 +558,7 @@ function browserFor(session: Session): LiveBrowser {
     onNav: (url, title) => {
       emitEvent(session, "browser.nav", "agent", { url, title });
     },
+    onFields: () => broadcastBrowserState(session),
     onAction: (action, at, url) => {
       emitEvent(session, "browser.action", "agent", {
         action,
@@ -705,6 +707,15 @@ function jevTarget(): JevTarget | null {
 const jevThisTurn = new Map<string, string[]>();
 
 /** The lines the model is told about Jev for this turn. */
+/** A model call's cost, whole and split, at today's prices. */
+function priceCall(
+  provider: string, model: string, input: number, output: number,
+  cachedRead = 0, cacheWrite = 0,
+): { cost: number; parts: CostParts } {
+  const parts = costParts(provider, model, input, output, new Date(), { read: cachedRead, write: cacheWrite });
+  return { cost: parts.fresh + parts.cached + parts.output, parts };
+}
+
 function jevBriefing(sessionId: string): string {
   const notes = jevThisTurn.get(sessionId) ?? [];
   return [
@@ -745,9 +756,10 @@ async function jevDecide(session: Session | null, task: JevTask): Promise<JevOut
       model: target.model,
       input: usage.input,
       output: usage.output,
-      cost: costOf(target.provider, target.model, usage.input, usage.output),
+      ...priceCall(target.provider, target.model, usage.input, usage.output, usage.cached),
       priced: isPriced(target.provider, target.model),
       estimated: false,
+      cached: usage.cached,
     });
   }
   if (session && (outcome.mode === "jev" || outcome.attempted)) {
@@ -1075,7 +1087,7 @@ function broadcastBrowserState(session: Session) {
   sendEphemeral(session.id, {
     type: "browser",
     session: session.id,
-    state: live ? live.status() : { available: false, open: false, url: null, title: null, detail: null, fps: 0, viewport: VIEWPORT },
+    state: live ? live.status() : { available: false, open: false, url: null, title: null, detail: null, fps: 0, viewport: VIEWPORT, fields: [] },
   });
 }
 
@@ -1266,18 +1278,6 @@ const RETRY_BACKOFF_MS = [600, 1500, 3200];
 /** Codes worth asking again for: rate limits, overload, and the generic 500. */
 const TRANSIENT = new Set([429, 500, 502, 503, 504]);
 
-/**
- * How many rounds of tool calls one prompt may take.
- *
- * Each round is a billed call to the model, and a model that has talked itself
- * into a loop -- re-reading the same page, re-running a command that will fail
- * the same way -- will spend every round it is given. Twelve is enough for real
- * multi-step work (open a page, read it, click through, run a command, check
- * the output, report) and cheap enough to hit by accident without it mattering.
- * Running out is reported in the thread rather than passed over in silence.
- */
-const MAX_TOOL_STEPS = 12;
-
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -1422,16 +1422,29 @@ function pastToolCalls(sessionId: string): string[] {
     });
 }
 
-/** What the model is told it is, and what it knows, before the conversation. */
+/**
+ * What the model is told, in two parts.
+ *
+ * `pinned` is the instructions: who it is, what it can do, how to answer. It
+ * is the same from one round to the next and one turn to the next, which is
+ * what lets a provider serve the whole opening of the prompt from its cache.
+ * `note` is what is true of this turn in particular -- the route, what was
+ * recalled, the open page, what ran before -- and rides on the person's
+ * latest message (see ContextEngine.setTurnNote). Before this split the
+ * instructions carried all of it, including a digest that grew with every
+ * tool call, so no two rounds began the same way and every round paid full
+ * price for the entire history.
+ */
 async function systemInstructionFor(
   sessionId: string,
   recalled: MemoryRecord[],
   active?: Resolved | null,
   /** Jev's reading of what kind of request this is, when it had one. */
   routeHint?: string | null,
-): Promise<string> {
+): Promise<{ pinned: string; note: string }> {
   const lines = [state.systemPrompt.trim()];
-  if (routeHint) lines.push("", routeHint);
+  const notes: string[] = [];
+  if (routeHint) notes.push(routeHint);
 
   /* What it can actually do, generated from the tool registry rather than
      written down here. This is the section whose absence made the console
@@ -1441,7 +1454,7 @@ async function systemInstructionFor(
      match. See server/tools.ts -- the schemas the model receives and this
      prose come from the same array, so they cannot drift. */
   lines.push("", await capabilityBriefing());
-  lines.push("", jevBriefing(sessionId));
+  notes.push(jevBriefing(sessionId));
 
   /* Which vendor is answering, said plainly.
      Nothing else in the prompt carries it, so a model asked "which provider
@@ -1463,11 +1476,10 @@ async function systemInstructionFor(
   }
 
   if (recalled.length > 0) {
-    lines.push(
-      "",
+    notes.push([
       "What you already know about this workspace (from the memory graph):",
       ...recalled.map((m) => `- [${m.kind}] ${m.title}: ${m.body}`),
-    );
+    ].join("\n"));
   }
 
   /* The open page used to be pasted in here on every turn, because reading it
@@ -1477,8 +1489,7 @@ async function systemInstructionFor(
      the six thousand characters of it are fetched if they turn out to matter. */
   const open = browsers.get(sessionId)?.status();
   if (open?.open && open.url) {
-    lines.push(
-      "",
+    notes.push(
       `A browser is already open at ${open.url}${
         open.title ? ` ("${open.title}")` : ""}. Call browser_read to see what ` +
         "is on it; the numbered elements it returns are what browser_click and " +
@@ -1497,21 +1508,33 @@ async function systemInstructionFor(
      nothing here can be mistaken for something the model said. */
   const done = pastToolCalls(sessionId);
   if (done.length > 0) {
-    lines.push(
-      "",
+    notes.push([
       "What you have already done in this session, oldest first:",
       ...done,
       "These happened. Do not repeat one to find out what it returned.",
-    );
+    ].join("\n"));
   }
 
   lines.push(
     "",
     "Answer as the console itself: direct, concrete, and short enough to read",
     "between steps. Plain prose -- no headings, and no markdown emphasis.",
+    "While you are working -- any message that comes with tool calls -- write",
+    "at most one short line saying what you are doing, or nothing at all. Do",
+    "not restate tool output, repeat a plan you already gave, or narrate each",
+    "step: the person sees every call and its result as it happens. When the",
+    "work is done, give your final answer in full, with everything the person",
+    "needs; brevity is for the steps in between, not for the answer.",
+    "The person's latest message may end with a console note for the turn;",
+    "the console wrote it, not the person, and it is context, not a request.",
   );
 
-  return lines.join("\n");
+  return {
+    pinned: lines.join("\n"),
+    note: notes.length > 0
+      ? ["[Console note for this turn -- written by Autora, not by the person]", ...notes].join("\n\n")
+      : "",
+  };
 }
 
 async function startServer() {
@@ -2106,8 +2129,10 @@ async function startServer() {
                 // per model call, so a turn that used six tools is billed as
                 // the six calls it actually was.
                 const priced = isPriced(active.provider, active.model);
-                const cost = costOf(
+                const cache = { read: turn.usage.cached ?? 0, write: turn.usage.cacheWrite ?? 0 };
+                const { cost, parts } = priceCall(
                   active.provider, active.model, turn.usage.input, turn.usage.output,
+                  cache.read, cache.write,
                 );
                 recordUsage({
                   ts: Math.floor(Date.now() / 1000),
@@ -2117,14 +2142,17 @@ async function startServer() {
                   input: turn.usage.input,
                   output: turn.usage.output,
                   cost,
+                  parts,
                   priced,
                   estimated: turn.usage.estimated,
+                  cached: cache.read,
                 });
                 emitEvent(session, "usage.turn", "system", {
                   provider: active.provider,
                   model: active.model,
                   input_tokens: turn.usage.input,
                   output_tokens: turn.usage.output,
+                  cached_tokens: cache.read,
                   cost_usd: cost,
                   priced,
                   estimated: turn.usage.estimated,
@@ -2191,9 +2219,11 @@ async function startServer() {
               model,
               input: turn.usage.input,
               output: turn.usage.output,
-              cost: costOf(active.provider, model, turn.usage.input, turn.usage.output),
+              ...priceCall(active.provider, model, turn.usage.input, turn.usage.output,
+                turn.usage.cached, turn.usage.cacheWrite),
               priced: isPriced(active.provider, model),
               estimated: turn.usage.estimated,
+              cached: turn.usage.cached ?? 0,
             });
             return turn.text;
           };
@@ -2287,16 +2317,33 @@ async function startServer() {
            * The agent loop.
            *
            * Ask, run whatever came back, tell the model what happened, ask
-           * again -- until it stops asking for tools, or the step budget runs
-           * out. The budget exists because a model that has got itself into a
-           * loop will happily spend a hundred calls on it, and every one of
-           * those is billed.
+           * again -- until it stops asking for tools, or you press Stop. There
+           * is no cap on the number of rounds: a turn that stopped halfway to
+           * ask whether to carry on was the wrong default for a long task.
+           * What there is instead is a loop watch: repeats get called out in
+           * the results the model reads, and a turn that keeps repeating
+           * after being told is stopped.
            */
           let spans = 0;
-          for (let step = 0; step < MAX_TOOL_STEPS; step += 1) {
+          /* Once per turn, not per round: the instructions must open every
+             round's request identically for the provider's cache to serve
+             them, and so must everything the note is attached ahead of. */
+          const { pinned, note } = await systemInstructionFor(session.id, uniqueAccessed, active, routeHint);
+          context.setTurnNote(note);
+          const watch = new LoopWatch();
+          let loopStop: string | null = null;
+          /** Run a call's result past the loop watch before the model reads it. */
+          const watched = (name: string, args: unknown, ok: boolean, raw: string, shown: string) => {
+            // What this tool costs in the prompt, for the Billing page's tally.
+            recordToolFeed(name, Math.ceil(shown.length / 4), dayKey(Math.floor(Date.now() / 1000)).slice(0, 7));
+            const verdict = watch.record(name, args, ok, raw);
+            if (verdict.log) emitEvent(session, "system.log", "system", { message: verdict.log });
+            if (verdict.stop) loopStop = verdict.stop;
+            return verdict.note ? `${shown}\n\n${verdict.note}` : shown;
+          };
+          for (;;) {
             if (running.get(session.id)?.stopped) break;
 
-            const pinned = await systemInstructionFor(session.id, uniqueAccessed, active, routeHint);
             /* Past the high-water mark this starts a background fold of the
                older turns and returns at once. It is never awaited: this
                step's call goes out now, on the history as it stands. */
@@ -2336,7 +2383,8 @@ async function startServer() {
                   ? `"${use.name}" exists but its group is not available right now.`
                   : `There is no tool called "${use.name}".`;
                 emitEvent(session, "tool.error", "agent", { error: why }, span);
-                reply(false, `${why} The tools you have are: ${known}.`);
+                const said = `${why} The tools you have are: ${known}.`;
+                reply(false, watched(use.name, use.args, false, said, said));
                 continue;
               }
 
@@ -2433,20 +2481,32 @@ async function startServer() {
                  anything still too long kept whole in the vault with its head
                  and tail left in the prompt. The thread already showed it
                  all, live; this is only what the model reads. */
-              reply(outcome.ok, context.ingest(spec.name, outcome.summary, canReadVault));
+              reply(outcome.ok, watched(
+                spec.name, use.args, outcome.ok, outcome.summary,
+                context.ingest(spec.name, outcome.summary, canReadVault),
+              ));
+              if (loopStop) break;
             }
 
-            context.append({ role: "tool", replies }, session.seqCounter);
+            /* The loop watch stopped the turn partway through the calls: the
+               ones it never reached still need an answer, or the provider
+               rejects the history. */
+            if (loopStop) {
+              for (const use of turn.calls) {
+                if (replies.some((r) => r.id === use.id)) continue;
+                replies.push({ id: use.id, name: use.name, ok: false, result: "Not run: the turn was stopped." });
+              }
+            }
+            const checkpoint = watch.endRound();
+            const last = replies[replies.length - 1];
+            if (checkpoint && last) last.result += `\n\n${checkpoint}`;
 
-            if (step === MAX_TOOL_STEPS - 1) {
-              /* Out of budget with the model still working. Said in the log
-                 rather than silently stopping, because a turn that ends
-                 mid-task with no explanation looks like a crash. */
-              emitEvent(session, "system.log", "system", {
-                message:
-                  `Stopped after ${MAX_TOOL_STEPS} rounds of tool calls. Ask ` +
-                  "again to carry on from here.",
-              });
+            context.append({ role: "tool", replies }, session.seqCounter);
+            context.supersedePages(canReadVault);
+
+            if (loopStop) {
+              emitEvent(session, "system.log", "system", { message: loopStop });
+              break;
             }
           }
         }

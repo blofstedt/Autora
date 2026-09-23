@@ -1,6 +1,6 @@
 import { Children, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { Shot } from "../lib/derive";
-import type { LiveFrame } from "../lib/types";
+import { onField, useLiveFrame } from "../lib/liveFrame";
 import { Frame } from "./Frame";
 import {
   IconChevron, IconGlobe, IconMaximize, IconMinimize, IconMonitor, IconStop,
@@ -36,7 +36,7 @@ const NAMED_KEYS = new Set([
  * card, and the strip under it moves through them.
  */
 export function ScreencastCell({
-  sessionId, source, url, shots, actions, live, feed, current = false,
+  sessionId, source, url, shots, actions, live, followsFeed = false, current = false,
   driving = false, waitingOnYou = false, onStop, children,
 }: {
   sessionId: string;
@@ -45,8 +45,8 @@ export function ScreencastCell({
   shots: Shot[];
   actions: string[];
   live: boolean;
-  /** The video, if this is the card whose page is still open. */
-  feed: LiveFrame | null;
+  /** This is the card whose page is still open, so the video is its to show. */
+  followsFeed?: boolean;
   /** The newest browser card: the only one looking at a page that exists. */
   current?: boolean;
   /** The agent is at the wheel, so the page is not yours to touch. */
@@ -58,6 +58,7 @@ export function ScreencastCell({
       the page stays put rather than being pushed up by each sentence. */
   children?: ReactNode;
 }) {
+  const feed = useLiveFrame(followsFeed);
   const logRef = useRef<HTMLDivElement>(null);
   const logFollows = useRef(true);
   const logCount = Children.count(children);
@@ -149,7 +150,7 @@ export function ScreencastCell({
   };
   const typeText = (text: string) => {
     pendingText.current += text;
-    if (!textTimer.current) textTimer.current = window.setTimeout(flushText, 90);
+    if (!textTimer.current) textTimer.current = window.setTimeout(flushText, 40);
   };
 
   const enqueue = (path: string, body: unknown): Promise<any> => {
@@ -222,19 +223,29 @@ export function ScreencastCell({
     if (!canUse) { refuse(); return; }
     const at = toPage(clientX, clientY);
     if (!at) return;
-    // Focus inside the gesture: iOS only raises the keyboard for a focus
-    // that descends from a tap.
     const sink = sinkRef.current;
-    if (sink) {
+    const focusSink = () => {
+      if (!sink) return;
       sink.value = SENTINEL;
       sink.focus({ preventScroll: true });
-    }
+    };
+    // Focus inside the gesture: iOS only raises the keyboard for a focus
+    // that descends from a tap. On a touch screen, only for a tap on one of
+    // the page's fields -- focusing for every tap flashed the keyboard up
+    // and straight back down on every button. A mouse raises no keyboard,
+    // so there the keys are always ready.
+    if (!touch || onField(at.x, at.y)) focusSink();
     const id = Date.now() + Math.random();
     setRipples((prev) => [...prev, { id, x: at.x, y: at.y }]);
     window.setTimeout(() => setRipples((prev) => prev.filter((r) => r.id !== id)), 600);
     void send("click", { x: at.x, y: at.y, button }).then((result: any) => {
+      if (!touch || !result || typeof result.editable !== "boolean") return;
       // Tapped something that is not a field: put the phone's keyboard away.
-      if (touch && result && result.editable === false) sink?.blur();
+      if (!result.editable) sink?.blur();
+      // A field the map had not caught up with yet. Android still raises the
+      // keyboard this soon after the tap; iOS needs a second tap, which the
+      // refreshed map then catches.
+      else if (document.activeElement !== sink) focusSink();
     });
   };
 

@@ -23,6 +23,8 @@ export type BrowserState = {
   detail: string | null;
   fps: number;
   viewport: { width: number; height: number };
+  /** The page's typeable fields, [x, y, w, h] in page pixels. */
+  fields?: Array<[number, number, number, number]>;
 };
 
 export type AutoraEvent = {

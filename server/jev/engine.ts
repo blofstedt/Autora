@@ -179,7 +179,7 @@ async function scoreOpenAi(
     usage: {
       input: data?.usage?.prompt_tokens ?? 0,
       output: data?.usage?.completion_tokens ?? 1,
-      cached: data?.usage?.prompt_tokens_details?.cached_tokens ?? 0,
+      cached: data?.usage?.prompt_cache_hit_tokens ?? data?.usage?.prompt_tokens_details?.cached_tokens ?? 0,
     },
   };
 }

@@ -31,6 +31,7 @@ import path from "node:path";
 import os from "node:os";
 import { GoogleGenAI } from "@google/genai";
 import { mergeTools, save, state, allSecrets, secretFor, redactSecrets } from "./state";
+import { htmlToText, textParts } from "./pages";
 import { describeCaptchas, probeBrowser, VIEWPORT, type LiveBrowser, type PageRead } from "./browser";
 import { relayAction, relayConnected, relayStatus } from "./desktop";
 import { CONTEXT_CONFIG, readVault } from "./context";
@@ -148,9 +149,12 @@ const TOOLS: ToolSpec[] = [
     name: "browser_open",
     group: "browser",
     description:
-      "Open a URL in the agent's own Chromium and return the page as text, " +
-      "along with its interactive elements numbered for clicking. The person " +
-      "watching sees the page load live.",
+      "Open a web page in the live browser the person watches, and return its " +
+      "main content as text (a part at a time on long pages) with the numbered " +
+      "elements that are on screen. This is how to look at or use any website: " +
+      "reading an article, checking a product, signing in, filling a form. For " +
+      "finding pages use web_search first; for APIs that answer in JSON use " +
+      "http_request.",
     parameters: {
       type: "object",
       properties: {
@@ -163,18 +167,29 @@ const TOOLS: ToolSpec[] = [
     name: "browser_read",
     group: "browser",
     description:
-      "Re-read the page that is currently open: its text and its numbered " +
-      "interactive elements. Use after something on the page has changed.",
-    parameters: { type: "object", properties: {} },
+      "Re-read the page that is currently open: the numbered elements on screen " +
+      "and a part of its main text. Long pages come in parts; ask for the next " +
+      "one with `part` to read further. Scrolling is only needed to reach " +
+      "elements, never to read text.",
+    parameters: {
+      type: "object",
+      properties: {
+        part: {
+          type: "integer",
+          description: "Which part of the page's text to return, from 1. Default 1.",
+        },
+      },
+    },
   },
   {
     name: "browser_click",
     group: "browser",
     description:
       "Click one of the numbered elements on the open page, then return the " +
-      "page as it is afterwards. The numbers come from browser_open or " +
-      "browser_read and change whenever the page does, so re-read rather than " +
-      "reusing a number from earlier.",
+      "page as it is afterwards. An element keeps its number while the page " +
+      "stays the same, however far it is scrolled, and one that is off screen " +
+      "is scrolled into view first. After the page changes, use the numbers " +
+      "from the latest result.",
     parameters: {
       type: "object",
       properties: {
@@ -220,7 +235,10 @@ const TOOLS: ToolSpec[] = [
   {
     name: "browser_scroll",
     group: "browser",
-    description: "Scroll the open page and return what is visible afterwards.",
+    description:
+      "Scroll the open page to bring other elements on screen, and return what " +
+      "is there afterwards. Not needed for reading: browser_read returns the " +
+      "text in parts.",
     parameters: {
       type: "object",
       properties: {
@@ -286,8 +304,10 @@ const TOOLS: ToolSpec[] = [
     group: "browser",
     description:
       "Make an HTTP API call directly from the server. Supports GET, POST, PUT, PATCH, DELETE, HEAD " +
-      "with custom headers and body. If calling api.github.com, automatically attaches the GITHUB_TOKEN " +
-      "from the workspace secret store so you never need to ask the user for passwords.",
+      "with custom headers and body. For APIs and data files, not for looking at websites: use " +
+      "browser_open for those, which the person can watch. A web page fetched here comes back as " +
+      "its readable text, not its HTML. If calling api.github.com, automatically attaches the " +
+      "GITHUB_TOKEN from the workspace secret store so you never need to ask the user for passwords.",
     parameters: {
       type: "object",
       properties: {
@@ -315,7 +335,8 @@ const TOOLS: ToolSpec[] = [
     group: "browser",
     description:
       "Search the web for up-to-date documentation, release notes, news, code examples, or factual answers " +
-      "without being blocked by search engine bot detection.",
+      "without being blocked by search engine bot detection. Then open the result you need with " +
+      "browser_open.",
     parameters: {
       type: "object",
       properties: {
@@ -863,18 +884,30 @@ export interface ToolOutcome {
   exitCode?: number;
 }
 
-/** The page, as the model reads it. */
-function describePage(page: PageRead): string {
+/**
+ * The page, as the model reads it: what is on screen to act on, and the
+ * page's main content one part at a time. Only browser_read asks for a part
+ * past the first; every action answers with the first, which is what a
+ * page that has just changed is most likely to have changed.
+ */
+function describePage(page: PageRead, part = 1): string {
+  const parts = textParts(page.text);
+  const k = Math.min(Math.max(1, Math.floor(part) || 1), parts.length);
+  const head = parts.length === 1
+    ? "Text:"
+    : k < parts.length
+      ? `Text (part ${k} of ${parts.length}; browser_read with part ${k + 1} for the next):`
+      : `Text (part ${k} of ${parts.length}, the last):`;
   return [
     `Page: ${page.title || "(untitled)"}`,
     `URL: ${page.url}`,
     "",
     "Interactive elements:",
-    page.outline || "(nothing interactive on this page)",
+    page.outline || "(nothing interactive on screen)",
     ...(page.captchas.length ? ["", describeCaptchas(page.captchas)] : []),
     "",
-    "Text:",
-    page.text.slice(0, 6000),
+    head,
+    parts[k - 1] || "(no text)",
   ].join("\n");
 }
 
@@ -1141,12 +1174,23 @@ async function runHttpRequest(args: {
 
     const status = res.status;
     const statusText = res.statusText;
-    const text = await res.text();
+    const raw = await res.text();
+    const type = res.headers.get("content-type") || "unknown";
+    /* A web page's HTML is mostly scripts, styles and menus: on a typical
+       article the first 20,000 characters hold none of the article at all.
+       What the model can use is the text a person would read. */
+    const html = /html/i.test(type) || /^\s*(<!doctype html|<html)/i.test(raw);
+    const text = html ? htmlToText(raw, url) : raw;
+    const cap = html ? 12_000 : 20_000;
 
     const preview = redactSecrets(`${method} ${url} → ${status} ${statusText}`);
     let summary = `HTTP ${status} ${statusText}\n`;
-    summary += `Content-Type: ${res.headers.get("content-type") || "unknown"}\n\n`;
-    summary += text.length > 20_000 ? text.slice(0, 20_000) + "\n\n[response truncated]" : text;
+    summary += `Content-Type: ${type}${html ? " (shown as readable text, not HTML)" : ""}\n\n`;
+    summary += text.length > cap
+      ? text.slice(0, cap) + (html
+        ? "\n\n[page truncated here -- open it with browser_open and read on with browser_read's part]"
+        : "\n\n[response truncated]")
+      : text;
 
     return {
       ok: res.ok,
@@ -1265,7 +1309,12 @@ export async function runTool(
       case "browser_read": {
         const page = await ctx.browser().snapshot();
         ctx.browserChanged();
-        return { ok: true, summary: describePage(page), preview: page.url };
+        const part = Number(args.part ?? 1);
+        return {
+          ok: true,
+          summary: describePage(page, part),
+          preview: part > 1 ? `${page.url} · part ${part}` : page.url,
+        };
       }
 
       case "browser_click": {

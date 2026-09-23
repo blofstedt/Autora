@@ -32,7 +32,8 @@
  */
 
 import crypto from "node:crypto";
-import { type ChatMessage, estimateTokens } from "./llm";
+import { type ChatMessage, type ToolReply, estimateTokens } from "./llm";
+import { compactJson, diffSnapshots, findPage, parseSnapshot, tagSnapshot } from "./pages";
 
 export interface ContextConfig {
   /** The window the prompt is kept inside, in tokens. */
@@ -96,6 +97,11 @@ const SLICE_TOTAL_CHARS = 80_000;
 const VAULT_MAX_CHARS = 16 * 1024 * 1024;
 
 // -------------------------------------------------------------- ingestion --
+
+/** Where a browser tool's page snapshot (or difference) starts, or -1. */
+export function pageSnapshotAt(result: string): number {
+  return findPage(result)?.at ?? -1;
+}
 
 /* CSI (colours, cursor moves), OSC (window titles, hyperlinks), and the
    two-byte escapes. Output that went through a terminal is full of these,
@@ -174,6 +180,13 @@ export class ContextEngine {
   /** Replaced whole on every load and swap, never spliced, so a copy taken
       for a request can never be changed under it. */
   private active: ChatMessage[] = [];
+  /** What the console tells the model about this turn in particular. */
+  private turnNote = "";
+  /** The newest full page snapshot handed out, which differences point at. */
+  private lastPage: { id: string; text: string } | null = null;
+  /** Snapshot ids handed out this round, not yet in `active`. */
+  private pendingPages = new Set<string>();
+  private pageCount = 0;
   /** The highest event seq each message stands for. Messages the server made
       up mid-turn are stamped with the seq current when they were appended. */
   private seqOf = new WeakMap<ChatMessage, number>();
@@ -198,6 +211,9 @@ export class ContextEngine {
 
   /** Start a turn from the history rebuilt out of the event log. */
   load(history: { message: ChatMessage; seq: number }[]) {
+    // Tool results are not carried between turns, so neither is a page.
+    this.lastPage = null;
+    this.pendingPages.clear();
     const next: ChatMessage[] = [];
     for (const { message, seq } of history) {
       this.seqOf.set(message, seq);
@@ -206,10 +222,100 @@ export class ContextEngine {
     this.active = next;
   }
 
+  /**
+   * Context that belongs to this turn only -- what was recalled, what ran in
+   * earlier turns, the page that is open -- carried on the person's latest
+   * message rather than in the instructions.
+   *
+   * Providers bill the unchanged opening of a prompt at a small fraction of
+   * the price (DeepSeek at about a fiftieth), but only up to the first
+   * character that differs from the last request. Anything that changes
+   * belongs as late in the prompt as possible, so everything before it still
+   * matches: set once when the turn starts, it stays put for every round.
+   */
+  setTurnNote(note: string) {
+    this.turnNote = note.trim();
+  }
+
   /** Add a message the turn produced: the model's tool calls, or their replies. */
   append(message: ChatMessage, seq: number) {
+    if (message.role === "tool") this.pendingPages.clear();
     this.seqOf.set(message, seq);
     this.active = [...this.active, message];
+  }
+
+  /**
+   * Shrink every page snapshot but the newest.
+   *
+   * Each browser action answers with the whole page -- elements and text,
+   * up to three thousand tokens -- and every one of them used to ride along
+   * in every later request of the turn, long after the page had moved on.
+   * Only the latest describes the page as it is now. The older ones keep the
+   * words around them ("Clicked [4].") and a line saying where they went; the
+   * full text stays in the vault. Changed in place, so the messages keep the
+   * identity compaction folds them by.
+   */
+  supersedePages(canRead: boolean) {
+    const found: { reply: ToolReply; at: number; kind: "full" | "diff"; id: string | null }[] = [];
+    for (const message of this.active) {
+      for (const reply of message.replies ?? []) {
+        const page = findPage(reply.result);
+        if (!page) continue;
+        found.push({
+          reply, at: page.at, kind: page.kind,
+          id: page.kind === "full" ? page.id : page.base,
+        });
+      }
+    }
+    const newest = found[found.length - 1];
+    if (!newest) return;
+    // A difference is only readable next to the snapshot it is measured from.
+    const base = newest.kind === "diff" ? newest.id : null;
+    for (const entry of found) {
+      if (entry === newest) continue;
+      if (base && entry.kind === "full" && entry.id === base) continue;
+      const snapshot = entry.reply.result.slice(entry.at);
+      const url = /\nURL: ([^\n]*)/.exec(snapshot)?.[1] ?? "the page";
+      const id = this.vault.put(snapshot);
+      const how = canRead ? ` Call vault_read with id "${id}" if you need it again.` : "";
+      const what = entry.kind === "full" ? "Page snapshot" : "Page changes";
+      entry.reply.result =
+        entry.reply.result.slice(0, entry.at) +
+        `[${what} of ${url} removed: a newer one is further down.${how}]`;
+    }
+  }
+
+  /** Whether a snapshot the model was given is still in what it is sent. */
+  private pageAvailable(id: string): boolean {
+    if (this.pendingPages.has(id)) return true;
+    const tag = `\nSnapshot: ${id}\n`;
+    return this.active.some((m) => (m.replies ?? []).some((r) => r.result.includes(tag)));
+  }
+
+  /**
+   * A browser result as the model should get it: the difference from the
+   * last full snapshot it still has when that is much shorter, and otherwise
+   * the whole page, tagged so later differences can point at it.
+   */
+  private condensePage(clean: string): string {
+    const page = findPage(clean);
+    if (!page || page.kind !== "full") return clean;
+    const snapshot = clean.slice(page.at);
+    const next = parseSnapshot(snapshot);
+    if (!next) return clean;
+
+    if (this.lastPage && this.pageAvailable(this.lastPage.id)) {
+      const base = parseSnapshot(this.lastPage.text);
+      const diff = base && diffSnapshots(base, this.lastPage.id, next, snapshot);
+      if (diff) return clean.slice(0, page.at) + diff;
+    }
+
+    this.pageCount += 1;
+    const id = `#${this.pageCount}`;
+    const tagged = tagSnapshot(snapshot, id);
+    this.lastPage = { id, text: tagged };
+    this.pendingPages.add(id);
+    return clean.slice(0, page.at) + tagged;
   }
 
   /**
@@ -220,9 +326,15 @@ export class ContextEngine {
    * where the errors are -- with a note saying how to read the rest.
    */
   ingest(toolName: string, raw: string, canRead: boolean): string {
-    const clean = sanitizeToolOutput(raw);
+    const clean = this.condensePage(compactJson(sanitizeToolOutput(raw)));
     const cap = this.config.maxToolTokens * CHARS_PER_TOKEN;
     if (clean.length <= cap) return clean;
+
+    // A page the model only sees the ends of is no base for a difference.
+    if (this.lastPage && clean.includes(`\nSnapshot: ${this.lastPage.id}\n`)) {
+      this.pendingPages.delete(this.lastPage.id);
+      this.lastPage = null;
+    }
 
     const id = this.vault.put(clean);
     const lines = clean.split("\n").length;
@@ -303,6 +415,13 @@ export class ContextEngine {
         },
         ...out,
       ];
+    }
+    if (this.turnNote) {
+      for (let i = out.length - 1; i >= 0; i -= 1) {
+        if (out[i].role !== "user") continue;
+        out[i] = { ...out[i], text: `${out[i].text ?? ""}\n\n${this.turnNote}` };
+        break;
+      }
     }
     return out;
   }

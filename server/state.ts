@@ -63,6 +63,27 @@ export interface UsageEntry {
   /** True when the token counts are our own arithmetic, because the vendor
       streamed an answer without reporting usage. */
   estimated: boolean;
+  /** Of `input`, how many tokens the provider served from its prompt cache.
+      Missing on entries recorded before this was tracked. */
+  cached?: number;
+  /** The cost above, split by where it went, in USD. Missing on entries
+      recorded before this was tracked. */
+  parts?: CostParts;
+}
+
+/** A model call's cost by kind of token. */
+export interface CostParts {
+  /** Input the provider had not seen: new tool output, the latest message. */
+  fresh: number;
+  /** Input served from the provider's cache (and, for Anthropic, written to it). */
+  cached: number;
+  output: number;
+}
+
+/** How much tool output went to the model this month, by tool. */
+export interface ToolFeed {
+  month: string;
+  tools: Record<string, { calls: number; tokens: number }>;
 }
 
 export interface PersistedState {
@@ -80,6 +101,8 @@ export interface PersistedState {
   /** Monthly ceiling in USD, or null for none. Advisory: it warns, it does not
       refuse -- a console that silently stops answering is a support ticket. */
   budgetUsd: number | null;
+  /** Which tools' output the model has been reading, this month. */
+  toolFeed: ToolFeed;
   usage: UsageEntry[];
   /** Which of the agent's groups of tools are on, and how tightly each is
       gated. See ./tools for what each group actually is. */
@@ -235,6 +258,7 @@ function blank(): PersistedState {
     keys: {},
     secrets: {},
     budgetUsd: null,
+    toolFeed: { month: "", tools: {} },
     usage: [],
     tools: defaultTools(),
     jev: { ...DEFAULT_JEV },
@@ -254,6 +278,9 @@ function read(): PersistedState {
     if (raw.keys && typeof raw.keys === "object") state.keys = { ...raw.keys };
     if (raw.secrets && typeof raw.secrets === "object") state.secrets = { ...raw.secrets };
     if (typeof raw.budgetUsd === "number") state.budgetUsd = raw.budgetUsd;
+    if (raw.toolFeed && typeof raw.toolFeed.month === "string" && raw.toolFeed.tools) {
+      state.toolFeed = { month: raw.toolFeed.month, tools: { ...raw.toolFeed.tools } };
+    }
     if (Array.isArray(raw.usage)) state.usage = raw.usage.filter(sane);
     /* Field by field, so a settings file written by an older build -- which
        has no `tools` key at all -- comes up with the defaults rather than with
@@ -639,6 +666,16 @@ export function recordUsage(entry: UsageEntry) {
     carried.output += dropped.output;
     carried.turns += 1;
   }
+  save();
+}
+
+/** Count what one tool's output cost in prompt tokens, as the model reads it. */
+export function recordToolFeed(tool: string, tokens: number, month: string) {
+  if (state.toolFeed.month !== month) state.toolFeed = { month, tools: {} };
+  const row = state.toolFeed.tools[tool] ?? { calls: 0, tokens: 0 };
+  row.calls += 1;
+  row.tokens += tokens;
+  state.toolFeed.tools[tool] = row;
   save();
 }
 

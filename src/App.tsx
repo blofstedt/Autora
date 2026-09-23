@@ -2,7 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { SessionStream, type StreamStatus } from "./lib/stream";
 import { derive, isRunning, type KanbanTask } from "./lib/derive";
 import { chime, paintChrome, type Chrome } from "./lib/chrome";
-import type { AutoraEvent, BrowserState, LiveFrame } from "./lib/types";
+import type { AutoraEvent, BrowserState } from "./lib/types";
+import { setLiveFields, setLiveFrame } from "./lib/liveFrame";
 import { Thread } from "./components/Thread";
 import { MemoryRibbon } from "./components/MemoryRibbon";
 import { Rail, pageLabel, PAGES, type PageId } from "./components/Rail";
@@ -66,7 +67,6 @@ export function App() {
       all. Held here rather than in the card because the socket is here; it is
       one frame at a time and never accumulates, so re-rendering on it costs a
       picture swap and nothing else. */
-  const [liveFrame, setLiveFrame] = useState<LiveFrame | null>(null);
   const [browser, setBrowser] = useState<BrowserState | null>(null);
   const [draft, setDraft] = useState("");
   const [liveOn, setLiveOn] = useState(false);
@@ -216,6 +216,7 @@ export function App() {
     if (!sessionId) return;
     setEvents([]);
     setLiveFrame(null);
+    setLiveFields([]);
     setBrowser(null);
     const stream = new SessionStream(sessionId, {
       onEvents: (fresh) =>
@@ -226,7 +227,10 @@ export function App() {
         }),
       onStatus: setStatus,
       onFrame: setLiveFrame,
-      onBrowser: setBrowser,
+      onBrowser: (state) => {
+        setLiveFields(state?.fields);
+        setBrowser(state);
+      },
     });
     streamRef.current = stream;
     stream.connect();
@@ -672,7 +676,6 @@ export function App() {
             busy={view.busy && !view.asking}
             sessionId={sessionId ?? ""}
             liveBrowserSeq={view.liveBrowserSeq}
-            liveFrame={liveFrame}
             live={live}
             onPermissionDecide={handlePermissionDecide}
             onRunAutonomous={handleRunAutonomous}
