@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.9.3"
+version: "0.9.4"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -73,20 +73,22 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Long sessions no longer outgrow the model's context, and nothing waits
-  while they are kept in bounds. Once a conversation fills most of the
-  window, older turns are condensed into a structured working memory
-  (goal, facts found, files changed, open items) by a background call; the
-  agent keeps working on the history it already has, and the newest turns
-  are never summarised. The standing instructions are never part of what
-  gets condensed.
+  You can now watch every browser step as it happens. The live page opens
+  large in the conversation while the agent is driving it, with the step it
+  is taking captioned over the picture, and a placeholder shows what is
+  loading before the first frame arrives. The feed no longer freezes one
+  step behind: the last frame of every change is always delivered, and it
+  runs at 10 frames a second by default. The pointer now visibly travels
+  to what it is about to click.
 
 
-  Very long tool output -- a huge log, a large HTTP response -- is cleaned
-  of colour codes and repeated lines, and anything still too long is kept
-  whole in a per-session vault with its start and end left in the prompt.
-  The agent reads the rest back with the new vault_read tool. The window
-  size and thresholds can be tuned with AUTORA_CONTEXT_TOKENS and friends.
+  The agent can now tick checkbox CAPTCHAs -- reCAPTCHA's "I'm not a
+  robot", hCaptcha and Cloudflare Turnstile. They sit in iframes the agent
+  could not see before; it now spots them, and the new browser_captcha tool
+  clicks them with humanlike movement: curved paths, varying speed, the
+  odd overshoot, off-centre landings and natural press timing. Ordinary
+  clicks and typing use the same movement and uneven key timing. If the box
+  escalates to a picture puzzle, the agent hands the browser to you.
 
 
 dependencies: []

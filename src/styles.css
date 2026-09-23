@@ -1610,6 +1610,12 @@ label + .jf-hint { margin-top: -5px; }
   animation: halo 1.8s ease-out infinite;
 }
 .shot-stage.is-watching { box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.25); }
+/* Before the first frame: the right-sized empty stage, saying what is loading. */
+.shot-stage.is-waiting {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  aspect-ratio: 16 / 10; max-height: 300px; color: var(--live);
+  font-family: var(--mono); font-size: 11.5px;
+}
 
 /* What it is doing, over the picture of it doing it. Bottom-left, because the
    top of a page is where the page's own chrome is and covering that is how you

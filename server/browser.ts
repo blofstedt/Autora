@@ -33,6 +33,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { stateFilePath } from "./state";
+import { humanClick, humanMove, humanType, pointIn, wander, type Point } from "./human";
 
 /* Playwright's types are not imported: the package is optional, and a type
    import would make the server half fail to compile wherever it is not
@@ -82,6 +83,27 @@ export interface PageRead {
   refs: Ref[];
   /** Readable prose, trimmed, for questions the outline cannot answer. */
   text: string;
+  /** Checkbox CAPTCHAs on the page. They live in cross-origin iframes the
+      outline cannot see into, so they are found separately. */
+  captchas: { kind: CaptchaKind; solved: boolean; challenge: boolean }[];
+}
+
+export type CaptchaKind = "recaptcha" | "hcaptcha" | "turnstile";
+
+/** A checkbox CAPTCHA found on the page, with where its box is. */
+interface CaptchaHit {
+  kind: CaptchaKind;
+  /** The checkbox itself, in page coordinates. */
+  box: { x: number; y: number; w: number; h: number };
+  solved: boolean;
+  /** An image or puzzle challenge is showing -- the checkbox was not enough. */
+  challenge: boolean;
+}
+
+export interface CaptchaResult {
+  outcome: "none" | "solved" | "challenge" | "pending";
+  kind: CaptchaKind | null;
+  page: PageRead;
 }
 
 export interface BrowserHooks {
@@ -108,9 +130,9 @@ const num = (value: string | undefined, fallback: number) => {
 };
 
 /** How often live frames go out. Chrome offers about sixty a second; a LAN is
-    not a video codec, and six is plenty to see a pointer move and a page
-    change. */
-const LIVE_FPS = Math.min(num(process.env.AUTORA_BROWSER_FPS, 6), 30);
+    not a video codec, and ten is enough to follow the pointer travelling to
+    what it is about to click. */
+const LIVE_FPS = Math.min(num(process.env.AUTORA_BROWSER_FPS, 10), 30);
 const LIVE_QUALITY = Math.min(num(process.env.AUTORA_BROWSER_QUALITY, 50), 100);
 /** Frames are sent narrower than the page is rendered: the picture is for
     watching, not for reading nine-point text, and halving the width quarters
@@ -181,7 +203,9 @@ function profileDir(): string {
  */
 const CURSOR_SCRIPT = `
 (() => {
-  if (window.__autoraCursor) return;
+  // Init scripts run in every frame; one pointer, drawn over the whole page,
+  // is the one that belongs to the top frame.
+  if (window.__autoraCursor || window.top !== window) return;
   const mount = () => {
     if (!document.body || document.getElementById("__autora_cursor")) return;
     const host = document.createElement("div");
@@ -194,7 +218,7 @@ const CURSOR_SCRIPT = `
       '<style>' +
       '.dot{position:fixed;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;' +
       'background:rgba(139,124,246,.9);box-shadow:0 0 0 2px rgba(255,255,255,.9),0 2px 10px rgba(0,0,0,.45);' +
-      'transition:left .18s cubic-bezier(.4,0,.2,1),top .18s cubic-bezier(.4,0,.2,1);opacity:0}' +
+      'transition:left .06s linear,top .06s linear;opacity:0}' +
       '.ring{position:fixed;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;' +
       'border:2px solid rgba(139,124,246,.95);opacity:0}' +
       '@keyframes tap{from{transform:scale(.4);opacity:.95}to{transform:scale(4.2);opacity:0}}' +
@@ -215,6 +239,12 @@ const CURSOR_SCRIPT = `
         ring.classList.add("go");
       }
     };
+    /* Follow the real pointer. The agent moves the mouse with genuine input
+       events along a curved path, so the dot tracks every step of it rather
+       than jumping to where the click will land. */
+    window.addEventListener("mousemove", (e) => {
+      if (e.isTrusted) window.__autoraCursor(e.clientX, e.clientY, false);
+    }, { capture: true, passive: true });
   };
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", mount);
@@ -497,6 +527,17 @@ export class LiveBrowser {
   private cdp: CDPSession | null = null;
   private streaming = false;
   private lastFrameAt = 0;
+  /** The newest frame that arrived too soon after the last one sent. It goes
+      out when the interval is up, so the feed always ends on the page as it
+      finally is rather than one step before it. */
+  private pendingFrame: string | null = null;
+  private flushTimer: NodeJS.Timeout | null = null;
+  /** Where the mouse is, so the next move starts from here rather than
+      appearing out of nowhere. */
+  private pointer: Point = {
+    x: Math.round(VIEWPORT.width * (0.3 + Math.random() * 0.4)),
+    y: Math.round(VIEWPORT.height * (0.3 + Math.random() * 0.4)),
+  };
   private refs: Ref[] = [];
   private closing = false;
   private control: { holder: "agent" | "human" | "shared"; reason: string | null } = {
@@ -628,10 +669,7 @@ export class LiveBrowser {
         ?.send("Page.screencastFrameAck", { sessionId: frame.sessionId })
         .catch(() => undefined);
       if (this.hooks.watchers() === 0) return;
-      const now = Date.now();
-      if (now - this.lastFrameAt < 1000 / LIVE_FPS) return;
-      this.lastFrameAt = now;
-      this.hooks.onFrame(frame.data);
+      this.forward(frame.data);
     });
     await this.cdp.send("Page.startScreencast", {
       format: "jpeg",
@@ -641,6 +679,28 @@ export class LiveBrowser {
       everyNthFrame: 1,
     });
     this.streaming = true;
+  }
+
+  /** Throttle with a trailing edge: a burst of frames is thinned to the
+      frame rate, and the last one of the burst is always delivered. Dropping
+      it left the feed parked on the page mid-change until something else
+      happened to move. */
+  private forward(data: string) {
+    const wait = 1000 / LIVE_FPS - (Date.now() - this.lastFrameAt);
+    if (wait <= 0) {
+      this.lastFrameAt = Date.now();
+      this.pendingFrame = null;
+      this.hooks.onFrame(data);
+      return;
+    }
+    this.pendingFrame = data;
+    if (this.flushTimer) return;
+    this.flushTimer = setTimeout(() => {
+      this.flushTimer = null;
+      const next = this.pendingFrame;
+      if (next && this.hooks.watchers() > 0) this.forward(next);
+    }, wait);
+    this.flushTimer.unref?.();
   }
 
   /**
@@ -677,6 +737,9 @@ export class LiveBrowser {
     this.context = null;
     this.cdp = null;
     this.streaming = false;
+    if (this.flushTimer) clearTimeout(this.flushTimer);
+    this.flushTimer = null;
+    this.pendingFrame = null;
     this.announced = "";
     this.currentUrl = null;
     this.currentTitle = null;
@@ -754,15 +817,14 @@ export class LiveBrowser {
       const target = this.refs.find((r) => r.ref === ref);
       if (!target) throw new Error(`No element [${ref}] on this page. Read it again.`);
 
-      await this.showCursor(target.x, target.y, false);
-      await page.mouse.move(target.x, target.y, { steps: 12 });
-      await this.showCursor(target.x, target.y, true);
+      // Said before the pointer sets off, so the caption on the feed names
+      // what it is heading for while you watch it travel there.
       this.hooks.onAction(
         `click [${ref}] ${target.role} "${target.name}"`.trim(),
         { x: target.x, y: target.y },
         this.currentUrl ?? "",
       );
-      await page.mouse.click(target.x, target.y);
+      await this.humanClickAt(pointIn(boxOf(target)));
       await this.settle(700);
       const read = await this.read();
       await this.keyframe();
@@ -779,15 +841,14 @@ export class LiveBrowser {
       for (const { ref, text } of values) {
         const target = this.refs.find((r) => r.ref === ref);
         if (!target) throw new Error(`No field [${ref}] on this page. Read it again.`);
-        await this.showCursor(target.x, target.y, true);
-        await page.mouse.click(target.x, target.y);
-        await page.keyboard.press("ControlOrMeta+A").catch(() => undefined);
-        await page.keyboard.type(text, { delay: 18 });
         this.hooks.onAction(
           `fill [${ref}] "${target.name}"`,
           { x: target.x, y: target.y },
           this.currentUrl ?? "",
         );
+        await this.humanClickAt(pointIn(boxOf(target)));
+        await page.keyboard.press("ControlOrMeta+A").catch(() => undefined);
+        await humanType(page, text);
       }
       if (submit) {
         await page.keyboard.press("Enter");
@@ -861,6 +922,7 @@ export class LiveBrowser {
       const page = await this.ensure();
       const clampedX = Math.max(0, Math.min(VIEWPORT.width, Math.round(x)));
       const clampedY = Math.max(0, Math.min(VIEWPORT.height, Math.round(y)));
+      this.pointer = { x: clampedX, y: clampedY };
       await this.showCursor(clampedX, clampedY, true);
       this.hooks.onAction(
         `${double ? "double-click" : "click"} at ${clampedX},${clampedY}`,
@@ -887,6 +949,7 @@ export class LiveBrowser {
       const clampedY = Math.max(0, Math.min(VIEWPORT.height, Math.round(y)));
       await this.showCursor(clampedX, clampedY, false);
       await page.mouse.move(clampedX, clampedY);
+      this.pointer = { x: clampedX, y: clampedY };
     });
   }
 
@@ -948,6 +1011,208 @@ export class LiveBrowser {
     });
   }
 
+  /** Travel to a point the way a hand would and click there, with the ring
+      played at the moment the button goes down. */
+  private async humanClickAt(to: Point) {
+    const page = this.page;
+    if (!page) return;
+    await this.showCursor(this.pointer.x, this.pointer.y, false);
+    this.pointer = await humanClick(page, this.pointer, to, {
+      before: () => this.showCursor(to.x, to.y, true),
+    });
+  }
+
+  // --------------------------------------------------------------- captcha --
+
+  /**
+   * Checkbox CAPTCHAs on the page, found by the frames that carry them.
+   *
+   * reCAPTCHA, hCaptcha and Turnstile all put their checkbox in a cross-origin
+   * iframe, which is exactly where the element scan cannot reach -- so without
+   * this the agent was told about a page with nothing to click on it. The
+   * frame's URL says which widget it is; its box says where to click.
+   */
+  private loadingCaptchas: CaptchaKind[] = [];
+
+  private async findCaptchas(): Promise<CaptchaHit[]> {
+    const page = this.page;
+    if (!page) return [];
+    const hits: CaptchaHit[] = [];
+    let recaptchaChallenge = false;
+    let hcaptchaChallenge = false;
+
+    const visibleBox = async (frame: any) => {
+      try {
+        const el = await frame.frameElement();
+        const box = await el.boundingBox();
+        if (!box || box.width < 20 || box.height < 20) return null;
+        return { el, box };
+      } catch {
+        return null;
+      }
+    };
+    const boxIn = async (frame: any, selector: string) => {
+      try {
+        const handle = await frame.$(selector);
+        const box = handle ? await handle.boundingBox() : null;
+        const checked = handle ? await handle.getAttribute("aria-checked") : null;
+        return { box, checked };
+      } catch {
+        return { box: null, checked: null };
+      }
+    };
+
+    for (const frame of page.frames()) {
+      if (frame === page.mainFrame()) continue;
+      let url: string = frame.url();
+      // A widget frame that has not finished loading reports no URL yet, but
+      // the iframe already carries the address it is loading.
+      if (!url || url === "about:blank") {
+        url = await frame
+          .frameElement()
+          .then((el: any) => el.getAttribute("src"))
+          .catch(() => null) ?? "";
+      }
+
+      if (/\/recaptcha\/(api2|enterprise)\/bframe/.test(url)) {
+        const shown = await visibleBox(frame);
+        if (shown && shown.box.height > 150 && shown.box.y > -1000) recaptchaChallenge = true;
+        continue;
+      }
+      if (/hcaptcha\.com/.test(url) && /frame=challenge/.test(url)) {
+        const shown = await visibleBox(frame);
+        if (shown && shown.box.height > 150 && shown.box.y > -1000) hcaptchaChallenge = true;
+        continue;
+      }
+
+      let kind: CaptchaKind | null = null;
+      let selector = "";
+      if (/\/recaptcha\/(api2|enterprise)\/anchor/.test(url)) {
+        kind = "recaptcha";
+        selector = "#recaptcha-anchor";
+      } else if (/hcaptcha\.com/.test(url) && /frame=checkbox/.test(url)) {
+        kind = "hcaptcha";
+        selector = "#checkbox";
+      } else if (/challenges\.cloudflare\.com/.test(url)) {
+        kind = "turnstile";
+        selector = "input[type=checkbox]";
+      }
+      if (!kind) continue;
+
+      const shown = await visibleBox(frame);
+      if (!shown) continue;
+      await shown.el.scrollIntoViewIfNeeded?.().catch(() => undefined);
+      const frameBox = (await shown.el.boundingBox().catch(() => null)) ?? shown.box;
+      const inner = await boxIn(frame, selector);
+
+      // Turnstile keeps its checkbox in a closed shadow root that nothing can
+      // query, so when the lookup comes back empty the box is where the widget
+      // always draws it: a small square near the left, vertically centred.
+      const box = inner.box
+        ? { x: inner.box.x, y: inner.box.y, w: inner.box.width, h: inner.box.height }
+        : kind === "turnstile"
+          ? { x: frameBox.x + 18, y: frameBox.y + frameBox.height / 2 - 12, w: 24, h: 24 }
+          : { x: frameBox.x + 12, y: frameBox.y + frameBox.height / 2 - 14, w: 28, h: 28 };
+
+      hits.push({ kind, box, solved: inner.checked === "true", challenge: false });
+    }
+
+    // A response token in the page is the widget's own word that it passed,
+    // and the only one Turnstile gives.
+    const found: { tokens: Record<string, boolean>; markup: Record<string, boolean> } = await page
+      .evaluate(`(() => {
+        const has = (sel) => [...document.querySelectorAll(sel)].some((el) => (el.value || "").length > 20);
+        const on = (sel) => !!document.querySelector(sel);
+        return {
+          tokens: {
+            recaptcha: has('textarea[name="g-recaptcha-response"]'),
+            hcaptcha: has('textarea[name="h-captcha-response"]'),
+            turnstile: has('input[name="cf-turnstile-response"]'),
+          },
+          markup: {
+            recaptcha: on('.g-recaptcha, iframe[src*="/recaptcha/api2/anchor"], iframe[src*="/recaptcha/enterprise/anchor"]'),
+            hcaptcha: on('.h-captcha, iframe[src*="hcaptcha.com"]'),
+            turnstile: on('.cf-turnstile, iframe[src*="challenges.cloudflare.com"]'),
+          },
+        };
+      })()`)
+      .catch(() => ({ tokens: {}, markup: {} }));
+    const tokens = found.tokens;
+    /** Widgets declared in the page whose frame has not drawn yet. */
+    this.loadingCaptchas = (Object.keys(found.markup) as CaptchaKind[]).filter(
+      (kind) => found.markup[kind] && !tokens[kind] && !hits.some((h) => h.kind === kind),
+    );
+
+    for (const hit of hits) {
+      if (tokens[hit.kind]) hit.solved = true;
+      if (hit.kind === "recaptcha" && recaptchaChallenge && !hit.solved) hit.challenge = true;
+      if (hit.kind === "hcaptcha" && hcaptchaChallenge && !hit.solved) hit.challenge = true;
+    }
+    return hits;
+  }
+
+  /**
+   * Tick the "I'm not a robot" box, like a person would.
+   *
+   * The pointer drifts a little first -- these widgets watch the mouse from
+   * the moment the page loads, and one that has never moved before the click
+   * is the giveaway -- then travels to the box on a curved, uneven path, lands
+   * off-centre, pauses and clicks. After that the widget decides: it ticks,
+   * it throws up a picture puzzle, or it thinks about it. Each is reported as
+   * what it is, because a picture puzzle is the person's to solve.
+   */
+  solveCaptcha(): Promise<CaptchaResult> {
+    return this.run(async () => {
+      const page = await this.ensure();
+      let hits = await this.findCaptchas();
+      // The widget script loads after the page does; give a declared one a
+      // few seconds to draw its checkbox before concluding there is none.
+      for (let waited = 0; waited < 12_000 && this.loadingCaptchas.length; waited += 500) {
+        await page.waitForTimeout(500).catch(() => undefined);
+        hits = await this.findCaptchas();
+      }
+      const target = hits.find((h) => !h.solved);
+      if (!target) {
+        const loading = this.loadingCaptchas[0] ?? null;
+        const read = await this.read();
+        return {
+          outcome: loading ? "pending" : hits.length ? "solved" : "none",
+          kind: loading ?? hits[0]?.kind ?? null,
+          page: read,
+        };
+      }
+
+      const aim = pointIn(target.box);
+      this.hooks.onAction(`captcha: tick the ${labelOf(target.kind)} checkbox`, aim, this.currentUrl ?? "");
+      await this.showCursor(this.pointer.x, this.pointer.y, false);
+      this.pointer = await wander(page, this.pointer, VIEWPORT);
+      await this.humanClickAt(aim);
+
+      // Give the widget time to decide. It usually does within a couple of
+      // seconds; Turnstile and a slow connection can take longer.
+      let outcome: CaptchaResult["outcome"] = "pending";
+      for (let waited = 0; waited < 15_000; waited += 500) {
+        await page.waitForTimeout(500).catch(() => undefined);
+        hits = await this.findCaptchas();
+        const same = hits.find((h) => h.kind === target.kind) ?? null;
+        if (!same || same.solved) { outcome = "solved"; break; }
+        if (same.challenge) { outcome = "challenge"; break; }
+      }
+
+      // Rest the pointer somewhere nearby rather than leaving it parked on
+      // the box -- people move off what they just clicked.
+      this.pointer = await humanMove(page, this.pointer, {
+        x: Math.min(VIEWPORT.width - 10, Math.max(10, this.pointer.x + Math.round((Math.random() - 0.3) * 200))),
+        y: Math.min(VIEWPORT.height - 10, Math.max(10, this.pointer.y + Math.round((Math.random() - 0.5) * 120))),
+      });
+      this.hooks.onAction(`captcha: ${outcome}`, null, this.currentUrl ?? "");
+      await this.settle(400);
+      const read = await this.read();
+      await this.keyframe();
+      return { outcome, kind: target.kind, page: read };
+    });
+  }
+
   private async showCursor(x: number, y: number, tap: boolean) {
     await this.page
       ?.evaluate(
@@ -968,14 +1233,44 @@ export class LiveBrowser {
     this.refs = scanned.refs;
     this.currentUrl = scanned.url;
     this.currentTitle = scanned.title;
+    const captchas = [
+      ...(await this.findCaptchas().catch(() => [] as CaptchaHit[])).map(
+        ({ kind, solved, challenge }) => ({ kind, solved, challenge }),
+      ),
+      ...this.loadingCaptchas.map((kind) => ({ kind, solved: false, challenge: false })),
+    ];
     return {
       url: scanned.url,
       title: scanned.title,
       refs: scanned.refs,
       text: scanned.text,
       outline: outlineOf(scanned.refs),
+      captchas,
     };
   }
+}
+
+/** A ref's box, from the centre and size the scan recorded. */
+function boxOf(r: Ref) {
+  return { x: r.x - r.w / 2, y: r.y - r.h / 2, w: r.w, h: r.h };
+}
+
+function labelOf(kind: CaptchaKind): string {
+  return kind === "recaptcha" ? "reCAPTCHA" : kind === "hcaptcha" ? "hCaptcha" : "Cloudflare Turnstile";
+}
+
+/** The CAPTCHA line for the model, or nothing when there is none. */
+export function describeCaptchas(captchas: PageRead["captchas"]): string {
+  if (!captchas.length) return "";
+  return captchas
+    .map((c) =>
+      c.solved
+        ? `CAPTCHA: ${labelOf(c.kind)} is passed.`
+        : c.challenge
+          ? `CAPTCHA: ${labelOf(c.kind)} is showing a picture challenge. Hand the browser to the person (browser_handoff).`
+          : `CAPTCHA: ${labelOf(c.kind)} checkbox is on the page and not ticked. It is not in the numbered list; call browser_captcha to tick it.`,
+    )
+    .join("\n");
 }
 
 /**

@@ -30,7 +30,7 @@ import path from "node:path";
 import os from "node:os";
 import { GoogleGenAI } from "@google/genai";
 import { mergeTools, save, state, allSecrets, secretFor, redactSecrets } from "./state";
-import { probeBrowser, VIEWPORT, type LiveBrowser, type PageRead } from "./browser";
+import { describeCaptchas, probeBrowser, VIEWPORT, type LiveBrowser, type PageRead } from "./browser";
 import { relayAction, relayConnected, relayStatus } from "./desktop";
 import { CONTEXT_CONFIG, readVault } from "./context";
 
@@ -224,11 +224,24 @@ const TOOLS: ToolSpec[] = [
     parameters: { type: "object", properties: {} },
   },
   {
+    name: "browser_captcha",
+    group: "browser",
+    description:
+      "Tick a checkbox CAPTCHA on the open page -- reCAPTCHA's \"I'm not a robot\", " +
+      "hCaptcha, or Cloudflare Turnstile -- using humanlike mouse movement (curved path, " +
+      "varying speed, off-centre landing, natural press timing). These checkboxes sit in " +
+      "iframes and never appear in the numbered outline, so use this instead of " +
+      "browser_click. Reports whether it passed, is still thinking, or escalated to a " +
+      "picture challenge (hand that one to the person with browser_handoff).",
+    parameters: { type: "object", properties: {} },
+  },
+  {
     name: "browser_handoff",
     group: "browser",
     description:
       "Transfer live browser control to the human watching. Call this when you encounter " +
-      "an OAuth/SSO login, CAPTCHA, 2FA prompt, or sensitive credentials entry. The console alerts " +
+      "an OAuth/SSO login, a CAPTCHA that browser_captcha could not pass (e.g. a picture " +
+      "challenge), a 2FA prompt, or sensitive credentials entry. The console alerts " +
       "the person so they can type and click directly in the live browser before returning control to you.",
     parameters: {
       type: "object",
@@ -630,6 +643,8 @@ export function renderCall(spec: ToolSpec, args: Record<string, any>): string {
       return args.search
         ? `search vault artifact ${args.id} for "${args.search}"`
         : `read vault artifact ${args.id}`;
+    case "browser_captcha":
+      return "tick the checkbox CAPTCHA on the open page";
     case "browser_handoff":
       return `handoff browser control: ${args.reason}`;
     case "http_request":
@@ -692,6 +707,7 @@ function describePage(page: PageRead): string {
     "",
     "Interactive elements:",
     page.outline || "(nothing interactive on this page)",
+    ...(page.captchas.length ? ["", describeCaptchas(page.captchas)] : []),
     "",
     "Text:",
     page.text.slice(0, 6000),
@@ -1128,6 +1144,26 @@ export async function runTool(
         };
       }
 
+      case "browser_captcha": {
+        const { outcome, kind, page } = await ctx.browser().solveCaptcha();
+        ctx.browserChanged();
+        const said: Record<typeof outcome, string> = {
+          none: "There is no checkbox CAPTCHA on this page.",
+          solved: `The ${kind ?? "CAPTCHA"} checkbox is ticked; the check passed.`,
+          pending:
+            `Clicked the ${kind ?? "CAPTCHA"} checkbox, but it has not confirmed yet. ` +
+            "Re-read the page in a moment; if it is still unticked, try browser_captcha once more.",
+          challenge:
+            `The ${kind ?? "CAPTCHA"} checkbox escalated to a picture challenge. ` +
+            "Hand the browser to the person with browser_handoff to solve it.",
+        };
+        return {
+          ok: outcome === "solved" || outcome === "none",
+          summary: `${said[outcome]}\n\n${describePage(page)}`,
+          preview: `captcha: ${outcome}`,
+        };
+      }
+
       case "browser_handoff": {
         const reason = String(args.reason ?? "Human intervention requested.");
         const live = ctx.browser();
@@ -1349,7 +1385,9 @@ export async function capabilityBriefing(): Promise<string> {
     lines.push(
       "",
       "These are real. The terminal runs on a real host, the browser opens real " +
-        "pages, and the desktop belongs to a real person who is watching. Take " +
+        "pages -- streamed live into the conversation, so the person watches every " +
+        "page load, pointer move and keystroke as you make it -- and the desktop " +
+        "belongs to a real person who is watching. Take " +
         "the actions you are asked for rather than describing what you would do, " +
         "and read the result of each one before the next.",
     );
