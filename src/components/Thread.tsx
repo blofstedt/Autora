@@ -54,7 +54,7 @@ export function Thread({
   // While the page in the thread is yours to use, the thread holds still:
   // following the live edge would slide the page out from under your finger
   // every time it repaints.
-  const handsOn = work.browserHandedOver && !work.docked;
+  const handsOn = work.browserHandedOver;
   const handsOnRef = useRef(handsOn);
   handsOnRef.current = handsOn;
   useEffect(() => {
@@ -178,8 +178,6 @@ type WorkState = {
   driving: boolean;
   /** The agent handed the browser over and is waiting for them. */
   browserHandedOver: boolean;
-  /** The live page is shown in the side panel instead of in the thread. */
-  docked: boolean;
   onStop: () => void;
 };
 
@@ -253,7 +251,6 @@ function CellView({
   onRunAutonomous,
   driving,
   browserHandedOver,
-  docked,
   onStop,
 }: {
   cell: Cell;
@@ -299,13 +296,12 @@ function CellView({
           current={live && current}
           driving={driving}
           waitingOnYou={browserHandedOver}
-          variant={docked && current && liveFrame ? "stub" : "inline"}
           onStop={onStop}
         />
       );
     }
     case "ask":
-      return <AskCell ask={cell.ask} sessionId={sessionId} readOnly={!live} docked={docked} />;
+      return <AskCell ask={cell.ask} sessionId={sessionId} readOnly={!live} />;
     case "images":
       return <ImageCell sessionId={sessionId} pictures={cell.pictures} />;
     case "file":

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { SessionStream, type StreamStatus } from "./lib/stream";
 import { derive, isRunning, type KanbanTask } from "./lib/derive";
 import { chime, paintChrome, type Chrome } from "./lib/chrome";
@@ -16,30 +16,14 @@ import { LiveChat } from "./components/LiveChat";
 import { useRelay } from "./components/RelaySetup";
 import { UpdateNotice } from "./components/UpdateNotice";
 import { AutoraMark, type MarkState } from "./components/AutoraMark";
-import { ScreencastCell } from "./components/ScreencastCell";
 import {
   dictationSupported, recognitionAvailable, secureOrigin, speakable,
   splitSpeakable, useSpeech,
 } from "./lib/voice";
 import {
-  IconArrow, IconChevron, IconGear, IconMessage, IconRepeat, IconSpark, IconStop,
+  IconArrow, IconArrowUp, IconChevron, IconGear, IconMessage, IconRepeat, IconSpark, IconStop,
   IconX,
 } from "./components/Icons";
-
-/** Wide enough for the live page to sit beside the conversation rather than
-    inside it. Below this the side panel would squeeze the thread to a strip. */
-const DOCK_QUERY = "(min-width: 1280px)";
-
-function useMedia(query: string): boolean {
-  const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
-  useEffect(() => {
-    const list = window.matchMedia(query);
-    const on = () => setMatches(list.matches);
-    list.addEventListener("change", on);
-    return () => list.removeEventListener("change", on);
-  }, [query]);
-  return matches;
-}
 
 const RIBBON_KEY = "autora.ribbon";
 
@@ -92,7 +76,6 @@ export function App() {
       return !open;
     });
   }, []);
-  const wide = useMedia(DOCK_QUERY);
   const streamRef = useRef<SessionStream | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const speech = useSpeech();
@@ -200,6 +183,16 @@ export function App() {
     }
   }, [pending]);
 
+  // The box grows with what is in it, up to a limit, and shrinks back when
+  // it is sent -- a one-line box you have to scroll inside is the thing that
+  // made it feel like a form field.
+  useLayoutEffect(() => {
+    const box = composerRef.current;
+    if (!box) return;
+    box.style.height = "auto";
+    box.style.height = `${Math.min(box.scrollHeight, 240)}px`;
+  }, [draft]);
+
   const send = useCallback(async (spoken?: string) => {
     const text = (spoken ?? draft).trim();
     if (!text || !sessionId) return;
@@ -264,18 +257,6 @@ export function App() {
   const driving = live && running && !view.asking;
   const browserHandedOver = view.asking?.kind === "browser";
 
-  /** The card whose page is still open. On a wide screen it moves out of the
-      thread into a panel beside it, where it stays in view however far the
-      conversation scrolls. */
-  const liveBrowserCell = useMemo(() => {
-    for (const b of view.buckets) {
-      for (const c of b.cells) {
-        if (c.kind === "screen" && c.seq === view.liveBrowserSeq) return c;
-      }
-    }
-    return null;
-  }, [view.buckets, view.liveBrowserSeq]);
-  const docked = wide && live && !!liveFrame && !!liveBrowserCell && !!browser?.open;
 
   // ------------------------------------------------------------ live chat --
   /** Turning it on has to happen inside the tap: iOS will not let a page speak
@@ -563,7 +544,6 @@ export function App() {
             onRunAutonomous={handleRunAutonomous}
             driving={driving}
             browserHandedOver={browserHandedOver}
-            docked={docked}
             onStop={() => void stopTurn()}
           />
 
@@ -641,85 +621,88 @@ export function App() {
                 disabled={readOnly}
               />
             ) : (
-              <div className="composer-box">
-                <textarea
-                  ref={composerRef}
-                  value={draft}
-                  rows={1}
-                  aria-label="Task"
-                  placeholder={live ? "Describe a task…" : "This session is a recording."}
-                  disabled={readOnly}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      void send();
-                    }
-                  }}
-                />
-                <div className="composer-foot">
-                  {notice ? (
-                    <button
-                      className="hint voice-note"
-                      onClick={() => setNotice(null)}
-                      title="Dismiss"
-                    >
-                      {notice}
-                    </button>
-                  ) : voiceBlocked ? (
-                    <button
-                      className="hint voice-note"
-                      onClick={() => setVoiceHelp(true)}
-                      title="Browsers only allow microphone access on a secure page."
-                    >
-                      Voice needs <code>https</code>
-                    </button>
-                  ) : (
-                    <span className="hint"><kbd>↵</kbd> send · <kbd>⇧↵</kbd> newline</span>
-                  )}
-                  <div className="composer-acts">
-                    {/* Stop lived on the stage bar, which no longer exists --
-                        and it belongs next to Send anyway, since the two are
-                        the same decision. */}
-                    {live && running && (
+              <>
+                <div className={`composer-box ${draft.trim() ? "has-text" : ""}`}>
+                  <textarea
+                    ref={composerRef}
+                    value={draft}
+                    rows={1}
+                    aria-label="Task"
+                    placeholder={live ? "Ask Autora to do something…" : "This session is a recording."}
+                    disabled={readOnly}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        void send();
+                      }
+                    }}
+                  />
+                  <div className="composer-foot">
+                    <div className="composer-tools">
+                      <DictateButton
+                        onText={appendDictation}
+                        disabled={readOnly}
+                        onBlocked={() => setVoiceHelp(true)}
+                        onTrouble={setNotice}
+                      />
+                      {/* Only shown where the bottom bar, which normally
+                          carries this, is hidden. */}
                       <button
-                        className="btn danger icon"
-                        onClick={() => void stopTurn()}
-                        title="Stop the agent"
-                        aria-label="Stop the agent"
+                        className="btn icon ghost composer-live"
+                        onClick={voiceReady ? toggleLive : () => setVoiceHelp(true)}
+                        disabled={readOnly}
+                        title={voiceReady ? "Start live voice chat (v)" : "Live voice requires https"}
+                        aria-label="Live voice chat"
                       >
-                        <IconStop size={13} />
+                        <AutoraMark state="rest" size={18} />
                       </button>
-                    )}
-                    {/* Only shown where the bottom bar, which normally
-                        carries this, is hidden. */}
-                    <button
-                      className="btn icon ghost composer-live"
-                      onClick={voiceReady ? toggleLive : () => setVoiceHelp(true)}
-                      disabled={readOnly}
-                      title={voiceReady ? "Start live voice chat (v)" : "Live voice requires https"}
-                      aria-label="Live voice chat"
-                    >
-                      <AutoraMark state="rest" size={18} />
-                    </button>
-                    <DictateButton
-                      onText={appendDictation}
-                      disabled={readOnly}
-                      onBlocked={() => setVoiceHelp(true)}
-                      onTrouble={setNotice}
-                    />
-                    <button
-                      className="btn primary icon composer-send-btn"
-                      disabled={readOnly || !draft.trim()}
-                      onClick={() => void send()}
-                      title={running ? "Interrupt & send" : "Send"}
-                      aria-label={running ? "Interrupt & send" : "Send"}
-                    >
-                      <IconArrow size={14} />
-                    </button>
+                      {notice ? (
+                        <button
+                          className="hint voice-note"
+                          onClick={() => setNotice(null)}
+                          title="Dismiss"
+                        >
+                          {notice}
+                        </button>
+                      ) : voiceBlocked ? (
+                        <button
+                          className="hint voice-note"
+                          onClick={() => setVoiceHelp(true)}
+                          title="Browsers only allow microphone access on a secure page."
+                        >
+                          Voice needs <code>https</code>
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="composer-acts">
+                      {/* Stop sits with Send: they are the same decision. */}
+                      {live && running && (
+                        <button
+                          className="composer-stop"
+                          onClick={() => void stopTurn()}
+                          title="Stop the agent"
+                          aria-label="Stop the agent"
+                        >
+                          <IconStop size={14} />
+                        </button>
+                      )}
+                      <button
+                        className="composer-send"
+                        disabled={readOnly || !draft.trim()}
+                        onClick={() => void send()}
+                        title={running ? "Interrupt & send" : "Send"}
+                        aria-label={running ? "Interrupt & send" : "Send"}
+                      >
+                        <IconArrowUp size={17} />
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
+                <p className="composer-hint">
+                  <kbd>Enter</kbd> to send · <kbd>Shift</kbd> + <kbd>Enter</kbd> for a new line
+                </p>
+              </>
             )}
           </div>
         </main>
@@ -772,25 +755,6 @@ export function App() {
         </nav>
       </div>
 
-      {docked && liveBrowserCell && liveBrowserCell.kind === "screen" && (
-        <aside className="dock" aria-label="Live browser">
-          <ScreencastCell
-            sessionId={sessionId ?? ""}
-            source="browser"
-            url={browser?.url ?? liveBrowserCell.url}
-            shots={liveBrowserCell.shots}
-            actions={liveBrowserCell.actions}
-            live={liveBrowserCell.live}
-            feed={liveFrame}
-            current
-            driving={driving}
-            waitingOnYou={browserHandedOver}
-            variant="panel"
-            onStop={() => void stopTurn()}
-          />
-        </aside>
-      )}
-
       {sessionsOpen && (
         <Sessions
           sessions={sessions}
@@ -804,6 +768,7 @@ export function App() {
       {knowledgeOpen && (
         <KnowledgeWeb
           initialKind={knowledgeInitialKind}
+          recent={view.memories}
           onClose={() => setKnowledgeOpen(false)}
         />
       )}

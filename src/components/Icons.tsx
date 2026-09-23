@@ -332,9 +332,8 @@ export const IconMinimize = ({ size = 16, className }: Props) => (
   </svg>
 );
 
-export const IconPanelRight = ({ size = 16, className }: Props) => (
+export const IconArrowUp = ({ size = 16, className }: Props) => (
   <svg {...base(size)} className={className}>
-    <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
-    <path d="M14 4.5v15" />
+    <path d="M12 19V5M6 11l6-6 6 6" />
   </svg>
 );

@@ -51,10 +51,12 @@
 
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
 
-  /* The reading column's width. One variable, so the memory ribbon above the
-     thread and the thread itself stay the same width at every breakpoint --
-     they used to be set separately and drifted apart on a desktop. */
-  --col: 940px;
+  /* The conversation pane fills the space beside the rail, in one surface
+     from edge to edge; --read is how wide its contents run inside that, so
+     lines stay readable on a wide monitor without the pane itself becoming a
+     box floating in a differently coloured margin. */
+  --col: 100%;
+  --read: 900px;
 }
 
 * { box-sizing: border-box; }
@@ -413,7 +415,10 @@ body::before {
   flex: 1; overflow-y: auto; overflow-x: hidden; overscroll-behavior-x: none;
   padding: 16px 16px 6px;
 }
-.thread-content { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.thread-content {
+  display: flex; flex-direction: column; gap: 18px; min-width: 0;
+  width: 100%; max-width: var(--read); margin: 0 auto;
+}
 .turn { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .turn .msg + .msg { margin-top: 14px; }
 
@@ -509,33 +514,71 @@ body::before {
 .approval-act .btn { flex: 1; justify-content: center; }
 
 /* -------------------------------------------------------------- composer -- */
-.composer { padding: 6px 14px 8px; flex: 0 0 auto; border-top: 1px solid var(--border); }
+/* One rounded surface that grows with what you write: the text on top, the
+   voice tools bottom-left, Stop and Send bottom-right. The thread runs up to
+   it with no rule between, so it reads as part of the conversation rather
+   than a form docked under it. */
+.composer {
+  position: relative; flex: 0 0 auto; padding: 4px 16px 10px;
+  width: 100%; max-width: var(--read, 100%); margin: 0 auto;
+}
+.composer::before {
+  /* The thread fades under the box instead of stopping at a hard edge. */
+  content: ""; position: absolute; left: 0; right: 0; top: -28px; height: 28px;
+  background: linear-gradient(to bottom, transparent, var(--s1));
+  pointer-events: none;
+}
 .composer-box {
-  background: var(--s2); border: 1px solid var(--border); border-radius: var(--r);
-  padding: 6px 10px 5px; transition: border-color 0.18s var(--ease), box-shadow 0.18s var(--ease);
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 12px 10px 8px 16px; border-radius: 22px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.015)), var(--s2);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 10px 32px -14px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
 }
 .composer-box:focus-within {
-  border-color: var(--accent-line);
-  box-shadow: 0 0 0 3px rgba(110, 91, 255, 0.12);
+  border-color: rgba(140, 120, 255, 0.45);
+  box-shadow: 0 0 0 4px rgba(110, 91, 255, 0.1), 0 10px 32px -14px rgba(0, 0, 0, 0.7);
 }
 .composer textarea {
-  width: 100%; resize: none; min-height: 24px; max-height: 140px;
-  background: none; border: 0; color: var(--text);
-  font-family: inherit; font-size: 13px; line-height: 1.4; padding: 1px 0;
+  width: 100%; resize: none; min-height: 26px; max-height: 240px; overflow-y: auto;
+  padding: 2px 6px 0 0; background: none; border: 0; color: var(--text);
+  font-family: inherit; font-size: 15px; line-height: 1.55;
 }
 .composer textarea:focus { outline: none; }
 .composer textarea::placeholder { color: var(--text-3); }
-.composer-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
-.composer-send-btn {
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border-radius: var(--r-sm);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
+.composer-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.composer-tools { display: flex; align-items: center; gap: 2px; min-width: 0; margin-left: -8px; }
+.composer-tools .btn.icon { width: 34px; height: 34px; border-radius: 50%; }
+.composer-acts { display: flex; align-items: center; gap: 8px; }
+.composer-send, .composer-stop {
+  display: grid; place-items: center; width: 36px; height: 36px; padding: 0;
+  border-radius: 50%; cursor: pointer; flex: 0 0 auto;
+  transition: background 0.18s var(--ease), color 0.18s var(--ease),
+              transform 0.12s var(--ease), box-shadow 0.18s var(--ease);
 }
+.composer-send {
+  border: 0; color: var(--text-3); background: var(--s3);
+}
+.composer-box.has-text .composer-send:not(:disabled) {
+  color: #fff; background: linear-gradient(145deg, #7d6bff, #5a48e8);
+  box-shadow: 0 4px 14px -4px rgba(110, 91, 255, 0.7);
+}
+.composer-send:disabled { cursor: default; }
+.composer-send:active:not(:disabled), .composer-stop:active { transform: scale(0.94); }
+.composer-stop {
+  border: 1px solid rgba(251, 113, 133, 0.45); color: var(--danger);
+  background: rgba(251, 113, 133, 0.12);
+}
+.composer-stop:hover { background: rgba(251, 113, 133, 0.22); }
+.composer-hint {
+  margin: 7px 0 0; text-align: center; font-size: 11px; color: var(--text-3);
+}
+.composer-hint kbd {
+  font-family: inherit; font-size: 10.5px; padding: 0 5px; border-radius: 4px;
+  background: var(--s2); border: 1px solid var(--border-strong); color: var(--text-2);
+}
+@media (pointer: coarse), (max-width: 680px) { .composer-hint { display: none; } }
 .hint { font-size: 11px; color: var(--text-3); }
 /* A fault you can act on, so it is a button rather than a label. */
 button.hint.voice-note {
@@ -1045,8 +1088,6 @@ button.hint.voice-note:hover { text-decoration: underline; }
 
 
 
-  /* composer text slightly smaller so the keyboard doesn't hide everything */
-  .composer textarea { font-size: 13px; }
 
   /* A phone has no ⇧↵, and the row it was occupying is exactly the room the
      voice controls need. The labels stay: a microphone you cannot find is the
@@ -1056,8 +1097,6 @@ button.hint.voice-note:hover { text-decoration: underline; }
      tip, and the reason the microphone is missing. */
   .composer-foot .hint.voice-note { display: inline; }
   .voice-help { padding: 9px 10px; }
-  .composer-foot { justify-content: flex-end; }
-  .composer-acts { gap: 6px; }
 
   /* Bigger orb and a thumb-sized End: this bar is the whole interface while
      it is up. */
@@ -1786,9 +1825,8 @@ label + .jf-hint { margin-top: -5px; }
 
 /* Laptops and small desktops: more room for the column itself. */
 @media (min-width: 1000px) {
-  :root { --col: 1020px; }
+  :root { --read: 1000px; }
   .thread { padding: 20px 22px 8px; }
-  .composer { padding: 14px 22px 18px; }
   .approvals { padding: 0 22px 14px; }
 }
 
@@ -1805,7 +1843,7 @@ label + .jf-hint { margin-top: -5px; }
      session switcher and the settings button are all up there already. */
   .top .brand.in-top, .top .btn.in-top { display: none; }
   .top { height: 52px; padding: 0 22px; }
-  :root { --col: 1120px; }
+  :root { --read: 1120px; }
   .thread-content { gap: 24px; }
   .shot-stage .frame { max-height: 480px; }
 }
@@ -1813,7 +1851,7 @@ label + .jf-hint { margin-top: -5px; }
 /* Very wide: stop growing the text column and let the work cells use the room,
    which is what actually benefits from it. */
 @media (min-width: 1500px) {
-  :root { --col: 1240px; }
+  :root { --read: 1220px; }
   .term-body { max-height: 460px; }
   .shot-stage .frame { max-height: 600px; }
 }
@@ -3182,8 +3220,6 @@ label + .jf-hint { margin-top: -5px; }
   .msg-text { font-size: 15px; }
   .msg-who { font-size: 11px; }
   .term-body, .diff-code { font-size: 12.5px; }
-  .composer textarea { font-size: 14.5px; min-height: 28px; max-height: 240px; }
-  .composer-box { padding: 10px 14px 8px; }
 }
 
 @media (min-width: 1180px) {
@@ -3281,32 +3317,6 @@ label + .jf-hint { margin-top: -5px; }
 .cell.shot.is-max .cell-top { padding: 10px 14px; }
 .cell.shot.is-max .shot-stage { flex: 1; min-height: 0; padding: 12px; }
 .cell.shot.is-max .shot-stage .frame { max-height: calc(100dvh - 90px); }
-
-/* ── the side panel ── */
-.dock {
-  flex: 0 0 clamp(460px, 44vw, 920px); min-width: 0; min-height: 0;
-  display: flex; flex-direction: column; padding: 14px;
-  background: var(--bg); border-left: 1px solid var(--border);
-  animation: dock-in 0.3s var(--ease) both;
-}
-@keyframes dock-in { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
-.cell.shot.is-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; animation: none; }
-.cell.shot.is-panel .shot-stage { flex: 1; min-height: 0; }
-.cell.shot.is-panel .shot-stage .frame { max-height: calc(100dvh - 170px); }
-
-/* What stays in the thread when the page has moved to the panel. */
-.shot-stub {
-  display: flex; align-items: center; gap: 9px; min-width: 0;
-  padding: 10px 12px; border-radius: var(--r);
-  background: var(--s2); border: 1px dashed var(--border-strong); color: var(--text-3);
-  font-size: 12px;
-}
-.shot-stub-where {
-  flex: 1; min-width: 0; font-family: var(--mono); font-size: 11.5px; color: var(--text-2);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.shot-stub-note { flex: 0 0 auto; }
-.shot-stub-note::after { content: " →"; }
 
 /* ============================================================================
    Asking the person
@@ -3555,25 +3565,93 @@ label + .jf-hint { margin-top: -5px; }
 .web-toggle.is-open { position: absolute; top: 10px; right: 12px; z-index: 10; }
 .web-toggle.is-open svg { transform: rotate(-90deg); }
 @media (pointer: coarse) { .web-toggle { width: 34px; height: 34px; } }
-.cell.shot.is-panel .shot-stage { place-items: start center; }
 
-/* The panel has height to spare under the page: the last few steps, newest
-   first, so what just happened is readable without scrolling the thread. */
-.shot-log {
-  flex: 0 0 auto; margin: 0; padding: 10px 14px 12px; list-style: none;
-  border-top: 1px solid var(--border); background: var(--s1);
-  display: flex; flex-direction: column; gap: 4px; max-height: 30%; overflow-y: auto;
-}
-.shot-log li {
-  font-family: var(--mono); font-size: 11.5px; color: var(--text-3);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.shot-log li::before { content: "·"; margin-right: 8px; color: var(--text-3); }
-.shot-log li.is-latest { color: var(--text); }
-.shot-log li.is-latest::before { content: "›"; color: var(--accent); }
-.cell.shot.is-panel .shot-stage { flex: 0 1 auto; }
-.cell.shot.is-panel .shot-log { flex: 1; max-height: none; }
 .md p { margin: 0; }
 .md blockquote > * + * { margin-top: 8px; }
 /* Inside the frame wrap, whose line-height is zero to keep the picture flush. */
 .shot-caption { line-height: 1.5; }
+
+/* ============================================================================
+   One surface on desktop
+
+   Rail, header, memory bar and conversation share the conversation's own
+   ground, separated by hairlines rather than by a change of colour -- the
+   panes used to be three different darks with a violet wash showing between
+   them.
+   ============================================================================ */
+.page { border-left: 0; border-right: 0; }
+.shell { background: var(--s1); }
+.approvals { width: 100%; max-width: var(--read); margin: 0 auto; }
+@media (min-width: 681px) {
+  .top { background: var(--s1); backdrop-filter: none; }
+}
+@media (min-width: 1180px) {
+  .rail { background: var(--s1); border-right-color: var(--border); }
+  .rail-top { height: 52px; }
+  .rail-row.on { background: var(--s2); box-shadow: inset 2px 0 0 var(--accent); }
+  .rail-row:hover { background: var(--s2); }
+  .rail-foot { border-top-color: var(--border); }
+}
+@media (pointer: coarse) {
+  .composer-tools .btn.icon, .composer-send, .composer-stop { width: 40px; height: 40px; }
+}
+
+/* ============================================================================
+   The memory graph, full size
+
+   The same object as the ribbon above the chat, opened up: the same violet
+   field and dot grid, the same glowing nodes and purple links, the same
+   chips. Only the room is different.
+   ============================================================================ */
+.kweb {
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(139, 92, 246, 0.22) 0%, rgba(24, 16, 46, 0.97) 55%, #0b0814 100%),
+    #0b0814;
+}
+.kweb-top {
+  background: rgba(20, 14, 38, 0.72); backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(168, 85, 247, 0.28);
+}
+.kweb-brand {
+  display: flex; align-items: center; gap: 9px; flex: 0 0 auto;
+  font-weight: 650; letter-spacing: -0.01em; color: #f3e8ff;
+}
+.kweb-brand .web-count { color: #c4b5fd; }
+.kweb-badge {
+  width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center;
+  background: rgba(139, 92, 246, 0.22); border: 1px solid rgba(168, 85, 247, 0.45); color: #e9d5ff;
+}
+.kweb-search {
+  background: rgba(11, 8, 20, 0.7); border-color: rgba(168, 85, 247, 0.3); color: #f3e8ff;
+}
+.kweb-search:focus { border-color: rgba(192, 132, 252, 0.7); }
+.kchip { border-color: rgba(168, 85, 247, 0.28); color: #b9a7e8; }
+.kchip.on { background: rgba(139, 92, 246, 0.22); border-color: rgba(168, 85, 247, 0.55); color: #f3e8ff; }
+.kweb-add { height: 31px; font-size: 12px; }
+.kweb-close { position: static; }
+.kweb-close svg { transform: none; }
+
+.kgraph { background: none; }
+.kedge { stroke: rgba(168, 85, 247, 0.28); stroke-width: 1.1; }
+.kedge.strong { stroke: rgba(168, 85, 247, 0.45); }
+.kedge.lit { stroke: #c084fc; stroke-width: 1.9; filter: drop-shadow(0 0 5px rgba(192, 132, 252, 0.7)); }
+.knode .kbody { stroke: rgba(255, 255, 255, 0.22); stroke-width: 1; }
+.knode.on .kbody { stroke: #fff; stroke-width: 2; }
+.knode text { fill: #d8ccff; font-size: 10px; paint-order: stroke; stroke: rgba(11, 8, 20, 0.85); stroke-width: 3px; }
+.knode:hover text, .knode.on text { fill: #fff; }
+.khalo { fill: none; stroke: #c084fc; stroke-width: 1.4; opacity: 0.45; }
+.khalo.is-written { stroke: var(--live); }
+.khalo.is-latest { opacity: 0.95; stroke-width: 2; animation: khalo-breathe 2.4s var(--ease) infinite; }
+@keyframes khalo-breathe { 50% { opacity: 0.45; } }
+.kgraph-hint { color: #9d8cc9; }
+.kgraph-fit { color: #e9d5ff; }
+
+.kweb-detail {
+  background: rgba(16, 11, 30, 0.9); backdrop-filter: blur(10px);
+  border-left-color: rgba(168, 85, 247, 0.28);
+}
+.kd-body { background: rgba(11, 8, 20, 0.7); border-left-color: #a855f7; }
+.kd-tags em { background: rgba(139, 92, 246, 0.2); color: #e9d5ff; }
+@media (max-width: 860px) {
+  .kweb-detail { border-top-color: rgba(168, 85, 247, 0.28); }
+}

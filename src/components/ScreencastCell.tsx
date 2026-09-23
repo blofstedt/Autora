@@ -3,8 +3,7 @@ import type { Shot } from "../lib/derive";
 import type { LiveFrame } from "../lib/types";
 import { Frame } from "./Frame";
 import {
-  IconChevron, IconGlobe, IconMaximize, IconMinimize, IconMonitor, IconPanelRight,
-  IconStop,
+  IconChevron, IconGlobe, IconMaximize, IconMinimize, IconMonitor, IconStop,
 } from "./Icons";
 
 /** The viewport the browser harness captures. Frame pixels map 1:1 to page
@@ -38,7 +37,7 @@ const NAMED_KEYS = new Set([
  */
 export function ScreencastCell({
   sessionId, source, url, shots, actions, live, feed, current = false,
-  driving = false, waitingOnYou = false, variant = "inline", onStop,
+  driving = false, waitingOnYou = false, onStop,
 }: {
   sessionId: string;
   source: "browser" | "desktop";
@@ -54,8 +53,6 @@ export function ScreencastCell({
   driving?: boolean;
   /** The agent has handed the page to you and is waiting. */
   waitingOnYou?: boolean;
-  /** "panel" fills the side dock; "stub" is the thread's pointer to it. */
-  variant?: "inline" | "panel" | "stub";
   onStop?: () => void;
 }) {
   const [at, setAt] = useState(shots.length - 1);
@@ -110,7 +107,7 @@ export function ScreencastCell({
 
   // Handed the page: bring it into view, since the card asking you to use it
   // sits below it and the page may have scrolled off the top.
-  const handedOver = waitingOnYou && canUse && variant === "inline";
+  const handedOver = waitingOnYou && canUse;
   useEffect(() => {
     if (!handedOver) return;
     // After the thread has finished laying out the card that asked, or its
@@ -209,7 +206,7 @@ export function ScreencastCell({
       scrolls the conversation instead -- otherwise a page in the middle of the
       thread is a wall you cannot scroll past -- and the expanded view is where
       you scroll the page itself. */
-  const dragScrollsPage = max || variant === "panel";
+  const dragScrollsPage = max;
 
   const refuse = () => {
     if (driving) setNudge({ text: "The agent is using the browser.", stop: !!onStop });
@@ -295,16 +292,6 @@ export function ScreencastCell({
     if (canUse && text) typeText(text);
   };
 
-  if (variant === "stub") {
-    return (
-      <div className="shot-stub">
-        <IconPanelRight size={14} />
-        <span className="shot-stub-where">{url ?? "about:blank"}</span>
-        <span className="shot-stub-note">in the panel</span>
-      </div>
-    );
-  }
-
   if (shots.length === 0 && actions.length === 0 && !feed) return null;
 
   const shot = shots[Math.min(Math.max(at, 0), shots.length - 1)];
@@ -315,7 +302,7 @@ export function ScreencastCell({
       ? `/api/sessions/${sessionId}/blobs/${shot.blob}`
       : null;
   const latest = actions[actions.length - 1];
-  const big = variant === "panel" || (bigChoice ?? (source === "browser" && live && (watching || !stageSrc)));
+  const big = bigChoice ?? (source === "browser" && live && (watching || !stageSrc));
   const waiting = !stageSrc && source === "browser" && live;
 
   const state: { label: string; tone: string } | null =
@@ -328,7 +315,7 @@ export function ScreencastCell({
 
   return (
     <section
-      className={`cell shot ${live ? "is-live" : ""} ${variant === "panel" ? "is-panel" : ""} ${
+      className={`cell shot ${live ? "is-live" : ""} ${
         max ? "is-max" : ""} ${waitingOnYou && canUse ? "is-yours" : ""}`}
     >
       <header className="cell-top">
@@ -351,7 +338,7 @@ export function ScreencastCell({
           <button
             className="shot-corner"
             onClick={() => {
-              if (variant === "inline" && !max && !big) { setBigChoice(true); return; }
+              if (!max && !big) { setBigChoice(true); return; }
               setMax((m) => !m);
             }}
             aria-label={max ? "Leave full screen" : "Enlarge"}
@@ -455,15 +442,7 @@ export function ScreencastCell({
         </div>
       )}
 
-      {variant === "panel" && !max && actions.length > 0 && (
-        <ol className="shot-log" aria-label="Recent steps">
-          {actions.slice(-8).reverse().map((a, i) => (
-            <li key={actions.length - i} className={i === 0 ? "is-latest" : undefined}>{a}</li>
-          ))}
-        </ol>
-      )}
-
-      {actions.length > 0 && !max && variant === "inline" && (
+      {actions.length > 0 && !max && (
         <div className="shot-acts">
           <button
             className={`shot-acts-toggle ${showActions ? "on" : ""}`}

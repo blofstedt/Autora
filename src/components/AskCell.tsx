@@ -13,13 +13,11 @@ import { IconArrow, IconCheck, IconKey, IconX } from "./Icons";
  * Once answered it folds to a line saying what you said.
  */
 export function AskCell({
-  ask, sessionId, readOnly, docked,
+  ask, sessionId, readOnly,
 }: {
   ask: Ask;
   sessionId: string;
   readOnly: boolean;
-  /** The live page is in the side panel rather than under this card. */
-  docked?: boolean;
 }) {
   const [picked, setPicked] = useState<string[]>([]);
   const [text, setText] = useState("");
@@ -104,9 +102,7 @@ export function AskCell({
       {isBrowser ? (
         <>
           <p className="ask-where">
-            {docked
-              ? "The page is unlocked in the panel on the right."
-              : "The page is unlocked just above: tap into it and type as you normally would."}
+            The page is unlocked just above: tap into it and type as you normally would.
           </p>
           <div className="ask-actions">
             <button className="ask-primary" disabled={disabled} onClick={() => void answer({})}>

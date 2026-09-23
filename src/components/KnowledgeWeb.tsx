@@ -3,7 +3,8 @@ import {
   KIND_COLOR, deleteRecord, edgesFor, fetchKnowledge, patchRecord,
   type Knowledge, type MemoryRecord,
 } from "../lib/memory";
-import { IconSpark, IconX } from "./Icons";
+import type { MemoryMark } from "../lib/derive";
+import { IconBrain, IconSpark, IconX } from "./Icons";
 
 /**
  * Everything the agent knows, as a graph you can argue with.
@@ -32,9 +33,13 @@ const KINDS: MemoryRecord["kind"][] = ["preference", "procedure", "fact", "skill
 export function KnowledgeWeb({
   onClose,
   initialKind,
+  recent = [],
 }: {
   onClose: () => void;
   initialKind?: MemoryRecord["kind"] | "all";
+  /** What this session has recalled or written, so the full graph shows the
+      same activity the ribbon does rather than a static map. */
+  recent?: MemoryMark[];
 }) {
   const [data, setData] = useState<Knowledge | null>(null);
   const [query, setQuery] = useState("");
@@ -89,11 +94,12 @@ export function KnowledgeWeb({
   const record = selected && data ? data.records.find((r) => r.id === selected) : null;
 
   return (
-    <div className="kweb" role="dialog" aria-label="Knowledge web">
+    <div className="kweb" role="dialog" aria-label="Memory">
       <header className="kweb-top">
-        <div className="brand">
-          <span className="brand-mark"><IconSpark size={13} /></span>
-          Knowledge
+        <div className="kweb-brand">
+          <span className="kweb-badge"><IconBrain size={14} /></span>
+          Memory
+          {data && <span className="web-count">{data.records.length}</span>}
         </div>
         <input
           className="kweb-search"
@@ -121,14 +127,13 @@ export function KnowledgeWeb({
         </div>
         <div className="spacer" />
         <button
-          className="btn sm"
+          className="web-tag skills-tag kweb-add"
           onClick={() => setShowNewSkill(true)}
           title="Register new skill into memory"
-          style={{ background: "rgba(124, 58, 237, 0.25)", color: "#e9d5ff", borderColor: "#8b5cf6" }}
         >
-          + Add Skill
+          + Add skill
         </button>
-        <button className="btn icon ghost" onClick={onClose} aria-label="Close knowledge web">
+        <button className="web-toggle kweb-close" onClick={onClose} aria-label="Close memory">
           <IconX size={15} />
         </button>
       </header>
@@ -216,6 +221,7 @@ export function KnowledgeWeb({
             data={filtered!}
             selected={selected}
             onSelect={setSelected}
+            recent={recent}
           />
         )}
 
@@ -298,12 +304,19 @@ export function KnowledgeWeb({
 
 /** Force-directed layout, run on rAF until it settles. */
 function Graph({
-  data, selected, onSelect,
+  data, selected, onSelect, recent,
 }: {
   data: Knowledge;
   selected: string | null;
   onSelect: (id: string | null) => void;
+  recent: MemoryMark[];
 }) {
+  /** Touched this session, newest last: the latest reads brightest. */
+  const touched = useMemo(() => {
+    const order = new Map<string, { kind: MemoryMark["kind"]; rank: number }>();
+    recent.forEach((m, i) => order.set(m.id, { kind: m.kind, rank: i }));
+    return { order, newest: recent.length - 1 };
+  }, [recent]);
   const hostRef = useRef<HTMLDivElement>(null);
   const [, tick] = useState(0);
   const [size, setSize] = useState({ w: 900, h: 700 });
@@ -462,6 +475,16 @@ function Graph({
       onPointerLeave={() => { dragRef.current = null; }}
     >
       <svg className="kgraph-svg">
+        <defs>
+          <filter id="kweb-glow" x="-80%" y="-80%" width="260%" height="260%">
+            <feGaussianBlur stdDeviation="4" result="blur" />
+            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+          <pattern id="kweb-dots" width="34" height="34" patternUnits="userSpaceOnUse">
+            <circle cx="17" cy="17" r="0.9" fill="#a855f7" opacity="0.22" />
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#kweb-dots)" />
         <g transform={`translate(${size.w / 2 + view.x}, ${size.h / 2 + view.y}) `
                     + `scale(${view.k})`}>
           <g className="kedges">
@@ -496,9 +519,27 @@ function Graph({
                 }}
                 onClick={() => onSelect(selected === node.id ? null : node.id)}
               >
-                <circle r={node.r} style={{ fill: KIND_COLOR[r.kind] }} />
+                {(() => {
+                  const t = touched.order.get(node.id);
+                  if (!t) return null;
+                  const latest = t.rank === touched.newest;
+                  return (
+                    <circle
+                      className={`khalo is-${t.kind} ${latest ? "is-latest" : ""}`}
+                      r={node.r + 6}
+                      filter="url(#kweb-glow)"
+                    />
+                  );
+                })()}
+                <circle
+                  r={node.r}
+                  className="kbody"
+                  style={{ fill: KIND_COLOR[r.kind] }}
+                  filter={selected === node.id || touched.order.has(node.id) ? "url(#kweb-glow)" : undefined}
+                />
+                {r.kind === "skill" && <circle r={node.r * 0.4} fill="#fff" opacity={0.9} />}
                 {r.pinned && <circle className="kpin" r={node.r + 3.5} />}
-                <text y={node.r + 13}>{r.title.slice(0, 28)}</text>
+                <text y={node.r + 15}>{r.title.slice(0, 28)}</text>
               </g>
             );
           })}

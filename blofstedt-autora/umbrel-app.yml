@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.9.6"
+version: "0.9.7"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -74,31 +74,27 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The live browser is now something you simply use. Click or tap the page and
-  the click lands there; tap into a field and type, and the keys go to the
-  page (a phone raises its own keyboard); scroll with the wheel, or drag in
-  the enlarged view. The old take-control toolbar and buttons are gone. The
-  page is locked while the agent is driving -- tap it and you are offered
-  Stop -- and unlocks when it finishes or hands the page to you.
+  A cleaner desktop. The side panel for the live browser is gone: the page
+  now sits in the conversation on every screen size, where you click and type
+  in it directly, and the conversation itself is wider. The sessions list,
+  header, memory bar and conversation now share one surface instead of three
+  different shades.
 
 
-  When the agent needs you it now asks with a card: the question, a few
-  answers to tap, and room for your own words. Sign-ins work the same way:
-  the agent hands you the page with a card saying what is needed, waits,
-  and carries on when you tap I'm done.
+  The message box has been redesigned: one rounded box that grows as you
+  write, voice controls on the left, a round Send button that lights up when
+  there is something to send, and Stop beside it while the agent works.
 
 
-  On wide screens the live page sits in a panel beside the conversation,
-  with the last few steps listed under it. Any browser page can go full
-  screen from its corner button. The memory graph folds down to a single
-  line (folded by default on phones), and replies are formatted: headings,
-  lists, tables, links and code blocks with a copy button.
+  The full memory graph now looks like the memory bar above the chat -- the
+  same violet field, glowing nodes and purple links -- and marks the memories
+  this session has recalled or written, with the latest one pulsing.
 
 
-  Also in this release: the conversation no longer scrolls sideways on
-  phones (tapping the message box no longer zooms the page), text and tap
-  targets are larger, and on desktops the session name shows at the top and
-  live voice sits next to Send.
+  Earlier in this series: the live browser is used directly (no take-control
+  toolbar), the agent asks questions and hands over sign-ins with cards,
+  replies are formatted, the memory bar folds to one line, and phones no
+  longer scroll sideways.
 
 dependencies: []
 path: ""
