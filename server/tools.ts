@@ -32,6 +32,7 @@ import { GoogleGenAI } from "@google/genai";
 import { mergeTools, save, state, allSecrets, secretFor, redactSecrets } from "./state";
 import { probeBrowser, VIEWPORT, type LiveBrowser, type PageRead } from "./browser";
 import { relayAction, relayConnected, relayStatus } from "./desktop";
+import { CONTEXT_CONFIG, readVault } from "./context";
 
 // --------------------------------------------------------------- settings --
 
@@ -447,6 +448,37 @@ const TOOLS: ToolSpec[] = [
       required: ["query"],
     },
   },
+  {
+    name: "vault_read",
+    group: "memory",
+    description:
+      "Read back a tool output that was too long to keep in context. When a " +
+      "result says it was stored as a vault artifact (an id like art_1a2b3c4d), " +
+      "only its start and end were shown; this returns any other part of it, " +
+      "or every line that contains some text. Vault artifacts last as long as " +
+      "this session's server process does.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The artifact id, e.g. art_1a2b3c4d." },
+        offset: {
+          type: "number",
+          description: "Character to start from. Defaults to 0.",
+        },
+        length: {
+          type: "number",
+          description: "How many characters to return. Defaults to as many as fit.",
+        },
+        search: {
+          type: "string",
+          description:
+            "Instead of a range, return every line containing this text " +
+            "(case-insensitive), with line numbers.",
+        },
+      },
+      required: ["id"],
+    },
+  },
 ];
 
 // ------------------------------------------------------------ availability --
@@ -594,6 +626,10 @@ export function renderCall(spec: ToolSpec, args: Record<string, any>): string {
       return `scroll the desktop by ${args.dy}`;
     case "memory_write":
       return `remember "${args.title}": ${args.body}`;
+    case "vault_read":
+      return args.search
+        ? `search vault artifact ${args.id} for "${args.search}"`
+        : `read vault artifact ${args.id}`;
     case "browser_handoff":
       return `handoff browser control: ${args.reason}`;
     case "http_request":
@@ -635,6 +671,8 @@ export interface ToolContext {
     write: (entry: { title: string; body: string; kind: string }) => { id: string };
     search: (query: string) => { kind: string; title: string; body: string }[];
   };
+  /** A tool output this session kept out of the prompt, by artifact id. */
+  vault: (id: string) => string | null;
 }
 
 export interface ToolOutcome {
@@ -1242,6 +1280,24 @@ export async function runTool(
             .join("\n"),
           preview: `${found.length} found`,
         };
+      }
+
+      case "vault_read": {
+        const id = String(args.id ?? "").trim();
+        if (!id) return { ok: false, summary: "No artifact id was given." };
+        const text = ctx.vault(id);
+        if (text === null) {
+          return {
+            ok: false,
+            summary:
+              `There is no vault artifact "${id}" -- it may have been evicted, ` +
+              "or the server restarted. Run the tool again if you still need it.",
+          };
+        }
+        // Kept under the ingestion cap, so what is read back is never itself
+        // sent to the vault.
+        const room = CONTEXT_CONFIG.maxToolTokens * 4 - 200;
+        return { ok: true, summary: readVault(text, args, room), preview: id };
       }
 
       default:

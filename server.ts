@@ -18,6 +18,7 @@ import {
 } from "./server/llm";
 import { billingSummary } from "./server/billing";
 import { dropSession, fromDataUrl, getBlob, putBlob } from "./server/blobs";
+import { ContextEngine, type CompactionReport } from "./server/context";
 import { LiveBrowser, VIEWPORT, probeBrowser, type PageRead } from "./server/browser";
 import {
   attachRelay, relayClientSource, relayStatus, watchDesktop,
@@ -698,10 +699,23 @@ function noteRelayChange() {
 
 // ---------------------------------------------------------------- models --
 
-/** How many past turns of this session to hand the model. Enough for the
-    conversation to hold together, bounded so a long session does not grow the
-    prompt (and the bill, and the latency) without limit. */
-const HISTORY_TURNS = 24;
+/* How much history the model is handed is no longer a fixed count of turns:
+   ./server/context folds older turns into an anchored working memory in the
+   background once the prompt passes its high-water mark, so a long session
+   stays bounded without forgetting what its early turns established. */
+
+/** Each session's context engine: its anchored memory, live history and
+    vault. Made on first use; lives as long as the session does. */
+const contexts = new Map<string, ContextEngine>();
+
+function engineFor(sessionId: string): ContextEngine {
+  let engine = contexts.get(sessionId);
+  if (!engine) {
+    engine = new ContextEngine();
+    contexts.set(sessionId, engine);
+  }
+  return engine;
+}
 
 /** Thinking costs tokens and seconds before a single word appears. This is a
     console you watch, so the default is off; set GEMINI_THINKING_BUDGET to a
@@ -735,12 +749,19 @@ const THINKING_BUDGET = (() => {
  * Two details every vendor cares about: consecutive turns from the same
  * speaker are merged (streamed replies arrive as many `turn.agent.text`
  * deltas, and forty one-word model turns is not a conversation), and a history
- * may not open on the assistant, so any leading assistant turns are dropped.
+ * may not open on the assistant, so any leading assistant turns are dropped --
+ * unless earlier turns were folded into the anchored memory, in which case the
+ * context engine opens the history with a line saying so instead.
+ *
+ * Events at or below `sinceSeq` have already been folded into that memory and
+ * are left out. Each message carries the highest seq it was built from, which
+ * is how the engine knows, later, what a fold has covered.
  */
-function historyFor(session: Session): ChatMessage[] {
-  const turns: ChatMessage[] = [];
+function historyFor(session: Session, sinceSeq = 0): { message: ChatMessage; seq: number }[] {
+  const turns: { message: ChatMessage; seq: number }[] = [];
 
   for (const event of session.events) {
+    if (event.seq <= sinceSeq) continue;
     let role: "user" | "assistant" | null = null;
     if (event.kind === "turn.user") role = "user";
     else if (event.kind === "turn.agent.text") {
@@ -759,21 +780,24 @@ function historyFor(session: Session): ChatMessage[] {
     if (!text) continue;
 
     const last = turns[turns.length - 1];
-    if (last && last.role === role) {
+    if (last && last.message.role === role) {
       /* Assistant text arrives as stream deltas -- one event per fragment of
          a single reply -- so those join edge to edge. Two user turns running
          together are two separate things somebody typed, which happens
          whenever what sat between them was console text rather than the
          model's, and they need the break: Anthropic rejects consecutive
          same-role messages, so they cannot simply be kept apart. */
-      last.text += role === "user" ? `\n\n${text}` : text;
+      last.message.text += role === "user" ? `\n\n${text}` : text;
+      last.seq = event.seq;
     } else {
-      turns.push({ role, text });
+      turns.push({ message: { role, text }, seq: event.seq });
     }
   }
 
-  while (turns.length > 0 && turns[0].role === "assistant") turns.shift();
-  return turns.slice(-HISTORY_TURNS);
+  if (sinceSeq === 0) {
+    while (turns.length > 0 && turns[0].message.role === "assistant") turns.shift();
+  }
+  return turns;
 }
 
 /** How many times to re-ask after a transient refusal, and how long to wait.
@@ -1301,7 +1325,14 @@ async function startServer() {
 
         if (connected) {
           const tools = await availableTools();
-          const messages = historyFor(session);
+          /* The conversation lives in the session's context engine for the
+             length of the turn: rebuilt from the log (minus whatever has been
+             folded into anchored memory), then grown by each round of tool
+             calls. A background compaction may swap part of it out between
+             any two steps; nothing here waits for one. */
+          const context = engineFor(session.id);
+          context.load(historyFor(session, context.foldedThroughSeq));
+          const canReadVault = tools.some((t) => t.name === "vault_read");
 
           /** An image inlined into the reply becomes a card where it was
               written, rather than a screenful of base64. */
@@ -1323,20 +1354,26 @@ async function startServer() {
            * Returns what it said and what it wants run, or null once the
            * failure has been reported and there is no point going again.
            */
-          const askModel = async (system: string): Promise<ChatTurn | null> => {
+          const askModel = async (pinned: string): Promise<ChatTurn | null> => {
             // Across attempts, not within one: a second attempt after half a
             // sentence has been delivered would say that half twice.
             let delivered = 0;
 
             for (let attempt = 0; attempt <= MODEL_RETRIES; attempt += 1) {
               try {
+                /* Frame 0 (the pinned instructions) with Frame 1 (anchored
+                   memory) under it, and a fresh copy of the history: taken
+                   per attempt, so a retry picks up a compaction that landed in
+                   the meantime, and a copy, so one landing mid-request cannot
+                   touch the request. */
+                const system = context.systemFor(pinned);
                 const turn = await streamChat({
                   provider: active.provider,
                   model: active.model,
                   key: active.key,
                   baseUrl: active.baseUrl,
                   system,
-                  messages,
+                  messages: context.messagesFor(system),
                   temperature: 0.7,
                   maxTokens: 2048,
                   thinkingBudget: THINKING_BUDGET,
@@ -1430,6 +1467,61 @@ async function startServer() {
             return null;
           };
 
+          /**
+           * The background summariser behind compaction: the same provider,
+           * no tools, a low temperature, nothing streamed to the thread.
+           * AUTORA_COMPACTION_MODEL names a cheaper model of that provider to
+           * use for it instead. Its cost goes in the ledger like any call.
+           */
+          const summarize = async (prompt: string): Promise<string> => {
+            const model = (process.env.AUTORA_COMPACTION_MODEL || "").trim() || active.model;
+            const turn = await streamChat({
+              provider: active.provider,
+              model,
+              key: active.key,
+              baseUrl: active.baseUrl,
+              system:
+                "You compress an AI agent's working context into a structured " +
+                "record of task state. Output only that record.",
+              messages: [{ role: "user", text: prompt }],
+              temperature: 0.2,
+              maxTokens: 2048,
+              thinkingBudget: 0,
+            }, () => undefined);
+            recordUsage({
+              ts: Math.floor(Date.now() / 1000),
+              session: session.id,
+              provider: active.provider,
+              model,
+              input: turn.usage.input,
+              output: turn.usage.output,
+              cost: costOf(active.provider, model, turn.usage.input, turn.usage.output),
+              priced: isPriced(active.provider, model),
+              estimated: turn.usage.estimated,
+            });
+            return turn.text;
+          };
+
+          const compacted = (report: CompactionReport) => {
+            if (!report.ok) {
+              // Nothing was lost -- the turns stay raw -- so this is for the
+              // server log, not the thread.
+              console.warn(`[context] ${session.id}: compaction failed: ${report.error}`);
+              return;
+            }
+            console.log(
+              `[context] ${session.id}: folded ${report.folded} messages ` +
+                `(~${report.tokensBefore} -> ~${report.tokensAfter} tokens)`,
+            );
+            emitEvent(session, "system.log", "system", {
+              message:
+                `Condensed ${report.folded} earlier message${report.folded === 1 ? "" : "s"} ` +
+                "into working memory, in the background " +
+                `(about ${report.tokensBefore.toLocaleString("en-US")} tokens of context ` +
+                `down to ${report.tokensAfter.toLocaleString("en-US")}).`,
+            });
+          };
+
           /** Everything a tool needs from this session, handed in rather than
               imported, so server/tools.ts knows nothing about sessions. */
           const contextFor = (span: string): ToolContext => ({
@@ -1490,6 +1582,7 @@ async function startServer() {
                 }));
               },
             },
+            vault: (id) => context.vault.get(id),
           });
 
           /**
@@ -1505,12 +1598,19 @@ async function startServer() {
           for (let step = 0; step < MAX_TOOL_STEPS; step += 1) {
             if (running.get(session.id)?.stopped) break;
 
-            const turn = await askModel(
-              await systemInstructionFor(session.id, uniqueAccessed, active),
-            );
+            const pinned = await systemInstructionFor(session.id, uniqueAccessed, active);
+            /* Past the high-water mark this starts a background fold of the
+               older turns and returns at once. It is never awaited: this
+               step's call goes out now, on the history as it stands. */
+            context.maybeCompact(pinned, summarize, compacted);
+
+            const turn = await askModel(pinned);
             if (!turn || turn.calls.length === 0) break;
 
-            messages.push({ role: "assistant", text: turn.text, calls: turn.calls });
+            context.append(
+              { role: "assistant", text: turn.text, calls: turn.calls },
+              session.seqCounter,
+            );
             const replies: ToolReply[] = [];
 
             for (const use of turn.calls) {
@@ -1616,10 +1716,14 @@ async function startServer() {
                 }
               }
 
-              reply(outcome.ok, outcome.summary);
+              /* Ingestion filter: control codes and repeated lines out, and
+                 anything still too long kept whole in the vault with its head
+                 and tail left in the prompt. The thread already showed it
+                 all, live; this is only what the model reads. */
+              reply(outcome.ok, context.ingest(spec.name, outcome.summary, canReadVault));
             }
 
-            messages.push({ role: "tool", replies });
+            context.append({ role: "tool", replies }, session.seqCounter);
 
             if (step === MAX_TOOL_STEPS - 1) {
               /* Out of budget with the model still working. Said in the log
