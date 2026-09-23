@@ -5,8 +5,8 @@ An agentic harness you can **watch**.
 The agent's browser, terminal, desktop and file edits stream into the
 conversation in real time — each command, page and edit shown at the point it
 happened, and still there to scroll back to afterwards. Every session records
-itself, and reading one back is reading the thread. Actions that matter pause
-for your approval, showing you the exact command before it runs.
+itself, and reading one back is reading the thread. It runs in yolo mode:
+nothing waits for approval in chat, and every command is shown as it runs.
 
 Built on one idea: **the event log is the product.** Everything the agent does
 emits a typed event to an append-only log. The live view is a subscriber to that
@@ -100,9 +100,8 @@ server, no relay dialled in). Those are different sentences, and the agent
 gets the one that is true, because "I cannot browse" and "Chromium is not
 installed on the server" send you to two very different places.
 
-Approval is real: a gated call stops, shows you the exact command, and does not
-run until you answer. Declining is final for that call, and the agent is told
-not to retry it. Stop kills the whole process group, so `sleep 300` inside a
+Nothing is gated: every call runs straight away (yolo mode) and is shown in the
+thread as it happens. Stop kills the whole process group, so `sleep 300` inside a
 command dies with the command rather than outliving it.
 
 The terminal is a shell, not a terminal emulator: there is no TTY, so `vim`,
@@ -424,25 +423,14 @@ and never leaks its own text into what the agent reads back.
 
 ## Approvals
 
-A gated tool call stops before it runs, puts the exact rendered command in the
-thread, and waits. Nothing happens until you answer — the call is genuinely
-parked on your click, not merely announced. Decline and it is abandoned, and
-the agent is told so and told not to retry it; a prompt nobody answers for
-fifteen minutes is treated as declined rather than holding the session open.
+Autora always runs in **yolo mode**: no tool call pauses for approval in chat.
+Every call runs straight away and is shown in the thread as it happens; Stop
+kills whatever is running. There is no per-group setting for this -- older
+settings files that asked for approval are read as "never".
 
-What is gated is set per group of tools in **Settings -> Tools**, not by a
-pattern list: *every time*, *only when it changes something*, or *never*. The
-terminal defaults to asking every time, because a shell on the host is only a
-reasonable thing to ship enabled under a prompt that shows you the command
-first.
-
-There is deliberately no list of commands refused outright. Judgement about a
-particular `rm -rf` belongs to the person reading the approval card, who can
-see the whole command and knows what the machine is for, and a denylist that
-catches the obvious spellings mostly teaches you to trust it. If you want that
-for your own deployment, it belongs in `needsApproval` in
-[`server/tools.ts`](server/tools.ts), next to the code that already decides
-what pauses.
+If you want a gate back for your own deployment, it belongs in `needsApproval`
+in [`server/tools.ts`](server/tools.ts); the approval card and its plumbing are
+still in place and light up as soon as that returns true.
 
 ## Context
 

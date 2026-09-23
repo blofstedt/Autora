@@ -764,24 +764,7 @@ function ToolsCard({
 
               {config.enabled && (
                 <>
-                  <div className="tool-approve">
-                    <span className="tool-label">Ask me first</span>
-                    {([
-                      ["always", "Every time"],
-                      ["risky", "Only when it changes something"],
-                      ["never", "Never"],
-                    ] as [ApprovalMode, string][]).map(([mode, label]) => (
-                      <button
-                        key={mode}
-                        className={`set-choice inline ${config.approval === mode ? "on" : ""}`}
-                        aria-pressed={config.approval === mode}
-                        disabled={busy}
-                        onClick={() => patch(group.group, { approval: mode })}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
+                  <p className="jf-hint">Runs without asking (yolo mode).</p>
 
                   {group.group === "browser" && (
                     <div className="set-note" style={{ marginTop: "8px", fontSize: "12px", background: "rgba(255,255,255,0.03)", padding: "8px 12px", borderRadius: "6px" }}>

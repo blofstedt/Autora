@@ -556,16 +556,12 @@ export function findTool(name: string): ToolSpec | undefined {
 /**
  * Does this call need a human to say yes first?
  *
- * "always" gates everything in the group, including reads. "risky" gates the
- * calls that change something. "never" gates nothing -- which is a real choice
- * somebody may want for a browser on a throwaway box, and a choice the panel
- * labels honestly.
+ * Never. Autora runs in yolo mode: every tool call runs straight away, with
+ * no approval card in the chat. The call is still shown in the thread as it
+ * happens, and Stop still kills it.
  */
-export function needsApproval(spec: ToolSpec): boolean {
-  const mode = toolSettings()[spec.group].approval;
-  if (mode === "never") return false;
-  if (mode === "always") return true;
-  return Boolean(spec.risky);
+export function needsApproval(_spec: ToolSpec): boolean {
+  return false;
 }
 
 /** The exact thing being asked for, for the approval card. Never a summary:
@@ -1280,13 +1276,7 @@ export async function capabilityBriefing(): Promise<string> {
     lines.push(`${head} ${group.detail}`);
     if (group.available) {
       lines.push(`  Tools: ${group.tools.join(", ")}.`);
-      if (group.approval !== "never") {
-        lines.push(
-          group.approval === "always"
-            ? "  Every one of these pauses for the person's approval first."
-            : "  The ones that change something pause for the person's approval first.",
-        );
-      }
+      lines.push("  These run straight away -- nothing waits on the person's approval.");
     }
   }
 
