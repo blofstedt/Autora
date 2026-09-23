@@ -62,8 +62,8 @@ export function MemoryRibbon({
   /** Folded to one line: the counts and the newest event, no graph. */
   collapsed?: boolean;
   onToggle?: () => void;
-  /** Drawn as a tall column beside the chat (desktop) rather than a wide
-      banner above it, so the nodes spread tall to fill the pane. */
+  /** Drawn at the foot of the desktop rail rather than above the chat: always
+      open, no fold button. Square either way. */
   pane?: boolean;
 }) {
   const [web, setWeb] = useState<Knowledge>({ records: [], links: [], enabled: true });
@@ -103,14 +103,16 @@ export function MemoryRibbon({
     if (latestSeq) load();
   }, [latestSeq, load]);
 
-  // Dynamic layout & auto-zoom:
-  // Distribute all records organically around (0, 0), and auto-calculate viewBox bounds
+  // Layout & auto-zoom: records spread round (0, 0) in a circle, framed by a
+  // square viewBox. Square everywhere -- the phone banner and the desktop rail
+  // alike -- so the same memory has the same shape wherever you look at it,
+  // instead of a web squashed flat on a phone and pulled tall on a desk.
   const { placed, viewBox, bgDots } = useMemo(() => {
     const rows = web.records;
     if (rows.length === 0) {
       return {
         placed: [] as Placed[],
-        viewBox: pane ? "-100 -170 200 340" : "-170 -72.5 340 145",
+        viewBox: "-120 -120 240 240",
         bgDots: [] as { x: number; y: number }[],
       };
     }
@@ -120,29 +122,17 @@ export function MemoryRibbon({
       let hash = 0;
       for (let i = 0; i < record.id.length; i++) hash = (hash * 31 + record.id.charCodeAt(i)) | 0;
       const angle = index * golden + ((hash % 100) / 400);
-      // Concentric elliptic layout around (0, 0)
       const radius = index === 0 ? 0 : 28 + Math.sqrt(index) * 26 + ((hash >>> 5) % 12);
-      // Oval spread matching the shape it is drawn in: a wide banner above the
-      // chat (~2.35:1), or a tall column beside it.
-      const x = Math.cos(angle) * radius * (pane ? 0.8 : 1.45);
-      const y = Math.sin(angle) * radius * (pane ? 1.35 : 0.68);
+      const x = Math.cos(angle) * radius;
+      const y = Math.sin(angle) * radius;
       const r = record.kind === "skill" ? 6 : record.pinned ? 7 : record.status === "provisional" ? 4.2 : 5.5;
-
-      return {
-        id: record.id,
-        x,
-        y,
-        r,
-        record,
-      };
+      return { id: record.id, x, y, r, record };
     });
 
-    // Calculate bounding box across ALL nodes
     let minX = Infinity;
     let maxX = -Infinity;
     let minY = Infinity;
     let maxY = -Infinity;
-
     for (const p of computedPlaced) {
       minX = Math.min(minX, p.x - p.r);
       maxX = Math.max(maxX, p.x + p.r);
@@ -150,44 +140,27 @@ export function MemoryRibbon({
       maxY = Math.max(maxY, p.y + p.r);
     }
 
-    // Add padding around all extremities so nodes always have breathing space and are never cut off
-    const padX = pane ? 24 : 32;
-    const padY = pane ? 40 : 24;
-    const minW = pane ? 200 : 340;
-    const minH = pane ? 340 : 145;
-    let spanW = Math.max(minW, (maxX - minX) + padX * 2);
-    let spanH = Math.max(minH, (maxY - minY) + padY * 2);
+    // Padding so no node is ever cut off, and a floor so three memories do not
+    // get blown up to fill the whole square.
+    const pad = 20;
+    const span = Math.max(240, maxX - minX + pad * 2, maxY - minY + pad * 2);
+    const vbX = (minX + maxX) / 2 - span / 2;
+    const vbY = (minY + maxY) / 2 - span / 2;
 
-    const targetAspect = minW / minH; // banner ~2.345, pane ~0.59
-    if (spanW / spanH < targetAspect) {
-      spanW = spanH * targetAspect;
-    } else {
-      spanH = spanW / targetAspect;
-    }
-
-    // Centroid of all nodes
-    const midX = (minX + maxX) / 2;
-    const midY = (minY + maxY) / 2;
-
-    const vbX = midX - spanW / 2;
-    const vbY = midY - spanH / 2;
-
-    // Generate responsive background dots across the full viewBox
     const dots: { x: number; y: number }[] = [];
-    const stepX = spanW / 7;
-    const stepY = spanH / 4;
+    const step = span / 7;
     for (let c = 1; c < 7; c++) {
-      for (let r = 1; r < 4; r++) {
-        dots.push({ x: vbX + c * stepX, y: vbY + r * stepY });
+      for (let r = 1; r < 7; r++) {
+        dots.push({ x: vbX + c * step, y: vbY + r * step });
       }
     }
 
     return {
       placed: computedPlaced,
-      viewBox: `${vbX} ${vbY} ${spanW} ${spanH}`,
+      viewBox: `${vbX} ${vbY} ${span} ${span}`,
       bgDots: dots,
     };
-  }, [web.records, pane]);
+  }, [web.records]);
 
   const active = memories.length ? memories[memories.length - 1].id : null;
   const byId = useMemo(() => new Map(placed.map((p) => [p.id, p])), [placed]);
