@@ -1,24 +1,22 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { SessionRow } from "./Sessions";
 import {
-  IconActivity, IconBrain, IconChart, IconClock, IconGear, IconKey, IconList, IconMessage,
-  IconMonitor, IconPalette, IconPlug, IconPlus, IconScroll, IconServer, IconSliders,
+  IconBrain, IconChart, IconClock, IconGear, IconKey, IconList, IconMessage,
+  IconMonitor, IconPalette, IconPlug, IconPlus, IconServer, IconSliders,
   IconSpark, IconX, IconCheck,
 } from "./Icons";
 import { FONTS, THEMES, type Appearance } from "../lib/theme";
 
 export type PageId =
-  | "status" | "chat" | "config" | "keys" | "sessions" | "logs" | "analytics"
+  | "chat" | "config" | "keys" | "sessions" | "analytics"
   | "cron" | "mind" | "mcp" | "system";
 
 /** The sidebar, in Hermes' order, less the pages Autora has nothing behind. */
 export const PAGES: { id: PageId; label: string; icon: ReactNode }[] = [
-  { id: "status", label: "Status", icon: <IconActivity size={16} /> },
   { id: "chat", label: "Chat", icon: <IconMessage size={16} /> },
   { id: "config", label: "Config", icon: <IconSliders size={16} /> },
   { id: "keys", label: "API Keys", icon: <IconKey size={16} /> },
   { id: "sessions", label: "Sessions", icon: <IconList size={16} /> },
-  { id: "logs", label: "Logs", icon: <IconScroll size={16} /> },
   { id: "analytics", label: "Analytics", icon: <IconChart size={16} /> },
   { id: "cron", label: "Cron", icon: <IconClock size={16} /> },
   { id: "mind", label: "Mind", icon: <IconBrain size={16} /> },

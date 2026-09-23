@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { SessionRow } from "../Sessions";
 import type { PageId } from "../Rail";
 import { duration } from "../Settings";
+import type { SystemTab } from "./SystemPage";
 
 type Snapshot = {
   system: { version: string; uptime_s: number; sessions: number; busy: number; browsers: number } | null;
@@ -23,11 +24,13 @@ const money = (n: number) => `$${n < 1 ? n.toFixed(3) : n.toFixed(2)}`;
  * that thing is managed.
  */
 export function StatusPage({
-  sessions, onOpenSession, onNavigate,
+  sessions, onOpenSession, onNavigate, onTab,
 }: {
   sessions: SessionRow[];
   onOpenSession: (id: string) => void;
   onNavigate: (page: PageId) => void;
+  /** Another section of the System page. */
+  onTab: (tab: SystemTab) => void;
 }) {
   const [snap, setSnap] = useState<Snapshot>({ system: null, settings: null, usage: null, mcp: null, errors: 0 });
 
@@ -57,7 +60,7 @@ export function StatusPage({
     <div className="page-scroll">
       <div className="page-inner">
         <div className="stat-grid">
-          <button className="stat-card" onClick={() => onNavigate("system")}>
+          <button className="stat-card" onClick={() => onTab("host")}>
             <span className="stat-label">Autora</span>
             <b className="stat-value">{snap.system ? `v${snap.system.version}` : "…"}</b>
             <span className="stat-sub">{snap.system ? `up ${duration(snap.system.uptime_s)}` : ""}</span>
@@ -102,7 +105,7 @@ export function StatusPage({
               {jev?.last ? `last: ${jev.last.task}, ${jev.last.mode === "jev" ? `${jev.last.ms} ms` : "fell back"}` : jev?.support.reason ?? ""}
             </span>
           </button>
-          <button className="stat-card" onClick={() => onNavigate("logs")}>
+          <button className="stat-card" onClick={() => onTab("logs")}>
             <span className="stat-label">Errors</span>
             <b className={`stat-value ${snap.errors ? "is-bad" : ""}`}>{snap.errors}</b>
             <span className="stat-sub">in the log since start</span>

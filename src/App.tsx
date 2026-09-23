@@ -6,9 +6,8 @@ import type { AutoraEvent, BrowserState, LiveFrame } from "./lib/types";
 import { Thread } from "./components/Thread";
 import { MemoryRibbon } from "./components/MemoryRibbon";
 import { Rail, pageLabel, PAGES, type PageId } from "./components/Rail";
-import { StatusPage } from "./components/pages/StatusPage";
 import { SessionsPage } from "./components/pages/SessionsPage";
-import { LogsPage } from "./components/pages/LogsPage";
+import { SystemPage, isSystemTab, type SystemTab } from "./components/pages/SystemPage";
 import { McpPage } from "./components/pages/McpPage";
 import { MindPage } from "./components/pages/MindPage";
 import type { Bucket } from "./lib/memory";
@@ -77,7 +76,17 @@ export function App() {
     const asked = new URLSearchParams(location.search).get("page");
     // Memory and Skills were folded into the Mind; old links still land there.
     if (asked === "memory" || asked === "skills") return "mind";
+    // Status and Logs are sections of System now.
+    if (asked === "status" || asked === "logs") return "system";
     return PAGES.some((p) => p.id === asked) ? (asked as PageId) : "chat";
+  });
+  /** Which section of System to open on, from the address. */
+  const [systemTab] = useState<SystemTab>(() => {
+    const params = new URLSearchParams(location.search);
+    const asked = params.get("page");
+    if (asked === "status" || asked === "logs") return asked;
+    const tab = params.get("tab");
+    return isSystemTab(tab) ? tab : "status";
   });
   /** Which of the Mind's buckets to open on. An object so asking for the
       same bucket twice still takes you back to it. */
@@ -173,6 +182,7 @@ export function App() {
     setDrawerOpen(false);
     setSessionsOpen(false);
     const url = new URL(location.href);
+    url.searchParams.delete("tab");
     if (next === "chat") url.searchParams.delete("page");
     else url.searchParams.set("page", next);
     history.replaceState(null, "", url.toString());
@@ -593,17 +603,20 @@ export function App() {
 
         {page !== "chat" && (
           <div className="page-host">
-            {page === "status" && (
-              <StatusPage sessions={sessions} onOpenSession={openSession} onNavigate={navigate} />
-            )}
             {page === "config" && <Settings key="config" section="config" embedded />}
             {page === "keys" && <Settings key="keys" section="keys" embedded />}
             {page === "analytics" && <Settings key="analytics" section="analytics" embedded />}
-            {page === "system" && <Settings key="system" section="system" embedded />}
+            {page === "system" && (
+              <SystemPage
+                initialTab={systemTab}
+                sessions={sessions}
+                onOpenSession={openSession}
+                onNavigate={navigate}
+              />
+            )}
             {page === "sessions" && (
               <SessionsPage current={sessionId} onOpen={openSession} onChanged={refreshSessions} />
             )}
-            {page === "logs" && <LogsPage />}
             {page === "mcp" && <McpPage />}
             {page === "cron" && <Schedule embedded onOpenSession={openSession} />}
             {page === "mind" && (

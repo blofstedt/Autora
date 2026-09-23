@@ -4190,3 +4190,11 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 .mind-rel em { font-style: normal; color: var(--text-3); font-size: 10.5px; }
 .mind-kinds { display: flex; flex-wrap: wrap; gap: 5px; }
 .mind-edit-actions { align-items: center; }
+
+/* System: Status, Logs and Host as sections of one page. */
+.system-page { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.system-tabs { flex: 0 0 auto; display: flex; justify-content: center; padding: 12px 12px 0; }
+.system-body { position: relative; flex: 1; min-height: 0; }
+.system-body > .sched.is-embedded {
+  position: absolute; inset: 0; z-index: auto; animation: none; background: var(--s1);
+}

@@ -81,6 +81,8 @@ releaseNotes: >-
   On a desktop the memory graph now has its own pane on the right, the full
   height of the window, on every page. On a phone the graph is under Map on
   the Mind page, and the strip above the chat stays as it was.
+  Status and Logs have moved into System, which now has three sections:
+  Status, Logs and Host.
 
 
   New pages. Status shows the whole installation at a glance. Sessions lets
