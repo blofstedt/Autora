@@ -68,10 +68,11 @@ export function ScreencastCell({
   const [picked, setPicked] = useState<Pick | null>(null);
   const [busy, setBusy] = useState(false);
   const [showActions, setShowActions] = useState(false);
-  /** Inline by default, big on request. A screenshot at its natural size is
-      two thirds of a laptop screen, and a conversation where every page the
-      agent opened is a full screen is a conversation you cannot skim. */
-  const [big, setBig] = useState(false);
+  /** Big while the agent is driving the page right now, inline otherwise. A
+      finished card at full size is two thirds of a laptop screen and makes a
+      conversation you cannot skim; the page the agent is working in *now* is
+      the thing you are there to watch. Either toggle overrides it. */
+  const [bigChoice, setBigChoice] = useState<boolean | null>(null);
   const [interactive, setInteractive] = useState(false);
   const [controlHolder, setControlHolder] = useState<"agent" | "human">("agent");
   const [handoffReason, setHandoffReason] = useState<string | null>(null);
@@ -334,6 +335,12 @@ export function ScreencastCell({
       ? `/api/sessions/${sessionId}/blobs/${shot.blob}`
       : null;
   const latest = actions[actions.length - 1];
+  const big = bigChoice ?? (source === "browser" && live && (watching || !stageSrc));
+  /* The card appears the moment the agent says what it is opening, which is
+     before Chrome has painted anything. Showing the stage anyway, with the
+     step in words, means you are looking at the right place when the first
+     frame lands rather than at a header that grows a picture later. */
+  const waiting = !stageSrc && source === "browser" && live;
 
   return (
     <section className={`cell shot ${live ? "is-live" : ""}`}>
@@ -387,7 +394,7 @@ export function ScreencastCell({
         {(shots.length > 0 || feed) && (
           <button
             className={`cell-act ${big ? "on" : ""}`}
-            onClick={() => setBig((v) => !v)}
+            onClick={() => setBigChoice(!big)}
             aria-pressed={big}
           >
             {big ? "shrink" : "expand"}
@@ -485,6 +492,13 @@ export function ScreencastCell({
               <span>Hand Back to Agent</span>
             </button>
           </div>
+        </div>
+      )}
+
+      {waiting && (
+        <div className="shot-stage is-waiting">
+          <span className="watch-dot" aria-hidden="true" />
+          <span>{latest ?? "Starting the browser…"}</span>
         </div>
       )}
 
