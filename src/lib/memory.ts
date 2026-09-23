@@ -31,6 +31,35 @@ export const KIND_COLOR: Record<MemoryRecord["kind"], string> = {
   skill: "var(--glow-light)",
 };
 
+export type Bucket = MemoryRecord["kind"];
+
+/** The Mind's four buckets, in the order the page shows them. */
+export const BUCKETS: { kind: Bucket; label: string; blurb: string }[] = [
+  { kind: "preference", label: "Preferences", blurb: "How you like things done." },
+  { kind: "procedure", label: "Procedures", blurb: "Steps it follows for a recurring job." },
+  { kind: "fact", label: "Facts", blurb: "What is true about your setup." },
+  { kind: "skill", label: "Skills", blurb: "Things it knows how to do." },
+];
+
+/** Said when a record is changed from the page, so the graph beside it
+    redraws now rather than on its next poll. */
+const CHANGED = "autora:memory-changed";
+export const announceChange = () => window.dispatchEvent(new Event(CHANGED));
+export function onKnowledgeChange(fn: () => void): () => void {
+  window.addEventListener(CHANGED, fn);
+  return () => window.removeEventListener(CHANGED, fn);
+}
+
+export async function createRecord(body: Pick<MemoryRecord, "kind" | "title" | "body" | "tags">) {
+  const res = await fetch("/api/memory", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Could not save");
+  return (await res.json()) as MemoryRecord;
+}
+
 export async function fetchKnowledge(): Promise<Knowledge> {
   const res = await fetch("/api/memory");
   if (!res.ok) return { records: [], links: [], enabled: false };

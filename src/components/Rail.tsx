@@ -3,13 +3,13 @@ import type { SessionRow } from "./Sessions";
 import {
   IconActivity, IconBrain, IconChart, IconClock, IconGear, IconKey, IconList, IconMessage,
   IconMonitor, IconPalette, IconPlug, IconPlus, IconScroll, IconServer, IconSliders,
-  IconSpark, IconX, IconZap, IconCheck,
+  IconSpark, IconX, IconCheck,
 } from "./Icons";
 import { FONTS, THEMES, type Appearance } from "../lib/theme";
 
 export type PageId =
   | "status" | "chat" | "config" | "keys" | "sessions" | "logs" | "analytics"
-  | "cron" | "skills" | "memory" | "mcp" | "system";
+  | "cron" | "mind" | "mcp" | "system";
 
 /** The sidebar, in Hermes' order, less the pages Autora has nothing behind. */
 export const PAGES: { id: PageId; label: string; icon: ReactNode }[] = [
@@ -21,8 +21,7 @@ export const PAGES: { id: PageId; label: string; icon: ReactNode }[] = [
   { id: "logs", label: "Logs", icon: <IconScroll size={16} /> },
   { id: "analytics", label: "Analytics", icon: <IconChart size={16} /> },
   { id: "cron", label: "Cron", icon: <IconClock size={16} /> },
-  { id: "skills", label: "Skills", icon: <IconZap size={16} /> },
-  { id: "memory", label: "Memory", icon: <IconBrain size={16} /> },
+  { id: "mind", label: "Mind", icon: <IconBrain size={16} /> },
   { id: "mcp", label: "MCP", icon: <IconPlug size={16} /> },
   { id: "system", label: "System", icon: <IconServer size={16} /> },
 ];

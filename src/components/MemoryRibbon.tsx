@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MemoryMark } from "../lib/derive";
-import { KIND_COLOR, fetchKnowledge, type Knowledge } from "../lib/memory";
+import { KIND_COLOR, fetchKnowledge, onKnowledgeChange, type Knowledge } from "../lib/memory";
 import { IconBrain, IconChevron } from "./Icons";
 import { useThemeColors } from "../lib/theme";
 
@@ -94,7 +94,8 @@ export function MemoryRibbon({
   useEffect(() => {
     load();
     const timer = window.setInterval(load, POLL_MS);
-    return () => window.clearInterval(timer);
+    const stop = onKnowledgeChange(load);
+    return () => { window.clearInterval(timer); stop(); };
   }, [load]);
 
   const latestSeq = memories.length ? memories[memories.length - 1].seq : 0;
@@ -398,13 +399,13 @@ export function MemoryRibbon({
 
   const tags = (
     <>
-      <button className="web-tag neural-tag" onClick={onOpen} title="Open knowledge graph">
+      <button className="web-tag neural-tag" onClick={onOpen} title="Open the Mind">
         <IconBrain size={13} />
         <span className="web-count">{web.records.length}</span>
         <IconChevron size={11} />
       </button>
       {skillsCount > 0 && (
-        <button className="web-tag skills-tag" onClick={onOpenSkills || onOpen} title="Open Skills Library">
+        <button className="web-tag skills-tag" onClick={onOpenSkills || onOpen} title="Open skills in the Mind">
           <span className="skills-dot" />
           <span className="web-count">{skillsCount} skills</span>
         </button>

@@ -74,10 +74,13 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  On a desktop the memory graph now has its own pane on the right of the
-  chat, the full height of the window, so the whole graph is always in view
-  without opening the Memory page. Phones and narrower windows keep the
-  banner above the conversation.
+  Memory and Skills are now one page in the sidebar, Mind. It sorts
+  everything the agent keeps into four buckets (preferences, procedures,
+  facts and skills), with a count for each and the connections between them.
+  You can edit any record, add new ones, or move them to another bucket.
+  On a desktop the memory graph now has its own pane on the right, the full
+  height of the window, on every page. On a phone the graph is under Map on
+  the Mind page, and the strip above the chat stays as it was.
 
 
   New pages. Status shows the whole installation at a glance. Sessions lets

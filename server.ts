@@ -114,6 +114,8 @@ interface MemoryRecord {
   superseded_by: string | null;
 }
 
+const MEMORY_KINDS: MemoryRecord["kind"][] = ["preference", "procedure", "fact", "skill"];
+
 interface MemoryLink {
   src: string;
   dst: string;
@@ -2738,7 +2740,7 @@ async function startServer() {
 
     const newRecord: MemoryRecord = {
       id: `mem-${Date.now().toString(36)}`,
-      kind: req.body?.kind || "skill",
+      kind: MEMORY_KINDS.includes(req.body?.kind) ? req.body.kind : "skill",
       scope: req.body?.scope || "workspace",
       title,
       body: req.body?.body || "",
@@ -2771,6 +2773,11 @@ async function startServer() {
     if (req.body.body !== undefined) record.body = req.body.body;
     if (req.body.status !== undefined) record.status = req.body.status;
     if (req.body.pinned !== undefined) record.pinned = Boolean(req.body.pinned);
+    // Moving a record between the Mind's buckets.
+    if (MEMORY_KINDS.includes(req.body.kind)) record.kind = req.body.kind;
+    if (Array.isArray(req.body.tags)) {
+      record.tags = req.body.tags.map((t: unknown) => String(t).trim()).filter(Boolean);
+    }
     record.updated = Math.floor(Date.now() / 1000);
 
     res.json(record);

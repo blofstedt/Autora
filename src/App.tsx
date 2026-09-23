@@ -10,12 +10,13 @@ import { StatusPage } from "./components/pages/StatusPage";
 import { SessionsPage } from "./components/pages/SessionsPage";
 import { LogsPage } from "./components/pages/LogsPage";
 import { McpPage } from "./components/pages/McpPage";
+import { MindPage } from "./components/pages/MindPage";
+import type { Bucket } from "./lib/memory";
 import {
   applyAppearance, cachedAppearance, saveAppearance, type Appearance,
 } from "./lib/theme";
 import { Sessions, type SessionRow } from "./components/Sessions";
 import { Approvals } from "./components/Approvals";
-import { KnowledgeWeb } from "./components/KnowledgeWeb";
 import { Schedule } from "./components/Schedule";
 import { Settings } from "./components/Settings";
 import { DictateButton } from "./components/DictateButton";
@@ -74,8 +75,15 @@ export function App() {
       are the sidebar's pages. Kept in the address so a reload stays put. */
   const [page, setPage] = useState<PageId>(() => {
     const asked = new URLSearchParams(location.search).get("page");
+    // Memory and Skills were folded into the Mind; old links still land there.
+    if (asked === "memory" || asked === "skills") return "mind";
     return PAGES.some((p) => p.id === asked) ? (asked as PageId) : "chat";
   });
+  /** Which of the Mind's buckets to open on. An object so asking for the
+      same bucket twice still takes you back to it. */
+  const [mindBucket, setMindBucket] = useState<{ kind: Bucket }>(
+    () => ({ kind: new URLSearchParams(location.search).get("page") === "skills" ? "skill" : "preference" }),
+  );
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [appearance, setAppearance] = useState<Appearance>(cachedAppearance);
   const [sessionsOpen, setSessionsOpen] = useState(false);
@@ -445,7 +453,7 @@ export function App() {
           break;
         case "k":
           e.preventDefault();
-          navigate(page === "memory" ? "chat" : "memory");
+          navigate(page === "mind" ? "chat" : "mind");
           break;
         case "v":
           e.preventDefault();
@@ -468,8 +476,8 @@ export function App() {
     view.title ||
     "Untitled session";
 
-  const openSkills = useCallback(() => navigate("skills"), [navigate]);
-  const openKnowledge = useCallback(() => navigate("memory"), [navigate]);
+  const openSkills = useCallback(() => { setMindBucket({ kind: "skill" }); navigate("mind"); }, [navigate]);
+  const openKnowledge = useCallback(() => navigate("mind"), [navigate]);
 
   const refreshSessions = useCallback(() => {
     fetch("/api/sessions").then((r) => r.json()).then(setSessions).catch(() => undefined);
@@ -598,13 +606,8 @@ export function App() {
             {page === "logs" && <LogsPage />}
             {page === "mcp" && <McpPage />}
             {page === "cron" && <Schedule embedded onOpenSession={openSession} />}
-            {(page === "memory" || page === "skills") && (
-              <KnowledgeWeb
-                key={page}
-                embedded
-                initialKind={page === "skills" ? "skill" : "all"}
-                recent={view.memories}
-              />
+            {page === "mind" && (
+              <MindPage jump={mindBucket} showMap={!desktop} recent={view.memories} />
             )}
           </div>
         )}
@@ -851,9 +854,9 @@ export function App() {
         </nav>
       </div>
 
-      {/* The third pane on a desktop: the whole memory graph beside the
-          conversation, tall enough to see it all without opening anything. */}
-      {desktop && page === "chat" && (
+      {/* The third pane on a desktop: the whole memory graph, beside whatever
+          page is open, tall enough to see it all without opening anything. */}
+      {desktop && (
         <aside className="mind-slot" aria-label="Memory">
           <MemoryRibbon
             memories={view.memories}
