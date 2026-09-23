@@ -270,6 +270,13 @@ export const IconCopy = ({ size = 16, className }: Props) => (
   </svg>
 );
 
+export const IconPin = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M9 4h6l-1 6 3.5 3.5V15h-11v-1.5L10 10z" />
+    <path d="M12 15v5" />
+  </svg>
+);
+
 export const IconSearch = ({ size = 16, className }: Props) => (
   <svg {...base(size)} className={className}>
     <circle cx="11" cy="11" r="7" />

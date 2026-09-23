@@ -91,6 +91,11 @@ releaseNotes: >-
   preferences, procedures, facts and skills, in place of the memory and
   skills counters. Tapping the map anywhere opens the Mind page and selects
   it in the menu, on desktop and on phones.
+
+
+  The sessions list that opens from the session name at the top of the chat
+  can now search sessions by title, pin a session so it stays at the top,
+  and delete a session (tap the bin, then Delete to confirm).
 dependencies: []
 path: ""
 defaultUsername: ""

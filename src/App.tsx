@@ -868,6 +868,19 @@ export function App() {
           onPick={pickSession}
           onNew={newSession}
           onClose={() => setSessionsOpen(false)}
+          onChanged={refreshSessions}
+          onDeleted={(id, remaining) => {
+            if (id !== sessionId) return;
+            // The open session is gone: move to the next one, or a fresh one,
+            // and leave the list open so the tidying can carry on.
+            const next = remaining[0]?.id;
+            if (next) {
+              history.replaceState(null, "", `?session=${next}`);
+              setSessionId(next);
+            } else {
+              void newSession().then(() => setSessionsOpen(true));
+            }
+          }}
         />
       )}
     </div>
