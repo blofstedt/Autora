@@ -100,6 +100,22 @@ releaseNotes: >-
   is also asked to check its progress against your request. If it repeats
   the same thing eight times anyway, the turn is stopped and the chat says
   why.
+
+
+  Long agent turns cost much less. Every round of tool calls sends the whole
+  conversation to the model again, and providers charge far less for the
+  part they have seen before (DeepSeek about a fiftieth), but only when the
+  start of the request is exactly the same as last time. Autora's
+  instructions changed on every round, so that discount almost never
+  applied. They now stay the same for the whole turn, with the per-turn
+  details moved to the end. Claude models now use Anthropic's prompt cache
+  too. Old page snapshots from the in-app browser are shrunk to one line
+  once a newer one exists; the full text is kept and the agent can read it
+  back.
+
+
+  The Billing page now shows how much of your input came from the
+  provider's cache, and cached tokens are priced at the cheaper cached rate.
 dependencies: []
 path: ""
 defaultUsername: ""
