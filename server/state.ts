@@ -83,12 +83,9 @@ const DEFAULT_PROMPT =
 /**
  * What the tools do before anybody visits Settings.
  *
- * Capable, and gated. Every group is on, so the agent that ships is the agent
- * described -- but the terminal asks before every single command, and the ones
- * that touch a page or a desktop ask before anything that changes rather than
- * reads. A shell on the host is only a reasonable default under a prompt that
- * shows you the exact command first, which is the promise this console was
- * built on.
+ * Capable, and ungated (yolo mode). Every group is on and nothing pauses for
+ * approval in chat: each call runs straight away and is shown in the thread
+ * as it happens.
  *
  * Turning a group off is a real answer too: it removes the tools from the
  * model's schema entirely and the agent is told, in words, that the group is
@@ -96,12 +93,10 @@ const DEFAULT_PROMPT =
  */
 function defaultTools(): ToolSettings {
   return {
-    terminal: { enabled: true, cwd: "", timeout: 120, approval: "always", shell: "" },
-    browser: { enabled: true, approval: "risky" },
-    computer: { enabled: true, approval: "risky" },
-    /* Unattended: writing a note down is not destructive, and an approval
-       prompt for every remembered fact is how people learn to click yes
-       without reading -- which is the prompt that matters going unread. */
+    /* Yolo mode: nothing asks for approval in chat. */
+    terminal: { enabled: true, cwd: "", timeout: 120, approval: "never", shell: "" },
+    browser: { enabled: true, approval: "never" },
+    computer: { enabled: true, approval: "never" },
     memory: { enabled: true, approval: "never" },
   };
 }
@@ -117,11 +112,11 @@ function defaultTools(): ToolSettings {
  */
 export function mergeTools(into: ToolSettings, patch: any): ToolSettings {
   if (!patch || typeof patch !== "object") return into;
-  const modes = new Set(["always", "risky", "never"]);
   const bool = (value: any, fallback: boolean) =>
     typeof value === "boolean" ? value : fallback;
-  const mode = (value: any, fallback: ToolSettings["browser"]["approval"]) =>
-    modes.has(value) ? value : fallback;
+  /* Yolo mode: whatever a settings file or a stale client says, nothing is
+     gated. Older settings files saved with "always" or "risky" land here too. */
+  const mode = (_value: any, _fallback: ApprovalMode): ApprovalMode => "never";
 
   if (patch.terminal && typeof patch.terminal === "object") {
     into.terminal.enabled = bool(patch.terminal.enabled, into.terminal.enabled);

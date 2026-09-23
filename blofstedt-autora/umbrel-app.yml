@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.9.1"
+version: "0.9.2"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -32,8 +32,8 @@ description: >-
 
   • Real tools, listed in Settings — a shell on this machine, the browser it
   drives, control of another computer over a small relay, and a memory that
-  outlives the session. Each can be switched off, and each decides for itself
-  how much asks you first: the terminal shows you every command before it runs.
+  outlives the session. Each can be switched off. Nothing waits for approval:
+  every command runs straight away and is shown in the thread as it runs.
 
 
   • Voice interface (optional) — Deepgram STT+TTS when DEEPGRAM_API_KEY is set.
@@ -73,18 +73,14 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Four new tools, and they run. Web search, HTTP requests, image
-  generation, and a browser handoff that stops the agent mid-task and
-  lets you finish a login yourself before it carries on.
+  Yolo mode, always. Tool calls no longer stop for an approval card in the
+  chat -- the terminal, browser, desktop and memory all run straight away,
+  and every command is still shown in the thread as it happens. Stop still
+  kills whatever is running.
 
 
-  Settings gains a secrets store. Paste a token once -- GITHUB_TOKEN,
-  TAVILY_API_KEY, whatever a tool asks for -- and it is injected into the
-  commands and tools that need it rather than typed into the task text.
-
-
-  The container now ships bash, curl and git, so a command the agent runs
-  lands in the same kind of shell you would use yourself.
+  The "Ask me first" setting is gone, and settings saved by an earlier
+  version that asked for approval are read as "never".
 
 
 dependencies: []

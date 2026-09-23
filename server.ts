@@ -234,7 +234,7 @@ const memoryRecords: MemoryRecord[] = [
     kind: "skill",
     scope: "workspace",
     title: "Policy Gating & Permission Elevations",
-    body: "A tool call that changes something stops and shows the exact command as an approval card in the transcript. It does not run until somebody answers, and a decline is final for that call.",
+    body: "Autora runs in yolo mode: tool calls run straight away with no approval card in the chat. Every command is still shown in the transcript as it runs, and Stop kills it.",
     tags: ["skill", "security", "permissions", "policy"],
     status: "confirmed",
     pinned: false,
@@ -359,7 +359,7 @@ function createInitialSession(): Session {
      released no tool call, because there was none, and the only thing it
      demonstrated was that the prompt could be drawn. Real ones now appear
      where a real call is parked on the answer. */
-  add("turn.agent.text", "agent", { local: true, text: "Autora is running. What I can reach — a shell on this host, a browser I drive, and a desktop if you run the relay — is listed under Tools in Settings, along with how much of it asks you first. Type a task and it happens in this thread: every command, page and keystroke shown where it occurred." });
+  add("turn.agent.text", "agent", { local: true, text: "Autora is running. What I can reach — a shell on this host, a browser I drive, and a desktop if you run the relay — is listed under Tools in Settings, and none of it waits for your approval. Type a task and it happens in this thread: every command, page and keystroke shown where it occurred." });
   add("turn.agent.done", "agent", {});
 
   return session;
