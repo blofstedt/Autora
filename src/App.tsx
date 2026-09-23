@@ -629,6 +629,17 @@ export function App() {
                         <IconStop size={13} />
                       </button>
                     )}
+                    {/* Only shown where the bottom bar, which normally
+                        carries this, is hidden. */}
+                    <button
+                      className="btn icon ghost composer-live"
+                      onClick={voiceReady ? toggleLive : () => setVoiceHelp(true)}
+                      disabled={readOnly}
+                      title={voiceReady ? "Start live voice chat (v)" : "Live voice requires https"}
+                      aria-label="Live voice chat"
+                    >
+                      <AutoraMark state="rest" size={18} />
+                    </button>
                     <DictateButton
                       onText={appendDictation}
                       disabled={readOnly}

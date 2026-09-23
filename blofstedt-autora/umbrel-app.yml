@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.9.4"
+version: "0.9.5"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -73,22 +73,19 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  You can now watch every browser step as it happens. The live page opens
-  large in the conversation while the agent is driving it, with the step it
-  is taking captioned over the picture, and a placeholder shows what is
-  loading before the first frame arrives. The feed no longer freezes one
-  step behind: the last frame of every change is always delivered, and it
-  runs at 10 frames a second by default. The pointer now visibly travels
-  to what it is about to click.
+  A layout pass for phones and desktops. On a phone the conversation no
+  longer drags sideways: tapping the message box no longer zooms the page
+  in, and long links, paths and code in the thread wrap or scroll inside
+  their own card. Text is larger, and card buttons, the bottom bar and the
+  live voice button are bigger and easier to tap. The memory graph takes
+  less of the screen, and the browser card's controls (including Take
+  control) wrap onto their own row instead of being cut off.
 
 
-  The agent can now tick checkbox CAPTCHAs -- reCAPTCHA's "I'm not a
-  robot", hCaptcha and Cloudflare Turnstile. They sit in iframes the agent
-  could not see before; it now spots them, and the new browser_captcha tool
-  clicks them with humanlike movement: curved paths, varying speed, the
-  odd overshoot, off-centre landings and natural press timing. Ordinary
-  clicks and typing use the same movement and uneven key timing. If the box
-  escalates to a picture puzzle, the agent hands the browser to you.
+  On a desktop the memory graph lines up with the conversation, the
+  current session's name shows at the top, screenshots and text are
+  larger, and the phone-style bottom bar is gone -- live voice now sits
+  next to Send.
 
 
 dependencies: []

@@ -50,6 +50,11 @@
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /* The reading column's width. One variable, so the memory ribbon above the
+     thread and the thread itself stay the same width at every breakpoint --
+     they used to be set separately and drifted apart on a desktop. */
+  --col: 940px;
 }
 
 * { box-sizing: border-box; }
@@ -230,7 +235,7 @@ body::before {
 .page {
   flex: 1; min-height: 0;
   display: flex; flex-direction: column;
-  width: 100%; max-width: 940px; margin: 0 auto;
+  width: 100%; max-width: var(--col); margin: 0 auto;
   border-left: 1px solid var(--border); border-right: 1px solid var(--border);
   background: var(--s1);
 }
@@ -244,7 +249,7 @@ body::before {
 .web {
   flex: 0 0 auto; display: flex; align-items: stretch; gap: 10px;
   padding: 8px 12px;
-  width: 100%; max-width: 940px; margin: 0 auto;
+  width: 100%; max-width: var(--col); margin: 0 auto;
   border-bottom: 1px solid var(--border); background: var(--bg);
 }
 .web-tag {
@@ -446,9 +451,16 @@ body::before {
 
 /* ---------------------------------------------------------------- thread -- */
 .thread-wrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.thread { flex: 1; overflow-y: auto; padding: 16px 16px 6px; }
-.thread-content { display: flex; flex-direction: column; gap: 18px; }
-.turn { display: flex; flex-direction: column; gap: 2px; }
+/* Vertical only. `overflow-y: auto` alone makes the x axis auto as well, so a
+   single unbreakable token anywhere in the thread let the whole conversation
+   be dragged sideways on a phone. Wide content (a terminal, a diff) scrolls
+   inside its own card instead. */
+.thread {
+  flex: 1; overflow-y: auto; overflow-x: hidden; overscroll-behavior-x: none;
+  padding: 16px 16px 6px;
+}
+.thread-content { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.turn { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .turn .msg + .msg { margin-top: 14px; }
 
 /* Offered, not forced: the pane holds still once you scroll up to read, and
@@ -492,7 +504,10 @@ body::before {
 }
 .msg-body { min-width: 0; flex: 1; }
 .msg-who { font-size: 10.5px; font-weight: 650; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-3); margin-bottom: 3px; }
-.msg-text { font-size: 13.5px; white-space: pre-wrap; word-break: break-word; color: var(--text); }
+.msg-text {
+  font-size: 14px; line-height: 1.6; white-space: pre-wrap;
+  overflow-wrap: anywhere; color: var(--text);
+}
 .msg.user .msg-text { color: var(--text); }
 
 .reason-toggle {
@@ -1525,7 +1540,7 @@ label + .jf-hint { margin-top: -5px; }
 
 /* The work belonging to one prompt, indented to sit under the reply rather
    than beside the avatars. */
-.work { display: flex; flex-direction: column; gap: 10px; }
+.work { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .work > * + * { margin-top: 0; }
 .work .msg + .msg { margin-top: 4px; }
 
@@ -1868,7 +1883,9 @@ label + .jf-hint { margin-top: -5px; }
   padding: 9px 11px; border-radius: var(--r-sm);
   background: var(--s2); border: 1px solid var(--border);
   font-size: 12px; color: var(--text-2); white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
+.cell-note > span { min-width: 0; }
 .cell-note.tone-bad { border-color: rgba(251, 113, 133, 0.3); color: var(--danger); }
 .cell-note.tone-warn { border-color: rgba(251, 191, 36, 0.3); color: var(--warn); }
 .cell-note svg { flex: 0 0 auto; margin-top: 2px; }
@@ -1959,7 +1976,7 @@ label + .jf-hint { margin-top: -5px; }
 
 /* Laptops and small desktops: more room for the column itself. */
 @media (min-width: 1000px) {
-  .page { max-width: 1020px; }
+  :root { --col: 1020px; }
   .thread { padding: 20px 22px 8px; }
   .composer { padding: 14px 22px 18px; }
   .approvals { padding: 0 22px 14px; }
@@ -1976,18 +1993,19 @@ label + .jf-hint { margin-top: -5px; }
   }
   /* The header's job is done by the rail on this width: the wordmark, the
      session switcher and the settings button are all up there already. */
-  .top .brand.in-top, .top .session-btn, .top .btn.in-top { display: none; }
-  .top { height: 46px; justify-content: flex-end; }
-  .page { max-width: 1120px; }
-  .thread-content { gap: 22px; }
-  .shot-stage .frame { max-height: 360px; }
+  .top .brand.in-top, .top .btn.in-top { display: none; }
+  .top { height: 52px; padding: 0 22px; }
+  :root { --col: 1120px; }
+  .thread-content { gap: 24px; }
+  .shot-stage .frame { max-height: 480px; }
 }
 
 /* Very wide: stop growing the text column and let the work cells use the room,
    which is what actually benefits from it. */
 @media (min-width: 1500px) {
-  .page { max-width: 1240px; }
+  :root { --col: 1240px; }
   .term-body { max-height: 460px; }
+  .shot-stage .frame { max-height: 600px; }
 }
 
 /* ----------------------------------------------------------------- tools -- */
@@ -3277,4 +3295,122 @@ label + .jf-hint { margin-top: -5px; }
   .badge.browsing { max-width: 132px; }
   .pic-full { padding: 14px; }
   .cell.pics.is-sheet .pics-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+}
+
+/* ============================================================================
+   Fit and finish across widths
+
+   Last in the file on purpose: these adjust rules defined above, and at equal
+   specificity the later rule wins.
+   ============================================================================ */
+
+/* The browser card's header carries an address, a control indicator and up to
+   four actions. On a phone that is wider than the card, and `overflow: hidden`
+   on the card quietly cut the last buttons off -- Take control was the one you
+   could not reach. It wraps instead: the address keeps the first row, the
+   controls take the second. */
+.browser-control-indicator { white-space: nowrap; flex: 0 0 auto; }
+.browser-handoff-alert { flex-wrap: wrap; }
+.browser-handoff-main { min-width: 0; flex: 1 1 240px; }
+.browser-interactive-bar input { min-width: 0; }
+.browser-interactive-hint { flex-wrap: wrap; }
+.kanban-card-title, .kanban-task-title, .perm-reason, .job-name { overflow-wrap: anywhere; }
+
+@media (max-width: 680px) {
+  .cell.shot .cell-top { flex-wrap: wrap; row-gap: 8px; }
+  .cell.shot .shot-where { flex: 1 1 calc(100% - 24px); }
+  .cell.shot .cell-top .spacer { display: none; }
+  /* The dot and the glyph say who is driving; the words do not fit. */
+  .browser-control-indicator > span:last-child { display: none; }
+  .browser-handoff-actions { flex: 1 1 100%; }
+  .browser-handoff-btn { flex: 1; justify-content: center; min-height: 40px; }
+
+  /* The memory graph is ambient, not the thing you came to read. At 145px it
+     took a fifth of a phone screen away from the conversation. */
+  .neural-stage { height: 92px; }
+  .web-tag-group { top: 8px; left: 10px; gap: 6px; }
+  .neural-latest { bottom: 6px; right: 10px; max-width: 70%; }
+
+  /* Reading size. The body copy was 13.5px, which is a desktop size held at
+     arm's length. */
+  .msg-text { font-size: 15px; line-height: 1.6; }
+  .msg-who { font-size: 11px; }
+  .avatar { width: 30px; height: 30px; }
+  .term-body, .diff-code, .cell-line-text, .cell-line-body { font-size: 12px; }
+  .working { padding-left: 41px; }
+
+  .top { height: 56px; }
+  .session-btn { height: 38px; font-size: 13.5px; padding: 0 13px; }
+  .top .btn.icon.in-top svg { width: 20px; height: 20px; }
+
+  /* ── bottom nav: bigger glyphs, readable labels, a thumb-sized live button ── */
+  .mobile-nav { height: calc(64px + env(safe-area-inset-bottom, 0px)); }
+  .mob-tab { font-size: 11px; gap: 4px; min-height: 52px; }
+  .mob-tab svg { width: 23px; height: 23px; }
+  .mob-live-btn { width: 50px; height: 50px; }
+  .kweb, .sched { bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
+}
+
+/* ── touch ──
+   Keyed to the pointer, not the width: a tablet in landscape is wide and
+   still driven by a thumb. */
+@media (pointer: coarse) {
+  /* iOS zooms the page in on any field whose text is under 16px, and does not
+     zoom back out -- so tapping the composer left the app magnified and
+     draggable sideways. 16px is the size that stops it. !important only
+     because a few fields carry inline sizes. */
+  textarea, input, select { font-size: 16px !important; }
+
+  /* No double-tap zoom on controls; a tap is a tap. */
+  button, a, .btn { touch-action: manipulation; }
+
+  /* The small pill buttons on cards were 22px tall: a mouse target. */
+  .cell-act { height: 34px; padding: 0 12px; font-size: 12px; }
+  .cell-top { padding: 8px 11px; }
+  .cell-line-top { padding: 9px 8px; }
+  .term-more, .shot-acts-toggle { padding: 11px 12px; font-size: 12px; }
+  .reason-toggle { padding: 8px 0; font-size: 12px; }
+  .kanban-step-btn { padding: 7px 11px; font-size: 12px; }
+  .web-tag { height: 34px; }
+  .jump-pill { height: 36px; padding: 0 16px; font-size: 12.5px; }
+  .badge-x { width: 28px; height: 28px; }
+  .rail-row { padding: 11px 10px; }
+  .rail-act { padding: 11px 10px; }
+  .ses-row { padding: 13px 12px; }
+  .shot-strip input { height: 32px; }
+  .shot-strip input::-webkit-slider-thumb { width: 20px; height: 20px; margin-top: -9px; }
+  .shot-strip input::-moz-range-thumb { width: 20px; height: 20px; }
+}
+
+/* The live voice control, for widths where the bottom bar is gone. */
+.composer-live { display: none; }
+
+/* ── desktop ── */
+@media (min-width: 1000px) {
+  .msg-text { font-size: 15px; }
+  .msg-who { font-size: 11px; }
+  .term-body, .diff-code { font-size: 12.5px; }
+  .composer textarea { font-size: 14.5px; min-height: 28px; max-height: 240px; }
+  .composer-box { padding: 10px 14px 8px; }
+}
+
+@media (min-width: 1180px) {
+  /* The rail already carries Tasks, and live voice moves next to Send. A tab
+     bar pinned to the bottom of a monitor is a phone habit. */
+  .mobile-nav { display: none; }
+  .composer-live { display: inline-flex; }
+
+  /* The session you are in, said at the top of the column rather than only
+     as a highlighted row in the rail. */
+  .top .session-btn {
+    background: none; border-color: transparent; height: 36px;
+    font-size: 14px; font-weight: 600; padding: 0 10px;
+  }
+  .top .session-btn:hover { background: var(--s2); border-color: var(--border); }
+  .session-name { max-width: 520px; }
+
+  .rail { flex-basis: 272px; }
+  .rail-row-main b { font-size: 13.5px; }
+  .rail-row-main em { font-size: 11px; }
+  .rail-act { font-size: 13px; }
 }
