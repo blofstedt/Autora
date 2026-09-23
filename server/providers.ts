@@ -299,21 +299,33 @@ export function costOf(
       Anthropic) how many were written to it. */
   cache: { read?: number; write?: number } = {},
 ): number {
+  const parts = costParts(providerId, modelId, inputTokens, outputTokens, at, cache);
+  return parts.fresh + parts.cached + parts.output;
+}
+
+/** The same cost, split into new input, cached input and output. */
+export function costParts(
+  providerId: string,
+  modelId: string,
+  inputTokens: number,
+  outputTokens: number,
+  at: Date = new Date(),
+  cache: { read?: number; write?: number } = {},
+): { fresh: number; cached: number; output: number } {
   const spec = modelSpec(providerId, modelId);
-  if (!spec || spec.priced === false) return 0;
+  if (!spec || spec.priced === false) return { fresh: 0, cached: 0, output: 0 };
   const read = Math.min(cache.read ?? 0, inputTokens);
   const write = Math.min(cache.write ?? 0, inputTokens - read);
   // Anthropic publishes its cache prices as multiples of the input price:
   // a tenth to read, a quarter more to write (the five-minute cache).
   const readPrice = spec.cachedInput ?? (providerId === "anthropic" ? spec.input * 0.1 : spec.input);
   const writePrice = providerId === "anthropic" ? spec.input * 1.25 : spec.input;
-  const list = (
-    (inputTokens - read - write) * spec.input +
-    read * readPrice +
-    write * writePrice +
-    outputTokens * spec.output
-  ) / 1_000_000;
-  return providerId === "deepseek" && deepseekOffPeak(at) ? list / 2 : list;
+  const scale = (providerId === "deepseek" && deepseekOffPeak(at) ? 0.5 : 1) / 1_000_000;
+  return {
+    fresh: (inputTokens - read - write) * spec.input * scale,
+    cached: (read * readPrice + write * writePrice) * scale,
+    output: outputTokens * spec.output * scale,
+  };
 }
 
 export function isPriced(providerId: string, modelId: string): boolean {

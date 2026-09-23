@@ -52,6 +52,8 @@ export type Usage = {
     cost: number;
     priced: boolean;
   }[];
+  split?: { fresh: number; cached: number; output: number; covered: number };
+  tool_feed?: { tool: string; calls: number; tokens: number }[];
   budget: {
     monthly_usd: number | null;
     spent: number;
@@ -80,6 +82,7 @@ export function money(amount: number): string {
 /** "1 turn", not "1 turns" -- the first turn of the month is the one most
     likely to be read, and it should not look like a placeholder. */
 const turns = (n: number) => `${n} turn${n === 1 ? "" : "s"}`;
+const turnsOf = (n: number) => `${n} call${n === 1 ? "" : "s"}`;
 
 /** " (84% cached)", or nothing when none of it was. */
 function cachedShare(input: number, cached: number | undefined): string {
@@ -211,6 +214,36 @@ export function Billing({
           input tokens ({tokens(usage.month.cached)} of {tokens(usage.month.input)}) were served
           from the provider's cache, at its lower cached price.
         </p>
+      )}
+
+      {/* Where the month's money went, by kind of token. New input and
+          output are the parts worth cutting; cached input is already cheap. */}
+      {usage.split && usage.split.covered > 0 && (
+        <div className="bill-split">
+          <h4>Where it went this month</h4>
+          <div className="bill-submodel"><span>New input</span><em>{money(usage.split.fresh)}</em></div>
+          <div className="bill-submodel"><span>Cached input</span><em>{money(usage.split.cached)}</em></div>
+          <div className="bill-submodel"><span>Output (what the model wrote)</span><em>{money(usage.split.output)}</em></div>
+          {usage.split.covered < usage.month.cost - 0.005 && (
+            <p className="jf-hint">
+              Covers {money(usage.split.covered)} of {money(usage.month.cost)}; earlier turns were
+              recorded before this split was kept.
+            </p>
+          )}
+        </div>
+      )}
+
+      {usage.tool_feed && usage.tool_feed.length > 0 && (
+        <details className="bill-recent">
+          <summary>Tool output sent to the model this month</summary>
+          {usage.tool_feed.map((row) => (
+            <div key={row.tool} className="bill-turn">
+              <code>{row.tool}</code>
+              <span className="bill-turn-tokens">{turnsOf(row.calls)}</span>
+              <em>{tokens(row.tokens)}</em>
+            </div>
+          ))}
+        </details>
       )}
 
       {/* A monthly ceiling that warns rather than blocks. A console that stops

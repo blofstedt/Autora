@@ -4,14 +4,14 @@ import path from "node:path";
 import express, { type Request, type Response } from "express";
 import { WebSocketServer, WebSocket } from "ws";
 import {
-  AUTO_ORDER, PRICES_CHECKED, PROVIDERS, costOf, isPriced, modelsFor,
+  AUTO_ORDER, PRICES_CHECKED, PROVIDERS, costParts, isPriced, modelsFor,
   providerSpec, rememberModels,
 } from "./server/providers";
 import {
   baseUrlFor, clearUsage, keyFor, keySource, maskKey, modelFor, recordUsage,
   resolveProvider, save, setKey, state, stateFilePath, type Resolved,
   listSecrets, setSecret, deleteSecret, getSecret, SECRET_PRESETS, redactSecrets,
-  mergeJev, mergeAppearance, saneMcp, THEMES, FONTS,
+  mergeJev, mergeAppearance, saneMcp, THEMES, FONTS, recordToolFeed, type CostParts,
 } from "./server/state";
 import { decide, lastDecision, supportFor, type JevOutcome, type JevTask } from "./server/jev/router";
 import type { JevTarget } from "./server/jev/engine";
@@ -27,7 +27,7 @@ import {
   ProviderError, listModels, streamChat,
   type ChatMessage, type ChatTurn, type ToolReply,
 } from "./server/llm";
-import { billingSummary } from "./server/billing";
+import { billingSummary, dayKey } from "./server/billing";
 import { dropSession, fromDataUrl, getBlob, putBlob } from "./server/blobs";
 import {
   MAX_ARTIFACT_BYTES, deleteArtifact, getArtifact, listArtifacts, readArtifact, saveArtifact,
@@ -707,6 +707,15 @@ function jevTarget(): JevTarget | null {
 const jevThisTurn = new Map<string, string[]>();
 
 /** The lines the model is told about Jev for this turn. */
+/** A model call's cost, whole and split, at today's prices. */
+function priceCall(
+  provider: string, model: string, input: number, output: number,
+  cachedRead = 0, cacheWrite = 0,
+): { cost: number; parts: CostParts } {
+  const parts = costParts(provider, model, input, output, new Date(), { read: cachedRead, write: cacheWrite });
+  return { cost: parts.fresh + parts.cached + parts.output, parts };
+}
+
 function jevBriefing(sessionId: string): string {
   const notes = jevThisTurn.get(sessionId) ?? [];
   return [
@@ -747,7 +756,7 @@ async function jevDecide(session: Session | null, task: JevTask): Promise<JevOut
       model: target.model,
       input: usage.input,
       output: usage.output,
-      cost: costOf(target.provider, target.model, usage.input, usage.output, new Date(), { read: usage.cached }),
+      ...priceCall(target.provider, target.model, usage.input, usage.output, usage.cached),
       priced: isPriced(target.provider, target.model),
       estimated: false,
       cached: usage.cached,
@@ -1510,6 +1519,12 @@ async function systemInstructionFor(
     "",
     "Answer as the console itself: direct, concrete, and short enough to read",
     "between steps. Plain prose -- no headings, and no markdown emphasis.",
+    "While you are working -- any message that comes with tool calls -- write",
+    "at most one short line saying what you are doing, or nothing at all. Do",
+    "not restate tool output, repeat a plan you already gave, or narrate each",
+    "step: the person sees every call and its result as it happens. When the",
+    "work is done, give your final answer in full, with everything the person",
+    "needs; brevity is for the steps in between, not for the answer.",
     "The person's latest message may end with a console note for the turn;",
     "the console wrote it, not the person, and it is context, not a request.",
   );
@@ -2115,9 +2130,9 @@ async function startServer() {
                 // the six calls it actually was.
                 const priced = isPriced(active.provider, active.model);
                 const cache = { read: turn.usage.cached ?? 0, write: turn.usage.cacheWrite ?? 0 };
-                const cost = costOf(
+                const { cost, parts } = priceCall(
                   active.provider, active.model, turn.usage.input, turn.usage.output,
-                  new Date(), cache,
+                  cache.read, cache.write,
                 );
                 recordUsage({
                   ts: Math.floor(Date.now() / 1000),
@@ -2127,6 +2142,7 @@ async function startServer() {
                   input: turn.usage.input,
                   output: turn.usage.output,
                   cost,
+                  parts,
                   priced,
                   estimated: turn.usage.estimated,
                   cached: cache.read,
@@ -2203,9 +2219,8 @@ async function startServer() {
               model,
               input: turn.usage.input,
               output: turn.usage.output,
-              cost: costOf(active.provider, model, turn.usage.input, turn.usage.output, new Date(), {
-                read: turn.usage.cached, write: turn.usage.cacheWrite,
-              }),
+              ...priceCall(active.provider, model, turn.usage.input, turn.usage.output,
+                turn.usage.cached, turn.usage.cacheWrite),
               priced: isPriced(active.provider, model),
               estimated: turn.usage.estimated,
               cached: turn.usage.cached ?? 0,
@@ -2319,6 +2334,8 @@ async function startServer() {
           let loopStop: string | null = null;
           /** Run a call's result past the loop watch before the model reads it. */
           const watched = (name: string, args: unknown, ok: boolean, raw: string, shown: string) => {
+            // What this tool costs in the prompt, for the Billing page's tally.
+            recordToolFeed(name, Math.ceil(shown.length / 4), dayKey(Math.floor(Date.now() / 1000)).slice(0, 7));
             const verdict = watch.record(name, args, ok, raw);
             if (verdict.log) emitEvent(session, "system.log", "system", { message: verdict.log });
             if (verdict.stop) loopStop = verdict.stop;

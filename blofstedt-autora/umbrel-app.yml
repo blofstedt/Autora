@@ -116,6 +116,17 @@ releaseNotes: >-
 
   The Billing page now shows how much of your input came from the
   provider's cache, and cached tokens are priced at the cheaper cached rate.
+  It also splits this month's spend into new input, cached input and output,
+  and lists which tools' output the model has been reading the most.
+
+
+  The agent is sent less without losing anything. When it clicks or types on
+  a page it has already read, it now gets only what changed (with the
+  current numbers of any buttons or links that moved) instead of the whole
+  page again, and "nothing changed" when nothing did. JSON results have
+  their spacing removed, leaving every value intact. And the agent keeps its
+  messages between steps to a line or less, while its final answer to you is
+  still written out in full.
 dependencies: []
 path: ""
 defaultUsername: ""

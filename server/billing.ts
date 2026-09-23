@@ -58,6 +58,11 @@ export function billingSummary() {
   const today = dayKey(now);
   const month = monthKey(now);
 
+  /* Where this month's money went. Entries from before the split was
+     recorded have no parts, and are left out of it rather than guessed at;
+     `covered` says how much of the month the split speaks for. */
+  const split = { fresh: 0, cached: 0, output: 0, covered: 0 };
+
   const all = empty();
   const todayBucket = empty();
   const monthBucket = empty();
@@ -68,7 +73,15 @@ export function billingSummary() {
     add(all, entry);
     const day = dayKey(entry.ts);
     if (day === today) add(todayBucket, entry);
-    if (day.slice(0, 7) === month) add(monthBucket, entry);
+    if (day.slice(0, 7) === month) {
+      add(monthBucket, entry);
+      if (entry.parts) {
+        split.fresh += entry.parts.fresh;
+        split.cached += entry.parts.cached;
+        split.output += entry.parts.output;
+        split.covered += entry.cost;
+      }
+    }
 
     byDay.set(day, (byDay.get(day) ?? 0) + entry.cost);
 
@@ -168,5 +181,13 @@ export function billingSummary() {
     },
     /** Vendors whose prices are in the table at all, for the caveat line. */
     priced_providers: PROVIDERS.map((p) => p.id),
+    split,
+    /** This month's tool output as the model read it, biggest first. */
+    tool_feed: state.toolFeed.month === month
+      ? Object.entries(state.toolFeed.tools)
+        .map(([tool, row]) => ({ tool, calls: row.calls, tokens: row.tokens }))
+        .sort((a, b) => b.tokens - a.tokens)
+        .slice(0, 8)
+      : [],
   };
 }
