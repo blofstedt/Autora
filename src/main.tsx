@@ -1,6 +1,10 @@
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import "./styles.css";
+import { applyAppearance, cachedAppearance } from "./lib/theme";
+
+// Before the first paint, so a saved theme never flashes the default one.
+applyAppearance(cachedAppearance());
 
 createRoot(document.getElementById("root")!).render(<App />);
 

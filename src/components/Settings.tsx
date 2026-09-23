@@ -120,7 +120,22 @@ function price(model: ModelOption): string {
  * startup -- and conflating them is how you end up certain a key is set while
  * the agent is still talking to something else entirely.
  */
-export function Settings({ onClose }: { onClose: () => void }) {
+/** Which part of the settings a page shows. The full panel is all of them. */
+export type SettingsSection = "config" | "keys" | "analytics" | "system";
+
+export function Settings({
+  onClose, section, embedded = false,
+}: {
+  onClose?: () => void;
+  section?: SettingsSection;
+  /** Rendered as a page inside the app rather than as a full-screen sheet. */
+  embedded?: boolean;
+}) {
+  const shows = (s: SettingsSection) => !section || section === s;
+  const title = section === "config" ? "Config"
+    : section === "keys" ? "API Keys"
+      : section === "analytics" ? "Analytics"
+        : section === "system" ? "System" : "Settings";
   const [state, setState] = useState<SettingsState | null>(null);
   const serverVersion = useServerVersion();
   const [keyDrafts, setKeyDrafts] = useState<Record<string, string>>({});
@@ -230,16 +245,18 @@ export function Settings({ onClose }: { onClose: () => void }) {
 
   if (!state) {
     return (
-      <div className="sched">
+      <div className={`sched ${embedded ? "is-embedded" : ""}`}>
         <div className="sched-top">
           <div className="brand">
             <span className="brand-mark"><IconGear size={13} /></span>
-            <span className="brand-word">Settings</span>
+            <span className="brand-word">{title}</span>
           </div>
           <div className="spacer" />
-          <button className="btn icon ghost" onClick={onClose} aria-label="Close settings">
-            <IconX size={14} />
-          </button>
+          {onClose && !embedded && (
+            <button className="btn icon ghost" onClick={onClose} aria-label="Close settings">
+              <IconX size={14} />
+            </button>
+          )}
         </div>
         <div className="sched-body">
           {error ? (
@@ -265,20 +282,26 @@ export function Settings({ onClose }: { onClose: () => void }) {
     prompt !== (state.system_prompt ?? "") ||
     budget.trim() !== savedBudget;
 
+  const saveable = section !== "system";
+
   return (
-    <div className="sched">
+    <div className={`sched ${embedded ? "is-embedded" : ""}`}>
       <div className="sched-top">
         <div className="brand">
           <span className="brand-mark"><IconGear size={13} /></span>
-          <span className="brand-word">Settings</span>
+          <span className="brand-word">{title}</span>
         </div>
         <div className="spacer" />
-        <button className="btn primary" onClick={save} disabled={!dirty || saving}>
-          {saving ? "Saving…" : "Save"}
-        </button>
-        <button className="btn icon ghost" onClick={onClose} aria-label="Close settings">
-          <IconX size={14} />
-        </button>
+        {saveable && (
+          <button className="btn primary" onClick={save} disabled={!dirty || saving}>
+            {saving ? "Saving…" : "Save"}
+          </button>
+        )}
+        {onClose && !embedded && (
+          <button className="btn icon ghost" onClick={onClose} aria-label="Close settings">
+            <IconX size={14} />
+          </button>
+        )}
       </div>
 
       {error && <div className="sched-error">{error}</div>}
@@ -293,8 +316,10 @@ export function Settings({ onClose }: { onClose: () => void }) {
         {/* First thing in the panel, because "did my update arrive" is the
             question people open this to answer, and it used to be answerable
             only from a line buried in the microphone check. */}
-        <VersionCard server={serverVersion} />
+        {shows("system") && <VersionCard server={serverVersion} />}
+        {section === "system" && <HostCard />}
 
+        {shows("config") && <>
         <section className="set-card set-active">
           <h3>Currently using</h3>
           <div className="set-active-row">
@@ -379,11 +404,39 @@ export function Settings({ onClose }: { onClose: () => void }) {
         <ToolsCard tools={state.tools} onSaved={adopt} />
 
         {state.jev && <JevCard jev={state.jev} onSaved={adopt} />}
+        </>}
 
-        <SecretStore />
+        {section === "keys" && (
+          <section className="set-card">
+            <h3>Model providers</h3>
+            <p className="jf-hint">
+              One key per vendor. Typing replaces the saved key; clearing it
+              removes it. Which provider and model answer is chosen on Config.
+            </p>
+            {state.credentials.filter((c) => c.role === "model").map((c) => (
+              <KeyField
+                key={c.name}
+                label={c.label}
+                note={c.note}
+                hint={c.hint}
+                set={c.set}
+                value={keyDrafts[c.name]}
+                onChange={(v) => setKeyDrafts((d) => ({ ...d, [c.name]: v }))}
+                onReset={() => setKeyDrafts(({ [c.name]: _drop, ...rest }) => rest)}
+              />
+            ))}
+            <p className="set-note set-where">
+              Keys saved here are written to <code>{state.state_file}</code> on the
+              server, readable only by the account Autora runs as.
+            </p>
+          </section>
+        )}
 
-        <Billing budget={budget} onBudget={setBudget} />
+        {shows("keys") && <SecretStore />}
 
+        {shows("analytics") && <Billing budget={budget} onBudget={setBudget} />}
+
+        {shows("config") && (
         <section className="set-card">
           <h3>Standing instructions</h3>
           <p className="jf-hint">
@@ -404,8 +457,9 @@ export function Settings({ onClose }: { onClose: () => void }) {
             {prompt.length} / {state.system_prompt_limit ?? 4000}
           </div>
         </section>
+        )}
 
-        {voiceKeys.length > 0 && (
+        {shows("keys") && voiceKeys.length > 0 && (
           <section className="set-card">
             <h3>Voice keys</h3>
             <p className="jf-hint">
@@ -427,9 +481,9 @@ export function Settings({ onClose }: { onClose: () => void }) {
           </section>
         )}
 
-        <VoiceCheck />
+        {shows("system") && <VoiceCheck />}
 
-        <TrustThisServer />
+        {shows("system") && <TrustThisServer />}
       </div>
     </div>
   );
@@ -969,6 +1023,55 @@ function TerminalOptions({
 }
 
 /** Which Autora is installed, and whether this page is that Autora. */
+type HostInfo = {
+  version: string; node: string; platform: string; hostname: string;
+  uptime_s: number; host_uptime_s: number; cpus: number; load: number[];
+  memory: { rss: number; heap: number; total: number; free: number };
+  sessions: number; busy: number; browsers: number; state_file: string; cwd: string;
+};
+
+const mb = (n: number) => `${Math.round(n / 1048576).toLocaleString()} MB`;
+export function duration(s: number): string {
+  if (s < 90) return `${s}s`;
+  if (s < 5400) return `${Math.round(s / 60)} min`;
+  if (s < 172800) return `${Math.round(s / 3600)} h`;
+  return `${Math.round(s / 86400)} days`;
+}
+
+/** The machine Autora runs on, refreshed while the page is open. */
+function HostCard() {
+  const [host, setHost] = useState<HostInfo | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () => fetch("/api/system").then((r) => r.json()).then((d) => alive && setHost(d)).catch(() => undefined);
+    load();
+    const timer = window.setInterval(load, 5000);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, []);
+  if (!host) return null;
+  const used = host.memory.total - host.memory.free;
+  return (
+    <section className="set-card">
+      <h3>Host</h3>
+      <dl className="host-grid">
+        <dt>Machine</dt><dd>{host.hostname} · {host.platform}</dd>
+        <dt>Node</dt><dd>{host.node}</dd>
+        <dt>Autora up</dt><dd>{duration(host.uptime_s)}</dd>
+        <dt>Host up</dt><dd>{duration(host.host_uptime_s)}</dd>
+        <dt>CPU</dt><dd>{host.cpus} cores · load {host.load.map((l) => l.toFixed(2)).join(" / ")}</dd>
+        <dt>Memory</dt>
+        <dd>
+          Autora {mb(host.memory.rss)} · host {mb(used)} of {mb(host.memory.total)}
+          <span className="host-meter"><i style={{ width: `${Math.round((used / host.memory.total) * 100)}%` }} /></span>
+        </dd>
+        <dt>Sessions</dt><dd>{host.sessions} open · {host.busy} working · {host.browsers} browser{host.browsers === 1 ? "" : "s"}</dd>
+        <dt>Settings file</dt><dd><code>{host.state_file}</code></dd>
+        <dt>Working dir</dt><dd><code>{host.cwd}</code></dd>
+      </dl>
+    </section>
+  );
+}
+
 function VersionCard({ server }: { server: string | null }) {
   const { page, stale } = versions(server);
   return (

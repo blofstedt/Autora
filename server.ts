@@ -11,11 +11,18 @@ import {
   baseUrlFor, clearUsage, keyFor, keySource, maskKey, modelFor, recordUsage,
   resolveProvider, save, setKey, state, stateFilePath, type Resolved,
   listSecrets, setSecret, deleteSecret, getSecret, SECRET_PRESETS, redactSecrets,
-  mergeJev,
+  mergeJev, mergeAppearance, saneMcp, THEMES, FONTS,
 } from "./server/state";
 import { decide, lastDecision, supportFor, type JevOutcome, type JevTask } from "./server/jev/router";
 import type { JevTarget } from "./server/jev/engine";
 import { guardWorthy } from "./server/jev/guard";
+import { captureConsole, log, readLogs, type LogLevel } from "./server/logs";
+import {
+  MCP_CATALOG, connect as connectMcp, disconnect as disconnectMcp, statusOf as mcpStatus,
+} from "./server/mcp";
+import os from "node:os";
+
+captureConsole();
 import {
   ProviderError, listModels, streamChat,
   type ChatMessage, type ChatTurn, type ToolReply,
@@ -414,7 +421,63 @@ function emitEvent(session: Session, kind: string, actor: string, payload: Recor
     }
   }
 
+  logEvent(session, event);
   return event;
+}
+
+/** Tool calls in flight, by span, so a result can say how long it took. */
+const spanLog = new Map<string, { name: string; started: number }>();
+
+/**
+ * The agent's activity, as log lines for the Logs page. Only what someone
+ * debugging would look for -- turns, tool calls and their outcomes, errors,
+ * decisions -- not every streamed token.
+ */
+function logEvent(session: Session, e: AutoraEvent) {
+  const p = e.payload ?? {};
+  const short = (t: unknown, n = 120) => {
+    const s = String(t ?? "").replace(/\s+/g, " ").trim();
+    return s.length > n ? `${s.slice(0, n)}…` : s;
+  };
+  const at = (level: LogLevel, component: string, message: string) =>
+    log(level, component, message, session.id);
+  switch (e.kind) {
+    case "turn.user": at("info", "agent", `turn started: "${short(p.text, 80)}"`); break;
+    case "turn.agent.done": at("info", "agent", "turn finished"); break;
+    case "tool.call":
+      if (e.span) spanLog.set(e.span, { name: String(p.name ?? "tool"), started: Date.now() });
+      at("info", "tools", `${p.name} ${short(JSON.stringify(p.args ?? {}), 160)}`);
+      break;
+    case "tool.result": {
+      const span = e.span ? spanLog.get(e.span) : undefined;
+      const exit = p.display?.exit_code;
+      at(p.ok === false ? "warn" : "info", "tools",
+        `${span?.name ?? "tool"} ${p.ok === false ? "failed" : "ok"}` +
+        (exit !== undefined ? ` (exit ${exit})` : "") +
+        (p.duration_ms != null ? ` in ${p.duration_ms} ms` : ""));
+      if (e.span) spanLog.delete(e.span);
+      break;
+    }
+    case "tool.error": {
+      const span = e.span ? spanLog.get(e.span) : undefined;
+      at("warn", p.guarded ? "guard" : "tools", `${span?.name ?? "tool"}: ${short(p.error ?? p.reason, 300)}`);
+      if (e.span) spanLog.delete(e.span);
+      break;
+    }
+    case "system.error": at("error", "agent", short(p.error ?? "error", 400)); break;
+    case "jev.decision":
+      at(p.mode === "jev" ? "info" : "debug", "jev", p.mode === "jev"
+        ? `${p.task}: fast path, ${(p.fields ?? []).length} fields in ${p.ms} ms, lowest ${Number(p.min ?? 0).toFixed(2)}`
+        : `${p.task}: fell back (${short(p.reason, 200)})`);
+      break;
+    case "ask.request": at("info", "agent", `asked the person: "${short(p.title, 120)}"`); break;
+    case "ask.answer": at("info", "agent", p.cancelled ? `question ${p.who === "user" ? "skipped" : p.who}` : "question answered"); break;
+    case "memory.write": at("info", "memory", `wrote "${short(p.title, 100)}"`); break;
+    case "browser.nav": at("info", "browser", `open ${short(p.url, 200)}`); break;
+    case "usage.turn":
+      at("debug", "provider", `${p.provider}/${p.model}: ${p.input_tokens ?? 0} in, ${p.output_tokens ?? 0} out`);
+      break;
+  }
 }
 
 function broadcastLiveStatus(session: Session) {
@@ -1405,6 +1468,30 @@ async function startServer() {
   const app = express();
   app.use(express.json());
 
+  // Failed API calls, for the Logs page: the request and what it answered.
+  app.use((req, res, next) => {
+    if (!req.path.startsWith("/api/") || req.path === "/api/logs") return next();
+    const started = Date.now();
+    res.on("finish", () => {
+      if (res.statusCode < 400) return;
+      log(res.statusCode >= 500 ? "error" : "warn", "http",
+        `${req.method} ${req.path} -> ${res.statusCode} (${Date.now() - started} ms)`);
+    });
+    next();
+  });
+
+  app.get("/api/logs", (req: Request, res: Response) => {
+    const level = ["debug", "info", "warn", "error"].includes(String(req.query.level))
+      ? (String(req.query.level) as LogLevel) : undefined;
+    res.json(readLogs({
+      level,
+      component: req.query.component ? String(req.query.component) : undefined,
+      q: req.query.q ? String(req.query.q) : undefined,
+      after: req.query.after !== undefined ? Number(req.query.after) : undefined,
+      limit: req.query.limit !== undefined ? Number(req.query.limit) : undefined,
+    }));
+  });
+
   // --- API Routes ---
 
   // 1. Origin & Runtime Info
@@ -1419,16 +1506,146 @@ async function startServer() {
 
   // 2. Sessions List & Creation
   app.get("/api/sessions", (req: Request, res: Response) => {
-    const list = Array.from(sessions.values()).map((s) => ({
-      id: s.id,
-      title: s.title || `Session ${s.id.slice(-6)}`,
-      live: s.live,
-      created_at: s.createdAt,
-      events: s.events.length,
-    }));
+    // Spend per session, from the ledger, in one pass.
+    const spend = new Map<string, { cost: number; input: number; output: number }>();
+    for (const u of state.usage) {
+      const row = spend.get(u.session) ?? { cost: 0, input: 0, output: 0 };
+      row.cost += u.cost; row.input += u.input; row.output += u.output;
+      spend.set(u.session, row);
+    }
+    const list = Array.from(sessions.values()).map((s) => {
+      let turns = 0, tools = 0, errors = 0;
+      for (const e of s.events) {
+        if (e.kind === "turn.user") turns += 1;
+        else if (e.kind === "tool.call") tools += 1;
+        else if (e.kind === "tool.error" || e.kind === "system.error") errors += 1;
+      }
+      const cost = spend.get(s.id);
+      return {
+        id: s.id,
+        title: s.title || `Session ${s.id.slice(-6)}`,
+        live: s.live,
+        busy: s.busy,
+        created_at: s.createdAt,
+        updated_at: s.events.length ? s.events[s.events.length - 1].ts : s.createdAt,
+        events: s.events.length,
+        turns, tools, errors,
+        cost: cost?.cost ?? 0,
+        tokens: cost ? cost.input + cost.output : 0,
+      };
+    });
     // Most recent first
     list.sort((a, b) => b.created_at - a.created_at);
     res.json(list);
+  });
+
+  app.patch("/api/sessions/:id", (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    const title = typeof req.body?.title === "string" ? req.body.title.trim().slice(0, 120) : "";
+    if (!title) return res.status(400).json({ error: "A title is required." });
+    session.title = title;
+    res.json({ ok: true, title });
+  });
+
+  /** Gone for good: its log, its pictures, and its browser. */
+  app.delete("/api/sessions/:id", async (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    if (session.busy) return res.status(409).json({ error: "Stop the session before deleting it." });
+    const live = browsers.get(session.id);
+    if (live) { await live.close().catch(() => undefined); browsers.delete(session.id); }
+    dropSession(session.id);
+    for (const ws of sessionSockets.get(session.id) ?? []) ws.close();
+    sessionSockets.delete(session.id);
+    sessions.delete(session.id);
+    log("info", "sessions", `deleted "${session.title}"`);
+    res.json({ ok: true });
+  });
+
+  /** The host, for the System and Status pages. */
+  app.get("/api/system", (_req: Request, res: Response) => {
+    const mem = process.memoryUsage();
+    res.json({
+      version: VERSION,
+      node: process.version,
+      platform: `${os.type()} ${os.release()} (${os.arch()})`,
+      hostname: os.hostname(),
+      uptime_s: Math.round(process.uptime()),
+      host_uptime_s: Math.round(os.uptime()),
+      cpus: os.cpus().length,
+      load: os.loadavg(),
+      memory: { rss: mem.rss, heap: mem.heapUsed, total: os.totalmem(), free: os.freemem() },
+      sessions: sessions.size,
+      busy: Array.from(sessions.values()).filter((s) => s.busy).length,
+      browsers: browsers.size,
+      state_file: stateFilePath(),
+      cwd: process.cwd(),
+    });
+  });
+
+  // ------------------------------------------------------------------ mcp --
+  const MASK = "••••••";
+  const mcpView = () => state.mcpServers.map((cfg) => ({
+    ...cfg,
+    // Values of env vars and headers are usually secrets: shown masked, and a
+    // masked value sent back means "keep what you have".
+    env: cfg.env ? Object.fromEntries(Object.keys(cfg.env).map((k) => [k, MASK])) : undefined,
+    headers: cfg.headers ? Object.fromEntries(Object.keys(cfg.headers).map((k) => [k, MASK])) : undefined,
+    ...mcpStatus(cfg.id),
+  }));
+  const keepMasked = (next: Record<string, string> | undefined, prev: Record<string, string> | undefined) => {
+    if (!next) return next;
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(next)) out[k] = v === MASK ? (prev?.[k] ?? "") : v;
+    return out;
+  };
+
+  app.get("/api/mcp", (_req: Request, res: Response) => {
+    res.json({ servers: mcpView(), catalog: MCP_CATALOG });
+  });
+
+  app.post("/api/mcp", async (req: Request, res: Response) => {
+    const cfg = saneMcp({ ...req.body, id: undefined });
+    if (!cfg) return res.status(400).json({ error: "A server needs a name." });
+    if (state.mcpServers.some((s) => s.name.toLowerCase() === cfg.name.toLowerCase())) {
+      return res.status(400).json({ error: `There is already a server called "${cfg.name}".` });
+    }
+    state.mcpServers.push(cfg);
+    save();
+    await connectMcp(cfg);
+    res.json({ servers: mcpView(), catalog: MCP_CATALOG });
+  });
+
+  app.patch("/api/mcp/:id", async (req: Request, res: Response) => {
+    const index = state.mcpServers.findIndex((s) => s.id === req.params.id);
+    if (index < 0) return res.status(404).json({ error: "No such server." });
+    const prev = state.mcpServers[index];
+    const next = saneMcp({ ...prev, ...req.body, id: prev.id });
+    if (!next) return res.status(400).json({ error: "A server needs a name." });
+    next.env = keepMasked(next.env, prev.env);
+    next.headers = keepMasked(next.headers, prev.headers);
+    state.mcpServers[index] = next;
+    save();
+    await connectMcp(next);
+    res.json({ servers: mcpView(), catalog: MCP_CATALOG });
+  });
+
+  app.post("/api/mcp/:id/reconnect", async (req: Request, res: Response) => {
+    const cfg = state.mcpServers.find((s) => s.id === req.params.id);
+    if (!cfg) return res.status(404).json({ error: "No such server." });
+    await connectMcp(cfg);
+    res.json({ servers: mcpView(), catalog: MCP_CATALOG });
+  });
+
+  app.delete("/api/mcp/:id", async (req: Request, res: Response) => {
+    const cfg = state.mcpServers.find((s) => s.id === req.params.id);
+    if (!cfg) return res.status(404).json({ error: "No such server." });
+    await disconnectMcp(cfg.id);
+    state.mcpServers = state.mcpServers.filter((s) => s.id !== cfg.id);
+    save();
+    log("info", "mcp", `${cfg.name}: removed`);
+    res.json({ servers: mcpView(), catalog: MCP_CATALOG });
   });
 
   app.post("/api/sessions", (req: Request, res: Response) => {
@@ -2742,6 +2959,7 @@ async function startServer() {
      async, and the rest of the payload is not. */
   const settingsWithTools = async () => ({
     ...settingsPayload(),
+    appearance: { ...state.appearance, themes: THEMES, fonts: FONTS },
     jev: {
       ...state.jev,
       support: supportFor(jevTarget()),
@@ -2841,6 +3059,7 @@ async function startServer() {
       updateToolSettings(body.tools);
     }
     if (body.jev && typeof body.jev === "object") mergeJev(state.jev, body.jev);
+    if (body.appearance && typeof body.appearance === "object") mergeAppearance(state.appearance, body.appearance);
 
     save();
     res.json(await settingsWithTools());
@@ -3176,10 +3395,15 @@ async function startServer() {
       dropSession(id);
     }
     browsers.clear();
+    // stdio MCP servers are child processes; do not leave them running.
+    await Promise.all(state.mcpServers.map((cfg) => disconnectMcp(cfg.id).catch(() => undefined)));
     process.exit(0);
   };
   process.once("SIGINT", () => void shutdown());
   process.once("SIGTERM", () => void shutdown());
+
+  // MCP servers connect in the background: a slow one must not hold up the UI.
+  for (const cfg of state.mcpServers) void connectMcp(cfg);
 
   // Asked once, at startup, so the settings panel and the browser card can
   // both say what is missing without every caller paying for the import.

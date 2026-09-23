@@ -24,6 +24,7 @@
  * to two very different places.
  */
 
+import { callMcpTool, mcpTools } from "./mcp";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -85,7 +86,7 @@ export type AskAnswer = { cancelled: boolean; choices: string[]; text: string; w
 export interface ToolSpec {
   name: string;
   /** "person" is not a setting: asking is always possible. */
-  group: ToolGroup | "person";
+  group: ToolGroup | "person" | "mcp";
   /** What the model is told this does. Written for the model, not the UI. */
   description: string;
   /** JSON Schema for the arguments. Every vendor accepts this shape. */
@@ -661,11 +662,24 @@ export async function groupStates(): Promise<GroupState[]> {
 export async function availableTools(): Promise<ToolSpec[]> {
   const groups = await groupStates();
   const usable = new Set(groups.filter((g) => g.available).map((g) => g.group));
-  return TOOLS.filter((t) => t.group === "person" || usable.has(t.group as ToolGroup));
+  return [
+    ...TOOLS.filter((t) => t.group === "person" || usable.has(t.group as ToolGroup)),
+    ...mcpSpecs(),
+  ];
 }
 
 export function findTool(name: string): ToolSpec | undefined {
-  return TOOLS.find((t) => t.name === name);
+  return TOOLS.find((t) => t.name === name) ?? mcpSpecs().find((t) => t.name === name);
+}
+
+/** Tools from connected MCP servers, in the registry's own shape. */
+function mcpSpecs(): ToolSpec[] {
+  return mcpTools().map((t) => ({
+    name: t.name,
+    group: "mcp" as const,
+    description: t.description,
+    parameters: t.parameters,
+  }));
 }
 
 /**
@@ -1469,8 +1483,17 @@ export async function runTool(
         return { ok: true, summary: readVault(text, args, room), preview: id };
       }
 
-      default:
+      default: {
+        if (spec.group === "mcp") {
+          const out = await callMcpTool(spec.name, args);
+          return {
+            ok: out.ok,
+            summary: out.text,
+            preview: out.text.replace(/\s+/g, " ").slice(0, 120),
+          };
+        }
         return { ok: false, summary: `There is no tool called "${spec.name}".` };
+      }
     }
   } catch (err: any) {
     // Playwright in particular throws on a timeout, a detached element, a page
@@ -1505,6 +1528,13 @@ export async function capabilityBriefing(): Promise<string> {
     }
   }
 
+  const mcp = mcpTools();
+  if (mcp.length > 0) {
+    lines.push(
+      `- MCP servers: ${mcp.length} tool${mcp.length === 1 ? "" : "s"} from connected servers, ` +
+        "named mcp__<server>__<tool>. Use them like any other tool.",
+    );
+  }
   lines.push(
     "- Asking the person: always available. Tool: ask_user. When you are " +
       "genuinely stuck on something only they can settle, ask with a short " +

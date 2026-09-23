@@ -256,11 +256,11 @@ export function SecretStore() {
               width: "32px",
               height: "32px",
               borderRadius: "8px",
-              background: "rgba(99, 102, 241, 0.15)",
+              background: "rgba(var(--accent-rgb), 0.15)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              color: "var(--accent, #6366f1)",
+              color: "var(--accent)",
             }}
           >
             <IconShield size={18} />
@@ -306,8 +306,8 @@ export function SecretStore() {
       {/* Security explanation banner */}
       <div
         style={{
-          background: "rgba(99, 102, 241, 0.08)",
-          border: "1px solid rgba(99, 102, 241, 0.2)",
+          background: "rgba(var(--accent-rgb), 0.08)",
+          border: "1px solid rgba(var(--accent-rgb), 0.2)",
           borderRadius: "var(--r-sm, 8px)",
           padding: "10px 14px",
           marginBottom: "16px",
@@ -316,7 +316,7 @@ export function SecretStore() {
           alignItems: "flex-start",
         }}
       >
-        <div style={{ color: "var(--accent, #6366f1)", marginTop: "2px", flexShrink: 0 }}>
+        <div style={{ color: "var(--accent)", marginTop: "2px", flexShrink: 0 }}>
           <IconLock size={16} />
         </div>
         <div style={{ fontSize: "12px", lineHeight: "1.5", color: "var(--text-2)" }}>
@@ -329,7 +329,7 @@ export function SecretStore() {
       {/* Preset Suggestions */}
       <div style={{ marginBottom: "16px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "8px" }}>
-          <span style={{ color: "var(--accent, #6366f1)" }}>
+          <span style={{ color: "var(--accent)" }}>
             <IconSpark size={13} />
           </span>
           <span style={{ fontSize: "11.5px", fontWeight: 600, color: "var(--text-2)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
@@ -483,7 +483,7 @@ export function SecretStore() {
                   {/* Left info */}
                   <div style={{ display: "flex", flexDirection: "column", gap: "3px", minWidth: "220px" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <code style={{ fontWeight: 650, fontSize: "13px", color: "var(--accent, #6366f1)" }}>
+                      <code style={{ fontWeight: 650, fontSize: "13px", color: "var(--accent)" }}>
                         {s.name}
                       </code>
                       <span
@@ -583,7 +583,7 @@ export function SecretStore() {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-          <span style={{ color: "var(--accent, #6366f1)" }}>
+          <span style={{ color: "var(--accent)" }}>
             <IconKey size={15} />
           </span>
           <span style={{ fontSize: "13px", fontWeight: 650, color: "var(--text)" }}>
@@ -607,7 +607,7 @@ export function SecretStore() {
               style={{ fontFamily: "var(--mono)", textTransform: "uppercase" }}
             />
             {presets[newName] && (
-              <span style={{ fontSize: "11px", color: "var(--accent, #6366f1)" }}>
+              <span style={{ fontSize: "11px", color: "var(--accent)" }}>
                 {presets[newName].label}: {presets[newName].description}
               </span>
             )}

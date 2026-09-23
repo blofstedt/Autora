@@ -34,8 +34,11 @@ export function KnowledgeWeb({
   onClose,
   initialKind,
   recent = [],
+  embedded = false,
 }: {
-  onClose: () => void;
+  onClose?: () => void;
+  /** Shown as a page rather than a full-screen overlay. */
+  embedded?: boolean;
   initialKind?: MemoryRecord["kind"] | "all";
   /** What this session has recalled or written, so the full graph shows the
       same activity the ribbon does rather than a static map. */
@@ -94,11 +97,11 @@ export function KnowledgeWeb({
   const record = selected && data ? data.records.find((r) => r.id === selected) : null;
 
   return (
-    <div className="kweb" role="dialog" aria-label="Memory">
+    <div className={`kweb ${embedded ? "is-embedded" : ""}`} role={embedded ? undefined : "dialog"} aria-label="Memory">
       <header className="kweb-top">
         <div className="kweb-brand">
           <span className="kweb-badge"><IconBrain size={14} /></span>
-          Memory
+          {initialKind === "skill" ? "Skills" : "Memory"}
           {data && <span className="web-count">{data.records.length}</span>}
         </div>
         <input
@@ -133,9 +136,11 @@ export function KnowledgeWeb({
         >
           + Add skill
         </button>
-        <button className="web-toggle kweb-close" onClick={onClose} aria-label="Close memory">
-          <IconX size={15} />
-        </button>
+        {onClose && !embedded && (
+          <button className="web-toggle kweb-close" onClick={onClose} aria-label="Close memory">
+            <IconX size={15} />
+          </button>
+        )}
       </header>
 
       <div className="kweb-body">
@@ -191,7 +196,7 @@ export function KnowledgeWeb({
                   className="btn primary sm"
                   disabled={!skillTitle.trim()}
                   onClick={createSkill}
-                  style={{ background: "#8b5cf6", color: "#fff", borderColor: "#a855f7" }}
+                  style={{ background: "var(--glow-deep)", color: "var(--on-accent)", borderColor: "var(--glow)" }}
                 >
                   Save Skill to Memory
                 </button>
@@ -481,7 +486,7 @@ function Graph({
             <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
           </filter>
           <pattern id="kweb-dots" width="34" height="34" patternUnits="userSpaceOnUse">
-            <circle cx="17" cy="17" r="0.9" fill="#a855f7" opacity="0.22" />
+            <circle cx="17" cy="17" r="0.9" style={{ fill: "var(--glow)" }} opacity="0.22" />
           </pattern>
         </defs>
         <rect width="100%" height="100%" fill="url(#kweb-dots)" />
