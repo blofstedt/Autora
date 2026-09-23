@@ -97,6 +97,12 @@ const VAULT_MAX_CHARS = 16 * 1024 * 1024;
 
 // -------------------------------------------------------------- ingestion --
 
+/** Where a browser tool's page snapshot starts in its result, or -1. */
+export function pageSnapshotAt(result: string): number {
+  const found = /(^|\n)Page: [^\n]*\nURL: [^\n]*\n\nInteractive elements:/.exec(result);
+  return found ? found.index + found[1].length : -1;
+}
+
 /* CSI (colours, cursor moves), OSC (window titles, hyperlinks), and the
    two-byte escapes. Output that went through a terminal is full of these,
    and to a model they are noise that costs tokens. */
@@ -174,6 +180,8 @@ export class ContextEngine {
   /** Replaced whole on every load and swap, never spliced, so a copy taken
       for a request can never be changed under it. */
   private active: ChatMessage[] = [];
+  /** What the console tells the model about this turn in particular. */
+  private turnNote = "";
   /** The highest event seq each message stands for. Messages the server made
       up mid-turn are stamped with the seq current when they were appended. */
   private seqOf = new WeakMap<ChatMessage, number>();
@@ -206,10 +214,54 @@ export class ContextEngine {
     this.active = next;
   }
 
+  /**
+   * Context that belongs to this turn only -- what was recalled, what ran in
+   * earlier turns, the page that is open -- carried on the person's latest
+   * message rather than in the instructions.
+   *
+   * Providers bill the unchanged opening of a prompt at a small fraction of
+   * the price (DeepSeek at about a fiftieth), but only up to the first
+   * character that differs from the last request. Anything that changes
+   * belongs as late in the prompt as possible, so everything before it still
+   * matches: set once when the turn starts, it stays put for every round.
+   */
+  setTurnNote(note: string) {
+    this.turnNote = note.trim();
+  }
+
   /** Add a message the turn produced: the model's tool calls, or their replies. */
   append(message: ChatMessage, seq: number) {
     this.seqOf.set(message, seq);
     this.active = [...this.active, message];
+  }
+
+  /**
+   * Shrink every page snapshot but the newest.
+   *
+   * Each browser action answers with the whole page -- elements and text,
+   * up to three thousand tokens -- and every one of them used to ride along
+   * in every later request of the turn, long after the page had moved on.
+   * Only the latest describes the page as it is now. The older ones keep the
+   * words around them ("Clicked [4].") and a line saying where they went; the
+   * full text stays in the vault. Changed in place, so the messages keep the
+   * identity compaction folds them by.
+   */
+  supersedePages(canRead: boolean) {
+    let newest = true;
+    for (let i = this.active.length - 1; i >= 0; i -= 1) {
+      for (const reply of [...(this.active[i].replies ?? [])].reverse()) {
+        const at = pageSnapshotAt(reply.result);
+        if (at < 0) continue;
+        if (newest) { newest = false; continue; }
+        const snapshot = reply.result.slice(at);
+        const url = /\nURL: ([^\n]*)/.exec(snapshot)?.[1] ?? "the page";
+        const id = this.vault.put(snapshot);
+        const how = canRead ? ` Call vault_read with id "${id}" if you need it again.` : "";
+        reply.result =
+          reply.result.slice(0, at) +
+          `[Page snapshot of ${url} removed: a newer one is further down.${how}]`;
+      }
+    }
   }
 
   /**
@@ -303,6 +355,13 @@ export class ContextEngine {
         },
         ...out,
       ];
+    }
+    if (this.turnNote) {
+      for (let i = out.length - 1; i >= 0; i -= 1) {
+        if (out[i].role !== "user") continue;
+        out[i] = { ...out[i], text: `${out[i].text ?? ""}\n\n${this.turnNote}` };
+        break;
+      }
     }
     return out;
   }

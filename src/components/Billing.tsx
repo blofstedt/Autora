@@ -4,6 +4,7 @@ import { IconCoin, IconRepeat, IconTrash } from "./Icons";
 type Bucket = {
   cost: number;
   input: number;
+  cached: number;
   output: number;
   turns: number;
   unpriced: number;
@@ -24,6 +25,7 @@ type ProviderRow = {
   label: string;
   cost: number;
   input: number;
+  cached: number;
   output: number;
   turns: number;
   unpriced: number;
@@ -45,6 +47,7 @@ export type Usage = {
     label: string;
     model: string;
     input: number;
+    cached: number;
     output: number;
     cost: number;
     priced: boolean;
@@ -77,6 +80,12 @@ export function money(amount: number): string {
 /** "1 turn", not "1 turns" -- the first turn of the month is the one most
     likely to be read, and it should not look like a placeholder. */
 const turns = (n: number) => `${n} turn${n === 1 ? "" : "s"}`;
+
+/** " (84% cached)", or nothing when none of it was. */
+function cachedShare(input: number, cached: number | undefined): string {
+  if (!cached || input <= 0) return "";
+  return ` (${Math.round((cached / input) * 100)}% cached)`;
+}
 
 function tokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -193,6 +202,17 @@ export function Billing({
         />
       </div>
 
+      {/* The prompt cache is where an agent's cost is won or lost: every
+          round resends the whole conversation, and the part the provider
+          recognises is billed at a small fraction of the price. */}
+      {usage.month.cached > 0 && (
+        <p className="jf-hint">
+          This month {Math.round((usage.month.cached / Math.max(1, usage.month.input)) * 100)}% of
+          input tokens ({tokens(usage.month.cached)} of {tokens(usage.month.input)}) were served
+          from the provider's cache, at its lower cached price.
+        </p>
+      )}
+
       {/* A monthly ceiling that warns rather than blocks. A console that stops
           answering mid-sentence because of a number typed here weeks ago is a
           worse surprise than the bill it was meant to prevent. */}
@@ -273,7 +293,7 @@ export function Billing({
                 >
                   <b>{row.label}</b>
                   <span className="bill-row-meta">
-                    {turns(row.turns)} · {tokens(row.input)} in · {tokens(row.output)} out
+                    {turns(row.turns)} · {tokens(row.input)} in{cachedShare(row.input, row.cached)} · {tokens(row.output)} out
                   </span>
                   {/* A provider whose every turn ran on an unpriced model has
                       not cost nothing -- we simply do not know. Saying $0.00
@@ -302,7 +322,7 @@ export function Billing({
               <span className="bill-turn-when">{when(turn.ts)}</span>
               <code>{turn.model}</code>
               <span className="bill-turn-tokens">
-                {tokens(turn.input)} / {tokens(turn.output)}
+                {tokens(turn.input)}{cachedShare(turn.input, turn.cached)} / {tokens(turn.output)}
               </span>
               <em>{turn.priced ? money(turn.cost) : "—"}</em>
             </div>

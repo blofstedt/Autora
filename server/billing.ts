@@ -33,17 +33,20 @@ const monthKey = (ts: number) => dayKey(ts).slice(0, 7);
 interface Bucket {
   cost: number;
   input: number;
+  /** Of `input`, served from the provider's prompt cache. */
+  cached: number;
   output: number;
   turns: number;
   unpriced: number;
   estimated: number;
 }
 
-const empty = (): Bucket => ({ cost: 0, input: 0, output: 0, turns: 0, unpriced: 0, estimated: 0 });
+const empty = (): Bucket => ({ cost: 0, input: 0, cached: 0, output: 0, turns: 0, unpriced: 0, estimated: 0 });
 
 function add(bucket: Bucket, entry: UsageEntry) {
   bucket.cost += entry.cost;
   bucket.input += entry.input;
+  bucket.cached += entry.cached ?? 0;
   bucket.output += entry.output;
   bucket.turns += 1;
   if (!entry.priced) bucket.unpriced += 1;
@@ -91,6 +94,7 @@ export function billingSummary() {
   const lifetime = {
     cost: all.cost + carried.cost,
     input: all.input + carried.input,
+    cached: all.cached,
     output: all.output + carried.output,
     turns: all.turns + carried.turns,
     unpriced: all.unpriced,
@@ -111,6 +115,7 @@ export function billingSummary() {
       label: providerSpec(id)?.label ?? id,
       cost: bucket.cost,
       input: bucket.input,
+      cached: bucket.cached,
       output: bucket.output,
       turns: bucket.turns,
       unpriced: bucket.unpriced,
@@ -148,6 +153,7 @@ export function billingSummary() {
         label: providerSpec(entry.provider)?.label ?? entry.provider,
         model: entry.model,
         input: entry.input,
+        cached: entry.cached ?? 0,
         output: entry.output,
         cost: entry.cost,
         priced: entry.priced,

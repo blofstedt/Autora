@@ -747,9 +747,10 @@ async function jevDecide(session: Session | null, task: JevTask): Promise<JevOut
       model: target.model,
       input: usage.input,
       output: usage.output,
-      cost: costOf(target.provider, target.model, usage.input, usage.output),
+      cost: costOf(target.provider, target.model, usage.input, usage.output, new Date(), { read: usage.cached }),
       priced: isPriced(target.provider, target.model),
       estimated: false,
+      cached: usage.cached,
     });
   }
   if (session && (outcome.mode === "jev" || outcome.attempted)) {
@@ -1412,16 +1413,29 @@ function pastToolCalls(sessionId: string): string[] {
     });
 }
 
-/** What the model is told it is, and what it knows, before the conversation. */
+/**
+ * What the model is told, in two parts.
+ *
+ * `pinned` is the instructions: who it is, what it can do, how to answer. It
+ * is the same from one round to the next and one turn to the next, which is
+ * what lets a provider serve the whole opening of the prompt from its cache.
+ * `note` is what is true of this turn in particular -- the route, what was
+ * recalled, the open page, what ran before -- and rides on the person's
+ * latest message (see ContextEngine.setTurnNote). Before this split the
+ * instructions carried all of it, including a digest that grew with every
+ * tool call, so no two rounds began the same way and every round paid full
+ * price for the entire history.
+ */
 async function systemInstructionFor(
   sessionId: string,
   recalled: MemoryRecord[],
   active?: Resolved | null,
   /** Jev's reading of what kind of request this is, when it had one. */
   routeHint?: string | null,
-): Promise<string> {
+): Promise<{ pinned: string; note: string }> {
   const lines = [state.systemPrompt.trim()];
-  if (routeHint) lines.push("", routeHint);
+  const notes: string[] = [];
+  if (routeHint) notes.push(routeHint);
 
   /* What it can actually do, generated from the tool registry rather than
      written down here. This is the section whose absence made the console
@@ -1431,7 +1445,7 @@ async function systemInstructionFor(
      match. See server/tools.ts -- the schemas the model receives and this
      prose come from the same array, so they cannot drift. */
   lines.push("", await capabilityBriefing());
-  lines.push("", jevBriefing(sessionId));
+  notes.push(jevBriefing(sessionId));
 
   /* Which vendor is answering, said plainly.
      Nothing else in the prompt carries it, so a model asked "which provider
@@ -1453,11 +1467,10 @@ async function systemInstructionFor(
   }
 
   if (recalled.length > 0) {
-    lines.push(
-      "",
+    notes.push([
       "What you already know about this workspace (from the memory graph):",
       ...recalled.map((m) => `- [${m.kind}] ${m.title}: ${m.body}`),
-    );
+    ].join("\n"));
   }
 
   /* The open page used to be pasted in here on every turn, because reading it
@@ -1467,8 +1480,7 @@ async function systemInstructionFor(
      the six thousand characters of it are fetched if they turn out to matter. */
   const open = browsers.get(sessionId)?.status();
   if (open?.open && open.url) {
-    lines.push(
-      "",
+    notes.push(
       `A browser is already open at ${open.url}${
         open.title ? ` ("${open.title}")` : ""}. Call browser_read to see what ` +
         "is on it; the numbered elements it returns are what browser_click and " +
@@ -1487,21 +1499,27 @@ async function systemInstructionFor(
      nothing here can be mistaken for something the model said. */
   const done = pastToolCalls(sessionId);
   if (done.length > 0) {
-    lines.push(
-      "",
+    notes.push([
       "What you have already done in this session, oldest first:",
       ...done,
       "These happened. Do not repeat one to find out what it returned.",
-    );
+    ].join("\n"));
   }
 
   lines.push(
     "",
     "Answer as the console itself: direct, concrete, and short enough to read",
     "between steps. Plain prose -- no headings, and no markdown emphasis.",
+    "The person's latest message may end with a console note for the turn;",
+    "the console wrote it, not the person, and it is context, not a request.",
   );
 
-  return lines.join("\n");
+  return {
+    pinned: lines.join("\n"),
+    note: notes.length > 0
+      ? ["[Console note for this turn -- written by Autora, not by the person]", ...notes].join("\n\n")
+      : "",
+  };
 }
 
 async function startServer() {
@@ -2096,8 +2114,10 @@ async function startServer() {
                 // per model call, so a turn that used six tools is billed as
                 // the six calls it actually was.
                 const priced = isPriced(active.provider, active.model);
+                const cache = { read: turn.usage.cached ?? 0, write: turn.usage.cacheWrite ?? 0 };
                 const cost = costOf(
                   active.provider, active.model, turn.usage.input, turn.usage.output,
+                  new Date(), cache,
                 );
                 recordUsage({
                   ts: Math.floor(Date.now() / 1000),
@@ -2109,12 +2129,14 @@ async function startServer() {
                   cost,
                   priced,
                   estimated: turn.usage.estimated,
+                  cached: cache.read,
                 });
                 emitEvent(session, "usage.turn", "system", {
                   provider: active.provider,
                   model: active.model,
                   input_tokens: turn.usage.input,
                   output_tokens: turn.usage.output,
+                  cached_tokens: cache.read,
                   cost_usd: cost,
                   priced,
                   estimated: turn.usage.estimated,
@@ -2181,9 +2203,12 @@ async function startServer() {
               model,
               input: turn.usage.input,
               output: turn.usage.output,
-              cost: costOf(active.provider, model, turn.usage.input, turn.usage.output),
+              cost: costOf(active.provider, model, turn.usage.input, turn.usage.output, new Date(), {
+                read: turn.usage.cached, write: turn.usage.cacheWrite,
+              }),
               priced: isPriced(active.provider, model),
               estimated: turn.usage.estimated,
+              cached: turn.usage.cached ?? 0,
             });
             return turn.text;
           };
@@ -2285,6 +2310,11 @@ async function startServer() {
            * after being told is stopped.
            */
           let spans = 0;
+          /* Once per turn, not per round: the instructions must open every
+             round's request identically for the provider's cache to serve
+             them, and so must everything the note is attached ahead of. */
+          const { pinned, note } = await systemInstructionFor(session.id, uniqueAccessed, active, routeHint);
+          context.setTurnNote(note);
           const watch = new LoopWatch();
           let loopStop: string | null = null;
           /** Run a call's result past the loop watch before the model reads it. */
@@ -2297,7 +2327,6 @@ async function startServer() {
           for (;;) {
             if (running.get(session.id)?.stopped) break;
 
-            const pinned = await systemInstructionFor(session.id, uniqueAccessed, active, routeHint);
             /* Past the high-water mark this starts a background fold of the
                older turns and returns at once. It is never awaited: this
                step's call goes out now, on the history as it stands. */
@@ -2456,6 +2485,7 @@ async function startServer() {
             if (checkpoint && last) last.result += `\n\n${checkpoint}`;
 
             context.append({ role: "tool", replies }, session.seqCounter);
+            context.supersedePages(canReadVault);
 
             if (loopStop) {
               emitEvent(session, "system.log", "system", { message: loopStop });

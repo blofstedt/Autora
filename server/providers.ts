@@ -25,6 +25,10 @@ export interface ModelSpec {
   input: number;
   /** USD per million output tokens. */
   output: number;
+  /** USD per million input tokens served from the provider's prompt cache.
+      Left out where we have not checked it, and those tokens are then
+      priced as ordinary input: overstated, never under. */
+  cachedInput?: number;
   /** One short line: what this model is for, shown beside it in the picker. */
   note?: string;
   /** False for a model we found by asking the vendor for its catalogue but
@@ -142,10 +146,13 @@ export const PROVIDERS: ProviderSpec[] = [
     // DeepSeek's /models names its models but does not price them, so a
     // model missing here shows as unpriced on the billing page.
     models: [
-      { id: "deepseek-flash", label: "DeepSeek Flash", input: 0.3, output: 1.2, note: "Fast and very cheap" },
-      { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro", input: 1.32, output: 3.96, note: "Most capable" },
+      // Cache-hit input read from api-docs.deepseek.com/quick_start/pricing
+      // in September 2026: about a fiftieth of the uncached price, which is
+      // why the agent loop keeps the opening of its prompt unchanged.
+      { id: "deepseek-flash", label: "DeepSeek Flash", input: 0.3, output: 1.2, cachedInput: 0.006, note: "Fast and very cheap" },
+      { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro", input: 1.32, output: 3.96, cachedInput: 0.044, note: "Most capable" },
       // Retired name DeepSeek still accepts, served and billed as Flash.
-      { id: "deepseek-v4-flash", label: "DeepSeek V4 Flash (legacy name)", input: 0.3, output: 1.2 },
+      { id: "deepseek-v4-flash", label: "DeepSeek V4 Flash (legacy name)", input: 0.3, output: 1.2, cachedInput: 0.006 },
     ],
   },
   {
@@ -288,10 +295,24 @@ export function costOf(
   inputTokens: number,
   outputTokens: number,
   at: Date = new Date(),
+  /** Of `inputTokens`, how many were read from the prompt cache, and (for
+      Anthropic) how many were written to it. */
+  cache: { read?: number; write?: number } = {},
 ): number {
   const spec = modelSpec(providerId, modelId);
   if (!spec || spec.priced === false) return 0;
-  const list = (inputTokens * spec.input + outputTokens * spec.output) / 1_000_000;
+  const read = Math.min(cache.read ?? 0, inputTokens);
+  const write = Math.min(cache.write ?? 0, inputTokens - read);
+  // Anthropic publishes its cache prices as multiples of the input price:
+  // a tenth to read, a quarter more to write (the five-minute cache).
+  const readPrice = spec.cachedInput ?? (providerId === "anthropic" ? spec.input * 0.1 : spec.input);
+  const writePrice = providerId === "anthropic" ? spec.input * 1.25 : spec.input;
+  const list = (
+    (inputTokens - read - write) * spec.input +
+    read * readPrice +
+    write * writePrice +
+    outputTokens * spec.output
+  ) / 1_000_000;
   return providerId === "deepseek" && deepseekOffPeak(at) ? list / 2 : list;
 }
 

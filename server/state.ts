@@ -63,6 +63,9 @@ export interface UsageEntry {
   /** True when the token counts are our own arithmetic, because the vendor
       streamed an answer without reporting usage. */
   estimated: boolean;
+  /** Of `input`, how many tokens the provider served from its prompt cache.
+      Missing on entries recorded before this was tracked. */
+  cached?: number;
 }
 
 export interface PersistedState {

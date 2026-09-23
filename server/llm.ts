@@ -76,8 +76,14 @@ export interface ChatCall {
 }
 
 export interface ChatUsage {
+  /** Every input token, cached or not. */
   input: number;
   output: number;
+  /** Of `input`, how many the provider served from its prompt cache. */
+  cached?: number;
+  /** Of `input`, how many were written to the cache (Anthropic bills these
+      at a premium). */
+  cacheWrite?: number;
   /** True when the counts are our arithmetic rather than the vendor's. */
   estimated: boolean;
 }
@@ -342,6 +348,9 @@ async function streamOpenAi(call: ChatCall, onDelta: (text: string) => void): Pr
       usage = {
         input: chunk.usage.prompt_tokens ?? 0,
         output: chunk.usage.completion_tokens ?? 0,
+        // DeepSeek reports its own field; OpenAI and most gateways the other.
+        cached: chunk.usage.prompt_cache_hit_tokens ??
+          chunk.usage.prompt_tokens_details?.cached_tokens ?? 0,
         estimated: false,
       };
     }
@@ -374,7 +383,7 @@ async function streamOpenAi(call: ChatCall, onDelta: (text: string) => void): Pr
  * that.
  */
 function anthropicMessages(call: ChatCall): any[] {
-  return call.messages.map((message) => {
+  const out = call.messages.map((message) => {
     if (message.role === "tool") {
       return {
         role: "user",
@@ -398,6 +407,15 @@ function anthropicMessages(call: ChatCall): any[] {
       content: content.length > 0 ? content : [{ type: "text", text: "(no content)" }],
     };
   });
+  /* Anthropic caches nothing unless asked. A breakpoint on the last block
+     caches the whole prompt up to it, and the next round -- the same prompt
+     with one exchange more -- reads all of that back at a tenth of the price.
+     The system prompt carries a breakpoint of its own (see streamAnthropic),
+     so a turn's first round still finds the instructions cached. */
+  const last = out[out.length - 1];
+  const block = last?.content?.[last.content.length - 1];
+  if (block) block.cache_control = { type: "ephemeral" };
+  return out;
 }
 
 async function streamAnthropic(call: ChatCall, onDelta: (text: string) => void): Promise<ChatTurn> {
@@ -413,7 +431,9 @@ async function streamAnthropic(call: ChatCall, onDelta: (text: string) => void):
       stream: true,
       max_tokens: call.maxTokens ?? 2048,
       temperature: call.temperature ?? 0.7,
-      system: call.system || undefined,
+      system: call.system
+        ? [{ type: "text", text: call.system, cache_control: { type: "ephemeral" } }]
+        : undefined,
       messages: anthropicMessages(call),
       ...(call.tools?.length
         ? {
@@ -448,7 +468,12 @@ async function streamAnthropic(call: ChatCall, onDelta: (text: string) => void):
       throw new ProviderError(event.error?.message ?? "stream failed", null);
     }
     if (event.type === "message_start") {
-      usage.input = event.message?.usage?.input_tokens ?? 0;
+      // input_tokens here is only the part that was neither read from the
+      // cache nor written to it; the other two are counted separately.
+      const u = event.message?.usage ?? {};
+      usage.cached = u.cache_read_input_tokens ?? 0;
+      usage.cacheWrite = u.cache_creation_input_tokens ?? 0;
+      usage.input = (u.input_tokens ?? 0) + usage.cached + usage.cacheWrite;
       counted = true;
     } else if (event.type === "content_block_start" && event.content_block?.type === "tool_use") {
       building.set(Number(event.index ?? 0), {
@@ -633,6 +658,7 @@ async function streamGemini(call: ChatCall, onDelta: (text: string) => void): Pr
       // Gemini reports cumulative counts, so the last word wins rather than
       // the sum -- adding them up bills a long reply several times over.
       usage.input = meta.promptTokenCount ?? usage.input;
+      usage.cached = meta.cachedContentTokenCount ?? usage.cached;
       usage.output = (meta.candidatesTokenCount ?? 0) + (meta.thoughtsTokenCount ?? 0);
       counted = true;
     }
