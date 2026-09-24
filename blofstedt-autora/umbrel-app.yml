@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.9.24"
+version: "0.9.25"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -74,19 +74,21 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The agent is much better at using web pages. Each field now tells it what it
-  is for (first name, last name, shipping ZIP...), what kind of value it takes,
-  which section it is in, what it currently holds, and any error the page
-  shows on it; dropdowns list their choices. One fill now handles dropdowns,
-  checkboxes and dates as well as text, and reports back what each field
-  ended up holding. Scrolling works by screens, straight to some text, or
-  inside a panel, and says how far down the page is and when it has reached
-  the end. The agent can press keys (Escape, Tab, arrows), sees fields inside
-  web components and embedded frames, and clicks things that are only
-  clickable by script. When a site refuses to let this browser sign in, the
-  agent now recognises it and stops retrying; you can sign in on your own
-  browser, export that site's cookies (for example with Cookie-Editor) and
-  upload the file, and the agent imports the sign-in.
+  Sign-ins that open their own window -- Sign in with Google, LinkedIn,
+  Microsoft, a 2FA approval -- now work: the window is shown on the live
+  screen until it finishes and closes itself, then you are back on the page
+  that opened it, signed in. Autora also remembers every sign-in: the browser
+  no longer forgets sites that keep you signed in only until it closes, the
+  agent is told which sites it has signed in to, and it checks whether a site
+  is still signed in before asking you again. The agent can now attach files
+  from your Artifacts to a web page's upload field -- a CV on a job
+  application, a photo, a document a form asks for -- whether the page shows
+  a plain file field, an "Upload CV" button or a drag-and-drop box. The live
+  browser now has a toolbar -- back, reload and an address bar you can type
+  into -- whenever the page is yours to use, and fits a phone screen. Also
+  fixed: the agent no longer highlights the whole page when a click meant
+  for a text box missed, and the open-page badge at the top right no longer
+  cuts off its close button.
 
 dependencies: []
 path: ""

@@ -208,7 +208,7 @@ const memoryRecords: MemoryRecord[] = [
     kind: "skill",
     scope: "workspace",
     title: "Web Browsing & DOM Inspection",
-    body: "Open a page with browser_open, read it as numbered elements with browser_read, then browser_click, browser_fill (text, dropdowns, checkboxes and dates in one call), browser_press and browser_scroll (by screens, to text, or inside a panel). Each field says what it is for, what it holds and any error on it. Checkbox CAPTCHAs (reCAPTCHA, hCaptcha, Turnstile) live in iframes outside the outline: tick them with browser_captcha. A site that refuses this browser's sign-in is signed in with browser_signin_import from the person's own cookie export. Every step is screencast to whoever is watching.",
+    body: "Open a page with browser_open, read it as numbered elements with browser_read, then browser_click, browser_fill (text, dropdowns, checkboxes and dates in one call), browser_upload (attach a file from the Artifacts, such as a CV), browser_press and browser_scroll (by screens, to text, or inside a panel). Each field says what it is for, what it holds and any error on it. Checkbox CAPTCHAs (reCAPTCHA, hCaptcha, Turnstile) live in iframes outside the outline: tick them with browser_captcha. A site that refuses this browser's sign-in is signed in with browser_signin_import from the person's own cookie export. Every step is screencast to whoever is watching.",
     tags: ["skill", "browser", "automation", "dom"],
     status: "confirmed",
     pinned: true,

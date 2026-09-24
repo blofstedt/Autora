@@ -31,6 +31,11 @@
 </form>
 <p id="done"></p>
 <div class="tile" onclick="document.getElementById('done').textContent = 'tile clicked'">Premium plan</div>
+<div><label>Resume <input type="file" id="resume"></label></div>
+<button type="button" onclick="document.getElementById('cv').click()">Upload CV</button>
+<input type="file" id="cv" style="display:none">
+<div id="drop" role="button" tabindex="0" style="padding:20px;border:2px dashed #999">Drop your CV here</div>
+<p id="attached"></p>
 <shadow-login></shadow-login>
 <iframe id="fr" srcdoc="<label>Coupon code <input name='coupon'></label>" style="height:60px"></iframe>
 <div id="pane"></div>
@@ -47,6 +52,21 @@
     connectedCallback() {
       this.attachShadow({ mode: "open" }).innerHTML = '<label>Username <input autocomplete="username"></label>';
     }
+  });
+  for (const id of ["resume", "cv"]) {
+    document.getElementById(id).addEventListener("change", (e) => {
+      const f = e.target.files[0];
+      document.getElementById("attached").textContent = "Attached " + id + ": " + f.name + " (" + f.size + " bytes)";
+    });
+  }
+  const drop = document.getElementById("drop");
+  drop.addEventListener("dragover", (e) => e.preventDefault());
+  drop.addEventListener("drop", (e) => {
+    e.preventDefault();
+    const f = e.dataTransfer.files[0];
+    f.text().then((t) => {
+      document.getElementById("attached").textContent = "Dropped: " + f.name + " (" + t + ")";
+    });
   });
   const pane = document.getElementById("pane");
   for (let i = 1; i <= 30; i++) { const d = document.createElement("div"); d.textContent = "Message " + i; pane.appendChild(d); }

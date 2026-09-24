@@ -64,6 +64,13 @@ export interface BrowserStatus {
   fields: Array<[number, number, number, number]>;
 }
 
+/** A file to put into an upload field, bytes and all. */
+export interface UploadFile {
+  name: string;
+  mimeType: string;
+  buffer: Buffer;
+}
+
 /** One numbered, clickable thing on the page. */
 export interface Ref {
   ref: number;
@@ -1017,6 +1024,7 @@ async function launchShared(): Promise<BrowserContext> {
       throw new Error(`The browser would not start: ${firstLine(err)}`);
     }
   }
+  await restoreCookies(context);
   await context.addInitScript(STEALTH_SCRIPT);
   await context.addInitScript(CURSOR_SCRIPT);
   context.on("close", () => {
@@ -1058,7 +1066,72 @@ async function releaseContext(context: BrowserContext) {
   // The last tab is gone: closing the context is what stops Chrome and
   // flushes the profile to disk.
   shared = null;
+  await saveCookies(context);
   await context.close().catch(() => undefined);
+}
+
+/**
+ * Every sign-in the browser holds, kept beside the profile.
+ *
+ * The profile keeps cookies with an expiry date, but Chrome drops the ones
+ * without -- "session" cookies, which is how a good many sites (and parts of
+ * Google, LinkedIn and Microsoft sign-in) hold you signed in -- every time it
+ * stops, and it stops whenever the last conversation lets go of it. It also
+ * writes its cookie store to disk only now and then, so a container that is
+ * stopped rather than shut down loses the last sign-in. Both meant being asked
+ * to sign in again to something you had signed in to. So every cookie is
+ * saved here after each page load and when the browser closes, and on the
+ * next start any the profile has lost are put back. Only missing ones: a
+ * cookie the profile still has is newer than this copy.
+ */
+function cookieFile(): string {
+  return path.join(path.dirname(stateFilePath()), "browser-cookies.json");
+}
+
+async function saveCookies(context: BrowserContext) {
+  try {
+    const cookies = await context.cookies();
+    const file = cookieFile();
+    const tmp = `${file}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(cookies), { mode: 0o600 });
+    fs.renameSync(tmp, file);
+  } catch {
+    // A browser mid-close, or a full disk: the profile still has most of it.
+  }
+}
+
+async function restoreCookies(context: BrowserContext) {
+  let saved: BrowserCookie[];
+  try {
+    const raw = JSON.parse(fs.readFileSync(cookieFile(), "utf8"));
+    saved = Array.isArray(raw) ? raw : [];
+  } catch {
+    return;
+  }
+  const now = Date.now() / 1000;
+  const key = (c: BrowserCookie) => `${c.name}\u0000${c.domain}\u0000${c.path}`;
+  const have = new Set(((await context.cookies().catch(() => [])) as BrowserCookie[]).map(key));
+  const missing = saved.filter((c) =>
+    c && typeof c.name === "string" && typeof c.domain === "string" &&
+    (c.expires === -1 || c.expires > now) && !have.has(key(c)));
+  if (missing.length === 0) return;
+  try {
+    await context.addCookies(missing);
+  } catch {
+    for (const cookie of missing) await context.addCookies([cookie]).catch(() => undefined);
+  }
+}
+
+let cookieSave: NodeJS.Timeout | null = null;
+
+/** Save the sign-ins a moment after a page loads: a sign-in ends in a page
+    load, and a moment later its cookies are all set. */
+function cookiesChanged() {
+  if (cookieSave) return;
+  cookieSave = setTimeout(() => {
+    cookieSave = null;
+    if (shared) void saveCookies(shared.context);
+  }, 3000);
 }
 
 /** One page, one screencast, one session's worth of browsing. */
@@ -1152,14 +1225,37 @@ export class LiveBrowser {
       throw err;
     }
     claimed.add(this.page);
-    const page = this.page;
+    this.wire(this.page);
+    await this.startStream();
+    return this.page;
+  }
 
-    // A link that opens a new tab is still the same browsing: follow it in
-    // this tab, which is the one being watched, rather than losing it to a
-    // tab nobody can see.
+  /** Windows a sign-in opened, the newest last, over the tab that opened
+      them: when one closes the page under it is the one watched again. */
+  private openers: Page[] = [];
+  private wired = new WeakSet<object>();
+
+  /** The listeners every page this session shows needs, once per page. */
+  private wire(page: Page) {
+    if (this.wired.has(page)) return;
+    this.wired.add(page);
+
     page.on("popup", (popup: Page) => {
+      claimed.add(popup);
       this.following = (async () => {
-        claimed.add(popup);
+        /* A window the page keeps a hold of -- "Sign in with Google", a
+           LinkedIn or Microsoft sign-in, a bank's 2FA -- has to stay open:
+           it reports back to the page that opened it and then closes
+           itself, and loading its address here instead leaves the sign-in
+           with nobody to report to. So it is shown in place of this tab
+           until it closes. A plain link to a new tab has no hold on this
+           page and is followed here, the tab being watched. */
+        const opener = await popup.opener().catch(() => null);
+        if (opener && this.page === page && !popup.isClosed()) {
+          await this.show(popup, page);
+          await popup.waitForLoadState("domcontentloaded", { timeout: 8000 }).catch(() => undefined);
+          return;
+        }
         await popup.waitForLoadState("commit").catch(() => undefined);
         const next = popup.url();
         await popup.close().catch(() => undefined);
@@ -1169,13 +1265,22 @@ export class LiveBrowser {
       })().finally(() => { this.following = null; });
     });
 
-    this.page.on("framenavigated", (frame: any) => {
-      if (frame !== this.page?.mainFrame()) return;
+    page.on("framenavigated", (frame: any) => {
+      if (this.page !== page || frame !== page.mainFrame()) return;
       this.currentUrl = frame.url();
       void this.announceNav();
     });
-    this.page.on("close", () => {
-      if (this.page !== page) return;
+    page.on("close", () => {
+      const waiting = this.openers.indexOf(page);
+      if (waiting >= 0) this.openers.splice(waiting, 1);
+      if (this.page !== page || this.closing) return;
+      // A sign-in window that closed itself, done: back to the page it
+      // opened from, which now has the sign-in.
+      const back = this.openers.pop();
+      if (back && !back.isClosed()) {
+        this.following = this.show(back, null).finally(() => { this.following = null; });
+        return;
+      }
       this.page = null;
       this.streaming = false;
       // The tab went on its own (Chrome crashed, or the page closed itself):
@@ -1184,9 +1289,31 @@ export class LiveBrowser {
       this.context = null;
       if (held) void releaseContext(held);
     });
+  }
 
-    await this.startStream();
-    return this.page;
+  /**
+   * Make `next` the page this session shows and acts on: the screencast
+   * moves to it, its elements are the ones numbered, and the person watching
+   * sees it and can type into it. `from`, when given, is kept underneath to
+   * come back to.
+   */
+  private async show(next: Page, from: Page | null) {
+    if (from) this.openers.push(from);
+    // Switched at once, so whatever reads the page next reads this one.
+    const cdp = this.cdp;
+    this.cdp = null;
+    this.streaming = false;
+    this.page = next;
+    this.refs = [];
+    this.wire(next);
+    await cdp?.send("Page.stopScreencast").catch(() => undefined);
+    await cdp?.detach().catch(() => undefined);
+    await next.setViewportSize(VIEWPORT).catch(() => undefined);
+    await next.bringToFront().catch(() => undefined);
+    this.currentUrl = next.url();
+    this.hooks.onAction(from ? "a sign-in window opened" : "the window closed; back to the page", null, this.currentUrl ?? "");
+    await this.startStream().catch(() => undefined);
+    await this.announceNav();
   }
 
   /** The last nav that was announced, so the several `framenavigated` events
@@ -1201,6 +1328,7 @@ export class LiveBrowser {
     const signature = `${url}\u0000${title}`;
     if (signature === this.announced) return;
     this.announced = signature;
+    cookiesChanged();
     this.hooks.onNav(url, title);
   }
 
@@ -1214,15 +1342,16 @@ export class LiveBrowser {
    */
   private async startStream() {
     if (!this.page || !this.context || this.streaming) return;
-    this.cdp = await this.context.newCDPSession(this.page);
+    const cdp = await this.context.newCDPSession(this.page);
+    this.cdp = cdp;
     this.cdp.on("Page.screencastFrame", (frame: any) => {
-      this.cdp
-        ?.send("Page.screencastFrameAck", { sessionId: frame.sessionId })
-        .catch(() => undefined);
-      if (this.hooks.watchers() === 0) return;
+      // Acknowledged on the session it came from: after a switch to a
+      // sign-in window, a late frame of the old page is not the new one's.
+      cdp.send("Page.screencastFrameAck", { sessionId: frame.sessionId }).catch(() => undefined);
+      if (this.hooks.watchers() === 0 || this.cdp !== cdp) return;
       this.forward(frame.data);
     });
-    await this.cdp.send("Page.startScreencast", {
+    await cdp.send("Page.startScreencast", {
       format: "jpeg",
       quality: LIVE_QUALITY,
       maxWidth: LIVE_WIDTH,
@@ -1299,8 +1428,11 @@ export class LiveBrowser {
     this.fields = [];
     if (this.typed.timer) clearTimeout(this.typed.timer);
     this.typed = { chars: 0, keys: [], timer: null };
+    const openers = this.openers;
+    this.openers = [];
     await cdp?.detach().catch(() => undefined);
     await page?.close().catch(() => undefined);
+    for (const under of openers) await under.close().catch(() => undefined);
     if (context) await releaseContext(context);
     this.closing = false;
   }
@@ -1485,7 +1617,7 @@ export class LiveBrowser {
           continue;
         }
         if (kind === "file") {
-          notes.push(`${label}: a file upload. Choosing a file is not something these tools can do; hand it to the person with browser_handoff.`);
+          notes.push(`${label}: a file upload. Put a file in it with browser_upload and the file's artifact id.`);
           continue;
         }
         if (kind === "select") {
@@ -1518,7 +1650,10 @@ export class LiveBrowser {
         }
 
         await this.humanClickAt(pointIn(await this.aim(target)));
-        await page.keyboard.press("ControlOrMeta+A").catch(() => undefined);
+        /* What is already in the field is selected so the typing replaces
+           it -- selected by the field itself rather than with Ctrl+A, which
+           on a click that did not land in the box selected the whole page. */
+        await page.evaluate(SELECT_FIELD_SCRIPT(ref)).catch(() => undefined);
         // A person's typing rhythm for whoever is watching; nobody watching,
         // it is typed straight in.
         if (this.hooks.watchers() > 0) await humanType(page, text);
@@ -1556,6 +1691,91 @@ export class LiveBrowser {
       } else {
         await this.settle();
       }
+      const read = await this.read();
+      read.notes = notes;
+      await this.keyframe();
+      return read;
+    });
+  }
+
+  /**
+   * Put files into a numbered upload field, the way choosing them in the
+   * file picker would. The number can be the file input itself or the
+   * button a site draws over a hidden one ("Upload CV", "Attach"): that is
+   * clicked, and the file picker it opens is answered with the files
+   * instead of being shown.
+   */
+  upload(ref: number, files: UploadFile[]): Promise<PageRead> {
+    return this.run(async () => {
+      const page = await this.ensure();
+      const target = this.refs.find((r) => r.ref === ref);
+      if (!target) throw new Error(`No element [${ref}] on this page. Read it again.`);
+      const names = files.map((f) => f.name).join(", ");
+      this.hooks.onAction(
+        `upload ${names} to [${ref}] "${target.name}"`,
+        { x: target.x, y: target.y },
+        this.currentUrl ?? "",
+      );
+      const payload = files.map((f) => ({ name: f.name, mimeType: f.mimeType, buffer: f.buffer }));
+      const notes: string[] = [];
+      /* The ways a page takes a file, surest first: its file input (the one
+         named, or a hidden one inside or near it, which is how most styled
+         upload boxes are built); the file picker a click on it opens; the
+         only file input on the page; and last, for a drag-and-drop box with
+         no input at all, the files dropped onto it. */
+      const inputNear = async (near: boolean) => {
+        const handle = await page.evaluateHandle(`(() => {
+          const el = ${REF_EL(ref)};
+          if (!el || !el.isConnected) return null;
+          const isFile = (n) => n && n.tagName === "INPUT" && (n.type || "").toLowerCase() === "file" && !n.disabled;
+          if (isFile(el)) return el;
+          if (${near ? "true" : "false"}) {
+            // Inside it, or inside the few boxes around it.
+            let box = el;
+            for (let i = 0; box && i < 4; i++, box = box.parentElement) {
+              const found = box.querySelectorAll ? [...box.querySelectorAll('input[type="file" i]')].filter(isFile) : [];
+              if (found.length === 1) return found[0];
+              if (found.length > 1) return null;
+            }
+            return null;
+          }
+          const all = [...el.ownerDocument.querySelectorAll('input[type="file" i]')].filter(isFile);
+          return all.length === 1 ? all[0] : null;
+        })()`).catch(() => null);
+        return handle?.asElement?.() ?? null;
+      };
+      const into = async (input: any) =>
+        input ? await input.setInputFiles(payload).then(() => true).catch(() => false) : false;
+
+      let how = "attached";
+      let done = await into(await inputNear(true));
+      if (!done) {
+        const chooser = page.waitForEvent("filechooser", { timeout: 3000 }).catch(() => null);
+        await this.humanClickAt(pointIn(await this.aim(target)));
+        const picker = await chooser;
+        if (picker) {
+          if (files.length > 1 && !picker.isMultiple()) {
+            throw new Error(`[${ref}] takes one file; ${files.length} were given.`);
+          }
+          await picker.setFiles(payload);
+          done = true;
+        }
+      }
+      if (!done) done = await into(await inputNear(false));
+      if (!done) {
+        done = await page.evaluate(DROP_SCRIPT(ref, files)).catch(() => false);
+        if (done) how = "dropped";
+      }
+      if (!done) {
+        throw new Error(
+          `[${ref}] would not take a file: it has no file input, opens no file picker and takes no ` +
+          `dropped files. Give the number of the upload box or the button that opens the picker.`,
+        );
+      }
+      notes.push(`[${ref}]${target.name ? ` "${target.name}"` : ""}: ${how} ${names}${
+        how === "dropped" ? " onto it (it is a drag-and-drop box); check the page shows the file" : ""}.`);
+      await this.settle(900);
+      await this.arrive();
       const read = await this.read();
       read.notes = notes;
       await this.keyframe();
@@ -1601,6 +1821,11 @@ export class LiveBrowser {
         })()`).catch(() => undefined);
       }
       for (const key of keys) {
+        /* Select-all with the focus outside any field highlights the whole
+           page and does nothing useful, so it is not pressed there. */
+        if (SELECT_ALL_KEY.test(key) && !(await page.evaluate(FOCUS_TYPEABLE_SCRIPT).catch(() => true))) {
+          continue;
+        }
         this.hooks.onAction(`press ${key}`, null, this.currentUrl ?? "");
         await page.keyboard.press(key);
         await page.waitForTimeout(120).catch(() => undefined);
@@ -1675,6 +1900,7 @@ export class LiveBrowser {
       if (!context) throw new Error("The browser is not running.");
       try {
         await context.addCookies(cookies);
+        await saveCookies(context);
         return { added: cookies.length, refused: 0 };
       } catch {
         let added = 0;
@@ -1686,6 +1912,7 @@ export class LiveBrowser {
             // Malformed for Chrome: the rest still go in.
           }
         }
+        await saveCookies(context);
         return { added, refused: cookies.length - added };
       }
     });
@@ -2172,9 +2399,21 @@ export class LiveBrowser {
 
   /** The scan, folded into the shape the model is given. */
   private async read(): Promise<PageRead> {
-    const page = this.page;
+    let page = this.page;
     if (!page) throw new Error("No page is open.");
-    const scanned = await page.evaluate(SCAN_SCRIPT);
+    let scanned;
+    try {
+      scanned = await page.evaluate(SCAN_SCRIPT);
+    } catch (err) {
+      // A sign-in window that closed itself as it was being read: the page
+      // under it is the one to read now.
+      if (!page.isClosed()) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      if (this.following) await this.following.catch(() => undefined);
+      if (!this.page || this.page === page) throw err;
+      page = this.page;
+      scanned = await page.evaluate(SCAN_SCRIPT);
+    }
     this.refs = scanned.refs;
     this.currentUrl = scanned.url;
     this.currentTitle = scanned.title;
@@ -2245,7 +2484,11 @@ const SET_VALUE_SCRIPT = (ref: number, value: string) => `(() => {
   const view = el.ownerDocument.defaultView;
   if (el.isContentEditable && typeof el.value !== "string") {
     el.focus();
-    el.ownerDocument.execCommand("selectAll", false);
+    const sel = view.getSelection();
+    const range = el.ownerDocument.createRange();
+    range.selectNodeContents(el);
+    sel.removeAllRanges();
+    sel.addRange(range);
     el.ownerDocument.execCommand("insertText", false, ${JSON.stringify(value)});
     return el.innerText;
   }
@@ -2257,6 +2500,74 @@ const SET_VALUE_SCRIPT = (ref: number, value: string) => `(() => {
   el.dispatchEvent(new Event("change", { bubbles: true }));
   el.dispatchEvent(new Event("blur", { bubbles: true }));
   return el.value;
+})()`;
+
+/**
+ * Select what a field holds, so what is typed next replaces it. The field
+ * is the numbered element, or the box inside it the click put the caret in.
+ * When neither is something that takes typing, whatever the click selected
+ * is cleared and nothing is selected: select-all outside a field is the
+ * whole page, highlighted, and that is what the person watching saw.
+ */
+const SELECT_FIELD_SCRIPT = (ref: number) => `(() => {
+  const el0 = ${REF_EL(ref)};
+  const doc = (el0 && el0.ownerDocument) || document;
+  const view = doc.defaultView;
+  const typeable = (el) => el && el.isConnected && !el.disabled && !el.readOnly &&
+    ((el.tagName === "INPUT" || el.tagName === "TEXTAREA") || el.isContentEditable);
+  const active = doc.activeElement;
+  const el = typeable(el0) ? el0 : typeable(active) ? active : null;
+  const sel = view.getSelection();
+  if (!el) {
+    if (sel) sel.removeAllRanges();
+    return false;
+  }
+  if (doc.activeElement !== el) el.focus();
+  if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") {
+    try { el.select(); } catch (e) {}
+    return true;
+  }
+  const range = doc.createRange();
+  range.selectNodeContents(el);
+  sel.removeAllRanges();
+  sel.addRange(range);
+  return true;
+})()`;
+
+/**
+ * Drop files onto an element the way dragging them from a desktop would: a
+ * drag-and-drop upload box with no file input behind it takes files only
+ * this way. The bytes travel into the page as base64.
+ */
+const DROP_SCRIPT = (ref: number, files: UploadFile[]) => `((files) => {
+  const el = ${REF_EL(ref)};
+  if (!el || !el.isConnected) return false;
+  const view = el.ownerDocument.defaultView;
+  const dt = new view.DataTransfer();
+  for (const f of files) {
+    const raw = view.atob(f.data);
+    const bytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+    dt.items.add(new view.File([bytes], f.name, { type: f.type }));
+  }
+  const b = el.getBoundingClientRect();
+  const at = { clientX: b.left + b.width / 2, clientY: b.top + b.height / 2 };
+  for (const type of ["dragenter", "dragover", "drop"]) {
+    el.dispatchEvent(new view.DragEvent(type, { bubbles: true, cancelable: true, composed: true, dataTransfer: dt, ...at }));
+  }
+  return true;
+})(${JSON.stringify(files.map((f) => ({ name: f.name, type: f.mimeType, data: f.buffer.toString("base64") })))})`;
+
+/** Keys that select everything wherever the focus is. */
+const SELECT_ALL_KEY = /^(control|meta|controlormeta)\+a$/i;
+
+/** Whether the focus is somewhere typing goes, as page script. */
+const FOCUS_TYPEABLE_SCRIPT = `(() => {
+  let el = document.activeElement;
+  while (el && el.tagName === "IFRAME") {
+    try { el = el.contentDocument && el.contentDocument.activeElement; } catch (e) { return true; }
+  }
+  return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
 })()`;
 
 /** Scroll as asked and say where that left things; see LiveBrowser.scroll. */

@@ -32,8 +32,9 @@ import os from "node:os";
 import { GoogleGenAI } from "@google/genai";
 import { mergeTools, save, state, allSecrets, secretFor, redactSecrets } from "./state";
 import { htmlToText, textParts } from "./pages";
-import { describeCaptchas, probeBrowser, VIEWPORT, type LiveBrowser, type PageRead } from "./browser";
+import { describeCaptchas, probeBrowser, VIEWPORT, type LiveBrowser, type PageRead, type UploadFile } from "./browser";
 import { parseCookieExport, sitesOf } from "./cookies";
+import { recordSignIn, signInBriefing } from "./signins";
 import { relayAction, relayConnected, relayStatus } from "./desktop";
 import { CONTEXT_CONFIG, readVault } from "./context";
 import {
@@ -244,6 +245,36 @@ const TOOLS: ToolSpec[] = [
         },
       },
       required: ["values"],
+    },
+    risky: true,
+  },
+  {
+    name: "browser_upload",
+    group: "browser",
+    description:
+      "Attach files from the Artifacts to an upload field on the open page -- " +
+      "a CV on a job application, a photo, a document a form asks for. Give " +
+      "the field's number, or the number of the button that opens the file " +
+      "picker (\"Upload CV\", \"Attach\", \"Choose file\"), or the " +
+      "drag-and-drop box itself (\"Drop your CV here\") -- a box with no file " +
+      "input gets the files dropped onto it -- and the " +
+      "artifact ids (see artifact_list). The files go in as if chosen in the " +
+      "picker. Returns the page afterwards: check the site shows the file " +
+      "attached before submitting.",
+    parameters: {
+      type: "object",
+      properties: {
+        ref: {
+          type: "integer",
+          description: "The upload field's element number, or the button that opens its file picker.",
+        },
+        ids: {
+          type: "array",
+          items: { type: "string" },
+          description: "Artifact ids of the files to attach, e.g. [\"file_0123456789abcdef\"]. Usually one.",
+        },
+      },
+      required: ["ref", "ids"],
     },
     risky: true,
   },
@@ -901,6 +932,8 @@ export function renderCall(spec: ToolSpec, args: Record<string, any>): string {
         : `read vault artifact ${args.id}`;
     case "browser_captcha":
       return "tick the checkbox CAPTCHA on the open page";
+    case "browser_upload":
+      return `attach ${(Array.isArray(args.ids) ? args.ids : [args.ids]).join(", ")} to element [${args.ref}] on the open page`;
     case "browser_press":
       return `press ${Array.isArray(args.keys) ? args.keys.join(", ") : args.keys}`;
     case "browser_signin_import":
@@ -1481,6 +1514,32 @@ export async function runTool(
         };
       }
 
+      case "browser_upload": {
+        const ref = Number(args.ref);
+        if (!Number.isFinite(ref)) return { ok: false, summary: "Give the upload field's element number as ref." };
+        const ids = (Array.isArray(args.ids) ? args.ids : [args.ids])
+          .map((id: unknown) => String(id ?? "").trim())
+          .filter(Boolean)
+          .slice(0, 10);
+        if (ids.length === 0) return { ok: false, summary: "No artifact ids were given. Use artifact_list to find the file." };
+        const files: UploadFile[] = [];
+        for (const id of ids) {
+          const meta = getArtifact(id);
+          const data = meta ? readArtifact(id) : null;
+          if (!meta || !data) {
+            return { ok: false, summary: `There is no artifact "${id}". Use artifact_list to find the file.` };
+          }
+          files.push({ name: meta.name, mimeType: meta.mime, buffer: data });
+        }
+        const page = await ctx.browser().upload(ref, files);
+        ctx.browserChanged();
+        return {
+          ok: true,
+          summary: withNotes(page, `Attached ${files.map((f) => f.name).join(", ")}:`),
+          preview: `attached ${files.map((f) => f.name).join(", ")} → [${ref}]`,
+        };
+      }
+
       case "browser_scroll": {
         const to = args.to === "top" || args.to === "bottom" ? args.to : undefined;
         const text = typeof args.text === "string" && args.text.trim() ? args.text.trim() : undefined;
@@ -1543,6 +1602,7 @@ export async function runTool(
         }
         const { added, refused } = await ctx.browser().importCookies(parsed.cookies);
         const sites = sitesOf(parsed.cookies);
+        if (added > 0) for (const site of sites) recordSignIn(site, "import");
         const kept = Boolean(args.keep_file);
         if (!kept && added > 0) deleteArtifact(id);
         const extra = [
@@ -1635,6 +1695,11 @@ export async function runTool(
           };
         }
         const page = await live.snapshot();
+        /* What the person did in the page is most often a sign-in, and it is
+           kept: noted here so no later conversation asks for it again. */
+        if (answer.who !== "auto" && !watch && /sign|log ?in|auth|2fa|mfa|verif|code|password|account|sso|oauth/i.test(reason)) {
+          recordSignIn(page.url, "handoff");
+        }
         if (answer.who === "auto") {
           return {
             ok: true,
@@ -1963,7 +2028,10 @@ const BROWSING_GUIDE = [
   "  - Fill a whole form with one browser_fill, dropdowns and checkboxes included, then read what " +
     "each field reports holding. Fix anything reformatted, refused or INVALID before submitting. " +
     "A field that offers suggestions as you type: fill it, then pick the suggestion (click its " +
-    "option, or browser_press ArrowDown then Enter).",
+    "option, or browser_press ArrowDown then Enter). A file the form asks for (a CV, a photo) " +
+    "is attached from the Artifacts with browser_upload, given the upload box or its button -- " +
+    "including a drag-and-drop box with no file input. Do not work around an upload box by " +
+    "studying its scripts or posting the form yourself.",
   "  - An open dialog (cookie notice, sign-up prompt) is named at the top of the elements. " +
     "Answer or close it first; browser_press Escape closes most.",
   "  - The last line says where you are on the page and how much is below. Use browser_scroll " +
@@ -1974,7 +2042,9 @@ const BROWSING_GUIDE = [
     "values) before the next. When a click seems to do nothing, look for an error or a dialog " +
     "before trying again, and try a different way rather than the same click.",
   "  - Sign-ins: fill the fields yourself when you have the details; hand the page to the person " +
-    "with browser_handoff for passwords you do not have, 2FA codes and CAPTCHA pictures. When the " +
+    "with browser_handoff for passwords you do not have, 2FA codes, app approvals and CAPTCHA " +
+    "pictures. A sign-in that opens its own window (Sign in with Google, LinkedIn, Microsoft) is " +
+    "shown in that window until it closes itself, then you are back on the page that opened it. When the " +
     "result says SIGN-IN REFUSED, the site is refusing this browser: stop, and follow what it says.",
 ].join("\n");
 
@@ -2004,7 +2074,7 @@ export async function capabilityBriefing(): Promise<string> {
     }
   }
 
-  if (groups.some((g) => g.group === "browser" && g.available)) lines.push(BROWSING_GUIDE);
+  if (groups.some((g) => g.group === "browser" && g.available)) lines.push(BROWSING_GUIDE, signInBriefing());
 
   const mcp = mcpTools();
   if (mcp.length > 0) {
