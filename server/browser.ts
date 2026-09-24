@@ -64,6 +64,13 @@ export interface BrowserStatus {
   fields: Array<[number, number, number, number]>;
 }
 
+/** A file to put into an upload field, bytes and all. */
+export interface UploadFile {
+  name: string;
+  mimeType: string;
+  buffer: Buffer;
+}
+
 /** One numbered, clickable thing on the page. */
 export interface Ref {
   ref: number;
@@ -1485,7 +1492,7 @@ export class LiveBrowser {
           continue;
         }
         if (kind === "file") {
-          notes.push(`${label}: a file upload. Choosing a file is not something these tools can do; hand it to the person with browser_handoff.`);
+          notes.push(`${label}: a file upload. Put a file in it with browser_upload and the file's artifact id.`);
           continue;
         }
         if (kind === "select") {
@@ -1518,7 +1525,10 @@ export class LiveBrowser {
         }
 
         await this.humanClickAt(pointIn(await this.aim(target)));
-        await page.keyboard.press("ControlOrMeta+A").catch(() => undefined);
+        /* What is already in the field is selected so the typing replaces
+           it -- selected by the field itself rather than with Ctrl+A, which
+           on a click that did not land in the box selected the whole page. */
+        await page.evaluate(SELECT_FIELD_SCRIPT(ref)).catch(() => undefined);
         // A person's typing rhythm for whoever is watching; nobody watching,
         // it is typed straight in.
         if (this.hooks.watchers() > 0) await humanType(page, text);
@@ -1556,6 +1566,65 @@ export class LiveBrowser {
       } else {
         await this.settle();
       }
+      const read = await this.read();
+      read.notes = notes;
+      await this.keyframe();
+      return read;
+    });
+  }
+
+  /**
+   * Put files into a numbered upload field, the way choosing them in the
+   * file picker would. The number can be the file input itself or the
+   * button a site draws over a hidden one ("Upload CV", "Attach"): that is
+   * clicked, and the file picker it opens is answered with the files
+   * instead of being shown.
+   */
+  upload(ref: number, files: UploadFile[]): Promise<PageRead> {
+    return this.run(async () => {
+      const page = await this.ensure();
+      const target = this.refs.find((r) => r.ref === ref);
+      if (!target) throw new Error(`No element [${ref}] on this page. Read it again.`);
+      const names = files.map((f) => f.name).join(", ");
+      this.hooks.onAction(
+        `upload ${names} to [${ref}] "${target.name}"`,
+        { x: target.x, y: target.y },
+        this.currentUrl ?? "",
+      );
+      const payload = files.map((f) => ({ name: f.name, mimeType: f.mimeType, buffer: f.buffer }));
+      const notes: string[] = [];
+      const handle = await page.evaluateHandle(`(() => {
+        const el = ${REF_EL(ref)};
+        if (!el || !el.isConnected) return null;
+        const isFile = (n) => n && n.tagName === "INPUT" && (n.type || "").toLowerCase() === "file";
+        if (isFile(el)) return el;
+        // A label or wrapper around the input it stands for.
+        const inner = el.querySelector && el.querySelector('input[type="file" i]');
+        return isFile(inner) ? inner : null;
+      })()`).catch(() => null);
+      const input = handle?.asElement?.() ?? null;
+      let done = false;
+      if (input) {
+        await input.setInputFiles(payload).then(() => { done = true; }).catch(() => undefined);
+      }
+      if (!done) {
+        const chooser = page.waitForEvent("filechooser", { timeout: 5000 }).catch(() => null);
+        await this.humanClickAt(pointIn(await this.aim(target)));
+        const picker = await chooser;
+        if (!picker) {
+          throw new Error(
+            `Clicking [${ref}] did not open a file picker, so there was nothing to put the file in. ` +
+            `Give the number of the upload field or the button that opens the picker.`,
+          );
+        }
+        if (files.length > 1 && !picker.isMultiple()) {
+          throw new Error(`[${ref}] takes one file; ${files.length} were given.`);
+        }
+        await picker.setFiles(payload);
+      }
+      notes.push(`[${ref}]${target.name ? ` "${target.name}"` : ""}: attached ${names}.`);
+      await this.settle(900);
+      await this.arrive();
       const read = await this.read();
       read.notes = notes;
       await this.keyframe();
@@ -1601,6 +1670,11 @@ export class LiveBrowser {
         })()`).catch(() => undefined);
       }
       for (const key of keys) {
+        /* Select-all with the focus outside any field highlights the whole
+           page and does nothing useful, so it is not pressed there. */
+        if (SELECT_ALL_KEY.test(key) && !(await page.evaluate(FOCUS_TYPEABLE_SCRIPT).catch(() => true))) {
+          continue;
+        }
         this.hooks.onAction(`press ${key}`, null, this.currentUrl ?? "");
         await page.keyboard.press(key);
         await page.waitForTimeout(120).catch(() => undefined);
@@ -2245,7 +2319,11 @@ const SET_VALUE_SCRIPT = (ref: number, value: string) => `(() => {
   const view = el.ownerDocument.defaultView;
   if (el.isContentEditable && typeof el.value !== "string") {
     el.focus();
-    el.ownerDocument.execCommand("selectAll", false);
+    const sel = view.getSelection();
+    const range = el.ownerDocument.createRange();
+    range.selectNodeContents(el);
+    sel.removeAllRanges();
+    sel.addRange(range);
     el.ownerDocument.execCommand("insertText", false, ${JSON.stringify(value)});
     return el.innerText;
   }
@@ -2257,6 +2335,50 @@ const SET_VALUE_SCRIPT = (ref: number, value: string) => `(() => {
   el.dispatchEvent(new Event("change", { bubbles: true }));
   el.dispatchEvent(new Event("blur", { bubbles: true }));
   return el.value;
+})()`;
+
+/**
+ * Select what a field holds, so what is typed next replaces it. The field
+ * is the numbered element, or the box inside it the click put the caret in.
+ * When neither is something that takes typing, whatever the click selected
+ * is cleared and nothing is selected: select-all outside a field is the
+ * whole page, highlighted, and that is what the person watching saw.
+ */
+const SELECT_FIELD_SCRIPT = (ref: number) => `(() => {
+  const el0 = ${REF_EL(ref)};
+  const doc = (el0 && el0.ownerDocument) || document;
+  const view = doc.defaultView;
+  const typeable = (el) => el && el.isConnected && !el.disabled && !el.readOnly &&
+    ((el.tagName === "INPUT" || el.tagName === "TEXTAREA") || el.isContentEditable);
+  const active = doc.activeElement;
+  const el = typeable(el0) ? el0 : typeable(active) ? active : null;
+  const sel = view.getSelection();
+  if (!el) {
+    if (sel) sel.removeAllRanges();
+    return false;
+  }
+  if (doc.activeElement !== el) el.focus();
+  if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") {
+    try { el.select(); } catch (e) {}
+    return true;
+  }
+  const range = doc.createRange();
+  range.selectNodeContents(el);
+  sel.removeAllRanges();
+  sel.addRange(range);
+  return true;
+})()`;
+
+/** Keys that select everything wherever the focus is. */
+const SELECT_ALL_KEY = /^(control|meta|controlormeta)\+a$/i;
+
+/** Whether the focus is somewhere typing goes, as page script. */
+const FOCUS_TYPEABLE_SCRIPT = `(() => {
+  let el = document.activeElement;
+  while (el && el.tagName === "IFRAME") {
+    try { el = el.contentDocument && el.contentDocument.activeElement; } catch (e) { return true; }
+  }
+  return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
 })()`;
 
 /** Scroll as asked and say where that left things; see LiveBrowser.scroll. */

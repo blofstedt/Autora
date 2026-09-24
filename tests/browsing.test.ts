@@ -177,6 +177,32 @@ async function main() {
       assert.match(read.text, /tile clicked/);
     });
 
+    await test("filling a field selects only what the field held, never the page", async () => {
+      await live.fill([{ ref: refOf(line(/\(shipping first name\)/)), text: "Janet" }]);
+      const selected = await (live as any).page.evaluate(`String(getSelection())`);
+      assert.equal(selected, "");
+      const read = await live.fill([{ ref: refOf(line(/\(shipping first name\)/)), text: "Jane" }]);
+      assert.match(read.notes!.join("\n"), /holds "Jane"/);
+    });
+    await test("select-all with no field focused does not highlight the page", async () => {
+      await (live as any).page.evaluate(`document.activeElement && document.activeElement.blur()`);
+      await live.press(["Control+A"]);
+      assert.equal(await (live as any).page.evaluate(`String(getSelection())`), "");
+    });
+    await test("a file goes into an upload field", async () => {
+      const read = await live.upload(refOf(line(/"Resume"/)), [
+        { name: "cv.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 hello") },
+      ]);
+      assert.match(read.text, /Attached resume: cv\.pdf \(14 bytes\)/);
+      assert.match(read.notes!.join("\n"), /attached cv\.pdf/);
+    });
+    await test("and through a button that opens the file picker", async () => {
+      const read = await live.upload(refOf(line(/button "Upload CV"/)), [
+        { name: "Jane Doe CV.docx", mimeType: "application/octet-stream", buffer: Buffer.from("abc") },
+      ]);
+      assert.match(read.text, /Attached cv: Jane Doe CV\.docx \(3 bytes\)/);
+    });
+
     await test("scrolling reports where it got to, and stops at the end", async () => {
       let read = await live.scroll({ screens: 1 });
       assert.match(read.outline, /% of the way down/);
