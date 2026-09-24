@@ -99,6 +99,36 @@ async function main() {
     assert.equal(buckets[1].cells.filter((c) => c.kind === "screen").length, 1);
   });
 
+  await test("a logged screenshot of the page lands on the one screen, never a second card", () => {
+    const shot = (payload: Record<string, any>) => ev(Kind.MediaImage, payload, `s${seq}`);
+    for (const picture of [
+      { alt: "cats", caption: "file:///app/cats/index.html", w: 1280, h: 800 },
+      { alt: "cats", caption: "file:///app/cats/other.html" },
+      { alt: "the page as it looks now", caption: "" },
+    ]) {
+      const cells = derive([
+        ev(Kind.UserMessage, { text: "make a cat page" }),
+        ev(Kind.ToolCall, { tool: "artifact_save", args: { path: "/app/cats/cat2.jpg" } }),
+        frame(),
+        ev(Kind.ToolCall, { tool: "artifact_save", args: { path: "/app/cats/cat3.jpg" } }),
+        shot(picture),
+        ev(Kind.AgentDone),
+      ]).buckets[0].cells;
+      assert.equal(cells.filter((c) => c.kind === "images").length, 0, JSON.stringify(picture));
+      assert.equal(cells.filter((c) => c.kind === "screen").length, 1);
+    }
+  });
+
+  await test("pictures that are not the page still get their own card", () => {
+    const cells = derive([
+      ev(Kind.UserMessage, { text: "draw" }),
+      ev(Kind.BrowserNav, { url: "https://example.com" }), frame(),
+      ev(Kind.MediaImage, { alt: "a cat", caption: "Generated: a cat" }, "g1"),
+      ev(Kind.AgentDone),
+    ]).buckets[0].cells;
+    assert.equal(cells.filter((c) => c.kind === "images").length, 1);
+  });
+
   console.log("captcha handoff");
   const page = (steps: { present: boolean; passed: boolean }[]) => {
     let i = 0;
