@@ -175,20 +175,6 @@ export function AutoraMark({
 
         <circle className="amark-wash" cx="16" cy="16" r="15" fill={`url(#w${uid})`} />
 
-        {/* A thread of the gradient orbiting the mark while it works. Dashed
-            rather than solid so the rotation is legible at 20px. */}
-        <circle
-          className="amark-orbit"
-          cx="16"
-          cy="16"
-          r="12.4"
-          fill="none"
-          stroke={`url(#g${uid})`}
-          strokeWidth="1.4"
-          strokeLinecap="round"
-          strokeDasharray="7 62"
-        />
-
         <path className="amark-star" d={REST} fill={`url(#g${uid})`}>
           {morphing && (
             <animate

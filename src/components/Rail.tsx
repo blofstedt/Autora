@@ -1,8 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { AutoraMark } from "./AutoraMark";
 import {
   IconBrain, IconChart, IconClock, IconFolder, IconList, IconMessage,
   IconMonitor, IconPalette, IconPlug, IconPlus, IconServer, IconSliders,
-  IconSpark, IconX, IconCheck,
+  IconX, IconCheck,
 } from "./Icons";
 import { FONTS, THEMES, type Appearance } from "../lib/theme";
 
@@ -34,7 +35,7 @@ export const pageLabel = (id: PageId) => PAGES.find((p) => p.id === id)?.label ?
  */
 export function Rail({
   page, onNavigate, relayOn, alert, onNew,
-  appearance, onAppearance, drawer = false, onClose, mind,
+  appearance, onAppearance, drawer = false, onClose,
 }: {
   page: PageId;
   onNavigate: (page: PageId) => void;
@@ -46,15 +47,13 @@ export function Rail({
   onAppearance: (next: Appearance) => void;
   drawer?: boolean;
   onClose?: () => void;
-  /** The memory graph, docked square at the foot of the rail (desktop). */
-  mind?: ReactNode;
 }) {
   const [menu, setMenu] = useState(false);
 
   return (
     <aside className={`rail ${drawer ? "is-drawer" : ""}`} aria-label="Navigation">
       <div className="rail-top">
-        <span className="brand-mark"><IconSpark size={13} /></span>
+        <span className="rail-brand"><AutoraMark size={30} state="live" /></span>
         <span className="brand-word">Autora</span>
         <div className="spacer" />
         <button className="rail-icon-btn" onClick={onNew} title="New session" aria-label="New session">
@@ -104,7 +103,6 @@ export function Rail({
         )}
       </div>
 
-      {mind && <div className="rail-mind">{mind}</div>}
     </aside>
   );
 }

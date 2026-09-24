@@ -18,18 +18,17 @@ const bucketLabel = (kind: Bucket) => BUCKETS.find((b) => b.kind === kind)?.labe
 
 /**
  * The Mind: everything the agent keeps, sorted into four buckets you can
- * read, edit and reorganise. The graph of it lives in the pane on the right
- * on a desktop; on a phone, where there is no such pane, it is one tap away
- * on this page.
+ * read, edit and reorganise. The graph of it lives only here, one tap away
+ * behind the Map switch.
  */
 export function MindPage({
   jump,
-  showMap = false,
+  showMap = true,
   recent = [],
 }: {
   /** The bucket to show; a new object moves there even if it is the same one. */
   jump?: { kind: Bucket };
-  /** Offer the graph here, for screens with no pane to put it in. */
+  /** Offer the graph here. It has no other home. */
   showMap?: boolean;
   recent?: MemoryMark[];
 }) {

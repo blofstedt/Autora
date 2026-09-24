@@ -5,7 +5,6 @@ import { chime, paintChrome, type Chrome } from "./lib/chrome";
 import type { AutoraEvent, BrowserState } from "./lib/types";
 import { setLiveFields, setLiveFrame } from "./lib/liveFrame";
 import { Thread } from "./components/Thread";
-import { MemoryRibbon } from "./components/MemoryRibbon";
 import { Rail, pageLabel, PAGES, type PageId } from "./components/Rail";
 import { SessionsPage } from "./components/pages/SessionsPage";
 import { SystemPage, isSystemTab, type SystemTab } from "./components/pages/SystemPage";
@@ -33,24 +32,6 @@ import {
   IconArrow, IconArrowUp, IconChevron, IconMenu, IconStop,
   IconX,
 } from "./components/Icons";
-
-const RIBBON_KEY = "autora.ribbon";
-/** Where the rail comes out (see styles.css). From here up there is room for
-    the memory graph as its own pane on the right instead of a banner. */
-const DESKTOP_QUERY = "(min-width: 1180px)";
-
-/** Whether a media query matches, kept current as the window resizes. */
-function useMedia(query: string): boolean {
-  const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
-  useEffect(() => {
-    const list = window.matchMedia(query);
-    const onChange = () => setMatches(list.matches);
-    onChange();
-    list.addEventListener("change", onChange);
-    return () => list.removeEventListener("change", onChange);
-  }, [query]);
-  return matches;
-}
 
 /** How often to re-read the session list, so sessions started elsewhere (or
     from another tab) show up without a reload. */
@@ -113,23 +94,6 @@ export function App() {
       only through `title` is reported to nobody. */
   const [notice, setNotice] = useState<string | null>(null);
   const [voiceHelp, setVoiceHelp] = useState(false);
-  /** The memory graph, folded to a line or open. Remembered per browser, and
-      folded by default on a phone, where it was a fifth of the screen. */
-  const [ribbonOpen, setRibbonOpen] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem(RIBBON_KEY);
-      if (saved === "open") return true;
-      if (saved === "closed") return false;
-    } catch { /* storage blocked: fall through to the default */ }
-    return !window.matchMedia("(max-width: 680px)").matches;
-  });
-  const desktop = useMedia(DESKTOP_QUERY);
-  const toggleRibbon = useCallback(() => {
-    setRibbonOpen((open) => {
-      try { localStorage.setItem(RIBBON_KEY, open ? "closed" : "open"); } catch { /* ignore */ }
-      return !open;
-    });
-  }, []);
   const streamRef = useRef<SessionStream | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const speech = useSpeech();
@@ -556,16 +520,6 @@ export function App() {
             onAppearance={changeAppearance}
             drawer={kind === "drawer"}
             onClose={() => setDrawerOpen(false)}
-            // On a desktop the memory graph lives here, square, under the
-            // pages and sessions -- not in a third pane, which cost the
-            // conversation a column and drew the web as a tall sliver.
-            mind={desktop && kind === "rail" ? (
-              <MemoryRibbon
-                memories={view.memories}
-                onOpen={openKnowledge}
-                pane
-              />
-            ) : undefined}
           />
         </div>
       ))}
@@ -648,7 +602,7 @@ export function App() {
             {page === "mcp" && <McpPage />}
             {page === "cron" && <Schedule embedded onOpenSession={openSession} />}
             {page === "mind" && (
-              <MindPage jump={mindBucket} showMap={!desktop} recent={view.memories} />
+              <MindPage jump={mindBucket} recent={view.memories} />
             )}
           </div>
         )}
@@ -656,18 +610,6 @@ export function App() {
         {/* The conversation stays mounted under the other pages, so leaving
             it and coming back keeps your place in the thread. */}
         <div className="chat-view" hidden={page !== "chat"}>
-
-        {/* Always on, above the conversation: what the agent knows, and what is
-            happening to it as it happens. On a desktop it sits at the foot of
-            the rail instead. */}
-        {!desktop && (
-          <MemoryRibbon
-            memories={view.memories}
-            onOpen={openKnowledge}
-            collapsed={!ribbonOpen}
-            onToggle={toggleRibbon}
-          />
-        )}
 
         <main className="page">
           <Thread
@@ -682,6 +624,7 @@ export function App() {
             driving={driving}
             browserHandedOver={browserHandedOver}
             onStop={() => void stopTurn()}
+            onOpenMind={openKnowledge}
           />
 
           <Approvals
