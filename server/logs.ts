@@ -7,7 +7,7 @@
  * the agent's own activity (turns, tool calls, errors, Jev decisions), which
  * server.ts reports as it emits the events the thread is built from.
  *
- * In memory only, like the sessions themselves: enough to answer "what just
+ * In memory only, unlike the sessions themselves: enough to answer "what just
  * happened" without writing a log file into the one directory Umbrel keeps.
  */
 

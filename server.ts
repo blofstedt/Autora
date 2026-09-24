@@ -33,6 +33,9 @@ import {
   MAX_ARTIFACT_BYTES, deleteArtifact, getArtifact, listArtifacts, readArtifact, saveArtifact,
 } from "./server/artifacts";
 import { ContextEngine, type CompactionReport } from "./server/context";
+import {
+  appendEvent, deleteSession, flushStore, loadSessions, readDoc, saveDoc, saveMeta, saveSession,
+} from "./server/store";
 import { LiveBrowser, VIEWPORT, probeBrowser, type PageRead } from "./server/browser";
 import { LoopWatch } from "./server/loopwatch";
 import {
@@ -142,7 +145,9 @@ interface Job {
   cron_error: string | null;
 }
 
-// --- In-Memory State ---
+// --- State ---
+// Seeds below are only what a fresh install starts with; once anything is on
+// disk (./server/store) it replaces them.
 const sessions = new Map<string, Session>();
 const sessionSockets = new Map<string, Set<WebSocket>>();
 
@@ -324,6 +329,30 @@ const jobs: Job[] = [
   },
 ];
 
+/* Memories and jobs from disk, when there are any. The arrays are filled in
+   place because everything below holds a reference to them. */
+(() => {
+  const mind = readDoc<{ records: MemoryRecord[]; links: MemoryLink[] }>("memory");
+  if (mind && Array.isArray(mind.records)) {
+    memoryRecords.splice(0, memoryRecords.length, ...mind.records);
+    memoryLinks.splice(0, memoryLinks.length, ...(Array.isArray(mind.links) ? mind.links : []));
+  }
+  const stored = readDoc<Job[]>("jobs");
+  if (Array.isArray(stored)) jobs.splice(0, jobs.length, ...stored);
+})();
+
+function saveMemory() {
+  saveDoc("memory", () => ({ records: memoryRecords, links: memoryLinks }));
+}
+
+function saveJobs() {
+  saveDoc("jobs", () => jobs);
+}
+
+function metaOf(session: Session) {
+  return { id: session.id, title: session.title, createdAt: session.createdAt, pinned: session.pinned };
+}
+
 // Settings used to live here, in a module-level object that lasted exactly as
 // long as the process. They now live in ./server/state, on disk, because a key
 // you paste into the panel should survive the next deploy -- and so should the
@@ -385,8 +414,26 @@ function createInitialSession(): Session {
   return session;
 }
 
-const defaultSession = createInitialSession();
-sessions.set(defaultSession.id, defaultSession);
+/* Every thread from before the restart. None is busy any more -- whatever
+   was running went down with the process -- and the welcome thread is only
+   made for an install that has none. */
+for (const stored of loadSessions<AutoraEvent>()) {
+  sessions.set(stored.id, {
+    id: stored.id,
+    title: stored.title,
+    live: true,
+    createdAt: stored.createdAt,
+    busy: false,
+    ...(stored.pinned ? { pinned: true } : {}),
+    events: stored.events,
+    seqCounter: stored.events.reduce((max, e) => Math.max(max, e.seq), 0),
+  });
+}
+if (sessions.size === 0) {
+  const defaultSession = createInitialSession();
+  sessions.set(defaultSession.id, defaultSession);
+  saveSession(defaultSession);
+}
 
 // Broadcast an event to all connected websockets for a session
 function emitEvent(session: Session, kind: string, actor: string, payload: Record<string, any>, span: string | null = null, blob: string | null = null): AutoraEvent {
@@ -418,6 +465,7 @@ function emitEvent(session: Session, kind: string, actor: string, payload: Recor
     blob,
   };
   session.events.push(event);
+  appendEvent(session.id, event);
 
   const sockets = sessionSockets.get(session.id);
   if (sockets) {
@@ -1675,6 +1723,7 @@ async function startServer() {
       session.title = title;
     }
     if (typeof pinned === "boolean") session.pinned = pinned;
+    saveMeta(metaOf(session));
     res.json({ ok: true, title: session.title, pinned: !!session.pinned });
   });
 
@@ -1689,6 +1738,7 @@ async function startServer() {
     for (const ws of sessionSockets.get(session.id) ?? []) ws.close();
     sessionSockets.delete(session.id);
     sessions.delete(session.id);
+    deleteSession(session.id);
     jevThisTurn.delete(session.id);
     log("info", "sessions", `deleted "${session.title}"`);
     res.json({ ok: true });
@@ -1792,6 +1842,7 @@ async function startServer() {
       seqCounter: 0,
     };
     sessions.set(id, session);
+    saveMeta(metaOf(session));
     emitEvent(session, "session.started", "system", { title: session.title });
     res.json({ id });
   });
@@ -1983,6 +2034,7 @@ async function startServer() {
     // If first message and title was generic, update session title
     if (session.events.filter((e) => e.kind === "turn.user").length === 0) {
       session.title = text.length > 40 ? text.slice(0, 37) + "..." : text;
+      saveMeta(metaOf(session));
     }
 
     // 1. Emit user message
@@ -2348,6 +2400,7 @@ async function startServer() {
                   superseded_by: null,
                 };
                 memoryRecords.push(record);
+                saveMemory();
                 emitEvent(session, "memory.write", "agent", {
                   id: record.id, title: record.title, kind: record.kind,
                 });
@@ -3052,6 +3105,7 @@ async function startServer() {
       superseded_by: null,
     };
     memoryRecords.push(newRecord);
+    saveMemory();
     res.json(newRecord);
   });
 
@@ -3075,6 +3129,7 @@ async function startServer() {
       record.tags = req.body.tags.map((t: unknown) => String(t).trim()).filter(Boolean);
     }
     record.updated = Math.floor(Date.now() / 1000);
+    saveMemory();
 
     res.json(record);
   });
@@ -3084,6 +3139,7 @@ async function startServer() {
     if (idx === -1) return res.status(404).json({ error: "Record not found" });
 
     memoryRecords.splice(idx, 1);
+    saveMemory();
     res.json({ ok: true });
   });
 
@@ -3110,6 +3166,7 @@ async function startServer() {
       cron_error: null,
     };
     jobs.push(newJob);
+    saveJobs();
     res.json({ id: newJob.id });
   });
 
@@ -3121,6 +3178,7 @@ async function startServer() {
     if (req.body.cron !== undefined) job.cron = req.body.cron;
     if (req.body.prompt !== undefined) job.prompt = req.body.prompt;
     if (req.body.enabled !== undefined) job.enabled = Boolean(req.body.enabled);
+    saveJobs();
 
     res.json({ ok: true });
   });
@@ -3129,6 +3187,7 @@ async function startServer() {
     const idx = jobs.findIndex((j) => j.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: "Job not found" });
     jobs.splice(idx, 1);
+    saveJobs();
     res.json({ ok: true });
   });
 
@@ -3148,6 +3207,7 @@ async function startServer() {
       seqCounter: 0,
     };
     sessions.set(sessionId, session);
+    saveMeta(metaOf(session));
 
     emitEvent(session, "session.started", "system", { title: session.title });
     emitEvent(session, "system.log", "system", {
@@ -3160,6 +3220,7 @@ async function startServer() {
 
     job.last_run = Math.floor(Date.now() / 1000);
     job.last_session = sessionId;
+    saveJobs();
 
     res.json({ session: sessionId });
   });
@@ -3709,6 +3770,7 @@ async function startServer() {
       dropSession(id);
     }
     browsers.clear();
+    flushStore();
     // stdio MCP servers are child processes; do not leave them running.
     await Promise.all(state.mcpServers.map((cfg) => disconnectMcp(cfg.id).catch(() => undefined)));
     process.exit(0);

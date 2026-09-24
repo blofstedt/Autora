@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.9.19"
+version: "0.9.20"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -74,13 +74,12 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Jev Mode now finds a Jev key saved in the Secrets store. Before, a key
-  stored there (for example as JEV_TOKEN) was ignored, so Jev Mode kept
-  falling back to scoring with the chat model, which fails for models that
-  don't return token probabilities. Autora now looks for the key under
-  JEV_API_KEY, JEV_TOKEN, JEV_KEY, TYPESAFE_API_KEY or TYPESAFE_TOKEN, in
-  Secrets or the server environment. The Jev Mode card shows which one it
-  is using.
+  Sessions and memories are now saved. Before, your threads, everything the
+  agent wrote to memory, and your scheduled tasks were held only in the
+  running process, so every restart or update wiped them (and brought the
+  demo memories back). They are now stored in the app's data folder beside
+  your settings and survive restarts and updates. Screenshots from before a
+  restart are not kept.
 
 dependencies: []
 path: ""
