@@ -48,8 +48,12 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           push=true
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            git fetch -q --depth=1 origin main
-            released=$(git show origin/main:package.json | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")
+            # The base the pull request was opened against, not main as it is
+            # now: merged within seconds, main already carries this version by
+            # the time this runs, and the image was never published early.
+            base=${{ github.event.pull_request.base.sha }}
+            git fetch -q --depth=1 origin "$base"
+            released=$(git show "$base:package.json" | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")
             if [ "$version" = "$released" ]; then
               push=false
               echo "Version $version is already main's; building without publishing."
