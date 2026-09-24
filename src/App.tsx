@@ -69,9 +69,9 @@ export function App() {
       again, from anywhere, takes you back to them. */
   const [configJump, setConfigJump] = useState<{ tab: ConfigTab }>(() => {
     const params = new URLSearchParams(location.search);
-    const keys = params.get("page") === "keys" ||
-      (params.get("page") === "config" && params.get("tab") === "keys");
-    return { tab: keys ? "keys" : "general" };
+    if (params.get("page") === "keys") return { tab: "keys" };
+    const tab = params.get("page") === "config" ? params.get("tab") : null;
+    return { tab: tab === "keys" || tab === "credentials" ? tab : "general" };
   });
   /** Which section of System to open on, from the address. */
   const [systemTab, setSystemTab] = useState<SystemTab>(() => {

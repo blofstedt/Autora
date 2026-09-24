@@ -169,7 +169,9 @@ export function Credentials() {
         Your details and sign-ins, for Autora to type into forms and sign-in pages. It is told
         which ones exist, never what they are: it asks for {"{{cred:first_name}}"} and the server
         types the real value into the page. A sign-in is only ever typed into pages on its own
-        site. Nothing saved here can be read back out, including from this screen.
+        site, or on the other sites of the same account: one saved for google.ca also signs in
+        on accounts.google.com, gmail.com and youtube.com. Nothing saved here can be read back
+        out, including from this screen.
       </p>
 
       {error && <p className="set-warn">{error}</p>}

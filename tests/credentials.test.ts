@@ -87,6 +87,25 @@ test("the briefing names placeholders, never values", () => {
   assert.ok(!text.includes("hunter2-long") && !text.includes("Jonathan"));
 });
 
+test("a sign-in works across the sites of one account, and no further", () => {
+  cred.saveLogin({ site: "google.ca", username: "jq@gmail.com", password: "g00gle-long" });
+  for (const url of [
+    "https://accounts.google.ca/", "https://accounts.google.com/v3/signin", "https://mail.google.com/",
+    "https://www.gmail.com/", "https://www.youtube.com/", "https://accounts.google.co.uk/",
+  ]) {
+    assert.equal(cred.fillPlaceholders("{{cred:google.ca:password}}", url), "g00gle-long", url);
+  }
+  // Named by another site of the same account, it finds the one saved.
+  assert.equal(cred.fillPlaceholders("{{cred:gmail.com:username}}", "https://accounts.google.com/"), "jq@gmail.com");
+  for (const url of ["https://google.xyz/", "https://google.com.evil.test/", "https://gmail.co/", "https://github.com/"]) {
+    assert.throws(() => cred.fillPlaceholders("{{cred:google.ca:password}}", url), /Refused/, url);
+  }
+  // A site in no family stays on its own.
+  assert.throws(() => cred.fillPlaceholders("{{cred:github.com:password}}", "https://github.co.uk/"), /Refused/);
+  assert.match(cred.credentialsBriefing(), /google\.ca \(the person's Google account\).*gmail\.com/);
+  cred.deleteLogin("google.ca");
+});
+
 test("sign-ins stay out of the terminal", () => {
   const env = cred.identityEnv();
   assert.equal(env.CRED_FIRST_NAME, "Jonathan");
