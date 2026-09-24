@@ -113,6 +113,9 @@ export interface PersistedState {
   mcpServers: McpServerConfig[];
   /** Theme and font, kept here so they follow you between devices. */
   appearance: Appearance;
+  /** Whether the agent looks back over its work after a turn and writes
+      down what it learned (as unconfirmed memories). */
+  learning: boolean;
 }
 
 const DEFAULT_PROMPT =
@@ -269,6 +272,7 @@ function blank(): PersistedState {
     jev: { ...DEFAULT_JEV },
     mcpServers: [],
     appearance: { theme: "violet", font: "inter" },
+    learning: true,
   };
 }
 
@@ -283,6 +287,7 @@ function read(): PersistedState {
     if (raw.keys && typeof raw.keys === "object") state.keys = { ...raw.keys };
     if (raw.secrets && typeof raw.secrets === "object") state.secrets = { ...raw.secrets };
     if (typeof raw.budgetUsd === "number") state.budgetUsd = raw.budgetUsd;
+    if (typeof raw.learning === "boolean") state.learning = raw.learning;
     if (raw.toolFeed && typeof raw.toolFeed.month === "string" && raw.toolFeed.tools) {
       state.toolFeed = { month: raw.toolFeed.month, tools: { ...raw.toolFeed.tools } };
     }

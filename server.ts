@@ -39,13 +39,19 @@ import {
 } from "./server/store";
 import { LiveBrowser, VIEWPORT, probeBrowser, type PageRead } from "./server/browser";
 import { LoopWatch } from "./server/loopwatch";
+import { healthBriefing, recordOutcome, toolHealth } from "./server/toolhealth";
+import { Scheduler, type Job, type JobWatch } from "./server/scheduler";
+import { htmlToText } from "./server/pages";
+import { deleteCustomTool, listCustomTools } from "./server/customtools";
+import { REFLECT_SYSTEM, parseReflection, reflectionPrompt, worthReflecting } from "./server/learning";
+import { MEMORY_KINDS, MemoryGraph, type MemoryLink, type MemoryRecord, type Recalled } from "./server/memory";
 import {
   attachRelay, relayClientSource, relayStatus, watchDesktop,
 } from "./server/desktop";
 import {
   availableTools, capabilityBriefing, findTool, groupStates, needsApproval,
-  renderCall, runTool, toolSettings, updateToolSettings,
-  type ToolContext, type ToolGroup, type AskRequest, type AskAnswer,
+  renderCall, runShellQuiet, runTool, toolSettings, updateToolSettings,
+  type ToolContext, type AskRequest, type AskAnswer,
 } from "./server/tools";
 
 /* Where to listen. Umbrel's compose file publishes 8817 and passes it in, so
@@ -106,245 +112,62 @@ interface Session {
   seqCounter: number;
 }
 
-interface MemoryRecord {
-  id: string;
-  kind: "fact" | "preference" | "procedure" | "skill";
-  scope: string;
-  title: string;
-  body: string;
-  tags: string[];
-  status: "provisional" | "confirmed";
-  pinned: boolean;
-  source_session: string | null;
-  source_seq: number | null;
-  created: number;
-  updated: number;
-  uses: number;
-  last_used: number | null;
-  superseded_by: string | null;
-}
-
-const MEMORY_KINDS: MemoryRecord["kind"][] = ["preference", "procedure", "fact", "skill"];
-
-interface MemoryLink {
-  src: string;
-  dst: string;
-  rel: string;
-}
-
-interface Job {
-  id: string;
-  name: string;
-  cron: string;
-  prompt: string;
-  enabled: boolean;
-  created: number;
-  last_run: number | null;
-  last_session: string | null;
-  last_error: string | null;
-  next_run: number | null;
-  cron_error: string | null;
-}
-
 // --- State ---
 // Seeds below are only what a fresh install starts with; once anything is on
 // disk (./server/store) it replaces them.
 const sessions = new Map<string, Session>();
 const sessionSockets = new Map<string, Set<WebSocket>>();
 
-const memoryRecords: MemoryRecord[] = [
-  {
-    id: "mem-1",
-    kind: "procedure",
-    scope: "project",
-    title: "Vite and Express deployment configuration",
-    body: "Run server.ts on host 0.0.0.0 and port 3000 with Vite middleware in dev and dist static assets in production.",
-    tags: ["build", "node", "deployment"],
-    status: "confirmed",
-    pinned: true,
-    source_session: "session-init",
-    source_seq: 1,
-    created: Math.floor(Date.now() / 1000) - 86400,
-    updated: Math.floor(Date.now() / 1000) - 86400,
-    uses: 12,
-    last_used: Math.floor(Date.now() / 1000),
-    superseded_by: null,
-  },
-  {
-    id: "mem-2",
-    kind: "preference",
-    scope: "user",
-    title: "Concise responses with execution steps",
-    body: "Provide explicit step-by-step actions and emit telemetry events for real-time console display.",
-    tags: ["style", "output", "agent"],
-    status: "confirmed",
-    pinned: true,
-    source_session: "session-init",
-    source_seq: 2,
-    created: Math.floor(Date.now() / 1000) - 43200,
-    updated: Math.floor(Date.now() / 1000) - 43200,
-    uses: 24,
-    last_used: Math.floor(Date.now() / 1000),
-    superseded_by: null,
-  },
-  {
-    id: "mem-3",
-    kind: "fact",
-    scope: "workspace",
-    title: "Autora Broadcast Architecture",
-    body: "Event logs are persisted sequentially and streamed to client subscribers via WebSocket /ws/:session.",
-    tags: ["architecture", "websocket", "events"],
-    status: "confirmed",
-    pinned: false,
-    source_session: "session-init",
-    source_seq: 3,
-    created: Math.floor(Date.now() / 1000) - 10000,
-    updated: Math.floor(Date.now() / 1000) - 10000,
-    uses: 5,
-    last_used: Math.floor(Date.now() / 1000),
-    superseded_by: null,
-  },
-  {
-    id: "mem-skill-1",
-    kind: "skill",
-    scope: "workspace",
-    title: "Web Browsing & DOM Inspection",
-    body: "Open a page with browser_open, read it as numbered elements with browser_read, then browser_click, browser_fill (text, dropdowns, checkboxes and dates in one call), browser_upload (attach a file from the Artifacts, such as a CV), browser_press and browser_scroll (by screens, to text, or inside a panel). Each field says what it is for, what it holds and any error on it. Checkbox CAPTCHAs (reCAPTCHA, hCaptcha, Turnstile) live in iframes outside the outline: tick them with browser_captcha. A site that refuses this browser's sign-in is signed in with browser_signin_import from the person's own cookie export. Every step is screencast to whoever is watching.",
-    tags: ["skill", "browser", "automation", "dom"],
-    status: "confirmed",
-    pinned: true,
-    source_session: "session-init",
-    source_seq: 4,
-    created: Math.floor(Date.now() / 1000) - 20000,
-    updated: Math.floor(Date.now() / 1000) - 20000,
-    uses: 18,
-    last_used: Math.floor(Date.now() / 1000),
-    superseded_by: null,
-  },
-  {
-    id: "mem-skill-2",
-    kind: "skill",
-    scope: "workspace",
-    title: "Terminal & Shell Orchestration",
-    body: "Run a command with the terminal tool: bash -lc on this host, output streamed as it arrives, exit code reported. Pipes rather than a TTY, so interactive programs are not usable.",
-    tags: ["skill", "terminal", "bash", "cli"],
-    status: "confirmed",
-    pinned: true,
-    source_session: "session-init",
-    source_seq: 5,
-    created: Math.floor(Date.now() / 1000) - 18000,
-    updated: Math.floor(Date.now() / 1000) - 18000,
-    uses: 32,
-    last_used: Math.floor(Date.now() / 1000),
-    superseded_by: null,
-  },
-  {
-    id: "mem-skill-3",
-    kind: "skill",
-    scope: "workspace",
-    title: "Autonomous Kanban Task Management",
-    body: "Break a multi-step goal into backlog cards on the board. The board is edited from the app; moving a card is not itself an action the agent can take.",
-    tags: ["skill", "kanban", "planning", "autonomy"],
-    status: "confirmed",
-    pinned: true,
-    source_session: "session-init",
-    source_seq: 6,
-    created: Math.floor(Date.now() / 1000) - 15000,
-    updated: Math.floor(Date.now() / 1000) - 15000,
-    uses: 21,
-    last_used: Math.floor(Date.now() / 1000),
-    superseded_by: null,
-  },
-  {
-    id: "mem-skill-4",
-    kind: "skill",
-    scope: "workspace",
-    title: "Policy Gating & Permission Elevations",
-    body: "Autora runs in yolo mode: tool calls run straight away with no approval card in the chat. Every command is still shown in the transcript as it runs, and Stop kills it.",
-    tags: ["skill", "security", "permissions", "policy"],
-    status: "confirmed",
-    pinned: false,
-    source_session: "session-init",
-    source_seq: 7,
-    created: Math.floor(Date.now() / 1000) - 12000,
-    updated: Math.floor(Date.now() / 1000) - 12000,
-    uses: 9,
-    last_used: Math.floor(Date.now() / 1000),
-    superseded_by: null,
-  },
-  {
-    id: "mem-skill-5",
-    kind: "skill",
-    scope: "workspace",
-    title: "Neural Memory Graph Weaving",
-    body: "Distill cognitive milestones, associative cross-links, and synaptically traversable memory nodes displayed in the top ribbon.",
-    tags: ["skill", "neural", "memory", "graph"],
-    status: "confirmed",
-    pinned: false,
-    source_session: "session-init",
-    source_seq: 8,
-    created: Math.floor(Date.now() / 1000) - 8000,
-    updated: Math.floor(Date.now() / 1000) - 8000,
-    uses: 14,
-    last_used: Math.floor(Date.now() / 1000),
-    superseded_by: null,
-  },
-];
+/* A fresh install starts knowing nothing it has not been told. It used to
+   start with demo memories ("run on port 3000", "synaptically traversable
+   memory nodes") that were recalled into real turns, and two demo jobs, one
+   of them enabled. Installs that still have those untouched get them removed
+   on load; anything the person edited is kept. */
+const memoryRecords: MemoryRecord[] = [];
+const memoryLinks: MemoryLink[] = [];
+const jobs: Job[] = [];
 
-const memoryLinks: MemoryLink[] = [
-  { src: "mem-1", dst: "mem-3", rel: "enforces" },
-  { src: "mem-2", dst: "mem-3", rel: "complements" },
-  { src: "mem-skill-1", dst: "mem-skill-2", rel: "pairs_with" },
-  { src: "mem-skill-3", dst: "mem-skill-4", rel: "gates" },
-  { src: "mem-skill-5", dst: "mem-skill-3", rel: "informs" },
-  { src: "mem-1", dst: "mem-skill-2", rel: "utilizes" },
-  { src: "mem-3", dst: "mem-skill-5", rel: "visualizes" },
-];
+const DEMO_MEMORY_TITLES = new Map([
+  ["mem-1", "Vite and Express deployment configuration"],
+  ["mem-2", "Concise responses with execution steps"],
+  ["mem-3", "Autora Broadcast Architecture"],
+  ["mem-skill-1", "Web Browsing & DOM Inspection"],
+  ["mem-skill-2", "Terminal & Shell Orchestration"],
+  ["mem-skill-3", "Autonomous Kanban Task Management"],
+  ["mem-skill-4", "Policy Gating & Permission Elevations"],
+  ["mem-skill-5", "Neural Memory Graph Weaving"],
+]);
+const DEMO_JOB_NAMES = new Map([
+  ["job-1", "Hourly health and repo status check"],
+  ["job-2", "Daily memory distillation and graph cleanup"],
+]);
 
-const jobs: Job[] = [
-  {
-    id: "job-1",
-    name: "Hourly health and repo status check",
-    cron: "0 * * * *",
-    prompt: "Verify server status, review active memory items, and summarize pending tasks.",
-    enabled: true,
-    created: Math.floor(Date.now() / 1000) - 3600,
-    last_run: Math.floor(Date.now() / 1000) - 1200,
-    last_session: "session-init",
-    last_error: null,
-    next_run: Math.floor(Date.now() / 1000) + 2400,
-    cron_error: null,
-  },
-  {
-    id: "job-2",
-    name: "Daily memory distillation and graph cleanup",
-    cron: "0 3 * * *",
-    prompt: "Scan recent session events, distill procedures and preferences into knowledge store.",
-    enabled: false,
-    created: Math.floor(Date.now() / 1000) - 7200,
-    last_run: null,
-    last_session: null,
-    last_error: null,
-    next_run: Math.floor(Date.now() / 1000) + 40000,
-    cron_error: null,
-  },
-];
-
-/* Memories and jobs from disk, when there are any. The arrays are filled in
-   place because everything below holds a reference to them. */
 (() => {
-  const mind = readDoc<{ records: MemoryRecord[]; links: MemoryLink[] }>("memory");
-  if (mind && Array.isArray(mind.records)) {
-    memoryRecords.splice(0, memoryRecords.length, ...mind.records);
-    memoryLinks.splice(0, memoryLinks.length, ...(Array.isArray(mind.links) ? mind.links : []));
+  const stored = readDoc<{ records: MemoryRecord[]; links: MemoryLink[] }>("memory");
+  if (stored && Array.isArray(stored.records)) {
+    const records = stored.records.filter((r) =>
+      !(DEMO_MEMORY_TITLES.get(r.id) === r.title && r.source_session === "session-init" && r.created === r.updated));
+    const ids = new Set(records.map((r) => r.id));
+    memoryRecords.push(...records);
+    memoryLinks.push(...(Array.isArray(stored.links) ? stored.links : [])
+      .filter((l) => ids.has(l.src) && ids.has(l.dst)));
+    if (records.length !== stored.records.length) saveMemory();
   }
-  const stored = readDoc<Job[]>("jobs");
-  if (Array.isArray(stored)) jobs.splice(0, jobs.length, ...stored);
+  const storedJobs = readDoc<Job[]>("jobs");
+  if (Array.isArray(storedJobs)) {
+    const kept = storedJobs.filter((j) =>
+      !(DEMO_JOB_NAMES.get(j.id) === j.name && (j.last_session === "session-init" || j.last_session === null)));
+    jobs.push(...kept);
+    if (kept.length !== storedJobs.length) saveJobs();
+  }
 })();
 
 function saveMemory() {
   saveDoc("memory", () => ({ records: memoryRecords, links: memoryLinks }));
 }
+
+/** The graph's rules (recall, merging, confirming) over the arrays above. */
+const mind = new MemoryGraph(memoryRecords, memoryLinks, saveMemory);
 
 function saveJobs() {
   saveDoc("jobs", () => jobs);
@@ -387,24 +210,6 @@ function createInitialSession(): Session {
   }
 
   add("session.started", "system", { title: session.title });
-  add("memory.recall", "agent", {
-    ids: ["mem-1", "mem-skill-3"],
-    titles: ["Vite and Express deployment configuration", "Autonomous Kanban Task Management"],
-    kinds: ["procedure", "skill"],
-  });
-  add("turn.user", "user", { text: "Organize project priorities and prepare autonomous task queue." });
-  add("turn.agent.thinking", "agent", { text: "Synthesizing workspace objectives into a structured Kanban board and checking elevated policy rules." });
-  add("kanban.update", "agent", {
-    id: "board-main",
-    title: "Project Autonomy Board",
-    autonomous: true,
-    tasks: [
-      { id: "t-1", title: "Verify container ingress on port 3000", status: "done", tag: "network" },
-      { id: "t-2", title: "Mount neural synaptic tracers in memory ribbon", status: "doing", tag: "visual" },
-      { id: "t-3", title: "Register autonomous skills in memory graph", status: "todo", tag: "skills" },
-      { id: "t-4", title: "Verify permission elevation card interactions", status: "todo", tag: "security" },
-    ],
-  });
   /* No approval card here any more. This session is seeded before anything
      has been asked for, so a card in it was waiting on nothing: clicking it
      released no tool call, because there was none, and the only thing it
@@ -873,11 +678,12 @@ async function jevDecide(session: Session | null, task: JevTask): Promise<JevOut
  * keyword recall", which is what happens whenever Jev is off, the model
  * cannot score, or any memory's call is too close to make.
  */
-async function jevRecall(session: Session, request: string): Promise<MemoryRecord[] | null> {
-  const candidates = memoryRecords
-    .filter((m) => !m.superseded_by)
-    .sort((a, b) => b.uses - a.uses)
-    .slice(0, 20);
+async function jevRecall(session: Session, request: string): Promise<Recalled[] | null> {
+  /* The shortlist is the ranked recall, widened, rather than the most-used
+     twenty: ranked by use, a memory written this week was never a candidate
+     once there were twenty older ones. */
+  const shortlist = mind.recall(request, 20);
+  const candidates = shortlist.map((r) => r.record);
   if (candidates.length === 0) return null;
 
   const properties: Record<string, any> = {};
@@ -905,10 +711,12 @@ async function jevRecall(session: Session, request: string): Promise<MemoryRecor
   });
   if (outcome.mode !== "jev") return null;
 
-  const picked = candidates.filter((m) => m.pinned);
+  const picked = shortlist.filter((r) => r.record.pinned);
   for (const [field, value] of Object.entries(outcome.values)) {
     const m = byField.get(field);
-    if (m && value === true && !picked.includes(m)) picked.push(m);
+    if (m && value === true && !picked.some((p) => p.record === m)) {
+      picked.push({ record: m, score: 0, reason: "chosen by Jev as relevant" });
+    }
   }
   return picked;
 }
@@ -1477,13 +1285,13 @@ const RECAP_CALLS = 30;
  * the same relation the transcript is built from, so this cannot describe a
  * call the person cannot also see.
  */
-function pastToolCalls(sessionId: string): string[] {
+function pastToolCalls(sessionId: string, sinceSeq = 0): string[] {
   const session = sessions.get(sessionId);
   if (!session) return [];
 
   const calls = new Map<string, { name: string; args: any; outcome: string }>();
   for (const event of session.events) {
-    if (!event.span) continue;
+    if (!event.span || event.seq <= sinceSeq) continue;
     if (event.kind === "tool.call") {
       calls.set(event.span, {
         name: String(event.payload?.name ?? "tool"),
@@ -1581,8 +1389,11 @@ async function systemInstructionFor(
 
   if (recalled.length > 0) {
     notes.push([
-      "What you already know about this workspace (from the memory graph):",
-      ...recalled.map((m) => `- [${m.kind}] ${m.title}: ${m.body}`),
+      "What you already know about this workspace (from the memory graph).",
+      "Ids are for memory_update and memory_forget when one turns out wrong;",
+      "\"unconfirmed\" ones were learned from earlier work and not yet proven:",
+      ...recalled.map((m) =>
+        `- ${m.id} [${m.kind}${m.status === "provisional" ? ", unconfirmed" : ""}] ${m.title}: ${m.body}`),
     ].join("\n"));
   }
 
@@ -1610,6 +1421,9 @@ async function systemInstructionFor(
      pairing strictly, and a call whose result went missing across a restart
      would fail the whole request. A digest is stated as what it is, so
      nothing here can be mistaken for something the model said. */
+  const health = healthBriefing();
+  if (health) notes.push(health);
+
   const done = pastToolCalls(sessionId);
   if (done.length > 0) {
     notes.push([
@@ -1639,6 +1453,895 @@ async function systemInstructionFor(
       ? ["[Console note for this turn -- written by Autora, not by the person]", ...notes].join("\n\n")
       : "",
   };
+}
+
+// ------------------------------------------------- jobs, watchers, notices --
+
+function newSession(title: string): Session {
+  const id = `session-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const session: Session = {
+    id,
+    title,
+    live: true,
+    createdAt: Math.floor(Date.now() / 1000),
+    busy: false,
+    events: [],
+    seqCounter: 0,
+  };
+  sessions.set(id, session);
+  saveMeta(metaOf(session));
+  emitEvent(session, "session.started", "system", { title: session.title });
+  return session;
+}
+
+/** Things worth telling the person about wherever they are in the app: a
+    job finishing while they were looking at something else. */
+interface Notice {
+  id: number;
+  ts: number;
+  tone: "ok" | "error" | "info";
+  title: string;
+  detail: string;
+  session: string | null;
+}
+const notices: Notice[] = [];
+let noticeSeq = 0;
+
+function notify(notice: Omit<Notice, "id" | "ts">) {
+  notices.push({ ...notice, id: ++noticeSeq, ts: Math.floor(Date.now() / 1000) });
+  if (notices.length > 50) notices.shift();
+}
+
+/** What a watcher sees, as text: the thing compared from one look to the next. */
+async function observe(watch: JobWatch): Promise<string> {
+  const target = watch.target.trim();
+  if (watch.kind === "page") {
+    if (!/^https?:\/\//i.test(target)) throw new Error("a page to watch needs an http(s) address");
+    const res = await fetch(target, {
+      signal: AbortSignal.timeout(20_000),
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; Autora watcher)" },
+      redirect: "follow",
+    });
+    if (!res.ok) throw new Error(`the page answered ${res.status}`);
+    const body = (await res.text()).slice(0, 2_000_000);
+    const type = res.headers.get("content-type") ?? "";
+    return (type.includes("html") ? htmlToText(body, target) : body).slice(0, 200_000);
+  }
+  if (watch.kind === "file") {
+    const full = path.resolve(toolSettings().terminal.cwd || process.cwd(), target);
+    const stat = fs.statSync(full);
+    if (stat.isDirectory()) {
+      return fs.readdirSync(full, { withFileTypes: true })
+        .map((d) => {
+          const st = fs.statSync(path.join(full, d.name));
+          return `${d.isDirectory() ? "dir " : "file"} ${d.name} ${st.size} bytes, modified ${st.mtime.toISOString()}`;
+        })
+        .sort()
+        .join("\n");
+    }
+    if (stat.size <= 256 * 1024) return fs.readFileSync(full, "utf8");
+    return `${stat.size} bytes, modified ${stat.mtime.toISOString()}`;
+  }
+  const { output } = await runShellQuiet(target, 60);
+  return output;
+}
+
+const scheduler = new Scheduler(jobs, {
+  run: async (job, prompt, reason) => {
+    const session = newSession(job.name);
+    emitEvent(session, "system.log", "system", {
+      event: "schedule.fired",
+      job: job.id,
+      name: job.name,
+      cron: job.cron,
+      message: reason === "change"
+        ? `Started by the watcher "${job.name}": what it watches changed.`
+        : reason === "manual"
+          ? `Started by hand from the schedule "${job.name}".`
+          : `Started on schedule by "${job.name}" (${job.cron}).`,
+    });
+    const done = startTurn(session, prompt);
+    return {
+      session: session.id,
+      done: done.then((r) => ({ ok: r.ok, error: r.error, reply: r.reply })),
+    };
+  },
+  observe,
+  save: () => saveJobs(),
+  notify: (job, run) => notify({
+    tone: run.ok ? "ok" : "error",
+    title: run.ok ? `${job.name} finished` : `${job.name} failed`,
+    detail: run.ok ? run.summary || "Done." : run.error || "It did not finish.",
+    session: run.session,
+  }),
+});
+
+/** A job as the Schedule page wants it: the watcher's last look without the
+    whole page it saw. */
+function jobView(job: Job) {
+  const { last_seen, ...rest } = job;
+  return {
+    ...rest,
+    running: scheduler.running(job.id),
+    last_seen: last_seen ? { at: last_seen.at, preview: last_seen.text.slice(0, 300) } : null,
+  };
+}
+
+function saneWatch(raw: any): JobWatch | null {
+  if (!raw || typeof raw !== "object") return null;
+  const kind = ["page", "file", "command"].includes(raw.kind) ? raw.kind : null;
+  const target = String(raw.target ?? "").trim();
+  return kind && target ? { kind, target } : null;
+}
+
+/**
+ * A model call nobody watches: compaction, learning. The same provider as the
+ * turns, no tools, a low temperature, nothing streamed to the thread.
+ * AUTORA_COMPACTION_MODEL names a cheaper model of that provider to use for
+ * these instead. Its cost goes in the ledger like any call.
+ */
+async function backgroundCall(sessionId: string, system: string, prompt: string, maxTokens: number): Promise<string> {
+  const active = resolveProvider();
+  if (!active.provider || active.problem) throw new Error(active.problem ?? "No model is connected.");
+  const model = (process.env.AUTORA_COMPACTION_MODEL || "").trim() || active.model;
+  const turn = await streamChat({
+    provider: active.provider,
+    model,
+    key: active.key,
+    baseUrl: active.baseUrl,
+    system,
+    messages: [{ role: "user", text: prompt }],
+    temperature: 0.2,
+    maxTokens,
+    thinkingBudget: 0,
+  }, () => undefined);
+  recordUsage({
+    ts: Math.floor(Date.now() / 1000),
+    session: sessionId,
+    provider: active.provider,
+    model,
+    input: turn.usage.input,
+    output: turn.usage.output,
+    ...priceCall(active.provider, model, turn.usage.input, turn.usage.output,
+      turn.usage.cached, turn.usage.cacheWrite),
+    priced: isPriced(active.provider, model),
+    estimated: turn.usage.estimated,
+    cached: turn.usage.cached ?? 0,
+  });
+  return turn.text;
+}
+
+/**
+ * After a turn: what to keep, what helped, what was wrong. See
+ * server/learning.ts. Runs in the background and never fails the turn.
+ */
+async function reflect(session: Session, request: string, startSeq: number, previousReply: string, result: TurnResult) {
+  if (!state.learning || !toolSettings().memory.enabled) return;
+  if (!worthReflecting({ request, ranSomething: result.ranSomething, stopped: result.stopped, ok: result.ok })) return;
+  const recalled = result.recalled.map((id) => mind.get(id)).filter((m): m is MemoryRecord => Boolean(m));
+  const nearby = mind.recall(`${request}\n${result.reply.slice(0, 1000)}`, 8, false)
+    .map((r) => r.record)
+    .filter((m) => !recalled.includes(m));
+  const known = new Set([...recalled, ...nearby].map((m) => m.id));
+  let text: string;
+  try {
+    text = await backgroundCall(session.id, REFLECT_SYSTEM, reflectionPrompt({
+      request, previousReply, steps: pastToolCalls(session.id, startSeq), reply: result.reply, recalled, nearby,
+    }), 1500);
+  } catch (err: any) {
+    console.warn(`[learning] ${session.id}: ${err?.message ?? err}`);
+    return;
+  }
+  const found = parseReflection(text, known);
+
+  const items: { id: string; title: string; kind: string; action: string; status: string; revises: string | null }[] = [];
+  for (const lesson of found.learned) {
+    const { record, action } = mind.write({
+      title: lesson.title, body: lesson.body, kind: lesson.kind, tags: lesson.tags,
+      status: "provisional", source_session: session.id, source_seq: session.seqCounter,
+    });
+    if (lesson.revises && action === "added" && lesson.revises !== record.id) {
+      record.replaces = lesson.revises;
+      memoryLinks.push({ src: record.id, dst: lesson.revises, rel: "revises" });
+      saveMemory();
+    }
+    items.push({
+      id: record.id, title: record.title, kind: record.kind, action, status: record.status,
+      revises: record.replaces ?? null,
+    });
+  }
+  const changes: { id: string; title: string; change: string }[] = [];
+  for (const id of found.helped) {
+    const change = mind.reinforce(id);
+    if (change) changes.push({ id, title: mind.get(id)?.title ?? id, change });
+  }
+  for (const id of found.misled) {
+    const record = mind.get(id);
+    if (!record) continue;
+    if (record.status === "provisional") {
+      mind.forget(id);
+      changes.push({ id, title: record.title, change: "dropped" });
+    } else {
+      changes.push({ id, title: record.title, change: "questioned" });
+    }
+  }
+  if (items.length === 0 && changes.length === 0) return;
+  emitEvent(session, "memory.learned", "agent", { items, changes });
+  log("info", "learning", `${session.id}: ${items.length} learned, ${changes.length} changed`);
+}
+
+/** How a turn ended, for whoever started it: the chat route ignores it, a
+    scheduled job keeps it in its history. */
+export interface TurnResult {
+  ok: boolean;
+  /** What the agent said, final reply included. */
+  reply: string;
+  /** Tools ran. */
+  ranSomething: boolean;
+  stopped: boolean;
+  error: string | null;
+  /** The memories it was given. */
+  recalled: string[];
+}
+
+/**
+ * Put the person's (or a job's) words in the thread and run the turn.
+ *
+ * Everything that starts a turn comes through here -- the chat box, a
+ * schedule, a watcher -- so they are the same turn: same memory, same tools,
+ * same log.
+ */
+function startTurn(session: Session, text: string): Promise<TurnResult> {
+  // The reply this message answers: a correction only makes sense beside it.
+  let previousReply = "";
+  for (let i = session.events.length - 1; i >= 0; i--) {
+    const e = session.events[i];
+    if (e.kind === "turn.user") break;
+    if (e.kind === "turn.agent.text" && !e.payload?.local) previousReply = String(e.payload?.text ?? "") + previousReply;
+  }
+  const startSeq = session.seqCounter;
+  emitEvent(session, "turn.user", "user", { text });
+  session.busy = true;
+  running.set(session.id, { stopped: false, cancels: new Set() });
+  broadcastLiveStatus(session);
+  const done = runTurn(session, text);
+  void done
+    .then((result) => reflect(session, text, startSeq, previousReply, result))
+    // Learning is a bonus: whatever goes wrong in it must not take the server down.
+    .catch((err) => console.warn(`[learning] ${session.id}: ${err?.message ?? err}`));
+  return done;
+}
+
+/** The agent loop for one turn. See startTurn. */
+async function runTurn(session: Session, text: string): Promise<TurnResult> {
+  const result: TurnResult = { ok: false, reply: "", ranSomething: false, stopped: false, error: null, recalled: [] };
+  try {
+    // Emit thinking event
+    emitEvent(session, "turn.agent.thinking", "agent", {
+      text: `Analyzing: "${text}"`,
+    });
+
+    /* Which memories this turn gets: ranked against the request (see
+       server/memory.ts), pinned ones always. When Jev can score, it makes
+       the final yes/no per memory from a wider shortlist. */
+    jevThisTurn.delete(session.id);
+    const [scored, routeHint] = await Promise.all([
+      jevRecall(session, text),
+      jevRoute(session, text),
+    ]);
+    const recalled = scored ?? mind.recall(text);
+    const uniqueAccessed = recalled.map((r) => r.record);
+    result.recalled = uniqueAccessed.map((r) => r.id);
+    if (uniqueAccessed.length > 0) {
+      mind.touch(uniqueAccessed.map((r) => r.id));
+      emitEvent(session, "memory.recall", "agent", {
+        ids: uniqueAccessed.map((r) => r.id),
+        titles: uniqueAccessed.map((r) => r.title),
+        kinds: uniqueAccessed.map((r) => r.kind),
+        reasons: recalled.map((r) => r.reason),
+      });
+    }
+
+    // ------------------------------------------------------ the turn --
+
+    const active = resolveProvider();
+    const connected = Boolean(active.provider) && !active.problem;
+    let streamed = 0;
+    /* Whether any tool actually ran this turn. The two ways a turn ends
+       with no words are not the same thing: the provider never answered
+       (an error is already in the log), or tools ran and the model simply
+       never wrote a closing line. Pointing at work that did not happen is
+       its own small lie. */
+    let ranSomething = false;
+    /* One per turn, and outside the retry loop on purpose: a retry only
+       happens when nothing has been said yet, so the sieve is empty, and
+       a fresh one per attempt would be the same object with more steps. */
+    const sieve = new DataUrlSieve();
+
+    if (connected) {
+      /* Refreshed every step, not once per turn: a tool the agent writes
+         with tool_create is usable on the very next step. */
+      let tools = await availableTools();
+      /* The conversation lives in the session's context engine for the
+         length of the turn: rebuilt from the log (minus whatever has been
+         folded into anchored memory), then grown by each round of tool
+         calls. A background compaction may swap part of it out between
+         any two steps; nothing here waits for one. */
+      const context = engineFor(session.id);
+      context.load(historyFor(session, context.foldedThroughSeq));
+      const canReadVault = tools.some((t) => t.name === "vault_read");
+
+      /** An image inlined into the reply becomes a card where it was
+          written, rather than a screenful of base64. */
+      const show = (found: string[]) => {
+        for (const raw of found) {
+          const decoded = fromDataUrl(raw);
+          if (!decoded || !decoded.mime.startsWith("image/")) continue;
+          emitEvent(session, "media.image", "agent", {
+            alt: "image from the reply",
+            caption: null,
+            inline: true,
+          }, null, putBlob(session.id, decoded.data, decoded.mime));
+        }
+      };
+
+      /** Lowered for the rest of the turn if the model refuses the default. */
+      let outputTokens = MAX_OUTPUT_TOKENS;
+
+      /**
+       * One call to the model, retried while nothing has reached the thread.
+       *
+       * Returns what it said and what it wants run, or null once the
+       * failure has been reported and there is no point going again.
+       */
+      const askModel = async (pinned: string): Promise<ChatTurn | null> => {
+        // Across attempts, not within one: a second attempt after half a
+        // sentence has been delivered would say that half twice.
+        let delivered = 0;
+        // Retrying on a transient error spends an attempt; retrying at a
+        // lower output limit does not, since that one is our mistake.
+        let limitRetried = false;
+
+        for (let attempt = 0; attempt <= MODEL_RETRIES; attempt += 1) {
+          try {
+            /* Frame 0 (the pinned instructions) with Frame 1 (anchored
+               memory) under it, and a fresh copy of the history: taken
+               per attempt, so a retry picks up a compaction that landed in
+               the meantime, and a copy, so one landing mid-request cannot
+               touch the request. */
+            const system = context.systemFor(pinned);
+            const turn = await streamChat({
+              provider: active.provider,
+              model: active.model,
+              key: active.key,
+              baseUrl: active.baseUrl,
+              system,
+              messages: context.messagesFor(system),
+              temperature: 0.7,
+              maxTokens: outputTokens,
+              thinkingBudget: THINKING_BUDGET,
+              tools: tools.map((t) => ({
+                name: t.name,
+                description: t.description,
+                parameters: t.parameters,
+              })),
+            }, (piece) => {
+              // The client coalesces these deltas into one reply (see
+              // derive.ts), so a chunk per emit is a sentence appearing,
+              // not forty cards.
+              const { text: clean, images } = sieve.feed(piece);
+              if (clean) {
+                emitEvent(session, "turn.agent.text", "agent", { text: clean });
+                result.reply += clean;
+                delivered += clean.length;
+                streamed += clean.length;
+              }
+              show(images);
+            });
+
+            const tail = sieve.flush();
+            if (tail.text) {
+              emitEvent(session, "turn.agent.text", "agent", { text: tail.text });
+              result.reply += tail.text;
+              delivered += tail.text.length;
+              streamed += tail.text.length;
+            }
+            show(tail.images);
+
+            // What the turn cost, written down at the moment it happened.
+            // Prices move, so re-pricing an old turn later from today's
+            // table would quietly rewrite history; the ledger keeps the
+            // figure that was in force when the call was made. One entry
+            // per model call, so a turn that used six tools is billed as
+            // the six calls it actually was.
+            const priced = isPriced(active.provider, active.model);
+            const cache = { read: turn.usage.cached ?? 0, write: turn.usage.cacheWrite ?? 0 };
+            const { cost, parts } = priceCall(
+              active.provider, active.model, turn.usage.input, turn.usage.output,
+              cache.read, cache.write,
+            );
+            recordUsage({
+              ts: Math.floor(Date.now() / 1000),
+              session: session.id,
+              provider: active.provider,
+              model: active.model,
+              input: turn.usage.input,
+              output: turn.usage.output,
+              cost,
+              parts,
+              priced,
+              estimated: turn.usage.estimated,
+              cached: cache.read,
+            });
+            emitEvent(session, "usage.turn", "system", {
+              provider: active.provider,
+              model: active.model,
+              input_tokens: turn.usage.input,
+              output_tokens: turn.usage.output,
+              cached_tokens: cache.read,
+              cost_usd: cost,
+              priced,
+              estimated: turn.usage.estimated,
+            });
+
+            return turn;
+          } catch (err: any) {
+            const detail = err?.message ?? String(err);
+            const status = err instanceof ProviderError ? err.status : null;
+            console.warn(
+              `[model] ${active.provider}/${active.model} attempt ${attempt + 1}: ${detail}`,
+            );
+
+            if (
+              delivered === 0 && !limitRetried && status === 400 &&
+              outputTokens > FALLBACK_OUTPUT_TOKENS && OUTPUT_LIMIT_REFUSED.test(detail)
+            ) {
+              outputTokens = FALLBACK_OUTPUT_TOKENS;
+              limitRetried = true;
+              attempt -= 1;
+              continue;
+            }
+
+            const retryable =
+              delivered === 0 &&
+              attempt < MODEL_RETRIES &&
+              (status === null || TRANSIENT.has(status));
+
+            if (retryable) {
+              await wait(RETRY_BACKOFF_MS[Math.min(attempt, RETRY_BACKOFF_MS.length - 1)]);
+              continue;
+            }
+
+            // Said out loud rather than swallowed: a canned reply in place
+            // of a real one is indistinguishable from the model working,
+            // and what people need to know is whether their key is wrong or
+            // the vendor is simply busy.
+            const vendor =
+              PROVIDERS.find((p) => p.id === active.provider)?.label ?? active.provider;
+            result.error = `${vendor} (${active.model}) did not answer: ${detail}`;
+            emitEvent(session, "system.error", "system", { error: result.error });
+            return null;
+          }
+        }
+        return null;
+      };
+
+      /**
+       * The background summariser behind compaction: the same provider,
+       * no tools, a low temperature, nothing streamed to the thread.
+       * AUTORA_COMPACTION_MODEL names a cheaper model of that provider to
+       * use for it instead. Its cost goes in the ledger like any call.
+       */
+      const summarize = (prompt: string): Promise<string> =>
+        backgroundCall(
+          session.id,
+          "You compress an AI agent's working context into a structured " +
+            "record of task state. Output only that record.",
+          prompt,
+          2048,
+        );
+
+      const compacted = (report: CompactionReport) => {
+        if (!report.ok) {
+          // Nothing was lost -- the turns stay raw -- so this is for the
+          // server log, not the thread.
+          console.warn(`[context] ${session.id}: compaction failed: ${report.error}`);
+          return;
+        }
+        console.log(
+          `[context] ${session.id}: folded ${report.folded} messages ` +
+            `(~${report.tokensBefore} -> ~${report.tokensAfter} tokens)`,
+        );
+        emitEvent(session, "system.log", "system", {
+          message:
+            `Condensed ${report.folded} earlier message${report.folded === 1 ? "" : "s"} ` +
+            "into working memory, in the background " +
+            `(about ${report.tokensBefore.toLocaleString("en-US")} tokens of context ` +
+            `down to ${report.tokensAfter.toLocaleString("en-US")}).`,
+        });
+      };
+
+      /** Everything a tool needs from this session, handed in rather than
+          imported, so server/tools.ts knows nothing about sessions. */
+      const contextFor = (span: string): ToolContext => ({
+        onOutput: (chunk) =>
+          emitEvent(session, "pty.output", "agent", { data: chunk }, span),
+        putBlob: (data, mime) => putBlob(session.id, data, mime),
+        showImage: (blob, alt, caption, size) =>
+          emitEvent(session, "media.image", "agent", {
+            alt, caption, ...(size ? { w: size.w, h: size.h } : {}),
+          }, null, blob),
+        showScreen: (source, blob, size) =>
+          emitEvent(session, `${source}.frame`, "agent", {
+            ...(source === "browser" ? { url: browsers.get(session.id)?.status().url ?? "" } : {}),
+            ...(size ? { w: size.w, h: size.h } : {}),
+          }, null, blob),
+        browser: () => browserFor(session),
+        browserChanged: () => broadcastBrowserState(session),
+        watchDesktop: () => watchDesktopFor(session),
+        cancelled: () => Boolean(running.get(session.id)?.stopped),
+        onCancel: (stop) => { running.get(session.id)?.cancels.add(stop); },
+        memory: {
+          write: ({ title, body, kind, tags }) => {
+            const { record, action } = mind.write({
+              title, body, kind, tags: [...(tags ?? []), "agent-authored"],
+              status: "confirmed", source_session: session.id, source_seq: session.seqCounter,
+            });
+            emitEvent(session, "memory.write", "agent", {
+              id: record.id, title: record.title, kind: record.kind, action,
+            });
+            return { id: record.id, action };
+          },
+          search: (query) => {
+            const hits = mind.recall(query, 8, false);
+            if (hits.length > 0) {
+              // A search is a recall, and the ribbon should light up for it
+              // exactly as it does for the automatic kind.
+              mind.touch(hits.map((h) => h.record.id));
+              emitEvent(session, "memory.recall", "agent", {
+                ids: hits.map((h) => h.record.id),
+                titles: hits.map((h) => h.record.title),
+                kinds: hits.map((h) => h.record.kind),
+                reasons: hits.map((h) => `searched for "${query}": ${h.reason}`),
+              });
+            }
+            return hits.map(({ record: m }) => ({
+              id: m.id, kind: m.kind, title: m.title, body: m.body, status: m.status,
+            }));
+          },
+          update: (id, patch) => {
+            const record = mind.update(id, patch);
+            if (record) {
+              emitEvent(session, "memory.write", "agent", {
+                id: record.id, title: record.title, kind: record.kind, action: "updated",
+              });
+            }
+            return Boolean(record);
+          },
+          forget: (id, replacedBy) => {
+            const record = mind.get(id);
+            const ok = mind.forget(id, replacedBy);
+            if (ok && record) {
+              emitEvent(session, "memory.write", "agent", {
+                id, title: record.title, kind: record.kind, action: "forgotten",
+              });
+            }
+            return ok;
+          },
+        },
+        vault: (id) => context.vault.get(id),
+        session: session.id,
+        ask: (request) => askPerson(session, request),
+      });
+
+      /**
+       * The agent loop.
+       *
+       * Ask, run whatever came back, tell the model what happened, ask
+       * again -- until it stops asking for tools, or you press Stop. There
+       * is no cap on the number of rounds: a turn that stopped halfway to
+       * ask whether to carry on was the wrong default for a long task.
+       * What there is instead is a loop watch: repeats get called out in
+       * the results the model reads, and a turn that keeps repeating
+       * after being told is stopped.
+       */
+      let spans = 0;
+      /* Once per turn, not per round: the instructions must open every
+         round's request identically for the provider's cache to serve
+         them, and so must everything the note is attached ahead of. */
+      const { pinned, note } = await systemInstructionFor(session.id, uniqueAccessed, active, routeHint);
+      context.setTurnNote(note);
+      const watch = new LoopWatch();
+      let loopStop: string | null = null;
+      /** Run a call's result past the loop watch before the model reads it. */
+      const watched = (name: string, args: unknown, ok: boolean, raw: string, shown: string) => {
+        // What this tool costs in the prompt, for the Billing page's tally.
+        recordToolFeed(name, Math.ceil(shown.length / 4), dayKey(Math.floor(Date.now() / 1000)).slice(0, 7));
+        recordOutcome(name, ok, raw);
+        const verdict = watch.record(name, args, ok, raw);
+        if (verdict.log) emitEvent(session, "system.log", "system", { message: verdict.log });
+        if (verdict.stop) loopStop = verdict.stop;
+        return verdict.note ? `${shown}\n\n${verdict.note}` : shown;
+      };
+      /** Steps in a row that came back empty or cut off, each answered by
+          telling the model to carry on. Reset by any step that asks for
+          a tool. */
+      let nudges = 0;
+      for (;;) {
+        if (running.get(session.id)?.stopped) break;
+
+        /* Past the high-water mark this starts a background fold of the
+           older turns and returns at once. It is never awaited: this
+           step's call goes out now, on the history as it stands. */
+        context.maybeCompact(pinned, summarize, compacted);
+
+        tools = await availableTools();
+        const turn = await askModel(pinned);
+        if (!turn) break;
+        if (turn.calls.length === 0) {
+          /* A step with no tool calls normally means the model is done.
+             Two cases where it is not, and where ending the turn left the
+             person to type "continue": the reply hit the output limit
+             mid-sentence, or it came back empty partway through the work.
+             Either way the model is told so and asked again. */
+          const empty = !turn.text.trim();
+          const stalled = turn.cutOff || (empty && ranSomething);
+          if (!stalled || nudges >= MAX_NUDGES || running.get(session.id)?.stopped) break;
+          nudges += 1;
+          if (!empty) {
+            context.append(
+              { role: "assistant", text: turn.text, reasoning: turn.reasoning },
+              session.seqCounter,
+            );
+          }
+          const why = turn.cutOff
+            ? "Your last reply was cut off at the output limit."
+            : "Your last reply was empty.";
+          context.append({
+            role: "user",
+            text:
+              `(Autora: ${why} The task is not finished unless you say it is. ` +
+              "Carry on from exactly where you stopped, using tools as needed. " +
+              "Keep each tool call small -- write a long file in several parts. " +
+              "If everything is done, say briefly what was done.)",
+          }, session.seqCounter);
+          emitEvent(session, "system.log", "system", {
+            message: turn.cutOff
+              ? "The model's reply hit the output limit; asked it to carry on."
+              : "The model returned an empty reply mid-task; asked it to carry on.",
+          });
+          continue;
+        }
+        nudges = 0;
+
+        context.append(
+          { role: "assistant", text: turn.text, calls: turn.calls, reasoning: turn.reasoning },
+          session.seqCounter,
+        );
+        const replies: ToolReply[] = [];
+
+        for (const use of turn.calls) {
+          const span = `span-${session.id}-${session.seqCounter}-${spans++}`;
+          const reply = (ok: boolean, result: string): void => {
+            replies.push({ id: use.id, name: use.name, ok, result });
+          };
+
+          if (running.get(session.id)?.stopped) {
+            reply(false, "The person stopped the turn before this ran.");
+            continue;
+          }
+
+          /* Cut off before its arguments were complete. Run with `{}` it
+             fails in a confusing way or, worse, does something; either
+             way the model repeats it at the same length and hits the
+             same wall. Saying why lets it split the work instead. */
+          if (use.incomplete) {
+            emitEvent(session, "tool.call", "agent", { name: use.name, args: {} }, span);
+            const said =
+              `Not run: this ${use.name} call was cut off at the output limit before ` +
+              "its arguments were complete. Make it again with less in it -- " +
+              "for a long file, write it in several smaller parts.";
+            emitEvent(session, "tool.error", "agent", { error: said }, span);
+            reply(false, said);
+            continue;
+          }
+
+          const spec = findTool(use.name);
+          /* Offered tools are the available ones, so an unknown name here
+             means the model invented it -- or asked for something from a
+             group that is switched off. Naming what it does have is more
+             use to it than "unknown tool". */
+          if (!spec || !tools.some((t) => t.name === use.name)) {
+            emitEvent(session, "tool.call", "agent", {
+              name: use.name, args: use.args,
+            }, span);
+            const known = tools.map((t) => t.name).join(", ") || "none";
+            const why = spec
+              ? `"${use.name}" exists but its group is not available right now.`
+              : `There is no tool called "${use.name}".`;
+            emitEvent(session, "tool.error", "agent", { error: why }, span);
+            const said = `${why} The tools you have are: ${known}.`;
+            reply(false, watched(use.name, use.args, false, said, said));
+            continue;
+          }
+
+          emitEvent(session, "tool.call", "agent", {
+            name: spec.name, args: use.args,
+          }, span);
+
+          if (needsApproval(spec)) {
+            const decision = await askPermission(session, {
+              tool: spec.name,
+              rendered: renderCall(spec, use.args),
+              reason: turn.text.trim()
+                // The model's own words for why, when it gave any: far more
+                // use on the card than a fixed sentence about elevation.
+                ? turn.text.trim().slice(0, 300)
+                : `${spec.name} needs your approval before it runs.`,
+            });
+            if (!decision.approved) {
+              emitEvent(session, "tool.error", "agent", {
+                denied: true, reason: "The person declined this.",
+              }, span);
+              reply(
+                false,
+                "The person declined this. Do not retry it. Either find " +
+                  "another way, or tell them what you needed it for and why.",
+              );
+              continue;
+            }
+            if (decision.response) {
+              emitEvent(session, "context.note", "user", {
+                text: `You answered the approval with: ${decision.response}`,
+              });
+            }
+          }
+
+          const held = await jevGuard(session, spec, use.args, text, turn.text.trim());
+          if (held) {
+            emitEvent(session, "tool.error", "agent", {
+              guarded: true, denied: true, error: held,
+            }, span);
+            reply(
+              false,
+              `${held} It did not run. Ask the person with ask_user first -- say ` +
+                "exactly what it will do and what cannot be undone. If they agree, " +
+                "make the same call again and it will go through. If they decline, " +
+                "find another way or stop.",
+            );
+            continue;
+          }
+
+          const started = Date.now();
+          ranSomething = true;
+          const outcome = await runTool(spec, use.args, contextFor(span));
+          const durationMs = Date.now() - started;
+
+          if (spec.group === "terminal" && outcome.exitCode !== undefined) {
+            // The terminal cell reads its exit code from here, and the
+            // pipes are closed by the time this lands.
+            emitEvent(session, "pty.exit", "agent", {
+              exit_code: outcome.exitCode ?? null,
+              duration_ms: durationMs,
+            }, span);
+          }
+
+          if (outcome.ok) {
+            emitEvent(session, "tool.result", "agent", {
+              ok: true,
+              preview: outcome.preview ?? "",
+              duration_ms: durationMs,
+              ...(outcome.exitCode !== undefined
+                ? { display: { exit_code: outcome.exitCode } }
+                : {}),
+            }, span);
+          } else {
+            /* A command that exits non-zero is a result, not a broken
+               tool: the model needs to read it and decide. Only a tool
+               that could not run at all is an error. */
+            if (outcome.exitCode !== undefined) {
+              emitEvent(session, "tool.result", "agent", {
+                ok: false,
+                preview: outcome.preview ?? "",
+                duration_ms: durationMs,
+                display: { exit_code: outcome.exitCode },
+              }, span);
+            } else {
+              emitEvent(session, "tool.error", "agent", {
+                error: outcome.summary,
+                duration_ms: durationMs,
+              }, span);
+            }
+          }
+
+          /* Ingestion filter: control codes and repeated lines out, and
+             anything still too long kept whole in the vault with its head
+             and tail left in the prompt. The thread already showed it
+             all, live; this is only what the model reads. */
+          reply(outcome.ok, watched(
+            spec.name, use.args, outcome.ok, outcome.summary,
+            context.ingest(spec.name, outcome.summary, canReadVault),
+          ));
+          if (loopStop) break;
+        }
+
+        /* The loop watch stopped the turn partway through the calls: the
+           ones it never reached still need an answer, or the provider
+           rejects the history. */
+        if (loopStop) {
+          for (const use of turn.calls) {
+            if (replies.some((r) => r.id === use.id)) continue;
+            replies.push({ id: use.id, name: use.name, ok: false, result: "Not run: the turn was stopped." });
+          }
+        }
+        const checkpoint = watch.endRound();
+        const last = replies[replies.length - 1];
+        if (checkpoint && last) last.result += `\n\n${checkpoint}`;
+
+        context.append({ role: "tool", replies }, session.seqCounter);
+        context.supersedePages(canReadVault);
+
+        if (loopStop) {
+          emitEvent(session, "system.log", "system", { message: loopStop });
+          break;
+        }
+      }
+    }
+
+    // Nothing came back -- no provider configured, or the call failed. Say
+    // something useful rather than leaving the turn blank.
+    if (!connected) result.error = active.problem ?? "No model is connected.";
+    if (streamed === 0) {
+      let reply: string;
+      if (!connected) {
+        reply =
+          "No model is connected yet, so nothing can answer you. " +
+          `${active.problem ?? ""} Open Settings, add a key for OpenAI, Google, ` +
+          "Anthropic, DeepSeek, or OpenRouter, and pick a model. The tools — " +
+          "terminal, browser, computer control — are configured in Settings too, " +
+          "but it takes a model to decide to use them.";
+      } else if (running.get(session.id)?.stopped) {
+        reply = "Stopped.";
+      } else if (ranSomething) {
+        /* Tools ran and the model never wrote a closing word. The work is
+           in the transcript above, so point at it rather than inventing a
+           summary of it. */
+        reply =
+          "That turn ended without a written answer. What ran is above, " +
+          "with its output.";
+      } else {
+        /* Nothing ran and nothing was said, which means the model call
+           itself failed -- and that failure is already in the log as a
+           system error naming the vendor and the reason. Repeating it here
+           in vaguer words would only bury it. */
+        reply = "Nothing came back that turn. The error above says why.";
+      }
+      /* `local` keeps this out of the history the model is shown next
+         turn -- see historyFor. */
+      emitEvent(session, "turn.agent.text", "agent", { text: reply, local: true });
+    }
+
+    emitEvent(session, "turn.agent.done", "agent", {});
+    result.ranSomething = ranSomething;
+    result.stopped = Boolean(running.get(session.id)?.stopped);
+    result.ok = connected && !result.error && !result.stopped;
+  } catch (err: any) {
+    result.error = err?.message || "Execution error";
+    emitEvent(session, "system.error", "system", { error: result.error });
+  } finally {
+    session.busy = false;
+    // Nothing from this turn is still cancellable, and anything left in
+    // the set holds a reference to a process that has exited.
+    running.delete(session.id);
+    /* If the turn touched the desktop but nobody is watching this session,
+       stop the relay capturing. Without this a single computer_screenshot
+       left a relay on somebody's laptop shipping JPEGs at two a second
+       indefinitely, because the only thing that turned it off was a
+       websocket closing and there had never been one. */
+    releaseDesktopIfIdle(session.id);
+    broadcastLiveStatus(session);
+  }
+  return result;
 }
 
 async function startServer() {
@@ -1837,21 +2540,8 @@ async function startServer() {
   });
 
   app.post("/api/sessions", (req: Request, res: Response) => {
-    const id = `session-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-    const title = (req.body?.title || "").trim() || "New Session";
-    const session: Session = {
-      id,
-      title,
-      live: true,
-      createdAt: Math.floor(Date.now() / 1000),
-      busy: false,
-      events: [],
-      seqCounter: 0,
-    };
-    sessions.set(id, session);
-    saveMeta(metaOf(session));
-    emitEvent(session, "session.started", "system", { title: session.title });
-    res.json({ id });
+    const session = newSession((req.body?.title || "").trim() || "New Session");
+    res.json({ id: session.id });
   });
 
   // 3. Session Events & Replay
@@ -1860,8 +2550,10 @@ async function startServer() {
     if (!session) {
       return res.status(404).json({ error: "Session not found" });
     }
-    const fromSeq = parseInt((req.query.from_seq as string) || "0", 10);
-    const limit = parseInt((req.query.limit as string) || "5000", 10);
+    // A malformed number reads as the default, not as NaN, which matches
+    // nothing and returned an empty thread.
+    const fromSeq = parseInt((req.query.from_seq as string) || "0", 10) || 0;
+    const limit = parseInt((req.query.limit as string) || "5000", 10) || 5000;
     const slice = session.events.filter((e) => e.seq >= fromSeq).slice(0, limit);
     res.json(slice);
   });
@@ -2043,710 +2735,8 @@ async function startServer() {
       saveMeta(metaOf(session));
     }
 
-    // 1. Emit user message
-    emitEvent(session, "turn.user", "user", { text });
-
-    // 2. Mark busy, and open a fresh cancellation slate for this turn
-    session.busy = true;
-    running.set(session.id, { stopped: false, cancels: new Set() });
-    broadcastLiveStatus(session);
     res.json({ ok: true, queued: false });
-
-    // 3. Process turn asynchronously
-    (async () => {
-      try {
-        // Emit thinking event
-        emitEvent(session, "turn.agent.thinking", "agent", {
-          text: `Analyzing: "${text}"`,
-        });
-
-        // Determine which memories and skills the bot is actively reading / accessing
-        const lower = text.toLowerCase();
-        const accessedRecords: MemoryRecord[] = [];
-
-        // Pinned user preference is consulted for execution style and interaction
-        const pref = memoryRecords.find((m) => m.id === "mem-2");
-        if (pref) accessedRecords.push(pref);
-
-        if (lower.includes("kanban") || lower.includes("task") || lower.includes("autonomously execute")) {
-          const kanbanSkill = memoryRecords.find((m) => m.id === "mem-skill-3");
-          const archFact = memoryRecords.find((m) => m.id === "mem-3");
-          if (kanbanSkill) accessedRecords.push(kanbanSkill);
-          if (archFact) accessedRecords.push(archFact);
-        } else if (lower.includes("permission") || lower.includes("elevat") || lower.includes("sudo") || lower.includes("deploy")) {
-          const permSkill = memoryRecords.find((m) => m.id === "mem-skill-4");
-          if (permSkill) accessedRecords.push(permSkill);
-        } else if (lower.includes("browser") || lower.includes("dom") || lower.includes("web") || lower.includes("screen")) {
-          const browserSkill = memoryRecords.find((m) => m.id === "mem-skill-1");
-          if (browserSkill) accessedRecords.push(browserSkill);
-        } else if (lower.includes("terminal") || lower.includes("bash") || lower.includes("shell") || lower.includes("run") || lower.includes("cmd") || lower.includes("ls")) {
-          const shellSkill = memoryRecords.find((m) => m.id === "mem-skill-2");
-          const deployProc = memoryRecords.find((m) => m.id === "mem-1");
-          if (shellSkill) accessedRecords.push(shellSkill);
-          if (deployProc) accessedRecords.push(deployProc);
-        } else if (lower.includes("memory") || lower.includes("graph") || lower.includes("skill") || lower.includes("synapse") || lower.includes("tracer") || lower.includes("knowledge")) {
-          const graphSkill = memoryRecords.find((m) => m.id === "mem-skill-5");
-          const archFact = memoryRecords.find((m) => m.id === "mem-3");
-          if (graphSkill) accessedRecords.push(graphSkill);
-          if (archFact) accessedRecords.push(archFact);
-        } else {
-          const archFact = memoryRecords.find((m) => m.id === "mem-3");
-          if (archFact) accessedRecords.push(archFact);
-        }
-
-        /* A skill record is a claim about what this agent can do, and it is
-           injected into the system prompt under "what you already know about
-           this workspace". While the tool layer did not exist, mem-skill-2 --
-           "Direct PTY execution, streaming command output chunks, exit code
-           monitoring" -- was told to a model holding no tools at all, which is
-           how a console with no shell came to narrate command output. Now that
-           the tools are real, the claim is only made where the tool behind it
-           is actually available; the briefing above says what is off and why. */
-        const BACKED_BY: Record<string, ToolGroup> = {
-          "mem-skill-1": "browser",
-          "mem-skill-2": "terminal",
-        };
-        const usable = new Set(
-          (await groupStates()).filter((g) => g.available).map((g) => g.group),
-        );
-
-        /* Jev Mode: when the model can score, which memories this turn gets
-           is decided by the model, per memory, with a confidence each. The
-           keyword rules above stay as the fallback for everything else. */
-        // Both at once: two small decisions, one wait.
-        jevThisTurn.delete(session.id);
-        const [scored, routeHint] = await Promise.all([
-          jevRecall(session, text),
-          jevRoute(session, text),
-        ]);
-        if (scored) accessedRecords.splice(0, accessedRecords.length, ...scored);
-
-        const uniqueAccessed = accessedRecords.filter(
-          (item, idx, self) =>
-            self.findIndex((r) => r.id === item.id) === idx &&
-            (!BACKED_BY[item.id] || usable.has(BACKED_BY[item.id])),
-        );
-        if (uniqueAccessed.length > 0) {
-          emitEvent(session, "memory.recall", "agent", {
-            ids: uniqueAccessed.map((r) => r.id),
-            titles: uniqueAccessed.map((r) => r.title),
-            kinds: uniqueAccessed.map((r) => r.kind),
-          });
-        }
-
-        // ------------------------------------------------------ the turn --
-
-        const active = resolveProvider();
-        const connected = Boolean(active.provider) && !active.problem;
-        let streamed = 0;
-        /* Whether any tool actually ran this turn. The two ways a turn ends
-           with no words are not the same thing: the provider never answered
-           (an error is already in the log), or tools ran and the model simply
-           never wrote a closing line. Pointing at work that did not happen is
-           its own small lie. */
-        let ranSomething = false;
-        /* One per turn, and outside the retry loop on purpose: a retry only
-           happens when nothing has been said yet, so the sieve is empty, and
-           a fresh one per attempt would be the same object with more steps. */
-        const sieve = new DataUrlSieve();
-
-        if (connected) {
-          const tools = await availableTools();
-          /* The conversation lives in the session's context engine for the
-             length of the turn: rebuilt from the log (minus whatever has been
-             folded into anchored memory), then grown by each round of tool
-             calls. A background compaction may swap part of it out between
-             any two steps; nothing here waits for one. */
-          const context = engineFor(session.id);
-          context.load(historyFor(session, context.foldedThroughSeq));
-          const canReadVault = tools.some((t) => t.name === "vault_read");
-
-          /** An image inlined into the reply becomes a card where it was
-              written, rather than a screenful of base64. */
-          const show = (found: string[]) => {
-            for (const raw of found) {
-              const decoded = fromDataUrl(raw);
-              if (!decoded || !decoded.mime.startsWith("image/")) continue;
-              emitEvent(session, "media.image", "agent", {
-                alt: "image from the reply",
-                caption: null,
-                inline: true,
-              }, null, putBlob(session.id, decoded.data, decoded.mime));
-            }
-          };
-
-          /** Lowered for the rest of the turn if the model refuses the default. */
-          let outputTokens = MAX_OUTPUT_TOKENS;
-
-          /**
-           * One call to the model, retried while nothing has reached the thread.
-           *
-           * Returns what it said and what it wants run, or null once the
-           * failure has been reported and there is no point going again.
-           */
-          const askModel = async (pinned: string): Promise<ChatTurn | null> => {
-            // Across attempts, not within one: a second attempt after half a
-            // sentence has been delivered would say that half twice.
-            let delivered = 0;
-            // Retrying on a transient error spends an attempt; retrying at a
-            // lower output limit does not, since that one is our mistake.
-            let limitRetried = false;
-
-            for (let attempt = 0; attempt <= MODEL_RETRIES; attempt += 1) {
-              try {
-                /* Frame 0 (the pinned instructions) with Frame 1 (anchored
-                   memory) under it, and a fresh copy of the history: taken
-                   per attempt, so a retry picks up a compaction that landed in
-                   the meantime, and a copy, so one landing mid-request cannot
-                   touch the request. */
-                const system = context.systemFor(pinned);
-                const turn = await streamChat({
-                  provider: active.provider,
-                  model: active.model,
-                  key: active.key,
-                  baseUrl: active.baseUrl,
-                  system,
-                  messages: context.messagesFor(system),
-                  temperature: 0.7,
-                  maxTokens: outputTokens,
-                  thinkingBudget: THINKING_BUDGET,
-                  tools: tools.map((t) => ({
-                    name: t.name,
-                    description: t.description,
-                    parameters: t.parameters,
-                  })),
-                }, (piece) => {
-                  // The client coalesces these deltas into one reply (see
-                  // derive.ts), so a chunk per emit is a sentence appearing,
-                  // not forty cards.
-                  const { text: clean, images } = sieve.feed(piece);
-                  if (clean) {
-                    emitEvent(session, "turn.agent.text", "agent", { text: clean });
-                    delivered += clean.length;
-                    streamed += clean.length;
-                  }
-                  show(images);
-                });
-
-                const tail = sieve.flush();
-                if (tail.text) {
-                  emitEvent(session, "turn.agent.text", "agent", { text: tail.text });
-                  delivered += tail.text.length;
-                  streamed += tail.text.length;
-                }
-                show(tail.images);
-
-                // What the turn cost, written down at the moment it happened.
-                // Prices move, so re-pricing an old turn later from today's
-                // table would quietly rewrite history; the ledger keeps the
-                // figure that was in force when the call was made. One entry
-                // per model call, so a turn that used six tools is billed as
-                // the six calls it actually was.
-                const priced = isPriced(active.provider, active.model);
-                const cache = { read: turn.usage.cached ?? 0, write: turn.usage.cacheWrite ?? 0 };
-                const { cost, parts } = priceCall(
-                  active.provider, active.model, turn.usage.input, turn.usage.output,
-                  cache.read, cache.write,
-                );
-                recordUsage({
-                  ts: Math.floor(Date.now() / 1000),
-                  session: session.id,
-                  provider: active.provider,
-                  model: active.model,
-                  input: turn.usage.input,
-                  output: turn.usage.output,
-                  cost,
-                  parts,
-                  priced,
-                  estimated: turn.usage.estimated,
-                  cached: cache.read,
-                });
-                emitEvent(session, "usage.turn", "system", {
-                  provider: active.provider,
-                  model: active.model,
-                  input_tokens: turn.usage.input,
-                  output_tokens: turn.usage.output,
-                  cached_tokens: cache.read,
-                  cost_usd: cost,
-                  priced,
-                  estimated: turn.usage.estimated,
-                });
-
-                return turn;
-              } catch (err: any) {
-                const detail = err?.message ?? String(err);
-                const status = err instanceof ProviderError ? err.status : null;
-                console.warn(
-                  `[model] ${active.provider}/${active.model} attempt ${attempt + 1}: ${detail}`,
-                );
-
-                if (
-                  delivered === 0 && !limitRetried && status === 400 &&
-                  outputTokens > FALLBACK_OUTPUT_TOKENS && OUTPUT_LIMIT_REFUSED.test(detail)
-                ) {
-                  outputTokens = FALLBACK_OUTPUT_TOKENS;
-                  limitRetried = true;
-                  attempt -= 1;
-                  continue;
-                }
-
-                const retryable =
-                  delivered === 0 &&
-                  attempt < MODEL_RETRIES &&
-                  (status === null || TRANSIENT.has(status));
-
-                if (retryable) {
-                  await wait(RETRY_BACKOFF_MS[Math.min(attempt, RETRY_BACKOFF_MS.length - 1)]);
-                  continue;
-                }
-
-                // Said out loud rather than swallowed: a canned reply in place
-                // of a real one is indistinguishable from the model working,
-                // and what people need to know is whether their key is wrong or
-                // the vendor is simply busy.
-                const vendor =
-                  PROVIDERS.find((p) => p.id === active.provider)?.label ?? active.provider;
-                emitEvent(session, "system.error", "system", {
-                  error: `${vendor} (${active.model}) did not answer: ${detail}`,
-                });
-                return null;
-              }
-            }
-            return null;
-          };
-
-          /**
-           * The background summariser behind compaction: the same provider,
-           * no tools, a low temperature, nothing streamed to the thread.
-           * AUTORA_COMPACTION_MODEL names a cheaper model of that provider to
-           * use for it instead. Its cost goes in the ledger like any call.
-           */
-          const summarize = async (prompt: string): Promise<string> => {
-            const model = (process.env.AUTORA_COMPACTION_MODEL || "").trim() || active.model;
-            const turn = await streamChat({
-              provider: active.provider,
-              model,
-              key: active.key,
-              baseUrl: active.baseUrl,
-              system:
-                "You compress an AI agent's working context into a structured " +
-                "record of task state. Output only that record.",
-              messages: [{ role: "user", text: prompt }],
-              temperature: 0.2,
-              maxTokens: 2048,
-              thinkingBudget: 0,
-            }, () => undefined);
-            recordUsage({
-              ts: Math.floor(Date.now() / 1000),
-              session: session.id,
-              provider: active.provider,
-              model,
-              input: turn.usage.input,
-              output: turn.usage.output,
-              ...priceCall(active.provider, model, turn.usage.input, turn.usage.output,
-                turn.usage.cached, turn.usage.cacheWrite),
-              priced: isPriced(active.provider, model),
-              estimated: turn.usage.estimated,
-              cached: turn.usage.cached ?? 0,
-            });
-            return turn.text;
-          };
-
-          const compacted = (report: CompactionReport) => {
-            if (!report.ok) {
-              // Nothing was lost -- the turns stay raw -- so this is for the
-              // server log, not the thread.
-              console.warn(`[context] ${session.id}: compaction failed: ${report.error}`);
-              return;
-            }
-            console.log(
-              `[context] ${session.id}: folded ${report.folded} messages ` +
-                `(~${report.tokensBefore} -> ~${report.tokensAfter} tokens)`,
-            );
-            emitEvent(session, "system.log", "system", {
-              message:
-                `Condensed ${report.folded} earlier message${report.folded === 1 ? "" : "s"} ` +
-                "into working memory, in the background " +
-                `(about ${report.tokensBefore.toLocaleString("en-US")} tokens of context ` +
-                `down to ${report.tokensAfter.toLocaleString("en-US")}).`,
-            });
-          };
-
-          /** Everything a tool needs from this session, handed in rather than
-              imported, so server/tools.ts knows nothing about sessions. */
-          const contextFor = (span: string): ToolContext => ({
-            onOutput: (chunk) =>
-              emitEvent(session, "pty.output", "agent", { data: chunk }, span),
-            putBlob: (data, mime) => putBlob(session.id, data, mime),
-            showImage: (blob, alt, caption, size) =>
-              emitEvent(session, "media.image", "agent", {
-                alt, caption, ...(size ? { w: size.w, h: size.h } : {}),
-              }, null, blob),
-            showScreen: (source, blob, size) =>
-              emitEvent(session, `${source}.frame`, "agent", {
-                ...(source === "browser" ? { url: browsers.get(session.id)?.status().url ?? "" } : {}),
-                ...(size ? { w: size.w, h: size.h } : {}),
-              }, null, blob),
-            browser: () => browserFor(session),
-            browserChanged: () => broadcastBrowserState(session),
-            watchDesktop: () => watchDesktopFor(session),
-            cancelled: () => Boolean(running.get(session.id)?.stopped),
-            onCancel: (stop) => { running.get(session.id)?.cancels.add(stop); },
-            memory: {
-              write: ({ title, body, kind }) => {
-                const record: MemoryRecord = {
-                  id: `mem-${Date.now().toString(36)}`,
-                  kind: kind as MemoryRecord["kind"],
-                  scope: "workspace",
-                  title,
-                  body,
-                  tags: ["agent-authored"],
-                  status: "confirmed",
-                  pinned: false,
-                  source_session: session.id,
-                  source_seq: session.seqCounter,
-                  created: Math.floor(Date.now() / 1000),
-                  updated: Math.floor(Date.now() / 1000),
-                  uses: 1,
-                  last_used: Math.floor(Date.now() / 1000),
-                  superseded_by: null,
-                };
-                memoryRecords.push(record);
-                saveMemory();
-                emitEvent(session, "memory.write", "agent", {
-                  id: record.id, title: record.title, kind: record.kind,
-                });
-                return { id: record.id };
-              },
-              search: (query) => {
-                const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
-                const hits = memoryRecords.filter((m) => {
-                  const haystack =
-                    `${m.title} ${m.body} ${m.tags.join(" ")}`.toLowerCase();
-                  return terms.some((t) => haystack.includes(t));
-                });
-                if (hits.length > 0) {
-                  // A search is a recall, and the ribbon should light up for it
-                  // exactly as it does for the automatic kind.
-                  emitEvent(session, "memory.recall", "agent", {
-                    ids: hits.slice(0, 8).map((m) => m.id),
-                    titles: hits.slice(0, 8).map((m) => m.title),
-                    kinds: hits.slice(0, 8).map((m) => m.kind),
-                  });
-                }
-                return hits.slice(0, 8).map((m) => ({
-                  kind: m.kind, title: m.title, body: m.body,
-                }));
-              },
-            },
-            vault: (id) => context.vault.get(id),
-            session: session.id,
-            ask: (request) => askPerson(session, request),
-          });
-
-          /**
-           * The agent loop.
-           *
-           * Ask, run whatever came back, tell the model what happened, ask
-           * again -- until it stops asking for tools, or you press Stop. There
-           * is no cap on the number of rounds: a turn that stopped halfway to
-           * ask whether to carry on was the wrong default for a long task.
-           * What there is instead is a loop watch: repeats get called out in
-           * the results the model reads, and a turn that keeps repeating
-           * after being told is stopped.
-           */
-          let spans = 0;
-          /* Once per turn, not per round: the instructions must open every
-             round's request identically for the provider's cache to serve
-             them, and so must everything the note is attached ahead of. */
-          const { pinned, note } = await systemInstructionFor(session.id, uniqueAccessed, active, routeHint);
-          context.setTurnNote(note);
-          const watch = new LoopWatch();
-          let loopStop: string | null = null;
-          /** Run a call's result past the loop watch before the model reads it. */
-          const watched = (name: string, args: unknown, ok: boolean, raw: string, shown: string) => {
-            // What this tool costs in the prompt, for the Billing page's tally.
-            recordToolFeed(name, Math.ceil(shown.length / 4), dayKey(Math.floor(Date.now() / 1000)).slice(0, 7));
-            const verdict = watch.record(name, args, ok, raw);
-            if (verdict.log) emitEvent(session, "system.log", "system", { message: verdict.log });
-            if (verdict.stop) loopStop = verdict.stop;
-            return verdict.note ? `${shown}\n\n${verdict.note}` : shown;
-          };
-          /** Steps in a row that came back empty or cut off, each answered by
-              telling the model to carry on. Reset by any step that asks for
-              a tool. */
-          let nudges = 0;
-          for (;;) {
-            if (running.get(session.id)?.stopped) break;
-
-            /* Past the high-water mark this starts a background fold of the
-               older turns and returns at once. It is never awaited: this
-               step's call goes out now, on the history as it stands. */
-            context.maybeCompact(pinned, summarize, compacted);
-
-            const turn = await askModel(pinned);
-            if (!turn) break;
-            if (turn.calls.length === 0) {
-              /* A step with no tool calls normally means the model is done.
-                 Two cases where it is not, and where ending the turn left the
-                 person to type "continue": the reply hit the output limit
-                 mid-sentence, or it came back empty partway through the work.
-                 Either way the model is told so and asked again. */
-              const empty = !turn.text.trim();
-              const stalled = turn.cutOff || (empty && ranSomething);
-              if (!stalled || nudges >= MAX_NUDGES || running.get(session.id)?.stopped) break;
-              nudges += 1;
-              if (!empty) {
-                context.append(
-                  { role: "assistant", text: turn.text, reasoning: turn.reasoning },
-                  session.seqCounter,
-                );
-              }
-              const why = turn.cutOff
-                ? "Your last reply was cut off at the output limit."
-                : "Your last reply was empty.";
-              context.append({
-                role: "user",
-                text:
-                  `(Autora: ${why} The task is not finished unless you say it is. ` +
-                  "Carry on from exactly where you stopped, using tools as needed. " +
-                  "Keep each tool call small -- write a long file in several parts. " +
-                  "If everything is done, say briefly what was done.)",
-              }, session.seqCounter);
-              emitEvent(session, "system.log", "system", {
-                message: turn.cutOff
-                  ? "The model's reply hit the output limit; asked it to carry on."
-                  : "The model returned an empty reply mid-task; asked it to carry on.",
-              });
-              continue;
-            }
-            nudges = 0;
-
-            context.append(
-              { role: "assistant", text: turn.text, calls: turn.calls, reasoning: turn.reasoning },
-              session.seqCounter,
-            );
-            const replies: ToolReply[] = [];
-
-            for (const use of turn.calls) {
-              const span = `span-${session.id}-${session.seqCounter}-${spans++}`;
-              const reply = (ok: boolean, result: string): void => {
-                replies.push({ id: use.id, name: use.name, ok, result });
-              };
-
-              if (running.get(session.id)?.stopped) {
-                reply(false, "The person stopped the turn before this ran.");
-                continue;
-              }
-
-              /* Cut off before its arguments were complete. Run with `{}` it
-                 fails in a confusing way or, worse, does something; either
-                 way the model repeats it at the same length and hits the
-                 same wall. Saying why lets it split the work instead. */
-              if (use.incomplete) {
-                emitEvent(session, "tool.call", "agent", { name: use.name, args: {} }, span);
-                const said =
-                  `Not run: this ${use.name} call was cut off at the output limit before ` +
-                  "its arguments were complete. Make it again with less in it -- " +
-                  "for a long file, write it in several smaller parts.";
-                emitEvent(session, "tool.error", "agent", { error: said }, span);
-                reply(false, said);
-                continue;
-              }
-
-              const spec = findTool(use.name);
-              /* Offered tools are the available ones, so an unknown name here
-                 means the model invented it -- or asked for something from a
-                 group that is switched off. Naming what it does have is more
-                 use to it than "unknown tool". */
-              if (!spec || !tools.some((t) => t.name === use.name)) {
-                emitEvent(session, "tool.call", "agent", {
-                  name: use.name, args: use.args,
-                }, span);
-                const known = tools.map((t) => t.name).join(", ") || "none";
-                const why = spec
-                  ? `"${use.name}" exists but its group is not available right now.`
-                  : `There is no tool called "${use.name}".`;
-                emitEvent(session, "tool.error", "agent", { error: why }, span);
-                const said = `${why} The tools you have are: ${known}.`;
-                reply(false, watched(use.name, use.args, false, said, said));
-                continue;
-              }
-
-              emitEvent(session, "tool.call", "agent", {
-                name: spec.name, args: use.args,
-              }, span);
-
-              if (needsApproval(spec)) {
-                const decision = await askPermission(session, {
-                  tool: spec.name,
-                  rendered: renderCall(spec, use.args),
-                  reason: turn.text.trim()
-                    // The model's own words for why, when it gave any: far more
-                    // use on the card than a fixed sentence about elevation.
-                    ? turn.text.trim().slice(0, 300)
-                    : `${spec.name} needs your approval before it runs.`,
-                });
-                if (!decision.approved) {
-                  emitEvent(session, "tool.error", "agent", {
-                    denied: true, reason: "The person declined this.",
-                  }, span);
-                  reply(
-                    false,
-                    "The person declined this. Do not retry it. Either find " +
-                      "another way, or tell them what you needed it for and why.",
-                  );
-                  continue;
-                }
-                if (decision.response) {
-                  emitEvent(session, "context.note", "user", {
-                    text: `You answered the approval with: ${decision.response}`,
-                  });
-                }
-              }
-
-              const held = await jevGuard(session, spec, use.args, text, turn.text.trim());
-              if (held) {
-                emitEvent(session, "tool.error", "agent", {
-                  guarded: true, denied: true, error: held,
-                }, span);
-                reply(
-                  false,
-                  `${held} It did not run. Ask the person with ask_user first -- say ` +
-                    "exactly what it will do and what cannot be undone. If they agree, " +
-                    "make the same call again and it will go through. If they decline, " +
-                    "find another way or stop.",
-                );
-                continue;
-              }
-
-              const started = Date.now();
-              ranSomething = true;
-              const outcome = await runTool(spec, use.args, contextFor(span));
-              const durationMs = Date.now() - started;
-
-              if (spec.group === "terminal") {
-                // The terminal cell reads its exit code from here, and the
-                // pipes are closed by the time this lands.
-                emitEvent(session, "pty.exit", "agent", {
-                  exit_code: outcome.exitCode ?? null,
-                  duration_ms: durationMs,
-                }, span);
-              }
-
-              if (outcome.ok) {
-                emitEvent(session, "tool.result", "agent", {
-                  ok: true,
-                  preview: outcome.preview ?? "",
-                  duration_ms: durationMs,
-                  ...(outcome.exitCode !== undefined
-                    ? { display: { exit_code: outcome.exitCode } }
-                    : {}),
-                }, span);
-              } else {
-                /* A command that exits non-zero is a result, not a broken
-                   tool: the model needs to read it and decide. Only a tool
-                   that could not run at all is an error. */
-                if (outcome.exitCode !== undefined) {
-                  emitEvent(session, "tool.result", "agent", {
-                    ok: false,
-                    preview: outcome.preview ?? "",
-                    duration_ms: durationMs,
-                    display: { exit_code: outcome.exitCode },
-                  }, span);
-                } else {
-                  emitEvent(session, "tool.error", "agent", {
-                    error: outcome.summary,
-                    duration_ms: durationMs,
-                  }, span);
-                }
-              }
-
-              /* Ingestion filter: control codes and repeated lines out, and
-                 anything still too long kept whole in the vault with its head
-                 and tail left in the prompt. The thread already showed it
-                 all, live; this is only what the model reads. */
-              reply(outcome.ok, watched(
-                spec.name, use.args, outcome.ok, outcome.summary,
-                context.ingest(spec.name, outcome.summary, canReadVault),
-              ));
-              if (loopStop) break;
-            }
-
-            /* The loop watch stopped the turn partway through the calls: the
-               ones it never reached still need an answer, or the provider
-               rejects the history. */
-            if (loopStop) {
-              for (const use of turn.calls) {
-                if (replies.some((r) => r.id === use.id)) continue;
-                replies.push({ id: use.id, name: use.name, ok: false, result: "Not run: the turn was stopped." });
-              }
-            }
-            const checkpoint = watch.endRound();
-            const last = replies[replies.length - 1];
-            if (checkpoint && last) last.result += `\n\n${checkpoint}`;
-
-            context.append({ role: "tool", replies }, session.seqCounter);
-            context.supersedePages(canReadVault);
-
-            if (loopStop) {
-              emitEvent(session, "system.log", "system", { message: loopStop });
-              break;
-            }
-          }
-        }
-
-        // Nothing came back -- no provider configured, or the call failed. Say
-        // something useful rather than leaving the turn blank.
-        if (streamed === 0) {
-          let reply: string;
-          if (!connected) {
-            reply =
-              "No model is connected yet, so nothing can answer you. " +
-              `${active.problem ?? ""} Open Settings, add a key for OpenAI, Google, ` +
-              "Anthropic, DeepSeek, or OpenRouter, and pick a model. The tools — " +
-              "terminal, browser, computer control — are configured in Settings too, " +
-              "but it takes a model to decide to use them.";
-          } else if (running.get(session.id)?.stopped) {
-            reply = "Stopped.";
-          } else if (ranSomething) {
-            /* Tools ran and the model never wrote a closing word. The work is
-               in the transcript above, so point at it rather than inventing a
-               summary of it. */
-            reply =
-              "That turn ended without a written answer. What ran is above, " +
-              "with its output.";
-          } else {
-            /* Nothing ran and nothing was said, which means the model call
-               itself failed -- and that failure is already in the log as a
-               system error naming the vendor and the reason. Repeating it here
-               in vaguer words would only bury it. */
-            reply = "Nothing came back that turn. The error above says why.";
-          }
-          /* `local` keeps this out of the history the model is shown next
-             turn -- see historyFor. */
-          emitEvent(session, "turn.agent.text", "agent", { text: reply, local: true });
-        }
-
-        emitEvent(session, "turn.agent.done", "agent", {});
-      } catch (err: any) {
-        emitEvent(session, "system.error", "system", {
-          error: err?.message || "Execution error",
-        });
-      } finally {
-        session.busy = false;
-        // Nothing from this turn is still cancellable, and anything left in
-        // the set holds a reference to a process that has exited.
-        running.delete(session.id);
-        /* If the turn touched the desktop but nobody is watching this session,
-           stop the relay capturing. Without this a single computer_screenshot
-           left a relay on somebody's laptop shipping JPEGs at two a second
-           indefinitely, because the only thing that turned it off was a
-           websocket closing and there had never been one. */
-        releaseDesktopIfIdle(session.id);
-        broadcastLiveStatus(session);
-      }
-    })();
+    void startTurn(session, text);
   });
 
   // 5. Interrupt current turn
@@ -3096,72 +3086,72 @@ async function startServer() {
       records,
       links: memoryLinks,
       enabled: true,
+      learning: state.learning,
     });
+  });
+
+  /** Whether the agent writes down what it learns after a turn. */
+  app.patch("/api/memory-settings", (req: Request, res: Response) => {
+    if (typeof req.body?.learning === "boolean") {
+      state.learning = req.body.learning;
+      save();
+    }
+    res.json({ learning: state.learning });
   });
 
   app.post("/api/memory", (req: Request, res: Response) => {
     const title = (req.body?.title || "").trim();
     if (!title) return res.status(400).json({ error: "Title is required" });
-
-    const newRecord: MemoryRecord = {
-      id: `mem-${Date.now().toString(36)}`,
-      kind: MEMORY_KINDS.includes(req.body?.kind) ? req.body.kind : "skill",
-      scope: req.body?.scope || "workspace",
+    const { record } = mind.write({
       title,
       body: req.body?.body || "",
-      tags: Array.isArray(req.body?.tags) ? req.body.tags : ["skill"],
+      kind: MEMORY_KINDS.includes(req.body?.kind) ? req.body.kind : "skill",
+      tags: Array.isArray(req.body?.tags) ? req.body.tags : [],
       status: "confirmed",
-      pinned: Boolean(req.body?.pinned),
       source_session: req.body?.source_session || null,
-      source_seq: null,
-      created: Math.floor(Date.now() / 1000),
-      updated: Math.floor(Date.now() / 1000),
-      uses: 1,
-      last_used: Math.floor(Date.now() / 1000),
-      superseded_by: null,
-    };
-    memoryRecords.push(newRecord);
-    saveMemory();
-    res.json(newRecord);
+    });
+    if (typeof req.body?.pinned === "boolean") mind.update(record.id, { pinned: req.body.pinned });
+    res.json(record);
   });
 
   app.get("/api/memory/:id", (req: Request, res: Response) => {
-    const record = memoryRecords.find((r) => r.id === req.params.id);
+    const record = mind.get(req.params.id);
     if (!record) return res.status(404).json({ error: "Record not found" });
     res.json(record);
   });
 
   app.patch("/api/memory/:id", (req: Request, res: Response) => {
-    const record = memoryRecords.find((r) => r.id === req.params.id);
+    const record = mind.get(req.params.id);
     if (!record) return res.status(404).json({ error: "Record not found" });
+    mind.update(record.id, {
+      title: req.body.title,
+      body: req.body.body,
+      kind: req.body.kind,
+      tags: Array.isArray(req.body.tags) ? req.body.tags : undefined,
+      pinned: req.body.pinned !== undefined ? Boolean(req.body.pinned) : undefined,
+    });
+    // Confirming is more than a field: a confirmed rewrite retires what it
+    // rewrote.
+    if (req.body.status === "confirmed") mind.confirm(record.id);
+    else if (req.body.status === "provisional") record.status = "provisional";
+    res.json(record);
+  });
 
-    if (req.body.title !== undefined) record.title = req.body.title;
-    if (req.body.body !== undefined) record.body = req.body.body;
-    if (req.body.status !== undefined) record.status = req.body.status;
-    if (req.body.pinned !== undefined) record.pinned = Boolean(req.body.pinned);
-    // Moving a record between the Mind's buckets.
-    if (MEMORY_KINDS.includes(req.body.kind)) record.kind = req.body.kind;
-    if (Array.isArray(req.body.tags)) {
-      record.tags = req.body.tags.map((t: unknown) => String(t).trim()).filter(Boolean);
-    }
-    record.updated = Math.floor(Date.now() / 1000);
-    saveMemory();
-
+  /** Keep something the agent learned: it is known from now on. */
+  app.post("/api/memory/:id/confirm", (req: Request, res: Response) => {
+    const record = mind.confirm(req.params.id);
+    if (!record) return res.status(404).json({ error: "Record not found" });
     res.json(record);
   });
 
   app.delete("/api/memory/:id", (req: Request, res: Response) => {
-    const idx = memoryRecords.findIndex((r) => r.id === req.params.id);
-    if (idx === -1) return res.status(404).json({ error: "Record not found" });
-
-    memoryRecords.splice(idx, 1);
-    saveMemory();
+    if (!mind.forget(req.params.id)) return res.status(404).json({ error: "Record not found" });
     res.json({ ok: true });
   });
 
-  // 9. Scheduled Jobs
-  app.get("/api/jobs", (req: Request, res: Response) => {
-    res.json(jobs);
+  // 9. Scheduled jobs and watchers (see server/scheduler.ts)
+  app.get("/api/jobs", (_req: Request, res: Response) => {
+    res.json(jobs.map(jobView));
   });
 
   app.post("/api/jobs", (req: Request, res: Response) => {
@@ -3178,25 +3168,40 @@ async function startServer() {
       last_run: null,
       last_session: null,
       last_error: null,
-      next_run: Math.floor(Date.now() / 1000) + 3600,
+      next_run: null,
       cron_error: null,
+      watch: saneWatch(req.body?.watch),
+      last_seen: null,
+      runs: [],
     };
+    scheduler.plan(newJob);
     jobs.push(newJob);
     saveJobs();
-    res.json({ id: newJob.id });
+    // A watcher's first look is its baseline; take it now rather than at the
+    // first tick, so the first change after saving is the one reported.
+    if (newJob.watch) void scheduler.check(newJob);
+    res.json({ id: newJob.id, cron_error: newJob.cron_error });
   });
 
   app.patch("/api/jobs/:id", (req: Request, res: Response) => {
     const job = jobs.find((j) => j.id === req.params.id);
     if (!job) return res.status(404).json({ error: "Job not found" });
 
-    if (req.body.name !== undefined) job.name = req.body.name;
-    if (req.body.cron !== undefined) job.cron = req.body.cron;
-    if (req.body.prompt !== undefined) job.prompt = req.body.prompt;
+    if (typeof req.body.name === "string") job.name = req.body.name;
+    if (typeof req.body.prompt === "string") job.prompt = req.body.prompt;
     if (req.body.enabled !== undefined) job.enabled = Boolean(req.body.enabled);
+    if (typeof req.body.cron === "string") job.cron = req.body.cron.trim();
+    let rewatch = false;
+    if (req.body.watch !== undefined) {
+      const watch = saneWatch(req.body.watch);
+      rewatch = JSON.stringify(watch) !== JSON.stringify(job.watch ?? null);
+      job.watch = watch;
+      if (rewatch) job.last_seen = null;
+    }
+    scheduler.plan(job);
     saveJobs();
-
-    res.json({ ok: true });
+    if (rewatch && job.watch) void scheduler.check(job);
+    res.json({ ok: true, cron_error: job.cron_error });
   });
 
   app.delete("/api/jobs/:id", (req: Request, res: Response) => {
@@ -3207,38 +3212,39 @@ async function startServer() {
     res.json({ ok: true });
   });
 
-  app.post("/api/jobs/:id/run", (req: Request, res: Response) => {
+  /** Run it now: a schedule runs its prompt, a watcher looks and runs with
+      what it saw, changed or not. */
+  app.post("/api/jobs/:id/run", async (req: Request, res: Response) => {
     const job = jobs.find((j) => j.id === req.params.id);
     if (!job) return res.status(404).json({ error: "Job not found" });
+    if (scheduler.running(job.id)) return res.status(409).json({ error: "It is already running." });
+    if (job.watch) {
+      const outcome = await scheduler.check(job, true);
+      if (outcome === "error") return res.status(400).json({ error: job.last_error });
+      return res.json({ session: job.last_session });
+    }
+    const session = await scheduler.fire(job, job.prompt, "manual");
+    if (!session) return res.status(400).json({ error: job.last_error ?? "It could not start." });
+    res.json({ session });
+  });
 
-    // Create a new session for the job
-    const sessionId = `session-job-${Date.now().toString(36)}`;
-    const session: Session = {
-      id: sessionId,
-      title: job.name,
-      live: true,
-      createdAt: Math.floor(Date.now() / 1000),
-      busy: false,
-      events: [],
-      seqCounter: 0,
-    };
-    sessions.set(sessionId, session);
-    saveMeta(metaOf(session));
+  app.get("/api/notices", (req: Request, res: Response) => {
+    const after = Number(req.query.after) || 0;
+    res.json({ notices: notices.filter((n) => n.id > after), latest: noticeSeq });
+  });
 
-    emitEvent(session, "session.started", "system", { title: session.title });
-    emitEvent(session, "system.log", "system", {
-      event: "schedule.fired",
-      job: job.id,
-      name: job.name,
-      cron: job.cron,
-    });
-    emitEvent(session, "turn.user", "user", { text: job.prompt });
+  // 9b. How the tools have been going, and the ones the agent wrote.
+  app.get("/api/tools/health", (_req: Request, res: Response) => {
+    res.json({ health: toolHealth() });
+  });
 
-    job.last_run = Math.floor(Date.now() / 1000);
-    job.last_session = sessionId;
-    saveJobs();
+  app.get("/api/custom-tools", (_req: Request, res: Response) => {
+    res.json({ tools: listCustomTools() });
+  });
 
-    res.json({ session: sessionId });
+  app.delete("/api/custom-tools/:name", (req: Request, res: Response) => {
+    if (!deleteCustomTool(req.params.name)) return res.status(404).json({ error: "No such tool" });
+    res.json({ ok: true });
   });
 
   // 10. Settings API
@@ -3671,7 +3677,10 @@ async function startServer() {
         return;
       }
 
-      if (!sessionId) return;
+      if (!sessionId) {
+        ws.close();
+        return;
+      }
 
       const session = sessions.get(sessionId);
       if (!session) {
@@ -3687,7 +3696,7 @@ async function startServer() {
       sessionSockets.get(sessionId)!.add(ws);
 
       // Replay backlog
-      const fromSeq = parseInt(url.searchParams.get("from_seq") || "0", 10);
+      const fromSeq = parseInt(url.searchParams.get("from_seq") || "0", 10) || 0;
       const backlog = session.events.filter((e) => e.seq >= fromSeq);
       if (backlog.length > 0) {
         ws.send(JSON.stringify({ type: "batch", events: backlog }));
@@ -3760,7 +3769,12 @@ async function startServer() {
         // somebody's screen.
         releaseDesktopIfIdle(sessionId);
       });
+      return;
     }
+
+    // Nothing else is served over a socket; left open, it would sit there
+    // unread for as long as the other end cared to keep it.
+    ws.close();
   });
 
   // 13. Vite Integration (Development middleware / Production static serving)
@@ -3836,6 +3850,18 @@ async function startServer() {
   void probeBrowser().then(({ ok, detail }) => {
     console.log(ok ? "[browser] ready" : `[browser] unavailable: ${detail}`);
   });
+
+  scheduler.start();
+  /* Memory housekeeping, daily and once shortly after a start: near-copies
+     merged, month-old unconfirmed guesses nobody used dropped. */
+  const tidy = () => {
+    const { merged, dropped, unlinked } = mind.consolidate();
+    if (merged || dropped || unlinked) {
+      log("info", "memory", `tidied: ${merged} merged, ${dropped} dropped, ${unlinked} dead links`);
+    }
+  };
+  setTimeout(tidy, 5 * 60_000).unref();
+  setInterval(tidy, 24 * 3600_000).unref();
 
   server.listen(PORT, HOST, () => {
     console.log(`Autora ${VERSION} running on http://${HOST}:${PORT}`);

@@ -22,7 +22,7 @@ export function useServerVersion(): string | null {
           if (alive && typeof body?.version === "string") setVersion(body.version);
         })
         .catch(() => undefined);
-    read();
+    void read();
     const timer = window.setInterval(read, POLL_MS);
     return () => { alive = false; window.clearInterval(timer); };
   }, []);

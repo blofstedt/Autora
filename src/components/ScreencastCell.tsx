@@ -143,6 +143,8 @@ export function ScreencastCell({
     // Anything that is not more typing goes out after the typing before it.
     if (path !== "type" && pendingText.current) flushText();
     return enqueue(path, body);
+    // enqueue and flushText only read refs and sessionId.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
   /** Keystrokes are gathered for a moment and sent as one: a request per
@@ -317,6 +319,14 @@ export function ScreencastCell({
     if (canUse && text) typeText(text);
   };
 
+  // The narration follows its newest line, unless the reader scrolled up in it.
+  // Above the early return: a hook after it runs on some renders and not
+  // others, and React throws when the first screenshot arrives.
+  useLayoutEffect(() => {
+    const el = logRef.current;
+    if (el && logFollows.current) el.scrollTop = el.scrollHeight;
+  });
+
   if (shots.length === 0 && actions.length === 0 && !feed) return null;
 
   const shot = shots[Math.min(Math.max(at, 0), shots.length - 1)];
@@ -351,12 +361,6 @@ export function ScreencastCell({
         : `https://duckduckgo.com/?q=${encodeURIComponent(target)}`;
     void send("navigate", { url });
   };
-
-  // The narration follows its newest line, unless the reader scrolled up in it.
-  useLayoutEffect(() => {
-    const el = logRef.current;
-    if (el && logFollows.current) el.scrollTop = el.scrollHeight;
-  });
 
   return (
     <section

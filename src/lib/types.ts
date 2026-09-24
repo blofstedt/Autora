@@ -64,6 +64,8 @@ export const Kind = {
   ContextNote: "context.note",
   MemoryRecall: "memory.recall",
   MemoryWrite: "memory.write",
+  /** What the agent took away from a turn, after it ended. */
+  MemoryLearned: "memory.learned",
   FileEdit: "file.edit",
   KanbanUpdate: "kanban.update",
   PermissionRequest: "permission.request",

@@ -10,7 +10,9 @@ WORKDIR /build
 COPY package.json package-lock.json ./
 RUN npm ci
 
-COPY tsconfig.json tsconfig.server.json vite.config.ts index.html ./
+COPY tsconfig.json tsconfig.server.json tsconfig.test.json eslint.config.js vite.config.ts index.html ./
+# Only so `npm run lint` can typecheck them; they stay in this stage.
+COPY tests/ tests/
 COPY public/ public/
 COPY src/ src/
 COPY server.ts ./

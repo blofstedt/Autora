@@ -101,7 +101,7 @@ function fieldPrompt(field: JevField): string {
 /** " A", "A)", "(a", "**A**" -> "A". Anything that is not a lone letter is
     not a candidate. */
 function normalize(token: string): string | null {
-  const bare = token.replace(/[\s"'`*().:\[\]]/g, "").toUpperCase();
+  const bare = token.replace(/[\s"'`*().:[\]]/g, "").toUpperCase();
   return /^[A-Z]$/.test(bare) ? bare : null;
 }
 

@@ -23,7 +23,7 @@ export function useRelay(pollMs = 8000): RelayStatus | null {
         .then((r) => r.json())
         .then((body) => { if (alive) setStatus(body); })
         .catch(() => undefined);
-    read();
+    void read();
     const timer = window.setInterval(read, pollMs);
     return () => { alive = false; window.clearInterval(timer); };
   }, [pollMs]);

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  BUCKETS, KIND_COLOR, announceChange, createRecord, deleteRecord, edgesFor,
-  fetchKnowledge, onKnowledgeChange, patchRecord,
+  BUCKETS, KIND_COLOR, announceChange, confirmRecord, createRecord, deleteRecord, edgesFor,
+  fetchKnowledge, onKnowledgeChange, patchRecord, setLearning,
   type Bucket, type Knowledge, type MemoryRecord,
 } from "../../lib/memory";
 import type { MemoryMark } from "../../lib/derive";
@@ -51,8 +51,14 @@ export function MindPage({
     if (jump) { setBucket(jump.kind); setQuery(""); }
   }, [jump]);
 
-  const records = data?.records ?? [];
-  const byId = useMemo(() => new Map(records.map((r) => [r.id, r])), [records]);
+  // Superseded records are history: the buckets show what is current.
+  const records = useMemo(() => (data?.records ?? []).filter((r) => !r.superseded_by), [data]);
+  const byId = useMemo(() => new Map((data?.records ?? []).map((r) => [r.id, r])), [data]);
+  /** Learned and not yet kept, newest first: the review queue. */
+  const unconfirmed = useMemo(
+    () => records.filter((r) => r.status === "provisional").sort((a, b) => b.created - a.created),
+    [records],
+  );
   const edges = useMemo(() => (data ? edgesFor(data) : []), [data]);
 
   /** Who each record is connected to, and why. */
@@ -183,6 +189,49 @@ export function MindPage({
           </div>
 
           {data && !data.enabled && <p className="set-warn">Memory is off on this server.</p>}
+
+          {data && (
+            <label className="mind-learning">
+              <input
+                type="checkbox"
+                checked={data.learning !== false}
+                onChange={(e) => void run(() => setLearning(e.target.checked))}
+              />
+              <span>
+                <b>Learn from finished work</b>
+                After a turn that did real work, or where you said how you like things done, the
+                agent writes down what is worth keeping. It stays unconfirmed until you keep it or
+                it works again; confirmed procedures that keep working are pinned automatically.
+              </span>
+            </label>
+          )}
+
+          {unconfirmed.length > 0 && (
+            <section className="set-card mind-review">
+              <h3>Learned, waiting for you <span className="web-count">{unconfirmed.length}</span></h3>
+              {unconfirmed.map((r) => {
+                const old = r.replaces ? byId.get(r.replaces) : null;
+                return (
+                  <div key={r.id} className="mind-review-item" style={{ "--chip": KIND_COLOR[r.kind] } as React.CSSProperties}>
+                    <div className="mind-review-text">
+                      <span className="mind-item-title">
+                        <i />
+                        <b>{r.title}</b>
+                        <span className="mind-flag">{bucketLabel(r.kind)}</span>
+                        {(r.worked ?? 0) > 0 && <span className="mind-flag">worked {r.worked}×</span>}
+                      </span>
+                      <span className="mind-item-body">{r.body}</span>
+                      {old && <span className="mind-review-old">Replaces “{old.title}”: {old.body}</span>}
+                    </div>
+                    <div className="mind-review-actions">
+                      <button className="btn tiny" disabled={busy} onClick={() => void run(() => confirmRecord(r.id))}>Keep</button>
+                      <button className="btn tiny ghost" disabled={busy} onClick={() => void run(() => deleteRecord(r.id))}>Discard</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </section>
+          )}
           {error && <p className="set-warn">{error}</p>}
 
           <div className="mind-buckets" role="tablist" aria-label="Buckets">
@@ -296,7 +345,8 @@ export function MindPage({
                         <i />
                         <b>{r.title}</b>
                         {r.pinned && <span className="mind-flag">pinned</span>}
-                        {r.status === "provisional" && <span className="mind-flag">provisional</span>}
+                        {r.status === "provisional" && <span className="mind-flag">unconfirmed</span>}
+                        {r.uses > 0 && <span className="mind-flag" title="Times recalled into a turn, and times a turn that used it went well">used {r.uses}×{r.worked ? `, worked ${r.worked}×` : ""}</span>}
                         {query && <span className="mind-flag">{bucketLabel(r.kind)}</span>}
                       </span>
                       {r.body && <span className="mind-item-body">{r.body}</span>}

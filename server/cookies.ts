@@ -121,7 +121,7 @@ function fromNetscape(text: string, now: number): ParsedCookies {
  * Throws with something to tell the person when it is none of them.
  */
 export function parseCookieExport(text: string, now = Math.floor(Date.now() / 1000)): ParsedCookies {
-  const trimmed = text.replace(/^﻿/, "").trim();
+  const trimmed = text.replace(/^\uFEFF/, "").trim();
   if (!trimmed) throw new Error("The file is empty.");
   if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
     let data: any;

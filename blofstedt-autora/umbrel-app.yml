@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.9.28"
+version: "0.9.29"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -40,6 +40,15 @@ description: >-
   drives, control of another computer over a small relay, and a memory that
   outlives the session. Each can be switched off. Nothing waits for approval:
   every command runs straight away and is shown in the thread as it runs.
+
+
+  • A memory that learns — after real work, Autora writes down what worked
+  (commands, fixes, your preferences) for you to keep or discard, recalls it
+  when it is relevant, and can save scripts it uses often as tools of its own.
+
+
+  • Schedules and watchers — run a task on a cron schedule, or whenever a web
+  page, a file or a command's output changes, with a history of every run.
 
 
   • Voice interface (optional) — Deepgram STT+TTS when DEEPGRAM_API_KEY is set.
@@ -79,16 +88,20 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  New in Settings -> API Keys: Credentials. Save your name, email, phone,
-  address and date of birth, and a username and password for each site, with
-  an optional authenticator key (paste it, or upload a screenshot of the QR
-  code) so Autora can fill the 2FA code itself. Autora is told which details
-  exist but never sees them: it asks for a placeholder and the server types
-  the real value into the page. A saved sign-in is only ever typed into pages
-  on its own site, so a page cannot trick it into giving a password away.
-  Personal details are also available to the terminal for filling PDFs.
-  Everything is stored encrypted, and nothing saved can be read back out,
-  not even from the settings screen.
+  Autora now learns and works on its own. Scheduled tasks actually run (they
+  never did before), and a task can instead watch a web page, a file or a
+  command's output and run when it changes, with the change attached; each
+  task keeps a history of its runs, and you get a notice when one finishes.
+  Memory is recalled by what you ask rather than by fixed keywords, near-copies
+  are merged, and the agent can correct or retire a memory. After a turn that
+  did real work it writes down what it learned, shown in the chat with Keep and
+  Discard and in a review list on the Mind page; things that keep working are
+  confirmed on their own. It can save a script it needs again as a tool of its
+  own, and it is told which tools have been failing lately (see System, Status).
+  The demo memories and demo tasks from the first install are removed if you
+  never changed them. Also: lint checks on every build and several bug fixes
+  (a crash in the live browser card, copying secrets over http, stray
+  connections, the offline copy of the app).
 
 dependencies: []
 path: ""

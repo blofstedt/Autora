@@ -1,0 +1,6 @@
+{
+  "//": "The tests and build config. They import from both halves (voice.test.ts reaches into src/lib), so they get both sets of globals.",
+  "extends": "./tsconfig.server.json",
+  "compilerOptions": { "lib": ["ES2022", "DOM", "DOM.Iterable"] },
+  "include": ["tests/**/*.ts", "vite.config.ts"]
+}

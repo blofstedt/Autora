@@ -114,7 +114,22 @@ export type MemoryMark = {
 
 /** A memory named where the agent reached for it. `kind` is the bucket
     (preference, skill...) when the server said which. */
-export type MemoryItem = { id: string; title: string; kind: string | null };
+export type MemoryItem = {
+  id: string; title: string; kind: string | null;
+  /** Why it was recalled ("matched deploy, docker", "pinned"). */
+  reason?: string;
+  /** For a write: added, merged, updated, forgotten. */
+  action?: string;
+};
+
+/** A memory the agent learned after a turn, up for keeping or discarding. */
+export type LearnedItem = {
+  id: string; title: string; kind: string;
+  /** added, proposed (a rewrite of `revises`), merged, reinforced. */
+  action: string;
+  status: string;
+  revises: string | null;
+};
 
 /** One reach into memory: what was recalled or written, and when. */
 export type MemoryTouch = { seq: number; action: "recalled" | "written"; items: MemoryItem[] };
@@ -185,6 +200,10 @@ export type Cell =
   | { kind: "permission"; seq: number; prompt: PermissionPrompt }
   | { kind: "ask"; seq: number; ask: Ask }
   | { kind: "jev"; seq: number; decision: JevDecision }
+  | {
+      kind: "learned"; seq: number; items: LearnedItem[];
+      changes: { id: string; title: string; change: string }[];
+    }
   | ({ kind: "memory" } & MemoryTouch);
 
 /**
@@ -362,10 +381,13 @@ export function derive(events: AutoraEvent[]): Derived {
         const ids: string[] = e.payload.ids ?? (e.payload.id ? [e.payload.id] : []);
         const titles: string[] = e.payload.titles ?? (e.payload.title ? [e.payload.title] : []);
         const kinds: (string | undefined)[] = e.payload.kinds ?? (e.payload.kind ? [e.payload.kind] : []);
+        const reasons: (string | undefined)[] = Array.isArray(e.payload.reasons) ? e.payload.reasons : [];
         const items: MemoryItem[] = ids.map((id, index) => ({
           id,
           title: titles[index] ?? memoryById.get(id)?.title ?? "a memory",
           kind: kinds[index] ?? null,
+          reason: reasons[index],
+          action: written ? e.payload.action : undefined,
         }));
         items.forEach((item) => {
           memoryById.set(item.id, {
@@ -389,6 +411,13 @@ export function derive(events: AutoraEvent[]): Derived {
         } else {
           push({ kind: "memory", ...next });
         }
+        break;
+      }
+
+      case Kind.MemoryLearned: {
+        const items: LearnedItem[] = Array.isArray(e.payload.items) ? e.payload.items : [];
+        const changes = Array.isArray(e.payload.changes) ? e.payload.changes : [];
+        if (items.length || changes.length) push({ kind: "learned", seq: e.seq, items, changes });
         break;
       }
 
@@ -435,10 +464,14 @@ export function derive(events: AutoraEvent[]): Derived {
           seq: e.seq,
         };
         spansById.set(span.id, span);
-        if (SHELL_TOOLS.has(name)) {
+        // A tool the agent wrote (my_*) is a saved script: shown as the
+        // terminal it runs in, headed by the call that ran it.
+        const script = name.startsWith("my_");
+        if (SHELL_TOOLS.has(name) || script) {
+          const shown = Object.entries(span.args).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(" ");
           const cell = push({
             kind: "terminal", seq: e.seq, span: span.id,
-            command: String(span.args.command ?? ""),
+            command: script ? `${name}${shown ? ` ${shown}` : ""}` : String(span.args.command ?? ""),
             output: "", status: "running", exitCode: null, durationMs: null,
           }) as Extract<Cell, { kind: "terminal" }>;
           shells.set(span.id, cell);

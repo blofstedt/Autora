@@ -30,8 +30,38 @@ Only when a change genuinely has no user-facing effect, skip the bump and put
 
 ## Other checks before pushing
 
-- `npm run lint` (typechecks client and server)
+- `npm run lint`: typechecks the client (`tsconfig.json`), the server
+  (`tsconfig.server.json`) and the tests (`tsconfig.test.json`), then runs
+  ESLint (`eslint.config.js`). ESLint is type-aware and aimed at bugs, not
+  style: unawaited promises (mark fire-and-forget ones with `void`), hooks
+  called conditionally or with stale dependencies, unused code. It must pass
+  with no errors or warnings; `.github/workflows/check.yml` and the Docker
+  build both run it.
+- `npm test`
 - `npm run build`
+
+## Where things are
+
+- `server.ts`: the Express app, every `/api/*` route, the `/ws/:session`
+  event stream and the agent turn loop.
+- `server/`: the pieces it uses. `tools.ts` (the agent's tools), `llm.ts` and
+  `providers.ts` (model calls), `browser.ts` (Playwright), `desktop.ts` (the
+  relay), `store.ts` / `state.ts` (what is kept on disk under `AUTORA_HOME`),
+  `credentials.ts`, `mcp.ts`, `jev/` (the evaluator).
+- How it learns and runs on its own:
+  - `memory.ts`: the memory graph (ranked recall, merging near-copies,
+    provisional to confirmed).
+  - `learning.ts`: looking back at a finished turn and deciding what to keep.
+  - `scheduler.ts`: cron jobs and watchers.
+  - `customtools.ts`: scripts the agent saved as its own tools.
+  - `toolhealth.ts`: recent failures per tool, told to the agent.
+- Every turn, from any source (the chat box, a job, a watcher), goes through
+  `startTurn()` in `server.ts`, and learning runs after it.
+- `src/`: the React client. `App.tsx` holds the session and stream;
+  `lib/derive.ts` folds the event log into what the thread shows;
+  `components/` renders it.
+- `tests/`: plain `tsx` scripts, one per area, listed in `npm test`.
+- `docs/ARCHITECTURE.md`: why it is built this way.
 
 ## Standing product decisions
 

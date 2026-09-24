@@ -76,7 +76,7 @@ export function Credentials() {
   }, []);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
   useEffect(() => {
@@ -272,7 +272,7 @@ export function Credentials() {
               <button className="btn" onClick={saveLogin} disabled={busy || !draft.site.trim()}>Save sign-in</button>
               <label className="btn ghost cred-upload">
                 Scan QR picture
-                <input type="file" accept="image/*" onChange={(e) => { scan(e.target.files?.[0]); e.target.value = ""; }} />
+                <input type="file" accept="image/*" onChange={(e) => { void scan(e.target.files?.[0]); e.target.value = ""; }} />
               </label>
               {draft.previous && data?.logins.find((l) => l.site === draft.previous)?.has_authenticator && (
                 <label className="cred-check">

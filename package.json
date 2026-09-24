@@ -1,14 +1,15 @@
 {
   "name": "autora",
   "private": true,
-  "version": "0.9.28",
+  "version": "0.9.29",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
-    "lint": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json",
-    "test": "tsx tests/voice.test.ts && tsx tests/jev.test.ts && tsx tests/mcp.test.ts && tsx tests/handoff.test.ts && tsx tests/loopwatch.test.ts && tsx tests/context.test.ts && tsx tests/browsing.test.ts && tsx tests/credentials.test.ts"
+    "lint": "npm run typecheck && eslint .",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.test.json",
+    "test": "tsx tests/voice.test.ts && tsx tests/jev.test.ts && tsx tests/mcp.test.ts && tsx tests/handoff.test.ts && tsx tests/loopwatch.test.ts && tsx tests/context.test.ts && tsx tests/browsing.test.ts && tsx tests/credentials.test.ts && tsx tests/memory.test.ts && tsx tests/scheduler.test.ts && tsx tests/learning.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.23.0",
@@ -19,6 +20,7 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "@types/express": "^4.17.21",
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.12",
@@ -26,8 +28,12 @@
     "@types/ws": "^8.5.14",
     "@vitejs/plugin-react": "^4.3.4",
     "esbuild": "^0.24.2",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^17.12.0",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",
+    "typescript-eslint": "^8.70.1",
     "vite": "^6.0.5"
   },
   "optionalDependencies": {

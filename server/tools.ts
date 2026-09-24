@@ -25,9 +25,12 @@
  */
 
 import { callMcpTool, mcpTools } from "./mcp";
+import {
+  PREFIX as CUSTOM_PREFIX, customEnv, defineCustomTool, deleteCustomTool, getCustomTool,
+  listCustomTools, missingArgs, noteCustomRun,
+} from "./customtools";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
-import path from "node:path";
 import os from "node:os";
 import { GoogleGenAI } from "@google/genai";
 import { mergeTools, save, state, allSecrets, secretFor, redactSecrets as redactStored } from "./state";
@@ -153,6 +156,52 @@ const TOOLS: ToolSpec[] = [
   },
 
   // ------------------------------------------------------------ browser --
+  {
+    name: "tool_create",
+    group: "terminal",
+    description:
+      "Save a shell script as a tool of your own, for work you expect to do " +
+      "again: once saved it is offered as my_<name> in every later session. " +
+      "The script runs like a terminal command (bash -lc, same directory and " +
+      "secrets); each parameter arrives as the environment variable " +
+      "ARG_<NAME> (uppercase), and all of them as JSON in TOOL_ARGS. Saving " +
+      "under an existing name replaces that tool. Only save what has already " +
+      "worked in the terminal.",
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Lowercase, underscores, e.g. check_backup." },
+        description: { type: "string", description: "What it does and when to use it, for your future self." },
+        parameters: {
+          type: "array",
+          description: "The arguments it takes.",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              description: { type: "string" },
+              required: { type: "boolean" },
+            },
+            required: ["name"],
+          },
+        },
+        script: { type: "string", description: "The shell script." },
+      },
+      required: ["name", "description", "script"],
+    },
+    risky: true,
+  },
+  {
+    name: "tool_delete",
+    group: "terminal",
+    description: "Delete a tool you wrote with tool_create, by its my_<name>.",
+    parameters: {
+      type: "object",
+      properties: { name: { type: "string", description: "e.g. my_check_backup" } },
+      required: ["name"],
+    },
+    risky: true,
+  },
   {
     name: "browser_open",
     group: "browser",
@@ -717,10 +766,53 @@ const TOOLS: ToolSpec[] = [
         kind: {
           type: "string",
           enum: ["fact", "preference", "procedure", "skill"],
-          description: "What sort of thing this is. Default fact.",
+          description:
+            "What sort of thing this is. Default fact. A procedure is how to do " +
+            "something here that worked -- the steps, commands and gotchas.",
+        },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+          description: "A few words it should be found by.",
         },
       },
       required: ["title", "body"],
+    },
+    risky: true,
+  },
+  {
+    name: "memory_update",
+    group: "memory",
+    description:
+      "Correct or extend a memory that is out of date or incomplete, by its id " +
+      "(recalled memories and memory_search show ids). Prefer this to writing " +
+      "a second memory about the same thing.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The memory's id, e.g. mem-abc123." },
+        title: { type: "string", description: "A new title, if it should change." },
+        body: { type: "string", description: "The whole new body, replacing the old one." },
+        kind: { type: "string", enum: ["fact", "preference", "procedure", "skill"] },
+        tags: { type: "array", items: { type: "string" } },
+      },
+      required: ["id"],
+    },
+    risky: true,
+  },
+  {
+    name: "memory_forget",
+    group: "memory",
+    description:
+      "Retire a memory that is wrong or no longer true. Name the memory that " +
+      "replaces it, if there is one, so the history is kept.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The memory to retire." },
+        replaced_by: { type: "string", description: "The id of the memory that supersedes it, if any." },
+      },
+      required: ["id"],
     },
     risky: true,
   },
@@ -875,12 +967,30 @@ export async function availableTools(): Promise<ToolSpec[]> {
   return [
     ...TOOLS.filter((t) =>
       t.group === "person" || t.group === "files" || usable.has(t.group as ToolGroup)),
+    ...(usable.has("terminal") ? customSpecs() : []),
     ...mcpSpecs(),
   ];
 }
 
 export function findTool(name: string): ToolSpec | undefined {
-  return TOOLS.find((t) => t.name === name) ?? mcpSpecs().find((t) => t.name === name);
+  return TOOLS.find((t) => t.name === name) ??
+    customSpecs().find((t) => t.name === name) ??
+    mcpSpecs().find((t) => t.name === name);
+}
+
+/** Tools the agent wrote (see ./customtools.ts), in the registry's shape. */
+function customSpecs(): ToolSpec[] {
+  return listCustomTools().map((t) => ({
+    name: `${CUSTOM_PREFIX}${t.name}`,
+    group: "terminal" as const,
+    description: `${t.description} (A tool you wrote earlier; runs a saved shell script.)`,
+    parameters: {
+      type: "object" as const,
+      properties: Object.fromEntries(t.params.map((p) => [p.name, { type: "string", description: p.description }])),
+      required: t.params.filter((p) => p.required).map((p) => p.name),
+    },
+    risky: true,
+  }));
 }
 
 /** Tools from connected MCP servers, in the registry's own shape. */
@@ -934,6 +1044,12 @@ export function renderCall(spec: ToolSpec, args: Record<string, any>): string {
       return `scroll the desktop by ${args.dy}`;
     case "memory_write":
       return `remember "${args.title}": ${args.body}`;
+    case "tool_create":
+      return `save tool ${CUSTOM_PREFIX}${String(args.name ?? "").replace(CUSTOM_PREFIX, "")}:\n${args.script}`;
+    case "memory_update":
+      return `update memory ${args.id}`;
+    case "memory_forget":
+      return `forget memory ${args.id}${args.replaced_by ? ` (replaced by ${args.replaced_by})` : ""}`;
     case "vault_read":
       return args.search
         ? `search vault artifact ${args.id} for "${args.search}"`
@@ -991,8 +1107,10 @@ export interface ToolContext {
   onCancel: (stop: () => void) => void;
   /** The memory graph, which the server owns. */
   memory: {
-    write: (entry: { title: string; body: string; kind: string }) => { id: string };
-    search: (query: string) => { kind: string; title: string; body: string }[];
+    write: (entry: { title: string; body: string; kind: string; tags?: string[] }) => { id: string; action: string };
+    search: (query: string) => { id: string; kind: string; title: string; body: string; status: string }[];
+    update: (id: string, patch: { title?: string; body?: string; kind?: string; tags?: string[] }) => boolean;
+    forget: (id: string, replacedBy?: string | null) => boolean;
   };
   /** A tool output this session kept out of the prompt, by artifact id. */
   vault: (id: string) => string | null;
@@ -1105,6 +1223,7 @@ function runCommand(
   cwd: string,
   timeoutSeconds: number,
   ctx: ToolContext,
+  extraEnv: Record<string, string> = {},
 ): Promise<ToolOutcome> {
   const candidates = candidateShells();
   const secrets = allSecrets();
@@ -1147,6 +1266,7 @@ function runCommand(
             ...process.env,
             ...secrets,
             ...identityEnv(),
+            ...extraEnv,
             PATH: process.env.PATH || "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             TERM: "dumb",
             PAGER: "cat",
@@ -1227,6 +1347,16 @@ function runCommand(
   };
 
   return tryShell(0);
+}
+
+/**
+ * A command run with nobody watching: for a watcher checking a command's
+ * output. Same shell, secrets and working directory as the terminal tool.
+ */
+export async function runShellQuiet(command: string, timeoutSeconds = 60): Promise<{ ok: boolean; output: string }> {
+  const quiet: Pick<ToolContext, "onOutput" | "onCancel"> = { onOutput: () => undefined, onCancel: () => undefined };
+  const outcome = await runCommand(command, toolSettings().terminal.cwd, timeoutSeconds, quiet as ToolContext);
+  return { ok: outcome.ok, output: outcome.summary };
 }
 
 async function searchWeb(query: string): Promise<string> {
@@ -1980,11 +2110,46 @@ async function runToolUnredacted(
         }
         const kinds = new Set(["fact", "preference", "procedure", "skill"]);
         const kind = kinds.has(String(args.kind)) ? String(args.kind) : "fact";
-        const { id } = ctx.memory.write({ title, body, kind });
+        const tags = Array.isArray(args.tags) ? args.tags.map(String) : [];
+        const { id, action } = ctx.memory.write({ title, body, kind, tags });
         return {
           ok: true,
-          summary: `Written down as ${id}: "${title}".`,
+          summary: action === "merged"
+            ? `That was close to ${id}, so ${id} was updated rather than a copy added: "${title}".`
+            : `Written down as ${id}: "${title}".`,
           preview: title,
+        };
+      }
+
+      case "memory_update": {
+        const id = String(args.id ?? "").trim();
+        if (!id) return { ok: false, summary: "No memory id was given." };
+        const patch = {
+          title: typeof args.title === "string" ? args.title : undefined,
+          body: typeof args.body === "string" ? args.body : undefined,
+          kind: typeof args.kind === "string" ? args.kind : undefined,
+          tags: Array.isArray(args.tags) ? args.tags.map(String) : undefined,
+        };
+        if (!ctx.memory.update(id, patch)) {
+          return { ok: false, summary: `There is no memory ${id}. memory_search shows the ids.` };
+        }
+        return { ok: true, summary: `Updated ${id}.`, preview: id };
+      }
+
+      case "memory_forget": {
+        const id = String(args.id ?? "").trim();
+        if (!id) return { ok: false, summary: "No memory id was given." };
+        const replacedBy = typeof args.replaced_by === "string" ? args.replaced_by.trim() : null;
+        if (!ctx.memory.forget(id, replacedBy)) {
+          return {
+            ok: false,
+            summary: `There is no memory ${id}${replacedBy ? ` or ${replacedBy}` : ""}. memory_search shows the ids.`,
+          };
+        }
+        return {
+          ok: true,
+          summary: replacedBy ? `${id} is retired in favour of ${replacedBy}.` : `${id} is forgotten.`,
+          preview: id,
         };
       }
 
@@ -1998,7 +2163,7 @@ async function runToolUnredacted(
         return {
           ok: true,
           summary: found
-            .map((m) => `- [${m.kind}] ${m.title}: ${m.body}`)
+            .map((m) => `- ${m.id} [${m.kind}${m.status === "provisional" ? ", unconfirmed" : ""}] ${m.title}: ${m.body}`)
             .join("\n"),
           preview: `${found.length} found`,
         };
@@ -2022,7 +2187,43 @@ async function runToolUnredacted(
         return { ok: true, summary: readVault(text, args, room), preview: id };
       }
 
+      case "tool_create": {
+        try {
+          const { tool, replaced } = defineCustomTool({
+            name: args.name, description: args.description, params: args.parameters,
+            script: args.script, session: ctx.session,
+          });
+          return {
+            ok: true,
+            summary:
+              `${replaced ? "Replaced" : "Saved"} ${CUSTOM_PREFIX}${tool.name}. It is offered from the ` +
+              "next step on, like any other tool. Try it once now to make sure it works.",
+            preview: `${CUSTOM_PREFIX}${tool.name}`,
+          };
+        } catch (err: any) {
+          return { ok: false, summary: err?.message ?? String(err) };
+        }
+      }
+
+      case "tool_delete": {
+        const name = String(args.name ?? "").trim();
+        return deleteCustomTool(name)
+          ? { ok: true, summary: `Deleted ${name}.`, preview: name }
+          : { ok: false, summary: `There is no tool you wrote called ${name}.` };
+      }
+
       default: {
+        const custom = spec.name.startsWith(CUSTOM_PREFIX) ? getCustomTool(spec.name) : undefined;
+        if (custom) {
+          const missing = missingArgs(custom, args);
+          if (missing.length) {
+            return { ok: false, summary: `${spec.name} needs ${missing.join(", ")}.` };
+          }
+          const settings = toolSettings().terminal;
+          const outcome = await runCommand(custom.script, settings.cwd, settings.timeout, ctx, customEnv(custom, args));
+          noteCustomRun(spec.name, outcome.ok);
+          return outcome;
+        }
         if (spec.group === "mcp") {
           const out = await callMcpTool(spec.name, args);
           return {

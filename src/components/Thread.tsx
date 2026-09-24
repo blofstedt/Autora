@@ -13,6 +13,7 @@ import { AskCell } from "./AskCell";
 import { Markdown } from "./Markdown";
 import { JevCell } from "./JevCell";
 import { MemoryCell } from "./MemoryCell";
+import { LearnedCell } from "./LearnedCell";
 
 /** Within this many pixels of the bottom counts as "watching the live edge". */
 const STICK_ZONE = 80;
@@ -322,6 +323,8 @@ function CellView({
     }
     case "memory":
       return <MemoryCell cell={cell} onOpen={onOpenMind} />;
+    case "learned":
+      return <LearnedCell items={cell.items} changes={cell.changes} onOpen={onOpenMind} />;
     case "jev":
       return <JevCell decision={cell.decision} />;
     case "ask":

@@ -32,8 +32,11 @@ createRoot(document.getElementById("root")!).render(<App />);
  */
 if ("serviceWorker" in navigator) {
   let reloading = false;
+  // A first visit has no worker yet, and the one it installs taking over is
+  // not an update: reloading then only loaded the same page twice.
+  const hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.addEventListener("controllerchange", () => {
-    if (reloading) return;
+    if (reloading || !hadController) return;
     reloading = true;
     window.location.reload();
   });

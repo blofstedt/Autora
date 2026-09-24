@@ -23,6 +23,7 @@ import { DictateButton } from "./components/DictateButton";
 import { LiveChat } from "./components/LiveChat";
 import { useRelay } from "./components/RelaySetup";
 import { UpdateNotice } from "./components/UpdateNotice";
+import { Notices } from "./components/Notices";
 import { AutoraMark, type MarkState } from "./components/AutoraMark";
 import {
   dictationSupported, recognitionAvailable, secureOrigin, speakable,
@@ -123,7 +124,7 @@ export function App() {
               : rows.length > 0 ? rows[0].id : null);
         })
         .catch(() => undefined);
-    load();
+    void load();
     const timer = window.setInterval(load, SESSION_POLL_MS);
     return () => {
       alive = false;
@@ -183,12 +184,16 @@ export function App() {
     setLiveFields([]);
     setBrowser(null);
     const stream = new SessionStream(sessionId, {
-      onEvents: (fresh) =>
+      onEvents: (fresh) => {
+        // A batch of nothing but repeats: a new array would re-derive the
+        // whole thread for no change.
+        if (fresh.length === 0) return;
         setEvents((prev) => {
           const next = [...prev, ...fresh];
           next.sort((a, b) => a.seq - b.seq);
           return next;
-        }),
+        });
+      },
       onStatus: setStatus,
       onFrame: setLiveFrame,
       onBrowser: (state) => {
@@ -528,6 +533,7 @@ export function App() {
         {/* Above everything, including the header: an app running code that is
             two releases old is not a detail to mention further down. */}
         <UpdateNotice />
+        <Notices onOpenSession={openSession} />
 
         <header className="top">
           <button
