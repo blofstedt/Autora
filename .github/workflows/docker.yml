@@ -1,13 +1,24 @@
 name: Build and publish container image
 
+# Built from the pull request as well as from main, because of when Umbrel
+# looks. It offers an update the moment a higher `version` lands on main, and
+# docker-compose.yml names that version's image -- so an image built only
+# after the merge was minutes late, and an update taken in between failed with
+# "manifest unknown". A pull request that raises the version therefore
+# publishes that version's image before it is merged; main rebuilds it from
+# the merge a few minutes later, and that build is the one that stays.
 on:
   push:
     branches: [main]
     tags: ["v*"]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
   build:
+    # A fork's pull request cannot push to this registry.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -27,15 +38,32 @@ jobs:
 
       # The version, as a tag of its own: docker-compose.yml names it, so an
       # update pulls exactly this build and never a stale :latest.
+      #
+      # From a pull request, only a version main does not have yet is pushed:
+      # a pull request that leaves the version alone would otherwise put its
+      # unmerged code under the tag of the release people are running.
       - id: version
-        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          push=true
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch -q --depth=1 origin main
+            released=$(git show origin/main:package.json | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")
+            if [ "$version" = "$released" ]; then
+              push=false
+              echo "Version $version is already main's; building without publishing."
+            fi
+          fi
+          echo "push=$push" >> "$GITHUB_OUTPUT"
 
       - id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/blofstedt/autora
+          # :latest only ever from main.
           tags: |
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ github.event_name != 'pull_request' }}
             type=raw,value=${{ steps.version.outputs.version }}
             type=ref,event=tag
 
@@ -44,7 +72,7 @@ jobs:
           context: .
           # Umbrel Home is amd64; Raspberry Pi is arm64.
           platforms: linux/amd64,linux/arm64
-          push: true
+          push: ${{ steps.version.outputs.push == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

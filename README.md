@@ -565,9 +565,12 @@ So a change that reaches the container ships with a higher `version` and
 rewritten `releaseNotes`, which Umbrel shows on the update, and
 `docker-compose.yml` names that version's image tag rather than `:latest`.
 The image workflow tags every build of main with the version in
-`package.json`; Umbrel offers the update as soon as the manifest changes,
-minutes before that build exists, and with `:latest` an update taken in that
-gap installed the previous build under the new version number. CI enforces this on
+`package.json`. Umbrel offers the update as soon as the manifest changes on
+main, so a pull request that raises the version also publishes that
+version's image before it is merged (main rebuilds it from the merge a few
+minutes later). Without that, an update taken in the gap failed with
+"manifest unknown"; with `:latest`, it installed the previous build under
+the new version number. CI enforces this on
 every pull request; a change with no user-facing effect opts out with
 `[no release]` in the pull request title or body.
 
