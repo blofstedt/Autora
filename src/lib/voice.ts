@@ -182,6 +182,34 @@ export function commit(ledger: Ledger, text: string, now: number): string {
   return fresh;
 }
 
+/** Words that leave a sentence hanging: a pause after one of these is you
+    thinking, not you finishing. */
+const HANGING = new Set([
+  "and", "or", "but", "so", "because", "cause", "then", "if", "when", "while",
+  "that", "which", "who", "the", "a", "an", "to", "of", "for", "with", "in",
+  "on", "at", "from", "into", "about", "my", "your", "our", "their", "this",
+  "is", "are", "was", "be", "can", "could", "should", "would", "will", "please",
+  "um", "uh", "er", "erm", "hmm", "like", "maybe", "also", "just",
+]);
+
+/**
+ * How long live chat waits in silence before it sends what you said.
+ *
+ * It used to be about a second, which is shorter than the breath people take
+ * mid-sentence, so live mode kept answering half a thought. A settled phrase
+ * (the engine decided you stopped) waits two seconds; an unsettled one, which
+ * is all Chrome for Android ever gives, waits longer; and a phrase that ends on
+ * "and", "the", "um" or a comma waits longer still, because nobody ends there.
+ */
+export function turnPause(text: string, settled: boolean): number {
+  const base = settled ? 2000 : 2800;
+  const trimmed = text.trim();
+  if (!trimmed) return base;
+  if (/,$/.test(trimmed)) return base + 1500;
+  const last = trimmed.split(/\s+/).pop()!.toLowerCase().replace(/[^a-z']/g, "");
+  return HANGING.has(last) ? base + 1500 : base;
+}
+
 export type Dictation = {
   supported: boolean;
   listening: boolean;

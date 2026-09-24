@@ -4,7 +4,7 @@
  *   npx tsx tests/voice.test.ts
  */
 import assert from "node:assert/strict";
-import { commit, newLedger } from "../src/lib/voice";
+import { commit, newLedger, turnPause } from "../src/lib/voice";
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -61,6 +61,18 @@ test("separate phrases are kept", () => {
 
 test("the same word said again later is not swallowed", () => {
   assert.equal(run(["yes", "yes"], 6000), "yes yes");
+});
+
+test("live chat waits through a normal breath before sending", () => {
+  assert.ok(turnPause("open my email", true) >= 2000);
+  assert.ok(turnPause("open my email", false) > turnPause("open my email", true));
+});
+
+test("a sentence left hanging waits longer", () => {
+  assert.ok(turnPause("open my email and", true) > turnPause("open my email", true));
+  assert.ok(turnPause("find the", false) > turnPause("find it", false));
+  assert.ok(turnPause("so first, um", true) > turnPause("so first done", true));
+  assert.ok(turnPause("check the calendar,", true) > turnPause("check the calendar", true));
 });
 
 console.log(`voice: ${passed} passed`);

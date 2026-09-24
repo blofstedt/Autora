@@ -702,6 +702,7 @@ export function App() {
                 onUtterance={sendSpoken}
                 onExit={toggleLive}
                 onInterrupt={hush}
+                onStop={() => void stopTurn()}
                 agentSpeaking={speaking}
                 agentWorking={running}
                 disabled={readOnly}
