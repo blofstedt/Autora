@@ -10,7 +10,10 @@ change to `src/`, `server/`, `server.ts`, `package.json`, `public/`, `ui/src/`,
 1. Bumps `version` in `blofstedt-autora/umbrel-app.yml` to a higher number
    (patch bump by default, e.g. 0.9.1 -> 0.9.2).
 2. Sets `"version"` in `package.json` (and the top two `"version"` fields in
-   `package-lock.json`) to that same number.
+   `package-lock.json`) to that same number, and the image tag in
+   `blofstedt-autora/docker-compose.yml` (`ghcr.io/blofstedt/autora:<version>`)
+   too. Never `:latest`: an update taken while the image was building would
+   install the previous build and never be offered again.
 3. Rewrites `releaseNotes` in `umbrel-app.yml` to describe this change, not
    the last release. If the change contradicts the manifest's `description`,
    update that too.

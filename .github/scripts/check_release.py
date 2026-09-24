@@ -54,6 +54,10 @@ WATCHED = (
     "blofstedt-autora/docker-compose.yml",
 )
 
+COMPOSE = "blofstedt-autora/docker-compose.yml"
+
+IMAGE_LINE = re.compile(r'^\s*image:\s*"?ghcr\.io/blofstedt/autora:([^"\s]+)"?\s*$', re.MULTILINE)
+
 OPT_OUT = "[no release]"
 
 VERSION_LINE = re.compile(r'^version:\s*"?([^"\n]+)"?\s*$', re.MULTILINE)
@@ -153,6 +157,15 @@ def running_version() -> str:
     return found.strip() if isinstance(found, str) else ""
 
 
+def image_tag(ref: str) -> str:
+    """The tag docker-compose.yml runs, or "" if it names none."""
+    try:
+        found = IMAGE_LINE.search(git("show", f"{ref}:{COMPOSE}"))
+    except subprocess.CalledProcessError:
+        return ""
+    return found.group(1).strip() if found else ""
+
+
 def opted_out(title: str, body: str) -> bool:
     return OPT_OUT in f"{title}\n{body}".lower()
 
@@ -234,10 +247,23 @@ def main(argv: list[str] | None = None) -> int:
     running = running_version()
     if running and running != new_version:
         print(
-            f"`version` is {new_version} but src/autora/__init__.py reports\n"
+            f"`version` is {new_version} but package.json reports\n"
             f"{running}. The app shows that second number in Settings as the\n"
             f"version actually answering, so a stale one does not just drift --\n"
             f"it tells someone their update did not land when it did.",
+            file=sys.stderr,
+        )
+        return 1
+
+    tag = image_tag(head)
+    if tag != new_version:
+        print(
+            f"`version` is {new_version} but {COMPOSE} runs the image tagged\n"
+            f"{tag or '(none)'}. Umbrel installs whatever that line names, so it\n"
+            f"has to be this release's own build: set it to\n"
+            f"ghcr.io/blofstedt/autora:{new_version}. (:latest is what let an\n"
+            f"update taken while the image was still building install the\n"
+            f"previous one and then never be offered again.)",
             file=sys.stderr,
         )
         return 1

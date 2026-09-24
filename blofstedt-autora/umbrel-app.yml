@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.9.25"
+version: "0.9.26"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -74,21 +74,14 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Sign-ins that open their own window -- Sign in with Google, LinkedIn,
-  Microsoft, a 2FA approval -- now work: the window is shown on the live
-  screen until it finishes and closes itself, then you are back on the page
-  that opened it, signed in. Autora also remembers every sign-in: the browser
-  no longer forgets sites that keep you signed in only until it closes, the
-  agent is told which sites it has signed in to, and it checks whether a site
-  is still signed in before asking you again. The agent can now attach files
-  from your Artifacts to a web page's upload field -- a CV on a job
-  application, a photo, a document a form asks for -- whether the page shows
-  a plain file field, an "Upload CV" button or a drag-and-drop box. The live
-  browser now has a toolbar -- back, reload and an address bar you can type
-  into -- whenever the page is yours to use, and fits a phone screen. Also
-  fixed: the agent no longer highlights the whole page when a click meant
-  for a text box missed, and the open-page badge at the top right no longer
-  cuts off its close button.
+  Updates now install the exact build they announce. If 0.9.25 did not seem to
+  arrive -- no browser toolbar, sign-in pop-ups still not opening -- this
+  update brings it: pop-up sign-ins (Google, LinkedIn, Microsoft, 2FA) that
+  finish and return you to the page, sign-ins remembered across restarts,
+  attaching Artifacts such as a CV to upload fields and drag-and-drop boxes,
+  a back / reload / address toolbar on the live browser, a header that fits
+  a phone, and no more whole-page highlighting. If this update fails, the new
+  build is still being published: try again in a few minutes.
 
 dependencies: []
 path: ""
