@@ -15,7 +15,7 @@ services:
     # never offered it again. A version tag that does not exist yet fails
     # the pull instead, and trying again a few minutes later gets it.
     # check_release.py keeps this equal to `version` in umbrel-app.yml.
-    image: ghcr.io/blofstedt/autora:0.9.26
+    image: ghcr.io/blofstedt/autora:0.9.27
     restart: on-failure
     # The https listener, published directly rather than through app_proxy,
     # because the proxy speaks http to the backend and the browser needs the

@@ -60,6 +60,11 @@ export interface ChatMessage {
   calls?: ToolUse[];
   /** Tool only: what those calls returned. */
   replies?: ToolReply[];
+  /** Assistant only: the model's thinking before it answered, where the
+      vendor sends it (DeepSeek's `reasoning_content`). DeepSeek refuses a
+      history with tools in it unless each assistant message carries this
+      back. */
+  reasoning?: string;
 }
 
 export interface ChatCall {
@@ -100,6 +105,8 @@ export interface ChatTurn {
   /** The reply stopped because it hit the output limit, not because the model
       was finished. A turn that ends on one of these is a turn cut short. */
   cutOff?: boolean;
+  /** The thinking that came before the reply, when the vendor streams it. */
+  reasoning?: string;
 }
 
 /** An error with the HTTP status kept, so the caller can tell a busy vendor
@@ -121,6 +128,7 @@ const roughTokens = (text: string) => Math.max(1, Math.round(text.length / 4));
 function weigh(message: ChatMessage): string {
   return [
     message.text ?? "",
+    message.reasoning ?? "",
     ...(message.calls ?? []).map((c) => c.name + JSON.stringify(c.args)),
     ...(message.replies ?? []).map((r) => r.result),
   ].join("");
@@ -262,36 +270,66 @@ function openAiHeaders(call: ChatCall): Record<string, string> {
  * the `tool_call_id` it answers, and batching several into one message loses
  * that pairing -- which a model then notices as a call it never got an answer
  * for.
+ *
+ * Every call is answered straight after the message that made it, and nothing
+ * else is: DeepSeek refuses the whole request, with "insufficient tool
+ * messages following tool_calls message", over one call left unanswered, one
+ * reply out of place, or two calls sharing an id. The history should never be
+ * in that shape, but one bad request is a turn that cannot go on, so it is put
+ * right here rather than trusted: a missing reply is filled in as not run, and
+ * a stray one is dropped.
  */
 function openAiMessages(call: ChatCall): any[] {
   const out: any[] = [];
   if (call.system) out.push({ role: "system", content: call.system });
+  // DeepSeek thinks by default, and with tools on it wants that thinking back
+  // on every assistant message. Other vendors reject a field they do not know.
+  const deepseek = call.provider === "deepseek" || /api\.deepseek\.com/.test(call.baseUrl);
+  const used = new Set<string>();
 
-  for (const message of call.messages) {
-    if (message.role === "tool") {
-      for (const reply of message.replies ?? []) {
-        out.push({ role: "tool", tool_call_id: reply.id, content: reply.result });
-      }
-      continue;
-    }
+  for (let i = 0; i < call.messages.length; i += 1) {
+    const message = call.messages[i];
+    // A reply whose call is not the message just before it: see below.
+    if (message.role === "tool") continue;
+
     if (message.role === "assistant") {
-      const calls = message.calls ?? [];
+      const calls = (message.calls ?? []).map((c) => {
+        let id = c.id || "call";
+        while (used.has(id)) id = `${c.id || "call"}_${used.size}`;
+        used.add(id);
+        return { use: c, id };
+      });
       out.push({
         role: "assistant",
         // Null rather than "" when a turn was nothing but tool calls: some
         // gateways reject an assistant message with both an empty string and
         // tool_calls set.
         content: message.text || (calls.length > 0 ? null : ""),
+        ...(deepseek ? { reasoning_content: message.reasoning ?? "" } : {}),
         ...(calls.length > 0
           ? {
-              tool_calls: calls.map((c) => ({
-                id: c.id,
+              tool_calls: calls.map(({ use, id }) => ({
+                id,
                 type: "function",
-                function: { name: c.name, arguments: JSON.stringify(c.args) },
+                function: { name: use.name, arguments: JSON.stringify(use.args) },
               })),
             }
           : {}),
       });
+      if (calls.length === 0) continue;
+
+      const next = call.messages[i + 1];
+      const replies = next?.role === "tool" ? next.replies ?? [] : [];
+      const taken = new Set<ToolReply>();
+      for (const { use, id } of calls) {
+        const reply = replies.find((r) => !taken.has(r) && r.id === use.id);
+        if (reply) taken.add(reply);
+        out.push({
+          role: "tool",
+          tool_call_id: id,
+          content: reply?.result || (reply ? "(no output)" : "Not run: no result was recorded for this call."),
+        });
+      }
       continue;
     }
     out.push({ role: "user", content: message.text ?? "" });
@@ -330,6 +368,7 @@ async function streamOpenAi(call: ChatCall, onDelta: (text: string) => void): Pr
   if (!res.ok) throw await failure(res);
 
   let reply = "";
+  let reasoning = "";
   let usage: ChatUsage | null = null;
   /* Tool calls arrive as deltas keyed by position, not by id: the first chunk
      for a slot carries the id and name, and every chunk after it carries more
@@ -355,6 +394,8 @@ async function streamOpenAi(call: ChatCall, onDelta: (text: string) => void): Pr
       reply += piece;
       onDelta(piece);
     }
+    // Kept, not shown: DeepSeek needs it sent back with the rest of the turn.
+    if (typeof delta?.reasoning_content === "string") reasoning += delta.reasoning_content;
 
     for (const part of delta?.tool_calls ?? []) {
       const slot = Number(part.index ?? 0);
@@ -389,7 +430,13 @@ async function streamOpenAi(call: ChatCall, onDelta: (text: string) => void): Pr
       ...(brokenArgs(found.args) ? { incomplete: true } : {}),
     }));
 
-  return { usage: usage ?? estimate(call, reply), text: reply, calls, cutOff };
+  return {
+    usage: usage ?? estimate(call, reply),
+    text: reply,
+    calls,
+    cutOff,
+    ...(reasoning ? { reasoning } : {}),
+  };
 }
 
 // ------------------------------------------------------------- anthropic --
