@@ -1996,6 +1996,8 @@ async function runTurn(session: Session, text: string): Promise<TurnResult> {
           emitEvent(session, "media.image", "agent", {
             alt, caption, ...(size ? { w: size.w, h: size.h } : {}),
           }, null, blob),
+        showWidget: ({ title, html, height }) =>
+          emitEvent(session, "media.widget", "agent", { title, html, height }, span),
         showScreen: (source, blob, size) =>
           emitEvent(session, `${source}.frame`, "agent", {
             ...(source === "browser" ? { url: browsers.get(session.id)?.status().url ?? "" } : {}),
@@ -3800,6 +3802,34 @@ async function startServer() {
     // Nothing else is served over a socket; left open, it would sit there
     // unread for as long as the other end cared to keep it.
     ws.close();
+  });
+
+  /* Three.js for explainer widgets, as the one file src/widget/three.ts
+     bundles it into (see there for why). The production build writes it to
+     dist/widget/three.js; in development it is built here on first ask, with
+     the same esbuild the build uses. */
+  let widgetThree: Promise<string> | null = null;
+  app.get("/widget/three.js", (_req: Request, res: Response) => {
+    widgetThree ??= process.env.NODE_ENV === "production"
+      ? fs.promises.readFile(path.join(process.cwd(), "dist", "widget", "three.js"), "utf8")
+      : import("esbuild").then(async (esbuild) => {
+          const out = await esbuild.build({
+            entryPoints: [path.join(process.cwd(), "src", "widget", "three.ts")],
+            bundle: true, format: "esm", minify: true, write: false,
+          });
+          return out.outputFiles[0].text;
+        });
+    widgetThree.then(
+      (code) => {
+        res.setHeader("Content-Type", "text/javascript; charset=utf-8");
+        res.setHeader("Cache-Control", `private, max-age=${process.env.NODE_ENV === "production" ? 86400 : 0}`);
+        res.send(code);
+      },
+      (err: any) => {
+        widgetThree = null;
+        res.status(500).type("text/plain").send(`The widget runtime is not available: ${err?.message ?? err}`);
+      },
+    );
   });
 
   // 13. Vite Integration (Development middleware / Production static serving)

@@ -59,6 +59,8 @@ export const Kind = {
       it was looking at. Screenshots it was asked for, images it produced,
       images it inlined into a reply. */
   MediaImage: "media.image",
+  /** An interactive explainer the agent wrote, run in a sandboxed frame. */
+  MediaWidget: "media.widget",
   DesktopFrame: "desktop.frame",
   DesktopAction: "desktop.action",
   ContextNote: "context.note",

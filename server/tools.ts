@@ -45,6 +45,9 @@ import {
   artifactPath, deleteArtifact, formatSize, getArtifact, isText, listArtifacts, readArtifact,
   saveArtifact, MAX_ARTIFACT_BYTES,
 } from "./artifacts";
+import {
+  MAX_WIDGET_CHARS, WIDGET_DEFAULT_HEIGHT, WIDGET_MAX_HEIGHT, WIDGET_MIN_HEIGHT, widgetDocument,
+} from "../src/lib/widget";
 
 /** Blank out stored secrets and the person's saved credentials. */
 function redactSecrets(text: string): string {
@@ -682,6 +685,50 @@ const TOOLS: ToolSpec[] = [
     },
   },
 
+  // ------------------------------------------------------------ widgets --
+  {
+    name: "widget_show",
+    group: "person",
+    description:
+      "Show an interactive explainer widget in the conversation: a small, " +
+      "self-contained web page you write (HTML with inline <style> and " +
+      "<script>) that runs in a sandboxed frame in the thread. Use it when a " +
+      "concept is easier to understand by seeing and playing with it than by " +
+      "reading -- how gravity bends orbits, the water cycle, a sorting " +
+      "algorithm, compound interest, how a lens focuses light -- and give a " +
+      "short written explanation alongside it. For 3D, import Three.js as an " +
+      "ES module: `<script type=\"module\">import * as THREE from \"three\"; " +
+      "import { OrbitControls } from \"three/addons/controls/OrbitControls.js\";` " +
+      "(CSS2DRenderer and CSS2DObject from \"three/addons/renderers/CSS2DRenderer.js\" " +
+      "are there too, for labels). For 2D use <canvas> or inline SVG. No other " +
+      "libraries are available and the frame has no network access to rely on, " +
+      "so write everything inline. Make it interactive: sliders, buttons, " +
+      "drag to rotate, play/pause, and label what is on screen. Size to the " +
+      "frame: use width 100% and window.innerWidth/innerHeight for canvases " +
+      "(and handle the resize event, the person can make it full screen); do " +
+      "not use 100vh plus margins. CSS variables --bg, --surface, --text, " +
+      "--muted, --accent, --accent-2, --border and --font match the app's " +
+      "theme; the page is dark. Buttons, sliders and the body are already " +
+      "styled to match. It is also saved as an artifact.",
+    parameters: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "A short title shown above the widget, e.g. \"Orbits and gravity\"." },
+        html: {
+          type: "string",
+          description:
+            "The widget: the contents of <body> (or a whole HTML document), " +
+            "with its CSS and JavaScript inline.",
+        },
+        height: {
+          type: "number",
+          description: `Height of the frame in CSS pixels, ${WIDGET_MIN_HEIGHT}-${WIDGET_MAX_HEIGHT}. Default ${WIDGET_DEFAULT_HEIGHT}; the frame also grows to fit content taller than this.`,
+        },
+      },
+      required: ["title", "html"],
+    },
+  },
+
   // ---------------------------------------------------------- artifacts --
   {
     name: "artifact_save",
@@ -1072,6 +1119,8 @@ export function renderCall(spec: ToolSpec, args: Record<string, any>): string {
       return `generate image: "${args.prompt}"`;
     case "artifact_save":
       return `save artifact ${args.name}`;
+    case "widget_show":
+      return `show widget "${args.title}"`;
     case "artifact_read":
       return `read artifact ${args.id}`;
     default: {
@@ -1092,6 +1141,8 @@ export interface ToolContext {
   putBlob: (data: Buffer, mime: string) => string;
   /** Show a picture in the conversation. */
   showImage: (blob: string, alt: string, caption: string | null, size?: { w: number; h: number }) => void;
+  /** Show an interactive widget in the conversation. */
+  showWidget: (widget: { title: string; html: string; height: number }) => void;
   /** Show a picture of the browser or desktop in the card already showing
       that screen, rather than as a card of its own beside it. */
   showScreen: (source: "browser" | "desktop", blob: string, size?: { w: number; h: number }) => void;
@@ -2023,6 +2074,46 @@ async function runToolUnredacted(
           : { ok: false, summary: result.error ?? "The scroll failed." };
       }
 
+      // -------------------------------------------------------- widgets --
+      case "widget_show": {
+        const html = String(args.html ?? "");
+        if (!html.trim()) return { ok: false, summary: "The widget has no HTML." };
+        if (html.length > MAX_WIDGET_CHARS) {
+          return {
+            ok: false,
+            summary: `The widget is ${html.length.toLocaleString("en-US")} characters; the limit is ${
+              MAX_WIDGET_CHARS.toLocaleString("en-US")}. Generate repetitive geometry or data in script instead of writing it out.`,
+          };
+        }
+        const title = String(args.title ?? "").trim().slice(0, 120) || "Explainer";
+        const asked = Number(args.height);
+        const height = Number.isFinite(asked) && asked > 0
+          ? Math.round(Math.min(WIDGET_MAX_HEIGHT, Math.max(WIDGET_MIN_HEIGHT, asked)))
+          : WIDGET_DEFAULT_HEIGHT;
+        ctx.showWidget({ title, html, height });
+
+        // A copy that opens on its own, Three.js and all, from the Artifacts page.
+        let saved = "";
+        try {
+          const art = saveArtifact({
+            origin: "agent", name: `${slug(title)}.html`,
+            data: Buffer.from(widgetDocument({ title, html }), "utf8"),
+            mime: "text/html", session: ctx.session, note: `Interactive widget: ${title}`,
+          });
+          saved = ` Saved as artifact ${art.id}.`;
+        } catch {
+          // The widget is still in the thread; losing the copy is not a failure.
+        }
+        return {
+          ok: true,
+          summary:
+            `The widget "${title}" is now shown in the conversation, running in the person's browser.${saved} ` +
+            "You cannot see it yourself. If it throws an error, the card says so to the person; " +
+            "when they report a problem, fix it and call widget_show again with the whole corrected widget.",
+          preview: title,
+        };
+      }
+
       // ------------------------------------------------------ artifacts --
       case "artifact_save": {
         const name = String(args.name ?? "").trim();
@@ -2323,6 +2414,13 @@ export async function capabilityBriefing(): Promise<string> {
       "artifact_save. Files the person uploaded (documents, photos...) are " +
       "there for you to read; save the deliverables you make with " +
       "artifact_save so they can be found and downloaded later.",
+  );
+  lines.push(
+    "- Explainer widgets: always available. Tool: widget_show. When someone " +
+      "asks how something works -- a physical process, a mechanism, an " +
+      "algorithm, a piece of maths -- and seeing it move would help, build a " +
+      "small interactive widget (2D canvas/SVG, or 3D with Three.js) and explain " +
+      "in text alongside it. Not for plain facts, lists or anything a sentence answers.",
   );
   lines.push(
     "- Asking the person: always available. Tool: ask_user. When you are " +
