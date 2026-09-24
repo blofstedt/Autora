@@ -77,7 +77,7 @@ export function SecretStore() {
   }, []);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
   // Auto-dismiss success message
@@ -202,7 +202,7 @@ export function SecretStore() {
   };
 
   // Copy secret value to clipboard
-  const handleCopy = async (name: string, maskedVal: string) => {
+  const handleCopy = async (name: string) => {
     let textToCopy = revealed[name];
     if (!textToCopy) {
       try {
@@ -218,10 +218,14 @@ export function SecretStore() {
       } catch {}
     }
 
-    if (textToCopy) {
-      navigator.clipboard.writeText(textToCopy);
-      setCopiedKey(name);
-      setTimeout(() => setCopiedKey(null), 2000);
+    // No clipboard over plain http (an Umbrel on the LAN), and a refused
+    // write rejects: say "copied" only when it was.
+    if (textToCopy && navigator.clipboard) {
+      try {
+        await navigator.clipboard.writeText(textToCopy);
+        setCopiedKey(name);
+        setTimeout(() => setCopiedKey(null), 2000);
+      } catch {}
     }
   };
 
@@ -544,7 +548,7 @@ export function SecretStore() {
                       type="button"
                       className="btn ghost"
                       style={{ padding: "5px 8px", fontSize: "11.5px", display: "inline-flex", alignItems: "center", gap: "4px" }}
-                      onClick={() => handleCopy(s.name, s.masked)}
+                      onClick={() => void handleCopy(s.name)}
                       title="Copy secret value to clipboard"
                     >
                       {isCopied ? <span style={{ color: "var(--live, #34d399)", display: "inline-flex" }}><IconCheck size={13} /></span> : <IconCopy size={13} />}

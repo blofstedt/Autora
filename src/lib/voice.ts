@@ -108,7 +108,7 @@ const words = (text: string): string[] => text.trim().split(/\s+/).filter(Boolea
 
 /** A word with the punctuation an engine sprinkles on a final taken off, so
     that "test" and "test." compare as the same word. */
-const EDGES = /^["'“”‘’(\[]+|[.,!?;:"'“”‘’)\]…]+$/g;
+const EDGES = /^["'“”‘’([]+|[.,!?;:"'“”‘’)\]…]+$/g;
 const bare = (word: string): string => word.toLowerCase().replace(EDGES, "");
 
 /**

@@ -1538,7 +1538,7 @@ export class LiveBrowser {
    */
   click(ref: number): Promise<PageRead> {
     return this.run(async () => {
-      const page = await this.ensure();
+      await this.ensure();
       const target = this.refs.find((r) => r.ref === ref);
       if (!target) throw new Error(`No element [${ref}] on this page. Read it again.`);
 
@@ -2649,7 +2649,7 @@ export function normaliseNative(type: string, text: string): string {
 /** Whether a field holds what was typed, allowing for the reformatting a
     phone, card or date box does to it: "(555) 123-4567" is "5551234567". */
 export function sameValue(held: string, typed: string): boolean {
-  const loose = (s: string) => s.toLowerCase().replace(/[\s\-().\/+,]/g, "");
+  const loose = (s: string) => s.toLowerCase().replace(/[\s\-()./+,]/g, "");
   if (held === typed || loose(held) === loose(typed)) return true;
   const digits = (s: string) => s.replace(/\D/g, "");
   return digits(typed).length >= 4 && digits(held) === digits(typed) && !/[a-z]/i.test(typed);

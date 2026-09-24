@@ -123,7 +123,7 @@ export function App() {
               : rows.length > 0 ? rows[0].id : null);
         })
         .catch(() => undefined);
-    load();
+    void load();
     const timer = window.setInterval(load, SESSION_POLL_MS);
     return () => {
       alive = false;
@@ -183,12 +183,16 @@ export function App() {
     setLiveFields([]);
     setBrowser(null);
     const stream = new SessionStream(sessionId, {
-      onEvents: (fresh) =>
+      onEvents: (fresh) => {
+        // A batch of nothing but repeats: a new array would re-derive the
+        // whole thread for no change.
+        if (fresh.length === 0) return;
         setEvents((prev) => {
           const next = [...prev, ...fresh];
           next.sort((a, b) => a.seq - b.seq);
           return next;
-        }),
+        });
+      },
       onStatus: setStatus,
       onFrame: setLiveFrame,
       onBrowser: (state) => {

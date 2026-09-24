@@ -1114,7 +1114,7 @@ function HostCard() {
   useEffect(() => {
     let alive = true;
     const load = () => fetch("/api/system").then((r) => r.json()).then((d) => alive && setHost(d)).catch(() => undefined);
-    load();
+    void load();
     const timer = window.setInterval(load, 5000);
     return () => { alive = false; window.clearInterval(timer); };
   }, []);

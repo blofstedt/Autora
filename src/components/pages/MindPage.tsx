@@ -51,7 +51,7 @@ export function MindPage({
     if (jump) { setBucket(jump.kind); setQuery(""); }
   }, [jump]);
 
-  const records = data?.records ?? [];
+  const records = useMemo(() => data?.records ?? [], [data]);
   const byId = useMemo(() => new Map(records.map((r) => [r.id, r])), [records]);
   const edges = useMemo(() => (data ? edgesFor(data) : []), [data]);
 

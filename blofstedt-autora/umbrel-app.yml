@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.9.28"
+version: "0.9.29"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -79,16 +79,16 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  New in Settings -> API Keys: Credentials. Save your name, email, phone,
-  address and date of birth, and a username and password for each site, with
-  an optional authenticator key (paste it, or upload a screenshot of the QR
-  code) so Autora can fill the 2FA code itself. Autora is told which details
-  exist but never sees them: it asks for a placeholder and the server types
-  the real value into the page. A saved sign-in is only ever typed into pages
-  on its own site, so a page cannot trick it into giving a password away.
-  Personal details are also available to the terminal for filling PDFs.
-  Everything is stored encrypted, and nothing saved can be read back out,
-  not even from the settings screen.
+  Bug fixes. The live browser card no longer crashes the thread when its
+  first screenshot arrives, since one of its hooks was running on some
+  renders and not others. Copying a secret now works, or quietly does
+  nothing, when Autora is opened over plain http instead of throwing, and it
+  only says "copied" when it was. The app no longer reloads itself on your
+  very first visit, and an error page served while the container restarts
+  is no longer saved as the offline copy of the app. Stray websocket
+  connections are closed instead of held open, and the knowledge graph fits
+  itself to the window's current size. Behind the scenes the code is now
+  checked by ESLint on every build.
 
 dependencies: []
 path: ""

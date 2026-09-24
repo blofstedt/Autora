@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 type Line = { id: number; ts: number; level: "debug" | "info" | "warn" | "error"; component: string; message: string; session?: string };
 type Level = "" | Line["level"];
@@ -29,7 +29,7 @@ export function LogsPage() {
   const box = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
 
-  const query = (after?: number) => {
+  const query = useCallback((after?: number) => {
     const p = new URLSearchParams({ limit: "1000" });
     if (level) p.set("level", level);
     else if (!debug) p.set("level", "info");
@@ -37,7 +37,7 @@ export function LogsPage() {
     if (q.trim()) p.set("q", q.trim());
     if (after !== undefined) p.set("after", String(after));
     return `/api/logs?${p}`;
-  };
+  }, [level, component, q, debug]);
 
   // A new filter is a fresh read; live tail then asks only for what is newer.
   useEffect(() => {
@@ -48,7 +48,7 @@ export function LogsPage() {
       atBottom.current = true;
     }).catch(() => undefined);
     return () => { alive = false; };
-  }, [level, component, q, debug]);
+  }, [query]);
 
   useEffect(() => {
     if (!live) return;
@@ -60,7 +60,7 @@ export function LogsPage() {
       }).catch(() => undefined);
     }, 2000);
     return () => window.clearInterval(timer);
-  }, [live, level, component, q, debug]);
+  }, [live, query]);
 
   useLayoutEffect(() => {
     const el = box.current;

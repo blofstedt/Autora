@@ -56,8 +56,13 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE).then((cache) => cache.put("/", copy)).catch(() => {});
+          // Only a good shell replaces the last good copy: the 502 a proxy
+          // serves while the container restarts is not something to fall
+          // back to.
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE).then((cache) => cache.put("/", copy)).catch(() => {});
+          }
           return response;
         })
         .catch(() => caches.match("/").then((hit) => hit || Response.error())),

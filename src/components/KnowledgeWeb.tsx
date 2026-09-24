@@ -120,7 +120,8 @@ export function KnowledgeWeb({
               aria-pressed={kinds.has(kind)}
               onClick={() => setKinds((prev) => {
                 const next = new Set(prev);
-                next.has(kind) ? next.delete(kind) : next.add(kind);
+                if (next.has(kind)) next.delete(kind);
+                else next.add(kind);
                 return next;
               })}
             >
@@ -365,6 +366,24 @@ function Graph({
     });
   }, [ids, data.records]);
 
+  const fit = useCallback(() => {
+    const nodes = nodesRef.current;
+    if (!nodes.length) return;
+    const pad = 90;
+    const xs = nodes.map((n) => n.x), ys = nodes.map((n) => n.y);
+    const w = Math.max(...xs) - Math.min(...xs) || 1;
+    const h = Math.max(...ys) - Math.min(...ys) || 1;
+    const cx = (Math.max(...xs) + Math.min(...xs)) / 2;
+    const cy = (Math.max(...ys) + Math.min(...ys)) / 2;
+    const k = Math.min((size.w - pad * 2) / w, (size.h - pad * 2) / h, 1.6);
+    viewRef.current = { k, x: -cx * k, y: -cy * k };
+    tick((t) => t + 1);
+  }, [size.w, size.h]);
+  // The simulation runs for its graph, not for every resize, so it reaches the
+  // current fit through a ref rather than restarting when the size changes.
+  const fitRef = useRef(fit);
+  fitRef.current = fit;
+
   useEffect(() => {
     let raf = 0;
     let alpha = 1;
@@ -413,7 +432,7 @@ function Graph({
         // Settled: frame the whole graph once, so opening the view shows all of
         // it rather than whatever happens to be near the origin.
         fittedRef.current = ids;
-        fit();
+        fitRef.current();
       }
     };
     raf = requestAnimationFrame(step);
@@ -430,19 +449,6 @@ function Graph({
   };
 
   /** Scale and centre so every node is on screen with room for its label. */
-  const fit = useCallback(() => {
-    const nodes = nodesRef.current;
-    if (!nodes.length) return;
-    const pad = 90;
-    const xs = nodes.map((n) => n.x), ys = nodes.map((n) => n.y);
-    const w = Math.max(...xs) - Math.min(...xs) || 1;
-    const h = Math.max(...ys) - Math.min(...ys) || 1;
-    const cx = (Math.max(...xs) + Math.min(...xs)) / 2;
-    const cy = (Math.max(...ys) + Math.min(...ys)) / 2;
-    const k = Math.min((size.w - pad * 2) / w, (size.h - pad * 2) / h, 1.6);
-    viewRef.current = { k, x: -cx * k, y: -cy * k };
-    tick((t) => t + 1);
-  }, [size.w, size.h]);
 
   const nodes = nodesRef.current;
   const index = new Map(nodes.map((n) => [n.id, n]));

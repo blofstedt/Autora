@@ -206,7 +206,7 @@ test("a web page's HTML becomes the article's text, links kept", () => {
   assert.match(text, /^# Hello & welcome/);
   assert.match(text, /link to docs \(https:\/\/site.test\/docs\)/);
   assert.match(text, /- One\n- Two/);
-  assert.match(text, /  indented\n    code/);
+  assert.match(text, / {2}indented\n {4}code/);
   for (const gone of ["tracking", "color:red", "About", "Copyright"]) assert.ok(!text.includes(gone), gone);
 });
 

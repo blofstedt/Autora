@@ -50,7 +50,12 @@ export class SessionStream {
     this.ws = ws;
 
     ws.onmessage = (raw) => {
-      const msg = JSON.parse(raw.data);
+      let msg;
+      try {
+        msg = JSON.parse(raw.data);
+      } catch {
+        return;
+      }
       switch (msg.type) {
         case "batch":
           this.handlers.onEvents(this.accept(msg.events));

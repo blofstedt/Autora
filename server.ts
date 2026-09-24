@@ -1860,8 +1860,10 @@ async function startServer() {
     if (!session) {
       return res.status(404).json({ error: "Session not found" });
     }
-    const fromSeq = parseInt((req.query.from_seq as string) || "0", 10);
-    const limit = parseInt((req.query.limit as string) || "5000", 10);
+    // A malformed number reads as the default, not as NaN, which matches
+    // nothing and returned an empty thread.
+    const fromSeq = parseInt((req.query.from_seq as string) || "0", 10) || 0;
+    const limit = parseInt((req.query.limit as string) || "5000", 10) || 5000;
     const slice = session.events.filter((e) => e.seq >= fromSeq).slice(0, limit);
     res.json(slice);
   });
@@ -2053,7 +2055,7 @@ async function startServer() {
     res.json({ ok: true, queued: false });
 
     // 3. Process turn asynchronously
-    (async () => {
+    void (async () => {
       try {
         // Emit thinking event
         emitEvent(session, "turn.agent.thinking", "agent", {
@@ -3671,7 +3673,10 @@ async function startServer() {
         return;
       }
 
-      if (!sessionId) return;
+      if (!sessionId) {
+        ws.close();
+        return;
+      }
 
       const session = sessions.get(sessionId);
       if (!session) {
@@ -3687,7 +3692,7 @@ async function startServer() {
       sessionSockets.get(sessionId)!.add(ws);
 
       // Replay backlog
-      const fromSeq = parseInt(url.searchParams.get("from_seq") || "0", 10);
+      const fromSeq = parseInt(url.searchParams.get("from_seq") || "0", 10) || 0;
       const backlog = session.events.filter((e) => e.seq >= fromSeq);
       if (backlog.length > 0) {
         ws.send(JSON.stringify({ type: "batch", events: backlog }));
@@ -3760,7 +3765,12 @@ async function startServer() {
         // somebody's screen.
         releaseDesktopIfIdle(sessionId);
       });
+      return;
     }
+
+    // Nothing else is served over a socket; left open, it would sit there
+    // unread for as long as the other end cared to keep it.
+    ws.close();
   });
 
   // 13. Vite Integration (Development middleware / Production static serving)
