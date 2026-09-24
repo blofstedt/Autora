@@ -1024,6 +1024,7 @@ async function launchShared(): Promise<BrowserContext> {
       throw new Error(`The browser would not start: ${firstLine(err)}`);
     }
   }
+  await restoreCookies(context);
   await context.addInitScript(STEALTH_SCRIPT);
   await context.addInitScript(CURSOR_SCRIPT);
   context.on("close", () => {
@@ -1065,7 +1066,72 @@ async function releaseContext(context: BrowserContext) {
   // The last tab is gone: closing the context is what stops Chrome and
   // flushes the profile to disk.
   shared = null;
+  await saveCookies(context);
   await context.close().catch(() => undefined);
+}
+
+/**
+ * Every sign-in the browser holds, kept beside the profile.
+ *
+ * The profile keeps cookies with an expiry date, but Chrome drops the ones
+ * without -- "session" cookies, which is how a good many sites (and parts of
+ * Google, LinkedIn and Microsoft sign-in) hold you signed in -- every time it
+ * stops, and it stops whenever the last conversation lets go of it. It also
+ * writes its cookie store to disk only now and then, so a container that is
+ * stopped rather than shut down loses the last sign-in. Both meant being asked
+ * to sign in again to something you had signed in to. So every cookie is
+ * saved here after each page load and when the browser closes, and on the
+ * next start any the profile has lost are put back. Only missing ones: a
+ * cookie the profile still has is newer than this copy.
+ */
+function cookieFile(): string {
+  return path.join(path.dirname(stateFilePath()), "browser-cookies.json");
+}
+
+async function saveCookies(context: BrowserContext) {
+  try {
+    const cookies = await context.cookies();
+    const file = cookieFile();
+    const tmp = `${file}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(cookies), { mode: 0o600 });
+    fs.renameSync(tmp, file);
+  } catch {
+    // A browser mid-close, or a full disk: the profile still has most of it.
+  }
+}
+
+async function restoreCookies(context: BrowserContext) {
+  let saved: BrowserCookie[];
+  try {
+    const raw = JSON.parse(fs.readFileSync(cookieFile(), "utf8"));
+    saved = Array.isArray(raw) ? raw : [];
+  } catch {
+    return;
+  }
+  const now = Date.now() / 1000;
+  const key = (c: BrowserCookie) => `${c.name}\u0000${c.domain}\u0000${c.path}`;
+  const have = new Set(((await context.cookies().catch(() => [])) as BrowserCookie[]).map(key));
+  const missing = saved.filter((c) =>
+    c && typeof c.name === "string" && typeof c.domain === "string" &&
+    (c.expires === -1 || c.expires > now) && !have.has(key(c)));
+  if (missing.length === 0) return;
+  try {
+    await context.addCookies(missing);
+  } catch {
+    for (const cookie of missing) await context.addCookies([cookie]).catch(() => undefined);
+  }
+}
+
+let cookieSave: NodeJS.Timeout | null = null;
+
+/** Save the sign-ins a moment after a page loads: a sign-in ends in a page
+    load, and a moment later its cookies are all set. */
+function cookiesChanged() {
+  if (cookieSave) return;
+  cookieSave = setTimeout(() => {
+    cookieSave = null;
+    if (shared) void saveCookies(shared.context);
+  }, 3000);
 }
 
 /** One page, one screencast, one session's worth of browsing. */
@@ -1159,14 +1225,37 @@ export class LiveBrowser {
       throw err;
     }
     claimed.add(this.page);
-    const page = this.page;
+    this.wire(this.page);
+    await this.startStream();
+    return this.page;
+  }
 
-    // A link that opens a new tab is still the same browsing: follow it in
-    // this tab, which is the one being watched, rather than losing it to a
-    // tab nobody can see.
+  /** Windows a sign-in opened, the newest last, over the tab that opened
+      them: when one closes the page under it is the one watched again. */
+  private openers: Page[] = [];
+  private wired = new WeakSet<object>();
+
+  /** The listeners every page this session shows needs, once per page. */
+  private wire(page: Page) {
+    if (this.wired.has(page)) return;
+    this.wired.add(page);
+
     page.on("popup", (popup: Page) => {
+      claimed.add(popup);
       this.following = (async () => {
-        claimed.add(popup);
+        /* A window the page keeps a hold of -- "Sign in with Google", a
+           LinkedIn or Microsoft sign-in, a bank's 2FA -- has to stay open:
+           it reports back to the page that opened it and then closes
+           itself, and loading its address here instead leaves the sign-in
+           with nobody to report to. So it is shown in place of this tab
+           until it closes. A plain link to a new tab has no hold on this
+           page and is followed here, the tab being watched. */
+        const opener = await popup.opener().catch(() => null);
+        if (opener && this.page === page && !popup.isClosed()) {
+          await this.show(popup, page);
+          await popup.waitForLoadState("domcontentloaded", { timeout: 8000 }).catch(() => undefined);
+          return;
+        }
         await popup.waitForLoadState("commit").catch(() => undefined);
         const next = popup.url();
         await popup.close().catch(() => undefined);
@@ -1176,13 +1265,22 @@ export class LiveBrowser {
       })().finally(() => { this.following = null; });
     });
 
-    this.page.on("framenavigated", (frame: any) => {
-      if (frame !== this.page?.mainFrame()) return;
+    page.on("framenavigated", (frame: any) => {
+      if (this.page !== page || frame !== page.mainFrame()) return;
       this.currentUrl = frame.url();
       void this.announceNav();
     });
-    this.page.on("close", () => {
-      if (this.page !== page) return;
+    page.on("close", () => {
+      const waiting = this.openers.indexOf(page);
+      if (waiting >= 0) this.openers.splice(waiting, 1);
+      if (this.page !== page || this.closing) return;
+      // A sign-in window that closed itself, done: back to the page it
+      // opened from, which now has the sign-in.
+      const back = this.openers.pop();
+      if (back && !back.isClosed()) {
+        this.following = this.show(back, null).finally(() => { this.following = null; });
+        return;
+      }
       this.page = null;
       this.streaming = false;
       // The tab went on its own (Chrome crashed, or the page closed itself):
@@ -1191,9 +1289,31 @@ export class LiveBrowser {
       this.context = null;
       if (held) void releaseContext(held);
     });
+  }
 
-    await this.startStream();
-    return this.page;
+  /**
+   * Make `next` the page this session shows and acts on: the screencast
+   * moves to it, its elements are the ones numbered, and the person watching
+   * sees it and can type into it. `from`, when given, is kept underneath to
+   * come back to.
+   */
+  private async show(next: Page, from: Page | null) {
+    if (from) this.openers.push(from);
+    // Switched at once, so whatever reads the page next reads this one.
+    const cdp = this.cdp;
+    this.cdp = null;
+    this.streaming = false;
+    this.page = next;
+    this.refs = [];
+    this.wire(next);
+    await cdp?.send("Page.stopScreencast").catch(() => undefined);
+    await cdp?.detach().catch(() => undefined);
+    await next.setViewportSize(VIEWPORT).catch(() => undefined);
+    await next.bringToFront().catch(() => undefined);
+    this.currentUrl = next.url();
+    this.hooks.onAction(from ? "a sign-in window opened" : "the window closed; back to the page", null, this.currentUrl ?? "");
+    await this.startStream().catch(() => undefined);
+    await this.announceNav();
   }
 
   /** The last nav that was announced, so the several `framenavigated` events
@@ -1208,6 +1328,7 @@ export class LiveBrowser {
     const signature = `${url}\u0000${title}`;
     if (signature === this.announced) return;
     this.announced = signature;
+    cookiesChanged();
     this.hooks.onNav(url, title);
   }
 
@@ -1221,15 +1342,16 @@ export class LiveBrowser {
    */
   private async startStream() {
     if (!this.page || !this.context || this.streaming) return;
-    this.cdp = await this.context.newCDPSession(this.page);
+    const cdp = await this.context.newCDPSession(this.page);
+    this.cdp = cdp;
     this.cdp.on("Page.screencastFrame", (frame: any) => {
-      this.cdp
-        ?.send("Page.screencastFrameAck", { sessionId: frame.sessionId })
-        .catch(() => undefined);
-      if (this.hooks.watchers() === 0) return;
+      // Acknowledged on the session it came from: after a switch to a
+      // sign-in window, a late frame of the old page is not the new one's.
+      cdp.send("Page.screencastFrameAck", { sessionId: frame.sessionId }).catch(() => undefined);
+      if (this.hooks.watchers() === 0 || this.cdp !== cdp) return;
       this.forward(frame.data);
     });
-    await this.cdp.send("Page.startScreencast", {
+    await cdp.send("Page.startScreencast", {
       format: "jpeg",
       quality: LIVE_QUALITY,
       maxWidth: LIVE_WIDTH,
@@ -1306,8 +1428,11 @@ export class LiveBrowser {
     this.fields = [];
     if (this.typed.timer) clearTimeout(this.typed.timer);
     this.typed = { chars: 0, keys: [], timer: null };
+    const openers = this.openers;
+    this.openers = [];
     await cdp?.detach().catch(() => undefined);
     await page?.close().catch(() => undefined);
+    for (const under of openers) await under.close().catch(() => undefined);
     if (context) await releaseContext(context);
     this.closing = false;
   }
@@ -1749,6 +1874,7 @@ export class LiveBrowser {
       if (!context) throw new Error("The browser is not running.");
       try {
         await context.addCookies(cookies);
+        await saveCookies(context);
         return { added: cookies.length, refused: 0 };
       } catch {
         let added = 0;
@@ -1760,6 +1886,7 @@ export class LiveBrowser {
             // Malformed for Chrome: the rest still go in.
           }
         }
+        await saveCookies(context);
         return { added, refused: cookies.length - added };
       }
     });
@@ -2246,9 +2373,21 @@ export class LiveBrowser {
 
   /** The scan, folded into the shape the model is given. */
   private async read(): Promise<PageRead> {
-    const page = this.page;
+    let page = this.page;
     if (!page) throw new Error("No page is open.");
-    const scanned = await page.evaluate(SCAN_SCRIPT);
+    let scanned;
+    try {
+      scanned = await page.evaluate(SCAN_SCRIPT);
+    } catch (err) {
+      // A sign-in window that closed itself as it was being read: the page
+      // under it is the one to read now.
+      if (!page.isClosed()) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      if (this.following) await this.following.catch(() => undefined);
+      if (!this.page || this.page === page) throw err;
+      page = this.page;
+      scanned = await page.evaluate(SCAN_SCRIPT);
+    }
     this.refs = scanned.refs;
     this.currentUrl = scanned.url;
     this.currentTitle = scanned.title;

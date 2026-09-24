@@ -34,6 +34,7 @@ import { mergeTools, save, state, allSecrets, secretFor, redactSecrets } from ".
 import { htmlToText, textParts } from "./pages";
 import { describeCaptchas, probeBrowser, VIEWPORT, type LiveBrowser, type PageRead, type UploadFile } from "./browser";
 import { parseCookieExport, sitesOf } from "./cookies";
+import { recordSignIn, signInBriefing } from "./signins";
 import { relayAction, relayConnected, relayStatus } from "./desktop";
 import { CONTEXT_CONFIG, readVault } from "./context";
 import {
@@ -1599,6 +1600,7 @@ export async function runTool(
         }
         const { added, refused } = await ctx.browser().importCookies(parsed.cookies);
         const sites = sitesOf(parsed.cookies);
+        if (added > 0) for (const site of sites) recordSignIn(site, "import");
         const kept = Boolean(args.keep_file);
         if (!kept && added > 0) deleteArtifact(id);
         const extra = [
@@ -1691,6 +1693,11 @@ export async function runTool(
           };
         }
         const page = await live.snapshot();
+        /* What the person did in the page is most often a sign-in, and it is
+           kept: noted here so no later conversation asks for it again. */
+        if (answer.who !== "auto" && !watch && /sign|log ?in|auth|2fa|mfa|verif|code|password|account|sso|oauth/i.test(reason)) {
+          recordSignIn(page.url, "handoff");
+        }
         if (answer.who === "auto") {
           return {
             ok: true,
@@ -2031,7 +2038,9 @@ const BROWSING_GUIDE = [
     "values) before the next. When a click seems to do nothing, look for an error or a dialog " +
     "before trying again, and try a different way rather than the same click.",
   "  - Sign-ins: fill the fields yourself when you have the details; hand the page to the person " +
-    "with browser_handoff for passwords you do not have, 2FA codes and CAPTCHA pictures. When the " +
+    "with browser_handoff for passwords you do not have, 2FA codes, app approvals and CAPTCHA " +
+    "pictures. A sign-in that opens its own window (Sign in with Google, LinkedIn, Microsoft) is " +
+    "shown in that window until it closes itself, then you are back on the page that opened it. When the " +
     "result says SIGN-IN REFUSED, the site is refusing this browser: stop, and follow what it says.",
 ].join("\n");
 
@@ -2061,7 +2070,7 @@ export async function capabilityBriefing(): Promise<string> {
     }
   }
 
-  if (groups.some((g) => g.group === "browser" && g.available)) lines.push(BROWSING_GUIDE);
+  if (groups.some((g) => g.group === "browser" && g.available)) lines.push(BROWSING_GUIDE, signInBriefing());
 
   const mcp = mcpTools();
   if (mcp.length > 0) {

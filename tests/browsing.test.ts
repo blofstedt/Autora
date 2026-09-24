@@ -229,8 +229,75 @@ async function main() {
     });
   } finally {
     await live.close();
+  }
+
+  console.log("sign-ins");
+  const http = await import("node:http");
+  const server = http.createServer((req, res) => {
+    res.setHeader("Content-Type", "text/html");
+    if (req.url === "/login") {
+      // A session cookie, no expiry: what Chrome forgets when it stops.
+      res.setHeader("Set-Cookie", "sid=kept; Path=/");
+      res.end(`<title>Sign in</title><button onclick="opener.postMessage('signed-in', '*'); window.close()">Approve</button>`);
+      return;
+    }
+    if (req.url === "/me") {
+      res.end(`<title>Me</title><p>cookie: ${req.headers.cookie ?? "none"}</p>`);
+      return;
+    }
+    res.end(`<title>App</title><button onclick="window.open('/login', 'auth', 'width=400,height=500')">Sign in with Example</button>
+      <p id="state">signed out</p>
+      <script>addEventListener("message", (e) => { document.getElementById("state").textContent = "popup said " + e.data; });</script>`);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const origin = `http://127.0.0.1:${(server.address() as any).port}`;
+  const first = new LiveBrowser({
+    onFrame: () => {}, onKeyframe: () => {}, onNav: () => {}, onAction: () => {},
+    onFields: () => {}, watchers: () => 0,
+  });
+  try {
+    await test("a sign-in window is shown, reports back to its page and hands it back", async () => {
+      let read = await first.goto(origin + "/");
+      const button = Number(/\[(\d+)\] button "Sign in with Example"/.exec(read.outline)![1]);
+      read = await first.click(button);
+      assert.match(read.url, /\/login$/);
+      const approve = Number(/\[(\d+)\] button "Approve"/.exec(read.outline)![1]);
+      await first.click(approve);
+      for (let i = 0; i < 20 && !/popup said/.test(read.text); i++) {
+        await new Promise((r) => setTimeout(r, 150));
+        read = await first.snapshot();
+      }
+      assert.match(read.url, new RegExp(`${origin}/$`));
+      assert.match(read.text, /popup said signed-in/);
+    });
+  } finally {
+    await first.close();
+  }
+  const second = new LiveBrowser({
+    onFrame: () => {}, onKeyframe: () => {}, onNav: () => {}, onAction: () => {},
+    onFields: () => {}, watchers: () => 0,
+  });
+  try {
+    await test("a session sign-in survives the browser stopping", async () => {
+      const read = await second.goto(origin + "/me");
+      assert.match(read.text, /cookie: sid=kept/);
+    });
+  } finally {
+    await second.close();
+    server.close();
     fs.rmSync(home, { recursive: true, force: true });
   }
+
+  const { siteOf, recordSignIn, signInBriefing } = await import("../server/signins");
+  await test("sign-ins are noted by site and put in the briefing", () => {
+    assert.equal(siteOf("https://accounts.google.com/o/oauth2"), "google.com");
+    assert.equal(siteOf("www.bbc.co.uk"), "bbc.co.uk");
+    assert.equal(siteOf("file:///tmp/x.html"), null);
+    fs.mkdirSync(home, { recursive: true });
+    recordSignIn("https://www.linkedin.com/feed/", "handoff", Date.UTC(2026, 8, 24));
+    assert.match(signInBriefing(), /Signed in before: linkedin\.com \(2026-09-24\)/);
+    fs.rmSync(home, { recursive: true, force: true });
+  });
 
   console.log(`\n${passed} passed`);
 }

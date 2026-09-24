@@ -74,12 +74,17 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The agent can now attach files from your Artifacts to a web page's upload
-  field -- a CV on a job application, a photo, a document a form asks for --
-  whether the page shows a plain file field or an "Upload CV" button. Upload
-  the file on the Artifacts page and ask the agent to use it. Also fixed: the
-  agent no longer highlights the whole page when a click meant for a text box
-  missed it; clearing a field now selects only what that field holds.
+  Sign-ins that open their own window -- Sign in with Google, LinkedIn,
+  Microsoft, a 2FA approval -- now work: the window is shown on the live
+  screen until it finishes and closes itself, then you are back on the page
+  that opened it, signed in. Autora also remembers every sign-in: the browser
+  no longer forgets sites that keep you signed in only until it closes, the
+  agent is told which sites it has signed in to, and it checks whether a site
+  is still signed in before asking you again. The agent can now attach files
+  from your Artifacts to a web page's upload field -- a CV on a job
+  application, a photo, a document a form asks for -- whether the page shows
+  a plain file field or an "Upload CV" button. Also fixed: the agent no
+  longer highlights the whole page when a click meant for a text box missed.
 
 dependencies: []
 path: ""
