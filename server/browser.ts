@@ -1027,6 +1027,24 @@ async function launchShared(): Promise<BrowserContext> {
   await restoreCookies(context);
   await context.addInitScript(STEALTH_SCRIPT);
   await context.addInitScript(CURSOR_SCRIPT);
+  /* A passkey request -- Google's "Use your passkey", a site's "Sign in with
+     a passkey" -- opens Chrome's own dialog, which a headless browser draws
+     nowhere. It still holds the tab: every click on the page is dropped until
+     it closes, so "Try another way" did nothing and the person had no dialog
+     to close. With WebAuthn handed to the DevTools protocol there is no
+     dialog; the request goes unanswered and the page stays clickable, so its
+     other ways in (a code, a prompt on the phone, the password) can be
+     chosen. A headed browser shows the real dialog, so it is left alone. */
+  if (process.env.AUTORA_BROWSER_HEADED !== "1") {
+    const noPasskeyDialog = (page: Page) => {
+      void context
+        .newCDPSession(page)
+        .then((cdp: any) => cdp.send("WebAuthn.enable", { enableUI: false }))
+        .catch(() => undefined);
+    };
+    context.pages().forEach(noPasskeyDialog);
+    context.on("page", noPasskeyDialog);
+  }
   context.on("close", () => {
     if (shared?.context === context) shared = null;
   });

@@ -88,24 +88,19 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Re-release of 0.9.29 for installs where that update failed with "manifest
-  unknown"; updates are now offered only once their image is ready.
+  "Try another way" on Google's sign-in works again. A passkey prompt opened
+  an invisible dialog in Autora's browser that swallowed every tap on the
+  page; now the page stays usable, so you can pick a code, a prompt on your
+  phone or your password instead.
 
 
-  Autora now learns and works on its own. Scheduled tasks actually run (they
-  never did before), and a task can instead watch a web page, a file or a
-  command's output and run when it changes, with the change attached; each
-  task keeps a history of its runs, and you get a notice when one finishes.
-  Memory is recalled by what you ask rather than by fixed keywords, near-copies
-  are merged, and the agent can correct or retire a memory. After a turn that
-  did real work it writes down what it learned, shown in the chat with Keep and
-  Discard and in a review list on the Mind page; things that keep working are
-  confirmed on their own. It can save a script it needs again as a tool of its
-  own, and it is told which tools have been failing lately (see System, Status).
-  The demo memories and demo tasks from the first install are removed if you
-  never changed them. Also: lint checks on every build and several bug fixes
-  (a crash in the live browser card, copying secrets over http, stray
-  connections, the offline copy of the app).
+  A saved sign-in now works across every site of the same account: one saved
+  for google.ca also signs in on accounts.google.com, gmail.com and
+  youtube.com (likewise Microsoft, Apple, Amazon and a few others). Any other
+  sign-in still stays on its own site.
+
+
+  Credentials has its own tab in Config, beside Model & tools and API Keys.
 
 dependencies: []
 path: ""

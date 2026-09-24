@@ -124,8 +124,9 @@ function price(model: ModelOption): string {
 /** Which part of the settings a page shows. The full panel is all of them. */
 export type SettingsSection = "config" | "keys" | "analytics" | "system";
 
-/** Config's two halves: the model, tools and instructions, and the keys. */
-export type ConfigTab = "general" | "keys";
+/** Config's three parts: the model, tools and instructions; the API keys and
+    secrets; and the person's own details and sign-ins. */
+export type ConfigTab = "general" | "keys" | "credentials";
 
 export function Settings({
   onClose, section, embedded = false, initialTab = "general",
@@ -153,6 +154,9 @@ export function Settings({
     section === "config"
       ? (s === "config" && tab === "general") || (s === "keys" && tab === "keys")
       : !section || section === s;
+  /* Credentials are the person's own details and sign-ins, not keys for a
+     service, so on Config they are a tab of their own. */
+  const showsCredentials = section === "config" ? tab === "credentials" : shows("keys");
   const title = section === "config" ? "Config"
     : section === "keys" ? "API Keys"
       : section === "analytics" ? "Analytics"
@@ -303,7 +307,8 @@ export function Settings({
     prompt !== (state.system_prompt ?? "") ||
     budget.trim() !== savedBudget;
 
-  const saveable = section !== "system";
+  // Credentials save as they are entered; the Save button is for the rest.
+  const saveable = section !== "system" && !(section === "config" && tab === "credentials");
 
   return (
     <div className={`sched ${embedded ? "is-embedded" : ""}`}>
@@ -318,6 +323,8 @@ export function Settings({
                     onClick={() => setTab("general")}>Model &amp; tools</button>
             <button role="tab" aria-selected={tab === "keys"} className={tab === "keys" ? "on" : ""}
                     onClick={() => setTab("keys")}>API Keys</button>
+            <button role="tab" aria-selected={tab === "credentials"} className={tab === "credentials" ? "on" : ""}
+                    onClick={() => setTab("credentials")}>Credentials</button>
           </div>
         )}
         <div className="spacer" />
@@ -461,7 +468,7 @@ export function Settings({
           </section>
         )}
 
-        {shows("keys") && <Credentials />}
+        {showsCredentials && <Credentials />}
 
         {shows("keys") && <SecretStore />}
 

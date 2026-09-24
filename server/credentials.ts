@@ -9,7 +9,8 @@
  * goes to the model's vendor, into the transcript, or into a log.
  *
  * A sign-in is locked to its site: {{cred:github.com:password}} is only typed
- * into a page on github.com (or a subdomain of it). A page that talks the
+ * into a page on github.com (or a subdomain of it), or on another site of the
+ * same account (see ACCOUNT_FAMILIES: Google on gmail.com). A page that talks the
  * agent into "sign in here" cannot collect a password meant for somewhere
  * else. The "code" field is the current six-digit authenticator code, made
  * from the key the person pasted in, the same as an authenticator app would.
@@ -306,8 +307,73 @@ export function hasPlaceholder(text: string): boolean {
   return PLACEHOLDER.test(text);
 }
 
+/**
+ * Sites that are one account under several addresses. A Google sign-in saved
+ * as google.ca is the same account on accounts.google.com, gmail.com and
+ * youtube.com, and Google signs you in on whichever of them it likes -- so
+ * locking it to google.ca alone left it unusable for Gmail.
+ *
+ * `brands` also cover the company's country sites (google.ca, amazon.co.uk,
+ * yahoo.co.jp): the name followed by .com or a country ending, never any
+ * other ending, which anyone could register. Kept to companies known to run
+ * one sign-in across all of them; anything not listed stays on its own site.
+ */
+const ACCOUNT_FAMILIES: { name: string; brands: string[]; sites: string[] }[] = [
+  { name: "Google", brands: ["google"], sites: ["gmail.com", "googlemail.com", "youtube.com", "blogger.com"] },
+  {
+    name: "Microsoft",
+    brands: ["microsoft"],
+    sites: [
+      "live.com", "outlook.com", "hotmail.com", "msn.com", "office.com", "office365.com",
+      "microsoftonline.com", "onedrive.com", "xbox.com", "skype.com", "bing.com", "azure.com",
+    ],
+  },
+  { name: "Apple", brands: ["apple"], sites: ["icloud.com"] },
+  { name: "Amazon", brands: ["amazon"], sites: ["primevideo.com"] },
+  { name: "Meta", brands: [], sites: ["facebook.com", "messenger.com", "fb.com"] },
+  { name: "Yahoo", brands: ["yahoo"], sites: [] },
+  { name: "PayPal", brands: ["paypal"], sites: [] },
+  { name: "eBay", brands: ["ebay"], sites: [] },
+  { name: "Atlassian", brands: [], sites: ["atlassian.com", "atlassian.net", "bitbucket.org", "trello.com"] },
+  { name: "Proton", brands: [], sites: ["proton.me", "protonmail.com", "protonmail.ch"] },
+];
+
+/** "mail.google.co.uk" -> "google.co.uk". The name a company registers. */
+function registrable(host: string): string {
+  const parts = host.split(".").filter(Boolean);
+  const keep = parts.length > 2 && parts[parts.length - 1].length === 2 && parts[parts.length - 2].length <= 3 ? 3 : 2;
+  return parts.slice(-keep).join(".");
+}
+
+/** The account a site belongs to, if it is one that spans several sites. */
+export function accountFamily(site: string) {
+  const domain = registrable(normaliseSite(site));
+  const dot = domain.indexOf(".");
+  if (dot < 0) return null;
+  const label = domain.slice(0, dot);
+  const ending = domain.slice(dot + 1);
+  const national = ending === "com" || /^[a-z]{2}$/.test(ending) || /^(co|com)\.[a-z]{2}$/.test(ending);
+  return ACCOUNT_FAMILIES.find((f) => f.sites.includes(domain) || (national && f.brands.includes(label))) ?? null;
+}
+
+/** Where a family's sign-in works, for the agent and the person. */
+function familyReach(family: NonNullable<ReturnType<typeof accountFamily>>): string {
+  return [...family.brands.map((b) => `${b}.com and ${b}'s country sites`), ...family.sites].join(", ");
+}
+
 function siteMatches(host: string, site: string): boolean {
-  return host === site || host.endsWith(`.${site}`);
+  if (host === site || host.endsWith(`.${site}`)) return true;
+  const family = accountFamily(site);
+  return family !== null && accountFamily(host) === family;
+}
+
+/** The saved sign-in a placeholder names: that site's, or failing that the
+    one saved for another site of the same account. */
+function loginFor(logins: Login[], site: string): Login | undefined {
+  const exact = logins.find((l) => l.site === site);
+  if (exact) return exact;
+  const family = accountFamily(site);
+  return family ? logins.find((l) => accountFamily(l.site) === family) : undefined;
 }
 
 /** Codes handed out lately, so they are blanked in what the agent reads back. */
@@ -343,11 +409,13 @@ export function fillPlaceholders(text: string, pageUrl: string): string {
     }
     const field = parts.pop()!.trim().toLowerCase();
     const site = normaliseSite(parts.join(":"));
-    const login = stored.logins.find((l) => l.site === site);
+    const login = loginFor(stored.logins, site);
     if (!login) throw new Error(`There is no saved sign-in for ${site || inner}.`);
     if (!host || !siteMatches(host, login.site)) {
+      const family = accountFamily(login.site);
+      const where = family ? `${login.site} and the other ${family.name} sites (${familyReach(family)})` : login.site;
       throw new Error(
-        `Refused: the sign-in for ${login.site} is only typed into pages on ${login.site}, and this page is on ${host || "no site"}.`,
+        `Refused: the sign-in for ${login.site} is only typed into pages on ${where}, and this page is on ${host || "no site"}.`,
       );
     }
     if (field === "username") {
@@ -430,7 +498,7 @@ export function credentialsBriefing(): string {
   const stored = load();
   const identity = Object.keys(stored.identity);
   if (identity.length === 0 && stored.logins.length === 0) {
-    return "- Credentials: none saved. The person can add their details and sign-ins in Settings -> Credentials.";
+    return "- Credentials: none saved. The person can add their details and sign-ins in Config -> Credentials.";
   }
   const lines = [
     "- Credentials: the person's saved details. You never see the values; write a placeholder " +
@@ -454,7 +522,15 @@ export function credentialsBriefing(): string {
       l.password && `{{cred:${l.site}:password}}`,
       l.totp && `{{cred:${l.site}:code}} (the current 2FA code)`,
     ].filter(Boolean);
-    if (fields.length) lines.push(`  Sign-in for ${l.site}: ${fields.join(", ")}. Only typed into pages on ${l.site}.`);
+    if (!fields.length) continue;
+    const family = accountFamily(l.site);
+    lines.push(
+      family
+        ? `  Sign-in for ${l.site} (the person's ${family.name} account): ${fields.join(", ")}. The same account on ` +
+            `every ${family.name} site, so use it on ${familyReach(family)} too, e.g. to sign in to ` +
+            `${family.sites[0] ?? `${family.brands[0]}.com`}.`
+        : `  Sign-in for ${l.site}: ${fields.join(", ")}. Only typed into pages on ${l.site}.`,
+    );
   }
   if (stored.logins.length > 0) {
     lines.push(
