@@ -10,9 +10,10 @@ import {
 import {
   baseUrlFor, clearUsage, keyFor, keySource, maskKey, modelFor, recordUsage,
   resolveProvider, save, setKey, state, stateFilePath, type Resolved,
-  listSecrets, setSecret, deleteSecret, getSecret, SECRET_PRESETS, redactSecrets,
+  listSecrets, setSecret, deleteSecret, getSecret, SECRET_PRESETS, redactSecrets as redactStored,
   mergeJev, mergeAppearance, saneMcp, THEMES, FONTS, recordToolFeed, type CostParts,
 } from "./server/state";
+import { deleteLogin, describeCredentials, redactCredentials, saveLogin, setIdentity } from "./server/credentials";
 import { decide, lastDecision, resetHealth, supportFor, type JevOutcome, type JevTask } from "./server/jev/router";
 import type { JevTarget } from "./server/jev/engine";
 import { guardWorthy } from "./server/jev/guard";
@@ -434,6 +435,11 @@ if (sessions.size === 0) {
   const defaultSession = createInitialSession();
   sessions.set(defaultSession.id, defaultSession);
   saveSession(defaultSession);
+}
+
+/** Blank out stored secrets and the person's saved credentials. */
+function redactSecrets(text: string): string {
+  return redactCredentials(redactStored(text), { identity: false });
 }
 
 // Broadcast an event to all connected websockets for a session
@@ -3487,6 +3493,40 @@ async function startServer() {
     deleteSecret(name);
     save();
     res.json({ ok: true, secrets: listSecrets() });
+  });
+
+  /* 10a'. Credentials: the person's details and sign-ins, typed in by the
+     agent through placeholders. Values go in; only masked forms come out.
+     See server/credentials.ts. */
+  app.get("/api/credentials", (_req: Request, res: Response) => {
+    res.json(describeCredentials());
+  });
+
+  app.put("/api/credentials/identity", (req: Request, res: Response) => {
+    setIdentity(req.body && typeof req.body === "object" ? req.body : {});
+    res.json(describeCredentials());
+  });
+
+  app.post("/api/credentials/logins", (req: Request, res: Response) => {
+    const body = req.body ?? {};
+    const text = (v: unknown) => (typeof v === "string" ? v : undefined);
+    try {
+      saveLogin({
+        site: String(body.site ?? ""),
+        previous: text(body.previous),
+        username: text(body.username),
+        password: text(body.password),
+        authenticator: text(body.authenticator),
+      });
+    } catch (err: any) {
+      return res.status(400).json({ error: err?.message ?? String(err) });
+    }
+    res.json(describeCredentials());
+  });
+
+  app.delete("/api/credentials/logins/:site", (req: Request, res: Response) => {
+    deleteLogin(req.params.site);
+    res.json(describeCredentials());
   });
 
   // 10b. Provider models and key checks

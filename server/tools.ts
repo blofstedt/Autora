@@ -30,7 +30,8 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { GoogleGenAI } from "@google/genai";
-import { mergeTools, save, state, allSecrets, secretFor, redactSecrets } from "./state";
+import { mergeTools, save, state, allSecrets, secretFor, redactSecrets as redactStored } from "./state";
+import { credentialsBriefing, fillPlaceholders, hasPlaceholder, identityEnv, redactCredentials } from "./credentials";
 import { htmlToText, textParts } from "./pages";
 import { describeCaptchas, probeBrowser, VIEWPORT, type LiveBrowser, type PageRead, type UploadFile } from "./browser";
 import { parseCookieExport, sitesOf } from "./cookies";
@@ -41,6 +42,11 @@ import {
   artifactPath, deleteArtifact, formatSize, getArtifact, isText, listArtifacts, readArtifact,
   saveArtifact, MAX_ARTIFACT_BYTES,
 } from "./artifacts";
+
+/** Blank out stored secrets and the person's saved credentials. */
+function redactSecrets(text: string): string {
+  return redactCredentials(redactStored(text));
+}
 
 // --------------------------------------------------------------- settings --
 
@@ -220,7 +226,9 @@ const TOOLS: ToolSpec[] = [
       "is for -- its (purpose), type, section and hint -- not only its label: " +
       "\"Name\" marked (first name) takes the first name alone. Read the " +
       "result: a field that reformatted, refused or shows INVALID needs fixing " +
-      "before you submit.",
+      "before you submit. The person's saved details and sign-ins go in as " +
+      "placeholders such as {{cred:first_name}} or {{cred:github.com:password}}; " +
+      "the value is typed in for you and you never see it.",
     parameters: {
       type: "object",
       properties: {
@@ -1138,6 +1146,7 @@ function runCommand(
           env: {
             ...process.env,
             ...secrets,
+            ...identityEnv(),
             PATH: process.env.PATH || "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             TERM: "dumb",
             PAGER: "cat",
@@ -1446,6 +1455,22 @@ export async function runTool(
   args: Record<string, any>,
   ctx: ToolContext,
 ): Promise<ToolOutcome> {
+  /* Whatever the tool read -- a page that now shows the address it was
+     given, a form echoing a username -- goes back to the model with the
+     person's saved details blanked out. */
+  const outcome = await runToolUnredacted(spec, args, ctx);
+  return {
+    ...outcome,
+    summary: redactSecrets(outcome.summary),
+    ...(outcome.preview !== undefined ? { preview: redactSecrets(outcome.preview) } : {}),
+  };
+}
+
+async function runToolUnredacted(
+  spec: ToolSpec,
+  args: Record<string, any>,
+  ctx: ToolContext,
+): Promise<ToolOutcome> {
   try {
     switch (spec.name) {
       // ------------------------------------------------------- terminal --
@@ -1501,6 +1526,14 @@ export async function runTool(
           .filter((v: any) => Number.isFinite(v.ref));
         if (values.length === 0) {
           return { ok: false, summary: "No fields were given to fill." };
+        }
+        if (values.some((v: { text: string }) => hasPlaceholder(v.text))) {
+          const at = ctx.browser().status().url ?? "";
+          try {
+            for (const v of values) v.text = fillPlaceholders(v.text, at);
+          } catch (err: any) {
+            return { ok: false, summary: `Nothing was filled. ${err?.message ?? err}` };
+          }
         }
         const page = await ctx.browser().fill(values, Boolean(args.submit));
         ctx.browserChanged();
@@ -2041,8 +2074,9 @@ const BROWSING_GUIDE = [
   "  - After each action, check the page did what you meant (the URL, the new text, the field " +
     "values) before the next. When a click seems to do nothing, look for an error or a dialog " +
     "before trying again, and try a different way rather than the same click.",
-  "  - Sign-ins: fill the fields yourself when you have the details; hand the page to the person " +
-    "with browser_handoff for passwords you do not have, 2FA codes, app approvals and CAPTCHA " +
+  "  - Sign-ins: fill the fields yourself when you have the details (a saved sign-in under " +
+    "Credentials below counts); hand the page to the person with browser_handoff for passwords " +
+    "you do not have, 2FA codes you cannot fill, app approvals and CAPTCHA " +
     "pictures. A sign-in that opens its own window (Sign in with Google, LinkedIn, Microsoft) is " +
     "shown in that window until it closes itself, then you are back on the page that opened it. When the " +
     "result says SIGN-IN REFUSED, the site is refusing this browser: stop, and follow what it says.",
@@ -2074,7 +2108,7 @@ export async function capabilityBriefing(): Promise<string> {
     }
   }
 
-  if (groups.some((g) => g.group === "browser" && g.available)) lines.push(BROWSING_GUIDE, signInBriefing());
+  if (groups.some((g) => g.group === "browser" && g.available)) lines.push(BROWSING_GUIDE, signInBriefing(), credentialsBriefing());
 
   const mcp = mcpTools();
   if (mcp.length > 0) {

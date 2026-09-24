@@ -7,6 +7,7 @@ import { VoiceCheck } from "./VoiceCheck";
 import { RelaySetup } from "./RelaySetup";
 import { Billing } from "./Billing";
 import { SecretStore } from "./SecretStore";
+import { Credentials } from "./Credentials";
 import { useServerVersion, versions } from "./UpdateNotice";
 
 type Credential = {
@@ -459,6 +460,8 @@ export function Settings({
             </p>
           </section>
         )}
+
+        {shows("keys") && <Credentials />}
 
         {shows("keys") && <SecretStore />}
 
