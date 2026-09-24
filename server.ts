@@ -12,6 +12,7 @@ import {
   resolveProvider, save, setKey, state, stateFilePath, type Resolved,
   listSecrets, setSecret, deleteSecret, getSecret, SECRET_PRESETS, redactSecrets as redactStored,
   mergeJev, mergeAppearance, saneMcp, THEMES, FONTS, recordToolFeed, type CostParts,
+  DEFAULT_PROMPT, standingRules,
 } from "./server/state";
 import { deleteLogin, describeCredentials, redactCredentials, saveLogin, setIdentity } from "./server/credentials";
 import { decide, lastDecision, resetHealth, supportFor, type JevOutcome, type JevTask } from "./server/jev/router";
@@ -1354,9 +1355,21 @@ async function systemInstructionFor(
   /** Jev's reading of what kind of request this is, when it had one. */
   routeHint?: string | null,
 ): Promise<{ pinned: string; note: string }> {
-  const lines = [state.systemPrompt.trim()];
+  const lines = [DEFAULT_PROMPT];
   const notes: string[] = [];
   if (routeHint) notes.push(routeHint);
+  /* Read from Settings here, every turn, so an edit applies from the next
+     one. They used to open the prompt as its first line, ahead of the whole
+     capability briefing and under the console's own style rules at the end
+     -- so a "be brief" was buried, and then overruled by "give your final
+     answer in full". They go last now, said to be the person's and to win. */
+  const rules = standingRules(state.systemPrompt);
+  if (rules) {
+    notes.push(
+      "Follow the person's standing instructions (the last section of your " +
+        "instructions) on this turn, including while you work.",
+    );
+  }
 
   /* What it can actually do, generated from the tool registry rather than
      written down here. This is the section whose absence made the console
@@ -1446,6 +1459,18 @@ async function systemInstructionFor(
     "The person's latest message may end with a console note for the turn;",
     "the console wrote it, not the person, and it is context, not a request.",
   );
+
+  if (rules) {
+    lines.push(
+      "",
+      "=== THE PERSON'S STANDING INSTRUCTIONS ===",
+      "Set by the person in Settings and in force on every turn and every step.",
+      "Where they conflict with anything above, these win.",
+      "",
+      rules,
+      "=== END STANDING INSTRUCTIONS ===",
+    );
+  }
 
   return {
     pinned: lines.join("\n"),

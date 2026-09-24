@@ -257,11 +257,17 @@ export function App() {
     // Dictated turns never touched the box, so there is nothing to clear and
     // clearing anyway would eat something half-typed.
     if (spoken === undefined) setDraft("");
-    await fetch(`/api/sessions/${sessionId}/message`, {
+    const res = await fetch(`/api/sessions/${sessionId}/message`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
-    }).catch(() => undefined);
+    }).catch(() => null);
+    // Now that the box stays open while the connection comes back, a send
+    // can fail: put what was typed back rather than losing it.
+    if (!res?.ok) {
+      if (spoken === undefined) setDraft((now) => now || text);
+      setNotice("Could not reach the server; your message was not sent.");
+    }
   }, [draft, sessionId]);
 
   /** Stop the turn in flight.
@@ -304,7 +310,12 @@ export function App() {
   }, []);
 
   const live = status.state === "live";
-  const readOnly = !live;
+  /* Only a session that can never take a turn again is read-only. A socket
+     that is reconnecting -- a phone waking up, a network blip, the server
+     restarting -- used to count too, and that disabled the box (and threw
+     away its focus) mid-sentence, at random as far as anyone typing could
+     tell. Messages go over a plain request anyway, not the socket. */
+  const readOnly = status.state === "recorded" || status.state === "closed";
 
   // Whether a turn is running now, read from the tail of the log so a reload
   // mid-turn comes back knowing one is in flight.
@@ -450,7 +461,7 @@ export function App() {
           break;
         case "v":
           e.preventDefault();
-          if (readOnly) break;
+          if (!live) break;
           if (voiceReady) toggleLive();
           else if (voiceBlocked) setVoiceHelp(true);
           break;
@@ -462,7 +473,7 @@ export function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [toggleLive, readOnly, voiceReady, voiceBlocked, navigate, page]);
+  }, [toggleLive, live, voiceReady, voiceBlocked, navigate, page]);
 
   const currentName =
     sessions.find((s) => s.id === sessionId)?.title?.trim() ||
@@ -635,7 +646,7 @@ export function App() {
 
           <Approvals
             approvals={view.approvals}
-            readOnly={readOnly}
+            readOnly={!live}
             onDecide={(id, approved) => streamRef.current?.approve(id, approved)}
           />
 
@@ -705,7 +716,7 @@ export function App() {
                 onStop={() => void stopTurn()}
                 agentSpeaking={speaking}
                 agentWorking={running}
-                disabled={readOnly}
+                disabled={!live}
               />
             ) : (
               <>
@@ -718,7 +729,7 @@ export function App() {
                     type="button"
                     className={`mob-live-btn composer-float is-${liveState}`}
                     onClick={voiceReady ? toggleLive : () => setVoiceHelp(true)}
-                    disabled={readOnly}
+                    disabled={!live}
                     title={voiceReady ? "Start live voice chat" : "Live voice requires https"}
                     aria-label="Live voice chat"
                     aria-pressed={liveOn}
@@ -732,7 +743,7 @@ export function App() {
                     value={draft}
                     rows={1}
                     aria-label="Task"
-                    placeholder={live ? "Ask Autora to do something…" : "This session is a recording."}
+                    placeholder={readOnly ? "This session is a recording." : "Ask Autora to do something…"}
                     disabled={readOnly}
                     onChange={(e) => setDraft(e.target.value)}
                     onKeyDown={(e) => {
@@ -755,7 +766,7 @@ export function App() {
                       <button
                         className="btn icon ghost composer-live"
                         onClick={voiceReady ? toggleLive : () => setVoiceHelp(true)}
-                        disabled={readOnly}
+                        disabled={!live}
                         title={voiceReady ? "Start live voice chat (v)" : "Live voice requires https"}
                         aria-label="Live voice chat"
                       >
