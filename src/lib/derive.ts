@@ -687,6 +687,13 @@ export function derive(events: AutoraEvent[]): Derived {
           height: typeof e.payload.h === "number" ? e.payload.h : null,
         };
         if (!picture.blob && !picture.url) break;
+        // A picture of the open page (older sessions logged the screenshot
+        // tool this way) belongs on the browser screen, not in a second card.
+        if (picture.blob && url && picture.caption === url && !e.payload.inline) {
+          const screen = screenCell("browser", e.seq);
+          screen.shots.push({ blob: picture.blob, seq: e.seq, ts: e.ts });
+          break;
+        }
         const cell = current();
         if (cell && cell.kind === "images") cell.pictures.push(picture);
         else push({ kind: "images", seq: e.seq, pictures: [picture] });

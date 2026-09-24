@@ -1993,9 +1993,8 @@ async function startServer() {
         case "shot": {
           const png = await live.capture();
           const blob = putBlob(session.id, png, "image/png");
-          emitEvent(session, "media.image", "agent", {
-            alt: "the page as it looks now",
-            caption: live.status().url ?? "",
+          emitEvent(session, "browser.frame", "agent", {
+            url: live.status().url ?? "",
             w: VIEWPORT.width,
             h: VIEWPORT.height,
           }, null, blob);
@@ -2376,6 +2375,11 @@ async function startServer() {
             showImage: (blob, alt, caption, size) =>
               emitEvent(session, "media.image", "agent", {
                 alt, caption, ...(size ? { w: size.w, h: size.h } : {}),
+              }, null, blob),
+            showScreen: (source, blob, size) =>
+              emitEvent(session, `${source}.frame`, "agent", {
+                ...(source === "browser" ? { url: browsers.get(session.id)?.status().url ?? "" } : {}),
+                ...(size ? { w: size.w, h: size.h } : {}),
               }, null, blob),
             browser: () => browserFor(session),
             browserChanged: () => broadcastBrowserState(session),
