@@ -88,19 +88,11 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  "Try another way" on Google's sign-in works again. A passkey prompt opened
-  an invisible dialog in Autora's browser that swallowed every tap on the
-  page; now the page stays usable, so you can pick a code, a prompt on your
-  phone or your password instead.
-
-
-  A saved sign-in now works across every site of the same account: one saved
-  for google.ca also signs in on accounts.google.com, gmail.com and
-  youtube.com (likewise Microsoft, Apple, Amazon and a few others). Any other
-  sign-in still stays on its own site.
-
-
-  Credentials has its own tab in Config, beside Model & tools and API Keys.
+  Sign-ins now survive the browser stopping. With newer versions of Chrome,
+  closing the browser's last tab threw away the cookies that keep many sites
+  (including parts of Google and Microsoft sign-in) signed in before Autora
+  had saved them, so you were asked to sign in again after the browser
+  restarted. They are now saved while the tab is still open.
 
 dependencies: []
 path: ""

@@ -1077,15 +1077,20 @@ async function acquireContext(): Promise<BrowserContext> {
   return shared.context;
 }
 
-async function releaseContext(context: BrowserContext) {
+async function releaseContext(context: BrowserContext, cookiesSaved = false) {
   if (!shared || shared.context !== context) return;
   shared.users -= 1;
   if (shared.users > 0) return;
   // The last tab is gone: closing the context is what stops Chrome and
   // flushes the profile to disk.
   shared = null;
-  await saveCookies(context);
+  if (!cookiesSaved) await saveCookies(context);
   await context.close().catch(() => undefined);
+}
+
+/** Whether letting go of `context` would stop the browser. */
+function lastUser(context: BrowserContext): boolean {
+  return shared !== null && shared.context === context && shared.users <= 1;
 }
 
 /**
@@ -1448,10 +1453,16 @@ export class LiveBrowser {
     this.typed = { chars: 0, keys: [], timer: null };
     const openers = this.openers;
     this.openers = [];
+    /* The sign-ins are saved while the tab is still open. Chrome launched
+       without --enable-automation (see launchShared) ends its browsing
+       session when the last tab closes, and newer Chrome drops session
+       cookies right then, so saving after the tab closed saved none. */
+    const saved = context !== null && lastUser(context);
+    if (saved) await saveCookies(context);
     await cdp?.detach().catch(() => undefined);
     await page?.close().catch(() => undefined);
     for (const under of openers) await under.close().catch(() => undefined);
-    if (context) await releaseContext(context);
+    if (context) await releaseContext(context, saved);
     this.closing = false;
   }
 
