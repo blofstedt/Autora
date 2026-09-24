@@ -3043,11 +3043,15 @@ label + .jf-hint { margin-top: -5px; }
 /* A page is open somewhere up the thread, said in the header because the card
    holding it scrolls away. */
 .badge.browsing {
-  gap: 6px; padding-right: 5px; font-family: var(--mono); font-size: 10.5px;
+  gap: 6px; padding-right: 3px; font-family: var(--mono); font-size: 10.5px;
   color: var(--live); border-color: rgba(52, 211, 153, 0.28);
   background: rgba(52, 211, 153, 0.09);
-  max-width: 190px; overflow: hidden; text-overflow: ellipsis;
+  max-width: 190px; min-width: 0;
 }
+/* The site gives way, the dot and the close button never do: clipping the
+   badge itself cut the x off and squashed the dot into a bar. */
+.badge.browsing .watch-dot, .badge.browsing .badge-x { flex: 0 0 auto; }
+.badge-host { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .badge-x {
   display: inline-grid; place-items: center; width: 18px; height: 18px;
   padding: 0; border: 0; border-radius: 50%; cursor: pointer;
@@ -3057,7 +3061,7 @@ label + .jf-hint { margin-top: -5px; }
 .badge-x:hover { opacity: 1; background: rgba(255, 255, 255, 0.08); }
 
 @media (max-width: 680px) {
-  .badge.browsing { max-width: 132px; }
+  .badge.browsing { max-width: 176px; }
   .pic-full { padding: 14px; }
   .cell.pics.is-sheet .pics-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
 }
@@ -3116,6 +3120,8 @@ label + .jf-hint { margin-top: -5px; }
   .web-tag { height: 34px; }
   .jump-pill { height: 36px; padding: 0 16px; font-size: 12.5px; }
   .badge-x { width: 28px; height: 28px; }
+  .shot-tool, .shot-corner { width: 36px; height: 36px; margin: -6px 0; }
+  input.shot-where { height: 34px; margin: -5px 0; }
   .rail-act { padding: 11px 10px; }
   .ses-row { padding: 13px 12px; }
   .ses-act { min-width: 40px; height: 40px; }
@@ -3171,10 +3177,37 @@ label + .jf-hint { margin-top: -5px; }
 /* ============================================================================
    The live page, used directly
 
-   No toolbar: the picture is the page. Its state is one chip in the header,
-   and the only button is the corner one that makes it bigger.
+   The picture is the page. Above it, the browser's own toolbar (back,
+   reload, the address), its state as one chip, and the corner button that
+   makes it bigger.
    ============================================================================ */
 .cell.shot .shot-where { flex: 1 1 auto; }
+.cell.shot .cell-top { gap: 6px; }
+
+/* The browser's own toolbar: back, reload and the address, as in any
+   browser, on the page that is open now. */
+.shot-tool {
+  flex: 0 0 auto; display: inline-grid; place-items: center;
+  width: 28px; height: 28px; margin: -3px 0; padding: 0;
+  border: 1px solid transparent; border-radius: var(--r-sm);
+  background: none; color: var(--text-2); cursor: pointer;
+  transition: color 0.15s var(--ease), background 0.15s var(--ease);
+}
+.shot-tool:hover:not(:disabled) { color: var(--text); background: var(--s3); }
+.shot-tool:disabled { opacity: 0.35; cursor: not-allowed; }
+.shot-address { flex: 1 1 auto; min-width: 0; display: flex; }
+input.shot-where {
+  width: 100%; height: 28px; margin: -3px 0; padding: 0 10px;
+  border: 1px solid var(--border); border-radius: 99px;
+  background: var(--sink); outline: none;
+}
+input.shot-where:focus:not([readonly]) { border-color: var(--accent-line); color: var(--text); }
+input.shot-where[readonly] { cursor: default; }
+.shot-state-short { display: none; }
+@media (max-width: 680px) {
+  .shot-state-long { display: none; }
+  .shot-state-short { display: inline; }
+}
 .shot-state { gap: 6px; white-space: nowrap; }
 .shot-state.is-open { background: rgba(52, 211, 153, 0.12); color: var(--live); }
 .shot-state.is-yours { background: rgba(52, 211, 153, 0.2); color: #6ee7b7; }

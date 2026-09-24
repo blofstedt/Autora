@@ -203,6 +203,15 @@ async function main() {
       assert.match(read.text, /Attached cv: Jane Doe CV\.docx \(3 bytes\)/);
     });
 
+    await test("and dropped onto a drag-and-drop box with no input behind it", async () => {
+      let read = await live.upload(refOf(line(/"Drop your CV here"/)), [
+        { name: "cv.txt", mimeType: "text/plain", buffer: Buffer.from("hello") },
+      ]);
+      for (let i = 0; i < 10 && !/Dropped:/.test(read.text); i++) read = await live.snapshot();
+      assert.match(read.text, /Dropped: cv\.txt \(hello\)/);
+      assert.match(read.notes!.join("\n"), /dropped cv\.txt/);
+    });
+
     await test("scrolling reports where it got to, and stops at the end", async () => {
       let read = await live.scroll({ screens: 1 });
       assert.match(read.outline, /% of the way down/);

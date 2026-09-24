@@ -83,8 +83,12 @@ releaseNotes: >-
   is still signed in before asking you again. The agent can now attach files
   from your Artifacts to a web page's upload field -- a CV on a job
   application, a photo, a document a form asks for -- whether the page shows
-  a plain file field or an "Upload CV" button. Also fixed: the agent no
-  longer highlights the whole page when a click meant for a text box missed.
+  a plain file field, an "Upload CV" button or a drag-and-drop box. The live
+  browser now has a toolbar -- back, reload and an address bar you can type
+  into -- whenever the page is yours to use, and fits a phone screen. Also
+  fixed: the agent no longer highlights the whole page when a click meant
+  for a text box missed, and the open-page badge at the top right no longer
+  cuts off its close button.
 
 dependencies: []
 path: ""

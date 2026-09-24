@@ -561,7 +561,7 @@ export function App() {
           {browser?.open && (
             <span className="badge browsing" title={browser.url ?? "a page is open"}>
               <span className="watch-dot" aria-hidden="true" />
-              {hostOf(browser.url)}
+              <span className="badge-host">{hostOf(browser.url)}</span>
               <button
                 className="badge-x"
                 onClick={() => void closeBrowser()}

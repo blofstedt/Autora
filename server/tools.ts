@@ -255,7 +255,9 @@ const TOOLS: ToolSpec[] = [
       "Attach files from the Artifacts to an upload field on the open page -- " +
       "a CV on a job application, a photo, a document a form asks for. Give " +
       "the field's number, or the number of the button that opens the file " +
-      "picker (\"Upload CV\", \"Attach\", \"Choose file\"), and the " +
+      "picker (\"Upload CV\", \"Attach\", \"Choose file\"), or the " +
+      "drag-and-drop box itself (\"Drop your CV here\") -- a box with no file " +
+      "input gets the files dropped onto it -- and the " +
       "artifact ids (see artifact_list). The files go in as if chosen in the " +
       "picker. Returns the page afterwards: check the site shows the file " +
       "attached before submitting.",
@@ -2027,7 +2029,9 @@ const BROWSING_GUIDE = [
     "each field reports holding. Fix anything reformatted, refused or INVALID before submitting. " +
     "A field that offers suggestions as you type: fill it, then pick the suggestion (click its " +
     "option, or browser_press ArrowDown then Enter). A file the form asks for (a CV, a photo) " +
-    "is attached from the Artifacts with browser_upload.",
+    "is attached from the Artifacts with browser_upload, given the upload box or its button -- " +
+    "including a drag-and-drop box with no file input. Do not work around an upload box by " +
+    "studying its scripts or posting the form yourself.",
   "  - An open dialog (cookie notice, sign-up prompt) is named at the top of the elements. " +
     "Answer or close it first; browser_press Escape closes most.",
   "  - The last line says where you are on the page and how much is below. Use browser_scroll " +

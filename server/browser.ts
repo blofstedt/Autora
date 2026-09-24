@@ -1718,36 +1718,62 @@ export class LiveBrowser {
       );
       const payload = files.map((f) => ({ name: f.name, mimeType: f.mimeType, buffer: f.buffer }));
       const notes: string[] = [];
-      const handle = await page.evaluateHandle(`(() => {
-        const el = ${REF_EL(ref)};
-        if (!el || !el.isConnected) return null;
-        const isFile = (n) => n && n.tagName === "INPUT" && (n.type || "").toLowerCase() === "file";
-        if (isFile(el)) return el;
-        // A label or wrapper around the input it stands for.
-        const inner = el.querySelector && el.querySelector('input[type="file" i]');
-        return isFile(inner) ? inner : null;
-      })()`).catch(() => null);
-      const input = handle?.asElement?.() ?? null;
-      let done = false;
-      if (input) {
-        await input.setInputFiles(payload).then(() => { done = true; }).catch(() => undefined);
-      }
+      /* The ways a page takes a file, surest first: its file input (the one
+         named, or a hidden one inside or near it, which is how most styled
+         upload boxes are built); the file picker a click on it opens; the
+         only file input on the page; and last, for a drag-and-drop box with
+         no input at all, the files dropped onto it. */
+      const inputNear = async (near: boolean) => {
+        const handle = await page.evaluateHandle(`(() => {
+          const el = ${REF_EL(ref)};
+          if (!el || !el.isConnected) return null;
+          const isFile = (n) => n && n.tagName === "INPUT" && (n.type || "").toLowerCase() === "file" && !n.disabled;
+          if (isFile(el)) return el;
+          if (${near ? "true" : "false"}) {
+            // Inside it, or inside the few boxes around it.
+            let box = el;
+            for (let i = 0; box && i < 4; i++, box = box.parentElement) {
+              const found = box.querySelectorAll ? [...box.querySelectorAll('input[type="file" i]')].filter(isFile) : [];
+              if (found.length === 1) return found[0];
+              if (found.length > 1) return null;
+            }
+            return null;
+          }
+          const all = [...el.ownerDocument.querySelectorAll('input[type="file" i]')].filter(isFile);
+          return all.length === 1 ? all[0] : null;
+        })()`).catch(() => null);
+        return handle?.asElement?.() ?? null;
+      };
+      const into = async (input: any) =>
+        input ? await input.setInputFiles(payload).then(() => true).catch(() => false) : false;
+
+      let how = "attached";
+      let done = await into(await inputNear(true));
       if (!done) {
-        const chooser = page.waitForEvent("filechooser", { timeout: 5000 }).catch(() => null);
+        const chooser = page.waitForEvent("filechooser", { timeout: 3000 }).catch(() => null);
         await this.humanClickAt(pointIn(await this.aim(target)));
         const picker = await chooser;
-        if (!picker) {
-          throw new Error(
-            `Clicking [${ref}] did not open a file picker, so there was nothing to put the file in. ` +
-            `Give the number of the upload field or the button that opens the picker.`,
-          );
+        if (picker) {
+          if (files.length > 1 && !picker.isMultiple()) {
+            throw new Error(`[${ref}] takes one file; ${files.length} were given.`);
+          }
+          await picker.setFiles(payload);
+          done = true;
         }
-        if (files.length > 1 && !picker.isMultiple()) {
-          throw new Error(`[${ref}] takes one file; ${files.length} were given.`);
-        }
-        await picker.setFiles(payload);
       }
-      notes.push(`[${ref}]${target.name ? ` "${target.name}"` : ""}: attached ${names}.`);
+      if (!done) done = await into(await inputNear(false));
+      if (!done) {
+        done = await page.evaluate(DROP_SCRIPT(ref, files)).catch(() => false);
+        if (done) how = "dropped";
+      }
+      if (!done) {
+        throw new Error(
+          `[${ref}] would not take a file: it has no file input, opens no file picker and takes no ` +
+          `dropped files. Give the number of the upload box or the button that opens the picker.`,
+        );
+      }
+      notes.push(`[${ref}]${target.name ? ` "${target.name}"` : ""}: ${how} ${names}${
+        how === "dropped" ? " onto it (it is a drag-and-drop box); check the page shows the file" : ""}.`);
       await this.settle(900);
       await this.arrive();
       const read = await this.read();
@@ -2507,6 +2533,30 @@ const SELECT_FIELD_SCRIPT = (ref: number) => `(() => {
   sel.addRange(range);
   return true;
 })()`;
+
+/**
+ * Drop files onto an element the way dragging them from a desktop would: a
+ * drag-and-drop upload box with no file input behind it takes files only
+ * this way. The bytes travel into the page as base64.
+ */
+const DROP_SCRIPT = (ref: number, files: UploadFile[]) => `((files) => {
+  const el = ${REF_EL(ref)};
+  if (!el || !el.isConnected) return false;
+  const view = el.ownerDocument.defaultView;
+  const dt = new view.DataTransfer();
+  for (const f of files) {
+    const raw = view.atob(f.data);
+    const bytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+    dt.items.add(new view.File([bytes], f.name, { type: f.type }));
+  }
+  const b = el.getBoundingClientRect();
+  const at = { clientX: b.left + b.width / 2, clientY: b.top + b.height / 2 };
+  for (const type of ["dragenter", "dragover", "drop"]) {
+    el.dispatchEvent(new view.DragEvent(type, { bubbles: true, cancelable: true, composed: true, dataTransfer: dt, ...at }));
+  }
+  return true;
+})(${JSON.stringify(files.map((f) => ({ name: f.name, type: f.mimeType, data: f.buffer.toString("base64") })))})`;
 
 /** Keys that select everything wherever the focus is. */
 const SELECT_ALL_KEY = /^(control|meta|controlormeta)\+a$/i;

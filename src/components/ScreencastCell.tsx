@@ -3,7 +3,7 @@ import type { Shot } from "../lib/derive";
 import { onField, useLiveFrame } from "../lib/liveFrame";
 import { Frame } from "./Frame";
 import {
-  IconChevron, IconGlobe, IconMaximize, IconMinimize, IconMonitor, IconStop,
+  IconArrowLeft, IconChevron, IconGlobe, IconMaximize, IconMinimize, IconMonitor, IconRotateCcw, IconStop,
 } from "./Icons";
 
 /** The viewport the browser harness captures. Frame pixels map 1:1 to page
@@ -25,10 +25,10 @@ const NAMED_KEYS = new Set([
  * A stretch of screen work -- a page, or the relayed desktop -- kept where it
  * happened.
  *
- * The page the agent is on now is also a page you can use. There are no
- * controls for that: click or tap the picture and the click lands on the
- * page, type and the keys go to whatever you clicked into, scroll and it
- * scrolls. It is locked while the agent is driving -- two pairs of hands on
+ * The page the agent is on now is also a page you can use: click or tap the
+ * picture and the click lands on the page, type and the keys go to whatever
+ * you clicked into, scroll and it scrolls. Above it is the browser's own
+ * toolbar -- back, reload, and an address you can type into. It is locked while the agent is driving -- two pairs of hands on
  * one page is how a sign-in ends up half typed by each -- and unlocks when the
  * agent finishes, stops, or asks you to take over.
  *
@@ -72,6 +72,14 @@ export function ScreencastCell({
   const [nudge, setNudge] = useState<{ text: string; stop?: boolean } | null>(null);
   const [ripples, setRipples] = useState<Array<{ id: number; x: number; y: number }>>([]);
   const [typing, setTyping] = useState(false);
+  /** The address bar's text while you are editing it; the page's address
+      otherwise. */
+  const [address, setAddress] = useState(url ?? "");
+  const [editingAddress, setEditingAddress] = useState(false);
+  const addressRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!editingAddress) setAddress(url ?? "");
+  }, [url, editingAddress]);
   const holdRef = useRef(held);
   holdRef.current = held;
   const stageRef = useRef<HTMLDivElement>(null);
@@ -322,13 +330,27 @@ export function ScreencastCell({
   const big = bigChoice ?? (source === "browser" && live && (watching || !stageSrc));
   const waiting = !stageSrc && source === "browser" && live;
 
-  const state: { label: string; tone: string } | null =
-    waitingOnYou && canUse ? { label: "your turn", tone: "is-yours" }
-      : canUse ? { label: "live · yours to use", tone: "is-open" }
-        : watching && driving ? { label: "agent driving", tone: "is-driving" }
-          : watching ? { label: "live", tone: "is-open" }
-            : live ? { label: "live", tone: "is-driving" }
+  /* `short` is what a phone has room for beside the address bar. */
+  const state: { label: string; short: string; tone: string } | null =
+    waitingOnYou && canUse ? { label: "your turn", short: "your turn", tone: "is-yours" }
+      : canUse ? { label: "live · yours to use", short: "yours", tone: "is-open" }
+        : watching && driving ? { label: "agent driving", short: "agent", tone: "is-driving" }
+          : watching ? { label: "live", short: "live", tone: "is-open" }
+            : live ? { label: "live", short: "live", tone: "is-driving" }
               : null;
+  /** The browser's own toolbar -- back, reload, the address -- on the page
+      that is open now, and usable whenever the page is yours. */
+  const toolbar = source === "browser" && current && watching;
+  const go = (e: React.FormEvent) => {
+    e.preventDefault();
+    const target = address.trim();
+    addressRef.current?.blur();
+    if (!target || !canUse) return;
+    const url = /^[a-z][a-z0-9+.-]*:/i.test(target) ? target
+      : /^[^\s]+\.[^\s]+$/.test(target) ? `https://${target}`
+        : `https://duckduckgo.com/?q=${encodeURIComponent(target)}`;
+    void send("navigate", { url });
+  };
 
   // The narration follows its newest line, unless the reader scrolled up in it.
   useLayoutEffect(() => {
@@ -342,14 +364,62 @@ export function ScreencastCell({
         max ? "is-max" : ""} ${waitingOnYou && canUse ? "is-yours" : ""}`}
     >
       <header className="cell-top">
-        <Icon size={13} />
-        <span className="shot-where" title={url ?? undefined}>
-          {source === "browser" ? (url ?? "about:blank") : "Desktop"}
-        </span>
+        {toolbar ? (
+          <>
+            <button
+              className="shot-tool"
+              disabled={!canUse}
+              onClick={() => void send("back", {})}
+              aria-label="Back"
+              title="Back"
+            >
+              <IconArrowLeft size={15} />
+            </button>
+            <button
+              className="shot-tool"
+              disabled={!canUse}
+              onClick={() => void send("reload", {})}
+              aria-label="Reload"
+              title="Reload"
+            >
+              <IconRotateCcw size={14} />
+            </button>
+            <form className="shot-address" onSubmit={go}>
+              <input
+                ref={addressRef}
+                className="shot-where"
+                value={address}
+                readOnly={!canUse}
+                onChange={(e) => setAddress(e.target.value)}
+                onFocus={(e) => { setEditingAddress(true); if (canUse) e.currentTarget.select(); }}
+                onBlur={() => setEditingAddress(false)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") { setAddress(url ?? ""); e.currentTarget.blur(); }
+                }}
+                title={url ?? undefined}
+                aria-label="Address"
+                inputMode="url"
+                enterKeyHint="go"
+                autoCapitalize="off"
+                autoCorrect="off"
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </form>
+          </>
+        ) : (
+          <>
+            <Icon size={13} />
+            <span className="shot-where" title={url ?? undefined}>
+              {source === "browser" ? (url ?? "about:blank") : "Desktop"}
+            </span>
+          </>
+        )}
         {state && (
-          <em className={`cell-chip shot-state ${state.tone}`}>
+          <em className={`cell-chip shot-state ${state.tone}`} title={state.label}>
             <span className="watch-dot" aria-hidden="true" />
-            {state.label}
+            <span className="shot-state-long">{state.label}</span>
+            <span className="shot-state-short">{state.short}</span>
           </em>
         )}
         {held && feed && (

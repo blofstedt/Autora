@@ -34,6 +34,7 @@
 <div><label>Resume <input type="file" id="resume"></label></div>
 <button type="button" onclick="document.getElementById('cv').click()">Upload CV</button>
 <input type="file" id="cv" style="display:none">
+<div id="drop" role="button" tabindex="0" style="padding:20px;border:2px dashed #999">Drop your CV here</div>
 <p id="attached"></p>
 <shadow-login></shadow-login>
 <iframe id="fr" srcdoc="<label>Coupon code <input name='coupon'></label>" style="height:60px"></iframe>
@@ -58,6 +59,15 @@
       document.getElementById("attached").textContent = "Attached " + id + ": " + f.name + " (" + f.size + " bytes)";
     });
   }
+  const drop = document.getElementById("drop");
+  drop.addEventListener("dragover", (e) => e.preventDefault());
+  drop.addEventListener("drop", (e) => {
+    e.preventDefault();
+    const f = e.dataTransfer.files[0];
+    f.text().then((t) => {
+      document.getElementById("attached").textContent = "Dropped: " + f.name + " (" + t + ")";
+    });
+  });
   const pane = document.getElementById("pane");
   for (let i = 1; i <= 30; i++) { const d = document.createElement("div"); d.textContent = "Message " + i; pane.appendChild(d); }
   if (location.search.includes("dialog")) document.getElementById("dlg").showModal();
