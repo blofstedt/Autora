@@ -17,6 +17,13 @@ manifest has to say so -- a version that went up, and release notes that are
 not the previous release's. A refactor with no user-facing effect is a real
 thing, so `[no release]` in the pull request title or body opts out and says
 why in the same place a reviewer is already looking.
+
+What the pull request raises is `version` in package.json (the version the
+image is built and tagged as) along with the release notes. The manifest's
+`version` and the image tag in docker-compose.yml are left alone: the image
+workflow moves both once that version's image is in the registry
+(offer_release.py). Raised by hand, Umbrel offered the update minutes before
+the image existed, and an update taken then failed with "manifest unknown".
 """
 
 from __future__ import annotations
@@ -24,7 +31,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import pathlib
 import re
 import subprocess
 import sys
@@ -137,24 +143,28 @@ def newer(head: str, base: str) -> bool:
     return head_parts > base_parts
 
 
-def running_version() -> str:
-    """What the server will report as its own version, or "" if unreadable.
+def package_version(ref: str) -> str:
+    """`version` in package.json at `ref`, or "" if unreadable.
 
-    package.json, since the rewrite: the server reads its version out of that
-    file, stamps it into the page it serves and answers /api/origin with it.
-    This used to read src/autora/__init__.py, which the rewrite deleted -- so
-    the check quietly stopped comparing anything, which is the failure mode it
-    exists to prevent, one level up.
+    The server reads its version out of that file, stamps it into the page it
+    serves and answers /api/origin with it, and the image workflow tags the
+    build with it.
     """
     try:
-        source = pathlib.Path("package.json").read_text(encoding="utf-8")
-    except OSError:
-        return ""
-    try:
-        found = json.loads(source).get("version")
-    except ValueError:
+        found = json.loads(git("show", f"{ref}:package.json")).get("version")
+    except (subprocess.CalledProcessError, ValueError):
         return ""
     return found.strip() if isinstance(found, str) else ""
+
+
+def lock_versions(ref: str) -> list[str]:
+    """The two `version` fields package-lock.json keeps for the app itself."""
+    try:
+        lock = json.loads(git("show", f"{ref}:package-lock.json"))
+    except (subprocess.CalledProcessError, ValueError):
+        return []
+    root = (lock.get("packages") or {}).get("") or {}
+    return [str(lock.get("version", "")), str(root.get("version", ""))]
 
 
 def image_tag(ref: str) -> str:
@@ -200,6 +210,26 @@ def main(argv: list[str] | None = None) -> int:
     head = git("rev-parse", args.head)
     base = resolve_base(args.base, head)
 
+    before, after = read_manifest(base), read_manifest(head)
+
+    # Checked whatever the pull request touches, and never opted out of: a
+    # hand-raised version is the race this whole arrangement exists to avoid.
+    moved = []
+    if version_of(after) != version_of(before):
+        moved.append(f"`version` in {MANIFEST} ({version_of(before)} -> {version_of(after)})")
+    if image_tag(head) != image_tag(base):
+        moved.append(f"the image tag in {COMPOSE} ({image_tag(base)} -> {image_tag(head)})")
+    if moved:
+        print(
+            "This changes " + " and ".join(moved) + ".\n\n"
+            "Leave that to CI and raise `version` in package.json (and\n"
+            "package-lock.json) instead. The image workflow sets them once that\n"
+            "version's image is in the registry; set here, Umbrel offers the\n"
+            "update before the image exists and it fails with \"manifest unknown\".",
+            file=sys.stderr,
+        )
+        return 1
+
     app_files = touches_the_app(changed_files(base, head))
     if not app_files:
         print("Nothing that reaches the container changed. No release needed.")
@@ -211,74 +241,61 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{OPT_OUT} in the pull request. Skipping the version check.")
         return 0
 
-    before, after = read_manifest(base), read_manifest(head)
-    old_version, new_version = version_of(before), version_of(after)
+    old_version, new_version = package_version(base), package_version(head)
 
     shown = "\n".join(f"    {f}" for f in app_files[:10])
     if len(app_files) > 10:
         shown += f"\n    ... and {len(app_files) - 10} more"
 
     if not new_version:
-        print(f"Could not read `version` from {MANIFEST}.", file=sys.stderr)
+        print("Could not read `version` from package.json.", file=sys.stderr)
         return 1
 
     if new_version == old_version:
         print(
-            f"This changes the app, but {MANIFEST} still says {old_version}:\n"
+            f"This changes the app, but package.json still says {old_version}:\n"
             f"{shown}\n\n"
-            f"Umbrel offers an update only when that string is higher than the\n"
-            f"installed one, so merging this as-is ships code nobody can get.\n"
-            f"Bump `version` and rewrite `releaseNotes` to say what changed --\n"
-            f"or put {OPT_OUT} in the pull request if this genuinely has no\n"
-            f"user-facing effect.",
+            f"Umbrel offers an update only when the version goes up, so merging\n"
+            f"this as-is ships code nobody can get. Raise `version` in\n"
+            f"package.json (and package-lock.json) and rewrite `releaseNotes` in\n"
+            f"{MANIFEST} to say what changed -- or put {OPT_OUT} in the pull\n"
+            f"request if this genuinely has no user-facing effect.",
             file=sys.stderr,
         )
         return 1
 
     if not newer(new_version, old_version):
         print(
-            f"`version` went from {old_version} to {new_version}, which Umbrel\n"
+            f"package.json went from {old_version} to {new_version}, which Umbrel\n"
             f"will not read as an upgrade. It offers an update only for a higher\n"
             f"version, so this ships as quietly as no bump at all.",
             file=sys.stderr,
         )
         return 1
 
-    running = running_version()
-    if running and running != new_version:
+    stale = [v for v in lock_versions(head) if v != new_version]
+    if stale:
         print(
-            f"`version` is {new_version} but package.json reports\n"
-            f"{running}. The app shows that second number in Settings as the\n"
-            f"version actually answering, so a stale one does not just drift --\n"
-            f"it tells someone their update did not land when it did.",
-            file=sys.stderr,
-        )
-        return 1
-
-    tag = image_tag(head)
-    if tag != new_version:
-        print(
-            f"`version` is {new_version} but {COMPOSE} runs the image tagged\n"
-            f"{tag or '(none)'}. Umbrel installs whatever that line names, so it\n"
-            f"has to be this release's own build: set it to\n"
-            f"ghcr.io/blofstedt/autora:{new_version}. (:latest is what let an\n"
-            f"update taken while the image was still building install the\n"
-            f"previous one and then never be offered again.)",
+            f"package.json says {new_version} but package-lock.json still says\n"
+            f"{stale[0]}. Set its top two `version` fields to match.",
             file=sys.stderr,
         )
         return 1
 
     if release_notes_of(before) == release_notes_of(after):
         print(
-            f"`version` is now {new_version}, but `releaseNotes` still describes\n"
-            f"{old_version}. Umbrel shows those notes on the update, so leaving\n"
+            f"The version is now {new_version}, but `releaseNotes` in {MANIFEST}\n"
+            f"is unchanged. Umbrel shows those notes on the update, so leaving\n"
             f"them tells everyone the previous release's news as though it were\n"
             f"this one.",
             file=sys.stderr,
         )
         return 1
 
-    print(f"{MANIFEST}: {old_version} -> {new_version}, with fresh notes. Good to merge.")
+    print(
+        f"package.json: {old_version} -> {new_version}, with fresh notes. Good to merge;\n"
+        f"Umbrel is offered it once the image is published."
+    )
     return 0
 
 

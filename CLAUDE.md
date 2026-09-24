@@ -7,16 +7,19 @@ change to `src/`, `server/`, `server.ts`, `package.json`, `public/`, `ui/src/`,
 `ui/public/`, `ui/index.html`, `ui/package.json`, `Dockerfile` or
 `blofstedt-autora/docker-compose.yml` unless the same branch also:
 
-1. Bumps `version` in `blofstedt-autora/umbrel-app.yml` to a higher number
-   (patch bump by default, e.g. 0.9.1 -> 0.9.2).
-2. Sets `"version"` in `package.json` (and the top two `"version"` fields in
-   `package-lock.json`) to that same number, and the image tag in
-   `blofstedt-autora/docker-compose.yml` (`ghcr.io/blofstedt/autora:<version>`)
-   too. Never `:latest`: an update taken while the image was building would
-   install the previous build and never be offered again.
-3. Rewrites `releaseNotes` in `umbrel-app.yml` to describe this change, not
-   the last release. If the change contradicts the manifest's `description`,
-   update that too.
+1. Bumps `"version"` in `package.json` to a higher number (patch bump by
+   default, e.g. 0.9.1 -> 0.9.2), and the top two `"version"` fields in
+   `package-lock.json` to the same number.
+2. Rewrites `releaseNotes` in `blofstedt-autora/umbrel-app.yml` to describe
+   this change, not the last release. If the change contradicts the
+   manifest's `description`, update that too.
+
+Do not touch `version` in `umbrel-app.yml` or the image tag in
+`blofstedt-autora/docker-compose.yml`; the check fails if you do. After the
+merge, the image workflow builds and publishes `ghcr.io/blofstedt/autora:<version>`
+and only then commits both to main (`.github/scripts/offer_release.py`), so
+Umbrel never offers an update whose image is still building ("manifest
+unknown").
 
 Do this in the same commit as the code change, without being asked. Before
 pushing, run the check locally and make sure it passes:
