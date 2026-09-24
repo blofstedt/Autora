@@ -333,7 +333,7 @@ function CellView({
     case "images":
       return <ImageCell sessionId={sessionId} pictures={cell.pictures} />;
     case "widget":
-      return <WidgetCell widget={cell.widget} />;
+      return <WidgetCell widget={cell.widget} sessionId={sessionId} canFix={live && !driving} />;
     case "file":
       return <FileCell file={cell.file} />;
     case "tool":

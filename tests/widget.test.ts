@@ -57,16 +57,48 @@ await test("a whole document keeps its shape, with the theme put in its head", (
   assert.match(doc, /<head>\n<meta charset="utf-8">[\s\S]*--accent:[\s\S]*<title>Mine<\/title>/);
 });
 
-await test("widget_show is always offered, shows the widget and saves a copy", async () => {
+const { probeBrowser } = await import("../server/browser");
+const canCheck = (await probeBrowser()).ok;
+
+await test("widget_show is always offered, tries the widget, shows it and saves a copy", async () => {
   assert.ok((await availableTools()).some((t) => t.name === "widget_show"));
-  const shown: { title: string; html: string; height: number }[] = [];
+  const shown: { title: string; html: string; height: number; artifact?: string }[] = [];
   const ctx = { showWidget: (w: any) => shown.push(w), session: "s1" } as any;
-  const outcome = await runTool(findTool("widget_show")!, { title: "Orbits", html: THREE_WIDGET, height: 5000 }, ctx);
-  assert.equal(outcome.ok, true);
-  assert.deepEqual(shown, [{ title: "Orbits", html: THREE_WIDGET, height: 1400 }]);
+  const html = `<p>Hello</p><button onclick="this.textContent='Done'">Go</button>`;
+  const outcome = await runTool(findTool("widget_show")!, { title: "Orbits", html, height: 5000 }, ctx);
+  assert.equal(outcome.ok, true, outcome.summary);
+  assert.equal(shown.length, 1);
+  assert.equal(shown[0].height, 1400);
   const art = listArtifacts().find((a) => a.name === "orbits.html");
   assert.ok(art && art.mime === "text/html");
-  assert.match(readArtifact(art.id)!.toString("utf8"), /cdn\.jsdelivr\.net\/npm\/three@/);
+  assert.equal(shown[0].artifact, art.id);
+  assert.match(readArtifact(art.id)!.toString("utf8"), /<p>Hello<\/p>/);
+  if (canCheck) {
+    assert.match(outcome.summary, /Text: "Hello Go"/);
+    assert.match(outcome.summary, /button "Go": clicked; no errors/);
+  }
+});
+
+await test("a widget that throws when used is not shown, and the agent is told what broke", async () => {
+  if (!canCheck) return console.log("      (no browser here; skipped)");
+  const shown: unknown[] = [];
+  const ctx = { showWidget: (w: unknown) => shown.push(w), session: "s1" } as any;
+  const html = `<button>Heat up</button><script>document.querySelector("button").onclick = () => evaporate();</script>`;
+  const outcome = await runTool(findTool("widget_show")!, { title: "Water", html }, ctx);
+  assert.equal(outcome.ok, false);
+  assert.equal(shown.length, 0);
+  assert.match(outcome.summary, /NOT shown/);
+  assert.match(outcome.summary, /after using button "Heat up": evaporate is not defined/);
+});
+
+await test("a widget that draws nothing is not shown", async () => {
+  if (!canCheck) return console.log("      (no browser here; skipped)");
+  const shown: unknown[] = [];
+  const ctx = { showWidget: (w: unknown) => shown.push(w), session: "s1" } as any;
+  const outcome = await runTool(findTool("widget_show")!, { title: "Empty", html: "<canvas></canvas>" }, ctx);
+  assert.equal(outcome.ok, false);
+  assert.match(outcome.summary, /NOTHING IS VISIBLE/);
+  assert.equal(shown.length, 0);
 });
 
 await test("an empty or oversized widget is refused, not shown", async () => {
@@ -79,3 +111,6 @@ await test("an empty or oversized widget is refused, not shown", async () => {
 });
 
 console.log(`${passed} passed`);
+// The checking browser closes itself after a few idle minutes; a test run
+// should not wait for it.
+process.exit(0);

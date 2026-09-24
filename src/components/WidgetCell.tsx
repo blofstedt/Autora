@@ -66,7 +66,14 @@ const MAX_GROWTHS = 8;
  * dragged is still there when it comes back down, and it works on phones
  * that have no element fullscreen.
  */
-export function WidgetCell({ widget }: { widget: Widget }) {
+export function WidgetCell({
+  widget, sessionId, canFix,
+}: {
+  widget: Widget;
+  sessionId: string;
+  /** The session is live and the agent is not busy, so it can be asked. */
+  canFix: boolean;
+}) {
   const needsThree = useMemo(() => usesThree(widget.html), [widget.html]);
   const [bundle, setBundle] = useState<string | null | undefined>(needsThree ? undefined : null);
   const [height, setHeight] = useState(widget.height);
@@ -101,12 +108,22 @@ export function WidgetCell({ widget }: { widget: Widget }) {
         }
       }
       if (typeof data.error === "string" && data.error) {
-        setErrors((prev) => prev.includes(data.error) || prev.length >= 3 ? prev : [...prev, data.error]);
+        const error = data.error.slice(0, 400);
+        setErrors((prev) => prev.includes(error) || prev.length >= 3 ? prev : [...prev, error]);
+        // Told to the agent too, so it knows without being asked; the server
+        // keeps each distinct error once.
+        if (sessionId) {
+          void fetch(`/api/sessions/${sessionId}/widgets/${widget.seq}/error`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ error }),
+          }).catch(() => undefined);
+        }
       }
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [frameId, widget.height]);
+  }, [frameId, widget.height, widget.seq, sessionId]);
 
   useEffect(() => {
     if (!expanded) return;
@@ -129,6 +146,18 @@ export function WidgetCell({ widget }: { widget: Widget }) {
     }),
     [bundle, widget.title, widget.html, frameId],
   );
+
+  const [asked, setAsked] = useState(false);
+  const askFix = () => {
+    setAsked(true);
+    void fetch(`/api/sessions/${sessionId}/message`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: `The "${widget.title}" widget is broken: ${errors.join("; ")}. Please fix it.`,
+      }),
+    }).catch(() => setAsked(false));
+  };
 
   const restart = () => {
     growths.current = 0;
@@ -162,6 +191,11 @@ export function WidgetCell({ widget }: { widget: Widget }) {
         <div className="widget-errors" role="status">
           <IconAlert size={13} />
           <span>{errors.join(" · ")}</span>
+          {canFix && (
+            <button className="btn widget-fix" onClick={askFix} disabled={asked}>
+              {asked ? "Asked" : "Fix it"}
+            </button>
+          )}
         </div>
       )}
 

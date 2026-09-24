@@ -45,6 +45,7 @@ import {
   artifactPath, deleteArtifact, formatSize, getArtifact, isText, listArtifacts, readArtifact,
   saveArtifact, MAX_ARTIFACT_BYTES,
 } from "./artifacts";
+import { checkWidget } from "./widgets";
 import {
   MAX_WIDGET_CHARS, WIDGET_DEFAULT_HEIGHT, WIDGET_MAX_HEIGHT, WIDGET_MIN_HEIGHT, widgetDocument,
 } from "../src/lib/widget";
@@ -709,7 +710,16 @@ const TOOLS: ToolSpec[] = [
       "not use 100vh plus margins. CSS variables --bg, --surface, --text, " +
       "--muted, --accent, --accent-2, --border and --font match the app's " +
       "theme; the page is dark. Buttons, sliders and the body are already " +
-      "styled to match. It is also saved as an artifact.",
+      "styled to match. Before the person sees it, it is run in a headless " +
+      "browser and tried -- loaded, watched, every control used, the canvas " +
+      "dragged -- and you get back a report: errors and when they happened, " +
+      "the text, controls and canvases on screen, a map of where the drawing " +
+      "is and its colours, whether it animates and whether each control " +
+      "changed the picture. A widget with errors or nothing visible is not " +
+      "shown: read the report, fix the cause, and call widget_show again with " +
+      "the whole corrected widget. When it is shown, read the report too, and " +
+      "fix anything that does not look like what you meant (a drawing crammed " +
+      "in a corner, a slider that changes nothing). It is also saved as an artifact.",
     parameters: {
       type: "object",
       properties: {
@@ -1142,7 +1152,7 @@ export interface ToolContext {
   /** Show a picture in the conversation. */
   showImage: (blob: string, alt: string, caption: string | null, size?: { w: number; h: number }) => void;
   /** Show an interactive widget in the conversation. */
-  showWidget: (widget: { title: string; html: string; height: number }) => void;
+  showWidget: (widget: { title: string; html: string; height: number; artifact?: string }) => void;
   /** Show a picture of the browser or desktop in the card already showing
       that screen, rather than as a card of its own beside it. */
   showScreen: (source: "browser" | "desktop", blob: string, size?: { w: number; h: number }) => void;
@@ -2090,27 +2100,39 @@ async function runToolUnredacted(
         const height = Number.isFinite(asked) && asked > 0
           ? Math.round(Math.min(WIDGET_MAX_HEIGHT, Math.max(WIDGET_MIN_HEIGHT, asked)))
           : WIDGET_DEFAULT_HEIGHT;
-        ctx.showWidget({ title, html, height });
+        const check = await checkWidget({ title, html, height });
+        if (!check.ok) {
+          return {
+            ok: false,
+            summary:
+              `The widget "${title}" was NOT shown to the person: it failed when it was tried.\n\n${check.report}\n\n` +
+              "Fix the cause and call widget_show again with the whole corrected widget.",
+            preview: `${title}: failed its check`,
+          };
+        }
 
         // A copy that opens on its own, Three.js and all, from the Artifacts page.
-        let saved = "";
+        let artifact: string | undefined;
         try {
-          const art = saveArtifact({
+          artifact = saveArtifact({
             origin: "agent", name: `${slug(title)}.html`,
             data: Buffer.from(widgetDocument({ title, html }), "utf8"),
             mime: "text/html", session: ctx.session, note: `Interactive widget: ${title}`,
-          });
-          saved = ` Saved as artifact ${art.id}.`;
+          }).id;
         } catch {
           // The widget is still in the thread; losing the copy is not a failure.
         }
+        ctx.showWidget({ title, html, height, ...(artifact ? { artifact } : {}) });
         return {
           ok: true,
           summary:
-            `The widget "${title}" is now shown in the conversation, running in the person's browser.${saved} ` +
-            "You cannot see it yourself. If it throws an error, the card says so to the person; " +
-            "when they report a problem, fix it and call widget_show again with the whole corrected widget.",
-          preview: title,
+            `The widget "${title}" is now shown in the conversation${artifact ? ` (saved as artifact ${artifact})` : ""}.\n\n` +
+            `${check.report}\n\n` +
+            (check.checked
+              ? "If this is not what you meant it to look like or do, fix it and call widget_show again. "
+              : "") +
+            "Errors it throws later in the person's browser are reported to you in the conversation.",
+          preview: check.checked ? title : `${title} (unchecked)`,
         };
       }
 

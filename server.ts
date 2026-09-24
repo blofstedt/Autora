@@ -31,6 +31,7 @@ import {
 } from "./server/llm";
 import { billingSummary, dayKey } from "./server/billing";
 import { dropSession, fromDataUrl, getBlob, putBlob } from "./server/blobs";
+import { threeRuntime } from "./server/widgets";
 import {
   MAX_ARTIFACT_BYTES, deleteArtifact, getArtifact, listArtifacts, readArtifact, saveArtifact,
 } from "./server/artifacts";
@@ -1136,9 +1137,19 @@ function historyFor(session: Session, sinceSeq = 0): { message: ChatMessage; seq
       if (event.payload?.local) continue;
       role = "assistant";
     }
+    let note = "";
+    if (event.kind === "media.widget.error") {
+      /* Said to the agent as the person's side of the conversation: it
+         happened in their browser, after the widget was shown. */
+      role = "user";
+      note = `[Autora: the widget "${event.payload?.title}" you made threw an error in the person's browser: ${
+        event.payload?.error}.${event.payload?.artifact
+          ? ` Its source is artifact ${event.payload.artifact} (artifact_read); fix it and show the corrected widget with widget_show.`
+          : ""}]`;
+    }
     if (!role) continue;
 
-    const text = String(event.payload?.text ?? "");
+    const text = note || String(event.payload?.text ?? "");
     if (!text) continue;
 
     const last = turns[turns.length - 1];
@@ -1996,8 +2007,10 @@ async function runTurn(session: Session, text: string): Promise<TurnResult> {
           emitEvent(session, "media.image", "agent", {
             alt, caption, ...(size ? { w: size.w, h: size.h } : {}),
           }, null, blob),
-        showWidget: ({ title, html, height }) =>
-          emitEvent(session, "media.widget", "agent", { title, html, height }, span),
+        showWidget: ({ title, html, height, artifact }) =>
+          emitEvent(session, "media.widget", "agent", {
+            title, html, height, ...(artifact ? { artifact } : {}),
+          }, span),
         showScreen: (source, blob, size) =>
           emitEvent(session, `${source}.frame`, "agent", {
             ...(source === "browser" ? { url: browsers.get(session.id)?.status().url ?? "" } : {}),
@@ -3805,31 +3818,38 @@ async function startServer() {
   });
 
   /* Three.js for explainer widgets, as the one file src/widget/three.ts
-     bundles it into (see there for why). The production build writes it to
-     dist/widget/three.js; in development it is built here on first ask, with
-     the same esbuild the build uses. */
-  let widgetThree: Promise<string> | null = null;
+     bundles it into (see there for why). */
   app.get("/widget/three.js", (_req: Request, res: Response) => {
-    widgetThree ??= process.env.NODE_ENV === "production"
-      ? fs.promises.readFile(path.join(process.cwd(), "dist", "widget", "three.js"), "utf8")
-      : import("esbuild").then(async (esbuild) => {
-          const out = await esbuild.build({
-            entryPoints: [path.join(process.cwd(), "src", "widget", "three.ts")],
-            bundle: true, format: "esm", minify: true, write: false,
-          });
-          return out.outputFiles[0].text;
-        });
-    widgetThree.then(
+    threeRuntime().then(
       (code) => {
         res.setHeader("Content-Type", "text/javascript; charset=utf-8");
         res.setHeader("Cache-Control", `private, max-age=${process.env.NODE_ENV === "production" ? 86400 : 0}`);
         res.send(code);
       },
       (err: any) => {
-        widgetThree = null;
         res.status(500).type("text/plain").send(`The widget runtime is not available: ${err?.message ?? err}`);
       },
     );
+  });
+
+  /* An explainer widget threw in the person's browser. Logged as an event
+     so the agent reads it with the conversation (see historyFor) and can
+     fix what it made; each distinct error once per widget. */
+  app.post("/api/sessions/:id/widgets/:seq/error", (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    const seq = Number(req.params.seq);
+    const shown = session.events.find((e) => e.seq === seq && e.kind === "media.widget");
+    const error = String(req.body?.error ?? "").replace(/\s+/g, " ").trim().slice(0, 400);
+    if (!shown || !error) return res.status(400).json({ error: "No such widget, or no error" });
+    const already = session.events.some((e) =>
+      e.kind === "media.widget.error" && e.payload?.widget === seq && e.payload?.error === error);
+    if (!already) {
+      emitEvent(session, "media.widget.error", "system", {
+        widget: seq, title: shown.payload?.title ?? "", artifact: shown.payload?.artifact ?? null, error,
+      });
+    }
+    res.json({ ok: true });
   });
 
   // 13. Vite Integration (Development middleware / Production static serving)

@@ -91,9 +91,12 @@ releaseNotes: >-
   Autora can now build interactive explainer widgets right in the chat. Ask
   how something works, like gravity, the water cycle or a sorting algorithm,
   and it can answer with a small hands-on visual you can play with: sliders,
-  buttons, animations and 3D scenes you can drag to rotate. Widgets run
-  safely sandboxed, can be expanded to fill the window, and are saved on the
-  Artifacts page as a page you can download and open on its own.
+  buttons, animations and 3D scenes you can drag to rotate. Before you see a
+  widget, Autora tries it out itself (loading it, pressing every button,
+  moving every slider) and fixes anything that breaks. If one still throws
+  an error in your browser, Autora is told, and a "Fix it" button on the card
+  asks it to repair it. Widgets run safely sandboxed, can be expanded to
+  fill the window, and are saved on the Artifacts page.
 
 dependencies: []
 path: ""

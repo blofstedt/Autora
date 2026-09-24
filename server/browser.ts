@@ -229,7 +229,7 @@ const CANDIDATE_PATHS = [
   "/Applications/Chromium.app/Contents/MacOS/Chromium",
 ];
 
-function systemBrowser(): string | null {
+export function systemBrowser(): string | null {
   const named = (process.env.AUTORA_BROWSER_PATH || "").trim();
   if (named) return named;
   for (const candidate of CANDIDATE_PATHS) {
