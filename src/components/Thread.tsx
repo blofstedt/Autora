@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { Bucket, Cell, KanbanTask } from "../lib/derive";
+import type { Bucket, Cell, KanbanTask, MemoryTouch } from "../lib/derive";
 import { IconAlert, IconArrowDown, IconChevron, IconUser } from "./Icons";
 import { AutoraMark } from "./AutoraMark";
 import { TerminalCell } from "./TerminalCell";
@@ -12,6 +12,7 @@ import { ImageCell } from "./ImageCell";
 import { AskCell } from "./AskCell";
 import { Markdown } from "./Markdown";
 import { JevCell } from "./JevCell";
+import { MemoryCell } from "./MemoryCell";
 
 /** Within this many pixels of the bottom counts as "watching the live edge". */
 const STICK_ZONE = 80;
@@ -175,6 +176,8 @@ type WorkState = {
   /** The agent handed the browser over and is waiting for them. */
   browserHandedOver: boolean;
   onStop: () => void;
+  /** Opens the Mind page, from a memory named in the thread. */
+  onOpenMind?: () => void;
 };
 
 function TurnBucket({
@@ -244,6 +247,7 @@ function CellView({
   driving,
   browserHandedOver,
   onStop,
+  onOpenMind,
 }: {
   cell: Cell;
   sessionId: string;
@@ -256,7 +260,15 @@ function CellView({
 } & WorkState) {
   switch (cell.kind) {
     case "reply":
-      return <Reply text={cell.turn.text} thinking={cell.turn.thinking} working={active} />;
+      return (
+        <Reply
+          text={cell.turn.text}
+          thinking={cell.turn.thinking}
+          memories={cell.memories}
+          working={active}
+          onOpenMind={onOpenMind}
+        />
+      );
     case "terminal":
       return (
         <TerminalCell
@@ -302,11 +314,14 @@ function CellView({
               driving={driving}
               browserHandedOver={browserHandedOver}
               onStop={onStop}
+              onOpenMind={onOpenMind}
             />
           ))}
         </ScreencastCell>
       );
     }
+    case "memory":
+      return <MemoryCell cell={cell} onOpen={onOpenMind} />;
     case "jev":
       return <JevCell decision={cell.decision} />;
     case "ask":
@@ -356,22 +371,26 @@ function CellView({
 function Reply({
   text,
   thinking,
+  memories = [],
   working,
+  onOpenMind,
 }: {
   text: string;
   thinking?: string;
+  memories?: MemoryTouch[];
+  onOpenMind?: () => void;
   /** Still being written. The mark animates while this holds and plays its
       own ending when it drops, so the reply visibly lands rather than just
       stopping. */
   working?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  if (!text && !thinking) return null;
+  if (!text && !thinking && memories.length === 0) return null;
 
   return (
     <div className={`msg agent ${working ? "is-working" : ""}`.trim()}>
       <span className="avatar">
-        <AutoraMark size={17} state={working ? "working" : "rest"} />
+        <AutoraMark size={27} state={working ? "working" : "rest"} />
       </span>
       <div className="msg-body">
         <div className="msg-who">autora</div>
@@ -388,6 +407,9 @@ function Reply({
             {open && <pre className="reason-body">{thinking}</pre>}
           </>
         )}
+        {memories.map((m, index) => (
+          <MemoryCell key={index} cell={m} onOpen={onOpenMind} inline />
+        ))}
         {text && <div className="msg-text is-md"><Markdown text={text} /></div>}
       </div>
     </div>

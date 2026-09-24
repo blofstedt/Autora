@@ -1,19 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#7c6ee6"/>
-      <stop offset="100%" stop-color="#ff3b6b"/>
+    <linearGradient id="s" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8b7bff"/>
+      <stop offset="1" stop-color="#22d3ee"/>
     </linearGradient>
-    <filter id="glow">
-      <feGaussianBlur stdDeviation="1.5" result="blur"/>
-      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    <radialGradient id="w">
+      <stop offset="0" stop-color="#a855f7" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#6e5bff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="g" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="0.9" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
   </defs>
-  <rect width="100" height="100" rx="22" fill="url(#bg)"/>
-  <!-- spark / star glyph — same path as IconSpark in the UI -->
-  <path
-    d="M50 22 l7 18.5L75.5 48 l-18.5 7L50 74 l-7-18.5L25 48 l18.5-7z"
-    fill="white"
-    filter="url(#glow)"
-  />
+  <rect width="32" height="32" rx="7" fill="#0b0a14"/>
+  <circle cx="16" cy="16" r="11.00" fill="url(#w)"/>
+  <path d="M16.00 4.75L18.30 13.70L27.25 16.00L18.30 18.30L16.00 27.25L13.70 18.30L4.75 16.00L13.70 13.70Z" fill="url(#s)" filter="url(#g)"/>
 </svg>

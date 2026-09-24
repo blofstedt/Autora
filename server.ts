@@ -389,6 +389,7 @@ function createInitialSession(): Session {
   add("memory.recall", "agent", {
     ids: ["mem-1", "mem-skill-3"],
     titles: ["Vite and Express deployment configuration", "Autonomous Kanban Task Management"],
+    kinds: ["procedure", "skill"],
   });
   add("turn.user", "user", { text: "Organize project priorities and prepare autonomous task queue." });
   add("turn.agent.thinking", "agent", { text: "Synthesizing workspace objectives into a structured Kanban board and checking elevated policy rules." });
@@ -2124,6 +2125,7 @@ async function startServer() {
           emitEvent(session, "memory.recall", "agent", {
             ids: uniqueAccessed.map((r) => r.id),
             titles: uniqueAccessed.map((r) => r.title),
+            kinds: uniqueAccessed.map((r) => r.kind),
           });
         }
 
@@ -2419,6 +2421,7 @@ async function startServer() {
                   emitEvent(session, "memory.recall", "agent", {
                     ids: hits.slice(0, 8).map((m) => m.id),
                     titles: hits.slice(0, 8).map((m) => m.title),
+                    kinds: hits.slice(0, 8).map((m) => m.kind),
                   });
                 }
                 return hits.slice(0, 8).map((m) => ({

@@ -74,9 +74,14 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The glowing star on the empty session screen is now larger and stands on
-  its own: the circle behind it is gone, and the mark no longer has a
-  rotating arc circling it anywhere in the app.
+  A new look built around the glowing star. It is the app icon now, signs the
+  top of the menu, and marks each of the agent's lines in the chat: it turns
+  and glows while a line is being written, then dims. The star on an empty
+  session is larger and stands on its own, and the rotating arc around it is
+  gone. The memory map has moved off the chat and sidebar and lives only on
+  the Mind page. Instead, when the agent recalls or saves a memory, a small
+  pulse beside its reasoning names each one and its bucket (preference, skill,
+  fact, procedure); tap it to open the Mind.
 
 dependencies: []
 path: ""

@@ -112,6 +112,13 @@ export type MemoryMark = {
   kind: "written" | "recalled";
 };
 
+/** A memory named where the agent reached for it. `kind` is the bucket
+    (preference, skill...) when the server said which. */
+export type MemoryItem = { id: string; title: string; kind: string | null };
+
+/** One reach into memory: what was recalled or written, and when. */
+export type MemoryTouch = { seq: number; action: "recalled" | "written"; items: MemoryItem[] };
+
 /** One captured frame, with the click it was showing, if any. */
 export type Shot = {
   blob: string;
@@ -152,7 +159,12 @@ export type Picture = {
  * recording was for.
  */
 export type Cell =
-  | { kind: "reply"; seq: number; turn: TranscriptTurn }
+  | {
+      kind: "reply"; seq: number; turn: TranscriptTurn;
+      /** Memories touched while this reply was being thought, shown beside
+          its reasoning rather than as a line of their own. */
+      memories: MemoryTouch[];
+    }
   | {
       kind: "terminal"; seq: number; span: string; command: string;
       output: string; status: SpanState["status"];
@@ -172,7 +184,8 @@ export type Cell =
   | { kind: "kanban"; seq: number; board: KanbanBoard }
   | { kind: "permission"; seq: number; prompt: PermissionPrompt }
   | { kind: "ask"; seq: number; ask: Ask }
-  | { kind: "jev"; seq: number; decision: JevDecision };
+  | { kind: "jev"; seq: number; decision: JevDecision }
+  | ({ kind: "memory" } & MemoryTouch);
 
 /**
  * One prompt and everything the agent did about it.
@@ -272,6 +285,36 @@ export function derive(events: AutoraEvent[]): Derived {
     return cell;
   };
 
+  /** Fold a memory touch into `into`, merging with the last one when it is
+      the same sort, so back-to-back recalls are one pulse naming them all. */
+  const touch = (into: MemoryTouch[], next: MemoryTouch) => {
+    const last = into[into.length - 1];
+    if (last && last.action === next.action) {
+      for (const item of next.items) {
+        if (!last.items.some((known) => known.id === item.id)) last.items.push(item);
+      }
+      last.seq = next.seq;
+    } else {
+      into.push(next);
+    }
+  };
+
+  /** Start a new reply. A memory pulse sitting just before it moves into it,
+      so what the agent recalled shows where its reasoning is. */
+  const openReply = (seq: number, text: string): TranscriptTurn => {
+    const turn: TranscriptTurn = { role: "agent", text, seq };
+    transcript.push(turn);
+    bucket.replies.push(turn);
+    const memories: MemoryTouch[] = [];
+    const before = current();
+    if (before && before.kind === "memory" && bucket.cells[bucket.cells.length - 1] === before) {
+      bucket.cells.pop();
+      memories.push({ seq: before.seq, action: before.action, items: before.items });
+    }
+    push({ kind: "reply", seq, turn, memories });
+    return turn;
+  };
+
   const screenCell = (source: "browser" | "desktop", seq: number) => {
     const cell = current();
     if (cell && cell.kind === "screen" && cell.source === source) return cell;
@@ -311,16 +354,37 @@ export function derive(events: AutoraEvent[]): Derived {
       case Kind.MemoryRecall:
       case Kind.MemoryWrite: {
         const written = e.kind === Kind.MemoryWrite;
-        const ids: string[] = e.payload.ids ?? [];
-        const titles: string[] = e.payload.titles ?? [];
-        ids.forEach((id, index) => {
-          memoryById.set(id, {
-            id,
-            title: titles[index] ?? memoryById.get(id)?.title ?? "a memory",
+        // A recall names several at once; a write names the one it wrote.
+        const ids: string[] = e.payload.ids ?? (e.payload.id ? [e.payload.id] : []);
+        const titles: string[] = e.payload.titles ?? (e.payload.title ? [e.payload.title] : []);
+        const kinds: (string | undefined)[] = e.payload.kinds ?? (e.payload.kind ? [e.payload.kind] : []);
+        const items: MemoryItem[] = ids.map((id, index) => ({
+          id,
+          title: titles[index] ?? memoryById.get(id)?.title ?? "a memory",
+          kind: kinds[index] ?? null,
+        }));
+        items.forEach((item) => {
+          memoryById.set(item.id, {
+            id: item.id,
+            title: item.title,
             seq: e.seq,
             kind: written ? "written" : "recalled",
           });
         });
+        if (items.length === 0) break;
+        // Shown in the thread where it happened: beside the reasoning of the
+        // reply being written, or on its own line until the next one starts.
+        const next: MemoryTouch = { seq: e.seq, action: written ? "written" : "recalled", items };
+        const last = current();
+        if (last && last.kind === "reply") {
+          touch(last.memories, next);
+        } else if (last && last.kind === "memory") {
+          const merged: MemoryTouch[] = [last];
+          touch(merged, next);
+          if (merged.length > 1) push({ kind: "memory", ...next });
+        } else {
+          push({ kind: "memory", ...next });
+        }
         break;
       }
 
@@ -330,20 +394,14 @@ export function derive(events: AutoraEvent[]): Derived {
         if (openAgentTurn && current()?.kind === "reply") {
           openAgentTurn.text += e.payload.text ?? "";
         } else {
-          openAgentTurn = { role: "agent", text: e.payload.text ?? "", seq: e.seq };
-          transcript.push(openAgentTurn);
-          bucket.replies.push(openAgentTurn);
-          push({ kind: "reply", seq: e.seq, turn: openAgentTurn });
+          openAgentTurn = openReply(e.seq, e.payload.text ?? "");
         }
         break;
       }
 
       case Kind.AgentThinking: {
         if (!openAgentTurn || current()?.kind !== "reply") {
-          openAgentTurn = { role: "agent", text: "", seq: e.seq };
-          transcript.push(openAgentTurn);
-          bucket.replies.push(openAgentTurn);
-          push({ kind: "reply", seq: e.seq, turn: openAgentTurn });
+          openAgentTurn = openReply(e.seq, "");
         }
         openAgentTurn.thinking = (openAgentTurn.thinking ?? "") + (e.payload.text ?? "");
         break;
