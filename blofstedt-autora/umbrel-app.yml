@@ -88,11 +88,12 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Sign-ins now survive the browser stopping. With newer versions of Chrome,
-  closing the browser's last tab threw away the cookies that keep many sites
-  (including parts of Google and Microsoft sign-in) signed in before Autora
-  had saved them, so you were asked to sign in again after the browser
-  restarted. They are now saved while the tab is still open.
+  Live voice chat lets you finish your sentence. It used to send after about a
+  second of silence, so a short pause mid-thought cut you off. It now waits
+  about two seconds, and longer when you trail off on words like "and", "the"
+  or "um". Live mode also shows that it is on: the bar at the bottom lights
+  up, shows your words as you say them, has a Stop button while Autora works,
+  and an End button to turn live mode off without leaving the session.
 
 dependencies: []
 path: ""
