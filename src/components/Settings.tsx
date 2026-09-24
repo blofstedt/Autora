@@ -764,7 +764,7 @@ type JevState = {
   enabled: boolean;
   threshold: number;
   /** The hosted Jev API key: whether one is set, never the key itself. */
-  key?: { set: boolean; source: "app" | "env" | null; masked: string };
+  key?: { set: boolean; source: "app" | "secret" | "env" | null; name?: string; masked: string };
   backend?: "hosted" | "model";
   support: { state: "yes" | "no" | "unknown"; reason?: string };
   last: {
@@ -851,7 +851,11 @@ function JevCard({ jev, onSaved }: { jev: JevState; onSaved: (next: SettingsStat
           autoComplete="off"
           spellCheck={false}
           placeholder={jev.key?.set
-            ? (jev.key.source === "env" ? "Jev key from the server environment" : `Jev key saved (${jev.key.masked})`)
+            ? (jev.key.source === "env"
+                ? `Jev key from the server environment (${jev.key.name})`
+                : jev.key.source === "secret"
+                  ? `Jev key from Secrets (${jev.key.name}, ${jev.key.masked})`
+                  : `Jev key saved (${jev.key.masked})`)
             : "Jev API key (jev_...)"}
           value={keyDraft}
           onChange={(e) => setKeyDraft(e.target.value)}

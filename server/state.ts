@@ -491,6 +491,11 @@ export const SECRET_PRESETS: Record<string, { label: string; description: string
     description: "API key for Claude models.",
     placeholder: "sk-ant-...",
   },
+  JEV_API_KEY: {
+    label: "Jev API Key",
+    description: "Key for the hosted Jev API (TypeSafe) used by Jev Mode. JEV_TOKEN works too.",
+    placeholder: "jev_...",
+  },
   SLACK_BOT_TOKEN: {
     label: "Slack Bot Token",
     description: "Bot user OAuth token for Slack notifications and integrations.",

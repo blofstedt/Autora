@@ -536,7 +536,7 @@ acting on it forever unless there is somewhere to go and say no.
 | `AUTORA_MAX_TOOL_TOKENS` | Tool output longer than this is kept in the session vault, with its start and end left in the prompt (default `3000`) |
 | `AUTORA_COMPACTION_MODEL` | A cheaper model of the same provider to write the working memory with (default: the chat model) |
 | `AUTORA_MAX_OUTPUT_TOKENS` | Output tokens the model may write per step of a task (default: 8192) |
-| `TYPESAFE_API_KEY` | A key for the hosted Jev API, used by Jev Mode instead of the chat model (also settable in Settings) |
+| `TYPESAFE_API_KEY` | A key for the hosted Jev API, used by Jev Mode instead of the chat model. `JEV_API_KEY`, `JEV_TOKEN`, `JEV_KEY` and `TYPESAFE_TOKEN` work too, as environment variables or saved in Settings → Secrets (also settable in Settings → Jev Mode) |
 | `AUTORA_BROWSER_HEADED` | `1` shows a real browser window instead of running headless |
 | `AUTORA_BROWSER_FPS` / `AUTORA_BROWSER_QUALITY` / `AUTORA_BROWSER_STREAM_WIDTH` | How much live video to send (default `6` fps, quality `50`, scaled to `960` wide) |
 | `AUTORA_HOME` | State directory (default `~/.autora`; `/data` in the container) — the one place that survives an update |

@@ -689,11 +689,23 @@ function askPermission(
 
 // ---------------------------------------------------------------- jev mode --
 
-/** The hosted Jev API key: saved in Settings, or from the environment. */
-function jevKey(): { key: string; source: "app" | "env" | null } {
+/** Names a Jev key may be stored under, in the Secrets store or the
+    environment. People name it whatever they like; these are the likely ones. */
+const JEV_KEY_NAMES = ["JEV_API_KEY", "JEV_TOKEN", "JEV_KEY", "TYPESAFE_API_KEY", "TYPESAFE_TOKEN"];
+
+/** The hosted Jev API key: saved in the Jev Mode card, saved as a secret in
+    the Secrets store, or from the server environment, in that order. */
+function jevKey(): { key: string; source: "app" | "secret" | "env" | null; name?: string } {
   if (state.jev.key) return { key: state.jev.key, source: "app" };
-  const env = (process.env.TYPESAFE_API_KEY || process.env.JEV_API_KEY || "").trim();
-  return env ? { key: env, source: "env" } : { key: "", source: null };
+  for (const name of JEV_KEY_NAMES) {
+    const saved = (state.secrets?.[name] || "").trim();
+    if (saved) return { key: saved, source: "secret", name };
+  }
+  for (const name of JEV_KEY_NAMES) {
+    const env = (process.env[name] || "").trim();
+    if (env) return { key: env, source: "env", name };
+  }
+  return { key: "", source: null };
 }
 
 /** Where Jev decisions go: the hosted Jev API when a key for it is set,
@@ -3256,8 +3268,8 @@ async function startServer() {
       threshold: state.jev.threshold,
       // Never the key itself: whether one is set, and where it came from.
       key: (() => {
-        const { key, source } = jevKey();
-        return { set: Boolean(key), source, masked: maskKey(key) };
+        const { key, source, name } = jevKey();
+        return { set: Boolean(key), source, name, masked: maskKey(key) };
       })(),
       backend: jevKey().key ? "hosted" : "model",
       support: supportFor(jevTarget()),
