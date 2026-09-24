@@ -88,12 +88,13 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Live voice chat lets you finish your sentence. It used to send after about a
-  second of silence, so a short pause mid-thought cut you off. It now waits
-  about two seconds, and longer when you trail off on words like "and", "the"
-  or "um". Live mode also shows that it is on: the bar at the bottom lights
-  up, shows your words as you say them, has a Stop button while Autora works,
-  and an End button to turn live mode off without leaving the session.
+  The message box no longer locks up at random. It used to be disabled
+  whenever the connection to the server dropped for a moment, such as when a
+  phone wakes up or the network blips. Now you can keep typing, and if a
+  message can't be sent, what you typed is put back. Your standing
+  instructions from Settings now come last in Autora's instructions on every
+  turn, marked as yours and overriding its defaults, so rules like "be brief"
+  are followed instead of buried.
 
 dependencies: []
 path: ""

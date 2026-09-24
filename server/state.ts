@@ -118,8 +118,22 @@ export interface PersistedState {
   learning: boolean;
 }
 
-const DEFAULT_PROMPT =
+export const DEFAULT_PROMPT =
   "You are Autora, an autonomous AI execution console and agent workspace.";
+
+/**
+ * The person's own rules, out of the stored prompt.
+ *
+ * The stored prompt starts life as the identity line above, and people type
+ * their house rules under it (or over it). The identity always opens the
+ * instructions anyway, so it is taken off here: what is left is only what
+ * the person wrote, which is what has to be stated as theirs.
+ */
+export function standingRules(prompt: string): string {
+  let text = prompt.trim();
+  if (text.startsWith(DEFAULT_PROMPT)) text = text.slice(DEFAULT_PROMPT.length).trim();
+  return text;
+}
 
 /**
  * What the tools do before anybody visits Settings.
