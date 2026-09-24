@@ -13,7 +13,7 @@ services:
     # version's image is in the registry (.github/scripts/offer_release.py),
     # so Umbrel never offers an update whose image is still building. Don't
     # change it by hand; check_release.py fails a pull request that does.
-    image: ghcr.io/blofstedt/autora:0.9.29
+    image: ghcr.io/blofstedt/autora:0.9.30
     restart: on-failure
     # The https listener, published directly rather than through app_proxy,
     # because the proxy speaks http to the backend and the browser needs the
