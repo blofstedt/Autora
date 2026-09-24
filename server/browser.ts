@@ -34,6 +34,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { stateFilePath } from "./state";
+import type { BrowserCookie } from "./cookies";
 import { humanClick, humanMove, humanType, pointIn, wander, type Point } from "./human";
 
 /* Playwright's types are not imported: the package is optional, and a type
@@ -81,6 +82,39 @@ export interface Ref {
   /** On screen (or within a little of it) when the page was read. The model
       is shown these; the rest are counted, keeping their numbers. */
   inView?: boolean;
+  /** An input type other than plain text: email, tel, date, number... */
+  type?: string;
+  /** What the field is for, from its autocomplete hint or its own name:
+      "first name", "shipping ZIP / postal code". */
+  purpose?: string;
+  placeholder?: string;
+  required?: boolean;
+  maxLength?: number;
+  /** min..max, for numbers and dates. */
+  range?: string;
+  /** What the page says is wrong with the value, when it says anything. */
+  invalid?: string;
+  /** The help text the page attaches to the field. */
+  hint?: string;
+  /** The fieldset, group or heading the field sits under. */
+  section?: string;
+  /** A dropdown's choices, the first fifteen, and how many there are. */
+  options?: string[];
+  optionCount?: number;
+  expanded?: boolean;
+  selected?: boolean;
+  current?: boolean;
+  /** The open dialog the element is inside, by name. */
+  dialog?: string;
+}
+
+/** Where the page is scrolled to: of the page itself, or of the pane that
+    does the scrolling in an app whose page never moves. */
+export interface ScrollState {
+  y: number;
+  max: number;
+  view: number;
+  pane: boolean;
 }
 
 export interface PageRead {
@@ -96,6 +130,24 @@ export interface PageRead {
   /** Checkbox CAPTCHAs on the page. They live in cross-origin iframes the
       outline cannot see into, so they are found separately. */
   captchas: { kind: CaptchaKind; solved: boolean; challenge: boolean }[];
+  /** The dialog open on top of the page, by name. */
+  dialog?: string | null;
+  scroll?: ScrollState;
+  /** The site turned the sign-in away, in its own words. */
+  blocked?: string | null;
+  /** What the action that produced this read did, field by field, or why
+      it did nothing. */
+  notes?: string[];
+}
+
+/** Where to scroll: by screens (or pixels), to the top or bottom, inside a
+    numbered element, or to some text. */
+export interface ScrollRequest {
+  screens?: number;
+  dy?: number;
+  to?: "top" | "bottom";
+  ref?: number | null;
+  text?: string;
 }
 
 export type CaptchaKind = "recaptcha" | "hcaptcha" | "turnstile";
@@ -270,7 +322,8 @@ const CURSOR_SCRIPT = `
 `;
 
 /**
- * Everything on the page you could act on, numbered.
+ * Everything on the page you could act on, numbered, and described well
+ * enough to act on correctly.
  *
  * The accessibility layer rather than the DOM, for the reason the README
  * gives: the DOM is wrapper soup, a button is six nested divs, and the a11y
@@ -278,84 +331,365 @@ const CURSOR_SCRIPT = `
  * would be given. Elements are collected in document order so the numbers are
  * stable across a read that changed nothing, and each carries the centre of
  * its box, which is where a click goes.
+ *
+ * A name alone was not enough to fill a form with. A box labelled "Name" is a
+ * first name, a last name or both, and the page says which -- in its
+ * autocomplete hint, its input type, the section it sits in, the text beside
+ * it -- so all of that is carried too: what the field is for, what kind of
+ * value it takes, whether it is required, and what the page said was wrong
+ * with it. Dropdowns list their choices. Open shadow roots and same-origin
+ * frames are walked, because a modern site's sign-in form is as likely to be
+ * inside one as not, and a div that is only clickable because of its cursor
+ * is still something to click.
  */
 const SCAN_SCRIPT = `
 (() => {
   const SELECTOR = [
-    "a[href]", "button", "input", "select", "textarea", "summary",
+    "a[href]", "button", "input", "select", "textarea", "summary", "label",
     "[role=button]", "[role=link]", "[role=checkbox]", "[role=radio]",
-    "[role=tab]", "[role=menuitem]", "[role=switch]", "[role=option]",
-    "[contenteditable=true]", "[tabindex]:not([tabindex='-1'])",
+    "[role=tab]", "[role=menuitem]", "[role=menuitemcheckbox]", "[role=menuitemradio]",
+    "[role=switch]", "[role=option]", "[role=combobox]", "[role=textbox]",
+    "[role=searchbox]", "[role=slider]", "[role=spinbutton]", "[role=treeitem]",
+    "[contenteditable=true]", "[contenteditable='']", "[tabindex]:not([tabindex='-1'])",
   ].join(",");
+  const FIELD_TAGS = { INPUT: 1, SELECT: 1, TEXTAREA: 1 };
+  const clean = (s) => String(s || "").replace(/\\s+/g, " ").trim();
+  const short = (s, n) => { s = clean(s); return s.length > n ? s.slice(0, n - 1) + "\\u2026" : s; };
+  const textOf = (el) => clean(el.innerText !== undefined ? el.innerText : el.textContent);
 
+  /* What an autocomplete token or a field's own name says it is for. The
+     single most useful thing to know about a box labelled "Name". */
+  const PURPOSES = {
+    "given-name": "first name", "family-name": "last name", "additional-name": "middle name",
+    "name": "full name", "nickname": "nickname", "honorific-prefix": "title (Mr, Ms...)",
+    "email": "email", "tel": "phone", "tel-national": "phone", "tel-country-code": "phone country code",
+    "street-address": "street address", "address-line1": "address line 1",
+    "address-line2": "address line 2 (apt, suite)", "address-line3": "address line 3",
+    "address-level2": "city", "address-level1": "state / province", "postal-code": "ZIP / postal code",
+    "country": "country", "country-name": "country", "organization": "company",
+    "organization-title": "job title", "bday": "date of birth", "bday-day": "birth day",
+    "bday-month": "birth month", "bday-year": "birth year", "sex": "gender",
+    "username": "username", "current-password": "current password",
+    "new-password": "new password (being set)", "one-time-code": "one-time code",
+    "cc-name": "name on card", "cc-number": "card number", "cc-exp": "card expiry",
+    "cc-exp-month": "card expiry month", "cc-exp-year": "card expiry year",
+    "cc-csc": "card security code", "url": "website",
+  };
+  const GUESSES = [
+    [/first.?name|fname|given|forename/i, "first name"],
+    [/last.?name|lname|surname|family.?name/i, "last name"],
+    [/middle.?name|mname/i, "middle name"],
+    [/full.?name/i, "full name"],
+    [/e.?mail/i, "email"],
+    [/phone|mobile|\\btel\\b|cell/i, "phone"],
+    [/zip|postal|postcode/i, "ZIP / postal code"],
+    [/\\bcity\\b|town|locality/i, "city"],
+    [/\\bstate\\b|province|region|county/i, "state / province"],
+    [/country/i, "country"],
+    [/address.?(line)?.?2|apt|suite|unit/i, "address line 2 (apt, suite)"],
+    [/address|street/i, "street address"],
+    [/birth|\\bdob\\b|bday/i, "date of birth"],
+    [/user.?name|login.?id/i, "username"],
+    [/company|organi[sz]ation|employer/i, "company"],
+    [/otp|one.?time|verification.?code|2fa|mfa/i, "one-time code"],
+  ];
+  const purposeOf = (el) => {
+    const auto = (el.getAttribute("autocomplete") || "").toLowerCase().split(/\\s+/)
+      .filter((t) => t && t !== "on" && t !== "off" && !t.startsWith("section-"));
+    const scope = auto.find((t) => t === "shipping" || t === "billing");
+    const token = auto.find((t) => PURPOSES[t]);
+    if (token) return (scope ? scope + " " : "") + PURPOSES[token];
+    const hint = (el.getAttribute("name") || "") + " " + (el.id || "");
+    for (const [re, what] of GUESSES) if (re.test(hint)) return what;
+    return "";
+  };
+
+  const rootOf = (el) => el.getRootNode ? el.getRootNode() : el.ownerDocument;
+  const byIds = (el, ids) => {
+    const root = rootOf(el);
+    return clean(String(ids || "").split(/\\s+/).map((id) => {
+      const n = (root.getElementById ? root.getElementById(id) : null) || el.ownerDocument.getElementById(id);
+      return n ? textOf(n) : "";
+    }).join(" "));
+  };
+
+  /* Text just before the element: the "First name" in
+     <div><span>First name</span><input></div>, which is how a great many
+     forms are labelled and which no attribute records. */
+  const nearbyText = (el) => {
+    let node = el;
+    for (let depth = 0; depth < 3 && node; depth++) {
+      let sib = node.previousElementSibling;
+      for (let hops = 0; sib && hops < 3; hops++) {
+        // Another field before this one: whatever is before that is its label.
+        if (isField(sib) || sib.querySelector("input,select,textarea")) return "";
+        if (!sib.matches(SELECTOR) || sib.tagName === "LABEL") {
+          const t = textOf(sib);
+          if (t && t.length <= 80) return t;
+          if (t) return "";
+        }
+        sib = sib.previousElementSibling;
+      }
+      node = node.parentElement;
+      if (node && node.querySelectorAll("input,select,textarea").length > 1) break;
+    }
+    return "";
+  };
+
+  const isField = (el) => !!FIELD_TAGS[el.tagName];
   const named = (el) => {
     const label = el.getAttribute("aria-label");
-    if (label) return label.trim();
+    if (label && clean(label)) return clean(label);
     const by = el.getAttribute("aria-labelledby");
-    if (by) {
-      const parts = by.split(/\\s+/).map((id) => document.getElementById(id))
-        .filter(Boolean).map((n) => n.textContent || "");
-      if (parts.length) return parts.join(" ").trim();
+    if (by) { const t = byIds(el, by); if (t) return t; }
+    if (el.labels && el.labels.length) {
+      const t = clean(Array.from(el.labels).map(textOf).join(" "));
+      if (t) return t;
     }
-    if (el.id) {
-      const wrapped = document.querySelector('label[for="' + CSS.escape(el.id) + '"]');
-      if (wrapped && wrapped.textContent) return wrapped.textContent.trim();
+    const wrapping = el.closest("label");
+    if (wrapping && textOf(wrapping)) return textOf(wrapping);
+    if (isField(el) || el.isContentEditable) {
+      const t = el.getAttribute("title") || nearbyText(el) || el.getAttribute("placeholder");
+      if (t) return clean(t);
+      const raw = el.getAttribute("name") || el.id || "";
+      return clean(raw.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[_\\-\\[\\].]+/g, " "));
     }
-    const closest = el.closest("label");
-    if (closest && closest.textContent) return closest.textContent.trim();
-    const alt = el.getAttribute("alt") || el.getAttribute("title")
-      || el.getAttribute("placeholder") || el.getAttribute("name");
-    if (alt) return alt.trim();
-    return (el.innerText || el.value || "").trim();
+    const img = el.querySelector && el.querySelector("img[alt]");
+    return clean(textOf(el) || el.getAttribute("alt") || el.getAttribute("title")
+      || (img && img.getAttribute("alt")) || el.value || "");
   };
 
   const roleOf = (el) => {
     const explicit = el.getAttribute("role");
-    if (explicit) return explicit;
+    if (explicit) return explicit.split(/\\s+/)[0];
     const tag = el.tagName.toLowerCase();
     if (tag === "a") return "link";
     if (tag === "button" || tag === "summary") return "button";
-    if (tag === "select") return "combobox";
+    if (tag === "select") return el.multiple ? "listbox" : "combobox";
     if (tag === "textarea") return "textbox";
-    if (tag !== "input") return tag;
+    if (tag === "label") return "label";
+    if (el.isContentEditable) return "textbox";
+    if (tag !== "input") return "clickable";
     const type = (el.getAttribute("type") || "text").toLowerCase();
-    if (type === "checkbox" || type === "radio") return type;
-    if (type === "submit" || type === "button" || type === "reset") return "button";
+    if (type === "checkbox" || type === "radio" || type === "range" || type === "file") return type === "range" ? "slider" : type;
+    if (type === "submit" || type === "button" || type === "reset" || type === "image") return "button";
     if (type === "password") return "password";
     return "textbox";
   };
 
+  /* The section a field belongs to: its fieldset's legend, a labelled group,
+     or the nearest heading above it. "Name" under "Billing address" and
+     "Name" under "Cardholder" are different fields. */
+  // A legend names its own fieldset only, which closest() handles; in the
+  // walk back it would name the neighbouring one.
+  const HEADING = "h1,h2,h3,h4,h5,h6,[role=heading]";
+  const sectionOf = (el) => {
+    const set = el.closest("fieldset");
+    if (set) { const legend = set.querySelector("legend"); if (legend && textOf(legend)) return short(textOf(legend), 60); }
+    const group = el.closest("[role=group],[role=radiogroup]");
+    if (group) {
+      const t = group.getAttribute("aria-label") || byIds(group, group.getAttribute("aria-labelledby"));
+      if (t) return short(t, 60);
+    }
+    let node = el;
+    for (let steps = 0; node && steps < 60; steps++) {
+      let prev = node.previousElementSibling;
+      while (prev && steps < 60) {
+        steps++;
+        if (prev.matches(HEADING)) return short(textOf(prev), 60);
+        const inner = prev.querySelectorAll(HEADING);
+        if (inner.length) return short(textOf(inner[inner.length - 1]), 60);
+        prev = prev.previousElementSibling;
+      }
+      node = node.parentElement;
+      if (!node || node.tagName === "BODY" || node.tagName === "FORM" || node.tagName === "MAIN") break;
+    }
+    return "";
+  };
+
+  const dialogOf = (el) => {
+    const d = el.closest("dialog[open],[role=dialog],[role=alertdialog],[aria-modal=true]");
+    if (!d) return null;
+    return d;
+  };
+  const dialogName = (d) => short(d.getAttribute("aria-label")
+    || byIds(d, d.getAttribute("aria-labelledby"))
+    || (d.querySelector(HEADING) ? textOf(d.querySelector(HEADING)) : "") || "dialog", 60);
+
+  const visible = (el, box) => {
+    if (box.width < 2 || box.height < 2) return false;
+    const style = el.ownerDocument.defaultView.getComputedStyle(el);
+    return !(style.visibility === "hidden" || style.display === "none" || style.opacity === "0");
+  };
+
+  /* Every candidate, in document order, through open shadow roots and into
+     frames on this origin, with the offset of the frame each is in. */
+  const found = [];
+  const walk = (root, dx, dy, depth) => {
+    for (const el of root.querySelectorAll("*")) {
+      if (el.closest("[data-autora]")) continue;
+      found.push([el, dx, dy]);
+      if (el.shadowRoot && depth < 8) walk(el.shadowRoot, dx, dy, depth + 1);
+      if ((el.tagName === "IFRAME" || el.tagName === "FRAME") && depth < 4) {
+        let doc = null;
+        try { doc = el.contentDocument; } catch (e) {}
+        if (doc && doc.documentElement) {
+          const r = el.getBoundingClientRect();
+          walk(doc, dx + r.left + el.clientLeft, dy + r.top + el.clientTop, depth + 1);
+        }
+      }
+    }
+  };
+  walk(document, 0, 0, 0);
+
+  /* A modal makes the rest of the page inert: listing what is behind it
+     only invites clicks that land on nothing. */
+  let modal = null;
+  for (const d of document.querySelectorAll("dialog,[aria-modal=true]")) {
+    const isModal = d.tagName === "DIALOG" ? d.matches(":modal") : true;
+    if (!isModal) continue;
+    const b = d.getBoundingClientRect();
+    if (visible(d, b)) { modal = d; break; }
+  }
+
   const refs = [];
   const elements = [];
-  for (const el of document.querySelectorAll(SELECTOR)) {
-    if (el.closest("[data-autora]")) continue;
+  const taken = new Set();
+  const within = (el) => { for (let p = el.parentElement; p; p = p.parentElement) if (taken.has(p)) return p; return null; };
+  for (const [el, dx, dy] of found) {
+    if (modal && el.ownerDocument === document && !modal.contains(el)) continue;
+    let target = el;
+    let matched = el.matches(SELECTOR);
+    // A label is only worth listing when it stands in for a control that
+    // has been hidden to be restyled -- the usual custom checkbox.
+    if (matched && el.tagName === "LABEL") {
+      const control = el.control;
+      if (!control || !/^(checkbox|radio)$/i.test(control.type || "")) continue;
+      const cbox = control.getBoundingClientRect();
+      if (visible(control, cbox)) continue;
+      target = control;
+    }
+    /* A div that is only clickable because a script says so still looks
+       clickable to a person: a pointer cursor, a little text, and not inside
+       something already listed. */
+    if (!matched) {
+      if (!el.parentElement || el.children.length > 6) continue;
+      const style = el.ownerDocument.defaultView.getComputedStyle(el);
+      if (style.cursor !== "pointer") continue;
+      const parentStyle = el.ownerDocument.defaultView.getComputedStyle(el.parentElement);
+      if (parentStyle.cursor === "pointer") continue;
+      const t = textOf(el);
+      if (!t || t.length > 80) continue;
+      if (within(el)) continue;
+      matched = true;
+    }
     const box = el.getBoundingClientRect();
-    if (box.width < 2 || box.height < 2) continue;
-    const style = getComputedStyle(el);
-    if (style.visibility === "hidden" || style.display === "none" || style.opacity === "0") continue;
-    const name = named(el).replace(/\\s+/g, " ").slice(0, 120);
-    const role = roleOf(el);
-    if (!name && role !== "textbox" && role !== "password") continue;
+    if (!visible(el, box)) continue;
+    // A span with tabindex inside a link is the link.
+    const outer = within(el);
+    if (outer && outer.tagName === "A" && !isField(el)) continue;
+    const role = roleOf(target);
+    const name = short(named(target) || named(el), 120);
+    const field = isField(target) || role === "textbox" || role === "combobox" || role === "searchbox";
+    if (!name && !field && role !== "password") continue;
     const ref = refs.length;
-    const inView = box.bottom > -40 && box.top < innerHeight + 40 &&
-      box.right > 0 && box.left < innerWidth;
-    refs.push({
-      ref,
-      role,
-      name,
-      value: typeof el.value === "string" && el.type !== "password" ? el.value.slice(0, 80) : null,
-      x: Math.round(box.left + box.width / 2),
-      y: Math.round(box.top + box.height / 2),
-      w: Math.round(box.width),
-      h: Math.round(box.height),
+    const x = box.left + dx, y = box.top + dy;
+    const inView = y + box.height > -40 && y < innerHeight + 40 && x + box.width > 0 && x < innerWidth;
+    const type = target.tagName === "INPUT" ? (target.getAttribute("type") || "text").toLowerCase() : null;
+    const info = {
+      ref, role, name,
+      value: null, x: Math.round(x + box.width / 2), y: Math.round(y + box.height / 2),
+      w: Math.round(box.width), h: Math.round(box.height),
       href: el.tagName === "A" ? (el.getAttribute("href") || null) : null,
-      checked: typeof el.checked === "boolean" ? el.checked : null,
-      disabled: !!el.disabled,
+      checked: null, disabled: !!(target.disabled || target.getAttribute("aria-disabled") === "true"),
       inView,
-    });
+    };
+    if (target.tagName === "SELECT") {
+      const opts = Array.from(target.options).map((o) => clean(o.text || o.value));
+      const chosen = Array.from(target.selectedOptions || []).map((o) => clean(o.text || o.value));
+      info.value = chosen.join(", ") || null;
+      info.options = opts.filter(Boolean).slice(0, 15);
+      info.optionCount = opts.filter(Boolean).length;
+    } else if (typeof target.value === "string" && type !== "password" && role !== "button" && role !== "checkbox" && role !== "radio") {
+      info.value = target.value.slice(0, 80) || null;
+    } else if (target.isContentEditable || role === "textbox" || role === "combobox" || role === "searchbox") {
+      info.value = short(textOf(target), 80) || null;
+      if (info.value === name) info.value = null;
+    }
+    if (typeof target.checked === "boolean" && (type === "checkbox" || type === "radio")) info.checked = target.checked;
+    else if (target.hasAttribute("aria-checked")) info.checked = target.getAttribute("aria-checked") === "true";
+    else if (role === "switch" || role === "menuitemcheckbox") info.checked = target.getAttribute("aria-pressed") === "true";
+    if (field || role === "checkbox" || role === "radio" || role === "password" || role === "switch") {
+      if (type && !/^(text|checkbox|radio|submit|button|hidden|password)$/.test(type)) info.type = type;
+      const purpose = purposeOf(target);
+      if (purpose && purpose.toLowerCase() !== name.toLowerCase()) info.purpose = purpose;
+      const ph = target.getAttribute("placeholder");
+      if (ph && clean(ph) !== name && clean(ph) !== info.value) info.placeholder = short(ph, 60);
+      if (target.required || target.getAttribute("aria-required") === "true") info.required = true;
+      const max = Number(target.getAttribute("maxlength"));
+      if (max > 0 && max <= 12) info.maxLength = max;
+      if (type === "number" || type === "date" || type === "range") {
+        const lo = target.getAttribute("min"), hi = target.getAttribute("max");
+        if (lo || hi) info.range = (lo || "") + ".." + (hi || "");
+      }
+      const hint = byIds(target, target.getAttribute("aria-describedby"));
+      const invalid = target.getAttribute("aria-invalid") === "true"
+        || (target.validity && !target.validity.valid && (target.value || "") !== "");
+      if (invalid) {
+        info.invalid = short(byIds(target, target.getAttribute("aria-errormessage")) || hint
+          || target.validationMessage || "the page marks this as invalid", 120);
+      } else if (hint && hint !== name) {
+        info.hint = short(hint, 100);
+      }
+      if (role === "radio" || role === "checkbox" || field) {
+        const section = sectionOf(target);
+        if (section && section !== name) info.section = section;
+      }
+    }
+    const expanded = el.getAttribute("aria-expanded");
+    if (expanded === "true" || expanded === "false") info.expanded = expanded === "true";
+    if (el.getAttribute("aria-selected") === "true" && role !== "option") info.selected = true;
+    if (role === "option" && el.getAttribute("aria-selected") === "true") info.selected = true;
+    if (el.getAttribute("aria-current") && el.getAttribute("aria-current") !== "false") info.current = true;
+    const dialog = dialogOf(el);
+    if (dialog) info.dialog = dialogName(dialog);
+    refs.push(info);
+    // The label, for a restyled checkbox: it is what is on screen to click.
     elements.push(el);
+    taken.add(el);
   }
   window.__autoraRefs = elements;
+
+  /* An open dialog sits on top of the page: whatever it asks comes first,
+     and clicks behind it tend to land on it instead. */
+  let dialog = null;
+  for (const d of document.querySelectorAll("dialog[open],[role=dialog],[role=alertdialog],[aria-modal=true]")) {
+    const b = d.getBoundingClientRect();
+    if (visible(d, b) && b.width > 100 && b.height > 60) { dialog = dialogName(d); break; }
+  }
+
+  /* Where the reader is on the page -- or in the pane that does the
+     scrolling, on the many apps whose page itself never moves. */
+  const scroller = (() => {
+    const doc = document.scrollingElement || document.documentElement;
+    if (doc.scrollHeight > innerHeight + 20) return doc;
+    let best = null, area = 0;
+    for (const el of document.querySelectorAll("body *")) {
+      if (el.scrollHeight <= el.clientHeight + 20 || el.clientHeight < 150) continue;
+      const oy = getComputedStyle(el).overflowY;
+      if (oy !== "auto" && oy !== "scroll") continue;
+      const b = el.getBoundingClientRect();
+      const a = b.width * b.height;
+      if (a > area) { area = a; best = el; }
+    }
+    return best || doc;
+  })();
+  const scroll = {
+    y: Math.round(scroller.scrollTop),
+    max: Math.max(0, Math.round(scroller.scrollHeight - scroller.clientHeight)),
+    view: Math.round(scroller === (document.scrollingElement || document.documentElement) ? innerHeight : scroller.clientHeight),
+    pane: scroller !== (document.scrollingElement || document.documentElement),
+  };
 
   /* The main content rather than the whole body: a site's menus, header and
      footer are the same on every page and are most of the text on many. A
@@ -396,6 +730,8 @@ const SCAN_SCRIPT = `
     url: location.href,
     title: document.title,
     refs,
+    dialog,
+    scroll,
     text: mainText.replace(/[ \\t]+/g, " ").replace(/\\n{3,}/g, "\\n\\n").trim().slice(0, 150000),
   };
 })();
@@ -745,6 +1081,8 @@ export class LiveBrowser {
   };
   private refs: Ref[] = [];
   private closing = false;
+  /** A new tab's address being followed into this one. */
+  private following: Promise<void> | null = null;
   private control: { holder: "agent" | "human" | "shared"; reason: string | null } = {
     holder: "agent",
     reason: null,
@@ -820,7 +1158,7 @@ export class LiveBrowser {
     // this tab, which is the one being watched, rather than losing it to a
     // tab nobody can see.
     page.on("popup", (popup: Page) => {
-      void (async () => {
+      this.following = (async () => {
         claimed.add(popup);
         await popup.waitForLoadState("commit").catch(() => undefined);
         const next = popup.url();
@@ -828,7 +1166,7 @@ export class LiveBrowser {
         if (next && next !== "about:blank" && this.page === page) {
           await page.goto(next, { waitUntil: "domcontentloaded" }).catch(() => undefined);
         }
-      })();
+      })().finally(() => { this.following = null; });
     });
 
     this.page.on("framenavigated", (frame: any) => {
@@ -1081,55 +1419,275 @@ export class LiveBrowser {
       );
       await this.humanClickAt(pointIn(await this.aim(target)));
       await this.settle(700);
+      await this.arrive();
       const read = await this.read();
       await this.keyframe();
       return read;
     });
   }
 
-  /** Fill fields by number, then optionally submit. A form is one round trip
-      rather than one per field, which is the difference between an agent that
-      fills in a login and one that spends six turns on it. */
+  /**
+   * Whatever a click or a key started, finished: a navigation (or the new
+   * tab a link opened, which is followed in this one) given the moment it
+   * needs to show its content, so the page read next is the page arrived at
+   * rather than the one being left.
+   */
+  private async arrive() {
+    const page = this.page;
+    if (!page) return;
+    if (this.following) await this.following.catch(() => undefined);
+    await page.waitForLoadState("domcontentloaded", { timeout: 8000 }).catch(() => undefined);
+  }
+
+  /**
+   * Fill fields by number, then optionally submit. A form is one round trip
+   * rather than one per field, which is the difference between an agent that
+   * fills in a login and one that spends six turns on it.
+   *
+   * "Fill" means whatever setting that field takes: typing into a box,
+   * choosing a dropdown's option by its text, ticking or clearing a checkbox,
+   * setting a date. Each field is read back afterwards and what it now holds
+   * is reported, so a phone box that reformatted the number, a dropdown with
+   * no such choice or a field the page rejected is seen at once rather than
+   * three steps later.
+   */
   fill(values: { ref: number; text: string }[], submit = false): Promise<PageRead> {
     return this.run(async () => {
       const page = await this.ensure();
+      const notes: string[] = [];
+      let lastKind = "text";
       for (const { ref, text } of values) {
         const target = this.refs.find((r) => r.ref === ref);
         if (!target) throw new Error(`No field [${ref}] on this page. Read it again.`);
+        const kind: string = await page.evaluate(`(() => {
+          const el0 = (window.__autoraRefs || [])[${Number(ref)}];
+          if (!el0 || !el0.isConnected) return "gone";
+          const el = el0.tagName === "LABEL" && el0.control ? el0.control : el0;
+          if (el.tagName === "SELECT") return "select";
+          const role = (el.getAttribute("role") || "").toLowerCase();
+          const type = el.tagName === "INPUT" ? (el.type || "text").toLowerCase() : "";
+          if (type === "checkbox" || role === "checkbox" || role === "switch" || role === "menuitemcheckbox") return "check";
+          if (type === "radio" || role === "radio" || role === "menuitemradio") return "radio";
+          if (type === "file") return "file";
+          if (/^(date|time|month|week|datetime-local|color|range)$/.test(type)) return "native:" + type;
+          return "text";
+        })()`).catch(() => "gone");
+        lastKind = kind;
         this.hooks.onAction(
           `fill [${ref}] "${target.name}"`,
           { x: target.x, y: target.y },
           this.currentUrl ?? "",
         );
+        const label = `[${ref}]${target.name ? ` "${target.name}"` : ""}`;
+
+        if (kind === "gone") {
+          notes.push(`${label}: no longer on the page; read it again.`);
+          continue;
+        }
+        if (kind === "file") {
+          notes.push(`${label}: a file upload. Choosing a file is not something these tools can do; hand it to the person with browser_handoff.`);
+          continue;
+        }
+        if (kind === "select") {
+          const picked = await page.evaluate(SELECT_SCRIPT(ref, text)).catch(() => null);
+          if (!picked?.ok) {
+            const list = (picked?.options ?? []).slice(0, 30).map((o: string) => JSON.stringify(o)).join(", ");
+            notes.push(`${label}: no option matches ${JSON.stringify(text)}. Its options: ${list || "(none)"}.`);
+          } else {
+            notes.push(`${label}: chose ${JSON.stringify(picked.chosen)}.`);
+          }
+          continue;
+        }
+        if (kind === "check" || kind === "radio") {
+          const want = kind === "radio" || !/^(false|no|off|0|uncheck(ed)?|unticked?|clear(ed)?|unselect(ed)?|none)$/i.test(text.trim());
+          const now = await this.checkedState(ref);
+          if (now !== want) {
+            await this.humanClickAt(pointIn(await this.aim(target)));
+            await this.settle(200);
+          }
+          const after = await this.checkedState(ref);
+          notes.push(`${label}: ${after === null ? "clicked" : after ? "checked" : "not checked"}${
+            after !== null && after !== want ? " -- it did not take; look at the page" : ""}.`);
+          continue;
+        }
+        if (kind.startsWith("native:")) {
+          const value = normaliseNative(kind.slice(7), text);
+          const held = await page.evaluate(SET_VALUE_SCRIPT(ref, value)).catch(() => null);
+          notes.push(`${label}: ${held === value ? `set to ${JSON.stringify(value)}` : `wanted ${JSON.stringify(value)}, holds ${JSON.stringify(held ?? "")}`}.`);
+          continue;
+        }
+
         await this.humanClickAt(pointIn(await this.aim(target)));
         await page.keyboard.press("ControlOrMeta+A").catch(() => undefined);
         // A person's typing rhythm for whoever is watching; nobody watching,
         // it is typed straight in.
         if (this.hooks.watchers() > 0) await humanType(page, text);
         else await page.keyboard.type(text);
+        let held = await this.valueOf(ref);
+        /* A field that swallowed the typing (a script that rebuilds it on
+           focus, an input that ignores synthetic keys) gets its value set
+           the way the page's own code would see it being set. */
+        if (held !== null && !sameValue(held, text)) {
+          const set = await page.evaluate(SET_VALUE_SCRIPT(ref, text)).catch(() => null);
+          if (typeof set === "string") held = set;
+        }
+        if (target.role === "password" || held === null) notes.push(`${label}: filled.`);
+        else if (sameValue(held, text)) notes.push(`${label}: holds ${JSON.stringify(held)}.`);
+        else notes.push(`${label}: typed ${JSON.stringify(text)} but it holds ${JSON.stringify(held)} -- the page reformatted or rejected it.`);
       }
       if (submit) {
-        await page.keyboard.press("Enter");
+        /* Enter submits from a text box. From a dropdown or a checkbox it
+           does not, so the form is asked to submit itself, the way its
+           submit button would. */
+        if (lastKind === "text") {
+          await page.keyboard.press("Enter");
+        } else {
+          const last = values[values.length - 1];
+          await page.evaluate(`(() => {
+            const el0 = (window.__autoraRefs || [])[${Number(last?.ref)}];
+            const el = el0 && el0.tagName === "LABEL" && el0.control ? el0.control : el0;
+            const form = el && (el.form || el.closest("form"));
+            if (form && form.requestSubmit) form.requestSubmit();
+          })()`).catch(() => undefined);
+        }
         this.hooks.onAction("submit", null, this.currentUrl ?? "");
         await this.settle(900);
+        await this.arrive();
       } else {
         await this.settle();
       }
+      const read = await this.read();
+      read.notes = notes;
+      await this.keyframe();
+      return read;
+    });
+  }
+
+  private async checkedState(ref: number): Promise<boolean | null> {
+    return (await this.page?.evaluate(`(() => {
+      const el0 = (window.__autoraRefs || [])[${Number(ref)}];
+      if (!el0) return null;
+      const el = el0.tagName === "LABEL" && el0.control ? el0.control : el0;
+      if (typeof el.checked === "boolean") return el.checked;
+      const aria = el.getAttribute("aria-checked") ?? el.getAttribute("aria-pressed");
+      return aria === null ? null : aria === "true";
+    })()`).catch(() => null)) ?? null;
+  }
+
+  private async valueOf(ref: number): Promise<string | null> {
+    return (await this.page?.evaluate(`(() => {
+      const el = (window.__autoraRefs || [])[${Number(ref)}];
+      if (!el) return null;
+      if (typeof el.value === "string") return el.value;
+      if (el.isContentEditable) return el.innerText;
+      return null;
+    })()`).catch(() => null)) ?? null;
+  }
+
+  /**
+   * Press a key, or a few, as a person would at the keyboard: Escape to
+   * close a dialog, Tab to move on, the arrows to walk a suggestion list,
+   * Enter to pick from it. With a field named, it is focused first.
+   */
+  press(keys: string[], ref: number | null = null): Promise<PageRead> {
+    return this.run(async () => {
+      const page = await this.ensure();
+      if (ref !== null) {
+        const target = this.refs.find((r) => r.ref === ref);
+        if (!target) throw new Error(`No element [${ref}] on this page. Read it again.`);
+        await page.evaluate(`(() => {
+          const el = (window.__autoraRefs || [])[${Number(ref)}];
+          if (el && el.focus) el.focus();
+        })()`).catch(() => undefined);
+      }
+      for (const key of keys) {
+        this.hooks.onAction(`press ${key}`, null, this.currentUrl ?? "");
+        await page.keyboard.press(key);
+        await page.waitForTimeout(120).catch(() => undefined);
+      }
+      await this.settle(400);
+      await this.arrive();
       const read = await this.read();
       await this.keyframe();
       return read;
     });
   }
 
-  scroll(dy: number): Promise<PageRead> {
+  /**
+   * Scroll to where something is.
+   *
+   * By screens rather than pixels, in whichever part of the page actually
+   * scrolls -- the page, or on the many apps whose page never moves, the pane
+   * that does -- or inside an element named by number, or straight to some
+   * text. What it reports is where that left the reader and whether it moved
+   * at all, because an agent told only "scrolled" scrolls a page that is
+   * already at the bottom forever.
+   */
+  scroll(how: ScrollRequest): Promise<PageRead> {
     return this.run(async () => {
       const page = await this.ensure();
-      await page.mouse.wheel(0, dy);
-      this.hooks.onAction(`scroll ${dy > 0 ? "down" : "up"}`, null, this.currentUrl ?? "");
-      await this.settle(300);
+      const notes: string[] = [];
+      const moved = await page.evaluate(SCROLL_SCRIPT(how)).catch((err: unknown) => ({ error: String(err) }));
+      const said = how.text
+        ? `scroll to "${how.text}"`
+        : how.to
+          ? `scroll to ${how.to}`
+          : `scroll ${(how.screens ?? how.dy ?? 1) < 0 ? "up" : "down"}`;
+      this.hooks.onAction(said, null, this.currentUrl ?? "");
+      if (moved?.error) {
+        notes.push(`Could not scroll: ${moved.error}`);
+      } else if (how.text) {
+        notes.push(moved?.found
+          ? `Found ${JSON.stringify(how.text)} and scrolled it to the middle of the screen: "${moved.found}".`
+          : `${JSON.stringify(how.text)} is not in the page's text. It may be further down (not loaded yet), in a different wording, or not on this page.`);
+      } else if (moved && moved.after === moved.before && moved.max !== undefined) {
+        notes.push(moved.max <= 0
+          ? "Nothing moved: there is nothing to scroll here."
+          : moved.after <= 0
+            ? "Nothing moved: already at the top."
+            : "Nothing moved: already at the bottom.");
+      }
+      await this.settle(350);
+      /* At the bottom of a feed, more is often loaded in as you arrive.
+         Wait a moment for it and say so, or it looks like the end. */
+      if (moved && moved.max !== undefined && moved.after >= moved.max - 2 && moved.max > 0) {
+        await page.waitForTimeout(900).catch(() => undefined);
+        const grown = await page.evaluate(SCROLL_SCRIPT({ screens: 0, ref: how.ref })).catch(() => null);
+        if (grown && grown.max > moved.max + 50) notes.push("More content loaded in at the bottom; scroll down again to see it.");
+      }
       const read = await this.read();
+      read.notes = notes;
       await this.keyframe();
       return read;
+    });
+  }
+
+  /**
+   * Sign-ins brought over from the person's own browser (see ./cookies).
+   * Into the shared profile, so every session is signed in from then on and
+   * they survive a restart. Returns how many took; a cookie Chrome refuses
+   * is skipped rather than taking the rest down with it.
+   */
+  importCookies(cookies: BrowserCookie[]): Promise<{ added: number; refused: number }> {
+    return this.run(async () => {
+      await this.ensure();
+      const context = this.context;
+      if (!context) throw new Error("The browser is not running.");
+      try {
+        await context.addCookies(cookies);
+        return { added: cookies.length, refused: 0 };
+      } catch {
+        let added = 0;
+        for (const cookie of cookies) {
+          try {
+            await context.addCookies([cookie]);
+            added += 1;
+          } catch {
+            // Malformed for Chrome: the rest still go in.
+          }
+        }
+        return { added, refused: cookies.length - added };
+      }
     });
   }
 
@@ -1349,12 +1907,24 @@ export class LiveBrowser {
     const fresh = page && await page.evaluate(`(() => {
       const el = (window.__autoraRefs || [])[${Number(target.ref)}];
       if (!el || !el.isConnected) return null;
-      let b = el.getBoundingClientRect();
-      if (b.top < 0 || b.bottom > innerHeight || b.left < 0 || b.right > innerWidth) {
+      // In a frame, its box is relative to the frame: add where each
+      // enclosing frame sits, out to the page.
+      const place = () => {
+        const b = el.getBoundingClientRect();
+        let x = b.left, y = b.top;
+        for (let win = el.ownerDocument.defaultView; win && win.frameElement; win = win.parent) {
+          const f = win.frameElement, fb = f.getBoundingClientRect();
+          x += fb.left + f.clientLeft;
+          y += fb.top + f.clientTop;
+        }
+        return { x, y, w: b.width, h: b.height };
+      };
+      let b = place();
+      if (b.y < 0 || b.y + b.h > innerHeight || b.x < 0 || b.x + b.w > innerWidth) {
         el.scrollIntoView({ block: "center", inline: "center" });
-        b = el.getBoundingClientRect();
+        b = place();
       }
-      return { x: b.left, y: b.top, w: b.width, h: b.height, moved: true };
+      return { ...b, moved: true };
     })()`).catch(() => null);
     if (!fresh || fresh.w < 1 || fresh.h < 1) return boxOf(target);
     return { x: fresh.x, y: fresh.y, w: fresh.w, h: fresh.h };
@@ -1614,15 +2184,189 @@ export class LiveBrowser {
       ),
       ...this.loadingCaptchas.map((kind) => ({ kind, solved: false, challenge: false })),
     ];
+    const blocked = signInRefusal(scanned.text);
     return {
       url: scanned.url,
       title: scanned.title,
       refs: scanned.refs,
       text: scanned.text,
-      outline: outlineOf(scanned.refs),
+      outline: outlineOf(scanned.refs, 80, { dialog: scanned.dialog, scroll: scanned.scroll }),
       captchas,
+      dialog: scanned.dialog ?? null,
+      scroll: scanned.scroll,
+      blocked,
     };
   }
+}
+
+/** The element a numbered ref stands for, as page script: a label that
+    stands in for a hidden checkbox resolves to the checkbox. */
+const REF_EL = (ref: number) => `(() => {
+  const el0 = (window.__autoraRefs || [])[${Number(ref)}];
+  return el0 && el0.tagName === "LABEL" && el0.control ? el0.control : el0;
+})()`;
+
+/**
+ * Choose a dropdown's option by what it says. Exact text first, then the
+ * option's value, then one that starts with or contains what was asked --
+ * "Canada" finds "Canada (CA)" -- and the change is announced the way a
+ * person's choice would be, so the page's own code sees it.
+ */
+const SELECT_SCRIPT = (ref: number, wanted: string) => `(() => {
+  const el = ${REF_EL(ref)};
+  if (!el || el.tagName !== "SELECT") return { ok: false, options: [] };
+  const norm = (s) => String(s || "").replace(/\\s+/g, " ").trim().toLowerCase();
+  const want = norm(${JSON.stringify(wanted)});
+  const opts = Array.from(el.options);
+  const texts = opts.map((o) => (o.text || "").replace(/\\s+/g, " ").trim());
+  const pick =
+    opts.find((o, i) => norm(texts[i]) === want) ||
+    opts.find((o) => norm(o.value) === want) ||
+    opts.find((o, i) => want && norm(texts[i]).startsWith(want)) ||
+    opts.find((o, i) => want && norm(texts[i]).includes(want)) ||
+    opts.find((o, i) => want.length > 2 && norm(texts[i]).length > 1 && want.includes(norm(texts[i])));
+  if (!pick) return { ok: false, options: texts.filter(Boolean) };
+  const set = Object.getOwnPropertyDescriptor(el.ownerDocument.defaultView.HTMLSelectElement.prototype, "value").set;
+  set.call(el, pick.value);
+  pick.selected = true;
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+  el.dispatchEvent(new Event("change", { bubbles: true }));
+  return { ok: true, chosen: (pick.text || pick.value).trim() };
+})()`;
+
+/**
+ * Set a field's value through the setter the page's framework watches, then
+ * announce it: what a date picker, a colour well or a field that ignores
+ * typed keys needs, since there is nothing sensible to type into those.
+ */
+const SET_VALUE_SCRIPT = (ref: number, value: string) => `(() => {
+  const el = ${REF_EL(ref)};
+  if (!el) return null;
+  const view = el.ownerDocument.defaultView;
+  if (el.isContentEditable && typeof el.value !== "string") {
+    el.focus();
+    el.ownerDocument.execCommand("selectAll", false);
+    el.ownerDocument.execCommand("insertText", false, ${JSON.stringify(value)});
+    return el.innerText;
+  }
+  const proto = el.tagName === "TEXTAREA" ? view.HTMLTextAreaElement.prototype : view.HTMLInputElement.prototype;
+  const desc = Object.getOwnPropertyDescriptor(proto, "value");
+  if (!desc || !desc.set) return null;
+  desc.set.call(el, ${JSON.stringify(value)});
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+  el.dispatchEvent(new Event("change", { bubbles: true }));
+  el.dispatchEvent(new Event("blur", { bubbles: true }));
+  return el.value;
+})()`;
+
+/** Scroll as asked and say where that left things; see LiveBrowser.scroll. */
+const SCROLL_SCRIPT = (how: ScrollRequest) => `((o) => {
+  const doc = document.scrollingElement || document.documentElement;
+  const scrollable = (el) => {
+    if (!el || el === doc) return false;
+    if (el.scrollHeight <= el.clientHeight + 20) return false;
+    const oy = getComputedStyle(el).overflowY;
+    return oy === "auto" || oy === "scroll" || oy === "overlay";
+  };
+  const pane = () => {
+    if (doc.scrollHeight > innerHeight + 20) return doc;
+    let best = null, area = 0;
+    for (const el of document.querySelectorAll("body *")) {
+      if (el.clientHeight < 150 || !scrollable(el)) continue;
+      const b = el.getBoundingClientRect();
+      if (b.bottom < 0 || b.top > innerHeight) continue;
+      if (b.width * b.height > area) { area = b.width * b.height; best = el; }
+    }
+    return best || doc;
+  };
+  if (o.text) {
+    const want = o.text.toLowerCase();
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let first = null, below = null;
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const t = n.nodeValue || "";
+      if (!t.toLowerCase().includes(want)) continue;
+      const el = n.parentElement;
+      if (!el || el.closest("[data-autora]")) continue;
+      const b = el.getBoundingClientRect();
+      if (b.width < 1 || b.height < 1) continue;
+      if (!first) first = el;
+      // The next one further down, so asking again moves on.
+      if (b.top > innerHeight * 0.55) { below = el; break; }
+    }
+    const hit = below || first;
+    if (!hit) return { found: null };
+    hit.scrollIntoView({ block: "center", inline: "nearest" });
+    const text = (hit.innerText || hit.textContent || "").replace(/\\s+/g, " ").trim();
+    return { found: text.length > 160 ? text.slice(0, 159) + "\\u2026" : text };
+  }
+  let target = pane();
+  if (o.ref !== null && o.ref !== undefined) {
+    const el0 = (window.__autoraRefs || [])[o.ref];
+    if (!el0 || !el0.isConnected) return { error: "there is no element [" + o.ref + "] now; read the page again" };
+    let up = el0;
+    while (up && up !== document.body && !scrollable(up)) up = up.parentElement;
+    if (up && up !== document.body && scrollable(up)) target = up;
+    else if (!o.to && !o.screens && !o.dy) {
+      el0.scrollIntoView({ block: "center", inline: "nearest" });
+      return { into: true };
+    }
+  }
+  const view = target === doc ? innerHeight : target.clientHeight;
+  const max = Math.max(0, target.scrollHeight - (target === doc ? innerHeight : target.clientHeight));
+  const before = Math.round(target.scrollTop);
+  if (o.to === "top") target.scrollTop = 0;
+  else if (o.to === "bottom") target.scrollTop = target.scrollHeight;
+  else if (o.dy) target.scrollTop = before + o.dy;
+  else if (o.screens) target.scrollTop = before + Math.round(o.screens * view * 0.85);
+  return { before, after: Math.round(target.scrollTop), max, view };
+})(${JSON.stringify(how)})`;
+
+/** A date typed as a person would say it, as the value a date field holds. */
+export function normaliseNative(type: string, text: string): string {
+  const t = text.trim();
+  if (type === "date" && !/^\d{4}-\d{2}-\d{2}$/.test(t)) {
+    const d = new Date(t);
+    if (!Number.isNaN(d.getTime())) {
+      const pad = (n: number) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    }
+  }
+  return t;
+}
+
+/** Whether a field holds what was typed, allowing for the reformatting a
+    phone, card or date box does to it: "(555) 123-4567" is "5551234567". */
+export function sameValue(held: string, typed: string): boolean {
+  const loose = (s: string) => s.toLowerCase().replace(/[\s\-().\/+,]/g, "");
+  if (held === typed || loose(held) === loose(typed)) return true;
+  const digits = (s: string) => s.replace(/\D/g, "");
+  return digits(typed).length >= 4 && digits(held) === digits(typed) && !/[a-z]/i.test(typed);
+}
+
+/**
+ * The site turning a sign-in away because of the browser it is in, found by
+ * what those pages say. Each of these means the same thing -- trying again
+ * here will not work -- and the agent needs to know that rather than retype
+ * the password until the account is locked.
+ */
+const REFUSALS: RegExp[] = [
+  /this browser or app may not be secure[^\n]*/i,
+  /couldn[’']t sign you in[^\n]*/i,
+  /try using a different browser[^\n]*/i,
+  /our systems have detected unusual traffic[^\n]*/i,
+  /(?:your )?browser is not supported[^\n]*/i,
+  /we (?:couldn[’']t|could not) verify (?:that )?you(?:['’]re| are) (?:a )?(?:human|not a robot)[^\n]*/i,
+  /access to this page has been denied[^\n]*/i,
+  /automated (?:access|queries|requests) (?:is|are) not allowed[^\n]*/i,
+];
+
+export function signInRefusal(text: string): string | null {
+  for (const re of REFUSALS) {
+    const hit = re.exec(text);
+    if (hit) return hit[0].trim().slice(0, 200);
+  }
+  return null;
 }
 
 /** A ref's box, from the centre and size the scan recorded. */
@@ -1648,6 +2392,51 @@ export function describeCaptchas(captchas: PageRead["captchas"]): string {
     .join("\n");
 }
 
+const FIELD_ROLES = new Set([
+  "textbox", "searchbox", "combobox", "listbox", "checkbox", "radio", "switch", "slider", "password", "spinbutton",
+]);
+
+/** One element, as the model reads it. */
+export function refLine(r: Ref): string {
+  const bits = [`[${r.ref}]`, r.role];
+  if (r.name) bits.push(JSON.stringify(r.name));
+  if (r.purpose) bits.push(`(${r.purpose})`);
+  if (r.type) bits.push(`type=${r.type}`);
+  if (r.value) bits.push(`value=${JSON.stringify(r.value)}`);
+  else if (r.placeholder) bits.push(`placeholder=${JSON.stringify(r.placeholder)}`);
+  if (r.options?.length) {
+    const more = (r.optionCount ?? r.options.length) - r.options.length;
+    bits.push(`options: ${r.options.map((o) => JSON.stringify(o)).join(", ")}${more > 0 ? ` (+${more} more)` : ""}`);
+  }
+  if (r.maxLength) bits.push(`max ${r.maxLength} chars`);
+  if (r.range) bits.push(`range ${r.range}`);
+  if (r.checked === true) bits.push("checked");
+  else if (r.checked === false) bits.push("not checked");
+  if (r.expanded === true) bits.push("expanded");
+  else if (r.expanded === false) bits.push("collapsed");
+  if (r.selected) bits.push("selected");
+  if (r.current) bits.push("current");
+  if (r.required) bits.push("required");
+  if (r.disabled) bits.push("disabled");
+  if (r.invalid) bits.push(`INVALID: ${JSON.stringify(r.invalid)}`);
+  else if (r.hint) bits.push(`hint: ${JSON.stringify(r.hint)}`);
+  if (r.href) bits.push(`-> ${r.href}`);
+  return bits.join(" ");
+}
+
+/** Where the reader is, in words: how far down, and how much is left. */
+export function scrollLine(s: ScrollState): string {
+  const where = s.pane ? "The scrolling pane" : "The page";
+  if (s.max <= 0) return `${where} fits on one screen; there is nothing to scroll.`;
+  const screensBelow = (s.max - s.y) / Math.max(1, s.view);
+  const pct = Math.round((s.y / s.max) * 100);
+  const pos = s.y <= 2 ? "at the top" : s.y >= s.max - 2 ? "at the bottom" : `${pct}% of the way down`;
+  const left = s.y >= s.max - 2
+    ? "nothing more below"
+    : `about ${screensBelow < 1 ? "less than one screen" : `${Math.round(screensBelow * 10) / 10} screens`} more below`;
+  return `${where} is ${pos}, ${left}.`;
+}
+
 /**
  * The numbered outline, as a screen reader would read it.
  *
@@ -1655,7 +2444,11 @@ export function describeCaptchas(captchas: PageRead["captchas"]): string {
  * forty are the ones anybody acts on; the count is printed so the model knows
  * it is looking at the top of a list rather than all of it.
  */
-export function outlineOf(refs: Ref[], limit = 80): string {
+export function outlineOf(
+  refs: Ref[],
+  limit = 80,
+  around: { dialog?: string | null; scroll?: ScrollState } = {},
+): string {
   // What is on screen, by the numbers every element keeps wherever the page
   // is scrolled. A read made before this was tracked shows everything.
   const shown = refs.some((r) => r.inView !== undefined) ? refs.filter((r) => r.inView) : refs;
@@ -1663,15 +2456,25 @@ export function outlineOf(refs: Ref[], limit = 80): string {
   const lastShown = shown[shown.length - 1]?.ref ?? -Infinity;
   const above = refs.filter((r) => !r.inView && r.ref < firstShown).length;
   const below = refs.filter((r) => !r.inView && r.ref > lastShown).length;
-  const lines = shown.slice(0, limit).map((r) => {
-    const bits = [`[${r.ref}]`, r.role];
-    if (r.name) bits.push(JSON.stringify(r.name));
-    if (r.value) bits.push(`value=${JSON.stringify(r.value)}`);
-    if (r.checked === true) bits.push("checked");
-    if (r.disabled) bits.push("disabled");
-    if (r.href) bits.push(`-> ${r.href}`);
-    return bits.join(" ");
-  });
+  const lines: string[] = [];
+  if (around.dialog) {
+    lines.push(
+      `A dialog is open on top of the page: "${around.dialog}". Deal with it first ` +
+        "(answer it, or close it with its button or Escape); what is behind it may not respond " +
+        "and, while it blocks the page, is not listed.",
+    );
+  }
+  /* Fields under a heading are introduced by it once, rather than each
+     carrying it: "Shipping address" then the six fields in it. */
+  let section = "";
+  for (const r of shown.slice(0, limit)) {
+    const under = r.dialog ? `in dialog "${r.dialog}"${r.section ? ` / ${r.section}` : ""}` : r.section ?? "";
+    if (under && under !== section) lines.push(`-- ${under} --`);
+    // A field outside the section closes it, so it is not read as part of it.
+    else if (!under && section && FIELD_ROLES.has(r.role)) lines.push("-- (end of section) --");
+    if (under || FIELD_ROLES.has(r.role)) section = under;
+    lines.push(refLine(r));
+  }
   if (shown.length > limit) {
     lines.push(`… ${shown.length - limit} more on screen after these.`);
   }
@@ -1682,5 +2485,6 @@ export function outlineOf(refs: Ref[], limit = 80): string {
         "one you saw earlier scrolls it into view first.)",
     );
   }
+  if (around.scroll) lines.push(scrollLine(around.scroll));
   return lines.join("\n");
 }

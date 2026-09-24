@@ -1,0 +1,56 @@
+<!doctype html>
+<html>
+<head>
+<title>Checkout</title>
+<style>
+  body { font: 14px sans-serif; margin: 0; }
+  .fake-box input { opacity: 0; position: absolute; width: 1px; height: 1px; }
+  .fake-box span { display: inline-block; width: 16px; height: 16px; border: 1px solid #333; }
+  #pane { height: 300px; overflow-y: auto; border: 1px solid #ccc; }
+  #pane div { height: 60px; }
+  .tall { height: 1400px; }
+  .tile { cursor: pointer; padding: 8px; background: #eef; width: 200px; }
+  dialog { top: 20px; }
+</style>
+</head>
+<body>
+<h1>Checkout</h1>
+<form id="f" onsubmit="event.preventDefault(); document.getElementById('done').textContent = 'Submitted: ' + new FormData(this).get('fname') + ' ' + new FormData(this).get('lname') + ' / ' + new FormData(this).get('country') + ' / terms=' + (new FormData(this).get('terms') || 'off');">
+  <fieldset>
+    <legend>Shipping address</legend>
+    <div><span>Name</span><input name="fname" autocomplete="shipping given-name" required></div>
+    <div><span>Name</span><input name="lname" autocomplete="shipping family-name" required></div>
+    <div><span>Email</span><input name="email" type="email" aria-describedby="email-err" aria-invalid="true"><span id="email-err">Enter a valid email address</span></div>
+    <div><span>Phone</span><input name="phone" type="tel" id="phone" placeholder="(555) 555-5555"></div>
+    <label for="country">Country</label>
+    <select id="country" name="country"><option value="">Choose…</option><option value="US">United States</option><option value="CA">Canada</option><option value="MX">Mexico</option></select>
+    <div><span>Birthday</span><input name="dob" type="date"></div>
+  </fieldset>
+  <label class="fake-box"><input type="checkbox" name="terms"><span></span> I agree to the terms</label>
+  <button type="submit">Place order</button>
+</form>
+<p id="done"></p>
+<div class="tile" onclick="document.getElementById('done').textContent = 'tile clicked'">Premium plan</div>
+<shadow-login></shadow-login>
+<iframe id="fr" srcdoc="<label>Coupon code <input name='coupon'></label>" style="height:60px"></iframe>
+<div id="pane"></div>
+<div class="tall"></div>
+<p>The very end of the page.</p>
+<dialog id="dlg"><h2>Cookie preferences</h2><button onclick="this.closest('dialog').close()">Accept all</button></dialog>
+<script>
+  // A phone box that formats as you type, like the ones that trip agents up.
+  document.getElementById("phone").addEventListener("input", (e) => {
+    const d = e.target.value.replace(/\D/g, "").slice(0, 10);
+    e.target.value = d.length > 6 ? `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}` : d;
+  });
+  customElements.define("shadow-login", class extends HTMLElement {
+    connectedCallback() {
+      this.attachShadow({ mode: "open" }).innerHTML = '<label>Username <input autocomplete="username"></label>';
+    }
+  });
+  const pane = document.getElementById("pane");
+  for (let i = 1; i <= 30; i++) { const d = document.createElement("div"); d.textContent = "Message " + i; pane.appendChild(d); }
+  if (location.search.includes("dialog")) document.getElementById("dlg").showModal();
+</script>
+</body>
+</html>

@@ -33,11 +33,12 @@ import { GoogleGenAI } from "@google/genai";
 import { mergeTools, save, state, allSecrets, secretFor, redactSecrets } from "./state";
 import { htmlToText, textParts } from "./pages";
 import { describeCaptchas, probeBrowser, VIEWPORT, type LiveBrowser, type PageRead } from "./browser";
+import { parseCookieExport, sitesOf } from "./cookies";
 import { relayAction, relayConnected, relayStatus } from "./desktop";
 import { CONTEXT_CONFIG, readVault } from "./context";
 import {
-  artifactPath, formatSize, getArtifact, isText, listArtifacts, readArtifact, saveArtifact,
-  MAX_ARTIFACT_BYTES,
+  artifactPath, deleteArtifact, formatSize, getArtifact, isText, listArtifacts, readArtifact,
+  saveArtifact, MAX_ARTIFACT_BYTES,
 } from "./artifacts";
 
 // --------------------------------------------------------------- settings --
@@ -168,9 +169,10 @@ const TOOLS: ToolSpec[] = [
     group: "browser",
     description:
       "Re-read the page that is currently open: the numbered elements on screen " +
-      "and a part of its main text. Long pages come in parts; ask for the next " +
-      "one with `part` to read further. Scrolling is only needed to reach " +
-      "elements, never to read text.",
+      "(with what each field is for, what it holds, its choices and any error " +
+      "the page shows on it), where the page is scrolled to, and a part of its " +
+      "main text. Long pages come in parts; ask for the next one with `part` to " +
+      "read further. Scrolling is only needed to reach elements, never to read text.",
     parameters: {
       type: "object",
       properties: {
@@ -186,10 +188,11 @@ const TOOLS: ToolSpec[] = [
     group: "browser",
     description:
       "Click one of the numbered elements on the open page, then return the " +
-      "page as it is afterwards. An element keeps its number while the page " +
-      "stays the same, however far it is scrolled, and one that is off screen " +
-      "is scrolled into view first. After the page changes, use the numbers " +
-      "from the latest result.",
+      "page as it is afterwards (after any navigation it started has loaded). " +
+      "An element keeps its number while the page stays the same, however far " +
+      "it is scrolled, and one that is off screen is scrolled into view first. " +
+      "After the page changes, use the numbers from the latest result. To " +
+      "choose from a dropdown or tick a checkbox, browser_fill is surer.",
     parameters: {
       type: "object",
       properties: {
@@ -206,8 +209,17 @@ const TOOLS: ToolSpec[] = [
     name: "browser_fill",
     group: "browser",
     description:
-      "Type into one or more numbered fields on the open page, optionally " +
-      "submitting the form afterwards, then return the resulting page.",
+      "Fill one or more numbered fields on the open page in one go, optionally " +
+      "submitting the form afterwards, then return the resulting page with what " +
+      "each field now holds. Works for every kind of field: text is typed into " +
+      "boxes; a dropdown (combobox with options) gets the option whose text " +
+      "matches; a checkbox or switch is ticked for \"yes\" and cleared for " +
+      "\"no\"; a radio button is selected; a date field takes the date in any " +
+      "clear form (2031-04-05 is safest). Match each value to what the field " +
+      "is for -- its (purpose), type, section and hint -- not only its label: " +
+      "\"Name\" marked (first name) takes the first name alone. Read the " +
+      "result: a field that reformatted, refused or shows INVALID needs fixing " +
+      "before you submit.",
     parameters: {
       type: "object",
       properties: {
@@ -218,14 +230,17 @@ const TOOLS: ToolSpec[] = [
             type: "object",
             properties: {
               ref: { type: "integer", description: "The field's element number." },
-              text: { type: "string", description: "What to type into it." },
+              text: {
+                type: "string",
+                description: "What to put in it: the text, the dropdown option's text, yes/no for a checkbox, or a date.",
+              },
             },
             required: ["ref", "text"],
           },
         },
         submit: {
           type: "boolean",
-          description: "Press Enter in the last field when done. Default false.",
+          description: "Submit the form when done (Enter in the last text field). Default false.",
         },
       },
       required: ["values"],
@@ -236,18 +251,80 @@ const TOOLS: ToolSpec[] = [
     name: "browser_scroll",
     group: "browser",
     description:
-      "Scroll the open page to bring other elements on screen, and return what " +
-      "is there afterwards. Not needed for reading: browser_read returns the " +
-      "text in parts.",
+      "Scroll to bring other elements on screen, and return what is there " +
+      "afterwards and where that left you (how far down, how much is left, or " +
+      "that nothing moved because you are already at the end). Scrolls " +
+      "whatever actually scrolls -- the page, or the pane that does on app-like " +
+      "sites. Give `text` to jump straight to where some text is (asking again " +
+      "moves on to the next place it appears), `ref` to scroll inside that " +
+      "element (a list, a side panel, a dialog), `to` for the top or bottom, " +
+      "or `screens` to move by screenfuls. Not needed for reading: browser_read " +
+      "returns the text in parts.",
     parameters: {
       type: "object",
       properties: {
-        dy: {
+        screens: {
+          type: "number",
+          description: "How far, in screens: 1 is down one screen, -1 up one. Default 1.",
+        },
+        to: { type: "string", enum: ["top", "bottom"], description: "Go straight to the top or the bottom." },
+        text: { type: "string", description: "Scroll to where this text appears on the page." },
+        ref: {
           type: "integer",
-          description: "Pixels to scroll: positive is down, negative is up.",
+          description: "Scroll inside this element (or its scrolling container) rather than the page; alone, just bring it into view.",
         },
       },
     },
+  },
+  {
+    name: "browser_press",
+    group: "browser",
+    description:
+      "Press keys on the open page, as at a keyboard: Escape to close a " +
+      "dialog or menu, Enter to submit or pick, Tab to move to the next " +
+      "field, ArrowDown/ArrowUp to walk a suggestion list (then Enter to " +
+      "choose), PageDown, Backspace, or a combination such as Control+A. " +
+      "Give `ref` to focus that element first. Returns the page afterwards.",
+    parameters: {
+      type: "object",
+      properties: {
+        keys: {
+          type: "array",
+          items: { type: "string" },
+          description: "Keys in order, e.g. [\"ArrowDown\", \"Enter\"]. Names as Playwright spells them: Enter, Escape, Tab, ArrowDown, PageDown, Backspace, Control+A.",
+        },
+        ref: { type: "integer", description: "Focus this element before pressing." },
+      },
+      required: ["keys"],
+    },
+    risky: true,
+  },
+  {
+    name: "browser_signin_import",
+    group: "browser",
+    description:
+      "Sign the browser in to a site with the person's own sign-in, brought " +
+      "over as a cookie export they uploaded. Use this when a site refuses to " +
+      "let this browser sign in (\"This browser or app may not be secure\", " +
+      "\"browser not supported\", a sign-in that keeps bouncing): ask the " +
+      "person to sign in to that site in their own browser, export its " +
+      "cookies (the Cookie-Editor extension: open it on the site, Export, " +
+      "JSON), and upload the file here; then call this with the file's " +
+      "artifact id. The sign-in lasts until the site expires it. The uploaded " +
+      "file is deleted after a successful import, since it is a live key to " +
+      "the account.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The uploaded cookie file's artifact id (see artifact_list)." },
+        keep_file: {
+          type: "boolean",
+          description: "Keep the uploaded file instead of deleting it after import. Default false.",
+        },
+      },
+      required: ["id"],
+    },
+    risky: true,
   },
   {
     name: "browser_back",
@@ -283,7 +360,9 @@ const TOOLS: ToolSpec[] = [
     description:
       "Hand the live browser to the person watching and wait for them. Call this when you " +
       "reach a sign-in (OAuth/SSO, a password, a 2FA code), a CAPTCHA that browser_captcha " +
-      "could not pass, or anything on the page only they should do. They get a card " +
+      "could not pass, or anything on the page only they should do. Not for a site that " +
+      "refuses this browser's sign-in outright -- they will be refused too; use " +
+      "browser_signin_import for that. They get a card " +
       "explaining what is needed and can then tap and type directly in the page. This " +
       "call returns when they say they are done (with the page as it is then) or that " +
       "they cannot do it. For a CAPTCHA it also returns by itself the moment the page " +
@@ -822,6 +901,10 @@ export function renderCall(spec: ToolSpec, args: Record<string, any>): string {
         : `read vault artifact ${args.id}`;
     case "browser_captcha":
       return "tick the checkbox CAPTCHA on the open page";
+    case "browser_press":
+      return `press ${Array.isArray(args.keys) ? args.keys.join(", ") : args.keys}`;
+    case "browser_signin_import":
+      return `import a sign-in from uploaded file ${args.id}`;
     case "browser_handoff":
       return `handoff browser control: ${args.reason}`;
     case "http_request":
@@ -908,10 +991,55 @@ function describePage(page: PageRead, part = 1): string {
     "Interactive elements:",
     page.outline || "(nothing interactive on screen)",
     ...(page.captchas.length ? ["", describeCaptchas(page.captchas)] : []),
+    ...(page.blocked ? ["", refusalNote(page.blocked)] : []),
     "",
     head,
     parts[k - 1] || "(no text)",
   ].join("\n");
+}
+
+/** What the model is told when a site turns this browser's sign-in away. */
+export function refusalNote(said: string): string {
+  return (
+    `SIGN-IN REFUSED: the site says "${said}". It is refusing this browser, not ` +
+    "the password, so retrying, retyping or handing the page to the person will " +
+    "not get past it. Stop and tell the person, and offer the ways that do " +
+    "work: they sign in to the site in their own browser, export its cookies " +
+    "(Cookie-Editor extension: Export, JSON) and upload the file, which you then " +
+    "load with browser_signin_import; or, if their desktop is connected, do it " +
+    "on their own computer with the computer tools; or use the service's API " +
+    "with a token or app password if it has one."
+  );
+}
+
+/** What an action did, above the page it left: one line per field filled. */
+function withNotes(page: PageRead, lead: string): string {
+  const notes = page.notes?.length ? `\n${page.notes.map((n) => `- ${n}`).join("\n")}` : "";
+  return `${lead}${notes}\n\n${describePage(page)}`;
+}
+
+/** A key as the model might write it, as Playwright names it: "esc" is
+    Escape, "ctrl+a" is Control+A, "down" is ArrowDown. */
+export function keyName(raw: string): string {
+  const alias: Record<string, string> = {
+    esc: "Escape", escape: "Escape", enter: "Enter", return: "Enter", tab: "Tab",
+    space: "Space", spacebar: "Space", backspace: "Backspace", delete: "Delete", del: "Delete",
+    up: "ArrowUp", down: "ArrowDown", left: "ArrowLeft", right: "ArrowRight",
+    arrowup: "ArrowUp", arrowdown: "ArrowDown", arrowleft: "ArrowLeft", arrowright: "ArrowRight",
+    pageup: "PageUp", pagedown: "PageDown", pgup: "PageUp", pgdn: "PageDown",
+    home: "Home", end: "End", ctrl: "Control", control: "Control", cmd: "Meta",
+    command: "Meta", meta: "Meta", alt: "Alt", option: "Alt", shift: "Shift",
+  };
+  return raw
+    .trim()
+    .split("+")
+    .map((part) => {
+      const p = part.trim();
+      if (!p) return "";
+      return alias[p.toLowerCase().replace(/[\s_-]/g, "")] ?? (p.length === 1 ? p : p[0].toUpperCase() + p.slice(1));
+    })
+    .filter(Boolean)
+    .join("+");
 }
 
 function candidateShells(): string[] {
@@ -1345,17 +1473,93 @@ export async function runTool(
         ctx.browserChanged();
         return {
           ok: true,
-          summary:
-            `Filled ${values.length} field${values.length === 1 ? "" : "s"}${
-              args.submit ? " and submitted" : ""}.\n\n${describePage(page)}`,
+          summary: withNotes(
+            page,
+            `Filled ${values.length} field${values.length === 1 ? "" : "s"}${args.submit ? " and submitted" : ""}:`,
+          ),
           preview: page.url,
         };
       }
 
       case "browser_scroll": {
-        const page = await ctx.browser().scroll(Number(args.dy ?? 600));
+        const to = args.to === "top" || args.to === "bottom" ? args.to : undefined;
+        const text = typeof args.text === "string" && args.text.trim() ? args.text.trim() : undefined;
+        const ref = Number.isFinite(Number(args.ref)) && args.ref !== null && args.ref !== undefined
+          ? Number(args.ref) : null;
+        const dy = Number(args.dy);
+        const screens = Number(args.screens);
+        const page = await ctx.browser().scroll({
+          to, text, ref,
+          ...(Number.isFinite(screens) && screens !== 0
+            ? { screens }
+            : Number.isFinite(dy) && dy !== 0
+              ? { dy }
+              : to || text || ref !== null ? {} : { screens: 1 }),
+        });
         ctx.browserChanged();
-        return { ok: true, summary: describePage(page), preview: page.url };
+        return {
+          ok: true,
+          summary: page.notes?.length ? withNotes(page, "Scrolled.") : describePage(page),
+          preview: page.url,
+        };
+      }
+
+      case "browser_press": {
+        const keys = (Array.isArray(args.keys) ? args.keys : [args.keys])
+          .map((k: unknown) => keyName(String(k ?? "")))
+          .filter(Boolean)
+          .slice(0, 20);
+        if (keys.length === 0) return { ok: false, summary: "No keys were given." };
+        const ref = Number.isFinite(Number(args.ref)) && args.ref !== null && args.ref !== undefined
+          ? Number(args.ref) : null;
+        const page = await ctx.browser().press(keys, ref);
+        ctx.browserChanged();
+        return {
+          ok: true,
+          summary: `Pressed ${keys.join(", ")}.\n\n${describePage(page)}`,
+          preview: `pressed ${keys.join(" ")}`,
+        };
+      }
+
+      case "browser_signin_import": {
+        const id = String(args.id ?? "").trim();
+        const meta = getArtifact(id);
+        const data = meta ? readArtifact(id) : null;
+        if (!meta || !data) {
+          return { ok: false, summary: `There is no uploaded file "${id}". Use artifact_list to find the cookie file.` };
+        }
+        let parsed;
+        try {
+          parsed = parseCookieExport(data.toString("utf8"));
+        } catch (err) {
+          return { ok: false, summary: `${meta.name}: ${err instanceof Error ? err.message : String(err)}` };
+        }
+        if (parsed.cookies.length === 0) {
+          return {
+            ok: false,
+            summary: `${meta.name} has no usable cookies in it${
+              parsed.expired ? ` (${parsed.expired} had already expired -- the sign-in needs exporting again)` : ""}.`,
+          };
+        }
+        const { added, refused } = await ctx.browser().importCookies(parsed.cookies);
+        const sites = sitesOf(parsed.cookies);
+        const kept = Boolean(args.keep_file);
+        if (!kept && added > 0) deleteArtifact(id);
+        const extra = [
+          refused ? `${refused} were refused by the browser` : "",
+          parsed.expired ? `${parsed.expired} had expired` : "",
+          parsed.skipped ? `${parsed.skipped} were unreadable` : "",
+        ].filter(Boolean).join("; ");
+        return {
+          ok: added > 0,
+          summary:
+            `Imported ${added} cookie${added === 1 ? "" : "s"} for ${sites.slice(0, 12).join(", ")}` +
+            `${sites.length > 12 ? ` and ${sites.length - 12} more sites` : ""}${extra ? ` (${extra})` : ""}. ` +
+            `${!kept && added > 0 ? "The uploaded file has been deleted. " : ""}` +
+            "Open the site to check it shows the person signed in; if it still asks " +
+            "for a sign-in, the export was from a signed-out browser or for a different address.",
+          preview: `signed in: ${sites.slice(0, 4).join(", ")}${sites.length > 4 ? "…" : ""}`,
+        };
       }
 
       case "browser_back": {
@@ -1740,6 +1944,41 @@ export async function runTool(
 }
 
 /**
+ * How to work a page, said once per turn while there is a browser.
+ *
+ * The tools say what each one does; this says how a careful person uses them
+ * together. Without it the agent read a form's labels and nothing else, typed
+ * a full name into a first-name box, scrolled a page that was already at the
+ * bottom, and retyped a password into a site that was refusing the browser.
+ */
+const BROWSING_GUIDE = [
+  "  Working a web page:",
+  "  - Each element line says what the page says about it: (purpose) from its autocomplete hint or " +
+    "field name, type=, value= or placeholder=, options: for a dropdown, required, INVALID: with " +
+    "the page's own error, hint:, and a -- section -- line above the fields it groups. Use all of " +
+    "it. A \"Name\" box marked (first name) takes only the first name; a (last name) box beside it " +
+    "takes the surname; two \"Name\" boxes under different sections are different people or " +
+    "addresses. Split, join and reformat what you know to fit each field (a phone as the field " +
+    "shows it, a date in the order its placeholder uses).",
+  "  - Fill a whole form with one browser_fill, dropdowns and checkboxes included, then read what " +
+    "each field reports holding. Fix anything reformatted, refused or INVALID before submitting. " +
+    "A field that offers suggestions as you type: fill it, then pick the suggestion (click its " +
+    "option, or browser_press ArrowDown then Enter).",
+  "  - An open dialog (cookie notice, sign-up prompt) is named at the top of the elements. " +
+    "Answer or close it first; browser_press Escape closes most.",
+  "  - The last line says where you are on the page and how much is below. Use browser_scroll " +
+    "with text to go to something you know is there, with a ref for a list or panel that scrolls " +
+    "on its own, and stop when it says you are at the bottom. Elements not on screen are " +
+    "counted, not listed, and can still be clicked by number.",
+  "  - After each action, check the page did what you meant (the URL, the new text, the field " +
+    "values) before the next. When a click seems to do nothing, look for an error or a dialog " +
+    "before trying again, and try a different way rather than the same click.",
+  "  - Sign-ins: fill the fields yourself when you have the details; hand the page to the person " +
+    "with browser_handoff for passwords you do not have, 2FA codes and CAPTCHA pictures. When the " +
+    "result says SIGN-IN REFUSED, the site is refusing this browser: stop, and follow what it says.",
+].join("\n");
+
+/**
  * What the agent is told it can do, in prose, before the conversation starts.
  *
  * Generated from the same registry the schemas come from, so the two cannot
@@ -1764,6 +2003,8 @@ export async function capabilityBriefing(): Promise<string> {
       lines.push("  These run straight away -- nothing waits on the person's approval.");
     }
   }
+
+  if (groups.some((g) => g.group === "browser" && g.available)) lines.push(BROWSING_GUIDE);
 
   const mcp = mcpTools();
   if (mcp.length > 0) {
