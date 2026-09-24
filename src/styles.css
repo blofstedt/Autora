@@ -382,6 +382,9 @@ body::before {
   color: var(--text-3);
   box-shadow: 0 0 34px -10px rgba(var(--accent-rgb),  0.6);
 }
+.empty-mark { margin-bottom: 6px; }
+/* Bigger mark, bigger light: the default 5px glow vanishes at this size. */
+.empty-mark.is-live .amark-star { filter: drop-shadow(0 0 12px rgba(var(--accent-rgb),  0.65)); }
 .empty h3 { margin: 4px 0 0; font-size: 14px; font-weight: 600; }
 .empty p { margin: 0; font-size: 12.5px; color: var(--text-3); max-width: 300px; }
 .empty .code-hint {
@@ -2703,20 +2706,6 @@ label + .jf-hint { margin-top: -5px; }
 .amark.is-working .amark-wash { opacity: 0.62; animation: amarkSwell 2.1s var(--ease) infinite; }
 .amark.is-settle .amark-wash { animation: amarkBloom var(--settle-ms) var(--ease) 1; }
 
-/* --- the orbiting thread: only while there is something to say --- */
-.amark-orbit {
-  transform-origin: 16px 16px;
-  opacity: 0;
-  transform: rotate(0deg) scale(0.9);
-  transition: opacity 0.45s var(--ease), transform 0.45s var(--ease);
-}
-.amark.is-working .amark-orbit {
-  opacity: 0.9;
-  animation: amarkOrbit 2.6s linear infinite;
-}
-.amark.is-live .amark-orbit { opacity: 0.35; animation: amarkOrbit 9s linear infinite; }
-.amark.is-settle .amark-orbit { opacity: 0; transform: rotate(150deg) scale(1.22); }
-
 /* --- the star itself --- */
 .amark-star {
   transform-origin: 16px 16px;
@@ -2743,9 +2732,6 @@ label + .jf-hint { margin-top: -5px; }
   45%  { transform: scale(1.1); opacity: 0.6; }
   100% { transform: scale(0.52); opacity: 0.22; }
 }
-@keyframes amarkOrbit {
-  to { transform: rotate(360deg) scale(1); }
-}
 @keyframes amarkTurn {
   to { transform: rotate(360deg); }
 }
@@ -2759,11 +2745,9 @@ label + .jf-hint { margin-top: -5px; }
    also drops the SVG morphing, which CSS cannot reach. */
 @media (prefers-reduced-motion: reduce) {
   .amark-wash,
-  .amark-orbit,
   .amark-star { animation: none !important; }
   .amark.is-working .amark-wash,
   .amark.is-live .amark-wash { opacity: 0.45; transform: scale(0.72); }
-  .amark.is-working .amark-orbit { opacity: 0.6; }
 }
 
 /* --------------------------------------------------------- providers --- */

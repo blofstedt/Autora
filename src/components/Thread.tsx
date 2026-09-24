@@ -125,7 +125,7 @@ export function Thread({
   if (buckets.length === 0 && !busy) {
     return (
       <div className="empty">
-        <span className="empty-ring"><AutoraMark size={30} state="live" /></span>
+        <AutoraMark size={80} state="live" className="empty-mark" />
         <h3>Ready</h3>
         <p>
           Describe a task below. Every command, page and edit appears here as it
