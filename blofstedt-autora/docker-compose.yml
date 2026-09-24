@@ -8,13 +8,11 @@ services:
       APP_PORT: 8817
 
   app:
-    # The release's own build, by version, never :latest. Umbrel offers an
-    # update the moment the manifest's version goes up, which is minutes
-    # before the new image finishes building; with :latest an update taken
-    # in that gap pulled the previous build, recorded the new version, and
-    # never offered it again. A version tag that does not exist yet fails
-    # the pull instead, and trying again a few minutes later gets it.
-    # check_release.py keeps this equal to `version` in umbrel-app.yml.
+    # The release's own build, by version, never :latest. The image workflow
+    # sets this tag, and `version` in umbrel-app.yml, only once that
+    # version's image is in the registry (.github/scripts/offer_release.py),
+    # so Umbrel never offers an update whose image is still building. Don't
+    # change it by hand; check_release.py fails a pull request that does.
     image: ghcr.io/blofstedt/autora:0.9.29
     restart: on-failure
     # The https listener, published directly rather than through app_proxy,

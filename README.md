@@ -561,18 +561,18 @@ change can be merged, built and pushed to the registry, and every installed
 copy will still report itself up to date — removing and re-adding the community
 store re-fetches the same manifest and reaches the same conclusion.
 
-So a change that reaches the container ships with a higher `version` and
-rewritten `releaseNotes`, which Umbrel shows on the update, and
-`docker-compose.yml` names that version's image tag rather than `:latest`.
-The image workflow tags every build of main with the version in
-`package.json`. Umbrel offers the update as soon as the manifest changes on
-main, so a pull request that raises the version also publishes that
-version's image before it is merged (main rebuilds it from the merge a few
-minutes later). Without that, an update taken in the gap failed with
-"manifest unknown"; with `:latest`, it installed the previous build under
-the new version number. CI enforces this on
-every pull request; a change with no user-facing effect opts out with
-`[no release]` in the pull request title or body.
+So a change that reaches the container raises `version` in `package.json`
+(and `package-lock.json`) and rewrites `releaseNotes`, which Umbrel shows on
+the update. It leaves the manifest's `version` and the image tag in
+`docker-compose.yml` alone: once main's image for the new version is in the
+registry, the image workflow commits both to main itself
+(`.github/scripts/offer_release.py`). Umbrel therefore never offers a version
+whose image is still building. When pull requests raised the manifest
+version themselves, an update taken in the minutes before the image finished
+failed with "manifest unknown"; with `:latest`, it installed the previous
+build under the new version number. CI enforces this on every pull request;
+a change with no user-facing effect opts out with `[no release]` in the pull
+request title or body.
 
 ```bash
 python3 .github/scripts/check_release.py --base origin/main   # the same check, locally

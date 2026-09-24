@@ -1,12 +1,19 @@
 name: Build and publish container image
 
-# Built from the pull request as well as from main, because of when Umbrel
-# looks. It offers an update the moment a higher `version` lands on main, and
-# docker-compose.yml names that version's image -- so an image built only
-# after the merge was minutes late, and an update taken in between failed with
-# "manifest unknown". A pull request that raises the version therefore
-# publishes that version's image before it is merged; main rebuilds it from
-# the merge a few minutes later, and that build is the one that stays.
+# The version Umbrel offers moves only after its image is in the registry.
+#
+# Umbrel offers an update the moment a higher `version` lands on main, and
+# docker-compose.yml names that version's image. When pull requests raised
+# that version themselves, the update was offered minutes before the image
+# finished building, and an update taken in the gap failed with "manifest
+# unknown". Publishing from the pull request narrowed the gap but could not
+# close it: a pull request merged within seconds still raced its own build.
+#
+# So a pull request raises only package.json (what the image is built as),
+# and this workflow, once main's image is pushed, commits the matching
+# `version` in umbrel-app.yml and image tag in docker-compose.yml to main.
+# That commit is made with GITHUB_TOKEN, so it starts no workflow of its own.
+
 on:
   push:
     branches: [main]
@@ -21,7 +28,8 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      # write: to commit the version bump that offers the update.
+      contents: write
       packages: write
     steps:
       - uses: actions/checkout@v4
@@ -37,29 +45,11 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # The version, as a tag of its own: docker-compose.yml names it, so an
-      # update pulls exactly this build and never a stale :latest.
-      #
-      # From a pull request, only a version main does not have yet is pushed:
-      # a pull request that leaves the version alone would otherwise put its
-      # unmerged code under the tag of the release people are running.
+      # update pulls exactly this build and never a stale :latest. Pull
+      # requests build without publishing, to catch a broken Dockerfile.
       - id: version
         run: |
-          version=$(node -p "require('./package.json').version")
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          push=true
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            # The base the pull request was opened against, not main as it is
-            # now: merged within seconds, main already carries this version by
-            # the time this runs, and the image was never published early.
-            base=${{ github.event.pull_request.base.sha }}
-            git fetch -q --depth=1 origin "$base"
-            released=$(git show "$base:package.json" | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")
-            if [ "$version" = "$released" ]; then
-              push=false
-              echo "Version $version is already main's; building without publishing."
-            fi
-          fi
-          echo "push=$push" >> "$GITHUB_OUTPUT"
+          echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
       - id: meta
         uses: docker/metadata-action@v5
@@ -76,8 +66,13 @@ jobs:
           context: .
           # Umbrel Home is amd64; Raspberry Pi is arm64.
           platforms: linux/amd64,linux/arm64
-          push: ${{ steps.version.outputs.push == 'true' }}
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Only now, with the image in the registry, does Umbrel get to see it.
+      - name: Offer this version on Umbrel
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: python3 .github/scripts/offer_release.py "${{ steps.version.outputs.version }}"
