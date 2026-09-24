@@ -25,12 +25,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # The version, as a tag of its own: docker-compose.yml names it, so an
+      # update pulls exactly this build and never a stale :latest.
+      - id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
       - id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/blofstedt/autora
           tags: |
             type=raw,value=latest
+            type=raw,value=${{ steps.version.outputs.version }}
             type=ref,event=tag
 
       - uses: docker/build-push-action@v6
