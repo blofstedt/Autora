@@ -232,6 +232,10 @@ const SHELL_TOOLS = new Set(["bash", "terminal", "shell"]);
     prefix as well as by name, because the real registry names them for what
     they do (`browser_click`, `computer_type`) and a one-line "tool called
     browser_click" card beside the video of that click is noise. */
+/** A page's address, as older builds captioned their browser screenshots.
+    Nothing else the agent shows is captioned like one. */
+const PAGE_ADDRESS = /^(?:[a-z][a-z0-9+.-]*:\/\/|about:)\S*$/i;
+
 const STAGED_TOOLS = new Set(["browser", "desktop", "computer", "edit", "write", "patch"]);
 
 const isStaged = (name: string) =>
@@ -687,10 +691,22 @@ export function derive(events: AutoraEvent[]): Derived {
           height: typeof e.payload.h === "number" ? e.payload.h : null,
         };
         if (!picture.blob && !picture.url) break;
-        // A picture of the open page (older sessions logged the screenshot
-        // tool this way) belongs on the browser screen, not in a second card.
-        if (picture.blob && url && picture.caption === url && !e.payload.inline) {
-          const screen = screenCell("browser", e.seq);
+        // A picture of a screen belongs on that screen's card, never in a
+        // second one beside it. Older builds logged the screenshot tools this
+        // way: the page's address as the caption (whatever the thread last
+        // knew the address to be), or "the relayed desktop" as the alt.
+        const screenOf = !picture.blob || e.payload.inline ? null
+          : picture.caption && (picture.caption === url || PAGE_ADDRESS.test(picture.caption)) ? "browser"
+          : picture.alt === "the page as it looks now" ? "browser"
+          : picture.alt === "the relayed desktop" ? "desktop"
+          : null;
+        if (screenOf && picture.blob) {
+          if (screenOf === "browser" && picture.caption && PAGE_ADDRESS.test(picture.caption)) {
+            url = picture.caption;
+          }
+          if (screenOf === "desktop") hasDesktop = true;
+          const screen = screenCell(screenOf, e.seq);
+          if (screenOf === "browser") screen.url = url;
           screen.shots.push({ blob: picture.blob, seq: e.seq, ts: e.ts });
           break;
         }
@@ -702,6 +718,7 @@ export function derive(events: AutoraEvent[]): Derived {
 
       case Kind.BrowserFrame:
         if (e.blob) {
+          if (e.payload.url) url = e.payload.url;
           const cell = screenCell("browser", e.seq);
           cell.url = url;
           cell.shots.push({
