@@ -2491,7 +2491,10 @@ async function startServer() {
               if (!stalled || nudges >= MAX_NUDGES || running.get(session.id)?.stopped) break;
               nudges += 1;
               if (!empty) {
-                context.append({ role: "assistant", text: turn.text }, session.seqCounter);
+                context.append(
+                  { role: "assistant", text: turn.text, reasoning: turn.reasoning },
+                  session.seqCounter,
+                );
               }
               const why = turn.cutOff
                 ? "Your last reply was cut off at the output limit."
@@ -2514,7 +2517,7 @@ async function startServer() {
             nudges = 0;
 
             context.append(
-              { role: "assistant", text: turn.text, calls: turn.calls },
+              { role: "assistant", text: turn.text, calls: turn.calls, reasoning: turn.reasoning },
               session.seqCounter,
             );
             const replies: ToolReply[] = [];
