@@ -1447,6 +1447,41 @@ label + .jf-hint { margin-top: -5px; }
 }
 .set-key-edit input:focus { outline: none; border-color: var(--accent-line); }
 
+/* Credentials: the person's details and sign-ins. */
+.cred-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+.cred-field { display: grid; gap: 4px; min-width: 0; }
+.cred-field > span {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 11.5px; font-weight: 600; color: var(--text-2);
+}
+.cred-field input {
+  min-width: 0; padding: 8px 10px; border-radius: var(--r-sm);
+  background: var(--s2); border: 1px solid var(--border); color: var(--text);
+  font-family: inherit; font-size: 12.5px;
+}
+.cred-field input:focus { outline: none; border-color: var(--accent-line); }
+.cred-clear {
+  border: 0; background: none; color: var(--text-3); cursor: pointer;
+  font-size: 14px; line-height: 1; padding: 0 2px;
+}
+.cred-clear:hover { color: var(--danger, #fb7185); }
+.cred-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.cred-login {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+  padding: 9px 11px; margin-bottom: 7px; border-radius: var(--r-sm);
+  background: var(--s2); border: 1px solid var(--border);
+}
+.cred-login > div:first-child { display: grid; gap: 2px; flex: 1 1 160px; min-width: 0; }
+.cred-login b { font-size: 13px; overflow-wrap: anywhere; }
+.cred-login span { font-family: var(--mono); font-size: 11.5px; color: var(--text-3); }
+.cred-login .cred-actions { margin-top: 0; }
+.cred-badges { display: flex; gap: 5px; }
+.cred-form { padding: 11px; border-radius: var(--r-sm); border: 1px solid var(--accent-line); margin-top: 4px; }
+.cred-upload { position: relative; overflow: hidden; cursor: pointer; }
+.cred-upload input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.cred-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); }
+.cred-ok { color: var(--live); }
+
 @media (max-width: 680px) {
   .sched-top, .kweb-top { padding: 0 12px; gap: 8px; }
   /* A long task name must not push the close button off the row. */

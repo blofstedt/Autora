@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.9.27"
+version: "0.9.28"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -23,6 +23,11 @@ description: >-
 
   • Persistent browser auth — sign in once to Gmail, Google Calendar, or any
   site; auth is preserved across restarts in a dedicated profile.
+
+
+  • Credentials — save your personal details, site passwords and
+  authenticator keys; Autora types them into pages without ever seeing them,
+  and each password only on its own site.
 
 
   • Live terminal with colour output, progress bars, and scrollback.
@@ -74,13 +79,16 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Fixes DeepSeek stopping partway through a task with "An assistant message
-  with 'tool_calls' must be followed by tool messages responding to each
-  'tool_call_id'". DeepSeek's current models think before they answer, and
-  with tools in play they want that thinking sent back with every earlier
-  step. Autora now keeps it and sends it. Any tool call still left without a
-  result is also answered before the request goes out, so one bad step can no
-  longer stop the rest of the task.
+  New in Settings -> API Keys: Credentials. Save your name, email, phone,
+  address and date of birth, and a username and password for each site, with
+  an optional authenticator key (paste it, or upload a screenshot of the QR
+  code) so Autora can fill the 2FA code itself. Autora is told which details
+  exist but never sees them: it asks for a placeholder and the server types
+  the real value into the page. A saved sign-in is only ever typed into pages
+  on its own site, so a page cannot trick it into giving a password away.
+  Personal details are also available to the terminal for filling PDFs.
+  Everything is stored encrypted, and nothing saved can be read back out,
+  not even from the settings screen.
 
 dependencies: []
 path: ""
