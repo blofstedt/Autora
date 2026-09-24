@@ -42,6 +42,15 @@ description: >-
   every command runs straight away and is shown in the thread as it runs.
 
 
+  • A memory that learns — after real work, Autora writes down what worked
+  (commands, fixes, your preferences) for you to keep or discard, recalls it
+  when it is relevant, and can save scripts it uses often as tools of its own.
+
+
+  • Schedules and watchers — run a task on a cron schedule, or whenever a web
+  page, a file or a command's output changes, with a history of every run.
+
+
   • Voice interface (optional) — Deepgram STT+TTS when DEEPGRAM_API_KEY is set.
 
 
@@ -79,16 +88,20 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Bug fixes. The live browser card no longer crashes the thread when its
-  first screenshot arrives, since one of its hooks was running on some
-  renders and not others. Copying a secret now works, or quietly does
-  nothing, when Autora is opened over plain http instead of throwing, and it
-  only says "copied" when it was. The app no longer reloads itself on your
-  very first visit, and an error page served while the container restarts
-  is no longer saved as the offline copy of the app. Stray websocket
-  connections are closed instead of held open, and the knowledge graph fits
-  itself to the window's current size. Behind the scenes the code is now
-  checked by ESLint on every build.
+  Autora now learns and works on its own. Scheduled tasks actually run (they
+  never did before), and a task can instead watch a web page, a file or a
+  command's output and run when it changes, with the change attached; each
+  task keeps a history of its runs, and you get a notice when one finishes.
+  Memory is recalled by what you ask rather than by fixed keywords, near-copies
+  are merged, and the agent can correct or retire a memory. After a turn that
+  did real work it writes down what it learned, shown in the chat with Keep and
+  Discard and in a review list on the Mind page; things that keep working are
+  confirmed on their own. It can save a script it needs again as a tool of its
+  own, and it is told which tools have been failing lately (see System, Status).
+  The demo memories and demo tasks from the first install are removed if you
+  never changed them. Also: lint checks on every build and several bug fixes
+  (a crash in the live browser card, copying secrets over http, stray
+  connections, the offline copy of the app).
 
 dependencies: []
 path: ""

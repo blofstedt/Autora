@@ -13,6 +13,29 @@ export type Job = {
   last_error: string | null;
   next_run: number | null;
   cron_error: string | null;
+  /** Set for a watcher: the cron is how often it looks. */
+  watch?: { kind: WatchKind; target: string } | null;
+  last_seen?: { at: number; preview: string } | null;
+  runs?: JobRun[];
+  running?: boolean;
+};
+
+type WatchKind = "page" | "file" | "command";
+
+type JobRun = {
+  at: number;
+  finished: number | null;
+  reason: "schedule" | "manual" | "change";
+  session: string | null;
+  ok: boolean;
+  error: string | null;
+  summary: string;
+};
+
+const WATCH_LABEL: Record<WatchKind, { noun: string; placeholder: string }> = {
+  page: { noun: "web page", placeholder: "https://example.com/pricing" },
+  file: { noun: "file or folder", placeholder: "/data/inbox" },
+  command: { noun: "command's output", placeholder: "docker ps --format '{{.Names}} {{.Status}}'" },
 };
 
 /** Schedules worth one tap, rather than making everyone recall field order. */
@@ -91,11 +114,12 @@ function ago(ts: number): string {
 }
 
 /**
- * Scheduled tasks: a prompt and a cron expression.
+ * Scheduled tasks and watchers: a prompt and a cron expression.
  *
- * Each run opens its own session, so the list here is a list of intentions --
- * what has actually happened lives in the session switcher like everything
- * else, and the newest run is one tap away from its row.
+ * A task runs its prompt on the schedule. A watcher uses the schedule to look
+ * at a page, a file or a command's output, and runs its prompt only when that
+ * changed, with the change attached. Each run opens its own session; the last
+ * few are listed under the task, one tap from each.
  */
 export function Schedule({
   onClose, onOpenSession, embedded = false,
@@ -138,7 +162,7 @@ export function Schedule({
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      setError(body.detail ?? "Could not save that task.");
+      setError(body.error ?? body.detail ?? "Could not save that task.");
       return false;
     }
     setEditing(null);
@@ -165,7 +189,7 @@ export function Schedule({
     const res = await fetch(`/api/jobs/${job.id}/run`, { method: "POST" });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
-      setError(body.detail ?? "Could not start that task.");
+      setError(body.error ?? body.detail ?? "Could not start that task.");
       return;
     }
     await load();
@@ -242,8 +266,9 @@ export function Schedule({
             </div>
 
             <div className="job-when">
+              {job.watch && <span className="job-watch">watches {WATCH_LABEL[job.watch.kind].noun}: <code>{job.watch.target}</code>,</span>}
               <code>{job.cron}</code>
-              {describeCron(job.cron) && <span>{describeCron(job.cron)}</span>}
+              {describeCron(job.cron) && <span>{job.watch ? "checked " : ""}{describeCron(job.cron)}</span>}
             </div>
 
             <p className="job-prompt">{job.prompt}</p>
@@ -265,8 +290,32 @@ export function Schedule({
                   <span className="muted">last run {ago(job.last_run)}</span>
                 )
               )}
+              {job.running && <span className="job-live">running now</span>}
+              {job.watch && job.last_seen && <span className="muted">looked {ago(job.last_seen.at)}</span>}
               {job.last_error && <span className="job-bad">{job.last_error}</span>}
             </div>
+
+            {(job.runs?.length ?? 0) > 0 && (
+              <details className="job-runs">
+                <summary>History ({job.runs!.length})</summary>
+                {[...job.runs!].reverse().map((run) => (
+                  <button
+                    key={`${run.at}-${run.session}`}
+                    className={`job-run ${run.finished === null ? "is-live" : run.ok ? "is-ok" : "is-bad"}`}
+                    disabled={!run.session}
+                    onClick={() => run.session && onOpenSession(run.session)}
+                  >
+                    <span className="job-run-dot" aria-hidden="true" />
+                    <span className="job-run-when">
+                      {ago(run.at)}{run.reason === "change" ? " · changed" : run.reason === "manual" ? " · by hand" : ""}
+                    </span>
+                    <span className="job-run-what">
+                      {run.finished === null ? "running…" : run.ok ? run.summary || "done" : run.error || "failed"}
+                    </span>
+                  </button>
+                ))}
+              </details>
+            )}
           </article>
         ))}
       </div>
@@ -284,10 +333,13 @@ function JobForm({
   const [name, setName] = useState(job?.name ?? "");
   const [cron, setCron] = useState(job?.cron ?? "0 8 * * *");
   const [prompt, setPrompt] = useState(job?.prompt ?? "");
+  const [watchKind, setWatchKind] = useState<WatchKind | "">(job?.watch?.kind ?? "");
+  const [target, setTarget] = useState(job?.watch?.target ?? "");
   const [saving, setSaving] = useState(false);
 
   const described = describeCron(cron);
-  const ready = cron.trim().split(/\s+/).length === 5 && prompt.trim().length > 0;
+  const ready = (cron.trim().startsWith("@") || cron.trim().split(/\s+/).length === 5) &&
+    prompt.trim().length > 0 && (!watchKind || target.trim().length > 0);
 
   return (
     <form
@@ -296,7 +348,10 @@ function JobForm({
         e.preventDefault();
         if (!ready || saving) return;
         setSaving(true);
-        await onSave({ name, cron, prompt }, job?.id);
+        await onSave({
+          name, cron, prompt,
+          watch: watchKind ? { kind: watchKind, target: target.trim() } : null,
+        }, job?.id);
         setSaving(false);
       }}
     >
@@ -316,8 +371,42 @@ function JobForm({
         />
       </label>
 
+      <div className="jf-row">
+        <span>Runs</span>
+        <div className="jf-presets">
+          {([["", "on the schedule"], ["page", "when a page changes"], ["file", "when a file changes"], ["command", "when a command's output changes"]] as const).map(([kind, label]) => (
+            <button
+              type="button"
+              key={kind || "cron"}
+              className={`kchip ${watchKind === kind ? "on" : ""}`}
+              onClick={() => setWatchKind(kind)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {watchKind && (
+        <>
+          <label className="jf-row">
+            <span>Watch</span>
+            <input
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+              placeholder={WATCH_LABEL[watchKind].placeholder}
+              spellCheck={false}
+            />
+          </label>
+          <div className="jf-hint">
+            The schedule below is how often it looks. The first look is only a baseline; after
+            that the task runs whenever what it sees has changed, with the change attached.
+          </div>
+        </>
+      )}
+
       <label className="jf-row">
-        <span>Schedule</span>
+        <span>{watchKind ? "Check" : "Schedule"}</span>
         <input
           value={cron}
           onChange={(e) => setCron(e.target.value)}

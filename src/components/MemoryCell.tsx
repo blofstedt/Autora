@@ -31,7 +31,7 @@ export function MemoryCell({
       type="button"
       className={`mem-pulse is-${cell.action} ${inline ? "is-inline" : ""}`.trim()}
       onClick={onOpen}
-      title="Open the Mind"
+      title="Open the Mind. Hover a memory to see why it was used."
     >
       {/* Keyed on seq so a merged recall pulses again when it grows. */}
       <span className="mem-pulse-dot" key={cell.seq} aria-hidden="true" />
@@ -41,11 +41,14 @@ export function MemoryCell({
         return (
           <span
             key={item.id}
-            className="mem-chip"
+            className={`mem-chip ${item.action === "forgotten" ? "is-gone" : ""}`.trim()}
             style={known ? ({ "--chip": KIND_COLOR[item.kind as Bucket] } as React.CSSProperties) : undefined}
+            // Why this one: what it matched, or that it is pinned.
+            title={item.reason ?? (item.action ? `${item.action}` : undefined)}
           >
             {known && <em>{item.kind}</em>}
             {item.title}
+            {item.action && item.action !== "added" && <small>{item.action}</small>}
           </span>
         );
       })}

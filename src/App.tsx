@@ -23,6 +23,7 @@ import { DictateButton } from "./components/DictateButton";
 import { LiveChat } from "./components/LiveChat";
 import { useRelay } from "./components/RelaySetup";
 import { UpdateNotice } from "./components/UpdateNotice";
+import { Notices } from "./components/Notices";
 import { AutoraMark, type MarkState } from "./components/AutoraMark";
 import {
   dictationSupported, recognitionAvailable, secureOrigin, speakable,
@@ -532,6 +533,7 @@ export function App() {
         {/* Above everything, including the header: an app running code that is
             two releases old is not a detail to mention further down. */}
         <UpdateNotice />
+        <Notices onOpenSession={openSession} />
 
         <header className="top">
           <button

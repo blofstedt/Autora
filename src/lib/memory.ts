@@ -14,6 +14,10 @@ export type MemoryRecord = {
   uses: number;
   last_used: number | null;
   superseded_by: string | null;
+  /** Times a turn that used it went well. */
+  worked?: number;
+  /** For a learned rewrite: the memory it replaces once kept. */
+  replaces?: string | null;
 };
 
 export type MemoryLink = { src: string; dst: string; rel: string };
@@ -22,6 +26,8 @@ export type Knowledge = {
   records: MemoryRecord[];
   links: MemoryLink[];
   enabled: boolean;
+  /** Whether the agent writes down what it learns after a turn. */
+  learning?: boolean;
 };
 
 export const KIND_COLOR: Record<MemoryRecord["kind"], string> = {
@@ -76,6 +82,20 @@ export async function patchRecord(id: string, body: Partial<MemoryRecord>) {
 
 export async function deleteRecord(id: string) {
   await fetch(`/api/memory/${id}`, { method: "DELETE" });
+}
+
+/** Keep a learned memory: known from now on, replacing what it rewrote. */
+export async function confirmRecord(id: string) {
+  const res = await fetch(`/api/memory/${id}/confirm`, { method: "POST" });
+  if (!res.ok) throw new Error("Could not keep it");
+}
+
+export async function setLearning(learning: boolean) {
+  await fetch("/api/memory-settings", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ learning }),
+  });
 }
 
 /**

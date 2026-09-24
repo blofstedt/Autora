@@ -14,6 +14,8 @@ type Snapshot = {
   usage: { month: { cost: number; turns: number }; today: { cost: number; turns: number } } | null;
   mcp: { servers: { name: string; status: string; tools: unknown[] }[] } | null;
   errors: number;
+  health: { tool: string; calls: number; failures: number; lastError: string | null; lastTs: number }[];
+  custom: { name: string; description: string; runs: number; failures: number; updated: number }[];
 };
 
 const money = (n: number) => `$${n < 1 ? n.toFixed(3) : n.toFixed(2)}`;
@@ -32,17 +34,24 @@ export function StatusPage({
   /** Another section of the System page. */
   onTab: (tab: SystemTab) => void;
 }) {
-  const [snap, setSnap] = useState<Snapshot>({ system: null, settings: null, usage: null, mcp: null, errors: 0 });
+  const [snap, setSnap] = useState<Snapshot>({
+    system: null, settings: null, usage: null, mcp: null, errors: 0, health: [], custom: [],
+  });
 
   useEffect(() => {
     let alive = true;
     const get = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : null)).catch(() => null);
     const load = async () => {
-      const [system, settings, usage, mcp, logs] = await Promise.all([
+      const [system, settings, usage, mcp, logs, health, custom] = await Promise.all([
         get("/api/system"), get("/api/settings"), get("/api/usage"), get("/api/mcp"),
-        get("/api/logs?level=error&limit=200"),
+        get("/api/logs?level=error&limit=200"), get("/api/tools/health"), get("/api/custom-tools"),
       ]);
-      if (alive) setSnap({ system, settings, usage, mcp, errors: logs?.lines?.length ?? 0 });
+      if (alive) {
+        setSnap({
+          system, settings, usage, mcp, errors: logs?.lines?.length ?? 0,
+          health: health?.health ?? [], custom: custom?.tools ?? [],
+        });
+      }
     };
     void load();
     const timer = window.setInterval(load, 5000);
@@ -111,6 +120,55 @@ export function StatusPage({
             <span className="stat-sub">in the log since start</span>
           </button>
         </div>
+
+        <section className="set-card">
+          <h3>How the tools have been going</h3>
+          <p className="jf-hint">
+            The last week of calls. Tools failing often are named to the agent at the start of
+            each turn, so it does not walk into the same wall again.
+          </p>
+          {snap.health.length === 0 && <p className="jf-hint">No tool calls yet.</p>}
+          <div className="health-rows">
+            {snap.health.map((h) => {
+              const share = h.calls ? h.failures / h.calls : 0;
+              return (
+                <div key={h.tool} className={`health-row ${share >= 0.4 && h.calls >= 3 ? "is-bad" : share > 0 ? "is-warn" : ""}`}>
+                  <code>{h.tool}</code>
+                  <span className="health-bar" aria-hidden="true"><i style={{ width: `${Math.round((1 - share) * 100)}%` }} /></span>
+                  <span className="health-count">{h.calls - h.failures}/{h.calls} ok</span>
+                  {h.lastError && <em title={h.lastError}>{h.lastError}</em>}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="set-card">
+          <h3>Tools Autora wrote</h3>
+          <p className="jf-hint">
+            Scripts the agent saved with tool_create for work it does again. It is offered each one
+            as my_&lt;name&gt; while the terminal is on.
+          </p>
+          {snap.custom.length === 0 && <p className="jf-hint">None yet.</p>}
+          {snap.custom.map((t) => (
+            <div key={t.name} className="health-row">
+              <code>my_{t.name}</code>
+              <span className="custom-desc">{t.description}</span>
+              <span className="health-count">{t.runs} run{t.runs === 1 ? "" : "s"}{t.failures ? `, ${t.failures} failed` : ""}</span>
+              <button
+                type="button"
+                className="btn tiny ghost"
+                onClick={() => {
+                  if (!window.confirm(`Delete my_${t.name}?`)) return;
+                  void fetch(`/api/custom-tools/${encodeURIComponent(t.name)}`, { method: "DELETE" })
+                    .then(() => setSnap((s) => ({ ...s, custom: s.custom.filter((c) => c.name !== t.name) })));
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          ))}
+        </section>
 
         <section className="set-card">
           <h3>Recent sessions</h3>

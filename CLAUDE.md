@@ -48,6 +48,15 @@ Only when a change genuinely has no user-facing effect, skip the bump and put
   `providers.ts` (model calls), `browser.ts` (Playwright), `desktop.ts` (the
   relay), `store.ts` / `state.ts` (what is kept on disk under `AUTORA_HOME`),
   `credentials.ts`, `mcp.ts`, `jev/` (the evaluator).
+- How it learns and runs on its own:
+  - `memory.ts`: the memory graph (ranked recall, merging near-copies,
+    provisional to confirmed).
+  - `learning.ts`: looking back at a finished turn and deciding what to keep.
+  - `scheduler.ts`: cron jobs and watchers.
+  - `customtools.ts`: scripts the agent saved as its own tools.
+  - `toolhealth.ts`: recent failures per tool, told to the agent.
+- Every turn, from any source (the chat box, a job, a watcher), goes through
+  `startTurn()` in `server.ts`, and learning runs after it.
 - `src/`: the React client. `App.tsx` holds the session and stream;
   `lib/derive.ts` folds the event log into what the thread shows;
   `components/` renders it.
