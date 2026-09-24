@@ -220,6 +220,11 @@ export function mergeJev(into: JevSettings, patch: any): JevSettings {
   if (!patch || typeof patch !== "object") return into;
   if (typeof patch.enabled === "boolean") into.enabled = patch.enabled;
   if (patch.threshold !== undefined) into.threshold = clampThreshold(patch.threshold);
+  if (typeof patch.key === "string") {
+    const key = patch.key.trim();
+    if (key) into.key = key;
+    else delete into.key;
+  }
   return into;
 }
 

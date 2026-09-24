@@ -25,7 +25,10 @@ import type { JevField, JevValue } from "./schema";
 
 export interface JevTarget {
   provider: string;
-  kind: "openai" | "gemini" | "anthropic";
+  /** "typesafe" is the hosted Jev API itself: it answers typed questions
+      with probabilities directly, so no log-probabilities are needed from
+      the chat model. */
+  kind: "openai" | "gemini" | "anthropic" | "typesafe";
   baseUrl: string;
   key: string;
   model: string;
@@ -63,6 +66,9 @@ const TOP_LOGPROBS = 20;
 const NO_LOGPROBS = /(^|\/)(o\d(-|$)|o\d-mini|gpt-5)/i;
 
 export function staticSupport(target: JevTarget): { ok: boolean; reason?: string } {
+  if (target.kind === "typesafe") {
+    return target.key ? { ok: true } : { ok: false, reason: "No Jev API key is set." };
+  }
   if (target.kind === "anthropic") {
     return { ok: false, reason: "Anthropic's API does not return token probabilities." };
   }
@@ -214,6 +220,60 @@ async function scoreGemini(
 }
 
 /**
+ * Every field in one request to the hosted Jev API (TypeSafe's System One).
+ *
+ * Each field goes as a "choice" question whose criteria are keyed by the
+ * option's letter, so the answer maps straight back onto the option table and
+ * the rest of the pipeline -- thresholds, coverage, the confidence matrix --
+ * is the same as for the log-probability path.
+ */
+async function scoreTypeSafe(
+  target: JevTarget, context: string, fields: JevField[], instructions: string | undefined,
+  signal: AbortSignal,
+): Promise<{ scores: FieldScore[]; usage: { input: number; output: number; cached: number } }> {
+  const questions: Record<string, unknown> = {};
+  for (const f of fields) {
+    questions[f.name] = {
+      type: "choice",
+      instructions: f.description || f.name,
+      criteria: Object.fromEntries(f.options.map((o) => [o.label, o.text])),
+    };
+  }
+  const state = instructions?.trim()
+    ? `${instructions.trim()}\n\n${context.trim() || "(none)"}`
+    : context.trim() || "(none)";
+  const data = await post(`${target.baseUrl.replace(/\/+$/, "")}/v1/systemone`, {
+    Authorization: `Bearer ${target.key}`,
+  }, { model: target.model, state, questions }, signal);
+  const answers = data?.answers;
+  if (!answers || typeof answers !== "object") {
+    throw new Error("Jev answered without any answers.");
+  }
+  const scores = fields.map((f) => {
+    const answer = answers[f.name];
+    const probs: Record<string, unknown> = answer?.probabilities ?? {};
+    const alternatives = f.options
+      .map((o) => ({ token: o.label, p: Number(probs[o.label]) }))
+      .filter((a) => Number.isFinite(a.p) && a.p > 0)
+      .map((a) => ({ token: a.token, logprob: Math.log(a.p) }));
+    if (alternatives.length === 0 && typeof answer?.choice === "string") {
+      // No distribution, only a pick: trust it at the confidence Jev gave.
+      const c = Number(answer.confidence);
+      alternatives.push({ token: answer.choice, logprob: Math.log(Number.isFinite(c) && c > 0 ? c : 1) });
+    }
+    return scoreField(f, alternatives);
+  });
+  return {
+    scores,
+    usage: {
+      input: data?.usage?.input_tokens ?? data?.usage?.prompt_tokens ?? 0,
+      output: data?.usage?.output_tokens ?? data?.usage?.completion_tokens ?? 0,
+      cached: 0,
+    },
+  };
+}
+
+/**
  * Score every field in parallel against one shared prefix.
  *
  * Throws JevUnsupported if the backend cannot do this at all, and an
@@ -239,6 +299,18 @@ export async function evaluateFields(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? FIELD_TIMEOUT_MS);
   opts.signal?.addEventListener("abort", () => controller.abort(), { once: true });
+
+  if (target.kind === "typesafe") {
+    try {
+      const { scores, usage } = await scoreTypeSafe(
+        target, context, fields, opts.instructions, controller.signal,
+      );
+      return { fields: scores, ms: Math.round(performance.now() - started), usage };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   const score = target.kind === "gemini" ? scoreGemini : scoreOpenAi;
 
   try {

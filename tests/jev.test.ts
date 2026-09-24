@@ -31,12 +31,22 @@ async function test(name: string, fn: () => Promise<void> | void) {
 type Reply = (field: string) => { status?: number; body: unknown; delayMs?: number };
 let reply: Reply = () => ({ body: {} });
 const seen: { system: string; user: string }[] = [];
+/** The hosted Jev API's /v1/systemone, answered by the test. */
+let hosted: (body: any) => { status?: number; body: unknown } = () => ({ body: {} });
+const hostedSeen: { auth: string; body: any }[] = [];
 
 const server = http.createServer((req, res) => {
   let raw = "";
   req.on("data", (c) => (raw += c));
   req.on("end", async () => {
     const body = JSON.parse(raw || "{}");
+    if (req.url?.endsWith("/v1/systemone")) {
+      hostedSeen.push({ auth: String(req.headers.authorization ?? ""), body });
+      const r = hosted(body);
+      res.writeHead(r.status ?? 200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(r.body));
+      return;
+    }
     const system = body.messages?.find((m: any) => m.role === "system")?.content ?? "";
     const user = body.messages?.find((m: any) => m.role === "user")?.content ?? "";
     seen.push({ system, user });
@@ -197,6 +207,46 @@ async function main() {
     assert.equal((await decide({ name: "t", context: "", schema }, { ...target, kind: "anthropic" }, on)).mode, "fallback");
     assert.equal((await decide({ name: "t", context: "", schema }, { ...target, model: "gpt-5-mini" }, on)).mode, "fallback");
     assert.equal(seen.length, 0);
+  });
+
+  console.log("hosted Jev");
+  const hostedTarget: JevTarget = {
+    provider: "typesafe", kind: "typesafe", baseUrl: `http://127.0.0.1:${port}`,
+    key: "jev_test", model: "jev-latest",
+  };
+  await test("every field goes as one choice question and maps back by letter", async () => {
+    resetHealth();
+    hostedSeen.length = 0;
+    hosted = (body) => ({
+      body: {
+        answers: Object.fromEntries(Object.keys(body.questions).map((name) => [name, {
+          type: "choice", choice: "B", confidence: 0.9,
+          probabilities: { A: 0.05, B: 0.9, C: 0.05 },
+        }])),
+        usage: { input_tokens: 300, output_tokens: 20 },
+      },
+    });
+    const out = await decide({ name: "t", context: "ctx", schema }, hostedTarget, on);
+    assert.equal(hostedSeen.length, 1);
+    assert.equal(hostedSeen[0].auth, "Bearer jev_test");
+    assert.equal(hostedSeen[0].body.questions.priority.type, "choice");
+    assert.deepEqual(Object.keys(hostedSeen[0].body.questions.priority.criteria), ["A", "B", "C"]);
+    assert.equal(out.mode, "jev");
+    if (out.mode === "jev") {
+      assert.equal(out.values.priority, "medium");
+      assert.equal(out.values.urgent, false);
+      assert.equal(out.usage.input, 300);
+    }
+  });
+  await test("works where the chat model could not: no logprobs needed", () => {
+    assert.notEqual(supportFor(hostedTarget).state, "no");
+  });
+  await test("a rejected key falls back rather than failing the turn", async () => {
+    resetHealth();
+    hosted = () => ({ status: 401, body: { error: { message: "invalid api key" } } });
+    const out = await decide({ name: "t", context: "ctx", schema }, hostedTarget, on);
+    assert.equal(out.mode, "fallback");
+    if (out.mode === "fallback") assert.match(out.reason, /401/);
   });
 
   console.log("tool guard pre-filter");

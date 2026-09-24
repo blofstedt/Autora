@@ -31,6 +31,10 @@ export interface ToolUse {
   id: string;
   name: string;
   args: Record<string, any>;
+  /** The arguments arrived but were not valid JSON -- almost always a call
+      cut off by the output limit. Running it with `{}` would do the wrong
+      thing quietly, so the caller answers it with an error instead. */
+  incomplete?: boolean;
 }
 
 /** What came back, on its way to the model. */
@@ -93,6 +97,9 @@ export interface ChatTurn {
   usage: ChatUsage;
   text: string;
   calls: ToolUse[];
+  /** The reply stopped because it hit the output limit, not because the model
+      was finished. A turn that ends on one of these is a turn cut short. */
+  cutOff?: boolean;
 }
 
 /** An error with the HTTP status kept, so the caller can tell a busy vendor
@@ -140,6 +147,18 @@ function estimate(call: ChatCall, reply: string): ChatUsage {
  * the thread, which the model can read and retry, where a thrown parse error
  * would end the turn with a stack trace.
  */
+/** Whether a call's raw argument text is present but unreadable. */
+function brokenArgs(raw: string): boolean {
+  const text = raw.trim();
+  if (!text) return false;
+  try {
+    JSON.parse(text);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
 function parseArgs(raw: string): Record<string, any> {
   const text = raw.trim();
   if (!text) return {};
@@ -317,6 +336,7 @@ async function streamOpenAi(call: ChatCall, onDelta: (text: string) => void): Pr
      of the argument JSON. So they are assembled by index and only parsed once
      the stream is done. */
   const building = new Map<number, { id: string; name: string; args: string }>();
+  let cutOff = false;
 
   for await (const payload of sse(res)) {
     let chunk: any;
@@ -328,6 +348,7 @@ async function streamOpenAi(call: ChatCall, onDelta: (text: string) => void): Pr
     // Some gateways deliver an error mid-stream with a 200 on the envelope.
     if (chunk.error) throw new ProviderError(chunk.error.message ?? "stream failed", null);
 
+    if (chunk.choices?.[0]?.finish_reason === "length") cutOff = true;
     const delta = chunk.choices?.[0]?.delta;
     const piece = delta?.content;
     if (typeof piece === "string" && piece) {
@@ -365,9 +386,10 @@ async function streamOpenAi(call: ChatCall, onDelta: (text: string) => void): Pr
       id: found.id || `call_${slot}`,
       name: found.name,
       args: parseArgs(found.args),
+      ...(brokenArgs(found.args) ? { incomplete: true } : {}),
     }));
 
-  return { usage: usage ?? estimate(call, reply), text: reply, calls };
+  return { usage: usage ?? estimate(call, reply), text: reply, calls, cutOff };
 }
 
 // ------------------------------------------------------------- anthropic --
@@ -452,6 +474,7 @@ async function streamAnthropic(call: ChatCall, onDelta: (text: string) => void):
   let reply = "";
   const usage: ChatUsage = { input: 0, output: 0, estimated: false };
   let counted = false;
+  let cutOff = false;
   /* Blocks are addressed by index across the whole message: a tool_use opens
      at some index, its arguments arrive as partial JSON against that index, and
      text blocks are interleaved at other indices. */
@@ -497,18 +520,26 @@ async function streamAnthropic(call: ChatCall, onDelta: (text: string) => void):
         if (found.args === "{}") found.args = "";
         found.args += String(event.delta.partial_json ?? "");
       }
-    } else if (event.type === "message_delta" && event.usage) {
-      usage.output = event.usage.output_tokens ?? usage.output;
-      counted = true;
+    } else if (event.type === "message_delta") {
+      if (event.delta?.stop_reason === "max_tokens") cutOff = true;
+      if (event.usage) {
+        usage.output = event.usage.output_tokens ?? usage.output;
+        counted = true;
+      }
     }
   }
 
   const calls: ToolUse[] = [...building.entries()]
     .sort((a, b) => a[0] - b[0])
     .filter(([, found]) => found.name && found.id)
-    .map(([, found]) => ({ id: found.id, name: found.name, args: parseArgs(found.args) }));
+    .map(([, found]) => ({
+      id: found.id,
+      name: found.name,
+      args: parseArgs(found.args),
+      ...(brokenArgs(found.args) ? { incomplete: true } : {}),
+    }));
 
-  return { usage: counted ? usage : estimate(call, reply), text: reply, calls };
+  return { usage: counted ? usage : estimate(call, reply), text: reply, calls, cutOff };
 }
 
 // ---------------------------------------------------------------- gemini --
@@ -612,6 +643,7 @@ async function streamGemini(call: ChatCall, onDelta: (text: string) => void): Pr
   let reply = "";
   const usage: ChatUsage = { input: 0, output: 0, estimated: false };
   let counted = false;
+  let cutOff = false;
   const calls: ToolUse[] = [];
 
   for await (const chunk of stream) {
@@ -653,6 +685,7 @@ async function streamGemini(call: ChatCall, onDelta: (text: string) => void): Pr
       calls.push({ id, name, args });
     }
 
+    if ((chunk as any).candidates?.[0]?.finishReason === "MAX_TOKENS") cutOff = true;
     const meta = (chunk as any).usageMetadata;
     if (meta) {
       // Gemini reports cumulative counts, so the last word wins rather than
@@ -664,7 +697,7 @@ async function streamGemini(call: ChatCall, onDelta: (text: string) => void): Pr
     }
   }
 
-  return { usage: counted ? usage : estimate(call, reply), text: reply, calls };
+  return { usage: counted ? usage : estimate(call, reply), text: reply, calls, cutOff };
 }
 
 /**

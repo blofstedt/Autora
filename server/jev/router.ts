@@ -24,6 +24,10 @@ export interface JevSettings {
   enabled: boolean;
   /** Minimum per-field confidence for the fast path, 0.5-0.99. */
   threshold: number;
+  /** A key for the hosted Jev API (api.typesafe.ai). When set, decisions go
+      there instead of to the chat model, so they work whatever that model
+      is -- including Anthropic's, which cannot score. Never sent to the page. */
+  key?: string;
 }
 
 export const DEFAULT_JEV: JevSettings = { enabled: true, threshold: 0.75 };
