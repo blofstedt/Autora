@@ -259,7 +259,7 @@ const TOOLS: ToolSpec[] = [
     name: "browser_screenshot",
     group: "browser",
     description:
-      "Put a picture of the open page into the conversation, for the person to " +
+      "Put a picture of the open page on the browser screen, for the person to " +
       "look at. Use this when asked what something looks like -- the page text " +
       "you already have cannot answer that. You do not get the image back; it " +
       "goes to the person watching.",
@@ -368,7 +368,7 @@ const TOOLS: ToolSpec[] = [
     name: "computer_screenshot",
     group: "computer",
     description:
-      "Take a picture of the relayed desktop and put it in the conversation " +
+      "Take a picture of the relayed desktop and put it on the desktop screen " +
       "for the person to see. Coordinates for the click and move tools are in " +
       "that screen's own pixels, whose full size is given in the result.",
     parameters: { type: "object", properties: {} },
@@ -852,6 +852,9 @@ export interface ToolContext {
   putBlob: (data: Buffer, mime: string) => string;
   /** Show a picture in the conversation. */
   showImage: (blob: string, alt: string, caption: string | null, size?: { w: number; h: number }) => void;
+  /** Show a picture of the browser or desktop in the card already showing
+      that screen, rather than as a card of its own beside it. */
+  showScreen: (source: "browser" | "desktop", blob: string, size?: { w: number; h: number }) => void;
   /** The session's browser, made on first use. */
   browser: () => LiveBrowser;
   /** The browser's state changed; tell the watchers. */
@@ -1366,16 +1369,11 @@ export async function runTool(
         const png = await live.capture();
         const blob = ctx.putBlob(png, "image/png");
         const status = live.status();
-        ctx.showImage(
-          blob,
-          status.title || status.url || "the open page",
-          status.url,
-          { w: VIEWPORT.width, h: VIEWPORT.height },
-        );
+        ctx.showScreen("browser", blob, { w: VIEWPORT.width, h: VIEWPORT.height });
         return {
           ok: true,
           summary:
-            "The picture is now in the conversation, where the person can see " +
+            "The picture is now on the browser screen, where the person can see " +
             "it. You cannot see it yourself -- describe the page from its text " +
             "if you need to say what is on it.",
           preview: status.url ?? "screenshot",
@@ -1528,12 +1526,7 @@ export async function runTool(
         const blob = ctx.putBlob(Buffer.from(image, "base64"), "image/jpeg");
         const w = Number(result.data?.w) || null;
         const h = Number(result.data?.h) || null;
-        ctx.showImage(
-          blob,
-          "the relayed desktop",
-          relayStatus().platform,
-          w && h ? { w, h } : undefined,
-        );
+        ctx.showScreen("desktop", blob, w && h ? { w, h } : undefined);
         return {
           ok: true,
           summary:

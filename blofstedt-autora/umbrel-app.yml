@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.9.21"
+version: "0.9.22"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -74,14 +74,11 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  A new look built around the glowing star. It is the app icon now, signs the
-  top of the menu, and marks each of the agent's lines in the chat: it turns
-  and glows while a line is being written, then dims. The star on an empty
-  session is larger and stands on its own, and the rotating arc around it is
-  gone. The memory map has moved off the chat and sidebar and lives only on
-  the Mind page. Instead, when the agent recalls or saves a memory, a small
-  pulse beside its reasoning names each one and its bucket (preference, skill,
-  fact, procedure); tap it to open the Mind.
+  The browser stays on one screen. When the agent takes a picture of the page
+  it is working on, the picture now shows on that same live browser screen
+  instead of opening a second card below it, and the same goes for pictures
+  of a relayed desktop. Browser pictures in older sessions move onto their
+  screen too.
 
 dependencies: []
 path: ""
