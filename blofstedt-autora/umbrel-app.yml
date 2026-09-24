@@ -88,6 +88,10 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
+  Re-release of 0.9.29 for installs where that update failed with "manifest
+  unknown"; updates are now offered only once their image is ready.
+
+
   Autora now learns and works on its own. Scheduled tasks actually run (they
   never did before), and a task can instead watch a web page, a file or a
   command's output and run when it changes, with the change attached; each
