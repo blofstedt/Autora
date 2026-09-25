@@ -59,7 +59,8 @@ export interface Recalled {
 
 /** A provisional memory that has worked this many times is confirmed. */
 export const CONFIRM_AFTER = 2;
-/** A confirmed procedure that has worked this many times is always recalled. */
+/** A confirmed procedure that has worked this many times is marked proven,
+    which ranks it higher whenever it matches. It is not pinned: see reinforce. */
 export const PROMOTE_AFTER = 3;
 /** Unconfirmed, unused memories older than this are dropped by consolidate. */
 const STALE_PROVISIONAL_S = 30 * 24 * 3600;
@@ -101,6 +102,20 @@ export function similarity(a: string, b: string): number {
 const now = () => Math.floor(Date.now() / 1000);
 const GENERIC_TAGS = new Set(["skill", "agent-authored", "learned", "unconfirmed", "proven"]);
 
+/**
+ * Whether a memory that shares `hits` of the request's `asked` words is about
+ * the request rather than merely mentioning one of them.
+ *
+ * One shared word is enough only when it is what the memory is about (in its
+ * title or tags) or the request is a word or two long. Otherwise a memory has
+ * to share two words with it -- a single "file" or "page" in a long body is
+ * how unrelated skills used to ride along on every turn.
+ */
+function relevant(hits: number, headHits: number, asked: number): boolean {
+  if (hits >= 2) return true;
+  return headHits >= 1 || asked <= 2;
+}
+
 // ----------------------------------------------------------------- graph --
 
 export class MemoryGraph {
@@ -108,7 +123,19 @@ export class MemoryGraph {
     public readonly records: MemoryRecord[],
     public readonly links: MemoryLink[],
     private readonly changed: () => void = () => undefined,
-  ) {}
+  ) {
+    /* Proven procedures used to be pinned, and so put in front of the model
+       on every turn whatever it was asked -- a pile of unrelated skills on a
+       question about the weather. Undo that for the ones promoted before. */
+    let unpinned = 0;
+    for (const r of records) {
+      if (r.pinned && r.kind === "procedure" && r.tags.includes("proven")) {
+        r.pinned = false;
+        unpinned += 1;
+      }
+    }
+    if (unpinned) this.changed();
+  }
 
   /** Everything still current: superseded records are history. */
   active(): MemoryRecord[] {
@@ -122,18 +149,25 @@ export class MemoryGraph {
   /**
    * The memories that bear on `query`, best first.
    *
-   * Pinned memories are always included unless `withPinned` is false. The
-   * rest must match some of the query's words; `limit` caps how many of
-   * those come back.
+   * Pinned memories -- only ever pinned by the person -- are always included
+   * unless `withPinned` is false. The rest must be about the query, not just
+   * share a word with it: see `relevant`. `limit` caps how many come back.
    */
   recall(query: string, limit = 6, withPinned = true): Recalled[] {
     const pool = this.active();
     const want = [...new Set(tokens(query))];
-    const docs = pool.map((r) => ({
-      record: r,
-      // Title and tags count double: they are what the memory is about.
-      words: [...tokens(r.title), ...tokens(r.title), ...r.tags.flatMap((t) => tokens(t)).flatMap((t) => [t, t]), ...tokens(r.body)],
-    }));
+    const docs = pool.map((r) => {
+      // Bookkeeping tags ("skill", "learned") say how a memory came to be,
+      // not what it is about; matched, they would recall every skill at once.
+      const topical = r.tags.filter((t) => !GENERIC_TAGS.has(t)).flatMap((t) => tokens(t));
+      const head = new Set([...tokens(r.title), ...topical]);
+      return {
+        record: r,
+        head,
+        // Title and tags count double: they are what the memory is about.
+        words: [...tokens(r.title), ...tokens(r.title), ...topical.flatMap((t) => [t, t]), ...tokens(r.body)],
+      };
+    });
     const avg = docs.reduce((n, d) => n + d.words.length, 0) / Math.max(docs.length, 1) || 1;
     const df = new Map<string, number>();
     for (const d of docs) for (const w of new Set(d.words)) df.set(w, (df.get(w) ?? 0) + 1);
@@ -142,16 +176,19 @@ export class MemoryGraph {
     for (const d of docs) {
       let score = 0;
       const hit: string[] = [];
+      let headHits = 0;
       for (const w of want) {
         const tf = d.words.filter((x) => x === w).length;
         if (!tf) continue;
         hit.push(w);
+        if (d.head.has(w)) headHits += 1;
         const idf = Math.log(1 + (docs.length - (df.get(w) ?? 0) + 0.5) / ((df.get(w) ?? 0) + 0.5));
         score += idf * ((tf * 2.2) / (tf + 1.2 * (0.25 + 0.75 * (d.words.length / avg))));
       }
-      if (score > 0) {
+      if (score > 0 && relevant(hit.length, headHits, want.length)) {
         const r = d.record;
         score *= 1 + 0.1 * Math.log1p(r.uses) + 0.15 * Math.log1p(r.worked ?? 0);
+        if (r.tags.includes("proven")) score *= 1.2;
         if (r.status === "provisional") score *= 0.8;
         scored.push({ record: r, score, reason: `matched ${hit.slice(0, 4).join(", ")}` });
       }
@@ -162,9 +199,9 @@ export class MemoryGraph {
       .filter((r) => withPinned && r.pinned)
       .map((record) => ({ record, score: Infinity, reason: "pinned: always recalled" }));
     const pinned = out.length;
-    // A long tail of one-word matches is noise: keep what scores within
-    // reach of the best.
-    const floor = (scored[0]?.score ?? 0) * 0.25;
+    // A long tail of weak matches is noise: keep what scores within reach
+    // of the best.
+    const floor = (scored[0]?.score ?? 0) * 0.4;
     for (const s of scored) {
       if (out.length >= pinned + limit || s.score < floor) break;
       if (!out.some((o) => o.record.id === s.record.id)) out.push(s);
@@ -341,7 +378,10 @@ export class MemoryGraph {
    * A turn that used this memory went well.
    *
    * Enough of those confirm a provisional memory without anyone having to,
-   * and turn a confirmed procedure into one that is always recalled.
+   * and mark a confirmed procedure proven, which ranks it higher when it is
+   * relevant. It is never pinned for it: always-recalled is for what the
+   * person pins, since a skill that worked for one job is noise on every
+   * other.
    * Returns what changed, for the thread.
    */
   reinforce(id: string): "confirmed" | "promoted" | null {
@@ -353,9 +393,9 @@ export class MemoryGraph {
       this.confirm(r.id, false);
       change = "confirmed";
     } else if (
-      r.status === "confirmed" && r.kind === "procedure" && !r.pinned && r.worked >= PROMOTE_AFTER
+      r.status === "confirmed" && r.kind === "procedure" && !r.tags.includes("proven") &&
+      r.worked >= PROMOTE_AFTER
     ) {
-      r.pinned = true;
       r.tags = [...new Set([...r.tags, "proven"])];
       change = "promoted";
     }

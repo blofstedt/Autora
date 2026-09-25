@@ -36,11 +36,30 @@ export class SessionStream {
   private closedByUser = false;
   private retry = 0;
   private retryTimer: number | null = null;
+  private heartbeat: number | null = null;
+  /** When anything last arrived on the current socket. */
+  private lastHeard = 0;
 
   constructor(private sessionId: string, private handlers: Handlers) {}
 
+  /* How a socket that has quietly died is noticed. A phone that sleeps, a
+     network that changes under it, or a proxy that drops a connection it
+     thinks is idle (Umbrel's sits in front of every app) all leave a socket
+     that still says OPEN and simply never delivers anything again -- no
+     close event, possibly for minutes. The thread then stops moving while
+     looking connected. So the client pings, and a socket that has said
+     nothing for SILENT_MS is replaced rather than waited on. */
+  private static PING_MS = 15000;
+  private static SILENT_MS = 40000;
+  /** Heard from this recently, a socket is trusted on wake without redialing. */
+  private static FRESH_MS = 20000;
+
   connect() {
     this.closedByUser = false;
+    if (this.retryTimer) {
+      window.clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
     this.handlers.onStatus({ state: "connecting" });
     const proto = location.protocol === "https:" ? "wss" : "ws";
     const from = this.highestSeq + 1;
@@ -48,8 +67,14 @@ export class SessionStream {
       `${proto}://${location.host}/ws/${this.sessionId}?from_seq=${from}`,
     );
     this.ws = ws;
+    this.lastHeard = Date.now();
+    this.startHeartbeat();
 
     ws.onmessage = (raw) => {
+      // A replaced socket can still deliver its last few messages; they are
+      // harmless (seq dedupe) but its status must not overwrite the new one.
+      if (this.ws !== ws) return;
+      this.lastHeard = Date.now();
       let msg;
       try {
         msg = JSON.parse(raw.data);
@@ -98,6 +123,11 @@ export class SessionStream {
     };
 
     ws.onclose = () => {
+      // Only the current socket gets to decide what happens next. A socket
+      // that was already replaced closing late used to schedule a second
+      // reconnect, and so a second live socket, on top of the new one.
+      if (this.ws !== ws) return;
+      this.stopHeartbeat();
       if (this.closedByUser) {
         this.handlers.onStatus({ state: "closed" });
         return;
@@ -108,6 +138,66 @@ export class SessionStream {
       this.retry += 1;
       this.retryTimer = window.setTimeout(() => this.connect(), delay);
     };
+  }
+
+  /**
+   * Called when the page comes back: the app is brought to the front, the
+   * phone wakes, the network returns. The socket may have died while nobody
+   * was looking, and a pending retry may be sitting out a long backoff that
+   * timers in a background tab stretched further still. Nobody should wait
+   * for either: if the socket is not demonstrably alive, reconnect now.
+   */
+  wake() {
+    if (this.closedByUser) return;
+    const ws = this.ws;
+    const alive =
+      ws?.readyState === WebSocket.OPEN && Date.now() - this.lastHeard < SessionStream.FRESH_MS;
+    if (alive) {
+      // Probably fine; a ping settles it within one round-trip.
+      this.send({ type: "ping" });
+      return;
+    }
+    if (ws?.readyState === WebSocket.CONNECTING && Date.now() - this.lastHeard < SessionStream.FRESH_MS) {
+      return;
+    }
+    this.retry = 0;
+    this.replace();
+  }
+
+  /** Drop the current socket without waiting for its close event, which on a
+      dead connection can take a very long time, and dial a fresh one. */
+  private replace() {
+    const old = this.ws;
+    this.ws = null;
+    this.stopHeartbeat();
+    if (old) {
+      old.onclose = null;
+      old.onmessage = null;
+      try {
+        old.close();
+      } catch {
+        // already gone
+      }
+    }
+    this.connect();
+  }
+
+  private startHeartbeat() {
+    this.stopHeartbeat();
+    this.heartbeat = window.setInterval(() => {
+      const ws = this.ws;
+      if (!ws) return;
+      if (Date.now() - this.lastHeard > SessionStream.SILENT_MS) {
+        this.replace();
+        return;
+      }
+      if (ws.readyState === WebSocket.OPEN) this.send({ type: "ping" });
+    }, SessionStream.PING_MS);
+  }
+
+  private stopHeartbeat() {
+    if (this.heartbeat) window.clearInterval(this.heartbeat);
+    this.heartbeat = null;
   }
 
   private accept(events: AutoraEvent[]): AutoraEvent[] {
@@ -137,6 +227,7 @@ export class SessionStream {
 
   close() {
     this.closedByUser = true;
+    this.stopHeartbeat();
     if (this.retryTimer) window.clearTimeout(this.retryTimer);
     this.ws?.close();
   }

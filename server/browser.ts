@@ -2193,15 +2193,25 @@ export class LiveBrowser {
   private async humanClickAt(to: Point, always = false) {
     const page = this.page;
     if (!page) return;
-    if (!always && this.hooks.watchers() === 0) {
-      await page.mouse.click(to.x, to.y);
+    try {
+      if (!always && this.hooks.watchers() === 0) {
+        await page.mouse.click(to.x, to.y);
+        this.pointer = to;
+        return;
+      }
+      await this.showCursor(this.pointer.x, this.pointer.y, false);
+      this.pointer = await humanClick(page, this.pointer, to, {
+        before: () => this.showCursor(to.x, to.y, true),
+      });
+    } catch (err) {
+      /* A button that closes its own window -- "Approve" in a sign-in popup
+         -- can take the page down before the mouse-up is acknowledged, and
+         the click that did exactly what it should then reported "Target page
+         closed". The page's close handler has already gone back to the
+         opener; the caller reads that. Any other failure is real. */
+      if (!page.isClosed()) throw err;
       this.pointer = to;
-      return;
     }
-    await this.showCursor(this.pointer.x, this.pointer.y, false);
-    this.pointer = await humanClick(page, this.pointer, to, {
-      before: () => this.showCursor(to.x, to.y, true),
-    });
   }
 
   // --------------------------------------------------------------- captcha --
