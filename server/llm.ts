@@ -82,6 +82,9 @@ export interface ChatCall {
       the request then carries no tool field at all -- some local servers 400
       on an empty array. */
   tools?: ToolDef[];
+  /** Stops the call mid-stream: the person pressed Stop, and every word
+      after that would be spoken into a turn that is over. */
+  signal?: AbortSignal;
 }
 
 export interface ChatUsage {
@@ -341,6 +344,7 @@ function openAiMessages(call: ChatCall): any[] {
 async function streamOpenAi(call: ChatCall, onDelta: (text: string) => void): Promise<ChatTurn> {
   const res = await request(`${trimSlash(call.baseUrl)}/chat/completions`, {
     method: "POST",
+    signal: call.signal,
     headers: openAiHeaders(call),
     body: JSON.stringify({
       model: call.model,
@@ -490,6 +494,7 @@ function anthropicMessages(call: ChatCall): any[] {
 async function streamAnthropic(call: ChatCall, onDelta: (text: string) => void): Promise<ChatTurn> {
   const res = await request(`${trimSlash(call.baseUrl)}/v1/messages`, {
     method: "POST",
+    signal: call.signal,
     headers: {
       "Content-Type": "application/json",
       "x-api-key": call.key,
@@ -666,6 +671,7 @@ async function streamGemini(call: ChatCall, onDelta: (text: string) => void): Pr
     contents: geminiContents(call),
     config: {
       systemInstruction: call.system || undefined,
+      abortSignal: call.signal,
       temperature: call.temperature ?? 0.7,
       maxOutputTokens: call.maxTokens ?? 2048,
       thinkingConfig: { thinkingBudget: call.thinkingBudget ?? 0 },

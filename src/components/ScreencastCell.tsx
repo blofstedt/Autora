@@ -180,8 +180,7 @@ export function ScreencastCell({
 
   /** Client pixels to page pixels, against the picture actually drawn. */
   const toPage = (clientX: number, clientY: number) => {
-    const img = (stageRef.current?.querySelector("img.frame-over")
-      ?? stageRef.current?.querySelector("img")) as HTMLImageElement | null;
+    const img = stageRef.current?.querySelector("img.frame") as HTMLImageElement | null;
     if (!img) return null;
     const b = img.getBoundingClientRect();
     const x = ((clientX - b.left) / b.width) * VIEWPORT.w;

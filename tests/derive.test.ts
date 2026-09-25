@@ -117,4 +117,22 @@ test("nothing is running when the log says the turn ended", () => {
   assert.equal(view.busy, false);
 });
 
+test("late output from a command does not cut the reply after it in two", () => {
+  const ev = (seq: number, kind: string, payload: Record<string, any>, span: string | null = null): AutoraEvent =>
+    ({ seq, ts: 1_700_000_000 + seq, kind, actor: "agent", span, payload, blob: null });
+  const view = derive([
+    { ...ev(1, Kind.UserMessage, { text: "go" }), actor: "user" },
+    ev(2, Kind.ToolCall, { name: "terminal", args: { command: "make" } }, "s1"),
+    ev(3, Kind.ToolResult, { ok: true }, "s1"),
+    ev(4, Kind.AgentText, { text: "Running the checks befo" }),
+    ev(5, Kind.PtyOutput, { data: "trailing\n" }, "s1"),
+    ev(6, Kind.AgentText, { text: "re a push." }),
+  ]);
+  const replies = view.buckets[0].cells.filter((c) => c.kind === "reply");
+  assert.equal(replies.length, 1);
+  assert.equal(replies[0].kind === "reply" && replies[0].turn.text, "Running the checks before a push.");
+  const term = view.buckets[0].cells.find((c) => c.kind === "terminal");
+  assert.equal(term?.kind === "terminal" && term.output, "trailing\n");
+});
+
 console.log(`\nderive: ${passed} passed`);

@@ -402,22 +402,6 @@ body::before {
   max-width: 100%; max-height: 100%; display: block;
   border-radius: var(--r); box-shadow: var(--shadow-lg);
 }
-/* Two layers: the last decoded frame holds the stage while the next one fades
-   in over it, so a screencast never flashes empty between frames.
-
-   The decoded layer is the one in flow, and that is load-bearing. Sizing the
-   wrap from the incoming frame instead looks equivalent and strobes: React
-   rebuilds that element on every new src, an <img> with nothing decoded yet is
-   zero tall, so the wrap collapses, takes the absolutely-positioned backdrop
-   down with it, and the stage blinks empty once per frame. */
-.frame-under { position: relative; }
-.frame-over {
-  position: absolute; inset: 0; width: 100%; height: 100%;
-  object-fit: contain; opacity: 0; transition: opacity 0.14s var(--ease);
-}
-/* First frame of a session: nothing decoded yet, so it has to size the wrap. */
-.frame-wrap.solo .frame-over { position: relative; width: auto; height: auto; }
-.frame-over.is-loaded { opacity: 1; }
 .marker {
   position: absolute; width: 34px; height: 34px; margin: -17px 0 0 -17px;
   border: 2px solid var(--accent); border-radius: 50%; pointer-events: none;
@@ -4331,3 +4315,29 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
   display: flex; flex-direction: column; box-shadow: var(--shadow-lg);
 }
 .cell.widget.is-expanded .widget-body { flex: 1; min-height: 0; }
+
+/* ------------------------------------------------------- slash commands -- */
+/* A terminal with nothing printed yet is its header and nothing else. */
+.cell-top:last-child { border-bottom: 0; }
+
+.slash-menu {
+  position: absolute; left: 0; right: 0; bottom: calc(100% + 8px); z-index: 30;
+  display: flex; flex-direction: column; padding: 5px;
+  max-height: min(320px, 50vh); overflow-y: auto;
+  background: var(--s2); border: 1px solid var(--border-strong); border-radius: 16px;
+  box-shadow: var(--shadow-lg);
+  animation: rise 0.14s var(--ease) both;
+}
+.slash-item {
+  display: flex; align-items: baseline; gap: 12px; width: 100%;
+  padding: 8px 10px; border: 0; border-radius: 10px; background: none;
+  color: var(--text); font-family: inherit; text-align: left; cursor: pointer;
+}
+.slash-item.on { background: var(--accent-soft); }
+.slash-name { flex: 0 0 auto; font-family: var(--mono); font-size: 13px; color: var(--accent); }
+.slash-name em { font-style: normal; color: var(--text-3); }
+.slash-hint {
+  min-width: 0; font-size: 12.5px; color: var(--text-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+@media (pointer: coarse) { .slash-item { padding: 11px 12px; } }

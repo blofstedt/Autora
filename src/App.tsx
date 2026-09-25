@@ -20,6 +20,8 @@ import { Approvals } from "./components/Approvals";
 import { Schedule } from "./components/Schedule";
 import { Settings, type ConfigTab } from "./components/Settings";
 import { DictateButton } from "./components/DictateButton";
+import { SlashMenu } from "./components/SlashMenu";
+import { resolve as resolveCommand, suggest as suggestCommands, type Command } from "./lib/commands";
 import { LiveChat } from "./components/LiveChat";
 import { useRelay } from "./components/RelaySetup";
 import { UpdateNotice } from "./components/UpdateNotice";
@@ -411,6 +413,77 @@ export function App() {
      browser with no engine at all still gets nothing: that one has no fix. */
   const voiceBlocked = !secureOrigin && (recognitionAvailable || !!canSpeak);
 
+  // --------------------------------------------------------- slash commands --
+  /** Where the highlight is in the command menu, and whether Escape put the
+      menu away for this draft. */
+  const [slashAt, setSlashAt] = useState(0);
+  const [slashDismissed, setSlashDismissed] = useState(false);
+  const slashOffered = useMemo(
+    () => (readOnly ? [] : suggestCommands(draft, live && running)),
+    [draft, live, running, readOnly],
+  );
+  const slashOpen = slashOffered.length > 0 && !slashDismissed;
+  const slashActive = Math.min(slashAt, Math.max(slashOffered.length - 1, 0));
+
+  const runCommand = useCallback((command: Command, arg: string) => {
+    // Waiting on its argument: leave it in the box to be finished.
+    if (command.arg && !arg) {
+      setDraft(`/${command.name} `);
+      composerRef.current?.focus();
+      return;
+    }
+    setDraft("");
+    switch (command.id) {
+      case "stop":
+        void stopTurn();
+        break;
+      case "continue":
+        void send("Continue from where you left off.");
+        break;
+      case "retry": {
+        const last = [...view.transcript].reverse().find((t) => t.role === "user");
+        if (last?.text) void send(last.text);
+        else setNotice("Nothing to send again yet.");
+        break;
+      }
+      case "remember":
+        void send(`Remember this for the future: ${arg}`);
+        break;
+      case "new":
+        void newSession();
+        break;
+      case "close":
+        void closeBrowser();
+        break;
+      case "live":
+        if (voiceReady && live) toggleLive();
+        else setVoiceHelp(true);
+        break;
+      case "sessions":
+      case "mind":
+      case "cron":
+      case "config":
+      case "system":
+        navigate(command.id);
+        break;
+    }
+  }, [stopTurn, send, view.transcript, newSession, closeBrowser, voiceReady, live, toggleLive, navigate]);
+
+  /** Enter or the send button: a command if the box holds one, otherwise
+      the message as typed. */
+  const submit = useCallback(() => {
+    if (slashOpen) {
+      runCommand(slashOffered[slashActive], "");
+      return;
+    }
+    const hit = resolveCommand(draft);
+    if (hit) {
+      runCommand(hit.command, hit.arg);
+      return;
+    }
+    void send();
+  }, [slashOpen, slashOffered, slashActive, draft, runCommand, send]);
+
   /** The same page over https, where the microphone is allowed. Built from the
       address that already worked: whatever name reached the http listener is
       the one this browser is known to have a route to. */
@@ -736,6 +809,14 @@ export function App() {
             ) : (
               <>
                 <div className={`composer-box ${draft.trim() ? "has-text" : ""}`}>
+                  {slashOpen && (
+                    <SlashMenu
+                      commands={slashOffered}
+                      active={slashActive}
+                      onHover={setSlashAt}
+                      onPick={(c) => runCommand(c, "")}
+                    />
+                  )}
                   {/* On a phone or tablet the live control floats just above
                       Send, where the thumb already is. It steps aside while
                       the voice note above is up, so it does not cover it. */}
@@ -760,11 +841,33 @@ export function App() {
                     aria-label="Task"
                     placeholder={readOnly ? "This session is a recording." : "Ask Autora to do something…"}
                     disabled={readOnly}
-                    onChange={(e) => setDraft(e.target.value)}
+                    onChange={(e) => {
+                      setDraft(e.target.value);
+                      setSlashDismissed(false);
+                    }}
                     onKeyDown={(e) => {
+                      if (slashOpen) {
+                        const n = slashOffered.length;
+                        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                          e.preventDefault();
+                          setSlashAt((slashActive + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
+                          return;
+                        }
+                        if (e.key === "Tab") {
+                          e.preventDefault();
+                          const picked = slashOffered[slashActive];
+                          setDraft(`/${picked.name}${picked.arg ? " " : ""}`);
+                          return;
+                        }
+                        if (e.key === "Escape") {
+                          e.preventDefault();
+                          setSlashDismissed(true);
+                          return;
+                        }
+                      }
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
-                        void send();
+                        submit();
                       }
                     }}
                   />
@@ -820,7 +923,7 @@ export function App() {
                       <button
                         className="composer-send"
                         disabled={readOnly || !draft.trim()}
-                        onClick={() => void send()}
+                        onClick={submit}
                         title={running ? "Interrupt & send" : "Send"}
                         aria-label={running ? "Interrupt & send" : "Send"}
                       >
@@ -830,7 +933,7 @@ export function App() {
                   </div>
                 </div>
                 <p className="composer-hint">
-                  <kbd>Enter</kbd> to send · <kbd>Shift</kbd> + <kbd>Enter</kbd> for a new line
+                  <kbd>Enter</kbd> to send · <kbd>Shift</kbd> + <kbd>Enter</kbd> for a new line · <kbd>/</kbd> for commands
                 </p>
               </>
             )}
