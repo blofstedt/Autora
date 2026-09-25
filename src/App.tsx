@@ -929,6 +929,7 @@ export function App() {
               if (next === "system") setSystemTab("status");
               navigate(next);
             }}
+            onOpenSession={(id) => { openSession(id); setDrawerOpen(false); }}
             relayOn={!!relay?.connected}
             mood={mood}
             attention={attention}

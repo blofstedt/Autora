@@ -3959,6 +3959,30 @@ html[data-font="mono"] body { font-size: 13.5px; }
 }
 .rail-tag.is-alert { color: var(--warn); background: rgba(251, 191, 36, 0.12); }
 .rail-divider { height: 1px; margin: 8px 10px; background: var(--border); }
+/* The rail's list and, below or above it, what runs without you. A column, so
+   an auto margin can push either to the far end without hiding anything when
+   the rail is too short: auto margins shrink to zero, they never overflow. */
+.rail-scroll { display: flex; flex-direction: column; }
+.rail-scroll > .rail-nav { flex: 0 0 auto; }
+.rail:not(.is-drawer) .rail-activity { margin-top: auto; }
+.rail.is-drawer .rail-scroll > :first-child { margin-top: auto; }
+.rail-activity {
+  display: flex; flex-direction: column; gap: 1px; margin: 10px 0 0;
+  padding-top: 8px; border-top: 1px solid var(--border);
+}
+.rail.is-drawer .rail-activity { margin: 0 0 8px; padding: 0 0 8px; border-top: 0; border-bottom: 1px solid var(--border); }
+.rail-act-row {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0;
+  padding: 6px 10px; border: 0; border-radius: var(--r-sm); cursor: pointer;
+  background: none; color: var(--text-3); font: inherit; font-size: 12px; text-align: left;
+  transition: background 0.14s var(--ease), color 0.14s var(--ease);
+}
+.rail-act-row:hover { background: var(--s2); color: var(--text-2); }
+.rail-act-row svg, .rail-act-row .watch-dot { flex: 0 0 auto; }
+.rail-act-row.is-running { color: var(--live); }
+.rail-act-label { flex: 0 0 auto; font-weight: 600; }
+.rail-act-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+.rail-act-when { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
 .sm-font-head { margin-top: 18px !important; }
 .sm-themes { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px; }
 .sm-theme {
@@ -4017,6 +4041,7 @@ html[data-font="mono"] body { font-size: 13.5px; }
 @keyframes drawer-in { from { transform: translateX(-100%); } to { transform: none; } }
 @media (pointer: coarse) {
   .rail-nav-item { padding: 12px 12px; font-size: 15px; }
+  .rail-act-row { padding: 10px 12px; font-size: 13.5px; }
   .rail-icon-btn { width: 38px; height: 38px; }
   .sm-theme { padding: 10px 10px; font-size: 14px; }
   .sm-font { padding: 11px 8px; font-size: 14px; }

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { AutoraMark, type MarkState } from "./AutoraMark";
 import {
   IconBrain, IconChart, IconClock, IconFolder, IconList, IconMessage,
@@ -6,6 +6,7 @@ import {
   IconX, IconCheck,
 } from "./Icons";
 import { FONTS, THEMES, type Appearance } from "../lib/theme";
+import { ago, until, type Job } from "./Schedule";
 
 export type PageId =
   | "chat" | "config" | "sessions" | "artifacts" | "analytics"
@@ -36,11 +37,12 @@ export const pageLabel = (id: PageId) => PAGES.find((p) => p.id === id)?.label ?
  * two that drift apart. How the app looks is under Settings, not here.
  */
 export function Rail({
-  page, onNavigate, relayOn, alert, onNew, drawer = false, onClose,
+  page, onNavigate, onOpenSession, relayOn, alert, onNew, drawer = false, onClose,
   mood = "rest", attention = 0, pulse = 0, learned = 0, bloom = 0,
 }: {
   page: PageId;
   onNavigate: (page: PageId) => void;
+  onOpenSession: (id: string) => void;
   relayOn: boolean;
   /** Something in the chat is waiting on you. */
   alert: boolean;
@@ -96,14 +98,96 @@ export function Rail({
         )}
       </div>
 
+      {/* In the drawer the list sits at the bottom, where a thumb reaches,
+          and what is running without you sits just above it. In the margin
+          the list stays at the top and that note settles at the foot. */}
       <div className="rail-scroll">
+        {drawer && <Activity onOpenSession={onOpenSession} onNavigate={onNavigate} />}
         <nav className="rail-nav">
           {PAGES.filter((p) => p.group === "work").map(item)}
           <div className="rail-divider" role="separator" />
           {PAGES.filter((p) => p.group === "setup").map(item)}
         </nav>
+        {!drawer && <Activity onOpenSession={onOpenSession} onNavigate={onNavigate} />}
       </div>
     </aside>
+  );
+}
+
+/** How often the rail asks what the schedules are doing. */
+const ACTIVITY_POLL_MS = 20_000;
+
+/**
+ * What is happening without you: schedules or watchers running right now, and
+ * the next one due. The Schedules page has the full list; this is one glance
+ * at it, and says nothing at all when nothing is set up.
+ */
+function Activity({
+  onOpenSession, onNavigate,
+}: {
+  onOpenSession: (id: string) => void;
+  onNavigate: (page: PageId) => void;
+}) {
+  const [jobs, setJobs] = useState<Job[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      // The rail in the margin stays mounted on a phone, hidden; a tab in the
+      // background has no one to show it to either.
+      if (document.hidden) return;
+      try {
+        const res = await fetch("/api/jobs");
+        if (res.ok && alive) setJobs(await res.json() as Job[]);
+      } catch {
+        /* the next poll will pick it up */
+      }
+    };
+    void load();
+    const timer = window.setInterval(() => void load(), ACTIVITY_POLL_MS);
+    const onVisible = () => { if (!document.hidden) void load(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
+
+  const running = jobs.filter((j) => j.running);
+  const next = jobs
+    .filter((j) => j.enabled && !j.running && j.next_run)
+    .sort((a, b) => a.next_run! - b.next_run!)[0];
+  if (!running.length && !next) return null;
+
+  return (
+    <section className="rail-activity" aria-label="Running on its own">
+      {running.map((job) => {
+        const started = job.runs?.[job.runs.length - 1]?.at ?? job.last_run;
+        const session = job.last_session;
+        return (
+          <button
+            key={job.id}
+            className="rail-act-row is-running"
+            onClick={() => (session ? onOpenSession(session) : onNavigate("cron"))}
+            title={session ? "Open the session it is running in" : "Open Schedules"}
+          >
+            <span className="watch-dot" aria-hidden="true" />
+            <span className="rail-act-label">Running</span>
+            <span className="rail-act-name">{job.name}</span>
+            {started && <span className="rail-act-when">{ago(started)}</span>}
+          </button>
+        );
+      })}
+      {next && (
+        <button className="rail-act-row" onClick={() => onNavigate("cron")} title="Open Schedules">
+          <IconClock size={12} />
+          <span className="rail-act-label">Next</span>
+          <span className="rail-act-name">{next.name}</span>
+          <span className="rail-act-when">{until(next.next_run!)}</span>
+        </button>
+      )}
+    </section>
   );
 }
 
