@@ -101,6 +101,10 @@ releaseNotes: >-
   memory has to be about the request, and only the ones you pin yourself are
   always recalled.
 
+
+  And clicking a button that closes its own window, such as "Approve" in a
+  sign-in popup, no longer reports an error after it worked.
+
 dependencies: []
 path: ""
 defaultUsername: ""
