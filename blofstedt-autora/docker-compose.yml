@@ -14,7 +14,11 @@ services:
     # so Umbrel never offers an update whose image is still building. Don't
     # change it by hand; check_release.py fails a pull request that does.
     image: ghcr.io/blofstedt/autora:0.9.35
-    restart: on-failure
+    # Not on-failure: a stop from inside the container -- the agent killing or
+    # restarting the server it runs in -- exits cleanly with 0, which
+    # on-failure takes as "leave it down", and the app then refuses every
+    # connection until somebody restarts it by hand.
+    restart: unless-stopped
     # The https listener, published directly rather than through app_proxy,
     # because the proxy speaks http to the backend and the browser needs the
     # certificate to be the one it is talking to.

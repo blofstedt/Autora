@@ -139,7 +139,12 @@ const TOOLS: ToolSpec[] = [
       "command and its output as it runs. Not a terminal emulator -- there is no " +
       "TTY, so interactive programs (vim, `top`, a password prompt, anything " +
       "paging) will hang rather than work. Use non-interactive flags, and prefer " +
-      "`sudo -n` so a password prompt fails fast instead of waiting.",
+      "`sudo -n` so a password prompt fails fast instead of waiting. " +
+      "Autora itself is a node process on this machine (in its Umbrel " +
+      "container, the main one): killing or restarting it ends this " +
+      "conversation and can leave the app offline, and in the container " +
+      "files changed under /app are replaced at the next update. To change " +
+      "Autora, change its source repository instead.",
     parameters: {
       type: "object",
       properties: {

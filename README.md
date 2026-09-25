@@ -149,7 +149,8 @@ settings changes that.
 
 **On a tailnet, this is one command and it is the best answer there is.**
 Tailscale issues a real certificate, so there is no warning to click through,
-and whatever was guarding the plain port — Umbrel's login, say — still guards it. On the machine running Autora:
+and whatever was guarding the plain port — Umbrel's login, say — still guards
+it. On the machine running Autora:
 
 ```bash
 tailscale serve --bg --https=8443 8817   # https://<machine>.<tailnet>.ts.net:8443 -> :8817

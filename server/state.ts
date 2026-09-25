@@ -363,7 +363,12 @@ export function saveNow() {
   try {
     fs.mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 });
     const body = JSON.stringify({ ...state, carried }, null, 2);
-    fs.writeFileSync(STATE_FILE, body, { mode: 0o600 });
+    /* Written aside and renamed into place: a process that dies mid-write
+       must leave the old file, not half of one, which read() would take for
+       nonsense and replace with defaults -- every saved key gone. */
+    const tmp = `${STATE_FILE}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, body, { mode: 0o600 });
+    fs.renameSync(tmp, STATE_FILE);
   } catch (err: any) {
     console.warn(`[state] could not save settings: ${err?.message ?? err}`);
   }

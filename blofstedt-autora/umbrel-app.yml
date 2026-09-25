@@ -88,22 +88,28 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Fixes the app randomly losing its connection, especially when installed on
-  a phone's home screen. Autora now keeps the connection alive, notices a
-  dead one within seconds and reconnects on its own, and checks it straight
-  away whenever you switch back to the app, unlock your phone or get your
-  network back.
+  Autora no longer stays down after it stops. If the agent restarted or
+  killed its own server (easy to do while working on Autora itself), the app
+  used to stay off and every page said "connection refused" until you
+  restarted it by hand. It now comes straight back, and the agent is told
+  that its own process is not one to restart. A stray error in a tool or a
+  watcher no longer takes the whole server down, and settings are saved so a
+  crash mid-save cannot wipe your keys.
 
 
-  Autora also recalls only what bears on what you asked. Skills that had
-  worked a few times used to be loaded on every turn whatever the topic, and
-  a memory sharing a single word with your message could ride along; now a
-  memory has to be about the request, and only the ones you pin yourself are
-  always recalled.
+  If your whole Umbrel stopped answering after you set up HTTPS for voice:
+  plain `tailscale serve` takes port 443, which umbrelOS 2.0 needs for its
+  own dashboard. Autora now suggests `tailscale serve --bg --https=8443 8817`
+  instead. To recover, run `tailscale serve --https=443 off`, then
+  `sudo systemctl start umbrel`.
 
 
-  And clicking a button that closes its own window, such as "Approve" in a
-  sign-in popup, no longer reports an error after it worked.
+  Also in this release, from 0.9.36, which never reached Umbrel because its
+  build hung: the app keeps its connection alive and reconnects within
+  seconds, including when you switch back to it on a phone. Autora now
+  recalls only memories about what you asked. And clicking a button that
+  closes its own window, such as "Approve" in a sign-in popup, no longer
+  reports an error after it worked.
 
 dependencies: []
 path: ""
