@@ -4229,6 +4229,11 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 .mem-chip.is-gone { text-decoration: line-through; opacity: 0.6; }
 
 /* Status: tool health and the tools the agent wrote. */
+/* Settings: the limits card. Two columns of labelled numbers, wrapping to
+   one on a narrow window -- the same shape the tool options use. */
+.limit-grid { display: flex; flex-wrap: wrap; gap: 10px 18px; margin-top: 10px; }
+.limit-grid .tool-opt { flex: 1 1 260px; min-width: 240px; }
+
 .health-rows { display: flex; flex-direction: column; gap: 6px; }
 .health-row {
   display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-width: 0;

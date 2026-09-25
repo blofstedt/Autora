@@ -74,6 +74,20 @@ type ToolConfig = {
   memory: { enabled: boolean; approval: ApprovalMode };
 };
 
+type LoopConfig = {
+  warnAt: number;
+  stopAt: number;
+  staleAfter: number;
+  checkEvery: number;
+};
+
+type RetentionPolicy = {
+  sessionDays: number;
+  keepSessions: number;
+  artifactDays: number;
+  keepArtifacts: number;
+};
+
 type SettingsState = {
   provider: string;
   model: string;
@@ -85,6 +99,10 @@ type SettingsState = {
   catalog: ProviderCard[];
   prices_checked: string;
   budget_usd: number | null;
+  /** When a turn is called a loop, and how much is kept. Both sets used to be
+      constants in the server's source, invisible and unchangeable. */
+  loop?: LoopConfig;
+  retention?: RetentionPolicy;
   state_file: string;
   credentials: Credential[];
   tools: { config: ToolConfig; groups: ToolGroupState[] };
@@ -169,6 +187,8 @@ export function Settings({
   const [provider, setProvider] = useState("auto");
   const [prompt, setPrompt] = useState("");
   const [budget, setBudget] = useState("");
+  const [loop, setLoop] = useState<LoopConfig | null>(null);
+  const [keep, setKeep] = useState<RetentionPolicy | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -178,6 +198,8 @@ export function Settings({
     setProvider(next.provider);
     setPrompt(next.system_prompt ?? "");
     setBudget(next.budget_usd === null ? "" : String(next.budget_usd));
+    setLoop(next.loop ?? null);
+    setKeep(next.retention ?? null);
     setKeyDrafts({});
     setModelDrafts({});
     setUrlDrafts({});
@@ -237,6 +259,8 @@ export function Settings({
           system_prompt: prompt,
           credentials: keyDrafts,
           budget_usd: budget.trim() === "" ? null : Number(budget),
+          ...(loop ? { loop } : {}),
+          ...(keep ? { retention: keep } : {}),
         }),
       });
       const body = await res.json();
@@ -251,7 +275,7 @@ export function Settings({
     } finally {
       setSaving(false);
     }
-  }, [provider, modelDrafts, urlDrafts, prompt, keyDrafts, budget, adopt]);
+  }, [provider, modelDrafts, urlDrafts, prompt, keyDrafts, budget, loop, keep, adopt]);
 
   /** Models discovered by asking a vendor, folded back into the open panel so
       the picker fills without losing everything else being edited. */
@@ -305,7 +329,9 @@ export function Settings({
     Object.keys(urlDrafts).length > 0 ||
     provider !== state.provider ||
     prompt !== (state.system_prompt ?? "") ||
-    budget.trim() !== savedBudget;
+    budget.trim() !== savedBudget ||
+    JSON.stringify(loop) !== JSON.stringify(state.loop ?? null) ||
+    JSON.stringify(keep) !== JSON.stringify(state.retention ?? null);
 
   // Credentials save as they are entered; the Save button is for the rest.
   const saveable = section !== "system" && !(section === "config" && tab === "credentials");
@@ -473,6 +499,55 @@ export function Settings({
         {shows("keys") && <SecretStore />}
 
         {shows("analytics") && <Billing budget={budget} onBudget={setBudget} />}
+
+        {shows("config") && (
+        <section className="set-card">
+          <h3>Limits</h3>
+          <p className="jf-hint">
+            When a turn is called a loop, and how much of this workspace is kept.
+            Both are saved with the button above; 0 days means never on age alone,
+            and the keep counts are always kept whatever else is set.
+          </p>
+          <div className="limit-grid">
+            {loop && ([
+              ["warnAt", "Note a repeat after", "repeats of the same call"],
+              ["stopAt", "Stop the turn after", "repeats"],
+              ["staleAfter", "Note no progress after", "calls in a row"],
+              ["checkEvery", "Ask it to check itself every", "rounds"],
+            ] as [keyof LoopConfig, string, string][]).map(([key, label, unit]) => (
+              <label className="tool-opt" key={key}>
+                <span className="tool-label">{label}</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={500}
+                  value={loop[key]}
+                  onChange={(e) => setLoop({ ...loop, [key]: Number(e.target.value) })}
+                />
+                <span className="tool-unit">{unit}</span>
+              </label>
+            ))}
+            {keep && ([
+              ["sessionDays", "Delete sessions older than", "days (0 = never)"],
+              ["keepSessions", "Always keep the newest", "sessions"],
+              ["artifactDays", "Delete artifacts older than", "days (0 = never)"],
+              ["keepArtifacts", "Always keep the newest", "artifacts"],
+            ] as [keyof RetentionPolicy, string, string][]).map(([key, label, unit]) => (
+              <label className="tool-opt" key={key}>
+                <span className="tool-label">{label}</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100000}
+                  value={keep[key]}
+                  onChange={(e) => setKeep({ ...keep, [key]: Number(e.target.value) })}
+                />
+                <span className="tool-unit">{unit}</span>
+              </label>
+            ))}
+          </div>
+        </section>
+        )}
 
         {shows("config") && (
         <section className="set-card">

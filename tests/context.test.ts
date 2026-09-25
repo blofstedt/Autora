@@ -10,6 +10,13 @@ import { costOf } from "../server/providers";
 import { compactJson, htmlToText, textParts } from "../server/pages";
 import { outlineOf, type Ref } from "../server/browser";
 
+/** The line the console puts above anything that came from outside itself:
+    a page, a search, an uploaded file, a command's output. */
+const OUTSIDE = /^\[Content from .*not from the person[^\]]*\]\n/;
+
+/** The same text with that line taken off, for the tests about the text. */
+const inside = (text: string) => text.replace(OUTSIDE, "");
+
 let passed = 0;
 function test(name: string, fn: () => void) {
   try {
@@ -67,8 +74,8 @@ test("every page snapshot but the newest is shrunk to a line", () => {
   engine.append({ role: "tool", replies: [replies[0]] }, 2);
   engine.append({ role: "tool", replies: [replies[1], replies[2]] }, 3);
   engine.supersedePages(true);
-  assert.match(replies[0].result, /^\[Page snapshot of https:\/\/a removed.*vault_read with id "art_/);
-  assert.match(replies[1].result, /^Clicked \[1\]\.\n\n\[Page snapshot of https:\/\/b removed/);
+  assert.match(inside(replies[0].result), /^\[Page snapshot of https:\/\/a removed.*vault_read with id "art_/);
+  assert.match(inside(replies[1].result), /^Clicked \[1\]\.\n\n\[Page snapshot of https:\/\/b removed/);
   assert.equal(replies[2].result, page("https://c"));
   // Running it again leaves the stubs alone.
   const stub = replies[0].result;
@@ -95,7 +102,7 @@ test("a click that changes little comes back as the change", () => {
   after[4] = `[5] button "Added to cart"`;
   const second = engine.ingest("browser_click",
     `Clicked [5].\n\n${snap("https://shop.test/a", after, [...body, "Cart: 1 item"])}`, true);
-  assert.match(second, /^Clicked \[5\]\.\n\nPage: Shop\nURL: https:\/\/shop.test\/a\nChanges since page snapshot #1 above/);
+  assert.match(inside(second), /^Clicked \[5\]\.\n\nPage: Shop\nURL: https:\/\/shop.test\/a\nChanges since page snapshot #1 above/);
   assert.match(second, /\[5\] button "Added to cart"/);
   assert.match(second, /\+ Cart: 1 item/);
   assert.ok(!second.includes("Menu item 1\""), "unchanged elements are left out");
@@ -134,7 +141,7 @@ test("the base a difference points at is kept when older pages are shrunk", () =
   engine.append({ role: "tool", replies: [d2] }, 4);
   engine.supersedePages(true);
   assert.match(base.result, /Snapshot: #1/, "the base stays whole");
-  assert.match(d1.result, /^\[Page changes of https:\/\/shop.test\/a removed/);
+  assert.match(inside(d1.result), /^\[Page changes of https:\/\/shop.test\/a removed/);
   assert.match(d2.result, /Changes since page snapshot #1/);
   assert.match(d2.result, /\+ two/);
 });
@@ -250,6 +257,32 @@ test("a model with no cached price charges cached tokens as ordinary input", () 
   const plain = costOf("openai", "gpt-4o-mini", 1_000_000, 0, peak);
   const cached = costOf("openai", "gpt-4o-mini", 1_000_000, 0, peak, { read: 500_000 });
   assert.equal(cached, plain);
+});
+
+console.log("untrusted content");
+
+test("a result from outside says what it is, before anything it says", () => {
+  const engine = new ContextEngine();
+  assert.match(engine.ingest("browser_read", "Page: Shop", true), OUTSIDE);
+  assert.match(engine.ingest("browser_open", "Page: Shop", true), /^\[Content from a web page/);
+  assert.match(engine.ingest("http_request", "{}", true), /^\[Content from an external source/);
+  assert.match(engine.ingest("web_search", "1. something", true), /^\[Content from search results/);
+  assert.match(engine.ingest("terminal", "exit 0", true), /^\[Content from a command's output/);
+  assert.match(engine.ingest("artifact_read", "notes", true), /^\[Content from an uploaded file/);
+});
+
+test("the console's own tools are not labelled", () => {
+  const engine = new ContextEngine();
+  for (const tool of ["memory_search", "memory_write", "vault_read", "artifact_save", "widget_show"]) {
+    assert.equal(engine.ingest(tool, "something", true).startsWith("["), false, tool);
+  }
+});
+
+test("the label survives the vault, where the point is the head and tail", () => {
+  const engine = new ContextEngine();
+  const big = engine.ingest("terminal", "x".repeat(400_000), true);
+  assert.match(big, /^\[Content from a command's output/);
+  assert.match(big, /more than fits in context/);
 });
 
 console.log(`\n${passed} passed`);

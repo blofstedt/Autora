@@ -88,22 +88,33 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Fixes the app randomly losing its connection, especially when installed on
-  a phone's home screen. Autora now keeps the connection alive, notices a
-  dead one within seconds and reconnects on its own, and checks it straight
-  away whenever you switch back to the app, unlock your phone or get your
-  network back.
+  The few commands nothing can undo now ask first. Wiping a disk, deleting the
+  whole filesystem or your home directory, overwriting the device — Autora stops
+  on an approval card before running one, with no key, no model and no network
+  involved. Everything else still runs straight away, exactly as before.
 
 
-  Autora also recalls only what bears on what you asked. Skills that had
-  worked a few times used to be loaded on every turn whatever the topic, and
-  a memory sharing a single word with your message could ride along; now a
-  memory has to be about the request, and only the ones you pin yourself are
-  always recalled.
+  Content that came from somewhere other than you — a page it read, a search
+  result, an uploaded file, a command's output — is labelled as such, and the
+  pinned prompt says a label means data rather than instructions. A page telling
+  Autora to run something or hand over a key is the page talking, and it now
+  says so in its reply instead of doing it.
 
 
-  And clicking a button that closes its own window, such as "Approve" in a
-  sign-in popup, no longer reports an error after it worked.
+  Long histories no longer slow the app down. The session list is read from an
+  index rather than every log at startup, and each thread's counts are kept
+  beside it instead of recounted from its event log — one log here had grown to
+  68,000 lines. Settings shows what is stored, with a retention policy (how old,
+  and how many to always keep), a Prune button and housekeeping that runs on its
+  own; pinned threads and ones in use are never touched.
+
+
+  Tool health is kept per site and per command, so one hostile site refusing
+  four calls no longer reads as though the whole browser were broken. The
+  loop-watch limits — when Autora is nudged about repeating itself and when a
+  turn is stopped — are settings now rather than constants, so a turn cannot be
+  stopped by a rule you cannot see. And a long tool result stays readable after
+  a restart instead of being reported as evicted.
 
 dependencies: []
 path: ""
