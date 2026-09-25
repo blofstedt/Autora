@@ -4,7 +4,7 @@
  *   npx tsx tests/voice.test.ts
  */
 import assert from "node:assert/strict";
-import { chooseVoice, commit, fetchSpeechStatus, newLedger, turnPause } from "../src/lib/voice";
+import { chooseVoice, commit, fetchSpeechStatus, newLedger, sentences, turnPause } from "../src/lib/voice";
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -83,6 +83,39 @@ test("a sentence left hanging waits longer", () => {
  * test() is synchronous on purpose (see the top of this file).
  */
 const realFetch = globalThis.fetch;
+
+test("the voice server is handed a sentence at a time, not the whole reply", () => {
+  assert.deepEqual(
+    sentences("I opened the page. It has three results! Want the first one?"),
+    ["I opened the page.", "It has three results!", "Want the first one?"],
+  );
+});
+
+test("decimals, abbreviations and initials do not end a sentence", () => {
+  assert.deepEqual(
+    sentences("Version 3.5 is out, e.g. on the site. Ask J. Smith about it."),
+    ["Version 3.5 is out, e.g. on the site.", "Ask J. Smith about it."],
+  );
+});
+
+test("a word on its own rides along rather than costing a clip", () => {
+  assert.deepEqual(sentences("Done. The file is saved in your notes."), ["Done. The file is saved in your notes."]);
+  assert.deepEqual(sentences("The file is saved in your notes. Done."), ["The file is saved in your notes. Done."]);
+  assert.deepEqual(sentences("OK."), ["OK."]);
+});
+
+test("a sentence that runs on is broken at a comma, not left to render whole", () => {
+  const long = `${"word ".repeat(30).trim()}, ${"more ".repeat(30).trim()}, and the end.`;
+  const pieces = sentences(long);
+  assert.ok(pieces.length >= 2);
+  assert.equal(pieces.join(" "), long);
+});
+
+test("line breaks end a piece, and nothing is lost or said twice", () => {
+  const text = "First line with no stop\nSecond line here. Third one comes last";
+  assert.deepEqual(sentences(text), ["First line with no stop", "Second line here.", "Third one comes last"]);
+  assert.deepEqual(sentences("   "), []);
+});
 
 async function consoleCalls() {
   const paths: { url: string; body: any }[] = [];

@@ -88,12 +88,12 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Live voice no longer keeps the microphone open. Autora still answers you out
-  loud, but to talk you now press and hold the Autora mark, speak, and let go:
-  what you said is sent as your message. Pressing the mark cuts Autora off
-  mid-sentence, and speaking while it works interrupts that turn, just as
-  typing does. No more chiming on and off between replies, and nothing is
-  picked up from the room unless you are holding the mark.
+  Autora's own voice now starts talking sooner. Instead of waiting for a whole
+  reply to be turned into speech before playing any of it, it speaks the
+  first sentence as soon as that sentence is ready, while the next ones are
+  prepared in the background, so the reply flows sentence after sentence with
+  no pause in between. Long run-on sentences are broken at a comma so they
+  never hold up the start.
 
 
 dependencies: []

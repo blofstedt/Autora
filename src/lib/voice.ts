@@ -557,6 +557,11 @@ function silence(): Blob {
   return new Blob([bytes], { type: "audio/wav" });
 }
 
+/** Sentences rendered ahead of the one playing. Enough to cover a short
+    sentence followed by a long one, few enough not to swamp a voice server
+    running on a CPU with work that a barge-in throws away. */
+const LOOKAHEAD = 2;
+
 export type Speech = {
   supported: boolean;
   speaking: boolean;
@@ -595,7 +600,12 @@ export function useSpeech(): Speech {
   const ready = useRef<Promise<void> | null>(null);
   const queue = useRef<string[]>([]);
   const element = useRef<HTMLAudioElement | null>(null);
-  const pending = useRef<AbortController | null>(null);
+  /** Clips being synthesised, so the one playing next is never asked for
+      twice -- once ahead of time and again when its turn comes. */
+  const fetching = useRef(new Map<string, { promise: Promise<Blob>; control: AbortController }>());
+  /** Bumped by cancel(), so a drain waking from an await knows the queue it
+      was working on is gone. */
+  const generation = useRef(0);
   const draining = useRef(false);
   /** A clip's playback, resolvable from outside it so cancel() cannot leave
       the drain loop waiting on an `ended` that will never come. */
@@ -650,23 +660,35 @@ export function useSpeech(): Speech {
   }, []);
 
   /** One fragment as an audio file, from the console or from last time. */
-  const clip = useCallback(async (text: string, signal: AbortSignal): Promise<Blob> => {
+  const clip = useCallback((text: string): Promise<Blob> => {
     const held = clips.current.get(text);
-    if (held) return held;
-    const res = await fetch("/api/speech", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-      signal,
-    });
-    if (!res.ok) throw new Error(`speech ${res.status}`);
-    const blob = await res.blob();
-    if (blob.size === 0) throw new Error("speech: empty recording");
-    // Small and cleared whole: a handful of sentences is all this ever holds,
-    // and a stale voice after changing it is worse than re-synthesising.
-    if (clips.current.size >= 24) clips.current.clear();
-    clips.current.set(text, blob);
-    return blob;
+    if (held) return Promise.resolve(held);
+    const going = fetching.current.get(text);
+    if (going) return going.promise;
+    const control = new AbortController();
+    const promise = (async () => {
+      const res = await fetch("/api/speech", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+        signal: control.signal,
+      });
+      if (!res.ok) throw new Error(`speech ${res.status}`);
+      const blob = await res.blob();
+      if (blob.size === 0) throw new Error("speech: empty recording");
+      // Small and cleared whole: a handful of sentences is all this ever
+      // holds, and a stale voice after changing it is worse than
+      // re-synthesising.
+      if (clips.current.size >= 24) clips.current.clear();
+      clips.current.set(text, blob);
+      return blob;
+    })();
+    fetching.current.set(text, { promise, control });
+    const done = () => {
+      if (fetching.current.get(text)?.promise === promise) fetching.current.delete(text);
+    };
+    promise.then(done, done);
+    return promise;
   }, []);
 
   const play = useCallback((blob: Blob) => {
@@ -694,18 +716,28 @@ export function useSpeech(): Speech {
     });
   }, []);
 
+  /** Start rendering the next sentences, without waiting on them. Also run
+      when a streamed sentence is queued mid-clip, so it is ready by the time
+      the one playing ends. Failures surface when drain asks for the clip. */
+  const renderAhead = useCallback(() => {
+    for (const ahead of queue.current.slice(0, LOOKAHEAD)) {
+      void clip(ahead).catch(() => undefined);
+    }
+  }, [clip]);
+
   const drain = useCallback(async () => {
     if (draining.current) return;
     draining.current = true;
     while (queue.current.length > 0) {
       const text = queue.current[0];
-      const control = new AbortController();
-      pending.current = control;
+      const gen = generation.current;
       let blob: Blob;
       try {
-        blob = await clip(text, control.signal);
+        blob = await clip(text);
       } catch {
-        if (control.signal.aborted) break;
+        // Cut off while it was being made: start again on whatever has been
+        // queued since, if anything.
+        if (gen !== generation.current) continue;
         /* The server has stopped answering -- restarted, moved, or the
            network changed. Everything still queued is said with the
            browser's voice: the person asked for this turn to be spoken, and
@@ -715,26 +747,29 @@ export function useSpeech(): Speech {
         for (const line of queue.current.splice(0, queue.current.length)) sayBrowser(line);
         break;
       }
+      // Cancelled while this one was on its way: it belongs to the old queue,
+      // and the front of the queue now is something said since.
+      if (gen !== generation.current) continue;
       queue.current.shift();
-      // The next fragment is fetched while this one plays. Synthesis runs a
-      // little faster than speech, so overlapping them hides most of the seam
-      // between sentences -- which is otherwise a second of silence each time.
-      if (queue.current.length > 0) {
-        void clip(queue.current[0], new AbortController().signal).catch(() => undefined);
-      }
+      // The next sentences render while this one plays. Synthesis runs faster
+      // than speech, so by the time a sentence ends the one after it is
+      // usually waiting -- no gap between them, and the first starts as soon
+      // as it alone is ready rather than when the whole reply is.
+      renderAhead();
       await play(blob);
     }
     draining.current = false;
-    pending.current = null;
     if (queue.current.length === 0) setSpeaking(false);
-  }, [clip, play, sayBrowser]);
+  }, [clip, play, renderAhead, sayBrowser]);
 
   const say = useCallback((text: string) => {
     const clean = text.trim();
     if (!clean) return;
     if (serverVoice.current === true) {
-      queue.current.push(clean);
+      queue.current.push(...sentences(clean));
       setSpeaking(true);
+      // Already playing: get the new sentences rendering behind it now.
+      if (draining.current) renderAhead();
       void drain();
       return;
     }
@@ -745,7 +780,7 @@ export function useSpeech(): Speech {
       setSpeaking(true);
       void ready.current.then(() => {
         if (serverVoice.current === true) {
-          queue.current.push(clean);
+          queue.current.push(...sentences(clean));
           void drain();
         } else {
           sayBrowser(clean);
@@ -754,11 +789,13 @@ export function useSpeech(): Speech {
       return;
     }
     sayBrowser(clean);
-  }, [drain, sayBrowser]);
+  }, [drain, renderAhead, sayBrowser]);
 
   const cancel = useCallback(() => {
     queue.current = [];
-    pending.current?.abort();
+    generation.current += 1;
+    for (const { control } of fetching.current.values()) control.abort();
+    fetching.current.clear();
     settled.current?.();
     const el = element.current;
     if (el) {
@@ -897,4 +934,58 @@ export function splitSpeakable(pending: string): [ready: string, rest: string] {
   }
   if (cut < 0) return ["", pending];
   return [pending.slice(0, cut), pending.slice(cut)];
+}
+
+/** Shorter than this, a piece rides along with the next one: "Done." alone
+    costs a round trip and a seam for a word. */
+const MERGE_UNDER = 12;
+
+/**
+ * Break text into the pieces the voice server renders one at a time.
+ *
+ * A sentence is the smallest unit that still sounds like speech: the voice
+ * sets its intonation across the whole sentence, so a word at a time would
+ * come out as a list of words, each said as if it ended a thought. A sentence
+ * that runs on is broken at a comma or dash once it is long enough that
+ * waiting for its end would be a noticeable pause before anything is heard.
+ */
+export function sentences(text: string): string[] {
+  const pieces: string[] = [];
+  const add = (piece: string) => {
+    let rest = piece.trim();
+    while (rest.length > SOFT_AFTER) {
+      let cut = -1;
+      SOFT_BOUNDARY.lastIndex = 0;
+      for (let m = SOFT_BOUNDARY.exec(rest); m; m = SOFT_BOUNDARY.exec(rest)) {
+        const end = m.index + m[0].length;
+        if (end > SOFT_AFTER) break;
+        if (end >= MERGE_UNDER) cut = end;
+      }
+      if (cut < 0) break;
+      pieces.push(rest.slice(0, cut).trim());
+      rest = rest.slice(cut).trim();
+    }
+    if (rest) pieces.push(rest);
+  };
+  const hard = /[.!?](?=\s|$)|\n/g;
+  let from = 0;
+  for (let m = hard.exec(text); m; m = hard.exec(text)) {
+    const end = m.index + m[0].length;
+    if (m[0] !== "\n" && !endsSentence(text.slice(from, end))) continue;
+    add(text.slice(from, end));
+    from = end;
+  }
+  add(text.slice(from));
+  const merged: string[] = [];
+  let carry = "";
+  for (const piece of pieces) {
+    const joined = carry ? `${carry} ${piece}` : piece;
+    if (joined.length < MERGE_UNDER) carry = joined;
+    else { merged.push(joined); carry = ""; }
+  }
+  if (carry) {
+    if (merged.length > 0) merged[merged.length - 1] += ` ${carry}`;
+    else merged.push(carry);
+  }
+  return merged;
 }
