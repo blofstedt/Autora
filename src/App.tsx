@@ -701,9 +701,10 @@ export function App() {
                       not about trusting this site.
                       <em className="voice-help-aside">
                         The fix is in front of the server, not in the browser. On a
-                        tailnet, <code>tailscale serve --bg {location.port || 80}</code>{" "}
+                        tailnet, <code>tailscale serve --bg --https=8443 {location.port || 80}</code>{" "}
                         on the machine running Autora gives this page a real
-                        certificate and a secure address; any reverse proxy with a
+                        certificate and a secure address on port 8443 (not 443,
+                        which an Umbrel needs for itself); any reverse proxy with a
                         certificate does the same. See the README.
                       </em>
                     </>
