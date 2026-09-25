@@ -526,7 +526,7 @@ function browserFor(session: Session): LiveBrowser {
  * than a flag. Each running tool registers a way to be killed, and Stop calls
  * all of them.
  */
-type RunningTurn = { stopped: boolean; cancels: Set<() => void> };
+type RunningTurn = { stopped: boolean; cancels: Set<() => void>; signal?: AbortSignal };
 const running = new Map<string, RunningTurn>();
 
 function stopTurn(sessionId: string) {
@@ -1834,6 +1834,27 @@ export interface TurnResult {
  * same log.
  */
 function startTurn(session: Session, text: string): Promise<TurnResult> {
+  /* One turn at a time per session. A message sent while a turn runs used
+     to start a second turn beside it, and the two models then streamed into
+     the same reply -- half-sentences, one reply split in two, words from one
+     spliced into the other. Sending while busy is "interrupt & send" (the
+     button says so): the running turn is stopped, and this one starts once
+     it has actually finished. */
+  const prior = turnsInFlight.get(session.id);
+  if (prior) stopTurn(session.id);
+  const done = (prior ?? Promise.resolve()).then(() => beginTurn(session, text));
+  const settled = done.then(() => undefined, () => undefined);
+  turnsInFlight.set(session.id, settled);
+  void settled.then(() => {
+    if (turnsInFlight.get(session.id) === settled) turnsInFlight.delete(session.id);
+  });
+  return done;
+}
+
+/** The turn each session is running (or about to), settled either way. */
+const turnsInFlight = new Map<string, Promise<void>>();
+
+function beginTurn(session: Session, text: string): Promise<TurnResult> {
   // The reply this message answers: a correction only makes sense beside it.
   let previousReply = "";
   for (let i = session.events.length - 1; i >= 0; i--) {
@@ -1844,7 +1865,10 @@ function startTurn(session: Session, text: string): Promise<TurnResult> {
   const startSeq = session.seqCounter;
   emitEvent(session, "turn.user", "user", { text });
   session.busy = true;
-  running.set(session.id, { stopped: false, cancels: new Set() });
+  // Stop reaches the model call too: without it, a stopped turn went on
+  // streaming its sentence into the thread until the vendor finished it.
+  const abort = new AbortController();
+  running.set(session.id, { stopped: false, cancels: new Set([() => abort.abort()]), signal: abort.signal });
   broadcastLiveStatus(session);
   const done = runTurn(session, text);
   void done
@@ -1962,6 +1986,7 @@ async function runTurn(session: Session, text: string): Promise<TurnResult> {
               temperature: 0.7,
               maxTokens: outputTokens,
               thinkingBudget: THINKING_BUDGET,
+              signal: running.get(session.id)?.signal,
               tools: tools.map((t) => ({
                 name: t.name,
                 description: t.description,
@@ -1971,6 +1996,8 @@ async function runTurn(session: Session, text: string): Promise<TurnResult> {
               // The client coalesces these deltas into one reply (see
               // derive.ts), so a chunk per emit is a sentence appearing,
               // not forty cards.
+              // Nothing more is said into a turn that has been stopped.
+              if (running.get(session.id)?.stopped) return;
               const { text: clean, images } = sieve.feed(piece);
               if (clean) {
                 emitEvent(session, "turn.agent.text", "agent", { text: clean });
@@ -2028,6 +2055,8 @@ async function runTurn(session: Session, text: string): Promise<TurnResult> {
 
             return turn;
           } catch (err: any) {
+            // Stopped mid-stream: the abort is ours, not the vendor failing.
+            if (running.get(session.id)?.stopped) return null;
             const detail = err?.message ?? String(err);
             const status = err instanceof ProviderError ? err.status : null;
             console.warn(

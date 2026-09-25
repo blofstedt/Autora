@@ -88,33 +88,29 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The few commands nothing can undo now ask first. Wiping a disk, deleting the
-  whole filesystem or your home directory, overwriting the device — Autora stops
-  on an approval card before running one, with no key, no model and no network
-  involved. Everything else still runs straight away, exactly as before.
+  Replies no longer break apart. Sending a message while Autora was working
+  used to start a second turn beside the first, and both streamed into the same
+  thread — a sentence cut in two, a word finished in the next bubble, two
+  replies spliced into one. Sending now does what the button says: it stops the
+  running turn, waits for it to finish, and then starts yours. Stop also cuts
+  the model off mid-sentence instead of letting it talk on.
 
 
-  Content that came from somewhere other than you — a page it read, a search
-  result, an uploaded file, a command's output — is labelled as such, and the
-  pinned prompt says a label means data rather than instructions. A page telling
-  Autora to run something or hand over a key is the page talking, and it now
-  says so in its reply instead of doing it.
+  No more empty boxes. A command that has printed nothing yet shows just its
+  header while it runs, and "no output" once it is done; one left over from a
+  turn that ended without its result says "no result" rather than "running"
+  forever.
 
 
-  Long histories no longer slow the app down. The session list is read from an
-  index rather than every log at startup, and each thread's counts are kept
-  beside it instead of recounted from its event log — one log here had grown to
-  68,000 lines. Settings shows what is stored, with a retention policy (how old,
-  and how many to always keep), a Prune button and housekeeping that runs on its
-  own; pinned threads and ones in use are never touched.
+  The browser in the thread no longer flashes black. Each frame is decoded
+  before it replaces the last, and cards keep their identity when the thread
+  regroups them, so the page is never rebuilt from nothing mid-stream.
 
 
-  Tool health is kept per site and per command, so one hostile site refusing
-  four calls no longer reads as though the whole browser were broken. The
-  loop-watch limits — when Autora is nudged about repeating itself and when a
-  turn is stopped — are settings now rather than constants, so a turn cannot be
-  stopped by a rule you cannot see. And a long tool result stays readable after
-  a restart instead of being reported as evicted.
+  Slash commands: type / in the box for a menu — /stop, /continue, /retry,
+  /remember, /new, /close (the browser), /live, and /sessions, /mind, /cron,
+  /config and /system to jump to a page. Arrow keys move, Enter or Tab picks,
+  Escape dismisses; a path like /etc/hosts still goes to the agent as written.
 
 dependencies: []
 path: ""

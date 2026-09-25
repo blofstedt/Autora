@@ -27,7 +27,16 @@ export function TerminalCell({
   const [copied, setCopied] = useState(false);
   const bodyRef = useRef<HTMLPreElement>(null);
 
-  const lines = useMemo(() => ansiToLines(output), [output]);
+  // Trailing blank lines are dropped: a command that has printed nothing
+  // yet is one empty line, and that drew an empty black box under the
+  // command -- a terminal apparently showing nothing, rather than a command
+  // that has not said anything yet.
+  const lines = useMemo(() => {
+    const all = ansiToLines(output);
+    let end = all.length;
+    while (end > 0 && all[end - 1].every((s) => !s.text.trim())) end -= 1;
+    return end === all.length ? all : all.slice(0, end);
+  }, [output]);
   const folded = !expanded && lines.length > FOLD_AT;
   const shown = folded ? lines.slice(lines.length - FOLD_AT) : lines;
 
@@ -45,6 +54,10 @@ export function TerminalCell({
   }, [copied]);
 
   const failed = status === "error" || (exitCode !== null && exitCode !== 0);
+  // Still marked running in a turn that is over: it never reported back
+  // (stopped, or the server restarted under it). Saying "running" forever
+  // would be a lie.
+  const orphaned = status === "running" && !live;
 
   return (
     <section className={`cell term ${failed ? "is-bad" : ""}`}>
@@ -52,7 +65,9 @@ export function TerminalCell({
         <IconTerminal size={13} />
         <code className="term-cmd" title={command}>{command || "terminal"}</code>
         <div className="spacer" />
-        {status === "running" ? (
+        {orphaned ? (
+          <em className="cell-chip">no result</em>
+        ) : status === "running" ? (
           <em className="cell-chip is-running">running</em>
         ) : failed ? (
           <em className="cell-chip is-bad">
@@ -105,6 +120,8 @@ export function TerminalCell({
           </pre>
         </>
       )}
+      {/* Nothing printed: while it runs the chip says so, and once it is
+          done a line says so. Never an empty box. */}
       {lines.length === 0 && status !== "running" && (
         <p className="cell-quiet">no output</p>
       )}
