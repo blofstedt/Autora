@@ -545,7 +545,12 @@ function Graph({
                 <circle
                   r={node.r}
                   className="kbody"
-                  style={{ fill: KIND_COLOR[r.kind] }}
+                  // Each node breathes on its own clock, so the map at rest
+                  // looks like something alive rather than a diagram.
+                  style={{
+                    fill: KIND_COLOR[r.kind],
+                    animationDelay: `-${[...node.id].reduce((n, c) => n + c.charCodeAt(0), 0) % 50 / 10}s`,
+                  }}
                   filter={selected === node.id || touched.order.has(node.id) ? "url(#kweb-glow)" : undefined}
                 />
                 {r.kind === "skill" && <circle r={node.r * 0.4} fill="#fff" opacity={0.9} />}

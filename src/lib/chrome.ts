@@ -6,7 +6,7 @@
  * you. Both the title and the favicon carry the same state, because which one a
  * given browser shows depends on how many tabs are open.
  */
-export type Chrome = "idle" | "working" | "live" | "approval" | "offline";
+export type Chrome = "idle" | "working" | "live" | "approval" | "offline" | "error";
 
 const DOT: Record<Chrome, string> = {
   idle: "#98a1b6",
@@ -14,6 +14,7 @@ const DOT: Record<Chrome, string> = {
   live: "#34d399",
   approval: "#fbbf24",
   offline: "#626a7e",
+  error: "#f87171",
 };
 
 /** The brand mark from the header -- the spark -- on a tile the state colours.
@@ -43,6 +44,7 @@ const PREFIX: Record<Chrome, string> = {
   live: "",
   approval: "⚠ ",
   offline: "",
+  error: "",
 };
 
 let applied: string | null = null;

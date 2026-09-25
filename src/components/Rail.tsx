@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { AutoraMark } from "./AutoraMark";
+import { AutoraMark, type MarkState } from "./AutoraMark";
 import {
   IconBrain, IconChart, IconClock, IconFolder, IconList, IconMessage,
   IconMonitor, IconPlug, IconPlus, IconServer, IconSliders,
@@ -37,6 +37,7 @@ export const pageLabel = (id: PageId) => PAGES.find((p) => p.id === id)?.label ?
  */
 export function Rail({
   page, onNavigate, relayOn, alert, onNew, drawer = false, onClose,
+  mood = "rest", attention = 0, pulse = 0, learned = 0, bloom = 0,
 }: {
   page: PageId;
   onNavigate: (page: PageId) => void;
@@ -46,11 +47,21 @@ export function Rail({
   onNew: () => void;
   drawer?: boolean;
   onClose?: () => void;
+  /** The agent's presence: what the mark at the top is doing. */
+  mood?: MarkState;
+  attention?: number;
+  pulse?: number;
+  /** Memories kept since the Mind was last opened, shown as +N on it. */
+  learned?: number;
+  /** Changes when something lands in the Mind, to light it up once. */
+  bloom?: number;
 }) {
   const item = (p: (typeof PAGES)[number]) => (
     <button
-      key={p.id}
-      className={`rail-nav-item ${page === p.id ? "on" : ""}`}
+      // Re-keyed on each landing so the bloom animation plays again.
+      key={p.id === "mind" ? `mind-${bloom}` : p.id}
+      data-page={p.id}
+      className={`rail-nav-item ${page === p.id ? "on" : ""} ${p.id === "mind" && bloom ? "is-bloom" : ""}`}
       onClick={() => onNavigate(p.id)}
       aria-current={page === p.id ? "page" : undefined}
     >
@@ -58,6 +69,7 @@ export function Rail({
       <span>{p.label}</span>
       {/* Said in words as well as the dot: a phone has no tooltips. */}
       {p.id === "chat" && alert && <em className="rail-tag is-alert">waiting on you</em>}
+      {p.id === "mind" && learned > 0 && page !== "mind" && <em className="rail-tag is-grew">+{learned}</em>}
       {p.id === "system" && relayOn && (
         <em className="rail-tag" title="A desktop relay is connected">
           <IconMonitor size={11} /> desktop
@@ -69,7 +81,9 @@ export function Rail({
   return (
     <aside className={`rail ${drawer ? "is-drawer" : ""}`} aria-label="Navigation">
       <div className="rail-top">
-        <span className="rail-brand"><AutoraMark size={30} state="live" /></span>
+        <span className="rail-brand presence">
+          <AutoraMark size={30} state={mood} idle attention={attention} pulse={pulse} />
+        </span>
         <span className="brand-word">Autora</span>
         <div className="spacer" />
         <button className="rail-icon-btn" onClick={onNew} title="New session" aria-label="New session">

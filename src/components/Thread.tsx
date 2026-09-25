@@ -134,11 +134,12 @@ export function Thread({
   if (buckets.length === 0 && !busy) {
     return (
       <div className="empty">
-        <AutoraMark size={80} state="live" className="empty-mark" />
+        {/* Still: the sidebar mark is the one that breathes at rest. */}
+        <AutoraMark size={80} state="rest" className="empty-mark" />
         {placeholder ?? (
           <>
-            <h3>Ready</h3>
-            <p>Describe a task below and watch it happen here.</p>
+            <h3>I'm here.</h3>
+            <p>Describe a task below and watch me do it here.</p>
           </>
         )}
       </div>
@@ -163,8 +164,10 @@ export function Thread({
         ))}
         {busy && (
           <div className="working" aria-live="polite">
-            <span className="bar" />
-            <span className="working-what">{doing || "Working"}</span>
+            <AutoraMark size={16} state="working" className="working-mark" />
+            {/* Keyed on the words, so each new step fades in over the last
+                rather than snapping -- a train of thought, not a counter. */}
+            <span className="working-what" key={doing || "working"}>{doing || "Working"}</span>
           </div>
         )}
         </div>
@@ -448,7 +451,7 @@ function Reply({
         {memories.map((m, index) => (
           <MemoryCell key={index} cell={m} onOpen={onOpenMind} inline />
         ))}
-        {text && <div className="msg-text is-md"><Markdown text={text} /></div>}
+        {text && <div className="msg-text is-md"><Markdown text={text} streaming={working} /></div>}
         {onOpenSettings && (
           <button className="btn primary msg-action" onClick={onOpenSettings}>
             Open Settings <IconArrow size={13} />

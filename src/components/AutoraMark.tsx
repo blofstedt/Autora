@@ -11,12 +11,19 @@ import { useThemeColors, type ThemeColors } from "../lib/theme";
  * turns and warms through the brand's colours says *what* is on, in the place
  * you were already looking.
  *
- * Four states:
+ * Six states:
  *
  *   rest     still, cool, quietly lit -- nothing is happening
  *   live     slow breathing, the microphone is open
  *   working  the points morph and the gradient turns, the model is writing
  *   settle   a single bloom as the work lands, then back to rest
+ *   waiting  a slow, warm beckon -- it is stopped on something only you can do
+ *   error    one dim shiver as a turn fails, then back to rest
+ *
+ * The app's one presence (the mark in the sidebar) also takes `idle`: at rest
+ * it breathes very slowly and now and then catches the light, so something
+ * that is switched on never looks switched off. Only that one mark does it --
+ * a thread full of breathing avatars would be wallpaper, not life.
  *
  * `settle` is the one worth explaining: a morph that simply stops is a
  * flinch, and the moment a reply finishes is exactly the moment worth
@@ -24,7 +31,7 @@ import { useThemeColors, type ThemeColors } from "../lib/theme";
  * to rest on its own -- the animation finishes rather than being switched off.
  */
 
-export type MarkState = "rest" | "live" | "working" | "settle";
+export type MarkState = "rest" | "live" | "working" | "settle" | "waiting" | "error";
 
 /** How long the finishing bloom runs. Matches --settle-ms in styles.css. */
 const SETTLE_MS = 900;
@@ -89,22 +96,30 @@ function useStillness(): boolean {
  *
  * The caller only knows whether the agent is busy; it should not have to run a
  * timer to give the ending somewhere to go. This turns the falling edge of
- * "working" into a bloom that expires by itself.
+ * "working" into a bloom that expires by itself. Only an ending that lands at
+ * rest blooms: work that stops on a question, or on a failure, says that
+ * instead.
+ *
+ * `pulse` asks for the same bloom on demand: a counter, and each change plays
+ * it once (someone came back to the tab; a memory was kept).
  */
-function useFinish(state: MarkState): MarkState {
+function useFinish(state: MarkState, pulse = 0): MarkState {
   const [finishing, setFinishing] = useState(false);
   const was = useRef(state);
+  const lastPulse = useRef(pulse);
 
   useEffect(() => {
-    const left = was.current === "working" && state !== "working";
+    const left = was.current === "working" && (state === "rest" || state === "live");
     was.current = state;
-    if (!left) return;
+    const asked = pulse !== lastPulse.current;
+    lastPulse.current = pulse;
+    if (!left && !asked) return;
     setFinishing(true);
     const timer = window.setTimeout(() => setFinishing(false), SETTLE_MS);
     return () => window.clearTimeout(timer);
-  }, [state]);
+  }, [state, pulse]);
 
-  if (state === "working") return "working";
+  if (state === "working" || state === "waiting" || state === "error") return state;
   return finishing ? "settle" : state;
 }
 
@@ -112,12 +127,21 @@ export function AutoraMark({
   state = "rest",
   size = 16,
   className = "",
+  idle = false,
+  attention = 0,
+  pulse = 0,
 }: {
   state?: MarkState;
   size?: number;
   className?: string;
+  /** The app's presence: breathe slowly at rest instead of holding still. */
+  idle?: boolean;
+  /** 0..1 -- how closely it is attending to you right now (typing). */
+  attention?: number;
+  /** Change it to play the settle bloom once. */
+  pulse?: number;
 }) {
-  const shown = useFinish(state);
+  const shown = useFinish(state, pulse);
   const still = useStillness();
   // Every instance needs its own gradient ids: two <defs> sharing an id on one
   // page is one gradient, and the second mark would quietly inherit the
@@ -136,8 +160,8 @@ export function AutoraMark({
 
   return (
     <span
-      className={`amark is-${shown} ${className}`.trim()}
-      style={{ width: size, height: size }}
+      className={`amark is-${shown} ${idle ? "is-idle" : ""} ${className}`.replace(/\s+/g, " ").trim()}
+      style={{ width: size, height: size, ...(attention ? { "--attention": attention.toFixed(2) } : {}) } as React.CSSProperties}
       aria-hidden="true"
     >
       <svg viewBox="0 0 32 32" width={size} height={size} role="presentation">

@@ -25,7 +25,8 @@ import { resolve as resolveCommand, suggest as suggestCommands, type Command } f
 import { LiveChat } from "./components/LiveChat";
 import { useRelay } from "./components/RelaySetup";
 import { UpdateNotice } from "./components/UpdateNotice";
-import { SetupCard, Starters } from "./components/SetupCard";
+import { SetupCard, Welcome } from "./components/SetupCard";
+import { flySpark, visible } from "./lib/presence";
 import { Notices } from "./components/Notices";
 import { AutoraMark, type MarkState } from "./components/AutoraMark";
 import { activity } from "./lib/activity";
@@ -105,7 +106,12 @@ export function App() {
   /** Whether a turn sent now would reach a model: null until asked. The empty
       chat offers setup until it is true, and starting tasks after. */
   const [modelReady, setModelReady] = useState<boolean | null>(null);
+  /** A turn just failed: the presence shivers and the tab turns red briefly. */
+  const [failing, setFailing] = useState(false);
   const streamRef = useRef<SessionStream | null>(null);
+  /** The newest event the presence has already reacted to, so a reload or a
+      session switch does not replay old moments. */
+  const noticed = useRef(0);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const speech = useSpeech();
   const { say, cancel: hush, prime, speaking, supported: canSpeak } = speech;
@@ -191,6 +197,7 @@ export function App() {
   useEffect(() => {
     if (!sessionId) return;
     setEvents([]);
+    noticed.current = 0;
     setLiveFrame(null);
     setLiveFields([]);
     setBrowser(null);
@@ -297,7 +304,11 @@ export function App() {
     if (!text || !sessionId) return;
     // Dictated turns never touched the box, so there is nothing to clear and
     // clearing anyway would eat something half-typed.
-    if (spoken === undefined) setDraft("");
+    if (spoken === undefined) {
+      setDraft("");
+      // The message is handed over: a spark from Send to the agent's mark.
+      flySpark(visible(".composer-send"), visible(".rail-slot .presence", ".top-presence"));
+    }
     // Unlock audio inside this tap, so anything the reply says aloud can play
     // on a phone that only allows sound a gesture started.
     if (!speaking) prime();
@@ -548,7 +559,9 @@ export function App() {
   // ---------------------------------------------------------- tab chrome --
   const chromeState: Chrome = pending > 0
     ? "approval"
-    : !live
+    : failing
+      ? "error"
+      : !live
       ? status.state === "closed" ? "offline" : "idle"
       : running ? "working" : "live";
 
@@ -566,6 +579,86 @@ export function App() {
   const liveState: MarkState = liveOn
     ? (userSpeaking ? "working" : "live")
     : "rest";
+
+  // ------------------------------------------------------------ presence --
+  /* The agent as one living thing: its mark in the sidebar (and the header,
+     on a phone) carries its mood, leans in while you type, blooms when you
+     come back, and shivers when a turn fails. Every one of these is driven
+     by something that actually happened -- nothing here is performed. */
+  const [attention, setAttention] = useState(0);
+  const [welcome, setWelcome] = useState(0);
+  const [learned, setLearned] = useState(0);
+  const [bloom, setBloom] = useState(0);
+  const mood: MarkState = pending > 0
+    ? "waiting"
+    : failing
+      ? "error"
+      : live && running
+        ? "working"
+        : liveOn ? "live" : "rest";
+
+  // Moments in the log, as they arrive: a failure, something learned. Only
+  // fresh events count, so opening an old session is not a replay.
+  useEffect(() => {
+    const now = Date.now() / 1000;
+    let newest = noticed.current;
+    const timers: number[] = [];
+    for (const e of events) {
+      if (e.seq <= noticed.current) continue;
+      newest = Math.max(newest, e.seq);
+      if (now - e.ts > 10) continue;
+      if (e.kind === Kind.Error) {
+        setFailing(true);
+        timers.push(window.setTimeout(() => setFailing(false), 1600));
+      }
+      if (e.kind === Kind.MemoryLearned) {
+        const count = (Array.isArray(e.payload.items) ? e.payload.items.length : 0);
+        if (!count) continue;
+        // After the card has painted, so the spark leaves from it.
+        timers.push(window.setTimeout(() => {
+          flySpark(
+            visible(".learned"),
+            visible(".rail-slot [data-page=\"mind\"]", ".menu-btn"),
+            () => { setLearned((n) => n + count); setBloom((b) => b + 1); },
+            "glow",
+          );
+        }, 350));
+      }
+    }
+    noticed.current = newest;
+    // Deliberately not cleared on the next run: a later batch of events must
+    // not cut short a shiver or a spark that is already under way.
+    void timers;
+  }, [events]);
+
+  useEffect(() => { if (page === "mind") setLearned(0); }, [page]);
+
+  // Leaning in while you type: brighter the faster you go, settling back a
+  // moment after you stop.
+  const strokes = useRef<number[]>([]);
+  const settleTimer = useRef<number | null>(null);
+  const noticeTyping = useCallback(() => {
+    const t = performance.now();
+    strokes.current = strokes.current.filter((k) => t - k < 1500);
+    strokes.current.push(t);
+    setAttention(Math.min(1, 0.25 + strokes.current.length / 12));
+    if (settleTimer.current) window.clearTimeout(settleTimer.current);
+    settleTimer.current = window.setTimeout(() => setAttention(0), 1100);
+  }, []);
+
+  // Coming back after a while is greeted with a bloom, and nothing ambient
+  // keeps animating in a tab nobody is looking at.
+  useEffect(() => {
+    let awayAt = 0;
+    const onVisibility = () => {
+      document.documentElement.classList.toggle("is-away", document.hidden);
+      if (document.hidden) { awayAt = Date.now(); return; }
+      if (awayAt && Date.now() - awayAt > 60_000) setWelcome((n) => n + 1);
+      awayAt = 0;
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
 
   const hadPending = useRef(0);
   useEffect(() => {
@@ -638,7 +731,17 @@ export function App() {
       onConnected={() => { setModelReady(true); composerRef.current?.focus(); }}
       onOpenSettings={openModelSettings}
     />
-  ) : modelReady ? <Starters onPick={startFrom} /> : undefined;
+  ) : modelReady ? (
+    <Welcome
+      sessions={sessions}
+      current={sessionId}
+      // A closure: openSession is declared further down.
+      onOpenSession={(id) => openSession(id)}
+      onOpenMind={() => navigate("mind")}
+      onOpenSchedules={() => navigate("cron")}
+      onPick={startFrom}
+    />
+  ) : undefined;
 
   const refreshSessions = useCallback(() => {
     fetch("/api/sessions").then((r) => r.json()).then(setSessions).catch(() => undefined);
@@ -763,6 +866,11 @@ export function App() {
               navigate(next);
             }}
             relayOn={!!relay?.connected}
+            mood={mood}
+            attention={attention}
+            pulse={welcome}
+            learned={learned}
+            bloom={bloom}
             alert={pending > 0}
             onNew={() => { void newSession(); navigate("chat"); }}
             drawer={kind === "drawer"}
@@ -786,6 +894,11 @@ export function App() {
           >
             <IconMenu size={18} />
           </button>
+
+          {/* The presence, where the sidebar is folded away. */}
+          <span className="top-presence">
+            <AutoraMark size={24} state={mood} idle attention={attention} pulse={welcome} />
+          </span>
 
           {page !== "chat" ? (
             <h1 className="top-title">{pageLabel(page)}</h1>
@@ -878,6 +991,9 @@ export function App() {
         <div className="chat-view" hidden={page !== "chat"}>
 
         <main className="page">
+          {/* The room's light: cool at rest, warmer while it works, amber
+              while it waits on you. Barely there, and still when away. */}
+          <div className={`mood-light is-${mood}`} aria-hidden="true" />
           <Thread
             buckets={view.buckets}
             // Stopped on a question is not working; the card says what it is.
@@ -996,12 +1112,14 @@ export function App() {
                       ? "This session is a recording."
                       : modelReady === false
                         ? "Connect a model to start…"
-                        : "Ask Autora to do something…"}
+                        : "What should I do?"}
                     disabled={readOnly}
                     onChange={(e) => {
                       setDraft(e.target.value);
                       setSlashDismissed(false);
+                      noticeTyping();
                     }}
+                    onBlur={() => setAttention(0)}
                     onKeyDown={(e) => {
                       if (slashOpen) {
                         const n = slashOffered.length;

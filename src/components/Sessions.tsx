@@ -7,6 +7,7 @@ export type SessionRow = {
   live?: boolean;
   pinned?: boolean;
   created_at?: number;
+  updated_at?: number;
   events?: number;
   /** Messages the person sent: what "how much is in it" means to them. */
   turns?: number;

@@ -87,17 +87,24 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  A friendlier first run and a tidier app. A new install now opens on a card
-  that connects a model (pick a provider, paste a key, done) instead of a chat
-  that could not answer, and once a model is connected the empty chat offers
-  example tasks to start from. The sidebar is regrouped with plainer names:
-  Schedules (was Cron), Integrations (was MCP), Usage (was Analytics) and
-  Settings (was Config), where themes and fonts now live under Appearance.
-  Settings save themselves as you change them, connected providers are listed
-  first, and keys have their own Save button. Deleting a session can be undone
-  for a few seconds. The header shows what the session has cost rather than
-  token counts, the Dictate and Talk buttons are labelled and sit in the
-  message box on phones too, and long help text is folded away.
+  Autora now feels like someone is there. Its mark in the sidebar (or the
+  header, on a phone) shows its mood: a slow breath at rest, turning while it
+  works, a warm beckon when it is waiting on you, a shiver when a turn fails.
+  It leans in while you type, a spark carries your message to it, and it
+  greets you with a bloom when you come back. Replies fade in word by word as
+  they are written, the line saying what it is doing eases from one step to
+  the next, and when it learns something a spark flies into the Mind, which
+  lights up with a +1. The empty chat now picks up from real history: the last
+  conversation, what your schedules did, what is due next, and what it learned.
+  It speaks in the first person throughout. All motion stops if your device
+  asks for reduced motion, and pauses when the tab is in the background.
+
+
+  Also in this release: a new install opens on a card that connects a model;
+  the sidebar is regrouped with plainer names (Schedules, Integrations, Usage,
+  Settings, with themes under Appearance); settings save themselves; deleting
+  a session can be undone; the header shows what a session has cost; and the
+  Dictate and Talk buttons are labelled.
 
 
 dependencies: []

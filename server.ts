@@ -2488,8 +2488,8 @@ async function runTurn(session: Session, text: string): Promise<TurnResult> {
       let reply: string;
       if (!connected) {
         reply =
-          "No model is connected yet, so nothing can answer this. Add a key " +
-          "for a provider in Settings and pick a model, then send it again.";
+          "I don't have a model to think with yet, so I can't answer this. Add a " +
+          "key for a provider in Settings, then send it again.";
       } else if (running.get(session.id)?.stopped) {
         reply = "Stopped.";
       } else if (ranSomething) {
@@ -2497,14 +2497,14 @@ async function runTurn(session: Session, text: string): Promise<TurnResult> {
            in the transcript above, so point at it rather than inventing a
            summary of it. */
         reply =
-          "That turn ended without a written answer. What ran is above, " +
+          "I finished without writing a summary. What I ran is above, " +
           "with its output.";
       } else {
         /* Nothing ran and nothing was said, which means the model call
            itself failed -- and that failure is already in the log as a
            system error naming the vendor and the reason. Repeating it here
            in vaguer words would only bury it. */
-        reply = "Nothing came back that turn. The error above says why.";
+        reply = "I couldn't get an answer from the model that turn. The error above says why.";
       }
       /* `local` keeps this out of the history the model is shown next
          turn -- see historyFor. */
