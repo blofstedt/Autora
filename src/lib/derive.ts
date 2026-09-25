@@ -76,9 +76,19 @@ export type PermissionPrompt = {
 };
 
 /** A question the agent put to the person, and where it stands. */
+/** What an MCP offer would set up, as the card shows it. Key names only. */
+export type AskOffer = {
+  name: string;
+  title: string;
+  summary: string;
+  runs: string;
+  kind: string;
+  needs: { env: string; label: string; url?: string; hint?: string; set: boolean }[];
+};
+
 export type Ask = {
   id: string;
-  kind: "question" | "browser";
+  kind: "question" | "browser" | "offer";
   title: string;
   detail: string;
   options: { label: string; detail?: string }[];
@@ -89,6 +99,7 @@ export type Ask = {
   /** Unanswered, and the turn is parked on it. */
   open: boolean;
   answer?: { cancelled: boolean; choices: string[]; text: string; who: string };
+  offer?: AskOffer;
 };
 
 /** A decision Jev Mode scored (or declined to), as the thread shows it. */
@@ -659,7 +670,7 @@ export function derive(events: AutoraEvent[]): Derived {
         const id = String(e.payload.ask_id ?? `ask-${e.seq}`);
         const ask: Ask = {
           id,
-          kind: e.payload.kind === "browser" ? "browser" : "question",
+          kind: e.payload.kind === "browser" ? "browser" : e.payload.kind === "offer" ? "offer" : "question",
           title: String(e.payload.title ?? ""),
           detail: String(e.payload.detail ?? ""),
           options: Array.isArray(e.payload.options) ? e.payload.options : [],
@@ -668,6 +679,14 @@ export function derive(events: AutoraEvent[]): Derived {
           placeholder: String(e.payload.placeholder ?? ""),
           seq: e.seq,
           open: true,
+          ...(e.payload.offer && typeof e.payload.offer === "object"
+            ? {
+                offer: {
+                  ...e.payload.offer,
+                  needs: Array.isArray(e.payload.offer.needs) ? e.payload.offer.needs : [],
+                } as AskOffer,
+              }
+            : {}),
         };
         asks.set(id, ask);
         push({ kind: "ask", seq: e.seq, ask });

@@ -50,7 +50,9 @@ Only when a change genuinely has no user-facing effect, skip the bump and put
 - `server/`: the pieces it uses. `tools.ts` (the agent's tools), `llm.ts` and
   `providers.ts` (model calls), `browser.ts` (Playwright), `desktop.ts` (the
   relay), `store.ts` / `state.ts` (what is kept on disk under `AUTORA_HOME`),
-  `credentials.ts`, `mcp.ts`, `jev/` (the evaluator).
+  `credentials.ts`, `mcp.ts` (plus `mcpcatalog.ts`, `mcpoffer.ts` and
+  `mcpscript.ts`: the servers the agent offers, sets up or writes itself),
+  `jev/` (the evaluator).
 - How it learns and runs on its own:
   - `memory.ts`: the memory graph (ranked recall, merging near-copies,
     provisional to confirmed).

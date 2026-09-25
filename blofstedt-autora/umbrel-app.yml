@@ -47,6 +47,12 @@ description: >-
   when it is relevant, and can save scripts it uses often as tools of its own.
 
 
+  • Integrations that grow as you go — when a task would be done better through
+  a service's API than its website (GitHub, Slack, Notion, a database...),
+  Autora offers to set up an MCP server for it, and only installs it if you
+  say yes.
+
+
   • Schedules and watchers — run a task on a cron schedule, or whenever a web
   page, a file or a command's output changes, with a history of every run.
 
@@ -87,24 +93,17 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Autora now feels like someone is there. Its mark in the sidebar (or the
-  header, on a phone) shows its mood: a slow breath at rest, turning while it
-  works, a warm beckon when it is waiting on you, a shiver when a turn fails.
-  It leans in while you type, a spark carries your message to it, and it
-  greets you with a bloom when you come back. Replies fade in word by word as
-  they are written, the line saying what it is doing eases from one step to
-  the next, and when it learns something a spark flies into the Mind, which
-  lights up with a +1. The empty chat now picks up from real history: the last
-  conversation, what your schedules did, what is due next, and what it learned.
-  It speaks in the first person throughout. All motion stops if your device
-  asks for reduced motion, and pauses when the tab is in the background.
-
-
-  Also in this release: a new install opens on a card that connects a model;
-  the sidebar is regrouped with plainer names (Schedules, Integrations, Usage,
-  Settings, with themes under Appearance); settings save themselves; deleting
-  a session can be undone; the header shows what a session has cost; and the
-  Dictate and Talk buttons are labelled.
+  Autora can now grow its own integrations. When a task lives on a service with
+  an API (GitHub, Slack, Notion, a database, maps, library docs) it offers to
+  set up an MCP server instead of working through the website: a card says
+  why it is better for what you asked and exactly what will run, and nothing
+  is installed until you tap Set it up. Not now is remembered for the rest of
+  the conversation. Keys a server needs are typed on the card and go straight
+  into Secrets, never into the chat or to the model. Beyond its built-in list
+  it can offer any MCP server on npm, a remote one, or write a small server of
+  its own for a service that has none. Servers it set up are marked on the
+  Integrations page, and you can ask it what MCP servers could help with a
+  task.
 
 
 dependencies: []

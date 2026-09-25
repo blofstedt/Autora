@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Ask } from "../lib/derive";
 import { AutoraMark } from "./AutoraMark";
-import { IconArrow, IconCheck, IconKey, IconX } from "./Icons";
+import { IconArrow, IconCheck, IconKey, IconPlug, IconX } from "./Icons";
 
 /**
  * The agent, stopped, asking you something.
@@ -46,8 +46,14 @@ export function AskCell({
 
   const isBrowser = ask.kind === "browser";
 
+  if (ask.open && ask.kind === "offer" && ask.offer) {
+    return <OfferCard ask={ask} readOnly={readOnly} onAnswer={answer} sending={sending} error={error} />;
+  }
+
   if (!ask.open) {
     const a = ask.answer;
+    // A turned-down offer settles as a no, not with a tick.
+    const declinedOffer = ask.kind === "offer" && !!a && !a.choices.includes("Set it up");
     const said = !a
       ? "No longer waiting"
       : a.cancelled
@@ -56,9 +62,9 @@ export function AskCell({
           ? a.who === "auto" ? (a.text || "Passed — carrying on") : "Done in the browser"
           : [...a.choices, a.text].filter(Boolean).join(" · ");
     return (
-      <div className={`ask is-settled ${a && !a.cancelled ? "is-answered" : ""}`}>
+      <div className={`ask is-settled ${a && !a.cancelled && !declinedOffer ? "is-answered" : ""}`}>
         <span className="ask-settled-mark">
-          {a && !a.cancelled ? <IconCheck size={12} /> : <IconX size={12} />}
+          {a && !a.cancelled && !declinedOffer ? <IconCheck size={12} /> : <IconX size={12} />}
         </span>
         <div className="ask-settled-body">
           <span className="ask-settled-q">{ask.title}</span>
@@ -186,6 +192,122 @@ export function AskCell({
         </>
       )}
       {error && <p className="ask-error">{error}</p>}
+    </section>
+  );
+}
+
+/**
+ * The agent offering to set up an MCP server.
+ *
+ * Says what it is, why it beats what the agent would otherwise do, and
+ * exactly what will run -- then asks for any key it needs right here. A key
+ * typed on this card goes straight into the secret store and never into the
+ * conversation: the answer that reaches the agent is only "Set it up".
+ */
+function OfferCard({
+  ask, readOnly, onAnswer, sending, error,
+}: {
+  ask: Ask;
+  readOnly: boolean;
+  onAnswer: (body: { choices?: string[]; cancelled?: boolean }) => Promise<void>;
+  sending: boolean;
+  error: string | null;
+}) {
+  const offer = ask.offer!;
+  const [keys, setKeys] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const missing = offer.needs.filter((n) => !n.set);
+  const ready = missing.every((n) => (keys[n.env] ?? "").trim());
+  const disabled = readOnly || sending || saving;
+
+  const accept = async () => {
+    setSaving(true);
+    setProblem(null);
+    try {
+      for (const need of missing) {
+        const res = await fetch("/api/secrets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: need.env, value: keys[need.env].trim() }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          setProblem(data?.error ?? `Could not save the ${need.label}.`);
+          return;
+        }
+      }
+      await onAnswer({ choices: ["Set it up"] });
+    } catch {
+      setProblem("Could not reach the server.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="ask is-offer" aria-live="polite">
+      <div className="ask-glow" aria-hidden="true" />
+      <header className="ask-head">
+        <span className="ask-badge"><IconPlug size={14} /></span>
+        <span className="ask-kicker">A better way to do this</span>
+        <span className="ask-waiting"><i /> waiting on you</span>
+      </header>
+
+      <h3 className="ask-title">{ask.title}</h3>
+      {ask.detail && <p className="ask-detail">{ask.detail}</p>}
+
+      <dl className="offer-facts">
+        <dt>What it gives me</dt>
+        <dd>{offer.summary}</dd>
+        <dt>What will run</dt>
+        <dd><code>{offer.runs}</code></dd>
+      </dl>
+
+      {offer.needs.length > 0 && (
+        <div className="offer-keys">
+          {offer.needs.map((need) => need.set ? (
+            <p key={need.env} className="offer-key is-set">
+              <IconCheck size={12} /> {need.label} is already saved
+            </p>
+          ) : (
+            <label key={need.env} className="offer-key">
+              <span>
+                {need.label}
+                {need.url && (
+                  <> · <a href={need.url} target="_blank" rel="noreferrer">get one</a></>
+                )}
+              </span>
+              <input
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                value={keys[need.env] ?? ""}
+                disabled={disabled}
+                placeholder={need.hint ?? need.env}
+                onChange={(e) => setKeys((k) => ({ ...k, [need.env]: e.target.value }))}
+                aria-label={need.label}
+              />
+            </label>
+          ))}
+          {missing.length > 0 && (
+            <p className="offer-note">
+              Saved to Settings › API Keys › Secrets as {missing.map((n) => n.env).join(", ")}.
+              I never see the value.
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="ask-actions">
+        <button className="ask-primary" disabled={disabled || !ready} onClick={() => void accept()}>
+          <IconCheck size={15} /> {saving || sending ? "Setting up…" : "Set it up"}
+        </button>
+        <button className="ask-secondary" disabled={disabled} onClick={() => void onAnswer({ choices: ["Not now"] })}>
+          Not now
+        </button>
+      </div>
+      {(problem || error) && <p className="ask-error">{problem || error}</p>}
     </section>
   );
 }

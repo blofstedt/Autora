@@ -14,6 +14,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { log } from "./logs";
+import { CATALOG, fillParams } from "./mcpcatalog";
 
 export interface McpServerConfig {
   id: string;
@@ -27,6 +28,31 @@ export interface McpServerConfig {
   url?: string;
   headers?: Record<string, string>;
   enabled: boolean;
+  /** "agent" when Autora offered it in a conversation and the person said yes. */
+  origin?: "agent" | "person";
+  /** One line on what it is for, shown on the Integrations page. */
+  note?: string;
+}
+
+/* Values may say ${secret:NAME}: the key stays in the secret store and is
+   put in only here, on the way to the process. The store lives with the
+   rest of the state, so the server hands over a lookup at startup. */
+let secretLookup: (name: string) => string | null = () => null;
+export function setSecretLookup(lookup: (name: string) => string | null) {
+  secretLookup = lookup;
+}
+const SECRET_REF = /\$\{secret:([A-Za-z_][A-Za-z0-9_]*)\}/g;
+/** Put the secrets in; names the ones that are missing. */
+function resolveSecrets(value: string, missing: Set<string>): string {
+  return value.replace(SECRET_REF, (_m, name: string) => {
+    const found = secretLookup(name);
+    if (found === null || found === "") { missing.add(name); return ""; }
+    return found;
+  });
+}
+function resolveRecord(values: Record<string, string> | undefined, missing: Set<string>) {
+  if (!values) return values;
+  return Object.fromEntries(Object.entries(values).map(([k, v]) => [k, resolveSecrets(v, missing)]));
 }
 
 export interface McpTool {
@@ -101,12 +127,20 @@ export async function connect(cfg: McpServerConfig): Promise<void> {
 
   const client = new Client({ name: "autora", version: "1" });
   try {
+    const missing = new Set<string>();
+    const env = resolveRecord(cfg.env, missing);
+    const args = (cfg.args ?? []).map((a) => resolveSecrets(a, missing));
+    const headers = resolveRecord(cfg.headers, missing);
+    const url = cfg.url ? resolveSecrets(cfg.url, missing) : cfg.url;
+    if (missing.size) {
+      throw new Error(`Missing secret${missing.size === 1 ? "" : "s"} ${[...missing].join(", ")} -- add ${missing.size === 1 ? "it" : "them"} under Settings > API Keys > Secrets.`);
+    }
     if (cfg.transport === "stdio") {
       if (!cfg.command?.trim()) throw new Error("No command to run.");
       const transport = new StdioClientTransport({
         command: cfg.command.trim(),
-        args: cfg.args ?? [],
-        env: { ...(process.env as Record<string, string>), ...(cfg.env ?? {}) },
+        args,
+        env: { ...(process.env as Record<string, string>), ...(env ?? {}) },
         stderr: "pipe",
       });
       transport.stderr?.on("data", (chunk: Buffer) => {
@@ -115,12 +149,12 @@ export async function connect(cfg: McpServerConfig): Promise<void> {
       });
       await withTimeout(client.connect(transport), CONNECT_TIMEOUT_MS, "Connecting");
     } else {
-      if (!cfg.url?.trim()) throw new Error("No URL to connect to.");
-      const url = new URL(cfg.url.trim());
-      const requestInit = { headers: cfg.headers ?? {} };
+      if (!url?.trim()) throw new Error("No URL to connect to.");
+      const endpoint = new URL(url.trim());
+      const requestInit = { headers: headers ?? {} };
       try {
         await withTimeout(
-          client.connect(new StreamableHTTPClientTransport(url, { requestInit })),
+          client.connect(new StreamableHTTPClientTransport(endpoint, { requestInit })),
           CONNECT_TIMEOUT_MS, "Connecting",
         );
       } catch (streamErr) {
@@ -128,7 +162,7 @@ export async function connect(cfg: McpServerConfig): Promise<void> {
         const fallback = new Client({ name: "autora", version: "1" });
         try {
           await withTimeout(
-            fallback.connect(new SSEClientTransport(url, { requestInit })),
+            fallback.connect(new SSEClientTransport(endpoint, { requestInit })),
             CONNECT_TIMEOUT_MS, "Connecting",
           );
         } catch {
@@ -220,34 +254,25 @@ export async function callMcpTool(
   return { ok: !result?.isError, text: parts.join("\n") || "(no output)" };
 }
 
-/** Servers worth offering one click away. Each only pre-fills the form. */
+/** Servers worth offering one click away on the Integrations page. Each only
+    pre-fills the form; the same list is what the agent offers in a
+    conversation (see mcpcatalog.ts). */
 export interface McpCatalogEntry {
   name: string;
   transport: "stdio";
   command: string;
   args: string[];
+  env?: Record<string, string>;
   note: string;
 }
 
-export const MCP_CATALOG: McpCatalogEntry[] = [
-  {
-    name: "filesystem", transport: "stdio", command: "npx",
-    args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
-    note: "Read and write files under the directories you list (edit the last argument).",
-  },
-  {
-    name: "memory", transport: "stdio", command: "npx",
-    args: ["-y", "@modelcontextprotocol/server-memory"],
-    note: "A separate knowledge-graph memory the agent can build and query.",
-  },
-  {
-    name: "sequential-thinking", transport: "stdio", command: "npx",
-    args: ["-y", "@modelcontextprotocol/server-sequential-thinking"],
-    note: "A structured step-by-step reasoning tool.",
-  },
-  {
-    name: "everything", transport: "stdio", command: "npx",
-    args: ["-y", "@modelcontextprotocol/server-everything"],
-    note: "The MCP reference server: every feature, for testing a connection.",
-  },
-];
+export const MCP_CATALOG: McpCatalogEntry[] = CATALOG.map((entry) => ({
+  name: entry.name,
+  transport: "stdio",
+  command: entry.command,
+  args: fillParams(entry, {}),
+  ...(entry.env ? { env: entry.env } : {}),
+  note: entry.summary + (entry.needs?.length
+    ? ` Needs ${entry.needs.map((n) => n.label).join(" and ")}, kept in Secrets.`
+    : ""),
+}));

@@ -24,7 +24,8 @@
  * to two very different places.
  */
 
-import { callMcpTool, mcpTools } from "./mcp";
+import { callMcpTool, mcpTools, statusOf as mcpStatusOf } from "./mcp";
+import { existing as existingMcp, install as installMcp, noteDeclined, overview as mcpOverview, planOffer, wasDeclined } from "./mcpoffer";
 import {
   PREFIX as CUSTOM_PREFIX, customEnv, defineCustomTool, deleteCustomTool, getCustomTool,
   listCustomTools, missingArgs, noteCustomRun,
@@ -97,8 +98,9 @@ export type ToolGroup = "terminal" | "browser" | "computer" | "memory";
 
 /** A question for the person, drawn as a card in the thread. */
 export type AskRequest = {
-  /** "browser" is a sign-in or similar handed over in the live page. */
-  kind: "question" | "browser";
+  /** "browser" is a sign-in or similar handed over in the live page;
+      "offer" is the agent offering to set up an MCP server. */
+  kind: "question" | "browser" | "offer";
   title: string;
   detail?: string;
   options: { label: string; detail?: string }[];
@@ -109,6 +111,15 @@ export type AskRequest = {
       settles it without the person: the thing they were asked to do has
       visibly been done, and saying so would only be a second chore. */
   watch?: () => Promise<string | null>;
+  /** For an offer: what would be set up, drawn on the card. */
+  offer?: {
+    name: string;
+    title: string;
+    summary: string;
+    runs: string;
+    kind: string;
+    needs: { env: string; label: string; url?: string; hint?: string; set: boolean }[];
+  };
 };
 export type AskAnswer = { cancelled: boolean; choices: string[]; text: string; who: string };
 
@@ -694,6 +705,84 @@ const TOOLS: ToolSpec[] = [
       },
       required: ["question"],
     },
+  },
+
+  // ---------------------------------------------------------------- mcp --
+  {
+    name: "mcp_servers",
+    group: "person",
+    description:
+      "List the MCP servers set up here (with their status and tools) and the ones you " +
+      "can offer to set up, each with why it beats doing the same job in the browser. " +
+      "Use it when the person asks about MCP servers or integrations, or before offering " +
+      "one. Pass `topic` (their request, or a service name) to see the servers that fit.",
+    parameters: {
+      type: "object",
+      properties: {
+        topic: { type: "string", description: "Optional: what the person wants to do, or a service (github, slack...)." },
+      },
+    },
+  },
+  {
+    name: "mcp_offer",
+    group: "person",
+    description:
+      "Offer to set up an MCP server, shown to the person as a card with Set it up / Not now; " +
+      "it installs and connects only if they agree, and its tools (mcp__<name>__<tool>) are " +
+      "yours from your next step. Offer one when a task lives on a service that has an API -- " +
+      "GitHub, Slack, Notion, a database, maps, library docs -- and a server would do it more " +
+      "reliably than the browser, or when they ask for an integration. Say `why` in one line, " +
+      "about their task. Give exactly one of: `server` (a catalog id from mcp_servers), " +
+      "`package` (an MCP server on npm, with `name`), `url` (a remote MCP server, with `name`), " +
+      "or `tools` (write your own: each {name, description, parameters (JSON schema), code}, " +
+      "where code is the body of `async (args, env) => {...}` that returns a string or JSON; " +
+      "`fetch` is available, and keys arrive in env). List keys it needs in `needs` " +
+      "(env var names); the card collects them into Secrets, so never ask for keys in chat. " +
+      "If they say not now, carry on another way and do not offer it again this session.",
+    parameters: {
+      type: "object",
+      properties: {
+        why: { type: "string", description: "One line: why this is better for what they asked than what you would otherwise do." },
+        server: { type: "string", description: "A catalog server id (see mcp_servers)." },
+        path: { type: "string", description: "For the filesystem server: the directory it may use." },
+        name: { type: "string", description: "Short name for a server not in the catalog; becomes its tool prefix." },
+        title: { type: "string", description: "Human name for the card." },
+        summary: { type: "string", description: "One line: what it gives you." },
+        package: { type: "string", description: "npm package of an MCP server, run with npx -y." },
+        args: { type: "array", items: { type: "string" }, description: "Extra command-line arguments for the package." },
+        url: { type: "string", description: "Endpoint of a remote MCP server (streamable HTTP or SSE)." },
+        needs: {
+          type: "array",
+          description: "Keys it needs, collected on the card into Secrets and passed as environment variables (for a url, the first is sent as a Bearer token).",
+          items: {
+            type: "object",
+            properties: {
+              env: { type: "string", description: "Environment variable name, e.g. LINEAR_API_KEY." },
+              label: { type: "string", description: "What to call it on the card." },
+              url: { type: "string", description: "Where to get one." },
+              hint: { type: "string", description: "What it looks like." },
+            },
+            required: ["env", "label"],
+          },
+        },
+        tools: {
+          type: "array",
+          description: "For a server you write: its tools.",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              description: { type: "string" },
+              parameters: { type: "object", description: "JSON schema: {properties, required}." },
+              code: { type: "string", description: "Body of async (args, env) => { ... }; return a string or JSON." },
+            },
+            required: ["name", "description", "code"],
+          },
+        },
+      },
+      required: ["why"],
+    },
+    risky: true,
   },
 
   // -------------------------------------------------------------- voice --
@@ -2020,6 +2109,72 @@ async function runToolUnredacted(
         };
       }
 
+      case "mcp_servers": {
+        return { ok: true, summary: mcpOverview(String(args.topic ?? "")), preview: "MCP servers" };
+      }
+
+      case "mcp_offer": {
+        const plan = planOffer(args);
+        if (typeof plan === "string") return { ok: false, summary: plan };
+        const already = existingMcp(plan.name);
+        if (already) {
+          const status = mcpStatusOf(already.id);
+          if (status.status === "connected") {
+            return {
+              ok: true,
+              summary: `${plan.title} is already set up and connected. Its tools: ` +
+                `${status.tools.map((t) => `mcp__${plan.name}__${t.name}`).join(", ") || "(none)"}. Use them.`,
+              preview: "already set up",
+            };
+          }
+        }
+        if (wasDeclined(ctx.session, plan.name)) {
+          return {
+            ok: false,
+            summary: `The person already said not now to ${plan.title} in this session. Do not offer it again; carry on another way.`,
+            preview: "declined earlier",
+          };
+        }
+        const answer = await ctx.ask({
+          kind: "offer",
+          title: `Set up ${plan.title}?`,
+          detail: plan.why,
+          options: [{ label: "Set it up" }, { label: "Not now" }],
+          multi: false,
+          allowText: false,
+          offer: {
+            name: plan.name, title: plan.title, summary: plan.summary,
+            runs: plan.runs, kind: plan.kind, needs: plan.needs,
+          },
+        });
+        if (answer.cancelled || !answer.choices.includes("Set it up")) {
+          noteDeclined(ctx.session, plan.name);
+          return {
+            ok: true,
+            summary: `The person chose not to set up ${plan.title} now. Carry on with the tools you have ` +
+              "and do not offer it again this session.",
+            preview: "not now",
+          };
+        }
+        const result = await installMcp(plan);
+        if (!result.ok) {
+          return {
+            ok: false,
+            summary: `${plan.title} was saved but did not connect: ${result.error ?? "unknown error"}` +
+              (result.missing.length ? ` Missing secrets: ${result.missing.join(", ")}.` : "") +
+              " Tell the person what went wrong in a sentence; it can be fixed on the Integrations page. " +
+              "Meanwhile carry on another way.",
+            preview: "did not connect",
+          };
+        }
+        return {
+          ok: true,
+          summary: `${plan.title} is set up and connected. New tools, yours from your next step: ` +
+            `${result.tools.map((t) => `mcp__${plan.name}__${t}`).join(", ")}. Use them for the rest of this task.`,
+          preview: `${result.tools.length} new tool${result.tools.length === 1 ? "" : "s"}`,
+        };
+      }
+
       case "http_request": {
         return await runHttpRequest({
           url: args.url,
@@ -2488,9 +2643,18 @@ export async function capabilityBriefing(): Promise<string> {
   if (mcp.length > 0) {
     lines.push(
       `- MCP servers: ${mcp.length} tool${mcp.length === 1 ? "" : "s"} from connected servers, ` +
-        "named mcp__<server>__<tool>. Use them like any other tool.",
+        "named mcp__<server>__<tool>. Use them like any other tool, in preference to the browser.",
     );
   }
+  lines.push(
+    "- Setting up MCP servers: always available. Tools: mcp_servers, mcp_offer. When the " +
+      "person asks about MCP servers or integrations, answer from mcp_servers. When a task " +
+      "lives on a service with an API (GitHub, Slack, Notion, a database, maps, library docs, " +
+      "an internal API) and no connected server covers it, offer one with mcp_offer before " +
+      "reaching for the browser -- once, with the reason in a line -- and use its tools if they " +
+      "say yes. If there is no ready-made server, you can write a small one (mcp_offer tools=...). " +
+      "Do not offer for one-off lookups a page read answers faster, and never ask for keys in chat.",
+  );
   lines.push(
     "- Artifacts: always available. Tools: artifact_list, artifact_read, " +
       "artifact_save. Files the person uploaded (documents, photos...) are " +
@@ -2506,7 +2670,7 @@ export async function capabilityBriefing(): Promise<string> {
   );
   lines.push(
     "- Your voice: always available. Tool: speak. It plays words aloud on the " +
-      "person's page at once, in the voice chosen under Config -> Voice. When you " +
+      "person's page at once, in the voice chosen under Settings -> Voice. When you " +
       "are asked to say or read something out loud, call speak -- do not make an " +
       "audio file, call the voice server yourself, or present a recording. With " +
       "live voice on, your replies are already read aloud; do not repeat them with speak.",

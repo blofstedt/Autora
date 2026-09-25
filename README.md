@@ -147,6 +147,31 @@ flags. `sudo` works wherever the account Autora runs as can use it -- in the
 Umbrel container that is usually root, where it is unnecessary rather than
 unavailable.
 
+### Integrations (MCP servers)
+
+**Integrations** in the sidebar connects Model Context Protocol servers; their
+tools reach the agent as `mcp__<server>__<tool>` from its next step.
+
+You rarely need to go there first. When a task lives on a service with an API --
+GitHub, Slack, Notion, a Postgres database, Google Maps, library docs -- and no
+connected server covers it, the agent offers one in the conversation instead of
+reaching for the browser: a card saying what it is, why it beats clicking
+through the website, and exactly what will run. Nothing is installed until you
+tap **Set it up**, and **Not now** is remembered for the rest of the session.
+Asking "what MCP servers could help with X?" gets an answer from the same list.
+
+- **Keys** a server needs are typed on the card and saved straight to
+  Settings › API Keys › Secrets. The server's config only refers to them as
+  `${secret:NAME}`, filled in when it starts, so a key never enters the chat,
+  the session log or the model's context.
+- **Beyond the built-in list**, the agent can offer any MCP server published on
+  npm (run with `npx -y`), a remote one at a URL, or **one it writes itself**:
+  a few tools, each a short piece of JavaScript, generated into a real stdio
+  server under the settings directory (`mcp-servers/`).
+
+Servers the agent set up are marked *set up by Autora* on the Integrations
+page, where they can be edited, switched off or removed like any other.
+
 ### Billing
 
 Settings carries a billing card: this month, today, and all time, with a
