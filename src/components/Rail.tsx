@@ -6,6 +6,7 @@ import {
   IconX, IconCheck,
 } from "./Icons";
 import { FONTS, THEMES, type Appearance } from "../lib/theme";
+import { chooseVoice, fetchSpeechStatus, type SpeechStatus } from "../lib/voice";
 
 export type PageId =
   | "chat" | "config" | "sessions" | "artifacts" | "analytics"
@@ -86,7 +87,7 @@ export function Rail({
             aria-expanded={menu}
           >
             <IconPalette size={16} />
-            <span>Themes</span>
+            <span>Themes &amp; voice</span>
             {relayOn && (
               <em className="rail-relay" title="A desktop relay is connected">
                 <IconMonitor size={12} />
@@ -116,11 +117,32 @@ function ThemesMenu({
   onAppearance: (next: Appearance) => void;
   onClose: () => void;
 }) {
+  /* Which voice the console has, asked for when the panel opens rather than
+     with the page: this is the only thing that wants it, and an install with
+     no voice server should not pay for a question nobody is asking. */
+  const [speech, setSpeech] = useState<SpeechStatus | null>(null);
+  const [complaint, setComplaint] = useState<string | null>(null);
+
   useEffect(() => {
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", esc);
     return () => document.removeEventListener("keydown", esc);
   }, [onClose]);
+
+  useEffect(() => {
+    let alive = true;
+    void fetchSpeechStatus().then((status) => { if (alive) setSpeech(status); });
+    return () => { alive = false; };
+  }, []);
+
+  const pickVoice = (voice: string) => {
+    if (!speech) return;
+    setSpeech({ ...speech, voice });
+    setComplaint(null);
+    void chooseVoice(voice).then((result) => {
+      if (!result.ok) setComplaint(result.detail ?? "That voice could not be saved.");
+    });
+  };
 
   return (
     <div className="settings-menu">
@@ -158,6 +180,32 @@ function ThemesMenu({
           </button>
         ))}
       </div>
+
+      {/* The console's own voice, when it has one. The list comes from the
+          voice server itself, so it is whatever that server offers rather
+          than a list hardcoded here that would go stale. */}
+      <div className="sm-head">Voice</div>
+      {speech?.available ? (
+        <>
+          <select
+            className="sm-voice"
+            aria-label="The voice the console speaks in"
+            value={speech.voice}
+            onChange={(e) => pickVoice(e.target.value)}
+          >
+            {speech.voices.map((v) => (
+              <option key={v.id} value={v.id}>{v.label}</option>
+            ))}
+          </select>
+          <div className="sm-note">
+            {complaint ?? "Every reply read aloud uses this voice, on every device."}
+          </div>
+        </>
+      ) : (
+        <div className="sm-note">
+          {speech?.reason ?? "No voice server is set, so the browser's own voice is used."}
+        </div>
+      )}
 
     </div>
   );

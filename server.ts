@@ -12,6 +12,7 @@ import {
   resolveProvider, save, setKey, state, stateFilePath, type Resolved,
   listSecrets, setSecret, deleteSecret, getSecret, SECRET_PRESETS, redactSecrets as redactStored,
   mergeJev, mergeAppearance, mergeLoop, mergeRetention, saneMcp, THEMES, FONTS,
+  mergeSpeech,
   recordToolFeed, type CostParts,
   DEFAULT_PROMPT, standingRules,
 } from "./server/state";
@@ -20,6 +21,7 @@ import { decide, lastDecision, resetHealth, supportFor, type JevOutcome, type Je
 import type { JevTarget } from "./server/jev/engine";
 import { guardWorthy, irreversible } from "./server/jev/guard";
 import { prune, storageReport } from "./server/retention";
+import { forgetSpeech, setSpeechUrl, speak as synthesise, speechStatus } from "./server/speech";
 import { captureConsole, log, readLogs, type LogLevel } from "./server/logs";
 import {
   MCP_CATALOG, connect as connectMcp, disconnect as disconnectMcp, statusOf as mcpStatus,
@@ -2555,6 +2557,8 @@ async function runTurn(session: Session, text: string): Promise<TurnResult> {
 }
 
 async function startServer() {
+  // A voice server chosen in the panel is the one every request uses.
+  setSpeechUrl(state.speech.url);
   const app = express();
   app.use(express.json());
 
@@ -3572,6 +3576,10 @@ async function startServer() {
   const settingsWithTools = async () => ({
     ...settingsPayload(),
     appearance: { ...state.appearance, themes: THEMES, fonts: FONTS },
+    /* Where the voice comes from, so the panel can say whether there is one
+       and offer the voices it has. A voice chosen in the panel wins over the
+       environment, the way every other setting here does. */
+    speech: await speechStatus(false, state.speech.voice || undefined),
     jev: {
       enabled: state.jev.enabled,
       threshold: state.jev.threshold,
@@ -3683,6 +3691,24 @@ async function startServer() {
       if (typeof body.jev.key === "string") resetHealth();
     }
     if (body.appearance && typeof body.appearance === "object") mergeAppearance(state.appearance, body.appearance);
+    /* Which voice, and which server. A voice is checked against the list the
+       server reports while it is reachable: a typo saved here would otherwise
+       only show up at the next sentence, in the middle of a conversation,
+       where it reads as the app being broken rather than as a setting being
+       wrong. With the server down the choice is kept unverified instead. */
+    if (body.speech && typeof body.speech === "object") {
+      const wanted = typeof body.speech.voice === "string" ? body.speech.voice.trim() : "";
+      if (wanted && wanted !== state.speech.voice) {
+        const listing = await speechStatus(true, wanted);
+        const known = listing.voices.some((v) => v.id === wanted);
+        if (listing.available && listing.voices.length > 0 && !known) {
+          return res.status(400).json({ detail: "The voice server has no voice called " + wanted + "." });
+        }
+      }
+      mergeSpeech(state.speech, body.speech);
+      setSpeechUrl(state.speech.url);
+      forgetSpeech();
+    }
     /* When a turn is called a loop, and how much is kept. Both used to be
        constants in the source: a turn could be stopped by a rule nobody could
        see, and nothing ever deleted anything. */
@@ -3691,6 +3717,49 @@ async function startServer() {
 
     save();
     res.json(await settingsWithTools());
+  });
+
+
+  /* The console's own voice. A GET says whether there is a voice server on
+     the network and which voices it offers; a POST turns one fragment of
+     speech into an audio file the page can play.
+
+     The page asks this server rather than the voice server directly because
+     it cannot reach it: Kokoro runs in its own container on the same private
+     Docker network as this one, publishing no port, and a browser on the
+     tailnet has no route to it. Going through here also means the audio
+     arrives from the origin the page already trusts. */
+  app.get("/api/speech", async (_req: Request, res: Response) => {
+    const status = await speechStatus();
+    res.json({
+      available: status.available,
+      voice: state.speech.voice || status.voice,
+      voices: status.voices,
+      reason: status.reason,
+      url: state.speech.url || status.url,
+    });
+  });
+
+  app.post("/api/speech", async (req: Request, res: Response) => {
+    const text = String(req.body?.text ?? "");
+    if (!text.trim()) return res.status(400).json({ error: "Nothing to say." });
+    try {
+      const utterance = await synthesise(text, {
+        voice: typeof req.body?.voice === "string" ? req.body.voice : state.speech.voice,
+        speed: req.body?.speed,
+      });
+      // Never cached: the same sentence in another voice, or after a voice
+      // change, must not come back as the old recording.
+      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("Content-Type", utterance.contentType);
+      res.setHeader("X-Autora-Voice", utterance.voice);
+      res.send(Buffer.from(utterance.audio));
+    } catch (err: any) {
+      /* 503, not 500: "there is no voice server right now" is a state the
+         page already knows how to live with -- it says the sentence with the
+         browser's own voice instead. */
+      res.status(503).json({ error: String(err?.message ?? err) });
+    }
   });
 
   // 10a. Secrets Store Management

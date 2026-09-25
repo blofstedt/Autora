@@ -1,8 +1,11 @@
 /**
  * Speaking to the app, and the app speaking back.
  *
- * All of this is the browser's own speech stack -- SpeechRecognition for words
- * in, speechSynthesis for words out. The voice loop that ships with the CLI
+ * Words in are the browser's own speech stack: SpeechRecognition, with all
+ * its unevenness. Words out are the console's own voice when it has one --
+ * a TTS server on the network, fetched as audio from this origin (see
+ * server/speech.ts) -- and speechSynthesis when it has not. The voice loop
+ * that ships with the CLI
  * (`src/autora/voice/`) opens the *host* machine's microphone through
  * sounddevice: the right thing on the desktop you are sitting at, and no use
  * at all from a phone on the other side of the house, which is the case this
@@ -461,9 +464,82 @@ function pickVoice(): SpeechSynthesisVoice | null {
   return preferred ?? pool.find((v) => v.lang.toLowerCase() === language) ?? pool[0];
 }
 
+export type SpeechSource = "server" | "browser";
+
+/** What the console says about its own voice, from GET /api/speech. */
+export type SpeechStatus = {
+  /** False when there is no voice server: the browser's voice is used. */
+  available: boolean;
+  voice: string;
+  voices: { id: string; label: string }[];
+  reason: string | null;
+  url: string | null;
+};
+
+/** Ask the console which voice it has, if any. Null when it cannot be asked. */
+export async function fetchSpeechStatus(): Promise<SpeechStatus | null> {
+  try {
+    const res = await fetch("/api/speech");
+    if (!res.ok) return null;
+    return (await res.json()) as SpeechStatus;
+  } catch {
+    return null;
+  }
+}
+
+/** Save a chosen voice, so it follows you between devices. */
+export async function chooseVoice(voice: string): Promise<{ ok: boolean; detail?: string }> {
+  try {
+    const res = await fetch("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ speech: { voice } }),
+    });
+    if (res.ok) return { ok: true };
+    const body = await res.json().catch(() => null);
+    return { ok: false, detail: body?.detail ?? `The console refused that voice (${res.status}).` };
+  } catch {
+    return { ok: false, detail: "The console could not be reached." };
+  }
+}
+
+/** How long a clip of silence to unlock audio with: long enough that iOS sees
+    it as playback, short enough that nobody hears anything. */
+const UNLOCK_MS = 60;
+
+/** A very short 8 kHz WAV of silence, built here rather than carried as a
+    blob of base64 in the source. iOS only unlocks audio for a page that has
+    started some from a gesture: playing this inside the tap that begins live
+    chat unlocks the element every later utterance reuses. */
+function silence(): Blob {
+  const samples = (8000 * UNLOCK_MS) / 1000;
+  const bytes = new Uint8Array(44 + samples);
+  const view = new DataView(bytes.buffer);
+  const ascii = (at: number, text: string) => {
+    for (let i = 0; i < text.length; i += 1) bytes[at + i] = text.charCodeAt(i);
+  };
+  ascii(0, "RIFF");
+  view.setUint32(4, 36 + samples, true);
+  ascii(8, "WAVE");
+  ascii(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, 8000, true);
+  view.setUint32(28, 8000, true);
+  view.setUint16(32, 1, true);
+  view.setUint16(34, 8, true);
+  ascii(36, "data");
+  view.setUint32(40, samples, true);
+  bytes.fill(128, 44);
+  return new Blob([bytes], { type: "audio/wav" });
+}
+
 export type Speech = {
   supported: boolean;
   speaking: boolean;
+  /** Where the last words out actually came from, for the panel to say. */
+  source: SpeechSource;
   /** Queue a fragment. Fragments play in order, so streamed text stays in order. */
   say: (text: string) => void;
   /** Stop now and drop whatever is queued -- for barge-in. */
@@ -472,10 +548,39 @@ export type Speech = {
   prime: () => void;
 };
 
+/**
+ * The words out.
+ *
+ * Two voices behind one interface. The console's own voice server comes first
+ * (see server/speech.ts): the audio is fetched from this origin and played as
+ * a file, so it sounds the same on the phone, the laptop and the desktop, and
+ * it is a voice somebody chose. The browser's speechSynthesis is the fallback
+ * -- and is still what an install with no voice server uses, unchanged.
+ *
+ * Which one is being used is not the caller's business: `say` queues a
+ * fragment and fragments come out in order, spoken once each, whichever voice
+ * is saying them. If the server stops answering mid-sentence the queue is
+ * finished with the browser's voice rather than going silent, so a long reply
+ * is never cut off because something else was restarted.
+ */
 export function useSpeech(): Speech {
   const [speaking, setSpeaking] = useState(false);
+  const [source, setSource] = useState<SpeechSource>("browser");
   const voice = useRef<SpeechSynthesisVoice | null>(null);
   const queued = useRef(0);
+  /** null until the console has been asked. */
+  const serverVoice = useRef<boolean | null>(null);
+  const ready = useRef<Promise<void> | null>(null);
+  const queue = useRef<string[]>([]);
+  const element = useRef<HTMLAudioElement | null>(null);
+  const pending = useRef<AbortController | null>(null);
+  const draining = useRef(false);
+  /** A clip's playback, resolvable from outside it so cancel() cannot leave
+      the drain loop waiting on an `ended` that will never come. */
+  const settled = useRef<(() => void) | null>(null);
+  /** Sentences the model repeats -- "Done.", a status line -- cost a round
+      trip each otherwise, and a round trip is seconds of synthesis. */
+  const clips = useRef(new Map<string, Blob>());
 
   useEffect(() => {
     if (!speechSupported) return;
@@ -488,18 +593,23 @@ export function useSpeech(): Speech {
     };
   }, []);
 
-  const cancel = useCallback(() => {
-    if (!speechSupported) return;
-    queued.current = 0;
-    speechSynthesis.cancel();
-    setSpeaking(false);
+  useEffect(() => {
+    let alive = true;
+    ready.current = fetchSpeechStatus()
+      .then((status) => {
+        if (!alive) return;
+        serverVoice.current = Boolean(status?.available);
+        setSource(status?.available ? "server" : "browser");
+      })
+      .catch(() => {
+        if (alive) serverVoice.current = false;
+      });
+    return () => { alive = false; };
   }, []);
 
-  const say = useCallback((text: string) => {
+  const sayBrowser = useCallback((text: string) => {
     if (!speechSupported) return;
-    const clean = text.trim();
-    if (!clean) return;
-    const utterance = new SpeechSynthesisUtterance(clean);
+    const utterance = new SpeechSynthesisUtterance(text);
     if (voice.current) {
       utterance.voice = voice.current;
       utterance.lang = voice.current.lang;
@@ -517,17 +627,157 @@ export function useSpeech(): Speech {
     speechSynthesis.speak(utterance);
   }, []);
 
+  /** One fragment as an audio file, from the console or from last time. */
+  const clip = useCallback(async (text: string, signal: AbortSignal): Promise<Blob> => {
+    const held = clips.current.get(text);
+    if (held) return held;
+    const res = await fetch("/api/speech", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+      signal,
+    });
+    if (!res.ok) throw new Error(`speech ${res.status}`);
+    const blob = await res.blob();
+    if (blob.size === 0) throw new Error("speech: empty recording");
+    // Small and cleared whole: a handful of sentences is all this ever holds,
+    // and a stale voice after changing it is worse than re-synthesising.
+    if (clips.current.size >= 24) clips.current.clear();
+    clips.current.set(text, blob);
+    return blob;
+  }, []);
+
+  const play = useCallback((blob: Blob) => {
+    const el = element.current ?? new Audio();
+    el.preload = "auto";
+    element.current = el;
+    const url = window.URL.createObjectURL(blob);
+    el.src = url;
+    return new Promise<void>((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        settled.current = null;
+        window.URL.revokeObjectURL(url);
+        resolve();
+      };
+      settled.current = finish;
+      el.onended = finish;
+      el.onerror = finish;
+      // Autoplay may be refused (no gesture yet, or a page opened in the
+      // background): there is nothing to say about it, and the queue has to
+      // keep moving or the next sentence never arrives.
+      el.play().then(undefined, finish);
+    });
+  }, []);
+
+  const drain = useCallback(async () => {
+    if (draining.current) return;
+    draining.current = true;
+    while (queue.current.length > 0) {
+      const text = queue.current[0];
+      const control = new AbortController();
+      pending.current = control;
+      let blob: Blob;
+      try {
+        blob = await clip(text, control.signal);
+      } catch {
+        if (control.signal.aborted) break;
+        /* The server has stopped answering -- restarted, moved, or the
+           network changed. Everything still queued is said with the
+           browser's voice: the person asked for this turn to be spoken, and
+           which voice says it matters far less than it being said. */
+        serverVoice.current = false;
+        setSource("browser");
+        for (const line of queue.current.splice(0, queue.current.length)) sayBrowser(line);
+        break;
+      }
+      queue.current.shift();
+      // The next fragment is fetched while this one plays. Synthesis runs a
+      // little faster than speech, so overlapping them hides most of the seam
+      // between sentences -- which is otherwise a second of silence each time.
+      if (queue.current.length > 0) {
+        void clip(queue.current[0], new AbortController().signal).catch(() => undefined);
+      }
+      await play(blob);
+    }
+    draining.current = false;
+    pending.current = null;
+    if (queue.current.length === 0) setSpeaking(false);
+  }, [clip, play, sayBrowser]);
+
+  const say = useCallback((text: string) => {
+    const clean = text.trim();
+    if (!clean) return;
+    if (serverVoice.current === true) {
+      queue.current.push(clean);
+      setSpeaking(true);
+      void drain();
+      return;
+    }
+    /* The console has not said yet whether it has a voice of its own. One
+       fragment, held for the answer, so the first sentence of the session is
+       not the one that sounds like a different person. */
+    if (serverVoice.current === null && ready.current) {
+      setSpeaking(true);
+      void ready.current.then(() => {
+        if (serverVoice.current === true) {
+          queue.current.push(clean);
+          void drain();
+        } else {
+          sayBrowser(clean);
+        }
+      });
+      return;
+    }
+    sayBrowser(clean);
+  }, [drain, sayBrowser]);
+
+  const cancel = useCallback(() => {
+    queue.current = [];
+    pending.current?.abort();
+    settled.current?.();
+    const el = element.current;
+    if (el) {
+      el.onended = null;
+      el.onerror = null;
+      el.pause();
+    }
+    if (speechSupported) speechSynthesis.cancel();
+    queued.current = 0;
+    setSpeaking(false);
+  }, []);
+
   const prime = useCallback(() => {
+    // iOS will not speak unless the first sound comes from a gesture, and it
+    // unlocks the element rather than the page: play a silence through the
+    // same element every clip will use.
+    const el = element.current ?? new Audio();
+    element.current = el;
+    const url = window.URL.createObjectURL(silence());
+    el.src = url;
+    el.play().then(
+      () => { el.pause(); window.URL.revokeObjectURL(url); },
+      () => window.URL.revokeObjectURL(url),
+    );
     if (!speechSupported) return;
-    // iOS will not speak unless the first utterance comes from a gesture. A
-    // space is inaudible and counts.
     const unlock = new SpeechSynthesisUtterance(" ");
     unlock.volume = 0;
     speechSynthesis.speak(unlock);
     voice.current = voice.current ?? pickVoice();
   }, []);
 
-  return { supported: speechSupported, speaking, say, cancel, prime };
+  return {
+    // Sound out is available from either voice; the browser's is only the one
+    // that is always there.
+    supported: speechSupported || source === "server",
+    speaking,
+    source,
+    say,
+    cancel,
+    prime,
+  };
 }
 
 // -- reading the agent's replies out loud ------------------------------------

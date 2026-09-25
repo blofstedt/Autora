@@ -4,7 +4,7 @@
  *   npx tsx tests/voice.test.ts
  */
 import assert from "node:assert/strict";
-import { commit, newLedger, turnPause } from "../src/lib/voice";
+import { chooseVoice, commit, fetchSpeechStatus, newLedger, turnPause } from "../src/lib/voice";
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -75,4 +75,63 @@ test("a sentence left hanging waits longer", () => {
   assert.ok(turnPause("check the calendar,", true) > turnPause("check the calendar", true));
 });
 
-console.log(`voice: ${passed} passed`);
+/**
+ * The panel's two calls into the console: which voice is there, and choosing
+ * one. Both are answered by a stub -- the point is what the page does with a
+ * refusal, which is the case that would otherwise be silent. The calls are
+ * awaited here and the assertions handed to test() as plain values, because
+ * test() is synchronous on purpose (see the top of this file).
+ */
+const realFetch = globalThis.fetch;
+
+async function consoleCalls() {
+  const paths: { url: string; body: any }[] = [];
+  const reply = (status: number, body: any) => (async (input: any, init: any) => {
+    paths.push({ url: String(input), body: init?.body ? JSON.parse(String(init.body)) : null });
+    return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+  }) as typeof fetch;
+
+  globalThis.fetch = reply(200, {
+    available: true, voice: "af_heart", voices: [{ id: "af_heart", label: "af_heart — A" }],
+    reason: null, url: "http://kokoro_web_1:8880",
+  });
+  const status = await fetchSpeechStatus();
+  const asked = paths[0];
+
+  globalThis.fetch = reply(200, {});
+  const saved = await chooseVoice("am_michael");
+  const chosen = paths.at(-1);
+
+  globalThis.fetch = reply(400, { detail: 'The voice server has no voice called "nope".' });
+  const refused = await chooseVoice("nope");
+
+  globalThis.fetch = (async () => { throw new Error("offline"); }) as typeof fetch;
+  const offlineStatus = await fetchSpeechStatus();
+  const offlineChoice = await chooseVoice("af_heart");
+
+  test("the console is asked which voice it has", () => {
+    assert.equal(status?.available, true);
+    assert.equal(status?.voice, "af_heart");
+    assert.equal(asked?.url, "/api/speech");
+  });
+
+  test("a voice is saved where every device can see it", () => {
+    assert.equal(saved.ok, true);
+    assert.equal(chosen?.url, "/api/settings");
+    assert.deepEqual(chosen?.body, { speech: { voice: "am_michael" } });
+  });
+
+  test("a voice the console refuses comes back with the reason, not as a shrug", () => {
+    assert.equal(refused.ok, false);
+    assert.match(String(refused.detail), /no voice called/);
+  });
+
+  test("a console that cannot be reached answers nothing, without throwing", () => {
+    assert.equal(offlineStatus, null);
+    assert.equal(offlineChoice.ok, false);
+  });
+
+  console.log(`voice: ${passed} passed`);
+}
+
+void consoleCalls().finally(() => { globalThis.fetch = realFetch; });

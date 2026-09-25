@@ -31,6 +31,43 @@ export interface Appearance {
   font: (typeof FONTS)[number];
 }
 
+/**
+ * Which voice the console speaks in, and where that voice comes from.
+ *
+ * Both are empty by default, which means "whatever the environment says" --
+ * so an install that has never been near the settings panel keeps working
+ * exactly as before, and one that has merely run a Kokoro container is heard
+ * without being configured at all. See ../server/speech.ts.
+ */
+export interface SpeechSettings {
+  voice: string;
+  /** A voice server to use instead of the ones discovered by name. */
+  url: string;
+}
+
+export const DEFAULT_SPEECH: SpeechSettings = { voice: "", url: "" };
+
+/** Only a plain http(s) address, and never a credential inside it. */
+export function saneSpeechUrl(raw: string): string {
+  const text = String(raw ?? "").trim();
+  if (!text) return "";
+  try {
+    const parsed = new URL(text);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
+    if (parsed.username || parsed.password) return "";
+    return parsed.origin;
+  } catch {
+    return "";
+  }
+}
+
+export function mergeSpeech(into: SpeechSettings, patch: any): SpeechSettings {
+  if (!patch || typeof patch !== "object") return into;
+  if (typeof patch.voice === "string") into.voice = patch.voice.trim().slice(0, 60);
+  if (typeof patch.url === "string") into.url = saneSpeechUrl(patch.url);
+  return into;
+}
+
 export type ApprovalMode = "always" | "risky" | "never";
 
 /**
@@ -168,6 +205,8 @@ export interface PersistedState {
   mcpServers: McpServerConfig[];
   /** Theme and font, kept here so they follow you between devices. */
   appearance: Appearance;
+  /** The voice the console speaks in, and the server it comes from. */
+  speech: SpeechSettings;
   /** Whether the agent looks back over its work after a turn and writes
       down what it learned (as unconfirmed memories). */
   learning: boolean;
@@ -346,6 +385,7 @@ function blank(): PersistedState {
     jev: { ...DEFAULT_JEV },
     mcpServers: [],
     appearance: { theme: "violet", font: "inter" },
+    speech: { ...DEFAULT_SPEECH },
     learning: true,
     loop: { ...LOOP_DEFAULTS },
     retention: { ...RETENTION_DEFAULTS },
@@ -379,6 +419,7 @@ function read(): PersistedState {
       state.mcpServers = raw.mcpServers.map(saneMcp).filter(Boolean) as McpServerConfig[];
     }
     if (raw.appearance) mergeAppearance(state.appearance, raw.appearance);
+    if (raw.speech) mergeSpeech(state.speech, raw.speech);
     if (raw.loop) mergeLoop(state.loop, raw.loop);
     if (raw.retention) mergeRetention(state.retention, raw.retention);
     if (raw.carried && typeof raw.carried === "object") {

@@ -88,20 +88,15 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Autora no longer stays down after it stops. If the agent restarted or
-  killed its own server (easy to do while working on Autora itself), the app
-  used to stay off and every page said "connection refused" until you
-  restarted it by hand. It now comes straight back, and the agent is told
-  that its own process is not one to restart. A stray error in a tool or a
-  watcher no longer takes the whole server down, and settings are saved so a
-  crash mid-save cannot wipe your keys.
+  Autora can speak in your own voice. If you have a speech server running
+  beside it — Kokoro, or anything else that speaks the OpenAI audio API —
+  Settings → Themes & voice now lists the voices that server offers, and
+  every reply read aloud uses the one you pick, on every device. Autora finds
+  the server by name on the Umbrel network and falls back to the browser's
+  own voice when there is none, saying so in the panel rather than going
+  quiet. Point it elsewhere with AUTORA_KOKORO_URL, and choose the voice it
+  starts with using AUTORA_KOKORO_VOICE.
 
-
-  If your whole Umbrel stopped answering after you set up HTTPS for voice:
-  plain `tailscale serve` takes port 443, which umbrelOS 2.0 needs for its
-  own dashboard. Autora now suggests `tailscale serve --bg --https=8443 8817`
-  instead. To recover, run `tailscale serve --https=443 off`, then
-  `sudo systemctl start umbrel`.
 
 dependencies: []
 path: ""

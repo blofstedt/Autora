@@ -74,6 +74,38 @@ thread says which key is missing rather than improvising a reply.
 **[docs/GEMINI.md](docs/GEMINI.md)** covers the Gemini specifics: choosing a
 model, the thinking budget, and what each error in the thread means.
 
+### The voice it speaks in
+
+Everything Autora says out loud -- the `v` key, replies read aloud, spoken
+approvals -- uses one voice for the whole install. Left alone it is the
+browser's own (`speechSynthesis`), which is a different voice on every
+device and on most of them the worst one the platform has.
+
+If a voice server is running on the network Autora finds it by itself: the
+[Kokoro](https://github.com/remsky/Kokoro-FastAPI) Umbrel app answers to
+`kokoro_web_1` on the same private Docker network, and what is spoken to is
+its OpenAI-shaped `/v1/audio/speech`. Nothing has to be configured for that
+to work. **Settings -> Themes & voice** then lists the voices the server
+offers -- the list comes from the server, so it is whatever it actually has --
+and the one picked there is used on every device, phone included, from then on.
+A voice chosen in the panel wins over the environment, the way every other
+setting does.
+
+| Variable | Purpose |
+|---|---|
+| `AUTORA_KOKORO_URL` | The voice server to use instead of the ones found by name. Default: `http://kokoro_web_1:8880`, then `http://kokoro:8880`, then `http://localhost:8880` |
+| `AUTORA_KOKORO_VOICE` | The voice to start with (default `af_heart`) |
+
+The page never talks to the voice server itself. `POST /api/speech` takes a
+fragment of text and returns an audio file: the voice server publishes no port
+and a phone on the tailnet has no route to it, while the app has one, and the
+audio arrives from the origin the page already trusts. `GET /api/speech` says
+whether there is a server at all and which voices it has.
+
+If there is none -- wrong address, container down, no Kokoro anywhere -- the
+panel says so and the browser's own voice carries on being used. Nothing goes
+quiet, and nothing is required to be set up.
+
 ### Tools
 
 A model decides; tools are what it decides *with*. **Settings -> Tools** lists
@@ -543,6 +575,8 @@ acting on it forever unless there is somewhere to go and say no.
 | `AUTORA_MAX_TOOL_TOKENS` | Tool output longer than this is kept in the session vault, with its start and end left in the prompt (default `3000`) |
 | `AUTORA_COMPACTION_MODEL` | A cheaper model of the same provider to write the working memory with (default: the chat model) |
 | `AUTORA_MAX_OUTPUT_TOKENS` | Output tokens the model may write per step of a task (default: 8192) |
+| `AUTORA_KOKORO_URL` | The voice server to speak with, instead of the ones found by name (default `http://kokoro_web_1:8880`) |
+| `AUTORA_KOKORO_VOICE` | The voice to start with (default `af_heart`); a voice picked in Settings wins |
 | `TYPESAFE_API_KEY` | A key for the hosted Jev API, used by Jev Mode instead of the chat model. `JEV_API_KEY`, `JEV_TOKEN`, `JEV_KEY` and `TYPESAFE_TOKEN` work too, as environment variables or saved in Settings → Secrets (also settable in Settings → Jev Mode) |
 | `AUTORA_BROWSER_HEADED` | `1` shows a real browser window instead of running headless |
 | `AUTORA_BROWSER_FPS` / `AUTORA_BROWSER_QUALITY` / `AUTORA_BROWSER_STREAM_WIDTH` | How much live video to send (default `6` fps, quality `50`, scaled to `960` wide) |
@@ -593,10 +627,12 @@ composition and compaction, accessibility-tree page reading, visual element
 picking (DOM and 3D), guidance overlays, memory with provenance, the knowledge
 web.
 
-Interfaces defined, adapters not shipped: speech-to-text and text-to-speech
-(`src/autora/voice/engine.py`), desktop control. The voice *logic* — barge-in,
-what to say aloud, voice approvals — is implemented and tested against fakes;
-plugging in Whisper/Kokoro is a small adapter each.
+Interfaces defined, adapters not shipped: speech-to-text
+(`src/autora/voice/engine.py`) and desktop control. The voice *logic* —
+barge-in, what to say aloud, voice approvals — is implemented and tested
+against fakes; text-to-speech is no longer an interface only: a Kokoro (or any
+OpenAI-shaped) server is spoken to through `server/speech.ts`, with the voice
+picked in Settings.
 
 ```bash
 python3 tests/run_all.py
