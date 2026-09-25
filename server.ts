@@ -2080,6 +2080,7 @@ async function runTurn(session: Session, text: string): Promise<TurnResult> {
               cost_usd: cost,
               priced,
               estimated: turn.usage.estimated,
+              context: context.gauge(pinned),
             });
 
             return turn;
@@ -2158,6 +2159,7 @@ async function runTurn(session: Session, text: string): Promise<TurnResult> {
             "into working memory, in the background " +
             `(about ${report.tokensBefore.toLocaleString("en-US")} tokens of context ` +
             `down to ${report.tokensAfter.toLocaleString("en-US")}).`,
+          context: { ...context.gauge("", report.tokensAfter), condensed: true },
         });
       };
 

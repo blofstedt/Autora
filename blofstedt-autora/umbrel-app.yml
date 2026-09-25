@@ -93,12 +93,14 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The menu now tells you what Autora is doing on its own. At the foot of the
-  left menu, a line shows any schedule or watcher running right now (tap it
+  The bottom of the left menu is no longer empty. A small ring shows how full
+  the open session's context is (for example "38k of 100k tokens") and where
+  Autora starts condensing older turns into working memory; it turns amber
+  once it gets there and says how many times the session has been condensed.
+  Below it, a line shows any schedule or watcher running right now (tap it
   to open the session it is working in) and which one is due next and when
-  (tap it for Schedules). When nothing is scheduled it says nothing. On a
-  phone, the menu's pages now sit at the bottom of the drawer, within reach
-  of your thumb, instead of at the top with empty space below them.
+  (tap it for Schedules). The menu looks the same on a phone as on a
+  computer.
 
 
 dependencies: []

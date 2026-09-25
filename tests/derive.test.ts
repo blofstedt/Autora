@@ -161,4 +161,16 @@ test("the old canned 'Analyzing' line is not shown as reasoning", () => {
   assert.equal(replies[0].kind === "reply" && replies[0].turn.thinking, undefined);
 });
 
+test("the context gauge follows the newest reading and counts condensing", () => {
+  const ev = (seq: number, kind: string, payload: Record<string, any>): AutoraEvent =>
+    ({ seq, ts: 1_700_000_000 + seq, kind, actor: "system", span: null, payload, blob: null });
+  assert.equal(derive([ev(1, Kind.UserMessage, { text: "hi" })]).context, null);
+  const view = derive([
+    ev(1, Kind.UsageTurn, { input_tokens: 10, context: { used: 80_000, limit: 100_000, compact_at: 0.75 } }),
+    ev(2, Kind.Log, { message: "Condensed 8 earlier messages", context: { used: 20_000, limit: 100_000, compact_at: 0.75, condensed: true } }),
+    ev(3, Kind.UsageTurn, { input_tokens: 10, context: { used: 24_000, limit: 100_000, compact_at: 0.75 } }),
+  ]);
+  assert.deepEqual(view.context, { used: 24_000, limit: 100_000, compactAt: 0.75, condensed: 1 });
+});
+
 console.log(`\nderive: ${passed} passed`);

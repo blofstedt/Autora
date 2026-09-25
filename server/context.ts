@@ -417,6 +417,15 @@ export class ContextEngine {
     ].join("\n");
   }
 
+  /**
+   * How full the prompt is against the window it is kept inside, and where
+   * condensing starts: the context gauge in the sidebar. `used` defaults to
+   * the prompt as it stands now.
+   */
+  gauge(pinned: string, used = estimateTokens(this.systemFor(pinned), this.active)) {
+    return { used, limit: this.config.maxContextTokens, compact_at: this.config.highWaterPct };
+  }
+
   /** Frame 0 with Frame 1 under it: the system text for the next call. */
   systemFor(pinned: string): string {
     if (!this.anchored) return pinned;

@@ -7,6 +7,7 @@ import {
 } from "./Icons";
 import { FONTS, THEMES, type Appearance } from "../lib/theme";
 import { ago, until, type Job } from "./Schedule";
+import type { ContextGauge } from "../lib/derive";
 
 export type PageId =
   | "chat" | "config" | "sessions" | "artifacts" | "analytics"
@@ -37,12 +38,14 @@ export const pageLabel = (id: PageId) => PAGES.find((p) => p.id === id)?.label ?
  * two that drift apart. How the app looks is under Settings, not here.
  */
 export function Rail({
-  page, onNavigate, onOpenSession, relayOn, alert, onNew, drawer = false, onClose,
+  page, onNavigate, onOpenSession, context, relayOn, alert, onNew, drawer = false, onClose,
   mood = "rest", attention = 0, pulse = 0, learned = 0, bloom = 0,
 }: {
   page: PageId;
   onNavigate: (page: PageId) => void;
   onOpenSession: (id: string) => void;
+  /** How full the open session's context is; null before its first reply. */
+  context: ContextGauge | null;
   relayOn: boolean;
   /** Something in the chat is waiting on you. */
   alert: boolean;
@@ -98,19 +101,91 @@ export function Rail({
         )}
       </div>
 
-      {/* In the drawer the list sits at the bottom, where a thumb reaches,
-          and what is running without you sits just above it. In the margin
-          the list stays at the top and that note settles at the foot. */}
+      {/* The pages at the top; at the foot, how full this session's context
+          is and what is running without you. */}
       <div className="rail-scroll">
-        {drawer && <Activity onOpenSession={onOpenSession} onNavigate={onNavigate} />}
         <nav className="rail-nav">
           {PAGES.filter((p) => p.group === "work").map(item)}
           <div className="rail-divider" role="separator" />
           {PAGES.filter((p) => p.group === "setup").map(item)}
         </nav>
-        {!drawer && <Activity onOpenSession={onOpenSession} onNavigate={onNavigate} />}
+        <div className="rail-foot">
+          <ContextCard gauge={context} />
+          <Activity onOpenSession={onOpenSession} onNavigate={onNavigate} />
+        </div>
       </div>
     </aside>
+  );
+}
+
+/** 38200 -> "38k", 1250000 -> "1.3M". */
+function short(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
+  if (n >= 1_000) return `${Math.round(n / 1_000)}k`;
+  return String(Math.round(n));
+}
+
+/**
+ * How full the open session's context is, as a ring.
+ *
+ * Autora never runs out of context: past the mark (75% by default) it
+ * condenses older turns into working memory in the background. So the ring
+ * shows that mark as a tick, turns amber once it is passed, and says how many
+ * times the session has been condensed, which is when detail from early on
+ * starts to be kept as notes rather than word for word.
+ */
+function ContextCard({ gauge }: { gauge: ContextGauge | null }) {
+  const R = 20;
+  const C = 2 * Math.PI * R;
+  const share = gauge ? Math.min(1, gauge.used / gauge.limit) : 0;
+  const mark = gauge?.compactAt ?? 0.75;
+  const over = share >= mark;
+  const pct = Math.round(share * 100);
+  // The tick at the condensing mark, measured from 12 o'clock.
+  const angle = mark * 2 * Math.PI - Math.PI / 2;
+  const tick = (r: number) => [24 + r * Math.cos(angle), 24 + r * Math.sin(angle)];
+  const [x1, y1] = tick(R - 3.5);
+  const [x2, y2] = tick(R + 3.5);
+
+  return (
+    <section
+      className={`rail-ctx ${over ? "is-over" : ""}`}
+      aria-label={gauge ? `Context ${pct}% full` : "Context empty"}
+    >
+      <svg className="rail-ctx-ring" viewBox="0 0 48 48" width="48" height="48" aria-hidden="true">
+        <circle className="rail-ctx-track" cx="24" cy="24" r={R} />
+        {share > 0 && (
+          <circle
+            className="rail-ctx-fill"
+            cx="24" cy="24" r={R}
+            strokeDasharray={`${Math.max(share * C, 1.5)} ${C}`}
+            transform="rotate(-90 24 24)"
+          />
+        )}
+        <line className="rail-ctx-tick" x1={x1} y1={y1} x2={x2} y2={y2} />
+        <text x="24" y="24" className="rail-ctx-pct">{pct}%</text>
+      </svg>
+      <div className="rail-ctx-text">
+        <span className="rail-ctx-head">Context</span>
+        {gauge ? (
+          <>
+            <span className="rail-ctx-line">{short(gauge.used)} of {short(gauge.limit)} tokens</span>
+            <span className="rail-ctx-sub">
+              {gauge.condensed > 0
+                ? `condensed ${gauge.condensed}× · keeps going`
+                : over
+                  ? "condensing older turns"
+                  : `condenses at ${Math.round(mark * 100)}%`}
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="rail-ctx-line">Empty</span>
+            <span className="rail-ctx-sub">fills as this session talks</span>
+          </>
+        )}
+      </div>
+    </section>
   );
 }
 

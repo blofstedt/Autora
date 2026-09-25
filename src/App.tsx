@@ -930,6 +930,7 @@ export function App() {
               navigate(next);
             }}
             onOpenSession={(id) => { openSession(id); setDrawerOpen(false); }}
+            context={view.context}
             relayOn={!!relay?.connected}
             mood={mood}
             attention={attention}

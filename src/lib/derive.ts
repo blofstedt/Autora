@@ -262,7 +262,20 @@ export type Derived = {
   /** The question the turn is waiting on, if it is waiting on one. */
   asking: Ask | null;
   tokens: { in: number; out: number; cached: number };
+  /** How full the model's context is, from the newest reading; null before
+      the first model call. */
+  context: ContextGauge | null;
   title: string;
+};
+
+/** The prompt against the window it is kept inside (server/context.ts). */
+export type ContextGauge = {
+  used: number;
+  limit: number;
+  /** The fraction of `limit` at which older turns start being condensed. */
+  compactAt: number;
+  /** How many times older turns have been condensed so far. */
+  condensed: number;
 };
 
 /** Terminal tools, whose PTY output belongs in the card their call opened. */
@@ -313,6 +326,15 @@ export function derive(events: AutoraEvent[]): Derived {
   let busy = false;
   let title = "";
   const tokens = { in: 0, out: 0, cached: 0 };
+  let context: ContextGauge | null = null;
+  let condensed = 0;
+  const gauge = (raw: any) => {
+    const used = Number(raw?.used);
+    const limit = Number(raw?.limit);
+    if (!Number.isFinite(used) || !(limit > 0)) return;
+    if (raw.condensed) condensed += 1;
+    context = { used, limit, compactAt: Number(raw.compact_at) || 0.75, condensed };
+  };
 
   /** The cell still being added to, so consecutive work of one kind stays one
       card instead of becoming one card per frame. */
@@ -907,6 +929,11 @@ export function derive(events: AutoraEvent[]): Derived {
           tokens.out += e.payload.usage.out ?? 0;
           tokens.cached += e.payload.usage.cached ?? 0;
         }
+        if (e.payload.context) gauge(e.payload.context);
+        break;
+
+      case Kind.UsageTurn:
+        if (e.payload.context) gauge(e.payload.context);
         break;
 
       case Kind.SessionEnded:
@@ -956,6 +983,7 @@ export function derive(events: AutoraEvent[]): Derived {
     // Only the tail can still be waiting: a turn that ended released it.
     asking: [...asks.values()].reverse().find((a) => a.open && tail?.open) ?? null,
     tokens,
+    context,
     title,
   };
 }
