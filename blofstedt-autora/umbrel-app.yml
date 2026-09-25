@@ -93,9 +93,15 @@ releaseNotes: >-
   needs for its own dashboard, and can leave Umbrel unable to start. It now
   suggests port 8443 instead ("tailscale serve --bg --https=8443 8817"). If
   you set it up the old way, run "tailscale serve --https=443 off" and set it
-  up again on 8443. Also includes interactive explainer widgets: ask how
-  something works and Autora can answer with a hands-on visual, 2D or 3D,
-  that it tests and fixes before showing you.
+  up again on 8443.
+
+
+  Also in this update, if you are coming from an earlier version: the app no
+  longer loses its connection at random, especially on a phone's home screen;
+  Autora recalls only the memories that bear on what you asked; clicking a
+  button that closes its own window no longer reports an error; and Autora
+  can answer "how does this work?" with an interactive explainer widget, 2D
+  or 3D, that it tests and fixes before showing you.
 
 dependencies: []
 path: ""

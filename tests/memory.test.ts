@@ -94,7 +94,34 @@ test("an unconfirmed memory that keeps working is confirmed, and a procedure pro
   assert.equal(r.status, "confirmed");
   assert.ok(!r.tags.includes("learned"));
   assert.equal(g.reinforce(r.id), "promoted");
-  assert.equal(r.pinned, true);
+  assert.ok(r.tags.includes("proven"));
+  assert.equal(r.pinned, false, "proven is not pinned: it is recalled only when it is relevant");
+  assert.equal(g.recall("what is the weather in paris").length, 0);
+  assert.equal(g.recall("the app cache is broken, clear it")[0]?.record.id, r.id);
+});
+
+test("an unrelated skill is not recalled for sharing one word", () => {
+  const { g } = graph();
+  g.write({
+    title: "Deploy the blog", kind: "procedure", tags: ["skill"],
+    body: "Build the site, copy the files to the server over rsync, then purge the CDN cache.",
+  });
+  const rename = g.write({ title: "Rename photos by date", kind: "procedure", tags: ["skill", "photos"],
+    body: "exiftool '-FileName<DateTimeOriginal' renames every photo in the folder." }).record;
+  assert.equal(g.recall("move these files into a folder on the desktop please").some((h) => h.record.title === "Deploy the blog"), false);
+  assert.equal(g.recall("which skill do i have").length, 0, "the bookkeeping tag matches nothing");
+  assert.equal(g.recall("rename my photos")[0]?.record.id, rename.id);
+});
+
+test("procedures pinned by the old promotion are unpinned on load", () => {
+  const base = { scope: "workspace", status: "confirmed" as const, source_session: null, source_seq: null, uses: 3, last_used: null, superseded_by: null, created: 1, updated: 1 };
+  const records: MemoryRecord[] = [
+    { ...base, id: "p", kind: "procedure", title: "Clear the cache", body: "rm -rf ~/.cache/app", tags: ["proven"], pinned: true },
+    { ...base, id: "q", kind: "preference", title: "British English", body: "Colour", tags: [], pinned: true },
+  ];
+  const g = new MemoryGraph(records, []);
+  assert.equal(g.get("p")?.pinned, false);
+  assert.equal(g.get("q")?.pinned, true, "what the person pinned stays pinned");
 });
 
 test("new memories are linked to related ones", () => {

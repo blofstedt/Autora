@@ -203,7 +203,22 @@ export function App() {
     });
     streamRef.current = stream;
     stream.connect();
+    /* An installed app is mostly resumed, not opened: from the home screen,
+       the app switcher, a locked phone. Each of those can leave the socket
+       dead or a reconnect parked behind a long backoff, so every way of
+       coming back checks it at once instead of waiting it out. */
+    const wake = () => {
+      if (document.visibilityState === "visible") stream.wake();
+    };
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("online", wake);
+    window.addEventListener("pageshow", wake);
+    window.addEventListener("focus", wake);
     return () => {
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("online", wake);
+      window.removeEventListener("pageshow", wake);
+      window.removeEventListener("focus", wake);
       stream.close();
       streamRef.current = null;
     };
