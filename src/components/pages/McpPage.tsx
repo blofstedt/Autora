@@ -7,8 +7,12 @@ type Server = {
   url?: string; headers?: Record<string, string>; enabled: boolean;
   status: "off" | "connecting" | "connected" | "error"; error: string | null;
   tools: { name: string; description: string }[]; version: string | null;
+  origin?: "agent" | "person"; note?: string;
 };
-type CatalogEntry = { name: string; transport: "stdio"; command: string; args: string[]; note: string };
+type CatalogEntry = {
+  name: string; transport: "stdio"; command: string; args: string[];
+  env?: Record<string, string>; note: string;
+};
 
 type Draft = {
   id?: string; name: string; transport: "stdio" | "http";
@@ -94,7 +98,9 @@ export function McpPage() {
           <p className="jf-hint page-lede">
             Model Context Protocol servers give the agent more tools. Autora starts
             a local one from a command, or connects to one at a URL; its tools are
-            offered to the agent from its next step.
+            offered to the agent from its next step. Autora also offers to set one
+            up in a conversation when a server would do the job better than the
+            browser — those are marked here.
           </p>
           {!draft && (
             <button className="btn primary" onClick={() => setDraft({ ...blank })}>
@@ -111,7 +117,10 @@ export function McpPage() {
               <div className="mcp-catalog">
                 {catalog.map((c) => (
                   <button key={c.name} className="mcp-preset" title={c.note}
-                          onClick={() => setDraft({ ...blank, name: c.name, command: c.command, args: c.args.join("\n") })}>
+                          onClick={() => setDraft({
+                            ...blank, name: c.name, command: c.command,
+                            args: c.args.join("\n"), env: fromRecord(c.env, "="),
+                          })}>
                     <b>{c.name}</b><span>{c.note}</span>
                   </button>
                 ))}
@@ -149,7 +158,11 @@ export function McpPage() {
                 </label>
               </>
             )}
-            <p className="jf-hint">Secret values are stored in the settings file and shown masked here; leave a masked value as it is to keep it.</p>
+            <p className="jf-hint">
+              Secret values are stored in the settings file and shown masked here; leave a masked value
+              as it is to keep it. A value written <code>{"${secret:NAME}"}</code> is read from
+              Settings › API Keys › Secrets instead, so the key itself never sits in this form.
+            </p>
             <div className="jf-actions">
               <button className="btn ghost" onClick={() => setDraft(null)}>Cancel</button>
               <button className="btn primary" disabled={busy === "form" || !draft.name.trim()} onClick={() => void submit()}>
@@ -172,6 +185,7 @@ export function McpPage() {
             <div className="tool-head">
               <span className="tool-icon"><IconPlug size={14} /></span>
               <b>{s.name}</b>
+              {s.origin === "agent" && <span className="mcp-origin">set up by Autora</span>}
               <span className={`tool-state ${s.status === "connected" ? "ok" : s.status === "error" ? "warn" : ""}`}>
                 {s.status === "connected" ? `${s.tools.length} tool${s.tools.length === 1 ? "" : "s"}` : s.status}
               </span>
@@ -198,6 +212,7 @@ export function McpPage() {
               <code>{s.transport === "stdio" ? [s.command, ...(s.args ?? [])].join(" ") : s.url}</code>
               {s.version ? <span> · v{s.version}</span> : null}
             </p>
+            {s.note && <p className="jf-hint mcp-note">{s.note}</p>}
             {s.status === "error" && s.error && <p className="set-warn">{s.error}</p>}
             {s.tools.length > 0 && (
               <>

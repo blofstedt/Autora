@@ -328,6 +328,8 @@ export function saneMcp(raw: any): McpServerConfig | null {
     url: transport === "http" ? String(raw.url ?? "").trim() : undefined,
     headers: transport === "http" ? record(raw.headers) : undefined,
     enabled: raw.enabled !== false,
+    ...(raw.origin === "agent" ? { origin: "agent" as const } : {}),
+    ...(typeof raw.note === "string" && raw.note.trim() ? { note: raw.note.trim().slice(0, 200) } : {}),
   };
 }
 

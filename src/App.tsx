@@ -603,13 +603,27 @@ export function App() {
     const now = Date.now() / 1000;
     let newest = noticed.current;
     const timers: number[] = [];
+    const calls = new Map<string, string>();
     for (const e of events) {
+      if (e.kind === Kind.ToolCall && e.span) calls.set(e.span, String(e.payload.name ?? ""));
       if (e.seq <= noticed.current) continue;
       newest = Math.max(newest, e.seq);
       if (now - e.ts > 10) continue;
       if (e.kind === Kind.Error) {
         setFailing(true);
         timers.push(window.setTimeout(() => setFailing(false), 1600));
+      }
+      // A new MCP server connected: a new capability, carried to Integrations.
+      if (e.kind === Kind.ToolResult && e.payload.ok !== false && e.span
+          && calls.get(e.span) === "mcp_offer" && /new tool/.test(String(e.payload.preview ?? ""))) {
+        timers.push(window.setTimeout(() => {
+          flySpark(
+            visible(".ask.is-settled.is-answered", ".composer-send"),
+            visible(".rail-slot [data-page=\"mcp\"]", ".menu-btn"),
+            undefined,
+            "glow",
+          );
+        }, 200));
       }
       if (e.kind === Kind.MemoryLearned) {
         const count = (Array.isArray(e.payload.items) ? e.payload.items.length : 0);

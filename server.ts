@@ -10,7 +10,7 @@ import {
 import {
   baseUrlFor, clearUsage, keyFor, keySource, maskKey, modelFor, recordUsage,
   resolveProvider, save, setKey, state, stateFilePath, type Resolved,
-  listSecrets, setSecret, deleteSecret, getSecret, SECRET_PRESETS, redactSecrets as redactStored,
+  listSecrets, setSecret, deleteSecret, getSecret, secretFor, SECRET_PRESETS, redactSecrets as redactStored,
   mergeJev, mergeAppearance, mergeLoop, mergeRetention, saneMcp, THEMES, FONTS,
   mergeSpeech,
   recordToolFeed, type CostParts,
@@ -25,6 +25,7 @@ import { forgetSpeech, setSpeechUrl, speak as synthesise, speechStatus } from ".
 import { captureConsole, log, readLogs, type LogLevel } from "./server/logs";
 import {
   MCP_CATALOG, connect as connectMcp, disconnect as disconnectMcp, statusOf as mcpStatus,
+  setSecretLookup as setMcpSecretLookup,
 } from "./server/mcp";
 import os from "node:os";
 
@@ -1016,6 +1017,8 @@ function askPerson(session: Session, request: AskRequest): Promise<AskAnswer> {
     multi: request.multi,
     allow_text: request.allowText,
     placeholder: request.placeholder ?? "",
+    // Only names and labels of keys travel: never a value.
+    ...(request.offer ? { offer: request.offer } : {}),
   });
 
   return new Promise((resolve) => {
@@ -2671,12 +2674,14 @@ async function startServer() {
 
   // ------------------------------------------------------------------ mcp --
   const MASK = "••••••";
+  const isSecretRef = (v: string) => /^(Bearer )?\$\{secret:[A-Za-z_][A-Za-z0-9_]*\}$/.test(v);
   const mcpView = () => state.mcpServers.map((cfg) => ({
     ...cfg,
     // Values of env vars and headers are usually secrets: shown masked, and a
     // masked value sent back means "keep what you have".
-    env: cfg.env ? Object.fromEntries(Object.keys(cfg.env).map((k) => [k, MASK])) : undefined,
-    headers: cfg.headers ? Object.fromEntries(Object.keys(cfg.headers).map((k) => [k, MASK])) : undefined,
+    // A reference to the secret store is not itself a secret: shown as written.
+    env: cfg.env ? Object.fromEntries(Object.entries(cfg.env).map(([k, v]) => [k, isSecretRef(v) ? v : MASK])) : undefined,
+    headers: cfg.headers ? Object.fromEntries(Object.entries(cfg.headers).map(([k, v]) => [k, isSecretRef(v) ? v : MASK])) : undefined,
     ...mcpStatus(cfg.id),
   }));
   const keepMasked = (next: Record<string, string> | undefined, prev: Record<string, string> | undefined) => {
@@ -4194,6 +4199,8 @@ async function startServer() {
   process.once("SIGTERM", () => void shutdown());
 
   // MCP servers connect in the background: a slow one must not hold up the UI.
+  // ${secret:NAME} in a server's config is filled from the secret store.
+  setMcpSecretLookup((name) => secretFor(name) || null);
   for (const cfg of state.mcpServers) void connectMcp(cfg);
 
   // Asked once, at startup, so the settings panel and the browser card can
