@@ -3700,7 +3700,38 @@ async function startServer() {
   const server = http.createServer(app);
   const wss = new WebSocketServer({ server });
 
+  /* Keep every socket visibly in use, and bury the ones that are not there.
+     Proxies in front of the app (Umbrel's app proxy, a reverse proxy, a
+     tunnel) and home NATs drop a connection that has been quiet for a while,
+     and a quiet session -- nothing running, nobody typing -- is most of them.
+     The drop is silent: the browser keeps an OPEN socket that never delivers
+     again, and the app looks connected while showing nothing new. A protocol
+     ping every 25 seconds is traffic enough to keep them open; a peer that
+     has not answered the previous one is gone, and is terminated so its
+     subscriber slot (and any desktop feed kept for it) is released. */
+  const alive = new WeakMap<WebSocket, boolean>();
+  const heartbeat = setInterval(() => {
+    for (const ws of wss.clients) {
+      if (alive.get(ws) === false) {
+        ws.terminate();
+        continue;
+      }
+      alive.set(ws, false);
+      try {
+        ws.ping();
+      } catch {
+        ws.terminate();
+      }
+    }
+  }, 25000);
+  heartbeat.unref();
+  wss.on("close", () => clearInterval(heartbeat));
+
   wss.on("connection", (ws: WebSocket, req: http.IncomingMessage) => {
+    alive.set(ws, true);
+    ws.on("pong", () => alive.set(ws, true));
+    // Any message proves the peer is there as well as a pong does.
+    ws.on("message", () => alive.set(ws, true));
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
     const pathname = url.pathname;
 

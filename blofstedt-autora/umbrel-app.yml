@@ -88,15 +88,12 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Autora can now build interactive explainer widgets right in the chat. Ask
-  how something works, like gravity, the water cycle or a sorting algorithm,
-  and it can answer with a small hands-on visual you can play with: sliders,
-  buttons, animations and 3D scenes you can drag to rotate. Before you see a
-  widget, Autora tries it out itself (loading it, pressing every button,
-  moving every slider) and fixes anything that breaks. If one still throws
-  an error in your browser, Autora is told, and a "Fix it" button on the card
-  asks it to repair it. Widgets run safely sandboxed, can be expanded to
-  fill the window, and are saved on the Artifacts page.
+  Fixes the app randomly losing its connection, especially when installed on
+  a phone's home screen. A quiet connection could be dropped along the way
+  without either end noticing, so the chat looked connected while nothing new
+  arrived. Autora now keeps the connection alive, notices a dead one within
+  seconds and reconnects on its own, and checks it straight away whenever you
+  switch back to the app, unlock your phone or get your network back.
 
 dependencies: []
 path: ""
