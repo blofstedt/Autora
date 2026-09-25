@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.9.35"
+version: "0.9.38"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -96,12 +96,15 @@ releaseNotes: >-
   up again on 8443.
 
 
-  Also in this update, if you are coming from an earlier version: the app no
-  longer loses its connection at random, especially on a phone's home screen;
-  Autora recalls only the memories that bear on what you asked; clicking a
-  button that closes its own window no longer reports an error; and Autora
-  can answer "how does this work?" with an interactive explainer widget, 2D
-  or 3D, that it tests and fixes before showing you.
+  Updates should also stop going missing: the release build no longer hangs
+  preparing the Raspberry Pi (arm64) image, which had left some versions
+  built but never offered.
+
+
+  If you are coming from before 0.9.38: replies no longer break apart when you
+  send while Autora works, slash commands (type /), no more black flashes in
+  the browser view, a steadier connection on phones, and interactive
+  explainer widgets for "how does this work?" questions.
 
 dependencies: []
 path: ""

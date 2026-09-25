@@ -551,7 +551,12 @@ export function derive(events: AutoraEvent[]): Derived {
         const cell = current();
         if (shell) {
           shell.output += e.payload.data ?? "";
-          open = shell;
+          // Output from a command that is still the newest thing extends it.
+          // Output landing late, after the agent has started talking again,
+          // goes to its card without taking the reply's place: making the
+          // shell "current" there cut the reply in two mid-word, the rest of
+          // the sentence starting a second reply underneath.
+          if (cell?.kind !== "reply") open = shell;
         } else if (cell && cell.kind === "terminal") {
           cell.output += e.payload.data ?? "";
         } else {

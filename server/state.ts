@@ -20,6 +20,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { AUTO_ORDER, PROVIDERS, providerSpec } from "./providers";
+import { LOOP_DEFAULTS, type LoopWatchConfig } from "./loopwatch";
 import { DEFAULT_JEV, clampThreshold, type JevSettings } from "./jev/router";
 import type { McpServerConfig } from "./mcp";
 
@@ -31,6 +32,60 @@ export interface Appearance {
 }
 
 export type ApprovalMode = "always" | "risky" | "never";
+
+/**
+ * What the workspace keeps, and what it lets go (see ./retention, which does
+ * the work). 0 days means "never on age alone"; the `keep` numbers are a
+ * floor under any sweep, so housekeeping cannot empty the app of the threads
+ * somebody was in the middle of.
+ */
+export interface RetentionPolicy {
+  sessionDays: number;
+  keepSessions: number;
+  artifactDays: number;
+  keepArtifacts: number;
+}
+
+export const RETENTION_DEFAULTS: RetentionPolicy = {
+  sessionDays: 180,
+  keepSessions: 500,
+  artifactDays: 365,
+  keepArtifacts: 500,
+};
+
+/** Out of whatever was posted, only numbers in a sane range. */
+export function mergeRetention(into: RetentionPolicy, patch: any): RetentionPolicy {
+  const clamp = (value: unknown, low: number, high: number, fallback: number) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.min(high, Math.max(low, Math.round(n))) : fallback;
+  };
+  into.sessionDays = clamp(patch?.sessionDays, 0, 3650, into.sessionDays);
+  into.artifactDays = clamp(patch?.artifactDays, 0, 3650, into.artifactDays);
+  into.keepSessions = clamp(patch?.keepSessions, 1, 100_000, into.keepSessions);
+  into.keepArtifacts = clamp(patch?.keepArtifacts, 1, 100_000, into.keepArtifacts);
+  return into;
+}
+
+/** What each loop-watch knob may be, so a mistyped number cannot stop every
+    turn on the second call. */
+const LOOP_LIMITS: Record<keyof LoopWatchConfig, [number, number]> = {
+  warnAt: [2, 50],
+  stopAt: [3, 200],
+  staleAfter: [2, 200],
+  checkEvery: [1, 500],
+};
+
+/** The knobs were fixed in code and invisible, so a turn could be stopped by
+    a rule nobody could see or change. They are settings now, clamped. */
+export function mergeLoop(into: LoopWatchConfig, patch: any): LoopWatchConfig {
+  for (const key of Object.keys(LOOP_LIMITS) as (keyof LoopWatchConfig)[]) {
+    const [low, high] = LOOP_LIMITS[key];
+    const n = Number(patch?.[key]);
+    if (Number.isFinite(n)) into[key] = Math.min(high, Math.max(low, Math.round(n)));
+  }
+  if (into.stopAt <= into.warnAt) into.stopAt = Math.max(into.warnAt + 1, LOOP_DEFAULTS.stopAt);
+  return into;
+}
 
 export interface ToolSettings {
   terminal: {
@@ -116,6 +171,11 @@ export interface PersistedState {
   /** Whether the agent looks back over its work after a turn and writes
       down what it learned (as unconfirmed memories). */
   learning: boolean;
+  /** When a turn is called a loop: repeats that earn a note, repeats that
+      stop the turn, and how often it is asked to check itself. */
+  loop: LoopWatchConfig;
+  /** How long sessions and artifacts are kept. */
+  retention: RetentionPolicy;
 }
 
 export const DEFAULT_PROMPT =
@@ -287,6 +347,8 @@ function blank(): PersistedState {
     mcpServers: [],
     appearance: { theme: "violet", font: "inter" },
     learning: true,
+    loop: { ...LOOP_DEFAULTS },
+    retention: { ...RETENTION_DEFAULTS },
   };
 }
 
@@ -317,6 +379,8 @@ function read(): PersistedState {
       state.mcpServers = raw.mcpServers.map(saneMcp).filter(Boolean) as McpServerConfig[];
     }
     if (raw.appearance) mergeAppearance(state.appearance, raw.appearance);
+    if (raw.loop) mergeLoop(state.loop, raw.loop);
+    if (raw.retention) mergeRetention(state.retention, raw.retention);
     if (raw.carried && typeof raw.carried === "object") {
       carried = {
         cost: Number(raw.carried.cost) || 0,
