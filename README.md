@@ -32,6 +32,12 @@ npm run dev
 
 Open <http://localhost:3000>. Type a task. Watch it work.
 
+It listens on this machine only. Autora has no login of its own and runs
+commands for whoever can reach it, so opening it to the network is a choice:
+`AUTORA_HOST=0.0.0.0 npm run dev` when you want it from a phone or another
+computer, on a network you trust. Requests and live connections started by
+other websites are refused either way.
+
 For production, `npm run build` then `npm start`. The container is the same
 two steps: `docker build -t autora . && docker run -p 8817:8817 -v autora-data:/data autora`.
 
@@ -191,13 +197,16 @@ weeks ago is a worse surprise than the bill it was meant to prevent.
 
 ```bash
 # any OpenAI-compatible server: vLLM, Ollama, llama.cpp, LM Studio
-autora up ~/code/my-project --provider local \
-  --base-url http://localhost:8000/v1 --model qwen3-coder
+AUTORA_LLM_BASE_URL=http://localhost:8000/v1 npm run dev
 ```
+
+Then pick **Local server** in Settings and type the model's name
+(`qwen3-coder`, say). The address can be set there too, which wins over the
+variable.
 
 ### Reaching it from a phone
 
-`autora up` speaks plain HTTP, which is fine over `localhost` and fine for
+Autora speaks plain HTTP, which is fine over `localhost` and fine for
 reading the thread from another device. Two things need more than that:
 
 | Wants a secure page | Why |
@@ -237,11 +246,11 @@ nothing has to listen on the tailnet interface at all.
 Anything else that terminates TLS works the same way: Caddy or nginx with a
 certificate from `tailscale cert`, or whatever reverse proxy you already run.
 
-**With nothing in front of it**, `--tls` is the fallback. Autora puts an https
-listener on the next port up with a certificate it generates and keeps:
+**With nothing in front of it**, `AUTORA_TLS=1` is the fallback. Autora puts an
+https listener on the next port up with a certificate it generates and keeps:
 
 ```bash
-autora up ~/code/my-project --tls        # http on 8817, https on 8818
+AUTORA_TLS=1 AUTORA_HOST=0.0.0.0 npm start   # http on 3000, https on 3001
 ```
 
 Nothing moves — the plain port serves what it always did, and the http page
@@ -271,11 +280,12 @@ tapping either says what is in the way and offers the secure page if one is
 running — rather than vanishing and leaving you to conclude voice was never
 built.
 
-| Flag | Env | |
-| --- | --- | --- |
-| `--tls` | `AUTORA_TLS=1` | Also serve https, with a generated certificate |
-| `--tls-port` | `AUTORA_TLS_PORT` | Where (default: `--port` + 1) |
-| `--tls-cert` / `--tls-key` | `AUTORA_TLS_CERT` / `AUTORA_TLS_KEY` | Use a real certificate instead |
+| Env | |
+| --- | --- |
+| `AUTORA_TLS=1` | Also serve https, with a generated certificate |
+| `AUTORA_TLS_PORT` | Where (default: `AUTORA_PORT` + 1) |
+| `AUTORA_TLS_CERT` / `AUTORA_TLS_KEY` | Use a real certificate instead |
+| `AUTORA_TLS_NAMES` | Extra names or addresses for a browser that connects by bare IP (which names no host, so gets the certificate listing this machine's own addresses) |
 
 The Umbrel app publishes 8818 for this and ships with `AUTORA_TLS: "0"`. Put a
 proxy in front if you can; set it to `1` if you cannot.
@@ -301,16 +311,14 @@ python relay.py                               # Windows: py relay.py
 server's own address already in them, says whether a relay is connected, and
 lists what to check when one will not connect.
 
-Where Autora *is* installed on that machine, `autora relay 192.168.1.5:8817`
-does the same thing. Any form of the address works — `host:port`,
-`http://host:port`, `ws://host` — and https with Autora's own certificate needs
-`--insecure` or the certificate installed there.
+`python relay.py 192.168.1.5:8817` points it at a different address; any form
+works — `host:port`, `http://host:port`, `ws://host`. Over https with Autora's
+own certificate, the relay needs `--insecure` or the certificate from
+`/autora-ca.crt` installed on that machine.
 
-Two things catch people out. `autora up` binds to `127.0.0.1` unless told
-otherwise, so start it with `--host 0.0.0.0` if the relay is on another
-machine. And `python -m autora.relay` only works where Autora is installed —
-on a PC that has never had it, that command reports `No module named autora`,
-which is the download above missing rather than anything being broken.
+One thing catches people out: outside the container Autora listens on
+`127.0.0.1` unless told otherwise, so start it with `AUTORA_HOST=0.0.0.0` if
+the relay is on another machine.
 
 Frames reach the conversation only while a session is using the desktop; a
 connected but idle relay is not an hour of screenshots in your transcript. The
@@ -324,10 +332,12 @@ Wayland. Windows needs nothing special.
 ### Other commands
 
 ```bash
-autora sessions                    # list recordings
-autora replay 20260919-141233-ab12 # print one to the terminal
-curl localhost:8817/api/sessions/<id>/cast > session.cast && asciinema play session.cast
+curl localhost:3000/api/sessions                  # list recordings
+curl localhost:3000/api/sessions/<id>/events      # one session's events, as JSON
 ```
+
+Each session's full log is also on disk as `sessions/<id>/events.jsonl` under
+the state directory, one event per line.
 
 ## What you see
 
@@ -596,7 +606,12 @@ acting on it forever unless there is somewhere to go and say no.
 | `GEMINI_MODEL` | Starting model for Gemini (default `gemini-flash-latest`, the rolling free-Flash alias); a model chosen in Settings wins |
 | `GEMINI_THINKING_BUDGET` | Thinking tokens (default `0` for a responsive console; `-1` lets the model decide) |
 | `AUTORA_STATE_DIR` | Where settings, keys and the spend ledger are written (default: `$AUTORA_HOME/settings`, else `.autora/` beside the app) |
-| `AUTORA_PORT` / `AUTORA_HOST` | Where to listen (default `3000` on `0.0.0.0`; the container uses `8817`) |
+| `AUTORA_PORT` / `AUTORA_HOST` | Where to listen (default `3000` on `127.0.0.1`, this machine only; set `AUTORA_HOST=0.0.0.0` to reach it from other devices. The container uses `8817` on `0.0.0.0`) |
+| `AUTORA_WORKDIR` | Where the agent's commands run when Settings names no directory (the Umbrel app sets `/host`, the host's filesystem) |
+| `AUTORA_TLS` | `1` also serves https on the next port up, with a certificate Autora issues from its own authority (download it at `/autora-ca.crt`) |
+| `AUTORA_TLS_PORT` | Where the https listener goes (default: `AUTORA_PORT` + 1) |
+| `AUTORA_TLS_CERT` / `AUTORA_TLS_KEY` | A real certificate and key (PEM files) to use instead of Autora's own |
+| `AUTORA_TLS_NAMES` | Extra names or addresses, comma separated, for the certificate shown to a browser that connects by bare IP |
 | `AUTORA_LLM_BASE_URL` | Local OpenAI-compatible endpoint |
 | `AUTORA_BROWSER_PATH` | The Chromium to drive (default: the usual system paths; `/usr/bin/chromium-browser` in the container) |
 | `AUTORA_CONTEXT_TOKENS` | The context window the prompt is kept inside (default `100000`; set it to your model's window for small local models) |

@@ -433,9 +433,21 @@ function read(): PersistedState {
       };
     }
     return state;
-  } catch {
+  } catch (err: any) {
     // No file yet, or one edited into nonsense by hand. Either way the app
     // should come up: defaults now, and the first save writes a clean file.
+    // A file that exists but cannot be read is set aside first, though: the
+    // first save would otherwise replace it, and every key saved in it with it.
+    if (err?.code !== "ENOENT") {
+      try {
+        const aside = `${STATE_FILE}.unreadable-${Date.now()}`;
+        fs.copyFileSync(STATE_FILE, aside);
+        fs.chmodSync(aside, 0o600);
+        console.warn(`[state] ${STATE_FILE} could not be read (${err?.message ?? err}); kept a copy at ${aside}`);
+      } catch {
+        // Nothing there to keep.
+      }
+    }
     return blank();
   }
 }
@@ -464,6 +476,16 @@ export function save() {
   }, 400);
   // Nothing here should hold the process open at shutdown.
   pending.unref?.();
+}
+
+/** Write now if a save is waiting. Called on the way out, where the timer
+    above would never fire: a key pasted a moment before a restart, or the
+    last turn's spend, was otherwise lost with the process. */
+export function flushState() {
+  if (!pending) return;
+  clearTimeout(pending);
+  pending = null;
+  saveNow();
 }
 
 export function saveNow() {
@@ -699,32 +721,65 @@ export function listSecrets(): {
   return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** Keys read from the environment by other parts of the app (voice, Jev)
+    that are not a provider's and not in the secret store's own list. */
+const OTHER_ENV_KEYS = [
+  "DEEPGRAM_API_KEY", "ASSEMBLYAI_API_KEY",
+  "JEV_API_KEY", "JEV_TOKEN", "JEV_KEY", "TYPESAFE_API_KEY", "TYPESAFE_TOKEN",
+];
+
+/**
+ * Every value that must never be shown, with what to show instead.
+ *
+ * Not only the secret store: a provider key set in the environment used to
+ * be scrubbed only for three vendors, so `env` in the terminal printed a
+ * DeepSeek, OpenRouter or local-server key straight into the thread, the log
+ * on disk and the next prompt. Every provider's variables are here now, as is
+ * the Jev key saved in its card.
+ */
+function secretTable(): { value: string; label: string }[] {
+  const table = new Map<string, string>();
+  const add = (value: string | undefined, label: string) => {
+    const v = (value ?? "").trim();
+    if (v.length >= 4 && !table.has(v)) table.set(v, label);
+  };
+  for (const [name, val] of Object.entries(allSecrets())) add(val, `[REDACTED_${name}]`);
+  for (const [prov, key] of Object.entries(state.keys ?? {})) add(key, `[REDACTED_${prov.toUpperCase()}_KEY]`);
+  for (const spec of PROVIDERS) for (const name of spec.envKeys) add(process.env[name], `[REDACTED_${name}]`);
+  for (const name of OTHER_ENV_KEYS) add(process.env[name], `[REDACTED_${name}]`);
+  add(state.jev?.key, "[REDACTED_JEV_API_KEY]");
+  return [...table].map(([value, label]) => ({ value, label }));
+}
+
+/** The table as one pattern, rebuilt only when a secret changes: this runs
+    on every streamed chunk of every event, and splitting the text once per
+    secret per chunk was most of what it cost. */
+let redactor: { signature: string; pattern: RegExp | null; labels: Map<string, string> } | null = null;
+
+function currentRedactor() {
+  const table = secretTable();
+  const signature = table.map((t) => `${t.label}\u0000${t.value}`).join("\u0001");
+  if (redactor?.signature === signature) return redactor;
+  // Longest first, so a secret that contains another is blanked whole.
+  const values = table.map((t) => t.value).sort((a, b) => b.length - a.length);
+  const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  redactor = {
+    signature,
+    pattern: values.length ? new RegExp(values.map(escape).join("|"), "g") : null,
+    labels: new Map(table.map((t) => [t.value, t.label])),
+  };
+  return redactor;
+}
+
 /**
  * Scrub all sensitive secret and API key values from any text before
  * sending it to the model transcript, event logs, or UI streams.
  */
 export function redactSecrets(text: string): string {
   if (!text || typeof text !== "string") return text;
-  let sanitized = text;
-
-  // 1. Scrub workspace and env secrets
-  const secrets = allSecrets();
-  for (const [name, val] of Object.entries(secrets)) {
-    if (val && val.length >= 4) {
-      sanitized = sanitized.split(val).join(`[REDACTED_${name}]`);
-    }
-  }
-
-  // 2. Scrub provider API keys
-  if (state.keys) {
-    for (const [prov, key] of Object.entries(state.keys)) {
-      if (key && key.length >= 4) {
-        sanitized = sanitized.split(key).join(`[REDACTED_${prov.toUpperCase()}_KEY]`);
-      }
-    }
-  }
-
-  return sanitized;
+  const { pattern, labels } = currentRedactor();
+  if (!pattern) return text;
+  return text.replace(pattern, (found) => labels.get(found) ?? "[REDACTED]");
 }
 
 // ------------------------------------------------------------- selection --
@@ -736,7 +791,11 @@ export function modelFor(providerId: string): string {
 
 export function baseUrlFor(providerId: string): string {
   const override = (state.baseUrls[providerId] || "").trim();
-  return override || providerSpec(providerId)?.baseUrl || "";
+  if (override) return override;
+  // The README has long offered AUTORA_LLM_BASE_URL for a local server; it
+  // is the fallback for that provider, below an address saved in Settings.
+  const fromEnv = providerId === "local" ? (process.env.AUTORA_LLM_BASE_URL || "").trim() : "";
+  return fromEnv || providerSpec(providerId)?.baseUrl || "";
 }
 
 export interface Resolved {

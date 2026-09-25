@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import http from "node:http";
+import https from "node:https";
 import path from "node:path";
+import type { Duplex } from "node:stream";
 import express, { type Request, type Response } from "express";
 import { WebSocketServer, WebSocket } from "ws";
 import {
@@ -8,8 +10,8 @@ import {
   providerSpec, rememberModels,
 } from "./server/providers";
 import {
-  baseUrlFor, clearUsage, keyFor, keySource, maskKey, modelFor, recordUsage,
-  resolveProvider, save, setKey, state, stateFilePath, type Resolved,
+  baseUrlFor, clearUsage, flushState, keyFor, keySource, maskKey, modelFor, recordUsage,
+  resolveProvider, save, setKey, state, stateDir, stateFilePath, type Resolved,
   listSecrets, setSecret, deleteSecret, getSecret, secretFor, SECRET_PRESETS, redactSecrets as redactStored,
   mergeJev, mergeAppearance, mergeLoop, mergeRetention, saneMcp, THEMES, FONTS,
   mergeSpeech,
@@ -22,7 +24,9 @@ import type { JevTarget } from "./server/jev/engine";
 import { guardWorthy, irreversible } from "./server/jev/guard";
 import { prune, storageReport } from "./server/retention";
 import { forgetSpeech, setSpeechUrl, speak as synthesise, speechStatus } from "./server/speech";
-import { captureConsole, log, readLogs, type LogLevel } from "./server/logs";
+import { captureConsole, log, readLogs, setLogRedactor, type LogLevel } from "./server/logs";
+import { allowSocket, refuseRequest } from "./server/crosssite";
+import { certificateSource, tlsSettings } from "./server/tls";
 import {
   MCP_CATALOG, connect as connectMcp, disconnect as disconnectMcp, statusOf as mcpStatus,
   setSecretLookup as setMcpSecretLookup,
@@ -58,15 +62,22 @@ import {
 } from "./server/desktop";
 import {
   availableTools, capabilityBriefing, findTool, groupStates, needsApproval,
-  renderCall, runShellQuiet, runTool, toolSettings, updateToolSettings,
+  renderCall, runShellQuiet, runTool, terminalDir, toolSettings, updateToolSettings,
   type ToolContext, type AskRequest, type AskAnswer,
 } from "./server/tools";
 
 /* Where to listen. Umbrel's compose file publishes 8817 and passes it in, so
    these cannot be constants; 3000 stays the default because that is what
-   `npm run dev` and every link in the README say. */
+   `npm run dev` and every link in the README say.
+
+   The address defaults to this machine only, as the README has always said:
+   this server runs commands for whoever can reach it and has no login of its
+   own, so being reachable from the rest of the network is something to ask
+   for (AUTORA_HOST=0.0.0.0), not something `npm run dev` does by itself. The
+   container image asks for it, since there the port is only published
+   through Umbrel's proxy. */
 const PORT = Number(process.env.AUTORA_PORT || process.env.PORT || 3000);
-const HOST = (process.env.AUTORA_HOST || "").trim() || "0.0.0.0";
+const HOST = (process.env.AUTORA_HOST || "").trim() || "127.0.0.1";
 
 /**
  * What this build is, read from package.json.
@@ -272,19 +283,7 @@ if (sessions.size === 0) {
  */
 function sweep(policy = state.retention) {
   const result = prune(policy, Date.now(), (id) => Boolean(sessions.get(id)?.busy));
-  for (const id of result.sessions.ids) {
-    const live = browsers.get(id);
-    if (live) {
-      void live.close().catch(() => undefined);
-      browsers.delete(id);
-    }
-    dropSession(id);
-    for (const ws of sessionSockets.get(id) ?? []) ws.close();
-    sessionSockets.delete(id);
-    sessions.delete(id);
-    contexts.delete(id);
-    jevThisTurn.delete(id);
-  }
+  for (const id of result.sessions.ids) forgetSession(id);
   if (result.sessions.count || result.artifacts.count) {
     log(
       "info", "store",
@@ -293,6 +292,34 @@ function sweep(policy = state.retention) {
     );
   }
   return result;
+}
+
+/**
+ * Everything held in memory for a session, let go: its browser, its
+ * pictures, its watchers, its context engine and the guard's notes on it.
+ *
+ * One place for both ways a session goes (deleted from the rail, or swept by
+ * housekeeping). They used to be two hand-kept lists, and deleting from the
+ * rail had lost the context engine -- so every deleted thread's working
+ * memory and vault stayed in the process until it restarted.
+ */
+function forgetSession(id: string) {
+  const live = browsers.get(id);
+  if (live) {
+    void live.close().catch(() => undefined);
+    browsers.delete(id);
+  }
+  dropSession(id);
+  for (const ws of sessionSockets.get(id) ?? []) ws.close();
+  sessionSockets.delete(id);
+  releaseDesktopIfIdle(id);
+  sessions.delete(id);
+  contexts.delete(id);
+  jevThisTurn.delete(id);
+  answeredAsks.delete(id);
+  lastAnswer.delete(id);
+  for (const key of heldCalls.keys()) if (key.startsWith(`${id}\u0000`)) heldCalls.delete(key);
+  turnsInFlight.delete(id);
 }
 
 /** How often housekeeping looks at the disk without being asked. */
@@ -318,26 +345,35 @@ function housekeeping(): void {
 function redactSecrets(text: string): string {
   return redactCredentials(redactStored(text), { identity: false });
 }
+// The Logs page gets the same treatment as the thread.
+setLogRedactor(redactSecrets);
+
+/**
+ * Every string in a payload, however deep, with secrets blanked.
+ *
+ * It used to look only one level down, so a key inside a tool call's nested
+ * arguments (an MCP tool's `{"auth": {"token": ...}}`, a header list) or in
+ * any array went into the log on disk and to every watcher as it was.
+ */
+function redactDeep(value: unknown, depth = 0): unknown {
+  if (typeof value === "string") return redactSecrets(value);
+  if (value === null || typeof value !== "object" || depth >= 8) return value;
+  if (Array.isArray(value)) return value.map((item) => redactDeep(item, depth + 1));
+  // Plain objects only: a Date or a Buffer rebuilt key by key would stop
+  // being one.
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return value;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value)) out[k] = redactDeep(v, depth + 1);
+  return out;
+}
 
 // Broadcast an event to all connected websockets for a session
 function emitEvent(session: Session, kind: string, actor: string, payload: Record<string, any>, span: string | null = null, blob: string | null = null): AutoraEvent {
   session.seqCounter += 1;
 
   // Sanitize any potential secret leakages from payload fields
-  const safePayload: Record<string, any> = {};
-  for (const [k, v] of Object.entries(payload || {})) {
-    if (typeof v === "string") {
-      safePayload[k] = redactSecrets(v);
-    } else if (v && typeof v === "object" && !Array.isArray(v)) {
-      const subObj: Record<string, any> = {};
-      for (const [subK, subV] of Object.entries(v)) {
-        subObj[subK] = typeof subV === "string" ? redactSecrets(subV) : subV;
-      }
-      safePayload[k] = subObj;
-    } else {
-      safePayload[k] = v;
-    }
-  }
+  const safePayload = redactDeep(payload || {}) as Record<string, any>;
 
   const event: AutoraEvent = {
     seq: session.seqCounter,
@@ -426,7 +462,9 @@ function broadcastLiveStatus(session: Session) {
     const raw = JSON.stringify({
       type: "live",
       session: session.id,
-      seq: session.events.length,
+      // The newest seq, from the counter: `events.length` was not a seq at
+      // all, and reading it loaded the whole log of a session not yet open.
+      seq: session.seqCounter,
       busy: session.busy,
     });
     for (const ws of sockets) {
@@ -1588,6 +1626,12 @@ async function systemInstructionFor(
 
 // ------------------------------------------------- jobs, watchers, notices --
 
+/** A title nobody chose: what a new session is called until its first message. */
+function isDefaultTitle(title: string): boolean {
+  const t = title.trim();
+  return !t || t === "New Session" || /^Session [a-z0-9]{1,8}$/i.test(t);
+}
+
 function newSession(title: string): Session {
   const id = `session-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
   const session: Session = {
@@ -1640,7 +1684,7 @@ async function observe(watch: JobWatch): Promise<string> {
     return (type.includes("html") ? htmlToText(body, target) : body).slice(0, 200_000);
   }
   if (watch.kind === "file") {
-    const full = path.resolve(toolSettings().terminal.cwd || process.cwd(), target);
+    const full = path.resolve(terminalDir(), target);
     const stat = fs.statSync(full);
     if (stat.isDirectory()) {
       return fs.readdirSync(full, { withFileTypes: true })
@@ -2544,7 +2588,32 @@ async function startServer() {
   // A voice server chosen in the panel is the one every request uses.
   setSpeechUrl(state.speech.url);
   const app = express();
-  app.use(express.json());
+  app.disable("x-powered-by");
+
+  /* The https copy of the app, when AUTORA_TLS asks for one (see
+     server/tls.ts). Read here so /api/origin can say whether it is up. */
+  const secure = tlsSettings(PORT);
+  let secureListening = false;
+  let caPem: string | null = null;
+
+  /* Before anything else reads the request: a page on another website
+     cannot change anything here (see server/crosssite.ts), and nothing is
+     sniffed into a type it was not served as. */
+  app.use((req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Referrer-Policy", "same-origin");
+    const refused = refuseRequest(req.method, req.headers);
+    if (refused) {
+      log("warn", "http", `${req.method} ${req.path} refused: sent from another site`);
+      return res.status(403).json({ error: refused });
+    }
+    next();
+  });
+
+  // Five megabytes, not the 100 KB default: a long document pasted into a
+  // message is well past 100 KB, and it failed with a bare 413 that the
+  // page could only report as the server being unreachable.
+  app.use(express.json({ limit: "5mb" }));
 
   // Failed API calls, for the Logs page: the request and what it answered.
   app.use((req, res, next) => {
@@ -2575,11 +2644,23 @@ async function startServer() {
   // 1. Origin & Runtime Info
   app.get("/api/origin", (req: Request, res: Response) => {
     res.json({
-      secure_port: null,
-      secure_listening: false,
-      certificate: false,
+      secure_port: secure.enabled ? secure.port : null,
+      secure_listening: secureListening,
+      // Whether /autora-ca.crt has an authority to hand out: only when the
+      // certificates are Autora's own rather than a real one from files.
+      certificate: Boolean(caPem),
       version: VERSION,
     });
+  });
+
+  /** The authority behind the https listener's certificates, to install on a
+      device so they are trusted there (Settings -> Trust this server). */
+  app.get("/autora-ca.crt", (_req: Request, res: Response) => {
+    if (!caPem) return res.status(404).type("text/plain").send("This server is not issuing its own certificates.");
+    res.setHeader("Content-Type", "application/x-x509-ca-cert");
+    res.setHeader("Content-Disposition", 'attachment; filename="autora-ca.crt"');
+    res.setHeader("Cache-Control", "no-store");
+    res.send(caPem);
   });
 
   // 2. Sessions List & Creation
@@ -2639,14 +2720,11 @@ async function startServer() {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
     if (session.busy) return res.status(409).json({ error: "Stop the session before deleting it." });
-    const live = browsers.get(session.id);
-    if (live) { await live.close().catch(() => undefined); browsers.delete(session.id); }
-    dropSession(session.id);
-    for (const ws of sessionSockets.get(session.id) ?? []) ws.close();
-    sessionSockets.delete(session.id);
-    sessions.delete(session.id);
+    // The browser is closed first, so its sign-ins are saved before it goes.
+    await browsers.get(session.id)?.close().catch(() => undefined);
+    browsers.delete(session.id);
+    forgetSession(session.id);
     deleteSession(session.id);
-    jevThisTurn.delete(session.id);
     log("info", "sessions", `deleted "${session.title}"`);
     res.json({ ok: true });
   });
@@ -2771,7 +2849,11 @@ async function startServer() {
       return res.status(404).json({ error: "No such image" });
     }
     res.setHeader("Content-Type", blob.mime);
-    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    // An SVG a model wrote into its reply is a blob too. Shown in an <img> it
+    // is only a picture; opened on its own it would be a page on this origin,
+    // running whatever script it carried. Sandboxed, it runs none.
+    res.setHeader("Content-Security-Policy", "sandbox");
+    res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
     res.setHeader("Content-Length", String(blob.data.byteLength));
     res.end(blob.data);
   });
@@ -2928,9 +3010,12 @@ async function startServer() {
       return res.status(400).json({ error: "Empty message" });
     }
 
-    // If first message and title was generic, update session title
-    if (session.events.filter((e) => e.kind === "turn.user").length === 0) {
-      session.title = text.length > 40 ? text.slice(0, 37) + "..." : text;
+    // The first message names the thread -- unless it was already given a
+    // name, which renaming a fresh session before typing used to lose. The
+    // tally is read rather than the log, which would load the whole thread.
+    if (session.counts.turns === 0 && isDefaultTitle(session.title)) {
+      const oneLine = text.replace(/\s+/g, " ");
+      session.title = oneLine.length > 40 ? `${oneLine.slice(0, 37)}...` : oneLine;
       saveMeta(metaOf(session));
     }
 
@@ -3358,7 +3443,9 @@ async function startServer() {
     if (!prompt) return res.status(400).json({ error: "A task needs a prompt" });
 
     const newJob: Job = {
-      id: `job-${Date.now().toString(36)}`,
+      // With a random tail: two jobs saved in the same millisecond (a quick
+      // double-click) shared an id, and editing one edited both.
+      id: `job-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
       name: (req.body?.name || "").trim() || "Scheduled Task",
       cron: (req.body?.cron || "").trim() || "0 * * * *",
       prompt,
@@ -3914,7 +4001,8 @@ async function startServer() {
       already knows its own address. */
   const relayAddress = (req: Request) => {
     const host = req.headers["host"] || `127.0.0.1:${PORT}`;
-    const proto = req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
+    const encrypted = Boolean((req.socket as { encrypted?: boolean }).encrypted);
+    const proto = encrypted || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
     return {
       ws: `${proto === "https" ? "wss" : "ws"}://${host}/ws/desktop-relay`,
       http: `${proto}://${host}`,
@@ -3948,7 +4036,23 @@ async function startServer() {
 
   // 12. Create HTTP Server & WebSocket Server
   const server = http.createServer(app);
-  const wss = new WebSocketServer({ server });
+  /* One socket server for both listeners (http, and https when it is on),
+     fed their upgrades by hand. A page on another website is refused here:
+     a WebSocket is not covered by CORS, and this one reads whole threads and
+     answers held commands. The relay and curl send no Sec-Fetch-Site and are
+     let through, as before. */
+  const wss = new WebSocketServer({
+    noServer: true,
+    verifyClient: ({ req }: { req: http.IncomingMessage }) => {
+      if (allowSocket(req.headers)) return true;
+      log("warn", "http", `websocket ${req.url ?? ""} refused: opened from another site`);
+      return false;
+    },
+  });
+  const upgrade = (req: http.IncomingMessage, socket: Duplex, head: Buffer) => {
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
+  };
+  server.on("upgrade", upgrade);
 
   /* Keep every socket visibly in use, and bury the ones that are not there.
      Proxies in front of the app (Umbrel's app proxy, a reverse proxy, a
@@ -4028,7 +4132,7 @@ async function startServer() {
         JSON.stringify({
           type: "live",
           session: session.id,
-          seq: session.events.length,
+          seq: session.seqCounter,
           busy: session.busy,
         }),
       );
@@ -4185,12 +4289,15 @@ async function startServer() {
      restarted a few times then has several headless browsers in it holding
      memory for pages nobody can see. */
   const shutdown = async () => {
+    // Settings first: they are what a slow browser close must not cost.
+    flushState();
     for (const [id, live] of browsers) {
       await live.close().catch(() => undefined);
       dropSession(id);
     }
     browsers.clear();
     flushStore();
+    flushState();
     // stdio MCP servers are child processes; do not leave them running.
     await Promise.all(state.mcpServers.map((cfg) => disconnectMcp(cfg.id).catch(() => undefined)));
     process.exit(0);
@@ -4223,7 +4330,35 @@ async function startServer() {
 
   server.listen(PORT, HOST, () => {
     console.log(`Autora ${VERSION} running on http://${HOST}:${PORT}`);
+    if (HOST === "127.0.0.1" && !process.env.AUTORA_HOST) {
+      console.log("[server] listening on this machine only; set AUTORA_HOST=0.0.0.0 to reach it from others");
+    }
   });
+
+  /* The https copy, beside the plain port rather than instead of it. A
+     failure here is said in the log and on the Voice check, and never takes
+     the plain port down with it. */
+  if (secure.enabled) {
+    try {
+      const source = certificateSource(secure, path.join(stateDir(), "tls"));
+      const secureServer = https.createServer(source.options, app);
+      secureServer.on("upgrade", upgrade);
+      secureServer.on("error", (err: NodeJS.ErrnoException) => {
+        secureListening = false;
+        console.warn(`[tls] https on port ${secure.port} failed: ${err.message}`);
+      });
+      secureServer.listen(secure.port, HOST, () => {
+        secureListening = true;
+        caPem = source.caPem;
+        console.log(
+          `[tls] https on port ${secure.port}` +
+          (source.caPem ? " with Autora's own certificate (install /autora-ca.crt to trust it)" : ""),
+        );
+      });
+    } catch (err: any) {
+      console.warn(`[tls] https is on but could not start: ${err?.message ?? err}`);
+    }
+  }
 }
 
 /* Once on the way up, then twice a day: an install left running for a year
@@ -4248,6 +4383,7 @@ process.on("uncaughtException", (err) => {
   console.error("[server] uncaught exception, restarting:", err?.stack ?? err);
   try {
     flushStore();
+    flushState();
   } finally {
     process.exit(1);
   }

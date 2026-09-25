@@ -188,7 +188,9 @@ export function App() {
     fetch("/api/origin")
       .then((r) => r.json())
       .then((d) => {
-        setSecurePort(typeof d?.secure_port === "number" ? d.secure_port : null);
+        // Only a listener that is actually up: a port that is configured but
+        // failed to start would be a link to an error page.
+        setSecurePort(typeof d?.secure_port === "number" && d?.secure_listening ? d.secure_port : null);
         setHasCertificate(!!d?.certificate);
       })
       .catch(() => undefined);

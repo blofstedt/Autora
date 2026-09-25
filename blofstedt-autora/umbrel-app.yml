@@ -93,17 +93,19 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Autora can now grow its own integrations. When a task lives on a service with
-  an API (GitHub, Slack, Notion, a database, maps, library docs) it offers to
-  set up an MCP server instead of working through the website: a card says
-  why it is better for what you asked and exactly what will run, and nothing
-  is installed until you tap Set it up. Not now is remembered for the rest of
-  the conversation. Keys a server needs are typed on the card and go straight
-  into Secrets, never into the chat or to the model. Beyond its built-in list
-  it can offer any MCP server on npm, a remote one, or write a small server of
-  its own for a service that has none. Servers it set up are marked on the
-  Integrations page, and you can ask it what MCP servers could help with a
-  task.
+  A security and reliability release. Voice from a phone works again:
+  AUTORA_TLS=1 now really serves https on port 8818, with a certificate Autora
+  issues for whatever name you open it by, and Settings offers that
+  certificate to install so the warning goes away. Other websites can no
+  longer reach into Autora from your browser: requests and live connections
+  they start are refused, so a page in another tab cannot read your threads
+  or answer a held command. API keys for every provider are now blanked
+  wherever they appear (the terminal, the thread, the Logs page), not just
+  three of them, and the GitHub token is only ever sent to GitHub. The
+  agent's commands now start in /host as the app always intended; addresses
+  like umbrel.local:8817 open in its browser; long command output keeps the
+  error at the end; web requests and searches can no longer hang a turn; and
+  a setting changed just before a restart is no longer lost.
 
 
 dependencies: []

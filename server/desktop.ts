@@ -309,6 +309,11 @@ stops when you close it (Ctrl-C). It has no Autora imports and opens no ports.
     pip install websockets mss pyautogui pillow
     python relay.py
 
+To reach a different address, give it: \`python relay.py 192.168.1.5:8817\`
+(host:port, http://..., https://... and ws://... all work). Over https with
+Autora's own certificate, either install the certificate from /autora-ca.crt
+on this machine or add --insecure.
+
 Nothing is sent until Autora asks for it, and it only asks while a session is
 actually looking at the desktop.
 """
@@ -318,9 +323,39 @@ import base64
 import io
 import json
 import platform
+import ssl
 import sys
 
+
+def relay_url(address):
+    """Any form of the server's address, as the relay's websocket URL."""
+    text = address.strip().rstrip("/")
+    if text.startswith("https://"):
+        text = "wss://" + text[len("https://"):]
+    elif text.startswith("http://"):
+        text = "ws://" + text[len("http://"):]
+    elif "://" not in text:
+        text = "ws://" + text
+    if "/ws/" not in text:
+        text += "/ws/desktop-relay"
+    return text
+
+
 WS_URL = "${wsUrl}"
+INSECURE = "--insecure" in sys.argv[1:]
+for arg in sys.argv[1:]:
+    if not arg.startswith("-"):
+        WS_URL = relay_url(arg)
+
+
+def connect_options():
+    """Certificate checking stays on unless --insecure asked otherwise."""
+    if INSECURE and WS_URL.startswith("wss://"):
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        return {"ssl": context}
+    return {}
 
 try:
     import websockets
@@ -503,7 +538,8 @@ async def main():
             # max_size lifted for inbound control messages; frames go the other
             # way. ping_keepalive lets a NAT-ed home connection stay up.
             async with websockets.connect(
-                WS_URL, max_size=8 * 1024 * 1024, ping_interval=20, ping_timeout=20
+                WS_URL, max_size=8 * 1024 * 1024, ping_interval=20, ping_timeout=20,
+                **connect_options()
             ) as ws:
                 delay = 1
                 await serve(ws)
