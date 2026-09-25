@@ -529,6 +529,26 @@ body::before {
 .turn { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .turn .msg + .msg { margin-top: 14px; }
 
+/* Turns scrolled out of view are not styled, laid out or painted.
+   Without this, every frame of any animation -- the presence mark breathing
+   in the sidebar, the mark turning while a reply is written -- re-ran layout
+   and paint over the entire conversation, so a long thread sat at half the
+   CPU while idle and choked while the agent typed. `auto 480px` is only the
+   guess for a turn never yet drawn; once drawn, its real height is kept.
+   Paint containment clips at the turn's edge, so the clip is moved out far
+   enough for card shadows and glows; browsers that cannot do that (or cannot
+   do `:has`) skip the whole rule and render as before. A maximised browser
+   card or expanded widget is `position: fixed`, which containment would pin
+   inside the turn, so its turn is left uncontained while it is open. */
+@supports (content-visibility: auto) and (overflow-clip-margin: 1px) and selector(:has(*)) {
+  .turn {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 480px;
+    overflow-clip-margin: 48px;
+  }
+  .turn:has(.cell.shot.is-max, .cell.widget.is-expanded) { content-visibility: visible; }
+}
+
 /* Offered, not forced: the pane holds still once you scroll up to read, and
    this is how you hand the live edge back. */
 .jump-pill {

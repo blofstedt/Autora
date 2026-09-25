@@ -93,7 +93,11 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  A security and reliability release. Voice from a phone works again:
+  Long conversations are fast again. The chat no longer redraws every earlier
+  reply for each word the agent types, and turns you have scrolled past cost
+  nothing, so a long thread stays smooth while a reply streams and no longer
+  keeps the processor busy while it sits idle. Also a security and
+  reliability release. Voice from a phone works again:
   AUTORA_TLS=1 now really serves https on port 8818, with a certificate Autora
   issues for whatever name you open it by, and Settings offers that
   certificate to install so the warning goes away. Other websites can no

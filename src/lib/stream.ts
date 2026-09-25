@@ -10,6 +10,25 @@ type Handlers = {
   onBrowser?: (state: BrowserState) => void;
 };
 
+/**
+ * The log so far with newly arrived events added, in seq order.
+ *
+ * They nearly always arrive in order, so the list is only sorted when a
+ * batch actually landed out of it -- sorting all of it on every streamed
+ * word was work repeated for nothing on a long thread.
+ */
+export function mergeEvents(prev: AutoraEvent[], fresh: AutoraEvent[]): AutoraEvent[] {
+  if (fresh.length === 0) return prev;
+  const next = prev.concat(fresh);
+  for (let i = Math.max(1, prev.length); i < next.length; i++) {
+    if (next[i - 1].seq > next[i].seq) {
+      next.sort((a, b) => a.seq - b.seq);
+      break;
+    }
+  }
+  return next;
+}
+
 export type StreamStatus =
   | { state: "connecting" }
   | { state: "live"; busy: boolean }

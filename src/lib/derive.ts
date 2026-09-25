@@ -287,9 +287,11 @@ const isStaged = (name: string) =>
  *
  * A pure reduction over the events, so what you read is exactly what the log
  * says and nothing is held anywhere else. It runs from zero on every change,
- * which is O(n) per render and fine into the tens of thousands of events; if a
- * session ever outgrows that, memoize on checkpoints rather than mutating
- * state in place.
+ * which is O(n) per update -- a few milliseconds at twenty thousand events.
+ * Every object it returns is new, so App passes the result through `share`
+ * (./share.ts), which hands back the previous object wherever nothing
+ * changed; that is what lets the thread redraw only the card that grew. Keep
+ * the output plain objects and arrays so that comparison stays meaningful.
  */
 export function derive(events: AutoraEvent[]): Derived {
   const spansById = new Map<string, SpanState>();

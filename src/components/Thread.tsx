@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { Bucket, Cell, KanbanTask, MemoryTouch } from "../lib/derive";
 import { IconAlert, IconArrow, IconArrowDown, IconChevron, IconUser } from "./Icons";
 import { AutoraMark } from "./AutoraMark";
@@ -199,7 +199,13 @@ type WorkState = {
   onOpenSettings?: () => void;
 };
 
-function TurnBucket({
+/* TurnBucket, CellView and Reply are memoised, and that is what keeps a long
+   thread responsive: the cards App hands down are the same objects from one
+   update to the next unless they changed (lib/share.ts), so while a reply
+   streams only its own card is drawn again -- not every earlier reply's
+   Markdown and every terminal above it. It relies on every prop being stable
+   too: pass handlers made with useCallback, never an inline arrow. */
+const TurnBucket = memo(function TurnBucket({
   bucket,
   sessionId,
   liveBrowserSeq,
@@ -252,7 +258,7 @@ function TurnBucket({
       </div>
     </article>
   );
-}
+});
 
 /**
  * Who a cell is, for React: the event that started it.
@@ -267,7 +273,7 @@ function cellKey(cell: Cell): string {
   return `${cell.kind}-${cell.seq}`;
 }
 
-function CellView({
+const CellView = memo(function CellView({
   cell,
   sessionId,
   liveBrowserSeq,
@@ -399,7 +405,7 @@ function CellView({
         </div>
       );
   }
-}
+});
 
 /**
  * What the agent said, with its reasoning one tap away.
@@ -407,10 +413,10 @@ function CellView({
  * Folded by default, live turn included: the reply is what you came for, and
  * reasoning that unfolds itself shoves the reply off the screen as it lands.
  */
-function Reply({
+const Reply = memo(function Reply({
   text,
   thinking,
-  memories = [],
+  memories = NO_MEMORIES,
   working,
   onOpenMind,
   onOpenSettings,
@@ -460,4 +466,8 @@ function Reply({
       </div>
     </div>
   );
-}
+});
+
+/** One empty list for every reply without memories, so the default does not
+    count as a change on each render. */
+const NO_MEMORIES: MemoryTouch[] = [];

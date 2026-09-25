@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { SessionStream, type StreamStatus } from "./lib/stream";
-import { derive, isRunning, type KanbanTask } from "./lib/derive";
+import { SessionStream, mergeEvents, type StreamStatus } from "./lib/stream";
+import { derive, isRunning, type Derived, type KanbanTask } from "./lib/derive";
+import { share } from "./lib/share";
 import { chime, paintChrome, type Chrome } from "./lib/chrome";
 import { Kind, type AutoraEvent, type BrowserState } from "./lib/types";
 import { setLiveFields, setLiveFrame } from "./lib/liveFrame";
@@ -45,6 +46,10 @@ const SESSION_POLL_MS = 10_000;
 /** How old a speak event may be and still be played: long enough for a slow
     connection to deliver it, short enough that a reload is not a recital. */
 const SPEAK_FRESH_S = 30;
+/** The least time between two updates of the thread while events stream in:
+    about fifteen a second, which reads as smooth text and leaves the page
+    room to breathe on a long conversation. */
+const EVENT_BATCH_MS = 66;
 
 export function App() {
   const [sessionId, setSessionId] = useState<string | null>(
@@ -203,16 +208,45 @@ export function App() {
     setLiveFrame(null);
     setLiveFields([]);
     setBrowser(null);
+    /* Events are added to the thread in batches, at most every
+       EVENT_BATCH_MS and on a frame, not one at a time. A streamed reply is
+       dozens of events a second and each one used to re-render the thread on
+       its own, which on a long conversation was more work than a frame has
+       room for. The first event after a quiet spell still shows on the very
+       next frame. A hidden page paints no frames, so there they go straight
+       in -- a reply read aloud with the screen off must not wait for one. */
+    let queued: AutoraEvent[] = [];
+    let frame: number | null = null;
+    let timer: number | null = null;
+    let lastFlush = 0;
+    const flush = () => {
+      if (frame !== null) cancelAnimationFrame(frame);
+      if (timer !== null) window.clearTimeout(timer);
+      frame = null;
+      timer = null;
+      if (queued.length === 0) return;
+      lastFlush = performance.now();
+      const batch = queued;
+      queued = [];
+      setEvents((prev) => mergeEvents(prev, batch));
+    };
+    const schedule = () => {
+      if (frame !== null || timer !== null) return;
+      const wait = EVENT_BATCH_MS - (performance.now() - lastFlush);
+      if (wait <= 0) frame = requestAnimationFrame(flush);
+      else timer = window.setTimeout(() => {
+        timer = null;
+        frame = requestAnimationFrame(flush);
+      }, wait);
+    };
     const stream = new SessionStream(sessionId, {
       onEvents: (fresh) => {
         // A batch of nothing but repeats: a new array would re-derive the
         // whole thread for no change.
         if (fresh.length === 0) return;
-        setEvents((prev) => {
-          const next = [...prev, ...fresh];
-          next.sort((a, b) => a.seq - b.seq);
-          return next;
-        });
+        queued.push(...fresh);
+        if (document.visibilityState === "hidden") flush();
+        else schedule();
       },
       onStatus: setStatus,
       onFrame: setLiveFrame,
@@ -229,12 +263,16 @@ export function App() {
        coming back checks it at once instead of waiting it out. */
     const wake = () => {
       if (document.visibilityState === "visible") stream.wake();
+      // Going away with events waiting for a frame that will not come.
+      else flush();
     };
     document.addEventListener("visibilitychange", wake);
     window.addEventListener("online", wake);
     window.addEventListener("pageshow", wake);
     window.addEventListener("focus", wake);
     return () => {
+      if (frame !== null) cancelAnimationFrame(frame);
+      if (timer !== null) window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", wake);
       window.removeEventListener("online", wake);
       window.removeEventListener("pageshow", wake);
@@ -258,7 +296,14 @@ export function App() {
     return () => { alive = false; };
   }, [page]);
 
-  const view = useMemo(() => derive(events), [events]);
+  /* The previous fold, so every card that did not change keeps its identity
+     and the thread redraws only the one that did (see lib/share.ts). */
+  const lastView = useRef<Derived | null>(null);
+  const view = useMemo(() => {
+    const next = share(lastView.current, derive(events));
+    lastView.current = next;
+    return next;
+  }, [events]);
   const doing = useMemo(() => activity(events), [events]);
 
   // A page that has been closed has no more frames coming, and the last one
@@ -730,6 +775,9 @@ export function App() {
     "Untitled session";
 
   const openKnowledge = useCallback(() => navigate("mind"), [navigate]);
+  // Stable, like every other handler the thread gets: a new function each
+  // render would make every card in it redraw on every streamed word.
+  const stopFromThread = useCallback(() => void stopTurn(), [stopTurn]);
   const openModelSettings = useCallback(() => {
     setConfigJump({ tab: "general" });
     navigate("config");
@@ -1022,7 +1070,7 @@ export function App() {
             onRunAutonomous={handleRunAutonomous}
             driving={driving}
             browserHandedOver={browserHandedOver}
-            onStop={() => void stopTurn()}
+            onStop={stopFromThread}
             onOpenMind={openKnowledge}
             onOpenSettings={openModelSettings}
             placeholder={placeholder}
