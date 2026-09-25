@@ -391,6 +391,9 @@ export function useDictation({
     };
 
     engine.onend = () => {
+      // An engine stopped and replaced by a fresh start -- hold-to-talk pressed
+      // again before the last one closed -- must not restart itself beside it.
+      if (recognition.current !== engine) return;
       setInterim("");
       if (wanted.current && restarts.current < MAX_RESTARTS) {
         restarts.current += 1;

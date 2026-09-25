@@ -88,13 +88,12 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The line under the conversation no longer just says "working": it says in a
-  few words what Autora is on — the request it is thinking about, the command
-  it is running, the site it is opening, or what it is thinking over between
-  steps. The voice settings have moved from the Themes menu to Config → Voice,
-  where you can also set the voice server's address and play a sample. And
-  when you ask Autora to say something out loud it now simply plays it in
-  that voice, instead of making an audio file and presenting it.
+  Live voice no longer keeps the microphone open. Autora still answers you out
+  loud, but to talk you now press and hold the Autora mark, speak, and let go:
+  what you said is sent as your message. Pressing the mark cuts Autora off
+  mid-sentence, and speaking while it works interrupts that turn, just as
+  typing does. No more chiming on and off between replies, and nothing is
+  picked up from the room unless you are holding the mark.
 
 
 dependencies: []

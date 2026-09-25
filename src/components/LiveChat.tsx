@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { turnPause, useDictation } from "../lib/voice";
+import type { PointerEvent as ReactPointerEvent } from "react";
+import { useDictation } from "../lib/voice";
 import { AutoraMark } from "./AutoraMark";
 import { IconStop, IconX } from "./Icons";
 
 /** Single stray syllables are usually the room, not a request. */
 const MIN_CHARS = 2;
+
+/** How long after you let go to wait for the engine to settle the last words
+    before sending what it had. Chrome on Android may never settle them. */
+const RELEASE_GRACE_MS = 1200;
 
 /**
  * Live voice, in place of the composer.
@@ -14,11 +19,13 @@ const MIN_CHARS = 2;
  * the conversation -- which is the whole point, because the reason to talk to
  * this thing is to watch it work while your hands are somewhere else.
  *
- * The loop is speak, pause, send: a phrase settles, a beat of silence ends the
- * thought, and it goes. The microphone closes while the agent talks, because a
- * phone speaker two inches from a phone microphone will happily transcribe the
- * agent back to itself; the orb is the way back in, and cutting it off mid
- * sentence is expected rather than rude.
+ * Autora answers out loud, and you talk by holding the mark: press and hold,
+ * speak, let go, and it goes. The microphone used to stay open between turns
+ * and decide for itself when you had finished, which meant it kept chiming on
+ * and off around the agent's voice and sent whatever the room said. Holding is
+ * unambiguous: nothing is heard unless you are pressing, and pressing cuts the
+ * agent off -- its voice stops at once, and what you say interrupts the turn
+ * in flight, the same as typing while it works.
  */
 export function LiveChat({
   onUtterance,
@@ -29,7 +36,6 @@ export function LiveChat({
   agentWorking,
   agentDoing,
   disabled,
-  onSpeakingChange,
 }: {
   onUtterance: (text: string) => void;
   onExit?: () => void;
@@ -42,41 +48,28 @@ export function LiveChat({
   /** What it is on, in a few words, when it is working. */
   agentDoing?: string | null;
   disabled?: boolean;
-  /** Report when the user is actively speaking in live mode. */
-  onSpeakingChange?: (speaking: boolean) => void;
 }) {
   /** Phrases the engine has committed to. */
   const pending = useRef("");
   /** The phrase still forming, which may never be committed to at all. */
   const live = useRef("");
-  const timer = useRef(0);
-  const speakingTimer = useRef<number>(0);
+  /** Set between letting go and sending, while the last words settle. */
+  const releasing = useRef(false);
+  const graceTimer = useRef(0);
   const utteranceRef = useRef(onUtterance);
   utteranceRef.current = onUtterance;
-  const speakingCbRef = useRef(onSpeakingChange);
-  speakingCbRef.current = onSpeakingChange;
 
   /** Set once the hook below exists; sending unsettled words is only half the
       job without it -- see `accept` in lib/voice. */
   const acceptRef = useRef<() => void>(() => {});
-  /** What will go out when you stop talking, shown so you can see it forming. */
+  /** What will go out when you let go, shown so you can see it forming. */
   const [heard, setHeard] = useState("");
-  const [userSpeaking, setUserSpeaking] = useState(false);
+  const [holding, setHolding] = useState(false);
 
-  const markSpeaking = useCallback(() => {
-    speakingCbRef.current?.(true);
-    setUserSpeaking(true);
-    window.clearTimeout(speakingTimer.current);
-    speakingTimer.current = window.setTimeout(() => {
-      speakingCbRef.current?.(false);
-      setUserSpeaking(false);
-    }, 850);
-  }, []);
-
-  /**
-   * Send what we have, settled or not.
-   */
+  /** Send what we have, settled or not. */
   const flush = useCallback(() => {
+    window.clearTimeout(graceTimer.current);
+    releasing.current = false;
     const text = `${pending.current} ${live.current}`.trim();
     pending.current = "";
     live.current = "";
@@ -89,67 +82,74 @@ export function LiveChat({
     }
   }, []);
 
-  /** Restart the quiet-for-long-enough clock. Talking keeps resetting it. */
-  const schedule = useCallback((quiet: number) => {
-    window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(flush, quiet);
-  }, [flush]);
-
   const onPhrase = useCallback((phrase: string) => {
-    markSpeaking();
     pending.current = `${pending.current} ${phrase}`.trim();
     // Settled, so it is no longer in flight -- keeping both would say it twice.
     live.current = "";
     setHeard(pending.current);
-    schedule(turnPause(pending.current, true));
-  }, [schedule, markSpeaking]);
-
-  const dictation = useDictation({ onPhrase, continuous: true });
-  const { start, stop, interim, level, supported, listening, error } = dictation;
-  acceptRef.current = dictation.accept;
-
-  // Show the words forming and mark speech active as interim results stream in
-  useEffect(() => {
-    if (!interim) return;
-    markSpeaking();
-    live.current = interim;
-    const text = `${pending.current} ${interim}`.trim();
-    setHeard(text);
-    schedule(turnPause(text, false));
-  }, [interim, schedule, markSpeaking]);
-
-  // Audio loudness level detection
-  useEffect(() => {
-    if (level > 0.12) {
-      markSpeaking();
-    }
-  }, [level, markSpeaking]);
-
-  // Hold the microphone shut while the agent has the floor, and take it back
-  // the moment it stops.
-  useEffect(() => {
-    if (disabled || !supported) return;
-    if (agentSpeaking) stop();
-    else start();
-  }, [agentSpeaking, disabled, supported, start, stop]);
-
-  useEffect(() => () => {
-    window.clearTimeout(timer.current);
-    window.clearTimeout(speakingTimer.current);
-    speakingCbRef.current?.(false);
   }, []);
 
+  const dictation = useDictation({ onPhrase, continuous: true });
+  const { start, stop, interim, supported, listening, error } = dictation;
+  acceptRef.current = dictation.accept;
+
+  // Show the words forming as interim results stream in.
+  useEffect(() => {
+    if (!interim) return;
+    live.current = interim;
+    setHeard(`${pending.current} ${interim}`.trim());
+  }, [interim]);
+
+  // Once the engine has closed after you let go, everything it was going to
+  // settle has settled: send it now rather than waiting out the grace.
+  useEffect(() => {
+    if (!listening && releasing.current) flush();
+  }, [listening, flush]);
+
+  const press = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (disabled || !supported || event.button > 0) return;
+    event.preventDefault();
+    // Keep the release even if the finger slides off the mark.
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* not supported */ }
+    // Still settling the last thing you said: send it before starting again.
+    if (releasing.current) flush();
+    onInterrupt?.();
+    setHolding(true);
+    start();
+  }, [disabled, supported, flush, onInterrupt, start]);
+
+  const release = useCallback(() => {
+    if (!holding) return;
+    setHolding(false);
+    releasing.current = true;
+    stop();
+    window.clearTimeout(graceTimer.current);
+    graceTimer.current = window.setTimeout(flush, RELEASE_GRACE_MS);
+  }, [holding, stop, flush]);
+
+  // Losing the page (or live mode going read-only) mid-hold is a release.
+  useEffect(() => {
+    if (disabled && holding) release();
+  }, [disabled, holding, release]);
+
+  useEffect(() => () => {
+    window.clearTimeout(graceTimer.current);
+  }, []);
+
+  const hint = "Hold the mark to talk.";
   const status = error
     ? `Microphone trouble: ${error}`
     : heard
       ? heard
-      : agentSpeaking
-        ? "Autora is speaking. Tap the mark to cut in."
-        : agentWorking
-          ? `${agentDoing || "Autora is working"}. Listening…`
-          : listening
-            ? "Listening…"
-            : "Starting the microphone…";
+      : holding
+        ? listening ? "Listening… let go to send." : "Starting the microphone…"
+        : agentSpeaking
+          ? `Autora is speaking. ${hint}`
+          : agentWorking
+            ? `${agentDoing || "Autora is working"}. ${hint}`
+            : hint;
+
+  const lit = holding || agentSpeaking;
 
   // The strip you would type into becomes the live bar: it says live mode is
   // on, shows the words as they form, and is the way back out.
@@ -157,13 +157,18 @@ export function LiveChat({
     <div className="live-bar" role="group" aria-label="Live voice chat">
       <button
         type="button"
-        className={`mob-live-btn live-bar-orb is-${userSpeaking || agentSpeaking ? "working" : "live"}`}
-        onClick={agentSpeaking ? onInterrupt : undefined}
-        title={agentSpeaking ? "Cut in" : "Live voice is on"}
-        aria-label={agentSpeaking ? "Cut in" : "Live voice is on"}
+        className={`mob-live-btn live-bar-orb is-${lit ? "working" : "live"} ${holding ? "is-holding" : ""}`}
+        onPointerDown={press}
+        onPointerUp={release}
+        onPointerCancel={release}
+        onContextMenu={(event) => event.preventDefault()}
+        disabled={disabled || !supported}
+        title="Hold to talk"
+        aria-label="Hold to talk"
+        aria-pressed={holding}
       >
         <span className="mob-live-glow" aria-hidden="true" />
-        <AutoraMark state={userSpeaking || agentSpeaking ? "working" : "live"} size={23} />
+        <AutoraMark state={lit ? "working" : "live"} size={23} />
       </button>
       <div className="live-bar-text">
         <span className="live-bar-label"><span className="live-bar-dot" />Live</span>

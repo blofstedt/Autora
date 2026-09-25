@@ -1082,6 +1082,12 @@ button.hint.voice-note:hover { text-decoration: underline; }
   box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.08), 0 10px 32px -14px rgba(0, 0, 0, 0.7);
 }
 .live-bar .live-bar-orb { margin: 0 4px 0 2px; }
+.live-bar .live-bar-orb {
+  /* Held, not tapped: no scrolling, text selection or long-press menu. */
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  transition: transform 0.12s var(--ease);
+}
+.live-bar .live-bar-orb.is-holding { transform: scale(1.12); }
 .live-bar-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .live-bar-label {
   display: inline-flex; align-items: center; gap: 6px;
