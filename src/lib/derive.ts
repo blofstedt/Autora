@@ -17,6 +17,8 @@ export type TranscriptTurn = {
   text: string;
   seq: number;
   thinking?: string;
+  /** No model was connected: the reply carries a button to Settings. */
+  setup?: boolean;
 };
 
 export type Approval = {
@@ -438,10 +440,15 @@ export function derive(events: AutoraEvent[]): Derived {
         } else {
           openAgentTurn = openReply(e.seq, e.payload.text ?? "");
         }
+        if (e.payload.setup) openAgentTurn.setup = true;
         break;
       }
 
       case Kind.AgentThinking: {
+        // Older servers opened every turn with a canned `Analyzing: "<the
+        // request>"`, which drew a "reasoning" toggle over replies that had
+        // no reasoning behind them -- a failure message included.
+        if (typeof e.payload.text === "string" && e.payload.text.startsWith('Analyzing: "')) break;
         if (!openAgentTurn || current()?.kind !== "reply") {
           openAgentTurn = openReply(e.seq, "");
         }

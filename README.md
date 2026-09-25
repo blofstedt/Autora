@@ -38,8 +38,10 @@ two steps: `docker build -t autora . && docker run -p 8817:8817 -v autora-data:/
 ### Connecting a model
 
 Replies come from whichever provider you connect, called from the server -- the
-key never reaches the browser. Open Settings (the gear, top right), pick a
-vendor, paste a key, and choose a model from the list:
+key never reaches the browser. On a fresh install the chat opens on a card
+that asks for one: pick a vendor, paste its key, and Autora checks it before
+saving. For the model list and every other option, open **Settings** in the
+sidebar:
 
 | Provider | Get a key | Notes |
 | --- | --- | --- |
@@ -85,7 +87,7 @@ If a voice server is running on the network Autora finds it by itself: the
 [Kokoro](https://github.com/remsky/Kokoro-FastAPI) Umbrel app answers to
 `kokoro_web_1` on the same private Docker network, and what is spoken to is
 its OpenAI-shaped `/v1/audio/speech`. Nothing has to be configured for that
-to work. **Config -> Voice** then lists the voices the server offers -- the
+to work. **Settings -> Voice** then lists the voices the server offers -- the
 list comes from the server, so it is whatever it actually has -- plays a sample,
 takes another address if the server lives elsewhere, and the voice picked there
 is used on every device, phone included, from then on. When the agent is asked

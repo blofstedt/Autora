@@ -208,6 +208,27 @@ body::before {
 }
 .modal-top b { font-size: 13.5px; font-weight: 650; }
 .modal-body { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; }
+.modal-foot {
+  flex: 0 0 auto; display: flex; justify-content: center;
+  padding: 6px 12px 8px; border-top: 1px solid var(--border);
+}
+
+/* "Deleted X · Undo": bottom centre, above the composer, for a few seconds. */
+.toast {
+  position: fixed; left: 50%; bottom: calc(132px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%); z-index: 90;
+  display: flex; align-items: center; gap: 14px;
+  max-width: calc(100vw - 32px); padding: 9px 10px 9px 16px;
+  border-radius: 999px; background: var(--s3); border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-lg); font-size: 13px; color: var(--text);
+  animation: rise 0.2s var(--ease) both;
+}
+.toast > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toast-act {
+  flex: 0 0 auto; border: 0; border-radius: 999px; padding: 5px 12px; cursor: pointer;
+  background: var(--accent-soft); color: var(--accent-light); font: inherit; font-weight: 650;
+}
+.toast-act:hover { background: rgba(var(--accent-rgb), 0.24); }
 
 /* One session: the row that opens it, then pin and delete beside it. */
 .ses-entry {
@@ -270,7 +291,8 @@ body::before {
 .badge.is-working .dot { animation: halo 1.1s ease-out infinite; box-shadow: 0 0 0 0 var(--accent-line); }
 .badge.is-recorded { color: var(--text-2); }
 .badge.is-closed { color: var(--danger); border-color: rgba(251, 113, 133, 0.3); }
-.badge.tokens { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); }
+.badge.tokens { font-size: 11px; color: var(--text-3); cursor: pointer; font-family: inherit; }
+.badge.tokens:hover { color: var(--text-2); border-color: var(--border-strong); }
 /* The status badge swaps between words of different lengths every turn; a fixed
    floor stops the whole header shuffling sideways each time it does. */
 .badge.status { min-width: 96px; justify-content: center; }
@@ -396,6 +418,51 @@ body::before {
   color: var(--text-2); text-align: left; white-space: pre-wrap; overflow-x: auto;
 }
 .empty .empty-note { font-size: 11.5px; color: var(--text-3); max-width: 340px; }
+
+/* The empty chat before a model is connected: one card asking for it. */
+.setup, .starters {
+  display: grid; gap: 10px; justify-items: center;
+  width: min(460px, 100%);
+}
+.setup p, .starters p { max-width: 380px; }
+.setup-providers { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 4px; }
+.setup-provider {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 30px; padding: 0 12px; border-radius: 999px;
+  border: 1px solid var(--border-strong); background: var(--s2); color: var(--text-2);
+  font: inherit; font-size: 12.5px; cursor: pointer;
+}
+.setup-provider:hover { color: var(--text); background: var(--s3); }
+.setup-provider.on { color: var(--text); border-color: var(--accent-line); background: var(--accent-soft); }
+.setup-form { display: grid; gap: 8px; width: 100%; text-align: left; }
+.setup-form input {
+  width: 100%; padding: 10px 12px; border-radius: var(--r-sm);
+  background: var(--s2); border: 1px solid var(--border-strong); color: var(--text);
+  font-family: var(--mono); font-size: 12.5px;
+}
+.setup-form input:focus { outline: none; border-color: var(--accent-line); }
+.setup-form .btn { justify-self: end; }
+.setup-hint { font-size: 12px; color: var(--text-3); margin: 0; }
+.setup-link { font-size: 12px; color: var(--accent-light); }
+.setup-error { margin: 0; }
+.setup-more {
+  border: 0; background: none; padding: 4px; cursor: pointer;
+  color: var(--text-3); font: inherit; font-size: 12px; text-decoration: underline;
+}
+.setup-more:hover { color: var(--text-2); }
+
+/* Tasks to start from, once a model is connected. */
+.starter-list { display: grid; gap: 6px; width: 100%; margin-top: 4px; }
+.starter {
+  padding: 10px 14px; border-radius: var(--r-sm); text-align: left;
+  border: 1px solid var(--border); background: var(--s1); color: var(--text-2);
+  font: inherit; font-size: 13px; cursor: pointer;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+.starter:hover { background: var(--s2); color: var(--text); border-color: var(--border-strong); }
+
+/* A button under a reply: "Open Settings" when no model answered. */
+.msg-action { margin-top: 10px; }
 
 .frame-wrap { position: relative; max-width: 100%; max-height: 100%; line-height: 0; }
 .frame {
@@ -1435,6 +1502,24 @@ label + .jf-hint { margin-top: -5px; }
   overflow-wrap: anywhere;
 }
 .set-warn { margin: 9px 0 0; font-size: 12px; line-height: 1.5; color: var(--warn); }
+/* "How it works" and other detail folded under a one-line summary. */
+.set-more { margin: 6px 0 0; }
+.set-more > summary {
+  cursor: pointer; width: fit-content; font-size: 12px; color: var(--text-3);
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.set-more > summary:hover { color: var(--text-2); }
+.prov-others { margin-top: 10px; }
+.prov-others > summary { margin-bottom: 8px; }
+.set-show-all { margin-top: 8px; }
+
+/* In place of a Save button: settings save themselves, and this says so. */
+.save-state {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12px; color: var(--text-3); white-space: nowrap;
+}
+.save-state.is-busy { color: var(--text-2); }
+.save-state.is-done { color: var(--live); }
 
 .set-choices { display: grid; gap: 7px; }
 .set-choice {
@@ -3186,22 +3271,15 @@ label + .jf-hint { margin-top: -5px; }
   .shot-strip input::-moz-range-thumb { width: 20px; height: 20px; }
 }
 
-/* The live voice control floats just above Send, its centre over Send's
-   centre, below desktop width. The thread keeps room beneath its last line so
-   the button never sits over it. On a desktop it moves into the row beside
-   the microphone instead. */
-.composer-live { display: none; }
-.composer-box { position: relative; --send: 36px; --float: 40px; }
-@media (pointer: coarse) { .composer-box { --send: 40px; } }
-@media (max-width: 680px) { .composer-box { --float: 50px; } }
-.mob-live-btn.composer-float {
-  position: absolute; z-index: 5; margin: 0;
-  width: var(--float); height: var(--float);
-  bottom: calc(100% + 14px);
-  right: calc(10px + var(--send) / 2 - var(--float) / 2);
+/* Dictate and Talk: labelled, side by side in the composer's tool row. */
+.composer-box { position: relative; }
+.composer-tools .btn.labeled {
+  width: auto; height: 32px; padding: 0 11px 0 9px; gap: 6px; border-radius: 999px;
+  font-size: 12px; font-weight: 550;
 }
-.mob-live-btn.composer-float:disabled { opacity: 0.5; cursor: default; transform: none; }
-@media (max-width: 1179px) { .thread { padding-bottom: 72px; } }
+.composer-tools .btn.labeled .mic-halo { border-radius: 999px; }
+.btn-label { position: relative; z-index: 1; }
+.composer-live:disabled { opacity: 0.5; }
 
 /* ── desktop ── */
 @media (min-width: 1000px) {
@@ -3211,10 +3289,6 @@ label + .jf-hint { margin-top: -5px; }
 }
 
 @media (min-width: 1180px) {
-  /* The rail already carries Tasks, and live voice moves next to Send. A tab
-     bar pinned to the bottom of a monitor is a phone habit. */
-  .mob-live-btn.composer-float { display: none; }
-  .composer-live { display: inline-flex; }
 
   /* The session you are in, said at the top of the column rather than only
      as a highlighted row in the rail. */
@@ -3792,23 +3866,18 @@ html[data-font="mono"] body { font-size: 13.5px; }
 .rail-nav-item:hover { background: var(--s2); color: var(--text); }
 .rail-nav-item.on { background: var(--accent-soft); color: var(--text); }
 .rail-nav-item.on svg { color: var(--accent); }
-.rail-alert {
-  margin-left: auto; width: 7px; height: 7px; border-radius: 50%;
-  background: var(--warn); animation: halo 1.6s ease-out infinite;
+/* A word at the end of a rail item: "waiting on you", "desktop". Text, not
+   just a dot, because a phone has no tooltips to explain a dot. */
+.rail-tag {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 4px;
+  padding: 1px 7px; border-radius: 999px; font-style: normal;
+  font-size: 10.5px; font-weight: 600; color: var(--live);
+  background: rgba(52, 211, 153, 0.1);
 }
-/* The Themes panel: unfolds in the list, under the Themes item. */
-.settings-menu {
-  margin: 6px 0 0; padding: 12px; border-radius: 14px;
-  background: var(--s2); border: 1px solid var(--border-strong);
-  animation: rise 0.18s var(--ease) both;
-}
-.sm-head {
-  display: flex; align-items: center; gap: 7px; margin: 2px 2px 8px;
-  font-size: 10.5px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase;
-  color: var(--text-3);
-}
-.sm-head:not(:first-child) { margin-top: 14px; }
-.sm-themes { display: grid; grid-template-columns: 1fr; gap: 3px; }
+.rail-tag.is-alert { color: var(--warn); background: rgba(251, 191, 36, 0.12); }
+.rail-divider { height: 1px; margin: 8px 10px; background: var(--border); }
+.sm-font-head { margin-top: 18px !important; }
+.sm-themes { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px; }
 .sm-theme {
   display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: var(--r-sm);
   border: 1px solid transparent; background: none; cursor: pointer;
@@ -3823,7 +3892,7 @@ html[data-font="mono"] body { font-size: 13.5px; }
 }
 .sm-swatch i { width: 10px; height: 10px; border-radius: 50%; }
 .sm-theme-name { flex: 1; min-width: 0; }
-.sm-fonts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; }
+.sm-fonts { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 5px; }
 .sm-font {
   padding: 7px 8px; border-radius: var(--r-sm); cursor: pointer;
   border: 1px solid var(--border); background: var(--s1); color: var(--text-2); font-size: 13px;
@@ -4019,7 +4088,7 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 .sched.is-embedded .sched-top {
   height: auto; min-height: 0; padding: 12px 22px; background: none; border-bottom: 0;
 }
-.sched.is-embedded .sched-top:not(:has(.btn)) { display: none; }
+.sched.is-embedded .sched-top:not(:has(.btn, .seg, .save-state)) { display: none; }
 .kweb.is-embedded .kweb-top { height: auto; min-height: 58px; }
 @media (max-width: 680px) { .sched.is-embedded .sched-top { padding: 10px 12px 0; } }
 @media (max-width: 680px) {
@@ -4371,3 +4440,11 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 @media (pointer: coarse) { .slash-item { padding: 11px 12px; } }
+
+/* The Mind before anything is in it: what will appear, and a way to start. */
+.mind-intro {
+  display: grid; justify-items: center; gap: 10px; text-align: center;
+  padding: 28px 20px;
+}
+.mind-intro h3 { margin: 4px 0 0; font-size: 14px; letter-spacing: 0; text-transform: none; color: var(--text); }
+.mind-intro p { margin: 0; max-width: 460px; font-size: 13px; line-height: 1.55; color: var(--text-2); }

@@ -20,6 +20,8 @@ export type Command = {
   arg?: string;
   /** Only offered while a turn is running. */
   whileRunning?: boolean;
+  /** Older names that still run it when typed in full, but are not offered. */
+  aliases?: string[];
 };
 
 export const COMMANDS: Command[] = [
@@ -32,8 +34,8 @@ export const COMMANDS: Command[] = [
   { id: "live", name: "live", hint: "Start live voice chat" },
   { id: "sessions", name: "sessions", hint: "Open the session list" },
   { id: "mind", name: "mind", hint: "Open what Autora remembers" },
-  { id: "cron", name: "cron", hint: "Open scheduled jobs and watchers" },
-  { id: "config", name: "config", hint: "Open settings and API keys" },
+  { id: "cron", name: "schedules", hint: "Open scheduled tasks and watchers", aliases: ["cron"] },
+  { id: "config", name: "settings", hint: "Open settings and API keys", aliases: ["config"] },
   { id: "system", name: "system", hint: "Open status and logs" },
 ];
 
@@ -60,6 +62,6 @@ export function suggest(draft: string, running: boolean): Command[] {
 export function resolve(draft: string): { command: Command; arg: string } | null {
   const parsed = parseCommand(draft.trim());
   if (!parsed) return null;
-  const command = COMMANDS.find((c) => c.name === parsed.name);
+  const command = COMMANDS.find((c) => c.name === parsed.name || c.aliases?.includes(parsed.name));
   return command ? { command, arg: parsed.arg } : null;
 }

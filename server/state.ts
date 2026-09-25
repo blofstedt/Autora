@@ -758,7 +758,10 @@ export interface Resolved {
 export function resolveProvider(): Resolved {
   const wanted = state.provider || "auto";
 
-  const usable = (id: string) => Boolean(keyFor(id)) || id === "local";
+  // A local server needs no key, but on Automatic it only counts once a model
+  // has been named for it: otherwise a fresh install "chose" Local server and
+  // reported "No model chosen for Local server" -- a provider nobody picked.
+  const usable = (id: string) => Boolean(keyFor(id)) || (id === "local" && Boolean(modelFor(id)));
 
   let chosen = wanted;
   if (wanted === "auto") {
@@ -769,7 +772,7 @@ export function resolveProvider(): Resolved {
         model: "",
         key: "",
         baseUrl: "",
-        problem: "No provider is connected. Add an API key in Settings.",
+        problem: "No provider is connected yet. Add an API key for one.",
       };
     }
   }

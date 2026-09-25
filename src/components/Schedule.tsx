@@ -201,7 +201,7 @@ export function Schedule({
       <div className="sched-top">
         <div className="brand">
           <span className="brand-mark"><IconRepeat size={13} /></span>
-          {embedded ? "Cron" : "Scheduled tasks"}
+          {embedded ? "Schedules" : "Scheduled tasks"}
         </div>
         <div className="spacer" />
         <button className="btn primary" onClick={() => { setError(null); setEditing("new"); }}>

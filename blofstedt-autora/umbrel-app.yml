@@ -66,12 +66,11 @@ description: >-
   • All sessions are recorded and replayable.
 
 
-  Setup: after installing, open the app, go to Settings, add an API key for
-  whichever provider you want and pick a model. Keys are saved to the app's
-  data directory, so they survive updates. Keys can also be set in
+  Setup: after installing, open the app. Until a model is connected the chat
+  shows a setup card: pick a provider, paste its API key, and Autora checks it
+  before saving. Every other option is in Settings. Keys are saved to the
+  app's data directory, so they survive updates. Keys can also be set in
   ~/umbrel/app-data/blofstedt-autora/.env instead, one KEY=value per line.
-  Without a key every panel still works, but nothing answers: the thread says
-  which key is missing rather than improvising a reply.
 
 
   Voice from a phone: browsers only open a microphone on a secure page, and an
@@ -88,12 +87,17 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Autora's own voice now starts talking sooner. Instead of waiting for a whole
-  reply to be turned into speech before playing any of it, it speaks the
-  first sentence as soon as that sentence is ready, while the next ones are
-  prepared in the background, so the reply flows sentence after sentence with
-  no pause in between. Long run-on sentences are broken at a comma so they
-  never hold up the start.
+  A friendlier first run and a tidier app. A new install now opens on a card
+  that connects a model (pick a provider, paste a key, done) instead of a chat
+  that could not answer, and once a model is connected the empty chat offers
+  example tasks to start from. The sidebar is regrouped with plainer names:
+  Schedules (was Cron), Integrations (was MCP), Usage (was Analytics) and
+  Settings (was Config), where themes and fonts now live under Appearance.
+  Settings save themselves as you change them, connected providers are listed
+  first, and keys have their own Save button. Deleting a session can be undone
+  for a few seconds. The header shows what the session has cost rather than
+  token counts, the Dictate and Talk buttons are labelled and sit in the
+  message box on phones too, and long help text is folded away.
 
 
 dependencies: []

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { Bucket, Cell, KanbanTask, MemoryTouch } from "../lib/derive";
-import { IconAlert, IconArrowDown, IconChevron, IconUser } from "./Icons";
+import { IconAlert, IconArrow, IconArrowDown, IconChevron, IconUser } from "./Icons";
 import { AutoraMark } from "./AutoraMark";
 import { TerminalCell } from "./TerminalCell";
 import { ScreencastCell } from "./ScreencastCell";
@@ -38,9 +38,12 @@ export function Thread({
   live,
   onPermissionDecide,
   onRunAutonomous,
+  placeholder,
   ...work
 }: {
   buckets: Bucket[];
+  /** What an empty session shows: the setup card, or tasks to start from. */
+  placeholder?: ReactNode;
   busy: boolean;
   /** What it is on right now, in a few words (see lib/activity.ts). */
   doing?: string | null;
@@ -132,11 +135,12 @@ export function Thread({
     return (
       <div className="empty">
         <AutoraMark size={80} state="live" className="empty-mark" />
-        <h3>Ready</h3>
-        <p>
-          Describe a task below. Every command, page and edit appears here as it
-          happens, and stays here to read back.
-        </p>
+        {placeholder ?? (
+          <>
+            <h3>Ready</h3>
+            <p>Describe a task below and watch it happen here.</p>
+          </>
+        )}
       </div>
     );
   }
@@ -188,6 +192,8 @@ type WorkState = {
   onStop: () => void;
   /** Opens the Mind page, from a memory named in the thread. */
   onOpenMind?: () => void;
+  /** Opens Settings on the model, from a reply that needs one connected. */
+  onOpenSettings?: () => void;
 };
 
 function TurnBucket({
@@ -271,6 +277,7 @@ function CellView({
   browserHandedOver,
   onStop,
   onOpenMind,
+  onOpenSettings,
 }: {
   cell: Cell;
   sessionId: string;
@@ -290,6 +297,7 @@ function CellView({
           memories={cell.memories}
           working={active}
           onOpenMind={onOpenMind}
+          onOpenSettings={cell.turn.setup ? onOpenSettings : undefined}
         />
       );
     case "terminal":
@@ -338,6 +346,7 @@ function CellView({
               browserHandedOver={browserHandedOver}
               onStop={onStop}
               onOpenMind={onOpenMind}
+              onOpenSettings={onOpenSettings}
             />
           ))}
         </ScreencastCell>
@@ -401,11 +410,13 @@ function Reply({
   memories = [],
   working,
   onOpenMind,
+  onOpenSettings,
 }: {
   text: string;
   thinking?: string;
   memories?: MemoryTouch[];
   onOpenMind?: () => void;
+  onOpenSettings?: () => void;
   /** Still being written. The mark animates while this holds and plays its
       own ending when it drops, so the reply visibly lands rather than just
       stopping. */
@@ -438,6 +449,11 @@ function Reply({
           <MemoryCell key={index} cell={m} onOpen={onOpenMind} inline />
         ))}
         {text && <div className="msg-text is-md"><Markdown text={text} /></div>}
+        {onOpenSettings && (
+          <button className="btn primary msg-action" onClick={onOpenSettings}>
+            Open Settings <IconArrow size={13} />
+          </button>
+        )}
       </div>
     </div>
   );

@@ -101,9 +101,11 @@ export function StatusPage({
           </button>
           <button className="stat-card" onClick={() => onNavigate("config")}>
             <span className="stat-label">Model</span>
-            <b className="stat-value">{snap.settings?.active.model ?? "none"}</b>
+            <b className="stat-value">{snap.settings?.active.model ?? "not connected"}</b>
             <span className={`stat-sub ${snap.settings?.active.model ? "" : "is-warn"}`}>
-              {snap.settings?.active.provider ?? snap.settings?.active.hint ?? ""}
+              {snap.settings?.active.model
+                ? snap.settings?.active.provider ?? ""
+                : "Add an API key in Settings"}
             </span>
           </button>
           <button className="stat-card" onClick={() => onNavigate("sessions")}>
@@ -119,24 +121,34 @@ export function StatusPage({
             <span className="stat-sub">{snap.usage ? `${money(snap.usage.today.cost)} today · ${snap.usage.month.turns} calls` : ""}</span>
           </button>
           <button className="stat-card" onClick={() => onNavigate("config")}>
-            <span className="stat-label">Tools</span>
-            <b className="stat-value">{groups.length ? `${ready} of ${groups.length}` : "…"}</b>
-            <span className="stat-sub">{groups.filter((g) => g.available).map((g) => g.label).join(" · ") || "none ready"}</span>
+            <span className="stat-label">What it can use</span>
+            <b className="stat-value">{groups.length ? `${ready} of ${groups.length} ready` : "…"}</b>
+            <span className="stat-sub">
+              {groups.filter((g) => g.available).map((g) => g.label).join(" · ") || "none ready"}
+              {groups.some((g) => !g.available)
+                ? ` — not yet: ${groups.filter((g) => !g.available).map((g) => g.label).join(", ")}`
+                : ""}
+            </span>
           </button>
           <button className="stat-card" onClick={() => onNavigate("mcp")}>
-            <span className="stat-label">MCP</span>
-            <b className="stat-value">{servers.length ? `${connected.length} of ${servers.length}` : "none"}</b>
+            <span className="stat-label">Integrations</span>
+            <b className="stat-value">{servers.length ? `${connected.length} of ${servers.length} connected` : "none"}</b>
             <span className={`stat-sub ${servers.length > connected.length ? "is-warn" : ""}`}>
               {servers.length ? `${mcpTools} tool${mcpTools === 1 ? "" : "s"} offered` : "no servers added"}
             </span>
           </button>
           <button className="stat-card" onClick={() => onNavigate("config")}>
-            <span className="stat-label">Jev Mode</span>
+            {/* Jev is the internal name; what it is to a person is fast decisions. */}
+            <span className="stat-label">Quick decisions (Jev)</span>
             <b className="stat-value">
-              {!jev ? "…" : !jev.enabled ? "off" : jev.support.state === "no" ? "not supported" : jev.support.state === "yes" ? "active" : "ready"}
+              {!jev ? "…" : !jev.enabled ? "off" : jev.support.state === "no" ? "unavailable" : jev.support.state === "yes" ? "on" : "ready"}
             </b>
             <span className="stat-sub">
-              {jev?.last ? `last: ${jev.last.task}, ${jev.last.mode === "jev" ? `${jev.last.ms} ms` : "fell back"}` : jev?.support.reason ?? ""}
+              {jev?.last
+                ? `last: ${jev.last.task}, ${jev.last.mode === "jev" ? `${jev.last.ms} ms` : "used the full model instead"}`
+                : jev?.support.state === "no"
+                  ? jev.support.reason ?? "This model cannot score its choices."
+                  : "Scores small yes/no choices without a full model call."}
             </span>
           </button>
           <button className="stat-card" onClick={() => onTab("logs")}>
@@ -149,8 +161,8 @@ export function StatusPage({
         <section className="set-card">
           <h3>How the tools have been going</h3>
           <p className="jf-hint">
-            The last week of calls. Tools failing often are named to the agent at the start of
-            each turn, so it does not walk into the same wall again.
+            The last week of tool calls. Tools that fail often are pointed out to the agent so it
+            tries another way.
           </p>
           {snap.health.length === 0 && <p className="jf-hint">No tool calls yet.</p>}
           <div className="health-rows">
@@ -171,8 +183,8 @@ export function StatusPage({
         <section className="set-card">
           <h3>Tools Autora wrote</h3>
           <p className="jf-hint">
-            Scripts the agent saved with tool_create for work it does again. It is offered each one
-            as my_&lt;name&gt; while the terminal is on.
+            Small scripts the agent saved for jobs it does repeatedly, so next time it runs the
+            script instead of working it out again.
           </p>
           {snap.custom.length === 0 && <p className="jf-hint">None yet.</p>}
           {snap.custom.map((t) => (
@@ -247,10 +259,10 @@ export function StatusPage({
                   .finally(() => setPruning(false));
               }}
             >
-              {pruning ? "Housekeeping…" : "Apply the limits now"}
+              {pruning ? "Cleaning up…" : "Clean up old sessions now"}
             </button>
             <span className="set-note">
-              Nothing else is deleted: the newest ones, anything pinned, and anything running now.
+              Only what is past the limits above. The newest, anything pinned, and anything running are kept.
             </span>
           </div>
         </section>

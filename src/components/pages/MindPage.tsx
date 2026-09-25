@@ -103,6 +103,9 @@ export function MindPage({
       .sort((p, q) => q.n - p.n);
   }, [edges, byId]);
 
+  /** Nothing in any bucket and no search: the first-visit state. */
+  const pristine = !!data && records.length === 0 && !query.trim();
+
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     return records
@@ -176,8 +179,7 @@ export function MindPage({
         <div className="page-inner">
           <div className="page-toolbar">
             <p className="jf-hint page-lede">
-              What the agent keeps between sessions, sorted into four buckets. Edit
-              anything here, or move it to the bucket it belongs in.
+              What the agent remembers between sessions. Edit, move or remove anything here.
             </p>
             <input
               className="page-search"
@@ -199,9 +201,8 @@ export function MindPage({
               />
               <span>
                 <b>Learn from finished work</b>
-                After a turn that did real work, or where you said how you like things done, the
-                agent writes down what is worth keeping. It stays unconfirmed until you keep it or
-                it works again; confirmed procedures that keep working are pinned automatically.
+                After real work, the agent notes what is worth keeping. New notes wait here for you
+                to keep or discard.
               </span>
             </label>
           )}
@@ -234,6 +235,27 @@ export function MindPage({
           )}
           {error && <p className="set-warn">{error}</p>}
 
+          {/* Nothing learned yet: one card that says what will appear here,
+              rather than four zeros and an empty list under them. */}
+          {pristine && (
+            <section className="set-card mind-intro">
+              <span className="empty-ring"><IconBrain size={22} /></span>
+              <h3>Nothing remembered yet</h3>
+              <p>
+                As Autora works, it notes what it learns — how you like things done, the steps
+                for a recurring job, facts about your setup, and skills it picks up. Each note
+                appears here for you to keep, edit or discard.
+              </p>
+              <button
+                className="btn"
+                onClick={() => { setAdding({ title: "", body: "", tags: "", kind: bucket }); openRecord(null); }}
+              >
+                <IconPlus size={14} /> Add one yourself
+              </button>
+            </section>
+          )}
+
+          {!pristine && <>
           <div className="mind-buckets" role="tablist" aria-label="Buckets">
             {BUCKETS.map((b) => (
               <button
@@ -295,7 +317,21 @@ export function MindPage({
             </section>
           )}
 
-          {data && shown.length === 0 && !adding && (
+          </>}
+
+          {adding && pristine && (
+            <section className="set-card mind-edit">
+              <RecordFields draft={adding} onChange={setAdding} />
+              <div className="jf-actions">
+                <button className="btn ghost" onClick={() => setAdding(null)}>Cancel</button>
+                <button className="btn primary" disabled={busy || !adding.title.trim()} onClick={() => void add()}>
+                  Add to {bucketLabel(adding.kind)}
+                </button>
+              </div>
+            </section>
+          )}
+
+          {!pristine && data && shown.length === 0 && !adding && (
             <div className="empty page-empty">
               <span className="empty-ring"><IconBrain size={22} /></span>
               <h3>{query ? "Nothing matches" : `No ${bucketLabel(bucket).toLowerCase()} yet`}</h3>
@@ -320,9 +356,11 @@ export function MindPage({
                         <button
                           className={`btn ${r.pinned ? "primary" : "ghost"}`}
                           onClick={() => void run(() => patchRecord(r.id, { pinned: !r.pinned }))}
-                          title="A pinned record is loaded into every session"
+                          aria-pressed={!!r.pinned}
                         >
-                          {r.pinned ? "Pinned" : "Pin"}
+                          {/* What pinning does, said on the button: a phone
+                              never shows the tooltip this used to be. */}
+                          {r.pinned ? "Used in every session" : "Use in every session"}
                         </button>
                         <button
                           className="btn icon ghost"

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   IconBrain, IconCheck, IconChevron, IconGear, IconGlobe, IconMonitor, IconRepeat,
   IconTerminal, IconX,
@@ -10,6 +10,8 @@ import { Billing } from "./Billing";
 import { SecretStore } from "./SecretStore";
 import { Credentials } from "./Credentials";
 import { useServerVersion, versions } from "./UpdateNotice";
+import { ThemePicker } from "./Rail";
+import type { Appearance } from "../lib/theme";
 
 type Credential = {
   name: string;
@@ -145,10 +147,10 @@ export type SettingsSection = "config" | "keys" | "analytics" | "system";
 
 /** Config's three parts: the model, tools and instructions; the API keys and
     secrets; and the person's own details and sign-ins. */
-export type ConfigTab = "general" | "keys" | "credentials";
+export type ConfigTab = "general" | "keys" | "credentials" | "appearance";
 
 export function Settings({
-  onClose, section, embedded = false, initialTab = "general",
+  onClose, section, embedded = false, initialTab = "general", appearance, onAppearance,
 }: {
   onClose?: () => void;
   section?: SettingsSection;
@@ -156,10 +158,12 @@ export function Settings({
   embedded?: boolean;
   /** On Config, which half to open on. */
   initialTab?: ConfigTab;
+  /** How the app looks, for the Appearance tab. */
+  appearance?: Appearance;
+  onAppearance?: (next: Appearance) => void;
 }) {
-  /* API Keys is a section of Config rather than a page of its own. One
-     component, so a key typed on one tab and a model picked on the other are
-     saved together by the one Save button. */
+  /* API Keys is a section of Settings rather than a page of its own, so the
+     keys and the model they unlock are edited in one component. */
   const [tab, setTab] = useState<ConfigTab>(initialTab);
   useEffect(() => {
     if (section !== "config" || !embedded) return;
@@ -176,9 +180,9 @@ export function Settings({
   /* Credentials are the person's own details and sign-ins, not keys for a
      service, so on Config they are a tab of their own. */
   const showsCredentials = section === "config" ? tab === "credentials" : shows("keys");
-  const title = section === "config" ? "Config"
+  const title = section === "config" ? "Settings"
     : section === "keys" ? "API Keys"
-      : section === "analytics" ? "Analytics"
+      : section === "analytics" ? "Usage"
         : section === "system" ? "System" : "Settings";
   const [state, setState] = useState<SettingsState | null>(null);
   const serverVersion = useServerVersion();
@@ -193,6 +197,7 @@ export function Settings({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [allProviders, setAllProviders] = useState(false);
 
   const adopt = useCallback((next: SettingsState) => {
     setState(next);
@@ -243,7 +248,27 @@ export function Settings({
 
   useEffect(load, [load]);
 
-  const save = useCallback(async () => {
+  /**
+   * Everything but keys saves itself, a moment after the last change.
+   *
+   * There used to be one Save button in the corner for the whole page, while
+   * tools, themes and Jev saved the instant they changed -- two rules on one
+   * screen, and leaving the page before finding the button lost the edit. Keys
+   * are the exception: half a key saved on a pause in typing is worse than
+   * none, so a key is saved with its own button (or Enter, or a passing
+   * check).
+   */
+  const body = useMemo(() => ({
+    provider,
+    models: modelDrafts,
+    base_urls: urlDrafts,
+    system_prompt: prompt,
+    budget_usd: budget.trim() === "" ? null : Number(budget),
+    ...(loop ? { loop } : {}),
+    ...(keep ? { retention: keep } : {}),
+  }), [provider, modelDrafts, urlDrafts, prompt, budget, loop, keep]);
+
+  const save = useCallback(async (sent: typeof body) => {
     setSaving(true);
     setError(null);
     setSaved(false);
@@ -251,32 +276,61 @@ export function Settings({
       const res = await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        // Only fields actually edited travel, so a masked key is never echoed
-        // back as if it were the real one.
-        body: JSON.stringify({
-          provider,
-          models: modelDrafts,
-          base_urls: urlDrafts,
-          system_prompt: prompt,
-          credentials: keyDrafts,
-          budget_usd: budget.trim() === "" ? null : Number(budget),
-          ...(loop ? { loop } : {}),
-          ...(keep ? { retention: keep } : {}),
-        }),
+        body: JSON.stringify(sent),
       });
-      const body = await res.json();
+      const next = await res.json();
       if (!res.ok) {
-        setError(body.detail ?? "Could not save settings.");
+        setError(next.detail ?? "Could not save settings.");
         return;
       }
-      adopt(body);
+      // Not adopt(): whatever was typed while this was in flight stays, and
+      // only the drafts that were actually sent are settled.
+      setState(next);
+      const settle = (drafts: Record<string, string>, was: Record<string, string>) =>
+        Object.fromEntries(Object.entries(drafts).filter(([k, v]) => was[k] !== v));
+      setModelDrafts((d) => settle(d, sent.models));
+      setUrlDrafts((d) => settle(d, sent.base_urls));
+      /* The server may tidy what it was sent (a limit clamped into range, a
+         budget of "20.0" stored as 20). Take its version of any field left
+         untouched since, or the page would look unsaved and save forever. */
+      const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+      setProvider((cur) => (cur === sent.provider ? next.provider : cur));
+      setPrompt((cur) => (cur === sent.system_prompt ? next.system_prompt ?? "" : cur));
+      setBudget((cur) => (
+        (cur.trim() === "" ? null : Number(cur)) === sent.budget_usd
+          ? (next.budget_usd === null ? "" : String(next.budget_usd))
+          : cur));
+      setLoop((cur) => (same(cur, sent.loop ?? null) ? next.loop ?? null : cur));
+      setKeep((cur) => (same(cur, sent.retention ?? null) ? next.retention ?? null : cur));
       setSaved(true);
     } catch {
       setError("Could not reach the server.");
     } finally {
       setSaving(false);
     }
-  }, [provider, modelDrafts, urlDrafts, prompt, keyDrafts, budget, loop, keep, adopt]);
+  }, []);
+
+  /** Save one key now: from its Save button, Enter, or a check that passed. */
+  const saveKey = useCallback(async (name: string, value: string) => {
+    setError(null);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credentials: { [name]: value } }),
+      });
+      const next = await res.json();
+      if (!res.ok) {
+        setError(next.detail ?? "Could not save that key.");
+        return;
+      }
+      setState(next);
+      setKeyDrafts(({ [name]: _drop, ...rest }) => rest);
+      setSaved(true);
+    } catch {
+      setError("Could not reach the server.");
+    }
+  }, []);
 
   /** Models discovered by asking a vendor, folded back into the open panel so
       the picker fills without losing everything else being edited. */
@@ -291,6 +345,41 @@ export function Settings({
           }
         : current,
     );
+  }, []);
+
+  const dirty = !!state && (
+    Object.keys(modelDrafts).length > 0 ||
+    Object.keys(urlDrafts).length > 0 ||
+    provider !== state.provider ||
+    prompt !== (state.system_prompt ?? "") ||
+    (budget.trim() === "" ? null : Number(budget)) !== (state.budget_usd ?? null) ||
+    JSON.stringify(loop) !== JSON.stringify(state.loop ?? null) ||
+    JSON.stringify(keep) !== JSON.stringify(state.retention ?? null));
+  const budgetOk = budget.trim() === "" || (Number.isFinite(Number(budget)) && Number(budget) >= 0);
+
+  useEffect(() => {
+    if (!dirty || !budgetOk) return;
+    const timer = window.setTimeout(() => void save(body), 700);
+    return () => window.clearTimeout(timer);
+  }, [dirty, budgetOk, body, save]);
+
+  /* Leaving the page inside that moment still saves: the edit is sent on the
+     way out rather than dropped. A key typed and never saved goes too, unless
+     it is blank -- blank means "remove", and nobody leaves a page meaning that. */
+  const pending = useRef<object | null>(null);
+  const typedKeys = Object.fromEntries(Object.entries(keyDrafts).filter(([, v]) => v.trim()));
+  const hasKeys = Object.keys(typedKeys).length > 0;
+  pending.current = (dirty && budgetOk) || hasKeys
+    ? { ...(dirty && budgetOk ? body : {}), ...(hasKeys ? { credentials: typedKeys } : {}) }
+    : null;
+  useEffect(() => () => {
+    if (!pending.current) return;
+    void fetch("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(pending.current),
+      keepalive: true,
+    });
   }, []);
 
   if (!state) {
@@ -323,19 +412,35 @@ export function Settings({
   }
 
   const voiceKeys = state.credentials.filter((c) => c.role === "voice");
-  const savedBudget = state.budget_usd === null ? "" : String(state.budget_usd);
-  const dirty =
-    Object.keys(keyDrafts).length > 0 ||
-    Object.keys(modelDrafts).length > 0 ||
-    Object.keys(urlDrafts).length > 0 ||
-    provider !== state.provider ||
-    prompt !== (state.system_prompt ?? "") ||
-    budget.trim() !== savedBudget ||
-    JSON.stringify(loop) !== JSON.stringify(state.loop ?? null) ||
-    JSON.stringify(keep) !== JSON.stringify(state.retention ?? null);
+  /** Connected: has a key, or (a local server) has a model named. Shown
+      first; the rest wait behind "Add another provider". */
+  const isConnected = (card: ProviderCard) => card.key.set || (!card.needs_key && !!card.model);
+  const connectedCards = state.catalog.filter(isConnected);
+  const otherCards = state.catalog.filter((card) => !isConnected(card));
+  const choiceCards = allProviders
+    ? state.catalog
+    : state.catalog.filter((card) => isConnected(card) || provider === card.id);
+  const providerRow = (card: ProviderCard) => (
+    <ProviderRow
+      key={card.id}
+      card={card}
+      selected={provider === card.id || provider === "auto"}
+      inUse={state.active.provider === card.label}
+      keyDraft={keyDrafts[card.id]}
+      modelDraft={modelDrafts[card.id]}
+      urlDraft={urlDrafts[card.id]}
+      onKey={(v) => setKeyDrafts((d) => ({ ...d, [card.id]: v }))}
+      onKeyCancel={() => setKeyDrafts(({ [card.id]: _drop, ...rest }) => rest)}
+      onKeySave={(v) => void saveKey(card.id, v)}
+      onModel={(v) => setModelDrafts((d) => ({ ...d, [card.id]: v }))}
+      onUrl={(v) => setUrlDrafts((d) => ({ ...d, [card.id]: v }))}
+      onModels={(models) => replaceModels(card.id, models)}
+      onUse={() => setProvider(card.id)}
+    />
+  );
 
-  // Credentials save as they are entered; the Save button is for the rest.
-  const saveable = section !== "system" && !(section === "config" && tab === "credentials");
+  // Credentials and appearance save as they change; nothing else to report.
+  const saveable = section !== "system" && !(section === "config" && (tab === "credentials" || tab === "appearance"));
 
   return (
     <div className={`sched ${embedded ? "is-embedded" : ""}`}>
@@ -345,20 +450,26 @@ export function Settings({
           <span className="brand-word">{title}</span>
         </div>
         {section === "config" && (
-          <div className="seg" role="tablist" aria-label="Config sections">
+          <div className="seg" role="tablist" aria-label="Settings sections">
             <button role="tab" aria-selected={tab === "general"} className={tab === "general" ? "on" : ""}
                     onClick={() => setTab("general")}>Model &amp; tools</button>
             <button role="tab" aria-selected={tab === "keys"} className={tab === "keys" ? "on" : ""}
                     onClick={() => setTab("keys")}>API Keys</button>
             <button role="tab" aria-selected={tab === "credentials"} className={tab === "credentials" ? "on" : ""}
                     onClick={() => setTab("credentials")}>Credentials</button>
+            <button role="tab" aria-selected={tab === "appearance"} className={tab === "appearance" ? "on" : ""}
+                    onClick={() => setTab("appearance")}>Appearance</button>
           </div>
         )}
         <div className="spacer" />
         {saveable && (
-          <button className="btn primary" onClick={save} disabled={!dirty || saving}>
-            {saving ? "Saving…" : "Save"}
-          </button>
+          <span className={`save-state ${saving || dirty ? "is-busy" : saved ? "is-done" : ""}`} role="status">
+            {saving || (dirty && budgetOk)
+              ? "Saving…"
+              : saved
+                ? <><IconCheck size={12} /> Saved</>
+                : "Changes save automatically"}
+          </span>
         )}
         {onClose && !embedded && (
           <button className="btn icon ghost" onClick={onClose} aria-label="Close settings">
@@ -368,12 +479,7 @@ export function Settings({
       </div>
 
       {error && <div className="sched-error">{error}</div>}
-      {saved && !error && (
-        <div className="sched-note">
-          <IconCheck size={13} /> Saved. The model switched immediately; voice keys
-          apply the next time Autora starts.
-        </div>
-      )}
+      {!budgetOk && <div className="sched-error">The monthly budget must be a number of dollars, 0 or more.</div>}
 
       <div className="sched-body">
         {/* First thing in the panel, because "did my update arrive" is the
@@ -411,7 +517,7 @@ export function Settings({
                 .
               </span>
             </button>
-            {state.catalog.map((card) => (
+            {choiceCards.map((card) => (
               <button
                 key={card.id}
                 className={`set-choice ${provider === card.id ? "on" : ""}`}
@@ -430,6 +536,13 @@ export function Settings({
               </button>
             ))}
           </div>
+          {choiceCards.length < state.catalog.length && (
+            <button className="setup-more set-show-all" onClick={() => setAllProviders(true)}>
+              {connectedCards.length === 0
+                ? "No provider is connected yet — add a key below, or show every provider"
+                : `Show all ${state.catalog.length} providers`}
+            </button>
+          )}
         </section>
 
         <section className="set-card">
@@ -440,23 +553,17 @@ export function Settings({
             vendors' published rates as of {state.prices_checked} and are what the
             billing card counts with.
           </p>
-          {state.catalog.map((card) => (
-            <ProviderRow
-              key={card.id}
-              card={card}
-              selected={provider === card.id || provider === "auto"}
-              inUse={state.active.provider === card.label}
-              keyDraft={keyDrafts[card.id]}
-              modelDraft={modelDrafts[card.id]}
-              urlDraft={urlDrafts[card.id]}
-              onKey={(v) => setKeyDrafts((d) => ({ ...d, [card.id]: v }))}
-              onKeyCancel={() => setKeyDrafts(({ [card.id]: _drop, ...rest }) => rest)}
-              onModel={(v) => setModelDrafts((d) => ({ ...d, [card.id]: v }))}
-              onUrl={(v) => setUrlDrafts((d) => ({ ...d, [card.id]: v }))}
-              onModels={(models) => replaceModels(card.id, models)}
-              onUse={() => setProvider(card.id)}
-            />
-          ))}
+          {connectedCards.map(providerRow)}
+          {otherCards.length > 0 && (
+            <details className="set-more prov-others" open={connectedCards.length === 0}>
+              <summary>
+                {connectedCards.length === 0
+                  ? `Choose a provider (${otherCards.length})`
+                  : `Add another provider (${otherCards.length})`}
+              </summary>
+              {otherCards.map(providerRow)}
+            </details>
+          )}
           <p className="set-note set-where">
             Keys saved here are written to <code>{state.state_file}</code> on the
             server, readable only by the account Autora runs as. Keys set in the
@@ -464,9 +571,9 @@ export function Settings({
           </p>
         </section>
 
-        <ToolsCard tools={state.tools} onSaved={adopt} />
+        <ToolsCard tools={state.tools} onSaved={setState} />
 
-        {state.jev && <JevCard jev={state.jev} onSaved={adopt} />}
+        {state.jev && <JevCard jev={state.jev} onSaved={setState} />}
         </>}
 
         {section && shows("keys") && (
@@ -486,6 +593,7 @@ export function Settings({
                 value={keyDrafts[c.name]}
                 onChange={(v) => setKeyDrafts((d) => ({ ...d, [c.name]: v }))}
                 onReset={() => setKeyDrafts(({ [c.name]: _drop, ...rest }) => rest)}
+                onSave={(v) => void saveKey(c.name, v)}
               />
             ))}
             <p className="set-note set-where">
@@ -497,6 +605,10 @@ export function Settings({
 
         {showsCredentials && <Credentials />}
 
+        {section === "config" && tab === "appearance" && appearance && onAppearance && (
+          <ThemePicker appearance={appearance} onAppearance={onAppearance} />
+        )}
+
         {shows("keys") && <SecretStore />}
 
         {shows("analytics") && <Billing budget={budget} onBudget={setBudget} />}
@@ -505,9 +617,8 @@ export function Settings({
         <section className="set-card">
           <h3>Limits</h3>
           <p className="jf-hint">
-            When a turn is called a loop, and how much of this workspace is kept.
-            Both are saved with the button above; 0 days means never on age alone,
-            and the keep counts are always kept whatever else is set.
+            When a turn counts as stuck in a loop, and how long old work is kept.
+            0 days means never delete on age alone.
           </p>
           <div className="limit-grid">
             {loop && ([
@@ -592,6 +703,7 @@ export function Settings({
                 value={keyDrafts[c.name]}
                 onChange={(v) => setKeyDrafts((d) => ({ ...d, [c.name]: v }))}
                 onReset={() => setKeyDrafts(({ [c.name]: _drop, ...rest }) => rest)}
+                onSave={(v) => void saveKey(c.name, v)}
               />
             ))}
           </section>
@@ -615,7 +727,7 @@ export function Settings({
  */
 function ProviderRow({
   card, selected, inUse, keyDraft, modelDraft, urlDraft,
-  onKey, onKeyCancel, onModel, onUrl, onModels, onUse,
+  onKey, onKeyCancel, onKeySave, onModel, onUrl, onModels, onUse,
 }: {
   card: ProviderCard;
   selected: boolean;
@@ -625,6 +737,7 @@ function ProviderRow({
   urlDraft: string | undefined;
   onKey: (v: string) => void;
   onKeyCancel: () => void;
+  onKeySave: (v: string) => void;
   onModel: (v: string) => void;
   onUrl: (v: string) => void;
   onModels: (models: ModelOption[]) => void;
@@ -657,7 +770,9 @@ function ProviderRow({
         setChecked({ ok: false, text: body.detail ?? "The key was refused." });
         return;
       }
-      setChecked({ ok: true, text: `Key works — ${body.models} models available.` });
+      setChecked({ ok: true, text: `Key works — ${body.models} models available.${keyDraft ? " Saved." : ""}` });
+      // A key that just passed is the one they meant: keep it.
+      if (keyDraft) onKeySave(keyDraft);
       const fresh = await fetch(`/api/providers/${card.id}/models`).then((r) => r.json());
       if (Array.isArray(fresh.models)) onModels(fresh.models);
     } catch {
@@ -665,7 +780,7 @@ function ProviderRow({
     } finally {
       setBusy(false);
     }
-  }, [card.id, keyDraft, onModels]);
+  }, [card.id, keyDraft, onModels, onKeySave]);
 
   /** Re-ask the vendor for its catalogue. Worth a button of its own for
       OpenRouter, whose list changes weekly and is far too long to ship. */
@@ -732,6 +847,7 @@ function ProviderRow({
               value={keyDraft}
               onChange={onKey}
               onReset={onKeyCancel}
+              onSave={onKeySave}
             />
           )}
 
@@ -897,36 +1013,43 @@ function JevCard({ jev, onSaved }: { jev: JevState; onSaved: (next: SettingsStat
     : jev.support.state === "yes"
       ? { cls: "ok", text: "active" }
       : jev.support.state === "no"
-        ? { cls: "warn", text: "not supported" }
+        ? { cls: "warn", text: "unavailable" }
         : { cls: "", text: "ready" };
 
   return (
     <section className="set-card">
       <div className="tool-head">
-        <h3 style={{ margin: 0 }}>Jev Mode</h3>
+        <h3 style={{ margin: 0 }}>Quick decisions (Jev)</h3>
         <span className={`tool-state ${support.cls}`}>{support.text}</span>
         <div className="spacer" />
         <button
           className={`job-switch ${jev.enabled ? "on" : ""}`}
           role="switch"
           aria-checked={jev.enabled}
-          aria-label={`Jev Mode: ${jev.enabled ? "on" : "off"}`}
+          aria-label={`Quick decisions: ${jev.enabled ? "on" : "off"}`}
           onClick={() => void patch({ enabled: !jev.enabled })}
         >
           <span className="job-knob" />
         </button>
       </div>
       <p className="jf-hint">
-        Quick decisions with a fixed set of answers are scored all at once
-        instead of written out: every option's probability is read in one
-        parallel pass, and the answer is taken only if each part of it clears
-        the confidence threshold. Anything less certain goes to the model's
-        normal reasoning, exactly as before. It decides three things: which
-        memories each turn recalls; whether a message needs an answer, action,
-        or a clarifying question first; and, for commands that could destroy
-        something, whether it looks destructive and unasked-for — in which case
-        the agent must ask you before it runs.
+        Makes small yes/no choices fast and cheaply, and hands anything uncertain
+        to the model as usual.
       </p>
+      <details className="set-more">
+        <summary>How it works</summary>
+        <p className="jf-hint">
+          Quick decisions with a fixed set of answers are scored all at once
+          instead of written out: every option's probability is read in one
+          parallel pass, and the answer is taken only if each part of it clears
+          the confidence threshold. Anything less certain goes to the model's
+          normal reasoning, exactly as before. It decides three things: which
+          memories each turn recalls; whether a message needs an answer, action,
+          or a clarifying question first; and, for commands that could destroy
+          something, whether it looks destructive and unasked-for — in which case
+          the agent must ask you before it runs.
+        </p>
+      </details>
       <p className="jf-hint">
         {jev.backend === "hosted"
           ? "Decisions go to the hosted Jev API (TypeSafe), whatever chat model you use."
@@ -1247,7 +1370,7 @@ function VersionCard({ server }: { server: string | null }) {
 }
 
 function KeyField({
-  label, note, hint, set, value, onChange, onReset,
+  label, note, hint, set, value, onChange, onReset, onSave,
 }: {
   label: string;
   note: string;
@@ -1256,6 +1379,8 @@ function KeyField({
   value: string | undefined;
   onChange: (v: string) => void;
   onReset: () => void;
+  /** Save the typed key now. Blank removes a saved one. */
+  onSave: (v: string) => void;
 }) {
   const editing = value !== undefined;
   return (
@@ -1273,10 +1398,18 @@ function KeyField({
             autoFocus
             value={value}
             onChange={(e) => onChange(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onSave(value.trim()); } }}
             placeholder={set ? "new key, or blank to remove" : "paste the key"}
             spellCheck={false}
             aria-label={`${label} value`}
           />
+          <button
+            className="btn primary"
+            onClick={() => onSave(value.trim())}
+            disabled={!set && !value.trim()}
+          >
+            {set && !value.trim() ? "Remove" : "Save"}
+          </button>
           <button className="btn ghost" onClick={onReset}>Cancel</button>
         </div>
       ) : (
