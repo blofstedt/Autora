@@ -1,15 +1,15 @@
 {
   "name": "autora",
   "private": true,
-  "version": "0.9.34",
+  "version": "0.9.35",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && esbuild src/widget/three.ts --bundle --format=esm --minify --outfile=dist/widget/three.js",
     "start": "node dist/server.cjs",
     "lint": "npm run typecheck && eslint .",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.test.json",
-    "test": "tsx tests/voice.test.ts && tsx tests/jev.test.ts && tsx tests/mcp.test.ts && tsx tests/handoff.test.ts && tsx tests/loopwatch.test.ts && tsx tests/context.test.ts && tsx tests/browsing.test.ts && tsx tests/credentials.test.ts && tsx tests/memory.test.ts && tsx tests/scheduler.test.ts && tsx tests/learning.test.ts"
+    "test": "tsx tests/voice.test.ts && tsx tests/jev.test.ts && tsx tests/mcp.test.ts && tsx tests/handoff.test.ts && tsx tests/loopwatch.test.ts && tsx tests/context.test.ts && tsx tests/browsing.test.ts && tsx tests/credentials.test.ts && tsx tests/memory.test.ts && tsx tests/scheduler.test.ts && tsx tests/learning.test.ts && tsx tests/widget.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.23.0",
@@ -25,12 +25,14 @@
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
+    "@types/three": "^0.186.0",
     "@types/ws": "^8.5.14",
     "@vitejs/plugin-react": "^4.3.4",
     "esbuild": "^0.24.2",
     "eslint": "^9.39.5",
     "eslint-plugin-react-hooks": "^5.2.0",
     "globals": "^17.12.0",
+    "three": "^0.186.1",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",
     "typescript-eslint": "^8.70.1",

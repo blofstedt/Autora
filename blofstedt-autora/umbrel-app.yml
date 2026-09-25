@@ -88,13 +88,15 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The message box no longer locks up at random. It used to be disabled
-  whenever the connection to the server dropped for a moment, such as when a
-  phone wakes up or the network blips. Now you can keep typing, and if a
-  message can't be sent, what you typed is put back. Your standing
-  instructions from Settings now come last in Autora's instructions on every
-  turn, marked as yours and overriding its defaults, so rules like "be brief"
-  are followed instead of buried.
+  Autora can now build interactive explainer widgets right in the chat. Ask
+  how something works, like gravity, the water cycle or a sorting algorithm,
+  and it can answer with a small hands-on visual you can play with: sliders,
+  buttons, animations and 3D scenes you can drag to rotate. Before you see a
+  widget, Autora tries it out itself (loading it, pressing every button,
+  moving every slider) and fixes anything that breaks. If one still throws
+  an error in your browser, Autora is told, and a "Fix it" button on the card
+  asks it to repair it. Widgets run safely sandboxed, can be expanded to
+  fill the window, and are saved on the Artifacts page.
 
 dependencies: []
 path: ""

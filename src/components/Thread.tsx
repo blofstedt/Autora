@@ -9,6 +9,7 @@ import { ToolCell } from "./ToolCell";
 import { KanbanCell } from "./KanbanCell";
 import { PermissionCell } from "./PermissionCell";
 import { ImageCell } from "./ImageCell";
+import { WidgetCell } from "./WidgetCell";
 import { AskCell } from "./AskCell";
 import { Markdown } from "./Markdown";
 import { JevCell } from "./JevCell";
@@ -331,6 +332,8 @@ function CellView({
       return <AskCell ask={cell.ask} sessionId={sessionId} readOnly={!live} />;
     case "images":
       return <ImageCell sessionId={sessionId} pictures={cell.pictures} />;
+    case "widget":
+      return <WidgetCell widget={cell.widget} sessionId={sessionId} canFix={live && !driving} />;
     case "file":
       return <FileCell file={cell.file} />;
     case "tool":

@@ -161,6 +161,14 @@ export type Picture = {
   height: number | null;
 };
 
+/** An interactive explainer the agent wrote (see src/lib/widget.ts). */
+export type Widget = {
+  seq: number;
+  title: string;
+  html: string;
+  height: number;
+};
+
 /**
  * One thing that happened, in the place in the conversation where it happened.
  *
@@ -193,6 +201,7 @@ export type Cell =
       log: Cell[];
     }
   | { kind: "images"; seq: number; pictures: Picture[] }
+  | { kind: "widget"; seq: number; widget: Widget }
   | { kind: "file"; seq: number; file: FileChange }
   | { kind: "tool"; seq: number; span: SpanState }
   | { kind: "note"; seq: number; tone: "bad" | "warn" | "plain"; text: string }
@@ -749,6 +758,21 @@ export function derive(events: AutoraEvent[]): Derived {
         break;
       }
 
+      case Kind.MediaWidget: {
+        const html = typeof e.payload.html === "string" ? e.payload.html : "";
+        if (!html) break;
+        push({
+          kind: "widget", seq: e.seq,
+          widget: {
+            seq: e.seq,
+            title: String(e.payload.title ?? "Explainer"),
+            html,
+            height: typeof e.payload.height === "number" ? e.payload.height : 440,
+          },
+        });
+        break;
+      }
+
       case Kind.BrowserFrame:
         if (e.blob) {
           if (e.payload.url) url = e.payload.url;
@@ -924,7 +948,7 @@ type ScreenCell = Extract<Cell, { kind: "screen" }>;
     person has to answer or act on, and the pictures handed over. They sit
     beside the card without ending it -- a sign-in is part of working the
     page. Everything else said or done meanwhile is shown inside the card. */
-const KEPT_OUT = new Set<Cell["kind"]>(["ask", "permission", "kanban", "images"]);
+const KEPT_OUT = new Set<Cell["kind"]>(["ask", "permission", "kanban", "images", "widget"]);
 
 /** The screen card a still-running turn is working in, if it is in one. */
 const openBoxes = new WeakMap<Bucket, ScreenCell>();
