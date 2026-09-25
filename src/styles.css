@@ -4025,6 +4025,51 @@ html[data-font="mono"] body { font-size: 13.5px; }
 .rail-vital.is-high .rail-vital-bar i { background: var(--warn); }
 .rail-vital.is-high .rail-vital-value { color: var(--warn); }
 .rail-vital-detail { font-size: 10.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* In the margin of a desktop the page list is compact and the rail is tall,
+   so the cards grow into the room a phone's larger list leaves them. Only
+   when the window is tall enough for it; a short one keeps the small cards. */
+@media (min-height: 760px) {
+  .rail:not(.is-drawer) .rail-foot { gap: 10px; padding-top: 18px; }
+  .rail:not(.is-drawer) .rail-ctx,
+  .rail:not(.is-drawer) .rail-mem,
+  .rail:not(.is-drawer) .rail-vitals { padding: 14px 16px; }
+  .rail:not(.is-drawer) .rail-ctx { gap: 14px; }
+  .rail:not(.is-drawer) .rail-ctx-ring { width: 62px; height: 62px; }
+  .rail:not(.is-drawer) .rail-ctx-head,
+  .rail:not(.is-drawer) .rail-mem-head,
+  .rail:not(.is-drawer) .rail-vital-label { font-size: 12px; }
+  .rail:not(.is-drawer) .rail-ctx-line { font-size: 15px; }
+  .rail:not(.is-drawer) .rail-ctx-sub { font-size: 12.5px; }
+  .rail:not(.is-drawer) .rail-mem { gap: 10px; }
+  .rail:not(.is-drawer) .rail-mem-title { font-size: 14.5px; -webkit-line-clamp: 3; }
+  .rail:not(.is-drawer) .rail-mem-ask { font-size: 12.5px; }
+  .rail:not(.is-drawer) .rail-mem-ask .btn { height: 28px; font-size: 12.5px; }
+  .rail:not(.is-drawer) .rail-vitals { gap: 14px; }
+  .rail:not(.is-drawer) .rail-vital { gap: 6px; }
+  .rail:not(.is-drawer) .rail-vital-value { font-size: 14px; }
+  .rail:not(.is-drawer) .rail-vital-bar { height: 6px; }
+  .rail:not(.is-drawer) .rail-vital-detail { font-size: 11.5px; }
+  .rail:not(.is-drawer) .rail-act-row { padding: 8px 10px; font-size: 13px; }
+}
+/* A full-height desktop window: the page list at a phone's size too, and the
+   cards a step larger again, so the rail is used top to bottom. */
+@media (min-height: 900px) and (pointer: fine) {
+  .rail:not(.is-drawer) .rail-nav { gap: 2px; }
+  .rail:not(.is-drawer) .rail-nav-item { padding: 11px 12px; font-size: 14.5px; }
+  .rail:not(.is-drawer) .rail-divider { margin: 10px 10px; }
+  .rail:not(.is-drawer) .rail-foot { gap: 12px; }
+  .rail:not(.is-drawer) .rail-ctx,
+  .rail:not(.is-drawer) .rail-mem,
+  .rail:not(.is-drawer) .rail-vitals { padding: 16px 18px; }
+  .rail:not(.is-drawer) .rail-ctx-ring { width: 70px; height: 70px; }
+  .rail:not(.is-drawer) .rail-ctx-line { font-size: 16px; }
+  .rail:not(.is-drawer) .rail-ctx-sub,
+  .rail:not(.is-drawer) .rail-mem-ask { font-size: 13px; }
+  .rail:not(.is-drawer) .rail-mem-title { font-size: 15.5px; }
+  .rail:not(.is-drawer) .rail-vital-value { font-size: 15px; }
+  .rail:not(.is-drawer) .rail-vital-detail { font-size: 12px; }
+  .rail:not(.is-drawer) .rail-act-row { padding: 10px 12px; font-size: 13.5px; }
+}
 .rail-act-row {
   display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0;
   padding: 6px 10px; border: 0; border-radius: var(--r-sm); cursor: pointer;

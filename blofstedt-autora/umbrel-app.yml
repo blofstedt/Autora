@@ -103,7 +103,8 @@ releaseNotes: >-
   three small bars show the machine it runs on: processor, memory and disk
   (amber past 85%). Last, a line shows any schedule or watcher running right
   now (tap it to open its session) and which one is due next. The menu looks
-  the same on a phone as on a computer.
+  the same on a phone as on a computer; on a tall desktop window the menu
+  and its cards are larger, so they fill it.
 
 
 dependencies: []
