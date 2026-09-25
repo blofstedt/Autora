@@ -14,7 +14,11 @@ services:
     # so Umbrel never offers an update whose image is still building. Don't
     # change it by hand; check_release.py fails a pull request that does.
     image: ghcr.io/blofstedt/autora:0.9.38
-    restart: on-failure
+    # Not on-failure: a stop from inside the container -- the agent killing or
+    # restarting the server it runs in -- exits cleanly with 0, which
+    # on-failure takes as "leave it down", and the app then refuses every
+    # connection until somebody restarts it by hand.
+    restart: unless-stopped
     # The https listener, published directly rather than through app_proxy,
     # because the proxy speaks http to the backend and the browser needs the
     # certificate to be the one it is talking to.
@@ -46,8 +50,9 @@ services:
       # with the whole filesystem mounted. That is not a default to hand
       # somebody. A proxy with a real certificate is better on every count: no
       # warning at all, no second port, and the login still in front. On a
-      # tailnet that is `tailscale serve --bg 8817`, one line, once. See the
-      # README.
+      # tailnet that is `tailscale serve --bg --https=8443 8817`, one line,
+      # once -- not plain `tailscale serve`, whose port 443 is the one umbrelOS
+      # needs for its own dashboard. See the README.
       AUTORA_TLS: "0"
       # Agent defaults — full server access, no per-action prompts
       AUTORA_WORKDIR: "/host"

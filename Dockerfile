@@ -2,7 +2,13 @@
 # The app is a Vite bundle and an esbuild'd Express server. Both come out of
 # `npm run build` into dist/, so one build stage produces everything the
 # runtime needs and none of the toolchain that produced it.
-FROM node:22-alpine AS builder
+#
+# On the machine doing the build, not the one the image is for. Everything it
+# produces is JavaScript -- the bundle, and dependencies that are pure JS --
+# so an amd64 build is the same bytes as an arm64 one, and running `npm ci`
+# and the typecheck under arm64 emulation took minutes when it worked and
+# hung the release for hours when it did not.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS builder
 WORKDIR /build
 
 # Dependencies first, from the lockfile alone: this layer is then reused on

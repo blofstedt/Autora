@@ -4174,6 +4174,24 @@ housekeeping();
 const housekeepingTimer = setInterval(housekeeping, SWEEP_EVERY_MS);
 housekeepingTimer.unref?.();
 
+/* One stray promise -- a tool, a watcher, a page that closed mid-call --
+   used to take the whole server down with it, and the person saw nothing but
+   "connection refused". A rejection nobody handled is logged and the server
+   carries on. A thrown exception leaves the process in a state nobody can
+   vouch for, so that one still exits, but non-zero and with the queued events
+   written, so the container restarts it and the thread survives. */
+process.on("unhandledRejection", (reason: any) => {
+  console.error("[server] unhandled rejection:", reason?.stack ?? reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[server] uncaught exception, restarting:", err?.stack ?? err);
+  try {
+    flushStore();
+  } finally {
+    process.exit(1);
+  }
+});
+
 startServer().catch((err) => {
   console.error("Failed to start Autora server:", err);
   process.exit(1);

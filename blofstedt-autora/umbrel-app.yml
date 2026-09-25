@@ -88,29 +88,20 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Replies no longer break apart. Sending a message while Autora was working
-  used to start a second turn beside the first, and both streamed into the same
-  thread — a sentence cut in two, a word finished in the next bubble, two
-  replies spliced into one. Sending now does what the button says: it stops the
-  running turn, waits for it to finish, and then starts yours. Stop also cuts
-  the model off mid-sentence instead of letting it talk on.
+  Autora no longer stays down after it stops. If the agent restarted or
+  killed its own server (easy to do while working on Autora itself), the app
+  used to stay off and every page said "connection refused" until you
+  restarted it by hand. It now comes straight back, and the agent is told
+  that its own process is not one to restart. A stray error in a tool or a
+  watcher no longer takes the whole server down, and settings are saved so a
+  crash mid-save cannot wipe your keys.
 
 
-  No more empty boxes. A command that has printed nothing yet shows just its
-  header while it runs, and "no output" once it is done; one left over from a
-  turn that ended without its result says "no result" rather than "running"
-  forever.
-
-
-  The browser in the thread no longer flashes black. Each frame is decoded
-  before it replaces the last, and cards keep their identity when the thread
-  regroups them, so the page is never rebuilt from nothing mid-stream.
-
-
-  Slash commands: type / in the box for a menu — /stop, /continue, /retry,
-  /remember, /new, /close (the browser), /live, and /sessions, /mind, /cron,
-  /config and /system to jump to a page. Arrow keys move, Enter or Tab picks,
-  Escape dismisses; a path like /etc/hosts still goes to the agent as written.
+  If your whole Umbrel stopped answering after you set up HTTPS for voice:
+  plain `tailscale serve` takes port 443, which umbrelOS 2.0 needs for its
+  own dashboard. Autora now suggests `tailscale serve --bg --https=8443 8817`
+  instead. To recover, run `tailscale serve --https=443 off`, then
+  `sudo systemctl start umbrel`.
 
 dependencies: []
 path: ""

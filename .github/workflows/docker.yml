@@ -27,6 +27,9 @@ jobs:
     # A fork's pull request cannot push to this registry.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    # A normal build is under ten minutes. One that hangs should fail where
+    # it can be seen rather than hold the release back for hours.
+    timeout-minutes: 40
     permissions:
       # write: to commit the version bump that offers the update.
       contents: write
@@ -70,7 +73,9 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # The cache only saves time: a failure to write it ("failed to
+          # reserve cache") must not fail a build that otherwise succeeded.
+          cache-to: type=gha,mode=max,ignore-error=true
 
       # Only now, with the image in the registry, does Umbrel get to see it.
       - name: Offer this version on Umbrel

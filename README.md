@@ -149,16 +149,23 @@ settings changes that.
 
 **On a tailnet, this is one command and it is the best answer there is.**
 Tailscale issues a real certificate, so there is no warning to click through,
-no port number to remember, and whatever was guarding the plain port — Umbrel's
-login, say — still guards it. On the machine running Autora:
+and whatever was guarding the plain port — Umbrel's login, say — still guards
+it. On the machine running Autora:
 
 ```bash
-tailscale serve --bg 8817          # https://<machine>.<tailnet>.ts.net -> :8817
-tailscale serve status             # confirm, and see the URL to open
-tailscale serve --https=443 off    # undo
+tailscale serve --bg --https=8443 8817   # https://<machine>.<tailnet>.ts.net:8443 -> :8817
+tailscale serve status                   # confirm, and see the URL to open
+tailscale serve --https=8443 off         # undo
 ```
 
-Open the `https://` URL it prints — no port on the end — and the microphone,
+**Not on 443.** Plain `tailscale serve --bg 8817` serves on 443, and on an
+Umbrel that takes the port umbrelOS 2.0 needs for its own HTTPS dashboard:
+umbreld then fails at boot with `EADDRINUSE ... :::443` and restarts in a loop,
+and the whole box is unreachable. If that has happened, free the port with
+`tailscale serve --https=443 off` and start Umbrel again
+(`sudo systemctl start umbrel`).
+
+Open the `https://` URL it prints, port and all, and the microphone,
 the install prompt and everything else appear. It needs MagicDNS and HTTPS
 Certificates enabled for the tailnet, both in the admin console under **DNS**;
 `tailscale serve` will tell you if they are off. With a proxy in front you can
