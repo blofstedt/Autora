@@ -95,7 +95,7 @@ export function App() {
     return isSystemTab(tab) ? tab : "status";
   });
   /** Which of the Mind's buckets to open on: Skills for a ?page=skills link. */
-  const [mindBucket] = useState<{ kind: Bucket }>(
+  const [mindBucket, setMindBucket] = useState<{ kind: Bucket; id?: string }>(
     () => ({ kind: new URLSearchParams(location.search).get("page") === "skills" ? "skill" : "preference" }),
   );
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -929,6 +929,9 @@ export function App() {
               if (next === "system") setSystemTab("status");
               navigate(next);
             }}
+            onOpenSession={(id) => { openSession(id); setDrawerOpen(false); }}
+            onOpenMemory={(id, kind) => { setMindBucket({ kind, id }); navigate("mind"); setDrawerOpen(false); }}
+            context={view.context}
             relayOn={!!relay?.connected}
             mood={mood}
             attention={attention}

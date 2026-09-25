@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { AutoraMark, type MarkState } from "./AutoraMark";
 import {
   IconBrain, IconChart, IconClock, IconFolder, IconList, IconMessage,
@@ -6,6 +6,12 @@ import {
   IconX, IconCheck,
 } from "./Icons";
 import { FONTS, THEMES, type Appearance } from "../lib/theme";
+import { ago, until, type Job } from "./Schedule";
+import type { ContextGauge } from "../lib/derive";
+import {
+  BUCKETS, announceChange, confirmRecord, deleteRecord, fetchKnowledge, onKnowledgeChange,
+  type Bucket, type MemoryRecord,
+} from "../lib/memory";
 
 export type PageId =
   | "chat" | "config" | "sessions" | "artifacts" | "analytics"
@@ -36,11 +42,16 @@ export const pageLabel = (id: PageId) => PAGES.find((p) => p.id === id)?.label ?
  * two that drift apart. How the app looks is under Settings, not here.
  */
 export function Rail({
-  page, onNavigate, relayOn, alert, onNew, drawer = false, onClose,
+  page, onNavigate, onOpenSession, onOpenMemory, context, relayOn, alert, onNew, drawer = false, onClose,
   mood = "rest", attention = 0, pulse = 0, learned = 0, bloom = 0,
 }: {
   page: PageId;
   onNavigate: (page: PageId) => void;
+  onOpenSession: (id: string) => void;
+  /** Open one memory in the Mind. */
+  onOpenMemory: (id: string, kind: Bucket) => void;
+  /** How full the open session's context is; null before its first reply. */
+  context: ContextGauge | null;
   relayOn: boolean;
   /** Something in the chat is waiting on you. */
   alert: boolean;
@@ -96,14 +107,322 @@ export function Rail({
         )}
       </div>
 
+      {/* The pages at the top; at the foot, how full this session's context
+          is and what is running without you. */}
       <div className="rail-scroll">
         <nav className="rail-nav">
           {PAGES.filter((p) => p.group === "work").map(item)}
           <div className="rail-divider" role="separator" />
           {PAGES.filter((p) => p.group === "setup").map(item)}
         </nav>
+        <div className="rail-foot">
+          <ContextCard gauge={context} />
+          <MemoryCard onOpen={onOpenMemory} />
+          <Vitals onOpen={() => onNavigate("system")} />
+          <Activity onOpenSession={onOpenSession} onNavigate={onNavigate} />
+        </div>
       </div>
     </aside>
+  );
+}
+
+/** 38200 -> "38k", 1250000 -> "1.3M". */
+function short(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
+  if (n >= 1_000) return `${Math.round(n / 1_000)}k`;
+  return String(Math.round(n));
+}
+
+/**
+ * How full the open session's context is, as a ring.
+ *
+ * Autora never runs out of context: past the mark (75% by default) it
+ * condenses older turns into working memory in the background. So the ring
+ * shows that mark as a tick, turns amber once it is passed, and says how many
+ * times the session has been condensed, which is when detail from early on
+ * starts to be kept as notes rather than word for word.
+ */
+function ContextCard({ gauge }: { gauge: ContextGauge | null }) {
+  const R = 20;
+  const C = 2 * Math.PI * R;
+  const share = gauge ? Math.min(1, gauge.used / gauge.limit) : 0;
+  const mark = gauge?.compactAt ?? 0.75;
+  const over = share >= mark;
+  const pct = Math.round(share * 100);
+  // The tick at the condensing mark, measured from 12 o'clock.
+  const angle = mark * 2 * Math.PI - Math.PI / 2;
+  const tick = (r: number) => [24 + r * Math.cos(angle), 24 + r * Math.sin(angle)];
+  const [x1, y1] = tick(R - 3.5);
+  const [x2, y2] = tick(R + 3.5);
+
+  return (
+    <section
+      className={`rail-ctx ${over ? "is-over" : ""}`}
+      aria-label={gauge ? `Context ${pct}% full` : "Context empty"}
+    >
+      <svg className="rail-ctx-ring" viewBox="0 0 48 48" width="48" height="48" aria-hidden="true">
+        <circle className="rail-ctx-track" cx="24" cy="24" r={R} />
+        {share > 0 && (
+          <circle
+            className="rail-ctx-fill"
+            cx="24" cy="24" r={R}
+            strokeDasharray={`${Math.max(share * C, 1.5)} ${C}`}
+            transform="rotate(-90 24 24)"
+          />
+        )}
+        <line className="rail-ctx-tick" x1={x1} y1={y1} x2={x2} y2={y2} />
+        <text x="24" y="24" className="rail-ctx-pct">{pct}%</text>
+      </svg>
+      <div className="rail-ctx-text">
+        <span className="rail-ctx-head">Context</span>
+        {gauge ? (
+          <>
+            <span className="rail-ctx-line">{short(gauge.used)} of {short(gauge.limit)} tokens</span>
+            <span className="rail-ctx-sub">
+              {gauge.condensed > 0
+                ? `condensed ${gauge.condensed}× · keeps going`
+                : over
+                  ? "condensing older turns"
+                  : `condenses at ${Math.round(mark * 100)}%`}
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="rail-ctx-line">Empty</span>
+            <span className="rail-ctx-sub">fills as this session talks</span>
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Poll `url` every `ms` while the tab is visible, and once more when it comes
+ * back. The rail in the margin stays mounted, hidden, on a phone; a tab in the
+ * background has no one to show it to either.
+ */
+function usePoll<T>(url: string, ms: number): T | null {
+  const [data, setData] = useState<T | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      if (document.hidden) return;
+      try {
+        const res = await fetch(url);
+        if (res.ok && alive) setData(await res.json() as T);
+      } catch {
+        /* the next poll will pick it up */
+      }
+    };
+    void load();
+    const timer = window.setInterval(() => void load(), ms);
+    const onVisible = () => { if (!document.hidden) void load(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [url, ms]);
+  return data;
+}
+
+/** How long one memory stays up before another takes its place. */
+const MEMORY_ROTATE_MS = 45_000;
+
+/** One of the list, preferring anything but `not`. */
+function pickOne(list: MemoryRecord[], not: string | null): MemoryRecord | null {
+  const others = list.length > 1 ? list.filter((r) => r.id !== not) : list;
+  return others[Math.floor(Math.random() * others.length)] ?? null;
+}
+
+/**
+ * Something it remembers, one at a time.
+ *
+ * Learned memories that nobody has kept yet come first, with Keep and Discard
+ * right on the card: confirming is how a guess becomes something it knows,
+ * and until now only the Mind page asked. Once everything is kept, a
+ * random memory rotates through instead, as a reminder of what it knows.
+ */
+function MemoryCard({ onOpen }: { onOpen: (id: string, kind: Bucket) => void }) {
+  const [records, setRecords] = useState<MemoryRecord[]>([]);
+  const [shownId, setShownId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    const load = () => {
+      if (document.hidden) return;
+      fetchKnowledge()
+        .then((k) => { if (alive) setRecords(k.records.filter((r) => !r.superseded_by)); })
+        .catch(() => undefined);
+    };
+    load();
+    const off = onKnowledgeChange(load);
+    const timer = window.setInterval(load, 60_000);
+    return () => { alive = false; off(); window.clearInterval(timer); };
+  }, []);
+
+  const unconfirmed = records.filter((r) => r.status === "provisional");
+  const pool = unconfirmed.length ? unconfirmed : records;
+  const shown = pool.find((r) => r.id === shownId) ?? null;
+
+  // Something to show when there is nothing on the card, or when what was
+  // shown has been kept, discarded or rewritten.
+  useEffect(() => {
+    if (!shown && pool.length) setShownId(pickOne(pool, null)?.id ?? null);
+  }, [shown, pool]);
+
+  // Rotate while nothing is waiting on an answer.
+  useEffect(() => {
+    if (unconfirmed.length || records.length < 2) return;
+    const timer = window.setInterval(
+      () => setShownId((id) => pickOne(records, id)?.id ?? null),
+      MEMORY_ROTATE_MS,
+    );
+    return () => window.clearInterval(timer);
+  }, [unconfirmed.length, records]);
+
+  if (!shown) return null;
+  const provisional = shown.status === "provisional";
+  const bucket = BUCKETS.find((b) => b.kind === shown.kind)?.label.replace(/s$/, "").toLowerCase();
+
+  const answer = async (work: (id: string) => Promise<unknown>) => {
+    setBusy(true);
+    try {
+      await work(shown.id);
+      announceChange();
+    } catch {
+      /* it stays on the card; the Mind page says what went wrong */
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className={`rail-mem ${provisional ? "is-new" : ""}`} aria-label="Something it remembers">
+      <button className="rail-mem-body" onClick={() => onOpen(shown.id, shown.kind)} title="Open in Mind">
+        <span className="rail-mem-head">
+          <IconBrain size={12} />
+          {provisional ? "Learned" : "I remember"} · {bucket} · {ago(shown.created)}
+        </span>
+        <span className="rail-mem-title">{shown.title}</span>
+      </button>
+      {provisional && (
+        <div className="rail-mem-ask">
+          <span>Is this right?</span>
+          <div className="spacer" />
+          <button className="btn tiny" disabled={busy} onClick={() => void answer(confirmRecord)}>
+            <IconCheck size={11} /> Keep
+          </button>
+          <button className="btn tiny ghost" disabled={busy} onClick={() => void answer(deleteRecord)}>
+            Discard
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+type HostVitals = {
+  cpu: number;
+  cores: number;
+  memory: { used: number; total: number };
+  disk: { used: number; total: number } | null;
+};
+
+const GB = 1024 ** 3;
+const gb = (n: number) => (n >= 100 * GB ? Math.round(n / GB) : Math.round((n / GB) * 10) / 10);
+
+/**
+ * The machine it runs on: processor, memory and disk, as three short bars.
+ * The agent runs commands and a browser there, so "is the box struggling?"
+ * is worth a glance, and nothing else in the app says.
+ */
+function Vitals({ onOpen }: { onOpen: () => void }) {
+  const v = usePoll<HostVitals>("/api/host", 15_000);
+  if (!v) return null;
+  const rows = [
+    {
+      label: "CPU", share: v.cpu, value: `${Math.round(v.cpu * 100)}%`,
+      detail: `${v.cores} core${v.cores === 1 ? "" : "s"}`,
+    },
+    {
+      label: "Memory", share: v.memory.used / v.memory.total, value: `${Math.round((v.memory.used / v.memory.total) * 100)}%`,
+      detail: `${gb(v.memory.used)} of ${gb(v.memory.total)} GB`,
+    },
+    ...(v.disk ? [{
+      label: "Disk", share: v.disk.used / v.disk.total, value: `${Math.round((v.disk.used / v.disk.total) * 100)}%`,
+      detail: `${gb(v.disk.total - v.disk.used)} GB free`,
+    }] : []),
+  ];
+  return (
+    <button className="rail-vitals" onClick={onOpen} title="Open System" aria-label="This machine">
+      {rows.map((r) => (
+        <span key={r.label} className={`rail-vital ${r.share >= 0.85 ? "is-high" : ""}`}>
+          <span className="rail-vital-top">
+            <span className="rail-vital-label">{r.label}</span>
+            <span className="rail-vital-value">{r.value}</span>
+          </span>
+          <span className="rail-vital-bar"><i style={{ width: `${Math.max(2, Math.min(100, r.share * 100))}%` }} /></span>
+          <span className="rail-vital-detail">{r.detail}</span>
+        </span>
+      ))}
+    </button>
+  );
+}
+
+/** How often the rail asks what the schedules are doing. */
+const ACTIVITY_POLL_MS = 20_000;
+
+/**
+ * What is happening without you: schedules or watchers running right now, and
+ * the next one due. The Schedules page has the full list; this is one glance
+ * at it, and says nothing at all when nothing is set up.
+ */
+function Activity({
+  onOpenSession, onNavigate,
+}: {
+  onOpenSession: (id: string) => void;
+  onNavigate: (page: PageId) => void;
+}) {
+  const jobs = usePoll<Job[]>("/api/jobs", ACTIVITY_POLL_MS) ?? [];
+
+  const running = jobs.filter((j) => j.running);
+  const next = jobs
+    .filter((j) => j.enabled && !j.running && j.next_run)
+    .sort((a, b) => a.next_run! - b.next_run!)[0];
+  if (!running.length && !next) return null;
+
+  return (
+    <section className="rail-activity" aria-label="Running on its own">
+      {running.map((job) => {
+        const started = job.runs?.[job.runs.length - 1]?.at ?? job.last_run;
+        const session = job.last_session;
+        return (
+          <button
+            key={job.id}
+            className="rail-act-row is-running"
+            onClick={() => (session ? onOpenSession(session) : onNavigate("cron"))}
+            title={session ? "Open the session it is running in" : "Open Schedules"}
+          >
+            <span className="watch-dot" aria-hidden="true" />
+            <span className="rail-act-label">Running</span>
+            <span className="rail-act-name">{job.name}</span>
+            {started && <span className="rail-act-when">{ago(started)}</span>}
+          </button>
+        );
+      })}
+      {next && (
+        <button className="rail-act-row" onClick={() => onNavigate("cron")} title="Open Schedules">
+          <IconClock size={12} />
+          <span className="rail-act-label">Next</span>
+          <span className="rail-act-name">{next.name}</span>
+          <span className="rail-act-when">{until(next.next_run!)}</span>
+        </button>
+      )}
+    </section>
   );
 }
 

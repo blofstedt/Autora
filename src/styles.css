@@ -3959,6 +3959,129 @@ html[data-font="mono"] body { font-size: 13.5px; }
 }
 .rail-tag.is-alert { color: var(--warn); background: rgba(251, 191, 36, 0.12); }
 .rail-divider { height: 1px; margin: 8px 10px; background: var(--border); }
+/* The rail's list and, below or above it, what runs without you. A column, so
+   an auto margin can push either to the far end without hiding anything when
+   the rail is too short: auto margins shrink to zero, they never overflow. */
+.rail-scroll { display: flex; flex-direction: column; }
+.rail-scroll > .rail-nav { flex: 0 0 auto; }
+.rail-foot { margin-top: auto; padding-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+.rail-activity { display: flex; flex-direction: column; gap: 1px; }
+/* The open session's context, as a ring with the condensing mark on it. */
+.rail-ctx {
+  display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: var(--r-md, 10px); background: var(--s2);
+}
+.rail-ctx-ring { flex: 0 0 auto; }
+.rail-ctx-track { fill: none; stroke: var(--border); stroke-width: 5; }
+.rail-ctx-fill {
+  fill: none; stroke: var(--accent); stroke-width: 5; stroke-linecap: round;
+  transition: stroke-dasharray 0.5s var(--ease), stroke 0.3s var(--ease);
+}
+.rail-ctx.is-over .rail-ctx-fill { stroke: var(--warn); }
+.rail-ctx-tick { stroke: var(--text-2); stroke-width: 2; stroke-linecap: round; }
+.rail-ctx-pct {
+  fill: var(--text); font-size: 11px; font-weight: 650; text-anchor: middle;
+  dominant-baseline: central; font-variant-numeric: tabular-nums;
+}
+.rail-ctx-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.35; }
+.rail-ctx-head { font-size: 11px; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); }
+.rail-ctx-line { font-size: 13px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.rail-ctx-sub { font-size: 11.5px; color: var(--text-3); }
+.rail-ctx.is-over .rail-ctx-sub { color: var(--warn); }
+/* Something it remembers: one memory, with Keep / Discard while unconfirmed. */
+.rail-mem {
+  display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: var(--r-md, 10px); background: var(--s2);
+}
+.rail-mem.is-new { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
+.rail-mem-body {
+  display: flex; flex-direction: column; gap: 3px; padding: 0; border: 0; background: none;
+  color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.rail-mem-head {
+  display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; color: var(--text-3);
+}
+.rail-mem-head svg { color: var(--accent); flex: 0 0 auto; }
+.rail-mem-title {
+  font-size: 13px; line-height: 1.4; color: var(--text);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.rail-mem-body:hover .rail-mem-title { color: var(--accent); }
+.rail-mem-ask { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-3); }
+.rail-mem-ask .btn { display: inline-flex; align-items: center; gap: 4px; }
+/* The machine: three short bars side by side. */
+.rail-vitals {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; width: 100%;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-md, 10px);
+  background: var(--s2); color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.rail-vitals:hover { border-color: var(--border-strong); }
+.rail-vital { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.rail-vital-top { display: flex; align-items: baseline; justify-content: space-between; gap: 4px; }
+.rail-vital-label { font-size: 11px; font-weight: 600; color: var(--text-3); }
+.rail-vital-value { font-size: 12px; font-weight: 650; color: var(--text); font-variant-numeric: tabular-nums; }
+.rail-vital-bar { height: 4px; border-radius: 999px; background: var(--border); overflow: hidden; }
+.rail-vital-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width 0.6s var(--ease); }
+.rail-vital.is-high .rail-vital-bar i { background: var(--warn); }
+.rail-vital.is-high .rail-vital-value { color: var(--warn); }
+.rail-vital-detail { font-size: 10.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* In the margin of a desktop the page list is compact and the rail is tall,
+   so the cards grow into the room a phone's larger list leaves them. Only
+   when the window is tall enough for it; a short one keeps the small cards. */
+@media (min-height: 760px) {
+  .rail:not(.is-drawer) .rail-foot { gap: 10px; padding-top: 18px; }
+  .rail:not(.is-drawer) .rail-ctx,
+  .rail:not(.is-drawer) .rail-mem,
+  .rail:not(.is-drawer) .rail-vitals { padding: 14px 16px; }
+  .rail:not(.is-drawer) .rail-ctx { gap: 14px; }
+  .rail:not(.is-drawer) .rail-ctx-ring { width: 62px; height: 62px; }
+  .rail:not(.is-drawer) .rail-ctx-head,
+  .rail:not(.is-drawer) .rail-mem-head,
+  .rail:not(.is-drawer) .rail-vital-label { font-size: 12px; }
+  .rail:not(.is-drawer) .rail-ctx-line { font-size: 15px; }
+  .rail:not(.is-drawer) .rail-ctx-sub { font-size: 12.5px; }
+  .rail:not(.is-drawer) .rail-mem { gap: 10px; }
+  .rail:not(.is-drawer) .rail-mem-title { font-size: 14.5px; -webkit-line-clamp: 3; }
+  .rail:not(.is-drawer) .rail-mem-ask { font-size: 12.5px; }
+  .rail:not(.is-drawer) .rail-mem-ask .btn { height: 28px; font-size: 12.5px; }
+  .rail:not(.is-drawer) .rail-vitals { gap: 14px; }
+  .rail:not(.is-drawer) .rail-vital { gap: 6px; }
+  .rail:not(.is-drawer) .rail-vital-value { font-size: 14px; }
+  .rail:not(.is-drawer) .rail-vital-bar { height: 6px; }
+  .rail:not(.is-drawer) .rail-vital-detail { font-size: 11.5px; }
+  .rail:not(.is-drawer) .rail-act-row { padding: 8px 10px; font-size: 13px; }
+}
+/* A full-height desktop window: the page list at a phone's size too, and the
+   cards a step larger again, so the rail is used top to bottom. */
+@media (min-height: 900px) and (pointer: fine) {
+  .rail:not(.is-drawer) .rail-nav { gap: 2px; }
+  .rail:not(.is-drawer) .rail-nav-item { padding: 11px 12px; font-size: 14.5px; }
+  .rail:not(.is-drawer) .rail-divider { margin: 10px 10px; }
+  .rail:not(.is-drawer) .rail-foot { gap: 12px; }
+  .rail:not(.is-drawer) .rail-ctx,
+  .rail:not(.is-drawer) .rail-mem,
+  .rail:not(.is-drawer) .rail-vitals { padding: 16px 18px; }
+  .rail:not(.is-drawer) .rail-ctx-ring { width: 70px; height: 70px; }
+  .rail:not(.is-drawer) .rail-ctx-line { font-size: 16px; }
+  .rail:not(.is-drawer) .rail-ctx-sub,
+  .rail:not(.is-drawer) .rail-mem-ask { font-size: 13px; }
+  .rail:not(.is-drawer) .rail-mem-title { font-size: 15.5px; }
+  .rail:not(.is-drawer) .rail-vital-value { font-size: 15px; }
+  .rail:not(.is-drawer) .rail-vital-detail { font-size: 12px; }
+  .rail:not(.is-drawer) .rail-act-row { padding: 10px 12px; font-size: 13.5px; }
+}
+.rail-act-row {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0;
+  padding: 6px 10px; border: 0; border-radius: var(--r-sm); cursor: pointer;
+  background: none; color: var(--text-3); font: inherit; font-size: 12px; text-align: left;
+  transition: background 0.14s var(--ease), color 0.14s var(--ease);
+}
+.rail-act-row:hover { background: var(--s2); color: var(--text-2); }
+.rail-act-row svg, .rail-act-row .watch-dot { flex: 0 0 auto; }
+.rail-act-row.is-running { color: var(--live); }
+.rail-act-label { flex: 0 0 auto; font-weight: 600; }
+.rail-act-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+.rail-act-when { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
 .sm-font-head { margin-top: 18px !important; }
 .sm-themes { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px; }
 .sm-theme {
@@ -4017,6 +4140,8 @@ html[data-font="mono"] body { font-size: 13.5px; }
 @keyframes drawer-in { from { transform: translateX(-100%); } to { transform: none; } }
 @media (pointer: coarse) {
   .rail-nav-item { padding: 12px 12px; font-size: 15px; }
+  .rail-act-row { padding: 10px 12px; font-size: 13.5px; }
+  .rail-mem-ask .btn { height: 32px; padding: 0 12px; font-size: 13px; }
   .rail-icon-btn { width: 38px; height: 38px; }
   .sm-theme { padding: 10px 10px; font-size: 14px; }
   .sm-font { padding: 11px 8px; font-size: 14px; }

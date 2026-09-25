@@ -92,7 +92,7 @@ function ordinal(n: number): string {
 }
 
 /** "in 4h", "in 3 days" -- a countdown answers "is this on?" faster than a date. */
-function until(ts: number): string {
+export function until(ts: number): string {
   const seconds = Math.round(ts - Date.now() / 1000);
   if (seconds <= 0) return "due now";
   if (seconds < 90) return `in ${seconds}s`;
@@ -103,7 +103,7 @@ function until(ts: number): string {
   return `in ${Math.round(hours / 24)} days`;
 }
 
-function ago(ts: number): string {
+export function ago(ts: number): string {
   const seconds = Math.round(Date.now() / 1000 - ts);
   if (seconds < 90) return "just now";
   const minutes = Math.round(seconds / 60);

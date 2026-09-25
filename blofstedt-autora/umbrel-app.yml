@@ -93,23 +93,18 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Long conversations are fast again. The chat no longer redraws every earlier
-  reply for each word the agent types, and turns you have scrolled past cost
-  nothing, so a long thread stays smooth while a reply streams and no longer
-  keeps the processor busy while it sits idle. Also a security and
-  reliability release. Voice from a phone works again:
-  AUTORA_TLS=1 now really serves https on port 8818, with a certificate Autora
-  issues for whatever name you open it by, and Settings offers that
-  certificate to install so the warning goes away. Other websites can no
-  longer reach into Autora from your browser: requests and live connections
-  they start are refused, so a page in another tab cannot read your threads
-  or answer a held command. API keys for every provider are now blanked
-  wherever they appear (the terminal, the thread, the Logs page), not just
-  three of them, and the GitHub token is only ever sent to GitHub. The
-  agent's commands now start in /host as the app always intended; addresses
-  like umbrel.local:8817 open in its browser; long command output keeps the
-  error at the end; web requests and searches can no longer hang a turn; and
-  a setting changed just before a restart is no longer lost.
+  The bottom of the left menu is no longer empty. A small ring shows how full
+  the open session's context is (for example "38k of 100k tokens") and where
+  Autora starts condensing older turns into working memory; it turns amber
+  once it gets there and says how many times the session has been condensed.
+  Under it, a card shows one thing Autora remembers. Something it has just
+  learned comes first, with Keep and Discard right there, so you can confirm
+  or drop it without opening the Mind; tap the card to open that memory. Then
+  three small bars show the machine it runs on: processor, memory and disk
+  (amber past 85%). Last, a line shows any schedule or watcher running right
+  now (tap it to open its session) and which one is due next. The menu looks
+  the same on a phone as on a computer; on a tall desktop window the menu
+  and its cards are larger, so they fill it.
 
 
 dependencies: []

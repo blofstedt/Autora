@@ -80,5 +80,7 @@ export const Kind = {
   /** A decision scored by Jev Mode, or handed back to normal reasoning. */
   JevDecision: "jev.decision",
   Log: "system.log",
+  /** One model call's tokens and cost, and how full the context now is. */
+  UsageTurn: "usage.turn",
   Error: "system.error",
 } as const;

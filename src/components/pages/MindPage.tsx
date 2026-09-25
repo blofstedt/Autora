@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BUCKETS, KIND_COLOR, announceChange, confirmRecord, createRecord, deleteRecord, edgesFor,
   fetchKnowledge, onKnowledgeChange, patchRecord, setLearning,
@@ -26,8 +26,9 @@ export function MindPage({
   showMap = true,
   recent = [],
 }: {
-  /** The bucket to show; a new object moves there even if it is the same one. */
-  jump?: { kind: Bucket };
+  /** The bucket to show; a new object moves there even if it is the same one.
+      With an id, that memory is opened as well. */
+  jump?: { kind: Bucket; id?: string };
   /** Offer the graph here. It has no other home. */
   showMap?: boolean;
   recent?: MemoryMark[];
@@ -50,6 +51,17 @@ export function MindPage({
   useEffect(() => {
     if (jump) { setBucket(jump.kind); setQuery(""); }
   }, [jump]);
+  // Open the memory the jump names, once, as soon as it has loaded.
+  const opened = useRef<object | null>(null);
+  useEffect(() => {
+    if (!jump?.id || opened.current === jump || !data) return;
+    opened.current = jump;
+    const r = data.records.find((x) => x.id === jump.id);
+    if (!r) return;
+    setBucket(r.kind);
+    setOpen(r.id);
+    setDraft(toDraft(r));
+  }, [jump, data]);
 
   // Superseded records are history: the buckets show what is current.
   const records = useMemo(() => (data?.records ?? []).filter((r) => !r.superseded_by), [data]);
