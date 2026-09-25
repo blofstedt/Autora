@@ -88,14 +88,13 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Autora can speak in your own voice. If you have a speech server running
-  beside it — Kokoro, or anything else that speaks the OpenAI audio API —
-  Settings → Themes & voice now lists the voices that server offers, and
-  every reply read aloud uses the one you pick, on every device. Autora finds
-  the server by name on the Umbrel network and falls back to the browser's
-  own voice when there is none, saying so in the panel rather than going
-  quiet. Point it elsewhere with AUTORA_KOKORO_URL, and choose the voice it
-  starts with using AUTORA_KOKORO_VOICE.
+  The line under the conversation no longer just says "working": it says in a
+  few words what Autora is on — the request it is thinking about, the command
+  it is running, the site it is opening, or what it is thinking over between
+  steps. The voice settings have moved from the Themes menu to Config → Voice,
+  where you can also set the voice server's address and play a sample. And
+  when you ask Autora to say something out loud it now simply plays it in
+  that voice, instead of making an audio file and presenting it.
 
 
 dependencies: []

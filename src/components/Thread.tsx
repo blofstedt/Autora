@@ -32,6 +32,7 @@ const STICK_ZONE = 80;
 export function Thread({
   buckets,
   busy,
+  doing,
   sessionId,
   liveBrowserSeq,
   live,
@@ -41,6 +42,8 @@ export function Thread({
 }: {
   buckets: Bucket[];
   busy: boolean;
+  /** What it is on right now, in a few words (see lib/activity.ts). */
+  doing?: string | null;
   sessionId: string;
   liveBrowserSeq: number | null;
   live: boolean;
@@ -154,7 +157,12 @@ export function Thread({
             {...work}
           />
         ))}
-        {busy && <div className="working"><span className="bar" />working</div>}
+        {busy && (
+          <div className="working" aria-live="polite">
+            <span className="bar" />
+            <span className="working-what">{doing || "Working"}</span>
+          </div>
+        )}
         </div>
       </div>
 

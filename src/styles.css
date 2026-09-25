@@ -560,7 +560,11 @@ body::before {
   animation: rise 0.22s var(--ease) both;
 }
 
-.working { display: flex; align-items: center; gap: 9px; color: var(--text-3); font-size: 12.5px; padding-left: 38px; }
+.working { display: flex; align-items: center; gap: 9px; color: var(--text-3); font-size: 12.5px; padding-left: 38px; min-width: 0; }
+.working .bar { flex: 0 0 auto; }
+/* A few words of what it is on; one line, cut rather than wrapped, so the
+   thread does not jump as the phrase changes length. */
+.working-what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .working .bar {
   width: 58px; height: 3px; border-radius: 99px; overflow: hidden;
   background: linear-gradient(90deg, var(--s3) 0%, var(--accent) 50%, var(--s3) 100%);
@@ -3830,7 +3834,16 @@ html[data-font="mono"] body { font-size: 13.5px; }
   font: inherit; font-size: 13px;
 }
 .sm-voice:hover { color: var(--text); border-color: var(--border-strong); }
-.sm-note { margin: 7px 2px 0; font-size: 11.5px; line-height: 1.45; color: var(--text-3); }
+/* Config -> Voice: the server's address, then the voice and a sample. */
+.voice-field { display: grid; gap: 6px; margin: 12px 0 10px; }
+.voice-field input {
+  min-width: 0; padding: 9px 11px; border-radius: var(--r-sm);
+  background: var(--s2); border: 1px solid var(--border); color: var(--text);
+  font-family: var(--mono); font-size: 12.5px;
+}
+.voice-row { display: flex; gap: 8px; align-items: center; }
+.voice-row .sm-voice { flex: 1; min-width: 0; }
+.voice-row .btn { flex: 0 0 auto; }
 
 /* The phone's drawer: the same rail, slid in over a dimmed app. */
 .drawer-scrim {
