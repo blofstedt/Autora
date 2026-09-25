@@ -196,43 +196,28 @@ const metaOf = (session: Session) => ({
 // record of what you have spent. See that module for the file and its
 // permissions.
 
-// Seed an initial session with welcoming events
+// A fresh install opens on an empty session. It used to open on a seeded
+// "System Initialization & Agent Ready" thread that told you to type a task,
+// before any model was connected to answer it; the empty thread now shows the
+// setup card (or example tasks, once a model is in) instead.
 function createInitialSession(): Session {
   const now = Math.floor(Date.now() / 1000);
   const session: Session = {
     id: "session-init",
-    title: "System Initialization & Agent Ready",
+    title: "New Session",
     live: true,
-    createdAt: now - 300,
+    createdAt: now,
     busy: false,
     events: [],
     seqCounter: 0,
     counts: { seq: 0, lastTs: 0, events: 0, turns: 0, tools: 0, errors: 0 },
   };
-
-  function add(kind: string, actor: string, payload: Record<string, any>, span: string | null = null) {
-    session.seqCounter += 1;
-    session.events.push({
-      seq: session.seqCounter,
-      ts: now - 300 + session.seqCounter * 2,
-      kind,
-      actor,
-      span,
-      payload,
-      blob: null,
-    });
-  }
-
-  add("session.started", "system", { title: session.title });
-  /* No approval card here any more. This session is seeded before anything
-     has been asked for, so a card in it was waiting on nothing: clicking it
-     released no tool call, because there was none, and the only thing it
-     demonstrated was that the prompt could be drawn. Real ones now appear
-     where a real call is parked on the answer. */
-  add("turn.agent.text", "agent", { local: true, text: "Autora is running. What I can reach — a shell on this host, a browser I drive, and a desktop if you run the relay — is listed under Tools in Settings, and none of it waits for your approval. Type a task and it happens in this thread: every command, page and keystroke shown where it occurred." });
-  add("turn.agent.done", "agent", {});
+  session.seqCounter = 1;
+  session.events.push({
+    seq: 1, ts: now, kind: "session.started", actor: "system", span: null,
+    payload: { title: session.title }, blob: null,
+  });
   session.counts = countsOf(session.events);
-
   return session;
 }
 
@@ -1884,11 +1869,6 @@ function beginTurn(session: Session, text: string): Promise<TurnResult> {
 async function runTurn(session: Session, text: string): Promise<TurnResult> {
   const result: TurnResult = { ok: false, reply: "", ranSomething: false, stopped: false, error: null, recalled: [] };
   try {
-    // Emit thinking event
-    emitEvent(session, "turn.agent.thinking", "agent", {
-      text: `Analyzing: "${text}"`,
-    });
-
     /* Which memories this turn gets: ranked against the request (see
        server/memory.ts), pinned ones always. When Jev can score, it makes
        the final yes/no per memory from a wider shortlist. */
@@ -2508,11 +2488,8 @@ async function runTurn(session: Session, text: string): Promise<TurnResult> {
       let reply: string;
       if (!connected) {
         reply =
-          "No model is connected yet, so nothing can answer you. " +
-          `${active.problem ?? ""} Open Settings, add a key for OpenAI, Google, ` +
-          "Anthropic, DeepSeek, or OpenRouter, and pick a model. The tools — " +
-          "terminal, browser, computer control — are configured in Settings too, " +
-          "but it takes a model to decide to use them.";
+          "I don't have a model to think with yet, so I can't answer this. Add a " +
+          "key for a provider in Settings, then send it again.";
       } else if (running.get(session.id)?.stopped) {
         reply = "Stopped.";
       } else if (ranSomething) {
@@ -2520,18 +2497,21 @@ async function runTurn(session: Session, text: string): Promise<TurnResult> {
            in the transcript above, so point at it rather than inventing a
            summary of it. */
         reply =
-          "That turn ended without a written answer. What ran is above, " +
+          "I finished without writing a summary. What I ran is above, " +
           "with its output.";
       } else {
         /* Nothing ran and nothing was said, which means the model call
            itself failed -- and that failure is already in the log as a
            system error naming the vendor and the reason. Repeating it here
            in vaguer words would only bury it. */
-        reply = "Nothing came back that turn. The error above says why.";
+        reply = "I couldn't get an answer from the model that turn. The error above says why.";
       }
       /* `local` keeps this out of the history the model is shown next
          turn -- see historyFor. */
-      emitEvent(session, "turn.agent.text", "agent", { text: reply, local: true });
+      // `setup` puts an Open Settings button under the reply.
+      emitEvent(session, "turn.agent.text", "agent", {
+        text: reply, local: true, ...(connected ? {} : { setup: true }),
+      });
     }
 
     emitEvent(session, "turn.agent.done", "agent", {});
@@ -3567,6 +3547,9 @@ async function startServer() {
         // worth saying here is what this choice costs, which is the fact the
         // billing card is about to be counting with.
         hint: active.problem ?? activePrice(),
+        // Whether a turn sent now would reach a model. The chat shows its
+        // setup card until this is true.
+        connected: Boolean(active.provider) && !active.problem,
       },
     };
   };

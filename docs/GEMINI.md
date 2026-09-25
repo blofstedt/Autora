@@ -45,7 +45,7 @@ The key is read once at startup, so **restart the server after setting it**.
 
 ## 3. Check it worked
 
-Open Settings (the gear, top right). Under *Model keys*, Google Gemini should
+Open **Settings** in the sidebar. Under *Model keys*, Google Gemini should
 read **Connected (server environment)**, and *Active* should name the model the
 next turn will call.
 

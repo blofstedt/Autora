@@ -21,10 +21,14 @@ const money = (n: number) => (n ? `$${n < 1 ? n.toFixed(3) : n.toFixed(2)}` : "â
  * rename it, take a copy of it, or get rid of it.
  */
 export function SessionsPage({
-  current, onOpen, onChanged,
+  current, onOpen, onChanged, onDelete, hidden,
 }: {
   current: string | null;
   onOpen: (id: string) => void;
+  /** Delete, with Undo: the app holds the actual removal back a moment. */
+  onDelete: (row: { id: string; title: string }) => void;
+  /** A session whose delete is waiting out its Undo: not listed. */
+  hidden: string | null;
   /** The list changed (renamed, deleted): refresh the app's copy. */
   onChanged: () => void;
 }) {
@@ -33,7 +37,6 @@ export function SessionsPage({
   const [sort, setSort] = useState<"recent" | "active" | "cost">("recent");
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
-  const [confirm, setConfirm] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
@@ -47,10 +50,12 @@ export function SessionsPage({
 
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    const list = (rows ?? []).filter((r) => !needle || r.title.toLowerCase().includes(needle) || r.id.includes(needle));
+    const list = (rows ?? [])
+      .filter((r) => r.id !== hidden)
+      .filter((r) => !needle || r.title.toLowerCase().includes(needle) || r.id.includes(needle));
     const key = sort === "recent" ? (r: Row) => r.updated_at : sort === "active" ? (r: Row) => r.tools + r.turns : (r: Row) => r.cost;
     return [...list].sort((a, b) => key(b) - key(a));
-  }, [rows, q, sort]);
+  }, [rows, q, sort, hidden]);
 
   const totals = useMemo(() => (rows ?? []).reduce(
     (t, r) => ({ events: t.events + r.events, tools: t.tools + r.tools, cost: t.cost + r.cost, turns: t.turns + r.turns }),
@@ -65,16 +70,6 @@ export function SessionsPage({
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }),
     }).catch(() => null);
     if (!res?.ok) setError("Could not rename that session.");
-    load(); onChanged();
-  };
-
-  const remove = async (id: string) => {
-    setConfirm(null);
-    const res = await fetch(`/api/sessions/${id}`, { method: "DELETE" }).catch(() => null);
-    if (!res?.ok) {
-      const body = await res?.json().catch(() => null);
-      setError(body?.error ?? "Could not delete that session.");
-    }
     load(); onChanged();
   };
 
@@ -154,12 +149,6 @@ export function SessionsPage({
                 {r.cost > 0 && <span className="ses-cost">{money(r.cost)}</span>}
               </button>
               <div className="ses-acts">
-                {confirm === r.id ? (
-                  <>
-                    <button className="btn danger" onClick={() => void remove(r.id)}>Delete</button>
-                    <button className="btn ghost" onClick={() => setConfirm(null)}>Keep</button>
-                  </>
-                ) : (
                   <>
                     <button className="btn icon ghost" title="Rename" aria-label="Rename"
                             onClick={() => { setEditing(r.id); setDraft(r.title); }}>
@@ -170,11 +159,10 @@ export function SessionsPage({
                       <IconDownload size={14} />
                     </button>
                     <button className="btn icon ghost" title="Delete" aria-label="Delete"
-                            disabled={r.busy} onClick={() => setConfirm(r.id)}>
+                            disabled={r.busy} onClick={() => onDelete(r)}>
                       <IconTrash size={14} />
                     </button>
                   </>
-                )}
               </div>
             </div>
           ))}

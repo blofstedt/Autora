@@ -7,7 +7,11 @@ export type SessionRow = {
   live?: boolean;
   pinned?: boolean;
   created_at?: number;
+  updated_at?: number;
   events?: number;
+  /** Messages the person sent: what "how much is in it" means to them. */
+  turns?: number;
+  cost?: number;
 };
 
 function when(ts: number | undefined): string {
@@ -33,10 +37,12 @@ function when(ts: number | undefined): string {
  * there is something worth listing.
  *
  * It is also where sessions are kept tidy: search by title, pin one to keep it
- * at the top, delete one (a second tap confirms, since there is no undo).
+ * at the top, delete one (one tap: the app offers Undo for a few seconds
+ * before anything is actually removed). Renaming, exporting and sorting live
+ * on the Sessions page, one link away.
  */
 export function Sessions({
-  sessions, current, onPick, onNew, onClose, onChanged, onDeleted,
+  sessions, current, onPick, onNew, onClose, onChanged, onDelete, onOpenPage,
 }: {
   sessions: SessionRow[];
   current: string | null;
@@ -45,8 +51,10 @@ export function Sessions({
   onClose: () => void;
   /** Pinned or deleted: refresh the app's copy of the list. */
   onChanged: () => void;
-  /** A session is gone; the app moves off it if it was the open one. */
-  onDeleted: (id: string, remaining: SessionRow[]) => void;
+  /** Delete, with Undo: the app holds the actual removal back a moment. */
+  onDelete: (row: SessionRow) => void;
+  /** The full Sessions page. */
+  onOpenPage: () => void;
 }) {
   const panel = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
@@ -54,7 +62,6 @@ export function Sessions({
   // round trip; the app's list replaces it when that arrives.
   const [rows, setRows] = useState(sessions);
   const [query, setQuery] = useState("");
-  const [confirm, setConfirm] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => setRows(sessions), [sessions]);
@@ -91,19 +98,10 @@ export function Sessions({
     onChanged();
   };
 
-  const remove = async (row: SessionRow) => {
-    setConfirm(null);
+  const remove = (row: SessionRow) => {
     setError(null);
-    const res = await fetch(`/api/sessions/${row.id}`, { method: "DELETE" }).catch(() => null);
-    if (!res?.ok) {
-      const body = await res?.json().catch(() => null);
-      setError(body?.error ?? "Could not delete that session.");
-      return;
-    }
-    const remaining = rows.filter((s) => s.id !== row.id);
-    setRows(remaining);
-    onDeleted(row.id, remaining);
-    onChanged();
+    setRows((list) => list.filter((s) => s.id !== row.id));
+    onDelete(row);
   };
 
   return (
@@ -158,8 +156,10 @@ export function Sessions({
                   <em>
                     {s.pinned ? "pinned · " : ""}
                     {when(s.created_at)}
-                    {s.events ? ` · ${s.events} events` : ""}
-                    {s.live ? " · live" : ""}
+                    {s.turns !== undefined
+                      ? ` · ${s.turns} message${s.turns === 1 ? "" : "s"}`
+                      : ""}
+                    {s.cost ? ` · $${s.cost < 1 ? s.cost.toFixed(3) : s.cost.toFixed(2)}` : ""}
                   </em>
                 </span>
                 {s.id === current && <IconCheck size={14} />}
@@ -173,27 +173,21 @@ export function Sessions({
               >
                 <IconPin size={14} />
               </button>
-              {confirm === s.id ? (
-                <button
-                  className="ses-act is-confirm"
-                  onClick={() => void remove(s)}
-                  onBlur={() => setConfirm(null)}
-                  autoFocus
-                >
-                  Delete
-                </button>
-              ) : (
-                <button
-                  className="ses-act"
-                  onClick={() => setConfirm(s.id)}
-                  aria-label="Delete session"
-                  title="Delete"
-                >
-                  <IconTrash size={14} />
-                </button>
-              )}
+              <button
+                className="ses-act"
+                onClick={() => remove(s)}
+                aria-label="Delete session"
+                title="Delete"
+              >
+                <IconTrash size={14} />
+              </button>
             </div>
           ))}
+        </div>
+        <div className="modal-foot">
+          <button className="setup-more" onClick={onOpenPage}>
+            All sessions — rename, export, sort by cost
+          </button>
         </div>
       </div>
     </div>

@@ -47,6 +47,14 @@ test("a finished command resolves, with its argument", () => {
   assert.equal(resolve("/STOP")?.command.id, "stop");
 });
 
+test("renamed commands still answer to their old names", () => {
+  assert.equal(resolve("/settings")?.command.id, "config");
+  assert.equal(resolve("/config")?.command.id, "config");
+  assert.equal(resolve("/schedules")?.command.id, "cron");
+  assert.equal(resolve("/cron")?.command.id, "cron");
+  assert.ok(!suggest("/", false).some((c) => c.name === "cron"), "old names are not offered");
+});
+
 test("a path or an unknown word is a message, not a command", () => {
   assert.equal(resolve("/etc/hosts is wrong"), null);
   assert.equal(resolve("/host/home/umbrel"), null);

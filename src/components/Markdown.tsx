@@ -13,8 +13,8 @@ import { IconCheck, IconCopy } from "./Icons";
  * has to tolerate half-written input: an unclosed fence is code to the end,
  * an unclosed `**` is just two asterisks.
  */
-export function Markdown({ text }: { text: string }) {
-  return <div className="md">{blocks(text)}</div>;
+export function Markdown({ text, streaming = false }: { text: string; streaming?: boolean }) {
+  return <div className={`md ${streaming ? "is-streaming" : ""}`.trim()}>{blocks(text, streaming)}</div>;
 }
 
 type Block =
@@ -108,7 +108,18 @@ function cells(row: string): string[] {
   return row.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
 }
 
-function blocks(text: string): ReactNode[] {
+/**
+ * While a reply is still arriving, its words are drawn one element each, so
+ * each new word can fade in as it lands -- spoken rather than printed. React
+ * keeps every word it has already drawn (same place, same key), so only the
+ * new ones animate. Once the reply is done it is plain text again.
+ */
+function words(text: string, key: string): ReactNode[] {
+  return text.split(/(?<=\s)/).map((w, i) => <span key={`${key}w${i}`} className="md-w">{w}</span>);
+}
+
+function blocks(text: string, live = false): ReactNode[] {
+  const inline = (t: string) => inlineOf(t, live);
   return parse(text).map((b, key) => {
     switch (b.kind) {
       case "p":
@@ -120,7 +131,7 @@ function blocks(text: string): ReactNode[] {
       case "code":
         return <CodeBlock key={key} lang={b.lang} body={b.body} />;
       case "quote":
-        return <blockquote key={key}>{blocks(b.lines.join("\n"))}</blockquote>;
+        return <blockquote key={key}>{blocks(b.lines.join("\n"), live)}</blockquote>;
       case "list": {
         const items = b.items.map((item, i) => {
           const task = item.match(/^\[([ xX])\]\s+(.*)$/s);
@@ -182,7 +193,9 @@ function CodeBlock({ lang, body }: { lang: string; body: string }) {
 const INLINE =
   /(`+)([\s\S]*?[^`])\1(?!`)|\*\*([^*\n]+?)\*\*|__([^_\n]+?)__|(?<![\w*])\*(?!\s)([^*\n]+?)\*(?![\w*])|(?<!\w)_(?!\s)([^_\n]+?)_(?!\w)|~~([^~\n]+?)~~|\[([^\]\n]+)\]\(\s*<?([^()\s>]+)>?\s*\)|(https?:\/\/[^\s<>"'`)\]]+[^\s<>"'`)\].,;:!?])/g;
 
-function inline(text: string): ReactNode[] {
+function inlineOf(text: string, live: boolean): ReactNode[] {
+  const inline = (t: string) => inlineOf(t, live);
+  const plain = (t: string, key: string): ReactNode => (live ? <Fragment key={key}>{words(t, key)}</Fragment> : t);
   const out: ReactNode[] = [];
   splitImages(text).forEach((piece, p) => {
     if (piece.kind === "image") {
@@ -193,7 +206,7 @@ function inline(text: string): ReactNode[] {
     let at = 0;
     for (const m of s.matchAll(INLINE)) {
       const start = m.index ?? 0;
-      if (start > at) out.push(s.slice(at, start));
+      if (start > at) out.push(plain(s.slice(at, start), `${p}t${at}`));
       const k = `${p}-${start}`;
       if (m[1]) out.push(<code key={k}>{m[2]}</code>);
       else if (m[3] || m[4]) out.push(<strong key={k}>{inline(m[3] || m[4])}</strong>);
@@ -203,7 +216,7 @@ function inline(text: string): ReactNode[] {
       else if (m[10]) out.push(link(m[10], m[10], k));
       at = start + m[0].length;
     }
-    if (at < s.length) out.push(s.slice(at));
+    if (at < s.length) out.push(plain(s.slice(at), `${p}t${at}`));
   });
   return out;
 }

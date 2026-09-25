@@ -25,6 +25,8 @@ import { resolve as resolveCommand, suggest as suggestCommands, type Command } f
 import { LiveChat } from "./components/LiveChat";
 import { useRelay } from "./components/RelaySetup";
 import { UpdateNotice } from "./components/UpdateNotice";
+import { SetupCard, Welcome } from "./components/SetupCard";
+import { flySpark, visible } from "./lib/presence";
 import { Notices } from "./components/Notices";
 import { AutoraMark, type MarkState } from "./components/AutoraMark";
 import { activity } from "./lib/activity";
@@ -77,7 +79,7 @@ export function App() {
     const params = new URLSearchParams(location.search);
     if (params.get("page") === "keys") return { tab: "keys" };
     const tab = params.get("page") === "config" ? params.get("tab") : null;
-    return { tab: tab === "keys" || tab === "credentials" ? tab : "general" };
+    return { tab: tab === "keys" || tab === "credentials" || tab === "appearance" ? tab : "general" };
   });
   /** Which section of System to open on, from the address. */
   const [systemTab, setSystemTab] = useState<SystemTab>(() => {
@@ -101,7 +103,15 @@ export function App() {
       only through `title` is reported to nobody. */
   const [notice, setNotice] = useState<string | null>(null);
   const [voiceHelp, setVoiceHelp] = useState(false);
+  /** Whether a turn sent now would reach a model: null until asked. The empty
+      chat offers setup until it is true, and starting tasks after. */
+  const [modelReady, setModelReady] = useState<boolean | null>(null);
+  /** A turn just failed: the presence shivers and the tab turns red briefly. */
+  const [failing, setFailing] = useState(false);
   const streamRef = useRef<SessionStream | null>(null);
+  /** The newest event the presence has already reacted to, so a reload or a
+      session switch does not replay old moments. */
+  const noticed = useRef(0);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const speech = useSpeech();
   const { say, cancel: hush, prime, speaking, supported: canSpeak } = speech;
@@ -144,6 +154,7 @@ export function App() {
     fetch("/api/settings")
       .then((r) => r.json())
       .then((d) => {
+        if (typeof d?.active?.connected === "boolean") setModelReady(d.active.connected);
         const saved = d?.appearance;
         if (!saved?.theme || !saved?.font) return;
         const next = { theme: saved.theme, font: saved.font } as Appearance;
@@ -186,6 +197,7 @@ export function App() {
   useEffect(() => {
     if (!sessionId) return;
     setEvents([]);
+    noticed.current = 0;
     setLiveFrame(null);
     setLiveFields([]);
     setBrowser(null);
@@ -229,6 +241,20 @@ export function App() {
       streamRef.current = null;
     };
   }, [sessionId]);
+
+  // Coming back to the chat from Settings is when a model may have been
+  // connected (or disconnected), so ask again then.
+  useEffect(() => {
+    if (page !== "chat") return;
+    let alive = true;
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((d) => {
+        if (alive && typeof d?.active?.connected === "boolean") setModelReady(d.active.connected);
+      })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [page]);
 
   const view = useMemo(() => derive(events), [events]);
   const doing = useMemo(() => activity(events), [events]);
@@ -278,7 +304,11 @@ export function App() {
     if (!text || !sessionId) return;
     // Dictated turns never touched the box, so there is nothing to clear and
     // clearing anyway would eat something half-typed.
-    if (spoken === undefined) setDraft("");
+    if (spoken === undefined) {
+      setDraft("");
+      // The message is handed over: a spark from Send to the agent's mark.
+      flySpark(visible(".composer-send"), visible(".rail-slot .presence", ".top-presence"));
+    }
     // Unlock audio inside this tap, so anything the reply says aloud can play
     // on a phone that only allows sound a gesture started.
     if (!speaking) prime();
@@ -326,6 +356,7 @@ export function App() {
     history.replaceState(null, "", `?session=${id}`);
     setSessionId(id);
     setSessionsOpen(false);
+    return id as string;
   }, []);
 
   const pickSession = useCallback((id: string) => {
@@ -507,8 +538,12 @@ export function App() {
       runCommand(hit.command, hit.arg);
       return;
     }
+    if (modelReady === false) {
+      setNotice("No model is connected yet. Add one in Settings (/settings) first.");
+      return;
+    }
     void send();
-  }, [slashOpen, slashOffered, slashActive, draft, runCommand, send]);
+  }, [slashOpen, slashOffered, slashActive, draft, runCommand, send, modelReady]);
 
   /** The same page over https, where the microphone is allowed. Built from the
       address that already worked: whatever name reached the http listener is
@@ -524,7 +559,9 @@ export function App() {
   // ---------------------------------------------------------- tab chrome --
   const chromeState: Chrome = pending > 0
     ? "approval"
-    : !live
+    : failing
+      ? "error"
+      : !live
       ? status.state === "closed" ? "offline" : "idle"
       : running ? "working" : "live";
 
@@ -542,6 +579,86 @@ export function App() {
   const liveState: MarkState = liveOn
     ? (userSpeaking ? "working" : "live")
     : "rest";
+
+  // ------------------------------------------------------------ presence --
+  /* The agent as one living thing: its mark in the sidebar (and the header,
+     on a phone) carries its mood, leans in while you type, blooms when you
+     come back, and shivers when a turn fails. Every one of these is driven
+     by something that actually happened -- nothing here is performed. */
+  const [attention, setAttention] = useState(0);
+  const [welcome, setWelcome] = useState(0);
+  const [learned, setLearned] = useState(0);
+  const [bloom, setBloom] = useState(0);
+  const mood: MarkState = pending > 0
+    ? "waiting"
+    : failing
+      ? "error"
+      : live && running
+        ? "working"
+        : liveOn ? "live" : "rest";
+
+  // Moments in the log, as they arrive: a failure, something learned. Only
+  // fresh events count, so opening an old session is not a replay.
+  useEffect(() => {
+    const now = Date.now() / 1000;
+    let newest = noticed.current;
+    const timers: number[] = [];
+    for (const e of events) {
+      if (e.seq <= noticed.current) continue;
+      newest = Math.max(newest, e.seq);
+      if (now - e.ts > 10) continue;
+      if (e.kind === Kind.Error) {
+        setFailing(true);
+        timers.push(window.setTimeout(() => setFailing(false), 1600));
+      }
+      if (e.kind === Kind.MemoryLearned) {
+        const count = (Array.isArray(e.payload.items) ? e.payload.items.length : 0);
+        if (!count) continue;
+        // After the card has painted, so the spark leaves from it.
+        timers.push(window.setTimeout(() => {
+          flySpark(
+            visible(".learned"),
+            visible(".rail-slot [data-page=\"mind\"]", ".menu-btn"),
+            () => { setLearned((n) => n + count); setBloom((b) => b + 1); },
+            "glow",
+          );
+        }, 350));
+      }
+    }
+    noticed.current = newest;
+    // Deliberately not cleared on the next run: a later batch of events must
+    // not cut short a shiver or a spark that is already under way.
+    void timers;
+  }, [events]);
+
+  useEffect(() => { if (page === "mind") setLearned(0); }, [page]);
+
+  // Leaning in while you type: brighter the faster you go, settling back a
+  // moment after you stop.
+  const strokes = useRef<number[]>([]);
+  const settleTimer = useRef<number | null>(null);
+  const noticeTyping = useCallback(() => {
+    const t = performance.now();
+    strokes.current = strokes.current.filter((k) => t - k < 1500);
+    strokes.current.push(t);
+    setAttention(Math.min(1, 0.25 + strokes.current.length / 12));
+    if (settleTimer.current) window.clearTimeout(settleTimer.current);
+    settleTimer.current = window.setTimeout(() => setAttention(0), 1100);
+  }, []);
+
+  // Coming back after a while is greeted with a bloom, and nothing ambient
+  // keeps animating in a tab nobody is looking at.
+  useEffect(() => {
+    let awayAt = 0;
+    const onVisibility = () => {
+      document.documentElement.classList.toggle("is-away", document.hidden);
+      if (document.hidden) { awayAt = Date.now(); return; }
+      if (awayAt && Date.now() - awayAt > 60_000) setWelcome((n) => n + 1);
+      awayAt = 0;
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
 
   const hadPending = useRef(0);
   useEffect(() => {
@@ -589,12 +706,42 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [toggleLive, live, voiceReady, voiceBlocked, navigate, page]);
 
+  const sessionCost = sessions.find((s) => s.id === sessionId)?.cost ?? 0;
+
   const currentName =
     sessions.find((s) => s.id === sessionId)?.title?.trim() ||
     view.title ||
     "Untitled session";
 
   const openKnowledge = useCallback(() => navigate("mind"), [navigate]);
+  const openModelSettings = useCallback(() => {
+    setConfigJump({ tab: "general" });
+    navigate("config");
+  }, [navigate]);
+
+  /** A starting task goes into the box to be read and edited, not straight
+      out: it is an example, and the person may want it slightly different. */
+  const startFrom = useCallback((text: string) => {
+    setDraft(text);
+    composerRef.current?.focus();
+  }, []);
+
+  const placeholder = modelReady === false ? (
+    <SetupCard
+      onConnected={() => { setModelReady(true); composerRef.current?.focus(); }}
+      onOpenSettings={openModelSettings}
+    />
+  ) : modelReady ? (
+    <Welcome
+      sessions={sessions}
+      current={sessionId}
+      // A closure: openSession is declared further down.
+      onOpenSession={(id) => openSession(id)}
+      onOpenMind={() => navigate("mind")}
+      onOpenSchedules={() => navigate("cron")}
+      onPick={startFrom}
+    />
+  ) : undefined;
 
   const refreshSessions = useCallback(() => {
     fetch("/api/sessions").then((r) => r.json()).then(setSessions).catch(() => undefined);
@@ -604,6 +751,81 @@ export function App() {
     pickSession(id);
     navigate("chat");
   }, [navigate, pickSession]);
+
+  // ------------------------------------------------------ undoable delete --
+  /** A session deleted a moment ago, still recoverable. Nothing is removed on
+      the server until the Undo window passes -- a two-tap confirm guarded the
+      same mistake, but slower, and still with no way back. */
+  const [trash, setTrash] = useState<{
+    id: string; title: string; wasOpen: boolean;
+    /** The empty session opened because the last one was deleted. */
+    stand?: Promise<string>;
+  } | null>(null);
+  const trashTimer = useRef<number | null>(null);
+  const trashRef = useRef(trash);
+  trashRef.current = trash;
+
+  const commitDelete = useCallback(async (id: string) => {
+    const res = await fetch(`/api/sessions/${id}`, { method: "DELETE" }).catch(() => null);
+    if (!res?.ok) {
+      const body = await res?.json().catch(() => null);
+      setNotice(body?.error ?? "Could not delete that session.");
+    }
+    refreshSessions();
+  }, [refreshSessions]);
+
+  const deleteSession = useCallback((row: { id: string; title?: string }) => {
+    // One Undo at a time: a second delete settles the first.
+    const earlier = trashRef.current;
+    if (earlier) {
+      if (trashTimer.current) window.clearTimeout(trashTimer.current);
+      void commitDelete(earlier.id);
+    }
+    const wasOpen = row.id === sessionId;
+    let stand: Promise<string> | undefined;
+    if (wasOpen) {
+      const next = sessions.find((s) => s.id !== row.id && s.id !== earlier?.id);
+      if (next) pickSession(next.id);
+      else stand = newSession();
+    }
+    setTrash({ id: row.id, title: row.title?.trim() || "Untitled session", wasOpen, stand });
+    trashTimer.current = window.setTimeout(() => {
+      trashTimer.current = null;
+      setTrash(null);
+      void commitDelete(row.id);
+    }, 6000);
+  }, [commitDelete, sessionId, sessions, pickSession, newSession]);
+
+  const undoDelete = useCallback(() => {
+    const held = trashRef.current;
+    if (!held) return;
+    if (trashTimer.current) window.clearTimeout(trashTimer.current);
+    trashTimer.current = null;
+    setTrash(null);
+    if (held.wasOpen) pickSession(held.id);
+    // The stand-in opened in its place goes again, if nothing was said in it.
+    void held.stand?.then(async (id) => {
+      const rows: SessionRow[] = await fetch("/api/sessions").then((r) => r.json()).catch(() => []);
+      const row = rows.find((r) => r.id === id);
+      if (row && !row.turns) await fetch(`/api/sessions/${id}`, { method: "DELETE" }).catch(() => undefined);
+      refreshSessions();
+    });
+  }, [pickSession, refreshSessions]);
+
+  // Leaving the page settles a pending delete rather than forgetting it.
+  useEffect(() => {
+    const flush = () => {
+      const held = trashRef.current;
+      if (held) void fetch(`/api/sessions/${held.id}`, { method: "DELETE", keepalive: true });
+    };
+    window.addEventListener("pagehide", flush);
+    return () => window.removeEventListener("pagehide", flush);
+  }, []);
+
+  const listed = useMemo(
+    () => (trash ? sessions.filter((s) => s.id !== trash.id) : sessions),
+    [sessions, trash],
+  );
 
   const handlePermissionDecide = useCallback(async (requestId: string, approved: boolean, response?: string) => {
     await fetch(`/api/policy/${requestId}`, {
@@ -644,10 +866,13 @@ export function App() {
               navigate(next);
             }}
             relayOn={!!relay?.connected}
+            mood={mood}
+            attention={attention}
+            pulse={welcome}
+            learned={learned}
+            bloom={bloom}
             alert={pending > 0}
             onNew={() => { void newSession(); navigate("chat"); }}
-            appearance={appearance}
-            onAppearance={changeAppearance}
             drawer={kind === "drawer"}
             onClose={() => setDrawerOpen(false)}
           />
@@ -669,6 +894,11 @@ export function App() {
           >
             <IconMenu size={18} />
           </button>
+
+          {/* The presence, where the sidebar is folded away. */}
+          <span className="top-presence">
+            <AutoraMark size={24} state={mood} idle attention={attention} pulse={welcome} />
+          </span>
 
           {page !== "chat" ? (
             <h1 className="top-title">{pageLabel(page)}</h1>
@@ -703,18 +933,30 @@ export function App() {
               </button>
             </span>
           )}
-          {view.tokens.in > 0 && (
-            <span className="badge tokens" title="tokens in / out / cached">
-              {fmt(view.tokens.in)} in · {fmt(view.tokens.out)} out ·{" "}
-              {fmt(view.tokens.cached)} cached
-            </span>
+          {/* What this session has cost, which is the question; the token
+              counts behind it are one hover (or the Usage page) away. */}
+          {page === "chat" && view.tokens.in > 0 && (
+            <button
+              className="badge tokens"
+              onClick={() => navigate("analytics")}
+              title={`${fmt(view.tokens.in)} tokens in · ${fmt(view.tokens.out)} out · ${fmt(view.tokens.cached)} cached — open Usage`}
+            >
+              {sessionCost > 0 ? `${money(sessionCost)} this session` : `${fmt(view.tokens.in + view.tokens.out)} tokens`}
+            </button>
           )}
         </header>
 
         {page !== "chat" && (
           <div className="page-host">
             {page === "config" && (
-              <Settings key={`config-${configJump.tab}`} section="config" embedded initialTab={configJump.tab} />
+              <Settings
+                key={`config-${configJump.tab}`}
+                section="config"
+                embedded
+                initialTab={configJump.tab}
+                appearance={appearance}
+                onAppearance={changeAppearance}
+              />
             )}
             {page === "analytics" && <Settings key="analytics" section="analytics" embedded />}
             {page === "system" && (
@@ -727,7 +969,13 @@ export function App() {
               />
             )}
             {page === "sessions" && (
-              <SessionsPage current={sessionId} onOpen={openSession} onChanged={refreshSessions} />
+              <SessionsPage
+                current={sessionId}
+                onOpen={openSession}
+                onChanged={refreshSessions}
+                onDelete={deleteSession}
+                hidden={trash?.id ?? null}
+              />
             )}
             {page === "artifacts" && <ArtifactsPage sessions={sessions} onOpenSession={openSession} />}
             {page === "mcp" && <McpPage />}
@@ -743,6 +991,9 @@ export function App() {
         <div className="chat-view" hidden={page !== "chat"}>
 
         <main className="page">
+          {/* The room's light: cool at rest, warmer while it works, amber
+              while it waits on you. Barely there, and still when away. */}
+          <div className={`mood-light is-${mood}`} aria-hidden="true" />
           <Thread
             buckets={view.buckets}
             // Stopped on a question is not working; the card says what it is.
@@ -757,6 +1008,8 @@ export function App() {
             browserHandedOver={browserHandedOver}
             onStop={() => void stopTurn()}
             onOpenMind={openKnowledge}
+            onOpenSettings={openModelSettings}
+            placeholder={placeholder}
           />
 
           <Approvals
@@ -773,40 +1026,44 @@ export function App() {
             {voiceHelp && !liveOn && (
               <div className="voice-help" role="status">
                 <div className="voice-help-text">
+                  {/* One line to act on; the explanation is folded under it,
+                      since on a phone it filled most of the screen. */}
                   {secureUrl ? (
                     <>
-                      <b>Voice lives on the secure page.</b> Browsers only open a
-                      microphone over a secure connection, and this page is not one.
-                      The same session is running on one — open it and the
-                      microphone appears.
-                      <em className="voice-help-aside">
-                        Your browser will warn you once that it does not recognise
-                        the certificate. That is expected: the certificate is your
-                        own server's. Tap <b>Advanced</b>, then <b>Proceed</b>.
-                      </em>
-                      {hasCertificate && (
-                        <em className="voice-help-trust">
-                          Rather not see that warning — or install this to your home
-                          screen? <a href="/autora-ca.crt" download>Install the
-                          certificate</a>, and this becomes an ordinary trusted
-                          site on this device. Settings explains where it goes.
+                      <b>Voice works on the secure page.</b> Browsers only open a
+                      microphone over https; this session is running there too.
+                      <details className="set-more">
+                        <summary>About the certificate warning</summary>
+                        <em className="voice-help-aside">
+                          Your browser will warn you once that it does not recognise
+                          the certificate. That is expected: the certificate is your
+                          own server's. Tap <b>Advanced</b>, then <b>Proceed</b>.
                         </em>
-                      )}
+                        {hasCertificate && (
+                          <em className="voice-help-trust">
+                            Rather not see that warning — or install this to your home
+                            screen? <a href="/autora-ca.crt" download>Install the
+                            certificate</a>, and this becomes an ordinary trusted
+                            site on this device. Settings explains where it goes.
+                          </em>
+                        )}
+                      </details>
                     </>
                   ) : (
                     <>
-                      <b>Voice needs a secure page.</b> Browsers only open a
-                      microphone over a secure connection, and this page is not one
-                      — no site setting can change that, because the restriction is
-                      not about trusting this site.
-                      <em className="voice-help-aside">
-                        The fix is in front of the server, not in the browser. On a
-                        tailnet, <code>tailscale serve --bg --https=8443 {location.port || 80}</code>{" "}
-                        on the machine running Autora gives this page a real
-                        certificate and a secure address on port 8443 (not 443,
-                        which an Umbrel needs for itself); any reverse proxy with a
-                        certificate does the same. See the README.
-                      </em>
+                      <b>Voice needs a secure (https) page.</b> Browsers only open a
+                      microphone over https, and this page is plain http.
+                      <details className="set-more">
+                        <summary>How to fix it</summary>
+                        <em className="voice-help-aside">
+                          The fix is in front of the server, not in the browser. On a
+                          tailnet, <code>tailscale serve --bg --https=8443 {location.port || 80}</code>{" "}
+                          on the machine running Autora gives this page a real
+                          certificate and a secure address on port 8443 (not 443,
+                          which an Umbrel needs for itself); any reverse proxy with a
+                          certificate does the same. See the README.
+                        </em>
+                      </details>
                     </>
                   )}
                 </div>
@@ -846,34 +1103,23 @@ export function App() {
                       onPick={(c) => runCommand(c, "")}
                     />
                   )}
-                  {/* On a phone or tablet the live control floats just above
-                      Send, where the thumb already is. It steps aside while
-                      the voice note above is up, so it does not cover it. */}
-                  {!voiceHelp && (
-                  <button
-                    type="button"
-                    className={`mob-live-btn composer-float is-${liveState}`}
-                    onClick={voiceReady ? toggleLive : () => setVoiceHelp(true)}
-                    disabled={!live}
-                    title={voiceReady ? "Start live voice chat" : "Live voice requires https"}
-                    aria-label="Live voice chat"
-                    aria-pressed={liveOn}
-                  >
-                    <span className="mob-live-glow" aria-hidden="true" />
-                    <AutoraMark state={liveState} size={23} />
-                  </button>
-                  )}
                   <textarea
                     ref={composerRef}
                     value={draft}
                     rows={1}
                     aria-label="Task"
-                    placeholder={readOnly ? "This session is a recording." : "Ask Autora to do something…"}
+                    placeholder={readOnly
+                      ? "This session is a recording."
+                      : modelReady === false
+                        ? "Connect a model to start…"
+                        : "What should I do?"}
                     disabled={readOnly}
                     onChange={(e) => {
                       setDraft(e.target.value);
                       setSlashDismissed(false);
+                      noticeTyping();
                     }}
+                    onBlur={() => setAttention(0)}
                     onKeyDown={(e) => {
                       if (slashOpen) {
                         const n = slashOffered.length;
@@ -908,16 +1154,19 @@ export function App() {
                         onBlocked={() => setVoiceHelp(true)}
                         onTrouble={setNotice}
                       />
-                      {/* Only shown on a desktop, where the control floating
-                          above Send is hidden. */}
+                      {/* In the row with Dictate, at every width. It used to
+                          float over the thread above Send on phones, where
+                          it covered the last line of whatever was there. */}
                       <button
-                        className="btn icon ghost composer-live"
+                        className="btn ghost labeled composer-live"
                         onClick={voiceReady ? toggleLive : () => setVoiceHelp(true)}
                         disabled={!live}
-                        title={voiceReady ? "Start live voice chat (v)" : "Live voice requires https"}
+                        title={voiceReady ? "Talk with Autora out loud (v)" : "Live voice requires https"}
                         aria-label="Live voice chat"
+                        aria-pressed={liveOn}
                       >
-                        <AutoraMark state="rest" size={18} />
+                        <AutoraMark state={liveState} size={18} />
+                        <span className="btn-label">Talk</span>
                       </button>
                       {notice ? (
                         <button
@@ -951,7 +1200,10 @@ export function App() {
                       )}
                       <button
                         className="composer-send"
-                        disabled={readOnly || !draft.trim()}
+                        // Without a model a message can only fail; a slash
+                        // command (/settings) still goes.
+                        disabled={readOnly || !draft.trim()
+                          || (modelReady === false && !draft.trim().startsWith("/"))}
                         onClick={submit}
                         title={running ? "Interrupt & send" : "Send"}
                         aria-label={running ? "Interrupt & send" : "Send"}
@@ -974,31 +1226,29 @@ export function App() {
 
       {sessionsOpen && (
         <Sessions
-          sessions={sessions}
+          sessions={listed}
           current={sessionId}
           onPick={pickSession}
           onNew={newSession}
           onClose={() => setSessionsOpen(false)}
           onChanged={refreshSessions}
-          onDeleted={(id, remaining) => {
-            if (id !== sessionId) return;
-            // The open session is gone: move to the next one, or a fresh one,
-            // and leave the list open so the tidying can carry on.
-            const next = remaining[0]?.id;
-            if (next) {
-              history.replaceState(null, "", `?session=${next}`);
-              setSessionId(next);
-            } else {
-              void newSession().then(() => setSessionsOpen(true));
-            }
-          }}
+          onDelete={deleteSession}
+          onOpenPage={() => navigate("sessions")}
         />
+      )}
+
+      {trash && (
+        <div className="toast" role="status">
+          <span>Deleted “{trash.title}”</span>
+          <button className="toast-act" onClick={undoDelete}>Undo</button>
+        </div>
       )}
     </div>
   );
 }
 
 const fmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+const money = (n: number) => `$${n < 1 ? n.toFixed(3) : n.toFixed(2)}`;
 
 /** Just the site, for a badge with room for about fifteen characters. */
 function hostOf(url: string | null): string {

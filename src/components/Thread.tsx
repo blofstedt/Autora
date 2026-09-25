@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { Bucket, Cell, KanbanTask, MemoryTouch } from "../lib/derive";
-import { IconAlert, IconArrowDown, IconChevron, IconUser } from "./Icons";
+import { IconAlert, IconArrow, IconArrowDown, IconChevron, IconUser } from "./Icons";
 import { AutoraMark } from "./AutoraMark";
 import { TerminalCell } from "./TerminalCell";
 import { ScreencastCell } from "./ScreencastCell";
@@ -38,9 +38,12 @@ export function Thread({
   live,
   onPermissionDecide,
   onRunAutonomous,
+  placeholder,
   ...work
 }: {
   buckets: Bucket[];
+  /** What an empty session shows: the setup card, or tasks to start from. */
+  placeholder?: ReactNode;
   busy: boolean;
   /** What it is on right now, in a few words (see lib/activity.ts). */
   doing?: string | null;
@@ -131,12 +134,14 @@ export function Thread({
   if (buckets.length === 0 && !busy) {
     return (
       <div className="empty">
-        <AutoraMark size={80} state="live" className="empty-mark" />
-        <h3>Ready</h3>
-        <p>
-          Describe a task below. Every command, page and edit appears here as it
-          happens, and stays here to read back.
-        </p>
+        {/* Still: the sidebar mark is the one that breathes at rest. */}
+        <AutoraMark size={80} state="rest" className="empty-mark" />
+        {placeholder ?? (
+          <>
+            <h3>I'm here.</h3>
+            <p>Describe a task below and watch me do it here.</p>
+          </>
+        )}
       </div>
     );
   }
@@ -159,8 +164,10 @@ export function Thread({
         ))}
         {busy && (
           <div className="working" aria-live="polite">
-            <span className="bar" />
-            <span className="working-what">{doing || "Working"}</span>
+            <AutoraMark size={16} state="working" className="working-mark" />
+            {/* Keyed on the words, so each new step fades in over the last
+                rather than snapping -- a train of thought, not a counter. */}
+            <span className="working-what" key={doing || "working"}>{doing || "Working"}</span>
           </div>
         )}
         </div>
@@ -188,6 +195,8 @@ type WorkState = {
   onStop: () => void;
   /** Opens the Mind page, from a memory named in the thread. */
   onOpenMind?: () => void;
+  /** Opens Settings on the model, from a reply that needs one connected. */
+  onOpenSettings?: () => void;
 };
 
 function TurnBucket({
@@ -271,6 +280,7 @@ function CellView({
   browserHandedOver,
   onStop,
   onOpenMind,
+  onOpenSettings,
 }: {
   cell: Cell;
   sessionId: string;
@@ -290,6 +300,7 @@ function CellView({
           memories={cell.memories}
           working={active}
           onOpenMind={onOpenMind}
+          onOpenSettings={cell.turn.setup ? onOpenSettings : undefined}
         />
       );
     case "terminal":
@@ -338,6 +349,7 @@ function CellView({
               browserHandedOver={browserHandedOver}
               onStop={onStop}
               onOpenMind={onOpenMind}
+              onOpenSettings={onOpenSettings}
             />
           ))}
         </ScreencastCell>
@@ -401,11 +413,13 @@ function Reply({
   memories = [],
   working,
   onOpenMind,
+  onOpenSettings,
 }: {
   text: string;
   thinking?: string;
   memories?: MemoryTouch[];
   onOpenMind?: () => void;
+  onOpenSettings?: () => void;
   /** Still being written. The mark animates while this holds and plays its
       own ending when it drops, so the reply visibly lands rather than just
       stopping. */
@@ -437,7 +451,12 @@ function Reply({
         {memories.map((m, index) => (
           <MemoryCell key={index} cell={m} onOpen={onOpenMind} inline />
         ))}
-        {text && <div className="msg-text is-md"><Markdown text={text} /></div>}
+        {text && <div className="msg-text is-md"><Markdown text={text} streaming={working} /></div>}
+        {onOpenSettings && (
+          <button className="btn primary msg-action" onClick={onOpenSettings}>
+            Open Settings <IconArrow size={13} />
+          </button>
+        )}
       </div>
     </div>
   );

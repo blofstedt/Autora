@@ -208,6 +208,27 @@ body::before {
 }
 .modal-top b { font-size: 13.5px; font-weight: 650; }
 .modal-body { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; }
+.modal-foot {
+  flex: 0 0 auto; display: flex; justify-content: center;
+  padding: 6px 12px 8px; border-top: 1px solid var(--border);
+}
+
+/* "Deleted X · Undo": bottom centre, above the composer, for a few seconds. */
+.toast {
+  position: fixed; left: 50%; bottom: calc(132px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%); z-index: 90;
+  display: flex; align-items: center; gap: 14px;
+  max-width: calc(100vw - 32px); padding: 9px 10px 9px 16px;
+  border-radius: 999px; background: var(--s3); border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-lg); font-size: 13px; color: var(--text);
+  animation: rise 0.2s var(--ease) both;
+}
+.toast > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toast-act {
+  flex: 0 0 auto; border: 0; border-radius: 999px; padding: 5px 12px; cursor: pointer;
+  background: var(--accent-soft); color: var(--accent-light); font: inherit; font-weight: 650;
+}
+.toast-act:hover { background: rgba(var(--accent-rgb), 0.24); }
 
 /* One session: the row that opens it, then pin and delete beside it. */
 .ses-entry {
@@ -270,7 +291,8 @@ body::before {
 .badge.is-working .dot { animation: halo 1.1s ease-out infinite; box-shadow: 0 0 0 0 var(--accent-line); }
 .badge.is-recorded { color: var(--text-2); }
 .badge.is-closed { color: var(--danger); border-color: rgba(251, 113, 133, 0.3); }
-.badge.tokens { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); }
+.badge.tokens { font-size: 11px; color: var(--text-3); cursor: pointer; font-family: inherit; }
+.badge.tokens:hover { color: var(--text-2); border-color: var(--border-strong); }
 /* The status badge swaps between words of different lengths every turn; a fixed
    floor stops the whole header shuffling sideways each time it does. */
 .badge.status { min-width: 96px; justify-content: center; }
@@ -386,7 +408,7 @@ body::before {
 }
 .empty-mark { margin-bottom: 6px; }
 /* Bigger mark, bigger light: the default 5px glow vanishes at this size. */
-.empty-mark.is-live .amark-star { filter: drop-shadow(0 0 12px rgba(var(--accent-rgb),  0.65)); }
+.empty-mark .amark-star { filter: drop-shadow(0 0 12px rgba(var(--accent-rgb),  0.65)); }
 .empty h3 { margin: 4px 0 0; font-size: 14px; font-weight: 600; }
 .empty p { margin: 0; font-size: 12.5px; color: var(--text-3); max-width: 300px; }
 .empty .code-hint {
@@ -396,6 +418,51 @@ body::before {
   color: var(--text-2); text-align: left; white-space: pre-wrap; overflow-x: auto;
 }
 .empty .empty-note { font-size: 11.5px; color: var(--text-3); max-width: 340px; }
+
+/* The empty chat before a model is connected: one card asking for it. */
+.setup, .starters {
+  display: grid; gap: 10px; justify-items: center;
+  width: min(460px, 100%);
+}
+.setup p, .starters p { max-width: 380px; }
+.setup-providers { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 4px; }
+.setup-provider {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 30px; padding: 0 12px; border-radius: 999px;
+  border: 1px solid var(--border-strong); background: var(--s2); color: var(--text-2);
+  font: inherit; font-size: 12.5px; cursor: pointer;
+}
+.setup-provider:hover { color: var(--text); background: var(--s3); }
+.setup-provider.on { color: var(--text); border-color: var(--accent-line); background: var(--accent-soft); }
+.setup-form { display: grid; gap: 8px; width: 100%; text-align: left; }
+.setup-form input {
+  width: 100%; padding: 10px 12px; border-radius: var(--r-sm);
+  background: var(--s2); border: 1px solid var(--border-strong); color: var(--text);
+  font-family: var(--mono); font-size: 12.5px;
+}
+.setup-form input:focus { outline: none; border-color: var(--accent-line); }
+.setup-form .btn { justify-self: end; }
+.setup-hint { font-size: 12px; color: var(--text-3); margin: 0; }
+.setup-link { font-size: 12px; color: var(--accent-light); }
+.setup-error { margin: 0; }
+.setup-more {
+  border: 0; background: none; padding: 4px; cursor: pointer;
+  color: var(--text-3); font: inherit; font-size: 12px; text-decoration: underline;
+}
+.setup-more:hover { color: var(--text-2); }
+
+/* Tasks to start from, once a model is connected. */
+.starter-list { display: grid; gap: 6px; width: 100%; margin-top: 4px; }
+.starter {
+  padding: 10px 14px; border-radius: var(--r-sm); text-align: left;
+  border: 1px solid var(--border); background: var(--s1); color: var(--text-2);
+  font: inherit; font-size: 13px; cursor: pointer;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+.starter:hover { background: var(--s2); color: var(--text); border-color: var(--border-strong); }
+
+/* A button under a reply: "Open Settings" when no model answered. */
+.msg-action { margin-top: 10px; }
 
 .frame-wrap { position: relative; max-width: 100%; max-height: 100%; line-height: 0; }
 .frame {
@@ -560,15 +627,32 @@ body::before {
   animation: rise 0.22s var(--ease) both;
 }
 
-.working { display: flex; align-items: center; gap: 9px; color: var(--text-3); font-size: 12.5px; padding-left: 38px; min-width: 0; }
-.working .bar { flex: 0 0 auto; }
+.working { display: flex; align-items: center; gap: 9px; color: var(--text-3); font-size: 12.5px; padding-left: 13px; min-width: 0; }
+.working-mark { flex: 0 0 auto; }
 /* A few words of what it is on; one line, cut rather than wrapped, so the
-   thread does not jump as the phrase changes length. */
-.working-what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.working .bar {
-  width: 58px; height: 3px; border-radius: 99px; overflow: hidden;
-  background: linear-gradient(90deg, var(--s3) 0%, var(--accent) 50%, var(--s3) 100%);
-  background-size: 200% 100%; animation: sweep 1.3s linear infinite;
+   thread does not jump as the phrase changes length. Each new phrase eases in
+   over the last, and a faint shimmer runs through it while it thinks. */
+.working-what {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: linear-gradient(90deg, var(--text-3) 0%, var(--text-3) 40%, var(--text) 50%, var(--text-3) 60%, var(--text-3) 100%);
+  background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: thoughtIn 0.5s var(--ease) both, shimmer 2.6s linear infinite;
+}
+@keyframes thoughtIn {
+  from { opacity: 0; transform: translateY(4px); filter: blur(3px); }
+  to   { opacity: 1; transform: none; filter: none; }
+}
+@keyframes shimmer { from { background-position: 100% 0; } to { background-position: -150% 0; } }
+
+/* Streaming words: each lands out of a slight blur, like being said. */
+.md.is-streaming .md-w { animation: wordIn 0.42s var(--ease) both; }
+@keyframes wordIn {
+  from { opacity: 0; filter: blur(3px); }
+  to   { opacity: 1; filter: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .working-what, .md.is-streaming .md-w { animation: none !important; }
+  .working-what { color: var(--text-3); background: none; }
 }
 
 /* ------------------------------------------------------------- approvals -- */
@@ -1435,6 +1519,24 @@ label + .jf-hint { margin-top: -5px; }
   overflow-wrap: anywhere;
 }
 .set-warn { margin: 9px 0 0; font-size: 12px; line-height: 1.5; color: var(--warn); }
+/* "How it works" and other detail folded under a one-line summary. */
+.set-more { margin: 6px 0 0; }
+.set-more > summary {
+  cursor: pointer; width: fit-content; font-size: 12px; color: var(--text-3);
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.set-more > summary:hover { color: var(--text-2); }
+.prov-others { margin-top: 10px; }
+.prov-others > summary { margin-bottom: 8px; }
+.set-show-all { margin-top: 8px; }
+
+/* In place of a Save button: settings save themselves, and this says so. */
+.save-state {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12px; color: var(--text-3); white-space: nowrap;
+}
+.save-state.is-busy { color: var(--text-2); }
+.save-state.is-done { color: var(--live); }
 
 .set-choices { display: grid; gap: 7px; }
 .set-choice {
@@ -2833,6 +2935,50 @@ label + .jf-hint { margin-top: -5px; }
   100% { transform: scale(1); }
 }
 
+/* --- moods of the one presence (see AutoraMark.tsx) --- */
+
+/* Idle: a breath slower than any other motion in the app, and every so often
+   the star catches the light. Switched on, not busy. */
+.amark.is-rest.is-idle .amark-wash { animation: amarkIdle 6.5s ease-in-out infinite; }
+.amark.is-rest.is-idle .amark-star { animation: amarkTwinkle 13s ease-in-out infinite; }
+@keyframes amarkIdle {
+  0%, 100% { transform: scale(0.5); opacity: 0.2; }
+  50%      { transform: scale(0.66); opacity: 0.34; }
+}
+@keyframes amarkTwinkle {
+  0%, 88%, 100% { filter: drop-shadow(0 0 2px rgba(var(--accent-rgb), 0.45)); transform: scale(1); }
+  93%           { filter: drop-shadow(0 0 8px rgba(var(--glow-light-rgb), 0.95)) brightness(1.35); transform: scale(1.08) rotate(8deg); }
+}
+
+/* Waiting on you: warm, and reaching -- out and back, with a pause, like a
+   hand raised rather than an alarm. */
+.amark.is-waiting .amark-wash { fill: var(--warn); animation: amarkBeckon 2.8s var(--ease) infinite; }
+.amark.is-waiting .amark-star { filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.7)); }
+@keyframes amarkBeckon {
+  0%, 100% { transform: scale(0.5); opacity: 0.18; }
+  35%      { transform: scale(1); opacity: 0.55; }
+  60%      { transform: scale(0.82); opacity: 0.4; }
+}
+
+/* A failure: one shiver and a dimming, then rest takes it back. */
+.amark.is-error { animation: amarkShiver 0.55s var(--ease) 1; }
+.amark.is-error .amark-star { filter: saturate(0.35) brightness(0.8) drop-shadow(0 0 5px rgba(248, 113, 113, 0.65)); }
+.amark.is-error .amark-wash { fill: #f87171; opacity: 0.3; }
+@keyframes amarkShiver {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-2px) rotate(-4deg); }
+  45% { transform: translateX(2px) rotate(3deg); }
+  70% { transform: translateX(-1px); }
+}
+
+/* Attention: it leans in while you type. On the svg, so it adds to whatever
+   the wash and the star are already doing instead of fighting them. */
+.amark svg {
+  transition: transform 0.35s var(--ease), filter 0.35s var(--ease);
+  transform: scale(calc(1 + var(--attention, 0) * 0.12));
+  filter: drop-shadow(0 0 calc(var(--attention, 0) * 9px) rgba(var(--glow-rgb), calc(var(--attention, 0) * 0.85)));
+}
+
 /* Reduced motion: the mark still reads, it simply stops moving. The component
    also drops the SVG morphing, which CSS cannot reach. */
 @media (prefers-reduced-motion: reduce) {
@@ -2840,6 +2986,8 @@ label + .jf-hint { margin-top: -5px; }
   .amark-star { animation: none !important; }
   .amark.is-working .amark-wash,
   .amark.is-live .amark-wash { opacity: 0.45; transform: scale(0.72); }
+  .amark.is-waiting .amark-wash { opacity: 0.5; transform: scale(0.8); }
+  .amark, .amark svg { animation: none !important; transform: none !important; }
 }
 
 /* --------------------------------------------------------- providers --- */
@@ -3144,7 +3292,7 @@ label + .jf-hint { margin-top: -5px; }
   .msg-who { font-size: 11px; }
   .avatar { width: 30px; height: 30px; }
   .term-body, .diff-code, .cell-line-text, .cell-line-body { font-size: 12px; }
-  .working { padding-left: 41px; }
+  .working { padding-left: 16px; }
   .mem-pulse:not(.is-inline) { padding-left: 41px; }
 
   .top { height: 56px; }
@@ -3186,22 +3334,15 @@ label + .jf-hint { margin-top: -5px; }
   .shot-strip input::-moz-range-thumb { width: 20px; height: 20px; }
 }
 
-/* The live voice control floats just above Send, its centre over Send's
-   centre, below desktop width. The thread keeps room beneath its last line so
-   the button never sits over it. On a desktop it moves into the row beside
-   the microphone instead. */
-.composer-live { display: none; }
-.composer-box { position: relative; --send: 36px; --float: 40px; }
-@media (pointer: coarse) { .composer-box { --send: 40px; } }
-@media (max-width: 680px) { .composer-box { --float: 50px; } }
-.mob-live-btn.composer-float {
-  position: absolute; z-index: 5; margin: 0;
-  width: var(--float); height: var(--float);
-  bottom: calc(100% + 14px);
-  right: calc(10px + var(--send) / 2 - var(--float) / 2);
+/* Dictate and Talk: labelled, side by side in the composer's tool row. */
+.composer-box { position: relative; }
+.composer-tools .btn.labeled {
+  width: auto; height: 32px; padding: 0 11px 0 9px; gap: 6px; border-radius: 999px;
+  font-size: 12px; font-weight: 550;
 }
-.mob-live-btn.composer-float:disabled { opacity: 0.5; cursor: default; transform: none; }
-@media (max-width: 1179px) { .thread { padding-bottom: 72px; } }
+.composer-tools .btn.labeled .mic-halo { border-radius: 999px; }
+.btn-label { position: relative; z-index: 1; }
+.composer-live:disabled { opacity: 0.5; }
 
 /* ── desktop ── */
 @media (min-width: 1000px) {
@@ -3211,10 +3352,6 @@ label + .jf-hint { margin-top: -5px; }
 }
 
 @media (min-width: 1180px) {
-  /* The rail already carries Tasks, and live voice moves next to Send. A tab
-     bar pinned to the bottom of a monitor is a phone habit. */
-  .mob-live-btn.composer-float { display: none; }
-  .composer-live { display: inline-flex; }
 
   /* The session you are in, said at the top of the column rather than only
      as a highlighted row in the rail. */
@@ -3792,23 +3929,18 @@ html[data-font="mono"] body { font-size: 13.5px; }
 .rail-nav-item:hover { background: var(--s2); color: var(--text); }
 .rail-nav-item.on { background: var(--accent-soft); color: var(--text); }
 .rail-nav-item.on svg { color: var(--accent); }
-.rail-alert {
-  margin-left: auto; width: 7px; height: 7px; border-radius: 50%;
-  background: var(--warn); animation: halo 1.6s ease-out infinite;
+/* A word at the end of a rail item: "waiting on you", "desktop". Text, not
+   just a dot, because a phone has no tooltips to explain a dot. */
+.rail-tag {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 4px;
+  padding: 1px 7px; border-radius: 999px; font-style: normal;
+  font-size: 10.5px; font-weight: 600; color: var(--live);
+  background: rgba(52, 211, 153, 0.1);
 }
-/* The Themes panel: unfolds in the list, under the Themes item. */
-.settings-menu {
-  margin: 6px 0 0; padding: 12px; border-radius: 14px;
-  background: var(--s2); border: 1px solid var(--border-strong);
-  animation: rise 0.18s var(--ease) both;
-}
-.sm-head {
-  display: flex; align-items: center; gap: 7px; margin: 2px 2px 8px;
-  font-size: 10.5px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase;
-  color: var(--text-3);
-}
-.sm-head:not(:first-child) { margin-top: 14px; }
-.sm-themes { display: grid; grid-template-columns: 1fr; gap: 3px; }
+.rail-tag.is-alert { color: var(--warn); background: rgba(251, 191, 36, 0.12); }
+.rail-divider { height: 1px; margin: 8px 10px; background: var(--border); }
+.sm-font-head { margin-top: 18px !important; }
+.sm-themes { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px; }
 .sm-theme {
   display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: var(--r-sm);
   border: 1px solid transparent; background: none; cursor: pointer;
@@ -3823,7 +3955,7 @@ html[data-font="mono"] body { font-size: 13.5px; }
 }
 .sm-swatch i { width: 10px; height: 10px; border-radius: 50%; }
 .sm-theme-name { flex: 1; min-width: 0; }
-.sm-fonts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; }
+.sm-fonts { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 5px; }
 .sm-font {
   padding: 7px 8px; border-radius: var(--r-sm); cursor: pointer;
   border: 1px solid var(--border); background: var(--s1); color: var(--text-2); font-size: 13px;
@@ -4019,7 +4151,7 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 .sched.is-embedded .sched-top {
   height: auto; min-height: 0; padding: 12px 22px; background: none; border-bottom: 0;
 }
-.sched.is-embedded .sched-top:not(:has(.btn)) { display: none; }
+.sched.is-embedded .sched-top:not(:has(.btn, .seg, .save-state)) { display: none; }
 .kweb.is-embedded .kweb-top { height: auto; min-height: 58px; }
 @media (max-width: 680px) { .sched.is-embedded .sched-top { padding: 10px 12px 0; } }
 @media (max-width: 680px) {
@@ -4371,3 +4503,108 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 @media (pointer: coarse) { .slash-item { padding: 11px 12px; } }
+
+/* The Mind before anything is in it: what will appear, and a way to start. */
+.mind-intro {
+  display: grid; justify-items: center; gap: 10px; text-align: center;
+  padding: 28px 20px;
+}
+.mind-intro h3 { margin: 4px 0 0; font-size: 14px; letter-spacing: 0; text-transform: none; color: var(--text); }
+.mind-intro p { margin: 0; max-width: 460px; font-size: 13px; line-height: 1.55; color: var(--text-2); }
+
+/* ============================================================================
+   Presence
+
+   The agent as one living thing rather than a text box that answers. One mark
+   carries its mood (sidebar, or the header on a phone); the room behind the
+   thread takes a faint light from that mood; sparks carry a message to it and
+   a lesson into its Mind. Everything here follows something that happened,
+   holds still for reduced motion, and pauses in a tab nobody is looking at.
+   ============================================================================ */
+
+/* The presence in the header, only where the sidebar is folded away. */
+.top-presence { display: inline-grid; place-items: center; flex: 0 0 auto; margin: 0 -6px 0 -4px; }
+@media (min-width: 1180px) { .top-presence { display: none; } }
+
+/* The room's light. Two soft blooms of the theme's own colours, drifting very
+   slowly; the mood only changes their colour and strength. */
+.page { position: relative; isolation: isolate; }
+.page > :not(.mood-light) { position: relative; z-index: 1; }
+.mood-light {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden;
+  opacity: 0.6; transition: opacity 1.6s var(--ease);
+}
+.mood-light::before, .mood-light::after {
+  content: ""; position: absolute; width: 70%; aspect-ratio: 1; border-radius: 50%;
+  filter: blur(90px); transition: background 1.8s var(--ease), opacity 1.8s var(--ease);
+  animation: moodDrift 38s ease-in-out infinite alternate;
+}
+.mood-light::before { left: -20%; top: 10%; background: rgba(var(--accent-rgb), 0.045); }
+.mood-light::after  { right: -25%; bottom: -10%; background: rgba(var(--accent2-rgb), 0.03); animation-delay: -19s; }
+.mood-light.is-working { opacity: 1; }
+.mood-light.is-working::before { background: rgba(var(--glow-rgb), 0.07); }
+.mood-light.is-working::after  { background: rgba(var(--accent2-rgb), 0.045); }
+.mood-light.is-waiting { opacity: 1; }
+.mood-light.is-waiting::before { background: rgba(251, 191, 36, 0.055); }
+.mood-light.is-error::before { background: rgba(248, 113, 113, 0.05); }
+@keyframes moodDrift {
+  from { transform: translate(0, 0) scale(1); }
+  to   { transform: translate(12%, -8%) scale(1.15); }
+}
+
+/* A spark in flight (lib/presence.ts positions and flies it). */
+.fly-spark {
+  position: fixed; left: 0; top: 0; z-index: 200; pointer-events: none;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: radial-gradient(circle, #fff 0 22%, rgba(var(--accent-rgb), 0.9) 45%, rgba(var(--accent-rgb), 0) 72%);
+  box-shadow: 0 0 14px 4px rgba(var(--accent-rgb), 0.55);
+}
+.fly-spark.is-glow {
+  background: radial-gradient(circle, #fff 0 22%, rgba(var(--glow-rgb), 0.9) 45%, rgba(var(--glow-rgb), 0) 72%);
+  box-shadow: 0 0 16px 5px rgba(var(--glow-rgb), 0.6);
+}
+
+/* The Mind, taking something in: one bloom, then a +N until it is opened. */
+.rail-nav-item.is-bloom { animation: mindTake 1.1s var(--ease) 1; }
+.rail-nav-item.is-bloom svg { animation: mindTakeIcon 1.1s var(--ease) 1; }
+@keyframes mindTake {
+  0%   { box-shadow: 0 0 0 0 rgba(var(--glow-rgb), 0.5); background: rgba(var(--glow-rgb), 0.18); }
+  100% { box-shadow: 0 0 0 10px rgba(var(--glow-rgb), 0); background: transparent; }
+}
+@keyframes mindTakeIcon {
+  0% { color: var(--glow-light); transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+.rail-tag.is-grew { color: var(--glow-light); background: rgba(var(--glow-rgb), 0.14); }
+
+/* The welcome, arriving a line at a time rather than all at once. */
+.starters h3, .starters p { animation: rise 0.45s var(--ease) both; }
+.starters p { animation-delay: 60ms; }
+.starter { animation: rise 0.45s var(--ease) both; }
+.starter.is-thread { display: flex; align-items: baseline; gap: 10px; color: var(--text); }
+.starter.is-thread > span { flex: 1; min-width: 0; }
+.starter.is-thread em { font-style: normal; font-size: 11.5px; color: var(--text-3); }
+.starter.is-thread.is-ok::before, .starter.is-thread.is-warn::before {
+  content: ""; flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%;
+  align-self: center; background: var(--live);
+}
+.starter.is-thread.is-warn::before { background: var(--warn); }
+
+/* Nothing ambient runs where nobody is watching. */
+:root.is-away .mood-light::before, :root.is-away .mood-light::after,
+:root.is-away .amark-wash, :root.is-away .amark-star { animation-play-state: paused !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mood-light::before, .mood-light::after,
+  .rail-nav-item.is-bloom, .rail-nav-item.is-bloom svg,
+  .starters h3, .starters p, .starter { animation: none !important; }
+}
+
+/* The Mind map at rest: every node breathes a little, each on its own beat. */
+.knode .kbody { transform-box: fill-box; transform-origin: center; animation: nodeBreathe 5s ease-in-out infinite; }
+@keyframes nodeBreathe {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.09); }
+}
+:root.is-away .knode .kbody { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) { .knode .kbody { animation: none; } }
