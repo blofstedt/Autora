@@ -2144,6 +2144,7 @@ async function runTurn(session: Session, text: string): Promise<TurnResult> {
           emitEvent(session, "media.image", "agent", {
             alt, caption, ...(size ? { w: size.w, h: size.h } : {}),
           }, null, blob),
+        speak: (text) => emitEvent(session, "media.speech", "agent", { text }, span),
         showWidget: ({ title, html, height, artifact }) =>
           emitEvent(session, "media.widget", "agent", {
             title, html, height, ...(artifact ? { artifact } : {}),
@@ -3737,6 +3738,7 @@ async function startServer() {
       voices: status.voices,
       reason: status.reason,
       url: state.speech.url || status.url,
+      configured: state.speech.url,
     });
   });
 

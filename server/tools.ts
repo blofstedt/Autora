@@ -46,9 +46,14 @@ import {
   saveArtifact, MAX_ARTIFACT_BYTES,
 } from "./artifacts";
 import { checkWidget } from "./widgets";
+import { speechStatus } from "./speech";
 import {
   MAX_WIDGET_CHARS, WIDGET_DEFAULT_HEIGHT, WIDGET_MAX_HEIGHT, WIDGET_MIN_HEIGHT, widgetDocument,
 } from "../src/lib/widget";
+
+/** What one speak call may say: a few paragraphs, the same ceiling the voice
+    server route holds a sentence to. */
+const MAX_SPOKEN_CHARS = 2_000;
 
 /** Blank out stored secrets and the person's saved credentials. */
 function redactSecrets(text: string): string {
@@ -691,6 +696,29 @@ const TOOLS: ToolSpec[] = [
     },
   },
 
+  // -------------------------------------------------------------- voice --
+  {
+    name: "speak",
+    group: "person",
+    description:
+      "Say something out loud to the person, right now, in the console's own " +
+      "voice (the Kokoro voice server when there is one, otherwise the browser's " +
+      "voice). It plays immediately on the page they have open -- nothing is " +
+      "saved and there is no file to hand over. Use it whenever you are asked " +
+      "to say, read out, pronounce or speak something, or to try the voice. " +
+      "Never make an audio file for this, never call the voice server yourself " +
+      "from the terminal or http_request, and never save or attach a recording: " +
+      "this tool is how you speak. Keep each call to what you mean to be heard " +
+      "(up to about 2,000 characters), plain words with no markdown.",
+    parameters: {
+      type: "object",
+      properties: {
+        text: { type: "string", description: "Exactly what to say aloud." },
+      },
+      required: ["text"],
+    },
+  },
+
   // ------------------------------------------------------------ widgets --
   {
     name: "widget_show",
@@ -1136,6 +1164,8 @@ export function renderCall(spec: ToolSpec, args: Record<string, any>): string {
       return `save artifact ${args.name}`;
     case "widget_show":
       return `show widget "${args.title}"`;
+    case "speak":
+      return `say aloud: ${JSON.stringify(String(args.text ?? ""))}`;
     case "artifact_read":
       return `read artifact ${args.id}`;
     default: {
@@ -1156,6 +1186,8 @@ export interface ToolContext {
   putBlob: (data: Buffer, mime: string) => string;
   /** Show a picture in the conversation. */
   showImage: (blob: string, alt: string, caption: string | null, size?: { w: number; h: number }) => void;
+  /** Say something aloud on the page the person has open. */
+  speak?: (text: string) => void;
   /** Show an interactive widget in the conversation. */
   showWidget: (widget: { title: string; html: string; height: number; artifact?: string }) => void;
   /** Show a picture of the browser or desktop in the card already showing
@@ -2089,6 +2121,29 @@ async function runToolUnredacted(
           : { ok: false, summary: result.error ?? "The scroll failed." };
       }
 
+      // ---------------------------------------------------------- voice --
+      case "speak": {
+        const text = String(args.text ?? "").replace(/\s+/g, " ").trim();
+        if (!text) return { ok: false, summary: "Nothing to say." };
+        if (text.length > MAX_SPOKEN_CHARS) {
+          return {
+            ok: false,
+            summary: `That is ${text.length.toLocaleString("en-US")} characters; say at most ${
+              MAX_SPOKEN_CHARS.toLocaleString("en-US")} per call, in more than one call if you need to.`,
+          };
+        }
+        if (!ctx.speak) return { ok: false, summary: "There is no page open to speak on." };
+        ctx.speak(text);
+        const voice = await speechStatus().catch(() => null);
+        return {
+          ok: true,
+          summary: voice?.available
+            ? `Played aloud on the person's page in the ${voice.voice} voice from ${voice.url}. Nothing else to do: do not also make or attach an audio file.`
+            : "Played aloud on the person's page in the browser's own voice (no voice server is set up). Nothing else to do: do not also make or attach an audio file.",
+          preview: text.slice(0, 80),
+        };
+      }
+
       // -------------------------------------------------------- widgets --
       case "widget_show": {
         const html = String(args.html ?? "");
@@ -2448,6 +2503,13 @@ export async function capabilityBriefing(): Promise<string> {
       "algorithm, a piece of maths -- and seeing it move would help, build a " +
       "small interactive widget (2D canvas/SVG, or 3D with Three.js) and explain " +
       "in text alongside it. Not for plain facts, lists or anything a sentence answers.",
+  );
+  lines.push(
+    "- Your voice: always available. Tool: speak. It plays words aloud on the " +
+      "person's page at once, in the voice chosen under Config -> Voice. When you " +
+      "are asked to say or read something out loud, call speak -- do not make an " +
+      "audio file, call the voice server yourself, or present a recording. With " +
+      "live voice on, your replies are already read aloud; do not repeat them with speak.",
   );
   lines.push(
     "- Asking the person: always available. Tool: ask_user. When you are " +

@@ -27,6 +27,7 @@ export function LiveChat({
   onStop,
   agentSpeaking,
   agentWorking,
+  agentDoing,
   disabled,
   onSpeakingChange,
 }: {
@@ -38,6 +39,8 @@ export function LiveChat({
   onStop?: () => void;
   agentSpeaking: boolean;
   agentWorking?: boolean;
+  /** What it is on, in a few words, when it is working. */
+  agentDoing?: string | null;
   disabled?: boolean;
   /** Report when the user is actively speaking in live mode. */
   onSpeakingChange?: (speaking: boolean) => void;
@@ -143,7 +146,7 @@ export function LiveChat({
       : agentSpeaking
         ? "Autora is speaking. Tap the mark to cut in."
         : agentWorking
-          ? "Autora is working. Listening…"
+          ? `${agentDoing || "Autora is working"}. Listening…`
           : listening
             ? "Listening…"
             : "Starting the microphone…";

@@ -61,6 +61,8 @@ export const Kind = {
   MediaImage: "media.image",
   /** An interactive explainer the agent wrote, run in a sandboxed frame. */
   MediaWidget: "media.widget",
+  /** Words the agent chose to say aloud (the speak tool): played, not shown. */
+  MediaSpeech: "media.speech",
   DesktopFrame: "desktop.frame",
   DesktopAction: "desktop.action",
   ContextNote: "context.note",

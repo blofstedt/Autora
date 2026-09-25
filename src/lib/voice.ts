@@ -474,6 +474,8 @@ export type SpeechStatus = {
   voices: { id: string; label: string }[];
   reason: string | null;
   url: string | null;
+  /** The address set in Config, "" when the server is found by name. */
+  configured?: string;
 };
 
 /** Ask the console which voice it has, if any. Null when it cannot be asked. */
@@ -498,6 +500,23 @@ export async function chooseVoice(voice: string): Promise<{ ok: boolean; detail?
     if (res.ok) return { ok: true };
     const body = await res.json().catch(() => null);
     return { ok: false, detail: body?.detail ?? `The console refused that voice (${res.status}).` };
+  } catch {
+    return { ok: false, detail: "The console could not be reached." };
+  }
+}
+
+/** Point the console at a voice server by address, or clear it ("") to go
+    back to finding one by name. */
+export async function chooseSpeechUrl(url: string): Promise<{ ok: boolean; detail?: string }> {
+  try {
+    const res = await fetch("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ speech: { url } }),
+    });
+    if (res.ok) return { ok: true };
+    const body = await res.json().catch(() => null);
+    return { ok: false, detail: body?.detail ?? `The console refused that address (${res.status}).` };
   } catch {
     return { ok: false, detail: "The console could not be reached." };
   }

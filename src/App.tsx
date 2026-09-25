@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { SessionStream, type StreamStatus } from "./lib/stream";
 import { derive, isRunning, type KanbanTask } from "./lib/derive";
 import { chime, paintChrome, type Chrome } from "./lib/chrome";
-import type { AutoraEvent, BrowserState } from "./lib/types";
+import { Kind, type AutoraEvent, type BrowserState } from "./lib/types";
 import { setLiveFields, setLiveFrame } from "./lib/liveFrame";
 import { Thread } from "./components/Thread";
 import { Rail, pageLabel, PAGES, type PageId } from "./components/Rail";
@@ -27,6 +27,7 @@ import { useRelay } from "./components/RelaySetup";
 import { UpdateNotice } from "./components/UpdateNotice";
 import { Notices } from "./components/Notices";
 import { AutoraMark, type MarkState } from "./components/AutoraMark";
+import { activity } from "./lib/activity";
 import {
   dictationSupported, recognitionAvailable, secureOrigin, speakable,
   splitSpeakable, useSpeech,
@@ -39,6 +40,9 @@ import {
 /** How often to re-read the session list, so sessions started elsewhere (or
     from another tab) show up without a reload. */
 const SESSION_POLL_MS = 10_000;
+/** How old a speak event may be and still be played: long enough for a slow
+    connection to deliver it, short enough that a reload is not a recital. */
+const SPEAK_FRESH_S = 30;
 
 export function App() {
   const [sessionId, setSessionId] = useState<string | null>(
@@ -227,6 +231,7 @@ export function App() {
   }, [sessionId]);
 
   const view = useMemo(() => derive(events), [events]);
+  const doing = useMemo(() => activity(events), [events]);
 
   // A page that has been closed has no more frames coming, and the last one
   // to arrive would otherwise sit on the card claiming to be live forever.
@@ -274,6 +279,9 @@ export function App() {
     // Dictated turns never touched the box, so there is nothing to clear and
     // clearing anyway would eat something half-typed.
     if (spoken === undefined) setDraft("");
+    // Unlock audio inside this tap, so anything the reply says aloud can play
+    // on a phone that only allows sound a gesture started.
+    if (!speaking) prime();
     const res = await fetch(`/api/sessions/${sessionId}/message`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -285,7 +293,7 @@ export function App() {
       if (spoken === undefined) setDraft((now) => now || text);
       setNotice("Could not reach the server; your message was not sent.");
     }
-  }, [draft, sessionId]);
+  }, [draft, sessionId, speaking, prime]);
 
   /** Stop the turn in flight.
    *
@@ -392,6 +400,24 @@ export function App() {
       }
     }
   }, [liveOn, canSpeak, view.buckets, say]);
+
+  // What the agent says with its speak tool plays as it arrives, live mode or
+  // not: it was asked to say something, so it is heard, not handed over as a
+  // file. Only fresh events -- opening an old session must not replay every
+  // sentence it ever spoke.
+  const said = useRef(new Set<number>());
+  useEffect(() => { said.current.clear(); }, [sessionId]);
+  useEffect(() => {
+    if (!canSpeak) return;
+    const now = Date.now() / 1000;
+    for (const e of events) {
+      if (e.kind !== Kind.MediaSpeech || said.current.has(e.seq)) continue;
+      said.current.add(e.seq);
+      if (now - e.ts > SPEAK_FRESH_S) continue;
+      const prose = speakable(String(e.payload?.text ?? ""));
+      if (prose) say(prose);
+    }
+  }, [events, canSpeak, say]);
 
   /** A spoken turn goes straight out: barge in over whatever is being said,
       then send. */
@@ -721,6 +747,7 @@ export function App() {
             buckets={view.buckets}
             // Stopped on a question is not working; the card says what it is.
             busy={view.busy && !view.asking}
+            doing={doing}
             sessionId={sessionId ?? ""}
             liveBrowserSeq={view.liveBrowserSeq}
             live={live}
@@ -805,6 +832,7 @@ export function App() {
                 onStop={() => void stopTurn()}
                 agentSpeaking={speaking}
                 agentWorking={running}
+                agentDoing={doing}
                 disabled={!live}
               />
             ) : (

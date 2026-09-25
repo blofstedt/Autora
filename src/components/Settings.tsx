@@ -4,6 +4,7 @@ import {
   IconTerminal, IconX,
 } from "./Icons";
 import { VoiceCheck } from "./VoiceCheck";
+import { VoiceCard } from "./VoiceCard";
 import { RelaySetup } from "./RelaySetup";
 import { Billing } from "./Billing";
 import { SecretStore } from "./SecretStore";
@@ -571,6 +572,8 @@ export function Settings({
           </div>
         </section>
         )}
+
+        {shows("config") && <VoiceCard />}
 
         {shows("keys") && voiceKeys.length > 0 && (
           <section className="set-card">

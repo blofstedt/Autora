@@ -85,9 +85,12 @@ If a voice server is running on the network Autora finds it by itself: the
 [Kokoro](https://github.com/remsky/Kokoro-FastAPI) Umbrel app answers to
 `kokoro_web_1` on the same private Docker network, and what is spoken to is
 its OpenAI-shaped `/v1/audio/speech`. Nothing has to be configured for that
-to work. **Settings -> Themes & voice** then lists the voices the server
-offers -- the list comes from the server, so it is whatever it actually has --
-and the one picked there is used on every device, phone included, from then on.
+to work. **Config -> Voice** then lists the voices the server offers -- the
+list comes from the server, so it is whatever it actually has -- plays a sample,
+takes another address if the server lives elsewhere, and the voice picked there
+is used on every device, phone included, from then on. When the agent is asked
+to say something out loud it uses its `speak` tool, which plays the words on
+the open page straight away rather than making an audio file to hand over.
 A voice chosen in the panel wins over the environment, the way every other
 setting does.
 
