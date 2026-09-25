@@ -243,6 +243,32 @@ export function systemBrowser(): string | null {
 }
 
 /**
+ * What to open, for what was typed.
+ *
+ * Only a real scheme is taken as one. `localhost:3000` and `box.local:8817`
+ * used to be read as URLs with the schemes "localhost" and "box.local", which
+ * Chrome refused, so the two addresses people most often hand an agent
+ * running on their own server could not be opened without spelling out
+ * http://. Without a scheme, an address on this machine or the local network
+ * is opened over http, which is what a dev server or a box on the LAN
+ * speaks, and anything else over https.
+ */
+export function addressFor(raw: string): string {
+  const text = raw.trim();
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(text)) return text;
+  if (/^(about|data|blob|javascript|mailto|view-source|chrome):/i.test(text)) return text;
+  const bare = text.replace(/^\/\//, "");
+  const host = bare.split(/[/?#]/)[0].replace(/:\d+$/, "").replace(/^\[|\]$/g, "").toLowerCase();
+  const local =
+    host === "localhost" || host === "::1" || host === "0.0.0.0" ||
+    /\.(localhost|local|lan|internal|home\.arpa)$/.test(host) ||
+    /^(127|10)\./.test(host) || /^192\.168\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+    /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(host) ||
+    (!host.includes(".") && !host.includes(":"));
+  return `${local ? "http" : "https"}://${bare}`;
+}
+
+/**
  * Where the browser keeps its profile.
  *
  * Beside the settings file, so it lands in whatever directory this
@@ -1534,7 +1560,7 @@ export class LiveBrowser {
   goto(rawUrl: string): Promise<PageRead> {
     return this.run(async () => {
       const page = await this.ensure();
-      const url = /^[a-z][a-z0-9+.-]*:/i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
+      const url = addressFor(rawUrl);
       this.hooks.onAction(`open ${url}`, null, url);
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
       await this.settle();

@@ -1,4 +1,4 @@
-import { Fragment, useState, type ReactNode } from "react";
+import { Fragment, memo, useState, type ReactNode } from "react";
 import { splitImages } from "../lib/images";
 import { InlineImage } from "./ImageCell";
 import { IconCheck, IconCopy } from "./Icons";
@@ -12,10 +12,13 @@ import { IconCheck, IconCopy } from "./Icons";
  * by the browser. It runs over the whole reply on every streamed token, so it
  * has to tolerate half-written input: an unclosed fence is code to the end,
  * an unclosed `**` is just two asterisks.
+ *
+ * Memoised on its two props, so a reply that is not the one streaming is
+ * never parsed again because something else in the thread changed.
  */
-export function Markdown({ text, streaming = false }: { text: string; streaming?: boolean }) {
+export const Markdown = memo(function Markdown({ text, streaming = false }: { text: string; streaming?: boolean }) {
   return <div className={`md ${streaming ? "is-streaming" : ""}`.trim()}>{blocks(text, streaming)}</div>;
-}
+});
 
 type Block =
   | { kind: "p"; lines: string[] }

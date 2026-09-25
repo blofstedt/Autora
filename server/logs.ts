@@ -26,13 +26,38 @@ const MAX_LINES = 5000;
 const lines: LogLine[] = [];
 let nextId = 1;
 
+/* What blanks secrets out of a line, handed in by the server so this module
+   depends on nothing: the Logs page shows what an MCP server printed to
+   stderr and what a vendor's error said, and either can carry a key. */
+let redactor: ((text: string) => string) | null = null;
+let redacting = false;
+
+export function setLogRedactor(fn: ((text: string) => string) | null) {
+  redactor = fn;
+}
+
+function clean(text: string): string {
+  // The redactor may itself warn (an unreadable credentials file); that
+  // warning comes back through here and must not recurse.
+  if (!redactor || redacting) return text;
+  redacting = true;
+  try {
+    return redactor(text);
+  } catch {
+    return text;
+  } finally {
+    redacting = false;
+  }
+}
+
 export function log(level: LogLevel, component: string, message: string, session?: string) {
+  const text = clean(String(message ?? ""));
   const line: LogLine = {
     id: nextId++,
     ts: Date.now(),
     level,
     component: component || "server",
-    message: message.length > 2000 ? `${message.slice(0, 2000)}…` : message,
+    message: text.length > 2000 ? `${text.slice(0, 2000)}…` : text,
     ...(session ? { session } : {}),
   };
   lines.push(line);

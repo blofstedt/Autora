@@ -33,8 +33,9 @@ import {
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
+import path from "node:path";
 import { GoogleGenAI } from "@google/genai";
-import { mergeTools, save, state, allSecrets, secretFor, redactSecrets as redactStored } from "./state";
+import { mergeTools, save, state, allSecrets, keyFor, secretFor, redactSecrets as redactStored } from "./state";
 import { credentialsBriefing, fillPlaceholders, hasPlaceholder, identityEnv, redactCredentials } from "./credentials";
 import { htmlToText, textParts } from "./pages";
 import { describeCaptchas, probeBrowser, VIEWPORT, type LiveBrowser, type PageRead, type UploadFile } from "./browser";
@@ -82,6 +83,28 @@ export interface ToolSettings {
 
 export function toolSettings(): ToolSettings {
   return state.tools;
+}
+
+/**
+ * Where commands run when nothing more specific is asked: the directory
+ * chosen in Settings, else AUTORA_WORKDIR, else the server's own.
+ *
+ * The Umbrel app sets AUTORA_WORKDIR=/host -- the host's filesystem, mounted
+ * so the agent can work on the server it lives on -- and nothing read it, so
+ * every command started in the app's own install directory instead.
+ */
+export function terminalDir(): string {
+  const chosen = toolSettings().terminal.cwd.trim();
+  if (chosen) return chosen;
+  const fromEnv = (process.env.AUTORA_WORKDIR || "").trim();
+  if (fromEnv) {
+    try {
+      if (fs.statSync(fromEnv).isDirectory()) return fromEnv;
+    } catch {
+      // Named but not there: the server's own directory, as before.
+    }
+  }
+  return process.cwd();
 }
 
 /** Apply a patch from the settings panel and persist it. The merge itself
@@ -1090,8 +1113,7 @@ export async function groupStates(): Promise<GroupState[]> {
       enabled: settings.terminal.enabled,
       available: settings.terminal.enabled,
       detail: settings.terminal.enabled
-        ? `A real shell on this host, as ${os.userInfo().username}, in ${
-            settings.terminal.cwd || process.cwd()}.`
+        ? `A real shell on this host, as ${os.userInfo().username}, in ${terminalDir()}.`
         : "No commands can run, and the agent is told so rather than left to guess.",
       approval: settings.terminal.approval,
       tools: names("terminal"),
@@ -1414,7 +1436,16 @@ function runCommand(
 ): Promise<ToolOutcome> {
   const candidates = candidateShells();
   const secrets = allSecrets();
-  const workingDir = cwd || process.cwd();
+  const workingDir = cwd || terminalDir();
+  /* A missing directory fails the spawn with the same ENOENT as a missing
+     shell, which sent this through every shell in the list and ended with
+     "no usable shell found" -- true of none of them. */
+  if (!fs.existsSync(workingDir) || !fs.statSync(workingDir).isDirectory()) {
+    return Promise.resolve({
+      ok: false,
+      summary: `Could not run that: the directory ${workingDir} does not exist on this machine.`,
+    });
+  }
 
   const tryShell = (candidateIdx: number): Promise<ToolOutcome> => {
     if (candidateIdx >= candidates.length) {
@@ -1429,9 +1460,15 @@ function runCommand(
       let child: any;
       let timer: any = null;
       let killedBy: "timeout" | "user" | null = null;
-      let collected = "";
-      let truncated = false;
-      const LIMIT = 24_000;
+      /* What the model reads back: the start and the end of the output.
+         Only the start used to be kept, so a build that printed 30 KB and
+         then its error handed the model 24 KB of progress lines and no
+         error. The whole of it is in the transcript either way. */
+      const HEAD = 8_000;
+      const TAIL = 16_000;
+      let head = "";
+      let tail = "";
+      let omitted = 0;
       let spawnedOk = false;
 
       const killGroup = () => {
@@ -1484,14 +1521,18 @@ function runCommand(
         const text = chunk.toString("utf8");
         const safeText = redactSecrets(text);
         ctx.onOutput(safeText);
-        if (collected.length < LIMIT) {
-          collected += safeText;
-          if (collected.length >= LIMIT) {
-            collected = collected.slice(0, LIMIT);
-            truncated = true;
+        let rest = safeText;
+        if (head.length < HEAD) {
+          const room = HEAD - head.length;
+          head += rest.slice(0, room);
+          rest = rest.slice(room);
+        }
+        if (rest) {
+          tail += rest;
+          if (tail.length > TAIL) {
+            omitted += tail.length - TAIL;
+            tail = tail.slice(-TAIL);
           }
-        } else {
-          truncated = true;
         }
       };
 
@@ -1510,14 +1551,17 @@ function runCommand(
       child.on("close", (code: number | null, signal: string | null) => {
         clearTimeout(timer);
         const exit = code ?? (signal ? 128 : 0);
+        const collected = omitted > 0
+          ? `${head}\n\n[... ${omitted.toLocaleString("en-US")} characters of output omitted here ...]\n\n${tail}`
+          : head + tail;
         const body = redactSecrets(collected.trim());
         const note =
           killedBy === "timeout"
             ? `\n\n[killed after ${timeoutSeconds}s -- it had not finished]`
             : killedBy === "user"
               ? "\n\n[stopped by the person watching]"
-              : truncated
-                ? "\n\n[output truncated; the full output is in the transcript]"
+              : omitted > 0
+                ? "\n\n[output shortened: its start and its end are above; the full output is in the transcript]"
                 : "";
 
         resolve({
@@ -1542,11 +1586,79 @@ function runCommand(
  */
 export async function runShellQuiet(command: string, timeoutSeconds = 60): Promise<{ ok: boolean; output: string }> {
   const quiet: Pick<ToolContext, "onOutput" | "onCancel"> = { onOutput: () => undefined, onCancel: () => undefined };
-  const outcome = await runCommand(command, toolSettings().terminal.cwd, timeoutSeconds, quiet as ToolContext);
+  const outcome = await runCommand(command, terminalDir(), timeoutSeconds, quiet as ToolContext);
   return { ok: outcome.ok, output: outcome.summary };
 }
 
-async function searchWeb(query: string): Promise<string> {
+/**
+ * How long a request may take, joined to Stop.
+ *
+ * These fetches had neither: a search engine or an API that accepted the
+ * connection and then said nothing held the turn until the operating system
+ * gave up on it, and Stop could not reach it, since nothing was listening.
+ */
+function requestSignal(ctx: Pick<ToolContext, "onCancel" | "cancelled"> | null, ms: number): AbortSignal {
+  // Stop has already been pressed: its callbacks have run and will not again.
+  if (ctx?.cancelled()) return AbortSignal.abort();
+  const timeout = AbortSignal.timeout(ms);
+  if (!ctx) return timeout;
+  const stop = new AbortController();
+  ctx.onCancel(() => stop.abort());
+  return AbortSignal.any([timeout, stop.signal]);
+}
+
+/** A failed fetch in words: which of the two limits ended it, or why not. */
+function fetchFailure(err: any, ms: number): string {
+  if (err?.name === "TimeoutError") return `no answer within ${Math.round(ms / 1000)}s`;
+  if (err?.name === "AbortError") return "stopped";
+  const cause = err?.cause?.code ?? err?.cause?.message;
+  return err?.message === "fetch failed" && cause ? `could not connect (${cause})` : String(err?.message ?? err);
+}
+
+/** Up to `limit` bytes of a body. A response of unknown size used to be read
+    whole into memory, however big it turned out to be. */
+async function readCapped(res: Response, limit: number): Promise<{ text: string; truncated: boolean }> {
+  const reader = res.body?.getReader();
+  if (!reader) return { text: "", truncated: false };
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (size + value.byteLength > limit) {
+      chunks.push(Buffer.from(value.subarray(0, limit - size)));
+      await reader.cancel().catch(() => undefined);
+      return { text: Buffer.concat(chunks).toString("utf8"), truncated: true };
+    }
+    chunks.push(Buffer.from(value));
+    size += value.byteLength;
+  }
+  return { text: Buffer.concat(chunks).toString("utf8"), truncated: false };
+}
+
+/**
+ * Whether a URL is GitHub's API, and so may be sent the saved GitHub token.
+ *
+ * Decided on the parsed address. It used to be a substring test, so
+ * `https://anywhere.example/?api.github.com` -- an address a web page could
+ * talk the agent into requesting -- was sent the token too.
+ */
+export function isGitHubApi(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" && parsed.hostname.toLowerCase() === "api.github.com";
+  } catch {
+    return false;
+  }
+}
+
+const SEARCH_TIMEOUT_MS = 20_000;
+const REQUEST_TIMEOUT_MS = 60_000;
+/** More than any page or API answer the model can read; the rest is not fetched. */
+const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
+
+async function searchWeb(query: string, ctx: Pick<ToolContext, "onCancel" | "cancelled"> | null = null): Promise<string> {
+  const signal = () => requestSignal(ctx, SEARCH_TIMEOUT_MS);
   const tavilyKey = secretFor("TAVILY_API_KEY") || process.env.TAVILY_API_KEY;
   if (tavilyKey) {
     try {
@@ -1554,6 +1666,7 @@ async function searchWeb(query: string): Promise<string> {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ api_key: tavilyKey, query, max_results: 6 }),
+        signal: signal(),
       });
       if (res.ok) {
         const data = (await res.json()) as any;
@@ -1569,7 +1682,7 @@ async function searchWeb(query: string): Promise<string> {
     try {
       const res = await fetch(
         `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=6`,
-        { headers: { "X-Subscription-Token": braveKey } },
+        { headers: { "X-Subscription-Token": braveKey }, signal: signal() },
       );
       if (res.ok) {
         const data = (await res.json()) as any;
@@ -1584,7 +1697,7 @@ async function searchWeb(query: string): Promise<string> {
   try {
     const res = await fetch(
       `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`,
-      { headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64)" } },
+      { headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64)" }, signal: signal() },
     );
     if (res.ok) {
       const data = (await res.json()) as any;
@@ -1608,9 +1721,10 @@ async function searchWeb(query: string): Promise<string> {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       },
+      signal: signal(),
     });
     if (res.ok) {
-      const html = await res.text();
+      const { text: html } = await readCapped(res, MAX_RESPONSE_BYTES);
       const snippets: string[] = [];
       const matches = html.matchAll(
         /<a class="result__snippet[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gi,
@@ -1632,26 +1746,29 @@ async function runHttpRequest(args: {
   method?: string;
   headers?: Record<string, string>;
   body?: string;
-}): Promise<ToolOutcome> {
+}, ctx: Pick<ToolContext, "onCancel" | "cancelled"> | null = null): Promise<ToolOutcome> {
   const url = String(args.url || "").trim();
+  if (!/^https?:\/\//i.test(url)) {
+    return { ok: false, summary: "http_request needs a full http:// or https:// address." };
+  }
   const method = (args.method || "GET").toUpperCase();
-  const headers: Record<string, string> = { ...args.headers };
+  const headers: Record<string, string> = {};
+  if (args.headers && typeof args.headers === "object") {
+    for (const [k, v] of Object.entries(args.headers)) headers[k] = String(v);
+  }
+  const has = (name: string) => Object.keys(headers).some((k) => k.toLowerCase() === name);
 
   // If calling GitHub API and GITHUB_TOKEN exists in secret store, inject Authorization
-  if (url.includes("api.github.com") && !headers["Authorization"] && !headers["authorization"]) {
-    const ghToken = secretFor("GITHUB_TOKEN") || process.env.GITHUB_TOKEN;
+  if (isGitHubApi(url) && !has("authorization")) {
+    const ghToken = secretFor("GITHUB_TOKEN") || secretFor("GH_TOKEN");
     if (ghToken) {
       headers["Authorization"] = `Bearer ${ghToken}`;
-      if (!headers["User-Agent"] && !headers["user-agent"]) {
-        headers["User-Agent"] = "Autora-Agent";
-      }
-      if (!headers["Accept"] && !headers["accept"]) {
-        headers["Accept"] = "application/vnd.github.v3+json";
-      }
+      if (!has("user-agent")) headers["User-Agent"] = "Autora-Agent";
+      if (!has("accept")) headers["Accept"] = "application/vnd.github.v3+json";
     }
   }
 
-  if (!headers["User-Agent"] && !headers["user-agent"]) {
+  if (!has("user-agent")) {
     headers["User-Agent"] = "Autora/1.0";
   }
 
@@ -1660,11 +1777,12 @@ async function runHttpRequest(args: {
       method,
       headers,
       body: ["GET", "HEAD"].includes(method) ? undefined : args.body,
+      signal: requestSignal(ctx, REQUEST_TIMEOUT_MS),
     });
 
     const status = res.status;
     const statusText = res.statusText;
-    const raw = await res.text();
+    const { text: raw, truncated: cut } = await readCapped(res, MAX_RESPONSE_BYTES);
     const type = res.headers.get("content-type") || "unknown";
     /* A web page's HTML is mostly scripts, styles and menus: on a typical
        article the first 20,000 characters hold none of the article at all.
@@ -1676,7 +1794,7 @@ async function runHttpRequest(args: {
     const preview = redactSecrets(`${method} ${url} → ${status} ${statusText}`);
     let summary = `HTTP ${status} ${statusText}\n`;
     summary += `Content-Type: ${type}${html ? " (shown as readable text, not HTML)" : ""}\n\n`;
-    summary += text.length > cap
+    summary += text.length > cap || cut
       ? text.slice(0, cap) + (html
         ? "\n\n[page truncated here -- open it with browser_open and read on with browser_read's part]"
         : "\n\n[response truncated]")
@@ -1688,7 +1806,7 @@ async function runHttpRequest(args: {
       preview,
     };
   } catch (err: any) {
-    return { ok: false, summary: `HTTP request failed: ${redactSecrets(err?.message ?? err)}` };
+    return { ok: false, summary: `HTTP request failed: ${redactSecrets(fetchFailure(err, REQUEST_TIMEOUT_MS))}` };
   }
 }
 
@@ -1706,14 +1824,17 @@ function artifactLine(a: { id: string; origin: string; name: string; mime: strin
 }
 
 async function generateImageTool(prompt: string, ctx: ToolContext): Promise<ToolOutcome> {
+  // The Gemini key saved in Settings counts: it used to be only the
+  // environment or the secret store, so a key pasted into the provider card
+  // -- the way the app asks for one -- could chat but not draw.
   const apiKey =
-    process.env.GEMINI_API_KEY ||
+    keyFor("gemini") ||
     secretFor("GEMINI_API_KEY") ||
     secretFor("GOOGLE_API_KEY");
   if (!apiKey) {
     return {
       ok: false,
-      summary: "Cannot generate image: GEMINI_API_KEY is not set in environment or secret store.",
+      summary: "Cannot generate image: no Google Gemini key is saved in Settings, the environment or the secret store.",
     };
   }
 
@@ -1795,7 +1916,9 @@ async function runToolUnredacted(
         const settings = toolSettings().terminal;
         const command = String(args.command ?? "").trim();
         if (!command) return { ok: false, summary: "No command was given." };
-        const cwd = String(args.cwd ?? "").trim() || settings.cwd;
+        const asked = String(args.cwd ?? "").trim();
+        // A relative directory is taken from the terminal's own, like `cd`.
+        const cwd = asked ? path.resolve(terminalDir(), asked) : terminalDir();
         return await runCommand(command, cwd, settings.timeout, ctx);
       }
 
@@ -2181,13 +2304,13 @@ async function runToolUnredacted(
           method: args.method,
           headers: args.headers,
           body: args.body,
-        });
+        }, ctx);
       }
 
       case "web_search": {
         const query = String(args.query ?? "").trim();
         if (!query) return { ok: false, summary: "No search query was provided." };
-        const results = await searchWeb(query);
+        const results = await searchWeb(query, ctx);
         return {
           ok: true,
           summary: `Web search results for "${query}":\n\n${results}`,
@@ -2355,9 +2478,13 @@ async function runToolUnredacted(
       case "artifact_save": {
         const name = String(args.name ?? "").trim();
         if (!name) return { ok: false, summary: "An artifact needs a file name." };
-        const from = String(args.path ?? "").trim();
+        const given = String(args.path ?? "").trim();
+        // Relative to where the terminal runs, which is where the agent just
+        // made the file -- not to wherever the server was started from.
+        const from = given ? path.resolve(terminalDir(), given) : "";
         let data: Buffer;
         if (from) {
+          if (!fs.existsSync(from)) return { ok: false, summary: `There is no file at ${from}.` };
           const stat = fs.statSync(from);
           if (!stat.isFile()) return { ok: false, summary: `${from} is not a file.` };
           if (stat.size > MAX_ARTIFACT_BYTES) {
@@ -2548,7 +2675,7 @@ async function runToolUnredacted(
             return { ok: false, summary: `${spec.name} needs ${missing.join(", ")}.` };
           }
           const settings = toolSettings().terminal;
-          const outcome = await runCommand(custom.script, settings.cwd, settings.timeout, ctx, customEnv(custom, args));
+          const outcome = await runCommand(custom.script, terminalDir(), settings.timeout, ctx, customEnv(custom, args));
           noteCustomRun(spec.name, outcome.ok);
           return outcome;
         }

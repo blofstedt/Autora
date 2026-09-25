@@ -146,7 +146,11 @@ function persistCounts(id: string) {
     const tmp = `${file}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(next, null, 2), { mode: 0o600 });
     fs.renameSync(tmp, file);
-  } catch (err) {
+  } catch (err: any) {
+    // A session being made asks for its tallies a moment before its
+    // meta.json is first written; saveMeta carries them in when it is. That
+    // is not worth a warning in the log for every new conversation.
+    if (err?.code === "ENOENT") return;
     warn(`could not write the counts for ${id}`, err);
   }
 }

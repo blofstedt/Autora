@@ -161,16 +161,17 @@ export class MemoryGraph {
       // not what it is about; matched, they would recall every skill at once.
       const topical = r.tags.filter((t) => !GENERIC_TAGS.has(t)).flatMap((t) => tokens(t));
       const head = new Set([...tokens(r.title), ...topical]);
-      return {
-        record: r,
-        head,
-        // Title and tags count double: they are what the memory is about.
-        words: [...tokens(r.title), ...tokens(r.title), ...topical.flatMap((t) => [t, t]), ...tokens(r.body)],
-      };
+      // Title and tags count double: they are what the memory is about.
+      const words = [...tokens(r.title), ...tokens(r.title), ...topical.flatMap((t) => [t, t]), ...tokens(r.body)];
+      // Counted once here rather than by scanning every word of every memory
+      // for every word of the query, which is what recall did on each turn.
+      const tf = new Map<string, number>();
+      for (const w of words) tf.set(w, (tf.get(w) ?? 0) + 1);
+      return { record: r, head, words, tf };
     });
     const avg = docs.reduce((n, d) => n + d.words.length, 0) / Math.max(docs.length, 1) || 1;
     const df = new Map<string, number>();
-    for (const d of docs) for (const w of new Set(d.words)) df.set(w, (df.get(w) ?? 0) + 1);
+    for (const d of docs) for (const w of d.tf.keys()) df.set(w, (df.get(w) ?? 0) + 1);
 
     const scored: Recalled[] = [];
     for (const d of docs) {
@@ -178,7 +179,7 @@ export class MemoryGraph {
       const hit: string[] = [];
       let headHits = 0;
       for (const w of want) {
-        const tf = d.words.filter((x) => x === w).length;
+        const tf = d.tf.get(w) ?? 0;
         if (!tf) continue;
         hit.push(w);
         if (d.head.has(w)) headHits += 1;
