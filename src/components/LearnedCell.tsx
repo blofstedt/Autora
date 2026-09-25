@@ -8,7 +8,7 @@ const isBucket = (kind: string): kind is Bucket => BUCKETS.some((b) => b.kind ==
 
 const CHANGE_WORDS: Record<string, string> = {
   confirmed: "confirmed: it has now worked twice",
-  promoted: "promoted: worked often enough to be always recalled",
+  promoted: "proven: worked often enough to be ranked first when relevant",
   dropped: "dropped: it turned out wrong",
   questioned: "turned out wrong or out of date -- worth a look in the Mind",
 };

@@ -705,8 +705,9 @@ async function jevRecall(session: Session, request: string): Promise<Recalled[] 
     name: "memory recall",
     context: `The person's request:\n${request.slice(0, 2000)}`,
     instructions:
-      "Each field is one stored memory. Answer true if knowing it would help " +
-      "with the request, false if it is unrelated.",
+      "Each field is one stored memory. Answer true only if it is about this " +
+      "request and the agent would use it to answer it. Sharing a word or a " +
+      "general topic is not enough; when unsure, answer false.",
     schema: { type: "object", properties },
     labels,
     timeoutMs: 5000,
