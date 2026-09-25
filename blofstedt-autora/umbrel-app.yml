@@ -88,15 +88,14 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Autora can now build interactive explainer widgets right in the chat. Ask
-  how something works, like gravity, the water cycle or a sorting algorithm,
-  and it can answer with a small hands-on visual you can play with: sliders,
-  buttons, animations and 3D scenes you can drag to rotate. Before you see a
-  widget, Autora tries it out itself (loading it, pressing every button,
-  moving every slider) and fixes anything that breaks. If one still throws
-  an error in your browser, Autora is told, and a "Fix it" button on the card
-  asks it to repair it. Widgets run safely sandboxed, can be expanded to
-  fill the window, and are saved on the Artifacts page.
+  Fixes Autora's advice for a secure address on a tailnet. It used to suggest
+  "tailscale serve --bg 8817", which takes port 443, the port umbrelOS 2.0
+  needs for its own dashboard, and can leave Umbrel unable to start. It now
+  suggests port 8443 instead ("tailscale serve --bg --https=8443 8817"). If
+  you set it up the old way, run "tailscale serve --https=443 off" and set it
+  up again on 8443. Also includes interactive explainer widgets: ask how
+  something works and Autora can answer with a hands-on visual, 2D or 3D,
+  that it tests and fixes before showing you.
 
 dependencies: []
 path: ""

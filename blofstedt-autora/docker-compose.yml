@@ -46,8 +46,9 @@ services:
       # with the whole filesystem mounted. That is not a default to hand
       # somebody. A proxy with a real certificate is better on every count: no
       # warning at all, no second port, and the login still in front. On a
-      # tailnet that is `tailscale serve --bg 8817`, one line, once. See the
-      # README.
+      # tailnet that is `tailscale serve --bg --https=8443 8817`, one line,
+      # once -- not plain `tailscale serve`, whose port 443 is the one umbrelOS
+      # needs for its own dashboard. See the README.
       AUTORA_TLS: "0"
       # Agent defaults — full server access, no per-action prompts
       AUTORA_WORKDIR: "/host"
