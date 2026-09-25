@@ -1,7 +1,7 @@
 {
   "name": "autora",
   "private": true,
-  "version": "0.9.37",
+  "version": "0.9.39",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -9,7 +9,7 @@
     "start": "node dist/server.cjs",
     "lint": "npm run typecheck && eslint .",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.test.json",
-    "test": "tsx tests/voice.test.ts && tsx tests/jev.test.ts && tsx tests/mcp.test.ts && tsx tests/handoff.test.ts && tsx tests/loopwatch.test.ts && tsx tests/context.test.ts && tsx tests/browsing.test.ts && tsx tests/credentials.test.ts && tsx tests/memory.test.ts && tsx tests/scheduler.test.ts && tsx tests/learning.test.ts && tsx tests/widget.test.ts"
+    "test": "tsx tests/run.ts"
   },
   "dependencies": {
     "@google/genai": "^2.23.0",

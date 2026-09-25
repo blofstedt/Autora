@@ -1,12 +1,20 @@
 import { useEffect, useState, type ReactNode } from "react";
 
+/** The last frame each card finished decoding, by src. A card that remounts
+    (the thread regrouping its cells, a page coming back into view) starts
+    from a picture it has already decoded instead of from nothing. */
+const decoded = new Set<string>();
+
 /**
- * One screencast frame, crossfaded onto the last one.
+ * One screencast frame, swapped in only once it can be drawn.
  *
- * Swapping an <img src> directly leaves a blank beat while the new blob
- * decodes, which reads as a slideshow. Holding the previous frame underneath
- * and fading the new one in over it means the stage never goes empty, and a
- * 4fps screencast starts to read as video.
+ * Each new frame used to be a fresh <img> that started transparent and faded
+ * in over the last one. Whenever there was no last one to sit on -- the first
+ * frame, a card remounted, the live feed switching to a stored screenshot --
+ * the stage behind it showed through, and the browser in the thread blinked
+ * black. Now a frame is decoded off-screen first and the visible picture only
+ * ever changes from one drawable frame to the next, so there is no moment
+ * with nothing to show.
  *
  * Frames are content-addressed, so every src is immutable and cached forever --
  * scrubbing back and forth costs no network traffic after the first pass.
@@ -19,42 +27,45 @@ export function Frame({
   /** Overlays positioned against the frame, e.g. the click marker. */
   children?: ReactNode;
 }) {
-  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
-  const [under, setUnder] = useState<string | null>(null);
-  const loaded = loadedSrc === src;
+  const [shown, setShown] = useState(src);
 
-  // The moment a new frame arrives, whatever was last fully decoded becomes the
-  // backdrop.
-  //
-  // Doing this on a timer instead looks right and is wrong: a live screencast
-  // emits a frame on every paint, so the next src lands before the timer fires,
-  // the timer is cancelled, and the backdrop is never set at all. Every frame
-  // then fades in over nothing and the stage strobes black. Deriving it from
-  // the src change has no window to miss.
   useEffect(() => {
-    if (loadedSrc && loadedSrc !== src) setUnder(loadedSrc);
-  }, [src, loadedSrc]);
-
-  // Derived once so the class and the element can never disagree: `solo` is
-  // exactly "no backdrop is rendered", and the CSS relies on that to know which
-  // layer is holding the wrap open.
-  const backdrop = under && under !== src ? under : null;
+    if (src === shown) return;
+    if (decoded.has(src)) { setShown(src); return; }
+    let gone = false;
+    const img = new Image();
+    img.src = src;
+    const swap = () => {
+      if (gone) return;
+      remember(src);
+      setShown(src);
+    };
+    // A frame that fails to decode is still the newest word on the page; show
+    // it rather than freezing on the one before.
+    img.decode().then(swap, swap);
+    return () => { gone = true; };
+  }, [src, shown]);
 
   return (
-    <div className={`frame-wrap ${backdrop ? "" : "solo"}`}>
-      {backdrop && (
-        <img className="frame frame-under" src={backdrop} alt="" aria-hidden="true" />
-      )}
+    <div className="frame-wrap">
       <img
-        // Keyed so each frame is its own element and starts transparent; without
-        // it React mutates src in place and the fade never runs.
-        key={src}
-        className={`frame frame-over ${loaded ? "is-loaded" : ""}`}
-        src={src}
+        className="frame"
+        src={shown}
         alt={alt}
-        onLoad={() => setLoadedSrc(src)}
+        onLoad={() => remember(shown)}
+        draggable={false}
       />
       {children}
     </div>
   );
+}
+
+function remember(src: string) {
+  decoded.add(src);
+  // Live frames are data URLs of a few hundred kilobytes each: keep the last
+  // handful, not the whole session.
+  if (decoded.size > 24) {
+    const oldest = decoded.values().next().value;
+    if (oldest !== undefined) decoded.delete(oldest);
+  }
 }

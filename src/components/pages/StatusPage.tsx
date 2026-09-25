@@ -14,11 +14,32 @@ type Snapshot = {
   usage: { month: { cost: number; turns: number }; today: { cost: number; turns: number } } | null;
   mcp: { servers: { name: string; status: string; tools: unknown[] }[] } | null;
   errors: number;
-  health: { tool: string; calls: number; failures: number; lastError: string | null; lastTs: number }[];
+  health: {
+    /** The tool, and the site or command it was aimed at. */
+    tool: string; target: string; label: string;
+    calls: number; failures: number; lastError: string | null; lastTs: number;
+  }[];
   custom: { name: string; description: string; runs: number; failures: number; updated: number }[];
 };
 
+type Storage = {
+  sessions: { count: number; bytes: number };
+  artifacts: { count: number; bytes: number };
+  settings: { count: number; bytes: number };
+  total: number;
+  policy: { sessionDays: number; keepSessions: number; artifactDays: number; keepArtifacts: number };
+};
+
 const money = (n: number) => `$${n < 1 ? n.toFixed(3) : n.toFixed(2)}`;
+
+/** Bytes as something readable. Megabytes are what this page is about, so
+    kilobytes only matter on a fresh install. */
+function size(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
 
 /**
  * Status: the installation at a glance. Everything on it is live data from
@@ -37,20 +58,24 @@ export function StatusPage({
   const [snap, setSnap] = useState<Snapshot>({
     system: null, settings: null, usage: null, mcp: null, errors: 0, health: [], custom: [],
   });
+  const [storage, setStorage] = useState<Storage | null>(null);
+  const [pruning, setPruning] = useState(false);
 
   useEffect(() => {
     let alive = true;
     const get = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : null)).catch(() => null);
     const load = async () => {
-      const [system, settings, usage, mcp, logs, health, custom] = await Promise.all([
+      const [system, settings, usage, mcp, logs, health, custom, disk] = await Promise.all([
         get("/api/system"), get("/api/settings"), get("/api/usage"), get("/api/mcp"),
         get("/api/logs?level=error&limit=200"), get("/api/tools/health"), get("/api/custom-tools"),
+        get("/api/storage"),
       ]);
       if (alive) {
         setSnap({
           system, settings, usage, mcp, errors: logs?.lines?.length ?? 0,
           health: health?.health ?? [], custom: custom?.tools ?? [],
         });
+        if (disk?.storage) setStorage(disk.storage as Storage);
       }
     };
     void load();
@@ -132,8 +157,8 @@ export function StatusPage({
             {snap.health.map((h) => {
               const share = h.calls ? h.failures / h.calls : 0;
               return (
-                <div key={h.tool} className={`health-row ${share >= 0.4 && h.calls >= 3 ? "is-bad" : share > 0 ? "is-warn" : ""}`}>
-                  <code>{h.tool}</code>
+                <div key={h.label ?? h.tool} className={`health-row ${share >= 0.4 && h.calls >= 3 ? "is-bad" : share > 0 ? "is-warn" : ""}`}>
+                  <code>{h.label ?? h.tool}</code>
                   <span className="health-bar" aria-hidden="true"><i style={{ width: `${Math.round((1 - share) * 100)}%` }} /></span>
                   <span className="health-count">{h.calls - h.failures}/{h.calls} ok</span>
                   {h.lastError && <em title={h.lastError}>{h.lastError}</em>}
@@ -168,6 +193,66 @@ export function StatusPage({
               </button>
             </div>
           ))}
+        </section>
+
+        <section className="set-card">
+          <h3>Stored on disk</h3>
+          <p className="jf-hint">
+            Sessions and their logs, the Artifacts page, and the settings file, in the directory
+            Umbrel keeps across an update. Housekeeping runs on every start and twice a day:
+            {" "}
+            {storage
+              ? `sessions older than ${storage.policy.sessionDays || "no"} ${storage.policy.sessionDays ? "days" : "age limit"}, ` +
+                `artifacts older than ${storage.policy.artifactDays || "no"} ${storage.policy.artifactDays ? "days" : "age limit"}, ` +
+                `always keeping the newest ${storage.policy.keepSessions} and ${storage.policy.keepArtifacts}.`
+              : "reading the policy…"}
+          </p>
+          {storage && (
+            <div className="health-rows">
+              <div className="health-row">
+                <code>sessions</code>
+                <span className="health-count">{storage.sessions.count} kept</span>
+                <span className="health-count">{size(storage.sessions.bytes)}</span>
+              </div>
+              <div className="health-row">
+                <code>artifacts</code>
+                <span className="health-count">{storage.artifacts.count} files</span>
+                <span className="health-count">{size(storage.artifacts.bytes)}</span>
+              </div>
+              <div className="health-row">
+                <code>settings &amp; memory</code>
+                <span className="health-count">{size(storage.settings.bytes)}</span>
+              </div>
+              <div className="health-row">
+                <code>total</code>
+                <span className="health-count">{size(storage.total)}</span>
+              </div>
+            </div>
+          )}
+          <div className="row-actions">
+            <button
+              type="button"
+              className="btn tiny ghost"
+              disabled={pruning}
+              onClick={() => {
+                if (!window.confirm(
+                  "Delete every session and artifact past the limits above? Pinned sessions are kept.",
+                )) return;
+                setPruning(true);
+                void fetch("/api/storage/prune", { method: "POST" })
+                  .then((r) => r.json())
+                  .then((body) => {
+                    if (body?.storage) setStorage(body.storage as Storage);
+                  })
+                  .finally(() => setPruning(false));
+              }}
+            >
+              {pruning ? "Housekeeping…" : "Apply the limits now"}
+            </button>
+            <span className="set-note">
+              Nothing else is deleted: the newest ones, anything pinned, and anything running now.
+            </span>
+          </div>
         </section>
 
         <section className="set-card">

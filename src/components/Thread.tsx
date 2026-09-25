@@ -220,7 +220,7 @@ function TurnBucket({
       <div className="work">
         {bucket.cells.map((cell, index) => (
           <CellView
-            key={`${cell.kind}-${cell.seq}-${index}`}
+            key={cellKey(cell)}
             cell={cell}
             sessionId={sessionId}
             liveBrowserSeq={liveBrowserSeq}
@@ -235,6 +235,19 @@ function TurnBucket({
       </div>
     </article>
   );
+}
+
+/**
+ * Who a cell is, for React: the event that started it.
+ *
+ * Not its position. The thread regroups cells while a turn runs -- what is
+ * said on a page moves into that page's card -- and a key with the index in
+ * it then named a different cell, so React tore the card down and built a
+ * new one. For the browser that meant a blank stage for a beat: the black
+ * flash in the middle of the conversation.
+ */
+function cellKey(cell: Cell): string {
+  return `${cell.kind}-${cell.seq}`;
 }
 
 function CellView({
@@ -303,11 +316,11 @@ function CellView({
         >
           {cell.log.length > 0 && cell.log.map((inner, index) => (
             <CellView
-              key={`${inner.kind}-${inner.seq}-${index}`}
+              key={cellKey(inner)}
               cell={inner}
               sessionId={sessionId}
               liveBrowserSeq={liveBrowserSeq}
-                live={live}
+              live={live}
               open={open}
               // The newest thing said, while the page is still being worked.
               active={cell.live && index === cell.log.length - 1}

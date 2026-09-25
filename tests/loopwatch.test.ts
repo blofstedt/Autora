@@ -5,7 +5,8 @@
  *   npx tsx tests/loopwatch.test.ts
  */
 import assert from "node:assert/strict";
-import { LoopWatch } from "../server/loopwatch";
+import { LOOP_DEFAULTS, LoopWatch } from "../server/loopwatch";
+import { mergeLoop } from "../server/state";
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -91,4 +92,28 @@ test("a checkpoint comes every twenty rounds, naming the repeats", () => {
   assert.match(checkpoint ?? "", /browser_read \(x5\)/);
 });
 
-console.log(`\n${passed} passed`);
+
+/* ---- the knobs are settings now ------------------------------------------
+
+   They were constants in the source: a turn could be stopped by a rule the
+   person could not see, let alone change. These are the same watches, run
+   with the numbers the panel can set. */
+
+test("a custom config is what the watch uses", () => {
+  const watch = new LoopWatch({ warnAt: 2, stopAt: 4, staleAfter: 3, checkEvery: 5 });
+  assert.equal(watch.record("browser_read", {}, true, "Sign in").note, null);
+  assert.match(watch.record("browser_read", {}, true, "Sign in").note ?? "", /2nd time/);
+});
+
+test("posted numbers are clamped, and a stop always comes after a warning", () => {
+  const loose = mergeLoop({ ...LOOP_DEFAULTS }, { warnAt: 5, stopAt: 2, staleAfter: 0, checkEvery: 9999 });
+  assert.equal(loose.warnAt, 5);
+  assert.ok(loose.stopAt > loose.warnAt);
+  assert.equal(loose.staleAfter, 2);
+  assert.equal(loose.checkEvery, 500);
+
+  const nonsense = mergeLoop({ ...LOOP_DEFAULTS }, { warnAt: "lots", stopAt: null });
+  assert.deepEqual(nonsense, LOOP_DEFAULTS);
+});
+
+console.log(`\nloop watch: ${passed} passed`);
