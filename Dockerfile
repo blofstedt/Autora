@@ -2,7 +2,16 @@
 # The app is a Vite bundle and an esbuild'd Express server. Both come out of
 # `npm run build` into dist/, so one build stage produces everything the
 # runtime needs and none of the toolchain that produced it.
-FROM node:22-alpine AS builder
+#
+# On the machine doing the build, never under emulation. The image is built
+# for amd64 and arm64, and without --platform this stage ran once per target:
+# the arm64 pass under QEMU, where `npm ci` hung for twenty minutes and more
+# until the job was cancelled, so a release could sit unpublished and never
+# be offered on Umbrel. Nothing it produces is native -- the bundle is
+# JavaScript, and no production dependency ships a compiled addon (the two
+# install scripts in the tree are a no-op and a version warning) -- so the one
+# native build serves both images.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS builder
 WORKDIR /build
 
 # Dependencies first, from the lockfile alone: this layer is then reused on
