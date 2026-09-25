@@ -8,6 +8,10 @@ import {
 import { FONTS, THEMES, type Appearance } from "../lib/theme";
 import { ago, until, type Job } from "./Schedule";
 import type { ContextGauge } from "../lib/derive";
+import {
+  BUCKETS, announceChange, confirmRecord, deleteRecord, fetchKnowledge, onKnowledgeChange,
+  type Bucket, type MemoryRecord,
+} from "../lib/memory";
 
 export type PageId =
   | "chat" | "config" | "sessions" | "artifacts" | "analytics"
@@ -38,12 +42,14 @@ export const pageLabel = (id: PageId) => PAGES.find((p) => p.id === id)?.label ?
  * two that drift apart. How the app looks is under Settings, not here.
  */
 export function Rail({
-  page, onNavigate, onOpenSession, context, relayOn, alert, onNew, drawer = false, onClose,
+  page, onNavigate, onOpenSession, onOpenMemory, context, relayOn, alert, onNew, drawer = false, onClose,
   mood = "rest", attention = 0, pulse = 0, learned = 0, bloom = 0,
 }: {
   page: PageId;
   onNavigate: (page: PageId) => void;
   onOpenSession: (id: string) => void;
+  /** Open one memory in the Mind. */
+  onOpenMemory: (id: string, kind: Bucket) => void;
   /** How full the open session's context is; null before its first reply. */
   context: ContextGauge | null;
   relayOn: boolean;
@@ -111,6 +117,8 @@ export function Rail({
         </nav>
         <div className="rail-foot">
           <ContextCard gauge={context} />
+          <MemoryCard onOpen={onOpenMemory} />
+          <Vitals onOpen={() => onNavigate("system")} />
           <Activity onOpenSession={onOpenSession} onNavigate={onNavigate} />
         </div>
       </div>
@@ -189,6 +197,182 @@ function ContextCard({ gauge }: { gauge: ContextGauge | null }) {
   );
 }
 
+/**
+ * Poll `url` every `ms` while the tab is visible, and once more when it comes
+ * back. The rail in the margin stays mounted, hidden, on a phone; a tab in the
+ * background has no one to show it to either.
+ */
+function usePoll<T>(url: string, ms: number): T | null {
+  const [data, setData] = useState<T | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      if (document.hidden) return;
+      try {
+        const res = await fetch(url);
+        if (res.ok && alive) setData(await res.json() as T);
+      } catch {
+        /* the next poll will pick it up */
+      }
+    };
+    void load();
+    const timer = window.setInterval(() => void load(), ms);
+    const onVisible = () => { if (!document.hidden) void load(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [url, ms]);
+  return data;
+}
+
+/** How long one memory stays up before another takes its place. */
+const MEMORY_ROTATE_MS = 45_000;
+
+/** One of the list, preferring anything but `not`. */
+function pickOne(list: MemoryRecord[], not: string | null): MemoryRecord | null {
+  const others = list.length > 1 ? list.filter((r) => r.id !== not) : list;
+  return others[Math.floor(Math.random() * others.length)] ?? null;
+}
+
+/**
+ * Something it remembers, one at a time.
+ *
+ * Learned memories that nobody has kept yet come first, with Keep and Discard
+ * right on the card: confirming is how a guess becomes something it knows,
+ * and until now only the Mind page asked. Once everything is kept, a
+ * random memory rotates through instead, as a reminder of what it knows.
+ */
+function MemoryCard({ onOpen }: { onOpen: (id: string, kind: Bucket) => void }) {
+  const [records, setRecords] = useState<MemoryRecord[]>([]);
+  const [shownId, setShownId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    const load = () => {
+      if (document.hidden) return;
+      fetchKnowledge()
+        .then((k) => { if (alive) setRecords(k.records.filter((r) => !r.superseded_by)); })
+        .catch(() => undefined);
+    };
+    load();
+    const off = onKnowledgeChange(load);
+    const timer = window.setInterval(load, 60_000);
+    return () => { alive = false; off(); window.clearInterval(timer); };
+  }, []);
+
+  const unconfirmed = records.filter((r) => r.status === "provisional");
+  const pool = unconfirmed.length ? unconfirmed : records;
+  const shown = pool.find((r) => r.id === shownId) ?? null;
+
+  // Something to show when there is nothing on the card, or when what was
+  // shown has been kept, discarded or rewritten.
+  useEffect(() => {
+    if (!shown && pool.length) setShownId(pickOne(pool, null)?.id ?? null);
+  }, [shown, pool]);
+
+  // Rotate while nothing is waiting on an answer.
+  useEffect(() => {
+    if (unconfirmed.length || records.length < 2) return;
+    const timer = window.setInterval(
+      () => setShownId((id) => pickOne(records, id)?.id ?? null),
+      MEMORY_ROTATE_MS,
+    );
+    return () => window.clearInterval(timer);
+  }, [unconfirmed.length, records]);
+
+  if (!shown) return null;
+  const provisional = shown.status === "provisional";
+  const bucket = BUCKETS.find((b) => b.kind === shown.kind)?.label.replace(/s$/, "").toLowerCase();
+
+  const answer = async (work: (id: string) => Promise<unknown>) => {
+    setBusy(true);
+    try {
+      await work(shown.id);
+      announceChange();
+    } catch {
+      /* it stays on the card; the Mind page says what went wrong */
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className={`rail-mem ${provisional ? "is-new" : ""}`} aria-label="Something it remembers">
+      <button className="rail-mem-body" onClick={() => onOpen(shown.id, shown.kind)} title="Open in Mind">
+        <span className="rail-mem-head">
+          <IconBrain size={12} />
+          {provisional ? "Learned" : "I remember"} · {bucket} · {ago(shown.created)}
+        </span>
+        <span className="rail-mem-title">{shown.title}</span>
+      </button>
+      {provisional && (
+        <div className="rail-mem-ask">
+          <span>Is this right?</span>
+          <div className="spacer" />
+          <button className="btn tiny" disabled={busy} onClick={() => void answer(confirmRecord)}>
+            <IconCheck size={11} /> Keep
+          </button>
+          <button className="btn tiny ghost" disabled={busy} onClick={() => void answer(deleteRecord)}>
+            Discard
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+type HostVitals = {
+  cpu: number;
+  cores: number;
+  memory: { used: number; total: number };
+  disk: { used: number; total: number } | null;
+};
+
+const GB = 1024 ** 3;
+const gb = (n: number) => (n >= 100 * GB ? Math.round(n / GB) : Math.round((n / GB) * 10) / 10);
+
+/**
+ * The machine it runs on: processor, memory and disk, as three short bars.
+ * The agent runs commands and a browser there, so "is the box struggling?"
+ * is worth a glance, and nothing else in the app says.
+ */
+function Vitals({ onOpen }: { onOpen: () => void }) {
+  const v = usePoll<HostVitals>("/api/host", 15_000);
+  if (!v) return null;
+  const rows = [
+    {
+      label: "CPU", share: v.cpu, value: `${Math.round(v.cpu * 100)}%`,
+      detail: `${v.cores} core${v.cores === 1 ? "" : "s"}`,
+    },
+    {
+      label: "Memory", share: v.memory.used / v.memory.total, value: `${Math.round((v.memory.used / v.memory.total) * 100)}%`,
+      detail: `${gb(v.memory.used)} of ${gb(v.memory.total)} GB`,
+    },
+    ...(v.disk ? [{
+      label: "Disk", share: v.disk.used / v.disk.total, value: `${Math.round((v.disk.used / v.disk.total) * 100)}%`,
+      detail: `${gb(v.disk.total - v.disk.used)} GB free`,
+    }] : []),
+  ];
+  return (
+    <button className="rail-vitals" onClick={onOpen} title="Open System" aria-label="This machine">
+      {rows.map((r) => (
+        <span key={r.label} className={`rail-vital ${r.share >= 0.85 ? "is-high" : ""}`}>
+          <span className="rail-vital-top">
+            <span className="rail-vital-label">{r.label}</span>
+            <span className="rail-vital-value">{r.value}</span>
+          </span>
+          <span className="rail-vital-bar"><i style={{ width: `${Math.max(2, Math.min(100, r.share * 100))}%` }} /></span>
+          <span className="rail-vital-detail">{r.detail}</span>
+        </span>
+      ))}
+    </button>
+  );
+}
+
 /** How often the rail asks what the schedules are doing. */
 const ACTIVITY_POLL_MS = 20_000;
 
@@ -203,31 +387,7 @@ function Activity({
   onOpenSession: (id: string) => void;
   onNavigate: (page: PageId) => void;
 }) {
-  const [jobs, setJobs] = useState<Job[]>([]);
-
-  useEffect(() => {
-    let alive = true;
-    const load = async () => {
-      // The rail in the margin stays mounted on a phone, hidden; a tab in the
-      // background has no one to show it to either.
-      if (document.hidden) return;
-      try {
-        const res = await fetch("/api/jobs");
-        if (res.ok && alive) setJobs(await res.json() as Job[]);
-      } catch {
-        /* the next poll will pick it up */
-      }
-    };
-    void load();
-    const timer = window.setInterval(() => void load(), ACTIVITY_POLL_MS);
-    const onVisible = () => { if (!document.hidden) void load(); };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      alive = false;
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, []);
+  const jobs = usePoll<Job[]>("/api/jobs", ACTIVITY_POLL_MS) ?? [];
 
   const running = jobs.filter((j) => j.running);
   const next = jobs

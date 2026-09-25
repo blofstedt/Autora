@@ -3988,6 +3988,43 @@ html[data-font="mono"] body { font-size: 13.5px; }
 .rail-ctx-line { font-size: 13px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
 .rail-ctx-sub { font-size: 11.5px; color: var(--text-3); }
 .rail-ctx.is-over .rail-ctx-sub { color: var(--warn); }
+/* Something it remembers: one memory, with Keep / Discard while unconfirmed. */
+.rail-mem {
+  display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: var(--r-md, 10px); background: var(--s2);
+}
+.rail-mem.is-new { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
+.rail-mem-body {
+  display: flex; flex-direction: column; gap: 3px; padding: 0; border: 0; background: none;
+  color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.rail-mem-head {
+  display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; color: var(--text-3);
+}
+.rail-mem-head svg { color: var(--accent); flex: 0 0 auto; }
+.rail-mem-title {
+  font-size: 13px; line-height: 1.4; color: var(--text);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.rail-mem-body:hover .rail-mem-title { color: var(--accent); }
+.rail-mem-ask { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-3); }
+.rail-mem-ask .btn { display: inline-flex; align-items: center; gap: 4px; }
+/* The machine: three short bars side by side. */
+.rail-vitals {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; width: 100%;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-md, 10px);
+  background: var(--s2); color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.rail-vitals:hover { border-color: var(--border-strong); }
+.rail-vital { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.rail-vital-top { display: flex; align-items: baseline; justify-content: space-between; gap: 4px; }
+.rail-vital-label { font-size: 11px; font-weight: 600; color: var(--text-3); }
+.rail-vital-value { font-size: 12px; font-weight: 650; color: var(--text); font-variant-numeric: tabular-nums; }
+.rail-vital-bar { height: 4px; border-radius: 999px; background: var(--border); overflow: hidden; }
+.rail-vital-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width 0.6s var(--ease); }
+.rail-vital.is-high .rail-vital-bar i { background: var(--warn); }
+.rail-vital.is-high .rail-vital-value { color: var(--warn); }
+.rail-vital-detail { font-size: 10.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rail-act-row {
   display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0;
   padding: 6px 10px; border: 0; border-radius: var(--r-sm); cursor: pointer;
@@ -4059,6 +4096,7 @@ html[data-font="mono"] body { font-size: 13.5px; }
 @media (pointer: coarse) {
   .rail-nav-item { padding: 12px 12px; font-size: 15px; }
   .rail-act-row { padding: 10px 12px; font-size: 13.5px; }
+  .rail-mem-ask .btn { height: 32px; padding: 0 12px; font-size: 13px; }
   .rail-icon-btn { width: 38px; height: 38px; }
   .sm-theme { padding: 10px 10px; font-size: 14px; }
   .sm-font { padding: 11px 8px; font-size: 14px; }

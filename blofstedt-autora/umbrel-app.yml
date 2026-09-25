@@ -97,10 +97,13 @@ releaseNotes: >-
   the open session's context is (for example "38k of 100k tokens") and where
   Autora starts condensing older turns into working memory; it turns amber
   once it gets there and says how many times the session has been condensed.
-  Below it, a line shows any schedule or watcher running right now (tap it
-  to open the session it is working in) and which one is due next and when
-  (tap it for Schedules). The menu looks the same on a phone as on a
-  computer.
+  Under it, a card shows one thing Autora remembers. Something it has just
+  learned comes first, with Keep and Discard right there, so you can confirm
+  or drop it without opening the Mind; tap the card to open that memory. Then
+  three small bars show the machine it runs on: processor, memory and disk
+  (amber past 85%). Last, a line shows any schedule or watcher running right
+  now (tap it to open its session) and which one is due next. The menu looks
+  the same on a phone as on a computer.
 
 
 dependencies: []

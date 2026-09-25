@@ -23,6 +23,7 @@ import { decide, lastDecision, resetHealth, supportFor, type JevOutcome, type Je
 import type { JevTarget } from "./server/jev/engine";
 import { guardWorthy, irreversible } from "./server/jev/guard";
 import { prune, storageReport } from "./server/retention";
+import { hostVitals } from "./server/host";
 import { forgetSpeech, setSpeechUrl, speak as synthesise, speechStatus } from "./server/speech";
 import { captureConsole, log, readLogs, setLogRedactor, type LogLevel } from "./server/logs";
 import { allowSocket, refuseRequest } from "./server/crosssite";
@@ -3530,6 +3531,11 @@ async function startServer() {
      Nothing said how much was stored until this: sessions, logs and the
      Artifacts page grew for the life of the install, and the only way to get
      disk back was deleting threads one at a time. */
+  /** CPU, memory and disk of the machine, for the sidebar's bars. */
+  app.get("/api/host", (_req: Request, res: Response) => {
+    res.json(hostVitals());
+  });
+
   app.get("/api/storage", (_req: Request, res: Response) => {
     res.json({ storage: { ...storageReport(), policy: { ...state.retention } } });
   });
