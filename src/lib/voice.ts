@@ -471,8 +471,12 @@ export type SpeechSource = "server" | "browser";
 
 /** What the console says about its own voice, from GET /api/speech. */
 export type SpeechStatus = {
-  /** False when there is no voice server: the browser's voice is used. */
+  /** False when there is no voice service: the browser's voice is used. */
   available: boolean;
+  /** Which service speaks: Deepgram's hosted voices, or a Kokoro server. */
+  provider?: "deepgram" | "kokoro" | null;
+  /** What was chosen in Config: "", "deepgram" or "kokoro". "" is automatic. */
+  choice?: string;
   voice: string;
   voices: { id: string; label: string }[];
   reason: string | null;
@@ -503,6 +507,23 @@ export async function chooseVoice(voice: string): Promise<{ ok: boolean; detail?
     if (res.ok) return { ok: true };
     const body = await res.json().catch(() => null);
     return { ok: false, detail: body?.detail ?? `The console refused that voice (${res.status}).` };
+  } catch {
+    return { ok: false, detail: "The console could not be reached." };
+  }
+}
+
+/** Choose the voice service: "deepgram", "kokoro", or "" to let the console
+    decide (Deepgram when there is a key for it, Kokoro otherwise). */
+export async function chooseProvider(provider: string): Promise<{ ok: boolean; detail?: string }> {
+  try {
+    const res = await fetch("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ speech: { provider } }),
+    });
+    if (res.ok) return { ok: true };
+    const body = await res.json().catch(() => null);
+    return { ok: false, detail: body?.detail ?? `The console refused that service (${res.status}).` };
   } catch {
     return { ok: false, detail: "The console could not be reached." };
   }

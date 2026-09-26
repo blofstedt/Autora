@@ -24,7 +24,7 @@ import type { JevTarget } from "./server/jev/engine";
 import { guardWorthy, irreversible } from "./server/jev/guard";
 import { prune, storageReport } from "./server/retention";
 import { hostVitals } from "./server/host";
-import { forgetSpeech, setSpeechUrl, speak as synthesise, speechStatus } from "./server/speech";
+import { forgetSpeech, setSpeechProvider, setSpeechUrl, speak as synthesise, speechStatus } from "./server/speech";
 import { captureConsole, log, readLogs, setLogRedactor, type LogLevel } from "./server/logs";
 import { allowSocket, refuseRequest } from "./server/crosssite";
 import { certificateSource, tlsSettings } from "./server/tls";
@@ -2616,7 +2616,9 @@ async function runTurn(session: Session, text: string): Promise<TurnResult> {
 }
 
 async function startServer() {
-  // A voice server chosen in the panel is the one every request uses.
+  // The voice service and server chosen in the panel are the ones every
+  // request uses -- Deepgram's hosted voices, or a Kokoro server named here.
+  setSpeechProvider(state.speech.provider);
   setSpeechUrl(state.speech.url);
   const app = express();
   app.disable("x-powered-by");
@@ -3808,22 +3810,32 @@ async function startServer() {
       if (typeof body.jev.key === "string") resetHealth();
     }
     if (body.appearance && typeof body.appearance === "object") mergeAppearance(state.appearance, body.appearance);
-    /* Which voice, and which server. A voice is checked against the list the
-       server reports while it is reachable: a typo saved here would otherwise
-       only show up at the next sentence, in the middle of a conversation,
-       where it reads as the app being broken rather than as a setting being
-       wrong. With the server down the choice is kept unverified instead. */
+    /* Which service, which voice, and which server. The service is applied
+       first so that a voice is checked against the list the service in hand
+       actually reports -- switching to Deepgram and picking a voice in one
+       save must not measure that voice against a Kokoro server. A voice is
+       checked while the service is reachable at all: a typo saved here would
+       otherwise only show up at the next sentence, in the middle of a
+       conversation, where it reads as the app being broken rather than as a
+       setting being wrong. With the service down the choice is kept
+       unverified instead. */
     if (body.speech && typeof body.speech === "object") {
+      const speakingThrough = state.speech.provider;
+      if (typeof body.speech.provider === "string") setSpeechProvider(body.speech.provider);
       const wanted = typeof body.speech.voice === "string" ? body.speech.voice.trim() : "";
       if (wanted && wanted !== state.speech.voice) {
         const listing = await speechStatus(true, wanted);
         const known = listing.voices.some((v) => v.id === wanted);
         if (listing.available && listing.voices.length > 0 && !known) {
+          // Nothing has been saved yet: put the running console back on the
+          // service it was already speaking through, and refuse.
+          setSpeechProvider(speakingThrough);
           return res.status(400).json({ detail: "The voice server has no voice called " + wanted + "." });
         }
       }
       mergeSpeech(state.speech, body.speech);
       setSpeechUrl(state.speech.url);
+      setSpeechProvider(state.speech.provider);
       forgetSpeech();
     }
     /* When a turn is called a loop, and how much is kept. Both used to be
@@ -3847,10 +3859,17 @@ async function startServer() {
      tailnet has no route to it. Going through here also means the audio
      arrives from the origin the page already trusts. */
   app.get("/api/speech", async (_req: Request, res: Response) => {
-    const status = await speechStatus();
+    /* The saved voice is put to the service as a preference, and what comes
+       back is the voice that will actually be heard: a voice saved while
+       Kokoro was speaking ("af_heart") is not one Deepgram offers, and the
+       panel should show the voice it would really use rather than a name that
+       would be refused at the next sentence. */
+    const status = await speechStatus(false, state.speech.voice || undefined);
     res.json({
       available: status.available,
-      voice: state.speech.voice || status.voice,
+      provider: status.provider,
+      choice: state.speech.provider,
+      voice: status.voice,
       voices: status.voices,
       reason: status.reason,
       url: state.speech.url || status.url,

@@ -57,7 +57,9 @@ description: >-
   page, a file or a command's output changes, with a history of every run.
 
 
-  • Voice interface (optional) — Deepgram STT+TTS when DEEPGRAM_API_KEY is set.
+  • Voice (optional) — replies are read aloud through Deepgram's hosted voices
+  when DEEPGRAM_API_KEY is set, or through a Kokoro server on the same Umbrel;
+  with neither, the browser's own voice.
 
 
   • Bring your own model — OpenAI, Google Gemini, Anthropic Claude, DeepSeek,
@@ -93,17 +95,15 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The browser Autora drives now looks like the one you use. It reports the
-  real installed Chrome version and a desktop platform instead of a bare
-  number, takes its timezone and locale from the machine’s own public IP so
-  they agree with the address a site sees, and carries the fonts a desktop
-  carries. Functions the stealth layer patches say they are native code, the
-  WebGL vendor and renderer read as a real graphics card, and the chrome.*
-  surface a desktop browser has is there. A Cloudflare holding screen is
-  recognised for what it is and reported in the turn note rather than
-  described as a page that failed to load. Stop is now a badge on the corner
-  of Send, in the one place you already press, and still there when Send is
-  greyed out — which is exactly when a turn is running with an empty box.
+  Replies are read aloud through Deepgram's hosted voices when a
+  DEEPGRAM_API_KEY is set — nothing to run, and the same voice on every
+  device. Settings → Voice now shows which service is speaking, lets you pick
+  Automatic, Deepgram or Kokoro, and lists the voices the service actually
+  offers (Deepgram's Aura voices read as names, not ids). A Kokoro server on
+  the network is still found by itself, and a voice saved from Kokoro no
+  longer breaks Deepgram: an id it does not know falls back to the default
+  voice instead of refusing every sentence. With neither set up, the
+  browser's own voice carries on as before.
 dependencies: []
 path: ""
 defaultUsername: ""

@@ -34,18 +34,22 @@ export interface Appearance {
 /**
  * Which voice the console speaks in, and where that voice comes from.
  *
- * Both are empty by default, which means "whatever the environment says" --
- * so an install that has never been near the settings panel keeps working
- * exactly as before, and one that has merely run a Kokoro container is heard
- * without being configured at all. See ../server/speech.ts.
+ * All three are empty by default, which means "whatever the environment says"
+ * -- so an install that has never been near the settings panel keeps working
+ * exactly as before, one that has merely set DEEPGRAM_API_KEY is heard through
+ * Deepgram without being configured at all, and one that has only ever run a
+ * Kokoro container is heard through that. See ../server/speech.ts.
  */
 export interface SpeechSettings {
+  /** "", "deepgram" or "kokoro": which service speaks, or "" to decide on its
+      own (Deepgram when there is a key for it, a Kokoro server otherwise). */
+  provider: string;
   voice: string;
-  /** A voice server to use instead of the ones discovered by name. */
+  /** A Kokoro voice server to use instead of the ones discovered by name. */
   url: string;
 }
 
-export const DEFAULT_SPEECH: SpeechSettings = { voice: "", url: "" };
+export const DEFAULT_SPEECH: SpeechSettings = { provider: "", voice: "", url: "" };
 
 /** Only a plain http(s) address, and never a credential inside it. */
 export function saneSpeechUrl(raw: string): string {
@@ -63,6 +67,11 @@ export function saneSpeechUrl(raw: string): string {
 
 export function mergeSpeech(into: SpeechSettings, patch: any): SpeechSettings {
   if (!patch || typeof patch !== "object") return into;
+  if (typeof patch.provider === "string") {
+    // Anything else -- including "auto" -- means "decide for yourself".
+    const wanted = patch.provider.trim().toLowerCase();
+    into.provider = wanted === "deepgram" || wanted === "kokoro" ? wanted : "";
+  }
   if (typeof patch.voice === "string") into.voice = patch.voice.trim().slice(0, 60);
   if (typeof patch.url === "string") into.url = saneSpeechUrl(patch.url);
   return into;
@@ -643,6 +652,11 @@ export const SECRET_PRESETS: Record<string, { label: string; description: string
     label: "Anthropic API Key",
     description: "API key for Claude models.",
     placeholder: "sk-ant-...",
+  },
+  DEEPGRAM_API_KEY: {
+    label: "Deepgram API Key",
+    description: "Reads replies aloud through Deepgram's hosted Aura voices, the same ones on every device.",
+    placeholder: "a Deepgram API key",
   },
   JEV_API_KEY: {
     label: "Jev API Key",
