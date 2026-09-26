@@ -213,6 +213,24 @@ body::before {
   padding: 6px 12px 8px; border-top: 1px solid var(--border);
 }
 
+/* One memory, opened from the thread: its name, its kind, and its text. */
+.modal.peek { max-width: 520px; max-height: min(76vh, 620px); }
+.peek-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.peek-body {
+  margin: 0; padding: 11px 13px; border-radius: var(--r-sm);
+  background: var(--s2); border-left: 2px solid var(--accent-line);
+  font-size: 12.5px; line-height: 1.62; color: var(--text-2); white-space: pre-wrap;
+}
+.peek-why { margin: 8px 2px 0; font-size: 11px; color: var(--text-3); }
+.peek-meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin: 9px 2px 2px; font-size: 11px; color: var(--text-3);
+}
+.peek-tag {
+  padding: 1px 7px; border-radius: 99px; background: var(--s2);
+  border: 1px solid var(--border); color: var(--text-3);
+}
+
 /* "Deleted X · Undo": bottom centre, above the composer, for a few seconds. */
 .toast {
   position: fixed; left: 50%; bottom: calc(132px + env(safe-area-inset-bottom, 0px));
@@ -585,12 +603,23 @@ body::before {
 /* A memory the agent reached for, named where it reached for it. */
 .mem-pulse {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
-  width: 100%; margin: 0; padding: 2px 0 2px 38px; background: none; border: 0;
+  width: 100%; margin: 0; padding: 2px 0 2px 38px;
   font-family: inherit; font-size: 11.5px; color: var(--text-3);
-  text-align: left; cursor: pointer; animation: rise 0.3s var(--ease) both;
+  text-align: left; animation: rise 0.3s var(--ease) both;
 }
 .mem-pulse.is-inline { padding-left: 0; margin-bottom: 6px; }
-.mem-pulse:hover .mem-pulse-verb { color: var(--text-2); }
+/* Folded by default: the line is the count, the names are behind the chevron. */
+.mem-pulse-head {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+  margin: 0; padding: 2px 0; background: none; border: 0; cursor: pointer;
+  font: inherit; color: var(--text-3); text-align: left;
+}
+.mem-pulse-head:hover .mem-pulse-verb { color: var(--text-2); }
+.mem-pulse-caret {
+  flex: none; opacity: 0.7;
+  transform: rotate(90deg); transition: transform 0.2s var(--ease);
+}
+.mem-pulse.is-open .mem-pulse-caret { transform: rotate(-90deg); }
 .mem-pulse-dot {
   position: relative; width: 7px; height: 7px; border-radius: 50%; flex: none;
   background: var(--glow-light); box-shadow: 0 0 8px rgba(var(--glow-rgb),  0.9);
@@ -614,6 +643,15 @@ body::before {
 .mem-chip em {
   font-style: normal; font-size: 9.5px; font-weight: 650; letter-spacing: 0.06em;
   text-transform: uppercase; color: var(--chip);
+}
+/* A chip that opens: the memory itself, in a modal over the thread. */
+.mem-chip.is-tap {
+  cursor: pointer; font: inherit; text-align: left;
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+.mem-chip.is-tap:hover {
+  background: color-mix(in srgb, var(--chip) 20%, transparent);
+  border-color: color-mix(in srgb, var(--chip) 60%, transparent);
 }
 @keyframes memPulse {
   0%   { transform: scale(1); opacity: 0.9; }

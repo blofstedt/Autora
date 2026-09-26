@@ -94,23 +94,29 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The composer now says what it costs. A thin bar sits at the top of the box
-  you type in: the month's spend against the ceiling you set in Settings,
-  with the right-hand end of it in a brighter tone for what this conversation
-  alone accounts for. One tap opens Usage, where the ceiling is set. It reads
-  again when a turn finishes and when the window comes back, so the number is
-  never stale, and it stays out of the way until it has something to say.
+  Stop is /Stop. The small square badge that sat on the corner of Send is
+  gone: the composer is the box, Send and the commands again, and typing
+  /Stop in the box is how a turn is stopped.
 
-  Talk has also moved to the left of Dictate, so the loud control comes first:
-  speak a turn out loud, then dictate into the box, then attach.
+  Sending a message while the agent is working no longer leaves a "Stopped."
+  line above the answer. The turn that message interrupted is dropped without
+  a word about it, and the next thing in the thread is the reply you asked
+  for.
 
-  And from the release before this one: a long turn is short again. The
-  commands and small tools a reply was made of are gathered into one collapsed
-  line, in the order they ran, so a turn that read a dozen files and ran six
-  commands no longer stands eighteen cards tall with the answer a screen away
-  from the question. Tap the line and every command is there, with its output,
-  exactly as before; anything that is not a command -- a page Autora looked at,
-  a diff, a question -- stays where it happened.
+  And the condensing line says what happened. It compared the prompt as it
+  stood when the fold was asked for against the prompt when it landed, with
+  the turn working in between, so it could report the context growing --
+  "about 6,000 tokens of context down to 7,500". Both figures are now taken
+  either side of the swap itself, and when the record the summariser writes
+  is longer than the turns it replaced, the line says so rather than claiming
+  a drop that did not happen.
+
+  Recall references no longer crowd the thread. A turn that used four memories
+  used to write all four names into the conversation; now it says "recalled 4
+  memories", and tapping that line unfolds the names. Tapping a name opens the
+  memory itself -- what kind of thing it is, its name, and the text the agent
+  kept -- over the chat, and closing it leaves the conversation where it was.
+  The Mind page is a tap further on, from the bottom of that card.
 
 dependencies: []
 path: ""

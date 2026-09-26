@@ -556,13 +556,29 @@ function browserFor(session: Session): LiveBrowser {
  * than a flag. Each running tool registers a way to be killed, and Stop calls
  * all of them.
  */
-type RunningTurn = { stopped: boolean; cancels: Set<() => void>; signal?: AbortSignal };
+type RunningTurn = {
+  stopped: boolean;
+  /** The person is sending a new message: this turn dies, and nothing is
+      said about it -- the reply they asked for is the next thing they read. */
+  superseded?: boolean;
+  cancels: Set<() => void>;
+  signal?: AbortSignal;
+};
 const running = new Map<string, RunningTurn>();
 
-function stopTurn(sessionId: string) {
+/**
+ * Stop the turn in this session.
+ *
+ * The reason is what the turn says about it on the way out: a turn the person
+ * stopped is worth a line ("Stopped."), a turn a new message pushed aside is
+ * not -- announcing it would sit between them and the answer they just asked
+ * for.
+ */
+function stopTurn(sessionId: string, why: "person" | "superseded" = "person") {
   const turn = running.get(sessionId);
   if (!turn) return;
   turn.stopped = true;
+  if (why === "superseded") turn.superseded = true;
   for (const cancel of turn.cancels) {
     try {
       cancel();
@@ -1899,7 +1915,7 @@ function startTurn(session: Session, text: string, attachments: AttachmentRef[] 
      button says so): the running turn is stopped, and this one starts once
      it has actually finished. */
   const prior = turnsInFlight.get(session.id);
-  if (prior) stopTurn(session.id);
+  if (prior) stopTurn(session.id, "superseded");
   const done = (prior ?? Promise.resolve()).then(() => beginTurn(session, text, attachments));
   const settled = done.then(() => undefined, () => undefined);
   turnsInFlight.set(session.id, settled);
@@ -2178,6 +2194,12 @@ async function runTurn(session: Session, text: string): Promise<TurnResult> {
           console.warn(`[context] ${session.id}: compaction failed: ${report.error}`);
           return;
         }
+        const size = (n: number) => n.toLocaleString("en-US");
+        /* The fold usually shrinks the prompt and sometimes does not: the
+           record it wrote can be longer than the turns it replaced. Said
+           either way, rather than as a drop that did not happen -- "6,000
+           tokens down to 7,500" is not a sentence. */
+        const shrink = report.tokensBefore - report.tokensAfter;
         console.log(
           `[context] ${session.id}: folded ${report.folded} messages ` +
             `(~${report.tokensBefore} -> ~${report.tokensAfter} tokens)`,
@@ -2186,8 +2208,9 @@ async function runTurn(session: Session, text: string): Promise<TurnResult> {
           message:
             `Condensed ${report.folded} earlier message${report.folded === 1 ? "" : "s"} ` +
             "into working memory, in the background " +
-            `(about ${report.tokensBefore.toLocaleString("en-US")} tokens of context ` +
-            `down to ${report.tokensAfter.toLocaleString("en-US")}).`,
+            (shrink > 0
+              ? `(about ${size(report.tokensBefore)} tokens of context down to ${size(report.tokensAfter)}).`
+              : `(about ${size(report.tokensBefore)} tokens of context; the prompt stands at ${size(report.tokensAfter)} now).`),
           context: { ...context.gauge("", report.tokensAfter), condensed: true },
         });
       };
@@ -2563,13 +2586,17 @@ async function runTurn(session: Session, text: string): Promise<TurnResult> {
     // something useful rather than leaving the turn blank.
     if (!connected) result.error = active.problem ?? "No model is connected.";
     if (streamed === 0) {
-      let reply: string;
+      let reply: string | null;
       if (!connected) {
         reply =
           "I don't have a model to think with yet, so I can't answer this. Add a " +
           "key for a provider in Settings, then send it again.";
       } else if (running.get(session.id)?.stopped) {
-        reply = "Stopped.";
+        /* A message that arrived while this turn ran has already started the
+           next turn: the person is about to read the answer to what they
+           typed, and a "Stopped." beside it is the console talking about
+           itself. Only a turn the person stopped says so. */
+        reply = running.get(session.id)?.superseded ? null : "Stopped.";
       } else if (ranSomething) {
         /* Tools ran and the model never wrote a closing word. The work is
            in the transcript above, so point at it rather than inventing a
@@ -2584,12 +2611,14 @@ async function runTurn(session: Session, text: string): Promise<TurnResult> {
            in vaguer words would only bury it. */
         reply = "I couldn't get an answer from the model that turn. The error above says why.";
       }
-      /* `local` keeps this out of the history the model is shown next
-         turn -- see historyFor. */
-      // `setup` puts an Open Settings button under the reply.
-      emitEvent(session, "turn.agent.text", "agent", {
-        text: reply, local: true, ...(connected ? {} : { setup: true }),
-      });
+      if (reply !== null) {
+        /* `local` keeps this out of the history the model is shown next
+           turn -- see historyFor. */
+        // `setup` puts an Open Settings button under the reply.
+        emitEvent(session, "turn.agent.text", "agent", {
+          text: reply, local: true, ...(connected ? {} : { setup: true }),
+        });
+      }
     }
 
     emitEvent(session, "turn.agent.done", "agent", {});

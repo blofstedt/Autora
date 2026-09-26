@@ -580,6 +580,12 @@ export class ContextEngine {
 
       // The swap. Synchronous from here to the end of the block, so no other
       // callback -- the agent loop included -- can observe it half done.
+      /* Both figures are taken here, either side of the swap with
+         nothing in between: the turn kept working while the summariser
+         ran, so measuring "before" when the fold was asked for and "after"
+         when it landed compared two different histories -- and could
+         report the context growing, as in "6,000 tokens down to 7,500". */
+      const promptBefore = estimateTokens(this.systemFor(pinned), this.active);
       const before = this.active.length;
       this.anchored = written;
       this.folded = Math.max(this.folded, job.watermark);
@@ -590,7 +596,7 @@ export class ContextEngine {
         ok: true,
         folded: before - this.active.length,
         kept: this.active.length,
-        tokensBefore: job.tokensBefore,
+        tokensBefore: promptBefore,
         tokensAfter: estimateTokens(this.systemFor(pinned), this.active),
       };
     } catch (err: any) {
