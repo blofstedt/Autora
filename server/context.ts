@@ -337,6 +337,30 @@ export class ContextEngine {
     }
   }
 
+  /**
+   * Keep only the newest picture the model was handed.
+   *
+   * A screenshot is worth one look, and it is big: every later request of the
+   * thread would otherwise carry it, and the one before it, and the one
+   * before that, at about a thousand tokens and a megabyte of base64 each.
+   * The older ones are dropped from the reply they came with -- what was
+   * learned from them has been said in words by now, and the person can see
+   * every one of them in the thread.
+   */
+  supersedePictures() {
+    let kept = false;
+    for (let i = this.active.length - 1; i >= 0; i -= 1) {
+      for (const reply of this.active[i].replies ?? []) {
+        if (!reply.images?.length) continue;
+        if (!kept) {
+          kept = true;
+          continue;
+        }
+        delete reply.images;
+      }
+    }
+  }
+
   /** Whether a snapshot the model was given is still in what it is sent. */
   private pageAvailable(id: string): boolean {
     if (this.pendingPages.has(id)) return true;

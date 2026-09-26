@@ -24,6 +24,7 @@ import type { JevTarget } from "./server/jev/engine";
 import { guardWorthy, irreversible } from "./server/jev/guard";
 import { prune, storageReport } from "./server/retention";
 import { hostVitals } from "./server/host";
+import { ensureHostNames } from "./server/hosts";
 import { forgetSpeech, speak as synthesise, speechStatus } from "./server/speech";
 import { captureConsole, log, readLogs, setLogRedactor, type LogLevel } from "./server/logs";
 import { allowSocket, refuseRequest } from "./server/crosssite";
@@ -2387,8 +2388,8 @@ async function runTurn(session: Session, text: string): Promise<TurnResult> {
 
         for (const use of turn.calls) {
           const span = `span-${session.id}-${session.seqCounter}-${spans++}`;
-          const reply = (ok: boolean, result: string): void => {
-            replies.push({ id: use.id, name: use.name, ok, result });
+          const reply = (ok: boolean, result: string, images?: ToolReply["images"]): void => {
+            replies.push({ id: use.id, name: use.name, ok, result, images });
           };
 
           if (running.get(session.id)?.stopped) {
@@ -2555,7 +2556,7 @@ async function runTurn(session: Session, text: string): Promise<TurnResult> {
           reply(outcome.ok, watched(
             spec.name, use.args, outcome.ok, outcome.summary,
             context.ingest(spec.name, outcome.summary, canReadVault),
-          ));
+          ), outcome.images);
           if (loopStop) break;
         }
 
@@ -2574,6 +2575,7 @@ async function runTurn(session: Session, text: string): Promise<TurnResult> {
 
         context.append({ role: "tool", replies }, session.seqCounter);
         context.supersedePages(canReadVault);
+        context.supersedePictures();
 
         if (loopStop) {
           emitEvent(session, "system.log", "system", { message: loopStop });
@@ -2647,6 +2649,15 @@ async function runTurn(session: Session, text: string): Promise<TurnResult> {
 async function startServer() {
   const app = express();
   app.disable("x-powered-by");
+
+  /* The person reaches this app by a name the container has never heard of --
+     the host on its tailnet -- and Docker gives a container only its own name.
+     Put it in /etc/hosts at start, so the agent can open the app it is running
+     in without a fresh hand-edit after every recreation (server/hosts.ts).
+     Best-effort: never a reason not to start. */
+  void Promise.resolve()
+    .then(() => ensureHostNames((line) => log("info", "hosts", line)))
+    .catch(() => undefined);
 
   /* The https copy of the app, when AUTORA_TLS asks for one (see
      server/tls.ts). Read here so /api/origin can say whether it is up. */

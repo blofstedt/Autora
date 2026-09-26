@@ -43,6 +43,10 @@ export interface ToolReply {
   name: string;
   result: string;
   ok: boolean;
+  /** Pictures the tool handed back -- a screenshot, mostly. Carried here
+      rather than in `result`, which is text; what the model reads is put
+      together per vendor, and OpenAI has nowhere else to put one. */
+  images?: ChatImage[];
 }
 
 /**
@@ -301,7 +305,7 @@ function openAiHeaders(call: ChatCall): Record<string, string> {
  * right here rather than trusted: a missing reply is filled in as not run, and
  * a stray one is dropped.
  */
-function openAiMessages(call: ChatCall): any[] {
+export function openAiMessages(call: ChatCall): any[] {
   const out: any[] = [];
   if (call.system) out.push({ role: "system", content: call.system });
   // DeepSeek thinks by default, and with tools on it wants that thinking back
@@ -350,6 +354,22 @@ function openAiMessages(call: ChatCall): any[] {
           role: "tool",
           tool_call_id: id,
           content: reply?.result || (reply ? "(no output)" : "Not run: no result was recorded for this call."),
+        });
+      }
+      /* A picture a call handed back. There is no room for one inside a tool
+         result here, so it follows as the next user message -- which is where
+         a person would put it too. */
+      const shown = replies.filter((r) => r.images?.length);
+      if (shown.length > 0) {
+        out.push({
+          role: "user",
+          content: [
+            { type: "text", text: "The picture from the call above, as it came back." },
+            ...shown.flatMap((r) => (r.images ?? []).map((img) => ({
+              type: "image_url",
+              image_url: { url: `data:${img.mime};base64,${img.data}` },
+            }))),
+          ],
         });
       }
       continue;
@@ -487,18 +507,23 @@ async function streamOpenAi(call: ChatCall, onDelta: (text: string) => void): Pr
  * empty string is a 400, and a turn that was nothing but tool calls has exactly
  * that.
  */
-function anthropicMessages(call: ChatCall): any[] {
+export function anthropicMessages(call: ChatCall): any[] {
   const out = call.messages.map((message) => {
     if (message.role === "tool") {
-      return {
-        role: "user",
-        content: (message.replies ?? []).map((reply) => ({
-          type: "tool_result",
-          tool_use_id: reply.id,
-          content: reply.result,
-          ...(reply.ok ? {} : { is_error: true }),
-        })),
-      };
+      const blocks: any[] = (message.replies ?? []).map((reply) => ({
+        type: "tool_result",
+        tool_use_id: reply.id,
+        content: reply.result,
+        ...(reply.ok ? {} : { is_error: true }),
+      }));
+      /* A picture a call handed back goes in after the results: this message
+         is one user turn, and Anthropic takes an image block in it. */
+      for (const reply of message.replies ?? []) {
+        for (const img of reply.images ?? []) {
+          blocks.push({ type: "image", source: { type: "base64", media_type: img.mime, data: img.data } });
+        }
+      }
+      return { role: "user", content: blocks };
     }
 
     const content: any[] = [];
@@ -673,21 +698,25 @@ function fromSdk(err: any): ProviderError {
  * name alone. So the ids the rest of this module relies on are ours, invented
  * at parse time, and dropped again here.
  */
-function geminiContents(call: ChatCall): any[] {
+export function geminiContents(call: ChatCall): any[] {
   return call.messages.map((message) => {
     if (message.role === "tool") {
-      return {
-        role: "user",
-        parts: (message.replies ?? []).map((reply) => ({
-          functionResponse: {
-            name: reply.name,
-            // The payload must be an object; the string goes inside it. A
-            // failure travels as an `error` key so the model can tell a tool
-            // that reported a problem from one that returned prose about one.
-            response: reply.ok ? { result: reply.result } : { error: reply.result },
-          },
-        })),
-      };
+      const parts: any[] = (message.replies ?? []).map((reply) => ({
+        functionResponse: {
+          name: reply.name,
+          // The payload must be an object; the string goes inside it. A
+          // failure travels as an `error` key so the model can tell a tool
+          // that reported a problem from one that returned prose about one.
+          response: reply.ok ? { result: reply.result } : { error: reply.result },
+        },
+      }));
+      /* A picture a call handed back, beside the result it belongs to. */
+      for (const reply of message.replies ?? []) {
+        for (const img of reply.images ?? []) {
+          parts.push({ inlineData: { mimeType: img.mime, data: img.data } });
+        }
+      }
+      return { role: "user", parts };
     }
 
     const parts: any[] = [];

@@ -94,6 +94,33 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
+  Three things that were getting in the way of ordinary work.
+
+  Autora can open the app it is running in. The console lives in a container
+  that had never heard the hostname its own host answers to, so the agent
+  opening the app at its own address — the tailnet name, the one a browser
+  uses — got a name that would not resolve, and it had to be typed into
+  /etc/hosts by hand again after every container recreation. Autora now asks
+  Tailscale on the host what the machine is called and what address it answers
+  on, and keeps its own /etc/hosts up to date at startup. Nothing is hardcoded
+  and a machine without Tailscale is simply left alone.
+
+  A screenshot comes back to the agent. browser_screenshot took a picture and
+  put it on the screen for the person, while the model was told it could not
+  see it — so "what does this page look like", a page stuck halfway drawn, a
+  click that did nothing, were answerable only from the page text. The picture
+  now arrives in the result as well, given to the model the way an attachment
+  is. Only the newest one is kept: a screenshot is worth one glance, and the
+  ones before it would otherwise be re-sent on every later call.
+
+  Saved details work in API calls. The person’s own details and site sign-ins
+  could be filled into a browser form and nowhere else, so reaching a service
+  that wants a key meant driving it through a browser. Placeholders are now
+  filled in http_request as well — in the address, in a header, in the body —
+  so a call can carry them directly. A sign-in saved for one site is still
+  refused on another, and one that does not exist says so instead of being
+  sent as literal text.
+
   Choosing a model no longer opens the operating system's own menu in its own
   font over a dark app. The Model row opens a card, the way sessions, a memory
   and the cost card already do: every model listed with what it is for and what

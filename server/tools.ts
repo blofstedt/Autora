@@ -37,6 +37,7 @@ import path from "node:path";
 import { GoogleGenAI } from "@google/genai";
 import { mergeTools, save, state, allSecrets, keyFor, secretFor, redactSecrets as redactStored } from "./state";
 import { credentialsBriefing, fillPlaceholders, hasPlaceholder, identityEnv, redactCredentials } from "./credentials";
+import type { ChatImage } from "./llm";
 import { htmlToText, textParts } from "./pages";
 import { describeCaptchas, probeBrowser, VIEWPORT, type LiveBrowser, type PageRead, type UploadFile } from "./browser";
 import { parseCookieExport, sitesOf } from "./cookies";
@@ -472,10 +473,12 @@ const TOOLS: ToolSpec[] = [
     name: "browser_screenshot",
     group: "browser",
     description:
-      "Put a picture of the open page on the browser screen, for the person to " +
-      "look at. Use this when asked what something looks like -- the page text " +
-      "you already have cannot answer that. You do not get the image back; it " +
-      "goes to the person watching.",
+      "Take a picture of the open page. You get it back in the result, so this " +
+      "is how to see a page rather than read it: use it when asked what " +
+      "something looks like, when a page is stuck or half drawn, or when " +
+      "something is on it that its text does not mention. The person sees it " +
+      "too, on the browser screen. It is the last picture kept: an earlier one " +
+      "is dropped when a new one arrives.",
     parameters: { type: "object", properties: {} },
   },
   {
@@ -522,7 +525,11 @@ const TOOLS: ToolSpec[] = [
       "with custom headers and body. For APIs and data files, not for looking at websites: use " +
       "browser_open for those, which the person can watch. A web page fetched here comes back as " +
       "its readable text, not its HTML. If calling api.github.com, automatically attaches the " +
-      "GITHUB_TOKEN from the workspace secret store so you never need to ask the user for passwords.",
+      "GITHUB_TOKEN from the workspace secret store so you never need to ask the user for passwords. " +
+      "The person's saved details and sign-ins go in as placeholders -- {{cred:first_name}}, " +
+      "{{cred:github.com:password}} -- in the url, in any header value or in the body; the real " +
+      "value is substituted for you and never appears in the transcript. A sign-in is only " +
+      "substituted into a request to a site it belongs to.",
     parameters: {
       type: "object",
       properties: {
@@ -583,9 +590,10 @@ const TOOLS: ToolSpec[] = [
     name: "computer_screenshot",
     group: "computer",
     description:
-      "Take a picture of the relayed desktop and put it on the desktop screen " +
-      "for the person to see. Coordinates for the click and move tools are in " +
-      "that screen's own pixels, whose full size is given in the result.",
+      "Take a picture of the relayed desktop. You get it back in the result, so " +
+      "this is how to see the screen; the person sees it too. Coordinates for " +
+      "the click and move tools are in that screen's own pixels, whose full " +
+      "size is given in the result.",
     parameters: { type: "object", properties: {} },
   },
   {
@@ -1344,6 +1352,10 @@ export interface ToolOutcome {
   /** For the transcript card, where it differs from the summary. */
   preview?: string;
   exitCode?: number;
+  /** Pictures that came back with the result, which the model is handed
+      rather than told about. The tool was asked for a look, and text about a
+      picture is not a look. */
+  images?: ChatImage[];
 }
 
 /**
@@ -1799,11 +1811,29 @@ async function runHttpRequest(args: {
     headers["User-Agent"] = "Autora/1.0";
   }
 
+  /* The person's saved details, in the address, any header value or the
+     body: {{cred:github.com:password}}, {{cred:email}}. Filled in here, the
+     way they are in a page, and never carried further -- the request goes out
+     with the real value, the transcript and the log keep the placeholder.
+     Which sign-in may be used is decided by the site the request is going to,
+     so a sign-in saved for one site cannot be spent on another. */
+  let target = url;
+  let body = args.body;
   try {
-    const res = await fetch(url, {
+    target = fillPlaceholders(url, url);
+    for (const [name, value] of Object.entries(headers)) {
+      headers[name] = fillPlaceholders(value, target);
+    }
+    if (body) body = fillPlaceholders(body, target);
+  } catch (err: unknown) {
+    return { ok: false, summary: `http_request: ${err instanceof Error ? err.message : String(err)}` };
+  }
+
+  try {
+    const res = await fetch(target, {
       method,
       headers,
-      body: ["GET", "HEAD"].includes(method) ? undefined : args.body,
+      body: ["GET", "HEAD"].includes(method) ? undefined : body,
       signal: requestSignal(ctx, REQUEST_TIMEOUT_MS),
     });
 
@@ -1836,6 +1866,22 @@ async function runHttpRequest(args: {
     return { ok: false, summary: `HTTP request failed: ${redactSecrets(fetchFailure(err, REQUEST_TIMEOUT_MS))}` };
   }
 }
+
+/**
+ * A picture for the model, or null when it is too big to hand over.
+ *
+ * Vendors cap a picture at a few megabytes, and a page of photographs shot at
+ * the full window can pass that; a call that fails on the request is worse
+ * than one that says the picture is only on the person's screen.
+ */
+function pictureFor(image: Buffer, mime: string): ChatImage | null {
+  if (image.byteLength > PICTURE_LIMIT_BYTES) return null;
+  return { mime, data: image.toString("base64") };
+}
+
+/** Three and a half megabytes: under every vendor's four-to-five, with the
+    base64 inflation and the rest of the request to spare. */
+const PICTURE_LIMIT_BYTES = 3_500_000;
 
 /** A file name from a sentence: a few lowercase words, hyphenated. */
 function slug(text: string): string {
@@ -2134,13 +2180,23 @@ async function runToolUnredacted(
         const blob = ctx.putBlob(png, "image/png");
         const status = live.status();
         ctx.showScreen("browser", blob, { w: VIEWPORT.width, h: VIEWPORT.height });
+        /* The picture goes to the model as well, in the result. It used to
+           say here that she could not see it, which left "what does the page
+           look like" answerable only from the text -- and a screenshot asked
+           for because a page is stuck, or because something looks wrong, is
+           exactly the question the text cannot answer. */
+        const picture = pictureFor(png, "image/png");
         return {
           ok: true,
           summary:
-            "The picture is now on the browser screen, where the person can see " +
-            "it. You cannot see it yourself -- describe the page from its text " +
-            "if you need to say what is on it.",
+            "A picture of the page as it is now is in this result, and on the " +
+            "browser screen where the person can see it. This is the only way to " +
+            "see the page rather than read it: use it when the person asks what " +
+            "something looks like, when a page seems to be stuck, or when a click " +
+            "did nothing and the text gives no reason." +
+            (picture ? "" : " It is too large to hand back as a picture; it is on the person's screen."),
           preview: status.url ?? "screenshot",
+          ...(picture ? { images: [picture] } : {}),
         };
       }
 
@@ -2358,20 +2414,25 @@ async function runToolUnredacted(
         if (!result.ok) return { ok: false, summary: result.error ?? "The screenshot failed." };
         const image = String(result.data?.image ?? "");
         if (!image) return { ok: false, summary: "The relay sent back no picture." };
-        const blob = ctx.putBlob(Buffer.from(image, "base64"), "image/jpeg");
+        const buffer = Buffer.from(image, "base64");
+        const blob = ctx.putBlob(buffer, "image/jpeg");
         const w = Number(result.data?.w) || null;
         const h = Number(result.data?.h) || null;
         ctx.showScreen("desktop", blob, w && h ? { w, h } : undefined);
+        const picture = pictureFor(buffer, "image/jpeg");
         return {
           ok: true,
-          summary:
-            `The desktop is now shown in the conversation for the person to see.${
-              w && h
-                ? ` Its screen is ${w}×${h} pixels; click and move coordinates ` +
-                  "are in that space, measured from the top-left."
-                : ""
-            } You cannot see the picture yourself.`,
+          summary: [
+            "The desktop is now shown in the conversation for the person to see,",
+            "and the picture is in this result for you to look at.",
+            w && h
+              ? `Its screen is ${w}×${h} pixels; click and move coordinates are in that` +
+                " space, measured from the top-left."
+              : "",
+            picture ? "" : "It is too large to hand back as a picture; it is on the person's screen.",
+          ].filter(Boolean).join(" "),
           preview: w && h ? `${w}×${h}` : "desktop",
+          ...(picture ? { images: [picture] } : {}),
         };
       }
 
