@@ -599,6 +599,12 @@ export function useSpeech(): Speech {
   /** Sentences the model repeats -- "Done.", a status line -- cost a round
       trip each otherwise, and a round trip is seconds of synthesis. */
   const clips = useRef(new Map<string, Blob>());
+  /** The voice id the last answer from the console named, so a change to it
+      is noticed as well as a change of service. */
+  const spokenAs = useRef<string | null>(null);
+  /** Bumped when the voice changes, so a clip rendered for the old one is
+      played if it is already on its way, but never kept for next time. */
+  const clipGen = useRef(0);
 
   useEffect(() => {
     if (!speechSupported) return;
@@ -617,12 +623,49 @@ export function useSpeech(): Speech {
       .then((status) => {
         if (!alive) return;
         serverVoice.current = Boolean(status?.available);
+        spokenAs.current = status?.voice ?? null;
         setSource(status?.available ? "server" : "browser");
       })
       .catch(() => {
         if (alive) serverVoice.current = false;
       });
     return () => { alive = false; };
+  }, []);
+
+  /* The answer this page got at load is not the answer forever: the key gets
+     pasted, the app is updated, the machine restarts, the voice is changed in
+     Settings. A page left open kept whichever voice it started with until it
+     was reloaded, so ask again each time the window is brought back and switch
+     over where the conversation stands, with no reload and nothing said
+     twice. */
+  useEffect(() => {
+    const recheck = () => {
+      if (document.visibilityState !== "visible") return;
+      void fetchSpeechStatus()
+        .then((status) => {
+          const can = Boolean(status?.available);
+          const voice = status?.voice ?? null;
+          if (can === serverVoice.current && voice === spokenAs.current) return;
+          /* Anything already made was made in the old voice, or by the other
+             service, and must not be heard after this one. */
+          clipGen.current += 1;
+          clips.current.clear();
+          fetching.current.clear();
+          serverVoice.current = can;
+          spokenAs.current = voice;
+          setSource(can ? "server" : "browser");
+        })
+        .catch(() => {
+          /* Unreachable is not the same as gone: keep the last answer rather
+             than dropping to the browser's voice for a blip. */
+        });
+    };
+    window.addEventListener("focus", recheck);
+    document.addEventListener("visibilitychange", recheck);
+    return () => {
+      window.removeEventListener("focus", recheck);
+      document.removeEventListener("visibilitychange", recheck);
+    };
   }, []);
 
   const sayBrowser = useCallback((text: string) => {
@@ -647,6 +690,7 @@ export function useSpeech(): Speech {
 
   /** One fragment as an audio file, from the console or from last time. */
   const clip = useCallback((text: string): Promise<Blob> => {
+    const gen = clipGen.current;
     const held = clips.current.get(text);
     if (held) return Promise.resolve(held);
     const going = fetching.current.get(text);
@@ -662,6 +706,9 @@ export function useSpeech(): Speech {
       if (!res.ok) throw new Error(`speech ${res.status}`);
       const blob = await res.blob();
       if (blob.size === 0) throw new Error("speech: empty recording");
+      /* Already on its way when the voice changed: let it play if it is next,
+         but do not keep it for the one after. */
+      if (clipGen.current !== gen) return blob;
       // Small and cleared whole: a handful of sentences is all this ever
       // holds, and a stale voice after changing it is worse than
       // re-synthesising.

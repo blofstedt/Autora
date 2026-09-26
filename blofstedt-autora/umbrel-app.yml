@@ -96,11 +96,14 @@ gallery: []
 releaseNotes: >-
   Replies are read aloud through Deepgram's hosted voices when a
   DEEPGRAM_API_KEY is set — nothing to run, and the same voice on every
-  device. There is now one voice service and one key: the Kokoro server it
-  used to look for on the network is gone, so Settings → Voice is a single
-  picker of the voices Deepgram itself offers, with a sample of each, and a
-  voice saved from Kokoro falls back to the default instead of refusing every
-  sentence. With no key, the browser's own voice carries on as before.
+  device. The voice service is now checked again every time the page is
+  brought back to the front, so a key pasted, an update installed or a voice
+  changed in Settings is picked up in the open tab instead of only after a
+  reload. There is one voice service and one key: the Kokoro server it used to
+  look for on the network is gone, so Settings → Voice is a single picker of
+  the voices Deepgram itself offers, with a sample of each, and a voice saved
+  from Kokoro falls back to the default instead of refusing every sentence.
+  With no key, the browser's own voice carries on as before.
 dependencies: []
 path: ""
 defaultUsername: ""
