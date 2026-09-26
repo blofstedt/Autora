@@ -308,6 +308,11 @@ export function KnowledgeWeb({
   );
 }
 
+/** How far the map may be scaled: the wheel, a pinch and Fit all stop here. */
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 3;
+const clampZoom = (k: number) => Math.min(Math.max(k, MIN_ZOOM), MAX_ZOOM);
+
 /** Force-directed layout, run on rAF until it settles. */
 function Graph({
   data, selected, onSelect, recent,
@@ -327,9 +332,17 @@ function Graph({
   const [, tick] = useState(0);
   const [size, setSize] = useState({ w: 900, h: 700 });
   const fittedRef = useRef("");
+  /* True once the reader has moved the map by hand: from then on the frame is
+     theirs, and the layout does not touch it. */
+  const touchedRef = useRef(false);
   const nodesRef = useRef<Node[]>([]);
   const viewRef = useRef({ x: 0, y: 0, k: 1 });
   const dragRef = useRef<{ id: string | null; x: number; y: number } | null>(null);
+  /* Every finger on the map, by pointer id, and the pinch in progress. Two
+     fingers are a zoom: the distance between them against the distance they
+     started at, about the middle of the map. One finger is a pan, as before. */
+  const pointersRef = useRef(new Map<number, { x: number; y: number }>());
+  const pinchRef = useRef<{ d: number; k: number } | null>(null);
 
   const edges = useMemo(() => edgesFor(data), [data]);
 
@@ -369,13 +382,28 @@ function Graph({
   const fit = useCallback(() => {
     const nodes = nodesRef.current;
     if (!nodes.length) return;
-    const pad = 90;
-    const xs = nodes.map((n) => n.x), ys = nodes.map((n) => n.y);
-    const w = Math.max(...xs) - Math.min(...xs) || 1;
-    const h = Math.max(...ys) - Math.min(...ys) || 1;
-    const cx = (Math.max(...xs) + Math.min(...xs)) / 2;
-    const cy = (Math.max(...ys) + Math.min(...ys)) / 2;
-    const k = Math.min((size.w - pad * 2) / w, (size.h - pad * 2) / h, 1.6);
+    // What has to be on screen is not the dots, it is the dots and their
+    // names: a fit that clips the label off every node on the edge has not
+    // fitted anything. Each node's box is its circle, widened to whichever is
+    // longer of that and half its name (10px text, ~2.6px a character), and
+    // taken far enough down to clear the line the name sits on.
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const n of nodes) {
+      const half = Math.max(n.r, Math.min(n.record.title.length, 28) * 2.6);
+      minX = Math.min(minX, n.x - half);
+      maxX = Math.max(maxX, n.x + half);
+      minY = Math.min(minY, n.y - n.r);
+      maxY = Math.max(maxY, n.y + Math.max(n.r, n.r + 22));
+    }
+    const pad = 14;
+    const w = Math.max(maxX - minX, 1);
+    const h = Math.max(maxY - minY, 1);
+    // As close as the viewport allows, with room to breathe at the edges --
+    // and no further in than a pinch could take you, so Fit is a zoom you can
+    // reach (and leave) by hand.
+    const k = clampZoom(Math.min((size.w - pad * 2) / w, (size.h - pad * 2) / h));
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
     viewRef.current = { k, x: -cx * k, y: -cy * k };
     tick((t) => t + 1);
   }, [size.w, size.h]);
@@ -387,6 +415,7 @@ function Graph({
   useEffect(() => {
     let raf = 0;
     let alpha = 1;
+    let frames = 0;
     const byId = () => new Map(nodesRef.current.map((n) => [n.id, n]));
 
     const step = () => {
@@ -425,6 +454,11 @@ function Graph({
         node.y += node.vy * alpha;
       }
       alpha *= 0.994;
+      frames += 1;
+      // Framed while it moves, not half a minute later. The graph sprawls as
+      // it settles, so a fit taken at the start is wrong by the second frame;
+      // it is re-taken as the layout grows, until the reader says otherwise.
+      if (!touchedRef.current && frames % 6 === 0) fitRef.current();
       tick((t) => t + 1);
       if (alpha > 0.02) {
         raf = requestAnimationFrame(step);
@@ -438,6 +472,25 @@ function Graph({
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
   }, [ids, edges]);
+
+  /** A finger off the map: the pinch is re-anchored, or ends. */
+  const release = (pointerId: number) => {
+    pointersRef.current.delete(pointerId);
+    if (pointersRef.current.size < 2) pinchRef.current = null;
+    const [one] = [...pointersRef.current.values()];
+    // One finger left down after a pinch keeps panning, from where it is,
+    // instead of doing nothing until it is lifted and put back.
+    dragRef.current = pinchRef.current || !one || dragRef.current?.id
+      ? null
+      : { id: null, x: one.x - viewRef.current.x, y: one.y - viewRef.current.y };
+    tick((t) => t + 1);
+  };
+
+  /** How far apart the two fingers on the map are. */
+  const spread = () => {
+    const [a, b] = [...pointersRef.current.values()];
+    return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
+  };
 
   const toWorld = (e: { clientX: number; clientY: number }) => {
     const box = hostRef.current!.getBoundingClientRect();
@@ -459,19 +512,48 @@ function Graph({
       className="kgraph"
       ref={hostRef}
       onWheel={(e) => {
-        const next = Math.min(Math.max(view.k * (e.deltaY < 0 ? 1.12 : 0.89), 0.25), 3);
+        touchedRef.current = true;
+        const next = clampZoom(view.k * (e.deltaY < 0 ? 1.12 : 0.89));
         viewRef.current = { ...view, k: next };
         tick((t) => t + 1);
       }}
+      /* Counted before the handlers below see it, and in the capture phase
+         because a node stops its own presses bubbling: two fingers landing on
+         two memory dots are as much a pinch as two on the empty map. */
+      onPointerDownCapture={(e) => {
+        pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (pointersRef.current.size === 2) {
+          dragRef.current = null;
+          pinchRef.current = { d: spread(), k: viewRef.current.k };
+        }
+      }}
       onPointerDown={(e) => {
+        if (pinchRef.current) return;
         if ((e.target as HTMLElement).closest("[data-node]")) return;
         dragRef.current = { id: null, x: e.clientX - view.x, y: e.clientY - view.y };
         (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
       }}
       onPointerMove={(e) => {
+        if (pointersRef.current.has(e.pointerId)) {
+          pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        }
+        const pinch = pinchRef.current;
+        if (pinch && pointersRef.current.size >= 2) {
+          const d = spread();
+          if (pinch.d > 0 && d > 0) {
+            // Fingers apart: closer in. The map stays where it is -- the pan
+            // under a pinch is the other finger's job, and moving both at
+            // once makes the map slide out from under the fingers holding it.
+            touchedRef.current = true;
+            viewRef.current = { ...viewRef.current, k: clampZoom(pinch.k * (d / pinch.d)) };
+            tick((t) => t + 1);
+          }
+          return;
+        }
         const drag = dragRef.current;
         if (!drag) return;
         if (drag.id === null) {
+          touchedRef.current = true;
           viewRef.current = { ...view, x: e.clientX - drag.x, y: e.clientY - drag.y };
         } else {
           const node = index.get(drag.id);
@@ -482,8 +564,9 @@ function Graph({
         }
         tick((t) => t + 1);
       }}
-      onPointerUp={() => { dragRef.current = null; }}
-      onPointerLeave={() => { dragRef.current = null; }}
+      onPointerUp={(e) => release(e.pointerId)}
+      onPointerCancel={(e) => release(e.pointerId)}
+      onPointerLeave={(e) => { if (e.pointerType !== "touch") release(e.pointerId); }}
     >
       <svg className="kgraph-svg">
         <defs>
@@ -526,6 +609,8 @@ function Graph({
                            `is-${r.status}`}
                 onPointerDown={(e) => {
                   e.stopPropagation();
+                  // A second finger down is a pinch, not a node being dragged.
+                  if (pointersRef.current.size > 1) return;
                   dragRef.current = { id: node.id, x: 0, y: 0 };
                 }}
                 onClick={() => onSelect(selected === node.id ? null : node.id)}
@@ -562,7 +647,7 @@ function Graph({
         </g>
       </svg>
       <button className="btn ghost kgraph-fit" onClick={fit}>Fit</button>
-      <div className="kgraph-hint">drag to pan · scroll to zoom · click a node</div>
+      <div className="kgraph-hint">drag to pan · pinch or scroll to zoom · click a node</div>
     </div>
   );
 }

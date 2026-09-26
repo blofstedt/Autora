@@ -91,7 +91,14 @@ function MemoryPeek({
   const title = detail?.title ?? item.title;
 
   return createPortal(
-    <div className="scrim" onClick={onClose} role="presentation">
+    <div
+      className="scrim"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClose();
+      }}
+      role="presentation"
+    >
       <div
         className="modal peek"
         role="dialog"

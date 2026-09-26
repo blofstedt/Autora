@@ -94,30 +94,30 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Stop is /Stop. The small square badge that sat on the corner of Send is
-  gone: the composer is the box, Send and the commands again, and typing
-  /Stop in the box is how a turn is stopped.
+  The Mind's map frames itself. Open the Map and the whole graph is on screen
+  from the first moment, names included -- a fit that took the dots and left
+  the labels off the edge was not fitting anything -- and it keeps itself in
+  frame while the layout is still spreading out, rather than settling outside
+  the window and jumping into it afterwards. The moment you pan or zoom, the
+  frame is yours and the layout leaves it alone; Fit brings it back, and two
+  fingers on the map now zoom it as well as the wheel does.
 
-  Sending a message while the agent is working no longer leaves a "Stopped."
-  line above the answer. The turn that message interrupted is dropped without
-  a word about it, and the next thing in the thread is the reply you asked
-  for.
+  Tapping the cost bar opens the figures over the chat instead of taking the
+  conversation off the screen to do it: the month against the ceiling you set,
+  today, all time and this session, with Usage -- ceiling and all -- one
+  button further on.
 
-  And the condensing line says what happened. It compared the prompt as it
-  stood when the fold was asked for against the prompt when it landed, with
-  the turn working in between, so it could report the context growing --
-  "about 6,000 tokens of context down to 7,500". Both figures are now taken
-  either side of the swap itself, and when the record the summariser writes
-  is longer than the turns it replaced, the line says so rather than claiming
-  a drop that did not happen.
+  Back leaves Autora for the Umbrel dashboard, not out of the app. Installed
+  to a phone, back is a system gesture, and with nothing behind the app it
+  closed Autora and left you nowhere. The app now answers the first back
+  itself: whatever is open over the chat closes, and the back after that
+  steps out to the dashboard -- which is the same address with Autora's port
+  taken off, so it is the dashboard that opens rather than a second copy of
+  the app.
 
-  Recall references no longer crowd the thread. A turn that used four memories
-  used to write all four names into the conversation; now it says "recalled 4
-  memories", and tapping that line unfolds the names. Tapping a name opens the
-  memory itself -- what kind of thing it is, its name, and the text the agent
-  kept -- over the chat, and closing it leaves the conversation where it was.
-  The Mind page is a tap further on, from the bottom of that card.
-
+  And tapping outside a card closes it again. The click was read as a second
+  tap on the bar that opened the card, which closed it and reopened it in the
+  same gesture, so the backdrop looked dead.
 dependencies: []
 path: ""
 defaultUsername: ""

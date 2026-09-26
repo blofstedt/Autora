@@ -30,6 +30,7 @@ import { useRelay } from "./components/RelaySetup";
 import { UpdateNotice } from "./components/UpdateNotice";
 import { SetupCard, Welcome } from "./components/SetupCard";
 import { flySpark, visible } from "./lib/presence";
+import { useBackOut } from "./lib/back";
 import { Notices } from "./components/Notices";
 import { AutoraMark, type MarkState } from "./components/AutoraMark";
 import { activity } from "./lib/activity";
@@ -57,6 +58,13 @@ const SPEAK_FRESH_S = 30;
 const EVENT_BATCH_MS = 66;
 
 export function App() {
+  /* Back, on a phone, is the system gesture, and in an installed app with
+     nothing behind it, back means leaving. One entry of our own is pushed on
+     load so the first back is ours to answer: it closes what is open over the
+     chat, and otherwise steps out to the Umbrel dashboard rather than out of
+     the app. See src/lib/back.ts. */
+  useBackOut();
+
   const [sessionId, setSessionId] = useState<string | null>(
     () => new URLSearchParams(location.search).get("session"),
   );

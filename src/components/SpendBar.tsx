@@ -1,6 +1,7 @@
-import { memo } from "react";
+import { memo, useState } from "react";
 import { money } from "./Billing";
 import { spendView } from "../lib/spend";
+import { SpendPeek } from "./SpendPeek";
 
 /** What `/api/usage` answers with, as far as this bar is concerned. */
 export type Usage = {
@@ -15,7 +16,8 @@ export type Usage = {
  * cost against it; the brighter section at the right-hand end is what this
  * conversation accounts for. Without a ceiling the bar is the month so far,
  * which still answers the useful half of the question -- how much of this is
- * the chat I am in. A tap opens Usage, where the ceiling is set.
+ * the chat I am in. A tap opens a card of the figures over the chat -- see
+ * SpendPeek -- with Usage, ceiling and all, one button further on.
  *
  * Small, and never in the way: it says a number you would otherwise leave the
  * chat to look up, and the thread above it loses 14px for that.
@@ -31,6 +33,7 @@ export const SpendBar = memo(function SpendBar({
   budget: number | null;
   onOpen: () => void;
 }) {
+  const [open, setOpen] = useState(false);
   const view = spendView({ spent, session, budget });
   if (!view.show) return null;
 
@@ -46,12 +49,13 @@ export const SpendBar = memo(function SpendBar({
   const mine = session > 0 ? ` · ${money(session)} this session` : "";
 
   return (
+    <>
     <button
       type="button"
       className={`spend ${tone}`.trim()}
-      onClick={onOpen}
-      aria-label={`${said}${mine}. Open Usage.`}
-      title={`${said}${mine}${view.over ? " — over the ceiling you set" : view.near ? " — close to the ceiling you set" : ""}. Open Usage.`}
+      onClick={() => setOpen(true)}
+      aria-label={`${said}${mine}. Open what this has cost.`}
+      title={`${said}${mine}${view.over ? " — over the ceiling you set" : view.near ? " — close to the ceiling you set" : ""}. Open what this has cost.`}
     >
       <span className="spend-track" aria-hidden="true">
         <i
@@ -69,5 +73,13 @@ export const SpendBar = memo(function SpendBar({
         {session > 0 && <> · {money(session)} <span className="spend-words">this session</span></>}
       </span>
     </button>
+    {/* Beside the bar, not inside it: the card is a portal, so the DOM nesting
+        is irrelevant, but React's events still follow the React tree -- a
+        click on the card's backdrop would bubble up to the button that opened
+        it and the card would close and reopen in the same click. */}
+    {open && (
+      <SpendPeek session={session} onUsage={onOpen} onClose={() => setOpen(false)} />
+    )}
+    </>
   );
 });
