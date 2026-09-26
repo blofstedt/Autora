@@ -22,6 +22,7 @@ import { Schedule } from "./components/Schedule";
 import { Settings, type ConfigTab } from "./components/Settings";
 import { DictateButton } from "./components/DictateButton";
 import { AttachButton, CameraButton } from "./components/AttachButton";
+import { SpendBar, type Usage } from "./components/SpendBar";
 import { SlashMenu } from "./components/SlashMenu";
 import { resolve as resolveCommand, suggest as suggestCommands, type Command } from "./lib/commands";
 import { LiveChat } from "./components/LiveChat";
@@ -60,6 +61,10 @@ export function App() {
     () => new URLSearchParams(location.search).get("session"),
   );
   const [sessions, setSessions] = useState<SessionRow[]>([]);
+
+  /** This month's spend, for the bar over the composer. Read here, never
+      written: the ledger is the turns' own, one row each as they finish. */
+  const [usage, setUsage] = useState<Usage | null>(null);
   const [events, setEvents] = useState<AutoraEvent[]>([]);
   const [status, setStatus] = useState<StreamStatus>({ state: "connecting" });
   /** The newest frame off the session's browser, and whether there is one at
@@ -858,6 +863,22 @@ export function App() {
     fetch("/api/sessions").then((r) => r.json()).then(setSessions).catch(() => undefined);
   }, []);
 
+  const readUsage = useCallback(() => {
+    fetch("/api/usage").then((r) => r.json()).then(setUsage).catch(() => undefined);
+  }, []);
+
+  /* The ledger only moves when a turn finishes, so three reads cover it: one
+     at the start, one when a turn ends, and one when the window comes back --
+     the same reason the voice service is re-checked rather than decided once
+     and kept. Each is a single read of a number the server already holds. */
+  useEffect(() => {
+    readUsage();
+    window.addEventListener("focus", readUsage);
+    return () => window.removeEventListener("focus", readUsage);
+  }, [readUsage]);
+
+  useEffect(() => { if (!running) readUsage(); }, [running, readUsage]);
+
   const openSession = useCallback((id: string) => {
     pickSession(id);
     navigate("chat");
@@ -1209,6 +1230,18 @@ export function App() {
             ) : (
               <>
                 <div className={`composer-box ${draft.trim() || attached.length > 0 ? "has-text" : ""}`}>
+                  {/* What the month has cost against the ceiling set in
+                      Settings, with this session's share at the right-hand
+                      end. Nothing until the first read comes back, so the
+                      box never makes room for a number it does not have. */}
+                  {usage && (
+                    <SpendBar
+                      spent={usage.month.cost}
+                      session={sessionCost}
+                      budget={usage.budget.monthly_usd}
+                      onOpen={() => navigate("analytics")}
+                    />
+                  )}
                   {slashOpen && (
                     <SlashMenu
                       commands={slashOffered}
@@ -1290,15 +1323,11 @@ export function App() {
                   )}
                   <div className="composer-foot">
                     <div className="composer-tools">
-                      <DictateButton
-                        onText={appendDictation}
-                        disabled={readOnly}
-                        onBlocked={() => setVoiceHelp(true)}
-                        onTrouble={setNotice}
-                      />
-                      {/* In the row with Dictate, at every width. It used to
-                          float over the thread above Send on phones, where
-                          it covered the last line of whatever was there. */}
+                      {/* Leftmost in the row, and the only one of the two that
+                          carries a conversation: Talk sits where the hand
+                          goes first. It used to float over the thread above
+                          Send on phones, where it covered the last line of
+                          whatever was there. */}
                       <button
                         className="btn ghost labeled composer-live"
                         onClick={voiceReady ? toggleLive : () => setVoiceHelp(true)}
@@ -1310,7 +1339,16 @@ export function App() {
                         <AutoraMark state={liveState} size={18} />
                         <span className="btn-label">Talk</span>
                       </button>
-                      {/* Beside Talk, at every width: the two things you can
+                      {/* Beside Talk: type by voice into the box instead of
+                          speaking the turn, which is the quieter half of the
+                          same idea. */}
+                      <DictateButton
+                        onText={appendDictation}
+                        disabled={readOnly}
+                        onBlocked={() => setVoiceHelp(true)}
+                        onTrouble={setNotice}
+                      />
+                      {/* Beside the two voices, at every width: the two things you can
                           hand over without typing -- a file, or a photo taken
                           here. Both land in the artifacts store first, so
                           nothing is lost if Send comes later. */}

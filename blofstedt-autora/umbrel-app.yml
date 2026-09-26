@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.9.54"
+version: "0.9.55"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -94,15 +94,23 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  A long turn is short again. The commands and small tools a reply was made of
-  are gathered into one line, closed, in the order they ran — so a turn that
-  read a dozen files and ran six commands no longer stands eighteen cards tall
-  with the answer a screen away from the question. Tap the line and every
-  command is there, with its own output, exactly as before; the line carries
-  what is running while it runs, and which commands failed or were declined.
-  Anything that is not a command — a page Autora looked at, a diff, a question
-  — stays where it happened, so the turn still reads as it was asked, worked
-  and answered.
+  The composer now says what it costs. A thin bar sits at the top of the box
+  you type in: the month's spend against the ceiling you set in Settings,
+  with the right-hand end of it in a brighter tone for what this conversation
+  alone accounts for. One tap opens Usage, where the ceiling is set. It reads
+  again when a turn finishes and when the window comes back, so the number is
+  never stale, and it stays out of the way until it has something to say.
+
+  Talk has also moved to the left of Dictate, so the loud control comes first:
+  speak a turn out loud, then dictate into the box, then attach.
+
+  And from the release before this one: a long turn is short again. The
+  commands and small tools a reply was made of are gathered into one collapsed
+  line, in the order they ran, so a turn that read a dozen files and ran six
+  commands no longer stands eighteen cards tall with the answer a screen away
+  from the question. Tap the line and every command is there, with its output,
+  exactly as before; anything that is not a command -- a page Autora looked at,
+  a diff, a question -- stays where it happened.
 
 dependencies: []
 path: ""

@@ -13,7 +13,7 @@ services:
     # version's image is in the registry (.github/scripts/offer_release.py),
     # so Umbrel never offers an update whose image is still building. Don't
     # change it by hand; check_release.py fails a pull request that does.
-    image: ghcr.io/blofstedt/autora:0.9.54
+    image: ghcr.io/blofstedt/autora:0.9.55
     # Not on-failure: a stop from inside the container -- the agent killing or
     # restarting the server it runs in -- exits cleanly with 0, which
     # on-failure takes as "leave it down", and the app then refuses every
