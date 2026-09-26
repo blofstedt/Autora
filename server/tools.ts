@@ -1359,11 +1359,30 @@ function describePage(page: PageRead, part = 1): string {
     "Interactive elements:",
     page.outline || "(nothing interactive on screen)",
     ...(page.captchas.length ? ["", describeCaptchas(page.captchas)] : []),
+    ...(page.challenge ? ["", challengeNote(page.challenge)] : []),
     ...(page.blocked ? ["", refusalNote(page.blocked)] : []),
     "",
     head,
     parts[k - 1] || "(no text)",
   ].join("\n");
+}
+
+/**
+ * What the model is told when Cloudflare is deciding about this browser.
+ *
+ * The page is a holding screen with nothing on it, which reads as a broken
+ * page: it is not, and it is not the thing to send the person to either --
+ * the check passes on its own for a browser it trusts, and it trusts this one
+ * more often than it used to.
+ */
+export function challengeNote(title: string): string {
+  return (
+    `CLOUDFLARE CHECK: the page is "${title}" -- Cloudflare is deciding about this ` +
+    "browser and does not want anything clicked. Give it half a minute: passing on its own is what it " +
+    "does when it is going to pass, and there is nothing on the page to act on until it does. If it " +
+    "is still there after that, hand the browser to the person with browser_handoff -- a person passing " +
+    "it once also earns this profile the site's clearance cookie, which then lasts hours."
+  );
 }
 
 /** What the model is told when a site turns this browser's sign-in away. */

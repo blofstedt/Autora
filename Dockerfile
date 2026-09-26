@@ -48,6 +48,13 @@ WORKDIR /app
 # musl builds, and the system one is both smaller and patched by the distro.
 # The fonts are not decoration -- without them every page renders as boxes,
 # which makes the screencast useless and the screenshots misleading.
+#
+# The set matters as much as the presence: a browser with five families is
+# as distinctive as one with none, and the families a desktop has are the
+# ones a page measures text with. DejaVu and Liberation are what a Linux
+# desktop carries (Liberation is metric-compatible with Arial, Times and
+# Courier, so the widths a site measures come out right), and Noto and
+# Cantarell cover the rest of what a page might ask for.
 RUN apk add --no-cache \
       bash \
       curl \
@@ -57,7 +64,11 @@ RUN apk add --no-cache \
       freetype \
       harfbuzz \
       ttf-freefont \
-      font-noto-emoji
+      font-noto-emoji \
+      font-dejavu \
+      font-liberation \
+      font-noto \
+      font-cantarell
 
 ENV NODE_ENV=production \
     # Umbrel's compose file publishes 8817 and app_proxy points at it.

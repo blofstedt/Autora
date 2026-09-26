@@ -1344,17 +1344,13 @@ export function App() {
                       ) : null}
                     </div>
                     <div className="composer-acts">
-                      {/* Stop sits with Send: they are the same decision. */}
-                      {live && running && (
-                        <button
-                          className="composer-stop"
-                          onClick={() => void stopTurn()}
-                          title="Stop the agent"
-                          aria-label="Stop the agent"
-                        >
-                          <IconStop size={14} />
-                        </button>
-                      )}
+                      {/* Stop is a small mark on the corner of Send rather
+                          than a button of its own: they are the same
+                          decision, and the row is precious on a phone. It
+                          stays outside the Send button, so it is still there
+                          to press when Send is disabled -- which is exactly
+                          when a turn is running with an empty box. */}
+                      <span className="composer-send-wrap">
                       <button
                         className="composer-send"
                         // Without a model a message can only fail; a slash
@@ -1367,6 +1363,17 @@ export function App() {
                       >
                         <IconArrowUp size={17} />
                       </button>
+                        {live && running && (
+                          <button
+                            className="composer-stop"
+                            onClick={() => void stopTurn()}
+                            title="Stop the agent"
+                            aria-label="Stop the agent"
+                          >
+                            <IconStop size={9} />
+                          </button>
+                        )}
+                      </span>
                     </div>
                   </div>
                 </div>

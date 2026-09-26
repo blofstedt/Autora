@@ -29,6 +29,7 @@
  * what is missing and the thread says so in words.
  */
 
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -142,6 +143,9 @@ export interface PageRead {
   scroll?: ScrollState;
   /** The site turned the sign-in away, in its own words. */
   blocked?: string | null;
+  /** A Cloudflare interstitial instead of the page: there is nothing on it to
+      click, and it decides on its own. */
+  challenge?: string | null;
   /** What the action that produced this read did, field by field, or why
       it did nothing. */
   notes?: string[];
@@ -285,6 +289,121 @@ function profileDir(): string {
     // Chrome will say so more precisely than we can guess at here.
   }
   return dir;
+}
+
+/**
+ * What this browser says it is, told truthfully.
+ *
+ * The user agent was pinned to Chrome/126 while the browser underneath was
+ * 152, whose own client hints -- Sec-CH-UA, navigator.userAgentData, the
+ * full version list -- said so in the same request. Two versions of one
+ * browser is the first thing a bot score reads, and it was ours. The version
+ * now comes from the binary, so upgrading the browser carries the user agent
+ * with it; "HeadlessChrome" is the one word in it that does have to go,
+ * because that is the browser announcing itself as the headless one.
+ */
+let cachedVersion: string | null | undefined;
+
+export function browserVersion(): string | null {
+  if (cachedVersion !== undefined) return cachedVersion;
+  cachedVersion = null;
+  const exe = systemBrowser();
+  if (exe) {
+    try {
+      const out = spawnSync(exe, ["--version"], { encoding: "utf8", timeout: 15_000 });
+      const found = /(\d+\.\d+\.\d+\.\d+)/.exec(`${out.stdout ?? ""} ${out.stderr ?? ""}`);
+      if (found) cachedVersion = found[1];
+    } catch {
+      // No version to be had: the browser's own user agent is left alone,
+      // which is still better than one that contradicts it.
+    }
+  }
+  return cachedVersion;
+}
+
+/** The user agent to present: the real version, and never "Headless". */
+export function browserUserAgent(): string | undefined {
+  const full = browserVersion();
+  if (!full) return undefined;
+  const platform =
+    process.platform === "darwin"
+      ? "Macintosh; Intel Mac OS X 10_15_7"
+      : process.platform === "win32"
+        ? "Windows NT 10.0; Win64; x64"
+        : "X11; Linux x86_64";
+  return `Mozilla/5.0 (${platform}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${full.split(".")[0]}.0.0.0 Safari/537.36`;
+}
+
+/**
+ * Where this machine's traffic appears to come from, for the clock and the
+ * language the browser reports.
+ *
+ * A browser that says it is in New York while its address is in Calgary is
+ * hours out against its own IP, and the timezone is one of the few things a
+ * page can read that is genuinely hard to fake consistently -- so it should be
+ * the true one rather than a guess. Looked up once and cached for a week beside
+ * the profile: an address changes about never, and a network round trip does
+ * not belong in the path of opening a page.
+ */
+interface BrowserGeo {
+  tz?: string;
+  locale?: string;
+  at: number;
+}
+
+function geoFile(): string {
+  return path.join(path.dirname(stateFilePath()), "browser-geo.json");
+}
+
+/** The language a browser in that country would most plausibly be running. */
+function languageFor(country: string | undefined): string | undefined {
+  const english: Record<string, string> = {
+    US: "en-US", CA: "en-CA", GB: "en-GB", AU: "en-AU", NZ: "en-NZ", IE: "en-IE",
+  };
+  return english[(country || "").toUpperCase()];
+}
+
+async function browserGeo(): Promise<BrowserGeo> {
+  const forcedTz = (process.env.AUTORA_BROWSER_TZ || "").trim();
+  const forcedLocale = (process.env.AUTORA_BROWSER_LOCALE || "").trim();
+  if (forcedTz || forcedLocale) {
+    return { tz: forcedTz || undefined, locale: forcedLocale || undefined, at: Date.now() };
+  }
+
+  let cached: BrowserGeo | null = null;
+  try {
+    cached = JSON.parse(fs.readFileSync(geoFile(), "utf8")) as BrowserGeo;
+  } catch {
+    cached = null;
+  }
+  if (cached?.tz && Date.now() - (cached.at || 0) < 7 * 24 * 3600_000) return cached;
+
+  for (const source of ["https://ipinfo.io/json", "https://ipapi.co/json/"]) {
+    try {
+      const res = await fetch(source, {
+        signal: AbortSignal.timeout(4000),
+        headers: { accept: "application/json" },
+      });
+      if (!res.ok) continue;
+      const data = (await res.json()) as { timezone?: string; country?: string; country_code?: string; languages?: string };
+      const tz = typeof data.timezone === "string" && data.timezone.includes("/") ? data.timezone : undefined;
+      if (!tz) continue;
+      const country = data.country || data.country_code;
+      const locale =
+        languageFor(country) ||
+        (typeof data.languages === "string" ? data.languages.split(",")[0].trim() : undefined);
+      const fresh: BrowserGeo = { tz, locale, at: Date.now() };
+      try {
+        fs.writeFileSync(geoFile(), JSON.stringify(fresh), { mode: 0o600 });
+      } catch {
+        // The cache is an optimisation, not a requirement.
+      }
+      return fresh;
+    } catch {
+      // Offline, or that lookup is blocked: try the next, then the clock.
+    }
+  }
+  return cached ?? { at: 0 };
 }
 
 /**
@@ -920,22 +1039,128 @@ const PICK_SCRIPT = (x: number, y: number) => `
 
 const STEALTH_SCRIPT = `
 (() => {
+  /* The functions this script replaces are marked, so that a page asking any
+     of them what they are gets the answer a built-in gives: "[native code]".
+     An overridden navigator property that still prints its own source is a
+     louder tell than the property was. */
+  const natives = new WeakMap();
+  const mark = (fn, name) => {
+    try { natives.set(fn, "function " + (name || "") + "() { [native code] }"); } catch {}
+    return fn;
+  };
+  const define = (obj, prop, get) => {
+    try { Object.defineProperty(obj, prop, { get, configurable: true }); } catch {}
+  };
+
+  /* -- the flag, and the globals a driven Chrome still has ---------------- */
+  define(navigator, "webdriver", () => undefined);
   try {
-    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-    window.chrome = {
-      runtime: {},
-      app: {},
-      csi: () => {},
-      loadTimes: () => {}
+    const c = window.chrome || (window.chrome = {});
+    if (!c.runtime) {
+      c.runtime = {
+        id: undefined,
+        connect: () => undefined,
+        sendMessage: () => undefined,
+        OnInstalledReason: { CHROME_UPDATE: "chrome_update", INSTALL: "install", SHARED_MODULE_UPDATE: "shared_module_update", UPDATE: "update" },
+        PlatformArch: { ARM: "arm", ARM64: "arm64", MIPS: "mips", MIPS64: "mips64", X86_32: "x86-32", X86_64: "x86-64" },
+        PlatformOs: { ANDROID: "android", CROS: "cros", LINUX: "linux", MAC: "mac", OPENBSD: "openbsd", WIN: "win" }
+      };
+    }
+    if (!c.app) {
+      c.app = {
+        isInstalled: false,
+        InstallState: { DISABLED: "disabled", INSTALLED: "installed", NOT_INSTALLED: "not_installed" },
+        RunningState: { CANNOT_RUN: "cannot_run", READY_TO_RUN: "ready_to_run", RUNNING: "running" }
+      };
+    }
+    if (!c.csi) c.csi = () => ({ onloadT: Date.now(), startE: Date.now(), pageT: 120, tran: 15 });
+    if (!c.loadTimes) {
+      const now = () => Date.now() / 1000;
+      c.loadTimes = () => ({
+        commitLoadTime: now(), connectionInfo: "h2", finishDocumentLoadTime: 0, finishLoadTime: 0,
+        firstPaintTime: 0, firstPaintAfterLoadTime: 0, npnNegotiatedProtocol: "h2", navigationType: "Other",
+        requestTime: now(), startLoadTime: now(), wasAlternateProtocolAvailable: false,
+        wasFetchedViaSpdy: true, wasNpnNegotiated: true
+      });
+    }
+  } catch {}
+
+  /* -- the graphics card --------------------------------------------------
+     This machine has no GPU, so WebGL is Chrome's software renderer and says
+     so by name: "SwiftShader" in the unmasked renderer is one of the surest
+     signs that nobody is sitting in front of the machine. Reported instead as
+     the integrated Intel chip a Linux desktop of this age would have, which
+     is the same story the platform and the user agent are telling. */
+  const VENDOR = "Google Inc. (Intel)";
+  const RENDERER = "ANGLE (Intel, Mesa Intel(R) UHD Graphics 630 (CFL GT2), OpenGL 4.6 (Core Profile) Mesa 23.1.4)";
+  for (const name of ["WebGLRenderingContext", "WebGL2RenderingContext"]) {
+    const proto = window[name] && window[name].prototype;
+    if (!proto || !proto.getParameter) continue;
+    const original = proto.getParameter;
+    proto.getParameter = mark(function getParameter(parameter) {
+      try {
+        const info = this.getExtension && this.getExtension("WEBGL_debug_renderer_info");
+        if (info) {
+          if (parameter === info.UNMASKED_VENDOR_WEBGL) return VENDOR;
+          if (parameter === info.UNMASKED_RENDERER_WEBGL) return RENDERER;
+        }
+      } catch {}
+      return original.call(this, parameter);
+    }, "getParameter");
+  }
+
+  /* -- a window with a browser around it ---------------------------------
+     A headless browser draws no tabs and no address bar, so its window is
+     exactly as tall as the page inside it -- a page can measure that, and the
+     difference is around eighty pixels on a desktop. */
+  define(window, "outerHeight", () => window.innerHeight + 87);
+  define(window, "outerWidth", () => window.innerWidth + 16);
+
+  /* -- what the page is allowed to ask ------------------------------------
+     Chrome answers "prompt" for notifications until it is asked once; the
+     driven one answers "default", which is not a state the API has. */
+  try {
+    const query = navigator.permissions && navigator.permissions.query;
+    if (query) {
+      navigator.permissions.query = mark(function query(parameters) {
+        if (parameters && parameters.name === "notifications") {
+          const known = typeof Notification !== "undefined" && Notification.permission !== "default";
+          return Promise.resolve({
+            name: "notifications",
+            state: known ? Notification.permission : "prompt",
+            onchange: null,
+            addEventListener: () => undefined,
+            removeEventListener: () => undefined,
+            dispatchEvent: () => false
+          });
+        }
+        return query.call(navigator.permissions, parameters);
+      }, "query");
+    }
+  } catch {}
+
+  /* -- the network ---------------------------------------------------------
+     Every desktop Chrome has this; a browser without it is not a desktop
+     Chrome. */
+  try {
+    if (!navigator.connection) {
+      define(navigator, "connection", () => ({
+        downlink: 10, downlinkMax: Infinity, effectiveType: "4g", rtt: 50, saveData: false,
+        type: "wifi", onchange: null,
+        addEventListener: () => undefined, removeEventListener: () => undefined
+      }));
+    }
+  } catch {}
+
+  /* -- and the last word on all of the above ------------------------------- */
+  try {
+    const original = Function.prototype.toString;
+    const patched = function toString() {
+      const fake = natives.get(this);
+      return fake || original.call(this);
     };
-    Object.defineProperty(navigator, 'plugins', {
-      get: () => [
-        { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
-        { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
-        { name: 'Native Client', filename: 'internal-nacl-plugin', description: '' }
-      ]
-    });
-    Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+    natives.set(patched, "function toString() { [native code] }");
+    Function.prototype.toString = patched;
   } catch {}
 })();
 `;
@@ -1014,16 +1239,19 @@ async function launchShared(): Promise<BrowserContext> {
   const { chromium } = await import("playwright-core");
   const executablePath = systemBrowser();
   const dir = profileDir();
+  const geo = await browserGeo();
+  const agent = browserUserAgent();
   const launch = () =>
     chromium.launchPersistentContext(dir, {
       headless: process.env.AUTORA_BROWSER_HEADED !== "1",
       ...(executablePath ? { executablePath } : {}),
       viewport: VIEWPORT,
       deviceScaleFactor: 1,
-      userAgent:
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-      locale: "en-US",
-      timezoneId: "America/New_York",
+      // The browser's own user agent, with "Headless" taken out of it and its
+      // real version left in: see browserUserAgent.
+      ...(agent ? { userAgent: agent } : {}),
+      locale: geo.locale || "en-US",
+      ...(geo.tz ? { timezoneId: geo.tz } : {}),
       ignoreDefaultArgs: ["--enable-automation"],
       args: [
         "--no-sandbox",
@@ -1032,6 +1260,7 @@ async function launchShared(): Promise<BrowserContext> {
         "--disable-blink-features=AutomationControlled",
         "--disable-features=IsolateOrigins,site-per-process",
         "--disable-infobars",
+        "--force-color-profile=srgb",
         `--window-size=${VIEWPORT.width},${VIEWPORT.height}`,
       ],
     });
@@ -2240,6 +2469,31 @@ export class LiveBrowser {
     }
   }
 
+  /**
+   * Cloudflare's "Just a moment..." interstitial, by name.
+   *
+   * It is not a CAPTCHA with a box to tick: it scores the browser and lets a
+   * browser it likes through by itself, with nothing clicked. Worth naming,
+   * because the page then looks empty and stuck, and the answer is to wait
+   * rather than to reach for the captcha tool or the person.
+   */
+  private async cloudflareCheck(): Promise<string | null> {
+    const page = this.page;
+    if (!page) return null;
+    return await page
+      .evaluate(`(() => {
+        const title = (document.title || "").trim();
+        const markup = !!document.querySelector(
+          '#challenge-stage, #cf-challenge-running, #challenge-form, #cf-wrapper, [src*="challenge-platform"]'
+        );
+        const words = /just a moment|checking your browser|verify you are human|ddos protection|enable javascript and cookies/i
+          .test((document.body && document.body.innerText || "").slice(0, 600));
+        if (markup || words || /just a moment/i.test(title)) return title || "a Cloudflare check";
+        return null;
+      })()`)
+      .catch(() => null);
+  }
+
   // --------------------------------------------------------------- captcha --
 
   /**
@@ -2401,6 +2655,23 @@ export class LiveBrowser {
   solveCaptcha(): Promise<CaptchaResult> {
     return this.run(async () => {
       const page = await this.ensure();
+
+      /* A Cloudflare interstitial is not a checkbox: it clears by itself for a
+         browser it trusts, and clicking it only delays that. Given the half
+         minute it usually needs before anything else is tried, so the tool
+         does not report "no CAPTCHA here" on a page that is one. */
+      let checking = await this.cloudflareCheck();
+      if (checking) {
+        this.hooks.onAction(`cloudflare: "${checking}" -- waiting for it to clear`, null, this.currentUrl ?? "");
+        for (let waited = 0; waited < 30_000 && checking; waited += 1000) {
+          await page.waitForTimeout(1000).catch(() => undefined);
+          checking = await this.cloudflareCheck();
+        }
+        if (checking) {
+          return { outcome: "pending", kind: null, page: await this.read() };
+        }
+      }
+
       let hits = await this.findCaptchas();
       // The widget script loads after the page does; give a declared one a
       // few seconds to draw its checkbox before concluding there is none.
@@ -2434,6 +2705,23 @@ export class LiveBrowser {
         const same = hits.find((h) => h.kind === target.kind) ?? null;
         if (!same || same.solved) { outcome = "solved"; break; }
         if (same.challenge) { outcome = "challenge"; break; }
+      }
+
+      /* Still thinking. A widget that has not decided usually wants the click
+         again, a moment later and a little to one side, rather than a harder
+         one -- and a page whose box has been redrawn wants the new box. */
+      if (outcome === "pending") {
+        const again = hits.find((h) => h.kind === target.kind && !h.solved) ?? null;
+        if (again) {
+          await this.humanClickAt(pointIn(again.box), true);
+          for (let waited = 0; waited < 12_000; waited += 500) {
+            await page.waitForTimeout(500).catch(() => undefined);
+            hits = await this.findCaptchas();
+            const same = hits.find((h) => h.kind === target.kind) ?? null;
+            if (!same || same.solved) { outcome = "solved"; break; }
+            if (same.challenge) { outcome = "challenge"; break; }
+          }
+        }
       }
 
       // Rest the pointer somewhere nearby rather than leaving it parked on
@@ -2489,6 +2777,7 @@ export class LiveBrowser {
       ...this.loadingCaptchas.map((kind) => ({ kind, solved: false, challenge: false })),
     ];
     const blocked = signInRefusal(scanned.text);
+    const challenge = await this.cloudflareCheck();
     return {
       url: scanned.url,
       title: scanned.title,
@@ -2499,6 +2788,7 @@ export class LiveBrowser {
       dialog: scanned.dialog ?? null,
       scroll: scanned.scroll,
       blocked,
+      challenge,
     };
   }
 }
