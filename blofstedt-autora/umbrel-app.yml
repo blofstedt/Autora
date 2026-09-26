@@ -94,18 +94,18 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The newest message in a conversation no longer sits in the fade above the box
-  you type in. The thread ended a few pixels from its own bottom edge, which
-  put the last line you had sent or received inside the soft edge the composer
-  fades behind it, so it read as half-swallowed until you scrolled. There is
-  clear air under the last message now, on a phone and on a wide screen alike.
+  Artifacts can be cleared out in one go. Select at the top of the page turns
+  every card into a picker: tap as many as you like, out of either pile, and
+  one Delete takes them after a single confirm. The bar counts what is picked,
+  the button says how many it will remove, and Escape or Done backs out
+  without touching anything.
 
-  Dragging the Mind's map is smooth. Every pan ticked React state, which
-  reconciled the whole graph -- every node, every edge -- on each pointer
-  event, while each node was also breathing on its own endless animation and
-  repainting the map every frame you moved it. The view is now written straight
-  to the map itself, once a frame, and the breathing pauses for the length of
-  the gesture: the map follows your finger instead of lagging behind it.
+  Autora is pickier about what it saves. It keeps the things worth keeping --
+  a file it wrote, built or edited, or one you asked it to keep -- and no
+  longer files away a second copy of something already on the page, or of a
+  picture it found online, which only made the page longer. Saving a name that
+  is already there now replaces that artifact in place, link and place in the
+  list intact, instead of adding a near identical card beside it.
 dependencies: []
 path: ""
 defaultUsername: ""

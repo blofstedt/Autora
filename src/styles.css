@@ -4595,6 +4595,12 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 
 /* Artifacts */
 .art-lede { margin: 0; }
+.art-toolbar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 8px 10px; border-radius: var(--r);
+  background: var(--s2); border: 1px solid var(--border);
+}
+.art-selcount { font-size: 12px; font-family: var(--mono); color: var(--text-2); }
 .art-section { display: flex; flex-direction: column; gap: 10px; }
 .art-head { display: flex; align-items: center; gap: 9px; min-height: 36px; }
 .art-head h3 { margin: 0; font-size: 14px; font-weight: 600; }
@@ -4605,11 +4611,25 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 .art-empty { margin: 0; padding: 18px 16px; border-radius: var(--r); border: 1px dashed var(--border); }
 .art-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
 .art-card {
+  position: relative;
   display: flex; flex-direction: column; min-width: 0; overflow: hidden;
   border-radius: var(--r); background: var(--s2); border: 1px solid var(--border);
-  transition: border-color 0.15s var(--ease);
+  transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
 }
 .art-card:hover { border-color: var(--accent-line); }
+.art-pickable { cursor: pointer; }
+.art-pickable:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
+/* A picked card says so twice: the tick in the corner and the tint, so it is
+   still obvious on the pictures, where the tick sits on the image itself. */
+.art-card.is-picked { border-color: var(--accent); background: var(--s3); }
+.art-pick {
+  position: absolute; top: 8px; left: 8px; z-index: 2;
+  display: flex; align-items: center; justify-content: center;
+  width: 21px; height: 21px; border-radius: var(--r-xs);
+  background: rgba(0, 0, 0, 0.5); border: 1px solid var(--border-strong);
+  color: var(--on-accent); box-shadow: var(--shadow-sm);
+}
+.art-card.is-picked .art-pick { background: var(--accent); border-color: var(--accent); }
 .art-thumb {
   display: flex; align-items: center; justify-content: center; aspect-ratio: 4 / 3;
   background: var(--sink); color: var(--text-3); text-decoration: none; overflow: hidden;
@@ -4634,6 +4654,8 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 .art-dragging { outline: 2px dashed var(--accent-line); outline-offset: -8px; }
 @media (max-width: 680px) {
   .art-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  /* The count would push Delete and Done onto a line of their own. */
+  .art-toolbar .art-selcount { width: 100%; order: 3; }
 }
 
 /* What the agent learned from a turn, up for keeping. */

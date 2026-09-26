@@ -44,8 +44,8 @@ import { recordSignIn, signInBriefing } from "./signins";
 import { relayAction, relayConnected, relayStatus } from "./desktop";
 import { CONTEXT_CONFIG, readVault } from "./context";
 import {
-  artifactPath, deleteArtifact, formatSize, getArtifact, isText, listArtifacts, readArtifact,
-  saveArtifact, MAX_ARTIFACT_BYTES,
+  artifactPath, cleanName, deleteArtifact, formatSize, getArtifact, isText, listArtifacts,
+  readArtifact, saveArtifact, MAX_ARTIFACT_BYTES,
 } from "./artifacts";
 import { checkWidget } from "./widgets";
 import { speechStatus } from "./speech";
@@ -894,7 +894,15 @@ const TOOLS: ToolSpec[] = [
       "for deliverables -- a report, a document, a spreadsheet, a script, an " +
       "export -- not for scratch output. Give either `content` (the text of " +
       "the file) or `path` (a file on this host, e.g. one you built with the " +
-      "terminal). Images from image_generate are saved automatically.",
+      "terminal). Images from image_generate are saved automatically. Save " +
+      "only what is net new or has changed. Do not save a copy of a file that " +
+      "is already in the workspace or already on the Artifacts page, and do " +
+      "not save a picture you downloaded or found online -- it can be fetched " +
+      "again from its own address and the thread already shows it. Check " +
+      "artifact_list first when you are unsure. Saving a name that is already " +
+      "there replaces that artifact's contents in place, so save again only " +
+      "when the file itself is different. If the person asks you to keep " +
+      "something, save it.",
     parameters: {
       type: "object",
       properties: {
@@ -2515,13 +2523,18 @@ async function runToolUnredacted(
         } else {
           return { ok: false, summary: "Give either the file's content or a path to it." };
         }
+        // Saving a name that is already up there rewrites that artifact, so
+        // say which happened: "saved" reads as a new card beside the old one.
+        const had = listArtifacts().find((a) => a.origin === "agent" && a.name === cleanName(name));
         const art = saveArtifact({
           origin: "agent", name, data, session: ctx.session,
           note: String(args.note ?? "").trim() || undefined,
         });
         return {
           ok: true,
-          summary: `Saved as artifact ${art.id} (${art.name}, ${formatSize(art.size)}). The person can open and download it from the Artifacts page.`,
+          summary: had
+            ? `Updated the artifact ${art.id} (${art.name}, ${formatSize(art.size)}); there is one copy of it on the Artifacts page, now holding this version.`
+            : `Saved as artifact ${art.id} (${art.name}, ${formatSize(art.size)}). The person can open and download it from the Artifacts page.`,
           preview: `${art.name} · ${formatSize(art.size)}`,
         };
       }
@@ -2805,7 +2818,14 @@ export async function capabilityBriefing(): Promise<string> {
     "- Artifacts: always available. Tools: artifact_list, artifact_read, " +
       "artifact_save. Files the person uploaded (documents, photos...) are " +
       "there for you to read; save the deliverables you make with " +
-      "artifact_save so they can be found and downloaded later.",
+      "artifact_save so they can be found and downloaded later. Artifacts " +
+      "are for what would otherwise be lost: a file you wrote, built or " +
+      "edited, or one the person asked you to keep. Do not save a copy of a " +
+      "file that is already there (yours or theirs), and do not save a " +
+      "picture you fetched from the web -- its own address still has it, and " +
+      "the thread already shows it. Saving the same name again updates that " +
+      "artifact in place, which is right when the file changed and wrong " +
+      "when it did not.",
   );
   lines.push(
     "- Explainer widgets: always available. Tool: widget_show. When someone " +

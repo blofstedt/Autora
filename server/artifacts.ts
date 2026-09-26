@@ -153,9 +153,28 @@ export function saveArtifact(input: {
     ...(input.session ? { session: input.session } : {}),
     ...(input.note ? { note: input.note.slice(0, 500) } : {}),
   };
+  const list = load();
+  // Saving the same name again from the agent rewrites that file instead of
+  // leaving a near-identical copy beside it: the id and its place in the list
+  // stay, so a link, a note or an artifact id the person already has still
+  // points at the thing. Uploads are exempt -- two files with one name can be
+  // two different files, and neither is ours to overwrite.
+  const at = input.origin === "agent" ? list.findIndex((a) => a.name === name) : -1;
   fs.mkdirSync(DIR, { recursive: true, mode: 0o700 });
+  if (at >= 0) {
+    const prev = list[at];
+    const next: Artifact = { ...prev, mime: artifact.mime, size: artifact.size, ts: artifact.ts };
+    if (artifact.session) next.session = artifact.session;
+    // A note describes the file as it was; one that came with this save
+    // replaces it, and a save without one does not leave the old behind.
+    if (artifact.note) next.note = artifact.note; else delete next.note;
+    list[at] = next;
+    fs.writeFileSync(fileFor(prev.id), input.data, { mode: 0o600 });
+    persist();
+    return next;
+  }
   fs.writeFileSync(fileFor(artifact.id), input.data, { mode: 0o600 });
-  load().push(artifact);
+  list.push(artifact);
   persist();
   return artifact;
 }

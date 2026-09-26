@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { SessionRow } from "../Sessions";
-import { IconDownload, IconFile, IconSpark, IconTrash, IconUpload, IconUser } from "../Icons";
+import {
+  IconCheck, IconDownload, IconFile, IconSpark, IconTrash, IconUpload, IconUser,
+} from "../Icons";
 
 type Artifact = {
   id: string;
@@ -34,6 +36,11 @@ const isPicture = (a: Artifact) => a.mime.startsWith("image/") && a.mime !== "im
  * Artifacts: the files of the workspace, in two piles. What Autora made --
  * generated images, documents it wrote, files it built and handed over -- and
  * what you uploaded for it to work with. The agent can list and read both.
+ *
+ * Selection mode is what makes clearing out a pile of them bearable: pick any
+ * number of cards, across both piles, and delete them in one go. Everything
+ * else on the page stays exactly as it was when it is off, which is why the
+ * per-card buttons are only hidden while it is on rather than removed.
  */
 export function ArtifactsPage({
   sessions, onOpenSession,
@@ -46,6 +53,9 @@ export function ArtifactsPage({
   const [uploading, setUploading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [selecting, setSelecting] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [removing, setRemoving] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
 
   const load = useCallback(() => {
@@ -60,6 +70,27 @@ export function ArtifactsPage({
     const t = window.setInterval(load, 8000);
     return () => window.clearInterval(t);
   }, [load]);
+
+  // One the agent deleted, or a page left open while another tab cleared the
+  // pile, should not stay counted as picked.
+  useEffect(() => {
+    if (!items) return;
+    const live = new Set(items.map((a) => a.id));
+    setPicked((p) => (p.every((id) => live.has(id)) ? p : p.filter((id) => live.has(id))));
+  }, [items]);
+
+  const leaveSelect = useCallback(() => {
+    setSelecting(false);
+    setPicked([]);
+  }, []);
+
+  // Escape gets you out, the way it does out of most things here.
+  useEffect(() => {
+    if (!selecting) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") leaveSelect(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selecting, leaveSelect]);
 
   const upload = async (files: FileList | File[]) => {
     setError(null);
@@ -89,45 +120,110 @@ export function ArtifactsPage({
     load();
   };
 
-  const remove = async (a: Artifact) => {
-    if (!window.confirm(`Delete ${a.name}? This cannot be undone.`)) return;
-    await fetch(`/api/artifacts/${a.id}`, { method: "DELETE" }).catch(() => undefined);
+  /** One confirm and one pass, whether it is one file or forty. */
+  const remove = async (list: Artifact[]) => {
+    if (!list.length || removing) return;
+    const what = list.length === 1 ? list[0].name : `${list.length} files`;
+    if (!window.confirm(`Delete ${what}? This cannot be undone.`)) return;
+    setRemoving(true);
+    setError(null);
+    const gone: string[] = [];
+    const results = await Promise.all(list.map((a) =>
+      fetch(`/api/artifacts/${a.id}`, { method: "DELETE" })
+        .then((r) => { if (r.ok) gone.push(a.id); return r.ok; })
+        .catch(() => false)));
+    const failed = results.filter((ok) => !ok).length;
+    if (failed) {
+      setError(failed === 1
+        ? "One file could not be deleted."
+        : `${failed} of ${list.length} files could not be deleted.`);
+    }
+    if (gone.length) setPicked((p) => p.filter((id) => !gone.includes(id)));
+    setRemoving(false);
     load();
   };
 
-  const made = (items ?? []).filter((a) => a.origin === "agent");
-  const uploaded = (items ?? []).filter((a) => a.origin === "user");
+  const toggle = (id: string) =>
+    setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+
+  const all = items ?? [];
+  const made = all.filter((a) => a.origin === "agent");
+  const uploaded = all.filter((a) => a.origin === "user");
   const titleOf = (id?: string) => sessions.find((s) => s.id === id)?.title?.trim() || null;
+  const allPicked = all.length > 0 && picked.length === all.length;
+
+  const thumb = (a: Artifact) => (
+    isPicture(a)
+      ? <img src={`/api/artifacts/${a.id}`} alt={a.note || a.name} loading="lazy" />
+      : <span className="art-kind"><IconFile size={26} /><b>{kind(a)}</b></span>
+  );
 
   const grid = (list: Artifact[]) => (
     <div className="art-grid">
-      {list.map((a) => (
-        <article key={a.id} className="art-card">
-          <a className="art-thumb" href={`/api/artifacts/${a.id}`} target="_blank" rel="noreferrer" title={`Open ${a.name}`}>
-            {isPicture(a)
-              ? <img src={`/api/artifacts/${a.id}`} alt={a.note || a.name} loading="lazy" />
-              : <span className="art-kind"><IconFile size={26} /><b>{kind(a)}</b></span>}
-          </a>
-          <div className="art-meta">
-            <b title={a.name}>{a.name}</b>
-            <em>{size(a.size)} · {date(a.ts)}</em>
-            {a.note && <span className="art-note" title={a.note}>{a.note}</span>}
-            {a.session && titleOf(a.session) && (
-              <button className="art-session" onClick={() => onOpenSession(a.session!)}>
-                in “{titleOf(a.session)}”
-              </button>
+      {list.map((a) => {
+        const on = picked.includes(a.id);
+        return (
+          <article
+            key={a.id}
+            className={`art-card${selecting ? " art-pickable" : ""}${on ? " is-picked" : ""}`}
+            role={selecting ? "checkbox" : undefined}
+            aria-checked={selecting ? on : undefined}
+            aria-label={selecting ? a.name : undefined}
+            tabIndex={selecting ? 0 : undefined}
+            onClick={selecting ? () => toggle(a.id) : undefined}
+            onKeyDown={selecting ? (e) => {
+              if (e.key === " " || e.key === "Enter") { e.preventDefault(); toggle(a.id); }
+            } : undefined}
+          >
+            {selecting && (
+              <span className="art-pick" aria-hidden="true">{on && <IconCheck size={13} />}</span>
             )}
-          </div>
-          <div className="art-acts">
-            <a className="btn icon ghost" href={`/api/artifacts/${a.id}?download`} title="Download" aria-label={`Download ${a.name}`}>
-              <IconDownload size={14} />
-            </a>
-            <button className="btn icon ghost" onClick={() => void remove(a)} title="Delete" aria-label={`Delete ${a.name}`}>
-              <IconTrash size={14} />
-            </button>
-          </div>
-        </article>
-      ))}
+            {selecting ? (
+              <span className="art-thumb">{thumb(a)}</span>
+            ) : (
+              <a
+                className="art-thumb"
+                href={`/api/artifacts/${a.id}`}
+                target="_blank"
+                rel="noreferrer"
+                title={`Open ${a.name}`}
+              >
+                {thumb(a)}
+              </a>
+            )}
+            <div className="art-meta">
+              <b title={a.name}>{a.name}</b>
+              <em>{size(a.size)} · {date(a.ts)}</em>
+              {a.note && <span className="art-note" title={a.note}>{a.note}</span>}
+              {!selecting && a.session && titleOf(a.session) && (
+                <button className="art-session" onClick={() => onOpenSession(a.session!)}>
+                  in “{titleOf(a.session)}”
+                </button>
+              )}
+            </div>
+            {!selecting && (
+              <div className="art-acts">
+                <a
+                  className="btn icon ghost"
+                  href={`/api/artifacts/${a.id}?download`}
+                  title="Download"
+                  aria-label={`Download ${a.name}`}
+                >
+                  <IconDownload size={14} />
+                </a>
+                <button
+                  className="btn icon ghost"
+                  onClick={() => void remove([a])}
+                  title="Delete"
+                  aria-label={`Delete ${a.name}`}
+                >
+                  <IconTrash size={14} />
+                </button>
+              </div>
+            )}
+          </article>
+        );
+      })}
     </div>
   );
 
@@ -165,6 +261,44 @@ export function ArtifactsPage({
           agent can find and read all of them.
         </p>
         {error && <p className="set-warn">{error}</p>}
+
+        {all.length > 0 && (
+          <div className="art-toolbar">
+            {selecting ? (
+              <>
+                <button
+                  className="btn ghost"
+                  onClick={() => setPicked(allPicked ? [] : all.map((a) => a.id))}
+                >
+                  {allPicked ? "Clear all" : "Select all"}
+                </button>
+                <span className="art-selcount" aria-live="polite">
+                  {picked.length === 0
+                    ? "Tap files to pick them"
+                    : `${picked.length} of ${all.length} selected`}
+                </span>
+                <div className="spacer" />
+                <button
+                  className="btn danger"
+                  disabled={picked.length === 0 || removing}
+                  onClick={() => void remove(all.filter((a) => picked.includes(a.id)))}
+                >
+                  <IconTrash size={14} />
+                  {removing ? "Deleting…"
+                    : picked.length > 1 ? `Delete ${picked.length}` : "Delete"}
+                </button>
+                <button className="btn ghost" onClick={leaveSelect} disabled={removing}>Done</button>
+              </>
+            ) : (
+              <>
+                <div className="spacer" />
+                <button className="btn ghost" onClick={() => setSelecting(true)}>
+                  <IconCheck size={14} /> Select
+                </button>
+              </>
+            )}
+          </div>
+        )}
 
         {section(
           "Made by Autora", <IconSpark size={14} />, made,
