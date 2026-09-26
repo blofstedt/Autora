@@ -34,7 +34,7 @@ export function ToolCell({ span }: { span: SpanState }) {
   );
 }
 
-function describeArgs(args: Record<string, any>): string {
+export function describeArgs(args: Record<string, any>): string {
   if (typeof args.command === "string") return args.command;
   if (typeof args.path === "string") return args.path;
   if (typeof args.query === "string") return args.query;

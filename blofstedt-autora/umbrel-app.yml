@@ -4,7 +4,7 @@ name: Autora
 tagline: An agentic AI harness you can watch in real time
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
 category: ai
-version: "0.9.53"
+version: "0.9.54"
 port: 8817
 description: >-
   Autora is a local AI agent that you can watch while it works. Point it at
@@ -94,16 +94,16 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Replies are read aloud through Deepgram's hosted voices when a
-  DEEPGRAM_API_KEY is set — nothing to run, and the same voice on every
-  device. The voice service is now checked again every time the page is
-  brought back to the front, so a key pasted, an update installed or a voice
-  changed in Settings is picked up in the open tab instead of only after a
-  reload. There is one voice service and one key: the Kokoro server it used to
-  look for on the network is gone, so Settings → Voice is a single picker of
-  the voices Deepgram itself offers, with a sample of each, and a voice saved
-  from Kokoro falls back to the default instead of refusing every sentence.
-  With no key, the browser's own voice carries on as before.
+  A long turn is short again. The commands and small tools a reply was made of
+  are gathered into one line, closed, in the order they ran — so a turn that
+  read a dozen files and ran six commands no longer stands eighteen cards tall
+  with the answer a screen away from the question. Tap the line and every
+  command is there, with its own output, exactly as before; the line carries
+  what is running while it runs, and which commands failed or were declined.
+  Anything that is not a command — a page Autora looked at, a diff, a question
+  — stays where it happened, so the turn still reads as it was asked, worked
+  and answered.
+
 dependencies: []
 path: ""
 defaultUsername: ""

@@ -1,12 +1,13 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { Bucket, Cell, KanbanTask, MemoryTouch } from "../lib/derive";
+import { turnItems } from "../lib/steps";
 import { isPicture, sizeLabel, type Attachment } from "../lib/attachments";
-import { IconAlert, IconArrow, IconArrowDown, IconChevron, IconFile, IconUser } from "./Icons";
+import { IconAlert, IconArrow, IconArrowDown, IconChevron, IconFile, IconTerminal, IconUser } from "./Icons";
 import { AutoraMark } from "./AutoraMark";
 import { TerminalCell } from "./TerminalCell";
 import { ScreencastCell } from "./ScreencastCell";
 import { FileCell } from "./FileCell";
-import { ToolCell } from "./ToolCell";
+import { ToolCell, describeArgs } from "./ToolCell";
 import { KanbanCell } from "./KanbanCell";
 import { PermissionCell } from "./PermissionCell";
 import { ImageCell } from "./ImageCell";
@@ -274,20 +275,17 @@ const TurnBucket = memo(function TurnBucket({
       )}
 
       <div className="work">
-        {bucket.cells.map((cell, index) => (
-          <CellView
-            key={cellKey(cell)}
-            cell={cell}
-            sessionId={sessionId}
-            liveBrowserSeq={liveBrowserSeq}
-            live={live}
-            open={bucket.open}
-            active={bucket.open && index === speaking}
-            onPermissionDecide={onPermissionDecide}
-            onRunAutonomous={onRunAutonomous}
-            {...work}
-          />
-        ))}
+        <StepRun
+          cells={bucket.cells}
+          activeKey={bucket.open && speaking >= 0 ? cellKey(bucket.cells[speaking]) : null}
+          sessionId={sessionId}
+          liveBrowserSeq={liveBrowserSeq}
+          live={live}
+          open={bucket.open}
+          onPermissionDecide={onPermissionDecide}
+          onRunAutonomous={onRunAutonomous}
+          {...work}
+        />
       </div>
     </article>
   );
@@ -305,6 +303,116 @@ const TurnBucket = memo(function TurnBucket({
 function cellKey(cell: Cell): string {
   return `${cell.kind}-${cell.seq}`;
 }
+
+/** Everything a cell needs to draw itself, apart from which cell it is. */
+type CellContext = {
+  sessionId: string;
+  liveBrowserSeq: number | null;
+  live: boolean;
+  /** The turn this belongs to is still running. */
+  open: boolean;
+  onPermissionDecide?: (requestId: string, approved: boolean, response?: string) => void;
+  onRunAutonomous?: (task: KanbanTask) => void;
+} & WorkState;
+
+/* ---------------------------------------------------------------- steps -- */
+
+const stepStatus = (cell: Cell) =>
+  cell.kind === "terminal" ? cell.status
+    : cell.kind === "tool" ? cell.span.status : "ok";
+
+/** The line of a step that is worth showing without opening it. */
+const stepLine = (cell: Cell) =>
+  cell.kind === "terminal" ? cell.command
+    : cell.kind === "tool" ? describeArgs(cell.span.args) : "";
+
+/** What the steps took, added up. Only counted where it was reported. */
+function stepsTook(steps: Cell[]): number | null {
+  let sum = 0;
+  let any = false;
+  for (const step of steps) {
+    const ms = step.kind === "terminal" ? step.durationMs
+      : step.kind === "tool" ? step.span.durationMs : null;
+    if (typeof ms === "number") { sum += ms; any = true; }
+  }
+  return any ? sum : null;
+}
+
+const shortMs = (value: number) =>
+  value >= 1000 ? `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}s` : `${Math.round(value)}ms`;
+
+/**
+ * One turn's commands, folded into a line.
+ *
+ * Closed by default, and closed again when the turn ends: what is being read
+ * is what the agent said, and the commands behind it are one tap away rather
+ * than in the way. While one of them is running the line carries it, so a
+ * folded turn is still a turn you can watch.
+ */
+const StepGroup = memo(function StepGroup({ steps, ...cell }: { steps: Cell[] } & CellContext) {
+  const [open, setOpen] = useState(false);
+  const running = cell.open && steps.some((s) => stepStatus(s) === "running");
+  // Marked running in a turn that is over: it never reported back. Saying
+  // "running" forever would be a lie.
+  const orphaned = !cell.open && steps.some((s) => stepStatus(s) === "running");
+  const failed = steps.filter((s) =>
+    stepStatus(s) === "error"
+    || (s.kind === "terminal" && s.exitCode !== null && s.exitCode !== 0)).length;
+  const denied = steps.filter((s) => stepStatus(s) === "denied").length;
+  const took = stepsTook(steps);
+  const many = steps.length > 1;
+  const last = steps[steps.length - 1];
+  const doing = running ? steps.find((s) => stepStatus(s) === "running") ?? last : last;
+  const title = many ? `${steps.length} steps` : stepLine(steps[0]) || steps[0].kind;
+  const tail = many ? stepLine(doing) : "";
+  const tone = failed ? "is-bad" : denied ? "is-warn" : running ? "is-live" : "";
+
+  return (
+    <section className={`steps ${tone} ${open ? "is-open" : ""}`.trim()}>
+      <button className="steps-top" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <span className="steps-chev"><IconChevron size={11} /></span>
+        {steps.some((s) => s.kind === "terminal")
+          ? <IconTerminal size={13} />
+          : <span className="steps-dot" />}
+        <b className="steps-title" title={title}>{title}</b>
+        {tail && <span className="steps-doing">{tail}</span>}
+        {running && <em className="cell-chip is-running">running</em>}
+        {orphaned && <em className="cell-chip">no result</em>}
+        {denied > 0 && <em className="cell-chip is-warn">declined</em>}
+        {failed > 0 && <em className="cell-chip is-bad">{failed} failed</em>}
+        {!running && took !== null && <em className="cell-at">{shortMs(took)}</em>}
+      </button>
+      {open && (
+        <div className="steps-body">
+          {steps.map((step) => (
+            <CellView key={cellKey(step)} cell={step} active={false} {...cell} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+});
+
+/** A run of cells: commands folded together, everything else as it was. */
+const StepRun = memo(function StepRun({
+  cells, activeKey, ...cell
+}: { cells: Cell[]; activeKey: string | null } & CellContext) {
+  return (
+    <>
+      {turnItems(cells).map((item) =>
+        item.kind === "steps" ? (
+          <StepGroup key={item.key} steps={item.cells} {...cell} />
+        ) : (
+          <CellView
+            key={item.key}
+            cell={item.cell}
+            active={activeKey !== null && cellKey(item.cell) === activeKey}
+            {...cell}
+          />
+        ))}
+    </>
+  );
+});
 
 const CellView = memo(function CellView({
   cell,
@@ -372,16 +480,15 @@ const CellView = memo(function CellView({
           waitingOnYou={browserHandedOver}
           onStop={onStop}
         >
-          {cell.log.length > 0 && cell.log.map((inner, index) => (
-            <CellView
-              key={cellKey(inner)}
-              cell={inner}
+          {cell.log.length > 0 && (
+            <StepRun
+              cells={cell.log}
+              // The newest thing said, while the page is still being worked.
+              activeKey={cell.live ? cellKey(cell.log[cell.log.length - 1]) : null}
               sessionId={sessionId}
               liveBrowserSeq={liveBrowserSeq}
               live={live}
               open={open}
-              // The newest thing said, while the page is still being worked.
-              active={cell.live && index === cell.log.length - 1}
               onPermissionDecide={onPermissionDecide}
               onRunAutonomous={onRunAutonomous}
               driving={driving}
@@ -390,7 +497,7 @@ const CellView = memo(function CellView({
               onOpenMind={onOpenMind}
               onOpenSettings={onOpenSettings}
             />
-          ))}
+          )}
         </ScreencastCell>
       );
     }

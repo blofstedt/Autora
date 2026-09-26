@@ -1893,6 +1893,43 @@ label + .jf-hint { margin-top: -5px; }
   white-space: pre-wrap; max-height: 300px; overflow: auto;
 }
 
+/* ---------------------------------------------------------------- steps -- */
+/* A turn's commands, folded into one line, closed. The turn reads as
+   question, work, answer again instead of a screenful of output between
+   them -- and every command is still here, one tap down, in order. */
+.steps { font-size: 12px; }
+.steps-top {
+  display: flex; align-items: center; gap: 7px; width: 100%; text-align: left;
+  padding: 3px 8px; border: 0; border-radius: var(--r-xs);
+  background: none; color: var(--text-2); font-family: inherit; cursor: pointer;
+  transition: background 0.14s var(--ease);
+}
+.steps-top:hover { background: var(--s2); }
+.steps-chev {
+  flex: 0 0 auto; display: inline-flex; align-items: center; color: var(--text-3);
+  transition: transform 0.2s var(--ease);
+}
+.steps.is-open .steps-chev { transform: rotate(90deg); }
+.steps-top > svg { flex: 0 0 auto; color: var(--text-3); }
+.steps-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--text-3); flex: 0 0 auto; }
+.steps-title {
+  flex: 0 1 auto; min-width: 0; font-family: var(--mono); font-size: 11px;
+  font-weight: 500; color: var(--text-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.steps-doing {
+  flex: 1 1 auto; min-width: 0; font-family: var(--mono); font-size: 10.5px;
+  color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.steps.is-bad .steps-title { color: var(--danger); }
+.steps.is-warn .steps-title { color: var(--warn); }
+.steps-body {
+  display: flex; flex-direction: column; gap: 8px;
+  margin: 4px 0 2px 11px; padding-left: 9px;
+  border-left: 2px solid var(--border);
+}
+.steps-body .cell { animation: none; }
+
 .cell-note {
   display: flex; align-items: flex-start; gap: 8px;
   padding: 9px 11px; border-radius: var(--r-sm);
