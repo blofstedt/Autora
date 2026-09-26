@@ -94,6 +94,18 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
+  Choosing a model no longer opens the operating system's own menu in its own
+  font over a dark app. The Model row opens a card, the way sessions, a memory
+  and the cost card already do: every model listed with what it is for and what
+  it costs per million tokens, the one in use ticked, and a search box for a
+  vendor whose list is too long to scroll. Refresh asks the vendor for its
+  catalogue from inside the card.
+
+  DeepSeek V4.1 Flash is named properly. It is the model behind deepseek-flash,
+  which the app has been calling since DeepSeek retired V4 Flash and V4 Flash
+  Vision on 10 September 2026 — nothing was missing except the name. The
+  retired ids stay in the list as aliases, priced the same.
+
   Artifacts can be cleared out in one go. Select at the top of the page turns
   every card into a picker: tap as many as you like, out of either pile, and
   one Delete takes them after a single confirm. The bar counts what is picked,

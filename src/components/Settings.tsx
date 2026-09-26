@@ -3,6 +3,7 @@ import {
   IconBrain, IconCheck, IconChevron, IconGear, IconGlobe, IconMonitor, IconRepeat,
   IconTerminal, IconX,
 } from "./Icons";
+import { ModelPicker } from "./ModelPicker";
 import { VoiceCheck } from "./VoiceCheck";
 import { VoiceCard } from "./VoiceCard";
 import { RelaySetup } from "./RelaySetup";
@@ -752,6 +753,7 @@ function ProviderRow({
   // A local server has no catalogue to offer, so it opens straight into the
   // text field rather than a picker with one item in it saying "Custom".
   const [custom, setCustom] = useState(card.open_ended);
+  const [picking, setPicking] = useState(false);
   const chosen = card.models.find((m) => m.id === model);
 
   /** Ask the vendor whether this key works -- and, since the answer arrives as
@@ -863,25 +865,16 @@ function ProviderRow({
                 aria-label={`${card.label} model id`}
               />
             ) : (
-              <select
-                className="set-select"
-                value={model}
-                onChange={(e) => {
-                  if (e.target.value === "__custom") {
-                    setCustom(true);
-                    onModel("");
-                  } else onModel(e.target.value);
-                }}
+              <button
+                type="button"
+                className="set-select mp-open"
+                onClick={() => setPicking(true)}
+                aria-haspopup="dialog"
                 aria-label={`${card.label} model`}
               >
-                {!model && <option value="">Choose a model…</option>}
-                {card.models.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.label} — {price(m)}
-                  </option>
-                ))}
-                <option value="__custom">Type a model id…</option>
-              </select>
+                <span>{model ? chosen?.label ?? model : "Choose a model…"}</span>
+                <IconChevron size={13} />
+              </button>
             )}
           </label>
 
@@ -914,6 +907,20 @@ function ProviderRow({
 
           {checked && (
             <p className={checked.ok ? "prov-ok" : "set-warn"}>{checked.text}</p>
+          )}
+
+          {picking && (
+            <ModelPicker
+              vendor={card.label}
+              models={card.models}
+              model={model}
+              busy={busy}
+              listable={card.listable}
+              onPick={(id) => { onModel(id); setPicking(false); }}
+              onCustom={() => { setPicking(false); setCustom(true); onModel(""); }}
+              onRefresh={() => void refresh()}
+              onClose={() => setPicking(false)}
+            />
           )}
 
           {/* The price is already on the option in the list, so repeating it

@@ -3160,6 +3160,40 @@ label + .jf-hint { margin-top: -5px; }
 }
 .set-select:focus { outline: none; border-color: var(--accent-line); }
 
+/* The model row is this control too, so it opens the app's own list rather
+   than the operating system's menu: same box, same chevron, and a card over
+   the page with the prices and the notes the system menu cannot show. */
+.mp-open {
+  display: flex; align-items: center; gap: 8px; text-align: left;
+  font-family: inherit; color: var(--text);
+}
+.mp-open span {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mp-open svg { flex: 0 0 auto; color: var(--text-3); }
+.mp-open:hover { border-color: var(--border-strong); background: var(--s3); }
+
+.mp-modal { max-width: 520px; }
+.mp-vendor { font-size: 11px; color: var(--text-3); }
+.mp-row {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  padding: 10px 11px; border: 1px solid transparent; border-radius: var(--r-sm);
+  background: none; color: var(--text); font-family: inherit; cursor: pointer;
+  transition: background 0.14s var(--ease), border-color 0.14s var(--ease);
+}
+.mp-row:hover { background: var(--s2); }
+.mp-row.on { background: var(--accent-soft); border-color: var(--accent-line); }
+.mp-row > svg { flex: 0 0 auto; color: var(--accent); }
+.mp-main { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.mp-main b {
+  font-size: 13px; font-weight: 550; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.mp-main em {
+  font-style: normal; font-size: 11px; color: var(--text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
 .set-providers-hint { margin-bottom: 4px; }
 .set-where { margin: 12px 0 0; padding-top: 11px; border-top: 1px solid var(--border); }
 .set-where code { font-family: var(--mono); font-size: 11px; overflow-wrap: anywhere; }
@@ -3445,6 +3479,7 @@ label + .jf-hint { margin-top: -5px; }
   input.shot-where { height: 34px; margin: -5px 0; }
   .rail-act { padding: 11px 10px; }
   .ses-row { padding: 13px 12px; }
+  .mp-row { padding: 13px 12px; }
   .ses-act { min-width: 40px; height: 40px; }
   .shot-strip input { height: 32px; }
   .shot-strip input::-webkit-slider-thumb { width: 20px; height: 20px; margin-top: -9px; }

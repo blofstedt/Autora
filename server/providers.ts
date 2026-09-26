@@ -149,10 +149,14 @@ export const PROVIDERS: ProviderSpec[] = [
       // Cache-hit input read from api-docs.deepseek.com/quick_start/pricing
       // in September 2026: about a fiftieth of the uncached price, which is
       // why the agent loop keeps the opening of its prompt unchanged.
-      { id: "deepseek-flash", label: "DeepSeek Flash", input: 0.3, output: 1.2, cachedInput: 0.006, note: "Fast and very cheap" },
+      // deepseek-flash IS V4.1 Flash: DeepSeek renamed nothing, it retired
+      // V4 Flash and V4 Flash Vision and serves both old ids from the new
+      // model (api-docs.deepseek.com/news/news260910, 10 September 2026).
+      { id: "deepseek-flash", label: "DeepSeek V4.1 Flash", input: 0.3, output: 1.2, cachedInput: 0.006, note: "Fast and very cheap; 1M context, reads images" },
       { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro", input: 1.32, output: 3.96, cachedInput: 0.044, note: "Most capable" },
-      // Retired name DeepSeek still accepts, served and billed as Flash.
-      { id: "deepseek-v4-flash", label: "DeepSeek V4 Flash (legacy name)", input: 0.3, output: 1.2, cachedInput: 0.006 },
+      // Retired names DeepSeek still accepts, served by V4.1 Flash and billed
+      // at its price, so they are here as aliases and priced the same.
+      { id: "deepseek-v4-flash", label: "DeepSeek V4 Flash (retired name)", input: 0.3, output: 1.2, cachedInput: 0.006 },
     ],
   },
   {
