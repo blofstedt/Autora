@@ -343,6 +343,45 @@ function Graph({
      started at, about the middle of the map. One finger is a pan, as before. */
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
   const pinchRef = useRef<{ d: number; k: number } | null>(null);
+  /* The layer the whole map sits in. A pan or a zoom is written straight to its
+     transform attribute -- once a frame, not once per pointer event -- so the
+     map follows the pointer without React reconciling every node and edge in
+     between. React still renders the same transform on any re-render, and the
+     effect below re-applies it, so the two can never disagree. */
+  const worldRef = useRef<SVGGElement>(null);
+  const sizeRef = useRef(size);
+  sizeRef.current = size;
+  const viewRaf = useRef(0);
+  const movingTimer = useRef(0);
+
+  const writeView = () => {
+    const g = worldRef.current;
+    if (!g) return;
+    const v = viewRef.current, s = sizeRef.current;
+    g.setAttribute("transform", `translate(${s.w / 2 + v.x}, ${s.h / 2 + v.y}) scale(${v.k})`);
+  };
+
+  /* Three pointermoves between two frames are one move, not three: the writes
+     are coalesced onto the next frame rather than queued up behind each other. */
+  const queueView = () => {
+    if (viewRaf.current) return;
+    viewRaf.current = requestAnimationFrame(() => { viewRaf.current = 0; writeView(); });
+  };
+
+  /* Flags the map as being moved by hand, for the animations CSS pauses. */
+  const markMoving = () => {
+    const host = hostRef.current;
+    if (!host) return;
+    host.classList.add("is-moving");
+    clearTimeout(movingTimer.current);
+    movingTimer.current = setTimeout(() => host.classList.remove("is-moving"), 150);
+  };
+
+  useEffect(() => { writeView(); });
+  useEffect(() => () => {
+    if (viewRaf.current) cancelAnimationFrame(viewRaf.current);
+    clearTimeout(movingTimer.current);
+  }, []);
 
   const edges = useMemo(() => edgesFor(data), [data]);
 
@@ -459,7 +498,9 @@ function Graph({
       // it settles, so a fit taken at the start is wrong by the second frame;
       // it is re-taken as the layout grows, until the reader says otherwise.
       if (!touchedRef.current && frames % 6 === 0) fitRef.current();
-      tick((t) => t + 1);
+      // Twice as often as every frame was reconciling a few hundred nodes
+      // twice per frame for no visible gain.
+      if (frames % 2 === 1) tick((t) => t + 1);
       if (alpha > 0.02) {
         raf = requestAnimationFrame(step);
       } else if (fittedRef.current !== ids) {
@@ -514,8 +555,8 @@ function Graph({
       onWheel={(e) => {
         touchedRef.current = true;
         const next = clampZoom(view.k * (e.deltaY < 0 ? 1.12 : 0.89));
-        viewRef.current = { ...view, k: next };
-        tick((t) => t + 1);
+        viewRef.current = { ...viewRef.current, k: next };
+        queueView(); markMoving();
       }}
       /* Counted before the handlers below see it, and in the capture phase
          because a node stops its own presses bubbling: two fingers landing on
@@ -530,7 +571,8 @@ function Graph({
       onPointerDown={(e) => {
         if (pinchRef.current) return;
         if ((e.target as HTMLElement).closest("[data-node]")) return;
-        dragRef.current = { id: null, x: e.clientX - view.x, y: e.clientY - view.y };
+        dragRef.current = { id: null, x: e.clientX - viewRef.current.x, y: e.clientY - viewRef.current.y };
+        markMoving();
         (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
       }}
       onPointerMove={(e) => {
@@ -546,7 +588,7 @@ function Graph({
             // once makes the map slide out from under the fingers holding it.
             touchedRef.current = true;
             viewRef.current = { ...viewRef.current, k: clampZoom(pinch.k * (d / pinch.d)) };
-            tick((t) => t + 1);
+            queueView(); markMoving();
           }
           return;
         }
@@ -554,7 +596,7 @@ function Graph({
         if (!drag) return;
         if (drag.id === null) {
           touchedRef.current = true;
-          viewRef.current = { ...view, x: e.clientX - drag.x, y: e.clientY - drag.y };
+          viewRef.current = { ...viewRef.current, x: e.clientX - drag.x, y: e.clientY - drag.y };
         } else {
           const node = index.get(drag.id);
           if (node) {
@@ -562,7 +604,8 @@ function Graph({
             node.x = p.x; node.y = p.y; node.vx = 0; node.vy = 0;
           }
         }
-        tick((t) => t + 1);
+        // A pan or a pinch is a DOM write, a dragged node is React state.
+        if (drag.id === null) { queueView(); markMoving(); } else tick((t) => t + 1);
       }}
       onPointerUp={(e) => release(e.pointerId)}
       onPointerCancel={(e) => release(e.pointerId)}
@@ -579,7 +622,7 @@ function Graph({
           </pattern>
         </defs>
         <rect width="100%" height="100%" fill="url(#kweb-dots)" />
-        <g transform={`translate(${size.w / 2 + view.x}, ${size.h / 2 + view.y}) `
+        <g ref={worldRef} transform={`translate(${size.w / 2 + view.x}, ${size.h / 2 + view.y}) `
                     + `scale(${view.k})`}>
           <g className="kedges">
             {edges.map((edge, i) => {
