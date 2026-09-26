@@ -32,48 +32,26 @@ export interface Appearance {
 }
 
 /**
- * Which voice the console speaks in, and where that voice comes from.
+ * Which of Deepgram's hosted voices the console speaks in.
  *
- * All three are empty by default, which means "whatever the environment says"
- * -- so an install that has never been near the settings panel keeps working
- * exactly as before, one that has merely set DEEPGRAM_API_KEY is heard through
- * Deepgram without being configured at all, and one that has only ever run a
- * Kokoro container is heard through that. See ../server/speech.ts.
+ * Empty by default, which means "whatever the environment says" -- so an
+ * install that has never been near the settings panel keeps working exactly as
+ * before, and one that has merely set AUTORA_DEEPGRAM_VOICE is heard through it
+ * without being configured at all. See ../server/speech.ts.
+ *
+ * It used to hold a second service and the address of a local voice server
+ * running on the same box; both are gone, and the two fields with them. An old
+ * settings file still carrying them loads fine -- they are simply ignored.
  */
 export interface SpeechSettings {
-  /** "", "deepgram" or "kokoro": which service speaks, or "" to decide on its
-      own (Deepgram when there is a key for it, a Kokoro server otherwise). */
-  provider: string;
   voice: string;
-  /** A Kokoro voice server to use instead of the ones discovered by name. */
-  url: string;
 }
 
-export const DEFAULT_SPEECH: SpeechSettings = { provider: "", voice: "", url: "" };
-
-/** Only a plain http(s) address, and never a credential inside it. */
-export function saneSpeechUrl(raw: string): string {
-  const text = String(raw ?? "").trim();
-  if (!text) return "";
-  try {
-    const parsed = new URL(text);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
-    if (parsed.username || parsed.password) return "";
-    return parsed.origin;
-  } catch {
-    return "";
-  }
-}
+export const DEFAULT_SPEECH: SpeechSettings = { voice: "" };
 
 export function mergeSpeech(into: SpeechSettings, patch: any): SpeechSettings {
   if (!patch || typeof patch !== "object") return into;
-  if (typeof patch.provider === "string") {
-    // Anything else -- including "auto" -- means "decide for yourself".
-    const wanted = patch.provider.trim().toLowerCase();
-    into.provider = wanted === "deepgram" || wanted === "kokoro" ? wanted : "";
-  }
   if (typeof patch.voice === "string") into.voice = patch.voice.trim().slice(0, 60);
-  if (typeof patch.url === "string") into.url = saneSpeechUrl(patch.url);
   return into;
 }
 

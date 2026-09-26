@@ -4123,7 +4123,7 @@ html[data-font="mono"] body { font-size: 13.5px; }
 .sm-font.on { border-color: var(--accent-line); background: var(--accent-soft); color: var(--text); }
 
 /* The voice, when the console has a voice server behind it. A plain select
-   rather than a row of chips: a Kokoro install offers scores of voices, and a
+   rather than a row of chips: Deepgram offers scores of hosted voices, and a
    list that long wants a list. */
 .sm-voice {
   width: 100%; padding: 8px 9px; border-radius: var(--r-sm); cursor: pointer;

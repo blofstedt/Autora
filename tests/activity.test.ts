@@ -12,8 +12,8 @@ import { activity, brief } from "../src/lib/activity";
 import type { AutoraEvent } from "../src/lib/types";
 
 process.env.AUTORA_STATE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "autora-activity-"));
-// Nothing listens here, so the voice server is known to be absent at once.
-process.env.AUTORA_KOKORO_URL = "http://127.0.0.1:9";
+// No key, so the voice is known to be the browser's own, without a call out.
+process.env.DEEPGRAM_API_KEY = "";
 const { availableTools, capabilityBriefing, findTool, runTool } = await import("../server/tools");
 
 let passed = 0;
@@ -54,8 +54,8 @@ await test("a step in progress is named, with what it is working on", () => {
     ev("tool.call", { name: "terminal", args: { command: "npm test" } }, "a"),
   ];
   assert.equal(activity(log), "Running npm test");
-  const web = [ev("turn.user", { text: "x" }), ev("tool.call", { name: "web_search", args: { query: "kokoro tts voices" } }, "b")];
-  assert.equal(activity(web), "Searching the web for “kokoro tts voices”");
+  const web = [ev("turn.user", { text: "x" }), ev("tool.call", { name: "web_search", args: { query: "deepgram tts voices" } }, "b")];
+  assert.equal(activity(web), "Searching the web for “deepgram tts voices”");
   const page = [ev("turn.user", { text: "x" }), ev("tool.call", { name: "browser_open", args: { url: "https://www.example.com/a" } }, "c")];
   assert.equal(activity(page), "Opening example.com");
   const mcp = [ev("turn.user", { text: "x" }), ev("tool.call", { name: "mcp__github__list", args: {} }, "d")];

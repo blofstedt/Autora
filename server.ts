@@ -24,7 +24,7 @@ import type { JevTarget } from "./server/jev/engine";
 import { guardWorthy, irreversible } from "./server/jev/guard";
 import { prune, storageReport } from "./server/retention";
 import { hostVitals } from "./server/host";
-import { forgetSpeech, setSpeechProvider, setSpeechUrl, speak as synthesise, speechStatus } from "./server/speech";
+import { forgetSpeech, speak as synthesise, speechStatus } from "./server/speech";
 import { captureConsole, log, readLogs, setLogRedactor, type LogLevel } from "./server/logs";
 import { allowSocket, refuseRequest } from "./server/crosssite";
 import { certificateSource, tlsSettings } from "./server/tls";
@@ -2616,10 +2616,6 @@ async function runTurn(session: Session, text: string): Promise<TurnResult> {
 }
 
 async function startServer() {
-  // The voice service and server chosen in the panel are the ones every
-  // request uses -- Deepgram's hosted voices, or a Kokoro server named here.
-  setSpeechProvider(state.speech.provider);
-  setSpeechUrl(state.speech.url);
   const app = express();
   app.disable("x-powered-by");
 
@@ -3695,9 +3691,9 @@ async function startServer() {
   const settingsWithTools = async () => ({
     ...settingsPayload(),
     appearance: { ...state.appearance, themes: THEMES, fonts: FONTS },
-    /* Where the voice comes from, so the panel can say whether there is one
-       and offer the voices it has. A voice chosen in the panel wins over the
-       environment, the way every other setting here does. */
+    /* Whether there is a voice at all, so the panel can say where it comes
+       from and offer the voices it has. A voice chosen in the panel wins over
+       the environment, the way every other setting here does. */
     speech: await speechStatus(false, state.speech.voice || undefined),
     jev: {
       enabled: state.jev.enabled,
@@ -3810,32 +3806,21 @@ async function startServer() {
       if (typeof body.jev.key === "string") resetHealth();
     }
     if (body.appearance && typeof body.appearance === "object") mergeAppearance(state.appearance, body.appearance);
-    /* Which service, which voice, and which server. The service is applied
-       first so that a voice is checked against the list the service in hand
-       actually reports -- switching to Deepgram and picking a voice in one
-       save must not measure that voice against a Kokoro server. A voice is
-       checked while the service is reachable at all: a typo saved here would
-       otherwise only show up at the next sentence, in the middle of a
-       conversation, where it reads as the app being broken rather than as a
-       setting being wrong. With the service down the choice is kept
-       unverified instead. */
+    /* Which voice speaks. It is checked while Deepgram is reachable at all: a
+       typo saved here would otherwise only show up at the next sentence, in the
+       middle of a conversation, where it reads as the app being broken rather
+       than as a setting being wrong. With Deepgram unreachable the choice is
+       kept unverified instead, since only a network that came back can settle
+       it. */
     if (body.speech && typeof body.speech === "object") {
-      const speakingThrough = state.speech.provider;
-      if (typeof body.speech.provider === "string") setSpeechProvider(body.speech.provider);
       const wanted = typeof body.speech.voice === "string" ? body.speech.voice.trim() : "";
       if (wanted && wanted !== state.speech.voice) {
         const listing = await speechStatus(true, wanted);
-        const known = listing.voices.some((v) => v.id === wanted);
-        if (listing.available && listing.voices.length > 0 && !known) {
-          // Nothing has been saved yet: put the running console back on the
-          // service it was already speaking through, and refuse.
-          setSpeechProvider(speakingThrough);
-          return res.status(400).json({ detail: "The voice server has no voice called " + wanted + "." });
+        if (listing.available && listing.voices.length > 0 && !listing.voices.some((v) => v.id === wanted)) {
+          return res.status(400).json({ detail: "Deepgram has no voice called " + wanted + "." });
         }
       }
       mergeSpeech(state.speech, body.speech);
-      setSpeechUrl(state.speech.url);
-      setSpeechProvider(state.speech.provider);
       forgetSpeech();
     }
     /* When a turn is called a loop, and how much is kept. Both used to be
@@ -3849,31 +3834,29 @@ async function startServer() {
   });
 
 
-  /* The console's own voice. A GET says whether there is a voice server on
-     the network and which voices it offers; a POST turns one fragment of
-     speech into an audio file the page can play.
+  /* The console's own voice. A GET says whether there is a voice service and
+     which voices it offers; a POST turns one fragment of speech into an audio
+     file the page can play.
 
-     The page asks this server rather than the voice server directly because
-     it cannot reach it: Kokoro runs in its own container on the same private
-     Docker network as this one, publishing no port, and a browser on the
-     tailnet has no route to it. Going through here also means the audio
-     arrives from the origin the page already trusts. */
+     The page asks this server rather than Deepgram directly because it has no
+     key and should not be given one: a key in the page is a key in every
+     browser that opens the app. Going through here also means the audio arrives
+     from the origin the page already trusts. */
   app.get("/api/speech", async (_req: Request, res: Response) => {
     /* The saved voice is put to the service as a preference, and what comes
-       back is the voice that will actually be heard: a voice saved while
-       Kokoro was speaking ("af_heart") is not one Deepgram offers, and the
-       panel should show the voice it would really use rather than a name that
-       would be refused at the next sentence. */
+       back is the voice that will actually be heard: a voice Deepgram has
+       never heard of -- one saved while a local voice server was speaking,
+       say -- is not passed through, and the panel should show the voice it
+       would really use rather than a name that would be refused at the next
+       sentence. */
     const status = await speechStatus(false, state.speech.voice || undefined);
     res.json({
       available: status.available,
       provider: status.provider,
-      choice: state.speech.provider,
       voice: status.voice,
       voices: status.voices,
       reason: status.reason,
-      url: state.speech.url || status.url,
-      configured: state.speech.url,
+      url: status.url,
     });
   });
 
@@ -3892,7 +3875,7 @@ async function startServer() {
       res.setHeader("X-Autora-Voice", utterance.voice);
       res.send(Buffer.from(utterance.audio));
     } catch (err: any) {
-      /* 503, not 500: "there is no voice server right now" is a state the
+      /* 503, not 500: "there is no voice service right now" is a state the
          page already knows how to live with -- it says the sentence with the
          browser's own voice instead. */
       res.status(503).json({ error: String(err?.message ?? err) });

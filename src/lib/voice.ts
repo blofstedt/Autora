@@ -473,16 +473,13 @@ export type SpeechSource = "server" | "browser";
 export type SpeechStatus = {
   /** False when there is no voice service: the browser's voice is used. */
   available: boolean;
-  /** Which service speaks: Deepgram's hosted voices, or a Kokoro server. */
-  provider?: "deepgram" | "kokoro" | null;
-  /** What was chosen in Config: "", "deepgram" or "kokoro". "" is automatic. */
-  choice?: string;
+  /** The service that speaks, or null when nothing is configured. */
+  provider?: "deepgram" | null;
   voice: string;
   voices: { id: string; label: string }[];
   reason: string | null;
+  /** The service behind it, for the panel to name. */
   url: string | null;
-  /** The address set in Config, "" when the server is found by name. */
-  configured?: string;
 };
 
 /** Ask the console which voice it has, if any. Null when it cannot be asked. */
@@ -512,39 +509,7 @@ export async function chooseVoice(voice: string): Promise<{ ok: boolean; detail?
   }
 }
 
-/** Choose the voice service: "deepgram", "kokoro", or "" to let the console
-    decide (Deepgram when there is a key for it, Kokoro otherwise). */
-export async function chooseProvider(provider: string): Promise<{ ok: boolean; detail?: string }> {
-  try {
-    const res = await fetch("/api/settings", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ speech: { provider } }),
-    });
-    if (res.ok) return { ok: true };
-    const body = await res.json().catch(() => null);
-    return { ok: false, detail: body?.detail ?? `The console refused that service (${res.status}).` };
-  } catch {
-    return { ok: false, detail: "The console could not be reached." };
-  }
-}
 
-/** Point the console at a voice server by address, or clear it ("") to go
-    back to finding one by name. */
-export async function chooseSpeechUrl(url: string): Promise<{ ok: boolean; detail?: string }> {
-  try {
-    const res = await fetch("/api/settings", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ speech: { url } }),
-    });
-    if (res.ok) return { ok: true };
-    const body = await res.json().catch(() => null);
-    return { ok: false, detail: body?.detail ?? `The console refused that address (${res.status}).` };
-  } catch {
-    return { ok: false, detail: "The console could not be reached." };
-  }
-}
 
 /** How long a clip of silence to unlock audio with: long enough that iOS sees
     it as playback, short enough that nobody hears anything. */
@@ -579,8 +544,8 @@ function silence(): Blob {
 }
 
 /** Sentences rendered ahead of the one playing. Enough to cover a short
-    sentence followed by a long one, few enough not to swamp a voice server
-    running on a CPU with work that a barge-in throws away. */
+    sentence followed by a long one, few enough that a barge-in does not throw
+    away a queue of requests nobody will hear. */
 const LOOKAHEAD = 2;
 
 export type Speech = {
@@ -599,11 +564,11 @@ export type Speech = {
 /**
  * The words out.
  *
- * Two voices behind one interface. The console's own voice server comes first
- * (see server/speech.ts): the audio is fetched from this origin and played as
- * a file, so it sounds the same on the phone, the laptop and the desktop, and
- * it is a voice somebody chose. The browser's speechSynthesis is the fallback
- * -- and is still what an install with no voice server uses, unchanged.
+ * Two voices behind one interface. Deepgram's hosted voices come first (see
+ * server/speech.ts): the audio is fetched from this origin and played as a
+ * file, so it sounds the same on the phone, the laptop and the desktop, and it
+ * is a voice somebody chose. The browser's speechSynthesis is the fallback --
+ * and is still what an install with no Deepgram key uses, unchanged.
  *
  * Which one is being used is not the caller's business: `say` queues a
  * fragment and fragments come out in order, spoken once each, whichever voice
@@ -962,7 +927,7 @@ export function splitSpeakable(pending: string): [ready: string, rest: string] {
 const MERGE_UNDER = 12;
 
 /**
- * Break text into the pieces the voice server renders one at a time.
+ * Break text into the pieces the service renders one at a time.
  *
  * A sentence is the smallest unit that still sounds like speech: the voice
  * sets its intonation across the whole sentence, so a word at a time would

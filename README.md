@@ -97,32 +97,24 @@ laptop and the desktop. Paste the key into **Settings -> Secrets** as
 the service, so it is whatever it actually has -- plays a sample, remembers the
 one picked on every device, and says which service is speaking.
 
-Without a key, a voice server running on the network is found by itself: the
-[Kokoro](https://github.com/remsky/Kokoro-FastAPI) Umbrel app answers to
-`kokoro_web_1` on the same private Docker network, and what is spoken to is
-its OpenAI-shaped `/v1/audio/speech`. Nothing has to be configured for that
-either. Which of the two speaks can be pinned in **Settings -> Voice**
-(Automatic, Deepgram or Kokoro, and the address of a Kokoro server living
-elsewhere). When the agent is asked to say something out loud it uses its
-`speak` tool, which plays the words on the open page straight away rather
-than making an audio file to hand over. A choice made in the panel wins over
-the environment, the way every other setting does.
+There is one service and one key: Deepgram's hosted voices. A local voice
+server is no longer looked for, and a key is the whole of the setup. Which
+voice speaks can be changed in **Settings -> Voice**, and the choice is
+remembered on every device. When the agent is asked to say something out loud
+it uses its `speak` tool, which plays the words on the open page straight
+away rather than making an audio file to hand over.
 
 | Variable | Purpose |
 |---|---|
 | `DEEPGRAM_API_KEY` | Speak through Deepgram's hosted Aura voices. A key saved in Settings -> Secrets wins over this |
-| `AUTORA_TTS_PROVIDER` | `deepgram` or `kokoro` to force one instead of deciding (default: Deepgram when a key is set, Kokoro otherwise) |
-| `AUTORA_DEEPGRAM_VOICE` | The Deepgram voice to start with (default `aura-2-thalia-en`) |
-| `AUTORA_KOKORO_URL` | The Kokoro server to use instead of the ones found by name. Default: `http://kokoro_web_1:8880`, then `http://kokoro:8880`, then `http://localhost:8880` |
-| `AUTORA_KOKORO_VOICE` | The Kokoro voice to start with (default `af_heart`) |
+| `AUTORA_DEEPGRAM_VOICE` | The Deepgram voice to start with (default `aura-2-thalia-en`); a voice picked in Settings wins |
 
-The page never talks to the voice service itself. `POST /api/speech` takes a
-fragment of text and returns an audio file: a Kokoro server publishes no port
-and a phone on the tailnet has no route to it, while the app has one -- and
-going through this origin keeps a Deepgram key out of the browser entirely.
-The audio arrives from the origin the page already trusts. `GET /api/speech`
-says which service is speaking, whether it is reachable, and which voices it
-has.
+The page never talks to Deepgram itself. `POST /api/speech` takes a fragment
+of text and returns an audio file, which keeps the key on the server and means
+a phone on the tailnet needs no route of its own. The audio arrives from the
+origin the page already trusts. `GET /api/speech` says whether there is a key,
+which voice it would use, and which voices the service has -- the list comes
+from Deepgram's own model catalogue, so it is whatever it actually offers.
 
 If there is none -- no key, wrong address, container down -- the panel says so
 and the browser's own voice carries on being used. Nothing goes quiet, and
@@ -632,10 +624,7 @@ acting on it forever unless there is somewhere to go and say no.
 | `AUTORA_COMPACTION_MODEL` | A cheaper model of the same provider to write the working memory with (default: the chat model) |
 | `AUTORA_MAX_OUTPUT_TOKENS` | Output tokens the model may write per step of a task (default: 8192) |
 | `DEEPGRAM_API_KEY` | Speak through Deepgram's hosted Aura voices; a key saved in Settings -> Secrets wins |
-| `AUTORA_TTS_PROVIDER` | `deepgram` or `kokoro` to force the voice service (default: Deepgram with a key, else Kokoro) |
-| `AUTORA_DEEPGRAM_VOICE` | The Deepgram voice to start with (default `aura-2-thalia-en`) |
-| `AUTORA_KOKORO_URL` | The Kokoro server to speak with, instead of the ones found by name (default `http://kokoro_web_1:8880`) |
-| `AUTORA_KOKORO_VOICE` | The Kokoro voice to start with (default `af_heart`); a voice picked in Settings wins |
+| `AUTORA_DEEPGRAM_VOICE` | The Deepgram voice to start with (default `aura-2-thalia-en`); a voice picked in Settings wins |
 | `TYPESAFE_API_KEY` | A key for the hosted Jev API, used by Jev Mode instead of the chat model. `JEV_API_KEY`, `JEV_TOKEN`, `JEV_KEY` and `TYPESAFE_TOKEN` work too, as environment variables or saved in Settings → Secrets (also settable in Settings → Jev Mode) |
 | `AUTORA_BROWSER_HEADED` | `1` shows a real browser window instead of running headless |
 | `AUTORA_BROWSER_FPS` / `AUTORA_BROWSER_QUALITY` / `AUTORA_BROWSER_STREAM_WIDTH` | How much live video to send (default `6` fps, quality `50`, scaled to `960` wide) |
@@ -690,8 +679,8 @@ Interfaces defined, adapters not shipped: speech-to-text
 (`src/autora/voice/engine.py`) and desktop control. The voice *logic* —
 barge-in, what to say aloud, voice approvals — is implemented and tested
 against fakes; text-to-speech is no longer an interface only: Deepgram's
-hosted voices, or a Kokoro (any OpenAI-shaped) server, are spoken to through
-`server/speech.ts`, with the service and the voice picked in Settings.
+hosted voices are spoken to through `server/speech.ts`, with the voice picked
+in Settings.
 
 ```bash
 python3 tests/run_all.py

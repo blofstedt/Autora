@@ -814,11 +814,11 @@ const TOOLS: ToolSpec[] = [
     group: "person",
     description:
       "Say something out loud to the person, right now, in the console's own " +
-      "voice (the Kokoro voice server when there is one, otherwise the browser's " +
+      "voice (a Deepgram API key when there is one, otherwise the browser's " +
       "voice). It plays immediately on the page they have open -- nothing is " +
       "saved and there is no file to hand over. Use it whenever you are asked " +
       "to say, read out, pronounce or speak something, or to try the voice. " +
-      "Never make an audio file for this, never call the voice server yourself " +
+      "Never make an audio file for this, never call Deepgram yourself " +
       "from the terminal or http_request, and never save or attach a recording: " +
       "this tool is how you speak. Keep each call to what you mean to be heard " +
       "(up to about 2,000 characters), plain words with no markdown.",
@@ -2436,7 +2436,7 @@ async function runToolUnredacted(
           ok: true,
           summary: voice?.available
             ? `Played aloud on the person's page in the ${voice.voice} voice from ${voice.url}. Nothing else to do: do not also make or attach an audio file.`
-            : "Played aloud on the person's page in the browser's own voice (no voice server is set up). Nothing else to do: do not also make or attach an audio file.",
+            : "Played aloud on the person's page in the browser's own voice (no Deepgram key is set up). Nothing else to do: do not also make or attach an audio file.",
           preview: text.slice(0, 80),
         };
       }
@@ -2818,7 +2818,7 @@ export async function capabilityBriefing(): Promise<string> {
     "- Your voice: always available. Tool: speak. It plays words aloud on the " +
       "person's page at once, in the voice chosen under Settings -> Voice. When you " +
       "are asked to say or read something out loud, call speak -- do not make an " +
-      "audio file, call the voice server yourself, or present a recording. With " +
+      "audio file, call Deepgram yourself, or present a recording. With " +
       "live voice on, your replies are already read aloud; do not repeat them with speak.",
   );
   lines.push(

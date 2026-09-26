@@ -111,8 +111,9 @@ Catching cancellation requires deciding whose cancellation it was.)
 
 ## Why voice quality is not a TTS problem
 
-Kokoro at 82M is perfectly pleasant. Agent voice is unbearable for other
-reasons, roughly in this order:
+A small local model at 82M is perfectly pleasant, and so are Deepgram's hosted
+Aura voices. Agent voice is unbearable for other reasons, roughly in this
+order:
 
 1. **It reads code, paths, JSON and hashes aloud.** Nothing breaks the spell
    faster than "slash home slash user slash dot config slash app dot t s x".

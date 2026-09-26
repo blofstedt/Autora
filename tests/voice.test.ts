@@ -84,7 +84,7 @@ test("a sentence left hanging waits longer", () => {
  */
 const realFetch = globalThis.fetch;
 
-test("the voice server is handed a sentence at a time, not the whole reply", () => {
+test("the service is handed a sentence at a time, not the whole reply", () => {
   assert.deepEqual(
     sentences("I opened the page. It has three results! Want the first one?"),
     ["I opened the page.", "It has three results!", "Want the first one?"],
@@ -126,7 +126,7 @@ async function consoleCalls() {
 
   globalThis.fetch = reply(200, {
     available: true, voice: "af_heart", voices: [{ id: "af_heart", label: "af_heart — A" }],
-    reason: null, url: "http://kokoro_web_1:8880",
+    provider: "deepgram" as const, reason: null, url: "https://api.deepgram.com",
   });
   const status = await fetchSpeechStatus();
   const asked = paths[0];
@@ -135,7 +135,7 @@ async function consoleCalls() {
   const saved = await chooseVoice("am_michael");
   const chosen = paths.at(-1);
 
-  globalThis.fetch = reply(400, { detail: 'The voice server has no voice called "nope".' });
+  globalThis.fetch = reply(400, { detail: 'The service has no voice called "nope".' });
   const refused = await chooseVoice("nope");
 
   globalThis.fetch = (async () => { throw new Error("offline"); }) as typeof fetch;
