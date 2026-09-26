@@ -21,6 +21,7 @@ import { Approvals } from "./components/Approvals";
 import { Schedule } from "./components/Schedule";
 import { Settings, type ConfigTab } from "./components/Settings";
 import { DictateButton } from "./components/DictateButton";
+import { AttachButton, CameraButton } from "./components/AttachButton";
 import { SlashMenu } from "./components/SlashMenu";
 import { resolve as resolveCommand, suggest as suggestCommands, type Command } from "./lib/commands";
 import { LiveChat } from "./components/LiveChat";
@@ -36,9 +37,12 @@ import {
   splitSpeakable, useSpeech,
 } from "./lib/voice";
 import {
-  IconArrow, IconArrowUp, IconChevron, IconMenu, IconStop,
+  IconArrow, IconArrowUp, IconChevron, IconFile, IconMenu, IconStop,
   IconX,
 } from "./components/Icons";
+import {
+  MAX_UPLOAD_BYTES, isPicture, sizeLabel, uploadAttachment, type Attachment,
+} from "./lib/attachments";
 
 /** How often to re-read the session list, so sessions started elsewhere (or
     from another tab) show up without a reload. */
@@ -64,6 +68,11 @@ export function App() {
       picture swap and nothing else. */
   const [browser, setBrowser] = useState<BrowserState | null>(null);
   const [draft, setDraft] = useState("");
+  /* Files on their way out with the next message. Uploaded the moment they
+     were picked or taken, so what is held here is already an artifact id and
+     Send does not have to wait for a photograph to travel. */
+  const [attached, setAttached] = useState<Attachment[]>([]);
+  const [attaching, setAttaching] = useState(0);
   const [liveOn, setLiveOn] = useState(false);
   const [userSpeaking] = useState(false);
   /** Which page of the app is showing. Chat is the conversation; the rest
@@ -348,11 +357,15 @@ export function App() {
 
   const send = useCallback(async (spoken?: string) => {
     const text = (spoken ?? draft).trim();
-    if (!text || !sessionId) return;
+    /* A dictated turn carries nothing but words, and a message may be nothing
+       but files: "look at this" with the photo is a whole request. */
+    const files = spoken === undefined ? attached : [];
+    if ((!text && files.length === 0) || !sessionId) return;
     // Dictated turns never touched the box, so there is nothing to clear and
     // clearing anyway would eat something half-typed.
     if (spoken === undefined) {
       setDraft("");
+      setAttached([]);
       // The message is handed over: a spark from Send to the agent's mark.
       flySpark(visible(".composer-send"), visible(".rail-slot .presence", ".top-presence"));
     }
@@ -362,15 +375,49 @@ export function App() {
     const res = await fetch(`/api/sessions/${sessionId}/message`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({
+        text,
+        ...(files.length > 0 ? { attachments: files.map((f) => f.id) } : {}),
+      }),
     }).catch(() => null);
     // Now that the box stays open while the connection comes back, a send
     // can fail: put what was typed back rather than losing it.
     if (!res?.ok) {
-      if (spoken === undefined) setDraft((now) => now || text);
+      if (spoken === undefined) {
+        setDraft((now) => now || text);
+        // The files are not lost either: the artifacts are still there, so
+        // the chips come back and Send can be pressed again.
+        setAttached((now) => (now.length > 0 ? now : files));
+      }
       setNotice("Could not reach the server; your message was not sent.");
     }
-  }, [draft, sessionId, speaking, prime]);
+  }, [draft, attached, sessionId, speaking, prime]);
+
+  /** Put files into the message: up to the artifacts store now, into a chip
+      beside the box while they travel, and into the message as their ids. */
+  const addFiles = useCallback(async (files: File[]) => {
+    if (files.length === 0) return;
+    setNotice(null);
+    for (const file of files) {
+      if (file.size > MAX_UPLOAD_BYTES) {
+        setNotice(`${file.name} is ${sizeLabel(file.size)}; the limit is ${sizeLabel(MAX_UPLOAD_BYTES)}.`);
+        continue;
+      }
+      setAttaching((n) => n + 1);
+      try {
+        const attachment = await uploadAttachment(file);
+        setAttached((list) => [...list, attachment]);
+      } catch (err: any) {
+        setNotice(err?.message ?? `Could not attach ${file.name}.`);
+      } finally {
+        setAttaching((n) => n - 1);
+      }
+    }
+  }, []);
+
+  const dropAttachment = useCallback((id: string) => {
+    setAttached((list) => list.filter((file) => file.id !== id));
+  }, []);
 
   /** Stop the turn in flight.
    *
@@ -1161,7 +1208,7 @@ export function App() {
               />
             ) : (
               <>
-                <div className={`composer-box ${draft.trim() ? "has-text" : ""}`}>
+                <div className={`composer-box ${draft.trim() || attached.length > 0 ? "has-text" : ""}`}>
                   {slashOpen && (
                     <SlashMenu
                       commands={slashOffered}
@@ -1213,6 +1260,34 @@ export function App() {
                       }
                     }}
                   />
+                  {attached.length > 0 && (
+                    <div className="attach-row">
+                      {attached.map((file) => (
+                        <span className="attach-chip" key={file.id}>
+                          {isPicture(file.mime)
+                            ? <img className="attach-pic" src={`/api/artifacts/${file.id}`} alt="" />
+                            : <IconFile size={13} />}
+                          <b>{file.name}</b>
+                          <em>{sizeLabel(file.size)}</em>
+                          <button
+                            type="button"
+                            className="attach-drop"
+                            onClick={() => dropAttachment(file.id)}
+                            title={`Remove ${file.name}`}
+                            aria-label={`Remove ${file.name}`}
+                          >
+                            <IconX size={12} />
+                          </button>
+                        </span>
+                      ))}
+                      {attaching > 0 && (
+                        <span className="attach-chip is-loading">
+                          <span className="attach-spin" aria-hidden="true" />
+                          <b>uploading…</b>
+                        </span>
+                      )}
+                    </div>
+                  )}
                   <div className="composer-foot">
                     <div className="composer-tools">
                       <DictateButton
@@ -1235,6 +1310,21 @@ export function App() {
                         <AutoraMark state={liveState} size={18} />
                         <span className="btn-label">Talk</span>
                       </button>
+                      {/* Beside Talk, at every width: the two things you can
+                          hand over without typing -- a file, or a photo taken
+                          here. Both land in the artifacts store first, so
+                          nothing is lost if Send comes later. */}
+                      <AttachButton
+                        onFiles={(files) => void addFiles(files)}
+                        disabled={readOnly}
+                        busy={attaching > 0}
+                        onTrouble={setNotice}
+                      />
+                      <CameraButton
+                        onFiles={(files) => void addFiles(files)}
+                        disabled={readOnly}
+                        onTrouble={setNotice}
+                      />
                       {notice ? (
                         <button
                           className="hint voice-note"
@@ -1269,7 +1359,7 @@ export function App() {
                         className="composer-send"
                         // Without a model a message can only fail; a slash
                         // command (/settings) still goes.
-                        disabled={readOnly || !draft.trim()
+                        disabled={readOnly || (!draft.trim() && attached.length === 0)
                           || (modelReady === false && !draft.trim().startsWith("/"))}
                         onClick={submit}
                         title={running ? "Interrupt & send" : "Send"}

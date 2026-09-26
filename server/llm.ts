@@ -53,6 +53,13 @@ export interface ToolReply {
  * way. `calls` only ever appears on an assistant message; `replies` only on a
  * tool one.
  */
+/** A picture handed to the model, base64 without the data-url prefix:
+    every vendor's API takes the media type and the bytes separately. */
+export interface ChatImage {
+  mime: string;
+  data: string;
+}
+
 export interface ChatMessage {
   role: "user" | "assistant" | "tool";
   text?: string;
@@ -65,6 +72,9 @@ export interface ChatMessage {
       history with tools in it unless each assistant message carries this
       back. */
   reasoning?: string;
+  /** User only: pictures that came with the message. Sent with the turn they
+      belong to and no later one -- see server/attach.ts. */
+  images?: ChatImage[];
 }
 
 export interface ChatCall {
@@ -134,8 +144,17 @@ function weigh(message: ChatMessage): string {
     message.reasoning ?? "",
     ...(message.calls ?? []).map((c) => c.name + JSON.stringify(c.args)),
     ...(message.replies ?? []).map((r) => r.result),
+    /* A picture costs about a thousand tokens on every vendor, whatever its
+       file size. Counting its base64 instead -- four characters per token by
+       this rule -- would report a two-megabyte photograph as half a million
+       tokens and have the context engine compacting a thread that is not
+       actually long. */
+    ...(message.images ?? []).map(() => "x".repeat(PICTURE_TOKENS * 4)),
   ].join("");
 }
+
+/** Charged per picture in the estimate above. */
+const PICTURE_TOKENS = 1100;
 
 /** What a prompt of this system text and history would cost, roughly. The
     context engine uses it to decide when to compact; the same rule as the
@@ -335,6 +354,19 @@ function openAiMessages(call: ChatCall): any[] {
       }
       continue;
     }
+    if (message.images?.length) {
+      out.push({
+        role: "user",
+        content: [
+          { type: "text", text: message.text ?? "" },
+          ...message.images.map((img) => ({
+            type: "image_url",
+            image_url: { url: `data:${img.mime};base64,${img.data}` },
+          })),
+        ],
+      });
+      continue;
+    }
     out.push({ role: "user", content: message.text ?? "" });
   }
 
@@ -470,6 +502,12 @@ function anthropicMessages(call: ChatCall): any[] {
     }
 
     const content: any[] = [];
+    /* Picture first, then the words: that is the order Anthropic recommends,
+       and it also leaves the last block of the turn a text one, which is
+       where the cache breakpoint below has always gone. */
+    for (const img of message.images ?? []) {
+      content.push({ type: "image", source: { type: "base64", media_type: img.mime, data: img.data } });
+    }
     if (message.text) content.push({ type: "text", text: message.text });
     for (const use of message.calls ?? []) {
       content.push({ type: "tool_use", id: use.id, name: use.name, input: use.args });
@@ -654,6 +692,9 @@ function geminiContents(call: ChatCall): any[] {
 
     const parts: any[] = [];
     if (message.text) parts.push({ text: message.text });
+    for (const img of message.images ?? []) {
+      parts.push({ inlineData: { mimeType: img.mime, data: img.data } });
+    }
     for (const use of message.calls ?? []) {
       parts.push({ functionCall: { name: use.name, args: use.args } });
     }

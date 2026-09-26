@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { Bucket, Cell, KanbanTask, MemoryTouch } from "../lib/derive";
-import { IconAlert, IconArrow, IconArrowDown, IconChevron, IconUser } from "./Icons";
+import { isPicture, sizeLabel, type Attachment } from "../lib/attachments";
+import { IconAlert, IconArrow, IconArrowDown, IconChevron, IconFile, IconUser } from "./Icons";
 import { AutoraMark } from "./AutoraMark";
 import { TerminalCell } from "./TerminalCell";
 import { ScreencastCell } from "./ScreencastCell";
@@ -205,6 +206,37 @@ type WorkState = {
    streams only its own card is drawn again -- not every earlier reply's
    Markdown and every terminal above it. It relies on every prop being stable
    too: pass handlers made with useCallback, never an inline arrow. */
+/**
+ * What a message came with, under the words.
+ *
+ * The same artifacts the agent was handed, drawn where the person can see that
+ * they went with this message rather than the one before it: a picture shows
+ * itself, anything else shows its name and opens from there. Small on purpose
+ * -- this is a receipt, not a gallery.
+ */
+const MessageFiles = memo(function MessageFiles({ files }: { files: Attachment[] }) {
+  if (files.length === 0) return null;
+  return (
+    <div className="msg-files">
+      {files.map((file) => (
+        <a
+          className="msg-file"
+          key={file.id}
+          href={`/api/artifacts/${file.id}`}
+          target="_blank"
+          rel="noreferrer"
+          title={`${file.name} — ${sizeLabel(file.size)}`}
+        >
+          {isPicture(file.mime)
+            ? <img src={`/api/artifacts/${file.id}`} alt={file.name} loading="lazy" />
+            : <IconFile size={14} />}
+          <span className="msg-file-name">{file.name}</span>
+        </a>
+      ))}
+    </div>
+  );
+});
+
 const TurnBucket = memo(function TurnBucket({
   bucket,
   sessionId,
@@ -230,12 +262,13 @@ const TurnBucket = memo(function TurnBucket({
 
   return (
     <article className="turn">
-      {bucket.prompt && (
+      {(bucket.prompt || bucket.attachments.length > 0) && (
         <div className="msg user">
           <span className="avatar"><IconUser size={14} /></span>
           <div className="msg-body">
             <div className="msg-who">you</div>
-            <div className="msg-text">{bucket.prompt}</div>
+            {bucket.prompt && <div className="msg-text">{bucket.prompt}</div>}
+            <MessageFiles files={bucket.attachments} />
           </div>
         </div>
       )}

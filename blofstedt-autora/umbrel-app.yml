@@ -93,19 +93,19 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The bottom of the left menu is no longer empty. A small ring shows how full
-  the open session's context is (for example "38k of 100k tokens") and where
-  Autora starts condensing older turns into working memory; it turns amber
-  once it gets there and says how many times the session has been condensed.
-  Under it, a card shows one thing Autora remembers. Something it has just
-  learned comes first, with Keep and Discard right there, so you can confirm
-  or drop it without opening the Mind; tap the card to open that memory. Then
-  three small bars show the machine it runs on: processor, memory and disk
-  (amber past 85%). Last, a line shows any schedule or watcher running right
-  now (tap it to open its session) and which one is due next. The menu looks
-  the same on a phone as on a computer; on a tall desktop window the menu
-  and its cards are larger, so they fill it.
-
+  A message can carry a file now. Beside Talk in the chat box there is a
+  paperclip: choose a document and it goes to the Artifacts store straight
+  away, waiting as a small chip above the box until you send -- remove one
+  with its x if you change your mind. To the right of it, a camera button
+  opens the camera on the phone or laptop you are using and attaches the
+  photograph the moment you press the shutter. Files travel with your words
+  rather than instead of them, and a message made of nothing but a file is a
+  whole request. Whatever a turn came with is listed under it afterwards, so
+  you can see later what you handed over, and the agent is told what it has
+  been given: a picture is shown to it as a picture, once, on the turn it
+  arrived and not again on every turn after, and a document is there for it to
+  read whenever it needs it. The camera needs a secure page -- so it appears
+  on the optional https address -- while the paperclip works either way.
 
 dependencies: []
 path: ""

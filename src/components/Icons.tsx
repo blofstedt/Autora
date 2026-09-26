@@ -189,6 +189,21 @@ export const IconTrash = ({ size = 16, className }: Props) => (
   </svg>
 );
 
+/** A paperclip: attach a file from this device. */
+export const IconPaperclip = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M20 11.5 12.6 19a4.6 4.6 0 0 1-6.5-6.5l7.6-7.6a3.1 3.1 0 0 1 4.4 4.4l-7.6 7.6a1.6 1.6 0 0 1-2.2-2.2l6.9-6.9" />
+  </svg>
+);
+
+/** A camera: take a photo here and attach it. */
+export const IconCamera = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M3.5 8.5A1.5 1.5 0 0 1 5 7h2.2l1.2-2h7.2l1.2 2H19a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 19 19H5a1.5 1.5 0 0 1-1.5-1.5z" />
+    <circle cx="12" cy="13" r="3.4" />
+  </svg>
+);
+
 export const IconMic = ({ size = 16, className }: Props) => (
   <svg {...base(size)} className={className}>
     <rect x="9" y="2.75" width="6" height="11" rx="3" />

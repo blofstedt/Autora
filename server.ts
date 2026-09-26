@@ -45,6 +45,9 @@ import { threeRuntime } from "./server/widgets";
 import {
   MAX_ARTIFACT_BYTES, deleteArtifact, getArtifact, listArtifacts, readArtifact, saveArtifact,
 } from "./server/artifacts";
+import {
+  attachmentNote, attachmentRefs, picturesFor, type AttachmentRef,
+} from "./server/attach";
 import { ContextEngine, type CompactionReport } from "./server/context";
 import {
   appendEvent, countsFor, countsOf, deleteSession, flushStore, loadSessionEvents,
@@ -1234,6 +1237,10 @@ const THINKING_BUDGET = (() => {
  */
 function historyFor(session: Session, sinceSeq = 0): { message: ChatMessage; seq: number }[] {
   const turns: { message: ChatMessage; seq: number }[] = [];
+  /* What each user turn came with, by the seq that turn ended on. The bytes
+     are read only for the turn about to be answered (below), never for the
+     ones already in the history. */
+  const attached = new Map<number, AttachmentRef[]>();
 
   for (const event of session.events) {
     if (event.seq <= sinceSeq) continue;
@@ -1261,7 +1268,13 @@ function historyFor(session: Session, sinceSeq = 0): { message: ChatMessage; seq
     }
     if (!role) continue;
 
-    const text = note || String(event.payload?.text ?? "");
+    const said = String(event.payload?.text ?? "");
+    const files = role === "user" ? attachmentRefs(event.payload?.attachments) : [];
+    if (role === "user" && files.length > 0) attached.set(event.seq, files);
+    /* The note goes after what they said, as a second paragraph: it is a fact
+       about the message, not a continuation of the sentence. */
+    const text = note
+      || [said, files.length > 0 ? attachmentNote(files) : ""].filter(Boolean).join("\n\n");
     if (!text) continue;
 
     const last = turns[turns.length - 1];
@@ -1277,6 +1290,16 @@ function historyFor(session: Session, sinceSeq = 0): { message: ChatMessage; seq
     } else {
       turns.push({ message: { role, text }, seq: event.seq });
     }
+  }
+
+  /* The pictures of the message being answered, and only that one: they go as
+     pictures for this turn and are left to the note afterwards, so a
+     photograph already looked at is not uploaded again on every turn. */
+  for (let i = turns.length - 1; i >= 0; i -= 1) {
+    if (turns[i].message.role !== "user") continue;
+    const pictures = picturesFor(attached.get(turns[i].seq) ?? []);
+    if (pictures.length > 0) turns[i].message.images = pictures;
+    break;
   }
 
   if (sinceSeq === 0) {
@@ -1868,7 +1891,7 @@ export interface TurnResult {
  * schedule, a watcher -- so they are the same turn: same memory, same tools,
  * same log.
  */
-function startTurn(session: Session, text: string): Promise<TurnResult> {
+function startTurn(session: Session, text: string, attachments: AttachmentRef[] = []): Promise<TurnResult> {
   /* One turn at a time per session. A message sent while a turn runs used
      to start a second turn beside it, and the two models then streamed into
      the same reply -- half-sentences, one reply split in two, words from one
@@ -1877,7 +1900,7 @@ function startTurn(session: Session, text: string): Promise<TurnResult> {
      it has actually finished. */
   const prior = turnsInFlight.get(session.id);
   if (prior) stopTurn(session.id);
-  const done = (prior ?? Promise.resolve()).then(() => beginTurn(session, text));
+  const done = (prior ?? Promise.resolve()).then(() => beginTurn(session, text, attachments));
   const settled = done.then(() => undefined, () => undefined);
   turnsInFlight.set(session.id, settled);
   void settled.then(() => {
@@ -1889,7 +1912,7 @@ function startTurn(session: Session, text: string): Promise<TurnResult> {
 /** The turn each session is running (or about to), settled either way. */
 const turnsInFlight = new Map<string, Promise<void>>();
 
-function beginTurn(session: Session, text: string): Promise<TurnResult> {
+function beginTurn(session: Session, text: string, attachments: AttachmentRef[] = []): Promise<TurnResult> {
   // The reply this message answers: a correction only makes sense beside it.
   let previousReply = "";
   for (let i = session.events.length - 1; i >= 0; i--) {
@@ -1898,7 +1921,12 @@ function beginTurn(session: Session, text: string): Promise<TurnResult> {
     if (e.kind === "turn.agent.text" && !e.payload?.local) previousReply = String(e.payload?.text ?? "") + previousReply;
   }
   const startSeq = session.seqCounter;
-  emitEvent(session, "turn.user", "user", { text });
+  /* The files ride on the event, so a reloaded thread still shows what came
+     with the message and the model still reads the note that names them. */
+  emitEvent(session, "turn.user", "user", {
+    text,
+    ...(attachments.length > 0 ? { attachments } : {}),
+  });
   session.busy = true;
   // Stop reaches the model call too: without it, a stopped turn went on
   // streaming its sentence into the thread until the vendor finished it.
@@ -3009,7 +3037,11 @@ async function startServer() {
     }
 
     const text = (req.body?.text || "").trim();
-    if (!text) {
+    /* Files picked in the composer are uploaded before the message goes, so
+       what arrives here are artifact ids. A message can be nothing but a
+       picture: "look at this" is a complete request. */
+    const attachments = attachmentRefs(req.body?.attachments);
+    if (!text && attachments.length === 0) {
       return res.status(400).json({ error: "Empty message" });
     }
 
@@ -3017,13 +3049,14 @@ async function startServer() {
     // name, which renaming a fresh session before typing used to lose. The
     // tally is read rather than the log, which would load the whole thread.
     if (session.counts.turns === 0 && isDefaultTitle(session.title)) {
-      const oneLine = text.replace(/\s+/g, " ");
+      const named = text || attachments.map((a) => a.name).join(", ");
+      const oneLine = named.replace(/\s+/g, " ");
       session.title = oneLine.length > 40 ? `${oneLine.slice(0, 37)}...` : oneLine;
       saveMeta(metaOf(session));
     }
 
     res.json({ ok: true, queued: false });
-    void startTurn(session, text);
+    void startTurn(session, text, attachments);
   });
 
   // 5. Interrupt current turn

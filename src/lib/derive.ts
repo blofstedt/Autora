@@ -1,3 +1,4 @@
+import type { Attachment } from "./attachments";
 import { Kind, type AutoraEvent } from "./types";
 
 export type SpanState = {
@@ -16,6 +17,8 @@ export type TranscriptTurn = {
   role: "user" | "agent";
   text: string;
   seq: number;
+  /** What came with this message, when it came with files. */
+  attachments?: Attachment[];
   thinking?: string;
   /** No model was connected: the reply carries a button to Settings. */
   setup?: boolean;
@@ -238,6 +241,8 @@ export type Cell =
 export type Bucket = {
   seq: number;
   prompt: string;
+  /** The files that rode with the prompt, shown beneath it. */
+  attachments: Attachment[];
   cells: Cell[];
   replies: TranscriptTurn[];
   /** Still working on this one: the last bucket, while the agent runs. */
@@ -292,6 +297,22 @@ const PAGE_ADDRESS = /^(?:[a-z][a-z0-9+.-]*:\/\/|about:)\S*$/i;
 
 const STAGED_TOOLS = new Set(["browser", "desktop", "computer", "edit", "write", "patch"]);
 
+/** The files a message came with, as the server logged them on the turn.
+    Anything that is not a well-formed reference is dropped, so a log written
+    by an older version simply shows the message without a file list. */
+function filesOf(event: AutoraEvent): Attachment[] {
+  const raw = event.payload?.attachments;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((f: any) => f && typeof f.id === "string" && typeof f.name === "string")
+    .map((f: any) => ({
+      id: f.id as string,
+      name: f.name as string,
+      mime: typeof f.mime === "string" ? f.mime : "",
+      size: Number(f.size) || 0,
+    }));
+}
+
 const isStaged = (name: string) =>
   STAGED_TOOLS.has(name) || STAGED_TOOLS.has(name.split("_")[0]);
 
@@ -313,7 +334,7 @@ export function derive(events: AutoraEvent[]): Derived {
   // Anything before the first prompt -- the session opening, a recall, a
   // scheduled task's own setup -- belongs to a bucket with no prompt, so it is
   // still reachable rather than silently dropped.
-  let bucket: Bucket = { seq: -1, prompt: "", cells: [], replies: [], open: false };
+  let bucket: Bucket = { seq: -1, prompt: "", attachments: [], cells: [], replies: [], open: false };
   buckets.push(bucket);
 
   const memoryById = new Map<string, MemoryMark>();
@@ -409,9 +430,11 @@ export function derive(events: AutoraEvent[]): Derived {
         break;
 
       case Kind.UserMessage:
-        transcript.push({ role: "user", text: e.payload.text ?? "", seq: e.seq });
+        transcript.push({
+          role: "user", text: e.payload.text ?? "", seq: e.seq, attachments: filesOf(e),
+        });
         bucket = {
-          seq: e.seq, prompt: e.payload.text ?? "",
+          seq: e.seq, prompt: e.payload.text ?? "", attachments: filesOf(e),
           cells: [], replies: [], open: true,
         };
         buckets.push(bucket);
