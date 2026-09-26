@@ -94,30 +94,18 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The Mind's map frames itself. Open the Map and the whole graph is on screen
-  from the first moment, names included -- a fit that took the dots and left
-  the labels off the edge was not fitting anything -- and it keeps itself in
-  frame while the layout is still spreading out, rather than settling outside
-  the window and jumping into it afterwards. The moment you pan or zoom, the
-  frame is yours and the layout leaves it alone; Fit brings it back, and two
-  fingers on the map now zoom it as well as the wheel does.
+  The newest message in a conversation no longer sits in the fade above the box
+  you type in. The thread ended a few pixels from its own bottom edge, which
+  put the last line you had sent or received inside the soft edge the composer
+  fades behind it, so it read as half-swallowed until you scrolled. There is
+  clear air under the last message now, on a phone and on a wide screen alike.
 
-  Tapping the cost bar opens the figures over the chat instead of taking the
-  conversation off the screen to do it: the month against the ceiling you set,
-  today, all time and this session, with Usage -- ceiling and all -- one
-  button further on.
-
-  Back leaves Autora for the Umbrel dashboard, not out of the app. Installed
-  to a phone, back is a system gesture, and with nothing behind the app it
-  closed Autora and left you nowhere. The app now answers the first back
-  itself: whatever is open over the chat closes, and the back after that
-  steps out to the dashboard -- which is the same address with Autora's port
-  taken off, so it is the dashboard that opens rather than a second copy of
-  the app.
-
-  And tapping outside a card closes it again. The click was read as a second
-  tap on the bar that opened the card, which closed it and reopened it in the
-  same gesture, so the backdrop looked dead.
+  Dragging the Mind's map is smooth. Every pan ticked React state, which
+  reconciled the whole graph -- every node, every edge -- on each pointer
+  event, while each node was also breathing on its own endless animation and
+  repainting the map every frame you moved it. The view is now written straight
+  to the map itself, once a frame, and the breathing pauses for the length of
+  the gesture: the map follows your finger instead of lagging behind it.
 dependencies: []
 path: ""
 defaultUsername: ""
