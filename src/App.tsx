@@ -440,14 +440,21 @@ export function App() {
    * did nothing, said nothing, and left the agent running. The fetch is the
    * one that can fail loudly, and interrupting twice is free: it sets a flag
    * the loop is already watching.
+   *
+   * What the response says back is deliberately not read. `interrupted` is
+   * false whenever the turn had already stopped by the time the request
+   * arrived, and the socket interrupt above is usually there first -- so
+   * stopping a turn that really was running answered "Nothing was running to
+   * stop.", in the one place on the page a person looks for an error. Nothing
+   * is lost with it: a stopped turn says so itself, in the thread, which is
+   * where the answer to "did that work" belongs. A stop that cannot reach the
+   * server at all is still reported here.
    */
   const stopTurn = useCallback(async () => {
     streamRef.current?.interrupt();
     if (!sessionId) return;
     try {
-      const res = await fetch(`/api/sessions/${sessionId}/interrupt`, { method: "POST" });
-      const body = await res.json();
-      if (!body?.interrupted) setNotice("Nothing was running to stop.");
+      await fetch(`/api/sessions/${sessionId}/interrupt`, { method: "POST" });
     } catch {
       setNotice("Could not reach the server to stop it.");
     }

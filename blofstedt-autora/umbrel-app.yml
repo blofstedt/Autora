@@ -94,71 +94,19 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Four things that were getting in the way of ordinary work.
+  Stop no longer says something untrue. Stopping a turn that was genuinely
+  running could answer "Nothing was running to stop." in amber at the foot of
+  the composer, next to the send button -- the one place on the page a person
+  looks for an error. Stop fires two paths at once, a websocket message and an
+  HTTP request, because a phone waking from sleep holds a socket that reports
+  itself open and is not; interrupting twice is free, but the second path also
+  asks the server whether anything was still busy, and by the time it arrives
+  the first path has usually cleared that flag. The reply is no longer read, so
+  that line is gone for good.
 
-  Autora can open the app it is running in. The console lives in a container
-  that had never heard the hostname its own host answers to, so the agent
-  opening the app at its own address — the tailnet name, the one a browser
-  uses — got a name that would not resolve, and it had to be typed into
-  /etc/hosts by hand again after every container recreation. Autora now asks
-  Tailscale on the host what the machine is called and what address it answers
-  on, and keeps its own /etc/hosts up to date at startup. Nothing is hardcoded
-  and a machine without Tailscale is simply left alone.
-
-  A screenshot comes back to the agent. browser_screenshot took a picture and
-  put it on the screen for the person, while the model was told it could not
-  see it — so "what does this page look like", a page stuck halfway drawn, a
-  click that did nothing, were answerable only from the page text. The picture
-  now arrives in the result as well, given to the model the way an attachment
-  is. Only the newest one is kept: a screenshot is worth one glance, and the
-  ones before it would otherwise be re-sent on every later call.
-
-  Saved details work in API calls. The person’s own details and site sign-ins
-  could be filled into a browser form and nowhere else, so reaching a service
-  that wants a key meant driving it through a browser. Placeholders are now
-  filled in http_request as well — in the address, in a header, in the body —
-  so a call can carry them directly. A sign-in saved for one site is still
-  refused on another, and one that does not exist says so instead of being
-  sent as literal text.
-
-  What Autora learns from a turn that went wrong. It already looked back over a
-  finished turn in the background and kept what was worth keeping, but only for
-  turns that ended well - which left out the ones with the most to teach: the
-  command that failed, the page that would not load. A turn that ran tools and
-  then went wrong is now looked back at too. A turn the person stopped, or one
-  that never reached a tool, is still left alone.
-
-  That look back is also shown how the tools have actually been behaving
-  lately, which the turn note has had all along: the same command failing every
-  time, the same site refusing every time. Told only about today's failure, a
-  bad afternoon is a bad afternoon; told that a command has now failed its last
-  three calls, it is worth a lesson - the procedure that avoids it, rather than
-  a note that it hurt.
-
-  Choosing a model no longer opens the operating system's own menu in its own
-  font over a dark app. The Model row opens a card, the way sessions, a memory
-  and the cost card already do: every model listed with what it is for and what
-  it costs per million tokens, the one in use ticked, and a search box for a
-  vendor whose list is too long to scroll. Refresh asks the vendor for its
-  catalogue from inside the card.
-
-  DeepSeek V4.1 Flash is named properly. It is the model behind deepseek-flash,
-  which the app has been calling since DeepSeek retired V4 Flash and V4 Flash
-  Vision on 10 September 2026 — nothing was missing except the name. The
-  retired ids stay in the list as aliases, priced the same.
-
-  Artifacts can be cleared out in one go. Select at the top of the page turns
-  every card into a picker: tap as many as you like, out of either pile, and
-  one Delete takes them after a single confirm. The bar counts what is picked,
-  the button says how many it will remove, and Escape or Done backs out
-  without touching anything.
-
-  Autora is pickier about what it saves. It keeps the things worth keeping --
-  a file it wrote, built or edited, or one you asked it to keep -- and no
-  longer files away a second copy of something already on the page, or of a
-  picture it found online, which only made the page longer. Saving a name that
-  is already there now replaces that artifact in place, link and place in the
-  list intact, instead of adding a near identical card beside it.
+  Nothing is lost with it. A turn that is stopped says so itself, in the
+  thread, which is where the answer to "did that work" belongs, and a stop that
+  cannot reach the server at all is still reported on the spot.
 dependencies: []
 path: ""
 defaultUsername: ""
