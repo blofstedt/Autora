@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { parseReflection, worthReflecting } from "../server/learning";
+import { parseReflection, reflectionPrompt, worthReflecting } from "../server/learning";
 
 process.env.AUTORA_STATE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "autora-learn-"));
 const custom = await import("../server/customtools");
@@ -33,6 +33,29 @@ test("only real work, or being told how, is reflected on", () => {
   assert.equal(worthReflecting({ ...base, request: "from now on, answer in French" }), true);
   assert.equal(worthReflecting({ ...base, ranSomething: true, request: "fix the backup" }), true);
   assert.equal(worthReflecting({ ...base, ranSomething: true, stopped: true, request: "fix it" }), false);
+  // A turn that ran tools and then went wrong is the one to look back at...
+  assert.equal(worthReflecting({ ...base, ok: false, ranSomething: true, request: "fix the backup" }), true);
+  // ...but one that never reached a tool is the provider having a bad day.
+  assert.equal(worthReflecting({ ...base, ok: false, request: "fix the backup" }), false);
+});
+
+test("a failing tool is named in the review, with what to do instead", () => {
+  const prompt = reflectionPrompt({
+    request: "check the logs",
+    previousReply: "",
+    steps: ["- terminal (pkill -f \"dist/server.cjs\") -> exit 128", "- terminal (curl ...) -> ok"],
+    trouble: "Tools that have been failing lately (last 7 days):\n- terminal (pkill -f): 3 of the last 3 calls failed, most recently: (no output)",
+    reply: "done",
+    recalled: [],
+    nearby: [],
+  });
+  assert.match(prompt, /pkill -f\): 3 of the last 3 calls failed/, "the failing command is quoted to the reviewer");
+  assert.match(prompt, /the procedure that avoids it, not a note that it hurt/);
+  // With nothing going wrong the block is left out entirely.
+  const quiet = reflectionPrompt({
+    request: "check the logs", previousReply: "", steps: [], reply: "done", recalled: [], nearby: [],
+  });
+  assert.doesNotMatch(quiet, /behaving lately/);
 });
 
 test("a reflection keeps well-formed lessons and known ids only", () => {

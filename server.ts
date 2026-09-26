@@ -1843,7 +1843,8 @@ async function reflect(session: Session, request: string, startSeq: number, prev
   let text: string;
   try {
     text = await backgroundCall(session.id, REFLECT_SYSTEM, reflectionPrompt({
-      request, previousReply, steps: pastToolCalls(session.id, startSeq), reply: result.reply, recalled, nearby,
+      request, previousReply, steps: pastToolCalls(session.id, startSeq), trouble: healthBriefing(),
+      reply: result.reply, recalled, nearby,
     }), 1500);
   } catch (err: any) {
     console.warn(`[learning] ${session.id}: ${err?.message ?? err}`);

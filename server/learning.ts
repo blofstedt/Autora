@@ -35,7 +35,12 @@ export interface Reflection {
 const INSTRUCTIVE = /\b(always|never|prefer|from now on|remember|don'?t|do not|stop|instead|i like|i want you to|next time|that'?s wrong|not what i)\b/i;
 
 export function worthReflecting(input: { request: string; ranSomething: boolean; stopped: boolean; ok: boolean }): boolean {
-  if (input.stopped || !input.ok) return false;
+  // A turn the person stopped is not evidence of anything.
+  if (input.stopped) return false;
+  // A turn that ran tools and then went wrong is the one most worth looking
+  // back at: the command that failed, the page that would not load. A turn
+  // that never reached a tool is the provider having a bad day, not a lesson.
+  if (!input.ok && !input.ranSomething) return false;
   return input.ranSomething || INSTRUCTIVE.test(input.request);
 }
 
@@ -47,6 +52,8 @@ export function reflectionPrompt(input: {
   request: string;
   previousReply: string;
   steps: string[];
+  /** How each tool has been behaving lately, from server/toolhealth.ts. */
+  trouble?: string;
   reply: string;
   recalled: MemoryRecord[];
   nearby: MemoryRecord[];
@@ -58,6 +65,10 @@ export function reflectionPrompt(input: {
     `The person's request:\n${input.request.slice(0, 3000)}`,
     "",
     input.steps.length ? `What the agent did, in order:\n${input.steps.join("\n")}` : "The agent ran no tools.",
+    input.trouble
+      ? `\nHow these tools have been behaving lately. A command or a site that keeps\nfailing is worth a lesson: the procedure that avoids it, not a note that it hurt.` +
+        `\n${input.trouble}`
+      : "",
     "",
     `The agent's final reply:\n${input.reply.slice(0, 3000) || "(none)"}`,
     "",

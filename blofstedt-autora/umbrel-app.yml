@@ -94,7 +94,7 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Three things that were getting in the way of ordinary work.
+  Four things that were getting in the way of ordinary work.
 
   Autora can open the app it is running in. The console lives in a container
   that had never heard the hostname its own host answers to, so the agent
@@ -120,6 +120,20 @@ releaseNotes: >-
   so a call can carry them directly. A sign-in saved for one site is still
   refused on another, and one that does not exist says so instead of being
   sent as literal text.
+
+  What Autora learns from a turn that went wrong. It already looked back over a
+  finished turn in the background and kept what was worth keeping, but only for
+  turns that ended well - which left out the ones with the most to teach: the
+  command that failed, the page that would not load. A turn that ran tools and
+  then went wrong is now looked back at too. A turn the person stopped, or one
+  that never reached a tool, is still left alone.
+
+  That look back is also shown how the tools have actually been behaving
+  lately, which the turn note has had all along: the same command failing every
+  time, the same site refusing every time. Told only about today's failure, a
+  bad afternoon is a bad afternoon; told that a command has now failed its last
+  three calls, it is worth a lesson - the procedure that avoids it, rather than
+  a note that it hurt.
 
   Choosing a model no longer opens the operating system's own menu in its own
   font over a dark app. The Model row opens a card, the way sessions, a memory
