@@ -543,6 +543,19 @@ function silence(): Blob {
   return new Blob([bytes], { type: "audio/wav" });
 }
 
+/** Raw PCM from the console is mono 24 kHz (see server/speech.ts). */
+const SPEECH_RATE = 24000;
+
+/** Characters in one streaming request. The console refuses more than 2000,
+    and a reply longer than this is split on sentence ends: a few renderings
+    for a very long answer, one for all the rest. */
+const STREAM_CHARS = 1200;
+
+/** How long a turn may sit unclosed before it is said anyway. Live chat
+    closes each turn the moment the agent stops talking; this is only for a
+    turn that never lands -- a dropped connection, a run that died. */
+const IDLE_FLUSH_MS = 12_000;
+
 /** Sentences rendered ahead of the one playing. Enough to cover a short
     sentence followed by a long one, few enough that a barge-in does not throw
     away a queue of requests nobody will hear. */
@@ -555,6 +568,15 @@ export type Speech = {
   source: SpeechSource;
   /** Queue a fragment. Fragments play in order, so streamed text stays in order. */
   say: (text: string) => void;
+  /**
+   * The turn is over: render everything said since the last flush and play it.
+   *
+   * One request is one rendering, and Deepgram draws the voice fresh for each
+   * rendering -- the same words come back at a different pitch and pace every
+   * time. Asking for a sentence at a time is what made the voice change with
+   * every sentence, so a turn is asked for whole.
+   */
+  flush: () => void;
   /** Stop now and drop whatever is queued -- for barge-in. */
   cancel: () => void;
   /** Unlock audio from inside a tap, which iOS requires before it will speak. */
@@ -605,6 +627,20 @@ export function useSpeech(): Speech {
   /** Bumped when the voice changes, so a clip rendered for the old one is
       played if it is already on its way, but never kept for next time. */
   const clipGen = useRef(0);
+  /* The turn so far: what has been said but not yet asked for. */
+  const pending = useRef("");
+  /** The context raw PCM plays through, and where in it the next chunk goes.
+      Built (and resumed) inside the tap that starts live chat, which is the
+      gesture iOS wants before a page may make a sound. */
+  const output = useRef<AudioContext | null>(null);
+  const playhead = useRef(0);
+  const playing = useRef(new Set<AudioBufferSourceNode>());
+  /** The rendering in flight, so a barge-in stops paying for the rest of it. */
+  const pouring = useRef<AbortController | null>(null);
+  /** A console too old to know the streaming route says so once, and every
+      turn after it is spoken a sentence at a time as before. */
+  const canStream = useRef(true);
+  const idle = useRef<number | null>(null);
 
   useEffect(() => {
     if (!speechSupported) return;
@@ -687,6 +723,93 @@ export function useSpeech(): Speech {
     setSpeaking(true);
     speechSynthesis.speak(utterance);
   }, []);
+
+  const clearIdle = useCallback(() => {
+    if (idle.current === null) return;
+    window.clearTimeout(idle.current);
+    idle.current = null;
+  }, []);
+
+  /** The context to play raw PCM through, made on first use. */
+  const context = useCallback((): AudioContext | null => {
+    if (output.current) return output.current;
+    const Ctor: typeof AudioContext | undefined =
+      window.AudioContext ?? (window as any).webkitAudioContext;
+    if (!Ctor) return null;
+    try {
+      /* Asked for at the rate it arrives at: nothing has to be resampled, and
+         a device that insists otherwise still plays it correctly. */
+      output.current = new Ctor({ sampleRate: SPEECH_RATE });
+    } catch {
+      try { output.current = new Ctor(); } catch { output.current = null; }
+    }
+    return output.current;
+  }, []);
+
+  /** One chunk of raw PCM onto the end of what is already due to play. */
+  const schedule = useCallback((samples: Int16Array) => {
+    const ac = context();
+    if (!ac) return false;
+    const buffer = ac.createBuffer(1, samples.length, SPEECH_RATE);
+    const out = buffer.getChannelData(0);
+    for (let i = 0; i < samples.length; i += 1) out[i] = samples[i] / 0x8000;
+    const node = ac.createBufferSource();
+    node.buffer = buffer;
+    node.connect(ac.destination);
+    /* A short lead -- enough that the first chunk is not already late when
+       the audio thread gets it, short enough not to be heard as a gap. What
+       follows is queued end to end, so the rendering is heard as one
+       utterance however many times it was chunked on the wire. */
+    const at = Math.max(ac.currentTime + 0.04, playhead.current);
+    node.start(at);
+    playhead.current = at + buffer.duration;
+    playing.current.add(node);
+    node.onended = () => {
+      playing.current.delete(node);
+      if (playing.current.size === 0 && !pouring.current) setSpeaking(false);
+    };
+    return true;
+  }, [context]);
+
+  /** One rendering, played as it arrives. Resolves when the last of it has
+      been handed to the audio thread, not when it has been heard. */
+  const pour = useCallback(async (text: string): Promise<void> => {
+    const control = new AbortController();
+    pouring.current = control;
+    try {
+      const res = await fetch("/api/speech/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+        signal: control.signal,
+      });
+      if (!res.ok || !res.body) throw new Error(`speech stream ${res.status}`);
+      const reader = res.body.getReader();
+      let carry: Uint8Array | null = null;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        let bytes = value;
+        if (carry) {
+          const joined = new Uint8Array(carry.length + bytes.length);
+          joined.set(carry);
+          joined.set(bytes, carry.length);
+          bytes = joined;
+          carry = null;
+        }
+        /* Sixteen-bit samples: an odd byte at the end of a chunk belongs with
+           the first byte of the next one. */
+        const even = bytes.length - (bytes.length % 2);
+        if (even !== bytes.length) carry = bytes.slice(even);
+        if (even === 0) continue;
+        const samples = new Int16Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + even));
+        if (!schedule(samples)) throw new Error("no audio to play it through");
+      }
+    } finally {
+      if (pouring.current === control) pouring.current = null;
+      control.abort();
+    }
+  }, [schedule]);
 
   /** One fragment as an audio file, from the console or from last time. */
   const clip = useCallback((text: string): Promise<Blob> => {
@@ -795,15 +918,68 @@ export function useSpeech(): Speech {
     if (queue.current.length === 0) setSpeaking(false);
   }, [clip, play, renderAhead, sayBrowser]);
 
+  /** Sentences for the fallback path: the browser's queue speaks fragments. */
+  const fallback = useCallback((text: string) => {
+    queue.current.push(...sentences(text));
+    setSpeaking(true);
+    void drain();
+  }, [drain]);
+
+  /**
+   * Everything said since the last flush, as one rendering.
+   *
+   * This is the whole point of the change: a request per sentence was a
+   * request per draw of the voice, and the drawing is what shifted -- same
+   * text, same voice, and the pitch came back anywhere between 120 and 190 Hz.
+   * One request for the turn is rendered in one pass and holds one voice.
+   */
+  const flush = useCallback(() => {
+    clearIdle();
+    const text = pending.current.trim();
+    pending.current = "";
+    if (!text) return;
+    if (serverVoice.current !== true) { sayBrowser(text); return; }
+    if (!canStream.current) { fallback(text); return; }
+    const gen = generation.current;
+    setSpeaking(true);
+    void (async () => {
+      for (const part of streamParts(text)) {
+        if (gen !== generation.current) return;
+        try {
+          await pour(part);
+        } catch {
+          if (gen !== generation.current) return;
+          /* No streaming here: an install older than this route, or a service
+             that has stopped answering. The words are said a sentence at a
+             time instead, which costs a voice that shifts -- silence and a
+             reply nobody hears costs more. */
+          canStream.current = false;
+          fallback(part);
+          return;
+        }
+      }
+      if (gen !== generation.current) return;
+      /* Nothing came out of it -- an empty rendering, or autoplay refused
+         before any gesture. Do not leave the page claiming to be speaking. */
+      if (playing.current.size === 0 && !pouring.current) setSpeaking(false);
+    })();
+  }, [clearIdle, fallback, pour, sayBrowser]);
+
+  /** Keep a fragment until the turn is done. */
+  const hold = useCallback((clean: string) => {
+    pending.current = pending.current ? `${pending.current} ${clean}` : clean;
+    setSpeaking(true);
+    clearIdle();
+    /* A turn the page never closes (a dropped connection, a run that died
+       mid-answer) is still said rather than held for ever. */
+    idle.current = window.setTimeout(() => { idle.current = null; flush(); }, IDLE_FLUSH_MS);
+  }, [clearIdle, flush]);
+
   const say = useCallback((text: string) => {
     const clean = text.trim();
     if (!clean) return;
     if (serverVoice.current === true) {
-      queue.current.push(...sentences(clean));
-      setSpeaking(true);
-      // Already playing: get the new sentences rendering behind it now.
-      if (draining.current) renderAhead();
-      void drain();
+      hold(clean);
       return;
     }
     /* The console has not said yet whether it has a voice of its own. One
@@ -812,21 +988,28 @@ export function useSpeech(): Speech {
     if (serverVoice.current === null && ready.current) {
       setSpeaking(true);
       void ready.current.then(() => {
-        if (serverVoice.current === true) {
-          queue.current.push(...sentences(clean));
-          void drain();
-        } else {
-          sayBrowser(clean);
-        }
+        if (serverVoice.current === true) hold(clean);
+        else sayBrowser(clean);
       });
       return;
     }
     sayBrowser(clean);
-  }, [drain, renderAhead, sayBrowser]);
+  }, [hold, sayBrowser]);
 
   const cancel = useCallback(() => {
     queue.current = [];
+    pending.current = "";
+    clearIdle();
     generation.current += 1;
+    /* Stop the rendering itself, not just the sound: a barge-in should not
+       keep paying for a reply nobody is listening to. */
+    pouring.current?.abort();
+    pouring.current = null;
+    for (const node of playing.current) {
+      try { node.stop(); } catch { /* already finished */ }
+    }
+    playing.current.clear();
+    playhead.current = 0;
     for (const { control } of fetching.current.values()) control.abort();
     fetching.current.clear();
     settled.current?.();
@@ -839,7 +1022,7 @@ export function useSpeech(): Speech {
     if (speechSupported) speechSynthesis.cancel();
     queued.current = 0;
     setSpeaking(false);
-  }, []);
+  }, [clearIdle]);
 
   const prime = useCallback(() => {
     // iOS will not speak unless the first sound comes from a gesture, and it
@@ -853,12 +1036,16 @@ export function useSpeech(): Speech {
       () => { el.pause(); window.URL.revokeObjectURL(url); },
       () => window.URL.revokeObjectURL(url),
     );
+    /* The same gesture unlocks the context the streamed rendering plays
+       through: iOS refuses to start one that no tap has started. */
+    const ac = context();
+    if (ac && ac.state === "suspended") void ac.resume().catch(() => undefined);
     if (!speechSupported) return;
     const unlock = new SpeechSynthesisUtterance(" ");
     unlock.volume = 0;
     speechSynthesis.speak(unlock);
     voice.current = voice.current ?? pickVoice();
-  }, []);
+  }, [context]);
 
   return {
     // Sound out is available from either voice; the browser's is only the one
@@ -867,6 +1054,7 @@ export function useSpeech(): Speech {
     speaking,
     source,
     say,
+    flush,
     cancel,
     prime,
   };
@@ -982,6 +1170,41 @@ const MERGE_UNDER = 12;
  * that runs on is broken at a comma or dash once it is long enough that
  * waiting for its end would be a noticeable pause before anything is heard.
  */
+/**
+ * A reply split into requests the console will take.
+ *
+ * Nothing is split for its own sake here: every piece is a rendering of its
+ * own and so a draw of the voice of its own, which is the thing being fixed.
+ * Only what one request cannot carry -- a reply past the console's limit --
+ * is split, and on sentence ends, so the join falls where a listener is least
+ * likely to hear it.
+ */
+export function streamParts(text: string, limit = STREAM_CHARS): string[] {
+  const clean = text.trim();
+  if (!clean) return [];
+  if (clean.length <= limit) return [clean];
+  const parts: string[] = [];
+  let rest = clean;
+  while (rest.length > limit) {
+    const window = rest.slice(0, limit);
+    let at = Math.max(
+      window.lastIndexOf(". "),
+      window.lastIndexOf("! "),
+      window.lastIndexOf("? "),
+      window.lastIndexOf("\n"),
+    );
+    if (at < limit / 2) at = window.lastIndexOf("; ");
+    if (at < limit / 2) at = window.lastIndexOf(", ");
+    if (at < limit / 2) at = window.lastIndexOf(" ");
+    if (at <= 0) at = limit - 1;
+    const piece = rest.slice(0, at + 1).trim();
+    if (piece) parts.push(piece);
+    rest = rest.slice(at + 1).trim();
+  }
+  if (rest) parts.push(rest);
+  return parts;
+}
+
 export function sentences(text: string): string[] {
   const pieces: string[] = [];
   const add = (piece: string) => {

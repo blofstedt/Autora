@@ -25,7 +25,7 @@ import { guardWorthy, irreversible } from "./server/jev/guard";
 import { prune, storageReport } from "./server/retention";
 import { hostVitals } from "./server/host";
 import { ensureHostNames } from "./server/hosts";
-import { forgetSpeech, speak as synthesise, speechStatus } from "./server/speech";
+import { forgetSpeech, speak as synthesise, speakStream, speechStatus } from "./server/speech";
 import { captureConsole, log, readLogs, setLogRedactor, type LogLevel } from "./server/logs";
 import { allowSocket, refuseRequest } from "./server/crosssite";
 import { certificateSource, tlsSettings } from "./server/tls";
@@ -4253,6 +4253,49 @@ async function startServer() {
          page already knows how to live with -- it says the sentence with the
          browser's own voice instead. */
       res.status(503).json({ error: String(err?.message ?? err) });
+    }
+  });
+
+  /* The same fragment, but as a stream: raw PCM as it is rendered, so a whole
+     reply can be one rendering and still start in half a second. This is what
+     the page uses for the replies it narrates -- a request per sentence is a
+     request per draw of the voice, and the voice changed with every one. */
+  app.post("/api/speech/stream", async (req: Request, res: Response) => {
+    const text = String(req.body?.text ?? "");
+    if (!text.trim()) return res.status(400).json({ error: "Nothing to say." });
+    let utterance;
+    try {
+      /* Nothing has been written when this throws, so a refusal still arrives
+         as a status the page can read and fall back on. */
+      utterance = await speakStream(text, {
+        voice: typeof req.body?.voice === "string" ? req.body.voice : state.speech.voice,
+        speed: req.body?.speed,
+      });
+    } catch (err: any) {
+      return res.status(503).json({ error: String(err?.message ?? err) });
+    }
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Content-Type", utterance.contentType);
+    res.setHeader("X-Autora-Voice", utterance.voice);
+    const reader = utterance.stream.getReader();
+    /* A barge-in, a closed tab or a page that navigated away: stop paying for
+       the rest of a rendering nobody will hear. */
+    const abandon = () => { void reader.cancel().catch(() => undefined); };
+    res.on("close", abandon);
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!res.write(Buffer.from(value))) {
+          await new Promise<void>((resolve) => res.once("drain", resolve));
+        }
+        if (res.writableEnded || res.destroyed) break;
+      }
+      res.end();
+    } catch (err: any) {
+      res.destroy();
+    } finally {
+      res.off("close", abandon);
     }
   });
 

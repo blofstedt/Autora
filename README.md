@@ -111,7 +111,13 @@ away rather than making an audio file to hand over.
 
 The page never talks to Deepgram itself. `POST /api/speech` takes a fragment
 of text and returns an audio file, which keeps the key on the server and means
-a phone on the tailnet needs no route of its own. The audio arrives from the
+a phone on the tailnet needs no route of its own. `POST /api/speech/stream`
+takes a whole reply and returns raw 24 kHz PCM as it is rendered, which is what
+a narrated answer uses: Deepgram draws the voice fresh for every request -- the
+same sentence sent twice comes back at a different pitch and pace -- so a
+request per sentence was a voice that changed from sentence to sentence. The
+first samples arrive in about half a second and run three or four times faster
+than they are spoken, so one rendering for the turn still starts straight away. The audio arrives from the
 origin the page already trusts. `GET /api/speech` says whether there is a key,
 which voice it would use, and which voices the service has -- the list comes
 from Deepgram's own model catalogue, so it is whatever it actually offers.

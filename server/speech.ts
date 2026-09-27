@@ -224,6 +224,79 @@ export async function speak(
   return speakDeepgram(input, status, options);
 }
 
+/** A rendering that is still being made, handed over as it arrives. */
+export interface SpeechStream {
+  /** Raw mono little-endian 16-bit PCM, exactly as Deepgram sends it. */
+  stream: ReadableStream<Uint8Array>;
+  contentType: string;
+  voice: string;
+}
+
+/** The rate the raw stream is rendered at, said in the content type so the
+    page can play it without guessing. */
+export const STREAM_RATE = 24000;
+
+/**
+ * A whole reply as one rendering, streamed back as it is made.
+ *
+ * Asking for a sentence at a time is what made the voice shift from sentence
+ * to sentence: Deepgram renders each request on its own, and the same words in
+ * the same voice come back at a different pitch and pace every time (measured
+ * on this box: one sentence sent four times gave median pitches of 145, 126,
+ * 163 and 153 Hz). One request for the whole reply is rendered in one pass, so
+ * it holds one voice all the way through.
+ *
+ * What makes that affordable is the shape of the request: raw PCM with no
+ * container starts arriving in about half a second and comes in three or four
+ * times faster than it is spoken, so the page plays the first words while the
+ * rest is still being rendered instead of waiting for a finished file.
+ */
+export async function speakStream(
+  text: string,
+  options: { voice?: string; speed?: number } = {},
+): Promise<SpeechStream> {
+  const input = String(text ?? "").replace(/\s+/g, " ").trim();
+  if (!input) throw new Error("Nothing to say.");
+  if (input.length > MAX_CHARS) throw new Error(`Too long to speak (${input.length} characters).`);
+
+  const status = await speechStatus();
+  if (!status.available) throw new Error(status.reason ?? "No voice service is available.");
+
+  const key = deepgramKey();
+  if (!key) throw new Error("Deepgram needs an API key — set DEEPGRAM_API_KEY, or paste one in Settings.");
+  const voice = voiceFor(
+    String(options.voice ?? "").trim() || status.voice,
+    deepgramVoices?.value ?? [],
+  );
+
+  const query = new URLSearchParams({
+    model: voice,
+    encoding: "linear16",
+    sample_rate: String(STREAM_RATE),
+    container: "none",
+  });
+  const speed = Number(options.speed);
+  if (Number.isFinite(speed) && speed >= 0.7 && speed <= 1.5) query.set("speed", String(speed));
+
+  const res = await fetch(`${DEEPGRAM_API}/v1/speak?${query.toString()}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Token ${key}`,
+      "Content-Type": "application/json",
+      Accept: "audio/l16",
+    },
+    body: JSON.stringify({ text: input }),
+    signal: AbortSignal.timeout(120_000),
+  });
+  if (!res.ok) throw new Error(deepgramComplaint(res.status, await res.text().catch(() => "")));
+  if (!res.body) throw new Error("Deepgram returned an empty recording.");
+  return {
+    stream: res.body,
+    contentType: `audio/l16;rate=${STREAM_RATE};channels=1`,
+    voice,
+  };
+}
+
 /** One sentence through Deepgram's hosted voices. */
 async function speakDeepgram(
   input: string,

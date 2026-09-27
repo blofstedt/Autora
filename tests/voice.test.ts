@@ -4,7 +4,9 @@
  *   npx tsx tests/voice.test.ts
  */
 import assert from "node:assert/strict";
-import { chooseVoice, commit, fetchSpeechStatus, newLedger, sentences, turnPause } from "../src/lib/voice";
+import {
+  chooseVoice, commit, fetchSpeechStatus, newLedger, sentences, streamParts, turnPause,
+} from "../src/lib/voice";
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -66,6 +68,24 @@ test("the same word said again later is not swallowed", () => {
 test("live chat waits through a normal breath before sending", () => {
   assert.ok(turnPause("open my email", true) >= 2000);
   assert.ok(turnPause("open my email", false) > turnPause("open my email", true));
+});
+
+test("a reply that fits is one request, so one rendering holds the voice", () => {
+  assert.deepEqual(streamParts("One sentence. And another, shorter one."), [
+    "One sentence. And another, shorter one.",
+  ]);
+  assert.deepEqual(streamParts("   "), []);
+});
+
+test("only what one request cannot carry is split, and on sentence ends", () => {
+  const long = Array.from({ length: 40 }, (_, i) => `Sentence number ${i} says something brief.`).join(" ");
+  const parts = streamParts(long);
+  assert.ok(parts.length > 1);
+  assert.equal(parts.join(" "), long);
+  for (const part of parts) {
+    assert.ok(part.length <= 1200, `${part.length} characters in one request`);
+    assert.match(part, /\.$/, "the break falls where a sentence ends");
+  }
 });
 
 test("a sentence left hanging waits longer", () => {

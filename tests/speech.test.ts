@@ -17,7 +17,7 @@ process.env.AUTORA_STATE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "autora-spe
 process.env.DEEPGRAM_API_KEY = "";
 delete process.env.AUTORA_DEEPGRAM_VOICE;
 
-const { defaultDeepgramVoice, forgetSpeech, speak, speechStatus } = await import("../server/speech");
+const { defaultDeepgramVoice, forgetSpeech, speak, speakStream, speechStatus } = await import("../server/speech");
 
 let passed = 0;
 async function test(name: string, fn: () => Promise<void>) {
@@ -240,6 +240,33 @@ async function main() {
     assert.equal(status.voice, "aura-2-orion-en");
     delete process.env.AUTORA_DEEPGRAM_VOICE;
     assert.equal(defaultDeepgramVoice(), "aura-2-thalia-en");
+  });
+
+  await test("a whole reply is one rendering, asked for as raw samples", async () => {
+    useKey();
+    const calls = deepgram({ models: MODELS });
+    const status = await speechStatus(true);
+    const out = await speakStream("One reply, said once, in one voice.");
+    const asked = calls.find((c) => c.url.includes("/v1/speak"));
+    assert.ok(asked, "Deepgram was asked to speak");
+    const query = new URL(asked!.url).searchParams;
+    assert.equal(query.get("model"), status.voice);
+    // No container: the samples are handed over as they are made rather than
+    // packed into a file that has to be finished first.
+    assert.equal(query.get("encoding"), "linear16");
+    assert.equal(query.get("container"), "none");
+    assert.equal(query.get("sample_rate"), "24000");
+    assert.match(out.contentType, /audio\/l16/);
+    const heard = new Uint8Array(await new Response(out.stream as any).arrayBuffer());
+    assert.deepEqual([...heard], [9, 8, 7]);
+  });
+
+  await test("a stream refuses nothing-to-say and too-much before the service is asked", async () => {
+    useKey();
+    const calls = deepgram({ models: MODELS });
+    await assert.rejects(() => speakStream("   "), /Nothing to say/);
+    await assert.rejects(() => speakStream("x".repeat(2001)), /Too long to speak/);
+    assert.equal(calls.filter((c) => c.url.includes("/v1/speak")).length, 0);
   });
 
   console.log(`speech: ${passed} passed`);

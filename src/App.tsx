@@ -141,7 +141,7 @@ export function App() {
   const noticed = useRef(0);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const speech = useSpeech();
-  const { say, cancel: hush, prime, speaking, supported: canSpeak } = speech;
+  const { say, flush, cancel: hush, prime, speaking, supported: canSpeak } = speech;
   const relay = useRelay();
   /** How much of each reply has been read out, so streaming text is spoken
       once and in order rather than re-read from the top on every token. */
@@ -149,6 +149,9 @@ export function App() {
   /** Replies at or before this sequence predate live chat and are not read
       aloud -- turning the microphone on should not recite the backlog. */
   const narrateAfter = useRef(-1);
+  /** The reply the voice is currently in the middle of, so a turn that is
+      still arriving is not closed off early. */
+  const narrating = useRef(-1);
 
   useEffect(() => {
     let alive = true;
@@ -541,10 +544,22 @@ export function App() {
         if (!chunk.trim()) continue;
         narrated.current.set(reply.seq, already + chunk.length);
         const prose = speakable(chunk);
-        if (prose) say(prose);
+        if (prose) {
+          narrating.current = reply.seq;
+          say(prose);
+        }
       }
     }
-  }, [liveOn, canSpeak, view.buckets, say]);
+    /* The turn is over, or the agent has moved on to something else -- so no
+       more text is coming for this reply and it can be spoken. Waiting for the
+       next token used to be impossible, so each sentence went out on its own,
+       and each one arrived in a different draw of the voice. */
+    const last = view.buckets[view.buckets.length - 1];
+    const tail = last?.cells[last.cells.length - 1];
+    const arriving = Boolean(last?.open) && tail?.kind === "reply"
+      && tail.turn.seq === narrating.current;
+    if (!arriving) flush();
+  }, [liveOn, canSpeak, view.buckets, say, flush]);
 
   // What the agent says with its speak tool plays as it arrives, live mode or
   // not: it was asked to say something, so it is heard, not handed over as a
@@ -560,9 +575,14 @@ export function App() {
       said.current.add(e.seq);
       if (now - e.ts > SPEAK_FRESH_S) continue;
       const prose = speakable(String(e.payload?.text ?? ""));
-      if (prose) say(prose);
+      if (prose) {
+        /* Asked to say something out loud: it is already whole, so it goes
+           out at once rather than waiting for a turn that is not coming. */
+        say(prose);
+        flush();
+      }
     }
-  }, [events, canSpeak, say]);
+  }, [events, canSpeak, say, flush]);
 
   /** A spoken turn goes straight out: barge in over whatever is being said,
       then send. */
