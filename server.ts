@@ -59,6 +59,10 @@ import { mergeCaptcha } from "./server/captcha";
 import { LoopWatch } from "./server/loopwatch";
 import { healthBriefing, recordOutcome, targetOf, toolHealth } from "./server/toolhealth";
 import { Scheduler, type Job, type JobWatch } from "./server/scheduler";
+import { backgroundBriefing } from "./server/background";
+import { addRule, autonomyBriefing, covered, listRules, matchText, revoke as revokeRule, revokeAll } from "./server/autonomy";
+import { freshness } from "./server/memory";
+import { inventoryBriefing } from "./server/inventory";
 import { htmlToText } from "./server/pages";
 import { deleteCustomTool, listCustomTools } from "./server/customtools";
 import { REFLECT_SYSTEM, parseReflection, reflectionPrompt, worthReflecting } from "./server/learning";
@@ -681,7 +685,7 @@ function stopTurn(sessionId: string, why: "person" | "superseded" = "person") {
  */
 type PendingApproval = {
   sessionId: string;
-  settle: (decision: { approved: boolean; response?: string }) => void;
+  settle: (decision: { approved: boolean; remember?: boolean; response?: string }) => void;
   timer: NodeJS.Timeout;
 };
 const awaitingApproval = new Map<string, PendingApproval>();
@@ -692,7 +696,7 @@ const APPROVAL_TIMEOUT_MS = 15 * 60 * 1000;
 
 function settleApproval(
   requestId: string,
-  decision: { approved: boolean; response?: string },
+  decision: { approved: boolean; remember?: boolean; response?: string },
 ) {
   const pending = awaitingApproval.get(requestId);
   if (!pending) return false;
@@ -711,8 +715,8 @@ function settleApproval(
  */
 function askPermission(
   session: Session,
-  what: { tool: string; rendered: string; reason: string },
-): Promise<{ approved: boolean; response?: string }> {
+  what: { tool: string; rendered: string; reason: string; remember?: boolean },
+): Promise<{ approved: boolean; remember?: boolean; response?: string }> {
   const requestId = `req-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
   emitEvent(session, "permission.request", "agent", {
@@ -722,6 +726,10 @@ function askPermission(
     rendered: what.rendered,
     reason: what.reason,
     inputType: "boolean",
+    /* Whether the card may offer "do not ask again". True on the ordinary
+       approval tier, false on the irreversible one: that is asked about every
+       time, by design. */
+    remember: Boolean(what.remember),
     settled: false,
   });
 
@@ -1026,6 +1034,15 @@ async function jevGuard(
 ): Promise<string | null> {
   if (!guardWorthy(spec.name, args)) return null;
   const rendered = renderCall(spec as any, args);
+
+  /* Already agreed. The person said yes to this class of work before -- once,
+     when the guard asked -- so asking again is the noise this exists to
+     remove. Recorded, so the rule says how much use it is getting. */
+  const agreed = covered(spec.name, args);
+  if (agreed) {
+    log("info", "guard", `covered by a standing agreement: ${agreed.note || agreed.match}`);
+    return null;
+  }
   const key = `${session.id}\u0000${spec.name}\u0000${rendered}`;
   const answered = answeredAsks.get(session.id) ?? 0;
   const heldAt = heldCalls.get(key);
@@ -1051,6 +1068,27 @@ async function jevGuard(
     if (verdict.mode === "jev" && verdict.values.approved === false) {
       heldCalls.set(key, answered);
       return "Held by the guard: the person declined this when asked.";
+    }
+    /* Said yes to a call the guard had held. The identical call goes
+       through, and the class of work is remembered -- earned autonomy, one
+       answer at a time -- but said out loud in the transcript rather than
+       done behind the person's back, because a rule nobody can see is a rule
+       nobody can take back. Never for anything irrecoverable: addRule refuses
+       those outright. */
+    const agreedOn = matchText(spec.name, args);
+    if (agreedOn) {
+      const made = addRule({
+        tool: spec.name,
+        match: agreedOn.slice(0, 400),
+        note: "you let this through when the guard held it",
+        by: "person",
+      });
+      if (made.rule) {
+        log("info", "guard", `standing agreement added: ${made.rule.id} (${spec.name})`);
+        emitEvent(session, "context.note", "system", {
+          text: `You let the guard's hold on "${made.rule.match}" through, so calls like it no longer stop to ask. It is listed under Standing agreements in Scheduled tasks, where you can revoke it.`,
+        });
+      }
     }
     return null;
   }
@@ -1645,6 +1683,47 @@ async function systemInstructionFor(
     "things.",
   );
 
+
+  /* How to be useful ahead of being asked, and when not to be. This is the
+     part of the prompt that the person's request for a more proactive
+     assistant actually lands in: the tools for work outside the turn are
+     listed above, and what this says is when to reach for them, what to do
+     without being told, and what to leave alone. */
+  lines.push(
+    "",
+    "Being useful ahead of being asked. When a step clearly follows from what",
+    "the person asked for, take it rather than asking whether to: the next move",
+    "in your own work is yours to make. Stop to ask only when the choice is",
+    "really theirs -- two approaches with different costs, an ambiguity only",
+    "they can settle, something that cannot be undone, or a detail only they",
+    "have. Say what you actually did, and what you could not do; never describe",
+    "work you did not carry out.",
+    "",
+    "Anything outward-facing -- a message to somebody, a post, a reply, an",
+    "email, a form that sends -- is left as a draft for them to send, unless",
+    "they asked you to send it. Put it where they can read it, say plainly that",
+    "it is not sent, and leave it there.",
+    "",
+    "Human steps -- a password, a 2FA code, a CAPTCHA, an approval in an app --",
+    "are gathered, not dribbled out one at a time. Do everything that does not",
+    "need them first, then make one handoff that covers what is left, with the",
+    "page already where it needs to be and the forms filled in as far as they",
+    "will go.",
+    "",
+    "And the other direction: not every moment wants acting on. If it is the",
+    "middle of the night, or a long job is still running, or the only thing",
+    "left is a tidy-up nobody asked for, do nothing, and say in a line what you",
+    "are leaving and why. Being proactive is the next useful step, not a report",
+    "on every step.",
+  );
+
+  /* What is on the machine, once per session and only while the look is
+     fresh. Before this, every session rediscovered the box by running
+     commands at it -- or, worse, trusted a memory about it that was months
+     out of date. */
+  const machine = inventoryBriefing(sessionId);
+  if (machine) notes.push(machine);
+
   notes.push(jevBriefing(sessionId));
 
   /* Which vendor is answering, said plainly.
@@ -1670,9 +1749,14 @@ async function systemInstructionFor(
     notes.push([
       "What you already know about this workspace (from the memory graph).",
       "Ids are for memory_update and memory_forget when one turns out wrong;",
-      "\"unconfirmed\" ones were learned from earlier work and not yet proven:",
-      ...recalled.map((m) =>
-        `- ${m.id} [${m.kind}${m.status === "provisional" ? ", unconfirmed" : ""}] ${m.title}: ${m.body}`),
+      "\"unconfirmed\" ones were learned from earlier work and not yet proven,",
+      "and one that says it was last checked months ago may have moved on:",
+      "memory_confirm says a memory still holds and stamps today's date on it.",
+      ...recalled.map((m) => {
+        const old = freshness(m);
+        return `- ${m.id} [${m.kind}${m.status === "provisional" ? ", unconfirmed" : ""}]` +
+          `${old ? ` (this is old knowledge: ${old})` : ""} ${m.title}: ${m.body}`;
+      }),
     ].join("\n"));
   }
 
@@ -1702,6 +1786,19 @@ async function systemInstructionFor(
      nothing here can be mistaken for something the model said. */
   const health = healthBriefing();
   if (health) notes.push(health);
+
+  /* Work the agent set going last time and did not wait for. Unprompted,
+     because the whole point of a background command is that nobody is
+     watching it: without this the next turn would have to remember to ask,
+     and a finished build would sit there unseen until somebody thought
+     of it. */
+  const background = backgroundBriefing();
+  if (background) notes.push(background);
+
+  /* What has already been agreed, so the agent does not ask again about
+     something the person settled days ago -- and knows it may act. */
+  const agreed = autonomyBriefing();
+  if (agreed) notes.push(agreed);
 
   const done = pastToolCalls(sessionId);
   if (done.length > 0) {
@@ -2360,6 +2457,15 @@ async function runTurn(session: Session, text: string): Promise<TurnResult> {
             }
             return Boolean(record);
           },
+          confirm: (id, note) => {
+            const record = mind.recheck(id, note);
+            if (record) {
+              emitEvent(session, "memory.write", "agent", {
+                id: record.id, title: record.title, kind: record.kind, action: "checked",
+              });
+            }
+            return Boolean(record);
+          },
           forget: (id, replacedBy) => {
             const record = mind.get(id);
             const ok = mind.forget(id, replacedBy);
@@ -2369,6 +2475,81 @@ async function runTurn(session: Session, text: string): Promise<TurnResult> {
               });
             }
             return ok;
+          },
+        },
+        /* The Schedule page's jobs, offered to the agent so it can set
+           something going instead of saying it cannot watch for a thing, or
+           worse, sleeping on it. The same records the page edits: one list. */
+        jobs: {
+          list: () => jobs.map((j) => ({
+            id: j.id,
+            name: j.name,
+            cron: j.cron,
+            prompt: j.prompt,
+            enabled: j.enabled,
+            watch: j.watch ? { kind: j.watch.kind, target: j.watch.target } : null,
+            next_run: j.next_run,
+            last_run: j.last_run,
+            last_error: j.last_error,
+            cron_error: j.cron_error,
+            running: scheduler.running(j.id),
+          })),
+          create: (input) => {
+            const made: Job = {
+              id: `job-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+              name: input.name.trim().slice(0, 80) || "Scheduled Task",
+              cron: input.cron.trim(),
+              prompt: input.prompt.trim(),
+              enabled: input.enabled !== false,
+              created: Math.floor(Date.now() / 1000),
+              last_run: null,
+              last_session: null,
+              last_error: null,
+              next_run: null,
+              cron_error: null,
+              watch: saneWatch(input.watch),
+              last_seen: null,
+              runs: [],
+            };
+            scheduler.plan(made);
+            jobs.push(made);
+            saveJobs();
+            if (made.watch) void scheduler.check(made);
+            log("info", "schedule", `${session.id} set up "${made.name}" (${made.cron})`);
+            emitEvent(session, "system.log", "agent", {
+              event: "schedule.made",
+              job: made.id,
+              name: made.name,
+              cron: made.cron,
+              message: `Scheduled "${made.name}" (${made.cron}).`,
+            });
+            return { id: made.id, error: made.cron_error };
+          },
+          update: (id, patch) => {
+            const job = jobs.find((j) => j.id === id);
+            if (!job) return { ok: false, error: `There is no job ${id}.` };
+            if (typeof patch.name === "string" && patch.name.trim()) job.name = patch.name.trim().slice(0, 80);
+            if (typeof patch.prompt === "string" && patch.prompt.trim()) job.prompt = patch.prompt.trim();
+            if (typeof patch.cron === "string" && patch.cron.trim()) job.cron = patch.cron.trim();
+            if (patch.enabled !== undefined) job.enabled = Boolean(patch.enabled);
+            if (patch.watch !== undefined) {
+              const watch = saneWatch(patch.watch);
+              const changed = JSON.stringify(watch) !== JSON.stringify(job.watch ?? null);
+              job.watch = watch;
+              if (changed) job.last_seen = null;
+              if (changed && watch) void scheduler.check(job);
+            }
+            scheduler.plan(job);
+            saveJobs();
+            return { ok: true, error: job.cron_error };
+          },
+          remove: (id) => {
+            const at = jobs.findIndex((j) => j.id === id);
+            if (at === -1) return false;
+            jobs.splice(at, 1);
+            saveJobs();
+            log("info", "schedule", `${session.id} removed job ${id}`);
+            return true;
           },
         },
         vault: (id) => context.vault.get(id),
@@ -2521,6 +2702,7 @@ async function runTurn(session: Session, text: string): Promise<TurnResult> {
             const decision = await askPermission(session, {
               tool: spec.name,
               rendered: renderCall(spec, use.args),
+              remember: true,
               reason: turn.text.trim()
                 // The model's own words for why, when it gave any: far more
                 // use on the card than a fixed sentence about elevation.
@@ -2543,6 +2725,24 @@ async function runTurn(session: Session, text: string): Promise<TurnResult> {
                 text: `You answered the approval with: ${decision.response}`,
               });
             }
+
+            /* The person said "do not ask again". Written down as their own
+               standing agreement, so the next call of this shape goes straight
+               through -- and listed in Scheduled tasks, where it can be taken
+               back. Only ever offered on this tier. */
+            if (decision.remember) {
+              const made = addRule({
+                tool: spec.name,
+                match: matchText(spec.name, use.args) ?? "",
+                note: `allowed on the card: ${renderCall(spec, use.args).slice(0, 140)}`,
+                by: "person",
+              });
+              emitEvent(session, "context.note", "system", {
+                text: made.rule
+                  ? `Standing agreement saved: ${spec.name} calls like "${made.rule.match}" now run without asking. It is listed in Scheduled tasks, where it can be revoked.`
+                  : `That could not be saved as a standing agreement (${made.error ?? "unknown reason"}). This call still ran.`,
+              });
+            }
           }
 
           /* The one tier that needs no key, no model and no network. Jev's
@@ -2555,6 +2755,9 @@ async function runTurn(session: Session, text: string): Promise<TurnResult> {
             const decision = await askPermission(session, {
               tool: spec.name,
               rendered: renderCall(spec, use.args),
+              /* Never remembered: nothing that cannot be undone is covered
+                 by a standing agreement. */
+              remember: false,
               reason:
                 `This cannot be undone: it would ${danger.what}` +
                 `${danger.match && danger.match !== String(use.args?.command ?? "")
@@ -3445,11 +3648,32 @@ async function startServer() {
    * which put an answer to somebody else's question into your transcript --
    * and released nothing, because nothing was waiting.
    */
+  /* What has already been agreed: the list the person can read and take
+     back. Added by the agent, by them on an approval card, or by saying
+     "do not ask again". */
+  app.get("/api/autonomy", (_req: Request, res: Response) => {
+    res.json({ rules: listRules() });
+  });
+
+  app.delete("/api/autonomy/:id", (req: Request, res: Response) => {
+    if (!revokeRule(req.params.id)) {
+      res.status(404).json({ error: "There is no agreement with that id." });
+      return;
+    }
+    res.json({ ok: true });
+  });
+
+  /* Everything at once, for the morning after an over-eager day of yeses. */
+  app.delete("/api/autonomy", (_req: Request, res: Response) => {
+    res.json({ ok: true, removed: revokeAll() });
+  });
+
   app.post("/api/policy/:requestId", (req: Request, res: Response) => {
     const requestId = req.params.requestId;
     const approved = Boolean(req.body?.approved);
     const who = req.body?.who || "user";
     const response = typeof req.body?.response === "string" ? req.body.response : undefined;
+    const remember = Boolean(req.body?.remember);
 
     const pending = awaitingApproval.get(requestId);
     const session = pending ? sessions.get(pending.sessionId) : null;
@@ -3462,10 +3686,11 @@ async function startServer() {
         approved,
         who,
         response,
+        remember,
       });
     }
 
-    const released = settleApproval(requestId, { approved, response });
+    const released = settleApproval(requestId, { approved, remember, response });
 
     /* An id nothing is waiting on is not an error: the card is still in the
        transcript after a restart, or after the prompt timed out, and clicking
@@ -4351,9 +4576,11 @@ async function startServer() {
               approved: Boolean(msg.approved),
               who: msg.who || "user",
               response: typeof msg.response === "string" ? msg.response : undefined,
+              remember: Boolean(msg.remember),
             });
             settleApproval(String(msg.request_id), {
               approved: Boolean(msg.approved),
+              remember: Boolean(msg.remember),
               response: typeof msg.response === "string" ? msg.response : undefined,
             });
           }

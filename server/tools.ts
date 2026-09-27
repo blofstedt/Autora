@@ -49,6 +49,9 @@ import {
   readArtifact, saveArtifact, MAX_ARTIFACT_BYTES,
 } from "./artifacts";
 import { checkWidget } from "./widgets";
+import { describe as describeJob, findJob, listJobs, readTail, startJob, stopJob } from "./background";
+import { addRule, listRules, revoke as revokeRule } from "./autonomy";
+import { get as getInventory } from "./inventory";
 import { speechStatus } from "./speech";
 import {
   MAX_WIDGET_CHARS, WIDGET_DEFAULT_HEIGHT, WIDGET_MAX_HEIGHT, WIDGET_MIN_HEIGHT, widgetDocument,
@@ -118,7 +121,7 @@ export function updateToolSettings(patch: any): ToolSettings {
 
 // ------------------------------------------------------------- the registry --
 
-export type ToolGroup = "terminal" | "browser" | "computer" | "memory";
+export type ToolGroup = "terminal" | "browser" | "computer" | "memory" | "schedule";
 
 /** A question for the person, drawn as a card in the thread. */
 export type AskRequest = {
@@ -202,6 +205,237 @@ const TOOLS: ToolSpec[] = [
       required: ["command"],
     },
     risky: true,
+  },
+
+  {
+    name: "run_background",
+    group: "terminal",
+    description:
+      "Start a shell command that keeps running after this turn is over: a " +
+      "build, a long test run, a download, a restore, anything that would hit " +
+      "the terminal's time limit. Same shell, same secrets and same working " +
+      "directory as terminal, but nothing waits for it. You get a job id and " +
+      "the file its output is going to; the job carries on when the turn ends, " +
+      "and the next turn is told by itself what has become of it. Read it " +
+      "later with background_output -- never start it and then sleep or poll " +
+      "in this turn. For something that must happen at a time, or be looked at " +
+      "again later, use schedule instead: a job there is a prompt and a time, " +
+      "and it comes back to you on its own.",
+    parameters: {
+      type: "object",
+      properties: {
+        command: {
+          type: "string",
+          description: "The command line to run in the background, exactly as you would type it.",
+        },
+        cwd: {
+          type: "string",
+          description: "Optional directory to run in. Defaults to the configured working directory.",
+        },
+        note: {
+          type: "string",
+          description:
+            "One line on why it was started, in your own words, e.g. " +
+            "\"rebuilding the app bundle\". The next turn reads this.",
+        },
+      },
+      required: ["command"],
+    },
+    risky: true,
+  },
+  {
+    name: "background_jobs",
+    group: "terminal",
+    description:
+      "List the background commands you started: what each one was, whether " +
+      "it is still running or has finished, its exit code and how long it " +
+      "ran. Cheap, and the right first call when something you set going " +
+      "earlier is needed now.",
+    parameters: { type: "object", properties: {} },
+  },
+  {
+    name: "background_output",
+    group: "terminal",
+    description:
+      "What a background command has printed, and how it ended. Give the " +
+      "job id run_background returned. For a job still running this is what " +
+      "it has printed so far, not the finished output.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The job id, e.g. job-m7x2k1p4a." },
+        lines: {
+          type: "number",
+          description: "How many lines from the end to return. Default 40, at most 500.",
+        },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "background_stop",
+    group: "terminal",
+    description:
+      "Stop a background command you started, and anything it started. Use it " +
+      "for one that is going wrong, or is no longer wanted.",
+    parameters: {
+      type: "object",
+      properties: { id: { type: "string", description: "The job id, e.g. job-m7x2k1p4a." } },
+      required: ["id"],
+    },
+    risky: true,
+  },
+
+  {
+    name: "schedule",
+    group: "schedule",
+    description:
+      "Set something going that comes back to you later: a task and a cron " +
+      "time for it. Use it for anything that should happen at a time (\"every " +
+      "weekday at 8am, check the release status and report\") or be watched for " +
+      "a change (give `watch` a page, a file or a command, and the task runs " +
+      "only when what it watches differs from the last look). The task runs as " +
+      "a turn of its own, in a new session, with this workspace's memory and " +
+      "tools, and the person sees what it says. Name it after the outcome, and " +
+      "write the prompt as an instruction to yourself: say what to do and what " +
+      "to tell the person. Prefer a watcher over a schedule that looks again " +
+      "and again: a watcher speaks only when something actually changed. " +
+      "Nothing runs while the machine or the console is off -- a time missed is " +
+      "missed, not made up afterwards. To change one you already set, give its " +
+      "id; to see them, use schedules.",
+    parameters: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description: "What it is for, in a few words, e.g. \"Release check\".",
+        },
+        cron: {
+          type: "string",
+          description:
+            "Five-field cron, in the server's local time: \"0 8 * * 1-5\" is " +
+            "08:00 on weekdays, \"*/15 * * * *\" is every fifteen minutes. " +
+            "@hourly, @daily, @weekly and @monthly also work. For a watcher " +
+            "this is how often to look.",
+        },
+        prompt: {
+          type: "string",
+          description:
+            "What to do when it runs, written as an instruction to yourself, " +
+            "ending with what to say to the person.",
+        },
+        id: {
+          type: "string",
+          description: "An existing job's id, to change that one instead of making a new one.",
+        },
+        enabled: { type: "boolean", description: "Whether it should run. Default true." },
+        watch: {
+          type: "object",
+          description:
+            "Only for a watcher: what to look at, and the task runs only when " +
+            "it differs from the last look. Leave it out for a plain schedule.",
+          properties: {
+            kind: {
+              type: "string",
+              description: "page (an http(s) address), file (a path on this machine) or command (a shell command's output).",
+            },
+            target: { type: "string", description: "The address, the path, or the command." },
+          },
+          required: ["kind", "target"],
+        },
+      },
+      required: ["name", "cron", "prompt"],
+    },
+    risky: true,
+  },
+  {
+    name: "schedules",
+    group: "schedule",
+    description:
+      "The scheduled tasks and watchers this workspace has: each one's id, " +
+      "when it next runs, when it last ran, and anything that went wrong. " +
+      "Read it before creating one that may already exist, and to find the id " +
+      "to change or remove.",
+    parameters: { type: "object", properties: {} },
+  },
+  {
+    name: "unschedule",
+    group: "schedule",
+    description:
+      "Remove a scheduled task or watcher, by id. With keep: true it is paused " +
+      "instead -- kept, but never fired -- which is the better choice when it " +
+      "may be wanted again.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The job's id, as schedules lists it." },
+        keep: { type: "boolean", description: "Pause it rather than removing it. Default false." },
+      },
+      required: ["id"],
+    },
+    risky: true,
+  },
+
+  {
+    name: "pre_authorise",
+    group: "schedule",
+    description:
+      "Agree a class of work in advance, so the guard stops asking about it: " +
+      "give the tool and a few words that a call of that kind contains. Use it " +
+      "when the same harmless hold keeps coming back -- restarting the same " +
+      "container, re-running the same deploy -- and say why in the note, " +
+      "because the person reads this list. It is not a way round a hold you " +
+      "have not explained, and it cannot cover anything irrecoverable: " +
+      "formatting a disk, wiping a volume, force-pushing over main and deleting " +
+      "the whole tree are asked about every time, however many agreements " +
+      "there are.",
+    parameters: {
+      type: "object",
+      properties: {
+        tool: {
+          type: "string",
+          description: "terminal, run_background or http_request -- the tools the guard asks about.",
+        },
+        match: {
+          type: "string",
+          description:
+            "The words a call must contain, e.g. \"docker compose restart kokoro\" " +
+            "or \"POST https://api.example.com/deploy\". At least 8 characters, " +
+            "and specific enough that it cannot match something else.",
+        },
+        note: { type: "string", description: "Why it is agreed, in a few words the person will read." },
+      },
+      required: ["tool", "match"],
+    },
+    risky: true,
+  },
+  {
+    name: "pre_authorisations",
+    group: "schedule",
+    description:
+      "The standing agreements there are: what is pre-authorised, who added " +
+      "each one, and how often it has been used. With revoke, an id, take one " +
+      "back.",
+    parameters: {
+      type: "object",
+      properties: {
+        revoke: { type: "string", description: "The id of an agreement to take back, e.g. allow-m7x2k-abc." },
+      },
+    },
+    risky: true,
+  },
+
+  {
+    name: "inventory",
+    group: "schedule",
+    description:
+      "Look at the machine again -- which commands are installed, which are " +
+      "not, the shell, the working directory and what is in it, the disk -- " +
+      "and answer with it. The first turn of a session is given this by " +
+      "itself, so call it only when something may have changed: after " +
+      "installing a tool, after a restart, or when a fact about this machine " +
+      "turns out not to hold.",
+    parameters: { type: "object", properties: {} },
   },
 
   // ------------------------------------------------------------ browser --
@@ -1040,6 +1274,30 @@ const TOOLS: ToolSpec[] = [
     risky: true,
   },
   {
+    name: "memory_confirm",
+    group: "memory",
+    description:
+      "Say that a memory still holds, after you have used it and seen it was " +
+      "right: the path is still there, the command still works, the release " +
+      "still goes that way. It stamps today's date on the record, so the next " +
+      "session can tell knowledge that was just checked from knowledge written " +
+      "months ago and never looked at again -- and a memory older than a month " +
+      "says so when it is recalled. Pass a note when what you found differs in " +
+      "detail; it is added to the memory.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The memory's id, e.g. mem-abc123." },
+        note: {
+          type: "string",
+          description: "What you actually found, if it is worth writing down, e.g. \"still at /data/work/a2, now on 0.9.68\".",
+        },
+      },
+      required: ["id"],
+    },
+    risky: true,
+  },
+  {
     name: "memory_search",
     group: "memory",
     description:
@@ -1108,6 +1366,9 @@ const LABELS: Record<ToolGroup, string> = {
   browser: "Web browser",
   computer: "Computer control",
   memory: "Memory",
+  /* Not a setting and so not in groupStates: scheduling, background work and
+     the rest of what happens outside the turn are simply always on. */
+  schedule: "Beyond the turn",
 };
 
 /**
@@ -1188,7 +1449,8 @@ export async function availableTools(): Promise<ToolSpec[]> {
   const usable = new Set(groups.filter((g) => g.available).map((g) => g.group));
   return [
     ...TOOLS.filter((t) =>
-      t.group === "person" || t.group === "files" || usable.has(t.group as ToolGroup)),
+      t.group === "person" || t.group === "files" || t.group === "schedule" ||
+      usable.has(t.group as ToolGroup)),
     ...(usable.has("terminal") ? customSpecs() : []),
     ...mcpSpecs(),
   ];
@@ -1311,6 +1573,31 @@ export function renderCall(spec: ToolSpec, args: Record<string, any>): string {
 
 /** Everything the executor needs from the session it is running in, passed in
     rather than imported, so this module stays independent of the server. */
+/** A scheduled task or watcher, as the agent sees it. The records are the
+    server's; this is what it is told about them. */
+export interface AgentJob {
+  id: string;
+  name: string;
+  cron: string;
+  prompt: string;
+  enabled: boolean;
+  watch: { kind: string; target: string } | null;
+  next_run: number | null;
+  last_run: number | null;
+  last_error: string | null;
+  cron_error: string | null;
+  running: boolean;
+}
+
+/** What the agent asks of a job: only the fields it may set. */
+export interface AgentJobInput {
+  name?: string;
+  cron?: string;
+  prompt?: string;
+  watch?: { kind: string; target: string } | null;
+  enabled?: boolean;
+}
+
 export interface ToolContext {
   /** A line of live output, as it arrives. */
   onOutput: (chunk: string) => void;
@@ -1340,12 +1627,22 @@ export interface ToolContext {
     write: (entry: { title: string; body: string; kind: string; tags?: string[] }) => { id: string; action: string };
     search: (query: string) => { id: string; kind: string; title: string; body: string; status: string }[];
     update: (id: string, patch: { title?: string; body?: string; kind?: string; tags?: string[] }) => boolean;
+    /** Say that a memory still holds, and stamp it checked today. */
+    confirm: (id: string, note?: string) => boolean;
     forget: (id: string, replacedBy?: string | null) => boolean;
   };
   /** A tool output this session kept out of the prompt, by artifact id. */
   vault: (id: string) => string | null;
   /** The session the call runs in, so what it makes can say where from. */
   session: string;
+  /** The Schedule page's jobs, so the agent can set up its own. */
+  jobs?: {
+    list: () => AgentJob[];
+    create: (input: AgentJobInput & { name: string; cron: string; prompt: string }) =>
+      { id: string | null; error: string | null };
+    update: (id: string, patch: AgentJobInput) => { ok: boolean; error: string | null };
+    remove: (id: string) => boolean;
+  };
   /** Put a question to the person and wait for the answer. */
   ask: (request: AskRequest) => Promise<AskAnswer>;
 }
@@ -1998,6 +2295,214 @@ async function runToolUnredacted(
         // A relative directory is taken from the terminal's own, like `cd`.
         const cwd = asked ? path.resolve(terminalDir(), asked) : terminalDir();
         return await runCommand(command, cwd, settings.timeout, ctx);
+      }
+
+      // --------------------------------------------------- background --
+      case "run_background": {
+        const command = String(args.command ?? "").trim();
+        if (!command) return { ok: false, summary: "No command was given." };
+        const asked = String(args.cwd ?? "").trim();
+        const cwd = asked ? path.resolve(terminalDir(), asked) : terminalDir();
+        const started = startJob({ command, cwd, note: String(args.note ?? ""), session: ctx.session });
+        if (!started.job) return { ok: false, summary: started.error ?? "It did not start." };
+        const job = started.job;
+        return {
+          ok: true,
+          summary:
+            `Started ${job.id} in the background, running: ${command}\n` +
+            `Working directory: ${cwd}\n` +
+            `Its output is going to ${job.log}.\n` +
+            "Nothing is waiting for it: this turn is free to carry on, and the " +
+            `next turn is told how it ended. Read it with background_output ${job.id}.`,
+          preview: `background ${job.id}`,
+        };
+      }
+
+      case "background_jobs": {
+        const list = listJobs();
+        if (list.length === 0) {
+          return {
+            ok: true,
+            summary: "No background commands. Start one with run_background.",
+            preview: "no background jobs",
+          };
+        }
+        const lines = list.map((j) => {
+          const tail = j.last.trim();
+          return tail ? `- ${describeJob(j)} Last line: ${tail}` : `- ${describeJob(j)}`;
+        });
+        return {
+          ok: true,
+          summary: ["Background commands, newest first:", ...lines].join("\n"),
+          preview: `${list.length} background job(s)`,
+        };
+      }
+
+      case "background_output": {
+        const id = String(args.id ?? "").trim();
+        if (!id) return { ok: false, summary: "No job id was given." };
+        const job = findJob(id);
+        if (!job) {
+          return {
+            ok: false,
+            summary: `There is no background job ${id}. background_jobs lists the ones there are.`,
+          };
+        }
+        const wanted = Math.min(Math.max(Number(args.lines ?? 40) || 40, 1), 500);
+        const text = readTail(job, 200_000).replace(/\s+$/, "");
+        const rows = text.split("\n");
+        const shown = rows.slice(-wanted).join("\n");
+        const omitted = rows.length > wanted ? `\n[${rows.length - wanted} earlier line(s) not shown]\n` : "\n";
+        return {
+          ok: job.state === "running" || job.exit === 0,
+          exitCode: job.exit ?? undefined,
+          summary:
+            `${describeJob(job)}\n` +
+            (job.state === "running" ? "(still running: this is what it has printed so far)\n" : "") +
+            omitted + (shown || "(nothing printed)"),
+          preview: `${job.id} · ${job.state}${job.exit === null ? "" : ` · exit ${job.exit}`}`,
+        };
+      }
+
+      case "background_stop": {
+        const id = String(args.id ?? "").trim();
+        if (!id) return { ok: false, summary: "No job id was given." };
+        const stopped = stopJob(id);
+        return { ok: stopped.ok, summary: stopped.message };
+      }
+
+      // ------------------------------------------------------ schedule --
+      case "schedule": {
+        const jobs = ctx.jobs;
+        if (!jobs) return { ok: false, summary: "Scheduled tasks are not available here." };
+        const name = String(args.name ?? "").trim();
+        const cron = String(args.cron ?? "").trim();
+        const prompt = String(args.prompt ?? "").trim();
+        const id = String(args.id ?? "").trim();
+        if (!prompt) return { ok: false, summary: "A task needs a prompt: what to do when it runs." };
+        if (!id && !name) return { ok: false, summary: "Give it a name, so the person knows what it is." };
+        if (!cron && !id) return { ok: false, summary: "Give it a time: a five-field cron expression." };
+        const watch = args.watch && typeof args.watch === "object"
+          ? {
+            kind: String((args.watch as any).kind ?? ""),
+            target: String((args.watch as any).target ?? "").trim(),
+          }
+          : null;
+        if (watch && !watch.target) return { ok: false, summary: "A watcher needs something to watch." };
+        const enabled = args.enabled === undefined ? true : Boolean(args.enabled);
+        if (id) {
+          const changed = jobs.update(id, { name: name || undefined, cron: cron || undefined, prompt, watch, enabled });
+          if (!changed.ok) return { ok: false, summary: changed.error ?? `There is no job ${id}.` };
+          return {
+            ok: !changed.error,
+            summary: changed.error
+              ? `Saved, but its time is not valid: ${changed.error}`
+              : `Changed ${id}. It runs "${prompt}" on ${cron || "its time"}.`,
+            preview: `schedule ${id} changed`,
+          };
+        }
+        const made = jobs.create({ name, cron, prompt, watch, enabled });
+        if (!made.id) return { ok: false, summary: made.error ?? "It could not be created." };
+        return {
+          ok: !made.error,
+          summary: made.error
+            ? `Made ${made.id}, but its time is not valid: ${made.error}. Change the cron or remove it.`
+            : `Made ${made.id}${watch ? ` watching the ${watch.kind} ${watch.target}` : ""}. ` +
+              "It runs in a session of its own and what it says appears there; you do not have to wait for it.",
+          preview: `schedule ${made.id}`,
+        };
+      }
+
+      case "schedules": {
+        const jobs = ctx.jobs;
+        if (!jobs) return { ok: false, summary: "Scheduled tasks are not available here." };
+        const list = jobs.list();
+        if (list.length === 0) {
+          return { ok: true, summary: "Nothing is scheduled. Set something with schedule.", preview: "no schedules" };
+        }
+        const when = (sec: number | null) =>
+          sec ? new Date(sec * 1000).toISOString().slice(0, 16).replace("T", " ") : "never";
+        return {
+          ok: true,
+          summary: [
+            "Scheduled tasks and watchers:",
+            ...list.map((j) =>
+              `- ${j.id} "${j.name}" -- ${j.cron}, next ${when(j.next_run)}, last ${when(j.last_run)}` +
+              `${j.watch ? `, watching the ${j.watch.kind} ${j.watch.target}` : ""}` +
+              `${j.enabled ? "" : ", PAUSED"}${j.running ? ", running now" : ""}` +
+              `${j.cron_error ? ` -- its time is not valid: ${j.cron_error}` : ""}` +
+              `${j.last_error ? ` -- last run failed: ${j.last_error}` : ""}`),
+          ].join("\n"),
+          preview: `${list.length} scheduled job(s)`,
+        };
+      }
+
+      case "unschedule": {
+        const jobs = ctx.jobs;
+        if (!jobs) return { ok: false, summary: "Scheduled tasks are not available here." };
+        const id = String(args.id ?? "").trim();
+        if (!id) return { ok: false, summary: "No job id was given." };
+        if (args.keep === true || args.keep === "true") {
+          const paused = jobs.update(id, { enabled: false });
+          return paused.ok
+            ? { ok: true, summary: `Paused ${id}. It stays, and never fires until it is enabled again.` }
+            : { ok: false, summary: paused.error ?? `There is no job ${id}.` };
+        }
+        return jobs.remove(id)
+          ? { ok: true, summary: `Removed ${id}.` }
+          : { ok: false, summary: `There is no job ${id}. schedules lists the ones there are.` };
+      }
+
+      // ----------------------------------------------------- autonomy --
+      case "pre_authorise": {
+        const tool = String(args.tool ?? "").trim();
+        const match = String(args.match ?? "").trim();
+        const made = addRule({ tool, match, note: String(args.note ?? ""), by: "agent" });
+        if (!made.rule) return { ok: false, summary: made.error ?? "It was not agreed." };
+        return {
+          ok: true,
+          summary:
+            `Agreed: ${made.rule.tool} calls containing "${made.rule.match}" run without being held. ` +
+            "It is listed in Settings, and the person can take it back. " +
+            "It covers the guard only -- nothing irrecoverable is ever covered.",
+          preview: `standing agreement ${made.rule.id}`,
+        };
+      }
+
+      case "pre_authorisations": {
+        const revoke = String(args.revoke ?? "").trim();
+        if (revoke) {
+          return revokeRule(revoke)
+            ? { ok: true, summary: `Taken back: ${revoke}. It will be asked about again.` }
+            : { ok: false, summary: `There is no standing agreement ${revoke}.` };
+        }
+        const list = listRules();
+        if (list.length === 0) {
+          return {
+            ok: true,
+            summary: "Nothing is pre-authorised. pre_authorise agrees a class of work so the guard stops asking about it.",
+            preview: "no standing agreements",
+          };
+        }
+        return {
+          ok: true,
+          summary: [
+            "Standing agreements:",
+            ...list.map((r) =>
+              `- ${r.id} — ${r.tool}: anything containing "${r.match}"` +
+              `${r.note ? ` (${r.note})` : ""}, added by the ${r.by}, used ${r.used} time${r.used === 1 ? "" : "s"}.`),
+          ].join("\n"),
+          preview: `${list.length} standing agreement(s)`,
+        };
+      }
+
+      case "inventory": {
+        const seen = getInventory(true);
+        return {
+          ok: true,
+          summary: ["What this machine has, as of now:", ...seen.lines].join("\n"),
+          preview: "looked at the machine",
+        };
       }
 
       // -------------------------------------------------------- browser --
@@ -2710,6 +3215,20 @@ async function runToolUnredacted(
         };
       }
 
+      case "memory_confirm": {
+        const id = String(args.id ?? "").trim();
+        if (!id) return { ok: false, summary: "No memory id was given." };
+        const note = typeof args.note === "string" ? args.note.trim() : "";
+        if (!ctx.memory.confirm(id, note)) {
+          return { ok: false, summary: `There is no memory ${id}. memory_search shows the ids.` };
+        }
+        return {
+          ok: true,
+          summary: `Marked ${id} as checked today${note ? ", with what you found added to it" : ""}.`,
+          preview: id,
+        };
+      }
+
       case "memory_search": {
         const query = String(args.query ?? "").trim();
         if (!query) return { ok: false, summary: "No search terms were given." };
@@ -2910,6 +3429,39 @@ export async function capabilityBriefing(): Promise<string> {
       "are asked to say or read something out loud, call speak -- do not make an " +
       "audio file, call Deepgram yourself, or present a recording. With " +
       "live voice on, your replies are already read aloud; do not repeat them with speak.",
+  );
+  lines.push(
+    "- Work that happens later: always available. Tools: schedule, schedules, " +
+      "unschedule. A scheduled job is a task and a cron time, run as a turn of " +
+      "its own in a new session; a watcher looks at a page, a file or a " +
+      "command and runs its task only when what it sees changed. Set one " +
+      "whenever the thing you were asked for is not due yet, or has to be " +
+      "checked again -- instead of a sleep, a poll, or saying you cannot. " +
+      "Nothing runs while the machine is off. Say in your answer that you " +
+      "set it, and what it will do.",
+  );
+  lines.push(
+    "- Work that outlives the turn: always available. Tools: run_background, " +
+      "background_jobs, background_output, background_stop. A background " +
+      "command is the same shell as the terminal, detached, so it keeps going " +
+      "after the turn ends: use it for a build, a long test run, a download, " +
+      "anything slower than the terminal's time limit. Never sleep or poll " +
+      "for one in the same turn; read it next turn, or use schedule.",
+  );
+  lines.push(
+    "- The machine you are on: always available. Tool: inventory. What is " +
+      "installed, what is not, the shell, the working directory and the disk, " +
+      "looked at now. The first turn of a session is given this by itself; " +
+      "look again after installing something or a restart, rather than " +
+      "guessing or trusting a memory about it that may have moved on.",
+  );
+  lines.push(
+    "- Standing agreements: always available. Tools: pre_authorise, " +
+      "pre_authorisations. The console holds a call that looks destructive and " +
+      "unasked-for; when the person lets one through, that class of work is " +
+      "remembered so it is not put to them again. pre_authorise adds one " +
+      "yourself for harmless work you keep being held on, and says why -- they " +
+      "read the list. Nothing irrecoverable can ever be covered by one.",
   );
   lines.push(
     "- Asking the person: always available. Tool: ask_user. When you are " +

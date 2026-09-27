@@ -29,6 +29,9 @@ export type Approval = {
   tool: string;
   rendered: string;
   reason: string;
+  /** The card may offer "do not ask again": false on the tier that cannot
+      be undone, which is asked about every time. */
+  remember?: boolean;
   seq: number;
   settled: boolean;
   approved?: boolean;
@@ -666,6 +669,7 @@ export function derive(events: AutoraEvent[]): Derived {
           tool: toolName,
           rendered: renderedText,
           reason: reasonText,
+          remember: e.payload.remember === true,
           seq: e.seq,
           settled: false,
         });

@@ -26,7 +26,10 @@ export const RISKY_COMMAND = new RegExp(
 );
 
 export function guardWorthy(name: string, args: Record<string, any>): boolean {
-  if (name === "terminal") return RISKY_COMMAND.test(String(args.command ?? ""));
+  /* A background job runs the same command in the same shell, so it is the
+     same question: `run_background rm -rf /` must not slip past a guard that
+     `terminal rm -rf /` stops at. */
+  if (name === "terminal" || name === "run_background") return RISKY_COMMAND.test(String(args.command ?? ""));
   if (name === "http_request") {
     const method = String(args.method ?? "GET").toUpperCase();
     return !["GET", "HEAD", "OPTIONS"].includes(method);
@@ -151,7 +154,7 @@ const IRRECOVERABLE: { test: (segment: string) => string | null; what: string }[
  * everything.
  */
 export function irreversible(name: string, args: Record<string, any>): Danger | null {
-  if (name !== "terminal") return null;
+  if (name !== "terminal" && name !== "run_background") return null;
   const command = String(args?.command ?? "");
   if (!command) return null;
   /* Before the split: a fork bomb is made of the separators the split is on. */

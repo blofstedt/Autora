@@ -236,8 +236,11 @@ export class SessionStream {
     }
   }
 
-  approve(requestId: string, approved: boolean) {
-    this.send({ type: "policy", request_id: requestId, approved, who: "you" });
+  approve(requestId: string, approved: boolean, remember = false) {
+    /* remember: the person pressed "do not ask again". The server writes it
+       down as their own standing agreement, so the next call of this kind
+       runs without a card. */
+    this.send({ type: "policy", request_id: requestId, approved, who: "you", remember });
   }
 
   interrupt() {

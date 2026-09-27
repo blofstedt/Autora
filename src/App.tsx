@@ -1165,7 +1165,7 @@ export function App() {
           <Approvals
             approvals={view.approvals}
             readOnly={!live}
-            onDecide={(id, approved) => streamRef.current?.approve(id, approved)}
+            onDecide={(id, approved, remember) => streamRef.current?.approve(id, approved, remember)}
           />
 
           {/* The screen above stays exactly as it was; only this strip changes,

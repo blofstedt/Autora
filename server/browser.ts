@@ -622,6 +622,31 @@ const SCAN_SCRIPT = `
     return "";
   };
 
+  /* A tile that is only a picture -- the squares of a picture CAPTCHA, the
+     cells of a picker -- has no text of its own to name it, so the outline
+     dropped it and there was no way to click it. Its name is in the picture:
+     the alt, or failing that the file, which for a CAPTCHA grid is the whole
+     answer (carrot.webp, stop-sign, the letter drawn on it). One image only,
+     so a whole card of pictures is not mistaken for one tile. */
+  const imageLabel = (el) => {
+    let pics = [];
+    try {
+      pics = /^(IMG|IMAGE)$/.test(el.tagName || "") ? [el] : Array.from(el.querySelectorAll("img,svg image"));
+    } catch (err) { return ""; }
+    if (pics.length !== 1) return "";
+    const pic = pics[0];
+    const alt = clean(pic.getAttribute("alt") || pic.getAttribute("aria-label"));
+    if (alt) return alt;
+    const title = clean(pic.getAttribute("title"));
+    if (title) return title;
+    const src = pic.getAttribute("src") || pic.getAttribute("xlink:href") || pic.getAttribute("href") || "";
+    const file = String(src).split(/[?#]/)[0].split("/").pop() || "";
+    if (!file) return "";
+    try {
+      return clean(decodeURIComponent(file.replace(/[.][a-z0-9]{2,5}$/i, "")).replace(/[-_+]+/g, " "));
+    } catch (err) { return clean(file.replace(/[.][a-z0-9]{2,5}$/i, "")); }
+  };
+
   const isField = (el) => !!FIELD_TAGS[el.tagName];
   const named = (el) => {
     const label = el.getAttribute("aria-label");
@@ -764,7 +789,7 @@ const SCAN_SCRIPT = `
       if (style.cursor !== "pointer") continue;
       const parentStyle = el.ownerDocument.defaultView.getComputedStyle(el.parentElement);
       if (parentStyle.cursor === "pointer") continue;
-      const t = textOf(el);
+      const t = textOf(el) || imageLabel(el);
       if (!t || t.length > 80) continue;
       if (within(el)) continue;
       matched = true;
@@ -775,7 +800,7 @@ const SCAN_SCRIPT = `
     const outer = within(el);
     if (outer && outer.tagName === "A" && !isField(el)) continue;
     const role = roleOf(target);
-    const name = short(named(target) || named(el), 120);
+    const name = short(named(target) || named(el) || imageLabel(el), 120);
     const field = isField(target) || role === "textbox" || role === "combobox" || role === "searchbox";
     if (!name && !field && role !== "password") continue;
     const ref = refs.length;
@@ -2733,6 +2758,7 @@ export class LiveBrowser {
       page,
       settings,
       vision: this.vision,
+      visionName: this.visionModel,
       // Whether this browser can draw a canvas at all: a blank picture says
       // something different when it cannot.
       webgl: await page

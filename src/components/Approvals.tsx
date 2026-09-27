@@ -16,7 +16,7 @@ export function Approvals({
   approvals, onDecide, readOnly,
 }: {
   approvals: Approval[];
-  onDecide: (requestId: string, approved: boolean) => void;
+  onDecide: (requestId: string, approved: boolean, remember?: boolean) => void;
   readOnly: boolean;
 }) {
   const pending = approvals.filter((a) => !a.settled);
@@ -47,6 +47,19 @@ export function Approvals({
             >
               <IconCheck size={13} /> Run it
             </button>
+            {/* Offered only where the server says it may be: never on the
+                tier that cannot be undone. It is a standing agreement, so it
+                says so rather than "remember this". */}
+            {approval.remember && (
+              <button
+                className="btn ghost"
+                disabled={readOnly}
+                title="Run this and calls like it without asking again. Listed in Scheduled tasks, where it can be revoked."
+                onClick={() => onDecide(approval.requestId, true, true)}
+              >
+                <IconCheck size={13} /> Always allow this kind
+              </button>
+            )}
           </div>
         </div>
       ))}

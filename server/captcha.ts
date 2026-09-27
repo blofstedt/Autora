@@ -36,6 +36,7 @@
  * photograph a region of it, a way to click and a way to drag, so the
  * arithmetic can be tested without one.
  */
+import { identifyTiles } from "./captcha-labels";
 import {
   colourShare,
   decodePng,
@@ -102,7 +103,16 @@ export interface Point { x: number; y: number }
 export type ChallengeKind = "grid" | "slider" | "words";
 
 /** One clickable square of a grid, numbered as the widget numbers it. */
-export interface Tile { index: number; box: Rect }
+export interface Tile {
+  index: number;
+  box: Rect;
+  /** What the page calls this square’s picture, when it says: the file name
+      at the end of an image URL, an alt text, a data attribute, a CSS
+      background-image. captcha-labels.ts reads it to answer a question of
+      meaning without a model; absent when the page names nothing, which is
+      every tile cut out of a sprite sheet. */
+  label?: string;
+}
 
 export interface Challenge {
   kind: ChallengeKind;
@@ -141,6 +151,9 @@ export interface SolverDeps {
   type?: ((text: string, at: Point) => Promise<void>) | null;
   /** A drag from one point to another, in page coordinates. */
   drag(from: Point, to: Point): Promise<void>;
+  /** Which model would read a picture, for the sight test’s cache and its
+      report. */
+  visionName?: (() => string | null) | null;
   /** Whether this browser can draw a canvas: false is why a picture is blank. */
   webgl?: boolean | null;
   /** Whether the challenge has passed, asked of the widget itself. */
@@ -350,17 +363,20 @@ export function union(rects: Rect[]): Rect {
  * square of each other, which is loose enough for a grid that is a pixel or
  * two out and tight enough not to merge two rows.
  */
-export function orderTiles(rects: Rect[]): Tile[] {
-  const rows: Rect[][] = [];
-  for (const tile of [...rects].sort((a, b) => a.y - b.y || a.x - b.x)) {
+export function orderTiles(rects: Rect[], labels?: (string | undefined)[]): Tile[] {
+  const items = rects.map((box, i) => ({ box, label: labels?.[i] }));
+  const rows: { box: Rect; label?: string }[][] = [];
+  for (const tile of [...items].sort((a, b) => a.box.y - b.box.y || a.box.x - b.box.x)) {
     const row = rows.find(
-      (r) => Math.abs(r[0].y + r[0].h / 2 - (tile.y + tile.h / 2)) < Math.max(4, Math.min(r[0].h, tile.h) / 2),
+      (r) =>
+        Math.abs(r[0].box.y + r[0].box.h / 2 - (tile.box.y + tile.box.h / 2)) <
+        Math.max(4, Math.min(r[0].box.h, tile.box.h) / 2),
     );
     if (row) row.push(tile);
     else rows.push([tile]);
   }
-  const lined = rows.flatMap((row) => row.sort((a, b) => a.x - b.x));
-  return lined.map((box, i) => ({ index: i + 1, box }));
+  const lined = rows.flatMap((row) => row.sort((a, b) => a.box.x - b.box.x));
+  return lined.map((tile, i) => ({ index: i + 1, box: tile.box, label: tile.label }));
 }
 
 /**
@@ -445,6 +461,7 @@ async function pageChallenge(page: any): Promise<Challenge | null> {
     kind: "grid" | "slider" | "words";
     prompt: string;
     tiles: Rect[];
+    labels?: (string | null)[] | null;
     verify: Rect | null;
     handle: Rect | null;
     track: Rect | null;
@@ -461,6 +478,20 @@ async function pageChallenge(page: any): Promise<Challenge | null> {
         return r;
       };
       const rect = (r) => ({ x: r.x, y: r.y, w: r.width, h: r.height });
+      // What the page says about one square’s picture: its own image, its alt
+      // text, its data attributes, a CSS background. Read here because this is
+      // the only place the square’s element is in hand.
+      const labelOf = (el) => {
+        const bits = [];
+        const im = el.tagName === "IMG" ? el : el.querySelector("img");
+        if (im) bits.push(im.getAttribute("src"), im.getAttribute("alt"), im.getAttribute("title"), im.getAttribute("aria-label"));
+        const bg = getComputedStyle(el).backgroundImage;
+        if (bg && bg.indexOf("none") !== 0) bits.push(bg);
+        for (const at of Array.from(el.attributes || [])) {
+          if (at.name.indexOf("data-") === 0 && at.value && at.value.length < 120) bits.push(at.value);
+        }
+        return bits.filter(Boolean).join(" ").toLowerCase();
+      };
       const said = (el) => String(el.innerText || el.textContent || '').replace(/[\\t\\n\\r]+/g, ' ').replace(/ {2,}/g, ' ').trim();
       const asks = /(select|click|choose|pick|tap)[^.]{0,30}(squares?|images?|tiles?|pictures?|cells?)/i;
       const slides = /(slide|drag)[^.]{0,30}(piece|puzzle|slider|unlock|fit|gap|into place)/i;
@@ -557,7 +588,7 @@ async function pageChallenge(page: any): Promise<Challenge | null> {
               /image|picture|tile|square|photo|cell|grid/i.test(String(k.className || ''));
           }).length;
           if (pictures < kids.length * 0.8) continue;
-          grids.push({ tiles: boxes.map(rect), distance: Math.max(0, Math.min(...boxes.map((r) => r.top)) - words.bottom) });
+          grids.push({ tiles: boxes.map(rect), labels: kids.map(labelOf), distance: Math.max(0, Math.min(...boxes.map((r) => r.top)) - words.bottom) });
         }
         if (!grids.length) return null;
         grids.sort((a, b) => a.distance - b.distance);
@@ -615,7 +646,7 @@ async function pageChallenge(page: any): Promise<Challenge | null> {
     };
   }
   if (!found.tiles?.length) return null;
-  const tiles = orderTiles(found.tiles);
+  const tiles = orderTiles(found.tiles, found.labels?.map((l) => l ?? undefined) ?? undefined);
   return {
     kind: "grid",
     widget: "the page's own puzzle",
@@ -817,6 +848,25 @@ async function colourAnswer(deps: SolverDeps, challenge: Challenge): Promise<Ans
   return { tiles: picked, points: [], slide: null };
 }
 
+/**
+ * A grid whose squares say what they are.
+ *
+ * "Select all the squares with a vegetable" is answerable outright when each
+ * square’s own picture is called carrot.webp: read the names off the page, keep
+ * the squares whose name is one of the things asked about, and click those.
+ * See captcha-labels.ts. null when the page named nothing usable, which hands
+ * the picture to the next backend.
+ */
+function nameAnswer(deps: SolverDeps, challenge: Challenge): Answer | null {
+  const found = identifyTiles(challenge.prompt, challenge.tiles);
+  if (!found) return null;
+  deps.log(
+    `captcha: the page names the squares -- ${found.names.join(", ")} in ${found.indexes.join(", ")} (local)`,
+    null,
+  );
+  return { tiles: found.indexes, points: [], slide: null };
+}
+
 async function localAnswer(deps: SolverDeps, challenge: Challenge): Promise<Answer> {
   const nothing: Answer = { tiles: [], points: [], slide: null };
   if (challenge.kind === "words") {
@@ -824,7 +874,15 @@ async function localAnswer(deps: SolverDeps, challenge: Challenge): Promise<Answ
     // here, and guessing at one is a wrong answer typed into a real form.
     return { ...nothing, why: "letters have to be read by a model; there is nothing to compute" };
   }
-  if (challenge.kind === "grid") return colourAnswer(deps, challenge);
+  if (challenge.kind === "grid") {
+    // A page that names its pictures has already answered the question, and a
+    // name is a reading where a colour is an inference. Colour still runs
+    // after this, because a question that really is about colour ("the red
+    // ones") is one the names say nothing about.
+    const byName = nameAnswer(deps, challenge);
+    if (byName) return byName;
+    return colourAnswer(deps, challenge);
+  }
   if (!challenge.handle) {
     return { ...nothing, why: "a picture question needs the vision model; there is nothing to compute" };
   }
@@ -886,10 +944,77 @@ export function wordPictures(size: Bitmap, factor = 4): Buffer[] {
   return cleaned.equals(enlarged) ? [enlarged] : [cleaned, enlarged];
 }
 
+const sight = new Map<string, boolean>();
+
+/** A picture with one of nine squares inked in, for the sight test. */
+export function probeBitmap(cell: number): Bitmap {
+  const size = 300;
+  const cellSize = size / 3;
+  const rgba = Buffer.alloc(size * size * 4, 255);
+  const fx = ((cell - 1) % 3) * cellSize;
+  const fy = Math.floor((cell - 1) / 3) * cellSize;
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const i = (y * size + x) * 4;
+      const inked = x >= fx && x < fx + cellSize && y >= fy && y < fy + cellSize;
+      const rule = x % cellSize < 2 || y % cellSize < 2;
+      const ink = inked ? 40 : rule ? 150 : 250;
+      rgba[i] = ink;
+      rgba[i + 1] = ink;
+      rgba[i + 2] = ink;
+      rgba[i + 3] = 255;
+    }
+  }
+  return { w: size, h: size, rgba };
+}
+
+/**
+ * Whether the model on the other end can see a picture at all.
+ *
+ * A model with no eyes does not say so. Asked which squares hold a vegetable
+ * it answers "1, 2, 3, 5, 6, 7, 9" -- seven confident numbers, every one of
+ * them a wrong click on a real page -- which is exactly what happened before
+ * this test existed. So it is asked two questions the answer to which is drawn
+ * in the picture and written nowhere else: which of nine squares is inked in.
+ * Only a model that gets both right is asked anything else, and the verdict is
+ * remembered per model, so it costs one small picture each.
+ */
+async function sightCheck(deps: SolverDeps): Promise<boolean> {
+  if (!deps.vision) return false;
+  const name = deps.visionName?.() ?? "the connected model";
+  const known = sight.get(name);
+  if (known !== undefined) return known;
+  let sees = true;
+  for (const cell of [4, 9]) {
+    let said = "";
+    try {
+      said = await deps.vision(
+        `The picture is nine numbered squares, row by row, and exactly one of them is inked in. Which one? Reply as {"tile":N} with N from 1 to 9.`,
+        [encodePng(probeBitmap(cell))],
+      );
+    } catch {
+      sees = false;
+      break;
+    }
+    if (!parseAnswer(said).tiles.includes(cell)) {
+      sees = false;
+      break;
+    }
+  }
+  sight.set(name, sees);
+  return sees;
+}
+
 /** The vision backend: the model that already runs this machine. */
 async function visionAnswer(deps: SolverDeps, challenge: Challenge): Promise<Answer> {
   const empty: Answer = { tiles: [], points: [], slide: null };
   if (!deps.vision) return { ...empty, why: "no image-reading model is connected" };
+  if (!(await sightCheck(deps))) {
+    return {
+      ...empty,
+      why: `${deps.visionName?.() ?? "the connected model"} cannot see pictures -- it did not find the filled square in a test picture, and a model that cannot see answers a grid with confident wrong squares`,
+    };
+  }
   try {
     // A words challenge is the picture of letters and, under it, a box and a
     // button: only the letters are worth sending.

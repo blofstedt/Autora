@@ -37,6 +37,10 @@ export interface MemoryRecord {
   /** Times it was put in front of the model. */
   uses: number;
   last_used: number | null;
+  /** When somebody last said this still holds. A memory written eight months
+      ago and never checked is a different thing from one used this morning,
+      and the note says so. Null on records written before this existed. */
+  checked?: number | null;
   superseded_by: string | null;
   /** Times a turn that used it went well. Drives confirming and promoting. */
   worked?: number;
@@ -64,6 +68,8 @@ export const CONFIRM_AFTER = 2;
 export const PROMOTE_AFTER = 3;
 /** Unconfirmed, unused memories older than this are dropped by consolidate. */
 const STALE_PROVISIONAL_S = 30 * 24 * 3600;
+/** A memory nobody has confirmed in this long speaks up about it. */
+const STALE_CHECKED_S = 30 * 24 * 3600;
 
 // ------------------------------------------------------------------ text --
 
@@ -360,6 +366,7 @@ export class MemoryGraph {
     const r = this.get(id);
     if (!r) return null;
     r.status = "confirmed";
+    r.checked = now();
     r.tags = r.tags.filter((t) => t !== "learned" && t !== "unconfirmed");
     if (r.replaces) {
       const old = this.get(r.replaces);
@@ -370,6 +377,30 @@ export class MemoryGraph {
       }
       r.replaces = null;
     }
+    r.updated = now();
+    if (save) this.changed();
+    return r;
+  }
+
+  /**
+   * Somebody used this and found it still true.
+   *
+   * Not the same as reinforcing it: that says a memory helped, which happens
+   * without anyone checking it. This says the world still matches it -- the
+   * path is still there, the command still works, the release still goes that
+   * way -- and stamps the date, so a memory nobody has confirmed in months
+   * announces itself as such instead of reading like this morning's news.
+   * A note is added to the body when what was found differs in detail.
+   */
+  recheck(id: string, note?: string, save = true): MemoryRecord | null {
+    const r = this.get(id);
+    if (!r) return null;
+    const said = String(note ?? "").trim();
+    if (said) {
+      const stamp = new Date().toISOString().slice(0, 10);
+      r.body = `${r.body.trim()}\n\nChecked ${stamp}: ${said}`.slice(0, 4000);
+    }
+    r.checked = now();
     r.updated = now();
     if (save) this.changed();
     return r;
@@ -448,4 +479,18 @@ export class MemoryGraph {
     if (merged || dropped || unlinked) this.changed();
     return { merged, dropped, unlinked };
   }
+}
+
+/**
+ * How a memory's age reads in the note, or null when it is recent enough not
+ * to need saying. Kept next to the records rather than in the prompt builder
+ * so the rule for when a memory counts as fresh is in one place.
+ */
+export function freshness(r: MemoryRecord, at = now()): string | null {
+  const when = r.checked ?? r.updated;
+  if (!when) return null;
+  const days = Math.floor((at - when) / 86400);
+  if (days < STALE_CHECKED_S / 86400) return null;
+  const ago = days < 60 ? `${days} days` : `${Math.round(days / 30)} months`;
+  return r.checked ? `last checked ${ago} ago` : `written ${ago} ago and never checked since`;
 }

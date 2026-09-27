@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { IconCheck, IconClock, IconPlay, IconPlus, IconRepeat, IconTrash, IconX } from "./Icons";
+import { IconCheck, IconClock, IconPlay, IconPlus, IconRepeat, IconShield, IconTrash, IconX } from "./Icons";
 
 export type Job = {
   id: string;
@@ -21,6 +21,22 @@ export type Job = {
 };
 
 type WatchKind = "page" | "file" | "command";
+
+/**
+ * A standing agreement: a class of call the person has already said yes to,
+ * so the guard stops asking about it. Added by the agent, by them on an
+ * approval card, or by pressing "do not ask again" there.
+ */
+type Agreement = {
+  id: string;
+  tool: string;
+  match: string;
+  note: string;
+  added: number;
+  by: "agent" | "person";
+  used: number;
+  last_used: number | null;
+};
 
 type JobRun = {
   at: number;
@@ -130,14 +146,17 @@ export function Schedule({
   embedded?: boolean;
 }) {
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [rules, setRules] = useState<Agreement[]>([]);
   const [editing, setEditing] = useState<Job | "new" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/jobs");
-      setJobs(await res.json());
+      const [jobsRes, rulesRes] = await Promise.all([fetch("/api/jobs"), fetch("/api/autonomy")]);
+      setJobs(await jobsRes.json());
+      const body = await rulesRes.json().catch(() => ({ rules: [] }));
+      setRules(Array.isArray(body?.rules) ? body.rules : []);
     } catch {
       /* the next poll will pick it up */
     } finally {
@@ -181,6 +200,12 @@ export function Schedule({
 
   const remove = useCallback(async (job: Job) => {
     await fetch(`/api/jobs/${job.id}`, { method: "DELETE" });
+    await load();
+  }, [load]);
+
+  /* With an agreement, that one; without, all of them. */
+  const revokeRule = useCallback(async (rule?: Agreement) => {
+    await fetch(rule ? `/api/autonomy/${encodeURIComponent(rule.id)}` : "/api/autonomy", { method: "DELETE" });
     await load();
   }, [load]);
 
@@ -318,6 +343,53 @@ export function Schedule({
             )}
           </article>
         ))}
+
+        {/* What the guard no longer asks about. Kept next to the schedules
+            because both are "things that will happen without you", and both
+            need somewhere to be seen and taken back. */}
+        {rules.length > 0 && (
+          <section className="agree">
+            <div className="agree-top">
+              <span className="brand-mark"><IconShield size={13} /></span>
+              <b>Standing agreements</b>
+              <div className="spacer" />
+              <button className="btn ghost" onClick={() => void revokeRule()}>
+                Revoke all
+              </button>
+            </div>
+            <p className="agree-why">
+              These calls run without an approval card. Everything else still waits for one,
+              and anything that cannot be undone is asked about every time.
+            </p>
+            {rules.map((rule) => (
+              <article className="rule" key={rule.id}>
+                <div className="rule-top">
+                  <code className="rule-match">{rule.match}</code>
+                  <div className="spacer" />
+                  <button
+                    className="btn icon ghost"
+                    title="Take this agreement back"
+                    aria-label={`Revoke ${rule.match}`}
+                    onClick={() => void revokeRule(rule)}
+                  >
+                    <IconTrash size={13} />
+                  </button>
+                </div>
+                <div className="rule-foot">
+                  <span className="muted">
+                    {rule.tool} · {rule.by === "person" ? "you agreed" : "the agent proposed it"} {ago(rule.added)}
+                  </span>
+                  <span className="muted">
+                    {rule.used === 0
+                      ? "not used yet"
+                      : `used ${rule.used}×${rule.last_used ? `, last ${ago(rule.last_used)}` : ""}`}
+                  </span>
+                </div>
+                {rule.note && <p className="rule-note">{rule.note}</p>}
+              </article>
+            ))}
+          </section>
+        )}
       </div>
     </div>
   );

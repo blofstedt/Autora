@@ -26,7 +26,8 @@ import {
   legible,
   type Bitmap,
 } from "../server/captcha-images";
-import { DEFAULT_CAPTCHA, mergeCaptcha, parseAnswer, wantedColour, wordPictures } from "../server/captcha";
+import { DEFAULT_CAPTCHA, mergeCaptcha, parseAnswer, probeBitmap, wantedColour, wordPictures } from "../server/captcha";
+import { identifyTiles, pictureNames } from "../server/captcha-labels";
 
 let passed = 0;
 async function test(name: string, fn: () => void | Promise<void>) {
@@ -293,6 +294,37 @@ await test("a words challenge is sent cleaned and enlarged", () => {
   let magenta = 0;
   for (let i = 0; i < second.rgba.length; i += 4) if (second.rgba[i] === 230 && second.rgba[i + 1] === 20) magenta += 1;
   assert.ok(magenta > 200, "the untouched reading keeps the page as it is");
+});
+
+await test("a page that names its squares is answered by reading the names", () => {
+  // The squares carry their picture in the URL: what a person calls a carrot,
+  // the page calls carrot.webp, and that is a reading rather than a guess.
+  const vegetables = ["tomato", "carrot", "onion", "banana", "grape", "corn", "avocado", "potato", "eggplant"];
+  const squares = vegetables.map((v, i) => ({ index: i + 1, label: `https://neal.fun/not-a-robot/vegetables/${v}.webp` }));
+  assert.deepEqual(pictureNames(squares[1].label), ["carrot"]);
+  assert.deepEqual(pictureNames(`url("tiles/traffic-light-3.webp") center/cover`), ["traffic", "light"]);
+  assert.deepEqual(pictureNames("1x-tile-4.png?cache=9"), ["tile"], "digits and 1x are not a name");
+  const veg = identifyTiles("Select all the squares with a Vegetable", squares);
+  assert.deepEqual(veg?.indexes, [2, 3, 6, 8, 9], "carrot, onion, corn, potato and the eggplant that is allowed beside them");
+  assert.deepEqual(veg?.names, ["carrot", "onion", "corn", "potato", "eggplant"]);
+  // Tomato, banana, grape and avocado are the fruit of that grid, which is
+  // exactly the mistake the colour scorer used to make for it.
+  assert.deepEqual(identifyTiles("Select all the squares with a Fruit", squares)?.indexes, [1, 4, 5, 7]);
+  // One picture cropped into cells names nothing: the model has to look.
+  const sprite = vegetables.map((_, i) => ({ index: i + 1, label: "https://x/stop-signs/1.webp" }));
+  assert.equal(identifyTiles("Select all the squares with a Stop Sign", sprite), null);
+  // Everything or nothing is not an answer either.
+  assert.equal(identifyTiles("Select all the squares with a Vegetable", squares.map((s) => ({ ...s, label: "carrot.webp" }))), null);
+});
+
+await test("a model is tested for eyes before it is asked to read a grid", () => {
+  const png = encodePng(probeBitmap(4));
+  const drawn = decodePng(png);
+  assert.equal(drawn.w, 300);
+  const ink = (x: number, y: number) => drawn.rgba[(y * drawn.w + x) * 4];
+  assert.ok(ink(50, 150) < 80, "square 4 -- the middle of the left column -- is the inked one");
+  assert.ok(ink(250, 250) > 240, "the other eight are left as paper");
+  assert.notDeepEqual(probeBitmap(4).rgba, probeBitmap(9).rgba, "the question is different every time");
 });
 
 console.log(`\n${passed} passed.`);
