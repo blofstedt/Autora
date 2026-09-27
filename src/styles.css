@@ -1260,6 +1260,38 @@ button.hint.voice-note:hover { text-decoration: underline; }
 }
 .live-bar-status.is-heard { color: var(--text); }
 .live-bar-end { flex: 0 0 auto; gap: 6px; border-radius: 999px; }
+.live-bar-sees { color: var(--text-3); font-weight: 500; letter-spacing: 0.04em; }
+.live-bar-status.is-trouble { color: var(--warn); }
+
+/* The two switches, in the bar rather than in Settings: whether the camera is
+   on and whether the microphone stays open are the kind of thing that depends
+   on the room you are standing in. Pill-shaped, so they read as switches and
+   not as another way out of the screen. */
+.live-bar-switch {
+  flex: 0 0 auto; height: 30px; padding: 0 12px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em;
+}
+.live-bar-switch.is-on {
+  --btn-bg: rgba(var(--accent-rgb), 0.16);
+  --btn-border: rgba(var(--accent-rgb), 0.5);
+  color: var(--text);
+}
+.live-bar-switch.btn.icon { width: 30px; padding: 0; justify-content: center; }
+
+/* The person's own half of live view: what the camera has, right here, drawn
+   by their own browser and sent nowhere. Tapping it turns the camera around. */
+.live-bar-peek {
+  position: relative; flex: 0 0 auto; width: 54px; height: 40px; padding: 0;
+  border-radius: 12px; overflow: hidden; cursor: pointer;
+  background: #000; border: 1px solid rgba(var(--accent-rgb), 0.45);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.1);
+}
+.live-bar-peek video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.live-bar-peek.is-mirror video { transform: scaleX(-1); }
+.live-bar-peek-dot {
+  position: absolute; top: 4px; left: 4px; width: 6px; height: 6px; border-radius: 50%;
+  background: #f87171; box-shadow: 0 0 6px rgba(248, 113, 113, 0.9);
+}
 
 @media (prefers-reduced-motion: reduce) {
   .mob-live-glow { animation: none; }
@@ -1312,7 +1344,13 @@ button.hint.voice-note:hover { text-decoration: underline; }
 
   /* Bigger orb and a thumb-sized End: this bar is the whole interface while
      it is up. */
-  .live-bar { gap: 11px; padding: 10px; }
+  .live-bar { gap: 9px; padding: 9px; }
+  /* On a phone the bar has five things in it: the mark, the words, the
+     picture, the switches, and the way out. The picture and the words give a
+     little, and the switch labels go -- the two glyphs carry them. */
+  .live-bar-peek { width: 44px; height: 34px; border-radius: 10px; }
+  .live-bar-switch { padding: 0 9px; font-size: 11px; }
+  .live-bar-status { font-size: 13px; }
   .live-orb { width: 52px; height: 52px; }
   /* Thumb-sized, and given a surface: at this size the glyph alone did not
      read as the way out. */

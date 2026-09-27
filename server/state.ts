@@ -52,14 +52,31 @@ export interface SpeechSettings {
       the wait before the first word -- the whole of the wait, in live voice --
       and a conversation wants the answer. Typed turns think as they please. */
   liveThinking: boolean;
+  /** Live view: whether talk mode opens with the camera on, so the agent can
+      see what is being shown to it while the person talks. Off by default --
+      a camera that comes on when somebody opens voice mode is a surprise, and
+      the switch is right there in the live bar. */
+  liveView: boolean;
+  /** Talk mode's microphone: whether it stays open and sends what it hears
+      (hands-free), rather than only while the mark is held. Holding is the
+      default: it is unambiguous about what is being heard, and it is what
+      makes barge-in work. Hands-free is for when the hands really are busy. */
+  handsFree: boolean;
 }
 
-export const DEFAULT_SPEECH: SpeechSettings = { voice: "", liveThinking: false };
+export const DEFAULT_SPEECH: SpeechSettings = {
+  voice: "",
+  liveThinking: false,
+  liveView: false,
+  handsFree: false,
+};
 
 export function mergeSpeech(into: SpeechSettings, patch: any): SpeechSettings {
   if (!patch || typeof patch !== "object") return into;
   if (typeof patch.voice === "string") into.voice = patch.voice.trim().slice(0, 60);
   if (typeof patch.liveThinking === "boolean") into.liveThinking = patch.liveThinking;
+  if (typeof patch.liveView === "boolean") into.liveView = patch.liveView;
+  if (typeof patch.handsFree === "boolean") into.handsFree = patch.handsFree;
   return into;
 }
 

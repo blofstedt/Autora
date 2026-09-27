@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { useDictation } from "../lib/voice";
+import { chooseTalk, fetchSpeechStatus, turnPause, useDictation } from "../lib/voice";
+import { useLiveView } from "../lib/liveview";
 import { AutoraMark } from "./AutoraMark";
-import { IconStop, IconX } from "./Icons";
+import { IconCamera, IconStop, IconX } from "./Icons";
 
 /** Single stray syllables are usually the room, not a request. */
 const MIN_CHARS = 2;
@@ -19,19 +20,27 @@ const RELEASE_GRACE_MS = 1200;
  * the conversation -- which is the whole point, because the reason to talk to
  * this thing is to watch it work while your hands are somewhere else.
  *
- * Autora answers out loud, and you talk by holding the mark: press and hold,
- * speak, let go, and it goes. The microphone used to stay open between turns
- * and decide for itself when you had finished, which meant it kept chiming on
- * and off around the agent's voice and sent whatever the room said. Holding is
- * unambiguous: nothing is heard unless you are pressing, and pressing cuts the
- * agent off -- its voice stops at once, and what you say interrupts the turn
- * in flight, the same as typing while it works.
+ * Two things about that strip are the person's to choose, and both are here
+ * rather than buried in Settings, because they are the kind of thing that
+ * depends on the room you are in:
+ *
+ *  - How the microphone works. Holding the mark is the default and is
+ *    unambiguous: nothing is heard unless you are pressing, and pressing cuts
+ *    the agent off mid-sentence. Hands-free keeps it open and sends what it
+ *    hears after a pause -- for when the hands really are busy -- and closes
+ *    itself while Autora is speaking, because the microphone would otherwise
+ *    hear the answer and send it back as a question.
+ *  - Whether the camera is on. Off by default. On, it is two things: a small
+ *    live picture in the bar for the person, and a stream at about a frame a
+ *    second for the agent, so "look at this" arrives with the thing being
+ *    shown. Both are switched off together the moment talk mode ends.
  */
 export function LiveChat({
   onUtterance,
   onExit,
   onInterrupt,
   onStop,
+  sessionId,
   agentSpeaking,
   agentWorking,
   agentDoing,
@@ -43,6 +52,8 @@ export function LiveChat({
   onInterrupt?: () => void;
   /** Stop the agent's turn. */
   onStop?: () => void;
+  /** The conversation this is happening in: where the frames go. */
+  sessionId: string | null;
   agentSpeaking: boolean;
   agentWorking?: boolean;
   /** What it is on, in a few words, when it is working. */
@@ -66,6 +77,34 @@ export function LiveChat({
   const [heard, setHeard] = useState("");
   const [holding, setHolding] = useState(false);
 
+  /** Hands-free: the microphone stays open, and what it hears goes after a
+      pause rather than at the end of a press. Remembered between devices. */
+  const [handsFree, setHandsFree] = useState(false);
+  /** Live view: the camera, and the frames the agent is shown. Remembered
+      the same way. */
+  const [view, setView] = useState(false);
+  /** A switch that could not be saved is said here rather than swallowed. */
+  const [complaint, setComplaint] = useState<string | null>(null);
+  /** The person chose something before the saved settings arrived. */
+  const touched = useRef(false);
+  const handsFreeRef = useRef(handsFree);
+  handsFreeRef.current = handsFree;
+
+  const camera = useLiveView(sessionId, view);
+
+  /* What talk mode opened as last time. Applied only if nothing has been
+     touched yet: the saved answer is not worth more than the switch somebody
+     just flicked. */
+  useEffect(() => {
+    let alive = true;
+    void fetchSpeechStatus().then((status) => {
+      if (!alive || !status || touched.current) return;
+      setView(status.liveView === true);
+      setHandsFree(status.handsFree === true);
+    });
+    return () => { alive = false; };
+  }, []);
+
   /** Send what we have, settled or not. */
   const flush = useCallback(() => {
     window.clearTimeout(graceTimer.current);
@@ -82,23 +121,38 @@ export function LiveChat({
     }
   }, []);
 
+  /** Hands-free sends after a pause, not at the end of a press: the wait is
+      tuned in lib/voice, where a sentence that trails off mid-thought waits
+      longer than one that has finished. */
+  const arm = useCallback((settled: boolean) => {
+    if (!handsFreeRef.current) return;
+    window.clearTimeout(graceTimer.current);
+    const text = `${pending.current} ${live.current}`.trim();
+    if (text.length < MIN_CHARS) return;
+    graceTimer.current = window.setTimeout(flush, turnPause(text, settled));
+  }, [flush]);
+
   const onPhrase = useCallback((phrase: string) => {
     pending.current = `${pending.current} ${phrase}`.trim();
     // Settled, so it is no longer in flight -- keeping both would say it twice.
     live.current = "";
     setHeard(pending.current);
-  }, []);
+    arm(true);
+  }, [arm]);
 
   const dictation = useDictation({ onPhrase, continuous: true });
   const { start, stop, interim, supported, listening, error } = dictation;
   acceptRef.current = dictation.accept;
 
-  // Show the words forming as interim results stream in.
+  // Show the words forming as interim results stream in. In hands-free a
+  // phrase still forming is not a phrase to send: it re-arms the longer wait
+  // instead, so talking over the pause does not get cut in half.
   useEffect(() => {
     if (!interim) return;
     live.current = interim;
     setHeard(`${pending.current} ${interim}`.trim());
-  }, [interim]);
+    arm(false);
+  }, [interim, arm]);
 
   // Once the engine has closed after you let go, everything it was going to
   // settle has settled: send it now rather than waiting out the grace.
@@ -109,14 +163,26 @@ export function LiveChat({
   const press = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
     if (disabled || !supported || event.button > 0) return;
     event.preventDefault();
-    // Keep the release even if the finger slides off the mark.
-    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* not supported */ }
+    if (handsFree) {
+      /* A tap, not a hold: this opens the microphone, and the next tap closes
+         it and sends what was heard. It also cuts the agent off, which is what
+         makes talking over it work. */
+      if (holding) {
+        setHolding(false);
+        stop();
+        flush();
+        return;
+      }
+    } else {
+      // Keep the release even if the finger slides off the mark.
+      try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* not supported */ }
+    }
     // Still settling the last thing you said: send it before starting again.
     if (releasing.current) flush();
     onInterrupt?.();
     setHolding(true);
     start();
-  }, [disabled, supported, flush, onInterrupt, start]);
+  }, [disabled, supported, handsFree, holding, stop, flush, onInterrupt, start]);
 
   const release = useCallback(() => {
     if (!holding) return;
@@ -127,6 +193,24 @@ export function LiveChat({
     graceTimer.current = window.setTimeout(flush, RELEASE_GRACE_MS);
   }, [holding, stop, flush]);
 
+  /* Autora talking into an open microphone is a loop: it hears the answer and
+     sends it back as a question. The microphone closes for the length of the
+     reply, and the mark is still there to talk over it with. */
+  useEffect(() => {
+    if (!handsFree || !holding || !agentSpeaking) return;
+    setHolding(false);
+    stop();
+    flush();
+  }, [handsFree, holding, agentSpeaking, stop, flush]);
+
+  // Hands-free switched off mid-sentence: close the microphone and send it.
+  useEffect(() => {
+    if (handsFree || !holding) return;
+    setHolding(false);
+    stop();
+    flush();
+  }, [handsFree, holding, stop, flush]);
+
   // Losing the page (or live mode going read-only) mid-hold is a release.
   useEffect(() => {
     if (disabled && holding) release();
@@ -136,13 +220,27 @@ export function LiveChat({
     window.clearTimeout(graceTimer.current);
   }, []);
 
-  const hint = "Hold the mark to talk.";
-  const status = error
-    ? `Microphone trouble: ${error}`
+  /** A switch, saved for the next time talk mode opens. */
+  const pick = (next: { liveView?: boolean; handsFree?: boolean }) => {
+    touched.current = true;
+    setComplaint(null);
+    if (next.liveView !== undefined) setView(next.liveView);
+    if (next.handsFree !== undefined) setHandsFree(next.handsFree);
+    void chooseTalk(next).then((result) => {
+      if (!result.ok) setComplaint(result.detail ?? "That could not be saved.");
+    });
+  };
+
+  const hint = handsFree ? "Tap the mark to talk." : "Hold the mark to talk.";
+  const trouble = error || camera.error || complaint;
+  const status = trouble
+    ? trouble
     : heard
       ? heard
       : holding
-        ? listening ? "Listening… let go to send." : "Starting the microphone…"
+        ? listening
+          ? handsFree ? "Listening… it goes when you stop." : "Listening… let go to send."
+          : "Starting the microphone…"
         : agentSpeaking
           ? `Autora is speaking. ${hint}`
           : agentWorking
@@ -150,29 +248,51 @@ export function LiveChat({
             : hint;
 
   const lit = holding || agentSpeaking;
+  /* What the bar is doing, for the light it carries: the same vocabulary the
+     rest of live mode uses, so the strip moves with the room rather than
+     only with the mark. */
+  const barState = agentSpeaking ? "speaking" : agentWorking ? "thinking" : "listening";
 
   // The strip you would type into becomes the live bar: it says live mode is
-  // on, shows the words as they form, and is the way back out.
+  // on, shows the words as they form, and carries the two switches and the
+  // way back out.
   return (
-    <div className="live-bar" role="group" aria-label="Live voice chat">
+    <div className="live-bar" data-state={barState} role="group" aria-label="Live voice chat">
       <button
         type="button"
         className={`mob-live-btn live-bar-orb is-${lit ? "working" : "live"} ${holding ? "is-holding" : ""}`}
         onPointerDown={press}
-        onPointerUp={release}
+        onPointerUp={() => { if (!handsFree) release(); }}
         onPointerCancel={release}
         onContextMenu={(event) => event.preventDefault()}
         disabled={disabled || !supported}
-        title="Hold to talk"
-        aria-label="Hold to talk"
+        title={handsFree ? "Tap to talk, tap again to send" : "Hold to talk"}
+        aria-label={handsFree ? "Tap to talk, tap again to send" : "Hold to talk"}
         aria-pressed={holding}
       >
         <span className="mob-live-glow" aria-hidden="true" />
         <AutoraMark state={lit ? "working" : "live"} size={23} />
       </button>
+      {view && (
+        /* The person's own half of live view: what the camera has, in the bar,
+           drawn here and sent nowhere. Tap it to turn the camera around. */
+        <button
+          type="button"
+          className={`live-bar-peek ${camera.facing === "user" ? "is-mirror" : ""}`}
+          onClick={camera.flip}
+          title="Turn the camera around"
+          aria-label="Turn the camera around"
+        >
+          <video ref={camera.attach} muted playsInline />
+          <span className="live-bar-peek-dot" aria-hidden="true" />
+        </button>
+      )}
       <div className="live-bar-text">
-        <span className="live-bar-label"><span className="live-bar-dot" />Live</span>
-        <span className={`live-bar-status ${heard ? "is-heard" : ""}`} aria-live="polite">
+        <span className="live-bar-label">
+          <span className="live-bar-dot" />Live
+          {view && <span className="live-bar-sees"> · view {camera.on ? "on" : "off"}</span>}
+        </span>
+        <span className={`live-bar-status ${heard ? "is-heard" : ""} ${trouble ? "is-trouble" : ""}`} aria-live="polite">
           {status}
         </span>
       </div>
@@ -187,6 +307,25 @@ export function LiveChat({
           <IconStop size={14} />
         </button>
       )}
+      <button
+        type="button"
+        className={`btn live-bar-switch ${handsFree ? "is-on" : ""}`}
+        onClick={() => pick({ handsFree: !handsFree })}
+        title={handsFree ? "The microphone stays open" : "The mark has to be held"}
+        aria-pressed={handsFree}
+      >
+        {handsFree ? "Open" : "Hold"}
+      </button>
+      <button
+        type="button"
+        className={`btn ghost icon live-bar-switch ${view ? "is-on" : ""}`}
+        onClick={() => pick({ liveView: !view })}
+        title={view ? "Live view is on" : "Live view is off"}
+        aria-label={view ? "Turn live view off" : "Turn live view on"}
+        aria-pressed={view}
+      >
+        <IconCamera size={15} />
+      </button>
       <button
         type="button"
         className="btn live-bar-end"

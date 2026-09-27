@@ -38,6 +38,7 @@ import { GoogleGenAI } from "@google/genai";
 import { mergeTools, save, state, allSecrets, keyFor, secretFor, redactSecrets as redactStored } from "./state";
 import { credentialsBriefing, fillPlaceholders, hasPlaceholder, identityEnv, redactCredentials } from "./credentials";
 import type { ChatImage } from "./llm";
+import { frameImage, latestFrame } from "./liveview";
 import { htmlToText, textParts } from "./pages";
 import { describeCaptchas, probeBrowser, VIEWPORT, type LiveBrowser, type PageRead, type UploadFile } from "./browser";
 import { parseCookieExport, sitesOf } from "./cookies";
@@ -977,6 +978,22 @@ const TOOLS: ToolSpec[] = [
     },
   },
 
+  {
+    name: "camera_look",
+    group: "person",
+    description:
+      "Look through the person's camera, while they have live view on in talk " +
+      "mode. You get the newest frame back as a picture -- which is the only " +
+      "frame there is: the view is a stream at about a frame a second and only " +
+      "the most recent one exists, so there is nothing to rewind to. Use it " +
+      "when you need to see again mid-turn: something moved, a step has been " +
+      "done, or you have been asked what you see now. While live view is on, " +
+      "the newest frame also arrives by itself with each message, so a call is " +
+      "only needed to refresh. It says so when the view is off, rather than " +
+      "returning a stale picture.",
+    parameters: { type: "object", properties: {} },
+  },
+
   // ---------------------------------------------------------------- mcp --
   {
     name: "mcp_servers",
@@ -1560,6 +1577,8 @@ export function renderCall(spec: ToolSpec, args: Record<string, any>): string {
       return `show widget "${args.title}"`;
     case "speak":
       return `say aloud: ${JSON.stringify(String(args.text ?? ""))}`;
+    case "camera_look":
+      return "look through the camera";
     case "artifact_read":
       return `read artifact ${args.id}`;
     default: {
@@ -3021,6 +3040,34 @@ async function runToolUnredacted(
             ? `Played aloud on the person's page in the ${voice.voice} voice from ${voice.url}. Nothing else to do: do not also make or attach an audio file.`
             : "Played aloud on the person's page in the browser's own voice (no Deepgram key is set up). Nothing else to do: do not also make or attach an audio file.",
           preview: text.slice(0, 80),
+        };
+      }
+
+      /* ------------------------------------------------------- live view -- */
+      case "camera_look": {
+        const frame = latestFrame(ctx.session);
+        if (!frame) {
+          return {
+            ok: false,
+            summary:
+              "Live view is off: nothing is coming in from the camera. It is on only while the " +
+              "person is in talk mode with the view switched on, so say so rather than asking again.",
+          };
+        }
+        const image = frameImage(frame);
+        if (!image) {
+          return { ok: false, summary: "That frame is too large to hand over as a picture." };
+        }
+        const agoMs = Date.now() - frame.at;
+        const ago = agoMs < 1500 ? "just now" : `${Math.round(agoMs / 1000)}s old`;
+        return {
+          ok: true,
+          summary:
+            `The newest frame from the person's camera (${ago}) is in this result. It is the only ` +
+            "one there is -- earlier frames were never kept -- so anything that has already gone " +
+            "from the view is gone.",
+          preview: `camera frame (${ago})`,
+          images: [image],
         };
       }
 

@@ -481,6 +481,12 @@ export type SpeechStatus = {
   /** Whether a turn spoken to the console may think before answering. Off
       by default: the thinking is most of the wait in live voice. */
   liveThinking: boolean;
+  /** Whether talk mode opens with live view on -- the camera, which the agent
+      is then shown frames from. */
+  liveView: boolean;
+  /** Whether talk mode's microphone stays open, instead of only while the
+      mark is held. */
+  handsFree: boolean;
   /** The service behind it, for the panel to name. */
   url: string | null;
 };
@@ -504,6 +510,25 @@ export async function chooseLiveThinking(liveThinking: boolean): Promise<{ ok: b
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ speech: { liveThinking } }),
+    });
+    if (res.ok) return { ok: true };
+    const body = await res.json().catch(() => null);
+    return { ok: false, detail: body?.error ?? `The console answered ${res.status}.` };
+  } catch (err: any) {
+    return { ok: false, detail: String(err?.message ?? err) };
+  }
+}
+
+/** How talk mode is set up when it opens: the camera, and the microphone.
+    Saved the way the voice is, so it follows the person between devices --
+    the switches in the live bar are the quick ones, this is the remembered
+    one. */
+export async function chooseTalk(next: { liveView?: boolean; handsFree?: boolean }): Promise<{ ok: boolean; detail?: string }> {
+  try {
+    const res = await fetch("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ speech: next }),
     });
     if (res.ok) return { ok: true };
     const body = await res.json().catch(() => null);

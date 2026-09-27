@@ -1260,6 +1260,7 @@ export function App() {
                 onExit={toggleLive}
                 onInterrupt={hush}
                 onStop={() => void stopTurn()}
+                sessionId={sessionId}
                 agentSpeaking={speaking}
                 agentWorking={running}
                 agentDoing={doing}

@@ -49,6 +49,9 @@ import {
 import {
   attachmentNote, attachmentRefs, picturesFor, type AttachmentRef,
 } from "./server/attach";
+import {
+  MAX_FRAME_BYTES, clearFrame, frameImage, latestFrame, liveViewNote, putFrame,
+} from "./server/liveview";
 import { ContextEngine, type CompactionReport } from "./server/context";
 import {
   appendEvent, countsFor, countsOf, deleteSession, flushStore, loadSessionEvents,
@@ -1435,6 +1438,17 @@ function historyFor(session: Session, sinceSeq = 0): { message: ChatMessage; seq
   for (let i = turns.length - 1; i >= 0; i -= 1) {
     if (turns[i].message.role !== "user") continue;
     const pictures = picturesFor(attached.get(turns[i].seq) ?? []);
+    /* And the camera, when live view is on: the newest frame the person's
+       device sent goes to the turn being answered, so what they say out loud
+       arrives with what they are looking at. It is a stream rather than a
+       file, and the note says so -- and it is only ever the newest one,
+       because the rest were never kept. */
+    const live = latestFrame(session.id);
+    if (live) {
+      const image = frameImage(live);
+      if (image) pictures.push(image);
+      turns[i].message.text += `\n\n${liveViewNote(live)}`;
+    }
     if (pictures.length > 0) turns[i].message.images = pictures;
     break;
   }
@@ -3102,6 +3116,7 @@ async function startServer() {
     // The browser is closed first, so its sign-ins are saved before it goes.
     await browsers.get(session.id)?.close().catch(() => undefined);
     browsers.delete(session.id);
+    clearFrame(session.id);
     forgetSession(session.id);
     deleteSession(session.id);
     log("info", "sessions", `deleted "${session.title}"`);
@@ -3409,6 +3424,35 @@ async function startServer() {
 
     res.json({ ok: true, queued: false });
     void startTurn(session, text, attachments, { spoken });
+  });
+
+  /* Live view: one frame, from the device, to the conversation being talked
+     in. A raw body rather than base64 in JSON, because it is a picture at
+     about a frame a second and base64 would be a third more bytes for nothing.
+     The response says nothing about the picture: there is nowhere for it to go
+     except the next turn, and nothing to name. */
+  app.post(
+    "/api/sessions/:id/frame",
+    express.raw({ type: () => true, limit: MAX_FRAME_BYTES }),
+    (req: Request, res: Response) => {
+      const session = sessions.get(req.params.id);
+      if (!session) return res.status(404).json({ error: "Session not found" });
+      const body = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+      const mime = String(req.headers["x-frame-type"] ?? "image/jpeg").split(";")[0].trim();
+      if (!putFrame(session.id, body, mime)) {
+        return res.status(400).json({ error: "That is not a frame worth keeping." });
+      }
+      res.json({ ok: true });
+    },
+  );
+
+  /* The camera went off, or the person left talk mode. Said out loud rather
+     than left to go stale, so the next thing the agent is told is not "live
+     view is on" for up to the length of the grace window. */
+  app.delete("/api/sessions/:id/frame", (req: Request, res: Response) => {
+    if (!sessions.get(req.params.id)) return res.status(404).json({ error: "Session not found" });
+    clearFrame(req.params.id);
+    res.json({ ok: true });
   });
 
   // 5. Interrupt current turn
@@ -4251,6 +4295,8 @@ async function startServer() {
       reason: status.reason,
       url: status.url,
       liveThinking: state.speech.liveThinking,
+      liveView: state.speech.liveView,
+      handsFree: state.speech.handsFree,
     });
   });
 
