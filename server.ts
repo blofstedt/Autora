@@ -56,6 +56,7 @@ import {
 } from "./server/store";
 import { LiveBrowser, VIEWPORT, probeBrowser, type PageRead } from "./server/browser";
 import { mergeCaptcha } from "./server/captcha";
+import { inQuiet, mergeProactivity, quietBriefing } from "./server/quiet";
 import { LoopWatch } from "./server/loopwatch";
 import { healthBriefing, recordOutcome, targetOf, toolHealth } from "./server/toolhealth";
 import { Scheduler, type Job, type JobWatch } from "./server/scheduler";
@@ -1792,8 +1793,17 @@ async function systemInstructionFor(
      watching it: without this the next turn would have to remember to ask,
      and a finished build would sit there unseen until somebody thought
      of it. */
-  const background = backgroundBriefing();
-  if (background) notes.push(background);
+  /* Their quiet hours, said every turn -- it is worth planning around, not
+     only obeying at the moment it bites -- and the one thing it holds back
+     here: a briefing about finished work, which is the agent's own
+     initiative arriving at 03:40. Held, not dropped: this same turn carries
+     it once the window has passed. */
+  const quiet = quietBriefing(Date.now(), state.proactivity);
+  if (quiet) notes.push(quiet);
+  if (!inQuiet(Date.now(), state.proactivity)) {
+    const background = backgroundBriefing();
+    if (background) notes.push(background);
+  }
 
   /* What has already been agreed, so the agent does not ask again about
      something the person settled days ago -- and knows it may act. */
@@ -4052,6 +4062,9 @@ async function startServer() {
       remoteKey: undefined,
       vision: captchaVisionLabel(),
     },
+    /* Two times of day on their clock, so the panel can show when the agent
+       keeps its own initiative to itself. */
+    proactivity: { ...state.proactivity },
     jev: {
       enabled: state.jev.enabled,
       threshold: state.jev.threshold,
@@ -4166,6 +4179,7 @@ async function startServer() {
     /* How a picture challenge is answered. The key for a self-hosted solver
        comes from the panel like any other and is never sent back. */
     if (body.captcha && typeof body.captcha === "object") mergeCaptcha(state.captcha, body.captcha);
+    if (body.proactivity && typeof body.proactivity === "object") mergeProactivity(state.proactivity, body.proactivity);
     /* Which voice speaks. It is checked while Deepgram is reachable at all: a
        typo saved here would otherwise only show up at the next sentence, in the
        middle of a conversation, where it reads as the app being broken rather
