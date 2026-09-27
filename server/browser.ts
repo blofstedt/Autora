@@ -37,7 +37,7 @@ import path from "node:path";
 import { stateFilePath } from "./state";
 import type { BrowserCookie } from "./cookies";
 import { humanClick, humanMove, humanPath, humanType, pointIn, wander, type Point } from "./human";
-import { DEFAULT_CAPTCHA, solveChallenge, type CaptchaSettings, type SolveReport } from "./captcha";
+import { DEFAULT_CAPTCHA, findChallenge, findPageCheckbox, solveChallenge, type CaptchaSettings, type SolveReport } from "./captcha";
 
 /* Playwright's types are not imported: the package is optional, and a type
    import would make the server half fail to compile wherever it is not
@@ -162,7 +162,7 @@ export interface ScrollRequest {
   text?: string;
 }
 
-export type CaptchaKind = "recaptcha" | "hcaptcha" | "turnstile";
+export type CaptchaKind = "recaptcha" | "hcaptcha" | "turnstile" | "lookalike";
 
 /** A checkbox CAPTCHA found on the page, with where its box is. */
 interface CaptchaHit {
@@ -2596,6 +2596,11 @@ export class LiveBrowser {
       hits.push({ kind, box, solved: inner.checked === "true", challenge: false });
     }
 
+    /* Nothing found, or nothing found that is still to be ticked: a page
+       with no widget at all can still draw the box itself. */
+    const drawn = hits.some((h) => !h.solved) ? null : await findPageCheckbox(page);
+    if (drawn) hits.push({ kind: "lookalike", box: { x: drawn.x, y: drawn.y, w: drawn.w, h: drawn.h }, solved: drawn.checked, challenge: false });
+
     // A response token in the page is the widget's own word that it passed,
     // and the only one Turnstile gives.
     const found: { tokens: Record<string, boolean>; markup: Record<string, boolean> } = await page
@@ -2715,8 +2720,12 @@ export class LiveBrowser {
       },
       drag: (from: Point, to: Point) => this.dragAt(from, to),
       passed: async () => {
+        // A puzzle still standing is not passed, whoever drew it: a page that
+        // draws its own has no widget token here to ask, so the puzzle it drew
+        // going away is the pass.
+        if (await findChallenge(page).catch(() => null)) return false;
         const hits = await this.findCaptchas();
-        return hits.length > 0 && !this.loadingCaptchas.length && hits.every((h) => h.solved);
+        return !this.loadingCaptchas.length && hits.every((h) => h.solved);
       },
       log: (what: string, at?: Point | null) => {
         this.hooks.onAction(what, at ?? null, this.currentUrl ?? "");
@@ -2780,6 +2789,25 @@ export class LiveBrowser {
       }
       const target = hits.find((h) => !h.solved);
       if (!target) {
+        /* Nothing to tick -- but a puzzle can still be standing: the box may
+           already be ticked, or the page may draw the puzzle and never draw a
+           box at all. browser_captcha is the tool for a picture challenge too,
+           so it answers that rather than reporting there is nothing here. */
+        const standing = await findChallenge(page).catch(() => null);
+        if (standing) {
+          const report = await this.solvePicture();
+          this.hooks.onAction(`captcha: ${standing.widget} -- ${report.detail}`, null, this.currentUrl ?? "");
+          await this.settle(400);
+          const read = await this.read();
+          await this.keyframe();
+          return {
+            outcome: report.outcome === "solved" ? "solved" : "challenge",
+            kind: hits[0]?.kind ?? null,
+            page: read,
+            detail: report.detail,
+            ...(report.backend ? { backend: report.backend } : {}),
+          };
+        }
         const loading = this.loadingCaptchas[0] ?? null;
         const read = await this.read();
         return {
@@ -3162,6 +3190,7 @@ function boxOf(r: Ref) {
 }
 
 function labelOf(kind: CaptchaKind): string {
+  if (kind === "lookalike") return "a look-alike";
   return kind === "recaptcha" ? "reCAPTCHA" : kind === "hcaptcha" ? "hCaptcha" : "Cloudflare Turnstile";
 }
 

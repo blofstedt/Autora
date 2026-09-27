@@ -16,8 +16,9 @@ description: >-
   Key features:
 
 
-  • CAPTCHA solving — a picture challenge is answered by the connected model or by
-  arithmetic on the images, and only handed to you when neither can.
+  • CAPTCHA solving — a checkbox the page draws itself is found and ticked, and a
+  picture challenge is answered by the connected model or by arithmetic on the images.
+
 
   • Real-time browser view — watch the cursor move, text appear, and pages load
   exactly as the agent drives them, then click and type in the page yourself
@@ -97,37 +98,29 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  A CAPTCHA that hides behind a picture is now answered instead of always being
-  handed over. Ticking "I'm not a robot" was already done; what a checkbox does
-  when it does not trust the browser is put a puzzle in front of it -- nine
-  photographs and "select all the buses", or a piece to drag into a hole -- and
-  that used to be where browser_captcha stopped and asked the person. It now
-  looks at the puzzle and answers it, and three backends do the looking, tried
-  in the order they are switched on in Settings, CAPTCHA. All three are free,
-  and none of them needs an account beyond the model connection you already
-  have.
+  A CAPTCHA with no widget behind it is now found and used. Plenty of pages do
+  not load reCAPTCHA, hCaptcha or Turnstile at all and draw the box themselves
+  -- a small square that says it is a checkbox, in a page that says it is not a
+  robot, with no iframe anywhere for browser_captcha to look into. On one of
+  those it used to answer "there is no checkbox CAPTCHA on this page" while the
+  box sat there in front of it. It is found now: the smallest checkbox-shaped
+  box whose own markup, or the markup around it, says CAPTCHA or "not a robot".
+  It is clicked with the usual humanlike movement and treated as the CAPTCHA it
+  is, in the activity feed and in what is reported back.
 
-  Pictures. The two images of a slider are compared here, pixel by pixel: where
-  the piece was cut from is arithmetic rather than inference, and it is right
-  the first time. Nothing is installed for it, nothing is sent anywhere, and it
-  reads the PNG a screenshot comes back as with what node already ships.
+  The puzzle such a page draws next is found too. The same scan that reads a
+  widget's grid now reads one the page builds out of ordinary divs -- a 4x4 of
+  squares with the photographs behind them, or a piece to drag along a track --
+  and the words above it are read for what to look for. What answers it has not
+  changed: a slider is still measured here on this machine, a grid of
+  photographs still needs a model that can see them or a solver of your own,
+  and a square is still only clicked when a backend has named it.
 
-  The model. A grid is cropped out of the page and given to the provider this
-  session is already talking to, with every square named and numbered, and it
-  answers with the squares to click -- the one thing that can say whether a
-  picture is a bus. It is the same model paying for the turn, so there is no
-  second key and no per-solve fee.
-
-  Your own solver. A solver you run yourself, speaking the createTask and
-  getTaskResult calls that the self-hosted ones all speak, reached by URL and
-  off until one is set.
-
-  Nothing is guessed. A backend that cannot answer says why in the activity
-  feed and the next one is asked; a click is only ever made on a square some
-  backend named; the widget's own token decides whether it passed; and a
-  challenge that survives every backend and every try comes back to you exactly
-  as it did before.
-
+  Checked live on neal.fun/not-a-robot: the box it draws itself is found and
+  ticked, the game moves from Level 1 to Level 2, and there the 4x4 stop-sign
+  grid and "Select all the squares with a Stop Sign" are read correctly. The
+  picture is the one thing no arithmetic here can read -- that is the connected
+  model's job, and a model with vision is what makes it work.
 dependencies: []
 path: ""
 defaultUsername: ""

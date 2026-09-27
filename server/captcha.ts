@@ -304,7 +304,235 @@ export async function findChallenge(page: any): Promise<Challenge | null> {
       }
     }
   }
-  return null;
+  /* No widget frame is running this one. A page that draws its own puzzle is
+     still a puzzle, and it is looked for last so that a real widget whose
+     frames are the ones above always wins. */
+  return pageChallenge(page);
+}
+
+/** The rect that covers all of these, or a zero rect when there are none. */
+export function union(rects: Rect[]): Rect {
+  if (!rects.length) return { x: 0, y: 0, w: 0, h: 0 };
+  const left = Math.min(...rects.map((r) => r.x));
+  const top = Math.min(...rects.map((r) => r.y));
+  const right = Math.max(...rects.map((r) => r.x + r.w));
+  const bottom = Math.max(...rects.map((r) => r.y + r.h));
+  return { x: left, y: top, w: right - left, h: bottom - top };
+}
+
+/**
+ * A grid's squares, numbered the way a widget numbers them: row by row.
+ *
+ * The rects arrive in document order, which is not the order anybody counts
+ * in -- a grid can be drawn column first, or with a row of odd ones at the
+ * end. Two squares are on the same row when their centres are within half a
+ * square of each other, which is loose enough for a grid that is a pixel or
+ * two out and tight enough not to merge two rows.
+ */
+export function orderTiles(rects: Rect[]): Tile[] {
+  const rows: Rect[][] = [];
+  for (const tile of [...rects].sort((a, b) => a.y - b.y || a.x - b.x)) {
+    const row = rows.find(
+      (r) => Math.abs(r[0].y + r[0].h / 2 - (tile.y + tile.h / 2)) < Math.max(4, Math.min(r[0].h, tile.h) / 2),
+    );
+    if (row) row.push(tile);
+    else rows.push([tile]);
+  }
+  const lined = rows.flatMap((row) => row.sort((a, b) => a.x - b.x));
+  return lined.map((box, i) => ({ index: i + 1, box }));
+}
+
+/**
+ * The challenge a page draws itself.
+ *
+ * Not every picture puzzle arrives in a widget's frame. Games, demos and a
+ * long tail of home-made CAPTCHAs draw the puzzle in their own document: a
+ * line of words asking for squares, a square area of pictures under it, and a
+ * button that confirms. None of that is any vendor's markup, so the markup is
+ * not what is looked for here -- the shape is. The words that ask for
+ * squares, the equal picture boxes arranged in a rectangle, the button: that
+ * is a grid challenge wherever it is drawn, and it is answered by the same
+ * backends, clicked the same way, and asked about afterwards the same way a
+ * widget's own table is.
+ *
+ * A slider drawn in a page is found the same way and by the same rule: a
+ * handle that says it is one, a track around it, and words nearby that ask
+ * for something to be slid. The words matter, because the page's document is
+ * the whole internet -- a drag handle that is part of a carousel or a map is
+ * not a puzzle, and this must not drag one.
+ */
+/** A checkbox a page draws itself, with no widget anywhere near it. */
+export interface PageCheckbox { x: number; y: number; w: number; h: number; checked: boolean }
+
+/**
+ * The checkbox a page draws in its own document.
+ *
+ * Not every site uses a widget. Some draw the box themselves, so there is no
+ * iframe for a scan of frames to find and browser_captcha used to answer
+ * "there is no checkbox CAPTCHA on this page" on a page that plainly has one.
+ * This is that box: small, square-ish, saying it is a checkbox, with CAPTCHA
+ * or "not a robot" somewhere in the markup around it. The smallest such box
+ * wins, because the outside wrapper is not the thing to click.
+ *
+ * It is a guess, so it is only ever used to move the mouse. A click on a
+ * stray box costs nothing; a missed CAPTCHA costs the whole page.
+ */
+export async function findPageCheckbox(page: any): Promise<PageCheckbox | null> {
+  if (!page) return null;
+  return page
+    .evaluate(`(() => {
+      const shown = (el) => {
+        const r = el.getBoundingClientRect();
+        if (r.width < 10 || r.height < 10 || r.width > 90 || r.height > 90) return null;
+        if (r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth) return null;
+        const st = getComputedStyle(el);
+        if (st.visibility === 'hidden' || st.display === 'none' || Number(st.opacity) < 0.4) return null;
+        return r;
+      };
+      const name = (el) => String(el.className || '') + ' ' + [el.id, el.getAttribute('aria-label'), el.getAttribute('name'), el.getAttribute('data-testid'), el.getAttribute('role')].filter(Boolean).join(' ');
+      const around = (el) => {
+        let said = name(el);
+        let p = el;
+        for (let i = 0; i < 3 && p; i += 1) {
+          p = p.parentElement;
+          if (p) said += ' ' + name(p) + ' ' + String(p.innerText || '').slice(0, 200);
+        }
+        return said;
+      };
+      const robot = /not a robot|are you (a )?(human|robot)|verify (that )?you are human/i;
+      const captchaish = /captcha|robot|turnstile|hcaptcha/i;
+      const found = [];
+      for (const el of document.querySelectorAll('[role=checkbox], input[type=checkbox], [class*=checkbox], [class*=captcha], [aria-label]')) {
+        const r = shown(el);
+        if (!r) continue;
+        const local = name(el);
+        if (!(el.getAttribute('role') === 'checkbox' || el.tagName === 'INPUT' || /checkbox|check-box/i.test(local))) continue;
+        const near = around(el);
+        if (!captchaish.test(near) && !robot.test(near)) continue;
+        found.push({ x: r.x, y: r.y, w: r.width, h: r.height, area: r.width * r.height,
+          checked: el.getAttribute('aria-checked') === 'true' || el.checked === true || /checked|done|success|passed|verified|ticked/i.test(String(el.className || '')) });
+      }
+      if (!found.length) return null;
+      found.sort((a, b) => a.area - b.area);
+      const best = found[0];
+      return { x: best.x, y: best.y, w: best.w, h: best.h, checked: best.checked };
+    })()`)
+    .catch(() => null);
+}
+async function pageChallenge(page: any): Promise<Challenge | null> {
+  const found: {
+    kind: "grid" | "slider";
+    prompt: string;
+    tiles: Rect[];
+    verify: Rect | null;
+    handle: Rect | null;
+    track: Rect | null;
+  } | null = await page
+    .evaluate(`(() => {
+      const shown = (el) => {
+        const r = el.getBoundingClientRect();
+        if (r.width < 24 || r.height < 24) return null;
+        if (r.bottom < 4 || r.top > innerHeight - 4 || r.right < 4 || r.left > innerWidth - 4) return null;
+        const st = getComputedStyle(el);
+        if (st.visibility === 'hidden' || st.display === 'none' || Number(st.opacity) < 0.5) return null;
+        return r;
+      };
+      const rect = (r) => ({ x: r.x, y: r.y, w: r.width, h: r.height });
+      const said = (el) => String(el.innerText || el.textContent || '').replace(/[\\t\\n\\r]+/g, ' ').replace(/ {2,}/g, ' ').trim();
+      const asks = /(select|click|choose|pick|tap)[^.]{0,30}(squares?|images?|tiles?|pictures?|cells?)/i;
+      const slides = /(slide|drag)[^.]{0,30}(piece|puzzle|slider|unlock|fit|gap|into place)/i;
+
+      let prompt = '';
+      let words = null;
+      const hits = [];
+      for (const el of document.querySelectorAll('h1,h2,h3,h4,h5,p,div,span,label,strong,b,legend')) {
+        const line = said(el);
+        if (!line || line.length > 200) continue;
+        if (!asks.test(line) && !slides.test(line)) continue;
+        const r = shown(el);
+        if (!r) continue;
+        hits.push({ line, r, area: r.width * r.height });
+      }
+      if (hits.length) {
+        hits.sort((a, b) => a.area - b.area);
+        prompt = hits[0].line;
+        words = hits[0].r;
+      }
+      if (!words) return null;
+
+      if (asks.test(prompt)) {
+        const grids = [];
+        for (const el of document.querySelectorAll('div,section,ul,ol,table,tbody,tr,figure')) {
+          const kids = [...el.children].filter((k) => shown(k));
+          if (kids.length < 6 || kids.length > 36) continue;
+          const boxes = kids.map((k) => k.getBoundingClientRect());
+          const w = boxes[0].width;
+          const h = boxes[0].height;
+          if (Math.abs(w - h) > Math.max(4, w * 0.2)) continue;
+          if (!boxes.every((r) => Math.abs(r.width - w) < 4 && Math.abs(r.height - h) < 4)) continue;
+          const cols = new Set(boxes.map((r) => Math.round(r.left))).size;
+          const rows = new Set(boxes.map((r) => Math.round(r.top))).size;
+          if (rows < 3 || cols < 3 || cols > 8 || rows * cols !== kids.length) continue;
+          const pictures = kids.filter((k) => {
+            const st = getComputedStyle(k);
+            return k.querySelector('img,canvas,svg') || /url\\(/.test(st.backgroundImage) ||
+              /image|picture|tile|square|photo|cell|grid/i.test(String(k.className || ''));
+          }).length;
+          if (pictures < kids.length * 0.8) continue;
+          grids.push({ tiles: boxes.map(rect), distance: Math.max(0, Math.min(...boxes.map((r) => r.top)) - words.bottom) });
+        }
+        if (!grids.length) return null;
+        grids.sort((a, b) => a.distance - b.distance);
+        let verify = null;
+        for (const el of document.querySelectorAll('button,[role=button],input[type=button],input[type=submit]')) {
+          const label = said(el) || String(el.value || '').trim();
+          if (!/^(verify|check|submit|confirm|next|continue|done)/i.test(label)) continue;
+          const r = shown(el);
+          if (!r) continue;
+          verify = rect(r);
+          break;
+        }
+        return { kind: 'grid', prompt, tiles: grids[0].tiles, verify, handle: null, track: null };
+      }
+
+      for (const el of document.querySelectorAll('[role=slider],[class*=slider-button],[class*=sliderButton],[class*=slider-btn],[class*=drag][class*=handle],[class*=slider] [class*=thumb]')) {
+        const handle = shown(el);
+        if (!handle) continue;
+        const parent = el.parentElement;
+        const track = parent ? shown(parent) : null;
+        if (!track || track.width < handle.width * 1.5) continue;
+        return { kind: 'slider', prompt, tiles: [], verify: null, handle: rect(handle), track: rect(track) };
+      }
+      return null;
+    })()`)
+    .catch(() => null);
+
+  if (!found) return null;
+  if (found.kind === "slider") {
+    if (!found.handle || !found.track) return null;
+    return {
+      kind: "slider",
+      widget: "the page's own slider",
+      box: union([found.handle, found.track]),
+      prompt: found.prompt,
+      tiles: [],
+      verify: null,
+      handle: found.handle,
+      track: found.track,
+    };
+  }
+  if (!found.tiles?.length) return null;
+  const tiles = orderTiles(found.tiles);
+  return {
+    kind: "grid",
+    widget: "the page's own puzzle",
+    box: union([...tiles.map((t) => t.box), ...(found.verify ? [found.verify] : [])]),
+    prompt: found.prompt,
+    tiles,
+    verify: found.verify,
+    handle: null,
+    track: null,
+  };
 }
 
 /** What a backend answered, in one shape. */

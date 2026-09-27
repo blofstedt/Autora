@@ -489,8 +489,10 @@ const TOOLS: ToolSpec[] = [
       "hCaptcha, or Cloudflare Turnstile -- using humanlike mouse movement (curved path, " +
       "varying speed, off-centre landing, natural press timing). These checkboxes sit in " +
       "iframes and never appear in the numbered outline, so use this instead of " +
-      "browser_click. When the checkbox escalates to a picture challenge -- a grid of " +
-      "images to pick from, or a piece to drag -- this answers that too, using the " +
+      "browser_click. It also finds one the page draws itself, with no widget frame at " +
+      "all -- a look-alike box that says it is a checkbox. When there is a picture " +
+      "challenge to answer -- a grid of images to pick from, or a piece to drag -- this " +
+      "answers that too, whether the widget draws it or the page does, using the " +
       "backends set in Settings, and reports which one did it. Call it again for a " +
       "challenge that is still there; hand the browser to the person with browser_handoff " +
       "only when it says it has given up.",
