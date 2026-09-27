@@ -98,16 +98,15 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The voice stops changing under a sentence. Every sentence used to be asked
-  for on its own, and Deepgram renders each request separately -- the same
-  sentence sent four times came back with pitches of 145, 126, 163 and 153 Hz
-  and lengths between three and four seconds -- so a spoken reply drifted in
-  pitch, pace and tone from sentence to sentence, and a long sentence could
-  change voice at a comma. A whole answer is now rendered in one pass and
-  streamed as raw samples while it is still being made: the first words arrive
-  in about half a second, faster than the old first sentence did, and the rest
-  is played behind them. Interrupting it stops the rendering itself, rather
-  than the sound alone.
+  Live voice answers without thinking first. Speaking to Autora waited on the
+  model's own reasoning before the first word, and on a reasoning model that
+  wait is most of the pause: measured here, a spoken question answered in about
+  half a second without thinking against a second or two with it, and a longer
+  one spent its whole output budget thinking and then said nothing at all. A
+  turn that came in through the microphone is now sent with that thinking
+  switched off, so the reply starts as soon as the words stop. A message typed
+  in the box is unchanged and still thinks before it answers.
 
-  Nothing else changes: the same voices, the same settings, and an install
-  whose server is older falls back to speaking a sentence at a time.
+  Settings -> Voice carries the switch, off by default: "Let it think before
+  it answers what you said" puts the reasoning back for spoken turns without
+  giving up the faster replies for typed ones. Nothing else changes.
