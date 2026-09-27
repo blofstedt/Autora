@@ -55,6 +55,7 @@ import {
   loadSessionIndex, readDoc, saveDoc, saveMeta, saveSession, type SessionCounts,
 } from "./server/store";
 import { LiveBrowser, VIEWPORT, probeBrowser, type PageRead } from "./server/browser";
+import { mergeCaptcha } from "./server/captcha";
 import { LoopWatch } from "./server/loopwatch";
 import { healthBriefing, recordOutcome, targetOf, toolHealth } from "./server/toolhealth";
 import { Scheduler, type Job, type JobWatch } from "./server/scheduler";
@@ -503,6 +504,76 @@ function sendEphemeral(sessionId: string, message: Record<string, unknown>) {
   }
 }
 
+/**
+ * The model that reads a CAPTCHA's picture: the one already connected.
+ *
+ * A picture challenge is a question about what is in a picture, which is
+ * exactly what the vision-capable models in this app are for. Asking the
+ * provider that is already paying for the turn means there is no second
+ * account, no second key and no per-solve fee beyond the turn -- and the
+ * picture never goes anywhere the conversation's own text has not already
+ * been. A provider whose model does not read pictures answers with an error,
+ * which the solver records as that backend's reason and moves on from.
+ */
+const VISION_SYSTEM =
+  "You answer CAPTCHA picture challenges. You are given a cropped picture of one challenge and a " +
+  "description of its geometry. You answer with JSON only, in the exact shape asked for, and with " +
+  "{\"tiles\":[]} or {\"slide\":null} when you cannot tell -- never a guess.";
+
+/** The model that would be asked, for the panel to name. Null when there is
+    no provider connected, or the connection has a problem. */
+function captchaVisionLabel(): string | null {
+  const active = resolveProvider();
+  if (!active.provider || active.problem) return null;
+  return active.model || active.provider;
+}
+
+/**
+ * One picture in, one JSON answer out.
+ *
+ * A fresh, tool-less call rather than part of the turn: the turn is a
+ * conversation about the page, and this is a single question about a picture.
+ * Nothing is streamed to the thread -- there is nothing to watch mid-answer --
+ * and the cost lands in the ledger like any other call, against the session
+ * whose browser asked.
+ */
+async function captchaVision(sessionId: string, prompt: string, png: Buffer): Promise<string> {
+  const active = resolveProvider();
+  if (!active.provider || active.problem) throw new Error(active.problem ?? "no model is connected");
+  const model = active.model;
+  const turn = await streamChat({
+    provider: active.provider,
+    model,
+    key: active.key,
+    baseUrl: active.baseUrl,
+    system: VISION_SYSTEM,
+    messages: [
+      {
+        role: "user",
+        text: prompt,
+        images: [{ mime: "image/png", data: png.toString("base64") }],
+      },
+    ],
+    temperature: 0,
+    maxTokens: 300,
+    thinkingBudget: 0,
+  }, () => undefined);
+  recordUsage({
+    ts: Math.floor(Date.now() / 1000),
+    session: sessionId,
+    provider: active.provider,
+    model,
+    input: turn.usage.input,
+    output: turn.usage.output,
+    ...priceCall(active.provider, model, turn.usage.input, turn.usage.output,
+      turn.usage.cached, turn.usage.cacheWrite),
+    priced: isPriced(active.provider, model),
+    estimated: turn.usage.estimated,
+    cached: turn.usage.cached ?? 0,
+  });
+  return turn.text;
+}
+
 // ---------------------------------------------------------------- browser --
 
 /** One browser per session, made on first use and kept until the session is
@@ -542,6 +613,13 @@ function browserFor(session: Session): LiveBrowser {
       });
     },
   });
+
+  // The picture a CAPTCHA escalates to is answered by the settings in the
+  // panel and by the model already connected -- no second account, no
+  // per-solve fee beyond the turn this session is already paying for.
+  live.setCaptchaSettings(() => state.captcha);
+  live.setVision((prompt: string, png: Buffer) => captchaVision(session.id, prompt, png));
+  live.setVisionModel(captchaVisionLabel);
 
   browsers.set(session.id, live);
   return live;
@@ -3736,6 +3814,16 @@ async function startServer() {
        from and offer the voices it has. A voice chosen in the panel wins over
        the environment, the way every other setting here does. */
     speech: await speechStatus(false, state.speech.voice || undefined),
+    /* What would answer a picture challenge, so the panel can say so before
+       anyone meets one: the backends, the model that reads pictures, and
+       whether the person's own solver is configured at all. Never the key. */
+    captcha: {
+      ...state.captcha,
+      backends: [...state.captcha.backends],
+      remoteKeySet: Boolean(state.captcha.remoteKey),
+      remoteKey: undefined,
+      vision: captchaVisionLabel(),
+    },
     jev: {
       enabled: state.jev.enabled,
       threshold: state.jev.threshold,
@@ -3847,6 +3935,9 @@ async function startServer() {
       if (typeof body.jev.key === "string") resetHealth();
     }
     if (body.appearance && typeof body.appearance === "object") mergeAppearance(state.appearance, body.appearance);
+    /* How a picture challenge is answered. The key for a self-hosted solver
+       comes from the panel like any other and is never sent back. */
+    if (body.captcha && typeof body.captcha === "object") mergeCaptcha(state.captcha, body.captcha);
     /* Which voice speaks. It is checked while Deepgram is reachable at all: a
        typo saved here would otherwise only show up at the next sentence, in the
        middle of a conversation, where it reads as the app being broken rather

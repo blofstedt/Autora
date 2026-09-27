@@ -16,6 +16,9 @@ description: >-
   Key features:
 
 
+  • CAPTCHA solving — a picture challenge is answered by the connected model or by
+  arithmetic on the images, and only handed to you when neither can.
+
   • Real-time browser view — watch the cursor move, text appear, and pages load
   exactly as the agent drives them, then click and type in the page yourself
   when it hands over (sign-ins, CAPTCHAs) or once it has finished.
@@ -94,19 +97,37 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Stop no longer says something untrue. Stopping a turn that was genuinely
-  running could answer "Nothing was running to stop." in amber at the foot of
-  the composer, next to the send button -- the one place on the page a person
-  looks for an error. Stop fires two paths at once, a websocket message and an
-  HTTP request, because a phone waking from sleep holds a socket that reports
-  itself open and is not; interrupting twice is free, but the second path also
-  asks the server whether anything was still busy, and by the time it arrives
-  the first path has usually cleared that flag. The reply is no longer read, so
-  that line is gone for good.
+  A CAPTCHA that hides behind a picture is now answered instead of always being
+  handed over. Ticking "I'm not a robot" was already done; what a checkbox does
+  when it does not trust the browser is put a puzzle in front of it -- nine
+  photographs and "select all the buses", or a piece to drag into a hole -- and
+  that used to be where browser_captcha stopped and asked the person. It now
+  looks at the puzzle and answers it, and three backends do the looking, tried
+  in the order they are switched on in Settings, CAPTCHA. All three are free,
+  and none of them needs an account beyond the model connection you already
+  have.
 
-  Nothing is lost with it. A turn that is stopped says so itself, in the
-  thread, which is where the answer to "did that work" belongs, and a stop that
-  cannot reach the server at all is still reported on the spot.
+  Pictures. The two images of a slider are compared here, pixel by pixel: where
+  the piece was cut from is arithmetic rather than inference, and it is right
+  the first time. Nothing is installed for it, nothing is sent anywhere, and it
+  reads the PNG a screenshot comes back as with what node already ships.
+
+  The model. A grid is cropped out of the page and given to the provider this
+  session is already talking to, with every square named and numbered, and it
+  answers with the squares to click -- the one thing that can say whether a
+  picture is a bus. It is the same model paying for the turn, so there is no
+  second key and no per-solve fee.
+
+  Your own solver. A solver you run yourself, speaking the createTask and
+  getTaskResult calls that the self-hosted ones all speak, reached by URL and
+  off until one is set.
+
+  Nothing is guessed. A backend that cannot answer says why in the activity
+  feed and the next one is asked; a click is only ever made on a square some
+  backend named; the widget's own token decides whether it passed; and a
+  challenge that survives every backend and every try comes back to you exactly
+  as it did before.
+
 dependencies: []
 path: ""
 defaultUsername: ""

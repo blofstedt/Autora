@@ -36,7 +36,8 @@ import path from "node:path";
 
 import { stateFilePath } from "./state";
 import type { BrowserCookie } from "./cookies";
-import { humanClick, humanMove, humanType, pointIn, wander, type Point } from "./human";
+import { humanClick, humanMove, humanPath, humanType, pointIn, wander, type Point } from "./human";
+import { DEFAULT_CAPTCHA, solveChallenge, type CaptchaSettings, type SolveReport } from "./captcha";
 
 /* Playwright's types are not imported: the package is optional, and a type
    import would make the server half fail to compile wherever it is not
@@ -177,6 +178,12 @@ export interface CaptchaResult {
   outcome: "none" | "solved" | "challenge" | "pending";
   kind: CaptchaKind | null;
   page: PageRead;
+  /** What the solver did about a picture challenge, and what stood in its
+      way. Absent when there was no picture to answer. */
+  detail?: string;
+  /** Which backend answered it: local arithmetic, the vision model, or the
+      person's own solver. */
+  backend?: string;
 }
 
 export interface BrowserHooks {
@@ -2652,7 +2659,99 @@ export class LiveBrowser {
     };
   }
 
-  solveCaptcha(): Promise<CaptchaResult> {
+  private captchaSettings: (() => CaptchaSettings) | null = null;
+  private vision: ((prompt: string, png: Buffer) => Promise<string>) | null = null;
+  private visionModel: (() => string | null) | null = null;
+
+  /** What the solver may do, read from the settings panel each time. */
+  setCaptchaSettings(read: () => CaptchaSettings) {
+    this.captchaSettings = read;
+  }
+
+  /** The model that reads pictures. Set by the server; null means that
+      backend has nothing to answer with. */
+  setVision(ask: (prompt: string, png: Buffer) => Promise<string>) {
+    this.vision = ask;
+  }
+
+  setVisionModel(label: () => string | null) {
+    this.visionModel = label;
+  }
+
+  /** The model that would read a challenge's picture, for the status line. */
+  captchaVisionModel(): string | null {
+    return this.visionModel?.() ?? null;
+  }
+
+  /**
+   * Answer the picture a checkbox CAPTCHA escalated to.
+   *
+   * Everything the solver needs is here and nothing of the browser's own
+   * state leaves: the settings, the model, a way to photograph part of the
+   * page, the same humanlike pointer the rest of the browsing uses, and the
+   * widget's own token as the judge of whether it worked.
+   */
+  private async solvePicture(): Promise<SolveReport> {
+    const page = this.page;
+    if (!page) return { outcome: "none", widget: null, backend: null, detail: "No page is open." };
+    const settings = this.captchaSettings?.() ?? DEFAULT_CAPTCHA;
+    return solveChallenge({
+      page,
+      settings,
+      vision: this.vision,
+      shot: (box: { x: number; y: number; w: number; h: number }) =>
+        page.screenshot({
+          clip: {
+            x: Math.max(0, Math.round(box.x)),
+            y: Math.max(0, Math.round(box.y)),
+            width: Math.max(2, Math.round(box.w)),
+            height: Math.max(2, Math.round(box.h)),
+          },
+          type: "png",
+        }),
+      click: async (at: Point) => {
+        this.pointer = await humanMove(page, this.pointer, at);
+        await this.humanClickAt(at, true);
+      },
+      drag: (from: Point, to: Point) => this.dragAt(from, to),
+      passed: async () => {
+        const hits = await this.findCaptchas();
+        return hits.length > 0 && !this.loadingCaptchas.length && hits.every((h) => h.solved);
+      },
+      log: (what: string, at?: Point | null) => {
+        this.hooks.onAction(what, at ?? null, this.currentUrl ?? "");
+      },
+      sleep: (ms: number) => page.waitForTimeout(ms).catch(() => undefined),
+    });
+  }
+
+  /**
+   * A drag, the way a hand does it: press, travel, release.
+   *
+   * Sliders watch the path and not just the two ends -- a piece that jumps
+   * from one side to the other with nothing in between is the single easiest
+   * thing to catch -- so the pointer follows the same curve a click does,
+   * with the button held down and a pause between the points that a hand
+   * would take.
+   */
+  private async dragAt(from: Point, to: Point) {
+    const page = this.page;
+    if (!page) return;
+    await this.showCursor(this.pointer.x, this.pointer.y, false);
+    this.pointer = await humanMove(page, this.pointer, from);
+    await this.showCursor(from.x, from.y, true);
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    for (const at of humanPath(this.pointer, to)) {
+      await page.mouse.move(at.x, at.y);
+      await page.waitForTimeout(8 + Math.random() * 14);
+    }
+    this.pointer = await humanMove(page, this.pointer, to);
+    await page.mouse.up();
+    await this.settle(140);
+  }
+
+    solveCaptcha(): Promise<CaptchaResult> {
     return this.run(async () => {
       const page = await this.ensure();
 
@@ -2730,11 +2829,33 @@ export class LiveBrowser {
         x: Math.min(VIEWPORT.width - 10, Math.max(10, this.pointer.x + Math.round((Math.random() - 0.3) * 200))),
         y: Math.min(VIEWPORT.height - 10, Math.max(10, this.pointer.y + Math.round((Math.random() - 0.5) * 120))),
       });
+
+      /* A picture challenge is no longer the end of the road. The solver
+         looks at it, answers it with whichever backend can, and asks the
+         widget itself whether that passed; only when every backend has had
+         its say and the widget still wants an answer does this come back as
+         a challenge for the person. */
+      let detail: string | null = null;
+      let backend: string | null = null;
+      if (outcome === "challenge") {
+        const report = await this.solvePicture();
+        detail = report.detail;
+        backend = report.backend;
+        this.hooks.onAction(`captcha: picture challenge -- ${report.detail}`, null, this.currentUrl ?? "");
+        if (report.outcome === "solved") outcome = "solved";
+      }
+
       this.hooks.onAction(`captcha: ${outcome}`, null, this.currentUrl ?? "");
       await this.settle(400);
       const read = await this.read();
       await this.keyframe();
-      return { outcome, kind: target.kind, page: read };
+      return {
+        outcome,
+        kind: target.kind,
+        page: read,
+        ...(detail ? { detail } : {}),
+        ...(backend ? { backend } : {}),
+      };
     });
   }
 
@@ -3052,7 +3173,7 @@ export function describeCaptchas(captchas: PageRead["captchas"]): string {
       c.solved
         ? `CAPTCHA: ${labelOf(c.kind)} is passed.`
         : c.challenge
-          ? `CAPTCHA: ${labelOf(c.kind)} is showing a picture challenge. Hand the browser to the person (browser_handoff).`
+          ? `CAPTCHA: ${labelOf(c.kind)} is showing a picture challenge. It is not in the numbered list; call browser_captcha to answer it, and hand it to the person with browser_handoff only if that gives up.`
           : `CAPTCHA: ${labelOf(c.kind)} checkbox is on the page and not ticked. It is not in the numbered list; call browser_captcha to tick it.`,
     )
     .join("\n");

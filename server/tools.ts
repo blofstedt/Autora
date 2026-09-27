@@ -489,8 +489,11 @@ const TOOLS: ToolSpec[] = [
       "hCaptcha, or Cloudflare Turnstile -- using humanlike mouse movement (curved path, " +
       "varying speed, off-centre landing, natural press timing). These checkboxes sit in " +
       "iframes and never appear in the numbered outline, so use this instead of " +
-      "browser_click. Reports whether it passed, is still thinking, or escalated to a " +
-      "picture challenge (hand that one to the person with browser_handoff).",
+      "browser_click. When the checkbox escalates to a picture challenge -- a grid of " +
+      "images to pick from, or a piece to drag -- this answers that too, using the " +
+      "backends set in Settings, and reports which one did it. Call it again for a " +
+      "challenge that is still there; hand the browser to the person with browser_handoff " +
+      "only when it says it has given up.",
     parameters: { type: "object", properties: {} },
   },
   {
@@ -2201,21 +2204,25 @@ async function runToolUnredacted(
       }
 
       case "browser_captcha": {
-        const { outcome, kind, page } = await ctx.browser().solveCaptcha();
+        const { outcome, kind, page, detail, backend } = await ctx.browser().solveCaptcha();
         ctx.browserChanged();
         const said: Record<typeof outcome, string> = {
           none: "There is no checkbox CAPTCHA on this page.",
-          solved: `The ${kind ?? "CAPTCHA"} checkbox is ticked; the check passed.`,
+          solved: `The ${kind ?? "CAPTCHA"} check passed.` +
+            (backend ? ` The picture challenge was answered by the ${backend} backend.` : ""),
           pending:
             `Clicked the ${kind ?? "CAPTCHA"} checkbox, but it has not confirmed yet. ` +
             "Re-read the page in a moment; if it is still unticked, try browser_captcha once more.",
           challenge:
-            `The ${kind ?? "CAPTCHA"} checkbox escalated to a picture challenge. ` +
+            `The ${kind ?? "CAPTCHA"} checkbox escalated to a picture challenge and the solver did not get it. ` +
             "Hand the browser to the person with browser_handoff to solve it.",
         };
         return {
           ok: outcome === "solved" || outcome === "none",
-          summary: `${said[outcome]}\n\n${describePage(page)}`,
+          summary:
+            `${said[outcome]}` +
+            (detail ? `\n\nWhat the solver did: ${detail}` : "") +
+            `\n\n${describePage(page)}`,
           preview: `captcha: ${outcome}`,
         };
       }

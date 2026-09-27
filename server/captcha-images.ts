@@ -1,0 +1,264 @@
+/**
+ * Reading a CAPTCHA's picture without a vision model.
+ *
+ * Slider CAPTCHAs -- GeeTest's, Aliyun's, the generic "drag the piece into the
+ * hole" widgets -- are not a question about meaning, they are a question about
+ * pixels: the puzzle piece was cut out of the background a little way along it,
+ * and where it was cut from is where it goes. That is arithmetic, not
+ * inference, and it is worth doing here rather than paying a model to guess:
+ * it is instant, it works with no network, no key and no model download, and
+ * it is the same every time.
+ *
+ * Nothing is imported to do it. A Playwright screenshot is a PNG, and PNG is
+ * inflate plus a per-row filter, both of which node already has; a dependency
+ * for that would be a dependency for the sake of a dependency. What is left,
+ * the matching itself, is a few lines of arithmetic over the two pictures.
+ *
+ * The pieces are in `Bitmap` form throughout: straight RGBA, row by row,
+ * top to bottom, so every coordinate is an index and nothing is hidden behind
+ * an abstraction that has to be right before the arithmetic can be checked.
+ */
+import zlib from "node:zlib";
+
+export interface Bitmap {
+  w: number;
+  h: number;
+  /** RGBA, four bytes per pixel, row-major. */
+  rgba: Buffer;
+}
+
+/** One row of a PNG, back to unfiltered bytes. */
+function unfilter(
+  raw: Buffer,
+  offset: number,
+  width: number,
+  stride: number,
+  filter: number,
+  prev: Buffer,
+): { row: Buffer; next: number } {
+  const row = Buffer.alloc(stride);
+  for (let x = 0; x < stride; x += 1) {
+    const value = raw[offset + x] ?? 0;
+    const a = x >= width ? row[x - width] : 0;
+    const b = prev[x] ?? 0;
+    const c = x >= width ? (prev[x - width] ?? 0) : 0;
+    let out: number;
+    switch (filter) {
+      case 0: out = value; break;
+      case 1: out = value + a; break;
+      case 2: out = value + b; break;
+      case 3: out = value + ((a + b) >> 1); break;
+      case 4: {
+        // Paeth: whichever of left, up and up-left the gradient points at.
+        const p = a + b - c;
+        const pa = Math.abs(p - a);
+        const pb = Math.abs(p - b);
+        const pc = Math.abs(p - c);
+        out = value + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c);
+        break;
+      }
+      default: out = value;
+    }
+    row[x] = out & 0xff;
+  }
+  return { row, next: offset + stride };
+}
+
+/**
+ * A PNG as RGBA pixels.
+ *
+ * Only what a screenshot actually is: 8 bits per channel, no interlacing, and
+ * any of the four colour types. Anything else throws rather than being
+ * silently misread -- a wrong answer here would be clicked on a real page.
+ */
+export function decodePng(png: Buffer): Bitmap {
+  if (png.length < 8 || png.readUInt32BE(0) !== 0x89504e47) throw new Error("not a PNG");
+  let offset = 8;
+  let width = 0;
+  let height = 0;
+  let depth = 0;
+  let colour = 0;
+  let interlace = 0;
+  let palette: Buffer | null = null;
+  const data: Buffer[] = [];
+
+  while (offset + 8 <= png.length) {
+    const length = png.readUInt32BE(offset);
+    const type = png.toString("latin1", offset + 4, offset + 8);
+    const body = png.subarray(offset + 8, offset + 8 + length);
+    if (type === "IHDR") {
+      width = body.readUInt32BE(0);
+      height = body.readUInt32BE(4);
+      depth = body[8];
+      colour = body[9];
+      interlace = body[12];
+    } else if (type === "PLTE") {
+      palette = Buffer.from(body);
+    } else if (type === "IDAT") {
+      data.push(Buffer.from(body));
+    } else if (type === "IEND") {
+      break;
+    }
+    offset += 12 + length;
+  }
+
+  if (!width || !height) throw new Error("PNG has no size");
+  if (depth !== 8) throw new Error(`PNG bit depth ${depth} is not supported`);
+  if (interlace !== 0) throw new Error("interlaced PNG is not supported");
+  // Channels in the file, and in the RGBA output.
+  const channels = colour === 6 ? 4 : colour === 2 ? 3 : colour === 4 ? 2 : colour === 0 ? 1 : colour === 3 ? 1 : 0;
+  if (!channels) throw new Error(`PNG colour type ${colour} is not supported`);
+
+  const raw = zlib.inflateSync(Buffer.concat(data));
+  const stride = width * channels;
+  const out = Buffer.alloc(width * height * 4, 255);
+  let prev: Buffer = Buffer.alloc(stride);
+  let at = 0;
+
+  for (let y = 0; y < height; y += 1) {
+    const filter = raw[at] ?? 0;
+    const step = unfilter(raw, at + 1, channels, stride, filter, prev);
+    const row = step.row;
+    at = step.next;
+    prev = row;
+    for (let x = 0; x < width; x += 1) {
+      const to = (y * width + x) * 4;
+      const from = x * channels;
+      if (colour === 6) {
+        out[to] = row[from]; out[to + 1] = row[from + 1]; out[to + 2] = row[from + 2]; out[to + 3] = row[from + 3];
+      } else if (colour === 2) {
+        out[to] = row[from]; out[to + 1] = row[from + 1]; out[to + 2] = row[from + 2];
+      } else if (colour === 4) {
+        const g = row[from];
+        out[to] = g; out[to + 1] = g; out[to + 2] = g; out[to + 3] = row[from + 1];
+      } else if (colour === 0) {
+        const g = row[from];
+        out[to] = g; out[to + 1] = g; out[to + 2] = g;
+      } else {
+        const index = row[from] * 3;
+        out[to] = palette?.[index] ?? 0;
+        out[to + 1] = palette?.[index + 1] ?? 0;
+        out[to + 2] = palette?.[index + 2] ?? 0;
+      }
+    }
+  }
+  return { w: width, h: height, rgba: out };
+}
+
+/** One pixel's luma, which is all the matching below needs. */
+function luma(b: Bitmap, x: number, y: number): number {
+  const i = (y * b.w + x) * 4;
+  return 0.299 * b.rgba[i] + 0.587 * b.rgba[i + 1] + 0.114 * b.rgba[i + 2];
+}
+
+export interface GapMatch {
+  /** Where the piece belongs, in pixels along the background. */
+  x: number;
+  /** 0-1: how much better the winner is than the next plausible place. */
+  confidence: number;
+  /** Mean difference at the winner, on the same scale as pixel luma. */
+  error: number;
+}
+
+/**
+ * Where along the background the piece was cut from.
+ *
+ * The piece and the background are photographed separately -- the piece's own
+ * element, and the strip behind it -- and the piece is then slid along the
+ * background a pixel at a time, keeping the offset where the two agree best.
+ * Where they agree, the piece is sitting over the hole it came from: the same
+ * pixels, cut out and put back.
+ *
+ * Rows are sampled rather than every one, because a slider is a few hundred
+ * pixels wide by a hundred tall and a fifth of the rows decides it just as
+ * well, in a fifth of the time. Ties are broken by the offset's neighbours
+ * being worse, which is what `confidence` reports.
+ */
+export function findGap(
+  background: Bitmap,
+  piece: Bitmap,
+  /** `from`/`to` bound the search: the piece is drawn over the background at
+      its own place, where it matches itself perfectly, so that stretch has to
+      be left out or the answer is always "where it already is". */
+  opts: { step?: number; from?: number; to?: number } = {},
+): GapMatch | null {
+  const pieceW = Math.max(4, Math.min(piece.w, Math.floor(background.w * 0.6)));
+  const height = Math.min(background.h, piece.h);
+  if (height < 4) return null;
+
+  const rows: number[] = [];
+  const step = Math.max(1, opts.step ?? 0);
+  for (let y = step; y < height - step; y += Math.max(1, step || Math.max(1, Math.floor(height / 24)))) rows.push(y);
+
+  const scores: number[] = [];
+  const widest = Math.max(0, background.w - pieceW);
+  const first = Math.max(0, Math.min(Math.round(opts.from ?? 0), widest));
+  const last = Math.max(first, Math.min(Math.round(opts.to ?? widest), widest));
+  for (let x = first; x <= last; x += 1) {
+    let total = 0;
+    for (const y of rows) {
+      for (let i = 0; i < pieceW; i += 2) {
+        total += Math.abs(luma(piece, i, y) - luma(background, x + i, y));
+      }
+    }
+    scores.push(total / Math.max(1, rows.length * Math.ceil(pieceW / 2)));
+  }
+  if (!scores.length) return null;
+
+  let best = 0;
+  for (let i = 1; i < scores.length; i += 1) if (scores[i] < scores[best]) best = i;
+
+  // The runner-up has to be a different place, not the neighbouring pixel of
+  // the same place: a piece sits still at its answer, and only slopes off at
+  // its edges.
+  const margin = Math.max(3, Math.round(pieceW * 0.15));
+  let runnerUp = Infinity;
+  for (let i = 0; i < scores.length; i += 1) {
+    if (Math.abs(i - best) <= margin) continue;
+    if (scores[i] < runnerUp) runnerUp = scores[i];
+  }
+  const error = scores[best];
+  const confidence =
+    !Number.isFinite(runnerUp) || runnerUp <= 0 ? (error < 12 ? 0.8 : 0.2) : Math.max(0, Math.min(1, (runnerUp - error) / runnerUp));
+
+  return { x: first + best, confidence, error };
+}
+
+/**
+ * The same question, asked of one picture.
+ *
+ * Some sliders draw the piece's shadow on the background as well, and some
+ * cover the background's own copy entirely, so the two-element version above
+ * has nothing to compare. What is left in one picture is the hole: a rectangle
+ * whose edges are darker than the scene around it, with the piece parked at
+ * the left. Taking each column's darkness gives that rectangle's left edge as
+ * the first strong vertical edge after the piece, which is where the piece
+ * goes -- cruder than the match above, and reported as the weaker answer it
+ * is, so the caller can prefer a vision model's judgement over it.
+ */
+export function findEdge(shot: Bitmap, pieceW: number): GapMatch | null {
+  const from = Math.min(shot.w - 2, Math.max(2, Math.round(pieceW) + 2));
+  if (from >= shot.w - 2 || shot.h < 8) return null;
+
+  const columns: number[] = [];
+  for (let x = 1; x < shot.w - 1; x += 1) {
+    let total = 0;
+    let counted = 0;
+    for (let y = Math.floor(shot.h * 0.12); y < Math.floor(shot.h * 0.88); y += 3) {
+      total += Math.abs(luma(shot, x + 1, y) - luma(shot, x - 1, y));
+      counted += 1;
+    }
+    columns.push(total / Math.max(1, counted));
+  }
+  let best = from - 1;
+  for (let i = from - 1; i < columns.length; i += 1) {
+    // A hole's left edge is a step, not a texture: it has to beat the column
+    // before it and after it, or it is the picture's own detail.
+    if (columns[i] > columns[best]) best = i;
+  }
+  const strength = columns[best] ?? 0;
+  if (strength < 6) return null;
+  const mean = columns.reduce((a, b) => a + b, 0) / Math.max(1, columns.length);
+  const confidence = Math.max(0, Math.min(0.6, (strength - mean) / Math.max(1, strength)));
+  return { x: best + 1, confidence, error: strength };
+}

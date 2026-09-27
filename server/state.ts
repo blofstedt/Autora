@@ -23,6 +23,7 @@ import { AUTO_ORDER, PROVIDERS, providerSpec } from "./providers";
 import { LOOP_DEFAULTS, type LoopWatchConfig } from "./loopwatch";
 import { DEFAULT_JEV, clampThreshold, type JevSettings } from "./jev/router";
 import type { McpServerConfig } from "./mcp";
+import { DEFAULT_CAPTCHA, mergeCaptcha, type CaptchaSettings } from "./captcha";
 
 export const THEMES = ["violet", "teal", "nous-blue", "midnight", "ember", "mono", "cyberpunk", "rose"] as const;
 export const FONTS = ["inter", "system", "rounded", "mono"] as const;
@@ -190,6 +191,9 @@ export interface PersistedState {
   jev: JevSettings;
   /** MCP servers whose tools are offered to the agent. */
   mcpServers: McpServerConfig[];
+  /** How a CAPTCHA picture challenge is answered: which backends to try,
+      and the person's own solver if they run one. See ../server/captcha.ts. */
+  captcha: CaptchaSettings;
   /** Theme and font, kept here so they follow you between devices. */
   appearance: Appearance;
   /** The voice the console speaks in, and the server it comes from. */
@@ -375,6 +379,7 @@ function blank(): PersistedState {
     mcpServers: [],
     appearance: { theme: "violet", font: "inter" },
     speech: { ...DEFAULT_SPEECH },
+    captcha: { ...DEFAULT_CAPTCHA, backends: [...DEFAULT_CAPTCHA.backends] },
     learning: true,
     loop: { ...LOOP_DEFAULTS },
     retention: { ...RETENTION_DEFAULTS },
@@ -409,6 +414,7 @@ function read(): PersistedState {
     }
     if (raw.appearance) mergeAppearance(state.appearance, raw.appearance);
     if (raw.speech) mergeSpeech(state.speech, raw.speech);
+    if (raw.captcha) mergeCaptcha(state.captcha, raw.captcha);
     if (raw.loop) mergeLoop(state.loop, raw.loop);
     if (raw.retention) mergeRetention(state.retention, raw.retention);
     if (raw.carried && typeof raw.carried === "object") {
