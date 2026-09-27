@@ -394,6 +394,9 @@ export function App() {
       body: JSON.stringify({
         text,
         ...(files.length > 0 ? { attachments: files.map((f) => f.id) } : {}),
+        /* It was said out loud, and a spoken turn answers without thinking
+           first: in live voice the wait is the whole experience. */
+        ...(spoken !== undefined ? { spoken: true } : {}),
       }),
     }).catch(() => null);
     // Now that the box stays open while the connection comes back, a send

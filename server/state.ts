@@ -47,13 +47,19 @@ export interface Appearance {
  */
 export interface SpeechSettings {
   voice: string;
+  /** Whether a turn that was spoken to the console may think before it
+      answers. Off by default: on a reasoning model the thinking is most of
+      the wait before the first word -- the whole of the wait, in live voice --
+      and a conversation wants the answer. Typed turns think as they please. */
+  liveThinking: boolean;
 }
 
-export const DEFAULT_SPEECH: SpeechSettings = { voice: "" };
+export const DEFAULT_SPEECH: SpeechSettings = { voice: "", liveThinking: false };
 
 export function mergeSpeech(into: SpeechSettings, patch: any): SpeechSettings {
   if (!patch || typeof patch !== "object") return into;
   if (typeof patch.voice === "string") into.voice = patch.voice.trim().slice(0, 60);
+  if (typeof patch.liveThinking === "boolean") into.liveThinking = patch.liveThinking;
   return into;
 }
 

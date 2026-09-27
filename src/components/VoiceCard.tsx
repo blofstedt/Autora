@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { chooseVoice, fetchSpeechStatus, type SpeechStatus } from "../lib/voice";
+import { chooseLiveThinking, chooseVoice, fetchSpeechStatus, type SpeechStatus } from "../lib/voice";
 
 /**
  * The console's voice: which of Deepgram's hosted voices speaks for it -- one
@@ -35,6 +35,18 @@ export function VoiceCard() {
     setComplaint(null);
     void chooseVoice(voice).then((result) => {
       if (!result.ok) setComplaint(result.detail ?? "That voice could not be saved.");
+    });
+  };
+
+  /** Thinking before it answers is most of the wait in live voice, so it is
+      off for spoken turns unless it is asked for here. Typed turns are not
+      affected. */
+  const pickLiveThinking = (on: boolean) => {
+    if (!speech) return;
+    setSpeech({ ...speech, liveThinking: on });
+    setComplaint(null);
+    void chooseLiveThinking(on).then((result) => {
+      if (!result.ok) setComplaint(result.detail ?? "That could not be saved.");
     });
   };
 
@@ -100,6 +112,21 @@ export function VoiceCard() {
             </button>
           </div>
           <p className="set-note">Speaking through Deepgram, in the {speech.voice} voice.</p>
+
+          <label style={{ display: "flex", gap: 9, alignItems: "flex-start", margin: "14px 0 0", fontSize: 12.5, lineHeight: 1.5 }}>
+            <input
+              type="checkbox"
+              checked={speech.liveThinking !== false}
+              onChange={(e) => pickLiveThinking(e.target.checked)}
+            />
+            <span>
+              Let it think before it answers what you said
+              <span style={{ display: "block", color: "var(--text-3)", fontSize: 11.5 }}>
+                Off means spoken replies start sooner, at the cost of a little
+                polish. Typed messages are not affected.
+              </span>
+            </span>
+          </label>
         </>
       ) : (
         <p className="set-note">

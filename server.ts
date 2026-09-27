@@ -2097,7 +2097,7 @@ export interface TurnResult {
  * schedule, a watcher -- so they are the same turn: same memory, same tools,
  * same log.
  */
-function startTurn(session: Session, text: string, attachments: AttachmentRef[] = []): Promise<TurnResult> {
+function startTurn(session: Session, text: string, attachments: AttachmentRef[] = [], opts: TurnOptions = {}): Promise<TurnResult> {
   /* One turn at a time per session. A message sent while a turn runs used
      to start a second turn beside it, and the two models then streamed into
      the same reply -- half-sentences, one reply split in two, words from one
@@ -2106,7 +2106,7 @@ function startTurn(session: Session, text: string, attachments: AttachmentRef[] 
      it has actually finished. */
   const prior = turnsInFlight.get(session.id);
   if (prior) stopTurn(session.id, "superseded");
-  const done = (prior ?? Promise.resolve()).then(() => beginTurn(session, text, attachments));
+  const done = (prior ?? Promise.resolve()).then(() => beginTurn(session, text, attachments, opts));
   const settled = done.then(() => undefined, () => undefined);
   turnsInFlight.set(session.id, settled);
   void settled.then(() => {
@@ -2118,7 +2118,13 @@ function startTurn(session: Session, text: string, attachments: AttachmentRef[] 
 /** The turn each session is running (or about to), settled either way. */
 const turnsInFlight = new Map<string, Promise<void>>();
 
-function beginTurn(session: Session, text: string, attachments: AttachmentRef[] = []): Promise<TurnResult> {
+/** What a turn was, beyond the words in it. */
+interface TurnOptions {
+  /** It was said out loud, in live voice. See runTurn for what that changes. */
+  spoken?: boolean;
+}
+
+function beginTurn(session: Session, text: string, attachments: AttachmentRef[] = [], opts: TurnOptions = {}): Promise<TurnResult> {
   // The reply this message answers: a correction only makes sense beside it.
   let previousReply = "";
   for (let i = session.events.length - 1; i >= 0; i--) {
@@ -2139,7 +2145,7 @@ function beginTurn(session: Session, text: string, attachments: AttachmentRef[] 
   const abort = new AbortController();
   running.set(session.id, { stopped: false, cancels: new Set([() => abort.abort()]), signal: abort.signal });
   broadcastLiveStatus(session);
-  const done = runTurn(session, text);
+  const done = runTurn(session, text, opts);
   void done
     .then((result) => reflect(session, text, startSeq, previousReply, result))
     // Learning is a bonus: whatever goes wrong in it must not take the server down.
@@ -2148,8 +2154,16 @@ function beginTurn(session: Session, text: string, attachments: AttachmentRef[] 
 }
 
 /** The agent loop for one turn. See startTurn. */
-async function runTurn(session: Session, text: string): Promise<TurnResult> {
+async function runTurn(session: Session, text: string, opts: TurnOptions = {}): Promise<TurnResult> {
   const result: TurnResult = { ok: false, reply: "", ranSomething: false, stopped: false, error: null, recalled: [] };
+
+  /* A spoken turn answers without thinking first, unless the person has asked
+     for the thinking back in Settings -> Voice. Measured against DeepSeek: a
+     spoken question answered in about half a second without thinking, and
+     after a second or two with it -- and on a question worth answering at any
+     length, thinking spent the entire output budget before saying a word, so
+     live voice was heard as silence followed by nothing. */
+  const fast = opts.spoken === true && !state.speech.liveThinking;
   try {
     /* Which memories this turn gets: ranked against the request (see
        server/memory.ts), pinned ones always. When Jev can score, it makes
@@ -2250,6 +2264,7 @@ async function runTurn(session: Session, text: string): Promise<TurnResult> {
               temperature: 0.7,
               maxTokens: outputTokens,
               thinkingBudget: THINKING_BUDGET,
+              ...(fast ? { thinking: "off" as const } : {}),
               signal: running.get(session.id)?.signal,
               tools: tools.map((t) => ({
                 name: t.name,
@@ -3388,8 +3403,12 @@ async function startServer() {
       saveMeta(metaOf(session));
     }
 
+    /* A turn that came in through the microphone, rather than through the
+       keyboard. It is the same turn otherwise, and only the wait changes. */
+    const spoken = req.body?.spoken === true;
+
     res.json({ ok: true, queued: false });
-    void startTurn(session, text, attachments);
+    void startTurn(session, text, attachments, { spoken });
   });
 
   // 5. Interrupt current turn
@@ -4231,6 +4250,7 @@ async function startServer() {
       voices: status.voices,
       reason: status.reason,
       url: status.url,
+      liveThinking: state.speech.liveThinking,
     });
   });
 

@@ -478,6 +478,9 @@ export type SpeechStatus = {
   voice: string;
   voices: { id: string; label: string }[];
   reason: string | null;
+  /** Whether a turn spoken to the console may think before answering. Off
+      by default: the thinking is most of the wait in live voice. */
+  liveThinking: boolean;
   /** The service behind it, for the panel to name. */
   url: string | null;
 };
@@ -490,6 +493,23 @@ export async function fetchSpeechStatus(): Promise<SpeechStatus | null> {
     return (await res.json()) as SpeechStatus;
   } catch {
     return null;
+  }
+}
+
+/** Whether spoken turns are allowed to think first, so it follows you
+    between devices. Off means the answer starts sooner. */
+export async function chooseLiveThinking(liveThinking: boolean): Promise<{ ok: boolean; detail?: string }> {
+  try {
+    const res = await fetch("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ speech: { liveThinking } }),
+    });
+    if (res.ok) return { ok: true };
+    const body = await res.json().catch(() => null);
+    return { ok: false, detail: body?.error ?? `The console answered ${res.status}.` };
+  } catch (err: any) {
+    return { ok: false, detail: String(err?.message ?? err) };
   }
 }
 
