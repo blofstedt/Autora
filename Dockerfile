@@ -60,6 +60,12 @@ RUN apk add --no-cache \
       curl \
       git \
       chromium \
+      # WebGL without a graphics card, for the CAPTCHAs and games that are a
+      # canvas: ANGLE over Mesa's software Vulkan (llvmpipe). See webglArgs in
+      # server/browser.ts -- the browser is only told to use it when a Vulkan
+      # driver like this one is actually installed.
+      vulkan-loader \
+      mesa-vulkan-swrast \
       nss \
       freetype \
       harfbuzz \

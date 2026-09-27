@@ -127,6 +127,8 @@ export interface SolverDeps {
   type?: ((text: string, at: Point) => Promise<void>) | null;
   /** A drag from one point to another, in page coordinates. */
   drag(from: Point, to: Point): Promise<void>;
+  /** Whether this browser can draw a canvas: false is why a picture is blank. */
+  webgl?: boolean | null;
   /** Whether the challenge has passed, asked of the widget itself. */
   passed: () => Promise<boolean>;
   /** Something to say in the activity feed, with where it happened. */
@@ -861,7 +863,13 @@ async function visionAnswer(deps: SolverDeps, challenge: Challenge): Promise<Ans
     // A picture of nothing is not a question: say so rather than pay a model
     // to guess at letters that were never drawn.
     if (detailShare(size) < 0.02) {
-      return { ...empty, why: "the picture is blank -- the page has not drawn this CAPTCHA (a background tab, or it has not been given a moment)" };
+      return {
+        ...empty,
+        why:
+          deps.webgl === false
+            ? "the picture is blank -- this browser has no WebGL, and a CAPTCHA the page draws with it (letters through a shader) never appears at all"
+            : "the picture is blank -- the page has not drawn this CAPTCHA (a background tab, or it has not been given a moment)",
+      };
     }
     const said = await deps.vision(visionPrompt(challenge, size.w, size.h), png);
     const answer = parseAnswer(said);

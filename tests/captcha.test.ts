@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 /**
  * The CAPTCHA solver's arithmetic, and the reading of a model's answer.
  *
@@ -11,6 +14,7 @@
  */
 import assert from "node:assert/strict";
 import zlib from "node:zlib";
+import { webglArgs } from "../server/browser";
 import { colourShare, decodePng, detailShare, findGap, HUES, type Bitmap } from "../server/captcha-images";
 import { DEFAULT_CAPTCHA, mergeCaptcha, parseAnswer, wantedColour } from "../server/captcha";
 
@@ -201,6 +205,17 @@ await test("a picture of nothing is told apart from a picture of letters", () =>
   assert.ok(detailShare(blank) < 0.02, "a white rectangle was taken for a drawn CAPTCHA");
   const drawn = decodePng(png(64, 32, (x, y) => (y % 8 === 0 || x % 11 === 0 ? [0, 0, 0] : [255, 255, 255])));
   assert.ok(detailShare(drawn) > 0.02, "letters on white were taken for a blank picture");
+});
+
+await test("a browser is only told to use software WebGL when a driver is there", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vulkan-"));
+  assert.deepEqual(webglArgs([dir]), [], "flags for a driver that is not installed");
+  fs.writeFileSync(path.join(dir, "lvp_icd.x86_64.json"), "{}");
+  assert.deepEqual(
+    webglArgs([dir]),
+    ["--use-angle=vulkan", "--ignore-gpu-blocklist"],
+    "a machine with a Vulkan driver is left with a WebGL context",
+  );
 });
 
 console.log(`\n${passed} passed.`);

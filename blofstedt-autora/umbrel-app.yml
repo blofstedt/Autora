@@ -98,27 +98,23 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The model that reads a CAPTCHA picture was being asked to answer in 300
-  tokens while a reasoning model thinks first -- so on a picture it spent the
-  whole allowance thinking and answered with nothing at all, every time, and
-  the solver reported "nothing usable came back" on a widget it could have
-  read. It is told not to think now, and the picture path answers.
+  A CAPTCHA that draws itself was being reported blank on this machine, and
+  the reason was not the page: the browser had no WebGL. getContext("webgl")
+  returned null, the page's own script gave up, and the canvas stayed empty
+  for ever -- not a picture that has not been drawn yet, a picture that never
+  will be. Verified here: with no flags WebGL is false; with --use-angle=vulkan
+  --ignore-gpu-blocklist it is true, on Mesa's software Vulkan (llvmpipe,
+  drawing on the CPU, no graphics card needed). Both flags are now used, but
+  only when a Vulkan driver is actually installed -- asking for a backend that
+  is not there would take WebGL away from a browser that had it. The image
+  installs that driver (vulkan-loader, mesa-vulkan-swrast) itself now.
 
-  Two more things a picture challenge needed. "Select all the squares with a
-  stop sign" is a question about where the red is, and that is arithmetic on
-  this machine, with no key, no network and no model: the squares are scored
-  by how much of them is the colour the prompt names, and the ones that stand
-  out are clicked. It also stops declaring a pass the moment the squares
-  vanish for a frame -- a challenge that comes back is not passed, and the
-  next backend gets its turn.
+  A blank picture also says which blank it is: "this browser has no WebGL, and
+  a CAPTCHA the page draws with it never appears at all" rather than "the page
+  has not been given a moment", which sent you looking at the wrong thing.
 
-  There is a third kind of challenge now: the text CAPTCHA, the distorted
-  letters in a picture with a box under them and a button. It is found, the
-  letters are read by the connected model, and they are typed in and
-  submitted. And a picture that comes back blank -- a canvas the page has not
-  drawn, a tab that is not being rendered -- is reported as blank instead of
-  being sent to a model to invent letters from.
-
-  Checked live on neal.fun/not-a-robot: the box the game draws itself, then
-  Level 2's 4x4 stop-sign grid solved on this machine with nothing paid and
-  nothing sent anywhere, and the game moving on to Level 3.
+  And the words are read: the distorted-text challenge of neal.fun/not-a-robot
+  Level 3, fetched as a plain .webp, is read by the connected model as six
+  characters -- the three pictures served by that level came back WVUGYQ,
+  YHRPCD and FNZZSD -- where before the model was asked with a thinking
+  budget and answered with nothing at all.

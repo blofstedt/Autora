@@ -240,6 +240,33 @@ const CANDIDATE_PATHS = [
   "/Applications/Chromium.app/Contents/MacOS/Chromium",
 ];
 
+/**
+ * The flags that give a machine with no graphics card a WebGL context.
+ *
+ * A CAPTCHA that draws itself is often a WebGL canvas -- distorted letters
+ * put through a shader, a 3D scene, a shape to drag -- and with no context
+ * getContext("webgl") returns null, the page's own script gives up, and the
+ * canvas stays empty for ever. That is not a page that has not drawn itself
+ * yet; it is a page that never will. Hardware is not needed for this, only a
+ * Vulkan driver: Mesa's software one (llvmpipe, the mesa-vulkan-swrast
+ * package) draws it on the CPU, and ANGLE is pointed at it here. Without a
+ * Vulkan driver on the machine both flags are left off, since asking for a
+ * backend that is not there would take WebGL away from a browser that might
+ * have had it.
+ */
+export function webglArgs(
+  dirs: string[] = ["/usr/share/vulkan/icd.d", "/etc/vulkan/icd.d"],
+): string[] {
+  const somewhere = dirs.some((dir) => {
+    try {
+      return fs.readdirSync(dir).some((name) => name.endsWith(".json"));
+    } catch {
+      return false;
+    }
+  });
+  return somewhere ? ["--use-angle=vulkan", "--ignore-gpu-blocklist"] : [];
+}
+
 export function systemBrowser(): string | null {
   const named = (process.env.AUTORA_BROWSER_PATH || "").trim();
   if (named) return named;
@@ -1268,6 +1295,8 @@ async function launchShared(): Promise<BrowserContext> {
         "--disable-features=IsolateOrigins,site-per-process",
         "--disable-infobars",
         "--force-color-profile=srgb",
+        // A canvas the page draws needs a GL context: see webglArgs.
+        ...webglArgs(),
         `--window-size=${VIEWPORT.width},${VIEWPORT.height}`,
       ],
     });
@@ -2704,6 +2733,19 @@ export class LiveBrowser {
       page,
       settings,
       vision: this.vision,
+      // Whether this browser can draw a canvas at all: a blank picture says
+      // something different when it cannot.
+      webgl: await page
+        .evaluate(() => {
+          try {
+            const doc = (globalThis as any).document;
+            const c = doc.createElement("canvas");
+            return !!(c.getContext("webgl") || c.getContext("experimental-webgl"));
+          } catch {
+            return null;
+          }
+        })
+        .catch(() => null),
       shot: (box: { x: number; y: number; w: number; h: number }) =>
         page.screenshot({
           clip: {
