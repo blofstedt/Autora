@@ -98,23 +98,23 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  A CAPTCHA of distorted letters is read from the page itself now, not only
-  from the widget's own image file. The crop that comes off the page is twenty
-  pixels of glyphs under a speckle of coloured noise, and a model asked to read
-  that answers with nothing at all -- while the same model, given the same
-  letters drawn clean and large, reads every one of them. The model was never
-  the problem; the picture it was being asked about was.
+  Two things you can now decide in advance: what the agent may do without
+  asking, and when it may speak up on its own.
 
-  So the picture is prepared before it is sent. Every pixel is repeated four
-  times over, which makes a glyph four times the size without smoothing it or
-  inventing anything; and the same crop is sent a second time with every pixel
-  put to one question -- is this the ink's colour, or is it nearer to paper --
-  and answered black or white, which takes the noise out and leaves the
-  letters. Both go in the same call, so a model that cannot see the letters in
-  the cleaning still has the drawing itself to work from.
+  Standing agreements. An approval card grows a third button beside Deny and
+  Run it -- "Always allow this kind" -- which runs this call and records the
+  class of work as yours, so the same question is not put again. It is offered
+  only where it is safe to offer: a command that cannot be undone is asked
+  about every time, whatever has been agreed. Everything you have agreed to is
+  listed under Standing agreements in Scheduled tasks, with who agreed it, how
+  often it has been used, and a bin to take it back, one at a time or all at
+  once. When the guard holds a call and you let it through, the rule it writes
+  now says so in the transcript rather than quietly.
 
-  The cleaning is arithmetic, in captcha-images.ts: the ink is the busiest hue
-  among the coloured pixels (under a sixth of them is speckle rather than
-  letters, and the picture is then left alone), and the paper is the picture's
-  own brightness. It also brings a PNG encoder, without which a picture the
-  solver has worked on could not be handed over at all.
+  Quiet hours, in Settings under Configuration. Two times on your own clock
+  during which the agent keeps its own initiative to itself: the note about a
+  job that has finished, work it decided to start, anything unprompted is held
+  rather than said. Nothing is lost -- the next thing you say carries it. A
+  question you ask at 03:40 is still answered at 03:40, and a schedule you set
+  still runs at the time you set it. Choosing the same time for both ends turns
+  it off, so it cannot become a mute button by accident.
