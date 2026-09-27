@@ -2694,7 +2694,7 @@ export class LiveBrowser {
   }
 
   private captchaSettings: (() => CaptchaSettings) | null = null;
-  private vision: ((prompt: string, png: Buffer) => Promise<string>) | null = null;
+  private vision: ((prompt: string, pngs: Buffer[]) => Promise<string>) | null = null;
   private visionModel: (() => string | null) | null = null;
 
   /** What the solver may do, read from the settings panel each time. */
@@ -2704,7 +2704,7 @@ export class LiveBrowser {
 
   /** The model that reads pictures. Set by the server; null means that
       backend has nothing to answer with. */
-  setVision(ask: (prompt: string, png: Buffer) => Promise<string>) {
+  setVision(ask: (prompt: string, pngs: Buffer[]) => Promise<string>) {
     this.vision = ask;
   }
 

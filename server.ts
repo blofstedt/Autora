@@ -537,7 +537,7 @@ function captchaVisionLabel(): string | null {
  * and the cost lands in the ledger like any other call, against the session
  * whose browser asked.
  */
-async function captchaVision(sessionId: string, prompt: string, png: Buffer): Promise<string> {
+async function captchaVision(sessionId: string, prompt: string, pngs: Buffer[]): Promise<string> {
   const active = resolveProvider();
   if (!active.provider || active.problem) throw new Error(active.problem ?? "no model is connected");
   const model = active.model;
@@ -551,7 +551,7 @@ async function captchaVision(sessionId: string, prompt: string, png: Buffer): Pr
       {
         role: "user",
         text: prompt,
-        images: [{ mime: "image/png", data: png.toString("base64") }],
+        images: pngs.map((png) => ({ mime: "image/png", data: png.toString("base64") })),
       },
     ],
     temperature: 0,
@@ -621,7 +621,7 @@ function browserFor(session: Session): LiveBrowser {
   // panel and by the model already connected -- no second account, no
   // per-solve fee beyond the turn this session is already paying for.
   live.setCaptchaSettings(() => state.captcha);
-  live.setVision((prompt: string, png: Buffer) => captchaVision(session.id, prompt, png));
+  live.setVision((prompt: string, pngs: Buffer[]) => captchaVision(session.id, prompt, pngs));
   live.setVisionModel(captchaVisionLabel);
 
   browsers.set(session.id, live);

@@ -36,7 +36,18 @@
  * photograph a region of it, a way to click and a way to drag, so the
  * arithmetic can be tested without one.
  */
-import { colourShare, decodePng, detailShare, findEdge, findGap, HUES, type Bitmap } from "./captcha-images";
+import {
+  colourShare,
+  decodePng,
+  detailShare,
+  encodePng,
+  findEdge,
+  findGap,
+  HUES,
+  legible,
+  upscale,
+  type Bitmap,
+} from "./captcha-images";
 
 export type CaptchaBackend = "local" | "vision" | "remote";
 
@@ -119,8 +130,11 @@ export interface SolverDeps {
   settings: CaptchaSettings;
   /** A picture of a region of the page, as PNG bytes. */
   shot(box: Rect): Promise<Buffer>;
-  /** The picture goes to the model; the reply comes back as text. */
-  vision: ((prompt: string, png: Buffer) => Promise<string>) | null;
+  /** Pictures go to the model; the reply comes back as text. A words
+      challenge is sent more than one picture of the same letters -- the crop
+      enlarged, and the crop with the coloured noise taken out -- because the
+      version a model reads best is not the version that came off the page. */
+  vision: ((prompt: string, pngs: Buffer[]) => Promise<string>) | null;
   /** A click at a point, in page coordinates, moved to like a hand. */
   click(at: Point): Promise<void>;
   /** Words only: click into a field and type into it, when the host can. */
@@ -690,14 +704,21 @@ export function parseAnswer(text: string): Answer {
 }
 
 /** The question put to the model, with every square named where it is. */
-export function visionPrompt(challenge: Challenge, w: number, h: number): string {
+export function visionPrompt(challenge: Challenge, w: number, h: number, pictures = 1): string {
   const head =
     `This is a CAPTCHA picture, ${w} by ${h} pixels, cropped exactly around the challenge. ` +
     `Answer with JSON only, no prose.\nThe widget says: "${challenge.prompt}".\n`;
   if (challenge.kind === "words") {
+    const how =
+      pictures > 1
+        ? `You are sent ${pictures} pictures of the same CAPTCHA. The first has the coloured noise taken out of it; ` +
+          `the last is the crop of the page, enlarged and otherwise untouched. The letters are the same in each: ` +
+          `read whichever one is clearest.\n`
+        : "";
     return (
       head +
       `The picture is the distorted text of a CAPTCHA: letters and digits, drawn to be hard to read.\n` +
+      how +
       `Read the characters. Reply as {"text":"7fq3"}. If they cannot be read, reply {"text":""}.`
     );
   }
@@ -850,6 +871,21 @@ async function localAnswer(deps: SolverDeps, challenge: Challenge): Promise<Answ
   }
 }
 
+/**
+ * The pictures a words challenge is worth sending.
+ *
+ * Two of the same letters: the cleaned one first, since that is the one a model
+ * usually reads, and the page's own crop enlarged after it, so a model that
+ * cannot see the letters in the cleaning still has the drawing itself to work
+ * from. Duplicates are dropped -- when the picture is not one ink on paper,
+ * cleaning leaves it exactly as the enlargement would.
+ */
+export function wordPictures(size: Bitmap, factor = 4): Buffer[] {
+  const cleaned = encodePng(legible(size, factor));
+  const enlarged = encodePng(upscale(size, factor));
+  return cleaned.equals(enlarged) ? [enlarged] : [cleaned, enlarged];
+}
+
 /** The vision backend: the model that already runs this machine. */
 async function visionAnswer(deps: SolverDeps, challenge: Challenge): Promise<Answer> {
   const empty: Answer = { tiles: [], points: [], slide: null };
@@ -871,7 +907,14 @@ async function visionAnswer(deps: SolverDeps, challenge: Challenge): Promise<Ans
             : "the picture is blank -- the page has not drawn this CAPTCHA (a background tab, or it has not been given a moment)",
       };
     }
-    const said = await deps.vision(visionPrompt(challenge, size.w, size.h), png);
+    // The crop off the page is the letters and, over them, coloured noise the
+    // whole point of which is to stop a model reading them: twenty pixels tall
+    // and speckled, a model answers "nothing" at best. What goes to the model
+    // is the same letters enlarged, and enlarged again with everything that is
+    // not the ink taken out -- the second reading being of the letters rather
+    // than the speckle.
+    const pictures = challenge.kind === "words" ? wordPictures(size) : [png];
+    const said = await deps.vision(visionPrompt(challenge, size.w, size.h, pictures.length), pictures);
     const answer = parseAnswer(said);
     // A model given tile numbers sometimes sends coordinates anyway; a model
     // given a picture sometimes sends fractions of it instead of pixels.

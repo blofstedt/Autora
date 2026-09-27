@@ -98,23 +98,23 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  A CAPTCHA that draws itself was being reported blank on this machine, and
-  the reason was not the page: the browser had no WebGL. getContext("webgl")
-  returned null, the page's own script gave up, and the canvas stayed empty
-  for ever -- not a picture that has not been drawn yet, a picture that never
-  will be. Verified here: with no flags WebGL is false; with --use-angle=vulkan
-  --ignore-gpu-blocklist it is true, on Mesa's software Vulkan (llvmpipe,
-  drawing on the CPU, no graphics card needed). Both flags are now used, but
-  only when a Vulkan driver is actually installed -- asking for a backend that
-  is not there would take WebGL away from a browser that had it. The image
-  installs that driver (vulkan-loader, mesa-vulkan-swrast) itself now.
+  A CAPTCHA of distorted letters is read from the page itself now, not only
+  from the widget's own image file. The crop that comes off the page is twenty
+  pixels of glyphs under a speckle of coloured noise, and a model asked to read
+  that answers with nothing at all -- while the same model, given the same
+  letters drawn clean and large, reads every one of them. The model was never
+  the problem; the picture it was being asked about was.
 
-  A blank picture also says which blank it is: "this browser has no WebGL, and
-  a CAPTCHA the page draws with it never appears at all" rather than "the page
-  has not been given a moment", which sent you looking at the wrong thing.
+  So the picture is prepared before it is sent. Every pixel is repeated four
+  times over, which makes a glyph four times the size without smoothing it or
+  inventing anything; and the same crop is sent a second time with every pixel
+  put to one question -- is this the ink's colour, or is it nearer to paper --
+  and answered black or white, which takes the noise out and leaves the
+  letters. Both go in the same call, so a model that cannot see the letters in
+  the cleaning still has the drawing itself to work from.
 
-  And the words are read: the distorted-text challenge of neal.fun/not-a-robot
-  Level 3, fetched as a plain .webp, is read by the connected model as six
-  characters -- the three pictures served by that level came back WVUGYQ,
-  YHRPCD and FNZZSD -- where before the model was asked with a thinking
-  budget and answered with nothing at all.
+  The cleaning is arithmetic, in captcha-images.ts: the ink is the busiest hue
+  among the coloured pixels (under a sixth of them is speckle rather than
+  letters, and the picture is then left alone), and the paper is the picture's
+  own brightness. It also brings a PNG encoder, without which a picture the
+  solver has worked on could not be handed over at all.

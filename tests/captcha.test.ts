@@ -15,8 +15,18 @@ import path from "node:path";
 import assert from "node:assert/strict";
 import zlib from "node:zlib";
 import { webglArgs } from "../server/browser";
-import { colourShare, decodePng, detailShare, findGap, HUES, type Bitmap } from "../server/captcha-images";
-import { DEFAULT_CAPTCHA, mergeCaptcha, parseAnswer, wantedColour } from "../server/captcha";
+import {
+  colourShare,
+  decodePng,
+  detailShare,
+  encodePng,
+  findGap,
+  HUES,
+  inkColour,
+  legible,
+  type Bitmap,
+} from "../server/captcha-images";
+import { DEFAULT_CAPTCHA, mergeCaptcha, parseAnswer, wantedColour, wordPictures } from "../server/captcha";
 
 let passed = 0;
 async function test(name: string, fn: () => void | Promise<void>) {
@@ -216,6 +226,73 @@ await test("a browser is only told to use software WebGL when a driver is there"
     ["--use-angle=vulkan", "--ignore-gpu-blocklist"],
     "a machine with a Vulkan driver is left with a WebGL context",
   );
+});
+
+/** A CAPTCHA as the page draws it: one ink, and noise of every other hue. */
+function noisyWords(w = 120, h = 40): Bitmap {
+  const bm: Bitmap = { w, h, rgba: Buffer.alloc(w * h * 4) };
+  const put = (x: number, y: number, r: number, g: number, b: number) => {
+    const i = (y * w + x) * 4;
+    bm.rgba[i] = r;
+    bm.rgba[i + 1] = g;
+    bm.rgba[i + 2] = b;
+    bm.rgba[i + 3] = 255;
+  };
+  for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) put(x, y, 250, 250, 250);
+  // A stroke of dark green letters, and a scatter of magenta noise over them.
+  for (let x = 10; x < 40; x += 1) for (let y = 8; y < 30; y += 1) if ((x + y) % 7 < 4) put(x, y, 20, 90, 40);
+  let seed = 7;
+  for (let n = 0; n < 400; n += 1) {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    put(seed % w, (seed >> 8) % h, 230, 20, 200);
+  }
+  return bm;
+}
+
+await test("a PNG written from pixels is read back the same", () => {
+  const bm = noisyWords(37, 19);
+  const back = decodePng(encodePng(bm));
+  assert.equal(back.w, 37);
+  assert.equal(back.h, 19);
+  assert.ok(back.rgba.equals(bm.rgba), "every pixel survives the round trip");
+});
+
+await test("the ink is the one colour the letters are drawn in", () => {
+  const ink = inkColour(noisyWords());
+  assert.ok(ink, "a picture with letters in one colour has an ink");
+  assert.ok(ink!.g > ink!.r && ink!.g > ink!.b, "green letters read as green");
+});
+
+await test("cleaning a CAPTCHA leaves the letters and drops the noise", () => {
+  const bm = noisyWords();
+  const clean = legible(bm, 3);
+  assert.equal(clean.w, 360, "enlarged three times over");
+  assert.equal(clean.h, 120);
+  const at = (x: number, y: number) => {
+    const i = (y * clean.w + x) * 4;
+    return [clean.rgba[i], clean.rgba[i + 1], clean.rgba[i + 2]];
+  };
+  assert.deepEqual(at(13 * 3, 8 * 3), [0, 0, 0], "a letter pixel is black");
+  // Where the noise landed is not: it is neither the ink's hue nor darker paper.
+  let noiseLeft = 0;
+  for (let y = 0; y < clean.h; y += 3) for (let x = 0; x < clean.w; x += 3) {
+    const i = (y * clean.w + x) * 4;
+    if (clean.rgba[i] === 230 && clean.rgba[i + 1] === 20) noiseLeft += 1;
+  }
+  assert.equal(noiseLeft, 0, "no magenta noise survives");
+});
+
+await test("a words challenge is sent cleaned and enlarged", () => {
+  const pictures = wordPictures(noisyWords(), 4);
+  assert.equal(pictures.length, 2, "two readings of the same letters");
+  const first = decodePng(pictures[0]);
+  const second = decodePng(pictures[1]);
+  assert.equal(first.w, 480);
+  assert.equal(second.w, 480);
+  // The page's own crop, enlarged: the noise is still there, untouched.
+  let magenta = 0;
+  for (let i = 0; i < second.rgba.length; i += 4) if (second.rgba[i] === 230 && second.rgba[i + 1] === 20) magenta += 1;
+  assert.ok(magenta > 200, "the untouched reading keeps the page as it is");
 });
 
 console.log(`\n${passed} passed.`);

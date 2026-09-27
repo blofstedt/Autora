@@ -371,3 +371,164 @@ export function detailShare(shot: Bitmap, patch?: Patch, step = 2): number {
   }
   return off / seen;
 }
+
+/* ------------------------------------------------ a picture made legible -- */
+
+/** A PNG again, from pixels: what the solver has enlarged and cleaned before
+    a model is asked to read it has to be handed over as a file. */
+export function encodePng(bm: Bitmap): Buffer {
+  const stride = bm.w * 4;
+  const raw = Buffer.alloc((stride + 1) * bm.h);
+  for (let y = 0; y < bm.h; y += 1) {
+    raw[y * (stride + 1)] = 0; // filter: none, so the decoder's own cost is nil
+    bm.rgba.copy(raw, y * (stride + 1) + 1, y * stride, (y + 1) * stride);
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(bm.w, 0);
+  ihdr.writeUInt32BE(bm.h, 4);
+  ihdr[8] = 8; // bits per channel
+  ihdr[9] = 6; // RGBA
+  const chunk = (type: string, data: Buffer): Buffer => {
+    const head = Buffer.alloc(8);
+    head.writeUInt32BE(data.length, 0);
+    head.write(type, 4, "latin1");
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), data])), 0);
+    return Buffer.concat([head, data, crc]);
+  };
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", zlib.deflateSync(raw, { level: 9 })),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+function crc32(buf: Buffer): number {
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i += 1) {
+    c ^= buf[i];
+    for (let k = 0; k < 8; k += 1) c = c & 1 ? (c >>> 1) ^ 0xedb88320 : c >>> 1;
+  }
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+/** The same picture, bigger, each pixel repeated.
+ *
+ * A CAPTCHA of distorted letters is barely twenty pixels tall on the page, and
+ * a model asked to read glyphs that size answers "nothing" at best. Repeating
+ * every pixel keeps the shapes exactly as drawn -- no smoothing, no invention
+ * -- and a glyph four times the size is one a model reads. */
+export function upscale(bm: Bitmap, factor: number): Bitmap {
+  const f = Math.max(1, Math.round(factor));
+  if (f === 1) return bm;
+  const out: Bitmap = { w: bm.w * f, h: bm.h * f, rgba: Buffer.alloc(bm.w * f * bm.h * f * 4) };
+  for (let y = 0; y < out.h; y += 1) {
+    const sy = (y / f) | 0;
+    for (let x = 0; x < out.w; x += 1) {
+      const sx = (x / f) | 0;
+      bm.rgba.copy(out.rgba, (y * out.w + x) * 4, (sy * bm.w + sx) * 4, (sy * bm.w + sx) * 4 + 4);
+    }
+  }
+  return out;
+}
+
+/** Where a colour sits on the wheel, in degrees. */
+function hueOf(r: number, g: number, b: number): number {
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const span = max - min;
+  if (!span) return -1;
+  const raw = max === r ? (g - b) / span : max === g ? 2 + (b - r) / span : 4 + (r - g) / span;
+  return ((raw * 60) % 360 + 360) % 360;
+}
+
+/**
+ * The colour the letters are drawn in, when one colour owns the picture.
+ *
+ * A CAPTCHA of distorted letters is drawn in one ink, and the speckle thrown
+ * over it is every colour at once: find the roundest thing in the picture and
+ * the letters are it, whatever they happen to be drawn in. Returns null when
+ * no single colour is enough of the picture to be the ink -- a photograph, a
+ * grid of objects -- which is the honest answer, since isolating the wrong
+ * colour would leave a blank where the question was.
+ */
+export function inkColour(bm: Bitmap): { r: number; g: number; b: number; share: number } | null {
+  const buckets = new Map<number, { n: number; r: number; g: number; b: number }>();
+  let coloured = 0;
+  for (let i = 0; i < bm.rgba.length; i += 4) {
+    const r = bm.rgba[i];
+    const g = bm.rgba[i + 1];
+    const b = bm.rgba[i + 2];
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    if (max - min < 45 || max < 60) continue; // grey, or too dark to have a hue
+    coloured += 1;
+    const key = Math.round(hueOf(r, g, b) / 15) % 24;
+    const hit = buckets.get(key) ?? { n: 0, r: 0, g: 0, b: 0 };
+    hit.n += 1;
+    hit.r += r;
+    hit.g += g;
+    hit.b += b;
+    buckets.set(key, hit);
+  }
+  if (coloured < 40) return null;
+  let best: { n: number; r: number; g: number; b: number } | null = null;
+  for (const hit of buckets.values()) if (!best || hit.n > best.n) best = hit;
+  if (!best) return null;
+  const share = best.n / (bm.w * bm.h);
+  // A sixth of the coloured pixels is a scattered speckle of one hue, not a
+  // set of letters: insisting on more is what keeps this from painting a
+  // rainbow photograph into two colours.
+  if (best.n < 60 || best.n / coloured < 0.15) return null;
+  return { r: best.r / best.n, g: best.g / best.n, b: best.b / best.n, share };
+}
+
+/**
+ * The picture as a model can read it: enlarged, and with everything that is
+ * not the ink taken out.
+ *
+ * What comes off the page is the letters and, over them, coloured noise the
+ * whole point of which is to stop a model reading them. Every pixel is put
+ * to the question -- is this the ink's colour, or is it nearer to paper -- and
+ * answered as black or white, at the original resolution so the decision is
+ * made on real pixels and then enlarged, where the edges stay where they were.
+ */
+export function legible(bm: Bitmap, factor = 4): Bitmap {
+  const ink = inkColour(bm);
+  const big = upscale(bm, factor);
+  if (!ink) return big;
+  // What the letters are drawn on: the brightest thing in the picture.
+  let paper = 0;
+  const step = Math.max(1, Math.round(Math.sqrt((bm.w * bm.h) / 4000)));
+  let seen = 0;
+  for (let i = 0; i < bm.rgba.length; i += 4 * step) {
+    paper += 0.299 * bm.rgba[i] + 0.587 * bm.rgba[i + 1] + 0.114 * bm.rgba[i + 2];
+    seen += 1;
+  }
+  paper = seen ? paper / seen : 255;
+  const mono: Bitmap = { w: bm.w, h: bm.h, rgba: Buffer.alloc(bm.rgba.length) };
+  for (let i = 0; i < bm.rgba.length; i += 4) {
+    const r = bm.rgba[i];
+    const g = bm.rgba[i + 1];
+    const b = bm.rgba[i + 2];
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const chroma = max - min;
+    let inkish = false;
+    if (chroma >= 45 && max >= 60) {
+      // Same hue as the ink, allowing for the shade the noise pushed it into.
+      const near = Math.abs(hueOf(r, g, b) - hueOf(ink.r, ink.g, ink.b));
+      inkish = Math.min(near, 360 - near) <= 40;
+    } else if (max < paper * 0.75) {
+      // No hue at all and darker than the paper: the ink's own edge.
+      inkish = true;
+    }
+    const value = inkish ? 0 : 255;
+    mono.rgba[i] = value;
+    mono.rgba[i + 1] = value;
+    mono.rgba[i + 2] = value;
+    mono.rgba[i + 3] = 255;
+  }
+  return upscale(mono, factor);
+}
