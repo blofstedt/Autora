@@ -98,23 +98,16 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Two things you can now decide in advance: what the agent may do without
-  asking, and when it may speak up on its own.
+  The voice stops changing under a sentence. Every sentence used to be asked
+  for on its own, and Deepgram renders each request separately -- the same
+  sentence sent four times came back with pitches of 145, 126, 163 and 153 Hz
+  and lengths between three and four seconds -- so a spoken reply drifted in
+  pitch, pace and tone from sentence to sentence, and a long sentence could
+  change voice at a comma. A whole answer is now rendered in one pass and
+  streamed as raw samples while it is still being made: the first words arrive
+  in about half a second, faster than the old first sentence did, and the rest
+  is played behind them. Interrupting it stops the rendering itself, rather
+  than the sound alone.
 
-  Standing agreements. An approval card grows a third button beside Deny and
-  Run it -- "Always allow this kind" -- which runs this call and records the
-  class of work as yours, so the same question is not put again. It is offered
-  only where it is safe to offer: a command that cannot be undone is asked
-  about every time, whatever has been agreed. Everything you have agreed to is
-  listed under Standing agreements in Scheduled tasks, with who agreed it, how
-  often it has been used, and a bin to take it back, one at a time or all at
-  once. When the guard holds a call and you let it through, the rule it writes
-  now says so in the transcript rather than quietly.
-
-  Quiet hours, in Settings under Configuration. Two times on your own clock
-  during which the agent keeps its own initiative to itself: the note about a
-  job that has finished, work it decided to start, anything unprompted is held
-  rather than said. Nothing is lost -- the next thing you say carries it. A
-  question you ask at 03:40 is still answered at 03:40, and a schedule you set
-  still runs at the time you set it. Choosing the same time for both ends turns
-  it off, so it cannot become a mute button by accident.
+  Nothing else changes: the same voices, the same settings, and an install
+  whose server is older falls back to speaking a sentence at a time.
