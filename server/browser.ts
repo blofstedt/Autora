@@ -2718,6 +2718,13 @@ export class LiveBrowser {
         this.pointer = await humanMove(page, this.pointer, at);
         await this.humanClickAt(at, true);
       },
+      // A text CAPTCHA is answered by typing into its box: click into it the
+      // way a hand would, then type the characters at a human speed.
+      type: async (text: string, at: Point) => {
+        this.pointer = await humanMove(page, this.pointer, at);
+        await this.humanClickAt(at, true);
+        await humanType(page, text);
+      },
       drag: (from: Point, to: Point) => this.dragAt(from, to),
       passed: async () => {
         // A puzzle still standing is not passed, whoever drew it: a page that

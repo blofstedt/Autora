@@ -262,3 +262,112 @@ export function findEdge(shot: Bitmap, pieceW: number): GapMatch | null {
   const confidence = Math.max(0, Math.min(0.6, (strength - mean) / Math.max(1, strength)));
   return { x: best + 1, confidence, error: strength };
 }
+
+/* ------------------------------------------------------------- colours -- */
+
+/** A rectangle in the picture's own pixels. */
+export interface Patch {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * The colours a "select all the pictures with..." prompt can name, as bands of
+ * hue: red wraps the end of the wheel, so it is two bands and not one.
+ */
+export const HUES: Record<string, [number, number][]> = {
+  red: [[345, 360], [0, 18]],
+  orange: [[18, 42]],
+  yellow: [[42, 68]],
+  green: [[68, 165]],
+  blue: [[165, 262]],
+  purple: [[262, 300]],
+  violet: [[262, 300]],
+  pink: [[300, 345]],
+  magenta: [[300, 345]],
+};
+
+/** Hue in degrees, and how colourful and how bright a pixel is, 0 to 1. */
+function hsv(r: number, g: number, b: number): { h: number; s: number; v: number } {
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+  let h = 0;
+  if (d !== 0) {
+    if (max === r) h = 60 * (((g - b) / d) % 6);
+    else if (max === g) h = 60 * ((b - r) / d + 2);
+    else h = 60 * ((r - g) / d + 4);
+  }
+  if (h < 0) h += 360;
+  return { h, s: max === 0 ? 0 : d / max, v: max / 255 };
+}
+
+/**
+ * How much of a rectangle is the given colour, 0 to 1.
+ *
+ * This is the cheap half of what a vision model does with "select all the
+ * squares with a stop sign": a stop sign is red and almost nothing else in a
+ * CAPTCHA's photograph is, so the squares holding one sort themselves out by
+ * how much red is in them. It is arithmetic over a screenshot -- no key, no
+ * network, no model -- and it either comes out clear or not at all: the caller
+ * asks for a colour it can name, and anything muddy is left to the model.
+ */
+export function colourShare(shot: Bitmap, patch: Patch, bands: [number, number][], step = 2): number {
+  const x0 = Math.max(0, Math.round(patch.x));
+  const y0 = Math.max(0, Math.round(patch.y));
+  const x1 = Math.min(shot.w, Math.round(patch.x + patch.w));
+  const y1 = Math.min(shot.h, Math.round(patch.y + patch.h));
+  let hit = 0;
+  let seen = 0;
+  for (let y = y0; y < y1; y += step) {
+    for (let x = x0; x < x1; x += step) {
+      const i = (y * shot.w + x) * 4;
+      const { h, s, v } = hsv(shot.rgba[i], shot.rgba[i + 1], shot.rgba[i + 2]);
+      seen += 1;
+      // Pale and near-grey pixels are paper and shadow, not the object: a
+      // colour has to be saturated and lit to count.
+      if (s < 0.35 || v < 0.25) continue;
+      if (bands.some(([lo, hi]) => h >= lo && h < hi)) hit += 1;
+    }
+  }
+  return seen ? hit / seen : 0;
+}
+
+/**
+ * How much of a rectangle is not one flat colour, 0 to 1.
+ *
+ * A picture that is about to be sent to a model is worth a look first: a
+ * canvas a page has not drawn yet, a frame that came back white, a tab
+ * Chromium has left unrendered -- all of them are a picture of nothing, and a
+ * model asked to read one answers "nothing" at best and invents letters at
+ * worst. Two per cent is well under what any drawn CAPTCHA has and well over
+ * the stray pixel.
+ */
+export function detailShare(shot: Bitmap, patch?: Patch, step = 2): number {
+  const x0 = Math.max(0, Math.round(patch?.x ?? 0));
+  const y0 = Math.max(0, Math.round(patch?.y ?? 0));
+  const x1 = Math.min(shot.w, Math.round(patch ? patch.x + patch.w : shot.w));
+  const y1 = Math.min(shot.h, Math.round(patch ? patch.y + patch.h : shot.h));
+  let sum = 0;
+  let seen = 0;
+  for (let y = y0; y < y1; y += step) {
+    for (let x = x0; x < x1; x += step) {
+      const i = (y * shot.w + x) * 4;
+      sum += 0.299 * shot.rgba[i] + 0.587 * shot.rgba[i + 1] + 0.114 * shot.rgba[i + 2];
+      seen += 1;
+    }
+  }
+  if (!seen) return 0;
+  const mean = sum / seen;
+  let off = 0;
+  for (let y = y0; y < y1; y += step) {
+    for (let x = x0; x < x1; x += step) {
+      const i = (y * shot.w + x) * 4;
+      const luma = 0.299 * shot.rgba[i] + 0.587 * shot.rgba[i + 1] + 0.114 * shot.rgba[i + 2];
+      if (Math.abs(luma - mean) > 25) off += 1;
+    }
+  }
+  return off / seen;
+}

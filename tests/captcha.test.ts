@@ -11,8 +11,8 @@
  */
 import assert from "node:assert/strict";
 import zlib from "node:zlib";
-import { decodePng, findGap, type Bitmap } from "../server/captcha-images";
-import { DEFAULT_CAPTCHA, mergeCaptcha, parseAnswer } from "../server/captcha";
+import { colourShare, decodePng, detailShare, findGap, HUES, type Bitmap } from "../server/captcha-images";
+import { DEFAULT_CAPTCHA, mergeCaptcha, parseAnswer, wantedColour } from "../server/captcha";
 
 let passed = 0;
 async function test(name: string, fn: () => void | Promise<void>) {
@@ -161,6 +161,46 @@ await test("an unreadable answer is no answer, and says why", () => {
   assert.ok(parseAnswer("I would click the second square").why);
   assert.ok(parseAnswer("{not json at all}").why);
   assert.equal(parseAnswer('{"tiles":[99]}').tiles.length, 0, "a square that does not exist was taken");
+});
+
+await test("a square is scored by how much of the asked-for colour is in it", async () => {
+  // Left half red, right half green, 64x32: a stop sign in one square and a
+  // tree in the next, which is the whole of what the local backend reads.
+  const shot = decodePng(png(64, 32, (x) => (x < 32 ? [200, 20, 20] : [20, 160, 40])));
+  const left = { x: 0, y: 0, w: 32, h: 32 };
+  const right = { x: 32, y: 0, w: 32, h: 32 };
+  assert.equal(colourShare(shot, left, HUES.red), 1);
+  assert.equal(colourShare(shot, left, HUES.green), 0);
+  assert.equal(colourShare(shot, right, HUES.green), 1);
+  assert.equal(colourShare(shot, right, HUES.red), 0);
+  // Grey and pale pixels are paper, not a colour, however they are spelled.
+  const grey = decodePng(png(16, 16, () => [200, 200, 200]));
+  assert.equal(colourShare(grey, { x: 0, y: 0, w: 16, h: 16 }, HUES.red), 0);
+});
+
+await test("the colour a prompt asks for is read out of it, or not at all", () => {
+  assert.equal(wantedColour("Select all squares with a red traffic light"), "red");
+  assert.equal(wantedColour("Select all squares with a Stop Sign"), "red");
+  assert.equal(wantedColour("Pick every picture with a green tree"), "green");
+  assert.equal(wantedColour("Select all squares with a bus"), null, "a bus is not a colour");
+  assert.equal(wantedColour("Select all with red or yellow cars"), null, "two colours decide nothing");
+});
+
+await test("the characters of a text CAPTCHA are read out of a reply", () => {
+  assert.equal(parseAnswer('{"text":"7fq3"}').text, "7fq3");
+  assert.equal(parseAnswer('{"letters":"a b c 9"}').text, "abc9");
+  // A model asked for the letters often sends nothing else at all.
+  assert.equal(parseAnswer("7fq3").text, "7fq3");
+  assert.equal(parseAnswer('{"text":""}').text, undefined);
+  assert.equal(parseAnswer('{"text":"ab"}').text, undefined, "two characters is not a CAPTCHA answer");
+  assert.ok(parseAnswer("I would type the letters").why, "prose was taken as the characters");
+});
+
+await test("a picture of nothing is told apart from a picture of letters", () => {
+  const blank = decodePng(png(64, 32, () => [255, 255, 255]));
+  assert.ok(detailShare(blank) < 0.02, "a white rectangle was taken for a drawn CAPTCHA");
+  const drawn = decodePng(png(64, 32, (x, y) => (y % 8 === 0 || x % 11 === 0 ? [0, 0, 0] : [255, 255, 255])));
+  assert.ok(detailShare(drawn) > 0.02, "letters on white were taken for a blank picture");
 });
 
 console.log(`\n${passed} passed.`);

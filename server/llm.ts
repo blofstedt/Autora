@@ -92,6 +92,13 @@ export interface ChatCall {
   maxTokens?: number;
   /** Gemini only: tokens of thinking allowed before the first word. */
   thinkingBudget?: number;
+  /**
+   * OpenAI-shaped vendors only: DeepSeek thinks before it answers unless it is
+   * told not to, and on a short reply the whole token budget goes on the
+   * thinking, so the answer arrives empty. "off" is for calls that want the
+   * answer and nothing else -- reading a picture, for one.
+   */
+  thinking?: "on" | "off";
   /** What the model may call this turn. Omitted or empty means text only, and
       the request then carries no tool field at all -- some local servers 400
       on an empty array. */
@@ -394,6 +401,7 @@ export function openAiMessages(call: ChatCall): any[] {
 }
 
 async function streamOpenAi(call: ChatCall, onDelta: (text: string) => void): Promise<ChatTurn> {
+  const deepseek = (call.provider ?? "") === "deepseek" || /api\.deepseek\.com/.test(call.baseUrl ?? "");
   const res = await request(`${trimSlash(call.baseUrl)}/chat/completions`, {
     method: "POST",
     signal: call.signal,
@@ -404,6 +412,9 @@ async function streamOpenAi(call: ChatCall, onDelta: (text: string) => void): Pr
       stream_options: { include_usage: true },
       temperature: call.temperature ?? 0.7,
       max_tokens: call.maxTokens ?? 2048,
+      // Only DeepSeek takes this, and only when the caller asked either way:
+      // left alone, its own default stands.
+      ...(deepseek && call.thinking ? { thinking: { type: call.thinking === "off" ? "disabled" : "enabled" } } : {}),
       messages: openAiMessages(call),
       ...(call.tools?.length
         ? {

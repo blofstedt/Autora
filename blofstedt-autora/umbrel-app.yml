@@ -98,30 +98,27 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  A CAPTCHA with no widget behind it is now found and used. Plenty of pages do
-  not load reCAPTCHA, hCaptcha or Turnstile at all and draw the box themselves
-  -- a small square that says it is a checkbox, in a page that says it is not a
-  robot, with no iframe anywhere for browser_captcha to look into. On one of
-  those it used to answer "there is no checkbox CAPTCHA on this page" while the
-  box sat there in front of it. It is found now: the smallest checkbox-shaped
-  box whose own markup, or the markup around it, says CAPTCHA or "not a robot".
-  It is clicked with the usual humanlike movement and treated as the CAPTCHA it
-  is, in the activity feed and in what is reported back.
+  The model that reads a CAPTCHA picture was being asked to answer in 300
+  tokens while a reasoning model thinks first -- so on a picture it spent the
+  whole allowance thinking and answered with nothing at all, every time, and
+  the solver reported "nothing usable came back" on a widget it could have
+  read. It is told not to think now, and the picture path answers.
 
-  The puzzle such a page draws next is found too. The same scan that reads a
-  widget's grid now reads one the page builds out of ordinary divs -- a 4x4 of
-  squares with the photographs behind them, or a piece to drag along a track --
-  and the words above it are read for what to look for. What answers it has not
-  changed: a slider is still measured here on this machine, a grid of
-  photographs still needs a model that can see them or a solver of your own,
-  and a square is still only clicked when a backend has named it.
+  Two more things a picture challenge needed. "Select all the squares with a
+  stop sign" is a question about where the red is, and that is arithmetic on
+  this machine, with no key, no network and no model: the squares are scored
+  by how much of them is the colour the prompt names, and the ones that stand
+  out are clicked. It also stops declaring a pass the moment the squares
+  vanish for a frame -- a challenge that comes back is not passed, and the
+  next backend gets its turn.
 
-  Checked live on neal.fun/not-a-robot: the box it draws itself is found and
-  ticked, the game moves from Level 1 to Level 2, and there the 4x4 stop-sign
-  grid and "Select all the squares with a Stop Sign" are read correctly. The
-  picture is the one thing no arithmetic here can read -- that is the connected
-  model's job, and a model with vision is what makes it work.
-dependencies: []
-path: ""
-defaultUsername: ""
-defaultPassword: ""
+  There is a third kind of challenge now: the text CAPTCHA, the distorted
+  letters in a picture with a box under them and a button. It is found, the
+  letters are read by the connected model, and they are typed in and
+  submitted. And a picture that comes back blank -- a canvas the page has not
+  drawn, a tab that is not being rendered -- is reported as blank instead of
+  being sent to a model to invent letters from.
+
+  Checked live on neal.fun/not-a-robot: the box the game draws itself, then
+  Level 2's 4x4 stop-sign grid solved on this machine with nothing paid and
+  nothing sent anywhere, and the game moving on to Level 3.

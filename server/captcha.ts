@@ -36,7 +36,7 @@
  * photograph a region of it, a way to click and a way to drag, so the
  * arithmetic can be tested without one.
  */
-import { decodePng, findEdge, findGap, type Bitmap } from "./captcha-images";
+import { colourShare, decodePng, detailShare, findEdge, findGap, HUES, type Bitmap } from "./captcha-images";
 
 export type CaptchaBackend = "local" | "vision" | "remote";
 
@@ -88,7 +88,7 @@ export function mergeCaptcha(into: CaptchaSettings, patch: any): CaptchaSettings
 export interface Rect { x: number; y: number; w: number; h: number }
 export interface Point { x: number; y: number }
 
-export type ChallengeKind = "grid" | "slider";
+export type ChallengeKind = "grid" | "slider" | "words";
 
 /** One clickable square of a grid, numbered as the widget numbers it. */
 export interface Tile { index: number; box: Rect }
@@ -109,6 +109,9 @@ export interface Challenge {
   handle: Rect | null;
   /** Slider only: the strip it travels along. */
   track: Rect | null;
+  /** Words only: the picture of the letters, and the box they are typed into. */
+  picture?: Rect | null;
+  field?: Rect | null;
 }
 
 export interface SolverDeps {
@@ -120,6 +123,8 @@ export interface SolverDeps {
   vision: ((prompt: string, png: Buffer) => Promise<string>) | null;
   /** A click at a point, in page coordinates, moved to like a hand. */
   click(at: Point): Promise<void>;
+  /** Words only: click into a field and type into it, when the host can. */
+  type?: ((text: string, at: Point) => Promise<void>) | null;
   /** A drag from one point to another, in page coordinates. */
   drag(from: Point, to: Point): Promise<void>;
   /** Whether the challenge has passed, asked of the widget itself. */
@@ -421,12 +426,14 @@ export async function findPageCheckbox(page: any): Promise<PageCheckbox | null> 
 }
 async function pageChallenge(page: any): Promise<Challenge | null> {
   const found: {
-    kind: "grid" | "slider";
+    kind: "grid" | "slider" | "words";
     prompt: string;
     tiles: Rect[];
     verify: Rect | null;
     handle: Rect | null;
     track: Rect | null;
+    picture?: Rect | null;
+    field?: Rect | null;
   } | null = await page
     .evaluate(`(() => {
       const shown = (el) => {
@@ -441,6 +448,7 @@ async function pageChallenge(page: any): Promise<Challenge | null> {
       const said = (el) => String(el.innerText || el.textContent || '').replace(/[\\t\\n\\r]+/g, ' ').replace(/ {2,}/g, ' ').trim();
       const asks = /(select|click|choose|pick|tap)[^.]{0,30}(squares?|images?|tiles?|pictures?|cells?)/i;
       const slides = /(slide|drag)[^.]{0,30}(piece|puzzle|slider|unlock|fit|gap|into place)/i;
+      const spells = /(enter|type|read|write)[^.]{0,30}(text|letters|characters|words|code|numbers?|answer)/i;
 
       let prompt = '';
       let words = null;
@@ -448,7 +456,7 @@ async function pageChallenge(page: any): Promise<Challenge | null> {
       for (const el of document.querySelectorAll('h1,h2,h3,h4,h5,p,div,span,label,strong,b,legend')) {
         const line = said(el);
         if (!line || line.length > 200) continue;
-        if (!asks.test(line) && !slides.test(line)) continue;
+        if (!asks.test(line) && !slides.test(line) && !spells.test(line)) continue;
         const r = shown(el);
         if (!r) continue;
         hits.push({ line, r, area: r.width * r.height });
@@ -459,6 +467,60 @@ async function pageChallenge(page: any): Promise<Challenge | null> {
         words = hits[0].r;
       }
       if (!words) return null;
+
+      // A text CAPTCHA, drawn by the page: words asking for the characters,
+      // the picture they are drawn in, the box they go in and the button that
+      // sends them. The words on their own are on every search box on the
+      // web, so they are only believed where the markup calls itself a
+      // CAPTCHA and a picture sits with the field.
+      if (spells.test(prompt)) {
+        const captchaish = (el) => {
+          let probe = el;
+          for (let i = 0; i < 4 && probe; i += 1) {
+            const mark = probe.id + ' ' + String(probe.className || '');
+            if (/captcha|robot|verify|human|words?Text|challenge/i.test(mark)) return true;
+            probe = probe.parentElement;
+          }
+          return false;
+        };
+        let field = null;
+        for (const el of document.querySelectorAll('input[type=text],input:not([type]),textarea')) {
+          const r = shown(el);
+          if (!r || r.width < 40) continue;
+          if (!captchaish(el)) continue;
+          if (el.value && el.value.length) continue;
+          field = { el, r };
+          if (Math.abs(r.top - words.bottom) < 200) break;
+        }
+        if (field) {
+          let picture = null;
+          const consider = (el, r) => {
+            if (r.width < 60 || r.height < 24) return;
+            if (r.width * r.height < 3000) return;
+            if (el.closest('button,a')) return;
+            const gap = Math.abs(r.top - field.r.top) + Math.abs(r.left - field.r.left);
+            if (gap > 600) return;
+            if (!picture || r.width * r.height > picture.area) picture = { r, area: r.width * r.height };
+          };
+          // The letters are drawn in the canvas; the speaker and refresh
+          // icons are images beside it, and a picture of the whole strip puts
+          // them in front of the model for nothing.
+          for (const el of document.querySelectorAll('canvas')) { const r = shown(el); if (r) consider(el, r); }
+          if (!picture) for (const el of document.querySelectorAll('img,svg')) { const r = shown(el); if (r) consider(el, r); }
+          if (picture) {
+            let verify = null;
+            for (const el of document.querySelectorAll('button,[role=button],input[type=button],input[type=submit]')) {
+              const label = said(el) || String(el.value || '').trim();
+              if (!/^(submit|verify|check|confirm|send|go|answer)/i.test(label)) continue;
+              const r = shown(el);
+              if (!r) continue;
+              verify = rect(r);
+              break;
+            }
+            return { kind: 'words', prompt, tiles: [], verify, handle: null, track: null, picture: rect(picture.r), field: rect(field.r) };
+          }
+        }
+      }
 
       if (asks.test(prompt)) {
         const grids = [];
@@ -508,6 +570,21 @@ async function pageChallenge(page: any): Promise<Challenge | null> {
     .catch(() => null);
 
   if (!found) return null;
+  if (found.kind === "words") {
+    if (!found.picture || !found.field) return null;
+    return {
+      kind: "words",
+      widget: "the page's own text CAPTCHA",
+      box: union([found.picture, found.field, ...(found.verify ? [found.verify] : [])]),
+      prompt: found.prompt,
+      tiles: [],
+      verify: found.verify,
+      handle: null,
+      track: null,
+      picture: found.picture,
+      field: found.field,
+    };
+  }
   if (found.kind === "slider") {
     if (!found.handle || !found.track) return null;
     return {
@@ -543,6 +620,8 @@ export interface Answer {
   points: Point[];
   /** Slider only: how far along the track the piece belongs, 0-1. */
   slide: number | null;
+  /** Words only: the characters read out of the picture. */
+  text?: string | null;
   /** Why it could not answer, when it could not. */
   why?: string;
 }
@@ -558,9 +637,20 @@ export interface Answer {
 export function parseAnswer(text: string): Answer {
   const none: Answer = { tiles: [], points: [], slide: null };
   const said = String(text ?? "");
+  const chars = (v: any): string | null => {
+    if (typeof v !== "string") return null;
+    const kept = v.replace(/[^A-Za-z0-9]/g, "");
+    return kept.length >= 3 && kept.length <= 16 ? kept : null;
+  };
   const start = said.indexOf("{");
   const end = said.lastIndexOf("}");
-  if (start < 0 || end <= start) return { ...none, why: "the model did not answer with JSON" };
+  if (start < 0 || end <= start) {
+    // A readable picture of letters is answered with the letters, and a model
+    // asked for those often sends nothing but them: "7fq3" is an answer.
+    const bare = chars(said.trim());
+    if (bare) return { ...none, text: bare };
+    return { ...none, why: "the model did not answer with JSON" };
+  }
   let body: any;
   try {
     body = JSON.parse(said.slice(start, end + 1));
@@ -587,7 +677,14 @@ export function parseAnswer(text: string): Answer {
     const n = Number(raw);
     if (Number.isFinite(n)) { slide = n > 1.5 ? n / 100 : n; break; }
   }
-  return { tiles: [...new Set(tiles)].filter((n) => n >= 1 && n <= 64), points, slide, ...(tiles.length || points.length || slide !== null ? {} : { why: "the model named nothing to click" }) };
+  const typed = chars(body.text ?? body.letters ?? body.characters ?? body.words ?? body.answer ?? body.captcha);
+  return {
+    tiles: [...new Set(tiles)].filter((n) => n >= 1 && n <= 64),
+    points,
+    slide,
+    ...(typed ? { text: typed } : {}),
+    ...(tiles.length || points.length || slide !== null || typed ? {} : { why: "the model named nothing to click or type" }),
+  };
 }
 
 /** The question put to the model, with every square named where it is. */
@@ -595,6 +692,13 @@ export function visionPrompt(challenge: Challenge, w: number, h: number): string
   const head =
     `This is a CAPTCHA picture, ${w} by ${h} pixels, cropped exactly around the challenge. ` +
     `Answer with JSON only, no prose.\nThe widget says: "${challenge.prompt}".\n`;
+  if (challenge.kind === "words") {
+    return (
+      head +
+      `The picture is the distorted text of a CAPTCHA: letters and digits, drawn to be hard to read.\n` +
+      `Read the characters. Reply as {"text":"7fq3"}. If they cannot be read, reply {"text":""}.`
+    );
+  }
   if (challenge.kind === "grid") {
     const named = challenge.tiles
       .map((t) => {
@@ -637,9 +741,68 @@ async function pixels(deps: SolverDeps, box: Rect): Promise<{ bitmap: Bitmap; sc
  * is nothing to compute: a guess there would be a wrong click on a real page.
  * So it says so and lets the next backend answer.
  */
+/** The one colour a prompt is asking for, when it names exactly one. */
+export function wantedColour(prompt: string): string | null {
+  const words = prompt.toLowerCase();
+  const named = Object.keys(HUES).filter((c) => new RegExp(`\\b${c}\\b`).test(words));
+  // "purple" and "violet" are the same band: naming both is still one colour.
+  const bands = [...new Set(named.map((c) => HUES[c].map((b) => b.join("-")).join("|")))];
+  if (bands.length === 1) return named[0];
+  if (named.length) return null;
+  // Objects that are one colour and cannot be mistaken for anything else.
+  if (/stop sign|fire hydrant|octagonal sign/.test(words)) return "red";
+  return null;
+}
+
+/**
+ * A grid the arithmetic can answer: "select all the squares with a stop sign"
+ * is a question about where the red is, and a screenshot says where the red
+ * is. Tiles are scored by how much of them is that colour and the ones well
+ * above the rest are clicked -- but only when the field is clear, because a
+ * wrong click lands on a real page. When it is not clear the answer is empty
+ * and the next backend gets the picture; see colourShare.
+ */
+async function colourAnswer(deps: SolverDeps, challenge: Challenge): Promise<Answer> {
+  const nothing: Answer = { tiles: [], points: [], slide: null };
+  const colour = wantedColour(challenge.prompt);
+  if (!colour) {
+    return { ...nothing, why: `nothing in "${challenge.prompt}" can be counted without a model` };
+  }
+  const bands = HUES[colour];
+  const { bitmap, scale } = await pixels(deps, challenge.box);
+  const scored = challenge.tiles.map((tile) => ({
+    index: tile.index,
+    value: colourShare(bitmap, {
+      x: (tile.box.x - challenge.box.x) * scale,
+      y: (tile.box.y - challenge.box.y) * scale,
+      w: tile.box.w * scale,
+      h: tile.box.h * scale,
+    }, bands),
+  }));
+  const top = Math.max(0, ...scored.map((s) => s.value));
+  if (top < 0.05) return { ...nothing, why: `no ${colour} stood out in any square` };
+  // A square holding a sign the photograph has mostly cut off scores a tenth
+  // of one holding the whole thing: the bar is what stands out from empty
+  // squares, not a share of the best one.
+  const picked = scored.filter((s) => s.value >= Math.max(0.02, top * 0.12)).map((s) => s.index);
+  // Most of the picture the same colour is a picture about something else, and
+  // a set that wide is a guess, not a reading.
+  if (picked.length > Math.max(4, Math.ceil(scored.length / 2))) {
+    return { ...nothing, why: `${colour} is in ${picked.length} of ${scored.length} squares, which decides nothing` };
+  }
+  deps.log(`captcha: ${colour} in squares ${picked.join(", ")} (local)`);
+  return { tiles: picked, points: [], slide: null };
+}
+
 async function localAnswer(deps: SolverDeps, challenge: Challenge): Promise<Answer> {
   const nothing: Answer = { tiles: [], points: [], slide: null };
-  if (challenge.kind !== "slider" || !challenge.handle) {
+  if (challenge.kind === "words") {
+    // Reading distorted letters is not arithmetic: there is no free reading
+    // here, and guessing at one is a wrong answer typed into a real form.
+    return { ...nothing, why: "letters have to be read by a model; there is nothing to compute" };
+  }
+  if (challenge.kind === "grid") return colourAnswer(deps, challenge);
+  if (!challenge.handle) {
     return { ...nothing, why: "a picture question needs the vision model; there is nothing to compute" };
   }
   const handle = challenge.handle;
@@ -690,13 +853,21 @@ async function visionAnswer(deps: SolverDeps, challenge: Challenge): Promise<Ans
   const empty: Answer = { tiles: [], points: [], slide: null };
   if (!deps.vision) return { ...empty, why: "no image-reading model is connected" };
   try {
-    const png = await deps.shot(challenge.box);
+    // A words challenge is the picture of letters and, under it, a box and a
+    // button: only the letters are worth sending.
+    const box = challenge.kind === "words" && challenge.picture ? challenge.picture : challenge.box;
+    const png = await deps.shot(box);
     const size = decodePng(png);
+    // A picture of nothing is not a question: say so rather than pay a model
+    // to guess at letters that were never drawn.
+    if (detailShare(size) < 0.02) {
+      return { ...empty, why: "the picture is blank -- the page has not drawn this CAPTCHA (a background tab, or it has not been given a moment)" };
+    }
     const said = await deps.vision(visionPrompt(challenge, size.w, size.h), png);
     const answer = parseAnswer(said);
     // A model given tile numbers sometimes sends coordinates anyway; a model
     // given a picture sometimes sends fractions of it instead of pixels.
-    if (!answer.tiles.length && !answer.points.length && answer.slide === null) {
+    if (!answer.tiles.length && !answer.points.length && answer.slide === null && !answer.text) {
       return { ...empty, why: answer.why ?? "nothing usable came back" };
     }
     return answer;
@@ -772,6 +943,22 @@ async function answerFrom(deps: SolverDeps, backend: CaptchaBackend, challenge: 
 /** Turn an answer into clicks on the page, and say what was done. */
 async function act(deps: SolverDeps, challenge: Challenge, backend: CaptchaBackend, answer: Answer): Promise<string> {
   const size = { w: challenge.box.w, h: challenge.box.h };
+
+  if (challenge.kind === "words") {
+    if (!answer.text) return "no characters to type";
+    if (!challenge.field) return "the box to type them into could not be found";
+    if (!deps.type) return "nothing here can type";
+    const at = { x: challenge.field.x + challenge.field.w / 2, y: challenge.field.y + challenge.field.h / 2 };
+    deps.log(`captcha: type the characters in (as ${answer.text.length} of them) (${backend})`, at);
+    await deps.type(answer.text, at);
+    await deps.sleep(200);
+    if (challenge.verify) {
+      const press = { x: challenge.verify.x + challenge.verify.w / 2, y: challenge.verify.y + challenge.verify.h / 2 };
+      deps.log("captcha: press Submit", press);
+      await deps.click(press);
+    }
+    return `typed ${answer.text.length} characters`;
+  }
 
   if (challenge.kind === "slider") {
     if (answer.slide === null) return "no distance to drag";
@@ -852,7 +1039,7 @@ export async function solveChallenge(deps: SolverDeps): Promise<SolveReport> {
 
     for (const backend of settings.backends) {
       const answer = await answerFrom(deps, backend, challenge);
-      const spoke = answer.tiles.length || answer.points.length || answer.slide !== null;
+      const spoke = answer.tiles.length || answer.points.length || answer.slide !== null || !!answer.text;
       if (!spoke) {
         reasons.push(`${backend}: ${answer.why ?? "no answer"}`);
         continue;
@@ -862,8 +1049,21 @@ export async function solveChallenge(deps: SolverDeps): Promise<SolveReport> {
       await deps.sleep(1400);
       const after = await deps.passed().catch(() => false);
       const still = await findChallenge(deps.page).catch(() => null);
-      if (after || !still) {
+      if (after) {
         return { outcome: "solved", widget: challenge.widget, backend, detail: `${backend} answered it: ${did}.` };
+      }
+      // Its squares are redrawn between a click and the widget's verdict, so
+      // one look that finds nothing is not a pass: ask again, and call it a
+      // pass only when the second look finds nothing either.
+      if (!still) {
+        await deps.sleep(1200);
+        const gone = await findChallenge(deps.page).catch(() => null);
+        const token = await deps.passed().catch(() => false);
+        if (token || !gone) {
+          return { outcome: "solved", widget: challenge.widget, backend, detail: `${backend} answered it: ${did}.` };
+        }
+        reasons.push(`${backend}: ${did}, and the challenge came back`);
+        continue;
       }
       if (still.kind === "grid" && /nothing to click|could not act/i.test(did)) {
         reasons.push(`${backend}: ${did}`);

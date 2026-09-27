@@ -557,6 +557,9 @@ async function captchaVision(sessionId: string, prompt: string, png: Buffer): Pr
     temperature: 0,
     maxTokens: 300,
     thinkingBudget: 0,
+    // DeepSeek spends a short budget thinking and answers with nothing at all;
+    // the picture reader has no use for the thinking.
+    thinking: "off",
   }, () => undefined);
   recordUsage({
     ts: Math.floor(Date.now() / 1000),
