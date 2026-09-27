@@ -98,15 +98,21 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Live voice answers without thinking first. Speaking to Autora waited on the
-  model's own reasoning before the first word, and on a reasoning model that
-  wait is most of the pause: measured here, a spoken question answered in about
-  half a second without thinking against a second or two with it, and a longer
-  one spent its whole output budget thinking and then said nothing at all. A
-  turn that came in through the microphone is now sent with that thinking
-  switched off, so the reply starts as soon as the words stop. A message typed
-  in the box is unchanged and still thinks before it answers.
+  Talk mode can show the agent the camera. Voice mode was the microphone and
+  nothing else: holding something up to be looked at got you words and no
+  picture. The live bar now has a view switch, and with it on a scaled frame
+  goes to the agent about once a second while you talk, so "look at this"
+  arrives with the thing being shown.
 
-  Settings -> Voice carries the switch, off by default: "Let it think before
-  it answers what you said" puts the reasoning back for spoken turns without
-  giving up the faster replies for typed ones. Nothing else changes.
+  It is a stream, not a recording. One frame per conversation is held in
+  memory, each replacing the last, and nothing is written to disk or kept, so
+  a frame stops counting after a few seconds and turning the view off is felt
+  at once -- a camera that has gone away reads as off, not as a still picture
+  from a while ago. The agent can also refresh it mid-turn when something
+  moves, and is told plainly when the view is off rather than shown something
+  stale.
+
+  Settings -> Voice decides whether talk mode opens with the view on; off by
+  default, since a camera that comes on by itself is a surprise. Holding to
+  talk stays the default too, with hands-free beside it as its own switch.
+  Nothing else changes.
