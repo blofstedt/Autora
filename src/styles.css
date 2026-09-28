@@ -1235,24 +1235,34 @@ button.hint.voice-note:hover { text-decoration: underline; }
    the viewfinder being a square parked in a bar grown tall enough to hold it. */
 .live-bar {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  align-items: end; column-gap: 10px;
-  min-height: 0; padding: 14px 16px 22px; border-radius: 22px;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  grid-template-rows: auto;
+  align-items: center; column-gap: 10px;
+  /* Off, this is one row at the composer's own height, so talk mode costs the
+     screen exactly what typing does. The height is the only thing that
+     changes when the camera comes on, so it is the only thing that animates:
+     the strip grows into the picture and shrinks back again. */
+  min-height: 86px; padding: 12px 14px; border-radius: 22px;
+  transition: min-height 0.42s var(--ease), padding 0.42s var(--ease);
   background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.08), rgba(var(--accent-rgb), 0.03)), var(--s2);
   border: 1px solid rgba(var(--accent-rgb), 0.4);
   box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.08), 0 10px 32px -14px rgba(0, 0, 0, 0.7);
 }
-/* The middle row is the picture, so with live view on the bar is as tall as
-   the picture wants to be and takes the room the camera needs. */
-.live-bar.has-view { min-height: 320px; }
+/* Camera on: three rows -- the switches along the top, the picture in the
+   middle, the mark and the words along the bottom -- and the middle row is the
+   picture, so the bar is as tall as live view wants to be. The same element
+   either side of the switch, so the change is one height being animated. */
+.live-bar.has-view {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  align-items: end; min-height: 320px; padding: 14px 16px 22px;
+}
 
 /* The mark, in a clear disc: over a picture a bare star can land on anything,
    and the disc is what keeps it legible. Drawn at 46px inside a 60px circle --
    a mark bigger than its own disc hangs out of the bottom of it and into the
    words under it, which is exactly what it was doing. */
 .live-bar .live-bar-orb {
-  grid-row: 3; grid-column: 1; align-self: center; justify-self: start;
+  grid-row: 1; grid-column: 1; align-self: center; justify-self: start;
   width: 60px; height: 60px; min-width: 60px; margin: 0; padding: 0;
   border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.12);
   display: grid; place-items: center;
@@ -1263,6 +1273,7 @@ button.hint.voice-note:hover { text-decoration: underline; }
   touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
   transition: transform 0.12s var(--ease), background 0.3s var(--ease);
 }
+.live-bar.has-view .live-bar-orb { grid-row: 3; }
 .live-bar .live-bar-orb::after { display: none; }
 /* The mark centres itself in the disc at every size, so a smaller one on a
    phone stays in the middle of it rather than slipping to a corner. */
@@ -1277,7 +1288,7 @@ button.hint.voice-note:hover { text-decoration: underline; }
 /* The words: one row with the mark, indented clear of it and centred on it, so
    the line sits level with the middle of the star instead of running under it. */
 .live-bar-text {
-  grid-row: 3; grid-column: 2 / -1; align-self: center;
+  grid-row: 1; grid-column: 2; align-self: center;
   display: flex; flex-direction: column; gap: 4px;
   min-width: 0; padding: 0 0 0 12px;
 }
@@ -1285,6 +1296,7 @@ button.hint.voice-note:hover { text-decoration: underline; }
   font-size: 15px; line-height: 1.4; color: var(--text-3);
   overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
 }
+.live-bar.has-view .live-bar-text { grid-row: 3; grid-column: 2 / -1; }
 /* Over a picture the words need their own edge, wherever the camera is
    pointed and whatever the room is doing. */
 .live-bar.has-view .live-bar-status { text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9); }
@@ -1314,18 +1326,20 @@ button.hint.voice-note:hover { text-decoration: underline; }
   flex: 0 0 auto; height: 30px; padding: 0 12px; border-radius: 999px;
   font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em;
 }
-.live-bar .live-bar-switch:not(.icon) { grid-row: 1; grid-column: 1; align-self: start; justify-self: start; }
+/* Hold or Open, on the right immediately beside the camera -- the two are read
+   together, and the row they sit on ends with the way out. */
+.live-bar .live-bar-switch:not(.icon) { grid-row: 1; grid-column: 3; align-self: center; justify-self: end; }
 
 /* The camera and the way out: the same circle, the same size, with the glyph
    centred in each and both on the same line -- one of them a 31px pill and the
    other a 30px disc put them on different centres. */
 .live-bar .live-bar-switch.icon, .live-bar .live-bar-exit {
-  grid-row: 1; align-self: start; justify-self: end;
+  grid-row: 1; align-self: center; justify-self: end;
   width: 30px; height: 30px; min-width: 30px; margin: 0; padding: 0;
   border-radius: 999px; display: grid; place-items: center;
 }
-.live-bar .live-bar-switch.icon { grid-column: 3; }
-.live-bar .live-bar-exit { grid-column: 4; }
+.live-bar .live-bar-switch.icon { grid-column: 4; }
+.live-bar .live-bar-exit { grid-column: 5; }
 .live-bar .live-bar-switch.icon > svg, .live-bar .live-bar-exit > svg {
   display: block; width: 16px; height: 16px; margin: 0; flex: none;
 }
@@ -1334,7 +1348,7 @@ button.hint.voice-note:hover { text-decoration: underline; }
 }
 /* Stop, while the agent works: on the top row beside the camera, not beside
    the way out. */
-.live-bar .composer-stop { grid-row: 1; grid-column: 2; align-self: start; justify-self: end; }
+.live-bar .composer-stop { grid-row: 1; grid-column: 2; align-self: center; justify-self: end; }
 
 /* The person's own half of live view: what the camera has, in the bar, drawn
    here and sent nowhere. The whole strip is the viewfinder -- the picture runs
@@ -1413,8 +1427,8 @@ button.hint.voice-note:hover { text-decoration: underline; }
      circles are sized for the thumb that is holding it, and the picture stops
      short of taking the whole screen: a phone is held in the hand this bar
      sits at the bottom of. */
-  .live-bar { column-gap: 9px; padding: 12px 13px 18px; min-height: 0; }
-  .live-bar.has-view { min-height: 250px; }
+  .live-bar { column-gap: 9px; padding: 10px 12px; min-height: 92px; }
+  .live-bar.has-view { min-height: 250px; padding: 12px 13px 18px; }
   .live-bar .live-bar-orb { width: 54px; height: 54px; min-width: 54px; }
   .live-bar .live-bar-orb > .amark > svg { width: 42px; height: 42px; }
   .live-bar .btn.live-bar-switch.icon, .live-bar .btn.live-bar-exit {

@@ -40,6 +40,49 @@ export type LiveViewState = {
   flip: () => void;
 };
 
+/**
+ * The camera to open, for the one the person has chosen.
+ *
+ * The back camera is asked for exactly, and that is not pedantry: an inexact
+ * `facingMode` is a preference a phone is free to ignore, and the ones that do
+ * ignore it hand over the front camera -- which, for a view whose whole purpose
+ * is to show the agent the thing in your other hand, is the one camera that is
+ * no use. An exact request rather than a constraint on its own, because exact
+ * fails outright where nothing can meet it, and that failure is caught below.
+ */
+function wanted(facing: "user" | "environment") {
+  return { facingMode: { exact: facing }, width: { ideal: 1280 }, height: { ideal: 720 } };
+}
+
+/** The same camera, asked for as a preference: the fallback for a device with
+    only one of them, or a browser that ignores exactness instead of failing. */
+function preferred(facing: "user" | "environment") {
+  return { facingMode: { ideal: facing }, width: { ideal: 1280 }, height: { ideal: 720 } };
+}
+
+/**
+ * Open the camera, the exact request first and the preference second. Only the
+ * two ways the exact request can be refused for the camera's sake fall
+ * through: a permission refusal or a missing camera entirely must still be
+ * reported, because asking again cannot fix either.
+ */
+async function openCamera(facing: "user" | "environment"): Promise<MediaStream> {
+  const ask = (video: MediaTrackConstraints) => {
+    const devices = navigator.mediaDevices;
+    // A page that has no camera API at all fails here rather than being
+    // guarded for, and the caller reports it in words.
+    if (!devices) throw new Error("no camera here");
+    return devices.getUserMedia({ video, audio: false });
+  };
+  try {
+    return await ask(wanted(facing));
+  } catch (err: any) {
+    const theirFault = err?.name === "NotAllowedError" || err?.name === "SecurityError";
+    if (theirFault) throw err;
+    return await ask(preferred(facing));
+  }
+}
+
 /** A JPEG of what the camera has now, scaled to something worth sending. */
 async function grab(video: HTMLVideoElement): Promise<Blob | null> {
   const w = video.videoWidth;
@@ -92,11 +135,7 @@ export function useLiveView(sessionId: string | null, on: boolean): LiveViewStat
     let live = true;
     let opened: MediaStream | null = null;
     setError(null);
-    navigator.mediaDevices
-      ?.getUserMedia({
-        video: { facingMode: { ideal: facing }, width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: false,
-      })
+    openCamera(facing)
       .then((s) => {
         opened = s;
         // Switched off while the permission prompt was still up.

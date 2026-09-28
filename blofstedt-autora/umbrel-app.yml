@@ -98,21 +98,21 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The live view in talk mode now runs the camera picture right across the bar,
-  with the camera, the mark and the way out sitting on the glass over it. It
-  was a small square in the middle of the bar with the picture fitted inside
-  it, so a wide phone picture was letterboxed into a stripe and read as broken.
-  The picture fills the bar now, and the things on top of it have been put
-  back on their centres: the mark is drawn inside its disc instead of hanging
-  out of the bottom of it, the words sit clear of the mark and centred on its
-  middle, the camera and the cross are the same size and share a centre line,
-  and the red dots are gone.
+  Talk mode reaches no higher than the box you type in when the camera is off.
+  The live bar sat taller than the composer, so turning talk on pushed the
+  thread up the screen: with the camera off it is one row at the composer box
+  height now, and nothing behind it moves.
 
-  A notice now comes up out of the message box instead of landing on top of
-  your chat. It was a card across the middle of the screen, over whatever you
-  were reading, and it stayed there until it was clicked. It is a slim line
-  above the box now -- what it was and what happened, side by side, one line
-  each -- that slides up out of the box's top edge, waits five seconds and
-  slides back down behind it. The close cross is still there if you want it
-  gone sooner, and clicking the notice still opens the session that produced
-  it.
+  Hold has moved to the right-hand end of the bar, immediately beside the
+  camera, so the two things you touch while you are talking sit together under
+  the thumb that is already there.
+
+  The camera opens on the back one, and it is now the back camera that is asked
+  for exactly rather than merely preferred. An inexact request is a preference
+  a phone is free to ignore, and the phones that ignore it hand over the front
+  camera -- the one camera that cannot show the agent the thing in your other
+  hand. A device with only one camera, or a browser that treats an exact
+  request as impossible, still gets the camera it has.
+
+  Turning the camera on grows the bar and turning it off shrinks it back in one
+  movement, instead of jumping between two sizes.
