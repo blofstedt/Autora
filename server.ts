@@ -2937,7 +2937,10 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
        */
       const siteMemory = (name: string, args: unknown): string => {
         if (!name.startsWith("browser_") && name !== "http_request") return "";
-        const site = siteOf(targetOf(name, (args ?? {}) as Record<string, any>));
+        // Where the call went, or for a click with no URL of its own, where
+        // the page is now -- a link followed to another site counts.
+        const page = name.startsWith("browser_") ? browsers.get(session.id)?.status().url ?? "" : "";
+        const site = siteOf(targetOf(name, (args ?? {}) as Record<string, any>, page));
         if (!site || sitesSeen.has(site)) return "";
         sitesSeen.add(site);
         const found = mind.aboutSite(site, new Set(result.recalled));
