@@ -137,6 +137,11 @@ function untrustedNote(toolName: string): string {
    and to a model they are noise that costs tokens. */
 const ANSI = /\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)|\u001b[@-Z\\-_]/g;
 
+/** Text without terminal colour codes: for a person to read, not a terminal. */
+export function stripAnsi(text: string): string {
+  return text.replace(ANSI, "");
+}
+
 /**
  * Tool output as a model should read it.
  *

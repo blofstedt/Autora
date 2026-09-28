@@ -34,6 +34,18 @@ export interface Reflection {
 /** Worth a look even with no tools run: the person telling it how to work. */
 const INSTRUCTIVE = /\b(always|never|prefer|from now on|remember|don'?t|do not|stop|instead|i like|i want you to|next time|that'?s wrong|not what i)\b/i;
 
+/* ...or telling it about themselves and what they work on. "I hold 40 shares
+   of ASML", "my server is the one in the attic", "we use Fastmail" were said
+   once, ran no tool, and were gone by the next session -- so the person was
+   asked the same things again, and every answer began from nothing. */
+const TELLING = new RegExp(
+  "\\b(i am an?|i'?m an?|i work|i own|i hold|i have an?|i use|we use|i run|i live|call me|" +
+    "my (name|job|work|company|team|business|wife|husband|partner|son|daughter|kids?|family|" +
+    "portfolio|holdings|watchlist|broker|account|bank|server|setup|home|house|car|project|" +
+    "website|site|domain|email|budget|goal|plan|stack))\\b",
+  "i",
+);
+
 export function worthReflecting(input: { request: string; ranSomething: boolean; stopped: boolean; ok: boolean }): boolean {
   // A turn the person stopped is not evidence of anything.
   if (input.stopped) return false;
@@ -41,7 +53,7 @@ export function worthReflecting(input: { request: string; ranSomething: boolean;
   // back at: the command that failed, the page that would not load. A turn
   // that never reached a tool is the provider having a bad day, not a lesson.
   if (!input.ok && !input.ranSomething) return false;
-  return input.ranSomething || INSTRUCTIVE.test(input.request);
+  return input.ranSomething || INSTRUCTIVE.test(input.request) || TELLING.test(input.request);
 }
 
 export const REFLECT_SYSTEM =
@@ -59,7 +71,8 @@ export function reflectionPrompt(input: {
   nearby: MemoryRecord[];
 }): string {
   const show = (m: MemoryRecord) =>
-    `- ${m.id} [${m.kind}${m.status === "provisional" ? ", unconfirmed" : ""}] ${m.title}: ${m.body.slice(0, 400)}`;
+    `- ${m.id} [${m.kind}${m.status === "provisional" ? ", unconfirmed" : ""}` +
+    `${m.doubted ? ", found wrong before" : ""}] ${m.title}: ${m.body.slice(0, 400)}`;
   return [
     input.previousReply ? `The agent's previous reply:\n${input.previousReply.slice(0, 1500)}\n` : "",
     `The person's request:\n${input.request.slice(0, 3000)}`,
@@ -80,12 +93,21 @@ export function reflectionPrompt(input: {
     "",
     "learned: at most 3 items, only ones that will still be useful months from now in",
     "other sessions. A procedure is how something was actually done here once it worked:",
-    "the exact commands, paths, settings and the gotcha that cost time. A preference is",
-    "how the person wants things done, from what they said. A fact is something true",
-    "about their machine, accounts or setup that was discovered. Never record the",
-    "request itself, one-off results, anything secret (passwords, tokens, keys), or",
-    "anything already in the memories above unless it corrects them -- then set",
-    "\"revises\" to that memory's id and write the corrected version in full.",
+    "the exact commands, paths, URLs, settings and the gotcha that cost time. When a step",
+    "failed and a later one worked, that is the lesson: write the way that worked, and",
+    "name the mistake to skip (\"not X: it fails with Y\"), so next time starts from the",
+    "working way. A source that answered well -- the site, API or command that had the",
+    "data, and how to ask it -- is a procedure too. A preference is how the person wants",
+    "things done, from what they said. A fact is something durable that was said or",
+    "discovered about the person, their work and interests, the people, projects and",
+    "things they deal with, or their machine, accounts and setup. Never record the request",
+    "itself, one-off results or figures that change by the day (a price, a count, today's",
+    "status), anything secret (passwords, tokens, keys, account numbers), or anything",
+    "already in the memories above unless it corrects them -- then set \"revises\" to that",
+    "memory's id and write the corrected version in full.",
+    "tags: the subject it belongs to (e.g. \"stocks\", \"docker\", \"email\", \"travel\"), the",
+    "site's host name if a site was involved, and the names of things it is about -- these",
+    "are the words it will be found by when the subject comes up again.",
     "helped: ids of given memories that the agent used and that proved right.",
     "misled: ids of given memories that proved wrong or out of date.",
     "Empty arrays are the usual, correct answer.",

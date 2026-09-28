@@ -46,6 +46,11 @@ export interface MemoryRecord {
   worked?: number;
   /** A provisional rewrite of this record, which replaces it on confirm. */
   replaces?: string | null;
+  /** Times a turn that used it found it wrong, since it last held. A
+      confirmed memory is not deleted for one bad turn -- it may be the turn
+      that was wrong -- but it ranks lower, and says so when it is recalled,
+      until it is checked, rewritten or works again. */
+  doubted?: number;
 }
 
 export interface MemoryLink {
@@ -77,22 +82,61 @@ const STOP = new Set(
   ("a an and are as at be but by can do does for from has have how i if in into is it its " +
     "me my of on or our so that the their them then there these this to use was we what " +
     "when where which who why will with you your please just also should would could about " +
-    "all any some get got make made want need").split(" "),
+    "all any some get got make made want need not no here now http https www").split(" "),
 );
 
-/** Lowercase words, stop words out, crude plural and tense endings off. */
+/** Parts of a dotted name that say nothing about what it names. */
+const EMPTY_PARTS = new Set(["com", "org", "net", "edu", "gov", "www", "http", "https"]);
+
+/* Letters and digits in any script. It was a-z only, so a memory written in
+   Swedish or German lost every word with an accent in it ("portfölj" became
+   "portf" and "lj"), and one in Greek or Cyrillic had no words at all and
+   could never be recalled. */
+const WORD = /[\p{L}\p{N}][\p{L}\p{N}_.-]*[\p{L}\p{N}]|[\p{L}\p{N}]/gu;
+
+/** Lowercase words, stop words out, plural and tense endings off. */
 export function tokens(text: string): string[] {
-  return (text.toLowerCase().match(/[a-z0-9][a-z0-9_.-]*[a-z0-9]|[a-z0-9]/g) ?? [])
-    .filter((w) => !STOP.has(w))
-    .map(stem);
+  const out: string[] = [];
+  for (const word of text.toLowerCase().match(WORD) ?? []) {
+    if (!/[_.-]/.test(word)) {
+      if (!STOP.has(word)) out.push(stem(word));
+      continue;
+    }
+    /* "docker-jellyfin", "server.ts", "github.com": the whole, as written,
+       and each part, so a question about jellyfin finds the note about the
+       docker-jellyfin container. */
+    out.push(word);
+    for (const part of word.split(/[_.-]+/)) {
+      if (part.length >= 3 && /\p{L}/u.test(part) && !STOP.has(part) && !EMPTY_PARTS.has(part)) out.push(stem(part));
+    }
+  }
+  return out;
 }
 
+/**
+ * The same word in its different forms, as one.
+ *
+ * Not a real stemmer, and it does not need to be: it only has to turn the
+ * forms of a word into the same string. The one it replaced cut "prices" to
+ * "pric" and left "price" alone, so a note about share prices was not found
+ * by a question about the price -- and the same for file and files, trade and
+ * trading, update and updated. Here every form loses its ending and then its
+ * silent e, so they meet: price, prices, priced, pricing are all "pric".
+ */
 function stem(word: string): string {
-  if (word.length > 5 && word.endsWith("ing")) return word.slice(0, -3);
-  if (word.length > 4 && word.endsWith("ed")) return word.slice(0, -2);
-  if (word.length > 4 && word.endsWith("es")) return word.slice(0, -2);
-  if (word.length > 3 && word.endsWith("s") && !word.endsWith("ss")) return word.slice(0, -1);
-  return word;
+  if (word.length <= 3 || !/^[a-z]+$/.test(word)) return word;
+  const vowel = /[aeiouy]/;
+  let w = word;
+  if (w.endsWith("ies") && w.length > 4) w = w.slice(0, -2);
+  else if (w.endsWith("s") && !/(ss|us|is)$/.test(w)) w = w.slice(0, -1);
+  if (w.length > 5 && w.endsWith("ing") && vowel.test(w.slice(0, -3))) w = w.slice(0, -3);
+  else if (w.length > 4 && w.endsWith("ed") && !w.endsWith("eed") && vowel.test(w.slice(0, -2))) w = w.slice(0, -2);
+  // "runn(ing)" is "run", "stopp(ed)" is "stop".
+  if (w !== word && /([b-df-hj-km-np-rtv-z])\1$/.test(w)) w = w.slice(0, -1);
+  if (w.length > 3 && w.endsWith("e") && !w.endsWith("ee")) w = w.slice(0, -1);
+  // "entry" and "entri(es)", "reply" and "repli(ed)".
+  if (w.length > 3 && /[^aeiou]y$/.test(w)) w = `${w.slice(0, -1)}i`;
+  return w;
 }
 
 /** Overlap of two texts' vocabularies, 0..1. */
@@ -120,6 +164,73 @@ const GENERIC_TAGS = new Set(["skill", "agent-authored", "learned", "unconfirmed
 function relevant(hits: number, headHits: number, asked: number): boolean {
   if (hits >= 2) return true;
   return headHits >= 1 || asked <= 2;
+}
+
+/** A request with this many words or fewer may be a follow-up whose subject
+    is in the conversation before it. See recallForTurn. */
+const FOLLOW_UP_WORDS = 6;
+/** Words that point back at something said before. */
+const REFERS = /\b(it|that|this|those|these|them|they|same|again|other|another|else|instead|retry|continue|carry on|go ahead|yes|yeah|yep|ok|okay|sure)\b/i;
+
+/**
+ * Whether a request leans on the conversation before it for what it is
+ * about: "yes, do that", "try again", "and the other one?", or a single
+ * word. "What's the weather in Paris" is short, and not one.
+ */
+export function isFollowUp(request: string): boolean {
+  const words = new Set(tokens(request)).size;
+  return words <= 1 || (words <= FOLLOW_UP_WORDS && REFERS.test(request));
+}
+
+/**
+ * The site a host belongs to: "shop.example.com" is "example.com", and
+ * "news.bbc.co.uk" is "bbc.co.uk". Empty for anything that is not a named
+ * site -- an address, localhost -- since a note that mentions 192.168.1.1 is
+ * not about every device on the network.
+ */
+export function siteOf(host: string): string {
+  const h = String(host ?? "").toLowerCase().trim().replace(/:\d+$/, "").replace(/^www\./, "");
+  if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(h)) return "";
+  const parts = h.split(".");
+  const n = parts.length >= 3 && parts[parts.length - 1].length === 2 && parts[parts.length - 2].length <= 3 ? 3 : 2;
+  return parts.slice(-n).join(".");
+}
+
+interface Indexed {
+  /** Words of the title and topical tags: what the memory is about. */
+  head: Set<string>;
+  /** How many words in all, for BM25's length normalisation. */
+  words: number;
+  tf: Map<string, number>;
+}
+
+/* Each memory's words, kept until it changes. Recall ran the tokenizer over
+   every memory, body and all, two or three times a turn (the turn's recall,
+   Jev's shortlist, the look back afterwards) -- with a few hundred memories
+   that was most of the time a turn spent before its first word. */
+const indexCache = new WeakMap<MemoryRecord, Indexed & { title: string; body: string; tags: string }>();
+
+function indexOf(r: MemoryRecord): Indexed {
+  const tags = r.tags.join("\u0000");
+  const hit = indexCache.get(r);
+  if (hit && hit.title === r.title && hit.body === r.body && hit.tags === tags) return hit;
+  // Bookkeeping tags ("skill", "learned") say how a memory came to be,
+  // not what it is about; matched, they would recall every skill at once.
+  const topical = r.tags.filter((t) => !GENERIC_TAGS.has(t)).flatMap((t) => tokens(t));
+  const title = tokens(r.title);
+  const body = tokens(r.body);
+  const tf = new Map<string, number>();
+  // Title and tags count double: they are what the memory is about.
+  for (const w of title) tf.set(w, (tf.get(w) ?? 0) + 2);
+  for (const w of topical) tf.set(w, (tf.get(w) ?? 0) + 2);
+  for (const w of body) tf.set(w, (tf.get(w) ?? 0) + 1);
+  const entry = {
+    head: new Set([...title, ...topical]),
+    words: 2 * title.length + 2 * topical.length + body.length,
+    tf, title: r.title, body: r.body, tags,
+  };
+  indexCache.set(r, entry);
+  return entry;
 }
 
 // ----------------------------------------------------------------- graph --
@@ -162,20 +273,8 @@ export class MemoryGraph {
   recall(query: string, limit = 6, withPinned = true): Recalled[] {
     const pool = this.active();
     const want = [...new Set(tokens(query))];
-    const docs = pool.map((r) => {
-      // Bookkeeping tags ("skill", "learned") say how a memory came to be,
-      // not what it is about; matched, they would recall every skill at once.
-      const topical = r.tags.filter((t) => !GENERIC_TAGS.has(t)).flatMap((t) => tokens(t));
-      const head = new Set([...tokens(r.title), ...topical]);
-      // Title and tags count double: they are what the memory is about.
-      const words = [...tokens(r.title), ...tokens(r.title), ...topical.flatMap((t) => [t, t]), ...tokens(r.body)];
-      // Counted once here rather than by scanning every word of every memory
-      // for every word of the query, which is what recall did on each turn.
-      const tf = new Map<string, number>();
-      for (const w of words) tf.set(w, (tf.get(w) ?? 0) + 1);
-      return { record: r, head, words, tf };
-    });
-    const avg = docs.reduce((n, d) => n + d.words.length, 0) / Math.max(docs.length, 1) || 1;
+    const docs = pool.map((r) => ({ record: r, ...indexOf(r) }));
+    const avg = docs.reduce((n, d) => n + d.words, 0) / Math.max(docs.length, 1) || 1;
     const df = new Map<string, number>();
     for (const d of docs) for (const w of d.tf.keys()) df.set(w, (df.get(w) ?? 0) + 1);
 
@@ -190,13 +289,14 @@ export class MemoryGraph {
         hit.push(w);
         if (d.head.has(w)) headHits += 1;
         const idf = Math.log(1 + (docs.length - (df.get(w) ?? 0) + 0.5) / ((df.get(w) ?? 0) + 0.5));
-        score += idf * ((tf * 2.2) / (tf + 1.2 * (0.25 + 0.75 * (d.words.length / avg))));
+        score += idf * ((tf * 2.2) / (tf + 1.2 * (0.25 + 0.75 * (d.words / avg))));
       }
       if (score > 0 && relevant(hit.length, headHits, want.length)) {
         const r = d.record;
         score *= 1 + 0.1 * Math.log1p(r.uses) + 0.15 * Math.log1p(r.worked ?? 0);
         if (r.tags.includes("proven")) score *= 1.2;
         if (r.status === "provisional") score *= 0.8;
+        if (r.doubted) score *= 0.7 ** Math.min(r.doubted, 3);
         scored.push({ record: r, score, reason: `matched ${hit.slice(0, 4).join(", ")}` });
       }
     }
@@ -214,6 +314,60 @@ export class MemoryGraph {
       if (!out.some((o) => o.record.id === s.record.id)) out.push(s);
     }
     return out;
+  }
+
+  /**
+   * The memories for a turn: what the request is about, and -- when the
+   * request is a follow-up too short to say it -- what the conversation
+   * before it was about.
+   *
+   * Recall on the request alone found nothing for "yes, do that", "try it
+   * again" or "and the other server?": the words that say what "that" is are
+   * in the previous exchange. A request that is not a follow-up (see
+   * isFollowUp) is recalled on its own words alone, so the last subject does
+   * not follow the person into a new one.
+   */
+  recallForTurn(request: string, conversation: string, limit = 6): Recalled[] {
+    const direct = this.recall(request, limit);
+    if (!conversation.trim() || !isFollowUp(request)) return direct;
+    const found = direct.filter((r) => r.score !== Infinity).length;
+    const room = Math.min(limit - found, 3);
+    if (room <= 0) return direct;
+    const more = this.recall(conversation, limit, false)
+      .filter((r) => !direct.some((d) => d.record.id === r.record.id))
+      .slice(0, room)
+      .map((r) => ({ ...r, reason: `from the conversation so far: ${r.reason}` }));
+    return [...direct, ...more];
+  }
+
+  /**
+   * What is written down about a website, for the moment the agent gets there.
+   *
+   * The turn's recall is made from the person's words, before anything has
+   * run -- so the note that says this shop's login needs the second form, or
+   * that this site's API wants a header, was only found if the person
+   * happened to name the site. This finds it when the browser does.
+   *
+   * `host` is matched on the site it belongs to (shop.example.com is
+   * example.com) anywhere in a memory, and on the site's name ("github")
+   * as a whole word in its title or tags.
+   */
+  aboutSite(host: string, exclude: ReadonlySet<string> = new Set(), limit = 3): MemoryRecord[] {
+    const site = siteOf(host);
+    if (!site) return [];
+    const name = site.split(".")[0];
+    const inText = new RegExp(`(^|[^a-z0-9-])${site.replace(/\./g, "\\.")}($|[^a-z0-9-])`, "i");
+    const byName = name.length >= 4 ? new RegExp(`(^|[^\\p{L}\\p{N}])${name}($|[^\\p{L}\\p{N}])`, "iu") : null;
+    const rank = (r: MemoryRecord) =>
+      (r.pinned ? 8 : 0) + (r.tags.includes("proven") ? 4 : 0) + (r.status === "confirmed" ? 2 : 0) -
+      (r.doubted ?? 0) * 2 + Math.log1p(r.worked ?? 0) + 0.1 * Math.log1p(r.uses);
+    return this.active()
+      .filter((r) => !exclude.has(r.id))
+      .filter((r) =>
+        inText.test(r.title) || inText.test(r.body) || r.tags.some((t) => inText.test(t)) ||
+        (byName !== null && (byName.test(r.title) || r.tags.some((t) => byName.test(t)))))
+      .sort((a, b) => rank(b) - rank(a) || b.updated - a.updated)
+      .slice(0, limit);
   }
 
   /** Counted as used: it was put in front of the model. */
@@ -330,10 +484,20 @@ export class MemoryGraph {
   update(id: string, patch: { title?: string; body?: string; kind?: string; tags?: string[]; pinned?: boolean }): MemoryRecord | null {
     const r = this.get(id);
     if (!r) return null;
-    if (typeof patch.title === "string" && patch.title.trim()) r.title = patch.title.trim();
-    if (typeof patch.body === "string" && patch.body.trim()) r.body = patch.body.trim();
+    if (typeof patch.title === "string" && patch.title.trim()) r.title = patch.title.trim().slice(0, 200);
+    if (typeof patch.body === "string" && patch.body.trim() && patch.body.trim() !== r.body) {
+      r.body = patch.body.trim();
+      // Rewritten, it is a different claim from the one that was doubted.
+      r.doubted = 0;
+    }
     if (MEMORY_KINDS.includes(patch.kind as MemoryKind)) r.kind = patch.kind as MemoryKind;
-    if (Array.isArray(patch.tags)) r.tags = patch.tags.map((t) => String(t).trim()).filter(Boolean);
+    if (Array.isArray(patch.tags)) {
+      /* Lowercased as write() does, or "Jellyfin" and "jellyfin" were two
+         tags. The bookkeeping ones ride along: a new list of topics is not a
+         request to forget that the memory is unconfirmed, or proven. */
+      const kept = r.tags.filter((t) => t === "learned" || t === "proven");
+      r.tags = [...new Set([...patch.tags.map((t) => String(t).trim().toLowerCase()).filter(Boolean), ...kept])];
+    }
     if (typeof patch.pinned === "boolean") r.pinned = patch.pinned;
     r.updated = now();
     this.changed();
@@ -367,6 +531,7 @@ export class MemoryGraph {
     if (!r) return null;
     r.status = "confirmed";
     r.checked = now();
+    r.doubted = 0;
     r.tags = r.tags.filter((t) => t !== "learned" && t !== "unconfirmed");
     if (r.replaces) {
       const old = this.get(r.replaces);
@@ -402,7 +567,25 @@ export class MemoryGraph {
     }
     r.checked = now();
     r.updated = now();
+    r.doubted = 0;
     if (save) this.changed();
+    return r;
+  }
+
+  /**
+   * A turn that used this memory found it wrong.
+   *
+   * An unconfirmed guess is simply dropped for it (see reflect in server.ts).
+   * A confirmed memory is not: one turn is not proof, and the memory may be
+   * right where the turn went wrong. It ranks lower, and when it is recalled
+   * it says it was found wrong, so the next turn checks it rather than
+   * trusting it -- and either fixes it or confirms it, which clears this.
+   */
+  doubt(id: string): MemoryRecord | null {
+    const r = this.get(id);
+    if (!r || r.superseded_by) return null;
+    r.doubted = (r.doubted ?? 0) + 1;
+    this.changed();
     return r;
   }
 
@@ -420,6 +603,7 @@ export class MemoryGraph {
     const r = this.get(id);
     if (!r || r.superseded_by) return null;
     r.worked = (r.worked ?? 0) + 1;
+    r.doubted = 0;
     let change: "confirmed" | "promoted" | null = null;
     if (r.status === "provisional" && r.worked >= CONFIRM_AFTER) {
       this.confirm(r.id, false);
@@ -493,4 +677,11 @@ export function freshness(r: MemoryRecord, at = now()): string | null {
   if (days < STALE_CHECKED_S / 86400) return null;
   const ago = days < 60 ? `${days} days` : `${Math.round(days / 30)} months`;
   return r.checked ? `last checked ${ago} ago` : `written ${ago} ago and never checked since`;
+}
+
+/** What the note says about a memory a recent turn found wrong, or null. */
+export function doubtNote(r: MemoryRecord): string | null {
+  if (!r.doubted) return null;
+  return `found wrong on ${r.doubted === 1 ? "a recent turn" : `${r.doubted} recent turns`}: ` +
+    "check it before relying on it, then fix it with memory_update or confirm it with memory_confirm";
 }

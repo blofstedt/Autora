@@ -5,7 +5,7 @@
  *   npx tsx tests/memory.test.ts
  */
 import assert from "node:assert/strict";
-import { MemoryGraph, similarity, tokens, type MemoryRecord } from "../server/memory";
+import { MemoryGraph, doubtNote, siteOf, similarity, tokens, type MemoryRecord } from "../server/memory";
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -156,6 +156,86 @@ test("housekeeping merges copies and drops stale unconfirmed guesses", () => {
   assert.equal(out.dropped, 1);
   assert.equal(g.get("a")?.superseded_by, "b");
   assert.equal(g.get("c"), undefined);
+});
+
+test("the forms of a word are one word", () => {
+  // The old endings cut "prices" to "pric" and left "price" alone.
+  for (const forms of [
+    ["price", "prices", "priced", "pricing"], ["file", "files"], ["trade", "trading", "trades"],
+    ["update", "updated", "updates"], ["cookie", "cookies"], ["entry", "entries"], ["run", "running", "runs"],
+    ["stop", "stopped", "stopping"], ["address", "addresses"], ["setting", "settings"],
+  ]) {
+    assert.equal(new Set(forms.map((f) => tokens(f).join(" "))).size, 1, forms.join("/"));
+  }
+  assert.deepEqual(tokens("status analysis"), ["status", "analysis"], "-us and -is are not plurals");
+});
+
+test("words in any script are words, and dotted names are found by their parts", () => {
+  assert.deepEqual(tokens("Min portfölj"), ["min", "portfölj"]);
+  assert.ok(tokens("Мой сервер").length === 2, "Cyrillic is not dropped");
+  const t = tokens("see docker-jellyfin and https://github.com/x");
+  assert.ok(t.includes("docker-jellyfin") && t.includes("jellyfin") && t.includes("github.com") && t.includes("github"));
+  assert.ok(!t.includes("com") && !t.includes("https"), "the scheme and the TLD say nothing");
+});
+
+test("a memory about share prices is found by a question about the price", () => {
+  const { g } = graph();
+  const m = g.write({ title: "Share prices", body: "Quotes come from the stooq CSV endpoint, no key needed.", tags: ["stocks"] }).record;
+  assert.equal(g.recall("what is the price of ASML")[0]?.record.id, m.id);
+});
+
+test("a short follow-up is recalled with the conversation before it", () => {
+  const { g } = graph();
+  const m = g.write({ title: "Restart jellyfin", body: "docker restart jellyfin fixes a stuck library scan.", kind: "procedure" }).record;
+  const before = "the jellyfin library scan is stuck\nI can restart the jellyfin container, shall I?";
+  assert.equal(g.recall("yes do it").length, 0, "the request alone says nothing");
+  const hits = g.recallForTurn("yes do it", before);
+  assert.equal(hits[0]?.record.id, m.id);
+  assert.match(hits[0].reason, /conversation/);
+  assert.equal(g.recallForTurn("and the other server?", before)[0]?.record.id, m.id);
+  // A request with words of its own is recalled on those, not on the last subject.
+  assert.equal(g.recallForTurn("what's the weather in paris", before).length, 0);
+  assert.equal(g.recallForTurn("how many people live in france", before).length, 0);
+});
+
+test("a memory found wrong ranks lower and says so until it holds again", () => {
+  const { g } = graph();
+  const a = g.write({ title: "Backup path", body: "Backups go to /mnt/nas/backups nightly.", tags: ["backup"] }).record;
+  const b = g.write({ title: "Backup schedule", body: "Backups run nightly at 3 to /mnt/nas.", tags: ["backup"] }).record;
+  const first = g.recall("nightly backup")[0].record.id;
+  g.doubt(first);
+  assert.notEqual(g.recall("nightly backup")[0].record.id, first, "the doubted one drops below the other");
+  assert.match(doubtNote(g.get(first)!) ?? "", /found wrong/);
+  g.recheck(first);
+  assert.equal(g.get(first)?.doubted, 0);
+  assert.equal(doubtNote(g.get(first)!), null);
+  g.doubt(a.id);
+  g.reinforce(a.id);
+  assert.equal(a.doubted, 0, "working again clears it");
+  g.doubt(b.id);
+  g.update(b.id, { body: "Backups run nightly at 4 to /mnt/usb." });
+  assert.equal(b.doubted, 0, "a rewrite is a new claim");
+});
+
+test("what is written down about a site is found by the site", () => {
+  const { g } = graph();
+  const login = g.write({ title: "Avanza login", body: "Sign in at www.avanza.se with BankID; the password form is a trap.", kind: "procedure" }).record;
+  const gh = g.write({ title: "GitHub tokens", body: "Use the fine-grained token in the vault.", tags: ["github"] }).record;
+  g.write({ title: "Router", body: "The router is at 192.168.1.1" });
+  assert.equal(siteOf("shop.example.co.uk:8080"), "example.co.uk");
+  assert.equal(siteOf("192.168.1.1"), "");
+  assert.equal(siteOf("localhost"), "");
+  assert.deepEqual(g.aboutSite("www.avanza.se").map((m) => m.id), [login.id]);
+  assert.deepEqual(g.aboutSite("api.github.com").map((m) => m.id), [gh.id], "by the site's name in the tags");
+  assert.deepEqual(g.aboutSite("api.github.com", new Set([gh.id])), [], "already given this turn");
+  assert.deepEqual(g.aboutSite("notgithub.com"), []);
+});
+
+test("new tags are lowercased and keep the bookkeeping", () => {
+  const { g } = graph();
+  const r = g.write({ title: "A guess", body: "Something learned from a turn", status: "provisional" }).record;
+  g.update(r.id, { tags: ["Jellyfin", "jellyfin"] });
+  assert.deepEqual(r.tags, ["jellyfin", "learned"]);
 });
 
 console.log(`${passed} passed`);

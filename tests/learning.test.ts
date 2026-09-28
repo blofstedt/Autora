@@ -37,6 +37,10 @@ test("only real work, or being told how, is reflected on", () => {
   assert.equal(worthReflecting({ ...base, ok: false, ranSomething: true, request: "fix the backup" }), true);
   // ...but one that never reached a tool is the provider having a bad day.
   assert.equal(worthReflecting({ ...base, ok: false, request: "fix the backup" }), false);
+  // Telling it about themselves is worth keeping, with or without a tool.
+  assert.equal(worthReflecting({ ...base, request: "I hold 40 shares of ASML and some VWCE" }), true);
+  assert.equal(worthReflecting({ ...base, request: "my broker is Avanza" }), true);
+  assert.equal(worthReflecting({ ...base, request: "I am going to bed" }), false);
 });
 
 test("a failing tool is named in the review, with what to do instead", () => {

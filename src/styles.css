@@ -3663,6 +3663,22 @@ label + .jf-hint { margin-top: -5px; }
 }
 .composer-tools .btn.labeled .mic-halo { border-radius: 999px; }
 .btn-label { position: relative; z-index: 1; }
+/* A phone's width. Four labelled buttons and Send needed about 320px, and a
+   390px phone gives the row 294: Photo slid under Send, and on a plain-http
+   install the "Voice needs https" note ran under it too. The buttons tighten
+   first; below 400px Attach and Photo keep their icon (a paperclip and a
+   camera need no word, and both are labelled for a screen reader) while the
+   two voices keep theirs; and anything that still does not fit wraps onto a
+   second line rather than under the button beside it. */
+@media (max-width: 440px) {
+  .composer-tools { gap: 0; flex-wrap: wrap; row-gap: 4px; }
+  .composer-tools .btn.labeled { padding: 0 8px 0 7px; gap: 5px; }
+  .composer-foot .hint.voice-note { flex-basis: 100%; padding-left: 8px; }
+}
+@media (max-width: 400px) {
+  .composer-tools .attach-btn .btn-label { display: none; }
+  .composer-tools .btn.labeled.attach-btn { padding: 0 9px; }
+}
 .composer-live:disabled { opacity: 0.5; }
 
 /* ── desktop ── */
@@ -4333,7 +4349,7 @@ html[data-font="mono"] body { font-size: 13.5px; }
   transition: stroke-dasharray 0.5s var(--ease), stroke 0.3s var(--ease);
 }
 .rail-ctx.is-over .rail-ctx-fill { stroke: var(--warn); }
-.rail-ctx-tick { stroke: var(--text-2); stroke-width: 2; stroke-linecap: round; }
+.rail-ctx-tick { fill: none; stroke: var(--text-3); stroke-width: 5; }
 .rail-ctx-pct {
   fill: var(--text); font-size: 11px; font-weight: 650; text-anchor: middle;
   dominant-baseline: central; font-variant-numeric: tabular-nums;
@@ -4559,6 +4575,17 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
   white-space: nowrap;
 }
 .seg button.on { background: var(--accent-soft); color: var(--text); box-shadow: inset 0 0 0 1px var(--accent-line); }
+/* Settings' four tabs are 384px wide, and on a 360px phone Appearance was
+   past the edge with nothing to scroll: a tab you could not reach. They
+   tighten on a phone, and whatever still does not fit scrolls sideways. */
+@media (max-width: 440px) {
+  .sched-top .seg { min-width: 0; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .sched-top .seg::-webkit-scrollbar { display: none; }
+  .sched-top .seg button { padding: 0 9px; font-size: 12px; flex: 0 0 auto; }
+  /* "Changes save automatically" is a sentence the tabs need the room for;
+     "Saving…" and "Saved" are short, and still said. */
+  .sched-top .save-state:not(.is-busy):not(.is-done) { display: none; }
+}
 
 /* Sessions */
 .ses-table { display: flex; flex-direction: column; gap: 6px; }
@@ -4753,9 +4780,14 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
   font-size: 10.5px; color: var(--text-3); padding: 1px 7px; border-radius: 99px;
   border: 1px solid var(--border); white-space: nowrap;
 }
+.mind-flag.is-doubted { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
 .mind-item-body {
   font-size: 12.5px; color: var(--text-2); line-height: 1.5; white-space: pre-wrap;
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.mind-item-body code, .mind-review-old code {
+  font-family: var(--mono); font-size: 0.92em; padding: 0 4px; border-radius: 4px;
+  background: var(--s2); color: var(--text);
 }
 .mind-tags { display: flex; flex-wrap: wrap; gap: 4px; }
 .mind-tags em {

@@ -218,6 +218,10 @@ export type Cell =
       /** What the agent said and did while it worked this page or desktop,
           shown inside the card rather than under it. See gatherScreenWork. */
       log: Cell[];
+      /** Came in after the turn had ended: a page that finished loading (or
+          failed to) once the agent had stopped, or the person browsing in
+          the card. It updates the card, and is not the agent at work. */
+      late?: boolean;
     }
   | { kind: "images"; seq: number; pictures: Picture[] }
   | { kind: "widget"; seq: number; widget: Widget }
@@ -423,6 +427,7 @@ export function derive(events: AutoraEvent[]): Derived {
     return push({
       kind: "screen", seq, source, url: source === "browser" ? url : null,
       shots: [], actions: [], live: false, log: [],
+      ...(bucket.open ? {} : { late: true }),
     }) as Extract<Cell, { kind: "screen" }>;
   };
 
@@ -607,8 +612,10 @@ export function derive(events: AutoraEvent[]): Derived {
           push({
             kind: "note", seq: e.seq,
             tone: e.payload.denied ? "warn" : "bad",
+            // Colour codes out: logs from before the server stripped them
+            // showed Playwright's call log as "[2m ... [22m".
             text: `${span?.name ?? "tool"}: ${
-              e.payload.error ?? e.payload.reason ?? "failed"}`,
+              String(e.payload.error ?? e.payload.reason ?? "failed").replace(COLOUR, "")}`,
           });
         }
         break;
@@ -1032,6 +1039,9 @@ export function isRunning(events: AutoraEvent[]): boolean {
 
 type ScreenCell = Extract<Cell, { kind: "screen" }>;
 
+/** A terminal colour code. */
+const COLOUR = /\u001b\[[0-?]*[ -/]*[@-~]/g;
+
 /** Stay in the conversation even while a page is being worked: things the
     person has to answer or act on, and the pictures handed over. They sit
     beside the card without ending it -- a sign-in is part of working the
@@ -1082,6 +1092,19 @@ function gatherScreenWork(buckets: Bucket[]) {
     for (const cell of bucket.cells) {
       if (cell.kind === "screen") {
         const prior = boxes[cell.source];
+        if (prior && cell.late) {
+          /* The page moved on after the turn was over -- Chrome's error page
+             arriving once a load had failed, say. That used to count as the
+             agent working the page again, which pulled the answer it had
+             just given, and what it learned, into the card and out of the
+             conversation. It updates the card where it stands and nothing
+             more. */
+          prior.shots.push(...cell.shots);
+          prior.actions.push(...cell.actions);
+          if (cell.url) prior.url = cell.url;
+          if (cell.actions.includes("close")) boxes[cell.source] = null;
+          continue;
+        }
         if (prior) {
           if (box === prior) {
             for (const c of pending) { prior.log.push(c); moved.add(c); }

@@ -30,7 +30,7 @@ type Storage = {
   policy: { sessionDays: number; keepSessions: number; artifactDays: number; keepArtifacts: number };
 };
 
-const money = (n: number) => `$${n < 1 ? n.toFixed(3) : n.toFixed(2)}`;
+const money = (n: number) => `$${n > 0 && n < 1 ? n.toFixed(3) : n.toFixed(2)}`;
 
 /** Bytes as something readable. Megabytes are what this page is about, so
     kilobytes only matter on a fresh install. */

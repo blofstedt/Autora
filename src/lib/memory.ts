@@ -18,6 +18,8 @@ export type MemoryRecord = {
   worked?: number;
   /** For a learned rewrite: the memory it replaces once kept. */
   replaces?: string | null;
+  /** Times a turn that used it found it wrong, since it last held. */
+  doubted?: number;
 };
 
 export type MemoryLink = { src: string; dst: string; rel: string };

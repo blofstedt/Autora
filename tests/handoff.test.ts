@@ -87,6 +87,22 @@ async function main() {
     assert.equal(card.url, "https://example.org");
   });
 
+  await test("a page that moves on after the turn ends does not take the answer with it", () => {
+    const [bucket] = derive([
+      ...working,
+      say("Here is what I found."),
+      ev(Kind.AgentDone),
+      ev(Kind.MemoryLearned, { items: [{ id: "m1", title: "t", kind: "fact", action: "added", status: "provisional" }] }),
+      // Chrome's error page, once the load had failed and the turn was over.
+      ev(Kind.BrowserNav, { url: "chrome-error://chromewebdata/" }),
+    ]).buckets;
+    assert.deepEqual(bucket.cells.map((c) => c.kind), ["screen", "reply", "learned"]);
+    const card = bucket.cells[0];
+    if (card.kind !== "screen") return;
+    assert.equal(card.url, "chrome-error://chromewebdata/", "the card still shows where the page went");
+    assert.equal(card.log.length, 1);
+  });
+
   await test("closing the browser ends the card", () => {
     const buckets = derive([
       ...working,
