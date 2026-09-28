@@ -107,6 +107,10 @@ type SettingsState = {
   catalog: ProviderCard[];
   prices_checked: string;
   budget_usd: number | null;
+  /** Paid in at the vendor in total, which with the balance left is the one
+      figure the real spend can be built from. Optional: an older server does
+      not know the field. */
+  top_up_usd?: number | null;
   /** When a turn is called a loop, and how much is kept. Both sets used to be
       constants in the server's source, invisible and unchangeable. */
   loop?: LoopConfig;
@@ -198,6 +202,7 @@ export function Settings({
   const [provider, setProvider] = useState("auto");
   const [prompt, setPrompt] = useState("");
   const [budget, setBudget] = useState("");
+  const [topUp, setTopUp] = useState("");
   const [loop, setLoop] = useState<LoopConfig | null>(null);
   const [keep, setKeep] = useState<RetentionPolicy | null>(null);
   const [saving, setSaving] = useState(false);
@@ -210,6 +215,7 @@ export function Settings({
     setProvider(next.provider);
     setPrompt(next.system_prompt ?? "");
     setBudget(next.budget_usd === null ? "" : String(next.budget_usd));
+    setTopUp(next.top_up_usd == null ? "" : String(next.top_up_usd));
     setLoop(next.loop ?? null);
     setKeep(next.retention ?? null);
     setKeyDrafts({});
@@ -272,9 +278,10 @@ export function Settings({
     base_urls: urlDrafts,
     system_prompt: prompt,
     budget_usd: budget.trim() === "" ? null : Number(budget),
+    top_up_usd: topUp.trim() === "" ? null : Number(topUp),
     ...(loop ? { loop } : {}),
     ...(keep ? { retention: keep } : {}),
-  }), [provider, modelDrafts, fastDrafts, urlDrafts, prompt, budget, loop, keep]);
+  }), [provider, modelDrafts, fastDrafts, urlDrafts, prompt, budget, topUp, loop, keep]);
 
   const save = useCallback(async (sent: typeof body) => {
     setSaving(true);
@@ -308,6 +315,10 @@ export function Settings({
       setBudget((cur) => (
         (cur.trim() === "" ? null : Number(cur)) === sent.budget_usd
           ? (next.budget_usd === null ? "" : String(next.budget_usd))
+          : cur));
+      setTopUp((cur) => (
+        (cur.trim() === "" ? null : Number(cur)) === sent.top_up_usd
+          ? (next.top_up_usd == null ? "" : String(next.top_up_usd))
           : cur));
       setLoop((cur) => (same(cur, sent.loop ?? null) ? next.loop ?? null : cur));
       setKeep((cur) => (same(cur, sent.retention ?? null) ? next.retention ?? null : cur));
@@ -362,15 +373,20 @@ export function Settings({
     provider !== state.provider ||
     prompt !== (state.system_prompt ?? "") ||
     (budget.trim() === "" ? null : Number(budget)) !== (state.budget_usd ?? null) ||
+    (topUp.trim() === "" ? null : Number(topUp)) !== (state.top_up_usd ?? null) ||
     JSON.stringify(loop) !== JSON.stringify(state.loop ?? null) ||
     JSON.stringify(keep) !== JSON.stringify(state.retention ?? null));
   const budgetOk = budget.trim() === "" || (Number.isFinite(Number(budget)) && Number(budget) >= 0);
+  const topUpOk = topUp.trim() === "" || (Number.isFinite(Number(topUp)) && Number(topUp) >= 0);
+  /* Both money fields are saved by the same rules: a half-typed number is not
+     saved, and the page says so rather than writing a nonsense figure. */
+  const moneyOk = budgetOk && topUpOk;
 
   useEffect(() => {
-    if (!dirty || !budgetOk) return;
+    if (!dirty || !moneyOk) return;
     const timer = window.setTimeout(() => void save(body), 700);
     return () => window.clearTimeout(timer);
-  }, [dirty, budgetOk, body, save]);
+  }, [dirty, moneyOk, body, save]);
 
   /* Leaving the page inside that moment still saves: the edit is sent on the
      way out rather than dropped. A key typed and never saved goes too, unless
@@ -378,8 +394,8 @@ export function Settings({
   const pending = useRef<object | null>(null);
   const typedKeys = Object.fromEntries(Object.entries(keyDrafts).filter(([, v]) => v.trim()));
   const hasKeys = Object.keys(typedKeys).length > 0;
-  pending.current = (dirty && budgetOk) || hasKeys
-    ? { ...(dirty && budgetOk ? body : {}), ...(hasKeys ? { credentials: typedKeys } : {}) }
+  pending.current = (dirty && moneyOk) || hasKeys
+    ? { ...(dirty && moneyOk ? body : {}), ...(hasKeys ? { credentials: typedKeys } : {}) }
     : null;
   useEffect(() => () => {
     if (!pending.current) return;
@@ -475,7 +491,7 @@ export function Settings({
         <div className="spacer" />
         {saveable && (
           <span className={`save-state ${saving || dirty ? "is-busy" : saved ? "is-done" : ""}`} role="status">
-            {saving || (dirty && budgetOk)
+            {saving || (dirty && moneyOk)
               ? "Saving…"
               : saved
                 ? <><IconCheck size={12} /> Saved</>
@@ -491,6 +507,7 @@ export function Settings({
 
       {error && <div className="sched-error">{error}</div>}
       {!budgetOk && <div className="sched-error">The monthly budget must be a number of dollars, 0 or more.</div>}
+      {!topUpOk && <div className="sched-error">The amount topped up must be a number of dollars, 0 or more.</div>}
 
       <div className="sched-body">
         {/* First thing in the panel, because "did my update arrive" is the
@@ -622,7 +639,9 @@ export function Settings({
 
         {shows("keys") && <SecretStore />}
 
-        {shows("analytics") && <Billing budget={budget} onBudget={setBudget} />}
+        {shows("analytics") && (
+          <Billing budget={budget} onBudget={setBudget} topUp={topUp} onTopUp={setTopUp} />
+        )}
 
         {shows("config") && (
         <section className="set-card">

@@ -1235,7 +1235,9 @@ button.hint.voice-note:hover { text-decoration: underline; }
   /* The same footprint as .composer-box under it: full width of the type box
      and about as tall, so switching live on does not shrink the thing you are
      looking at. */
-  min-height: 100px; padding: 12px 14px; border-radius: 22px;
+  /* Tall enough for the square the viewfinder needs, not just for a line of
+     words: 132px of picture plus the bar's own padding. */
+  min-height: 156px; padding: 12px 14px; border-radius: 22px;
   background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.08), rgba(var(--accent-rgb), 0.03)), var(--s2);
   border: 1px solid rgba(var(--accent-rgb), 0.4);
   box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.08), 0 10px 32px -14px rgba(0, 0, 0, 0.7);
@@ -1297,19 +1299,35 @@ button.hint.voice-note:hover { text-decoration: underline; }
 
 /* The person's own half of live view: what the camera has, right here, drawn
    by their own browser and sent nowhere. Tapping it turns the camera around. */
-/* With the bar this tall the picture is not a thumbnail in it but the ground
-   under it: the whole bar becomes the viewfinder, and the words sit over it. */
+/* The person's own half of live view, and the whole point of it: a camera is
+   wide, the bar is not, and a picture cropped to the bar's shape is a picture
+   with its edges cut off -- which is exactly what is being held up to be seen.
+   So the viewfinder is a square, the shape the camera's own frame fits into
+   without losing anything, and it grows the bar to hold it rather than being
+   cropped to the bar. The words sit to the side of it, not over it. */
+/* The bar crops what leaves it -- right for a wash, wrong for a picture that
+   is taller than the bar was built to be. So the square does not just sit in
+   the bar: it sets the bar's height, and the bar stops cropping while it. */
+.live-bar.has-view {
+  align-items: center;
+  overflow: visible;
+  min-height: 0;
+  padding-top: 10px; padding-bottom: 10px;
+}
 .live-bar-peek {
-  position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; padding: 0;
-  border-radius: inherit; overflow: hidden; cursor: pointer;
-  background: #000; border: 0; box-shadow: none;
+  position: relative; z-index: 1; flex: 0 0 auto;
+  width: var(--peek, 132px); height: var(--peek, 132px);
+  padding: 0; border-radius: 16px; overflow: hidden; cursor: pointer;
+  background: #000; border: 0; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.09);
 }
 .live-bar-scrim {
-  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  position: absolute; inset: 0; z-index: 0; pointer-events: none;
   background: linear-gradient(90deg, rgba(6, 8, 12, 0.84) 0%, rgba(6, 8, 12, 0.45) 48%, rgba(6, 8, 12, 0.74) 100%);
 }
 .live-bar > *:not(.live-bar-peek):not(.live-bar-scrim) { z-index: 2; }
-.live-bar-peek video { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* contain, not cover: the square is the shape the frame fits into, so nothing
+   is cropped out of it. */
+.live-bar-peek video { width: 100%; height: 100%; object-fit: contain; display: block; }
 .live-bar-peek.is-mirror video { transform: scaleX(-1); }
 .live-bar-peek-dot {
   position: absolute; top: 9px; left: 10px; width: 7px; height: 7px; border-radius: 50%;
@@ -1372,7 +1390,10 @@ button.hint.voice-note:hover { text-decoration: underline; }
   /* On a phone the bar has five things in it: the mark, the words, the
      picture, the switches, and the way out. The picture and the words give a
      little, and the switch labels go -- the two glyphs carry them. */
-  .live-bar-peek { border-radius: inherit; }
+  /* A phone is held in the hand this bar is at the bottom of, so the square
+     still grows the bar but not as far. */
+  .live-bar.has-view { --peek: 108px; min-height: 0; }
+  .live-bar-peek { border-radius: 14px; }
   .live-bar-switch { padding: 0 9px; font-size: 11px; }
   .live-bar-status { font-size: 14px; }
   .live-bar-label { font-size: 11.5px; }

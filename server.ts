@@ -41,6 +41,7 @@ import {
   type ChatMessage, type ChatTurn, type ToolReply,
 } from "./server/llm";
 import { billingSummary, dayKey } from "./server/billing";
+import { refreshVendorMoney, vendorMoneyStale } from "./server/vendor-money";
 import { dropSession, fromDataUrl, getBlob, putBlob } from "./server/blobs";
 import { threeRuntime } from "./server/widgets";
 import {
@@ -4352,6 +4353,7 @@ async function startServer() {
       catalog,
       prices_checked: PRICES_CHECKED,
       budget_usd: state.budgetUsd,
+      top_up_usd: state.topUpUsd,
       loop: { ...state.loop },
       retention: { ...state.retention },
       state_file: stateFilePath(),
@@ -4515,6 +4517,20 @@ async function startServer() {
         return res.status(400).json({ detail: "The monthly budget must be a positive amount." });
       }
       state.budgetUsd = amount;
+    }
+
+    /* What has been paid in at the vendor. This is half of the real total --
+        spend is this less the balance left -- and it is typed in rather than
+        worked out because everything before the first balance the console ever
+        read is history it never saw. Later payments need no hand: a balance
+        that jumps up is one, and is folded in as it is observed. */
+    if (body.top_up_usd !== undefined) {
+      const raw = body.top_up_usd;
+      const amount = raw === null || raw === "" ? null : Number(raw);
+      if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
+        return res.status(400).json({ detail: "The amount topped up must be a positive amount." });
+      }
+      state.topUpUsd = amount;
     }
 
     /* Which tools the agent has, and how tightly each is gated. Turning a
@@ -4802,6 +4818,12 @@ async function startServer() {
   /** What has been spent, and on what. Read-only: the ledger is written by
       the turns themselves, one row each, as they finish. */
   app.get("/api/usage", (req: Request, res: Response) => {
+    /* The vendor's balance is what the real total is read from, and it is
+       fetched behind the answer rather than in front of it: this route is
+       asked at the end of every turn and on every window focus, and it must
+       never wait on somebody else's server to answer. A stale reading starts
+       a refresh; this reply carries the one already known. */
+    if (vendorMoneyStale()) void refreshVendorMoney();
     res.json(billingSummary());
   });
 
@@ -5189,6 +5211,15 @@ async function startServer() {
 housekeeping();
 const housekeepingTimer = setInterval(housekeeping, SWEEP_EVERY_MS);
 housekeepingTimer.unref?.();
+
+/* The vendor's balance: once on the way up, then every ten minutes. It is the
+   one figure that can say what has really been spent -- counting tokens here
+   cannot see a call that was charged without reporting -- and it belongs to
+   somebody else's server, so it is read on its own schedule rather than at
+   the moment a person is waiting for something. */
+void refreshVendorMoney();
+const moneyTimer = setInterval(() => void refreshVendorMoney(), 10 * 60_000);
+moneyTimer.unref?.();
 
 /* One stray promise -- a tool, a watcher, a page that closed mid-call --
    used to take the whole server down with it, and the person saw nothing but

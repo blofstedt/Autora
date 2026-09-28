@@ -98,28 +98,32 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Three things that were wrong.
+  The dollar figure beside the chat now comes from the vendor, not from
+  counting. It was always the lower of the two: a call that is charged without
+  reporting what it used -- an answer you stopped, an attempt retried after a
+  dropped connection -- leaves no row in the ledger, so a count could never see
+  it and the number read low against the real bill.
 
-  The Mind no longer lights up when the sidebar opens. It was meant to glow
-  once, when something actually landed in it, and the flag that lit it was
-  never cleared -- so every fresh look at the sidebar replayed an ending that
-  had finished days ago. It now lights up when something lands, and stops.
+  DeepSeek publishes no usage endpoint. What it does publish is the balance, so
+  that is what is used: paid in, less what is left, which is the one figure
+  that cannot be wrong, being the vendor's own arithmetic on the vendor's own
+  money. The balance is read every ten minutes and whenever the page is opened,
+  and a balance that jumps up is noticed as a payment, so the amount paid in
+  has to be right once and keeps itself right afterwards.
 
-  The pill that says the agent is using the browser is centred, and its Stop
-  button sits inside the card instead of hanging off the edge. Its entrance
-  animation was writing the same property that was holding it in the middle,
-  so the centring was thrown away the moment the pill appeared. The centring
-  no longer depends on the animation.
+  Where that amount goes: Settings, then Billing, has a "Topped up so far"
+  field beside the monthly budget. Fill it in once with everything paid in at
+  the vendor so far. Left empty, nothing changes -- the figures go back to
+  being counted, exactly as before.
 
-  This month has stopped falling as the ledger turns over. The ledger keeps
-  the last five thousand calls; what fell off the end was folded into running
-  totals with no dates in them, which only the lifetime figure could use, so
-  "this month" and "today" quietly dropped that spend and read low against the
-  vendor's own bill. What ages out is now kept by day as well, and counted
-  back into the day it happened on.
+  The all-time figure is now the vendor's. This month and today are still
+  counted from the ledger, and they carry the difference whenever the whole
+  history the console has is in the current month, so the month does not
+  quietly disagree with the total about the same money. Both figures are shown
+  under the headline, so the arithmetic can be checked rather than trusted.
 
-  The note under the figures also says plainly what the number still cannot
-  see: usage from outside this app, a vendor's own discounts, and a call that
-  ends before it reports its tokens -- an answer you stopped, or an attempt
-  that was retried after a dropped connection. Those are charged, and they are
-  exactly where this figure comes out under the vendor's.
+  The live view in talk mode is square again. It was being squashed into a
+  flat rectangle: the bar had been told to shrink to fit its contents so it
+  would not crop the picture, and that same rule let it collapse around the
+  viewfinder. The bar now holds its height while the camera is on, so the
+  whole frame is visible.

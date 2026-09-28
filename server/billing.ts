@@ -17,6 +17,7 @@
 
 import { PROVIDERS, providerSpec } from "./providers";
 import { carriedDays, carriedTotals, state, type UsageEntry } from "./state";
+import { vendorMoney } from "./vendor-money";
 
 const DAYS_SHOWN = 30;
 const RECENT_TURNS = 25;
@@ -124,8 +125,17 @@ export function billingSummary() {
 
   // The lump sums, for the lifetime total.
   const carried = carriedTotals();
+  /* The vendor's own answer to "what has been spent", when its balance can be
+     read: what has been paid in, less what is left with it. That beats
+     anything counted from tokens here, because it also covers the calls that
+     were charged without reporting what they used -- an answer stopped
+     mid-sentence, an attempt retried after a dropped connection -- and those
+     are exactly where counting comes out low. */
+  const real = vendorMoney();
+  const counted = all.cost + carried.cost;
+  const unaccounted = real ? Math.max(0, real.lifetime_usd - counted) : 0;
   const lifetime = {
-    cost: all.cost + carried.cost,
+    cost: real ? real.lifetime_usd : counted,
     input: all.input + carried.input,
     cached: all.cached,
     output: all.output + carried.output,
@@ -133,6 +143,23 @@ export function billingSummary() {
     unpriced: all.unpriced,
     estimated: all.estimated,
   };
+
+  /* The month, when the month is all there is.
+     A console a few days old has nothing dated outside this month in it, and
+     then the month and the lifetime are the same money: the vendor's own total
+     is the honest figure for both, because counting leaves out the calls that
+     never reported and the lump that aged out of the ledger -- which, on a
+     ledger written before the days were kept, has no date to be placed by, and
+     cannot be older than the oldest turn that does. A month that disagreed
+     with the total about the same dollars would read as the console doubting
+     itself. Only while that holds: one dated turn in another month and the
+     month goes back to being counted, with the difference left out of it. */
+  const oldest = state.usage.length > 0 ? state.usage[0].ts : null;
+  const nothingDatedOutsideThisMonth =
+    oldest !== null &&
+    monthKey(oldest) === month &&
+    Object.keys(carriedDays()).every((day) => day.slice(0, 7) === month);
+  if (real && nothingDatedOutsideThisMonth) monthBucket.cost = real.lifetime_usd;
 
   // A dense run of days, including the quiet ones: a chart that silently skips
   // the days you spent nothing makes a calm week look like a busy one.
@@ -191,6 +218,19 @@ export function billingSummary() {
         cost: entry.cost,
         priced: entry.priced,
       })),
+    /* What the vendor says, beside what was counted here, so the two can be
+       compared by anyone who wants to check the arithmetic rather than trust
+       the headline. Null when no balance can be read: nothing is guessed. */
+    real: real
+      ? {
+        balance_usd: real.balance_usd,
+        topped_up_usd: real.topped_up_usd,
+        at: real.at,
+        lifetime_usd: real.lifetime_usd,
+        counted_usd: counted,
+        unaccounted_usd: unaccounted,
+      }
+      : null,
     budget: {
       monthly_usd: budget,
       spent: monthBucket.cost,

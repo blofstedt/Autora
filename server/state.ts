@@ -212,6 +212,15 @@ export interface PersistedState {
   /** Monthly ceiling in USD, or null for none. Advisory: it warns, it does not
       refuse -- a console that silently stops answering is a support ticket. */
   budgetUsd: number | null;
+  /** What the vendor says is left with it. Real spend is read as "paid in,
+      less what is left" rather than counted from tokens, because counting
+      cannot see a call that was charged without reporting. See ./vendor-money. */
+  balanceUsd: number | null;
+  /** When that balance was last read, in seconds since the epoch. */
+  balanceAt: number | null;
+  /** Paid in (topped up) in total, in USD. What came before the first reading
+      is entered by hand; a later rise in the balance is folded in by itself. */
+  topUpUsd: number | null;
   /** Which tools' output the model has been reading, this month. */
   toolFeed: ToolFeed;
   usage: UsageEntry[];
@@ -430,6 +439,9 @@ function blank(): PersistedState {
     keys: {},
     secrets: {},
     budgetUsd: null,
+    balanceUsd: null,
+    balanceAt: null,
+    topUpUsd: null,
     toolFeed: { month: "", tools: {} },
     usage: [],
     tools: defaultTools(),
@@ -457,6 +469,9 @@ function read(): PersistedState {
     if (raw.keys && typeof raw.keys === "object") state.keys = { ...raw.keys };
     if (raw.secrets && typeof raw.secrets === "object") state.secrets = { ...raw.secrets };
     if (typeof raw.budgetUsd === "number") state.budgetUsd = raw.budgetUsd;
+    if (typeof raw.balanceUsd === "number") state.balanceUsd = raw.balanceUsd;
+    if (typeof raw.balanceAt === "number") state.balanceAt = raw.balanceAt;
+    if (typeof raw.topUpUsd === "number") state.topUpUsd = raw.topUpUsd;
     if (typeof raw.learning === "boolean") state.learning = raw.learning;
     if (raw.toolFeed && typeof raw.toolFeed.month === "string" && raw.toolFeed.tools) {
       state.toolFeed = { month: raw.toolFeed.month, tools: { ...raw.toolFeed.tools } };
