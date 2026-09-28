@@ -89,7 +89,7 @@ export type AskOffer = {
   summary: string;
   runs: string;
   kind: string;
-  needs: { env: string; label: string; url?: string; hint?: string; set: boolean }[];
+  needs: { env: string; label: string; url?: string; hint?: string; optional?: boolean; set: boolean }[];
 };
 
 export type Ask = {

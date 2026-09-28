@@ -251,7 +251,10 @@ body::before {
 /* "Deleted X · Undo": bottom centre, above the composer, for a few seconds. */
 .toast {
   position: fixed; left: 50%; bottom: calc(132px + env(safe-area-inset-bottom, 0px));
-  transform: translateX(-50%); z-index: 90;
+  /* `translate`, not `transform`: the rise animation sets transform, and a
+     keyframe's value replaces the whole property -- which left the toast
+     sitting half a width to the right of centre. */
+  translate: -50% 0; z-index: 90;
   display: flex; align-items: center; gap: 14px;
   max-width: calc(100vw - 32px); padding: 9px 10px 9px 16px;
   border-radius: 999px; background: var(--s3); border: 1px solid var(--border-strong);
@@ -5128,17 +5131,20 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 .mind-review-actions { display: flex; gap: 6px; }
 
 /* A scheduled task finished while you were elsewhere.
-   A slim line that sits on the message box and comes up from behind it: the
+   A slim card that sits on the message box and comes up from behind it: the
    container is the clip, its bottom edge is the box's top edge, so the toast
-   is only ever drawn above the box and leaves the way it arrived. Both
-   offsets come from the composer itself (App.tsx measures it into
-   --composer-h and --composer-r) rather than from a height guessed here. */
+   is only ever drawn above the box and leaves the way it arrived. It is
+   centred on the box rather than on the window -- the box is what it belongs
+   to, and with a dock open the two are not the same line. Every offset comes
+   from the composer itself (App.tsx measures it into --composer-h, -l and -w)
+   rather than from a size guessed here. */
 .notices {
   position: fixed; z-index: 60;
-  right: calc(var(--composer-r, 16px) + 10px);
+  left: calc(var(--composer-l, 0px) + var(--composer-w, 100vw) / 2);
+  transform: translateX(-50%);
   bottom: var(--composer-h, 104px);
   display: flex; flex-direction: column; gap: 6px;
-  width: min(340px, calc(100vw - 32px));
+  width: min(440px, calc(var(--composer-w, 100vw) - 16px));
   padding-top: 12px;                 /* room for the shadow above it */
   overflow: hidden;                  /* the message box's top edge is the line */
   pointer-events: none;
@@ -5162,20 +5168,18 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 .notice.is-ok { border-left-color: var(--live); }
 .notice.is-error { border-left-color: var(--danger); }
 .notice.is-leaving { animation: notice-down 0.3s var(--ease) both; }
+/* What the task was and what happened to it, as one run of text: the title
+   and the sentence after it flow together and wrap, up to three lines, and
+   are ellipsised after that. One line of it was not enough to tell which
+   task finished, which is the only thing the card is for. */
 .notice-main {
-  flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 7px;
-  padding: 2px 0; background: none; border: 0; font: inherit;
+  flex: 1; min-width: 0; padding: 2px 0; background: none; border: 0; font: inherit;
   text-align: left; cursor: pointer; color: var(--text-2);
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }
 .notice-main:disabled { cursor: default; }
-.notice-main b {
-  flex: 0 1 auto; max-width: 62%; color: var(--text); font-size: calc(12.5px * var(--ts, 1)); font-weight: 600;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.notice-main span {
-  flex: 1 1 auto; min-width: 0; font-size: calc(11.5px * var(--ts, 1)); color: var(--text-3);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
+.notice-main b { color: var(--text); font-size: calc(12.5px * var(--ts, 1)); font-weight: 600; }
+.notice-main span { font-size: calc(11.5px * var(--ts, 1)); color: var(--text-3); }
 .notice .notice-x { flex: 0 0 auto; width: 24px; height: 24px; border-radius: 50%; color: var(--text-3); }
 @media (prefers-reduced-motion: reduce) { .notice, .notice.is-leaving { animation: none; } }
 

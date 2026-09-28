@@ -99,12 +99,28 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  The mark beside the agent's words is sized against the man opposite it now.
-  It was drawn to fill the avatar's square -- 2.28 times the tile, a 27 pixel
-  triangle where the person's own icon, IconUser at 14 pixels, has ink 9.2 by
-  10.2 -- so it read as a logo taking a seat rather than the agent speaking.
-  It is a 27 pixel box now, which draws 11.9 by 10.6: the same height as the
-  man, a hair wider, which is what a wide flat triangle needs to look barely
-  the bigger of the two. The size is a calc() of --is, so the mark grows with
-  the icon size in Settings exactly as the man does, and it no longer overhangs
-  its tile at any size -- 27 pixels, 30 on a phone, 22 in the shot log.
+  webclaw, the MCP server that reads pages and sites over HTTP instead of
+  through a browser, works out of the box now. Its launcher is not a Node
+  program: it downloads a compiled binary, and its platform map has no musl
+  entry, so inside Autora's own Alpine container it fetched a glibc build
+  that cannot exec there and all the console could say was "MCP error -32000:
+  Connection closed". Autora fetches the right build itself, into its data
+  directory rather than a cache a container update wipes, and hands it to the
+  launcher through WEBCLAW_MCP_BIN -- once, at the first connect, and again if
+  the file has gone. It is in the catalog now too, so it can be offered in a
+  conversation or added from the Integrations page like any other, and its
+  Serper key is optional: everything but the search tool works without one, so
+  the card installs without it. When a key is optional it is simply left empty
+  instead of stopping the server -- a key you do have starts working the
+  moment it is saved. If such a launcher still cannot start, the error says
+  which build it wanted and where to put one.
+
+  The notice that rises above the message box when a scheduled task finishes
+  is centred on the box now rather than pinned to its right edge, which put it
+  a third of a width off centre and read as a clipped tooltip. It is also
+  three lines tall before it is ellipsised: one line was rarely enough to say
+  which task had finished and what happened to it, since the name was usually
+  the part that got cut. The delete toast's own centring is fixed with it --
+  the animation that lifts it into view sets transform, which replaced the
+  translate that centred it, so "Deleted X / Undo" sat half a width to the
+  right of centre with nothing wrong with the stylesheet to show for it.

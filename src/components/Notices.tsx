@@ -25,8 +25,10 @@ const OUT_MS = 320;
  * what happens while the page is open is shown -- the first poll is the
  * starting line, not a backlog.
  *
- * It sits on the message box and rises from behind it (styles.css does the
- * clipping), so it never covers the last thing said.
+ * It is centred on the message box and rises from behind it (styles.css does
+ * the clipping), so it never covers the last thing said -- and the sentence
+ * wraps to three lines before it is ellipsised, because the task's name is
+ * the whole point of the card and one line of it was usually cut off.
  */
 export function Notices({ onOpenSession }: { onOpenSession: (id: string) => void }) {
   const [shown, setShown] = useState<Notice[]>([]);
@@ -75,7 +77,7 @@ export function Notices({ onOpenSession }: { onOpenSession: (id: string) => void
               dismiss(n.id);
             }}
           >
-            <b>{n.title}</b>
+            <b>{n.title}</b>{" "}
             <span>{n.detail}</span>
           </button>
           <button

@@ -217,7 +217,9 @@ function OfferCard({
   const [keys, setKeys] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const missing = offer.needs.filter((n) => !n.set);
+  /* A key the server can do without (one that unlocks a single tool) is
+     offered but never demanded: the card installs without it. */
+  const missing = offer.needs.filter((n) => !n.set && !n.optional);
   const ready = missing.every((n) => (keys[n.env] ?? "").trim());
   const disabled = readOnly || sending || saving;
 
@@ -225,11 +227,14 @@ function OfferCard({
     setSaving(true);
     setProblem(null);
     try {
-      for (const need of missing) {
+      for (const need of offer.needs) {
+        if (need.set) continue;
+        const value = (keys[need.env] ?? "").trim();
+        if (!value) continue;                       // an optional key left empty
         const res = await fetch("/api/secrets", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: need.env, value: keys[need.env].trim() }),
+          body: JSON.stringify({ name: need.env, value }),
         });
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
@@ -277,6 +282,7 @@ function OfferCard({
                 {need.url && (
                   <> · <a href={need.url} target="_blank" rel="noreferrer">get one</a></>
                 )}
+                {need.optional && " · optional"}
               </span>
               <input
                 type="password"

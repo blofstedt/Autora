@@ -146,7 +146,7 @@ export type AskRequest = {
     summary: string;
     runs: string;
     kind: string;
-    needs: { env: string; label: string; url?: string; hint?: string; set: boolean }[];
+    needs: { env: string; label: string; url?: string; hint?: string; optional?: boolean; set: boolean }[];
   };
 };
 export type AskAnswer = { cancelled: boolean; choices: string[]; text: string; who: string };
@@ -1048,6 +1048,7 @@ const TOOLS: ToolSpec[] = [
               label: { type: "string", description: "What to call it on the card." },
               url: { type: "string", description: "Where to get one." },
               hint: { type: "string", description: "What it looks like." },
+              optional: { type: "boolean", description: "True when the server works without it, so the card installs without the key." },
             },
             required: ["env", "label"],
           },

@@ -58,6 +58,7 @@ function needsFrom(raw: unknown): CatalogNeed[] {
       label: String(n?.label ?? n?.env ?? "").trim(),
       url: n?.url ? String(n.url) : undefined,
       hint: n?.hint ? String(n.hint) : undefined,
+      ...(n?.optional === true ? { optional: true } : {}),
     }))
     .filter((n) => /^[A-Z_][A-Z0-9_]*$/.test(n.env) && n.label)
     .slice(0, 6);
@@ -102,7 +103,7 @@ export function planOffer(args: Record<string, any>): OfferPlan | string {
   const title = String(args.title ?? args.name).trim().slice(0, 60);
   const summary = String(args.summary ?? "").trim().slice(0, 200) || title;
   const needs = needsFrom(args.needs);
-  const env = Object.fromEntries(needs.map((n) => [n.env, `\${secret:${n.env}}`]));
+  const env = Object.fromEntries(needs.map((n) => [n.env, `\${secret:${n.env}${n.optional ? "?" : ""}}`]));
 
   // One the agent writes itself.
   if (Array.isArray(args.tools)) {

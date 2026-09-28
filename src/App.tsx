@@ -393,10 +393,12 @@ export function App() {
   }, [draft]);
 
   // The notices rise from behind the message box, so they need the box's own
-  // edge: --composer-h is how far its top is above the bottom of the window,
-  // --composer-r how far its right edge is from the right. Measured from the
-  // element rather than assumed, because the box grows with the textarea,
-  // carries a spend bar when there is one, and gives way to the live bar.
+  // edges: --composer-h is how far its top is above the bottom of the window,
+  // --composer-l and -w its left edge and width (which is how a notice is
+  // centred on the box rather than on the window), --composer-r how far its
+  // right edge is from the right. Measured from the element rather than
+  // assumed, because the box grows with the textarea, carries a spend bar
+  // when there is one, and gives way to the live bar.
   useEffect(() => {
     const el = composerEl.current;
     if (!el) return;
@@ -407,6 +409,8 @@ export function App() {
       const pad = parseFloat(getComputedStyle(el).paddingRight) || 0;
       const root = document.documentElement.style;
       root.setProperty("--composer-h", `${Math.round(window.innerHeight - rect.top)}px`);
+      root.setProperty("--composer-l", `${Math.round(rect.left)}px`);
+      root.setProperty("--composer-w", `${Math.round(rect.width)}px`);
       root.setProperty("--composer-r", `${Math.round(window.innerWidth - rect.right + pad)}px`);
     };
     measure();

@@ -22,6 +22,9 @@ export interface CatalogNeed {
   /** Where to get one. */
   url?: string;
   hint?: string;
+  /** The server works without it (a key that unlocks one tool, say), so it
+      is offered but not demanded: the card installs without it. */
+  optional?: boolean;
 }
 
 export interface CatalogEntry {
@@ -120,6 +123,27 @@ export const CATALOG: CatalogEntry[] = [
     args: ["-y", "@modelcontextprotocol/server-brave-search"],
     env: { BRAVE_API_KEY: "${secret:BRAVE_API_KEY}" },
     needs: [{ env: "BRAVE_API_KEY", label: "Brave Search API key", url: "https://brave.com/search/api/" }],
+  },
+  {
+    id: "webclaw",
+    name: "webclaw",
+    title: "webclaw",
+    summary: "A page as clean text, a whole site crawled, its sitemap, and structured data pulled out of it by schema.",
+    better: "Reads pages and sites over HTTP with the browser's own fingerprint, so bot walls and JavaScript-heavy pages come back as text instead of a browser session.",
+    keywords: ["webclaw", "scrape", "scraping", "crawl", "crawler", "sitemap", "read this page", "summarize this page", "extract from a page", "web search"],
+    command: "npx",
+    args: ["-y", "@webclaw/mcp"],
+    /* Only the search tool needs a backend, and the server starts without
+       one, so the key is optional: "?" keeps a missing secret from stopping
+       the connection. */
+    env: { SERPER_API_KEY: "${secret:SERPER_API_KEY?}" },
+    needs: [{
+      env: "SERPER_API_KEY",
+      label: "Serper.dev key, for the search tool alone",
+      url: "https://serper.dev",
+      hint: "serper key — optional, everything but search works without it",
+      optional: true,
+    }],
   },
   {
     id: "google-maps",
@@ -224,6 +248,8 @@ export function fillParams(entry: CatalogEntry, given: Record<string, string>): 
 /** Secret names a config refers to, wherever it refers to them. */
 export function secretRefs(values: (string | undefined)[]): string[] {
   const out = new Set<string>();
-  for (const v of values) for (const m of (v ?? "").matchAll(/\$\{secret:([A-Za-z_][A-Za-z0-9_]*)\}/g)) out.add(m[1]);
+  for (const v of values) for (const m of (v ?? "").matchAll(/\$\{secret:([A-Za-z_][A-Za-z0-9_]*)(\?)?\}/g)) {
+    if (!m[2]) out.add(m[1]);
+  }
   return [...out];
 }

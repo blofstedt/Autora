@@ -15,6 +15,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { log } from "./logs";
 import { CATALOG, fillParams } from "./mcpcatalog";
+import { launchHint, prepareStdioEnv } from "./mcplaunch";
 
 export interface McpServerConfig {
   id: string;
@@ -41,12 +42,19 @@ let secretLookup: (name: string) => string | null = () => null;
 export function setSecretLookup(lookup: (name: string) => string | null) {
   secretLookup = lookup;
 }
-const SECRET_REF = /\$\{secret:([A-Za-z_][A-Za-z0-9_]*)\}/g;
-/** Put the secrets in; names the ones that are missing. */
+/* ${secret:NAME} is required: without it the server is started wrong, so the
+   connection stops and says which key is missing. ${secret:NAME?} is optional
+   -- a key that unlocks one tool of a server that works without any (Brave's
+   search backend, say) -- and simply goes in empty when it is not saved. */
+const SECRET_REF = /\$\{secret:([A-Za-z_][A-Za-z0-9_]*)(\?)?\}/g;
+/** Put the secrets in; names the ones that are missing and are needed. */
 function resolveSecrets(value: string, missing: Set<string>): string {
-  return value.replace(SECRET_REF, (_m, name: string) => {
+  return value.replace(SECRET_REF, (_m, name: string, optional: string | undefined) => {
     const found = secretLookup(name);
-    if (found === null || found === "") { missing.add(name); return ""; }
+    if (found === null || found === "") {
+      if (!optional) missing.add(name);
+      return "";
+    }
     return found;
   });
 }
@@ -137,10 +145,14 @@ export async function connect(cfg: McpServerConfig): Promise<void> {
     }
     if (cfg.transport === "stdio") {
       if (!cfg.command?.trim()) throw new Error("No command to run.");
+      /* A launcher that downloads a binary for the platform can pick the
+         wrong one (see mcplaunch.ts); whatever has to be ready before it
+         starts is made ready here, and comes in through its environment. */
+      const ready = await prepareStdioEnv(cfg);
       const transport = new StdioClientTransport({
         command: cfg.command.trim(),
         args,
-        env: { ...(process.env as Record<string, string>), ...(env ?? {}) },
+        env: { ...(process.env as Record<string, string>), ...(env ?? {}), ...ready },
         stderr: "pipe",
       });
       transport.stderr?.on("data", (chunk: Buffer) => {
@@ -199,9 +211,11 @@ export async function connect(cfg: McpServerConfig): Promise<void> {
     entry.status = "error";
     // Node reports every network failure as "fetch failed"; the cause says which.
     const cause = err?.cause?.code ?? err?.cause?.message;
-    entry.error = err?.message === "fetch failed" && cause
+    const plain = err?.message === "fetch failed" && cause
       ? `Could not reach ${cfg.url} (${cause}).`
       : err?.message ?? String(err);
+    const hint = launchHint(cfg, plain);
+    entry.error = hint ? `${plain} ${hint}` : plain;
     entry.tools = [];
     log("error", "mcp", `${cfg.name}: ${entry.error}`);
     try { await (entry.client ?? client).close(); } catch { /* nothing to close */ }
