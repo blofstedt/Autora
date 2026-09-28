@@ -9,10 +9,18 @@ import {
   CLOSE_ON,
   DRAWN_BOX,
   MARK,
+  MORPH,
+  MORPH_MS,
   REST,
+  SETTLE_MS,
+  BLOOM_SPLINES,
+  type Closing,
   buildWait,
-  morphFrames,
+  caughtIn,
+  morphPhase,
+  settleHome,
   stackUnits,
+  times,
 } from "../lib/mark";
 
 /**
@@ -73,16 +81,6 @@ export type MarkState =
   /** The name these two shared before they were told apart. Still accepted. */
   | "working";
 
-/** How long the finishing bloom runs. Matches --settle-ms in styles.css. */
-const SETTLE_MS = 900;
-
-/** The morph, drawn as frames of the same 24 points. Twice round the cycle the
-    mark opens out into the circle inside it and closes again, and all the while
-    it turns; the loop has no seam because two thirds of a turn is a triangle's
-    own symmetry, so the last frame is the first one with its corners renamed. */
-const MORPH = morphFrames().join(";");
-const MORPH_MS = 9000;
-
 /** When the three quarters fall in, how long a fall takes, and when they are
     gone again. The last one has settled by 0.50, which leaves a third of the
     turn in the state worth watching: not a diagram of a triangle, and not the
@@ -93,8 +91,6 @@ const LAY_GAP = 0.085;
 const FALL = 0.155;
 const CLOSE_BY = 0.76;
 
-/** A keyTimes list, at the precision SVG is read at. */
-const times = (t: number[]) => t.map((v) => v.toFixed(4)).join(";");
 
 const STACK = stackUnits();
 
@@ -118,7 +114,8 @@ function useStillness(): boolean {
 }
 
 /**
- * Hold `settle` for a beat after work stops.
+ * Hold `settle` for a beat after work stops, and say where the mark was when
+ * the work landed.
  *
  * The caller only knows whether the agent is busy; it should not have to run a
  * timer to give the ending somewhere to go. This turns the falling edge of
@@ -126,31 +123,57 @@ function useStillness(): boolean {
  * lands at rest blooms: work that stops on a question, or on a failure, says
  * that instead.
  *
+ * A build is held to its own close (useWholeTurn above), so it is already drawn
+ * as the resting mark when its turn ends. A morph is a nine-second loop and the
+ * work underneath it can land anywhere in it, which used to cut the mark --
+ * open at the circle, most of the time -- back to the triangle a frame later,
+ * at the very moment the reply arriving was worth marking. So the ending also
+ * reports where in the cycle it was caught and how long coming home from there
+ * takes, and the drawing closes from there first: a quarter of a cycle is the
+ * most there ever is to come home from, and it is the whole of MORPH_CLOSE_MS,
+ * so the close is the mark's own movement at one speed rather than a cut.
+ *
  * `pulse` asks for the same bloom on demand: a counter, and each change plays
  * it once (someone came back to the tab; a memory was kept).
  */
-function useFinish(state: MarkState, pulse = 0): MarkState {
-  const [finishing, setFinishing] = useState(false);
+function useFinish(state: MarkState, pulse = 0): { shown: MarkState; close: Closing | null } {
+  const [finishing, setFinishing] = useState<{ close: Closing | null } | null>(null);
   const was = useRef(state === "working" ? "thinking" : state);
   const lastPulse = useRef(pulse);
+  /** When the morph's animation started, on the clock the timers use. The
+      animation restarts every time the mark is shown thinking (it is keyed by
+      the state), and so does this. */
+  const turning = useRef(0);
 
   useEffect(() => {
     const now = state === "working" ? "thinking" : state;
+    if (now === "thinking" && was.current !== "thinking") turning.current = performance.now();
     const left = was.current === "thinking" || was.current === "building"
       ? now === "rest" || now === "live"
       : false;
+    // Where the morph was caught, and how long coming home from there takes.
+    // A mark caught all but on the triangle has nothing worth closing: caughtIn
+    // says so, and the bloom alone says it better than a step of a hair would.
+    const close = left && was.current === "thinking"
+      ? caughtIn(morphPhase(turning.current, performance.now()))
+      : null;
     was.current = now;
     const asked = pulse !== lastPulse.current;
     lastPulse.current = pulse;
     if (!left && !asked) return;
-    setFinishing(true);
-    const timer = window.setTimeout(() => setFinishing(false), SETTLE_MS);
+    setFinishing({ close });
+    const timer = window.setTimeout(
+      () => setFinishing(null),
+      close === null ? SETTLE_MS : close.ms + SETTLE_MS,
+    );
     return () => window.clearTimeout(timer);
   }, [state, pulse]);
 
   const now = state === "working" ? "thinking" : state;
-  if (now === "thinking" || now === "building" || now === "waiting" || now === "error") return now;
-  return finishing ? "settle" : now;
+  if (now === "thinking" || now === "building" || now === "waiting" || now === "error") {
+    return { shown: now, close: null };
+  }
+  return finishing ? { shown: "settle", close: finishing.close } : { shown: now, close: null };
 }
 
 /**
@@ -269,7 +292,7 @@ export function AutoraMark({
   pulse?: number;
 }) {
   const still = useStillness();
-  const shown = useFinish(useWholeTurn(state, still), pulse);
+  const { shown, close } = useFinish(useWholeTurn(state, still), pulse);
   // Every instance needs its own gradient ids: two <defs> sharing an id on one
   // page is one gradient, and the second mark would quietly inherit the
   // first's animation.
@@ -282,8 +305,15 @@ export function AutoraMark({
 
   return (
     <span
-      className={`amark is-${shown} ${idle ? "is-idle" : ""} ${className}`.replace(/\s+/g, " ").trim()}
-      style={{ width: size, height: size, ...(attention ? { "--attention": attention.toFixed(2) } : {}) } as React.CSSProperties}
+      className={`amark is-${shown} ${close !== null ? "is-closing" : ""} ${idle ? "is-idle" : ""} ${className}`.replace(/\s+/g, " ").trim()}
+      style={{
+        width: size,
+        height: size,
+        ...(attention ? { "--attention": attention.toFixed(2) } : {}),
+        /* How long this ending's way home takes: the bloom in styles.css waits
+           for it, and it is as long as the mark has to travel. */
+        ...(close !== null ? { "--morph-close-ms": `${close.ms}ms` } : {}),
+      } as React.CSSProperties}
       aria-hidden="true"
     >
       <svg viewBox={`0 0 ${MARK.box} ${MARK.box}`} width={size} height={size} role="presentation">
@@ -388,14 +418,16 @@ export function AutoraMark({
             )}
             {!still && shown === "settle" && (
               <animate
-                key="settle"
+                key={close === null ? "settle" : "settle-home"}
                 attributeName="d"
-                values={BLOOM.join(";")}
-                dur={`${SETTLE_MS}ms`}
+                /* A settle that follows a morph is the way home and then the
+                   bloom in one run; one from rest is the bloom alone. */
+                {...(close === null
+                  ? { values: BLOOM.join(";"), dur: `${SETTLE_MS}ms`, keySplines: BLOOM_SPLINES }
+                  : settleHome(close))}
                 repeatCount="1"
                 fill="freeze"
                 calcMode="spline"
-                keySplines="0.2 0.9 0.2 1; 0.4 0 0.2 1; 0.4 0 0.2 1; 0.4 0 0.2 1"
               />
             )}
           </path>

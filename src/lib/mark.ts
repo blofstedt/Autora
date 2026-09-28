@@ -227,8 +227,19 @@ export const CIRCLE_FILLET = MARK.R / 2;
  * fixed in the mark's own box, so turning the shape walks its corners through
  * the colours rather than dragging the colours round with them.
  */
-export function morphFrames(
-  steps = 30,
+
+/** How long one pass of the cycle takes. */
+export const MORPH_MS = 9000;
+
+/** Frames the cycle is written out as: what the animation interpolates. */
+const MORPH_STEPS = 30;
+
+/** The cycle's own numbers, the same ones the frames have always been drawn
+    from, gathered so the single-frame reader and the frame list cannot drift. */
+const CYCLE = { breath: 0.3, turns: 2, pulses: 2 };
+
+/** Where the shared docs for these live. */
+type CycleOptions = {
   /**
    * How much of the shrinking the mark does not do.
    *
@@ -238,42 +249,138 @@ export function morphFrames(
    * takes most of that back, so the mark breathes instead of shrinking. 0 is
    * the pure incircle, 1 is a circle as tall as the triangle was.
    */
-  {
-    pulses = 2,
-    breath = 0.3,
-    /**
-     * How many thirds of a turn the cycle covers.
-     *
-     * Two, not one: the mark has to be sharp at turn 0, turn 120 and turn 240
-     * degrees and nowhere else, and those three are the same picture only for
-     * whole thirds. At one third the half-way sharp moment is the mark upside
-     * down, which is not the mark. Three-fold symmetry is what keeps the loop
-     * seamless either way.
-     */
-    turns = 2,
-  }: { pulses?: number; breath?: number; turns?: number } = {},
-): string[] {
+  breath?: number;
+  /**
+   * How many thirds of a turn the cycle covers.
+   *
+   * Two, not one: the mark has to be sharp at turn 0, turn 120 and turn 240
+   * degrees and nowhere else, and those three are the same picture only for
+   * whole thirds. At one third the half-way sharp moment is the mark upside
+   * down, which is not the mark. Three-fold symmetry is what keeps the loop
+   * seamless either way.
+   */
+  turns?: number;
+  /** How many times the mark opens out into the circle in one cycle. Each
+      opening is two still moments -- the circle and the triangle -- and the
+      cycle is drawn so that both of them are still. */
+  pulses?: number;
+};
+
+/** Reads `options` over the cycle's own numbers. */
+function cycle(options: CycleOptions = {}) {
+  return { ...CYCLE, ...options };
+}
+
+/**
+ * The mark's pose at one point in the cycle, as a path.
+ *
+ * The cycle is a function of the phase, not a list of pictures: the fillet
+ * opens along a cosine, the shape turns, and both are read off at whatever
+ * phase is asked for. `morphFrames` is this function sampled for the
+ * animation; `morphClose` reads poses out of it directly, which is how the
+ * close can start from the exact pose that is on screen rather than from the
+ * nearest frame the animation happens to hold.
+ */
+export function morphFrame(p: number, options: CycleOptions = {}): string {
+  const { breath, turns, pulses } = cycle(options);
+  // 0 at the triangle, 1 at the circle, `pulses` times round the cycle.
+  const open = Math.sin(Math.PI * pulses * p) ** 2;
+  const fillet = MARK.fillet + (CIRCLE_FILLET - MARK.fillet) * open;
+  // Drawn about the origin and moved afterwards, so the frame can be centred on
+  // its own outline. A shape that is also turning has no fixed idea of
+  // "half a fillet up": which corner is the apex changes, and with it the drawn
+  // box, so a fixed offset would let the mark bob as it turned.
+  const points = outlinePoints({
+    cy: 0,
+    fillet,
+    scale: 1 + breath * open,
+    turn: -Math.PI / 2 + (TAU / 3) * turns * p,
+  });
+  const [x0, y0, x1, y1] = bbox(points);
+  const dx = MARK.cx - (x0 + x1) / 2;
+  const dy = MARK.cy - (y0 + y1) / 2;
+  return pathOf(points.map(([x, y]) => [x + dx, y + dy]));
+}
+
+/** The cycle as the list of frames the animation interpolates between. */
+export function morphFrames(steps = MORPH_STEPS, options: CycleOptions = {}): string[] {
+  const frames: string[] = [];
+  for (let i = 0; i <= steps; i += 1) frames.push(morphFrame(i / steps, options));
+  return frames;
+}
+
+/** The cycle as one values string: what a working mark is drawn from. */
+export const MORPH = morphFrames().join(";");
+
+/** How far round the cycle the mark is, having been turning since `startedAt`. */
+export function morphPhase(startedAt: number, now: number): number {
+  const turning = now - startedAt;
+  return turning <= 0 ? 0 : (turning % MORPH_MS) / MORPH_MS;
+}
+
+/**
+ * The nearest phase that draws the sharp mark: a whole pulse of the cycle,
+ * where the fillet has closed back on the triangle.
+ *
+ * It is also the only place the mark may be left. A triangle has three-fold
+ * symmetry, so every one of these is the same picture, and a close that ends on
+ * one of them ends on the mark however the cycle was turning when it was asked.
+ */
+export function morphSharp(p: number, options: CycleOptions = {}): number {
+  const { pulses } = cycle(options);
+  return Math.min(1, Math.max(0, Math.round(p * pulses) / pulses));
+}
+
+/** How long the longest way home takes: a whole quarter of the cycle of it.
+    Every close takes this long per quarter, so the mark comes home at one speed
+    however far it has to travel. */
+export const MORPH_CLOSE_MS = 700;
+
+/** How many steps the way home is drawn in: 14 of 700ms is a frame every 50ms,
+    which is as fine as the morph's own 30 frames in 9s and smoother than the
+    mark ever moves under its own steam. */
+export const MORPH_CLOSE_STEPS = 14;
+
+/** How long the way home takes from the phase `from`, which is at most a
+    quarter of the cycle and at least nothing at all.
+ *
+ * Coming home at one *speed* rather than in one time is what keeps it from
+ * looking like either a snap or a stall: a mark caught at the circle is a
+ * quarter of a cycle away and takes the whole of MORPH_CLOSE_MS, while one
+ * caught a hair off the triangle is over almost at once, instead of a near miss
+ * sitting still for as long as the long one does.
+ */
+export function morphCloseMs(from: number, options: CycleOptions = {}): number {
+  const { pulses } = cycle(options);
+  const furthest = 1 / (2 * pulses);
+  return MORPH_CLOSE_MS * (Math.abs(morphSharp(from, options) - from) / furthest);
+}
+
+/**
+ * The way home: frames that carry the mark from the pose on screen back to the
+ * triangle, so an ending blooms from the mark rather than from a mark that was
+ * switched off mid-turn.
+ *
+ * The poses are the cycle's own, read along the phase towards the nearest sharp
+ * moment, so what plays is the movement the mark was already making, only
+ * faster -- a quarter of a cycle is the most there ever is to come home from.
+ * The phase is eased at both ends (a shape that arrives at the triangle still
+ * travelling is the flinch this is here to avoid), which is why the caller can
+ * interpolate the frames flat.
+ *
+ * It ends on the resting mark twice: once as the cycle draws it there, which is
+ * the same picture with its corners renamed, and once as REST itself, because
+ * that string is the frame the bloom begins from. A step between two identical
+ * pictures is no step at all.
+ */
+export function morphClose(from: number, steps = MORPH_CLOSE_STEPS, options: CycleOptions = {}): string[] {
+  const to = morphSharp(from, options);
   const frames: string[] = [];
   for (let i = 0; i <= steps; i += 1) {
-    const p = i / steps;
-    // 0 at the triangle, 1 at the circle, `pulses` times round the cycle.
-    const open = Math.sin(Math.PI * pulses * p) ** 2;
-    const fillet = MARK.fillet + (CIRCLE_FILLET - MARK.fillet) * open;
-    // Drawn about the origin and moved afterwards, so the frame can be centred
-    // on its own outline. A shape that is also turning has no fixed idea of
-    // "half a fillet up": which corner is the apex changes, and with it the
-    // drawn box, so a fixed offset would let the mark bob as it turned.
-    const points = outlinePoints({
-      cy: 0,
-      fillet,
-      scale: 1 + breath * open,
-      turn: -Math.PI / 2 + (TAU / 3) * turns * p,
-    });
-    const [x0, y0, x1, y1] = bbox(points);
-    const dx = MARK.cx - (x0 + x1) / 2;
-    const dy = MARK.cy - (y0 + y1) / 2;
-    frames.push(pathOf(points.map(([x, y]) => [x + dx, y + dy])));
+    const t = i / steps;
+    frames.push(morphFrame(from + (to - from) * (t * t * (3 - 2 * t)), options));
   }
+  frames.push(REST);
   return frames;
 }
 
@@ -285,6 +392,64 @@ export const BLOOM = [
   trianglePath({ scale: 1.03 }),
   REST,
 ];
+
+
+/** How long the finishing bloom runs. Kept in step with --settle-ms in
+    styles.css: the shape and the light behind it are animated apart and have to
+    land together. */
+export const SETTLE_MS = 900;
+
+/** The bloom's own easing: a breath out, and a slower fall back to rest. */
+export const BLOOM_SPLINES = "0.2 0.9 0.2 1; 0.4 0 0.2 1; 0.4 0 0.2 1; 0.4 0 0.2 1";
+
+/** How short a way home is worth drawing at all. Shorter than this the mark was
+    caught all but on the triangle, and the bloom on its own says it better than
+    a step of a few hundredths of a unit would -- which also keeps every close's
+    keyTimes far enough apart not to round onto one another. */
+export const CLOSE_LEAST_MS = 90;
+
+/** An ending that was caught mid-morph: the phase the mark was at, and how long
+    coming home from there takes -- as long as it has to travel. */
+export type Closing = { at: number; ms: number };
+
+/** Numbers as an animation attribute wants them. */
+export const times = (t: number[]) => t.map((v) => v.toFixed(4)).join(";");
+
+/** Which phase the mark was at when the work ended, if the ending is to come
+    home first, and how long that takes: null when there is nothing worth
+    closing -- a mark already on the triangle, or one caught so near it that the
+    bloom alone says it better. */
+export function caughtIn(from: number, options: CycleOptions = {}): Closing | null {
+  const ms = morphCloseMs(from, options);
+  return ms >= CLOSE_LEAST_MS ? { at: from, ms } : null;
+}
+
+/**
+ * The end of a turn that was caught mid-morph: the mark comes home, and the
+ * bloom plays from the mark it lands on.
+ *
+ * One animation rather than two, because two `d` animations on the one path
+ * fight over the attribute; the frame list is the close's followed by the
+ * bloom's, and the keyTimes give the close the first share of the run. The
+ * close's frames are already eased along the phase (see morphClose above), so
+ * they are interpolated flat and the shape has no speed at either end of them.
+ */
+export function settleHome({ at, ms: closeMs }: Closing) {
+  const close = morphClose(at);
+  const share = closeMs / (closeMs + SETTLE_MS);
+  const keys = close.map((_, i) => (i / (close.length - 1)) * share);
+  // The bloom's own moments, placed in the share of the run left to it. Not
+  // `Math.max(t, share)` and the like: a short close puts the bloom's first
+  // moment *before* the close's last one, and the bloom would start over the
+  // top of the close -- exactly the two animations fighting this avoids.
+  keys.push(...[0.25, 0.5, 0.75, 1].map((t) => share + (1 - share) * t));
+  return {
+    values: [...close, ...BLOOM.slice(1)].join(";"),
+    keyTimes: times(keys),
+    keySplines: [...close.slice(1).map(() => "0 0 1 1"), ...BLOOM_SPLINES.split("; ")].join("; "),
+    dur: `${closeMs + SETTLE_MS}ms`,
+  };
+}
 
 /**
  * The small copies that stack up into the mark, for the building animation.

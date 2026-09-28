@@ -21,6 +21,8 @@ import { LearnedCell } from "./LearnedCell";
 
 /** Within this many pixels of the bottom counts as "watching the live edge". */
 const STICK_ZONE = 80;
+/** How long a touch counts as still on the thread after the finger has gone. */
+const TOUCH_TAIL_MS = 260;
 
 /**
  * The conversation, and the work, in one column.
@@ -84,6 +86,53 @@ export function Thread({
     if (el) el.scrollTo({ top: el.scrollHeight, behavior });
   }, []);
 
+  /**
+   * Where the thread sits, readable from a handler that is not re-rendered.
+   */
+  const stuckRef = useRef(stuck);
+  stuckRef.current = stuck;
+
+  /**
+   * A finger on the thread outranks the live edge.
+   *
+   * Following the bottom during a gesture is what the swipe at the end of a
+   * working turn used to do: scroll events that had only gone a few pixels --
+   * still inside the stick zone, so still "following" -- kept the thread
+   * stuck, and every token, image or resize that landed while the finger was
+   * moving scrolled it back to the bottom underneath it. The reader lost the
+   * gesture and got a jitter instead, each yank feeding the next.
+   *
+   * So while a finger is down nothing moves the thread, and a drag that goes
+   * up lets go of the live edge at any distance from the bottom, not just past
+   * the stick zone. The flag is held a moment past the touch, because on a
+   * phone the scroll keeps going after the finger has gone (momentum) and that
+   * tail is the reader's too. One catch-up at the end: if the thread is still
+   * following, it lands on the live edge where it would have been.
+   */
+  const finger = useRef(false);
+  const fingerTimer = useRef<number | null>(null);
+
+  const touchStart = useCallback(() => {
+    if (fingerTimer.current !== null) {
+      window.clearTimeout(fingerTimer.current);
+      fingerTimer.current = null;
+    }
+    finger.current = true;
+  }, []);
+
+  const touchEnd = useCallback(() => {
+    if (fingerTimer.current !== null) window.clearTimeout(fingerTimer.current);
+    fingerTimer.current = window.setTimeout(() => {
+      fingerTimer.current = null;
+      finger.current = false;
+      if (stuckRef.current) toBottom("auto");
+    }, TOUCH_TAIL_MS);
+  }, [toBottom]);
+
+  useEffect(() => () => {
+    if (fingerTimer.current !== null) window.clearTimeout(fingerTimer.current);
+  }, []);
+
   // Layout effect so the jump happens in the same frame the content grows --
   // in a plain effect the reader sees one frame at the old offset.
   useLayoutEffect(() => {
@@ -93,9 +142,11 @@ export function Thread({
       if (isNewTurn || tailLength) setUnread(true);
       return;
     }
-    // A whole new turn is worth an animated move; a token landing is not, and
-    // re-targeting a smooth scroll 40 times a second feels seasick.
-    toBottom(isNewTurn ? "smooth" : "auto");
+    // A finger on the thread is in charge of where it sits; the catch-up is
+    // in touchEnd, once it has gone. A whole new turn is worth an animated
+    // move; a token landing is not, and re-targeting a smooth scroll 40 times
+    // a second feels seasick.
+    if (!finger.current) toBottom(isNewTurn ? "smooth" : "auto");
   }, [count, tailLength, busy, stuck, toBottom]);
 
   /** Where the scroller was last time, so a scroll that was not the reader's
@@ -108,6 +159,10 @@ export function Thread({
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= STICK_ZONE;
     const wentUp = el.scrollTop < lastTop.current;
     lastTop.current = el.scrollTop;
+    // The reader's own drag lets go of the live edge at any distance, inside
+    // the stick zone included: re-sticking on the same gesture is what made a
+    // swipe at the bottom jump back under the finger.
+    if (wentUp && finger.current) { setStuck(false); setUnread(false); return; }
     if (atBottom && !handsOnRef.current) { setStuck(true); setUnread(false); return; }
     // Only scrolling up lets go of the live edge. A smooth scroll to the
     // bottom reports every frame on the way down as "not at the bottom", and
@@ -131,7 +186,7 @@ export function Thread({
     const el = scrollerRef.current;
     const content = contentRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => { if (stuck) toBottom("auto"); });
+    const observer = new ResizeObserver(() => { if (stuck && !finger.current) toBottom("auto"); });
     observer.observe(el);
     if (content) observer.observe(content);
     return () => observer.disconnect();
@@ -154,7 +209,14 @@ export function Thread({
 
   return (
     <div className="thread-wrap">
-      <div className="thread" ref={scrollerRef} onScroll={onScroll}>
+      <div
+        className="thread"
+        ref={scrollerRef}
+        onScroll={onScroll}
+        onTouchStart={touchStart}
+        onTouchEnd={touchEnd}
+        onTouchCancel={touchEnd}
+      >
         <div className="thread-content" ref={contentRef}>
         {buckets.map((b) => (
           <TurnBucket

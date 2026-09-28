@@ -21,8 +21,21 @@ import {
   CLOSE_ON,
   DRAWN_BOX,
   MARK,
+  MORPH,
+  MORPH_CLOSE_MS,
+  MORPH_CLOSE_STEPS,
+  SETTLE_MS,
+  caughtIn,
+  MORPH_MS,
   REST,
   buildWait,
+  morphClose,
+  morphCloseMs,
+  morphFrame,
+  morphFrames,
+  morphPhase,
+  morphSharp,
+  settleHome,
   stackUnits,
 } from "../src/lib/mark";
 
@@ -171,6 +184,209 @@ test("the three quarters stack into the mark", () => {
   assert.ok(Math.abs(x1 - x0 - (DRAWN_BOX.x1 - DRAWN_BOX.x0)) < MARK.fillet);
   assert.ok(Math.abs(y1 - y0 - (DRAWN_BOX.y1 - DRAWN_BOX.y0)) < MARK.fillet * 2);
   assert.ok(y0 < DRAWN_BOX.y0 && y0 > DRAWN_BOX.y0 - MARK.fillet, "the stack does not reach the apex");
+});
+
+/** A drawing's points, in the order its path names them. */
+function pointsOf(d: string) {
+  const n = (d.match(/-?[\d.]+/g) ?? []).map(Number);
+  const out: [number, number][] = [];
+  for (let i = 0; i + 1 < n.length; i += 2) out.push([n[i], n[i + 1]]);
+  return out;
+}
+
+/** The same points, sorted, so two drawings can be compared as pictures rather
+    than as lists: the same outline written from a different corner, or with its
+    corners renamed, compares equal -- which is what the morph's whole loop
+    rests on. */
+function sorted(d: string) {
+  return pointsOf(d).sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+}
+
+/** How far a drawing moves between two frames, as the furthest any of its
+    points travels to the nearest point of the next one. Identical pictures are
+    0 however their points are ordered. */
+function stepOf(a: string, b: string) {
+  const B = pointsOf(b);
+  return Math.max(...pointsOf(a).map(([x, y]) => Math.min(...B.map(([u, v]) => Math.hypot(x - u, y - v)))));
+}
+
+/** The furthest the mark ever moves between two frames of its own morph: the
+    speed the drawing under its own steam already has, which a close is held to. */
+function morphStep() {
+  const frames = morphFrames();
+  let most = 0;
+  for (let i = 1; i < frames.length; i += 1) most = Math.max(most, stepOf(frames[i - 1], frames[i]));
+  return most;
+}
+
+/** The same outline, whatever order its points are written in and wherever the
+    path starts: a triangle showing its next corner is the mark. */
+function sameShape(a: string, b: string, tol = 0.02) {
+  const A = sorted(a);
+  const B = sorted(b);
+  return A.length === B.length && A.every((p, i) => Math.hypot(p[0] - B[i][0], p[1] - B[i][1]) < tol);
+}
+
+/** How far apart two drawings are, as the furthest pair of their points. */
+function spread(a: string, b: string) {
+  const A = sorted(a);
+  const B = sorted(b);
+  return Math.max(...A.map((p, i) => Math.hypot(p[0] - B[i][0], p[1] - B[i][1])));
+}
+
+test("the morph is the mark at both ends of every pulse, and centred between them", () => {
+  const frames = morphFrames();
+  assert.equal(frames.length, 31, "the cycle's frames");
+  assert.equal(MORPH, frames.join(";"), "the string the app draws is not these frames");
+
+  // Sharp at the start, the middle and the end of the cycle -- and those three
+  // are the same picture, which is what makes the loop seamless.
+  for (const p of [0, 0.5, 1]) {
+    assert.ok(sameShape(morphFrame(p), REST), `phase ${p} is not the mark`);
+  }
+  assert.ok(sameShape(frames[30], frames[0]), "the loop has a seam");
+
+  // A quarter of the way through a pulse it is out at the circle: as wide as
+  // it is tall.
+  const open = box(morphFrame(0.25), 0, 0);
+  assert.ok(Math.abs(open.x1 - open.x0 - (open.y1 - open.y0)) < MARK.fillet / 2, "the open mark is not round");
+
+  // And it never leaves its own centre on the way, however open it is.
+  for (const d of frames) {
+    const b = box(d, 0, 0);
+    assert.ok(Math.abs((b.x0 + b.x1) / 2 - MARK.cx) < 0.01, "the mark drifts sideways as it morphs");
+    assert.ok(Math.abs((b.y0 + b.y1) / 2 - MARK.cy) < 0.01, "the mark drifts up or down as it morphs");
+  }
+});
+
+test("the way home takes as long as the mark has to travel, and no longer", () => {
+  // A quarter of a cycle away -- the most there ever is -- takes the whole of
+  // MORPH_CLOSE_MS, at the circle and at either point the cycle is sharp.
+  for (const p of [0.25, 0.75]) {
+    assert.ok(Math.abs(morphCloseMs(p) - MORPH_CLOSE_MS) < 1e-9, `phase ${p} is not a whole close`);
+  }
+  // A mark already on the triangle has nothing to come home from.
+  for (const p of [0, 0.5, 1]) {
+    assert.ok(morphCloseMs(p) < 1e-9, `phase ${p} is not already home`);
+  }
+  // Half way out takes half as long: one speed, whatever it is coming from.
+  assert.ok(Math.abs(morphCloseMs(0.125) - MORPH_CLOSE_MS / 2) < 1e-9, "the close is not at one speed");
+
+  // Never longer than a quarter of the cycle's worth of travel, and never
+  // negative, wherever it is caught.
+  for (let i = 0; i <= 100; i += 1) {
+    const ms = morphCloseMs(i / 100);
+    assert.ok(ms >= 0 && ms <= MORPH_CLOSE_MS + 1e-9, `phase ${i / 100} takes ${ms.toFixed(0)}ms to come home`);
+  }
+});
+
+test("a settle that follows a morph comes home rather than cutting", () => {
+  // The fastest the mark moves under its own steam, which a close is held to:
+  // coming home is a settle, not a whip.
+  const fastest = morphStep();
+  const caught = [0.02, 0.12, 0.25, 0.31, 0.46, 0.5, 0.62, 0.75, 0.98];
+
+  for (const p of caught) {
+    const close = morphClose(p);
+    assert.equal(close.length, MORPH_CLOSE_STEPS + 2, "the way home's frames");
+    // It begins on the pose that was on screen, not near it.
+    assert.equal(close[0], morphFrame(p), `the close does not start where the morph was (${p})`);
+    // It ends on the mark, twice: as the cycle draws it there, and as REST,
+    // which is the frame the bloom starts from. So there is no jump into it.
+    assert.ok(sameShape(close[MORPH_CLOSE_STEPS], REST), `the way home does not arrive at the mark (${p})`);
+    assert.equal(close[MORPH_CLOSE_STEPS + 1], REST, `the way home does not end on the resting mark (${p})`);
+
+    let most = 0;
+    for (let i = 1; i < close.length; i += 1) most = Math.max(most, stepOf(close[i - 1], close[i]));
+    assert.ok(most <= fastest, `the way home from ${p} moves ${most.toFixed(2)} units in a frame, past the ${fastest.toFixed(2)} the morph itself moves`);
+    for (const d of close) {
+      const b = box(d, 0, 0);
+      assert.ok(Math.abs((b.x0 + b.x1) / 2 - MARK.cx) < 0.01, "the mark drifts sideways coming home");
+      assert.ok(Math.abs((b.y0 + b.y1) / 2 - MARK.cy) < 0.01, "the mark drifts up or down coming home");
+    }
+  }
+
+  // Caught at the circle, there is a real distance to come home from; caught
+  // at the mark, there is nothing to do.
+  assert.ok(spread(morphClose(0.25)[0], REST) > 5, "the way home starts too close to the mark to be seen");
+  assert.ok(spread(morphClose(0.5)[0], REST) < 0.02, "a mark already home is moved about");
+});
+
+test("the way home is never longer than a quarter of the cycle", () => {
+  for (let i = 0; i <= 40; i += 1) {
+    const p = i / 40;
+    const sharp = morphSharp(p);
+    assert.ok(Math.abs(sharp - p) <= 0.25 + 1e-9, `phase ${p} has ${Math.abs(sharp - p)} of cycle to come home`);
+    assert.ok(sameShape(morphFrame(sharp), REST), `phase ${sharp} is not the mark`);
+  }
+});
+
+test("the drawing's clock reads the phase the animation is at", () => {
+  assert.equal(morphPhase(1000, 1000), 0);
+  assert.ok(Math.abs(morphPhase(1000, 1000 + MORPH_MS / 4) - 0.25) < 1e-9);
+  assert.ok(Math.abs(morphPhase(1000, 1000 + MORPH_MS) - 0) < 1e-9, "a whole cycle is not back where it started");
+  assert.equal(morphPhase(2000, 1000), 0, "a clock that has not started is at the mark");
+  assert.equal(MORPH_MS, 9000, "the cycle's length moved");
+});
+
+test("the ending's animation is one an SVG will read, however far it has to come home", () => {
+  let drawn = 0;
+  for (let i = 0; i <= 200; i += 1) {
+    const close = caughtIn(i / 200);
+    if (close === null) continue;
+    drawn += 1;
+    const { values, keyTimes, keySplines, dur } = settleHome(close);
+    const frames = values.split(";");
+    const keys = keyTimes.split(";").map(Number);
+    const splines = keySplines.split("; ");
+
+    // The run is the close's frames and then the bloom's, with one keyTime per
+    // frame and one easing per step between them: three lists that an SVG
+    // checks against each other, and silently drops the animation over.
+    assert.equal(keys.length, frames.length, `keyTimes and frames disagree at ${close.at}`);
+    assert.equal(splines.length, frames.length - 1, `keySplines and frames disagree at ${close.at}`);
+    assert.equal(dur, `${close.ms + SETTLE_MS}ms`, "the run is not the close plus the bloom");
+
+    // KeyTimes have to be in order and inside the run, and must not round onto
+    // one another -- a repeated time is one frame that never gets drawn.
+    assert.equal(keys[0], 0, `the run does not start at once (${close.at})`);
+    assert.equal(keys[keys.length - 1], 1, `the run does not end on time (${close.at})`);
+    for (let k = 0; k < keys.length; k += 1) {
+      assert.ok(keys[k] >= 0 && keys[k] <= 1, `keyTime ${keys[k]} is off the run at ${close.at}`);
+      if (k > 0) assert.ok(keys[k] > keys[k - 1], `frames ${k - 1} and ${k} land on the same moment at ${close.at}`);
+    }
+
+    // It starts on the pose that was on screen, and ends on the mark.
+    assert.equal(frames[0], morphFrame(close.at), "the ending does not start where the morph was");
+    assert.equal(frames[frames.length - 1], REST, "the ending does not finish on the resting mark");
+  }
+  assert.ok(drawn > 150, `only ${drawn} of 201 phases had a way home worth drawing`);
+  // A mark caught all but on the triangle is left to the bloom.
+  assert.equal(caughtIn(0), null, "a mark already home is made to come home");
+  assert.equal(caughtIn(0.5), null, "a mark already home is made to come home");
+  assert.ok(caughtIn(0.25) !== null, "a mark caught at the circle is left to cut");
+});
+
+test("the component comes home before it blooms", () => {
+  const src = fs.readFileSync(path.join(import.meta.dirname, "..", "src", "components", "AutoraMark.tsx"), "utf8");
+  assert.ok(src.includes("caughtIn(morphPhase(turning.current, performance.now()))"), "the settle no longer asks where the morph was");
+  assert.ok(src.includes("settleHome(close)"), "the way home is not drawn");
+  assert.ok(src.includes("close.ms + SETTLE_MS"), "the settle is not the close plus the bloom");
+  assert.ok(src.includes('"settle-home"'), "the settle's animation is not keyed by the way home");
+  assert.ok(src.includes("is-closing"), "the wash is not told the close is happening");
+  assert.ok(src.includes('"--morph-close-ms"'), "the bloom is not told how long to wait");
+  assert.ok(!/const MORPH_MS/.test(src), "the morph's clock is written out by hand in the component again");
+
+  // The wash waits for the mark: styles.css and lib/mark.ts have to agree on
+  // how long the longest close is and how long the bloom runs, and each pair is
+  // one number away from drifting apart.
+  const css = fs.readFileSync(path.join(import.meta.dirname, "..", "src", "styles.css"), "utf8");
+  assert.ok(css.includes(`--morph-close-ms: ${MORPH_CLOSE_MS}ms`), "styles.css no longer knows how long a close is");
+  assert.ok(css.includes(`--settle-ms: ${SETTLE_MS}ms`), "styles.css no longer knows how long the bloom is");
+  assert.ok(
+    /\.amark\.is-settle\.is-closing[^{]*\{[^}]*animation-delay: var\(--morph-close-ms\)/.test(css),
+    "the bloom is not held back for the close",
+  );
 });
 
 console.log(`\n${passed} passed`);

@@ -545,7 +545,12 @@ body::before {
    be dragged sideways on a phone. Wide content (a terminal, a diff) scrolls
    inside its own card instead. */
 .thread {
-  flex: 1; overflow-y: auto; overflow-x: hidden; overscroll-behavior-x: none;
+  flex: 1; overflow-y: auto; overflow-x: hidden;
+  /* Neither axis chains to the page. Vertically this is the pan at the end of
+     the thread: handed to the document, a phone's browser takes it as a page
+     scroll and slides its own URL bar in and out, the viewport changes height
+     under an app that is 100dvh, and the thread jumps as it relayouts. */
+  overscroll-behavior-x: none; overscroll-behavior-y: contain;
   padding: 16px 16px 48px;
 }
 .thread-content {
@@ -3136,8 +3141,9 @@ label + .jf-hint { margin-top: -5px; }
    ============================================================================ */
 
 .amark {
-  /* Kept in step with SETTLE_MS in AutoraMark.tsx. */
+  /* Kept in step with SETTLE_MS and MORPH_CLOSE_MS in AutoraMark.tsx. */
   --settle-ms: 900ms;
+  --morph-close-ms: 700ms;
   display: inline-grid;
   place-items: center;
   flex: 0 0 auto;
@@ -3173,6 +3179,14 @@ label + .jf-hint { margin-top: -5px; }
 .amark.is-thinking .amark-shape,
 .amark.is-building .amark-shape { filter: drop-shadow(0 0 7px rgba(var(--glow-rgb),  0.75)); }
 .amark.is-settle .amark-shape { animation: amarkLand var(--settle-ms) var(--ease) 1; }
+
+/* A settle that follows a morph starts while the mark is still on its way home
+   from wherever the morph was caught (see useFinish in AutoraMark.tsx). The
+   bloom is held back for the close, so the light lands when the mark does and
+   not over the top of it; --morph-close-ms is kept in step with MORPH_CLOSE_MS
+   in lib/mark.ts, and the run as a whole is that plus --settle-ms. */
+.amark.is-settle.is-closing .amark-wash,
+.amark.is-settle.is-closing .amark-shape { animation-delay: var(--morph-close-ms); }
 
 @keyframes amarkBreathe {
   0%, 100% { transform: scale(0.52); opacity: 0.32; }
@@ -4551,6 +4565,34 @@ html[data-font="mono"] body { font-size: 13.5px; }
   .rail-icon-btn { width: 38px; height: 38px; }
   .sm-theme { padding: 10px 10px; font-size: 14px; }
   .sm-font { padding: 11px 8px; font-size: 14px; }
+}
+
+/* The phone's drawer: nine pages, the context ring, what it remembers, the
+   machine and what is running on its own all have to sit on one screen --
+   and a phone is shorter than it looks once the safe areas and the browser's
+   own chrome are taken out of it. So the drawer runs a step tighter than the
+   rail in a desktop margin, which has all the height it wants. Every page
+   still gets a full-width 41px tap target, and the vitals drop the line of
+   detail under each bar, which the System page it opens has in full. */
+@media (pointer: coarse) {
+  .rail.is-drawer .rail-top { height: 46px; }
+  .rail.is-drawer .rail-scroll { padding: 6px 8px; }
+  .rail.is-drawer .rail-nav { gap: 0; }
+  .rail.is-drawer .rail-nav-item { padding: 8px 12px; }
+  .rail.is-drawer .rail-divider { margin: 5px 10px; }
+  .rail.is-drawer .rail-foot { gap: 5px; padding-top: 10px; }
+  .rail.is-drawer .rail-ctx,
+  .rail.is-drawer .rail-mem,
+  .rail.is-drawer .rail-vitals { padding: 8px 11px; }
+  .rail.is-drawer .rail-ctx { gap: 10px; }
+  .rail.is-drawer .rail-ctx-ring { width: 40px; height: 40px; }
+  .rail.is-drawer .rail-ctx-text { line-height: 1.25; }
+  .rail.is-drawer .rail-mem { gap: 6px; }
+  .rail.is-drawer .rail-mem-ask .btn { height: 28px; }
+  .rail.is-drawer .rail-vitals { gap: 9px; }
+  .rail.is-drawer .rail-vital { gap: 3px; }
+  .rail.is-drawer .rail-vital-detail { display: none; }
+  .rail.is-drawer .rail-act-row { padding: 7px 12px; }
 }
 
 /* ── pages ── */
