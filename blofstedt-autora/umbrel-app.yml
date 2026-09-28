@@ -99,14 +99,12 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  The incognito mask is the hat and glasses you would recognise.
-  The glyph comes from Lucide -- its hat-glasses, the one tagged incognito and
-  private browsing -- instead of being drawn here, because the shape it
-  replaces had a brim 18.4 wide over a body 12 tall, and at the 12 to 15
-  pixels that button is really drawn at it read as a squashed bar. Lucide
-  draws on the same 24 pixel grid with round caps and joins, so it sits with
-  the rest of the set without looking collected from somewhere else. Same icon,
-  same places: beside the plus, in the sessions list and in the header badge.
-  The version in package-lock.json is checked and bumped again -- the last
-  release raised package.json without it, so the check that reads the manifest
-  failed on that push even though the image and the update were built.
+  The mark beside the agent's words is sized against the man opposite it now.
+  It was drawn to fill the avatar's square -- 2.28 times the tile, a 27 pixel
+  triangle where the person's own icon, IconUser at 14 pixels, has ink 9.2 by
+  10.2 -- so it read as a logo taking a seat rather than the agent speaking.
+  It is a 27 pixel box now, which draws 11.9 by 10.6: the same height as the
+  man, a hair wider, which is what a wide flat triangle needs to look barely
+  the bigger of the two. The size is a calc() of --is, so the mark grows with
+  the icon size in Settings exactly as the man does, and it no longer overhangs
+  its tile at any size -- 27 pixels, 30 on a phone, 22 in the shot log.

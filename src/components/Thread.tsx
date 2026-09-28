@@ -675,13 +675,14 @@ const Reply = memo(function Reply({
 
   return (
     <div className={`msg agent ${working ? "is-working" : ""}`.trim()}>
-      {/* 62 boxes is a 27px triangle: the mark fills 14.04 of its own 32-unit
-          box, so a 27px box draws an 11.8px mark -- under half the tile the
-          person's own avatar sits in. This is that tile's size. The stylesheet
-          owns the real number (it follows the tile down to a phone); what is
-          here is what a page without it gets. See the .avatar rules. */}
+      {/* 27 boxes is a 11.9 x 10.6 triangle: the mark fills 14.04 of its own
+          32-unit box, and the man opposite it (IconUser, a 14px glyph) has ink
+          9.2 x 10.2 -- so this is a hair the bigger of the two, not the
+          tile-filling mark it was. The stylesheet owns the real number, in
+          --is so it follows the icon size in Settings; what is here is what a
+          page without it gets. See the .msg.agent .avatar .amark rules. */}
       <span className="avatar">
-        <AutoraMark size={62} state={working ? phase : "rest"} />
+        <AutoraMark size={27} state={working ? phase : "rest"} />
       </span>
       <div className="msg-body">
         <div className="msg-who">autora</div>
