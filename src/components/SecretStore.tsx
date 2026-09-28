@@ -13,7 +13,7 @@ import {
   IconAlert,
   IconTerminal,
   IconRepeat,
-  IconSpark,
+  IconMark,
 } from "./Icons";
 
 export interface SecretItem {
@@ -334,7 +334,7 @@ export function SecretStore() {
       <div style={{ marginBottom: "16px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "8px" }}>
           <span style={{ color: "var(--accent)" }}>
-            <IconSpark size={13} />
+            <IconMark size={13} />
           </span>
           <span style={{ fontSize: "11.5px", fontWeight: 600, color: "var(--text-2)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
             Quick Presets

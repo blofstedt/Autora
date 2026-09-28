@@ -4,6 +4,7 @@ import { turnItems } from "../lib/steps";
 import { isPicture, sizeLabel, type Attachment } from "../lib/attachments";
 import { IconAlert, IconArrow, IconArrowDown, IconChevron, IconFile, IconTerminal, IconUser } from "./Icons";
 import { AutoraMark } from "./AutoraMark";
+import type { MarkPhase } from "../lib/activity";
 import { TerminalCell } from "./TerminalCell";
 import { ScreencastCell } from "./ScreencastCell";
 import { FileCell } from "./FileCell";
@@ -35,6 +36,7 @@ export function Thread({
   buckets,
   busy,
   doing,
+  phase = "thinking",
   sessionId,
   liveBrowserSeq,
   live,
@@ -49,6 +51,8 @@ export function Thread({
   busy: boolean;
   /** What it is on right now, in a few words (see lib/activity.ts). */
   doing?: string | null;
+  /** Which of the mark's two busy states that is: thinking or building. */
+  phase?: MarkPhase;
   sessionId: string;
   liveBrowserSeq: number | null;
   live: boolean;
@@ -162,11 +166,12 @@ export function Thread({
             onPermissionDecide={onPermissionDecide}
             onRunAutonomous={onRunAutonomous}
             {...work}
+            phase={phase}
           />
         ))}
         {busy && (
           <div className="working" aria-live="polite">
-            <AutoraMark size={16} state="working" className="working-mark" />
+            <AutoraMark size={16} state={phase} className="working-mark" />
             {/* Keyed on the words, so each new step fades in over the last
                 rather than snapping -- a train of thought, not a counter. */}
             <span className="working-what" key={doing || "working"}>{doing || "Working"}</span>
@@ -243,6 +248,7 @@ const TurnBucket = memo(function TurnBucket({
   sessionId,
   liveBrowserSeq,
   live,
+  phase,
   onPermissionDecide,
   onRunAutonomous,
   ...work
@@ -251,6 +257,7 @@ const TurnBucket = memo(function TurnBucket({
   sessionId: string;
   liveBrowserSeq: number | null;
   live: boolean;
+  phase: MarkPhase;
   onPermissionDecide?: (requestId: string, approved: boolean, response?: string) => void;
   onRunAutonomous?: (task: KanbanTask) => void;
 } & WorkState) {
@@ -282,6 +289,7 @@ const TurnBucket = memo(function TurnBucket({
           liveBrowserSeq={liveBrowserSeq}
           live={live}
           open={bucket.open}
+          phase={phase}
           onPermissionDecide={onPermissionDecide}
           onRunAutonomous={onRunAutonomous}
           {...work}
@@ -311,6 +319,8 @@ type CellContext = {
   live: boolean;
   /** The turn this belongs to is still running. */
   open: boolean;
+  /** Which of the mark's two busy states suits what it is doing. */
+  phase: MarkPhase;
   onPermissionDecide?: (requestId: string, approved: boolean, response?: string) => void;
   onRunAutonomous?: (task: KanbanTask) => void;
 } & WorkState;
@@ -420,6 +430,7 @@ const CellView = memo(function CellView({
   liveBrowserSeq,
   live,
   open,
+  phase,
   active,
   onPermissionDecide,
   onRunAutonomous,
@@ -434,6 +445,7 @@ const CellView = memo(function CellView({
   liveBrowserSeq: number | null;
   live: boolean;
   open: boolean;
+  phase: MarkPhase;
   active: boolean;
   onPermissionDecide?: (requestId: string, approved: boolean, response?: string) => void;
   onRunAutonomous?: (task: KanbanTask) => void;
@@ -446,6 +458,7 @@ const CellView = memo(function CellView({
           thinking={cell.turn.thinking}
           memories={cell.memories}
           working={active}
+          phase={phase}
           onOpenMind={onOpenMind}
           onOpenSettings={cell.turn.setup ? onOpenSettings : undefined}
         />
@@ -489,6 +502,7 @@ const CellView = memo(function CellView({
               liveBrowserSeq={liveBrowserSeq}
               live={live}
               open={open}
+              phase={phase}
               onPermissionDecide={onPermissionDecide}
               onRunAutonomous={onRunAutonomous}
               driving={driving}
@@ -558,6 +572,7 @@ const Reply = memo(function Reply({
   thinking,
   memories = NO_MEMORIES,
   working,
+  phase = "thinking",
   onOpenMind,
   onOpenSettings,
 }: {
@@ -570,6 +585,9 @@ const Reply = memo(function Reply({
       own ending when it drops, so the reply visibly lands rather than just
       stopping. */
   working?: boolean;
+  /** Whether it is waiting on something (thinking) or a step is in flight
+      (building) -- the two busy states of the mark. */
+  phase?: MarkPhase;
 }) {
   const [open, setOpen] = useState(false);
   if (!text && !thinking && memories.length === 0) return null;
@@ -577,7 +595,7 @@ const Reply = memo(function Reply({
   return (
     <div className={`msg agent ${working ? "is-working" : ""}`.trim()}>
       <span className="avatar">
-        <AutoraMark size={27} state={working ? "working" : "rest"} />
+        <AutoraMark size={27} state={working ? phase : "rest"} />
       </span>
       <div className="msg-body">
         <div className="msg-who">autora</div>

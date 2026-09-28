@@ -3,7 +3,7 @@ import type { Widget } from "../lib/derive";
 import {
   DEFAULT_PALETTE, usesThree, widgetDocument, WIDGET_MAX_HEIGHT, type WidgetPalette,
 } from "../lib/widget";
-import { IconAlert, IconMaximize, IconMinimize, IconRotateCcw, IconSpark } from "./Icons";
+import { IconAlert, IconMaximize, IconMinimize, IconRotateCcw, IconMark } from "./Icons";
 
 /**
  * Three.js as a data: URL, fetched once for every widget in the tab.
@@ -170,7 +170,7 @@ export function WidgetCell({
   return (
     <section className={`cell widget ${expanded ? "is-expanded" : ""} ${errors.length ? "is-bad" : ""}`}>
       <header className="cell-top">
-        <IconSpark size={13} />
+        <IconMark size={13} />
         <span className="shot-where">{widget.title}</span>
         {needsThree && <i className="cell-chip">3D</i>}
         <span className="spacer" />

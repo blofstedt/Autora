@@ -4,7 +4,7 @@ import {
   type Knowledge, type MemoryRecord,
 } from "../lib/memory";
 import type { MemoryMark } from "../lib/derive";
-import { IconBrain, IconSpark, IconX } from "./Icons";
+import { IconBrain, IconMark, IconX } from "./Icons";
 
 /**
  * Everything the agent knows, as a graph you can argue with.
@@ -208,13 +208,13 @@ export function KnowledgeWeb({
 
         {!data || !data.enabled ? (
           <div className="empty">
-            <span className="empty-ring"><IconSpark size={20} /></span>
+            <span className="empty-ring"><IconMark size={20} /></span>
             <h3>Memory is off</h3>
             <p>Start the harness with a memory store to let the agent keep what it learns.</p>
           </div>
         ) : filtered && filtered.records.length === 0 ? (
           <div className="empty">
-            <span className="empty-ring"><IconSpark size={20} /></span>
+            <span className="empty-ring"><IconMark size={20} /></span>
             <h3>{query ? "Nothing matches" : "Nothing learned yet"}</h3>
             <p>
               {query

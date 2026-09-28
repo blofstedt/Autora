@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { SessionRow } from "../Sessions";
 import {
-  IconCheck, IconDownload, IconFile, IconSpark, IconTrash, IconUpload, IconUser,
+  IconCheck, IconDownload, IconFile, IconMark, IconTrash, IconUpload, IconUser,
 } from "../Icons";
 
 type Artifact = {
@@ -301,7 +301,7 @@ export function ArtifactsPage({
         )}
 
         {section(
-          "Made by Autora", <IconSpark size={14} />, made,
+          "Made by Autora", <IconMark size={14} />, made,
           "Nothing yet. Images Autora generates and files it saves for you appear here.",
         )}
 

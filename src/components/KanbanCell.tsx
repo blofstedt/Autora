@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import type { KanbanBoard, KanbanTask } from "../lib/derive";
-import { IconCheck, IconChevron, IconGrip, IconSpark } from "./Icons";
+import { IconCheck, IconChevron, IconGrip, IconMark } from "./Icons";
 
 type ColumnKey = "todo" | "doing" | "done";
 
@@ -229,7 +229,7 @@ export function KanbanCell({
       <div className="kanban-header">
         <div className="kanban-title">
           <span className="kanban-badge">
-            <IconSpark size={12} />
+            <IconMark size={12} />
           </span>
           <b>{board.title}</b>
           <span className="kanban-count">{currentTasks.length} tasks</span>
@@ -447,7 +447,7 @@ export function KanbanCell({
                 {isColOver && draggingTaskId && (
                   <div className="kanban-drop-placeholder">
                     <span className="kanban-drop-icon">
-                      <IconSpark size={11} />
+                      <IconMark size={11} />
                     </span>
                     <span>Drop into {col.label}</span>
                   </div>

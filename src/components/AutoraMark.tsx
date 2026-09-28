@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useThemeColors, type ThemeColors } from "../lib/theme";
+import { BLOOM, MARK, REST, flipFrames, stackingUnits } from "../lib/mark";
 
 /**
  * The Autora mark, alive.
@@ -8,17 +9,27 @@ import { useThemeColors, type ThemeColors } from "../lib/theme";
  * agent's side of the conversation, the live button, the empty session -- and
  * it carries state by how it moves rather than by a second indicator parked
  * next to it. A blinking dot says "something is on"; a mark that breathes,
- * turns and warms through the brand's colours says *what* is on, in the place
+ * flips and warms through the brand's colours says *what* is on, in the place
  * you were already looking.
  *
- * Six states:
+ * The shape itself is in lib/mark.ts -- one equilateral triangle with rounded
+ * corners, the same geometry the favicon, the Umbrel tile and the home-screen
+ * icons are rendered from. Seven states:
  *
- *   rest     still, cool, quietly lit -- nothing is happening
- *   live     slow breathing, the microphone is open
- *   working  the points morph and the gradient turns, the model is writing
- *   settle   a single bloom as the work lands, then back to rest
- *   waiting  a slow, warm beckon -- it is stopped on something only you can do
- *   error    one dim shiver as a turn fails, then back to rest
+ *   rest      still, cool, quietly lit -- nothing is happening
+ *   live      slow breathing, the microphone is open
+ *   thinking  it turns over on its own axis, again and again, and the
+ *             gradient turns with it -- the model is working something out
+ *   building  the mark stacks itself together out of smaller copies of
+ *             itself, bottom row first, while colours run across the pieces
+ *   settle    a single bloom as the work lands, then back to rest
+ *   waiting   a slow, warm beckon -- it is stopped on something only you can do
+ *   error     one dim shiver as a turn fails, then back to rest
+ *
+ * `thinking` and `building` are the two ways of being busy, and the difference
+ * is worth the extra state: a mark that flips is deliberating, one that is
+ * assembling itself is doing. Callers that know only that the agent is busy
+ * can keep passing "working", which is what the two of them replaced.
  *
  * The app's one presence (the mark in the sidebar) also takes `idle`: at rest
  * it breathes very slowly and now and then catches the light, so something
@@ -31,46 +42,33 @@ import { useThemeColors, type ThemeColors } from "../lib/theme";
  * to rest on its own -- the animation finishes rather than being switched off.
  */
 
-export type MarkState = "rest" | "live" | "working" | "settle" | "waiting" | "error";
+export type MarkState =
+  | "rest"
+  | "live"
+  | "thinking"
+  | "building"
+  | "settle"
+  | "waiting"
+  | "error"
+  /** The name these two shared before they were told apart. Still accepted. */
+  | "working";
 
 /** How long the finishing bloom runs. Matches --settle-ms in styles.css. */
 const SETTLE_MS = 900;
 
-const TAU = Math.PI * 2;
+/** The flip, sampled from a rotation and looping seamlessly because its first
+    and last frames are both the upright mark. */
+const FLIP = flipFrames().join(";");
+const FLIP_MS = 4600;
 
-/**
- * A four-pointed spark on the 32-unit grid the icon set uses.
- *
- * Every variant is built from the same eight points in the same order, which
- * is what makes them morphable: SVG interpolates `d` pairwise, so two shapes
- * only blend if their commands line up one for one. Vary the radii and the
- * rotation, never the structure.
- */
-function spark(outer: number, inner: number, turn = 0): string {
-  const points: string[] = [];
-  for (let i = 0; i < 8; i += 1) {
-    const r = i % 2 === 0 ? outer : inner;
-    const a = (i / 8) * TAU + turn;
-    points.push(`${(16 + r * Math.sin(a)).toFixed(2)} ${(16 - r * Math.cos(a)).toFixed(2)}`);
-  }
-  return `M${points[0]}L${points.slice(1).join("L")}Z`;
-}
+/** One turn of the building animation: stack up, hold, come apart, again. */
+const BUILD_MS = 3600;
 
-const REST = spark(9, 2.6);
-
-/** The morph loop. Opens and closes on REST so the cycle seams invisibly and
-    so stopping mid-flight never lands far from where the mark sits at rest. */
-const MORPH = [
-  REST,
-  spark(9.5, 4.1, 0.13),
-  spark(8.1, 2.1, -0.11),
-  spark(9.7, 3.4, 0.06),
-  spark(8.6, 2.9, -0.05),
-  REST,
-].join(";");
-
-/** The bloom: out, and softly back. */
-const BLOOM = [REST, spark(10.4, 4.6, 0.09), spark(9.2, 3.0, 0.02), REST].join(";");
+/** Below this the pieces are too small to be seen as pieces, so the mark is
+    built from four rather than nine. */
+const COARSE_BELOW = 22;
+const FINE = stackingUnits(3);
+const COARSE = stackingUnits(2);
 
 /** Brand violet, cyan and orchid, turning through each other. The green that
     used to mean "live" is deliberately absent -- state is carried by motion. */
@@ -96,21 +94,24 @@ function useStillness(): boolean {
  *
  * The caller only knows whether the agent is busy; it should not have to run a
  * timer to give the ending somewhere to go. This turns the falling edge of
- * "working" into a bloom that expires by itself. Only an ending that lands at
- * rest blooms: work that stops on a question, or on a failure, says that
- * instead.
+ * either busy state into a bloom that expires by itself. Only an ending that
+ * lands at rest blooms: work that stops on a question, or on a failure, says
+ * that instead.
  *
  * `pulse` asks for the same bloom on demand: a counter, and each change plays
  * it once (someone came back to the tab; a memory was kept).
  */
 function useFinish(state: MarkState, pulse = 0): MarkState {
   const [finishing, setFinishing] = useState(false);
-  const was = useRef(state);
+  const was = useRef(state === "working" ? "thinking" : state);
   const lastPulse = useRef(pulse);
 
   useEffect(() => {
-    const left = was.current === "working" && (state === "rest" || state === "live");
-    was.current = state;
+    const now = state === "working" ? "thinking" : state;
+    const left = was.current === "thinking" || was.current === "building"
+      ? now === "rest" || now === "live"
+      : false;
+    was.current = now;
     const asked = pulse !== lastPulse.current;
     lastPulse.current = pulse;
     if (!left && !asked) return;
@@ -119,8 +120,55 @@ function useFinish(state: MarkState, pulse = 0): MarkState {
     return () => window.clearTimeout(timer);
   }, [state, pulse]);
 
-  if (state === "working" || state === "waiting" || state === "error") return state;
-  return finishing ? "settle" : state;
+  const now = state === "working" ? "thinking" : state;
+  if (now === "thinking" || now === "building" || now === "waiting" || now === "error") return now;
+  return finishing ? "settle" : now;
+}
+
+/** One small copy of the mark, arriving: drops in from below, pops to size,
+    holds the row it belongs to, and comes apart with the rest at the end. */
+function Piece({ d, x, y, at, fill }: { d: string; x: number; y: number; at: number; fill: string }) {
+  // Appears at `at`, has settled by `at + 0.13`, and dissolves at 0.86.
+  const times = [0, at, at + 0.045, at + 0.13, 0.86, 1].map((t) => t.toFixed(3)).join(";");
+  const ease = "0 0 1 1;0.16 1.15 0.32 1;0 0 1 1;0 0 1 1;0.4 0 0.6 1";
+
+  return (
+    <g transform={`translate(${x.toFixed(3)} ${y.toFixed(3)})`}>
+      <g>
+        <animateTransform
+          attributeName="transform"
+          type="translate"
+          dur={`${BUILD_MS}ms`}
+          repeatCount="indefinite"
+          calcMode="spline"
+          keyTimes={times}
+          keySplines={ease}
+          values="0 2.4;0 2.4;0 0;0 0;0 0;0 0.5"
+        />
+        <g>
+          <animateTransform
+            attributeName="transform"
+            type="scale"
+            dur={`${BUILD_MS}ms`}
+            repeatCount="indefinite"
+            calcMode="spline"
+            keyTimes={times}
+            keySplines={ease}
+            values="0.4;0.4;1.16;1;1;0.82"
+          />
+          <path d={d} fill={fill}>
+            <animate
+              attributeName="opacity"
+              dur={`${BUILD_MS}ms`}
+              repeatCount="indefinite"
+              keyTimes={times}
+              values="0;0;1;1;1;0"
+            />
+          </path>
+        </g>
+      </g>
+    </g>
+  );
 }
 
 export function AutoraMark({
@@ -149,14 +197,14 @@ export function AutoraMark({
   const uid = useId().replace(/:/g, "");
   const colors = useThemeColors();
 
-  const moving = !still && (shown === "working" || shown === "settle" || shown === "live");
-  const morphing = !still && (shown === "working" || shown === "settle");
+  const busy = shown === "thinking" || shown === "building";
+  const shifting = !still && (busy || shown === "live" || shown === "settle");
 
-  // Working turns quickly and keeps going; the bloom runs once, slower, and
-  // stops on the resting shape.
-  const morph = shown === "settle"
-    ? { values: BLOOM, dur: `${SETTLE_MS}ms`, repeat: "1" }
-    : { values: MORPH, dur: "4.2s", repeat: "indefinite" };
+  const pieces = size < COARSE_BELOW ? COARSE : FINE;
+  // The pieces arrive over the first 40% of the cycle, in order, with a small
+  // stagger so the base row is laid before the row above it starts.
+  const first = 0.05;
+  const span = 0.38;
 
   return (
     <span
@@ -164,28 +212,27 @@ export function AutoraMark({
       style={{ width: size, height: size, ...(attention ? { "--attention": attention.toFixed(2) } : {}) } as React.CSSProperties}
       aria-hidden="true"
     >
-      <svg viewBox="0 0 32 32" width={size} height={size} role="presentation">
+      <svg viewBox={`0 0 ${MARK.box} ${MARK.box}`} width={size} height={size} role="presentation">
         <defs>
-          <linearGradient id={`g${uid}`} x1="0" y1="0" x2="1" y2="1">
+          {/* Measured across the mark's own box rather than each shape's, so
+              the pieces of a mark still being built are coloured by where they
+              sit and the finished thing matches the mark at rest. */}
+          <linearGradient
+            id={`g${uid}`}
+            gradientUnits="userSpaceOnUse"
+            x1="8.98"
+            y1="9.74"
+            x2="23.02"
+            y2="22.28"
+          >
             <stop offset="0" stopColor={colors.accent}>
-              {moving && (
-                <animate
-                  attributeName="stop-color"
-                  values={warm(colors)}
-                  dur="6s"
-                  repeatCount="indefinite"
-                />
-              )}
+              {shifting && <animate attributeName="stop-color" values={warm(colors)} dur="6s" repeatCount="indefinite" />}
+            </stop>
+            <stop offset="0.55" stopColor={colors.glow}>
+              {shifting && <animate attributeName="stop-color" values={cool(colors)} dur="7.4s" repeatCount="indefinite" />}
             </stop>
             <stop offset="1" stopColor={colors.accent2}>
-              {moving && (
-                <animate
-                  attributeName="stop-color"
-                  values={cool(colors)}
-                  dur="6s"
-                  repeatCount="indefinite"
-                />
-              )}
+              {shifting && <animate attributeName="stop-color" values={warm(colors)} dur="5.4s" repeatCount="indefinite" />}
             </stop>
           </linearGradient>
 
@@ -199,26 +246,62 @@ export function AutoraMark({
 
         <circle className="amark-wash" cx="16" cy="16" r="15" fill={`url(#w${uid})`} />
 
-        <path className="amark-star" d={REST} fill={`url(#g${uid})`}>
-          {morphing && (
-            <animate
-              // Remounted whenever the loop changes, so a bloom starts from
-              // the top instead of inheriting the morph's clock.
-              key={shown}
-              attributeName="d"
-              values={morph.values}
-              dur={morph.dur}
-              repeatCount={morph.repeat}
-              fill="freeze"
-              calcMode="spline"
-              keySplines={
-                shown === "settle"
-                  ? "0.2 0.9 0.2 1; 0.4 0 0.2 1; 0.4 0 0.2 1"
-                  : "0.4 0 0.2 1; 0.4 0 0.2 1; 0.4 0 0.2 1; 0.4 0 0.2 1; 0.4 0 0.2 1"
-              }
-            />
-          )}
-        </path>
+        {shown === "building" && !still ? (
+          <g>
+            {/* The shape it is heading for, so what the pieces are making is
+                never in doubt while they are still arriving. */}
+            <path
+              className="amark-ghost"
+              d={REST}
+              fill="none"
+              stroke={colors.accent}
+              strokeWidth="0.6"
+            >
+              <animate
+                attributeName="opacity"
+                dur={`${BUILD_MS}ms`}
+                repeatCount="indefinite"
+                keyTimes="0;0.05;0.45;0.86;1"
+                values="0.18;0.4;0.3;0;0"
+              />
+            </path>
+            {pieces.map((p, i) => (
+              <Piece
+                key={i}
+                d={p.d}
+                x={p.x}
+                y={p.y}
+                at={first + (span * i) / pieces.length}
+                fill={`url(#g${uid})`}
+              />
+            ))}
+          </g>
+        ) : (
+          <path className="amark-shape" d={REST} fill={`url(#g${uid})`}>
+            {!still && busy && (
+              <animate
+                key={shown}
+                attributeName="d"
+                values={FLIP}
+                dur={`${FLIP_MS}ms`}
+                repeatCount="indefinite"
+                calcMode="linear"
+              />
+            )}
+            {!still && shown === "settle" && (
+              <animate
+                key="settle"
+                attributeName="d"
+                values={BLOOM.join(";")}
+                dur={`${SETTLE_MS}ms`}
+                repeatCount="1"
+                fill="freeze"
+                calcMode="spline"
+                keySplines="0.2 0.9 0.2 1; 0.4 0 0.2 1; 0.4 0 0.2 1; 0.4 0 0.2 1"
+              />
+            )}
+          </path>
+        )}
       </svg>
     </span>
   );

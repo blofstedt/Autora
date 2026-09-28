@@ -6,6 +6,8 @@
  * you. Both the title and the favicon carry the same state, because which one a
  * given browser shows depends on how many tabs are open.
  */
+import { MARK, trianglePath } from "./mark";
+
 export type Chrome = "idle" | "working" | "live" | "approval" | "offline" | "error";
 
 const DOT: Record<Chrome, string> = {
@@ -17,26 +19,31 @@ const DOT: Record<Chrome, string> = {
   error: "#f87171",
 };
 
-/** The brand mark from the header -- the spark -- on a tile the state colours.
+/**
+ * The tab, carrying the mark and the state.
  *
- * The state used to be a pip in the middle of a ring, and the mark used to be
- * that ring: a shape the app had stopped drawing everywhere else. Carrying the
- * spark instead put the state somewhere, and a pip in the corner is the
- * obvious answer until you look at it at 16 pixels, where it sits on top of
- * the spark's lower point and leaves both illegible.
+ * The mark is the app's triangle, the same one the header, the home screen and
+ * the Umbrel tile draw: at 16 pixels a triangle still reads as the brand, which
+ * is the only thing a tab strip has room to say. The tile carries the state --
+ * idle is the brand as it is everywhere else (dark plate, the gradient mark),
+ * and a state worth noticing is a flat plate behind a white mark, which reads
+ * as a colour change at any size a tab gets.
  *
- * So the tile carries the state and the spark stays whole. It reads as a
- * colour change at any size a tab strip will ever give it, which is the whole
- * job: idle is the brand gradient, everything else is flat and unmistakable.
+ * The state used to be a pip in the corner of the tile, which at 16 pixels sat
+ * on the mark's own corner and left both illegible.
  */
-const svg = (color: string, gradient: boolean) =>
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-<defs><linearGradient id="a" x1="0" y1="0" x2="1" y2="1">
-<stop offset="0" stop-color="#6e5bff"/><stop offset="1" stop-color="#22d3ee"/>
+const svg = (color: string, brand: boolean) => {
+  // The ramp runs across the mark itself, not the plate: spread over the whole
+  // 32px box it gives the triangle a slice of one colour and it comes out flat.
+  const w = MARK.R * Math.sqrt(3) / 2;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+<defs><linearGradient id="a" gradientUnits="userSpaceOnUse" x1="${(MARK.cx - w).toFixed(2)}" y1="${(MARK.cy - MARK.R).toFixed(2)}" x2="${(MARK.cx + w).toFixed(2)}" y2="${(MARK.cy + MARK.R).toFixed(2)}">
+<stop offset="0" stop-color="#6e5bff"/><stop offset="50" stop-color="#22d3ee"/><stop offset="1" stop-color="#c06bff"/>
 </linearGradient></defs>
-<rect x="1" y="1" width="30" height="30" rx="9" fill="${gradient ? "url(#a)" : color}"/>
-<path d="M16 7l2.45 6.55L25 16l-6.55 2.45L16 25l-2.45-6.55L7 16l6.55-2.45z" fill="#fff"/>
+<rect width="32" height="32" rx="7.5" fill="${brand ? "#0b0a14" : color}"/>
+<path d="${trianglePath()}" fill="${brand ? "url(#a)" : "#fff"}"/>
 </svg>`;
+};
 
 const PREFIX: Record<Chrome, string> = {
   idle: "",

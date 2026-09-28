@@ -98,21 +98,15 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Talk mode reaches no higher than the box you type in when the camera is off.
-  The live bar sat taller than the composer, so turning talk on pushed the
-  thread up the screen: with the camera off it is one row at the composer box
-  height now, and nothing behind it moves.
+  The mark is a triangle.
 
-  Hold has moved to the right-hand end of the bar, immediately beside the
-  camera, so the two things you touch while you are talking sit together under
-  the thumb that is already there.
+  Everywhere Autora draws itself it is now the same equilateral triangle with
+  rounded corners -- the header, the empty thread, the tab icon, the home-screen
+  icon and the tile in the Umbrel app store -- instead of the four-pointed star,
+  which read as somebody else's mark.
 
-  The camera opens on the back one, and it is now the back camera that is asked
-  for exactly rather than merely preferred. An inexact request is a preference
-  a phone is free to ignore, and the phones that ignore it hand over the front
-  camera -- the one camera that cannot show the agent the thing in your other
-  hand. A device with only one camera, or a browser that treats an exact
-  request as impossible, still gets the camera it has.
-
-  Turning the camera on grows the bar and turning it off shrinks it back in one
-  movement, instead of jumping between two sizes.
+  At rest it holds the brand gradient. While it is thinking, the mark turns over
+  on its own axis, landing upside down and coming back, again and again, and the
+  gradient turns with it: a working agent is not mistaken for an idle one. While
+  it is building, miniature triangles stack into the full-size one, row by row,
+  then come apart and start again.

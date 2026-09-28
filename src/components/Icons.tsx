@@ -55,9 +55,13 @@ export const IconUser = ({ size = 16, className }: Props) => (
   </svg>
 );
 
-export const IconSpark = ({ size = 16, className }: Props) => (
+/** The brand mark, as a glyph: the same triangle the logo is, on the icon grid.
+ *
+ * One vertex up on a radius of 8.5 puts it at the weight of the ring and the
+ * globe beside it; the round line joins round the corners for free. */
+export const IconMark = ({ size = 16, className }: Props) => (
   <svg {...base(size)} className={className}>
-    <path d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9L12 17.5l-1.9-5.1L5 10.5l5.1-1.9z" />
+    <path d="M12 3.5 19.36 16.25 4.64 16.25Z" />
   </svg>
 );
 

@@ -1,6 +1,22 @@
 import { Kind, type AutoraEvent } from "./types";
 
 /**
+ * Which of the mark's two busy states suits what the agent is doing: `building`
+ * while a step is actually in flight, `thinking` the rest of the time -- before
+ * it has reached for anything, and again while it mulls over what came back.
+ * The mark says the same thing at 16px that the line under the thread says in
+ * words. See lib/mark.ts for what the two look like.
+ */
+export type MarkPhase = "thinking" | "building";
+
+export type Reading = {
+  /** What it is doing, in a few words. */
+  text: string | null;
+  /** Which of the two ways of being busy that is. */
+  phase: MarkPhase;
+};
+
+/**
  * What the agent is doing right now, in a few words, for the line under the
  * thread that used to say only "working".
  *
@@ -10,15 +26,15 @@ import { Kind, type AutoraEvent } from "./types";
  * of, or what it is mulling over between steps. Read from the event log alone,
  * so a reload mid-turn says the same thing as the page that watched it start.
  */
-export function activity(events: AutoraEvent[]): string | null {
+export function readActivity(events: AutoraEvent[]): Reading {
   // Only the turn in flight counts; everything before its request is history.
   let start = -1;
   for (let i = events.length - 1; i >= 0; i--) {
     const kind = events[i].kind;
-    if (kind === Kind.AgentDone || kind === Kind.SessionEnded) return null;
+    if (kind === Kind.AgentDone || kind === Kind.SessionEnded) return { text: null, phase: "thinking" };
     if (kind === Kind.UserMessage) { start = i; break; }
   }
-  if (start < 0) return null;
+  if (start < 0) return { text: null, phase: "thinking" };
 
   const request = String(events[start].payload?.text ?? "");
   const open = new Map<string, AutoraEvent>();
@@ -59,17 +75,28 @@ export function activity(events: AutoraEvent[]): string | null {
     }
   }
 
-  if (asking) return "Waiting for your answer";
+  if (asking) return { text: "Waiting for your answer", phase: "thinking" };
   const running = [...open.values()].pop();
-  if (running) return doing(String(running.payload?.name ?? "tool"), running.payload?.args ?? {});
-  if (lastKind === Kind.AgentText) return "Writing the reply";
+  // A step in flight: this is the mark stacking itself together.
+  if (running) {
+    return { text: doing(String(running.payload?.name ?? "tool"), running.payload?.args ?? {}), phase: "building" };
+  }
+  if (lastKind === Kind.AgentText) return { text: "Writing the reply", phase: "thinking" };
   if (last) {
-    return last.failed
-      ? `Rethinking after ${failedWhat(last.name)} failed`
-      : `Thinking over ${looked(last.name, last.args)}`;
+    return {
+      text: last.failed
+        ? `Rethinking after ${failedWhat(last.name)} failed`
+        : `Thinking over ${looked(last.name, last.args)}`,
+      phase: "thinking",
+    };
   }
   const gist = brief(request, 6);
-  return gist ? `Thinking about “${gist}”` : "Thinking";
+  return { text: gist ? `Thinking about “${gist}”` : "Thinking", phase: "thinking" };
+}
+
+/** The same reading, for the callers that only wanted the words. */
+export function activity(events: AutoraEvent[]): string | null {
+  return readActivity(events).text;
 }
 
 /** The first few words of something, with an ellipsis if there was more. */

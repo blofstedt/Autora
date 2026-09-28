@@ -33,7 +33,7 @@ import { flySpark, visible } from "./lib/presence";
 import { useBackOut } from "./lib/back";
 import { Notices } from "./components/Notices";
 import { AutoraMark, type MarkState } from "./components/AutoraMark";
-import { activity } from "./lib/activity";
+import { readActivity } from "./lib/activity";
 import {
   dictationSupported, recognitionAvailable, secureOrigin, speakable,
   splitSpeakable, useSpeech,
@@ -332,7 +332,11 @@ export function App() {
     lastView.current = next;
     return next;
   }, [events]);
-  const doing = useMemo(() => activity(events), [events]);
+  /* What it is on, in words, and with it which of the mark's two busy
+     states says that best: a step in flight is the mark building itself,
+     everything else is it thinking. */
+  const reading = useMemo(() => readActivity(events), [events]);
+  const doing = reading.text;
 
   // A page that has been closed has no more frames coming, and the last one
   // to arrive would otherwise sit on the card claiming to be live forever.
@@ -764,7 +768,7 @@ export function App() {
     : failing
       ? "error"
       : live && running
-        ? "working"
+        ? reading.phase
         : liveOn ? "live" : "rest";
 
   // Moments in the log, as they arrive: a failure, something learned. Only
@@ -1211,6 +1215,7 @@ export function App() {
             // Stopped on a question is not working; the card says what it is.
             busy={view.busy && !view.asking}
             doing={doing}
+            phase={reading.phase}
             sessionId={sessionId ?? ""}
             liveBrowserSeq={view.liveBrowserSeq}
             live={live}
