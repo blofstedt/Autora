@@ -57,11 +57,30 @@ await test("requests are matched to the servers that fit", () => {
 await test("an offer needs a reason and a real server", () => {
   assert.equal(typeof planOffer({ server: "github" }), "string", "no why");
   assert.match(String(planOffer({ server: "nope", why: "x" })), /no catalog server/i);
+  /* Whether that key is already on this machine is the machine's business -- a
+     shell may export one -- so ask the card for both answers instead of
+     trusting the environment. */
+  const hadEnv = process.env.GITHUB_PERSONAL_ACCESS_TOKEN;
+  const hadSaved = state.secrets?.GITHUB_PERSONAL_ACCESS_TOKEN;
+  delete process.env.GITHUB_PERSONAL_ACCESS_TOKEN;
+  if (state.secrets) delete state.secrets.GITHUB_PERSONAL_ACCESS_TOKEN;
+
   const plan = planOffer({ server: "github", why: "Reads issues directly" });
   assert.ok(typeof plan !== "string");
   assert.equal(plan.needs[0].env, "GITHUB_PERSONAL_ACCESS_TOKEN");
   assert.equal(plan.needs[0].set, false);
   assert.doesNotMatch(plan.runs, /secret/, "the card never shows a secret reference as a command");
+
+  setSecret("GITHUB_PERSONAL_ACCESS_TOKEN", "example-not-a-real-key");
+  const withKey = planOffer({ server: "github", why: "Reads issues directly" });
+  assert.ok(typeof withKey !== "string");
+  assert.equal(withKey.needs[0].set, true, "a saved key is recognised");
+  assert.doesNotMatch(withKey.runs, /secret/);
+
+  if (hadSaved === undefined) delete state.secrets.GITHUB_PERSONAL_ACCESS_TOKEN;
+  else state.secrets.GITHUB_PERSONAL_ACCESS_TOKEN = hadSaved;
+  if (hadEnv === undefined) delete process.env.GITHUB_PERSONAL_ACCESS_TOKEN;
+  else process.env.GITHUB_PERSONAL_ACCESS_TOKEN = hadEnv;
 });
 
 await test("saying not now installs nothing and is not asked again", async () => {
