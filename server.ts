@@ -10,7 +10,7 @@ import {
   providerSpec, rememberModels,
 } from "./server/providers";
 import {
-  baseUrlFor, clearUsage, flushState, keyFor, keySource, maskKey, modelFor, recordUsage,
+  baseUrlFor, clearUsage, flushState, keyFor, keySource, maskKey, modelFor, fastModelFor, recordUsage,
   resolveProvider, save, setKey, state, stateDir, stateFilePath, type Resolved,
   listSecrets, setSecret, deleteSecret, getSecret, secretFor, SECRET_PRESETS, redactSecrets as redactStored,
   mergeJev, mergeAppearance, mergeLoop, mergeRetention, saneMcp, THEMES, FONTS,
@@ -2167,6 +2167,47 @@ function beginTurn(session: Session, text: string, attachments: AttachmentRef[] 
   return done;
 }
 
+/**
+ * The one tool talk mode's fast model has that nothing else does: handing the
+ * turn to the model that can think.
+ *
+ * A spoken question wants its first word now, and a reasoning model spends the
+ * whole of that wait thinking -- measured against DeepSeek, roughly half a
+ * second against a second or two, and on anything worth a sentence the
+ * thinking ate the entire output budget before a word was said. So live voice
+ * answers with the fast model, and the fast model is the wrong one for
+ * anything that takes more than a breath: a file to read, a command to run, a
+ * fact to check, several steps to join up.
+ *
+ * Rather than have it guess, it calls this. The turn carries straight on in
+ * the same conversation with the provider's main model doing the work, and the
+ * fast model keeps talking throughout: everything the reasoning model says and
+ * does is read to the fast model, which says it in its own words, so the person
+ * hears progress instead of silence, and hears the answer in the same voice it
+ * has been hearing all along.
+ */
+const THINK_LONGER = {
+  name: "think_longer",
+  description:
+    "Hand this to the slower reasoning model, which can think, use tools and take several " +
+    "steps. Call it whenever the answer is not something you are sure of in one breath: it " +
+    "needs a file, a command, a search, a calculation, something checked, or more than a " +
+    "couple of sentences. Say one short line first about what you are looking into -- that " +
+    "line is the first thing the person hears -- then call it and stop: you will be given " +
+    "everything the reasoning model says and does, and you are the one who says the answer " +
+    "once it is finished. Call it instead of answering; never answer and then call it.",
+  parameters: {
+    type: "object" as const,
+    properties: {
+      task: {
+        type: "string",
+        description: "What needs working out or looking up, in one line.",
+      },
+    },
+    required: [] as string[],
+  },
+};
+
 /** The agent loop for one turn. See startTurn. */
 async function runTurn(session: Session, text: string, opts: TurnOptions = {}): Promise<TurnResult> {
   const result: TurnResult = { ok: false, reply: "", ranSomething: false, stopped: false, error: null, recalled: [] };
@@ -2204,6 +2245,33 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
 
     const active = resolveProvider();
     const connected = Boolean(active.provider) && !active.problem;
+
+    /* Which model answers, this turn and this step.
+       A spoken turn is answered by the provider's fast model when one is named
+       in Settings -> Model, and hands the turn over the moment it turns out to
+       be more than a sentence (see THINK_LONGER). One voice answers either
+       way: the fast model's line, then the reasoning model's conclusion. */
+    const talkFast = opts.spoken === true ? active.fastModel : "";
+    /* The one voice in a spoken turn: the fast model when the provider has one
+       named, and the provider's own model otherwise. It does not change for
+       the length of the turn, whatever the work turns out to need. */
+    const voice = talkFast || active.model;
+    /* Whether the reasoning model has the work. It thinks and uses tools in
+       this same turn and this same conversation, but it does not speak: what
+       it writes is kept, handed to the voice, and said by the voice. */
+    let handedOver = false;
+    /* The task the voice handed over, and what the worker has done since --
+       the material the voice reads to keep talking while the work is going. */
+    let handedTask = "";
+    let narratedStart = false;
+    let workerSaid = "";
+    const work: string[] = [];
+    /* The tools of this step. think_longer is offered only while the voice
+       still has work left to hand over. */
+    const offered = async () => {
+      const list = await availableTools();
+      return talkFast && !handedOver ? [...list, THINK_LONGER] : list;
+    };
     let streamed = 0;
     /* Whether any tool actually ran this turn. The two ways a turn ends
        with no words are not the same thing: the provider never answered
@@ -2219,7 +2287,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
     if (connected) {
       /* Refreshed every step, not once per turn: a tool the agent writes
          with tool_create is usable on the very next step. */
-      let tools = await availableTools();
+      let tools = await offered();
       /* The conversation lives in the session's context engine for the
          length of the turn: rebuilt from the log (minus whatever has been
          folded into anchored memory), then grown by each round of tool
@@ -2246,6 +2314,146 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
       /** Lowered for the rest of the turn if the model refuses the default. */
       let outputTokens = MAX_OUTPUT_TOKENS;
 
+      /** What one call to a model cost, written down as it happened. */
+      const charge = (model: string, usage: ChatTurn["usage"]) => {
+        const priced = isPriced(active.provider, model);
+        const cache = { read: usage.cached ?? 0, write: usage.cacheWrite ?? 0 };
+        const { cost, parts } = priceCall(
+          active.provider, model, usage.input, usage.output, cache.read, cache.write,
+        );
+        recordUsage({
+          ts: Math.floor(Date.now() / 1000),
+          session: session.id,
+          provider: active.provider,
+          model,
+          input: usage.input,
+          output: usage.output,
+          cost,
+          parts,
+          priced,
+          estimated: usage.estimated,
+          cached: cache.read,
+        });
+        return { cost, priced, cache };
+      };
+
+      /**
+       * One thing said aloud by the voice, while the reasoning model works.
+       *
+       * The voice is the fast model: it does not think, it reads what the other
+       * model has just said and done and says it as itself, which is how the
+       * person hears progress instead of waiting in silence. `brief` is what
+       * it is asked for, `material` is all it may go on, and `stream` decides
+       * whether the words reach the thread as they are written (the answer at
+       * the end) or only once complete (a line that is allowed to be nothing).
+       */
+      const callVoice = async (
+        brief: string, material: string, maxTokens: number, stream: boolean,
+      ): Promise<string> => {
+        let said = "";
+        try {
+          const turn = await streamChat({
+            provider: active.provider,
+            model: voice,
+            key: active.key,
+            baseUrl: active.baseUrl,
+            system: brief,
+            messages: [{ role: "user", text: material }],
+            temperature: 0.6,
+            maxTokens,
+            /* Never a thought: this is the model whose job is to talk now. */
+            thinking: "off",
+            signal: running.get(session.id)?.signal,
+          }, (piece) => {
+            if (running.get(session.id)?.stopped) return;
+            said += piece;
+            if (!stream) return;
+            emitEvent(session, "turn.agent.text", "agent", { text: piece });
+            result.reply += piece;
+            streamed += piece.length;
+          });
+          charge(voice, turn.usage);
+        } catch (err: any) {
+          console.warn(`[voice] ${active.provider}/${voice}: ${err?.message ?? err}`);
+          return "";
+        }
+        const words = said.trim();
+        if (!stream && words) {
+          emitEvent(session, "turn.agent.text", "agent", { text: words + " " });
+          result.reply += words + " ";
+          streamed += words.length;
+        }
+        return words;
+      };
+
+      /**
+       * A line from the voice about work in progress.
+       *
+       * It is filler, and filler that invents is worse than silence, so it is
+       * told to use only what is written down for it and is allowed to answer
+       * NOTHING -- which is dropped rather than said.
+       */
+      const narrate = async (kind: "started" | "progress"): Promise<void> => {
+        if (running.get(session.id)?.stopped) return;
+        const material =
+          kind === "started"
+            ? `Handed to the reasoning model: ${handedTask || text}`
+            : work.join("\n\n").slice(-4000) || "(nothing yet)";
+        const said = await callVoice(
+          kind === "started"
+            ? "You are the voice in a live spoken conversation and the only one talking. " +
+              "You have just handed the question to the reasoning model, which thinks, uses " +
+              "tools and takes several steps; it cannot speak, so you do. The person is " +
+              "waiting in silence right now. Say ONE short sentence out loud about what you " +
+              "are doing. Say it as yourself, never mention that there are two models, and " +
+              "use no lists, no headings and nothing you have not been told."
+            : "You are the voice in a live spoken conversation and the only one talking. The " +
+              "reasoning model is working on the person's question and cannot speak. Below " +
+              "is what it has said and done since you last spoke. Say ONE or TWO short " +
+              "sentences out loud, in the present tense, about what it is finding or doing " +
+              "-- something the person is glad to hear while they wait. Use only what is " +
+              "written: never guess a result, never state a fact it has not established, " +
+              "and do not read tool output back to them. If there is genuinely nothing " +
+              "worth saying, reply with exactly NOTHING and nothing else.",
+          material, 90, false,
+        );
+        if (/^nothing[.!]?$/i.test(said)) return;
+      };
+
+      /**
+       * The answer, once the work is done: the voice says what was found, in
+       * its own words, as the one voice that has been talking all along.
+       */
+      const answerAsVoice = async (conclusion: string): Promise<void> => {
+        const material = [
+          `What the person asked: ${text}`,
+          conclusion ? `What was worked out: ${conclusion}` : "",
+          work.length > 0 ? `What was done along the way:\n${work.join("\n\n")}` : "",
+        ].filter(Boolean).join("\n\n").slice(-8000);
+        const said = await callVoice(
+          "You are the agent these people are talking to, in a live spoken conversation, and " +
+            "the only one who speaks. The work on their question is finished. Everything " +
+            "below is what was actually established -- nothing else is known. Answer them " +
+            "now, out loud, in your own words and as one voice: what the answer is, then " +
+            "whatever they need to know about it, briefly. Do not mention two models or " +
+            "being handed anything, do not repeat what you said while it was working, and " +
+            "use plain spoken sentences -- no lists, no headings, no code.",
+          material, 700, true,
+        );
+        if (said) return;
+        /* The voice said nothing at all, which is a failure and rare. The work
+           is done and the person is owed the answer, so the reasoning model's
+           own words go in, marked for what they are. */
+        if (conclusion) {
+          emitEvent(session, "system.log", "system", {
+            message: "The fast model did not answer; the reasoning model's own words are shown.",
+          });
+          emitEvent(session, "turn.agent.text", "agent", { text: conclusion });
+          result.reply += conclusion;
+          streamed += conclusion.length;
+        }
+      };
+
       /**
        * One call to the model, retried while nothing has reached the thread.
        *
@@ -2270,7 +2478,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             const system = context.systemFor(pinned);
             const turn = await streamChat({
               provider: active.provider,
-              model: active.model,
+              model: handedOver ? active.model : voice,
               key: active.key,
               baseUrl: active.baseUrl,
               system,
@@ -2278,7 +2486,13 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
               temperature: 0.7,
               maxTokens: outputTokens,
               thinkingBudget: THINKING_BUDGET,
-              ...(fast ? { thinking: "off" as const } : {}),
+              /* No thinking while talk mode's fast model holds the turn --
+                 that is the whole of the wait it saves. The moment it hands
+                 over, the reasoning model thinks as it likes. */
+              /* The voice answers without thinking -- that is the whole of
+                 the wait it saves. Once the work is handed over, the reasoning
+                 model thinks as much as it likes: that is the point of it. */
+              ...((fast || talkFast) && !handedOver ? { thinking: "off" as const } : {}),
               signal: running.get(session.id)?.signal,
               tools: tools.map((t) => ({
                 name: t.name,
@@ -2293,8 +2507,17 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
               if (running.get(session.id)?.stopped) return;
               const { text: clean, images } = sieve.feed(piece);
               if (clean) {
-                emitEvent(session, "turn.agent.text", "agent", { text: clean });
-                result.reply += clean;
+                /* While the reasoning model has the work, what it writes is
+                   material for the voice, not words for the person: it is
+                   kept, and said in the voice's own words a moment later.
+                   Nothing reaches the thread except through the one model
+                   whose job is to speak. */
+                if (handedOver) {
+                  workerSaid += clean;
+                } else {
+                  emitEvent(session, "turn.agent.text", "agent", { text: clean });
+                  result.reply += clean;
+                }
                 delivered += clean.length;
                 streamed += clean.length;
               }
@@ -2303,8 +2526,12 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
 
             const tail = sieve.flush();
             if (tail.text) {
-              emitEvent(session, "turn.agent.text", "agent", { text: tail.text });
-              result.reply += tail.text;
+              if (handedOver) {
+                workerSaid += tail.text;
+              } else {
+                emitEvent(session, "turn.agent.text", "agent", { text: tail.text });
+                result.reply += tail.text;
+              }
               delivered += tail.text.length;
               streamed += tail.text.length;
             }
@@ -2316,28 +2543,12 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             // figure that was in force when the call was made. One entry
             // per model call, so a turn that used six tools is billed as
             // the six calls it actually was.
-            const priced = isPriced(active.provider, active.model);
-            const cache = { read: turn.usage.cached ?? 0, write: turn.usage.cacheWrite ?? 0 };
-            const { cost, parts } = priceCall(
-              active.provider, active.model, turn.usage.input, turn.usage.output,
-              cache.read, cache.write,
+            const { cost, priced, cache } = charge(
+              handedOver ? active.model : voice, turn.usage,
             );
-            recordUsage({
-              ts: Math.floor(Date.now() / 1000),
-              session: session.id,
-              provider: active.provider,
-              model: active.model,
-              input: turn.usage.input,
-              output: turn.usage.output,
-              cost,
-              parts,
-              priced,
-              estimated: turn.usage.estimated,
-              cached: cache.read,
-            });
             emitEvent(session, "usage.turn", "system", {
               provider: active.provider,
-              model: active.model,
+              model: handedOver ? active.model : voice,
               input_tokens: turn.usage.input,
               output_tokens: turn.usage.output,
               cached_tokens: cache.read,
@@ -2383,7 +2594,8 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             // the vendor is simply busy.
             const vendor =
               PROVIDERS.find((p) => p.id === active.provider)?.label ?? active.provider;
-            result.error = `${vendor} (${active.model}) did not answer: ${detail}`;
+            result.error =
+              `${vendor} (${handedOver ? active.model : voice}) did not answer: ${detail}`;
             emitEvent(session, "system.error", "system", { error: result.error });
             return null;
           }
@@ -2643,10 +2855,29 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
            step's call goes out now, on the history as it stands. */
         context.maybeCompact(pinned, summarize, compacted);
 
-        tools = await availableTools();
+        tools = await offered();
+        /* What the model says in this step, read before this step's work is
+           put in its own words. */
+        workerSaid = "";
         const turn = await askModel(pinned);
         if (!turn) break;
         if (turn.calls.length === 0) {
+          /* Handed over, and the reasoning model has stopped calling tools:
+             the work is done, and it still does not speak. Its answer is
+             material -- the voice says it, in the voice's own words, and that
+             is the end of the turn. */
+          if (handedOver && !turn.cutOff && (turn.text.trim() || work.length > 0)) {
+            context.append(
+              { role: "assistant", text: turn.text, reasoning: turn.reasoning },
+              session.seqCounter,
+            );
+            emitEvent(session, "system.log", "system", {
+              message: `The reasoning model finished; ${voice} is saying what it found.`,
+            });
+            await answerAsVoice(turn.text.trim());
+            break;
+          }
+
           /* A step with no tool calls normally means the model is done.
              Two cases where it is not, and where ending the turn left the
              person to type "continue": the reply hit the output limit
@@ -2711,6 +2942,30 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
               "for a long file, write it in several smaller parts.";
             emitEvent(session, "tool.error", "agent", { error: said }, span);
             reply(false, said);
+            continue;
+          }
+
+          /* Talk mode's hand-over, handled here rather than in the registry:
+             it is not a tool that does anything, it is the work changing
+             hands. The voice keeps the turn and keeps talking; the reasoning
+             model takes the work, and everything it says and does is read to
+             the voice rather than to the person. */
+          if (use.name === THINK_LONGER.name && talkFast && !handedOver) {
+            emitEvent(session, "tool.call", "agent", { name: use.name, args: use.args }, span);
+            handedOver = true;
+            handedTask =
+              String((use.args as Record<string, unknown> | undefined)?.task ?? "").trim();
+            emitEvent(session, "system.log", "system", {
+              message:
+                `${active.model} has the work now; ${voice} keeps talking and will say what it finds.`,
+            });
+            reply(
+              true,
+              "You have the work now. Think it through and use your tools, and put what you " +
+                "find into plain words: they are read to the model that is speaking to the " +
+                "person, and it says them in its own voice. Do not address the person " +
+                "yourself, and do not ask them anything.",
+            );
             continue;
           }
 
@@ -2901,10 +3156,37 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
         context.supersedePages(canReadVault);
         context.supersedePictures();
 
+        /* The person has heard nothing from the reasoning model -- it does not
+           speak. So the voice reads what was just said and done and says it,
+           before the worker's next step leaves another silence. */
+        if (handedOver && !running.get(session.id)?.stopped) {
+          work.push(
+            ...(workerSaid.trim()
+              ? [`Said in that step: ${workerSaid.trim()}`]
+              : []),
+            ...replies.map((r) =>
+              (r.ok ? `${r.name} ran and returned: ` : `${r.name} failed: `) +
+              r.result.slice(0, 700),
+            ),
+          );
+          await narrate(narratedStart ? "progress" : "started");
+          narratedStart = true;
+        }
+
         if (loopStop) {
           emitEvent(session, "system.log", "system", { message: loopStop });
           break;
         }
+      }
+
+      /* The work went to the reasoning model and it never reached a closing
+         line -- stopped, or nudged out. Whatever it did reach is still worth
+         saying, in the voice that was talking all along. */
+      if (
+        handedOver && !running.get(session.id)?.stopped &&
+        !result.reply.trim() && (workerSaid.trim() || work.length > 0)
+      ) {
+        await answerAsVoice(workerSaid.trim());
       }
     }
 
@@ -4052,6 +4334,7 @@ async function startServer() {
           env_names: spec.envKeys,
         },
         model: modelFor(spec.id),
+        fast_model: fastModelFor(spec.id),
         models: modelsFor(spec.id),
       };
     });
@@ -4192,6 +4475,15 @@ async function startServer() {
       }
     } else if (typeof body.model === "string" && target) {
       state.models[target] = body.model.trim();
+    }
+
+    /* Talk mode's own model. An empty string is a real choice here -- it says
+       answer spoken turns with the main model -- so it is stored, not ignored. */
+    if (body.fast_models && typeof body.fast_models === "object") {
+      for (const [id, model] of Object.entries(body.fast_models)) {
+        if (!known.has(id) || typeof model !== "string") continue;
+        state.fastModels[id] = model.trim();
+      }
     }
 
     if (body.base_urls && typeof body.base_urls === "object") {

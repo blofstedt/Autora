@@ -248,6 +248,9 @@ export function LiveChat({
             : hint;
 
   const lit = holding || agentSpeaking;
+  /* Your own voice works the mark too: while the microphone is carrying your
+     words the star glows and morphs, instead of only breathing. */
+  const talking = lit || Boolean(heard);
   /* What the bar is doing, for the light it carries: the same vocabulary the
      rest of live mode uses, so the strip moves with the room rather than
      only with the mark. */
@@ -257,10 +260,10 @@ export function LiveChat({
   // on, shows the words as they form, and carries the two switches and the
   // way back out.
   return (
-    <div className="live-bar" data-state={barState} role="group" aria-label="Live voice chat">
+    <div className={`live-bar${view ? " has-view" : ""}`} data-state={barState} role="group" aria-label="Live voice chat">
       <button
         type="button"
-        className={`mob-live-btn live-bar-orb is-${lit ? "working" : "live"} ${holding ? "is-holding" : ""}`}
+        className={`mob-live-btn live-bar-orb is-${talking ? "working" : "live"} ${holding ? "is-holding" : ""}`}
         onPointerDown={press}
         onPointerUp={() => { if (!handsFree) release(); }}
         onPointerCancel={release}
@@ -271,7 +274,7 @@ export function LiveChat({
         aria-pressed={holding}
       >
         <span className="mob-live-glow" aria-hidden="true" />
-        <AutoraMark state={lit ? "working" : "live"} size={23} />
+        <AutoraMark state={talking ? "working" : "live"} size={69} />
       </button>
       {view && (
         /* The person's own half of live view: what the camera has, in the bar,
@@ -286,6 +289,11 @@ export function LiveChat({
           <video ref={camera.attach} muted playsInline />
           <span className="live-bar-peek-dot" aria-hidden="true" />
         </button>
+      )}
+      {view && (
+        /* A wash over the picture: the same bar carries the preview and the
+           words, so the words need something to sit on. */
+        <span className="live-bar-scrim" aria-hidden="true" />
       )}
       <div className="live-bar-text">
         <span className="live-bar-label">

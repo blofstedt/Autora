@@ -1232,12 +1232,25 @@ button.hint.voice-note:hover { text-decoration: underline; }
    they form, Stop while the agent works, and End. */
 .live-bar {
   display: flex; align-items: center; gap: 12px;
-  padding: 10px 10px 10px 12px; border-radius: 22px;
+  /* The same footprint as .composer-box under it: full width of the type box
+     and about as tall, so switching live on does not shrink the thing you are
+     looking at. */
+  min-height: 100px; padding: 12px 14px; border-radius: 22px;
   background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.08), rgba(var(--accent-rgb), 0.03)), var(--s2);
   border: 1px solid rgba(var(--accent-rgb), 0.4);
   box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.08), 0 10px 32px -14px rgba(0, 0, 0, 0.7);
 }
-.live-bar .live-bar-orb { margin: 0 4px 0 2px; }
+/* The mark on its own, at three times the size: no ring around it and no dark
+   disc behind it. What makes it readable now is its own light -- the star's
+   glow, the warm halo that spills past it, and the wash over the picture. */
+.live-bar .live-bar-orb {
+  margin: 0; width: 78px; height: 78px; border: 0; background: transparent;
+  box-shadow: none; border-radius: 22px;
+}
+.live-bar .live-bar-orb::after { display: none; }
+.live-bar .live-bar-orb .amark-star { filter: drop-shadow(0 0 10px rgba(var(--glow-light-rgb), 0.95)); }
+.live-bar .live-bar-orb.is-working .amark-star { filter: drop-shadow(0 0 18px rgba(var(--glow-light-rgb), 1)); }
+.live-bar .live-bar-orb .mob-live-glow { inset: -12px; filter: blur(11px); }
 .live-bar .live-bar-orb {
   /* Held, not tapped: no scrolling, text selection or long-press menu. */
   touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
@@ -1262,6 +1275,10 @@ button.hint.voice-note:hover { text-decoration: underline; }
 .live-bar-end { flex: 0 0 auto; gap: 6px; border-radius: 999px; }
 .live-bar-sees { color: var(--text-3); font-weight: 500; letter-spacing: 0.04em; }
 .live-bar-status.is-trouble { color: var(--warn); }
+/* Room enough for the words now, so they are not written for a thin strip. */
+.live-bar-label { font-size: 12px; }
+.live-bar-text { gap: 4px; }
+.live-bar-status { font-size: 15px; line-height: 1.4; }
 
 /* The two switches, in the bar rather than in Settings: whether the camera is
    on and whether the microphone stays open are the kind of thing that depends
@@ -1280,16 +1297,22 @@ button.hint.voice-note:hover { text-decoration: underline; }
 
 /* The person's own half of live view: what the camera has, right here, drawn
    by their own browser and sent nowhere. Tapping it turns the camera around. */
+/* With the bar this tall the picture is not a thumbnail in it but the ground
+   under it: the whole bar becomes the viewfinder, and the words sit over it. */
 .live-bar-peek {
-  position: relative; flex: 0 0 auto; width: 54px; height: 40px; padding: 0;
-  border-radius: 12px; overflow: hidden; cursor: pointer;
-  background: #000; border: 1px solid rgba(var(--accent-rgb), 0.45);
-  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.1);
+  position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; padding: 0;
+  border-radius: inherit; overflow: hidden; cursor: pointer;
+  background: #000; border: 0; box-shadow: none;
 }
+.live-bar-scrim {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: linear-gradient(90deg, rgba(6, 8, 12, 0.84) 0%, rgba(6, 8, 12, 0.45) 48%, rgba(6, 8, 12, 0.74) 100%);
+}
+.live-bar > *:not(.live-bar-peek):not(.live-bar-scrim) { z-index: 2; }
 .live-bar-peek video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .live-bar-peek.is-mirror video { transform: scaleX(-1); }
 .live-bar-peek-dot {
-  position: absolute; top: 4px; left: 4px; width: 6px; height: 6px; border-radius: 50%;
+  position: absolute; top: 9px; left: 10px; width: 7px; height: 7px; border-radius: 50%;
   background: #f87171; box-shadow: 0 0 6px rgba(248, 113, 113, 0.9);
 }
 
@@ -1344,13 +1367,15 @@ button.hint.voice-note:hover { text-decoration: underline; }
 
   /* Bigger orb and a thumb-sized End: this bar is the whole interface while
      it is up. */
-  .live-bar { gap: 9px; padding: 9px; }
+  .live-bar { gap: 10px; padding: 11px 12px; min-height: 96px; }
+  .live-bar .live-bar-orb { width: 74px; height: 74px; }
   /* On a phone the bar has five things in it: the mark, the words, the
      picture, the switches, and the way out. The picture and the words give a
      little, and the switch labels go -- the two glyphs carry them. */
-  .live-bar-peek { width: 44px; height: 34px; border-radius: 10px; }
+  .live-bar-peek { border-radius: inherit; }
   .live-bar-switch { padding: 0 9px; font-size: 11px; }
-  .live-bar-status { font-size: 13px; }
+  .live-bar-status { font-size: 14px; }
+  .live-bar-label { font-size: 11.5px; }
   .live-orb { width: 52px; height: 52px; }
   /* Thumb-sized, and given a surface: at this size the glyph alone did not
      read as the way out. */

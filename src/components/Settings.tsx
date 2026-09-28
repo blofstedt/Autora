@@ -55,6 +55,8 @@ type ProviderCard = {
     env_names: string[];
   };
   model: string;
+  /** Talk mode's own model for this provider; empty means the one above. */
+  fast_model: string;
   models: ModelOption[];
 };
 
@@ -191,6 +193,7 @@ export function Settings({
   const serverVersion = useServerVersion();
   const [keyDrafts, setKeyDrafts] = useState<Record<string, string>>({});
   const [modelDrafts, setModelDrafts] = useState<Record<string, string>>({});
+  const [fastDrafts, setFastDrafts] = useState<Record<string, string>>({});
   const [urlDrafts, setUrlDrafts] = useState<Record<string, string>>({});
   const [provider, setProvider] = useState("auto");
   const [prompt, setPrompt] = useState("");
@@ -211,6 +214,7 @@ export function Settings({
     setKeep(next.retention ?? null);
     setKeyDrafts({});
     setModelDrafts({});
+    setFastDrafts({});
     setUrlDrafts({});
   }, []);
 
@@ -264,12 +268,13 @@ export function Settings({
   const body = useMemo(() => ({
     provider,
     models: modelDrafts,
+    fast_models: fastDrafts,
     base_urls: urlDrafts,
     system_prompt: prompt,
     budget_usd: budget.trim() === "" ? null : Number(budget),
     ...(loop ? { loop } : {}),
     ...(keep ? { retention: keep } : {}),
-  }), [provider, modelDrafts, urlDrafts, prompt, budget, loop, keep]);
+  }), [provider, modelDrafts, fastDrafts, urlDrafts, prompt, budget, loop, keep]);
 
   const save = useCallback(async (sent: typeof body) => {
     setSaving(true);
@@ -292,6 +297,7 @@ export function Settings({
       const settle = (drafts: Record<string, string>, was: Record<string, string>) =>
         Object.fromEntries(Object.entries(drafts).filter(([k, v]) => was[k] !== v));
       setModelDrafts((d) => settle(d, sent.models));
+      setFastDrafts((d) => settle(d, sent.fast_models));
       setUrlDrafts((d) => settle(d, sent.base_urls));
       /* The server may tidy what it was sent (a limit clamped into range, a
          budget of "20.0" stored as 20). Take its version of any field left
@@ -431,11 +437,13 @@ export function Settings({
       inUse={state.active.provider === card.label}
       keyDraft={keyDrafts[card.id]}
       modelDraft={modelDrafts[card.id]}
+      fastDraft={fastDrafts[card.id]}
       urlDraft={urlDrafts[card.id]}
       onKey={(v) => setKeyDrafts((d) => ({ ...d, [card.id]: v }))}
       onKeyCancel={() => setKeyDrafts(({ [card.id]: _drop, ...rest }) => rest)}
       onKeySave={(v) => void saveKey(card.id, v)}
       onModel={(v) => setModelDrafts((d) => ({ ...d, [card.id]: v }))}
+      onFast={(v) => setFastDrafts((d) => ({ ...d, [card.id]: v }))}
       onUrl={(v) => setUrlDrafts((d) => ({ ...d, [card.id]: v }))}
       onModels={(models) => replaceModels(card.id, models)}
       onUse={() => setProvider(card.id)}
@@ -731,19 +739,21 @@ export function Settings({
  * chosen.
  */
 function ProviderRow({
-  card, selected, inUse, keyDraft, modelDraft, urlDraft,
-  onKey, onKeyCancel, onKeySave, onModel, onUrl, onModels, onUse,
+  card, selected, inUse, keyDraft, modelDraft, fastDraft, urlDraft,
+  onKey, onKeyCancel, onKeySave, onModel, onFast, onUrl, onModels, onUse,
 }: {
   card: ProviderCard;
   selected: boolean;
   inUse: boolean;
   keyDraft: string | undefined;
   modelDraft: string | undefined;
+  fastDraft: string | undefined;
   urlDraft: string | undefined;
   onKey: (v: string) => void;
   onKeyCancel: () => void;
   onKeySave: (v: string) => void;
   onModel: (v: string) => void;
+  onFast: (v: string) => void;
   onUrl: (v: string) => void;
   onModels: (models: ModelOption[]) => void;
   onUse: () => void;
@@ -758,7 +768,10 @@ function ProviderRow({
   // text field rather than a picker with one item in it saying "Custom".
   const [custom, setCustom] = useState(card.open_ended);
   const [picking, setPicking] = useState(false);
+  const [pickingFast, setPickingFast] = useState(false);
   const chosen = card.models.find((m) => m.id === model);
+  const fast = fastDraft ?? card.fast_model;
+  const fastChosen = card.models.find((m) => m.id === fast);
 
   /** Ask the vendor whether this key works -- and, since the answer arrives as
       its model list, fill the picker from the same call. */
@@ -882,6 +895,39 @@ function ProviderRow({
             )}
           </label>
 
+          {/* Talk mode's other model. A spoken question is answered by this
+              one without thinking, so the first word arrives now, and it
+              hands the turn to the model above the moment the question turns
+              out to need more than a sentence -- checked facts, a file, a
+              command, several steps. Left empty, talk mode answers with the
+              model above, exactly as it always did. */}
+          <label className="jf-row">
+            <span>Talk mode</span>
+            <button
+              type="button"
+              className="set-select mp-open"
+              onClick={() => setPickingFast(true)}
+              aria-haspopup="dialog"
+              aria-label={`${card.label} model for talk mode`}
+            >
+              <span>{fast ? fastChosen?.label ?? fast : "Same model as above"}</span>
+              <IconChevron size={13} />
+            </button>
+          </label>
+          <p className="jf-hint">
+            {fast
+              ? "Live voice answers with this one instantly, then hands over to the model above when the task needs thinking or tools."
+              : "Live voice answers with the model above. Name a faster model here to have it answer aloud at once and hand the harder questions over."}
+            {fast ? (
+              <>
+                {" "}
+                <button type="button" className="btn ghost" onClick={() => onFast("")}>
+                  Use the model above
+                </button>
+              </>
+            ) : null}
+          </p>
+
           <div className="prov-actions">
             {card.needs_key && (
               <button className="btn ghost" onClick={check} disabled={busy}>
@@ -911,6 +957,20 @@ function ProviderRow({
 
           {checked && (
             <p className={checked.ok ? "prov-ok" : "set-warn"}>{checked.text}</p>
+          )}
+
+          {pickingFast && (
+            <ModelPicker
+              vendor={`${card.label} · talk mode`}
+              models={card.models}
+              model={fast}
+              busy={busy}
+              listable={card.listable}
+              onPick={(id) => { onFast(id); setPickingFast(false); }}
+              onCustom={() => { setPickingFast(false); onFast(""); }}
+              onRefresh={() => void refresh()}
+              onClose={() => setPickingFast(false)}
+            />
           )}
 
           {picking && (

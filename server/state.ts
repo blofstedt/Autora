@@ -195,6 +195,13 @@ export interface PersistedState {
   /** Chosen model per provider, so switching vendors and back does not lose
       the choice you made the first time. */
   models: Record<string, string>;
+  /** The model talk mode answers with, per provider. Separate from the one
+      above on purpose: a reasoning model is the right thing to think a task
+      through and the wrong thing to wait for the first word of a sentence, so
+      live voice may answer with a faster model of the same vendor and hand
+      over when the question turns out to need the work. Empty means talk mode
+      uses the main model, exactly as it did before this existed. */
+  fastModels: Record<string, string>;
   /** Per-provider API root override. Mostly for local servers and proxies. */
   baseUrls: Record<string, string>;
   systemPrompt: string;
@@ -394,6 +401,7 @@ function blank(): PersistedState {
   return {
     provider: "auto",
     models: {},
+    fastModels: {},
     baseUrls: {},
     systemPrompt: DEFAULT_PROMPT,
     keys: {},
@@ -420,6 +428,7 @@ function read(): PersistedState {
     const state = blank();
     if (typeof raw.provider === "string") state.provider = raw.provider;
     if (raw.models && typeof raw.models === "object") state.models = { ...raw.models };
+    if (raw.fastModels && typeof raw.fastModels === "object") state.fastModels = { ...raw.fastModels };
     if (raw.baseUrls && typeof raw.baseUrls === "object") state.baseUrls = { ...raw.baseUrls };
     if (typeof raw.systemPrompt === "string") state.systemPrompt = raw.systemPrompt;
     if (raw.keys && typeof raw.keys === "object") state.keys = { ...raw.keys };
@@ -816,6 +825,12 @@ export function modelFor(providerId: string): string {
   return chosen || providerSpec(providerId)?.defaultModel || "";
 }
 
+/** The model a spoken turn is answered by, when one is named for the
+    provider. Empty means talk mode uses the main model. */
+export function fastModelFor(providerId: string): string {
+  return (state.fastModels[providerId] || "").trim();
+}
+
 export function baseUrlFor(providerId: string): string {
   const override = (state.baseUrls[providerId] || "").trim();
   if (override) return override;
@@ -828,6 +843,9 @@ export function baseUrlFor(providerId: string): string {
 export interface Resolved {
   provider: string;
   model: string;
+  /** Talk mode's own model: the fast one, when the vendor has one named.
+      Empty when live voice should answer with `model` like everything else. */
+  fastModel: string;
   key: string;
   baseUrl: string;
   /** Why nothing is usable, when nothing is. */
@@ -858,6 +876,7 @@ export function resolveProvider(): Resolved {
       return {
         provider: "",
         model: "",
+        fastModel: "",
         key: "",
         baseUrl: "",
         problem: "No provider is connected yet. Add an API key for one.",
@@ -870,6 +889,7 @@ export function resolveProvider(): Resolved {
     return {
       provider: chosen,
       model: "",
+      fastModel: "",
       key: "",
       baseUrl: "",
       problem: `Unknown provider "${chosen}".`,
@@ -882,7 +902,14 @@ export function resolveProvider(): Resolved {
   if (!key && chosen !== "local") problem = `${spec.label} has no API key set.`;
   else if (!model) problem = `No model chosen for ${spec.label}.`;
 
-  return { provider: chosen, model, key, baseUrl: baseUrlFor(chosen), problem };
+  return {
+    provider: chosen,
+    model,
+    fastModel: fastModelFor(chosen),
+    key,
+    baseUrl: baseUrlFor(chosen),
+    problem,
+  };
 }
 
 // ------------------------------------------------------------------ spend --
