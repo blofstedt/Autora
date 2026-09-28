@@ -98,15 +98,15 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The mark is a triangle.
+  The mark is better centred, and thinking looks better.
 
-  Everywhere Autora draws itself it is now the same equilateral triangle with
-  rounded corners -- the header, the empty thread, the tab icon, the home-screen
-  icon and the tile in the Umbrel app store -- instead of the four-pointed star,
-  which read as somebody else's mark.
+  The triangle in the home-screen icon and the Umbrel tile sat a little low --
+  the shape it was built from is not the shape you see, and the difference is
+  most of a pixel at 32px. It is measured and asserted now, so it cannot drift
+  back.
 
-  At rest it holds the brand gradient. While it is thinking, the mark turns over
-  on its own axis, landing upside down and coming back, again and again, and the
-  gradient turns with it: a working agent is not mistaken for an idle one. While
-  it is building, miniature triangles stack into the full-size one, row by row,
-  then come apart and start again.
+  Thinking no longer turns the mark over on its axis. It opens out into the
+  circle drawn inside it and closes again, twice, while it turns: the corner
+  the fillet takes off is the only thing that moves, and the two shapes it
+  passes through are its own. The old flip flattened the mark to a bar on the
+  way past, which read as the mark falling over rather than as work being done.

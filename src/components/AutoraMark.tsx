@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useThemeColors, type ThemeColors } from "../lib/theme";
-import { BLOOM, MARK, REST, flipFrames, stackingUnits } from "../lib/mark";
+import { BLOOM, DRAWN_BOX, MARK, REST, morphFrames, stackingUnits } from "../lib/mark";
 
 /**
  * The Autora mark, alive.
@@ -9,7 +9,7 @@ import { BLOOM, MARK, REST, flipFrames, stackingUnits } from "../lib/mark";
  * agent's side of the conversation, the live button, the empty session -- and
  * it carries state by how it moves rather than by a second indicator parked
  * next to it. A blinking dot says "something is on"; a mark that breathes,
- * flips and warms through the brand's colours says *what* is on, in the place
+ * morphs and warms through the brand's colours says *what* is on, in the place
  * you were already looking.
  *
  * The shape itself is in lib/mark.ts -- one equilateral triangle with rounded
@@ -18,8 +18,8 @@ import { BLOOM, MARK, REST, flipFrames, stackingUnits } from "../lib/mark";
  *
  *   rest      still, cool, quietly lit -- nothing is happening
  *   live      slow breathing, the microphone is open
- *   thinking  it turns over on its own axis, again and again, and the
- *             gradient turns with it -- the model is working something out
+ *   thinking  it opens out into the circle inside it and closes again,
+ *             twice, while it turns -- the model is working something out
  *   building  the mark stacks itself together out of smaller copies of
  *             itself, bottom row first, while colours run across the pieces
  *   settle    a single bloom as the work lands, then back to rest
@@ -27,7 +27,7 @@ import { BLOOM, MARK, REST, flipFrames, stackingUnits } from "../lib/mark";
  *   error     one dim shiver as a turn fails, then back to rest
  *
  * `thinking` and `building` are the two ways of being busy, and the difference
- * is worth the extra state: a mark that flips is deliberating, one that is
+ * is worth the extra state: a mark that morphs is deliberating, one that is
  * assembling itself is doing. Callers that know only that the agent is busy
  * can keep passing "working", which is what the two of them replaced.
  *
@@ -56,10 +56,12 @@ export type MarkState =
 /** How long the finishing bloom runs. Matches --settle-ms in styles.css. */
 const SETTLE_MS = 900;
 
-/** The flip, sampled from a rotation and looping seamlessly because its first
-    and last frames are both the upright mark. */
-const FLIP = flipFrames().join(";");
-const FLIP_MS = 4600;
+/** The morph, drawn as frames of the same 24 points. Twice round the cycle the
+    mark opens out into the circle inside it and closes again, and all the while
+    it turns; the loop has no seam because two thirds of a turn is a triangle's
+    own symmetry, so the last frame is the first one with its corners renamed. */
+const MORPH = morphFrames().join(";");
+const MORPH_MS = 9000;
 
 /** One turn of the building animation: stack up, hold, come apart, again. */
 const BUILD_MS = 3600;
@@ -214,16 +216,16 @@ export function AutoraMark({
     >
       <svg viewBox={`0 0 ${MARK.box} ${MARK.box}`} width={size} height={size} role="presentation">
         <defs>
-          {/* Measured across the mark's own box rather than each shape's, so
-              the pieces of a mark still being built are coloured by where they
-              sit and the finished thing matches the mark at rest. */}
+          {/* Measured across the mark's own drawn box rather than each shape's,
+              so the pieces of a mark still being built are coloured by where
+              they sit and the finished thing matches the mark at rest. */}
           <linearGradient
             id={`g${uid}`}
             gradientUnits="userSpaceOnUse"
-            x1="8.98"
-            y1="9.74"
-            x2="23.02"
-            y2="22.28"
+            x1={DRAWN_BOX.x0}
+            y1={DRAWN_BOX.y0}
+            x2={DRAWN_BOX.x1}
+            y2={DRAWN_BOX.y1}
           >
             <stop offset="0" stopColor={colors.accent}>
               {shifting && <animate attributeName="stop-color" values={warm(colors)} dur="6s" repeatCount="indefinite" />}
@@ -282,8 +284,8 @@ export function AutoraMark({
               <animate
                 key={shown}
                 attributeName="d"
-                values={FLIP}
-                dur={`${FLIP_MS}ms`}
+                values={MORPH}
+                dur={`${MORPH_MS}ms`}
                 repeatCount="indefinite"
                 calcMode="linear"
               />

@@ -6,7 +6,7 @@
  * you. Both the title and the favicon carry the same state, because which one a
  * given browser shows depends on how many tabs are open.
  */
-import { MARK, trianglePath } from "./mark";
+import { DRAWN_BOX, trianglePath } from "./mark";
 
 export type Chrome = "idle" | "working" | "live" | "approval" | "offline" | "error";
 
@@ -33,11 +33,12 @@ const DOT: Record<Chrome, string> = {
  * on the mark's own corner and left both illegible.
  */
 const svg = (color: string, brand: boolean) => {
-  // The ramp runs across the mark itself, not the plate: spread over the whole
-  // 32px box it gives the triangle a slice of one colour and it comes out flat.
-  const w = MARK.R * Math.sqrt(3) / 2;
+  // The ramp runs corner to corner of the mark itself, not of the plate: spread
+  // over the whole 32px box it gives the triangle a slice of one colour and it
+  // comes out flat.
+  const box = DRAWN_BOX;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-<defs><linearGradient id="a" gradientUnits="userSpaceOnUse" x1="${(MARK.cx - w).toFixed(2)}" y1="${(MARK.cy - MARK.R).toFixed(2)}" x2="${(MARK.cx + w).toFixed(2)}" y2="${(MARK.cy + MARK.R).toFixed(2)}">
+<defs><linearGradient id="a" gradientUnits="userSpaceOnUse" x1="${box.x0.toFixed(2)}" y1="${box.y0.toFixed(2)}" x2="${box.x1.toFixed(2)}" y2="${box.y1.toFixed(2)}">
 <stop offset="0" stop-color="#6e5bff"/><stop offset="50" stop-color="#22d3ee"/><stop offset="1" stop-color="#c06bff"/>
 </linearGradient></defs>
 <rect width="32" height="32" rx="7.5" fill="${brand ? "#0b0a14" : color}"/>

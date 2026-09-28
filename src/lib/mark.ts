@@ -3,8 +3,9 @@
  *
  * One equilateral triangle with rounded corners -- the shape the app signs its
  * name with -- plus the few things it turns into while the agent works: it
- * flips over while it is thinking, and stacks itself together out of smaller
- * copies of itself while it is building something.
+ * opens out into the circle drawn inside it, and turns, while it is thinking,
+ * and stacks itself together out of smaller copies of itself while it is
+ * building something.
  *
  * Pure numbers, no React and no DOM, for two reasons. The app draws it, the
  * favicon in index.html draws it, the Umbrel tile draws it and
@@ -36,12 +37,11 @@ const P = (n: number) => +n.toFixed(3);
  * triangle, with corners taken off rather than a triangle rounded into a
  * lozenge.
  *
- * `cy` is the box centre less half a fillet, which is the offset that centres
- * the shape you can actually see. The corners are the part of a triangle that
- * a fillet takes away, so the drawn silhouette is half a fillet shorter at the
- * apex than the ideal one; centring the ideal one leaves the mark sitting low.
+ * `cy` is the centre of the box the mark is drawn in. The shape goes half a
+ * fillet above it, and that is done in `trianglePath` rather than here, because
+ * the offset has to follow the fillet: see the note there.
  */
-export const MARK = { box: 32, cx: 16, cy: 16 - 0.75, R: 9.375, fillet: 1.5 };
+export const MARK = { box: 32, cx: 16, cy: 16, R: 9.375, fillet: 1.5 };
 
 /** The art the mark was drawn at: a 512px master, r=24 fillets. */
 export const ART = { box: 512, R: 150, fillet: 24 };
@@ -61,32 +61,47 @@ export type ShapeOptions = {
   turn?: number;
   /** Uniform scale about the centre. */
   scale?: number;
-  /** Vertical scale about the centre: 1 as drawn, 0 edge-on, -1 upside down. */
+  /** Vertical scale about the centre: 1 as drawn, below 1 a little flattened. */
   squash?: number;
   /** Points per corner. */
   steps?: number;
 };
 
 /**
- * One triangle: apex up, corners rounded, centred on (cx, cy).
+ * One triangle as points: apex up, corners rounded, placed on (cx, cy).
  *
- * `squash` and `scale` are applied before the shape is placed, so a squashed
- * mark stays in the middle of its box instead of sliding onto its edge -- and
- * a squash through zero is the flip: at 0 the mark is a horizontal line, and
- * past it the same points read upside down.
+ * The points, not the path string, because two of the things built on it have
+ * to measure where the shape ended up -- the morph, which recentres every frame
+ * on the outline you can actually see, and `bbox` below -- and neither can
+ * measure a string. `trianglePath` is the same points joined up.
+ *
+ * `squash` and `scale` are applied before the shape is placed, so a squashed or
+ * scaled mark stays in the middle of its box instead of sliding onto its edge.
+ * The settle bloom is the one thing that uses them.
  */
-export function trianglePath({
+export function outlinePoints({
   cx = MARK.cx,
-  cy = MARK.cy,
+  cy,
   R = MARK.R,
   fillet = MARK.fillet,
   turn = -Math.PI / 2,
   scale = 1,
   squash = 1,
   steps = STEPS,
-}: ShapeOptions = {}): string {
+}: ShapeOptions = {}): number[][] {
   const radius = R * scale;
   const r = fillet * scale;
+
+  // What you actually see is half a fillet lower than the ideal triangle's
+  // box, and a fillet is not the same size in every shape the mark turns into:
+  // a fillet takes a whole radius off the apex, where the corner's bisector is
+  // vertical, and nothing off the base, where the arc is tangent to it. So the
+  // drawn silhouette's centre is half a fillet below the centre of the shape's
+  // own box, at *every* fillet -- including the one where the mark is a circle
+  // -- and the mark is placed half a fillet up to put what you see in the
+  // middle of its box. Centring the ideal triangle instead is what left the app
+  // icons sitting 0.75 units low on the 32 grid.
+  const originY = cy ?? MARK.cy - r / 2;
   // The circumcentre of a triangle whose bounding box is centred on the
   // origin: apex at -0.75R, base at +0.75R, so the centre is 0.25R down.
   const centre = [0, radius / 4];
@@ -124,34 +139,141 @@ export function trianglePath({
   for (const { arc, a0, sweep } of corners) {
     for (let k = 0; k < steps; k += 1) {
       const a = a0 + (sweep * k) / (steps - 1);
-      points.push([cx + arc[0] + r * Math.cos(a), cy + squash * (arc[1] + r * Math.sin(a))]);
+      points.push([cx + arc[0] + r * Math.cos(a), originY + squash * (arc[1] + r * Math.sin(a))]);
     }
   }
 
+  return points;
+}
+
+/** Points as an SVG path: nothing but M, L and Z, so any two outlines with the
+    same number of points interpolate -- which is the whole reason the corners
+    are sampled rather than written as arc commands. */
+export function pathOf(points: number[][]): string {
   return `M${points.map(([x, y]) => `${P(x)} ${P(y)}`).join("L")}Z`;
+}
+
+/** The outline of one triangle, as an SVG path. */
+export function trianglePath(options: ShapeOptions = {}): string {
+  return pathOf(outlinePoints(options));
+}
+
+/** The box the points occupy: what you see, not the ideal shape behind it. */
+function bbox(points: number[][]): [number, number, number, number] {
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (const [x, y] of points) {
+    if (x < x0) x0 = x;
+    if (y < y0) y0 = y;
+    if (x > x1) x1 = x;
+    if (y > y1) y1 = y;
+  }
+  return [x0, y0, x1, y1];
 }
 
 /** The mark as it sits: apex up, nothing moving. */
 export const REST = trianglePath();
 
 /**
- * The flip, as frames: the mark turning over about its own horizontal axis the
- * way a card does when you turn it -- squashed edge-on and back out the other
- * way, landing upside down, then home again.
+ * The box the mark at rest occupies on its own grid -- measured from the
+ * outline rather than from the ideal triangle behind it, which is a fillet
+ * taller at the apex and half a fillet wider.
  *
- * The frames are sampled from a cosine, which is exactly the profile of a
- * rotation seen from the side, so a handful of them read as one continuous
- * turn. Going straight from the upright mark to the inverted one would instead
- * collapse it through its own centroid, which looks like a mistake rather than
- * a movement.
+ * The tab icon and the app's own gradient are painted across this box rather
+ * than across the whole 32 units: a ramp spread over the plate spends its middle
+ * on empty background and hands the mark a slice of one colour, so the mark
+ * comes out flat. Measured here so there is one answer to where the mark is,
+ * rather than a literal in each of the two places that draw it.
  */
-export function flipFrames(steps = 6): string[] {
-  const half: string[] = [];
-  for (let i = 0; i < steps; i += 1) {
-    half.push(trianglePath({ squash: Math.cos((Math.PI * i) / (steps - 1)) }));
+export const DRAWN_BOX = (() => {
+  const [x0, y0, x1, y1] = bbox(outlinePoints());
+  return { x0, y0, x1, y1 };
+})();
+
+/**
+ * The fillet at which the mark stops being a triangle and is a circle.
+ *
+ * A corner's arc sits `2 * fillet` along the corner's bisector, and the
+ * incenter of an equilateral triangle is `2 * inradius` along the same line, so
+ * at a fillet of half the circumradius -- the inradius -- all three arcs share
+ * a centre and the outline is exactly the circle drawn inside the triangle.
+ * Nothing else has to move for the mark to become a circle: the corner angle is
+ * 60 degrees however large the fillet is, so every frame of the morph is the
+ * same 24 points and the interpolator has no work to do but between them.
+ */
+export const CIRCLE_FILLET = MARK.R / 2;
+
+/**
+ * The morph, as frames: the mark opening out into a circle and closing again,
+ * twice, while it turns a third of a turn.
+ *
+ * There is no flip any more. Turning a triangle over edge-on is a squash, and a
+ * shape that flattens to a line and comes back inverted reads as the mark
+ * falling over rather than as work being done -- and because the flattening
+ * happens on the mark's own horizontal axis, most of what you watch is a bar
+ * rather than the mark.
+ *
+ * What it does instead is change *shape*. The corners open out until the mark
+ * is the circle drawn inside it and close again, and the fillet follows a
+ * cosine rather than a ramp, so the mark arrives at the circle and at the
+ * triangle with no speed at all: the two still moments are the two shapes, and
+ * the movement is entirely in between.
+ *
+ * The turn is a third of a turn per cycle. A triangle has three-fold symmetry,
+ * so the last frame here is the first frame with its corners renamed -- the
+ * same outline -- and the loop restarts with nothing to see. The gradient is
+ * fixed in the mark's own box, so turning the shape walks its corners through
+ * the colours rather than dragging the colours round with them.
+ */
+export function morphFrames(
+  steps = 30,
+  /**
+   * How much of the shrinking the mark does not do.
+   *
+   * The circle drawn inside the triangle is a good deal smaller than the
+   * triangle: same height it is not, and going all the way in reads as the mark
+   * deflating rather than as the mark turning. A little scale on the way out
+   * takes most of that back, so the mark breathes instead of shrinking. 0 is
+   * the pure incircle, 1 is a circle as tall as the triangle was.
+   */
+  {
+    pulses = 2,
+    breath = 0.3,
+    /**
+     * How many thirds of a turn the cycle covers.
+     *
+     * Two, not one: the mark has to be sharp at turn 0, turn 120 and turn 240
+     * degrees and nowhere else, and those three are the same picture only for
+     * whole thirds. At one third the half-way sharp moment is the mark upside
+     * down, which is not the mark. Three-fold symmetry is what keeps the loop
+     * seamless either way.
+     */
+    turns = 2,
+  }: { pulses?: number; breath?: number; turns?: number } = {},
+): string[] {
+  const frames: string[] = [];
+  for (let i = 0; i <= steps; i += 1) {
+    const p = i / steps;
+    // 0 at the triangle, 1 at the circle, `pulses` times round the cycle.
+    const open = Math.sin(Math.PI * pulses * p) ** 2;
+    const fillet = MARK.fillet + (CIRCLE_FILLET - MARK.fillet) * open;
+    // Drawn about the origin and moved afterwards, so the frame can be centred
+    // on its own outline. A shape that is also turning has no fixed idea of
+    // "half a fillet up": which corner is the apex changes, and with it the
+    // drawn box, so a fixed offset would let the mark bob as it turned.
+    const points = outlinePoints({
+      cy: 0,
+      fillet,
+      scale: 1 + breath * open,
+      turn: -Math.PI / 2 + (TAU / 3) * turns * p,
+    });
+    const [x0, y0, x1, y1] = bbox(points);
+    const dx = MARK.cx - (x0 + x1) / 2;
+    const dy = MARK.cy - (y0 + y1) / 2;
+    frames.push(pathOf(points.map(([x, y]) => [x + dx, y + dy])));
   }
-  const frames = [...half];
-  for (let i = half.length - 2; i >= 1; i -= 1) frames.push(half[i]);
   return frames;
 }
 
@@ -181,7 +303,8 @@ export function stackingUnits(rows: number): { d: string; x: number; y: number }
   const side = unit * Math.sqrt(3);                    // its side, and the lattice pitch
   const height = unit * 1.5;                           // its height, and the row pitch
   const left = MARK.cx - (MARK.R * Math.sqrt(3)) / 2;  // the mark's bottom-left corner
-  const base = MARK.cy + MARK.R * 0.75;                // the mark's base line
+  const centreY = MARK.cy - MARK.fillet / 2;           // the drawn mark's own centre
+  const base = centreY + MARK.R * 0.75;                // the mark's base line
   const up = trianglePath({ cx: 0, cy: 0, R: unit, fillet: MARK.fillet / rows });
   const down = trianglePath({ cx: 0, cy: 0, R: unit, fillet: MARK.fillet / rows, turn: Math.PI / 2 });
 

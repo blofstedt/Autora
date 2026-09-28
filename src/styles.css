@@ -589,7 +589,7 @@ body::before {
 .msg.user .avatar { background: rgba(var(--accent2-rgb),  0.13); color: var(--accent-2); }
 
 /* The agent's side of the conversation is signed with the bare mark, the
-   same glowing star as the empty session and the app icon: no tile behind
+   same glowing mark as the empty session and the app icon: no tile behind
    it. It turns and glows while its line is being written, then dims, so the
    bright one is always the line that is still being said. */
 .msg.agent .avatar { overflow: visible; }
@@ -1173,7 +1173,7 @@ button.hint.voice-note:hover { text-decoration: underline; }
 .mob-live-btn > .amark { z-index: 2; }
 
 /* Brighter than the mark is elsewhere: it is read at 22px against its own
-   halo, so the star needs more light than it does beside a line of text. */
+   halo, so the triangle needs more light than it does beside a line of text. */
 .mob-live-btn .amark-shape { filter: drop-shadow(0 0 4px rgba(var(--glow-light-rgb),  0.9)); }
 .mob-live-btn.is-working .amark-shape { filter: drop-shadow(0 0 9px rgba(var(--glow-light-rgb),  1)); }
 .mob-live-btn .amark-wash { opacity: 0.5; }
@@ -1257,7 +1257,7 @@ button.hint.voice-note:hover { text-decoration: underline; }
   align-items: end; min-height: 320px; padding: 14px 16px 22px;
 }
 
-/* The mark, in a clear disc: over a picture a bare star can land on anything,
+/* The mark, in a clear disc: over a picture a bare triangle can land on anything,
    and the disc is what keeps it legible. Drawn at 46px inside a 60px circle --
    a mark bigger than its own disc hangs out of the bottom of it and into the
    words under it, which is exactly what it was doing. */
@@ -1286,7 +1286,7 @@ button.hint.voice-note:hover { text-decoration: underline; }
 .live-bar .live-bar-orb.is-holding { transform: scale(1.12); }
 
 /* The words: one row with the mark, indented clear of it and centred on it, so
-   the line sits level with the middle of the star instead of running under it. */
+   the line sits level with the middle of the mark instead of running under it. */
 .live-bar-text {
   grid-row: 1; grid-column: 2; align-self: center;
   display: flex; flex-direction: column; gap: 4px;
@@ -3153,9 +3153,10 @@ label + .jf-hint { margin-top: -5px; }
   filter: drop-shadow(0 0 2px rgba(var(--accent-rgb),  0.45));
 }
 .amark.is-live .amark-shape { filter: drop-shadow(0 0 5px rgba(var(--accent-rgb),  0.6)); }
-/* Busy, the two ways of being busy. Neither of them turns: the flip and the
-   stacking are drawn in the shape itself (see lib/mark.ts), and a rotation on
-   top of either would be a second thing happening to the same mark. */
+/* Busy, the two ways of being busy. Both are drawn into the shape itself (see
+   lib/mark.ts) and nothing is animated here: the morph carries its own turn in
+   the path data, and a rotation on top of that would be a second thing
+   happening to the same mark at once. */
 .amark.is-thinking .amark-shape,
 .amark.is-building .amark-shape { filter: drop-shadow(0 0 7px rgba(var(--glow-rgb),  0.75)); }
 .amark.is-settle .amark-shape { animation: amarkLand var(--settle-ms) var(--ease) 1; }
@@ -3182,7 +3183,7 @@ label + .jf-hint { margin-top: -5px; }
 /* --- moods of the one presence (see AutoraMark.tsx) --- */
 
 /* Idle: a breath slower than any other motion in the app, and every so often
-   the star catches the light. Switched on, not busy. */
+   the mark catches the light. Switched on, not busy. */
 .amark.is-rest.is-idle .amark-wash { animation: amarkIdle 6.5s ease-in-out infinite; }
 .amark.is-rest.is-idle .amark-shape { animation: amarkTwinkle 13s ease-in-out infinite; }
 @keyframes amarkIdle {
@@ -3216,7 +3217,7 @@ label + .jf-hint { margin-top: -5px; }
 }
 
 /* Attention: it leans in while you type. On the svg, so it adds to whatever
-   the wash and the star are already doing instead of fighting them. */
+   the wash and the mark are already doing instead of fighting them. */
 .amark svg {
   transition: transform 0.35s var(--ease), filter 0.35s var(--ease);
   transform: scale(calc(1 + var(--attention, 0) * 0.12));

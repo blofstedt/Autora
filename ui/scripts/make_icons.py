@@ -34,7 +34,9 @@ OUT = pathlib.Path(__file__).resolve().parents[2] / "public" / "icons"
 TILE = pathlib.Path(__file__).resolve().parents[2] / "blofstedt-autora" / "icon.svg"
 
 #: The mark as src/lib/mark.ts draws it on the 32-unit grid the icon set uses.
-MARK = {"box": 32, "cx": 16.0, "cy": 16.0 - 0.75, "R": 9.375, "fillet": 1.5}
+#: `cy` is the middle of the box; the mark is drawn half a fillet above it by
+#: `mark_at`, because that is where what you see lands in the middle.
+MARK = {"box": 32, "cx": 16.0, "cy": 16.0, "R": 9.375, "fillet": 1.5}
 
 #: The art the mark was designed at: a 512px master, r=24 fillets. Icons scale
 #: from this rather than from the 32 grid, so the proportions are the
@@ -100,10 +102,28 @@ def triangle(cx: float, cy: float, R: float, fillet: float, steps: int = STEPS):
 
 
 def mark_at(span: float, size: float, lift: float = 0.0, steps: int = STEPS):
-    """The mark's outline on a `size` box, its width `span` of that box."""
+    """The mark's outline on a `size` box, its width `span` of that box.
+
+    The mark is placed half a fillet above the middle of the box, because what
+    you see of a rounded triangle is half a fillet *below* the ideal triangle's
+    own box: a fillet takes a whole radius off the apex, where the corner's
+    bisector is vertical, and nothing off the base, where the arc is tangent to
+    it. Centring the ideal triangle instead leaves the mark sitting low -- which
+    is what these icons were doing, 0.75 of the 32 units the app draws on, 2.3%
+    of the height. `visible_centre` below is the check.
+    """
     scale = span * size / (ART["R"] * math.sqrt(3))
-    cy = size / 2 + lift * size
-    return triangle(size / 2, cy, ART["R"] * scale, ART["fillet"] * scale, steps)
+    fillet = ART["fillet"] * scale
+    cy = size / 2 - fillet / 2 + lift * size
+    return triangle(size / 2, cy, ART["R"] * scale, fillet, steps)
+
+
+def visible_centre(span: float, size: float, steps: int = STEPS):
+    """The middle of the mark you can actually see, on its own `size` box."""
+    points = mark_at(span, size, steps=steps)
+    xs = [x for x, _ in points]
+    ys = [y for _, y in points]
+    return (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
 
 
 def gradient(big: int, box: tuple[float, float, float, float]) -> Image.Image:
@@ -202,8 +222,25 @@ def svg(size: int = 32) -> str:
 """
 
 
+#: (size, span) of every icon that gets drawn, for the centring check.
+SHAPES = ((192, 0.52), (512, 0.52), (512, 0.40), (180, 0.52))
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
+
+    # Centred on the mark you can see, not on the ideal triangle it is built
+    # from. Asserted rather than assumed: an icon that sits low is exactly the
+    # thing nobody notices until they look at the tile, which is how this got
+    # here.
+    for size, span in SHAPES:
+        x, y = visible_centre(span, size)
+        print(
+            f"  centre  {size}px span {span}: x {x:.2f} y {y:.2f}"
+            f" (off centre {y - size / 2:+.3f})"
+        )
+        assert abs(x - size / 2) < size * 0.005, f"{size}px {span}: off centre in x"
+        assert abs(y - size / 2) < size * 0.005, f"{size}px {span}: sitting low"
 
     # `purpose: any`. Nothing masks these, so they carry their own corners.
     for size in (192, 512):
