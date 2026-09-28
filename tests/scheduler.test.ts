@@ -164,4 +164,34 @@ await test("a look that outlasts the tick does not let a second tick fire the sa
   assert.deepEqual(fired, ["plain"], "fired once");
 });
 
+
+await test("a job the budget holds back does not start, and keeps its place", async () => {
+  const j = job();
+  let clock = at("2026-03-10T08:00:10").getTime();
+  const finished: JobRun[] = [];
+  let ran = 0;
+  const s = new Scheduler([j], {
+    now: () => clock,
+    save: () => undefined,
+    notify: (_job, run) => finished.push(run),
+    allow: () => "Today’s automation budget ($1.00) is spent, so it was not started.",
+    observe: async () => "",
+    run: async () => {
+      ran += 1;
+      return { session: "s1", done: Promise.resolve({ ok: true, error: null, reply: "" }) };
+    },
+  });
+  s.plan(j);
+  const planned = j.next_run;
+  clock += 60_000;
+  await s.tick();
+  assert.equal(ran, 0, "nothing was spent");
+  assert.equal(finished.length, 1, "the refusal is recorded as a run");
+  assert.match(finished[0].error ?? "", /automation budget/);
+  assert.equal(finished[0].session, null, "no session was opened");
+  assert.equal(j.enabled, true, "the job is not switched off");
+  assert.equal(j.cron, "* * * * *", "nor is its cron cleared");
+  assert.ok((j.next_run ?? 0) > (planned ?? 0), "and it is planned again for its next time");
+});
+
 console.log(`${passed} passed`);

@@ -7,6 +7,7 @@ import { ModelPicker } from "./ModelPicker";
 import { VoiceCheck } from "./VoiceCheck";
 import { VoiceCard } from "./VoiceCard";
 import { CaptchaCard } from "./CaptchaCard";
+import { AutomationCard } from "./AutomationCard";
 import { QuietCard } from "./QuietCard";
 import { RelaySetup } from "./RelaySetup";
 import { Billing } from "./Billing";
@@ -717,6 +718,7 @@ export function Settings({
         {shows("config") && <VoiceCard />}
         {shows("config") && <CaptchaCard />}
         {shows("config") && <QuietCard />}
+        {shows("config") && <AutomationCard />}
 
         {shows("keys") && voiceKeys.length > 0 && (
           <section className="set-card">

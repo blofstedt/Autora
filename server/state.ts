@@ -26,6 +26,7 @@ import { DEFAULT_JEV, clampThreshold, type JevSettings } from "./jev/router";
 import type { McpServerConfig } from "./mcp";
 import { DEFAULT_CAPTCHA, mergeCaptcha, type CaptchaSettings } from "./captcha";
 import { DEFAULT_PROACTIVITY, mergeProactivity, type Proactivity } from "./quiet";
+import { AUTOMATION_DEFAULTS, mergeAutomation, type AutomationBudget } from "./automation";
 
 export const THEMES = ["violet", "teal", "nous-blue", "midnight", "ember", "mono", "cyberpunk", "rose"] as const;
 export const FONTS = ["inter", "system", "rounded", "mono"] as const;
@@ -265,6 +266,10 @@ export interface PersistedState {
   loop: LoopWatchConfig;
   /** How long sessions and artifacts are kept. */
   retention: RetentionPolicy;
+  /** What automated runs -- schedules and watchers -- may cost, kept apart
+      from what the person spends talking to the agent. See
+      server/automation.ts. */
+  automation: AutomationBudget;
 }
 
 export const DEFAULT_PROMPT =
@@ -484,6 +489,7 @@ function blank(): PersistedState {
     learning: true,
     loop: { ...LOOP_DEFAULTS },
     retention: { ...RETENTION_DEFAULTS },
+    automation: { ...AUTOMATION_DEFAULTS },
   };
 }
 
@@ -523,6 +529,7 @@ function read(): PersistedState {
     if (raw.proactivity) mergeProactivity(state.proactivity, raw.proactivity);
     if (raw.loop) mergeLoop(state.loop, raw.loop);
     if (raw.retention) mergeRetention(state.retention, raw.retention);
+    if (raw.automation) mergeAutomation(state.automation, raw.automation);
     if (raw.carried && typeof raw.carried === "object") {
       carried = {
         cost: Number(raw.carried.cost) || 0,

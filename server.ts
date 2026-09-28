@@ -65,6 +65,10 @@ import { inQuiet, mergeProactivity, quietBriefing } from "./server/quiet";
 import { LoopWatch } from "./server/loopwatch";
 import { healthBriefing, recordOutcome, targetOf, toolHealth } from "./server/toolhealth";
 import { Scheduler, type Job, type JobWatch } from "./server/scheduler";
+import {
+  addSpend, budgetLine, mergeAutomation, overDay, overRun, rollLedger, skipReason,
+  stopReason, type AutomationLedger,
+} from "./server/automation";
 import { backgroundBriefing } from "./server/background";
 import { addRule, autonomyBriefing, covered, listRules, matchText, revoke as revokeRule, revokeAll } from "./server/autonomy";
 import { inventoryBriefing } from "./server/inventory";
@@ -2071,9 +2075,53 @@ async function observe(watch: JobWatch): Promise<string> {
   return output;
 }
 
+/** What automated runs have spent today, and what stopped them. Kept on
+    disk, so a restart in the middle of a day does not hand every job a fresh
+    budget. See server/automation.ts. */
+let automationLedger: AutomationLedger = rollLedger(
+  readDoc<AutomationLedger>("automation"),
+  dayKey(Math.floor(Date.now() / 1000)),
+);
+/** The day the budget was found spent is told to the person once, not once
+    per job that then sat out -- and it starts over with the day. */
+let automationSkipDay = "";
+let automationSkipNoted = false;
+
+/** Sessions a job opened, so a run\u0027s own spending can be found while it is
+    still going -- the per-run half of the budget. */
+const automationSessions = new Set<string>();
+
+function saveAutomation() {
+  saveDoc("automation", () => automationLedger);
+}
+
+/** What a session has cost so far, from the ledger entries still in memory.
+    Asked while a scheduled run is in flight, and again when it finishes. */
+function sessionCost(sessionId: string): number {
+  let total = 0;
+  for (const entry of state.usage) if (entry.session === sessionId) total += Number(entry.cost) || 0;
+  return total;
+}
+
 const scheduler = new Scheduler(jobs, {
+  /* Asked before a job spends anything: what all of today\u0027s automated runs
+     have cost, against the day\u0027s budget. A job that is refused keeps its
+     cron and its next time -- what stops is the spending, not the schedule. */
+  allow: (job) => {
+    const day = dayKey(Math.floor(Date.now() / 1000));
+    automationLedger = rollLedger(automationLedger, day);
+    if (automationSkipDay !== day) {
+      automationSkipDay = day;
+      automationSkipNoted = false;
+    }
+    if (!overDay(state.automation, automationLedger)) return null;
+    automationLedger.skipped += 1;
+    saveAutomation();
+    return skipReason(job.name, state.automation);
+  },
   run: async (job, prompt, reason) => {
     const session = newSession(job.name);
+    automationSessions.add(session.id);
     emitEvent(session, "system.log", "system", {
       event: "schedule.fired",
       job: job.id,
@@ -2085,20 +2133,39 @@ const scheduler = new Scheduler(jobs, {
           ? `Started by hand from the schedule "${job.name}".`
           : `Started on schedule by "${job.name}" (${job.cron}).`,
     });
-    const done = startTurn(session, prompt);
-    return {
-      session: session.id,
-      done: done.then((r) => ({ ok: r.ok, error: r.error, reply: r.reply })),
-    };
+    const done = startTurn(session, prompt).then((r) => {
+      /* What the run cost goes on today\u0027s ledger, so the next job knows what
+         this one has already spent. */
+      automationLedger = rollLedger(automationLedger, dayKey(Math.floor(Date.now() / 1000)));
+      addSpend(automationLedger, sessionCost(session.id));
+      saveAutomation();
+      return { ok: r.ok, error: r.error, reply: r.reply };
+    });
+    return { session: session.id, done };
   },
   observe,
   save: () => saveJobs(),
-  notify: (job, run) => notify({
-    tone: run.ok ? "ok" : "error",
-    title: run.ok ? `${job.name} finished` : `${job.name} failed`,
-    detail: run.ok ? run.summary || "Done." : run.error || "It did not finish.",
-    session: run.session,
-  }),
+  notify: (job, run) => {
+    /* A job held back by the day\u0027s budget is not a failure and is worth
+       saying once, not once per job that then sat out. */
+    const held = !run.ok && (run.error ?? "").startsWith("Today\u0027s automation budget");
+    if (held) {
+      if (automationSkipNoted) return;
+      automationSkipNoted = true;
+      return notify({
+        tone: "info",
+        title: "Automation budget spent for today",
+        detail: `${run.error} (Held back: ${job.name}.)`,
+        session: null,
+      });
+    }
+    notify({
+      tone: run.ok ? "ok" : "error",
+      title: run.ok ? `${job.name} finished` : `${job.name} failed`,
+      detail: run.ok ? run.summary || "Done." : run.error || "It did not finish.",
+      session: run.session,
+    });
+  },
 });
 
 /** A job as the Schedule page wants it: the watcher's last look without the
@@ -2993,6 +3060,18 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
         const verdict = watch.record(name, args, ok, raw);
         if (verdict.log) emitEvent(session, "system.log", "system", { message: verdict.log });
         if (verdict.stop) loopStop = verdict.stop;
+        /* A scheduled run has a budget of its own, so one job that has begun
+           to chew through a session is stopped here rather than left to
+           finish. A turn the person is having is never stopped this way. */
+        if (!loopStop && automationSessions.has(session.id)) {
+          const spent = sessionCost(session.id);
+          if (overRun(state.automation, spent)) {
+            automationLedger = rollLedger(automationLedger, dayKey(Math.floor(Date.now() / 1000)));
+            automationLedger.stopped += 1;
+            saveAutomation();
+            loopStop = stopReason(state.automation, spent);
+          }
+        }
         const known = siteMemory(name, args);
         return [shown, verdict.note, known].filter(Boolean).join("\n\n");
       };
@@ -4431,6 +4510,18 @@ async function startServer() {
   });
 
   // 9. Scheduled jobs and watchers (see server/scheduler.ts)
+  /* What automated runs have spent today, what the guard did about it, and
+     what is left. The Schedule page and the Settings card both read this. */
+  app.get("/api/automation", (_req: Request, res: Response) => {
+    automationLedger = rollLedger(automationLedger, dayKey(Math.floor(Date.now() / 1000)));
+    res.json({
+      budget: { ...state.automation },
+      ledger: { ...automationLedger },
+      line: budgetLine(state.automation, automationLedger),
+      running: automationSessions.size,
+    });
+  });
+
   app.get("/api/jobs", (_req: Request, res: Response) => {
     res.json(jobs.map(jobView));
   });
@@ -4616,6 +4707,7 @@ async function startServer() {
       top_up_usd: state.topUpUsd,
       loop: { ...state.loop },
       retention: { ...state.retention },
+      automation: { ...state.automation },
       state_file: stateFilePath(),
       credentials: PROVIDERS.filter((spec) => spec.id !== "local").map((spec) => {
         const source = keySource(spec.id);
@@ -4833,6 +4925,9 @@ async function startServer() {
        see, and nothing ever deleted anything. */
     if (body.loop && typeof body.loop === "object") mergeLoop(state.loop, body.loop);
     if (body.retention && typeof body.retention === "object") mergeRetention(state.retention, body.retention);
+    /* What automated runs may cost. Enforced in the scheduler and again in
+       the agent loop -- see server/automation.ts. */
+    if (body.automation && typeof body.automation === "object") mergeAutomation(state.automation, body.automation);
 
     save();
     res.json(await settingsWithTools());

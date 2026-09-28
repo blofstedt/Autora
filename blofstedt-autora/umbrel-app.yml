@@ -99,28 +99,25 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  webclaw, the MCP server that reads pages and sites over HTTP instead of
-  through a browser, works out of the box now. Its launcher is not a Node
-  program: it downloads a compiled binary, and its platform map has no musl
-  entry, so inside Autora's own Alpine container it fetched a glibc build
-  that cannot exec there and all the console could say was "MCP error -32000:
-  Connection closed". Autora fetches the right build itself, into its data
-  directory rather than a cache a container update wipes, and hands it to the
-  launcher through WEBCLAW_MCP_BIN -- once, at the first connect, and again if
-  the file has gone. It is in the catalog now too, so it can be offered in a
-  conversation or added from the Integrations page like any other, and its
-  Serper key is optional: everything but the search tool works without one, so
-  the card installs without it. When a key is optional it is simply left empty
-  instead of stopping the server -- a key you do have starts working the
-  moment it is saved. If such a launcher still cannot start, the error says
-  which build it wanted and where to put one.
+  Scheduled jobs and watchers now have a budget of their own, apart from what
+  you spend talking to the agent. Every firing opens a fresh session, and a
+  fresh session loads the whole prompt, the tool list and the memory before the
+  job has done anything at all, so a watcher pointed at something that changes
+  often -- a release, a build, a feed -- pays that again every single time.
+  Left unmeasured that quietly becomes the largest line on the bill, and there
+  was nothing watching the watchers.
 
-  The notice that rises above the message box when a scheduled task finishes
-  is centred on the box now rather than pinned to its right edge, which put it
-  a third of a width off centre and read as a clipped tooltip. It is also
-  three lines tall before it is ellipsised: one line was rarely enough to say
-  which task had finished and what happened to it, since the name was usually
-  the part that got cut. The delete toast's own centring is fixed with it --
-  the animation that lifts it into view sets transform, which replaced the
-  translate that centred it, so "Deleted X / Undo" sat half a width to the
-  right of centre with nothing wrong with the stylesheet to show for it.
+  The budget is checked twice. Before a job is allowed to start, against what
+  all of today’s automated runs have cost; and every round of a run already
+  going, against what that one run has cost, so a job that has begun to chew
+  through a session is stopped rather than left to finish. Neither check ever
+  deletes a job or clears its cron: a job held back runs again after midnight
+  and one stopped part-way runs again at its next time, and you are told once
+  when the day’s budget is what stopped it. The defaults are a dollar a day
+  across all jobs and a quarter for any one run; both are on the Settings page,
+  clamped to sane ranges so a typo cannot switch the guard off, and a turn you
+  are having is never stopped this way. Turning it off still counts what the
+  jobs spend, it just stops holding them to it.
+
+  What automation has spent today, and what the guard did about it, is on the
+  Settings page beside the budget itself.

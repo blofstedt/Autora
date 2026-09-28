@@ -190,6 +190,12 @@ export const hashOf = (text: string) => crypto.createHash("sha256").update(text)
 
 export interface SchedulerHooks {
   /** Run the prompt in a fresh session. */
+  /** Asked before a job is allowed to spend anything. A string back is the
+      reason it must not start -- the day\u0027s automation budget is spent,
+      most often -- and that goes in the job\u0027s run list as a failure with
+      no session opened, so the job itself is untouched and runs again at its
+      next time. See server/automation.ts. */
+  allow?: (job: Job) => string | null;
   run: (job: Job, prompt: string, reason: JobRun["reason"]) => Promise<{
     session: string;
     done: Promise<{ ok: boolean; error: string | null; reply: string }>;
@@ -302,6 +308,19 @@ export class Scheduler {
   /** Run a job's prompt now, in a fresh session. Resolves once it has started. */
   async fire(job: Job, prompt: string, reason: JobRun["reason"]): Promise<string | null> {
     if (this.inFlight.has(job.id)) return null;
+    /* Asked before anything is spent. A refused job still gets a run
+       recorded, so the Schedule page shows why it did nothing. */
+    const refused = this.hooks.allow ? this.hooks.allow(job) : null;
+    if (refused) {
+      const at = Math.floor(this.now() / 1000);
+      const run: JobRun = { at, finished: at, reason, session: null, ok: false, error: refused, summary: "" };
+      job.runs = [...(job.runs ?? []), run].slice(-MAX_RUNS);
+      job.last_run = at;
+      job.last_error = refused;
+      this.hooks.save();
+      this.hooks.notify(job, run);
+      return null;
+    }
     this.inFlight.add(job.id);
     const run: JobRun = {
       at: Math.floor(this.now() / 1000), finished: null, reason, session: null, ok: false, error: null, summary: "",
