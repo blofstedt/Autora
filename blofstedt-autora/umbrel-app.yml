@@ -97,25 +97,23 @@ submission: https://github.com/blofstedt/Autora
 repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
-  Make it yours, and use the whole screen.
 
+releaseNotes: >-
+  Make it yours, and use the whole screen.
   Settings -> Appearance now sets how big the text is and how big the icons
   are, as two separate four-step scales, from Small to Largest. They follow
   you between devices, so a phone gets the size you chose on the desktop.
   Nothing is left behind: every size in the interface scales together,
   including the icons in the rail and the small print in a thread.
-
   A conversation is no longer stuck in a narrow strip down the middle of a
   wide monitor. Text column chooses Comfort -- the width it has always been --
   Wide, or Fill, and the empty margin either side goes away if you want it to.
-
   Four corner widgets, on a desktop: pin a small version of a page to each
   corner of the conversation -- System, Usage, Schedules, Mind, Artifacts,
   Sessions, Integrations or Settings -- and it sits in the margin and opens
   that page when you click it. Nothing is pinned until you ask for it, and
   when something is, the text makes room for it rather than running
   underneath.
-
   Fixes: with the column set to Fill, the compositor no longer runs the full
   width of the window. Text size and icon size are checked on the way in, so a
   settings file written by an older release, or edited by hand, falls back to
