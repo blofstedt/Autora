@@ -3415,6 +3415,22 @@ const BROWSING_GUIDE = [
  * told "browsing is turned off in Settings" can say so, which is the answer the
  * person actually needs.
  */
+/* When to reach for the memory, not only that it is there. The tools were
+   listed and nothing said when to use them, so the agent searched only when
+   asked to, and worked out again on Friday what it had worked out on
+   Tuesday -- recall at the start of a turn is made from the person's words,
+   and says nothing about the site or service the work turns to halfway. */
+const MEMORY_GUIDE =
+  "- Using your memory: what was recalled for this turn is in the console note, found by " +
+  "the words of the request. When the work turns to a subject, site, service or project " +
+  "that note did not cover, memory_search it by name before working it out again: how it " +
+  "was done here last time may be written down. When you find out something that will " +
+  "matter again -- how a site or API actually behaves, the command that finally worked, " +
+  "something the person tells you about themselves or their work -- memory_write it, with " +
+  "tags naming its subject, so it comes back when that subject does. Each finished turn " +
+  "is also looked back on for you, so there is no need to write down the conversation. " +
+  "A recalled memory that turns out wrong is fixed with memory_update, not worked around.";
+
 export async function capabilityBriefing(): Promise<string> {
   const groups = await groupStates();
   const lines: string[] = ["What you can actually do, right now, on this machine:"];
@@ -3433,6 +3449,7 @@ export async function capabilityBriefing(): Promise<string> {
   }
 
   if (groups.some((g) => g.group === "browser" && g.available)) lines.push(BROWSING_GUIDE, signInBriefing(), credentialsBriefing());
+  if (groups.some((g) => g.group === "memory" && g.available)) lines.push(MEMORY_GUIDE);
 
   const mcp = mcpTools();
   if (mcp.length > 0) {

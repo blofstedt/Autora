@@ -117,8 +117,11 @@ export function App() {
     return isSystemTab(tab) ? tab : "status";
   });
   /** Which of the Mind's buckets to open on: Skills for a ?page=skills link. */
-  const [mindBucket, setMindBucket] = useState<{ kind: Bucket; id?: string }>(
-    () => ({ kind: new URLSearchParams(location.search).get("page") === "skills" ? "skill" : "preference" }),
+  const [mindBucket, setMindBucket] = useState<{ kind: Bucket; id?: string; auto?: boolean }>(
+    () => new URLSearchParams(location.search).get("page") === "skills"
+      ? { kind: "skill" }
+      // Nobody asked for Preferences: the page picks a bucket with something in it.
+      : { kind: "preference", auto: true },
   );
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [appearance, setAppearance] = useState<Appearance>(cachedAppearance);
@@ -1534,13 +1537,17 @@ export function App() {
 }
 
 const fmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
-const money = (n: number) => `$${n < 1 ? n.toFixed(3) : n.toFixed(2)}`;
+const money = (n: number) => `$${n > 0 && n < 1 ? n.toFixed(3) : n.toFixed(2)}`;
 
 /** Just the site, for a badge with room for about fifteen characters. */
 function hostOf(url: string | null): string {
   if (!url) return "a page";
   try {
-    return new URL(url).host.replace(/^www\./, "");
+    const parsed = new URL(url);
+    // Chrome's own error page, where a page that failed to load leaves it:
+    // its host is "chromewebdata", which means nothing to anyone.
+    if (parsed.protocol === "chrome-error:") return "did not load";
+    return parsed.host.replace(/^www\./, "") || "a page";
   } catch {
     return url.slice(0, 24);
   }

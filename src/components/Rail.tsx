@@ -154,11 +154,10 @@ function ContextCard({ gauge }: { gauge: ContextGauge | null }) {
   const mark = gauge?.compactAt ?? 0.75;
   const over = share >= mark;
   const pct = Math.round(share * 100);
-  // The tick at the condensing mark, measured from 12 o'clock.
-  const angle = mark * 2 * Math.PI - Math.PI / 2;
-  const tick = (r: number) => [24 + r * Math.cos(angle), 24 + r * Math.sin(angle)];
-  const [x1, y1] = tick(R - 3.5);
-  const [x2, y2] = tick(R + 3.5);
+  /* The condensing mark, as a short lighter stretch of the ring itself. It
+     was a radial dash, and at 75% that is a horizontal line at nine o'clock,
+     right beside the number: "3%" read as "-3%". */
+  const TICK = 0.03;
 
   return (
     <section
@@ -167,6 +166,12 @@ function ContextCard({ gauge }: { gauge: ContextGauge | null }) {
     >
       <svg className="rail-ctx-ring" viewBox="0 0 48 48" width="48" height="48" aria-hidden="true">
         <circle className="rail-ctx-track" cx="24" cy="24" r={R} />
+        <circle
+          className="rail-ctx-tick"
+          cx="24" cy="24" r={R}
+          strokeDasharray={`${TICK * C} ${C}`}
+          transform={`rotate(${-90 + (mark - TICK / 2) * 360} 24 24)`}
+        />
         {share > 0 && (
           <circle
             className="rail-ctx-fill"
@@ -175,7 +180,6 @@ function ContextCard({ gauge }: { gauge: ContextGauge | null }) {
             transform="rotate(-90 24 24)"
           />
         )}
-        <line className="rail-ctx-tick" x1={x1} y1={y1} x2={x2} y2={y2} />
         <text x="24" y="24" className="rail-ctx-pct">{pct}%</text>
       </svg>
       <div className="rail-ctx-text">

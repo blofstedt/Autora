@@ -1146,7 +1146,9 @@ function JevCard({ jev, onSaved }: { jev: JevState; onSaved: (next: SettingsStat
           : "No Jev API key is set, so decisions are scored by the chat model itself, " +
             "which only works for models that return token probabilities (not Anthropic's)."}
       </p>
-      <div className="jf-row" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+      {/* A row: .jf-row is a column, and in one the key field's 220px basis
+          was its height -- a box a fifth of the screen tall. */}
+      <div className="jf-row" style={{ display: "flex", flexDirection: "row", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <input
           type="password"
           autoComplete="off"
@@ -1186,6 +1188,7 @@ function JevCard({ jev, onSaved }: { jev: JevState; onSaved: (next: SettingsStat
           onPointerUp={() => void patch({ threshold })}
           onKeyUp={() => void patch({ threshold })}
           aria-label="Confidence threshold"
+          style={{ "--fill": `${((threshold - 0.5) / 0.49) * 100}%` } as React.CSSProperties}
         />
       </label>
       {jev.last && (

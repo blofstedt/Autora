@@ -14,6 +14,20 @@ const toDraft = (r: MemoryRecord): Draft => ({
   title: r.title, body: r.body, tags: r.tags.join(", "), kind: r.kind,
 });
 const splitTags = (text: string) => text.split(",").map((t) => t.trim()).filter(Boolean);
+
+/** A memory's text with its `commands` shown as code: procedures are written
+    with them in backticks, and read as a row of stray quote marks without. */
+function Body({ text }: { text: string }) {
+  const parts = text.split(/(`[^`\n]+`)/g);
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.length > 2 && part.startsWith("`") && part.endsWith("`")
+          ? <code key={i}>{part.slice(1, -1)}</code>
+          : part)}
+    </>
+  );
+}
 const bucketLabel = (kind: Bucket) => BUCKETS.find((b) => b.kind === kind)?.label ?? kind;
 
 /**
@@ -27,8 +41,9 @@ export function MindPage({
   recent = [],
 }: {
   /** The bucket to show; a new object moves there even if it is the same one.
-      With an id, that memory is opened as well. */
-  jump?: { kind: Bucket; id?: string };
+      With an id, that memory is opened as well. `auto` says it is only the
+      default, and a bucket with something in it may be shown instead. */
+  jump?: { kind: Bucket; id?: string; auto?: boolean };
   /** Offer the graph here. It has no other home. */
   showMap?: boolean;
   recent?: MemoryMark[];
@@ -98,6 +113,19 @@ export function MindPage({
     for (const r of records) c[r.kind]++;
     return c;
   }, [records]);
+
+  /* Opened with nothing asked for, the page used to land on Preferences
+     whatever was in it -- "No preferences yet" over a mind full of
+     procedures. It opens on the first bucket with something in it, once;
+     after that the bucket is whichever one was picked. */
+  const settled = useRef(Boolean(jump && !jump.auto));
+  useEffect(() => {
+    if (settled.current || !data) return;
+    settled.current = true;
+    if (counts[bucket] > 0) return;
+    const first = BUCKETS.find((b) => counts[b.kind] > 0);
+    if (first) setBucket(first.kind);
+  }, [data, counts, bucket]);
 
   /** How many connections run between each pair of buckets. */
   const bridges = useMemo(() => {
@@ -233,8 +261,8 @@ export function MindPage({
                         <span className="mind-flag">{bucketLabel(r.kind)}</span>
                         {(r.worked ?? 0) > 0 && <span className="mind-flag">worked {r.worked}×</span>}
                       </span>
-                      <span className="mind-item-body">{r.body}</span>
-                      {old && <span className="mind-review-old">Replaces “{old.title}”: {old.body}</span>}
+                      <span className="mind-item-body"><Body text={r.body} /></span>
+                      {old && <span className="mind-review-old">Replaces “{old.title}”: <Body text={old.body} /></span>}
                     </div>
                     <div className="mind-review-actions">
                       <button className="btn tiny" disabled={busy} onClick={() => void run(() => confirmRecord(r.id))}>Keep</button>
@@ -383,6 +411,15 @@ export function MindPage({
                           <IconTrash size={14} />
                         </button>
                         <div className="spacer" />
+                        {(r.doubted ?? 0) > 0 && (
+                          <button
+                            className="btn ghost"
+                            title="A turn found this wrong. Say it still holds, and it is trusted again."
+                            onClick={() => void run(() => confirmRecord(r.id))}
+                          >
+                            Still true
+                          </button>
+                        )}
                         <button className="btn ghost" onClick={() => openRecord(null)}>Cancel</button>
                         <button className="btn primary" disabled={busy || !draft.title.trim()} onClick={() => void save(r)}>
                           Save
@@ -396,10 +433,15 @@ export function MindPage({
                         <b>{r.title}</b>
                         {r.pinned && <span className="mind-flag">pinned</span>}
                         {r.status === "provisional" && <span className="mind-flag">unconfirmed</span>}
+                        {(r.doubted ?? 0) > 0 && (
+                          <span className="mind-flag is-doubted" title="A turn that used this found it wrong. It is recalled with a warning, and ranked lower, until it is checked or edited.">
+                            found wrong
+                          </span>
+                        )}
                         {r.uses > 0 && <span className="mind-flag" title="Times recalled into a turn, and times a turn that used it went well">used {r.uses}×{r.worked ? `, worked ${r.worked}×` : ""}</span>}
                         {query && <span className="mind-flag">{bucketLabel(r.kind)}</span>}
                       </span>
-                      {r.body && <span className="mind-item-body">{r.body}</span>}
+                      {r.body && <span className="mind-item-body"><Body text={r.body} /></span>}
                       {r.tags.length > 0 && (
                         <span className="mind-tags">{r.tags.map((t) => <em key={t}>{t}</em>)}</span>
                       )}

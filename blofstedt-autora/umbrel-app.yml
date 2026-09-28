@@ -98,19 +98,44 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  A photo you are about to send is shown as the photo.
+  Autora remembers more of what matters, and finds it when it is needed.
 
-  Attachments under the message box were one flat pill whether you had picked
-  a picture or a document: the name and its size with a small icon beside them.
-  A picture is now the picture itself, in a square box at the size of the row,
-  and a document is a box with its name and size in it. Both carry the same
-  small x to take them off the message, and while an upload is running the row
-  shows one more of those boxes turning instead of the word uploading. On a
-  narrow screen the boxes are smaller so more than one still fits on a line.
+  Recall now matches the forms of a word: a note about share prices is found by
+  a question about the price, and file, trade and update find files, trading
+  and updated. Words with accents, and text in any alphabet, are searched
+  rather than dropped. A short follow-up such as "yes, do that" or "try again"
+  now recalls what the conversation before it was about, where it used to find
+  nothing. And when the agent opens a website it has notes about -- a login
+  that needs the second form, an API that wants a header -- those notes are put
+  in front of it the moment it gets there, not only when you named the site.
 
-  A photo taken with the phone no longer sits between two black bars.
+  It learns more from mistakes. The look back after a turn now sees why a step
+  failed, not just that it did, and writes down the way that worked and the
+  mistake to skip. A memory that turned out wrong is no longer only called
+  questioned: it ranks lower and is recalled with a warning to check it, until
+  it is fixed, confirmed or works again, and the Mind page marks it with a
+  Still true button. Things you tell it about yourself and your work are now
+  kept too, and every lesson is tagged with its subject so it comes back when
+  that subject does.
 
-  A portrait stream from the camera was being stretched to the width of its
-  frame, which letterboxed it -- a solid black column down each side of the
-  picture in the viewer and in the round camera button. The picture is now
-  given only the room it needs, so the bars are gone and the shot fills its box.
+  Easier to read. Small grey text -- labels, hints, times, the figures under
+  the context ring -- was too faint to read comfortably, in every theme; it is
+  lifted to the contrast small text needs while staying the quietest of the
+  three greys. Keep, Discard and the small toggles in a thread are bigger to
+  tap on a phone, the tiniest labels are a little larger, and the browser's
+  own controls (a slider, a time field, a dropdown) are drawn dark to match.
+
+  Fixes: on a phone the Photo button no longer slides under Send, and the
+  Appearance tab in Settings can be reached on a small screen. A page that
+  failed to load no longer pulls the agent's answer into the browser card or
+  calls itself "chromewebdata". A turn that crashed, or was cut off by a
+  restart, no longer leaves the thread showing it as still working. The
+  context ring's 75% mark no longer reads as a minus sign, the Mind opens on a
+  bucket with something in it, commands in memories show as code, and error
+  messages lose their stray colour codes. A scheduled job can no longer run
+  twice when a watcher's look at a slow page outlasts the scheduler's tick,
+  and a schedule such as "every other day on Mondays" is read the way cron
+  reads it. In Settings the Jev key field is one line again rather than a box
+  a fifth of the screen tall, and in Status the clean-up button lines up with
+  the rows above it. With a few hundred memories, recall and saving are several times
+  faster.

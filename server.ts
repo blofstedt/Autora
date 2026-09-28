@@ -53,7 +53,7 @@ import {
 import {
   MAX_FRAME_BYTES, clearFrame, frameImage, latestFrame, liveViewNote, putFrame,
 } from "./server/liveview";
-import { ContextEngine, type CompactionReport } from "./server/context";
+import { ContextEngine, stripAnsi, type CompactionReport } from "./server/context";
 import {
   appendEvent, countsFor, countsOf, deleteSession, flushStore, loadSessionEvents,
   loadSessionIndex, readDoc, saveDoc, saveMeta, saveSession, type SessionCounts,
@@ -66,12 +66,14 @@ import { healthBriefing, recordOutcome, targetOf, toolHealth } from "./server/to
 import { Scheduler, type Job, type JobWatch } from "./server/scheduler";
 import { backgroundBriefing } from "./server/background";
 import { addRule, autonomyBriefing, covered, listRules, matchText, revoke as revokeRule, revokeAll } from "./server/autonomy";
-import { freshness } from "./server/memory";
 import { inventoryBriefing } from "./server/inventory";
 import { htmlToText } from "./server/pages";
 import { deleteCustomTool, listCustomTools } from "./server/customtools";
 import { REFLECT_SYSTEM, parseReflection, reflectionPrompt, worthReflecting } from "./server/learning";
-import { MEMORY_KINDS, MemoryGraph, type MemoryLink, type MemoryRecord, type Recalled } from "./server/memory";
+import {
+  MEMORY_KINDS, MemoryGraph, doubtNote, freshness, siteOf,
+  type MemoryLink, type MemoryRecord, type Recalled,
+} from "./server/memory";
 import {
   attachRelay, relayClientSource, relayStatus, watchDesktop,
 } from "./server/desktop";
@@ -471,6 +473,32 @@ function logEvent(session: Session, e: AutoraEvent) {
   }
 }
 
+/**
+ * Close a turn the log says is still running when nothing in this process is
+ * running it -- the server stopped or restarted partway through.
+ *
+ * The thread reads a turn as running until turn.agent.done, and a process
+ * that went down mid-turn never wrote one: the thread came back showing
+ * "working" and a Stop button for a turn that no longer existed, until
+ * something else was sent. Done when somebody opens the session, so a start
+ * still reads no logs.
+ */
+function closeInterruptedTurn(session: Session) {
+  if (turnsInFlight.has(session.id) || session.busy) return;
+  const events = session.events;
+  let open = false;
+  for (let i = events.length - 1; i >= 0 && !open; i--) {
+    const kind = events[i].kind;
+    if (kind === "turn.agent.done" || kind === "session.ended") return;
+    open = kind === "turn.user";
+  }
+  if (!open) return;
+  emitEvent(session, "system.log", "system", {
+    message: "Autora restarted while this was running, so it stopped here. Send it again to carry on.",
+  });
+  emitEvent(session, "turn.agent.done", "agent", { interrupted: true });
+}
+
 function broadcastLiveStatus(session: Session) {
   const sockets = sessionSockets.get(session.id);
   if (sockets) {
@@ -858,7 +886,7 @@ async function jevDecide(session: Session | null, task: JevTask): Promise<JevOut
     const notes = jevThisTurn.get(session.id) ?? [];
     notes.push(outcome.mode === "jev"
       ? `${task.name}: decided by Jev in ${outcome.ms} ms (lowest confidence ${outcome.min.toFixed(2)})`
-      : `${task.name}: not decided by Jev -- ${outcome.reason}`);
+      : `${task.name}: not decided by Jev -- ${outcome.reason.replace(/\.$/, "")}`);
     jevThisTurn.set(session.id, notes);
   }
   const usage = outcome.usage;
@@ -903,11 +931,11 @@ async function jevDecide(session: Session | null, task: JevTask): Promise<JevOut
  * keyword recall", which is what happens whenever Jev is off, the model
  * cannot score, or any memory's call is too close to make.
  */
-async function jevRecall(session: Session, request: string): Promise<Recalled[] | null> {
+async function jevRecall(session: Session, request: string, conversation: string): Promise<Recalled[] | null> {
   /* The shortlist is the ranked recall, widened, rather than the most-used
      twenty: ranked by use, a memory written this week was never a candidate
      once there were twenty older ones. */
-  const shortlist = mind.recall(request, 20);
+  const shortlist = mind.recallForTurn(request, conversation, 20);
   const candidates = shortlist.map((r) => r.record);
   if (candidates.length === 0) return null;
 
@@ -926,11 +954,16 @@ async function jevRecall(session: Session, request: string): Promise<Recalled[] 
 
   const outcome = await jevDecide(session, {
     name: "memory recall",
-    context: `The person's request:\n${request.slice(0, 2000)}`,
+    /* With the exchange before it: "yes, do that" is about whatever "that"
+       was, and judged on its own words every memory was a no. */
+    context:
+      (conversation ? `The conversation just before:\n${conversation.slice(-1200)}\n\n` : "") +
+      `The person's request:\n${request.slice(0, 2000)}`,
     instructions:
       "Each field is one stored memory. Answer true only if it is about this " +
-      "request and the agent would use it to answer it. Sharing a word or a " +
-      "general topic is not enough; when unsure, answer false.",
+      "request (read with the conversation before it, if any) and the agent " +
+      "would use it to answer it. Sharing a word or a general topic is not " +
+      "enough; when unsure, answer false.",
     schema: { type: "object", properties },
     labels,
     timeoutMs: 5000,
@@ -993,6 +1026,32 @@ async function jevRoute(session: Session, request: string): Promise<string | nul
     default:
       return null;
   }
+}
+
+/**
+ * The exchange before the person's latest message: what they said last, and
+ * the end of what the agent answered. What a follow-up like "yes, do that" is
+ * about, for recall (see MemoryGraph.recallForTurn).
+ */
+function conversationSoFar(session: Session): string {
+  let seenUser = 0;
+  let asked = "";
+  const answered: string[] = [];
+  for (let i = session.events.length - 1; i >= 0; i--) {
+    const e = session.events[i];
+    if (e.kind === "turn.user") {
+      seenUser += 1;
+      if (seenUser === 2) {
+        asked = String(e.payload?.text ?? "");
+        break;
+      }
+      continue;
+    }
+    if (seenUser === 1 && e.kind === "turn.agent.text" && !e.payload?.local) {
+      answered.unshift(String(e.payload?.text ?? ""));
+    }
+  }
+  return [asked.slice(0, 1000), answered.join("").trim().slice(-1500)].filter(Boolean).join("\n");
 }
 
 /** What the agent said last, so "yes, do it" can be routed with its antecedent. */
@@ -1603,12 +1662,18 @@ function pastToolCalls(sessionId: string, sinceSeq = 0): string[] {
     if (!found) continue;
     if (event.kind === "tool.result") {
       const code = event.payload?.display?.exit_code;
+      const preview = String(event.payload?.preview ?? "").trim();
+      /* How a failure failed, not only that it did: "exit 1" told the look
+         back after the turn (and the next turn) nothing about what to do
+         differently. A command's preview is its last line of output, which
+         for a failure is nearly always the error. */
+      const why = preview && preview !== `exit ${code}` ? ` -- ${preview.slice(0, 100)}` : "";
       found.outcome =
         code !== undefined
-          ? `exit ${code}`
+          ? `exit ${code}${code !== 0 ? why : ""}`
           : event.payload?.ok === false
-            ? "failed"
-            : `ok${event.payload?.preview ? ` -- ${String(event.payload.preview).slice(0, 80)}` : ""}`;
+            ? `failed${why}`
+            : `ok${preview ? ` -- ${preview.slice(0, 80)}` : ""}`;
     } else if (event.kind === "tool.error") {
       found.outcome = event.payload?.denied
         ? "declined by the person"
@@ -1631,6 +1696,14 @@ function pastToolCalls(sessionId: string, sinceSeq = 0): string[] {
       const what = essential(c.name, c.args);
       return `- ${c.name}${what ? ` (${what})` : ""} -> ${c.outcome}`;
     });
+}
+
+/** One memory as the model reads it: id, kind, how far to trust it, and what it says. */
+function memoryLine(m: MemoryRecord): string {
+  const old = freshness(m);
+  const doubt = doubtNote(m);
+  return `- ${m.id} [${m.kind}${m.status === "provisional" ? ", unconfirmed" : ""}]` +
+    `${doubt ? ` (${doubt})` : old ? ` (this is old knowledge: ${old})` : ""} ${m.title}: ${m.body}`;
 }
 
 /**
@@ -1768,11 +1841,7 @@ async function systemInstructionFor(
       "\"unconfirmed\" ones were learned from earlier work and not yet proven,",
       "and one that says it was last checked months ago may have moved on:",
       "memory_confirm says a memory still holds and stamps today's date on it.",
-      ...recalled.map((m) => {
-        const old = freshness(m);
-        return `- ${m.id} [${m.kind}${m.status === "provisional" ? ", unconfirmed" : ""}]` +
-          `${old ? ` (this is old knowledge: ${old})` : ""} ${m.title}: ${m.body}`;
-      }),
+      ...recalled.map(memoryLine),
     ].join("\n"));
   }
 
@@ -1782,7 +1851,12 @@ async function systemInstructionFor(
      at the point it is wanted -- so this says only that a page is open, and
      the six thousand characters of it are fetched if they turn out to matter. */
   const open = browsers.get(sessionId)?.status();
-  if (open?.open && open.url) {
+  if (open?.open && open.url?.startsWith("chrome-error:")) {
+    notes.push(
+      "A browser is open, but the last page it was sent to did not load. " +
+        "browser_open a URL to carry on with it.",
+    );
+  } else if (open?.open && open.url) {
     notes.push(
       `A browser is already open at ${open.url}${
         open.title ? ` ("${open.title}")` : ""}. Call browser_read to see what ` +
@@ -2082,7 +2156,11 @@ async function reflect(session: Session, request: string, startSeq: number, prev
     if (record.status === "provisional") {
       mind.forget(id);
       changes.push({ id, title: record.title, change: "dropped" });
-    } else {
+    } else if (mind.doubt(id)) {
+      /* Questioned used to be a word in the thread and nothing else: the
+         memory was recalled next time exactly as before, and misled again.
+         Now it ranks lower and carries the doubt into the note until it is
+         checked or rewritten. */
       changes.push({ id, title: record.title, change: "questioned" });
     }
   }
@@ -2212,6 +2290,8 @@ const THINK_LONGER = {
 /** The agent loop for one turn. See startTurn. */
 async function runTurn(session: Session, text: string, opts: TurnOptions = {}): Promise<TurnResult> {
   const result: TurnResult = { ok: false, reply: "", ranSomething: false, stopped: false, error: null, recalled: [] };
+  /** Whether turn.agent.done has been said, so a late failure says it once. */
+  let closed = false;
 
   /* A spoken turn answers without thinking first, unless the person has asked
      for the thinking back in Settings -> Voice. Measured against DeepSeek: a
@@ -2225,11 +2305,12 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
        server/memory.ts), pinned ones always. When Jev can score, it makes
        the final yes/no per memory from a wider shortlist. */
     jevThisTurn.delete(session.id);
+    const conversation = conversationSoFar(session);
     const [scored, routeHint] = await Promise.all([
-      jevRecall(session, text),
+      jevRecall(session, text, conversation),
       jevRoute(session, text),
     ]);
-    const recalled = scored ?? mind.recall(text);
+    const recalled = scored ?? mind.recallForTurn(text, conversation);
     const uniqueAccessed = recalled.map((r) => r.record);
     result.recalled = uniqueAccessed.map((r) => r.id);
     if (uniqueAccessed.length > 0) {
@@ -2836,13 +2917,47 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
            not the browser failing, and one command that fails is not the
            terminal. The page the browser is on is what a click or a read
            with no URL of its own was acting on. */
-        recordOutcome(name, ok, raw, {
+        recordOutcome(name, ok, stripAnsi(raw), {
           target: targetOf(name, (args ?? {}) as Record<string, any>, browsers.get(session.id)?.status().url ?? ""),
         });
         const verdict = watch.record(name, args, ok, raw);
         if (verdict.log) emitEvent(session, "system.log", "system", { message: verdict.log });
         if (verdict.stop) loopStop = verdict.stop;
-        return verdict.note ? `${shown}\n\n${verdict.note}` : shown;
+        const known = siteMemory(name, args);
+        return [shown, verdict.note, known].filter(Boolean).join("\n\n");
+      };
+      /* Sites this turn has been to, so what memory holds about one is said
+         the first time only. */
+      const sitesSeen = new Set<string>();
+      /**
+       * What is written down about the site a call just went to, the first
+       * time the turn goes there. The turn's recall is made from the
+       * person's words before anything runs, so the note about this site's
+       * login or this API's quirk was missed unless they named the site.
+       */
+      const siteMemory = (name: string, args: unknown): string => {
+        if (!name.startsWith("browser_") && name !== "http_request") return "";
+        // Where the call went, or for a click with no URL of its own, where
+        // the page is now -- a link followed to another site counts.
+        const page = name.startsWith("browser_") ? browsers.get(session.id)?.status().url ?? "" : "";
+        const site = siteOf(targetOf(name, (args ?? {}) as Record<string, any>, page));
+        if (!site || sitesSeen.has(site)) return "";
+        sitesSeen.add(site);
+        const found = mind.aboutSite(site, new Set(result.recalled));
+        if (found.length === 0) return "";
+        const ids = found.map((m) => m.id);
+        mind.touch(ids);
+        result.recalled.push(...ids);
+        emitEvent(session, "memory.recall", "agent", {
+          ids,
+          titles: found.map((m) => m.title),
+          kinds: found.map((m) => m.kind),
+          reasons: found.map(() => `about ${site}, where the agent just went`),
+        });
+        return [
+          `[From your memory graph, not from the page] What you have written down about ${site}:`,
+          ...found.map(memoryLine),
+        ].join("\n");
       };
       /** Steps in a row that came back empty or cut off, each answered by
           telling the model to carry on. Reset by any step that asks for
@@ -3123,7 +3238,8 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
               }, span);
             } else {
               emitEvent(session, "tool.error", "agent", {
-                error: outcome.summary,
+                // Playwright colours its call log; the thread is not a terminal.
+                error: stripAnsi(outcome.summary),
                 duration_ms: durationMs,
               }, span);
             }
@@ -3231,12 +3347,17 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
     }
 
     emitEvent(session, "turn.agent.done", "agent", {});
+    closed = true;
     result.ranSomething = ranSomething;
     result.stopped = Boolean(running.get(session.id)?.stopped);
     result.ok = connected && !result.error && !result.stopped;
   } catch (err: any) {
     result.error = err?.message || "Execution error";
     emitEvent(session, "system.error", "system", { error: result.error });
+    /* The thread reads a turn as running until it sees this, so a turn that
+       threw without it showed "working" and a Stop button until the next
+       message was sent. */
+    if (!closed) emitEvent(session, "turn.agent.done", "agent", { failed: true });
   } finally {
     session.busy = false;
     // Nothing from this turn is still cancellable, and anything left in
@@ -5001,6 +5122,8 @@ async function startServer() {
         ws.close();
         return;
       }
+
+      closeInterruptedTurn(session);
 
       // Add to session subscriber set
       if (!sessionSockets.has(sessionId)) {

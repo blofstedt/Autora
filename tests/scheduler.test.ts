@@ -48,6 +48,9 @@ await test("the next run is the next matching minute", () => {
   assert.equal(iso(nextRun("@monthly", at("2026-03-10T00:00:00"))), "2026-04-01 00:00");
   // Day-of-month and weekday both set: either matches, as in cron.
   assert.equal(iso(nextRun("0 0 1 * 0", at("2026-03-10T00:00:00"))), "2026-03-15 00:00");
+  // A stepped star is a star, as in cron: every other day AND a Monday, not
+  // every other day OR any Monday. 2026-03-16 is a Monday on an odd date.
+  assert.equal(iso(nextRun("0 0 */2 * 1", at("2026-03-10T00:00:00"))), "2026-03-23 00:00");
 });
 
 await test("a change is described as lines new and lines gone", () => {
@@ -128,6 +131,37 @@ await test("a watcher runs only when what it sees changed", async () => {
   assert.equal(h.fired.length, 1);
   assert.equal(h.fired[0].reason, "change");
   assert.match(h.fired[0].prompt, /\+ price: 12/);
+});
+
+await test("a look that outlasts the tick does not let a second tick fire the same jobs", async () => {
+  const slow = job({ id: "slow", watch: { kind: "page", target: "https://example.com" } });
+  const plain = job({ id: "plain" });
+  let release: () => void = () => undefined;
+  let looks = 0;
+  let clock = at("2026-03-10T08:00:10").getTime();
+  const fired: string[] = [];
+  const s = new Scheduler([slow, plain], {
+    now: () => clock,
+    save: () => undefined,
+    notify: () => undefined,
+    observe: () => { looks += 1; return new Promise<string>((r) => { release = () => r("x"); }); },
+    run: async (j) => {
+      fired.push(j.id);
+      // Finishes at once, so nothing is left in flight to stop a second fire.
+      return { session: `s-${j.id}`, done: Promise.resolve({ ok: true, error: null, reply: "" }) };
+    },
+  });
+  s.plan(slow);
+  s.plan(plain);
+  clock += 60_000;
+  const first = s.tick();
+  await s.tick();
+  // Whatever the second tick started is over before the slow look ends.
+  await new Promise((r) => setTimeout(r, 0));
+  release();
+  await first;
+  assert.equal(looks, 1, "looked once");
+  assert.deepEqual(fired, ["plain"], "fired once");
 });
 
 console.log(`${passed} passed`);

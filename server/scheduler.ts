@@ -101,7 +101,9 @@ function field(text: string, min: number, max: number, names?: string[]): Field 
     if (lo < min || hi > max || lo > hi) throw new Error(`"${part}" is outside ${min}-${max}`);
     for (let v = lo; v <= hi; v += step) values.add(v);
   }
-  return { values, star: text === "*" };
+  // "*/2" counts as starred, as in cron: for the day rule below, a stepped
+  // star restricts nothing about which kind of day it is.
+  return { values, star: text.startsWith("*") };
 }
 
 /** Parse five-field cron (or an @alias). Throws with a readable reason. */
@@ -243,17 +245,29 @@ export class Scheduler {
     return this.inFlight.has(id);
   }
 
+  /** Whether a tick is still working through what was due. */
+  private ticking = false;
+
   /** Fire whatever is due. Exposed for tests. */
   async tick() {
-    const due = this.jobs.filter((j) =>
-      j.enabled && !j.cron_error && j.next_run !== null && j.next_run * 1000 <= this.now() &&
-      !this.inFlight.has(j.id));
-    for (const job of due) {
-      // Planned before running, so a slow run cannot be fired twice.
-      this.plan(job);
-      this.hooks.save();
-      if (job.watch) await this.check(job);
-      else await this.fire(job, job.prompt, "schedule");
+    /* One at a time. A watcher's look at a slow page can outlast the
+       interval, and a second tick then worked through the same due list
+       beside the first: the jobs it had not reached yet were due to both. */
+    if (this.ticking) return;
+    this.ticking = true;
+    try {
+      const due = this.jobs.filter((j) =>
+        j.enabled && !j.cron_error && j.next_run !== null && j.next_run * 1000 <= this.now() &&
+        !this.inFlight.has(j.id));
+      // All planned before any runs, so a slow run cannot be fired twice.
+      for (const job of due) this.plan(job);
+      if (due.length > 0) this.hooks.save();
+      for (const job of due) {
+        if (job.watch) await this.check(job);
+        else await this.fire(job, job.prompt, "schedule");
+      }
+    } finally {
+      this.ticking = false;
     }
   }
 
