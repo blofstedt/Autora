@@ -64,6 +64,30 @@ COMPOSE = "blofstedt-autora/docker-compose.yml"
 
 IMAGE_LINE = re.compile(r'^\s*image:\s*"?ghcr\.io/blofstedt/autora:([^"\s]+)"?\s*$', re.MULTILINE)
 
+#: What Umbrel's own manifest parser (zod, in umbreld) insists on. An app
+#: missing any of these is dropped from the store's registry without a word --
+#: see the shape check below, which exists because that happened to 0.9.87 and
+#: looked, from the dashboard, exactly like an update that was never offered.
+MANIFEST_REQUIRED = (
+    "id",
+    "name",
+    "tagline",
+    "category",
+    "version",
+    "port",
+    "description",
+    "website",
+    "support",
+    "gallery",
+    "releaseNotes",
+)
+
+#: A key line at the left margin: `key:` or `key: value`.
+KEY_LINE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*):(?:\s+(.*))?$")
+
+#: Values that open an indented block rather than being complete on their line.
+BLOCK_VALUE = re.compile(r"^[>|][-+0-9]*$")
+
 OPT_OUT = "[no release]"
 
 VERSION_LINE = re.compile(r'^version:\s*"?([^"\n]+)"?\s*$', re.MULTILINE)
@@ -96,6 +120,48 @@ def read_manifest(ref: str) -> str:
         return git("show", f"{ref}:{MANIFEST}")
     except subprocess.CalledProcessError:
         return ""
+
+
+def manifest_problems(manifest: str) -> list[str]:
+    """What is wrong with this manifest's shape, if anything.
+
+    Not a YAML parser -- PyYAML is not something this script may assume -- but
+    enough of one to catch the mistake that put 0.9.87 beyond reach: the
+    release notes were rewritten without their `releaseNotes:` line, leaving
+    the text indented under `gallery: []`, which is not valid YAML. Umbrel
+    reads the manifest, fails, and drops the app entirely: the store shows
+    Autora and offers nothing, so the update never appears and nothing says
+    why. An indented line is only allowed under a key whose value opens a
+    block, and the keys Umbrel requires have to be there.
+    """
+    problems: list[str] = []
+    keys: set[str] = set()
+    opens_block = False
+
+    for number, line in enumerate(manifest.splitlines(), start=1):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if line[0].isspace():
+            if not opens_block:
+                problems.append(
+                    f"line {number} is indented but the line above it holds a "
+                    f"complete value, so it belongs to no key: {line.strip()[:60]!r}"
+                )
+            continue
+        found = KEY_LINE.match(line)
+        if not found:
+            problems.append(f"line {number} is not a `key: value` line: {line.strip()[:60]!r}")
+            opens_block = False
+            continue
+        key, value = found.group(1), (found.group(2) or "").strip()
+        keys.add(key)
+        opens_block = value == "" or bool(BLOCK_VALUE.match(value))
+
+    missing = [key for key in MANIFEST_REQUIRED if key not in keys]
+    if missing:
+        problems.append("no " + ", ".join(f"`{key}`" for key in missing) + " -- Umbrel drops an app that lacks these")
+
+    return problems
 
 
 def version_of(manifest: str) -> str:
@@ -211,6 +277,19 @@ def main(argv: list[str] | None = None) -> int:
     base = resolve_base(args.base, head)
 
     before, after = read_manifest(base), read_manifest(head)
+
+    problems = manifest_problems(after)
+    if problems:
+        print(
+            f"{MANIFEST} would not be read as an app manifest:\n"
+            + "".join(f"  - {problem}\n" for problem in problems[:3])
+            + (f"  ... and {len(problems) - 3} more\n" if len(problems) > 3 else "")
+            + "\nUmbrel does not report this: it drops the app, the store shows "
+            "nothing, and no update is ever offered. Fix the manifest before "
+            "merging.",
+            file=sys.stderr,
+        )
+        return 1
 
     # Checked whatever the pull request touches, and never opted out of: a
     # hand-raised version is the race this whole arrangement exists to avoid.
