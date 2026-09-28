@@ -98,32 +98,10 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The dollar figure beside the chat now comes from the vendor, not from
-  counting. It was always the lower of the two: a call that is charged without
-  reporting what it used -- an answer you stopped, an attempt retried after a
-  dropped connection -- leaves no row in the ledger, so a count could never see
-  it and the number read low against the real bill.
-
-  DeepSeek publishes no usage endpoint. What it does publish is the balance, so
-  that is what is used: paid in, less what is left, which is the one figure
-  that cannot be wrong, being the vendor's own arithmetic on the vendor's own
-  money. The balance is read every ten minutes and whenever the page is opened,
-  and a balance that jumps up is noticed as a payment, so the amount paid in
-  has to be right once and keeps itself right afterwards.
-
-  Where that amount goes: Settings, then Billing, has a "Topped up so far"
-  field beside the monthly budget. Fill it in once with everything paid in at
-  the vendor so far. Left empty, nothing changes -- the figures go back to
-  being counted, exactly as before.
-
-  The all-time figure is now the vendor's. This month and today are still
-  counted from the ledger, and they carry the difference whenever the whole
-  history the console has is in the current month, so the month does not
-  quietly disagree with the total about the same money. Both figures are shown
-  under the headline, so the arithmetic can be checked rather than trusted.
-
-  The live view in talk mode is square again. It was being squashed into a
-  flat rectangle: the bar had been told to shrink to fit its contents so it
-  would not crop the picture, and that same rule let it collapse around the
-  viewfinder. The bar now holds its height while the camera is on, so the
-  whole frame is visible.
+  A notice now comes up out of the message box instead of landing on top of
+  your chat. It was a card in the middle of the screen, over whatever you were
+  reading, and it stayed there until it was clicked. It is now a slim line
+  above the box -- who it was and what happened, side by side, one line each --
+  that slides up out of the box's top edge, waits five seconds and slides back
+  down behind it. The close cross is still there if you want it gone sooner,
+  and clicking the notice still opens the session that produced it.
