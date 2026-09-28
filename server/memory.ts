@@ -141,8 +141,11 @@ function stem(word: string): string {
 
 /** Overlap of two texts' vocabularies, 0..1. */
 export function similarity(a: string, b: string): number {
-  const x = new Set(tokens(a));
-  const y = new Set(tokens(b));
+  return overlap(new Set(tokens(a)), new Set(tokens(b)));
+}
+
+/** Overlap of two vocabularies, 0..1. */
+function overlap(x: ReadonlySet<string>, y: ReadonlySet<string>): number {
   if (x.size === 0 || y.size === 0) return 0;
   let shared = 0;
   for (const w of x) if (y.has(w)) shared += 1;
@@ -199,6 +202,10 @@ export function siteOf(host: string): string {
 interface Indexed {
   /** Words of the title and topical tags: what the memory is about. */
   head: Set<string>;
+  /** Words of the title and body, for telling near-copies apart. */
+  vocab: Set<string>;
+  /** The title's words in order: two titles that say the same thing. */
+  titleKey: string;
   /** How many words in all, for BM25's length normalisation. */
   words: number;
   tf: Map<string, number>;
@@ -226,6 +233,8 @@ function indexOf(r: MemoryRecord): Indexed {
   for (const w of body) tf.set(w, (tf.get(w) ?? 0) + 1);
   const entry = {
     head: new Set([...title, ...topical]),
+    vocab: new Set([...title, ...body]),
+    titleKey: title.join(" "),
     words: 2 * title.length + 2 * topical.length + body.length,
     tf, title: r.title, body: r.body, tags,
   };
@@ -384,13 +393,15 @@ export class MemoryGraph {
 
   /** The existing memory this would be a near-copy of, if any. */
   findDuplicate(title: string, body: string, kind: MemoryKind): MemoryRecord | null {
-    const norm = (s: string) => tokens(s).join(" ");
+    const wanted = tokens(title).join(" ");
+    const vocab = new Set(tokens(`${title} ${body}`));
     let best: MemoryRecord | null = null;
     let bestSim = 0;
     for (const r of this.active()) {
       if (r.kind !== kind) continue;
-      if (norm(r.title) && norm(r.title) === norm(title)) return r;
-      const sim = similarity(`${r.title} ${r.body}`, `${title} ${body}`);
+      const known = indexOf(r);
+      if (wanted && known.titleKey === wanted) return r;
+      const sim = overlap(known.vocab, vocab);
       if (sim > bestSim) { bestSim = sim; best = r; }
     }
     return bestSim >= 0.55 ? best : null;
@@ -464,12 +475,13 @@ export class MemoryGraph {
 
   /** Tie a new memory to the few it most resembles, so the graph grows. */
   linkRelated(record: MemoryRecord, max = 3) {
-    const mine = new Set(record.tags.filter((t) => !GENERIC_TAGS.has(t)));
+    const topics = new Set(record.tags.filter((t) => !GENERIC_TAGS.has(t)));
+    const mine = indexOf(record);
     const candidates = this.active()
       .filter((r) => r.id !== record.id && r.id !== record.replaces)
       .map((r) => {
-        const sharedTags = r.tags.filter((t) => mine.has(t)).length;
-        const sim = similarity(`${r.title} ${r.body}`, `${record.title} ${record.body}`);
+        const sharedTags = r.tags.filter((t) => topics.has(t)).length;
+        const sim = overlap(indexOf(r).vocab, mine.vocab);
         return { r, weight: sim + 0.15 * sharedTags };
       })
       .filter((c) => c.weight >= 0.18)
@@ -634,7 +646,9 @@ export class MemoryGraph {
       for (let j = i + 1; j < current.length; j += 1) {
         const b = current[j];
         if (b.superseded_by || a.kind !== b.kind || a.status !== b.status) continue;
-        if (similarity(`${a.title} ${a.body}`, `${b.title} ${b.body}`) < 0.8) continue;
+        // From each memory's cached words: tokenising both texts for every
+        // pair made this quadratic in the tokenizer, daily.
+        if (overlap(indexOf(a).vocab, indexOf(b).vocab) < 0.8) continue;
         const [keep, old] = a.updated >= b.updated ? [a, b] : [b, a];
         keep.uses += old.uses;
         keep.worked = (keep.worked ?? 0) + (old.worked ?? 0);

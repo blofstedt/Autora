@@ -125,4 +125,8 @@ releaseNotes: >-
   restart, no longer leaves the thread showing it as still working. The
   context ring's 75% mark no longer reads as a minus sign, the Mind opens on a
   bucket with something in it, commands in memories show as code, and error
-  messages lose their stray colour codes.
+  messages lose their stray colour codes. A scheduled job can no longer run
+  twice when a watcher's look at a slow page outlasts the scheduler's tick,
+  and a schedule such as "every other day on Mondays" is read the way cron
+  reads it. With a few hundred memories, recall and saving are several times
+  faster.
