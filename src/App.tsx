@@ -6,6 +6,7 @@ import { chime, paintChrome, type Chrome } from "./lib/chrome";
 import { Kind, type AutoraEvent, type BrowserState } from "./lib/types";
 import { setLiveFields, setLiveFrame } from "./lib/liveFrame";
 import { Thread } from "./components/Thread";
+import { Dock } from "./components/Dock";
 import { Rail, pageLabel, PAGES, type PageId } from "./components/Rail";
 import { SessionsPage } from "./components/pages/SessionsPage";
 import { SystemPage, isSystemTab, type SystemTab } from "./components/pages/SystemPage";
@@ -14,7 +15,8 @@ import { ArtifactsPage } from "./components/pages/ArtifactsPage";
 import { MindPage } from "./components/pages/MindPage";
 import type { Bucket } from "./lib/memory";
 import {
-  applyAppearance, cachedAppearance, saveAppearance, type Appearance,
+  applyAppearance, cachedAppearance, saneAppearance, saveAppearance,
+  type Appearance,
 } from "./lib/theme";
 import { Sessions, type SessionRow } from "./components/Sessions";
 import { Approvals } from "./components/Approvals";
@@ -191,9 +193,10 @@ export function App() {
       .then((r) => r.json())
       .then((d) => {
         if (typeof d?.active?.connected === "boolean") setModelReady(d.active.connected);
-        const saved = d?.appearance;
-        if (!saved?.theme || !saved?.font) return;
-        const next = { theme: saved.theme, font: saved.font } as Appearance;
+        if (!d?.appearance) return;
+        // Everything is validated on the way in: the server may be a release
+        // behind, and an older payload has no sizes or corner widgets in it.
+        const next = saneAppearance(d.appearance);
         setAppearance(next);
         applyAppearance(next);
       })
@@ -1230,6 +1233,19 @@ export function App() {
             onOpenMind={openKnowledge}
             onOpenSettings={openModelSettings}
             placeholder={placeholder}
+            // Anything pinned to the corners of the conversation. Empty
+            // unless it is asked for in Settings -> Appearance.
+            dock={(
+              <Dock
+                dock={appearance.dock}
+                targets={{
+                  go: navigate,
+                  openSession,
+                  openMemory: (id, kind) => { setMindBucket({ kind, id }); navigate("mind"); },
+                  settingsTab: (tab) => { setConfigJump({ tab }); navigate("config"); },
+                }}
+              />
+            )}
           />
 
           <Approvals

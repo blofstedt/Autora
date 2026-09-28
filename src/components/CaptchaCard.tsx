@@ -43,11 +43,11 @@ const ROW: React.CSSProperties = {
   gap: 9,
   alignItems: "flex-start",
   margin: "7px 0",
-  fontSize: 12.5,
+  fontSize: "calc(12.5px * var(--ts, 1))",
   lineHeight: 1.5,
 };
 
-const EMOJI_FREE_HINT: React.CSSProperties = { display: "block", color: "var(--text-3)", fontSize: 11.5 };
+const EMOJI_FREE_HINT: React.CSSProperties = { display: "block", color: "var(--text-3)", fontSize: "calc(11.5px * var(--ts, 1))" };
 
 async function load(): Promise<CaptchaSettings | null> {
   try {
@@ -161,7 +161,7 @@ export function CaptchaCard() {
         <select
           value={state?.attempts ?? 3}
           onChange={(e) => change({ attempts: Number(e.target.value) })}
-          style={{ padding: "9px 11px", borderRadius: "var(--r-sm)", background: "var(--s2)", border: "1px solid var(--border)", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }}
+          style={{ padding: "9px 11px", borderRadius: "var(--r-sm)", background: "var(--s2)", border: "1px solid var(--border)", color: "var(--text)", fontFamily: "inherit", fontSize: "calc(13px * var(--ts, 1))" }}
         >
           {[1, 2, 3, 4, 5, 6].map((n) => (
             <option key={n} value={n}>

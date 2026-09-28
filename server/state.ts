@@ -28,9 +28,24 @@ import { DEFAULT_PROACTIVITY, mergeProactivity, type Proactivity } from "./quiet
 
 export const THEMES = ["violet", "teal", "nous-blue", "midnight", "ember", "mono", "cyberpunk", "rose"] as const;
 export const FONTS = ["inter", "system", "rounded", "mono"] as const;
+/** How big the words and the icons are. Named, not numbered: the step is
+    picked in the UI and its multiplier is the client's business. */
+export const TEXT_SIZES = ["small", "default", "large", "largest"] as const;
+export const ICON_SIZES = TEXT_SIZES;
+export const COLUMNS = ["comfort", "wide", "fill"] as const;
+/** Which of the app's pages a pinned corner widget shows. */
+export const DOCK_WIDGETS = [
+  "none", "system", "usage", "schedules", "mind",
+  "artifacts", "sessions", "integrations", "settings",
+] as const;
+export const DOCK_SLOTS = ["tl", "tr", "bl", "br"] as const;
 export interface Appearance {
   theme: (typeof THEMES)[number];
   font: (typeof FONTS)[number];
+  text: (typeof TEXT_SIZES)[number];
+  icons: (typeof ICON_SIZES)[number];
+  column: (typeof COLUMNS)[number];
+  dock: Record<(typeof DOCK_SLOTS)[number], (typeof DOCK_WIDGETS)[number]>;
 }
 
 /**
@@ -337,6 +352,17 @@ export function mergeAppearance(into: Appearance, patch: any): Appearance {
   if (!patch || typeof patch !== "object") return into;
   if ((THEMES as readonly string[]).includes(patch.theme)) into.theme = patch.theme;
   if ((FONTS as readonly string[]).includes(patch.font)) into.font = patch.font;
+  if ((TEXT_SIZES as readonly string[]).includes(patch.text)) into.text = patch.text;
+  if ((ICON_SIZES as readonly string[]).includes(patch.icons)) into.icons = patch.icons;
+  if ((COLUMNS as readonly string[]).includes(patch.column)) into.column = patch.column;
+  // The corners arrive as a part, so what is not mentioned stays as it was:
+  // one slot can be cleared without disturbing the other three.
+  if (patch.dock && typeof patch.dock === "object") {
+    for (const slot of DOCK_SLOTS) {
+      const pick = patch.dock[slot];
+      if ((DOCK_WIDGETS as readonly string[]).includes(pick)) into.dock[slot] = pick;
+    }
+  }
   return into;
 }
 
@@ -447,7 +473,10 @@ function blank(): PersistedState {
     tools: defaultTools(),
     jev: { ...DEFAULT_JEV },
     mcpServers: [],
-    appearance: { theme: "violet", font: "inter" },
+    appearance: {
+      theme: "violet", font: "inter", text: "default", icons: "default", column: "comfort",
+      dock: { tl: "none", tr: "none", bl: "none", br: "none" },
+    },
     speech: { ...DEFAULT_SPEECH },
     captcha: { ...DEFAULT_CAPTCHA, backends: [...DEFAULT_CAPTCHA.backends] },
     proactivity: { ...DEFAULT_PROACTIVITY },

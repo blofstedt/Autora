@@ -45,11 +45,15 @@ export function Thread({
   onPermissionDecide,
   onRunAutonomous,
   placeholder,
+  dock,
   ...work
 }: {
   buckets: Bucket[];
   /** What an empty session shows: the setup card, or tasks to start from. */
   placeholder?: ReactNode;
+  /** The pinned corner widgets, if any: they sit in the pane's corners, over
+      the margin rather than in the scroll. See components/Dock.tsx. */
+  dock?: ReactNode;
   busy: boolean;
   /** What it is on right now, in a few words (see lib/activity.ts). */
   doing?: string | null;
@@ -209,6 +213,7 @@ export function Thread({
 
   return (
     <div className="thread-wrap">
+      {dock}
       <div
         className="thread"
         ref={scrollerRef}

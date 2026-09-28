@@ -1297,7 +1297,7 @@ function ToolsCard({
                   <p className="jf-hint">Runs without asking (yolo mode).</p>
 
                   {group.group === "browser" && (
-                    <div className="set-note" style={{ marginTop: "8px", fontSize: "12px", background: "rgba(255,255,255,0.03)", padding: "8px 12px", borderRadius: "6px" }}>
+                    <div className="set-note" style={{ marginTop: "8px", fontSize: "calc(12px * var(--ts, 1))", background: "rgba(255,255,255,0.03)", padding: "8px 12px", borderRadius: "6px" }}>
                       <strong>Browser &amp; OAuth notice:</strong> Most identity providers (Google, GitHub, Cloudflare) block automated Chromium browsers from completing interactive OAuth / SSO logins. When encountering a login or CAPTCHA, click <em>&ldquo;take control&rdquo;</em> on the browser card to type directly, or provide an API token via the <strong>Workspace Secrets</strong> store below.
                     </div>
                   )}

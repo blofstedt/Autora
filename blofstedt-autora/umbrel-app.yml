@@ -97,45 +97,27 @@ submission: https://github.com/blofstedt/Autora
 repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
-releaseNotes: >-
-  Autora remembers more of what matters, and finds it when it is needed.
+  Make it yours, and use the whole screen.
 
-  Recall now matches the forms of a word: a note about share prices is found by
-  a question about the price, and file, trade and update find files, trading
-  and updated. Words with accents, and text in any alphabet, are searched
-  rather than dropped. A short follow-up such as "yes, do that" or "try again"
-  now recalls what the conversation before it was about, where it used to find
-  nothing. And when the agent opens a website it has notes about -- a login
-  that needs the second form, an API that wants a header -- those notes are put
-  in front of it the moment it gets there, not only when you named the site.
+  Settings -> Appearance now sets how big the text is and how big the icons
+  are, as two separate four-step scales, from Small to Largest. They follow
+  you between devices, so a phone gets the size you chose on the desktop.
+  Nothing is left behind: every size in the interface scales together,
+  including the icons in the rail and the small print in a thread.
 
-  It learns more from mistakes. The look back after a turn now sees why a step
-  failed, not just that it did, and writes down the way that worked and the
-  mistake to skip. A memory that turned out wrong is no longer only called
-  questioned: it ranks lower and is recalled with a warning to check it, until
-  it is fixed, confirmed or works again, and the Mind page marks it with a
-  Still true button. Things you tell it about yourself and your work are now
-  kept too, and every lesson is tagged with its subject so it comes back when
-  that subject does.
+  A conversation is no longer stuck in a narrow strip down the middle of a
+  wide monitor. Text column chooses Comfort -- the width it has always been --
+  Wide, or Fill, and the empty margin either side goes away if you want it to.
 
-  Easier to read. Small grey text -- labels, hints, times, the figures under
-  the context ring -- was too faint to read comfortably, in every theme; it is
-  lifted to the contrast small text needs while staying the quietest of the
-  three greys. Keep, Discard and the small toggles in a thread are bigger to
-  tap on a phone, the tiniest labels are a little larger, and the browser's
-  own controls (a slider, a time field, a dropdown) are drawn dark to match.
+  Four corner widgets, on a desktop: pin a small version of a page to each
+  corner of the conversation -- System, Usage, Schedules, Mind, Artifacts,
+  Sessions, Integrations or Settings -- and it sits in the margin and opens
+  that page when you click it. Nothing is pinned until you ask for it, and
+  when something is, the text makes room for it rather than running
+  underneath.
 
-  Fixes: on a phone the Photo button no longer slides under Send, and the
-  Appearance tab in Settings can be reached on a small screen. A page that
-  failed to load no longer pulls the agent's answer into the browser card or
-  calls itself "chromewebdata". A turn that crashed, or was cut off by a
-  restart, no longer leaves the thread showing it as still working. The
-  context ring's 75% mark no longer reads as a minus sign, the Mind opens on a
-  bucket with something in it, commands in memories show as code, and error
-  messages lose their stray colour codes. A scheduled job can no longer run
-  twice when a watcher's look at a slow page outlasts the scheduler's tick,
-  and a schedule such as "every other day on Mondays" is read the way cron
-  reads it. In Settings the Jev key field is one line again rather than a box
-  a fifth of the screen tall, and in Status the clean-up button lines up with
-  the rows above it. With a few hundred memories, recall and saving are several times
-  faster.
+  Fixes: with the column set to Fill, the compositor no longer runs the full
+  width of the window. Text size and icon size are checked on the way in, so a
+  settings file written by an older release, or edited by hand, falls back to
+  a size that exists rather than to a missing one. iOS no longer zooms the
+  page when you tap into a text box, whatever text size you have chosen.

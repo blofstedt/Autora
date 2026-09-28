@@ -11,6 +11,12 @@ type Props = { className?: string; size?: number };
 const base = (size: number) => ({
   width: size,
   height: size,
+  // The size in Settings -> Appearance scales every icon: a CSS length beats
+  // the width/height attributes, so this needs nothing at the call sites.
+  style: {
+    width: `calc(${size}px * var(--is, 1))`,
+    height: `calc(${size}px * var(--is, 1))`,
+  },
   viewBox: "0 0 24 24",
   fill: "none",
   stroke: "currentColor",

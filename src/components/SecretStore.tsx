@@ -270,10 +270,10 @@ export function SecretStore() {
             <IconShield size={18} />
           </div>
           <div>
-            <h3 style={{ margin: 0, fontSize: "14px", fontWeight: 650, letterSpacing: "0.02em", color: "var(--text)" }}>
+            <h3 style={{ margin: 0, fontSize: "calc(14px * var(--ts, 1))", fontWeight: 650, letterSpacing: "0.02em", color: "var(--text)" }}>
               Secret Store &amp; Environment Variables
             </h3>
-            <span style={{ fontSize: "12px", color: "var(--text-3)" }}>
+            <span style={{ fontSize: "calc(12px * var(--ts, 1))", color: "var(--text-3)" }}>
               Zero-leak credentials store for terminal subprocesses &amp; API tools
             </span>
           </div>
@@ -297,7 +297,7 @@ export function SecretStore() {
           <button
             type="button"
             className="btn ghost"
-            style={{ padding: "4px 8px", fontSize: "12px" }}
+            style={{ padding: "4px 8px", fontSize: "calc(12px * var(--ts, 1))" }}
             onClick={() => load(true)}
             title="Refresh secret store"
             disabled={refreshing}
@@ -323,7 +323,7 @@ export function SecretStore() {
         <div style={{ color: "var(--accent)", marginTop: "2px", flexShrink: 0 }}>
           <IconLock size={16} />
         </div>
-        <div style={{ fontSize: "12px", lineHeight: "1.5", color: "var(--text-2)" }}>
+        <div style={{ fontSize: "calc(12px * var(--ts, 1))", lineHeight: "1.5", color: "var(--text-2)" }}>
           <strong style={{ color: "var(--text)" }}>Zero Conversation Logging:</strong> Sensitive variables defined here
           are strictly redacted from conversation history, transcript messages, and WebSocket broadcasts. When commands run
           or APIs execute, matching secret values are automatically masked as <code>[REDACTED_SECRET]</code>.
@@ -336,7 +336,7 @@ export function SecretStore() {
           <span style={{ color: "var(--accent)" }}>
             <IconMark size={13} />
           </span>
-          <span style={{ fontSize: "11.5px", fontWeight: 600, color: "var(--text-2)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+          <span style={{ fontSize: "calc(11.5px * var(--ts, 1))", fontWeight: 600, color: "var(--text-2)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
             Quick Presets
           </span>
         </div>
@@ -350,7 +350,7 @@ export function SecretStore() {
                 className="btn ghost"
                 onClick={() => handleSelectPreset(k)}
                 style={{
-                  fontSize: "11px",
+                  fontSize: "calc(11px * var(--ts, 1))",
                   padding: "4px 9px",
                   borderRadius: "99px",
                   background: isSet ? "rgba(52, 211, 153, 0.08)" : "var(--s2)",
@@ -379,7 +379,7 @@ export function SecretStore() {
             borderRadius: "6px",
             padding: "8px 12px",
             marginBottom: "12px",
-            fontSize: "12px",
+            fontSize: "calc(12px * var(--ts, 1))",
             color: "#f87171",
             display: "flex",
             alignItems: "center",
@@ -399,7 +399,7 @@ export function SecretStore() {
             borderRadius: "6px",
             padding: "8px 12px",
             marginBottom: "12px",
-            fontSize: "12px",
+            fontSize: "calc(12px * var(--ts, 1))",
             color: "var(--live, #34d399)",
             display: "flex",
             alignItems: "center",
@@ -414,7 +414,7 @@ export function SecretStore() {
       {/* Existing Secrets List */}
       <div style={{ marginBottom: "20px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-          <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-2)" }}>
+          <span style={{ fontSize: "calc(12px * var(--ts, 1))", fontWeight: 600, color: "var(--text-2)" }}>
             Configured Variables ({filteredSecrets.length})
           </span>
           {secrets.length > 3 && (
@@ -430,7 +430,7 @@ export function SecretStore() {
                 style={{
                   width: "100%",
                   padding: "4px 8px 4px 26px",
-                  fontSize: "11.5px",
+                  fontSize: "calc(11.5px * var(--ts, 1))",
                   borderRadius: "var(--r-xs, 6px)",
                   background: "var(--s2)",
                   border: "1px solid var(--border)",
@@ -442,7 +442,7 @@ export function SecretStore() {
         </div>
 
         {loading ? (
-          <div style={{ padding: "20px", textAlign: "center", color: "var(--text-3)", fontSize: "13px" }}>
+          <div style={{ padding: "20px", textAlign: "center", color: "var(--text-3)", fontSize: "calc(13px * var(--ts, 1))" }}>
             Loading secret store...
           </div>
         ) : filteredSecrets.length === 0 ? (
@@ -454,7 +454,7 @@ export function SecretStore() {
               borderRadius: "var(--r-sm, 8px)",
               border: "1px dashed var(--border-strong)",
               color: "var(--text-3)",
-              fontSize: "12.5px",
+              fontSize: "calc(12.5px * var(--ts, 1))",
             }}
           >
             <div style={{ opacity: 0.4, margin: "0 auto 8px", display: "inline-block" }}>
@@ -487,13 +487,13 @@ export function SecretStore() {
                   {/* Left info */}
                   <div style={{ display: "flex", flexDirection: "column", gap: "3px", minWidth: "220px" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <code style={{ fontWeight: 650, fontSize: "13px", color: "var(--accent)" }}>
+                      <code style={{ fontWeight: 650, fontSize: "calc(13px * var(--ts, 1))", color: "var(--accent)" }}>
                         {s.name}
                       </code>
                       <span
                         className="set-badge"
                         style={{
-                          fontSize: "10px",
+                          fontSize: "calc(10px * var(--ts, 1))",
                           padding: "1px 6px",
                           background: s.source === "app" ? "rgba(52, 211, 153, 0.12)" : "rgba(34, 211, 238, 0.12)",
                           color: s.source === "app" ? "var(--live, #34d399)" : "var(--accent-2, #22d3ee)",
@@ -504,7 +504,7 @@ export function SecretStore() {
                     </div>
 
                     {s.preset?.description && (
-                      <span style={{ fontSize: "11px", color: "var(--text-3)" }}>
+                      <span style={{ fontSize: "calc(11px * var(--ts, 1))", color: "var(--text-3)" }}>
                         {s.preset.description}
                       </span>
                     )}
@@ -512,7 +512,7 @@ export function SecretStore() {
                     <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "2px" }}>
                       <code
                         style={{
-                          fontSize: "11.5px",
+                          fontSize: "calc(11.5px * var(--ts, 1))",
                           color: isRevealed ? "var(--live, #34d399)" : "var(--text-2)",
                           background: "rgba(0,0,0,0.25)",
                           padding: "2px 6px",
@@ -523,7 +523,7 @@ export function SecretStore() {
                         {displayVal}
                       </code>
                       {isRevealed && (
-                        <span style={{ fontSize: "10px", color: "var(--warn, #fbbf24)" }}>
+                        <span style={{ fontSize: "calc(10px * var(--ts, 1))", color: "var(--warn, #fbbf24)" }}>
                           (Auto-hides in 15s)
                         </span>
                       )}
@@ -535,7 +535,7 @@ export function SecretStore() {
                     <button
                       type="button"
                       className="btn ghost"
-                      style={{ padding: "5px 8px", fontSize: "11.5px", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                      style={{ padding: "5px 8px", fontSize: "calc(11.5px * var(--ts, 1))", display: "inline-flex", alignItems: "center", gap: "4px" }}
                       onClick={() => handleToggleReveal(s.name)}
                       disabled={revealingName === s.name}
                       title={isRevealed ? "Hide secret value" : "Reveal secret value"}
@@ -547,7 +547,7 @@ export function SecretStore() {
                     <button
                       type="button"
                       className="btn ghost"
-                      style={{ padding: "5px 8px", fontSize: "11.5px", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                      style={{ padding: "5px 8px", fontSize: "calc(11.5px * var(--ts, 1))", display: "inline-flex", alignItems: "center", gap: "4px" }}
                       onClick={() => void handleCopy(s.name)}
                       title="Copy secret value to clipboard"
                     >
@@ -559,7 +559,7 @@ export function SecretStore() {
                       <button
                         type="button"
                         className="btn ghost"
-                        style={{ color: "var(--danger, #fb7185)", padding: "5px 8px", fontSize: "11.5px", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                        style={{ color: "var(--danger, #fb7185)", padding: "5px 8px", fontSize: "calc(11.5px * var(--ts, 1))", display: "inline-flex", alignItems: "center", gap: "4px" }}
                         onClick={() => handleDelete(s.name)}
                         disabled={busy}
                         title="Remove secret from store"
@@ -590,7 +590,7 @@ export function SecretStore() {
           <span style={{ color: "var(--accent)" }}>
             <IconKey size={15} />
           </span>
-          <span style={{ fontSize: "13px", fontWeight: 650, color: "var(--text)" }}>
+          <span style={{ fontSize: "calc(13px * var(--ts, 1))", fontWeight: 650, color: "var(--text)" }}>
             Add / Update Secret
           </span>
         </div>
@@ -598,7 +598,7 @@ export function SecretStore() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "12px", marginBottom: "14px" }}>
           {/* Variable Name */}
           <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-            <span style={{ fontSize: "11.5px", fontWeight: 600, color: "var(--text-2)" }}>
+            <span style={{ fontSize: "calc(11.5px * var(--ts, 1))", fontWeight: 600, color: "var(--text-2)" }}>
               Variable Name
             </span>
             <input
@@ -611,7 +611,7 @@ export function SecretStore() {
               style={{ fontFamily: "var(--mono)", textTransform: "uppercase" }}
             />
             {presets[newName] && (
-              <span style={{ fontSize: "11px", color: "var(--accent)" }}>
+              <span style={{ fontSize: "calc(11px * var(--ts, 1))", color: "var(--accent)" }}>
                 {presets[newName].label}: {presets[newName].description}
               </span>
             )}
@@ -620,13 +620,13 @@ export function SecretStore() {
           {/* Variable Value */}
           <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: "11.5px", fontWeight: 600, color: "var(--text-2)" }}>
+              <span style={{ fontSize: "calc(11.5px * var(--ts, 1))", fontWeight: 600, color: "var(--text-2)" }}>
                 Secret Value / Token
               </span>
               <button
                 type="button"
                 className="btn ghost"
-                style={{ padding: "1px 6px", fontSize: "11px" }}
+                style={{ padding: "1px 6px", fontSize: "calc(11px * var(--ts, 1))" }}
                 onClick={() => setShowNewValue(!showNewValue)}
               >
                 {showNewValue ? "Hide" : "Show"}
@@ -648,7 +648,7 @@ export function SecretStore() {
 
         {/* Action button */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11.5px", color: "var(--text-3)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "calc(11.5px * var(--ts, 1))", color: "var(--text-3)" }}>
             <IconTerminal size={13} />
             <span>Injected as environment variable into subcommands and tools</span>
           </div>

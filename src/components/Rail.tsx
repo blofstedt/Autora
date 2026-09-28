@@ -5,7 +5,10 @@ import {
   IconMonitor, IconPlug, IconPlus, IconServer, IconSliders,
   IconX, IconCheck,
 } from "./Icons";
-import { FONTS, THEMES, type Appearance } from "../lib/theme";
+import {
+  COLUMNS, DOCK_SLOTS, DOCK_WIDGETS, FONTS, ICON_SIZES, TEXT_SIZES, THEMES,
+  type Appearance, type DockWidgetId,
+} from "../lib/theme";
 import { ago, until, type Job } from "./Schedule";
 import type { ContextGauge } from "../lib/derive";
 import {
@@ -478,6 +481,86 @@ export function ThemePicker({
         ))}
       </div>
       <p className="jf-hint">Saved to the server, so every device you open Autora on matches.</p>
+
+      <h3 className="sm-font-head">Text size</h3>
+      <div className="sm-fonts">
+        {TEXT_SIZES.map((t) => (
+          <button
+            key={t.id}
+            className={`sm-font ${appearance.text === t.id ? "on" : ""}`}
+            onClick={() => onAppearance({ ...appearance, text: t.id })}
+            aria-pressed={appearance.text === t.id}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <p className="jf-hint">
+        Every word in the app, on this device and the others. The four steps are
+        close together on purpose: past the largest, rows that have a fixed
+        height start to clip rather than grow.
+      </p>
+
+      <h3 className="sm-font-head">Icon size</h3>
+      <div className="sm-fonts">
+        {ICON_SIZES.map((i) => (
+          <button
+            key={i.id}
+            className={`sm-font ${appearance.icons === i.id ? "on" : ""}`}
+            onClick={() => onAppearance({ ...appearance, icons: i.id })}
+            aria-pressed={appearance.icons === i.id}
+          >
+            {i.label}
+          </button>
+        ))}
+      </div>
+      <p className="jf-hint">
+        Separate from the text, so a phone can have bigger words with the icons
+        left alone — the reverse on a desktop, if that reads better.
+      </p>
+
+      <h3 className="sm-font-head">Text column</h3>
+      <div className="sm-fonts">
+        {COLUMNS.map((c) => (
+          <button
+            key={c.id}
+            className={`sm-font ${appearance.column === c.id ? "on" : ""}`}
+            onClick={() => onAppearance({ ...appearance, column: c.id })}
+            aria-pressed={appearance.column === c.id}
+            title={c.hint}
+          >
+            {c.label}
+          </button>
+        ))}
+      </div>
+      <p className="jf-hint">{COLUMNS.find((c) => c.id === appearance.column)?.hint}.</p>
+
+      <h3 className="sm-font-head">Corner widgets</h3>
+      <p className="jf-hint">
+        Desktop only, and only where the window is wide enough to hold them
+        beside the words rather than over them. Each one is a small version of
+        a page in the sidebar and a way through to it; the text column makes
+        room for whatever is pinned.
+      </p>
+      <div className="sm-dock">
+        {DOCK_SLOTS.map((slot) => (
+          <label key={slot.id} className="sm-dock-row">
+            <span className="sm-dock-label">{slot.label}</span>
+            <select
+              className="set-select"
+              value={appearance.dock[slot.id]}
+              onChange={(e) => onAppearance({
+                ...appearance,
+                dock: { ...appearance.dock, [slot.id]: e.target.value as DockWidgetId },
+              })}
+            >
+              {DOCK_WIDGETS.map((w) => (
+                <option key={w.id} value={w.id}>{w.label} — {w.hint}</option>
+              ))}
+            </select>
+          </label>
+        ))}
+      </div>
     </section>
   );
 }

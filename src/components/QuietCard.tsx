@@ -93,7 +93,7 @@ export function QuietCard() {
         answered, and schedules you set still run at the time you set them.
       </p>
 
-      <label style={{ display: "flex", gap: 9, alignItems: "flex-start", margin: "7px 0", fontSize: 12.5, lineHeight: 1.5 }}>
+      <label style={{ display: "flex", gap: 9, alignItems: "flex-start", margin: "7px 0", fontSize: "calc(12.5px * var(--ts, 1))", lineHeight: 1.5 }}>
         <input
           type="checkbox"
           checked={state?.quiet === true}
@@ -101,7 +101,7 @@ export function QuietCard() {
         />
         <span>
           Hold the agent's own initiative between two times
-          <span style={{ display: "block", color: "var(--text-3)", fontSize: 11.5 }}>
+          <span style={{ display: "block", color: "var(--text-3)", fontSize: "calc(11.5px * var(--ts, 1))" }}>
             Off means it can speak up at any hour.
           </span>
         </span>
