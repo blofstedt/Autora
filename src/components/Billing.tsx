@@ -367,7 +367,10 @@ export function Billing({
         Counted here from the tokens each vendor reports, priced from the list
         prices shown when you pick a model. It is a close running estimate, not
         an invoice: it cannot see usage from outside this app, nor a vendor's
-        own discounts or minimums.
+        own discounts or minimums, nor a call that ended before it reported
+        its tokens -- an answer you stopped, or an attempt that was retried
+        after a dropped connection. Those are still charged, and are exactly
+        where this figure can come out under the vendor's own.
         {usage.lifetime.estimated > 0 &&
           ` ${turns(usage.lifetime.estimated)} had no reported token count and ${
             usage.lifetime.estimated === 1 ? "was" : "were"

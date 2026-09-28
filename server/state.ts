@@ -394,8 +394,31 @@ const STATE_DIR = (() => {
 })();
 const STATE_FILE = path.join(STATE_DIR, "settings.json");
 
-/** Spend that has aged out of the ledger, kept so lifetime totals survive it. */
-let carried = { cost: 0, input: 0, output: 0, turns: 0 };
+/** One day's spend that has aged out of the ledger. */
+interface CarriedDay { cost: number; input: number; output: number; turns: number }
+
+/**
+ * Spend that has aged out of the ledger, kept so the totals survive it.
+ *
+ * The day-by-day copy is not decoration. The ledger holds the last 5,000
+ * calls, which a busy week can be; the headline figures are this month and
+ * today, and a lump sum with no dates in it can only be added to the lifetime
+ * figure. Left that way, "this month" quietly dropped everything that had
+ * aged out of the ledger, and read low against the vendor's own bill by
+ * exactly the spend that had fallen off the end.
+ */
+let carried: { cost: number; input: number; output: number; turns: number; days: Record<string, CarriedDay> } =
+  { cost: 0, input: 0, output: 0, turns: 0, days: {} };
+
+/** How long the per-day copy is kept: enough for this month and the chart. */
+const CARRIED_DAYS_KEPT = 70;
+
+/** Local-time YYYY-MM-DD, the day the person spending it would call it. */
+function carriedDayKey(ts: number): string {
+  const d = new Date(ts * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
 
 function blank(): PersistedState {
   return {
@@ -461,7 +484,22 @@ function read(): PersistedState {
         input: Number(raw.carried.input) || 0,
         output: Number(raw.carried.output) || 0,
         turns: Number(raw.carried.turns) || 0,
+        days: {},
       };
+      /* A file written before the days were kept has the lump sums only;
+         those still count towards the lifetime figure, and there is no
+         honest way to date them, so they are not guessed into a day. */
+      if (raw.carried.days && typeof raw.carried.days === "object") {
+        for (const [day, row] of Object.entries(raw.carried.days as Record<string, any>)) {
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !row || typeof row !== "object") continue;
+          carried.days[day] = {
+            cost: Number(row.cost) || 0,
+            input: Number(row.input) || 0,
+            output: Number(row.output) || 0,
+            turns: Number(row.turns) || 0,
+          };
+        }
+      }
     }
     return state;
   } catch (err: any) {
@@ -922,6 +960,19 @@ export function recordUsage(entry: UsageEntry) {
     carried.input += dropped.input;
     carried.output += dropped.output;
     carried.turns += 1;
+    /* Dated as well, so the month and today figures can still count it. */
+    const day = carriedDayKey(dropped.ts);
+    const row = carried.days[day] ?? { cost: 0, input: 0, output: 0, turns: 0 };
+    row.cost += dropped.cost;
+    row.input += dropped.input;
+    row.output += dropped.output;
+    row.turns += 1;
+    carried.days[day] = row;
+    const keys = Object.keys(carried.days).sort();
+    while (keys.length > CARRIED_DAYS_KEPT) {
+      const oldest = keys.shift()!;
+      delete carried.days[oldest];
+    }
   }
   save();
 }
@@ -937,12 +988,17 @@ export function recordToolFeed(tool: string, tokens: number, month: string) {
 }
 
 export function carriedTotals() {
-  return { ...carried };
+  return { cost: carried.cost, input: carried.input, output: carried.output, turns: carried.turns };
+}
+
+/** The dated part of it, which the month, today and the chart can use. */
+export function carriedDays(): Record<string, CarriedDay> {
+  return carried.days;
 }
 
 export function clearUsage() {
   state.usage = [];
-  carried = { cost: 0, input: 0, output: 0, turns: 0 };
+  carried = { cost: 0, input: 0, output: 0, turns: 0, days: {} };
   saveNow();
 }
 

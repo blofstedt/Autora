@@ -726,6 +726,12 @@ export function App() {
   const [welcome, setWelcome] = useState(0);
   const [learned, setLearned] = useState(0);
   const [bloom, setBloom] = useState(0);
+  /* True only while the Mind is actually being lit up. The count in `bloom`
+     stays where it is, so it can key the element; this flag is what the class
+     reads, because a count that never goes back to zero keeps the animation
+     class on the item for ever -- and a phone's drawer mounts the rail afresh
+     every time it opens, which played that ending all over again. */
+  const [mindGlow, setMindGlow] = useState(false);
   const mood: MarkState = pending > 0
     ? "waiting"
     : failing
@@ -770,7 +776,12 @@ export function App() {
           flySpark(
             visible(".learned"),
             visible(".rail-slot [data-page=\"mind\"]", ".menu-btn"),
-            () => { setLearned((n) => n + count); setBloom((b) => b + 1); },
+            () => {
+              setLearned((n) => n + count);
+              setBloom((b) => b + 1);
+              setMindGlow(true);
+              timers.push(window.setTimeout(() => setMindGlow(false), 1400));
+            },
             "glow",
           );
         }, 350));
@@ -1044,6 +1055,7 @@ export function App() {
             pulse={welcome}
             learned={learned}
             bloom={bloom}
+            mindGlow={mindGlow}
             alert={pending > 0}
             onNew={() => { void newSession(); navigate("chat"); }}
             drawer={kind === "drawer"}

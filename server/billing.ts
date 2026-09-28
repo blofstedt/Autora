@@ -16,7 +16,7 @@
  */
 
 import { PROVIDERS, providerSpec } from "./providers";
-import { carriedTotals, state, type UsageEntry } from "./state";
+import { carriedDays, carriedTotals, state, type UsageEntry } from "./state";
 
 const DAYS_SHOWN = 30;
 const RECENT_TURNS = 25;
@@ -100,9 +100,29 @@ export function billingSummary() {
     add(model, entry);
   }
 
-  // Turns that have aged out of the ledger still happened and were still
-  // charged, so the lifetime figure carries them even though their detail is
-  // gone.
+  /* Spend that has aged out of the ledger still happened and was still
+     charged, so the lifetime figure carries it. It is also added back into
+     the day it happened on -- which is the difference between a month figure
+     that is right and one that quietly falls as the ledger turns over. Only
+     the day and month buckets take it: the per-vendor and per-model
+     breakdown stays a reading of the detail still on the ledger. */
+  for (const [day, row] of Object.entries(carriedDays())) {
+    byDay.set(day, (byDay.get(day) ?? 0) + row.cost);
+    if (day === today) {
+      todayBucket.cost += row.cost;
+      todayBucket.input += row.input;
+      todayBucket.output += row.output;
+      todayBucket.turns += row.turns;
+    }
+    if (day.slice(0, 7) === month) {
+      monthBucket.cost += row.cost;
+      monthBucket.input += row.input;
+      monthBucket.output += row.output;
+      monthBucket.turns += row.turns;
+    }
+  }
+
+  // The lump sums, for the lifetime total.
   const carried = carriedTotals();
   const lifetime = {
     cost: all.cost + carried.cost,

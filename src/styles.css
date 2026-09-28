@@ -3697,15 +3697,27 @@ input.shot-where[readonly] { cursor: default; }
   color: transparent; caret-color: transparent; font-size: 16px;
 }
 
+/* Why the page is not yours to touch: a pill across the bottom of the stage.
+   The centring is on the layer, not on the pill. The pill's entrance
+   animation writes `transform`, and an animated transform replaces the
+   translateX(-50%) that was doing the centring -- so the pill sat an inch to
+   the right of centre and its Stop button hung off the edge. Nothing in the
+   layer is animated, so the pill is centred whatever width the stage is. */
+.shot-nudge-layer {
+  position: absolute; left: 0; right: 0; bottom: 14px;
+  display: flex; justify-content: center; padding: 0 12px;
+  pointer-events: none; z-index: 3;
+}
 .shot-nudge {
-  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
-  display: inline-flex; align-items: center; gap: 10px; max-width: calc(100% - 24px);
+  display: inline-flex; align-items: center; gap: 10px;
+  min-width: 0; max-width: 100%;
   padding: 6px 6px 6px 14px; border-radius: 99px;
   background: rgba(var(--bg-rgb),  0.92); border: 1px solid var(--border-strong);
   box-shadow: var(--shadow-lg); color: var(--text); font-size: 12.5px;
-  animation: rise 0.2s var(--ease) both; z-index: 3;
+  pointer-events: auto;
+  animation: rise 0.2s var(--ease) both;
 }
-.shot-nudge span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shot-nudge span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .shot-nudge-stop {
   flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px;
   height: 30px; padding: 0 12px; border-radius: 99px; cursor: pointer;

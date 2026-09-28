@@ -490,13 +490,17 @@ export function ScreencastCell({
           </Frame>
 
           {nudge && (
-            <div className="shot-nudge" role="status" onPointerUp={(e) => e.stopPropagation()}>
-              <span>{nudge.text}</span>
-              {nudge.stop && onStop && (
-                <button className="shot-nudge-stop" onClick={() => { setNudge(null); onStop(); }}>
-                  <IconStop size={12} /> Stop it
-                </button>
-              )}
+            /* A layer to centre in, so the pill's own entrance animation
+               cannot move it off centre. */
+            <div className="shot-nudge-layer">
+              <div className="shot-nudge" role="status" onPointerUp={(e) => e.stopPropagation()}>
+                <span>{nudge.text}</span>
+                {nudge.stop && onStop && (
+                  <button className="shot-nudge-stop" onClick={() => { setNudge(null); onStop(); }}>
+                    <IconStop size={12} /> Stop it
+                  </button>
+                )}
+              </div>
             </div>
           )}
 

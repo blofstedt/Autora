@@ -43,7 +43,7 @@ export const pageLabel = (id: PageId) => PAGES.find((p) => p.id === id)?.label ?
  */
 export function Rail({
   page, onNavigate, onOpenSession, onOpenMemory, context, relayOn, alert, onNew, drawer = false, onClose,
-  mood = "rest", attention = 0, pulse = 0, learned = 0, bloom = 0,
+  mood = "rest", attention = 0, pulse = 0, learned = 0, bloom = 0, mindGlow = false,
 }: {
   page: PageId;
   onNavigate: (page: PageId) => void;
@@ -64,15 +64,20 @@ export function Rail({
   pulse?: number;
   /** Memories kept since the Mind was last opened, shown as +N on it. */
   learned?: number;
-  /** Changes when something lands in the Mind, to light it up once. */
+  /** Counts what has landed in the Mind; used only to key the item, so a new
+      landing replays the animation. */
   bloom?: number;
+  /** Whether that lighting-up is happening right now. Kept apart from the
+      count, so re-mounting the rail (a drawer opening) cannot replay an
+      animation that finished long ago. */
+  mindGlow?: boolean;
 }) {
   const item = (p: (typeof PAGES)[number]) => (
     <button
       // Re-keyed on each landing so the bloom animation plays again.
       key={p.id === "mind" ? `mind-${bloom}` : p.id}
       data-page={p.id}
-      className={`rail-nav-item ${page === p.id ? "on" : ""} ${p.id === "mind" && bloom ? "is-bloom" : ""}`}
+      className={`rail-nav-item ${page === p.id ? "on" : ""} ${p.id === "mind" && mindGlow ? "is-bloom" : ""}`}
       onClick={() => onNavigate(p.id)}
       aria-current={page === p.id ? "page" : undefined}
     >
