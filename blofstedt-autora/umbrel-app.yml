@@ -99,28 +99,14 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  A chat you can leave no trace of.
-  Beside the plus, in the sessions list and in the hamburger menu, is an
-  incognito mask. An incognito chat is never written down: the server holds it
-  in memory for as long as it is open, and writes no log, no meta, no tallies
-  and nothing in the vault -- it refuses to, however it is asked. It is not in
-  the sessions list, and the address bar keeps no record of it, so a reload
-  opens the chat you were in before. A dashed Incognito badge in the header
-  says which chat you are in and closes it when you click it.
-  When one ends: opening another chat, leaving the chat page, closing the tab
-  or reloading. Nothing is left behind to delete, and a turn still running does
-  not hold it open.
-  The button that opened a new chat in the sessions list is now the plus on its
-  own. The word New is gone, and both buttons name themselves for a screen
-  reader.
-  The words are gone from the four icons in the text box -- Talk, Dictate,
-  Attach and Photo are glyphs now, each still named for a screen reader -- and
-  the mark on the first of them is drawn at the size of the mic beside it
-  instead of under half.
-  In a conversation the agent's mark is drawn at the size of the tile your own
-  avatar sits in, rather than looking half of it, and the line under the thread
-  that says what it is doing wears a glyph of its own: a brain while it is
-  thinking, a wrench while it is working. The only mark in a chat is the one
-  beside the agent's words.
-  Choosing the corner widgets is rows and tiles under Appearance now, in place
-  of four system menus dropping over the panel.
+  The incognito mask is the hat and glasses you would recognise.
+  The glyph comes from Lucide -- its hat-glasses, the one tagged incognito and
+  private browsing -- instead of being drawn here, because the shape it
+  replaces had a brim 18.4 wide over a body 12 tall, and at the 12 to 15
+  pixels that button is really drawn at it read as a squashed bar. Lucide
+  draws on the same 24 pixel grid with round caps and joins, so it sits with
+  the rest of the set without looking collected from somewhere else. Same icon,
+  same places: beside the plus, in the sessions list and in the header badge.
+  The version in package-lock.json is checked and bumped again -- the last
+  release raised package.json without it, so the check that reads the manifest
+  failed on that push even though the image and the update were built.

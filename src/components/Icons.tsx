@@ -1,10 +1,13 @@
 /**
  * Inline SVG icons.
  *
- * Hand-rolled rather than an icon package: this needs about fourteen glyphs,
- * and a dependency would ship several hundred. They share one grid (24px
+ * Kept inline rather than as an icon package: this needs about fifty glyphs,
+ * and a dependency would ship several thousand. They share one grid (24px
  * viewBox, 1.75 stroke, round caps) so they sit together without looking
- * collected from different sets.
+ * collected from different sets -- which is also the rule for adding one:
+ * take the glyph from a stroke set on that same 24px grid and round-join
+ * family (Lucide is the closest match; IconMask below came from it) instead
+ * of inventing the geometry, so nothing lands beside the others looking odd.
  */
 type Props = { className?: string; size?: number };
 
@@ -133,14 +136,20 @@ export const IconPlus = ({ size = 16, className }: Props) => (
   </svg>
 );
 
-/* Incognito: the hat and glasses, on the same grid as the rest. */
+/**
+ * The incognito glyph is taken from Lucide (`hat-glasses`, ISC), not drawn here.
+ * The in-house mask had a brim 18.4 wide over a body only 12 tall, so at the
+ * 12-15px this is actually used at it read as a squashed bar. Lucide shares this
+ * file s grid and finish (24px viewBox, round caps and joins) and tags this one
+ * "incognito / private browsing", so it sits with the rest of the set.
+ */
 export const IconMask = ({ size = 16, className }: Props) => (
   <svg {...base(size)} className={className}>
-    <path d="M2.8 11.2h18.4" />
-    <path d="M6.6 11V9.3A3.2 3.2 0 0 1 9.8 6.1h4.4a3.2 3.2 0 0 1 3.2 3.2V11" />
-    <circle cx="7.6" cy="15.4" r="2.7" />
-    <circle cx="16.4" cy="15.4" r="2.7" />
-    <path d="M10.3 15.1c.5-.6 1.1-.9 1.7-.9s1.2.3 1.7.9" />
+    <path d="M14 18a2 2 0 0 0-4 0" />
+    <path d="m19 11-2.11-6.657a2 2 0 0 0-2.752-1.148l-1.276.61A2 2 0 0 1 12 4H8.5a2 2 0 0 0-1.925 1.456L5 11" />
+    <path d="M2 11h20" />
+    <circle cx="17" cy="18" r="3" />
+    <circle cx="7" cy="18" r="3" />
   </svg>
 );
 
