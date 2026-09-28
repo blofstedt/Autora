@@ -120,9 +120,27 @@ export const IconFlag = ({ size = 16, className }: Props) => (
   </svg>
 );
 
+/** Nothing pinned, drawn rather than spelled: the fourth corner widget. */
+export const IconMinus = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M6.5 12h11" />
+  </svg>
+);
+
 export const IconPlus = ({ size = 16, className }: Props) => (
   <svg {...base(size)} className={className}>
     <path d="M12 5.5v13M5.5 12h13" />
+  </svg>
+);
+
+/* Incognito: the hat and glasses, on the same grid as the rest. */
+export const IconMask = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M2.8 11.2h18.4" />
+    <path d="M6.6 11V9.3A3.2 3.2 0 0 1 9.8 6.1h4.4a3.2 3.2 0 0 1 3.2 3.2V11" />
+    <circle cx="7.6" cy="15.4" r="2.7" />
+    <circle cx="16.4" cy="15.4" r="2.7" />
+    <path d="M10.3 15.1c.5-.6 1.1-.9 1.7-.9s1.2.3 1.7.9" />
   </svg>
 );
 
@@ -180,6 +198,16 @@ export const IconRepeat = ({ size = 16, className }: Props) => (
     <path d="m15 1.5 3 2.5-3 2.5" />
     <path d="M20 15a5 5 0 0 1-5 5H6" />
     <path d="m9 17.5-3 2.5 3 2.5" />
+  </svg>
+);
+
+/** A wrench: what the thread wears while it is doing something. The mark is
+    the agent's signature, not a progress spinner, so the busy line gets a
+    glyph of its own and the only mark in a conversation is the one beside the
+    words. */
+export const IconWrench = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M15.4 3.3a4.7 4.7 0 0 0-4.1 7.9l-.6.6-5.9 5.9a1.95 1.95 0 0 0 2.8 2.8l5.9-5.9.6-.6a4.7 4.7 0 0 0 5.9-6.7l-2.6 2.6-2.6-.6-.6-2.6z" />
   </svg>
 );
 

@@ -1643,6 +1643,9 @@ export interface ToolContext {
   onCancel: (stop: () => void) => void;
   /** The memory graph, which the server owns. */
   memory: {
+    /** True in an incognito chat: a read is fine, a write is refused, because
+        nothing in that chat is written down anywhere. */
+    incognito?: boolean;
     write: (entry: { title: string; body: string; kind: string; tags?: string[] }) => { id: string; action: string };
     search: (query: string) => { id: string; kind: string; title: string; body: string; status: string }[];
     update: (id: string, patch: { title?: string; body?: string; kind?: string; tags?: string[] }) => boolean;
@@ -2282,6 +2285,21 @@ async function generateImageTool(prompt: string, ctx: ToolContext): Promise<Tool
  * call is a normal event in a turn: the model needs to read what went wrong and
  * try something else, and an exception here would end the turn instead.
  */
+/**
+ * What the agent is told when it tries to write to memory in an incognito
+ * chat. An answer in words rather than a silent no: it should say that
+ * nothing here is kept, not try the same call again three ways.
+ */
+function incognitoMemory(): { ok: boolean; summary: string } {
+  return {
+    ok: false,
+    summary:
+      "This chat is incognito: nothing in it is saved or recorded, so there is " +
+      "nothing to write down and nothing learned here will be remembered. Tell " +
+      "the person that, rather than trying again.",
+  };
+}
+
 export async function runTool(
   spec: ToolSpec,
   args: Record<string, any>,
@@ -3212,6 +3230,7 @@ async function runToolUnredacted(
 
       // --------------------------------------------------------- memory --
       case "memory_write": {
+        if (ctx.memory.incognito) return incognitoMemory();
         const title = String(args.title ?? "").trim();
         const body = String(args.body ?? "").trim();
         if (!title || !body) {
@@ -3231,6 +3250,7 @@ async function runToolUnredacted(
       }
 
       case "memory_update": {
+        if (ctx.memory.incognito) return incognitoMemory();
         const id = String(args.id ?? "").trim();
         if (!id) return { ok: false, summary: "No memory id was given." };
         const patch = {
@@ -3246,6 +3266,7 @@ async function runToolUnredacted(
       }
 
       case "memory_forget": {
+        if (ctx.memory.incognito) return incognitoMemory();
         const id = String(args.id ?? "").trim();
         if (!id) return { ok: false, summary: "No memory id was given." };
         const replacedBy = typeof args.replaced_by === "string" ? args.replaced_by.trim() : null;
@@ -3263,6 +3284,7 @@ async function runToolUnredacted(
       }
 
       case "memory_confirm": {
+        if (ctx.memory.incognito) return incognitoMemory();
         const id = String(args.id ?? "").trim();
         if (!id) return { ok: false, summary: "No memory id was given." };
         const note = typeof args.note === "string" ? args.note.trim() : "";

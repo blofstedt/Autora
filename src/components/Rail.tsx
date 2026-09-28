@@ -1,14 +1,15 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { AutoraMark, type MarkState } from "./AutoraMark";
 import {
-  IconBrain, IconChart, IconClock, IconFolder, IconList, IconMessage,
+  IconBrain, IconChart, IconClock, IconFolder, IconList, IconMask, IconMessage,
   IconMonitor, IconPlug, IconPlus, IconServer, IconSliders,
   IconX, IconCheck,
 } from "./Icons";
 import {
-  COLUMNS, DOCK_SLOTS, DOCK_WIDGETS, FONTS, ICON_SIZES, TEXT_SIZES, THEMES,
-  type Appearance, type DockWidgetId,
+  COLUMNS, FONTS, ICON_SIZES, TEXT_SIZES, THEMES,
+  type Appearance,
 } from "../lib/theme";
+import { DockPicker } from "./DockPicker";
 import { ago, until, type Job } from "./Schedule";
 import type { ContextGauge } from "../lib/derive";
 import {
@@ -45,7 +46,8 @@ export const pageLabel = (id: PageId) => PAGES.find((p) => p.id === id)?.label ?
  * two that drift apart. How the app looks is under Settings, not here.
  */
 export function Rail({
-  page, onNavigate, onOpenSession, onOpenMemory, context, relayOn, alert, onNew, drawer = false, onClose,
+  page, onNavigate, onOpenSession, onOpenMemory, context, relayOn, alert, onNew, onIncognito,
+  drawer = false, onClose,
   mood = "rest", attention = 0, pulse = 0, learned = 0, bloom = 0, mindGlow = false,
 }: {
   page: PageId;
@@ -59,6 +61,8 @@ export function Rail({
   /** Something in the chat is waiting on you. */
   alert: boolean;
   onNew: () => void;
+  /** A chat that is never written down, beside the new one. */
+  onIncognito: () => void;
   drawer?: boolean;
   onClose?: () => void;
   /** The agent's presence: what the mark at the top is doing. */
@@ -105,6 +109,14 @@ export function Rail({
         </span>
         <span className="brand-word">Autora</span>
         <div className="spacer" />
+        <button
+          className="rail-icon-btn"
+          onClick={onIncognito}
+          title="Incognito chat — nothing is saved"
+          aria-label="New incognito chat"
+        >
+          <IconMask size={15} />
+        </button>
         <button className="rail-icon-btn" onClick={onNew} title="New session" aria-label="New session">
           <IconPlus size={15} />
         </button>
@@ -542,25 +554,13 @@ export function ThemePicker({
         a page in the sidebar and a way through to it; the text column makes
         room for whatever is pinned.
       </p>
-      <div className="sm-dock">
-        {DOCK_SLOTS.map((slot) => (
-          <label key={slot.id} className="sm-dock-row">
-            <span className="sm-dock-label">{slot.label}</span>
-            <select
-              className="set-select"
-              value={appearance.dock[slot.id]}
-              onChange={(e) => onAppearance({
-                ...appearance,
-                dock: { ...appearance.dock, [slot.id]: e.target.value as DockWidgetId },
-              })}
-            >
-              {DOCK_WIDGETS.map((w) => (
-                <option key={w.id} value={w.id}>{w.label} — {w.hint}</option>
-              ))}
-            </select>
-          </label>
-        ))}
-      </div>
+      <DockPicker
+        dock={appearance.dock}
+        onPick={(slot, id) => onAppearance({
+          ...appearance,
+          dock: { ...appearance.dock, [slot]: id },
+        })}
+      />
     </section>
   );
 }

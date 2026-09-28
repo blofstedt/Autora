@@ -2,7 +2,10 @@ import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type R
 import type { Bucket, Cell, KanbanTask, MemoryTouch } from "../lib/derive";
 import { turnItems } from "../lib/steps";
 import { isPicture, sizeLabel, type Attachment } from "../lib/attachments";
-import { IconAlert, IconArrow, IconArrowDown, IconChevron, IconFile, IconTerminal, IconUser } from "./Icons";
+import {
+  IconAlert, IconArrow, IconArrowDown, IconBrain, IconChevron, IconFile, IconTerminal,
+  IconUser, IconWrench,
+} from "./Icons";
 import { AutoraMark } from "./AutoraMark";
 import type { MarkPhase } from "../lib/activity";
 import { TerminalCell } from "./TerminalCell";
@@ -23,6 +26,13 @@ import { LearnedCell } from "./LearnedCell";
 const STICK_ZONE = 80;
 /** How long a touch counts as still on the thread after the finger has gone. */
 const TOUCH_TAIL_MS = 260;
+
+/** What the working line wears while the agent is busy: a brain while it is
+    thinking, a wrench while it is doing. One glyph per phase, so a new phase
+    is a new line here and nothing else. */
+function phaseGlyph(phase: MarkPhase) {
+  return phase === "thinking" ? <IconBrain size={15} /> : <IconWrench size={15} />;
+}
 
 /**
  * The conversation, and the work, in one column.
@@ -238,7 +248,11 @@ export function Thread({
         ))}
         {busy && (
           <div className="working" aria-live="polite">
-            <AutoraMark size={16} state={phase} className="working-mark" />
+            {/* The line under the thread wears a glyph of its own, not the
+                mark: the mark is the agent signing its own words, and a second
+                one down here turned the brand into a progress spinner.
+                Thinking is a brain, doing is a wrench -- see phaseGlyph. */}
+            <span className="working-mark" aria-hidden="true">{phaseGlyph(phase)}</span>
             {/* Keyed on the words, so each new step fades in over the last
                 rather than snapping -- a train of thought, not a counter. */}
             <span className="working-what" key={doing || "working"}>{doing || "Working"}</span>
@@ -661,8 +675,13 @@ const Reply = memo(function Reply({
 
   return (
     <div className={`msg agent ${working ? "is-working" : ""}`.trim()}>
+      {/* 62 boxes is a 27px triangle: the mark fills 14.04 of its own 32-unit
+          box, so a 27px box draws an 11.8px mark -- under half the tile the
+          person's own avatar sits in. This is that tile's size. The stylesheet
+          owns the real number (it follows the tile down to a phone); what is
+          here is what a page without it gets. See the .avatar rules. */}
       <span className="avatar">
-        <AutoraMark size={27} state={working ? phase : "rest"} />
+        <AutoraMark size={62} state={working ? phase : "rest"} />
       </span>
       <div className="msg-body">
         <div className="msg-who">autora</div>

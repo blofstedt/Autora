@@ -332,6 +332,15 @@ body::before {
    floor stops the whole header shuffling sideways each time it does. */
 .badge.status { min-width: 96px; justify-content: center; }
 
+/* Incognito: the chat that is written down nowhere. A dashed edge, because it
+   is a state with an ending rather than a place you go back to. */
+.badge.incognito {
+  color: var(--text-2);
+  border-style: dashed;
+  cursor: pointer;
+}
+.badge.incognito:hover { color: var(--text); border-color: var(--border-strong); }
+
 /* Anything that counts up gets fixed-width figures, or it jitters as it ticks.
    Inter's proportional numerals are the default and the wrong default here. */
 .badge.tokens, .stats, .shot-count, .cell-at {
@@ -604,8 +613,13 @@ body::before {
 .jump-pill.on { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
 
 .msg { display: flex; gap: 11px; animation: rise 0.3s var(--ease) both; }
+/* --tile is how big the avatar's square is, and the agent's mark reads it:
+   the mark is drawn to the size of the tile beside it (see .msg.agent rules
+   below), so the two sizes have to come from one number. It is 27 here, 30 on
+   a phone and 22 in the shot log, and the mark follows all three. */
 .avatar {
-  width: 27px; height: 27px; border-radius: 9px; flex: 0 0 auto;
+  --tile: 27px;
+  width: var(--tile); height: var(--tile); border-radius: 9px; flex: 0 0 auto;
   display: grid; place-items: center; margin-top: 1px;
 }
 .msg.user .avatar { background: rgba(var(--accent2-rgb),  0.13); color: var(--accent-2); }
@@ -614,7 +628,29 @@ body::before {
    same glowing mark as the empty session and the app icon: no tile behind
    it. It turns and glows while its line is being written, then dims, so the
    bright one is always the line that is still being said. */
-.msg.agent .avatar { overflow: visible; }
+/* place-content as well as the place-items the .avatar grid already has: the
+   mark is bigger than the box it lives in, and with only place-items the grid's
+   track is the mark's own width, laid from the box's left edge -- so the shape
+   hung out to the right of the tile instead of sitting on it. This centres the
+   track, and the mark with it. */
+.msg.agent .avatar { overflow: visible; place-content: center; }
+/* The mark at the size of the tile.
+
+   The shape fills 14.04 of its own 32-unit box (DRAWN_BOX in lib/mark.ts), so
+   the 27px box it used to be given drew an 11.8px triangle -- under half the
+   tile the person's own avatar sits in, while the morph swelled to something
+   twice that. 2.28 boxes per tile makes the mark at rest exactly the size of
+   the tile on the other side of the turn. It overflows the box rather than
+   widening the column; the line above already lets the glow out.
+
+   Widths carry !important because the mark writes its own size inline, and
+   they are calc() of --tile so the phone's 30px tile and the shot log's 22px
+   one each get their own answer from the same rule. */
+.msg.agent .avatar .amark {
+  width: calc(var(--tile) * 2.28) !important;
+  height: calc(var(--tile) * 2.28) !important;
+}
+.msg.agent .avatar .amark svg { width: 100%; height: 100%; }
 .msg.agent .avatar .amark { opacity: 0.5; transition: opacity 0.6s var(--ease); }
 .msg.agent.is-working .avatar .amark,
 .msg.agent .avatar .amark.is-settle { opacity: 1; }
@@ -708,7 +744,15 @@ body::before {
 }
 
 .working { display: flex; align-items: center; gap: 9px; color: var(--text-3); font-size: calc(12.5px * var(--ts, 1)); padding-left: 13px; min-width: 0; }
-.working-mark { flex: 0 0 auto; }
+/* The glyph on the busy line, not the mark (see Thread.tsx): the mark is the
+   agent signing its own words and stays beside them, so this one is a plain
+   glyph in one colour, breathing at the shimmer's own tempo. Reduced motion
+   kills the animation with every other one, in the rule further down. */
+.working-mark { flex: 0 0 auto; display: inline-flex; color: var(--accent-2); animation: workBreathe 2.6s var(--ease) infinite; }
+@keyframes workBreathe {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
 /* A few words of what it is on; one line, cut rather than wrapped, so the
    thread does not jump as the phrase changes length. Each new phrase eases in
    over the last, and a faint shimmer runs through it while it thinks. */
@@ -3606,7 +3650,7 @@ label + .jf-hint { margin-top: -5px; }
      arm's length. */
   .msg-text { font-size: calc(15px * var(--ts, 1)); line-height: 1.6; }
   .msg-who { font-size: calc(11px * var(--ts, 1)); }
-  .avatar { width: 30px; height: 30px; }
+  .avatar { --tile: 30px; }
   .term-body, .diff-code, .cell-line-text, .cell-line-body { font-size: calc(12px * var(--ts, 1)); }
   .working { padding-left: 16px; }
   .mem-pulse:not(.is-inline) { padding-left: 41px; }
@@ -3693,27 +3737,16 @@ label + .jf-hint { margin-top: -5px; }
 }
 
 
-.composer-tools .btn.labeled {
-  width: auto; height: 32px; padding: 0 11px 0 9px; gap: 6px; border-radius: 999px;
-  font-size: calc(12px * var(--ts, 1)); font-weight: 550;
-}
-.composer-tools .btn.labeled .mic-halo { border-radius: 999px; }
-.btn-label { position: relative; z-index: 1; }
-/* A phone's width. Four labelled buttons and Send needed about 320px, and a
-   390px phone gives the row 294: Photo slid under Send, and on a plain-http
-   install the "Voice needs https" note ran under it too. The buttons tighten
-   first; below 400px Attach and Photo keep their icon (a paperclip and a
-   camera need no word, and both are labelled for a screen reader) while the
-   two voices keep theirs; and anything that still does not fit wraps onto a
-   second line rather than under the button beside it. */
+/* Four glyphs and no words. Each one keeps its name for a screen reader,
+   so the row reads as a toolstrip instead of four clipped sentences, and the
+   circle .btn.icon already gets in the composer is the whole target. */
+.composer-tools .btn.icon { flex: 0 0 auto; }
+/* A phone narrow enough that the row has to wrap anyway: the note about a
+   page needing https takes a line of its own rather than sitting under the
+   button beside it. */
 @media (max-width: 440px) {
-  .composer-tools { gap: 0; flex-wrap: wrap; row-gap: 4px; }
-  .composer-tools .btn.labeled { padding: 0 8px 0 7px; gap: 5px; }
+  .composer-tools { flex-wrap: wrap; row-gap: 4px; }
   .composer-foot .hint.voice-note { flex-basis: 100%; padding-left: 8px; }
-}
-@media (max-width: 400px) {
-  .composer-tools .attach-btn .btn-label { display: none; }
-  .composer-tools .btn.labeled.attach-btn { padding: 0 9px; }
 }
 .composer-live:disabled { opacity: 0.5; }
 
@@ -4574,6 +4607,7 @@ html[data-font="mono"] body { font-size: calc(13.5px * var(--ts, 1)); }
   .rail-icon-btn { width: 38px; height: 38px; }
   .sm-theme { padding: 10px 10px; font-size: calc(14px * var(--ts, 1)); }
   .sm-font { padding: 11px 8px; font-size: calc(14px * var(--ts, 1)); }
+  .sm-dock-head, .sm-dock-w { padding: 11px 9px; font-size: calc(13px * var(--ts, 1)); }
 }
 
 /* The phone's drawer: nine pages, the context ring, what it remembers, the
@@ -4913,7 +4947,7 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
   padding: 10px 12px; border-top: 1px solid var(--border); background: var(--s1);
 }
 .shot-log .msg { gap: 8px; align-items: flex-start; }
-.shot-log .msg .avatar { width: 22px; height: 22px; }
+.shot-log .msg .avatar { --tile: 22px; }
 .shot-log .msg-who { display: none; }
 /* Said while working the page, so shown as a chat thread about it: each
    message its own bubble, the way a side conversation reads in a team chat. */
@@ -5586,10 +5620,41 @@ button.dock-card { text-align: left; cursor: pointer; font: inherit; }
 button.dock-card:hover { border-color: var(--border-strong); }
 
 /* Four rows of one dropdown each, for the corner widgets in Appearance. */
-.sm-dock { display: grid; gap: 8px; margin-top: 10px; }
-.sm-dock-row { display: flex; align-items: center; gap: 10px; }
-.sm-dock-label {
-  flex: 0 0 96px; color: var(--text-2);
-  font-size: calc(12.5px * var(--ts, 1));
+/* Corner widgets: a row per corner, the pick that is on it, and the widgets
+   themselves opening under it as tiles that wear the glyph they will wear in
+   the corner. This was four native selects, which dropped a system menu over
+   the panel with every option spelled out ("Schedules — What is running, and
+   what is next") and read as nothing else in the appearance tab. */
+.sm-dock { display: grid; gap: 4px; margin-top: 10px; }
+.sm-dock-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.sm-dock-head {
+  flex: 1 1 auto; display: flex; align-items: center; gap: 9px; min-width: 0;
+  padding: 7px 9px; border-radius: var(--r-sm); cursor: pointer; text-align: left;
+  border: 1px solid var(--border); background: var(--s1); color: var(--text-2);
+  font: inherit; font-size: calc(12.5px * var(--ts, 1));
+  transition: border-color 0.16s var(--ease), background 0.16s var(--ease), color 0.16s var(--ease);
 }
-.sm-dock-row .set-select { flex: 1 1 auto; }
+.sm-dock-head:hover { color: var(--text); border-color: var(--border-strong); }
+.sm-dock-row.is-open .sm-dock-head {
+  border-color: var(--accent-line); background: var(--accent-soft); color: var(--text);
+}
+.sm-dock-label { flex: 0 0 96px; font-size: calc(12.5px * var(--ts, 1)); }
+.sm-dock-pick { display: inline-flex; align-items: center; gap: 7px; min-width: 0; color: var(--text); }
+.sm-dock-ico { display: inline-flex; flex: 0 0 auto; color: var(--text-3); }
+.sm-dock-head .sm-dock-ico, .sm-dock-w.on .sm-dock-ico { color: var(--accent); }
+.sm-dock-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sm-dock-head > svg { margin-left: auto; color: var(--text-3); transition: transform 0.2s var(--ease); }
+.sm-dock-row.is-open .sm-dock-head > svg { transform: rotate(90deg); }
+.sm-dock-grid {
+  flex: 1 0 100%; display: grid; gap: 5px; padding: 0 0 6px;
+  grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
+}
+.sm-dock-w {
+  display: flex; align-items: center; gap: 7px; min-width: 0;
+  padding: 7px 8px; border-radius: var(--r-sm); cursor: pointer; text-align: left;
+  border: 1px solid var(--border); background: var(--s1); color: var(--text-2); font: inherit;
+  font-size: calc(12.5px * var(--ts, 1));
+  transition: border-color 0.16s var(--ease), background 0.16s var(--ease), color 0.16s var(--ease);
+}
+.sm-dock-w:hover { color: var(--text); border-color: var(--border-strong); }
+.sm-dock-w.on { border-color: var(--accent-line); background: var(--accent-soft); color: var(--text); }

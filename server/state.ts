@@ -19,6 +19,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { isEphemeral } from "./ephemeral";
 import { AUTO_ORDER, PROVIDERS, providerSpec } from "./providers";
 import { LOOP_DEFAULTS, type LoopWatchConfig } from "./loopwatch";
 import { DEFAULT_JEV, clampThreshold, type JevSettings } from "./jev/router";
@@ -997,7 +998,12 @@ export function resolveProvider(): Resolved {
 // ------------------------------------------------------------------ spend --
 
 export function recordUsage(entry: UsageEntry) {
-  state.usage.push(entry);
+  /* An incognito chat is filed under a word that names no chat. The ledger is
+     written for every call the app pays for, so leaving the id in it would be
+     the one trace such a chat left on disk -- and leaving the call out
+     altogether would make the spend wrong. Nothing else about the chat is in
+     the row: no text, no title, only what was spent. */
+  state.usage.push(isEphemeral(entry.session) ? { ...entry, session: "incognito" } : entry);
   while (state.usage.length > MAX_USAGE) {
     const dropped = state.usage.shift()!;
     carried.cost += dropped.cost;

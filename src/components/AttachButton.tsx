@@ -54,14 +54,13 @@ export function AttachButton({ onFiles, disabled, busy }: Picked) {
       />
       <button
         type="button"
-        className="btn ghost labeled attach-btn"
+        className="btn ghost icon attach-btn"
         onClick={() => picker.current?.click()}
         disabled={disabled}
         title="Attach a file"
         aria-label="Attach a file"
       >
         {busy ? <span className="attach-spin" aria-hidden="true" /> : <IconPaperclip size={18} />}
-        <span className="btn-label">Attach</span>
       </button>
     </>
   );
@@ -101,14 +100,13 @@ export function CameraButton({ onFiles, disabled, onTrouble }: Picked) {
       />
       <button
         type="button"
-        className="btn ghost labeled attach-btn"
+        className="btn ghost icon attach-btn"
         onClick={() => (streamable ? setShooting(true) : openPicker())}
         disabled={disabled}
         title={streamable ? "Take a photo" : "Take a photo (opens the camera on a phone)"}
         aria-label="Take a photo and attach it"
       >
         <IconCamera size={18} />
-        <span className="btn-label">Photo</span>
       </button>
 
       {shooting && (

@@ -99,23 +99,28 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  Make it yours, and use the whole screen.
-  Settings -> Appearance now sets how big the text is and how big the icons
-  are, as two separate four-step scales, from Small to Largest. They follow
-  you between devices, so a phone gets the size you chose on the desktop.
-  Nothing is left behind: every size in the interface scales together,
-  including the icons in the rail and the small print in a thread.
-  A conversation is no longer stuck in a narrow strip down the middle of a
-  wide monitor. Text column chooses Comfort -- the width it has always been --
-  Wide, or Fill, and the empty margin either side goes away if you want it to.
-  Four corner widgets, on a desktop: pin a small version of a page to each
-  corner of the conversation -- System, Usage, Schedules, Mind, Artifacts,
-  Sessions, Integrations or Settings -- and it sits in the margin and opens
-  that page when you click it. Nothing is pinned until you ask for it, and
-  when something is, the text makes room for it rather than running
-  underneath.
-  Fixes: with the column set to Fill, the compositor no longer runs the full
-  width of the window. Text size and icon size are checked on the way in, so a
-  settings file written by an older release, or edited by hand, falls back to
-  a size that exists rather than to a missing one. iOS no longer zooms the
-  page when you tap into a text box, whatever text size you have chosen.
+  A chat you can leave no trace of.
+  Beside the plus, in the sessions list and in the hamburger menu, is an
+  incognito mask. An incognito chat is never written down: the server holds it
+  in memory for as long as it is open, and writes no log, no meta, no tallies
+  and nothing in the vault -- it refuses to, however it is asked. It is not in
+  the sessions list, and the address bar keeps no record of it, so a reload
+  opens the chat you were in before. A dashed Incognito badge in the header
+  says which chat you are in and closes it when you click it.
+  When one ends: opening another chat, leaving the chat page, closing the tab
+  or reloading. Nothing is left behind to delete, and a turn still running does
+  not hold it open.
+  The button that opened a new chat in the sessions list is now the plus on its
+  own. The word New is gone, and both buttons name themselves for a screen
+  reader.
+  The words are gone from the four icons in the text box -- Talk, Dictate,
+  Attach and Photo are glyphs now, each still named for a screen reader -- and
+  the mark on the first of them is drawn at the size of the mic beside it
+  instead of under half.
+  In a conversation the agent's mark is drawn at the size of the tile your own
+  avatar sits in, rather than looking half of it, and the line under the thread
+  that says what it is doing wears a glyph of its own: a brain while it is
+  thinking, a wrench while it is working. The only mark in a chat is the one
+  beside the agent's words.
+  Choosing the corner widgets is rows and tiles under Appearance now, in place
+  of four system menus dropping over the panel.

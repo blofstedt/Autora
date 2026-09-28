@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { IconCheck, IconPin, IconPlus, IconSearch, IconTrash, IconX } from "./Icons";
+import { IconCheck, IconMask, IconPin, IconPlus, IconSearch, IconTrash, IconX } from "./Icons";
 
 export type SessionRow = {
   id: string;
@@ -42,12 +42,14 @@ function when(ts: number | undefined): string {
  * on the Sessions page, one link away.
  */
 export function Sessions({
-  sessions, current, onPick, onNew, onClose, onChanged, onDelete, onOpenPage,
+  sessions, current, onPick, onNew, onIncognito, onClose, onChanged, onDelete, onOpenPage,
 }: {
   sessions: SessionRow[];
   current: string | null;
   onPick: (id: string) => void;
   onNew: () => void;
+  /** A chat that is never written down, beside the new one. */
+  onIncognito: () => void;
   onClose: () => void;
   /** Pinned or deleted: refresh the app's copy of the list. */
   onChanged: () => void;
@@ -117,8 +119,16 @@ export function Sessions({
         <div className="modal-top">
           <b>Sessions</b>
           <div className="spacer" />
-          <button className="btn" onClick={onNew}>
-            <IconPlus size={13} /> New
+          <button
+            className="btn icon"
+            onClick={onIncognito}
+            title="Incognito chat — nothing is saved"
+            aria-label="New incognito chat"
+          >
+            <IconMask size={14} />
+          </button>
+          <button className="btn icon" onClick={onNew} title="New session" aria-label="New session">
+            <IconPlus size={14} />
           </button>
           <button className="btn icon ghost" onClick={onClose} aria-label="Close sessions">
             <IconX size={14} />

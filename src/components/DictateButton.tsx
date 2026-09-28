@@ -56,14 +56,13 @@ export function DictateButton({
     return (
       <button
         type="button"
-        className="btn ghost labeled mic-btn is-blocked"
+        className="btn ghost icon mic-btn is-blocked"
         onClick={onBlocked}
         disabled={disabled || !onBlocked}
         title={why}
         aria-label={why}
       >
         <IconMic size={15} />
-        <span className="btn-label">Dictate</span>
       </button>
     );
   }
@@ -73,7 +72,7 @@ export function DictateButton({
   return (
     <button
       type="button"
-      className={`btn ghost labeled mic-btn ${listening ? "on" : ""}${
+      className={`btn ghost icon mic-btn ${listening ? "on" : ""}${
         dictation.error ? " has-error" : ""}`}
       onClick={dictation.toggle}
       disabled={disabled}
@@ -86,9 +85,6 @@ export function DictateButton({
     >
       <span className="mic-halo" aria-hidden="true" />
       <IconMic size={15} />
-      {/* Two voice buttons sat side by side as two small icons; the words
-          say which one types and which one talks back. */}
-      <span className="btn-label">{listening ? "Listening…" : "Dictate"}</span>
     </button>
   );
 }

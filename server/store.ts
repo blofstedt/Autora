@@ -29,6 +29,11 @@ function safeId(id: string): string | null {
   return /^[A-Za-z0-9_-]{1,120}$/.test(id) ? id : null;
 }
 
+/* A chat that is never written down: see server/ephemeral.ts for the rule.
+   Re-exported, because this is where the rest of the app has always asked. */
+import { ephemeralId, isEphemeral } from "./ephemeral";
+export { ephemeralId, isEphemeral };
+
 function writeAtomic(file: string, body: string) {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   const tmp = `${file}.${process.pid}.tmp`;
@@ -137,6 +142,8 @@ function flushLines() {
     there. Called as the log is flushed, so a session's meta.json is always a
     summary of the log next to it. */
 function persistCounts(id: string) {
+  // Nothing of an incognito chat is filed, its tallies included.
+  if (isEphemeral(id)) return;
   const counts = countsCache.get(id);
   if (!counts) return;
   try {
@@ -164,6 +171,13 @@ function persistCounts(id: string) {
 export function countsFor(id: string): SessionCounts {
   const held = countsCache.get(id);
   if (held) return held;
+  /* A session that is never written down is not counted from a log it has
+     not got; it starts empty and stays in memory with the session. */
+  if (isEphemeral(id)) {
+    const fresh: SessionCounts = { seq: 0, lastTs: 0, events: 0, turns: 0, tools: 0, errors: 0 };
+    countsCache.set(id, fresh);
+    return fresh;
+  }
   let counts: SessionCounts | undefined;
   try {
     counts = (JSON.parse(
@@ -217,7 +231,7 @@ export function forgetCounts(id: string) {
  * in meta.json cannot drift from the log it summarises, whoever appends.
  */
 export function appendEvent(id: string, event: unknown) {
-  if (!safeId(id)) return;
+  if (!safeId(id) || isEphemeral(id)) return;
   const lines = pendingLines.get(id) ?? [];
   lines.push(`${JSON.stringify(event)}\n`);
   pendingLines.set(id, lines);
@@ -231,7 +245,7 @@ export function appendEvent(id: string, event: unknown) {
     than expected from the caller: a rename must not lose the summary of a
     log, which would put the next start back to reading the whole thing. */
 export function saveMeta(meta: StoredMeta) {
-  if (!safeId(meta.id)) return;
+  if (!safeId(meta.id) || isEphemeral(meta.id)) return;
   const counts = meta.counts ?? countsCache.get(meta.id);
   if (counts) countsCache.set(meta.id, counts);
   try {
@@ -246,7 +260,7 @@ export function saveMeta(meta: StoredMeta) {
 
 /** Save a whole session at once: for one built in memory before it was stored. */
 export function saveSession<E>(session: StoredSession<E>) {
-  if (!safeId(session.id)) return;
+  if (!safeId(session.id) || isEphemeral(session.id)) return;
   pendingLines.delete(session.id);
   if (session.counts) countsCache.set(session.id, session.counts);
   saveMeta({
@@ -422,7 +436,7 @@ function safeArtifactId(id: string): string | null {
 }
 
 export function saveVaultText(sessionId: string, id: string, text: string) {
-  const safe = safeId(sessionId) && safeArtifactId(id);
+  const safe = safeId(sessionId) && !isEphemeral(sessionId) && safeArtifactId(id);
   if (!safe) return;
   try {
     const dir = path.join(SESSIONS(), sessionId, VAULT_DIR);

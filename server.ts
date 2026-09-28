@@ -55,7 +55,8 @@ import {
 } from "./server/liveview";
 import { ContextEngine, stripAnsi, type CompactionReport } from "./server/context";
 import {
-  appendEvent, countsFor, countsOf, deleteSession, flushStore, loadSessionEvents,
+  appendEvent, countsFor, countsOf, deleteSession, ephemeralId, flushStore,
+  loadSessionEvents,
   loadSessionIndex, readDoc, saveDoc, saveMeta, saveSession, type SessionCounts,
 } from "./server/store";
 import { LiveBrowser, VIEWPORT, probeBrowser, type PageRead } from "./server/browser";
@@ -144,6 +145,9 @@ interface Session {
   busy: boolean;
   /** Kept at the top of the session lists. */
   pinned?: boolean;
+  /** A chat that is never written down and never listed: incognito. It is in
+      this process's memory alone, and closing it closes it for good. */
+  incognito?: boolean;
   events: AutoraEvent[];
   seqCounter: number;
   /** What the log holds, kept current as events are emitted, so neither the
@@ -156,6 +160,13 @@ interface Session {
 // disk (./server/store) it replaces them.
 const sessions = new Map<string, Session>();
 const sessionSockets = new Map<string, Set<WebSocket>>();
+
+/* An incognito chat is closed by the client when it is left or the window
+   goes. This is the other way a tab ends -- a crash, a phone that died -- and
+   it is a grace period rather than a rule: a reconnect within it (a reload, a
+   network that blinked) keeps the conversation. */
+const EPHEMERAL_GRACE_MS = 20_000;
+const ephemeralDrops = new Map<string, NodeJS.Timeout>();
 
 /* A fresh install starts knowing nothing it has not been told. It used to
    start with demo memories ("run on port 3000", "synaptically traversable
@@ -321,6 +332,11 @@ function sweep(policy = state.retention) {
  * memory and vault stayed in the process until it restarted.
  */
 function forgetSession(id: string) {
+  const waiting = ephemeralDrops.get(id);
+  if (waiting) {
+    clearTimeout(waiting);
+    ephemeralDrops.delete(id);
+  }
   const live = browsers.get(id);
   if (live) {
     void live.close().catch(() => undefined);
@@ -337,6 +353,33 @@ function forgetSession(id: string) {
   lastAnswer.delete(id);
   for (const key of heldCalls.keys()) if (key.startsWith(`${id}\u0000`)) heldCalls.delete(key);
   turnsInFlight.delete(id);
+}
+
+/**
+ * An incognito chat outlives nobody. When the last socket watching one goes
+ * and nothing is running in it, it closes with the tab -- after a moment's
+ * grace, so that a reconnect, a reload or a network that blinked does not
+ * throw away a conversation somebody is still in.
+ */
+function scheduleEphemeralDrop(id: string) {
+  const session = sessions.get(id);
+  if (!session?.incognito || ephemeralDrops.has(id)) return;
+  if ((sessionSockets.get(id)?.size ?? 0) > 0) return;
+  const arm = () => {
+    const timer = setTimeout(() => {
+      ephemeralDrops.delete(id);
+      const live = sessions.get(id);
+      if (!live?.incognito) return;
+      // Somebody is back, or a turn is still running: kept, and looked at again.
+      if ((sessionSockets.get(id)?.size ?? 0) > 0) return;
+      if (live.busy || turnsInFlight.has(id)) return arm();
+      forgetSession(id);
+      log("info", "sessions", "an incognito chat was closed when its tab went");
+    }, EPHEMERAL_GRACE_MS);
+    timer.unref?.();
+    ephemeralDrops.set(id, timer);
+  };
+  arm();
 }
 
 /** How often housekeeping looks at the disk without being asked. */
@@ -402,7 +445,11 @@ function emitEvent(session: Session, kind: string, actor: string, payload: Recor
     blob,
   };
   session.events.push(event);
-  appendEvent(session.id, event);
+  /* An incognito chat is not written down: not to its own log, and not to the
+     app's log either, which would keep a line about every turn of a
+     conversation that was meant to leave none. It goes to the tab watching it
+     and nowhere else. */
+  if (!session.incognito) appendEvent(session.id, event);
 
   const sockets = sessionSockets.get(session.id);
   if (sockets) {
@@ -414,7 +461,7 @@ function emitEvent(session: Session, kind: string, actor: string, payload: Recor
     }
   }
 
-  logEvent(session, event);
+  if (!session.incognito) logEvent(session, event);
   return event;
 }
 
@@ -1950,8 +1997,10 @@ function isDefaultTitle(title: string): boolean {
   return !t || t === "New Session" || /^Session [a-z0-9]{1,8}$/i.test(t);
 }
 
-function newSession(title: string): Session {
-  const id = `session-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+function newSession(title: string, incognito = false): Session {
+  const id = incognito
+    ? ephemeralId()
+    : `session-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
   const session: Session = {
     id,
     title,
@@ -1961,9 +2010,11 @@ function newSession(title: string): Session {
     events: [],
     seqCounter: 0,
     counts: countsFor(id),
+    ...(incognito ? { incognito: true } : {}),
   };
   sessions.set(id, session);
-  saveMeta(metaOf(session));
+  // An incognito chat has no meta.json: the store refuses to write one.
+  if (!incognito) saveMeta(metaOf(session));
   emitEvent(session, "session.started", "system", { title: session.title });
   return session;
 }
@@ -2110,6 +2161,9 @@ async function backgroundCall(sessionId: string, system: string, prompt: string,
  * server/learning.ts. Runs in the background and never fails the turn.
  */
 async function reflect(session: Session, request: string, startSeq: number, previousReply: string, result: TurnResult) {
+  /* Nothing is learned from an incognito chat: a lesson kept from one is a
+     record of a conversation that was meant to leave none. */
+  if (session.incognito) return;
   if (!state.learning || !toolSettings().memory.enabled) return;
   if (!worthReflecting({ request, ranSomething: result.ranSomething, stopped: result.stopped, ok: result.ok })) return;
   const recalled = result.recalled.map((id) => mind.get(id)).filter((m): m is MemoryRecord => Boolean(m));
@@ -2314,7 +2368,9 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
     const uniqueAccessed = recalled.map((r) => r.record);
     result.recalled = uniqueAccessed.map((r) => r.id);
     if (uniqueAccessed.length > 0) {
-      mind.touch(uniqueAccessed.map((r) => r.id));
+      // How often a memory is used is a write: an incognito chat leaves the
+      // graph exactly as it found it.
+      if (!session.incognito) mind.touch(uniqueAccessed.map((r) => r.id));
       emitEvent(session, "memory.recall", "agent", {
         ids: uniqueAccessed.map((r) => r.id),
         titles: uniqueAccessed.map((r) => r.title),
@@ -2754,7 +2810,12 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
         cancelled: () => Boolean(running.get(session.id)?.stopped),
         onCancel: (stop) => { running.get(session.id)?.cancels.add(stop); },
         memory: {
+          /* An incognito chat reads the graph and changes nothing in it: the
+             tool layer says so in words when the agent tries to write (see
+             server/tools.ts), and these guards are the second line of it. */
+          incognito: Boolean(session.incognito),
           write: ({ title, body, kind, tags }) => {
+            if (session.incognito) return { id: "", action: "refused" };
             const { record, action } = mind.write({
               title, body, kind, tags: [...(tags ?? []), "agent-authored"],
               status: "confirmed", source_session: session.id, source_seq: session.seqCounter,
@@ -2766,6 +2827,12 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           },
           search: (query) => {
             const hits = mind.recall(query, 8, false);
+            if (hits.length > 0 && session.incognito) {
+              // Read, recalled, and left: a search is not a change.
+              return hits.map(({ record: m }) => ({
+                id: m.id, kind: m.kind, title: m.title, body: m.body, status: m.status,
+              }));
+            }
             if (hits.length > 0) {
               // A search is a recall, and the ribbon should light up for it
               // exactly as it does for the automatic kind.
@@ -2782,6 +2849,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             }));
           },
           update: (id, patch) => {
+            if (session.incognito) return false;
             const record = mind.update(id, patch);
             if (record) {
               emitEvent(session, "memory.write", "agent", {
@@ -2791,6 +2859,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             return Boolean(record);
           },
           confirm: (id, note) => {
+            if (session.incognito) return false;
             const record = mind.recheck(id, note);
             if (record) {
               emitEvent(session, "memory.write", "agent", {
@@ -2800,6 +2869,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             return Boolean(record);
           },
           forget: (id, replacedBy) => {
+            if (session.incognito) return false;
             const record = mind.get(id);
             const ok = mind.forget(id, replacedBy);
             if (ok && record) {
@@ -3469,7 +3539,9 @@ async function startServer() {
       row.cost += u.cost; row.input += u.input; row.output += u.output;
       spend.set(u.session, row);
     }
-    const list = Array.from(sessions.values()).map((s) => {
+    /* Incognito chats are not in it: there is nobody to come back to them,
+       and the tab that opened one is the only thing holding its id. */
+    const list = Array.from(sessions.values()).filter((s) => !s.incognito).map((s) => {
       /* From the tallies kept alongside the events rather than by walking the
          log: this route is called whenever the rail is drawn, and for a
          session nobody has opened yet that would mean parsing a thread of
@@ -3516,14 +3588,23 @@ async function startServer() {
   app.delete("/api/sessions/:id", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
-    if (session.busy) return res.status(409).json({ error: "Stop the session before deleting it." });
+    /* An incognito chat is closed rather than deleted -- there is nothing on
+       disk to remove -- and closing it is the point, so a turn still running
+       in it is stopped instead of the request being refused. */
+    const incognito = Boolean(session.incognito);
+    if (session.busy) {
+      if (!incognito) return res.status(409).json({ error: "Stop the session before deleting it." });
+      stopTurn(session.id);
+      session.busy = false;
+    }
     // The browser is closed first, so its sign-ins are saved before it goes.
     await browsers.get(session.id)?.close().catch(() => undefined);
     browsers.delete(session.id);
     clearFrame(session.id);
     forgetSession(session.id);
-    deleteSession(session.id);
-    log("info", "sessions", `deleted "${session.title}"`);
+    if (!incognito) deleteSession(session.id);
+    // No title of an incognito chat is in a log line: it may be a first message.
+    log("info", "sessions", incognito ? "an incognito chat was closed" : `deleted "${session.title}"`);
     res.json({ ok: true });
   });
 
@@ -3615,8 +3696,15 @@ async function startServer() {
   });
 
   app.post("/api/sessions", (req: Request, res: Response) => {
-    const session = newSession((req.body?.title || "").trim() || "New Session");
-    res.json({ id: session.id });
+    /* An incognito chat is created like any other and kept differently: the
+       flag is what makes the store refuse to write it and the listing leave
+       it out. */
+    const incognito = req.body?.incognito === true;
+    const session = newSession(
+      (req.body?.title || "").trim() || (incognito ? "Incognito" : "New Session"),
+      incognito,
+    );
+    res.json({ id: session.id, incognito });
   });
 
   // 3. Session Events & Replay
@@ -3815,7 +3903,10 @@ async function startServer() {
     // The first message names the thread -- unless it was already given a
     // name, which renaming a fresh session before typing used to lose. The
     // tally is read rather than the log, which would load the whole thread.
-    if (session.counts.turns === 0 && isDefaultTitle(session.title)) {
+    /* An incognito chat keeps the name it was given: naming a thread after
+       its first message is a small record of that message, and this one is
+       not written down anywhere. */
+    if (!session.incognito && session.counts.turns === 0 && isDefaultTitle(session.title)) {
       const named = text || attachments.map((a) => a.name).join(", ");
       const oneLine = named.replace(/\s+/g, " ");
       session.title = oneLine.length > 40 ? `${oneLine.slice(0, 37)}...` : oneLine;
@@ -5206,6 +5297,8 @@ async function startServer() {
         // Nobody left watching: stop asking the relay for pictures of
         // somebody's screen.
         releaseDesktopIfIdle(sessionId);
+        // An incognito chat goes with the tab that opened it.
+        scheduleEphemeralDrop(sessionId);
       });
       return;
     }

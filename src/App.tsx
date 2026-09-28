@@ -15,7 +15,7 @@ import { ArtifactsPage } from "./components/pages/ArtifactsPage";
 import { MindPage } from "./components/pages/MindPage";
 import type { Bucket } from "./lib/memory";
 import {
-  applyAppearance, cachedAppearance, saneAppearance, saveAppearance,
+  applyAppearance, cachedAppearance, iconScale, saneAppearance, saveAppearance,
   type Appearance,
 } from "./lib/theme";
 import { Sessions, type SessionRow } from "./components/Sessions";
@@ -41,7 +41,7 @@ import {
   splitSpeakable, useSpeech,
 } from "./lib/voice";
 import {
-  IconArrow, IconArrowUp, IconChevron, IconFile, IconMenu,
+  IconArrow, IconArrowUp, IconChevron, IconFile, IconMask, IconMenu,
   IconX,
 } from "./components/Icons";
 import {
@@ -71,6 +71,12 @@ export function App() {
     () => new URLSearchParams(location.search).get("session"),
   );
   const [sessions, setSessions] = useState<SessionRow[]>([]);
+  /* The chat that leaves nothing behind, when one is open. Its id is what
+     says so: the server holds the chat in memory and refuses to write it, so
+     "incognito" is a fact about the open session rather than a mode. */
+  const [incognitoId, setIncognitoId] = useState<string | null>(null);
+  /** The same, for the poll and the unload handler, which are set up once. */
+  const incognitoRef = useRef<string | null>(null);
 
   /** This month's spend, for the bar over the composer. Read here, never
       written: the ledger is the turns' own, one row each as they finish. */
@@ -173,7 +179,9 @@ export function App() {
           // otherwise every session switch restarts the poll. A session that
           // has been deleted gives way to the newest one.
           setSessionId((current) =>
-            current && rows.some((r: SessionRow) => r.id === current)
+            // A session that is not in the list because it is never written
+            // down -- incognito -- is still the one that is open.
+            current && (rows.some((r: SessionRow) => r.id === current) || current === incognitoRef.current)
               ? current
               : rows.length > 0 ? rows[0].id : null);
         })
@@ -503,7 +511,71 @@ export function App() {
     }
   }, [sessionId]);
 
+  /* Ending an incognito chat is one request: there is nothing on disk to
+     remove and nothing to come back to, so telling the server to forget it is
+     the whole of it. Sent keepalive, because the usual reason to end one is
+     the window going. */
+  const endIncognito = useCallback(() => {
+    const id = incognitoRef.current;
+    incognitoRef.current = null;
+    setIncognitoId(null);
+    if (id) {
+      void fetch(`/api/sessions/${id}`, { method: "DELETE", keepalive: true }).catch(() => undefined);
+    }
+  }, []);
+
+  /** A new chat that is never written down: created like any other, and kept
+      differently. Whatever incognito chat was open ends with it. */
+  const startIncognito = useCallback(async () => {
+    endIncognito();
+    const res = await fetch("/api/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ incognito: true }),
+    }).catch(() => null);
+    const id = res?.ok ? (await res.json().catch(() => null))?.id : null;
+    if (typeof id !== "string" || !id) {
+      setNotice("Could not open an incognito chat.");
+      return;
+    }
+    /* To the chat first, then the id: a render that had the id but still
+       showed another page would count as walking away from it. */
+    setSessionsOpen(false);
+    navigate("chat");
+    incognitoRef.current = id;
+    setIncognitoId(id);
+    setSessionId(id);
+    /* The address keeps no trace of it: a reload opens the chat you were in
+       before, rather than asking the server for one that is already gone. */
+    const url = new URL(location.href);
+    url.searchParams.delete("session");
+    history.replaceState(null, "", url.toString());
+  }, [endIncognito, navigate]);
+
+  /* Leaving the chat ends an incognito one, wherever you go next: it is a
+     chat you close by walking away from, and a turn still running does not
+     hold it open. */
+  useEffect(() => {
+    if (!incognitoId || page === "chat") return;
+    endIncognito();
+  }, [incognitoId, page, endIncognito]);
+
+  /* And the window going ends it: a reload, a closed tab, a phone put away.
+     The server has the same rule for a tab that dies without saying anything. */
+  useEffect(() => {
+    if (!incognitoId) return;
+    const leaving = () => endIncognito();
+    window.addEventListener("pagehide", leaving);
+    window.addEventListener("beforeunload", leaving);
+    return () => {
+      window.removeEventListener("pagehide", leaving);
+      window.removeEventListener("beforeunload", leaving);
+    };
+  }, [incognitoId, endIncognito]);
+
   const newSession = useCallback(async () => {
+    // Opening another chat closes an incognito one: two at once is not a thing.
+    endIncognito();
     const res = await fetch("/api/sessions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -514,13 +586,19 @@ export function App() {
     setSessionId(id);
     setSessionsOpen(false);
     return id as string;
-  }, []);
+  }, [endIncognito]);
 
   const pickSession = useCallback((id: string) => {
+    // Going to another chat ends an incognito one rather than leaving it open
+    // in the background: it is not somewhere to come back to.
+    if (incognitoRef.current && incognitoRef.current !== id) endIncognito();
     history.replaceState(null, "", `?session=${id}`);
     setSessionId(id);
     setSessionsOpen(false);
-  }, []);
+  }, [endIncognito]);
+
+  /** The open chat is an incognito one. */
+  const incognito = Boolean(incognitoId) && sessionId === incognitoId;
 
   const live = status.state === "live";
   /* Only a session that can never take a turn again is read-only. A socket
@@ -1095,6 +1173,7 @@ export function App() {
             mindGlow={mindGlow}
             alert={pending > 0}
             onNew={() => { void newSession(); navigate("chat"); }}
+            onIncognito={() => { void startIncognito(); }}
             drawer={kind === "drawer"}
             onClose={() => setDrawerOpen(false)}
           />
@@ -1134,6 +1213,21 @@ export function App() {
             <span className="session-name">{currentName}</span>
             <IconChevron size={12} />
           </button>
+          )}
+
+          {/* The one state of the header worth stating outright: this chat is
+              written down nowhere, and leaving it ends it. */}
+          {incognito && (
+            <button
+              className="badge incognito"
+              onClick={() => { void newSession(); }}
+              title="Incognito — nothing here is saved. Another chat or leaving the chat ends it."
+              aria-label="Leave the incognito chat"
+            >
+              <IconMask size={12} />
+              Incognito
+              <IconX size={10} />
+            </button>
           )}
 
           <div className="spacer" />
@@ -1446,17 +1540,28 @@ export function App() {
                           carries a conversation: Talk sits where the hand
                           goes first. It used to float over the thread above
                           Send on phones, where it covered the last line of
-                          whatever was there. */}
+                          whatever was there.
+
+                          The word "Talk" is gone: four glyphs in a row read as
+                          a toolstrip, and each one is named for a screen
+                          reader anyway. The mark is drawn larger here than
+                          anywhere else at this weight, because a triangle
+                          fills under half of its own box -- 28 is what makes
+                          it as big on screen as the 15px mic beside it. It
+                          follows the icon size in Settings (--is, which the
+                          plain glyphs get from their own stylesheet). */}
                       <button
-                        className="btn ghost labeled composer-live"
+                        className="btn ghost icon composer-live"
                         onClick={voiceReady ? toggleLive : () => setVoiceHelp(true)}
                         disabled={!live}
                         title={voiceReady ? "Talk with Autora out loud (v)" : "Live voice requires https"}
                         aria-label="Live voice chat"
                         aria-pressed={liveOn}
                       >
-                        <AutoraMark state={liveState} size={18} />
-                        <span className="btn-label">Talk</span>
+                        <AutoraMark
+                          state={liveState}
+                          size={Math.round(28 * iconScale(appearance.icons))}
+                        />
                       </button>
                       {/* Beside Talk: type by voice into the box instead of
                           speaking the turn, which is the quieter half of the
@@ -1535,6 +1640,7 @@ export function App() {
           current={sessionId}
           onPick={pickSession}
           onNew={newSession}
+          onIncognito={() => { void startIncognito(); }}
           onClose={() => setSessionsOpen(false)}
           onChanged={refreshSessions}
           onDelete={deleteSession}
