@@ -356,3 +356,55 @@ export function stackUnits(): { d: string; x: number; y: number }[] {
     { d: up, x: MARK.cx, y: base - height - 0.75 * unit },
   ];
 }
+
+/**
+ * The building animation's clock.
+ *
+ * One turn is a fixed length and everything drawn during it -- the quarters
+ * falling, the breath when they are up, the close -- is a fraction of that
+ * length, so the length lives here, with the geometry, rather than in the
+ * component that happens to play it. What matters beyond the length is where in
+ * the turn the build may be left: that is `buildWait` below.
+ */
+export const BUILD_MS = 3400;
+
+/**
+ * The close, as fractions of a turn: from CLOSE_AT the three quarters are
+ * drawn into the mark, by CLOSE_IN the mark is drawn, by CLOSE_ON it has
+ * arrived in its place, and from CLOSE_FADE it begins to go -- the breath the
+ * loop takes before it starts over.
+ *
+ * Between CLOSE_ON and CLOSE_FADE what is on screen is the resting mark: the
+ * same shape, at the same size, in the same place, in the same gradient, which
+ * is also the first frame of the thinking morph. That is what makes it the only
+ * moment a build can be left without a jump, and components/AutoraMark.tsx
+ * writes its close keyTimes from these numbers so that the drawing and the
+ * rule cannot drift apart.
+ */
+export const CLOSE_AT = 0.66;
+export const CLOSE_IN = 0.78;
+export const CLOSE_ON = 0.8;
+export const CLOSE_FADE = 0.93;
+
+/**
+ * How much longer the mark has to keep building, now that the work it was
+ * showing is done.
+ *
+ * `started` is when the build began and `now` is the moment the app stopped
+ * saying "building" -- any monotonic clock, in milliseconds. The answer is 0
+ * when the mark may hand over at once, and otherwise the wait until it may.
+ *
+ * The stack is a loop, and the app's idea of when a build is over is not the
+ * loop's: a step that comes back in 300ms ends it a tenth of the way round,
+ * with a quarter still in the air, the gap open and the mark not yet made. Cut
+ * there, the mark jumps into the morph, which is a different shape at a
+ * different moment. Held to its close, the two agree and nobody sees the
+ * change. The wait is never a whole turn (never more than ~3s): a build that
+ * outlasts a turn is caught by the close of the next one.
+ */
+export function buildWait(started: number, now: number, ms = BUILD_MS): number {
+  const turn = (((now - started) % ms) + ms) % ms;
+  if (turn >= ms * CLOSE_ON && turn <= ms * CLOSE_FADE) return 0;
+  const next = turn < ms * CLOSE_ON ? ms * CLOSE_ON : ms * (1 + CLOSE_ON);
+  return next - turn;
+}

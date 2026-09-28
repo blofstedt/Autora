@@ -98,20 +98,17 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The mark building itself now looks like building.
+  The mark's build finishes before it stops.
 
-  It used to assemble from the nine small copies of the triangle that fit inside
-  it -- arriving, holding, coming apart again -- which was a lot of movement
-  that read as texture rather than as work. It is stacked from three now: the
-  three upright quarters, the ones that leave the inverted quarter of the
-  triangle as a hole between them.
+  The building animation is a loop of a fixed length, and it was stopped the
+  moment the step it was showing came back -- which for a quick step is a tenth
+  of the way round, with a quarter still in the air and the gap still open. From
+  there it cut to the thinking morph, which is a different shape at a different
+  moment, and that was the jolt.
 
-  They are laid one at a time from the bottom -- bottom left, bottom right, then
-  the one that caps them -- each rising into its place and landing on its base
-  with a short squash, and while they wait the stack breathes once. Then the gap
-  between them closes and the mark is simply there, in the gradient it rests in,
-  so a build that finishes hands over to the settle bloom instead of cutting to
-  it, whenever it happens to finish.
-
-  Three pieces rather than nine is also what the sizes the mark is really drawn
-  at can carry: at 16px the nine were a speckle.
+  Now it keeps building to the end of its turn: the pieces are up, the gap
+  closes, the mark is standing there -- which is exactly the frame the morph
+  begins on. The two drawings agree, so the change is invisible. The price is
+  that the mark can go on saying "doing" for up to one turn (about three
+  seconds) after the work has stopped, and it is worth it: an animation that
+  finishes rather than one that is switched off.

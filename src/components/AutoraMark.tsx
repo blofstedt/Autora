@@ -1,6 +1,19 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useThemeColors, type ThemeColors } from "../lib/theme";
-import { BLOOM, DRAWN_BOX, MARK, REST, morphFrames, stackUnits } from "../lib/mark";
+import {
+  BLOOM,
+  BUILD_MS,
+  CLOSE_AT,
+  CLOSE_FADE,
+  CLOSE_IN,
+  CLOSE_ON,
+  DRAWN_BOX,
+  MARK,
+  REST,
+  buildWait,
+  morphFrames,
+  stackUnits,
+} from "../lib/mark";
 
 /**
  * The Autora mark, alive.
@@ -40,6 +53,13 @@ import { BLOOM, DRAWN_BOX, MARK, REST, morphFrames, stackUnits } from "../lib/ma
  * flinch, and the moment a reply finishes is exactly the moment worth
  * marking. So the end of the work plays a short outward bloom and falls back
  * to rest on its own -- the animation finishes rather than being switched off.
+ *
+ * The build is the other one. It is a loop of a fixed length, and the app stops
+ * saying "building" as soon as the step it was showing comes back -- a tenth of
+ * the way through a turn, if the step was quick -- which would leave a quarter
+ * in the air and the gap open and cut to a morph that is a different shape at a
+ * different moment. So a build is held for the rest of its turn, to the close
+ * (see useWholeTurn and buildWait): the same mark the morph draws, no jump.
  */
 
 export type MarkState =
@@ -63,17 +83,18 @@ const SETTLE_MS = 900;
 const MORPH = morphFrames().join(";");
 const MORPH_MS = 9000;
 
-/** One turn of the building animation. The fractions below are of one turn. */
-const BUILD_MS = 3400;
-
-/** When the three quarters fall in, how long a fall takes, and when they close.
-    The last one has settled by 0.50, which leaves a third of the turn in the
-    state worth watching: not a diagram of a triangle, and not the triangle. */
+/** When the three quarters fall in, how long a fall takes, and when they are
+    gone again. The last one has settled by 0.50, which leaves a third of the
+    turn in the state worth watching: not a diagram of a triangle, and not the
+    triangle. BUILD_MS, CLOSE_AT and the rest of the close come from
+    ../lib/mark, because where in a turn a build may be left depends on them. */
 const LAY_FROM = 0.04;
 const LAY_GAP = 0.085;
 const FALL = 0.155;
-const CLOSE_AT = 0.66;
 const CLOSE_BY = 0.76;
+
+/** A keyTimes list, at the precision SVG is read at. */
+const times = (t: number[]) => t.map((v) => v.toFixed(4)).join(";");
 
 const STACK = stackUnits();
 
@@ -133,6 +154,48 @@ function useFinish(state: MarkState, pulse = 0): MarkState {
 }
 
 /**
+ * Hold the build for the rest of its turn.
+ *
+ * The stack is a loop, so the app leaving `building` is not the same thing as
+ * the animation being over: a step that comes back in 300ms ends it near the
+ * start of a turn. This keeps the mark building until the turn reaches its
+ * close -- the moment the loop has drawn the resting mark and is about to
+ * breathe and start over, which is also the morph's first frame -- and only then
+ * lets the state through. buildWait in lib/mark.ts works out how long that is;
+ * this is the timer and the bookkeeping. The cost is at most one turn of the
+ * mark saying "doing" a moment after the work stopped, and what it buys is an
+ * animation that finishes rather than one that is switched off.
+ *
+ * Nothing is held when motion is off: the animation is not drawn then, and a
+ * still mark has no turn to complete.
+ */
+function useWholeTurn(state: MarkState, still: boolean): MarkState {
+  /** When this build began, on the same clock the timers use; null at rest. */
+  const [started, setStarted] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (still) {
+      if (started !== null) setStarted(null);
+      return;
+    }
+    if (state === "building") {
+      setStarted((at) => at ?? performance.now());
+      return;
+    }
+    if (started === null) return;
+    const wait = buildWait(started, performance.now());
+    if (wait <= 0) {
+      setStarted(null);
+      return;
+    }
+    const timer = window.setTimeout(() => setStarted(null), wait);
+    return () => window.clearTimeout(timer);
+  }, [state, started, still]);
+
+  return state === "building" || (!still && started !== null) ? "building" : state;
+}
+
+/**
  * One quarter of the mark, arriving: it rises into its place from below, lands
  * with a squash, rights itself, and holds there until the three of them close.
  *
@@ -147,7 +210,6 @@ function StackPiece({ d, x, y, at, fill }: { d: string; x: number; y: number; at
   const rise = [0, at, land, land + 0.05, land + 0.1, 1];
   const form = [0, at, land, land + 0.035, land + 0.075, land + 0.12, 1];
   const fade = [0, at, land, land + 0.03, CLOSE_AT, CLOSE_BY, 1];
-  const times = (t: number[]) => t.map((v) => v.toFixed(4)).join(";");
 
   return (
     <g transform={`translate(${x.toFixed(3)} ${y.toFixed(3)})`}>
@@ -206,8 +268,8 @@ export function AutoraMark({
   /** Change it to play the settle bloom once. */
   pulse?: number;
 }) {
-  const shown = useFinish(state, pulse);
   const still = useStillness();
+  const shown = useFinish(useWholeTurn(state, still), pulse);
   // Every instance needs its own gradient ids: two <defs> sharing an id on one
   // page is one gradient, and the second mark would quietly inherit the
   // first's animation.
@@ -300,8 +362,9 @@ export function AutoraMark({
             {/* The close. The three stay put and fade where they are -- it is
                 the gap between them that fills -- and the turn ends on the
                 mark: the same shape, in the same gradient, that rest and the
-                state after this one draw. So a build that finishes is a
-                handover rather than a cut, whenever it happens to finish. */}
+                state after this one draw. So a build that reaches the end of
+                its turn is a handover rather than a cut -- which is why the app
+                is not allowed to stop it anywhere else (useWholeTurn above). */}
             <g>
               <animateTransform
                 attributeName="transform"
@@ -309,7 +372,7 @@ export function AutoraMark({
                 dur={`${BUILD_MS}ms`}
                 repeatCount="indefinite"
                 calcMode="spline"
-                keyTimes="0;0.66;0.8;1"
+                keyTimes={times([0, CLOSE_AT, CLOSE_ON, 1])}
                 keySplines="0 0 1 1;0.2 0.8 0.3 1;0 0 1 1"
                 values="0 0.35;0 0.35;0 0;0 0"
               />
@@ -319,7 +382,7 @@ export function AutoraMark({
                   dur={`${BUILD_MS}ms`}
                   repeatCount="indefinite"
                   calcMode="spline"
-                  keyTimes="0;0.66;0.78;0.93;1"
+                  keyTimes={times([0, CLOSE_AT, CLOSE_IN, CLOSE_FADE, 1])}
                   keySplines="0 0 1 1;0.2 0.8 0.3 1;0 0 1 1;0.4 0 0.6 1"
                   values="0;0;1;1;0"
                 />
