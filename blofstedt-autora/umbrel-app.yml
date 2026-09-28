@@ -98,22 +98,28 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Talk mode answers with two models, and one voice. A spoken turn goes to the
-  fast model first, which replies without stopping to think, so the first word
-  comes back in about the time it takes to say it. The moment a question turns
-  out to need more than a sentence -- a file to read, a command to run, a fact
-  to check -- it hands the work to the model above it, which thinks and takes
-  as many steps as it needs. The fast model stays the mouth throughout: it says
-  what it is doing while the other one works, and puts the answer into its own
-  words when the work comes back. What the reasoning model writes is never
-  shown to you raw; it is what the voice is reading.
+  Three things that were wrong.
 
-  Name the fast model on the provider card in Settings -> Model & tools, under
-  Talk mode. Left empty, talk mode answers with the model above, exactly as it
-  did before.
+  The Mind no longer lights up when the sidebar opens. It was meant to glow
+  once, when something actually landed in it, and the flag that lit it was
+  never cleared -- so every fresh look at the sidebar replayed an ending that
+  had finished days ago. It now lights up when something lands, and stops.
 
-  The look follows the behaviour. The star you hold to talk to is three times
-  its size and no longer sits inside a ring, stretching and glowing while you
-  speak and while the agent answers. The live bar is the full width of the
-  window and as tall as the camera panel it shows, so a face in the camera and
-  the thing you are talking to are the same size.
+  The pill that says the agent is using the browser is centred, and its Stop
+  button sits inside the card instead of hanging off the edge. Its entrance
+  animation was writing the same property that was holding it in the middle,
+  so the centring was thrown away the moment the pill appeared. The centring
+  no longer depends on the animation.
+
+  This month has stopped falling as the ledger turns over. The ledger keeps
+  the last five thousand calls; what fell off the end was folded into running
+  totals with no dates in them, which only the lifetime figure could use, so
+  "this month" and "today" quietly dropped that spend and read low against the
+  vendor's own bill. What ages out is now kept by day as well, and counted
+  back into the day it happened on.
+
+  The note under the figures also says plainly what the number still cannot
+  see: usage from outside this app, a vendor's own discounts, and a call that
+  ends before it reports its tokens -- an answer you stopped, or an attempt
+  that was retried after a dropped connection. Those are charged, and they are
+  exactly where this figure comes out under the vendor's.
