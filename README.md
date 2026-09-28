@@ -183,6 +183,11 @@ Asking "what MCP servers could help with X?" gets an answer from the same list.
   npm (run with `npx -y`), a remote one at a URL, or **one it writes itself**:
   a few tools, each a short piece of JavaScript, generated into a real stdio
   server under the settings directory (`mcp-servers/`).
+- **A launcher that downloads a binary for the platform** is given the build
+  for *this* machine before it starts, fetched once into the data directory
+  rather than a cache a container update wipes. webclaw's launcher has no musl
+  entry, so on an Alpine container it used to fetch a glibc build it could not
+  run and the only symptom was `MCP error -32000: Connection closed`.
 
 Servers the agent set up are marked *set up by Autora* on the Integrations
 page, where they can be edited, switched off or removed like any other.
