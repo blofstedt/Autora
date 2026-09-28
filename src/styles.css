@@ -1228,111 +1228,137 @@ button.hint.voice-note:hover { text-decoration: underline; }
 
 @keyframes liveGlowTurn { to { transform: rotate(360deg); } }
 
-/* Live mode's own strip, in place of the composer: the mark lit, the words as
-   they form, Stop while the agent works, and End. */
+/* Live mode's own strip, in place of the composer: the mark in a disc at the
+   bottom left with the words beside it, and the switches and the way out along
+   the top. A grid rather than a row, because with live view on the picture is
+   the strip -- it runs to every edge and the controls float on it, instead of
+   the viewfinder being a square parked in a bar grown tall enough to hold it. */
 .live-bar {
-  display: flex; align-items: center; gap: 12px;
-  /* The same footprint as .composer-box under it: full width of the type box
-     and about as tall, so switching live on does not shrink the thing you are
-     looking at. */
-  /* Tall enough for the square the viewfinder needs, not just for a line of
-     words: 132px of picture plus the bar's own padding. */
-  min-height: 156px; padding: 12px 14px; border-radius: 22px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  align-items: end; column-gap: 10px;
+  min-height: 0; padding: 14px 16px 22px; border-radius: 22px;
   background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.08), rgba(var(--accent-rgb), 0.03)), var(--s2);
   border: 1px solid rgba(var(--accent-rgb), 0.4);
   box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.08), 0 10px 32px -14px rgba(0, 0, 0, 0.7);
 }
-/* The mark on its own, at three times the size: no ring around it and no dark
-   disc behind it. What makes it readable now is its own light -- the star's
-   glow, the warm halo that spills past it, and the wash over the picture. */
+/* The middle row is the picture, so with live view on the bar is as tall as
+   the picture wants to be and takes the room the camera needs. */
+.live-bar.has-view { min-height: 320px; }
+
+/* The mark, in a clear disc: over a picture a bare star can land on anything,
+   and the disc is what keeps it legible. Drawn at 46px inside a 60px circle --
+   a mark bigger than its own disc hangs out of the bottom of it and into the
+   words under it, which is exactly what it was doing. */
 .live-bar .live-bar-orb {
-  margin: 0; width: 78px; height: 78px; border: 0; background: transparent;
-  box-shadow: none; border-radius: 22px;
-}
-.live-bar .live-bar-orb::after { display: none; }
-.live-bar .live-bar-orb .amark-star { filter: drop-shadow(0 0 10px rgba(var(--glow-light-rgb), 0.95)); }
-.live-bar .live-bar-orb.is-working .amark-star { filter: drop-shadow(0 0 18px rgba(var(--glow-light-rgb), 1)); }
-.live-bar .live-bar-orb .mob-live-glow { inset: -12px; filter: blur(11px); }
-.live-bar .live-bar-orb {
+  grid-row: 3; grid-column: 1; align-self: center; justify-self: start;
+  width: 60px; height: 60px; min-width: 60px; margin: 0; padding: 0;
+  border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.12);
+  display: grid; place-items: center;
+  background: rgba(10, 13, 20, 0.28);
+  box-shadow: 0 6px 18px -10px rgba(0, 0, 0, 0.9);
+  backdrop-filter: blur(9px) saturate(1.1); -webkit-backdrop-filter: blur(9px) saturate(1.1);
   /* Held, not tapped: no scrolling, text selection or long-press menu. */
   touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
-  transition: transform 0.12s var(--ease);
+  transition: transform 0.12s var(--ease), background 0.3s var(--ease);
 }
+.live-bar .live-bar-orb::after { display: none; }
+/* The mark centres itself in the disc at every size, so a smaller one on a
+   phone stays in the middle of it rather than slipping to a corner. */
+.live-bar .live-bar-orb .amark { display: grid; place-items: center; }
+.live-bar .live-bar-orb .amark-star { filter: drop-shadow(0 0 10px rgba(var(--glow-light-rgb), 0.95)); }
+.live-bar .live-bar-orb.is-working .amark-star { filter: drop-shadow(0 0 18px rgba(var(--glow-light-rgb), 1)); }
+/* The halo stops just past the disc: any wider and it reaches the bar's own
+   bottom edge, where being clipped turns a glow into a straight line. */
+.live-bar .live-bar-orb .mob-live-glow { inset: -5px; filter: blur(7px); }
 .live-bar .live-bar-orb.is-holding { transform: scale(1.12); }
-.live-bar-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.live-bar-label {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--live);
-}
-.live-bar-dot {
-  width: 7px; height: 7px; border-radius: 50%; background: var(--live);
-  animation: halo 2s ease-out infinite;
+
+/* The words: one row with the mark, indented clear of it and centred on it, so
+   the line sits level with the middle of the star instead of running under it. */
+.live-bar-text {
+  grid-row: 3; grid-column: 2 / -1; align-self: center;
+  display: flex; flex-direction: column; gap: 4px;
+  min-width: 0; padding: 0 0 0 12px;
 }
 .live-bar-status {
-  font-size: 14px; line-height: 1.45; color: var(--text-3);
+  font-size: 15px; line-height: 1.4; color: var(--text-3);
   overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
 }
+/* Over a picture the words need their own edge, wherever the camera is
+   pointed and whatever the room is doing. */
+.live-bar.has-view .live-bar-status { text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9); }
 .live-bar-status.is-heard { color: var(--text); }
-.live-bar-end { flex: 0 0 auto; gap: 6px; border-radius: 999px; }
-.live-bar-sees { color: var(--text-3); font-weight: 500; letter-spacing: 0.04em; }
 .live-bar-status.is-trouble { color: var(--warn); }
-/* Room enough for the words now, so they are not written for a thin strip. */
-.live-bar-label { font-size: 12px; }
-.live-bar-text { gap: 4px; }
-.live-bar-status { font-size: 15px; line-height: 1.4; }
 
 /* The two switches, in the bar rather than in Settings: whether the camera is
    on and whether the microphone stays open are the kind of thing that depends
-   on the room you are standing in. Pill-shaped, so they read as switches and
-   not as another way out of the screen. */
-.live-bar-switch {
+   on the room you are standing in. Over the picture they stop being chrome and
+   become glass, so the picture runs under them. */
+.live-bar .live-bar-switch, .live-bar .live-bar-exit {
+  background: rgba(10, 13, 20, 0.40); border: 1px solid rgba(255, 255, 255, 0.16);
+  color: var(--text-2);
+  backdrop-filter: blur(9px) saturate(1.1); -webkit-backdrop-filter: blur(9px) saturate(1.1);
+  box-shadow: 0 6px 18px -10px rgba(0, 0, 0, 0.9);
+}
+.live-bar .live-bar-switch:hover:not(:disabled), .live-bar .live-bar-exit:hover:not(:disabled) {
+  background: rgba(22, 26, 36, 0.55); border-color: rgba(255, 255, 255, 0.26); color: var(--text);
+}
+/* Open, rather than Hold: the one switch that is a mode says so in the brand's
+   colour when it is on. The camera switch is not tinted -- the picture behind
+   it is what says the camera is on. */
+.live-bar .live-bar-switch:not(.icon).is-on {
+  background: rgba(var(--accent-rgb), 0.26); border-color: rgba(var(--accent-rgb), 0.55); color: var(--text);
+}
+.live-bar .live-bar-switch {
   flex: 0 0 auto; height: 30px; padding: 0 12px; border-radius: 999px;
   font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em;
 }
-.live-bar-switch.is-on {
-  --btn-bg: rgba(var(--accent-rgb), 0.16);
-  --btn-border: rgba(var(--accent-rgb), 0.5);
-  color: var(--text);
-}
-.live-bar-switch.btn.icon { width: 30px; padding: 0; justify-content: center; }
+.live-bar .live-bar-switch:not(.icon) { grid-row: 1; grid-column: 1; align-self: start; justify-self: start; }
 
-/* The person's own half of live view: what the camera has, right here, drawn
-   by their own browser and sent nowhere. Tapping it turns the camera around. */
-/* The person's own half of live view, and the whole point of it: a camera is
-   wide, the bar is not, and a picture cropped to the bar's shape is a picture
-   with its edges cut off -- which is exactly what is being held up to be seen.
-   So the viewfinder is a square, the shape the camera's own frame fits into
-   without losing anything, and it grows the bar to hold it rather than being
-   cropped to the bar. The words sit to the side of it, not over it. */
-/* The bar crops what leaves it -- right for a wash, wrong for a picture that
-   is taller than the bar was built to be. So the square does not just sit in
-   the bar: it sets the bar's height, and the bar stops cropping while it. */
-.live-bar.has-view {
-  align-items: center;
-  overflow: visible;
-  min-height: 0;
-  padding-top: 10px; padding-bottom: 10px;
+/* The camera and the way out: the same circle, the same size, with the glyph
+   centred in each and both on the same line -- one of them a 31px pill and the
+   other a 30px disc put them on different centres. */
+.live-bar .live-bar-switch.icon, .live-bar .live-bar-exit {
+  grid-row: 1; align-self: start; justify-self: end;
+  width: 30px; height: 30px; min-width: 30px; margin: 0; padding: 0;
+  border-radius: 999px; display: grid; place-items: center;
 }
+.live-bar .live-bar-switch.icon { grid-column: 3; }
+.live-bar .live-bar-exit { grid-column: 4; }
+.live-bar .live-bar-switch.icon > svg, .live-bar .live-bar-exit > svg {
+  display: block; width: 16px; height: 16px; margin: 0; flex: none;
+}
+.live-bar .live-bar-exit:hover:not(:disabled) {
+  background: rgba(30, 14, 16, 0.62); border-color: rgba(255, 140, 140, 0.42); color: var(--text);
+}
+/* Stop, while the agent works: on the top row beside the camera, not beside
+   the way out. */
+.live-bar .composer-stop { grid-row: 1; grid-column: 2; align-self: start; justify-self: end; }
+
+/* The person's own half of live view: what the camera has, in the bar, drawn
+   here and sent nowhere. The whole strip is the viewfinder -- the picture runs
+   to every edge and everything else sits on top of it. Tapping it turns the
+   camera around. */
 .live-bar-peek {
-  position: relative; z-index: 1; flex: 0 0 auto;
-  width: var(--peek, 132px); height: var(--peek, 132px);
-  padding: 0; border-radius: 16px; overflow: hidden; cursor: pointer;
-  background: #000; border: 0; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.09);
+  position: absolute; inset: 0; z-index: 0; flex: none;
+  width: auto; height: auto; margin: 0; padding: 0; border-radius: 0; cursor: pointer;
+  background: #05070b; border: 0; box-shadow: none;
 }
+/* cover, not contain: filling the strip is the point of it. A camera's frame is
+   a different shape from the strip, so filling it crops the edges -- the whole
+   frame is what the agent is shown, and this is the one place the person can
+   see what it is being shown. */
+.live-bar-peek video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.live-bar-peek.is-mirror video { transform: scaleX(-1); }
+/* The wash: across the top for the controls and along the bottom for the
+   words, so both have something to sit on. */
 .live-bar-scrim {
-  position: absolute; inset: 0; z-index: 0; pointer-events: none;
-  background: linear-gradient(90deg, rgba(6, 8, 12, 0.84) 0%, rgba(6, 8, 12, 0.45) 48%, rgba(6, 8, 12, 0.74) 100%);
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: linear-gradient(180deg, rgba(6, 8, 12, 0.55) 0%, rgba(6, 8, 12, 0.10) 16%,
+              rgba(6, 8, 12, 0) 34%, rgba(6, 8, 12, 0.55) 74%, rgba(6, 8, 12, 0.90) 100%);
 }
 .live-bar > *:not(.live-bar-peek):not(.live-bar-scrim) { z-index: 2; }
-/* contain, not cover: the square is the shape the frame fits into, so nothing
-   is cropped out of it. */
-.live-bar-peek video { width: 100%; height: 100%; object-fit: contain; display: block; }
-.live-bar-peek.is-mirror video { transform: scaleX(-1); }
-.live-bar-peek-dot {
-  position: absolute; top: 9px; left: 10px; width: 7px; height: 7px; border-radius: 50%;
-  background: #f87171; box-shadow: 0 0 6px rgba(248, 113, 113, 0.9);
-}
 
 @media (prefers-reduced-motion: reduce) {
   .mob-live-glow { animation: none; }
@@ -1383,20 +1409,22 @@ button.hint.voice-note:hover { text-decoration: underline; }
   .composer-foot .hint.voice-note { display: inline; }
   .voice-help { padding: 9px 10px; }
 
-  /* Bigger orb and a thumb-sized End: this bar is the whole interface while
-     it is up. */
-  .live-bar { gap: 10px; padding: 11px 12px; min-height: 96px; }
-  .live-bar .live-bar-orb { width: 74px; height: 74px; }
-  /* On a phone the bar has five things in it: the mark, the words, the
-     picture, the switches, and the way out. The picture and the words give a
-     little, and the switch labels go -- the two glyphs carry them. */
-  /* A phone is held in the hand this bar is at the bottom of, so the square
-     still grows the bar but not as far. */
-  .live-bar.has-view { --peek: 108px; min-height: 0; }
-  .live-bar-peek { border-radius: 14px; }
-  .live-bar-switch { padding: 0 9px; font-size: 11px; }
-  .live-bar-status { font-size: 14px; }
-  .live-bar-label { font-size: 11.5px; }
+  /* The bar is the whole interface while it is up, so the mark and the two
+     circles are sized for the thumb that is holding it, and the picture stops
+     short of taking the whole screen: a phone is held in the hand this bar
+     sits at the bottom of. */
+  .live-bar { column-gap: 9px; padding: 12px 13px 18px; min-height: 0; }
+  .live-bar.has-view { min-height: 250px; }
+  .live-bar .live-bar-orb { width: 54px; height: 54px; min-width: 54px; }
+  .live-bar .live-bar-orb > .amark > svg { width: 42px; height: 42px; }
+  .live-bar .btn.live-bar-switch.icon, .live-bar .btn.live-bar-exit {
+    width: 28px; height: 28px; min-width: 28px; padding: 0;
+  }
+  .live-bar .btn.live-bar-switch.icon > svg, .live-bar .btn.live-bar-exit > svg { width: 15px; height: 15px; }
+  .live-bar .live-bar-text { padding-left: 10px; }
+  .live-bar .live-bar-switch { height: 30px; }
+  .live-bar .live-bar-switch:not(.icon) { padding: 0 10px; font-size: 11px; }
+  .live-bar-status { font-size: 13.5px; }
   .live-orb { width: 52px; height: 52px; }
   /* Thumb-sized, and given a surface: at this size the glyph alone did not
      read as the way out. */

@@ -256,9 +256,9 @@ export function LiveChat({
      only with the mark. */
   const barState = agentSpeaking ? "speaking" : agentWorking ? "thinking" : "listening";
 
-  // The strip you would type into becomes the live bar: it says live mode is
-  // on, shows the words as they form, and carries the two switches and the
-  // way back out.
+  // The strip you would type into becomes the live bar: the mark, the words as
+  // they form, the two switches, and the way back out -- and with live view on,
+  // the picture the agent is being shown, running the whole width of it.
   return (
     <div className={`live-bar${view ? " has-view" : ""}`} data-state={barState} role="group" aria-label="Live voice chat">
       <button
@@ -274,11 +274,11 @@ export function LiveChat({
         aria-pressed={holding}
       >
         <span className="mob-live-glow" aria-hidden="true" />
-        <AutoraMark state={talking ? "working" : "live"} size={69} />
+        <AutoraMark state={talking ? "working" : "live"} size={46} />
       </button>
       {view && (
-        /* The person's own half of live view: what the camera has, in the bar,
-           drawn here and sent nowhere. Tap it to turn the camera around. */
+        /* The person's own half of live view: what the camera has, filling the
+           bar, drawn here and sent nowhere. Tap it to turn the camera around. */
         <button
           type="button"
           className={`live-bar-peek ${camera.facing === "user" ? "is-mirror" : ""}`}
@@ -287,19 +287,14 @@ export function LiveChat({
           aria-label="Turn the camera around"
         >
           <video ref={camera.attach} muted playsInline />
-          <span className="live-bar-peek-dot" aria-hidden="true" />
         </button>
       )}
       {view && (
-        /* A wash over the picture: the same bar carries the preview and the
-           words, so the words need something to sit on. */
+        /* A wash over the picture: the same bar carries the preview, the words
+           and the switches, so all of them need something to sit on. */
         <span className="live-bar-scrim" aria-hidden="true" />
       )}
       <div className="live-bar-text">
-        <span className="live-bar-label">
-          <span className="live-bar-dot" />Live
-          {view && <span className="live-bar-sees"> · view {camera.on ? "on" : "off"}</span>}
-        </span>
         <span className={`live-bar-status ${heard ? "is-heard" : ""} ${trouble ? "is-trouble" : ""}`} aria-live="polite">
           {status}
         </span>
@@ -336,12 +331,12 @@ export function LiveChat({
       </button>
       <button
         type="button"
-        className="btn live-bar-end"
+        className="btn ghost icon live-bar-exit"
         onClick={onExit}
         title="End live voice chat (v)"
         aria-label="End live voice chat"
       >
-        <IconX size={14} /> End
+        <IconX size={16} />
       </button>
     </div>
   );
