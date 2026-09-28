@@ -98,17 +98,21 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The mark's build finishes before it stops.
+  The mark builds without drawing its own ending first.
 
-  The building animation is a loop of a fixed length, and it was stopped the
-  moment the step it was showing came back -- which for a quick step is a tenth
-  of the way round, with a quarter still in the air and the gap still open. From
-  there it cut to the thinking morph, which is a different shape at a different
-  moment, and that was the jolt.
+  While the three pieces stack and close, the app used to draw a faint outline
+  of the finished triangle behind them, so it was clear what they were making.
+  It also gave away the last frame of every build, and read as a diagram rather
+  than as the mark being made. The outline is gone; the pieces and the close are
+  the whole animation. It is the same length and lands on the same frame, so the
+  hand-over to the thinking morph is unchanged.
 
-  Now it keeps building to the end of its turn: the pieces are up, the gap
-  closes, the mark is standing there -- which is exactly the frame the morph
-  begins on. The two drawings agree, so the change is invisible. The price is
-  that the mark can go on saying "doing" for up to one turn (about three
-  seconds) after the work has stopped, and it is worth it: an animation that
-  finishes rather than one that is switched off.
+  The browser inside the app can now be used on a phone.
+
+  A page shown in the app was watchable and not much else: no zoom, no way to
+  move a page that ran off the edge, and a dropdown on the page could not be
+  opened at all -- a tap on one went nowhere. There is a zoom control for the
+  full-screen view, press-and-drag moves the page (so a wide page or a map can
+  be reached), and tapping a dropdown opens its options and sends the choice
+  through to the page, which is the difference between reading a site and
+  filling in its form.

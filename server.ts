@@ -3915,8 +3915,9 @@ async function startServer() {
 
     try {
       const button = req.body?.button === "right" ? "right" : req.body?.button === "middle" ? "middle" : "left";
-      const { editable } = await live.userClick(x, y, button, !!req.body?.double);
-      res.json({ ok: true, editable });
+      const { editable, select } = await live.userClick(x, y, button, !!req.body?.double);
+      // A dropdown answers with its choices: the app shows them itself.
+      res.json({ ok: true, editable, select: select ?? null });
     } catch (err: any) {
       res.status(500).json({ error: err?.message ?? "Click failed" });
     }
@@ -3940,6 +3941,53 @@ async function startServer() {
       res.json({ ok: true });
     } catch (err: any) {
       res.status(500).json({ error: err?.message ?? "Move failed" });
+    }
+  });
+
+  // A drag from the person's own hand, in three parts, so what they are
+  // dragging follows the pointer instead of jumping when they let go.
+  app.post("/api/sessions/:id/browser/drag", async (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
+    const live = browsers.get(session.id);
+    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
+
+    const phase = req.body?.phase === "start" ? "start" : req.body?.phase === "end" ? "end" : "move";
+    const x = Number(req.body?.x);
+    const y = Number(req.body?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      return res.status(400).json({ error: "Invalid drag coordinates." });
+    }
+
+    try {
+      const out = await live.userDrag(phase, x, y);
+      res.json({ ...out, ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message ?? "Drag failed" });
+    }
+  });
+
+  // The choice made from a dropdown's list in the app, set on the page.
+  app.post("/api/sessions/:id/browser/choose", async (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
+    const live = browsers.get(session.id);
+    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
+
+    const x = Number(req.body?.x);
+    const y = Number(req.body?.y);
+    const index = Number(req.body?.index);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(index)) {
+      return res.status(400).json({ error: "Invalid choice." });
+    }
+
+    try {
+      const out = await live.chooseOption(x, y, index);
+      res.json({ ...out, ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message ?? "Choosing failed" });
     }
   });
 

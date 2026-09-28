@@ -3742,6 +3742,46 @@ input.shot-where[readonly] { cursor: default; }
 .shot-stage.is-usable { cursor: default; }
 .shot-stage.is-usable .frame { outline: 1px solid rgba(52, 211, 153, 0.35); }
 .shot-stage.is-dragging-page { touch-action: none; }
+
+/* Magnified on request: the picture is drawn wider than the card and the card
+   scrolls to it. Clicks still land where they look, because where a click
+   lands is read from the picture actually drawn. */
+.shot-stage.is-zoomed { overflow: auto; align-items: flex-start; touch-action: pan-x pan-y; }
+.shot-stage.is-zoomed .frame-wrap { width: calc(100% * var(--zoom)); max-width: none; max-height: none; }
+.shot-stage.is-zoomed .frame { width: 100%; max-height: none; }
+.shot-stage.is-zoomed.is-dragging-page { touch-action: none; }
+
+.shot-zoom { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 1px; }
+.shot-zoom .shot-tool { width: 24px; height: 24px; font-size: 14px; line-height: 1; }
+.shot-zoom-at {
+  background: none; border: 0; padding: 0 3px; min-width: 32px; cursor: pointer;
+  color: var(--text-3); font: 10.5px/1 ui-monospace, monospace;
+}
+.shot-zoom-at:hover { color: var(--text); }
+.shot-tool.shot-drag.on { color: var(--accent); background: var(--s3); }
+
+/* The page's dropdown, listed by the app: a native <select> popup is drawn by
+   the browser outside the page, so it never reaches the picture. */
+.shot-picker-scrim { position: absolute; inset: 0; z-index: 6; }
+.shot-picker {
+  position: absolute; z-index: 7; display: flex; flex-direction: column;
+  min-width: 148px; max-width: 62%; max-height: 46%;
+  background: var(--s1, var(--s2)); border: 1px solid var(--border);
+  border-radius: var(--r-sm); box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55); overflow: hidden;
+}
+.shot-picker-head {
+  padding: 6px 10px 5px; color: var(--text-3);
+  font: 10px/1 ui-monospace, monospace; letter-spacing: 0.05em; text-transform: uppercase;
+}
+.shot-picker-list { display: flex; flex-direction: column; overflow: auto; }
+.shot-picker-opt {
+  max-width: 340px; padding: 9px 11px; border: 0; border-top: 1px solid var(--border);
+  background: none; color: var(--text); text-align: left; cursor: pointer;
+  font: 12.5px/1.25 inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.shot-picker-opt:hover { background: var(--s3); }
+.shot-picker-opt.on { color: var(--accent); font-weight: 600; }
+.shot-picker-opt:disabled { opacity: 0.4; cursor: default; }
 .shot-stage.is-locked { cursor: not-allowed; }
 
 /* The agent handed the page to you: the whole card lights up. */

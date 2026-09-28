@@ -322,24 +322,9 @@ export function AutoraMark({
 
         {shown === "building" && !still ? (
           <g>
-            {/* The shape they are making, so what three quarters are for is
-                never in doubt -- and the ghost is the whole mark, including
-                the middle the pieces leave open, which is where it arrives. */}
-            <path
-              className="amark-ghost"
-              d={REST}
-              fill="none"
-              stroke={colors.accent}
-              strokeWidth="0.6"
-            >
-              <animate
-                attributeName="opacity"
-                dur={`${BUILD_MS}ms`}
-                repeatCount="indefinite"
-                keyTimes="0;0.45;0.6;0.74;1"
-                values="0.16;0.42;0.34;0;0"
-              />
-            </path>
+            {/* No ghost of the finished mark behind the stack: the three
+                pieces landing are the whole of it, and a triangle already
+                drawn behind them gives the ending away. */}
 
             {/* The stack, breathing once it is up: held weight that is
                 perfectly still reads as a picture, not as a thing. */}

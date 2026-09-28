@@ -46,6 +46,21 @@ type Page = any;
 type BrowserContext = any;
 type CDPSession = any;
 
+/** A dropdown's choices, as the page offers them. */
+export interface SelectChoice {
+  index: number;
+  label: string;
+  selected: boolean;
+  disabled: boolean;
+}
+
+/** A dropdown a person tapped: what it is called and what it offers. */
+export interface SelectInfo {
+  name: string;
+  multiple: boolean;
+  options: SelectChoice[];
+}
+
 export interface BrowserStatus {
   /** Playwright and a browser binary are both present. */
   available: boolean;
@@ -2342,13 +2357,22 @@ export class LiveBrowser {
     y: number,
     button: "left" | "right" | "middle" = "left",
     double = false,
-  ): Promise<{ editable: boolean }> {
+  ): Promise<{ editable: boolean; select: SelectInfo | null }> {
     return this.run(async () => {
       const page = await this.ensure();
       const cx = Math.max(0, Math.min(VIEWPORT.width, Math.round(x)));
       const cy = Math.max(0, Math.min(VIEWPORT.height, Math.round(y)));
       this.pointer = { x: cx, y: cy };
       await this.showCursor(cx, cy, true);
+      // A native <select> opens a popup the browser draws outside the page,
+      // and a screencast never paints it: the tap would look like a tap on
+      // nothing. So a dropdown is not clicked at all -- its choices go back
+      // with the click and the app offers them itself.
+      const dropdown = await this.selectAt(cx, cy);
+      if (dropdown) {
+        this.hooks.onAction(`you opened a dropdown at ${cx},${cy}`, { x: cx, y: cy }, this.currentUrl ?? "");
+        return { editable: false, select: dropdown };
+      }
       this.hooks.onAction(`you clicked at ${cx},${cy}`, { x: cx, y: cy }, this.currentUrl ?? "");
       if (double) await page.mouse.dblclick(cx, cy, { button });
       else await page.mouse.click(cx, cy, { button });
@@ -2368,7 +2392,111 @@ export class LiveBrowser {
         })()`)
         .catch(() => false);
       await this.keyframe();
-      return { editable };
+      return { editable, select: null };
+    });
+  }
+
+  /**
+   * The dropdown under a point, if the page has one there.
+   *
+   * The choices are read off the element itself, so what the app shows is
+   * what the page would have shown -- the same options, in the same order,
+   * with the selected one marked and the disabled ones unchoosable.
+   */
+  private async selectAt(x: number, y: number): Promise<SelectInfo | null> {
+    const page = this.page;
+    if (!page) return null;
+    const read = await page
+      .evaluate(`(() => {
+        const el = document.elementFromPoint(${x}, ${y});
+        const sel = el && el.closest ? el.closest("select") : null;
+        if (!sel) return null;
+        return {
+          name: String(sel.getAttribute("aria-label") || sel.name || "").slice(0, 80),
+          multiple: !!sel.multiple,
+          options: Array.from(sel.options).map((o, i) => ({
+            index: i,
+            label: String(o.label || o.textContent || "").replace(/\\s+/g, " ").trim().slice(0, 120),
+            selected: !!o.selected,
+            disabled: !!o.disabled || !!o.parentElement && !!o.parentElement.disabled,
+          })),
+        };
+      })()`)
+      .catch(() => null);
+    return (read && Array.isArray((read as SelectInfo).options)) ? (read as SelectInfo) : null;
+  }
+
+  /**
+   * Set a dropdown to the choice the person made in the app's own list.
+   *
+   * No popup is involved: the element's own selectedIndex is set and the
+   * change is announced the way a real choice is, so a page listening for it
+   * (or a form that submits on it) behaves exactly as if it had been clicked.
+   */
+  chooseOption(x: number, y: number, index: number): Promise<{ ok: boolean; label: string | null }> {
+    return this.run(async () => {
+      const page = await this.ensure();
+      const cx = Math.max(0, Math.min(VIEWPORT.width, Math.round(x)));
+      const cy = Math.max(0, Math.min(VIEWPORT.height, Math.round(y)));
+      const picked: string | null = await page
+        .evaluate(`(() => {
+          const el = document.elementFromPoint(${cx}, ${cy});
+          const sel = el && el.closest ? el.closest("select") : null;
+          if (!sel) return null;
+          const opt = sel.options[${Math.round(index)}];
+          if (!opt) return null;
+          sel.selectedIndex = ${Math.round(index)};
+          opt.selected = true;
+          sel.dispatchEvent(new Event("input", { bubbles: true }));
+          sel.dispatchEvent(new Event("change", { bubbles: true }));
+          return String(opt.label || opt.textContent || "").replace(/\\s+/g, " ").trim();
+        })()`)
+        .catch(() => null);
+      this.hooks.onAction(
+        picked === null ? "a dropdown chose nothing" : `you chose "${picked}"`,
+        { x: cx, y: cy },
+        this.currentUrl ?? "",
+      );
+      await this.settle(150);
+      await this.keyframe();
+      return { ok: picked !== null, label: picked };
+    });
+  }
+
+  /**
+   * A drag from the person's own hand, in three parts.
+   *
+   * A slider, a canvas, a map or a drag handle only moves when the pointer
+   * travels with the button held, and until now a drag on the picture did
+   * nothing at all: the app treated every movement as a scroll of the page.
+   * Start presses, move travels (as the pointer moves, not after it is let
+   * go, so what is being dragged follows the hand), end releases.
+   */
+  userDrag(phase: "start" | "move" | "end", x: number, y: number): Promise<{ ok: boolean }> {
+    return this.run(async () => {
+      const page = await this.ensure();
+      const cx = Math.max(0, Math.min(VIEWPORT.width, Math.round(x)));
+      const cy = Math.max(0, Math.min(VIEWPORT.height, Math.round(y)));
+      if (phase === "start") {
+        this.pointer = { x: cx, y: cy };
+        await this.showCursor(cx, cy, true);
+        this.hooks.onAction(`you dragged from ${cx},${cy}`, { x: cx, y: cy }, this.currentUrl ?? "");
+        await page.mouse.move(cx, cy);
+        await page.mouse.down();
+        return { ok: true };
+      }
+      if (phase === "move") {
+        this.pointer = { x: cx, y: cy };
+        await this.showCursor(cx, cy, true);
+        await page.mouse.move(cx, cy);
+        return { ok: true };
+      }
+      await page.mouse.move(cx, cy);
+      await page.mouse.up();
+      this.pointer = { x: cx, y: cy };
+      await this.settle(180);
+      await this.keyframe();
+      return { ok: true };
     });
   }
 

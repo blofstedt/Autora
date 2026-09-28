@@ -1,9 +1,13 @@
-import { Children, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  Children, useCallback, useEffect, useLayoutEffect, useRef, useState,
+  type CSSProperties, type ReactNode,
+} from "react";
 import type { Shot } from "../lib/derive";
 import { onField, useLiveFrame } from "../lib/liveFrame";
 import { Frame } from "./Frame";
 import {
-  IconArrowLeft, IconChevron, IconGlobe, IconMaximize, IconMinimize, IconMonitor, IconRotateCcw, IconStop,
+  IconArrowLeft, IconChevron, IconGlobe, IconMaximize, IconMinimize, IconMonitor, IconMousePointer,
+  IconRotateCcw, IconStop,
 } from "./Icons";
 
 /** The viewport the browser harness captures. Frame pixels map 1:1 to page
@@ -69,6 +73,18 @@ export function ScreencastCell({
       either way the corner button overrides it. */
   const [bigChoice, setBigChoice] = useState<boolean | null>(null);
   const [max, setMax] = useState(false);
+  /** How much bigger than the card the picture is drawn. A page of small
+      type on a phone is unreadable at fit; this is the magnifier. */
+  const [zoom, setZoom] = useState(1);
+  /** Dragging the page with a finger rather than scrolling it: what a
+      slider, a canvas or a map needs on a touch screen. A mouse drags
+      without it -- there is nothing else for a mouse drag here to mean. */
+  const [dragMode, setDragMode] = useState(false);
+  /** A dropdown's choices, listed by the app because the page's own popup is
+      drawn outside the page and never reaches the picture. */
+  const [picker, setPicker] = useState<
+    { x: number; y: number; options: Array<{ index: number; label: string; selected: boolean; disabled: boolean }> } | null
+  >(null);
   const [nudge, setNudge] = useState<{ text: string; stop?: boolean } | null>(null);
   const [ripples, setRipples] = useState<Array<{ id: number; x: number; y: number }>>([]);
   const [typing, setTyping] = useState(false);
@@ -87,7 +103,13 @@ export function ScreencastCell({
   /** Every input goes out in order, one after another: a click that lands
       after the text meant for the field it focuses is a lost password. */
   const chain = useRef<Promise<unknown>>(Promise.resolve());
-  const pointer = useRef<{ x: number; y: number; lastY: number; moved: boolean; type: string } | null>(null);
+  /** What the pointer is doing. A drag of the page and a scroll of it cannot
+      both own the same movement, so which one it is is decided when the button
+      goes down. */
+  const pointer = useRef<{
+    x: number; y: number; lastY: number; moved: boolean; type: string;
+    drag: boolean; from: { x: number; y: number }; started: boolean; sentAt: number;
+  } | null>(null);
   const scrollAccum = useRef({ dx: 0, dy: 0, timer: 0 });
 
   useEffect(() => {
@@ -248,6 +270,13 @@ export function ScreencastCell({
     setRipples((prev) => [...prev, { id, x: at.x, y: at.y }]);
     window.setTimeout(() => setRipples((prev) => prev.filter((r) => r.id !== id)), 600);
     void send("click", { x: at.x, y: at.y, button }).then((result: any) => {
+      // The tap landed on a dropdown. Its popup is drawn by the browser
+      // outside the page, so nothing would appear on the picture: the choices
+      // come back with the click and are shown here instead.
+      if (result?.select?.options?.length) {
+        setPicker({ x: at.x, y: at.y, options: result.select.options });
+        return;
+      }
       if (!touch || !result || typeof result.editable !== "boolean") return;
       // Tapped something that is not a field: put the phone's keyboard away.
       if (!result.editable) sink?.blur();
@@ -258,19 +287,49 @@ export function ScreencastCell({
     });
   };
 
+  /** A drag of the page, in parts, so what is being dragged follows the hand
+      rather than jumping into place when it is let go. */
+  const dragTo = (p: NonNullable<typeof pointer.current>, clientX: number, clientY: number) => {
+    const at = toPage(clientX, clientY);
+    if (!at) return;
+    if (!p.started) {
+      p.started = true;
+      p.sentAt = Date.now();
+      void send("drag", { phase: "start", x: p.from.x, y: p.from.y });
+      return;
+    }
+    // A move per frame would put a request per pixel of travel in the queue
+    // behind it; the page sees one every 60ms, which is what a hand is.
+    const now = Date.now();
+    if (now - p.sentAt < 60) return;
+    p.sentAt = now;
+    void send("drag", { phase: "move", x: at.x, y: at.y });
+  };
+
   const onPointerDown = (e: React.PointerEvent) => {
     // A touch is followed by emulated mouse events, and that mousedown lands
     // on the stage -- which is not focusable -- and blurs the keyboard sink
     // the tap just focused. Cancelling here suppresses them. Scrolling is
     // governed by touch-action, not by this.
     if (canUse) e.preventDefault();
-    pointer.current = { x: e.clientX, y: e.clientY, lastY: e.clientY, moved: false, type: e.pointerType };
+    const at = toPage(e.clientX, e.clientY);
+    const drag = canUse && !!at && (e.pointerType === "mouse" || dragMode);
+    pointer.current = {
+      x: e.clientX, y: e.clientY, lastY: e.clientY, moved: false,
+      type: e.pointerType, drag, from: at ?? { x: 0, y: 0 }, started: false, sentAt: 0,
+    };
   };
   const onPointerMove = (e: React.PointerEvent) => {
     const p = pointer.current;
     if (!p) return;
     if (Math.hypot(e.clientX - p.x, e.clientY - p.y) > 10) p.moved = true;
-    if (canUse && p.type !== "mouse" && dragScrollsPage && p.moved) {
+    if (!canUse) return;
+    if (p.drag) {
+      // Under ten pixels of travel is a shaky tap, not a drag.
+      if (p.moved) dragTo(p, e.clientX, e.clientY);
+      return;
+    }
+    if (p.type !== "mouse" && dragScrollsPage && p.moved) {
       const scale = toPage(e.clientX, e.clientY)?.scale ?? 1;
       queueScroll(0, (p.lastY - e.clientY) * scale);
       p.lastY = e.clientY;
@@ -279,7 +338,13 @@ export function ScreencastCell({
   const onPointerUp = (e: React.PointerEvent) => {
     const p = pointer.current;
     pointer.current = null;
-    if (!p || p.moved || e.button === 2) return;
+    if (!p) return;
+    if (p.started) {
+      const at = toPage(e.clientX, e.clientY) ?? p.from;
+      void send("drag", { phase: "end", x: at.x, y: at.y });
+      return;
+    }
+    if (p.moved || e.button === 2) return;
     click(e.clientX, e.clientY, "left", p.type !== "mouse");
   };
 
@@ -430,6 +495,47 @@ export function ScreencastCell({
             back to live
           </button>
         )}
+        {stageSrc && canUse && (
+          <button
+            className={`shot-tool shot-drag ${dragMode ? "on" : ""}`}
+            onClick={() => setDragMode((v) => !v)}
+            aria-pressed={dragMode}
+            aria-label="Drag on the page"
+            title={dragMode
+              ? "Dragging with a finger — tap to scroll again"
+              : "Drag on the page — a slider, a canvas, a map"}
+          >
+            <IconMousePointer size={15} />
+          </button>
+        )}
+        {stageSrc && max && (
+          <span className="shot-zoom">
+            <button
+              className="shot-tool"
+              disabled={zoom <= 1}
+              onClick={() => setZoom((z) => Math.max(1, Math.round((z - 0.5) * 10) / 10))}
+              aria-label="Smaller"
+            >
+              −
+            </button>
+            <button
+              className="shot-zoom-at"
+              onClick={() => setZoom(1)}
+              title="Back to fit"
+              aria-label={`${Math.round(zoom * 100)} percent — tap to fit`}
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+            <button
+              className="shot-tool"
+              disabled={zoom >= 4}
+              onClick={() => setZoom((z) => Math.min(4, Math.round((z + 0.5) * 10) / 10))}
+              aria-label="Bigger"
+            >
+              +
+            </button>
+          </span>
+        )}
         {stageSrc && (
           <button
             className="shot-corner"
@@ -456,12 +562,17 @@ export function ScreencastCell({
         <div
           ref={stageRef}
           className={`shot-stage ${big ? "is-big" : ""} ${watching ? "is-watching" : ""} ${
-            canUse ? "is-usable" : ""} ${canUse && dragScrollsPage ? "is-dragging-page" : ""} ${
-            driving && watching ? "is-locked" : ""}`}
+            canUse ? "is-usable" : ""} ${canUse && (dragScrollsPage || dragMode) ? "is-dragging-page" : ""} ${
+            driving && watching ? "is-locked" : ""} ${zoom > 1 ? "is-zoomed" : ""}`}
+          style={zoom > 1 ? ({ "--zoom": zoom } as CSSProperties) : undefined}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
-          onPointerCancel={() => { pointer.current = null; }}
+          onPointerCancel={() => {
+            const p = pointer.current;
+            pointer.current = null;
+            if (p?.started) void send("drag", { phase: "end", x: p.from.x, y: p.from.y });
+          }}
           onContextMenu={(e) => {
             if (!canUse) return;
             e.preventDefault();
@@ -488,6 +599,46 @@ export function ScreencastCell({
             {watching && driving && latest && <span className="shot-caption">{latest}</span>}
             {canUse && typing && <span className="shot-caption is-typing">typing into the page</span>}
           </Frame>
+
+          {picker && (
+            /* The page's dropdown, listed here: the popup the browser draws
+               for a <select> is outside the page and never appears on the
+               picture, so a tap on one used to look like a tap on nothing. */
+            <>
+              <div
+                className="shot-picker-scrim"
+                onPointerDown={(e) => { e.stopPropagation(); setPicker(null); }}
+              />
+              <div
+                className="shot-picker"
+                role="listbox"
+                aria-label="Choose from the page's dropdown"
+                onPointerDown={(e) => e.stopPropagation()}
+                style={{
+                  left: `${Math.min(58, (picker.x / VIEWPORT.w) * 100)}%`,
+                  top: `${Math.min(52, (picker.y / VIEWPORT.h) * 100)}%`,
+                }}
+              >
+                <div className="shot-picker-head">the page's dropdown</div>
+                <div className="shot-picker-list">
+                  {picker.options.map((o) => (
+                    <button
+                      key={o.index}
+                      className={`shot-picker-opt ${o.selected ? "on" : ""}`}
+                      disabled={o.disabled}
+                      onClick={() => {
+                        const { x, y } = picker;
+                        setPicker(null);
+                        void send("choose", { x, y, index: o.index });
+                      }}
+                    >
+                      {o.label || <em>blank</em>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
 
           {nudge && (
             /* A layer to centre in, so the pill's own entrance animation
