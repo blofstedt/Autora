@@ -4917,27 +4917,57 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 .mind-review-old { font-size: 11.5px; color: var(--text-3); }
 .mind-review-actions { display: flex; gap: 6px; }
 
-/* A scheduled task finished while you were elsewhere. */
+/* A scheduled task finished while you were elsewhere.
+   A slim line that sits on the message box and comes up from behind it: the
+   container is the clip, its bottom edge is the box's top edge, so the toast
+   is only ever drawn above the box and leaves the way it arrived. Both
+   offsets come from the composer itself (App.tsx measures it into
+   --composer-h and --composer-r) rather than from a height guessed here. */
 .notices {
-  position: fixed; right: 16px; bottom: 16px; z-index: 60;
-  display: flex; flex-direction: column; gap: 8px; width: min(360px, calc(100vw - 32px));
+  position: fixed; z-index: 60;
+  right: calc(var(--composer-r, 16px) + 10px);
+  bottom: var(--composer-h, 104px);
+  display: flex; flex-direction: column; gap: 6px;
+  width: min(340px, calc(100vw - 32px));
+  padding-top: 12px;                 /* room for the shadow above it */
+  overflow: hidden;                  /* the message box's top edge is the line */
+  pointer-events: none;
+}
+@keyframes notice-up {
+  from { opacity: 0; transform: translateY(calc(100% + 14px)); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes notice-down {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(calc(100% + 14px)); }
 }
 .notice {
-  display: flex; align-items: flex-start; gap: 4px; padding: 10px 6px 10px 12px;
-  border-radius: var(--r-sm); border: 1px solid var(--border-strong);
+  display: flex; align-items: center; gap: 4px; padding: 4px 4px 4px 10px;
+  border-radius: 12px; border: 1px solid var(--border-strong);
   border-left: 3px solid var(--text-3);
-  background: var(--s2); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-  animation: rise 0.25s var(--ease) both;
+  background: var(--s2); box-shadow: 0 -6px 18px -8px rgba(0, 0, 0, 0.6);
+  pointer-events: auto;
+  animation: notice-up 0.34s var(--ease) both;
 }
 .notice.is-ok { border-left-color: var(--live); }
 .notice.is-error { border-left-color: var(--danger); }
+.notice.is-leaving { animation: notice-down 0.3s var(--ease) both; }
 .notice-main {
-  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;
-  padding: 0; background: none; border: 0; font: inherit; text-align: left; cursor: pointer; color: var(--text-2);
+  flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 7px;
+  padding: 2px 0; background: none; border: 0; font: inherit;
+  text-align: left; cursor: pointer; color: var(--text-2);
 }
 .notice-main:disabled { cursor: default; }
-.notice-main b { color: var(--text); font-size: 13px; font-weight: 600; }
-.notice-main span { font-size: 12px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.notice-main b {
+  flex: 0 1 auto; max-width: 62%; color: var(--text); font-size: 12.5px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.notice-main span {
+  flex: 1 1 auto; min-width: 0; font-size: 11.5px; color: var(--text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.notice .notice-x { flex: 0 0 auto; width: 24px; height: 24px; border-radius: 50%; color: var(--text-3); }
+@media (prefers-reduced-motion: reduce) { .notice, .notice.is-leaving { animation: none; } }
 
 /* ── Explainer widgets ─────────────────────────────────────────────────────
    The agent's own page, in a sandboxed frame. Expanded, the card itself

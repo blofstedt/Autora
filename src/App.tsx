@@ -140,6 +140,9 @@ export function App() {
       session switch does not replay old moments. */
   const noticed = useRef(0);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  /** The strip the message box lives in. The scheduled-task notices sit on
+      its top edge, so its geometry is published to CSS and kept current. */
+  const composerEl = useRef<HTMLDivElement>(null);
   const speech = useSpeech();
   const { say, flush, cancel: hush, prime, speaking, supported: canSpeak } = speech;
   const relay = useRelay();
@@ -370,6 +373,30 @@ export function App() {
     box.style.height = "auto";
     box.style.height = `${Math.min(box.scrollHeight, 240)}px`;
   }, [draft]);
+
+  // The notices rise from behind the message box, so they need the box's own
+  // edge: --composer-h is how far its top is above the bottom of the window,
+  // --composer-r how far its right edge is from the right. Measured from the
+  // element rather than assumed, because the box grows with the textarea,
+  // carries a spend bar when there is one, and gives way to the live bar.
+  useEffect(() => {
+    const el = composerEl.current;
+    if (!el) return;
+    const measure = () => {
+      if (!el.offsetParent) return;                 // another page is showing
+      const rect = el.getBoundingClientRect();
+      if (rect.height === 0) return;
+      const pad = parseFloat(getComputedStyle(el).paddingRight) || 0;
+      const root = document.documentElement.style;
+      root.setProperty("--composer-h", `${Math.round(window.innerHeight - rect.top)}px`);
+      root.setProperty("--composer-r", `${Math.round(window.innerWidth - rect.right + pad)}px`);
+    };
+    measure();
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    ro?.observe(el);
+    window.addEventListener("resize", measure);
+    return () => { ro?.disconnect(); window.removeEventListener("resize", measure); };
+  }, []);
 
   const send = useCallback(async (spoken?: string) => {
     const text = (spoken ?? draft).trim();
@@ -1205,7 +1232,7 @@ export function App() {
 
           {/* The screen above stays exactly as it was; only this strip changes,
               because the point of talking to it is to keep watching it work. */}
-          <div className={`composer ${liveOn ? "is-live" : ""}`}>
+          <div className={`composer ${liveOn ? "is-live" : ""}`} ref={composerEl}>
             {/* Said here rather than in a settings page nobody opens: the button
                 that did not work is two inches below it. */}
             {voiceHelp && !liveOn && (
