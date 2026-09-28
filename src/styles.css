@@ -13,6 +13,10 @@
    ============================================================================ */
 
 :root {
+  /* Every theme is dark, and the browser's own controls should be too: without
+     this a slider's track, an unchecked box, a time field and a dropdown's
+     list were drawn for a light page. */
+  color-scheme: dark;
   /* Every colour below is a theme token. The default values are Autora Violet;
      the other themes (see "Themes" at the end of this file) redefine the same
      names, so nothing else in the stylesheet knows which theme is on. The
@@ -32,7 +36,11 @@
 
   --text: #edeff5;
   --text-2: #98a1b6;
-  --text-3: #626a7e;
+  /* Tertiary text: labels, hints, timestamps. It was 3.3:1 on a card, under
+     the 4.5:1 small text needs to be read comfortably (and on a phone in
+     daylight, at all). Each theme's is lifted to about 4.6:1 on --s2 and
+     stays half again as dim as --text-2, so the three steps still read. */
+  --text-3: #7a8297;
 
   --accent-rgb: 110, 91, 255;
   --accent: rgb(var(--accent-rgb));
@@ -519,7 +527,7 @@ body::before {
 .stats .plus { color: var(--live); }
 .stats .minus { color: var(--danger); }
 .tag {
-  font-size: 9.5px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase;
+  font-size: 10px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase;
   padding: 2px 7px; border-radius: 99px; font-style: normal;
   background: rgba(52, 211, 153, 0.13); color: var(--live);
 }
@@ -641,7 +649,7 @@ body::before {
   color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .mem-chip em {
-  font-style: normal; font-size: 9.5px; font-weight: 650; letter-spacing: 0.06em;
+  font-style: normal; font-size: 10px; font-weight: 650; letter-spacing: 0.06em;
   text-transform: uppercase; color: var(--chip);
 }
 /* A chip that opens: the memory itself, in a modal over the thread. */
@@ -1550,7 +1558,7 @@ button.hint.voice-note:hover { text-decoration: underline; }
   font-size: 10px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase;
 }
 .kd-status {
-  font-size: 9.5px; font-weight: 650; letter-spacing: 0.05em; text-transform: uppercase;
+  font-size: 10px; font-weight: 650; letter-spacing: 0.05em; text-transform: uppercase;
   padding: 2px 7px; border-radius: 99px; background: var(--s3); color: var(--text-3);
 }
 .kd-status.is-confirmed { background: rgba(52, 211, 153, 0.13); color: var(--live); }
@@ -1563,7 +1571,7 @@ button.hint.voice-note:hover { text-decoration: underline; }
 }
 .kd-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 12px; }
 .kd-tags em {
-  font-style: normal; font-size: 10px; padding: 2px 8px; border-radius: 99px;
+  font-style: normal; font-size: 11px; padding: 2px 8px; border-radius: 99px;
   background: var(--s3); color: var(--text-2);
 }
 .kd-meta {
@@ -1712,6 +1720,11 @@ label + .jf-hint { margin-top: -5px; }
   text-transform: uppercase; color: var(--text-3);
 }
 .set-card .jf-row { margin-top: 11px; }
+/* A card ends at its padding. A hint paragraph keeps the browser's 1em below
+   it, and as a card's last line that was a dead band under the text. */
+.set-card > :last-child { margin-bottom: 0; }
+/* A button with a note beside it, under a card's rows. */
+.row-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-top: 12px; }
 
 /* What is running, as opposed to what is saved -- the distinction the old
    error messages could not draw. */
@@ -1765,7 +1778,7 @@ label + .jf-hint { margin-top: -5px; }
   padding: 2px 8px; border-radius: 99px;
   background: rgba(52, 211, 153, 0.13); color: var(--live);
 }
-.set-badge.is-unset { background: var(--s3); color: var(--text-3); }
+.set-badge.is-unset { background: var(--s3); color: var(--text-2); }
 .set-note { margin: 5px 0 9px; font-size: 11.5px; line-height: 1.45; color: var(--text-3); }
 .set-key-edit { display: flex; gap: 8px; align-items: center; }
 .set-key-edit input {
@@ -2891,7 +2904,7 @@ label + .jf-hint { margin-top: -5px; }
 
 .kanban-progress-pct {
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: 10.5px;
   color: var(--text-2);
 }
 
@@ -4195,7 +4208,29 @@ input.shot-where[readonly] { cursor: default; }
 .jev-bar em { position: absolute; top: -3px; bottom: -3px; width: 1px; background: var(--text-2); }
 .jev-conf { font-family: var(--mono); font-size: 11px; color: var(--text-2); text-align: right; font-variant-numeric: tabular-nums; }
 .jev-foot { margin: 2px 0 0; font-size: 10.5px; color: var(--text-3); }
-.set-card input[type="range"] { padding: 0; border: 0; background: none; accent-color: var(--accent); }
+/* Drawn here rather than left to the browser, which paints the unfilled part
+   of an accent-coloured track near-white whatever the page's scheme. Filled
+   up to --fill, set from the value by the page. Same thumb as the frame
+   scrubber in a browser card. */
+.set-card input[type="range"] {
+  appearance: none; -webkit-appearance: none;
+  height: 18px; margin: 2px 0 0; padding: 0; border: 0; background: none; cursor: pointer;
+}
+.set-card input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px; border-radius: 99px;
+  background: linear-gradient(var(--accent), var(--accent)) 0 / var(--fill, 0%) 100% no-repeat, var(--s4);
+}
+.set-card input[type="range"]::-webkit-slider-thumb {
+  appearance: none; -webkit-appearance: none;
+  width: 14px; height: 14px; margin-top: -5px; border-radius: 50%;
+  background: #fff; border: 3px solid var(--accent);
+}
+.set-card input[type="range"]::-moz-range-track { height: 4px; border-radius: 99px; background: var(--s4); }
+.set-card input[type="range"]::-moz-range-progress { height: 4px; border-radius: 99px; background: var(--accent); }
+.set-card input[type="range"]::-moz-range-thumb {
+  width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 3px solid var(--accent);
+}
+.set-card input[type="range"]:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 4px; border-radius: 99px; }
 
 
 /* ============================================================================
@@ -4209,7 +4244,7 @@ input.shot-where[readonly] { cursor: default; }
 html[data-theme="teal"] {
   --bg-rgb: 6, 11, 12; --s1-rgb: 11, 18, 20; --s2-rgb: 17, 27, 30;
   --s3: #182529; --s4: #203136; --sink: #040808;
-  --text: #e8f2f1; --text-2: #93a8a6; --text-3: #5d706e;
+  --text: #e8f2f1; --text-2: #93a8a6; --text-3: #738785;
   --accent-rgb: 20, 184, 166; --accent-deep: #0f8f82; --accent-light: #2dd4bf; --on-accent: #03201c;
   --accent2-rgb: 56, 189, 248;
   --glow-rgb: 45, 212, 191; --glow-deep-rgb: 13, 148, 136; --glow-light-rgb: 94, 234, 212;
@@ -4220,7 +4255,7 @@ html[data-theme="teal"] {
 html[data-theme="nous-blue"] {
   --bg-rgb: 7, 10, 16; --s1-rgb: 12, 17, 26; --s2-rgb: 18, 26, 39;
   --s3: #1a2435; --s4: #222e43; --sink: #05070c;
-  --text: #e9eef7; --text-2: #95a3ba; --text-3: #5f6c82;
+  --text: #e9eef7; --text-2: #95a3ba; --text-3: #76849a;
   --accent-rgb: 59, 130, 246; --accent-deep: #2563eb; --accent-light: #60a5fa; --on-accent: #fff;
   --accent2-rgb: 167, 139, 250;
   --glow-rgb: 96, 165, 250; --glow-deep-rgb: 37, 99, 235; --glow-light-rgb: 147, 197, 253;
@@ -4231,7 +4266,7 @@ html[data-theme="nous-blue"] {
 html[data-theme="midnight"] {
   --bg-rgb: 4, 5, 10; --s1-rgb: 8, 10, 18; --s2-rgb: 13, 16, 28;
   --s3: #141826; --s4: #1b2032; --sink: #020308;
-  --text: #e6e8f2; --text-2: #8e94ad; --text-3: #585e78;
+  --text: #e6e8f2; --text-2: #8e94ad; --text-3: #777d96;
   --accent-rgb: 129, 140, 248; --accent-deep: #6366f1; --accent-light: #a5b4fc; --on-accent: #0b0d1f;
   --accent2-rgb: 244, 114, 182;
   --glow-rgb: 129, 140, 248; --glow-deep-rgb: 99, 102, 241; --glow-light-rgb: 165, 180, 252;
@@ -4242,7 +4277,7 @@ html[data-theme="midnight"] {
 html[data-theme="ember"] {
   --bg-rgb: 13, 9, 8; --s1-rgb: 20, 14, 12; --s2-rgb: 28, 20, 17;
   --s3: #261b17; --s4: #31231e; --sink: #080504;
-  --text: #f5ece8; --text-2: #b09c93; --text-3: #76655e;
+  --text: #f5ece8; --text-2: #b09c93; --text-3: #8f7d75;
   --accent-rgb: 249, 115, 22; --accent-deep: #ea580c; --accent-light: #fb923c; --on-accent: #1f0a02;
   --accent2-rgb: 250, 204, 21;
   --glow-rgb: 251, 146, 60; --glow-deep-rgb: 234, 88, 12; --glow-light-rgb: 253, 186, 116;
@@ -4253,7 +4288,7 @@ html[data-theme="ember"] {
 html[data-theme="mono"] {
   --bg-rgb: 9, 9, 10; --s1-rgb: 15, 15, 17; --s2-rgb: 22, 22, 24;
   --s3: #1f1f22; --s4: #29292d; --sink: #050506;
-  --text: #ededed; --text-2: #a1a1a6; --text-3: #6b6b70;
+  --text: #ededed; --text-2: #a1a1a6; --text-3: #818186;
   --accent-rgb: 229, 229, 231; --accent-deep: #bdbdc2; --accent-light: #ffffff; --on-accent: #0a0a0b;
   --accent2-rgb: 161, 161, 170;
   --glow-rgb: 212, 212, 216; --glow-deep-rgb: 161, 161, 170; --glow-light-rgb: 228, 228, 231;
@@ -4264,7 +4299,7 @@ html[data-theme="mono"] {
 html[data-theme="cyberpunk"] {
   --bg-rgb: 7, 4, 13; --s1-rgb: 13, 8, 22; --s2-rgb: 20, 12, 32;
   --s3: #1d122d; --s4: #271a3a; --sink: #040208;
-  --text: #f5eefe; --text-2: #a896c0; --text-3: #6d5e85;
+  --text: #f5eefe; --text-2: #a896c0; --text-3: #86769e;
   --accent-rgb: 236, 72, 153; --accent-deep: #db2777; --accent-light: #f472b6; --on-accent: #fff;
   --accent2-rgb: 34, 211, 238;
   --glow-rgb: 34, 211, 238; --glow-deep-rgb: 8, 145, 178; --glow-light-rgb: 103, 232, 249;
@@ -4275,7 +4310,7 @@ html[data-theme="cyberpunk"] {
 html[data-theme="rose"] {
   --bg-rgb: 15, 13, 21; --s1-rgb: 21, 18, 28; --s2-rgb: 28, 24, 38;
   --s3: #25202f; --s4: #2f2939; --sink: #0a0810;
-  --text: #efe9f4; --text-2: #aca1b9; --text-3: #726a80;
+  --text: #efe9f4; --text-2: #aca1b9; --text-3: #898097;
   --accent-rgb: 235, 145, 164; --accent-deep: #d4738a; --accent-light: #f4b4c2; --on-accent: #2a1119;
   --accent2-rgb: 156, 207, 216;
   --glow-rgb: 196, 167, 231; --glow-deep-rgb: 158, 127, 204; --glow-light-rgb: 221, 200, 245;
@@ -4925,7 +4960,7 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 .learned-fate { margin-left: auto; font-size: 11px; font-weight: 600; }
 .learned-item.is-kept .learned-fate { color: var(--live); }
 .btn.tiny { height: 24px; padding: 0 10px; font-size: 11.5px; }
-.mem-chip small { font-size: 10px; color: var(--text-3); }
+.mem-chip small { font-size: 11px; color: var(--text-3); }
 .mem-chip.is-gone { text-decoration: line-through; opacity: 0.6; }
 
 /* Status: tool health and the tools the agent wrote. */
@@ -5397,4 +5432,19 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 @media (max-width: 680px) {
   .attach-row { --attach-box: 56px; }
   .attach-chip.is-file { max-width: min(200px, 62vw); }
+}
+
+/* Fingertip sizes for the small controls defined above. At the end of the
+   file on purpose: the touch block further up comes before these controls'
+   own rules, and at equal specificity the later rule wins. Keep and Discard
+   under what was learned, the lines that fold a thread's memories, a code
+   block's copy and the segmented tabs were 19-30px tall. Hit areas grow;
+   negative margins keep what is around them where it was. */
+@media (pointer: coarse) {
+  .btn.tiny { height: 32px; padding: 0 12px; margin: -4px 0; }
+  .learned-head { padding: 7px 0; margin: -7px 0; }
+  .mem-pulse-head { padding: 7px 0; margin: -5px 0; }
+  .md-copy { height: 32px; margin: -3px 0; }
+  .seg button { height: 34px; }
+  .setup-more { padding-top: 6px; padding-bottom: 6px; }
 }

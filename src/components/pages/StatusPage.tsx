@@ -244,7 +244,7 @@ export function StatusPage({
           <div className="row-actions">
             <button
               type="button"
-              className="btn tiny ghost"
+              className="btn tiny"
               disabled={pruning}
               onClick={() => {
                 if (!window.confirm(

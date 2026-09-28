@@ -118,6 +118,13 @@ releaseNotes: >-
   kept too, and every lesson is tagged with its subject so it comes back when
   that subject does.
 
+  Easier to read. Small grey text -- labels, hints, times, the figures under
+  the context ring -- was too faint to read comfortably, in every theme; it is
+  lifted to the contrast small text needs while staying the quietest of the
+  three greys. Keep, Discard and the small toggles in a thread are bigger to
+  tap on a phone, the tiniest labels are a little larger, and the browser's
+  own controls (a slider, a time field, a dropdown) are drawn dark to match.
+
   Fixes: on a phone the Photo button no longer slides under Send, and the
   Appearance tab in Settings can be reached on a small screen. A page that
   failed to load no longer pulls the agent's answer into the browser card or
@@ -128,5 +135,7 @@ releaseNotes: >-
   messages lose their stray colour codes. A scheduled job can no longer run
   twice when a watcher's look at a slow page outlasts the scheduler's tick,
   and a schedule such as "every other day on Mondays" is read the way cron
-  reads it. With a few hundred memories, recall and saving are several times
+  reads it. In Settings the Jev key field is one line again rather than a box
+  a fifth of the screen tall, and in Status the clean-up button lines up with
+  the rows above it. With a few hundred memories, recall and saving are several times
   faster.
