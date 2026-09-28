@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useThemeColors, type ThemeColors } from "../lib/theme";
-import { BLOOM, DRAWN_BOX, MARK, REST, morphFrames, stackingUnits } from "../lib/mark";
+import { BLOOM, DRAWN_BOX, MARK, REST, morphFrames, stackUnits } from "../lib/mark";
 
 /**
  * The Autora mark, alive.
@@ -20,8 +20,8 @@ import { BLOOM, DRAWN_BOX, MARK, REST, morphFrames, stackingUnits } from "../lib
  *   live      slow breathing, the microphone is open
  *   thinking  it opens out into the circle inside it and closes again,
  *             twice, while it turns -- the model is working something out
- *   building  the mark stacks itself together out of smaller copies of
- *             itself, bottom row first, while colours run across the pieces
+ *   building  the mark stacks itself out of three quarters of itself, laid
+ *             one at a time, and then closes on the mark and hands over
  *   settle    a single bloom as the work lands, then back to rest
  *   waiting   a slow, warm beckon -- it is stopped on something only you can do
  *   error     one dim shiver as a turn fails, then back to rest
@@ -63,14 +63,19 @@ const SETTLE_MS = 900;
 const MORPH = morphFrames().join(";");
 const MORPH_MS = 9000;
 
-/** One turn of the building animation: stack up, hold, come apart, again. */
-const BUILD_MS = 3600;
+/** One turn of the building animation. The fractions below are of one turn. */
+const BUILD_MS = 3400;
 
-/** Below this the pieces are too small to be seen as pieces, so the mark is
-    built from four rather than nine. */
-const COARSE_BELOW = 22;
-const FINE = stackingUnits(3);
-const COARSE = stackingUnits(2);
+/** When the three quarters fall in, how long a fall takes, and when they close.
+    The last one has settled by 0.50, which leaves a third of the turn in the
+    state worth watching: not a diagram of a triangle, and not the triangle. */
+const LAY_FROM = 0.04;
+const LAY_GAP = 0.085;
+const FALL = 0.155;
+const CLOSE_AT = 0.66;
+const CLOSE_BY = 0.76;
+
+const STACK = stackUnits();
 
 /** Brand violet, cyan and orchid, turning through each other. The green that
     used to mean "live" is deliberately absent -- state is carried by motion. */
@@ -127,12 +132,22 @@ function useFinish(state: MarkState, pulse = 0): MarkState {
   return finishing ? "settle" : now;
 }
 
-/** One small copy of the mark, arriving: drops in from below, pops to size,
-    holds the row it belongs to, and comes apart with the rest at the end. */
-function Piece({ d, x, y, at, fill }: { d: string; x: number; y: number; at: number; fill: string }) {
-  // Appears at `at`, has settled by `at + 0.13`, and dissolves at 0.86.
-  const times = [0, at, at + 0.045, at + 0.13, 0.86, 1].map((t) => t.toFixed(3)).join(";");
-  const ease = "0 0 1 1;0.16 1.15 0.32 1;0 0 1 1;0 0 1 1;0.4 0 0.6 1";
+/**
+ * One quarter of the mark, arriving: it rises into its place from below, lands
+ * with a squash, rights itself, and holds there until the three of them close.
+ *
+ * The squash is the whole trick. A piece that simply appears is a fade; a piece
+ * that lands on its base with the weight of the drop in it is a thing being
+ * stacked, and a two-axis scale is the only way to say that about a shape with
+ * no limbs. It is over in a tenth of a second -- about as long as you can see it
+ * without it turning into a cartoon.
+ */
+function StackPiece({ d, x, y, at, fill }: { d: string; x: number; y: number; at: number; fill: string }) {
+  const land = at + FALL;
+  const rise = [0, at, land, land + 0.05, land + 0.1, 1];
+  const form = [0, at, land, land + 0.035, land + 0.075, land + 0.12, 1];
+  const fade = [0, at, land, land + 0.03, CLOSE_AT, CLOSE_BY, 1];
+  const times = (t: number[]) => t.map((v) => v.toFixed(4)).join(";");
 
   return (
     <g transform={`translate(${x.toFixed(3)} ${y.toFixed(3)})`}>
@@ -143,9 +158,9 @@ function Piece({ d, x, y, at, fill }: { d: string; x: number; y: number; at: num
           dur={`${BUILD_MS}ms`}
           repeatCount="indefinite"
           calcMode="spline"
-          keyTimes={times}
-          keySplines={ease}
-          values="0 2.4;0 2.4;0 0;0 0;0 0;0 0.5"
+          keyTimes={times(rise)}
+          keySplines="0 0 1 1;0.2 0.6 0.35 1;0.4 0 0.5 1;0.4 0 0.6 1;0 0 1 1"
+          values="0 2.2;0 2.2;0 -0.12;0 0.07;0 0;0 0"
         />
         <g>
           <animateTransform
@@ -154,17 +169,17 @@ function Piece({ d, x, y, at, fill }: { d: string; x: number; y: number; at: num
             dur={`${BUILD_MS}ms`}
             repeatCount="indefinite"
             calcMode="spline"
-            keyTimes={times}
-            keySplines={ease}
-            values="0.4;0.4;1.16;1;1;0.82"
+            keyTimes={times(form)}
+            keySplines="0 0 1 1;0.25 0 0.5 1;0.35 0 0.5 1;0.4 0 0.6 1;0.4 0 0.6 1;0 0 1 1"
+            values="0.7 0.7;0.7 0.7;1.2 0.82;0.94 1.08;1.03 0.98;1 1;1 1"
           />
           <path d={d} fill={fill}>
             <animate
               attributeName="opacity"
               dur={`${BUILD_MS}ms`}
               repeatCount="indefinite"
-              keyTimes={times}
-              values="0;0;1;1;1;0"
+              keyTimes={times(fade)}
+              values="0;0;1;1;1;0;0"
             />
           </path>
         </g>
@@ -202,11 +217,6 @@ export function AutoraMark({
   const busy = shown === "thinking" || shown === "building";
   const shifting = !still && (busy || shown === "live" || shown === "settle");
 
-  const pieces = size < COARSE_BELOW ? COARSE : FINE;
-  // The pieces arrive over the first 40% of the cycle, in order, with a small
-  // stagger so the base row is laid before the row above it starts.
-  const first = 0.05;
-  const span = 0.38;
 
   return (
     <span
@@ -250,8 +260,9 @@ export function AutoraMark({
 
         {shown === "building" && !still ? (
           <g>
-            {/* The shape it is heading for, so what the pieces are making is
-                never in doubt while they are still arriving. */}
+            {/* The shape they are making, so what three quarters are for is
+                never in doubt -- and the ghost is the whole mark, including
+                the middle the pieces leave open, which is where it arrives. */}
             <path
               className="amark-ghost"
               d={REST}
@@ -263,20 +274,57 @@ export function AutoraMark({
                 attributeName="opacity"
                 dur={`${BUILD_MS}ms`}
                 repeatCount="indefinite"
-                keyTimes="0;0.05;0.45;0.86;1"
-                values="0.18;0.4;0.3;0;0"
+                keyTimes="0;0.45;0.6;0.74;1"
+                values="0.16;0.42;0.34;0;0"
               />
             </path>
-            {pieces.map((p, i) => (
-              <Piece
-                key={i}
-                d={p.d}
-                x={p.x}
-                y={p.y}
-                at={first + (span * i) / pieces.length}
-                fill={`url(#g${uid})`}
+
+            {/* The stack, breathing once it is up: held weight that is
+                perfectly still reads as a picture, not as a thing. */}
+            <g>
+              <animateTransform
+                attributeName="transform"
+                type="translate"
+                dur={`${BUILD_MS}ms`}
+                repeatCount="indefinite"
+                calcMode="spline"
+                keyTimes="0;0.48;0.57;0.66;1"
+                keySplines="0 0 1 1;0.4 0 0.3 1;0.4 0 0.6 1;0 0 1 1"
+                values="0 0;0 0;0 -0.18;0 0;0 0"
               />
-            ))}
+              {STACK.map((p, i) => (
+                <StackPiece key={i} d={p.d} x={p.x} y={p.y} at={LAY_FROM + LAY_GAP * i} fill={`url(#g${uid})`} />
+              ))}
+            </g>
+
+            {/* The close. The three stay put and fade where they are -- it is
+                the gap between them that fills -- and the turn ends on the
+                mark: the same shape, in the same gradient, that rest and the
+                state after this one draw. So a build that finishes is a
+                handover rather than a cut, whenever it happens to finish. */}
+            <g>
+              <animateTransform
+                attributeName="transform"
+                type="translate"
+                dur={`${BUILD_MS}ms`}
+                repeatCount="indefinite"
+                calcMode="spline"
+                keyTimes="0;0.66;0.8;1"
+                keySplines="0 0 1 1;0.2 0.8 0.3 1;0 0 1 1"
+                values="0 0.35;0 0.35;0 0;0 0"
+              />
+              <path className="amark-shape" d={REST} fill={`url(#g${uid})`}>
+                <animate
+                  attributeName="opacity"
+                  dur={`${BUILD_MS}ms`}
+                  repeatCount="indefinite"
+                  calcMode="spline"
+                  keyTimes="0;0.66;0.78;0.93;1"
+                  keySplines="0 0 1 1;0.2 0.8 0.3 1;0 0 1 1;0.4 0 0.6 1"
+                  values="0;0;1;1;0"
+                />
+              </path>
+            </g>
           </g>
         ) : (
           <path className="amark-shape" d={REST} fill={`url(#g${uid})`}>

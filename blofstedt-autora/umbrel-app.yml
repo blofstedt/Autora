@@ -98,15 +98,20 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The mark is better centred, and thinking looks better.
+  The mark building itself now looks like building.
 
-  The triangle in the home-screen icon and the Umbrel tile sat a little low --
-  the shape it was built from is not the shape you see, and the difference is
-  most of a pixel at 32px. It is measured and asserted now, so it cannot drift
-  back.
+  It used to assemble from the nine small copies of the triangle that fit inside
+  it -- arriving, holding, coming apart again -- which was a lot of movement
+  that read as texture rather than as work. It is stacked from three now: the
+  three upright quarters, the ones that leave the inverted quarter of the
+  triangle as a hole between them.
 
-  Thinking no longer turns the mark over on its axis. It opens out into the
-  circle drawn inside it and closes again, twice, while it turns: the corner
-  the fillet takes off is the only thing that moves, and the two shapes it
-  passes through are its own. The old flip flattened the mark to a bar on the
-  way past, which read as the mark falling over rather than as work being done.
+  They are laid one at a time from the bottom -- bottom left, bottom right, then
+  the one that caps them -- each rising into its place and landing on its base
+  with a short squash, and while they wait the stack breathes once. Then the gap
+  between them closes and the mark is simply there, in the gradient it rests in,
+  so a build that finishes hands over to the settle bloom instead of cutting to
+  it, whenever it happens to finish.
+
+  Three pieces rather than nine is also what the sizes the mark is really drawn
+  at can carry: at 16px the nine were a speckle.

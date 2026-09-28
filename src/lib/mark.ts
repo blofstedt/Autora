@@ -328,3 +328,31 @@ export function stackingUnits(rows: number): { d: string; x: number; y: number }
     .sort((a, b) => a.row - b.row || a.at - b.at)
     .map(({ d, x, y }) => ({ d, x, y }));
 }
+
+/**
+ * The three upright quarters the mark is stacked from, in the order they are
+ * laid: bottom left, bottom right, then the one that caps them.
+ *
+ * The same lattice, fillet and placement as the coarse half of
+ * `stackingUnits(2)`, with the inverted fourth left out. The gap they leave is
+ * the point: three of the four quarters are a mark with a triangle missing, so
+ * when they close the shape they make is the real one -- something the viewer
+ * could see coming from the moment the first piece landed, rather than a
+ * reveal. Three pieces also survive the small sizes the app draws the mark at,
+ * where nine would be speckle.
+ */
+export function stackUnits(): { d: string; x: number; y: number }[] {
+  const unit = MARK.R / 2;                             // one quarter's circumradius
+  const side = unit * Math.sqrt(3);                    // its side, and the lattice pitch
+  const height = unit * 1.5;                           // its height, and the row pitch
+  const left = MARK.cx - (MARK.R * Math.sqrt(3)) / 2;  // the mark's bottom-left corner
+  const centreY = MARK.cy - MARK.fillet / 2;           // the drawn mark's own centre
+  const base = centreY + MARK.R * 0.75;                // the mark's base line
+  const up = trianglePath({ cx: 0, cy: 0, R: unit, fillet: MARK.fillet / 2 });
+
+  return [
+    { d: up, x: left + side / 2, y: base - 0.75 * unit },
+    { d: up, x: left + (3 * side) / 2, y: base - 0.75 * unit },
+    { d: up, x: MARK.cx, y: base - height - 0.75 * unit },
+  ];
+}
