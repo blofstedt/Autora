@@ -1377,29 +1377,46 @@ export function App() {
                     }}
                   />
                   {attached.length > 0 && (
+                    /* Boxes along the bottom of the field, left to right: a
+                       picture is the picture, a file is its name. Both arrive
+                       with the same small pop. */
                     <div className="attach-row">
                       {attached.map((file) => (
-                        <span className="attach-chip" key={file.id}>
-                          {isPicture(file.mime)
-                            ? <img className="attach-pic" src={`/api/artifacts/${file.id}`} alt="" />
-                            : <IconFile size={13} />}
-                          <b>{file.name}</b>
-                          <em>{sizeLabel(file.size)}</em>
-                          <button
-                            type="button"
-                            className="attach-drop"
-                            onClick={() => dropAttachment(file.id)}
-                            title={`Remove ${file.name}`}
-                            aria-label={`Remove ${file.name}`}
-                          >
-                            <IconX size={12} />
-                          </button>
-                        </span>
+                        isPicture(file.mime) ? (
+                          <span className="attach-chip is-pic" key={file.id} title={file.name}>
+                            <img className="attach-pic" src={`/api/artifacts/${file.id}`} alt={file.name} />
+                            <button
+                              type="button"
+                              className="attach-drop"
+                              onClick={() => dropAttachment(file.id)}
+                              title={`Remove ${file.name}`}
+                              aria-label={`Remove ${file.name}`}
+                            >
+                              <IconX size={12} />
+                            </button>
+                          </span>
+                        ) : (
+                          <span className="attach-chip is-file" key={file.id}>
+                            <IconFile size={16} />
+                            <span className="attach-meta">
+                              <b title={file.name}>{file.name}</b>
+                              <em>{sizeLabel(file.size)}</em>
+                            </span>
+                            <button
+                              type="button"
+                              className="attach-drop"
+                              onClick={() => dropAttachment(file.id)}
+                              title={`Remove ${file.name}`}
+                              aria-label={`Remove ${file.name}`}
+                            >
+                              <IconX size={12} />
+                            </button>
+                          </span>
+                        )
                       ))}
                       {attaching > 0 && (
-                        <span className="attach-chip is-loading">
+                        <span className="attach-chip is-loading" title="Uploading" aria-label="Uploading">
                           <span className="attach-spin" aria-hidden="true" />
-                          <b>uploading…</b>
                         </span>
                       )}
                     </div>

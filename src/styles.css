@@ -5231,30 +5231,68 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 /* ── what a message came with ── */
 
 /* The chips sit between the box and the row of tools, inside the composer, so
-   that Send is still the last thing under the thumb. */
+   that Send is still the last thing under the thumb. They are boxes, not
+   pills: a picture arrives as the picture. */
 .attach-row {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
-  padding: 6px 2px 2px; min-width: 0;
+  /* One size for every box -- square for a picture, the same height for a
+     file -- so a row of them reads as a row however many there are and
+     whatever they are. */
+  --attach-box: 64px;
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px;
+  padding: 8px 2px 2px; min-width: 0;
 }
 .attach-chip {
-  display: inline-flex; align-items: center; gap: 6px; max-width: 220px;
-  padding: 3px 4px 3px 5px; border-radius: 8px;
+  position: relative;
+  display: flex; align-items: center; gap: 9px;
+  min-height: var(--attach-box); max-width: 100%;
+  border-radius: 14px;
   background: var(--s2, rgba(255, 255, 255, 0.06));
   border: 1px solid var(--border); font-size: 12px; color: var(--text-2, var(--text));
+  overflow: hidden;
+  /* Each box arrives on its own, a pop and a rise, so a file landing in the
+     field is something you watch happen rather than something that is
+     suddenly there. The chip is a flex item with no transform of its own, so
+     the keyframes own the transform outright and end on none. */
+  animation: attach-in 0.3s var(--ease) both;
 }
-.attach-chip.b, .attach-chip b { font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.attach-chip em { font-style: normal; color: var(--text-3); font-size: 11px; flex: 0 0 auto; }
-.attach-chip.is-loading { color: var(--text-3); }
-.attach-pic { width: 22px; height: 22px; border-radius: 5px; object-fit: cover; flex: 0 0 auto; }
+@keyframes attach-in {
+  from { opacity: 0; transform: translateY(7px) scale(0.8); }
+  to { opacity: 1; transform: none; }
+}
+/* A picture box is the picture: edge to edge, the name in the tooltip, the way
+   out in the corner. */
+.attach-chip.is-pic { width: var(--attach-box); padding: 0; }
+.attach-pic {
+  display: block; width: 100%; height: 100%; object-fit: cover;
+  transition: transform 0.3s var(--ease);
+}
+.attach-chip.is-pic:hover .attach-pic { transform: scale(1.07); }
+/* A file box shows the name, and as much of it as fits. The name is the thing
+   you check before sending, so it gets the room and the size does not. */
+.attach-chip.is-file { padding: 8px 30px 8px 11px; max-width: min(250px, 58vw); }
+.attach-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.attach-chip b { font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attach-chip em { font-style: normal; color: var(--text-3); font-size: 10.5px; flex: 0 0 auto; }
+/* A wait, not a file: the same box, empty, turning. */
+.attach-chip.is-loading { width: var(--attach-box); padding: 0; justify-content: center; color: var(--text-3); }
 .attach-drop {
-  display: grid; place-items: center; width: 18px; height: 18px; padding: 0; flex: 0 0 auto;
+  position: absolute; top: 4px; right: 4px;
+  display: grid; place-items: center; width: 20px; height: 20px; padding: 0;
   border: 0; border-radius: 50%; cursor: pointer;
-  background: none; color: var(--text-3);
+  /* Over a photograph this button sits on the picture itself, so it carries
+     its own ground or the x disappears into whatever the photo happens to be
+     there. */
+  background: rgba(9, 11, 18, 0.62); color: #fff;
+  box-shadow: 0 1px 4px -1px rgba(0, 0, 0, 0.6);
+  transition: background 0.14s var(--ease), transform 0.14s var(--ease);
 }
-.attach-drop:hover { background: var(--s3); color: var(--text); }
+.attach-chip.is-file .attach-drop { top: 50%; right: 5px; transform: translateY(-50%); background: none; box-shadow: none; color: var(--text-3); }
+.attach-chip.is-file .attach-drop:hover { transform: translateY(-50%) scale(1.12); }
+.attach-chip.is-pic .attach-drop:hover { transform: scale(1.12); }
+.attach-drop:hover { background: rgba(244, 63, 94, 0.92); color: #fff; }
 /* Read as a live mark, not a picture: it is a wait, not a file. */
 .attach-spin {
-  width: 13px; height: 13px; border-radius: 50%; flex: 0 0 auto;
+  width: 15px; height: 15px; border-radius: 50%; flex: 0 0 auto;
   border: 1.5px solid var(--border); border-top-color: var(--accent, var(--text));
   animation: attach-turn 0.7s linear infinite;
 }
@@ -5286,8 +5324,14 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
   box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.8);
 }
 .cam-frame video {
-  width: 100%; max-height: 62vh; border-radius: 10px; background: #000;
-  object-fit: contain;
+  /* Sized to the picture, never to a box around it: the element is as wide as
+     its own aspect ratio wants at whatever height fits. It used to be
+     `width: 100%` with a black background and `object-fit: contain`, which
+     letterboxes every stream that is not the shape of the frame -- a phone
+     held up in portrait came back with black bars down both sides. With both
+     sizes auto and only maxima, there is no leftover box to fill. */
+  display: block; width: auto; height: auto; max-width: 100%; max-height: 62vh;
+  border-radius: 10px; background: #000; object-fit: contain;
 }
 .cam-error { margin: 0; font-size: 13px; color: var(--text-2, var(--text)); text-align: center; }
 .cam-acts { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; }
@@ -5314,3 +5358,11 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 .peek-row-label { flex: 0 0 auto; min-width: 92px; font-size: 11.5px; color: var(--text-3); }
 .peek-row-value { font-size: 13.5px; font-variant-numeric: tabular-nums; }
 .peek-row-sub { margin-left: auto; font-size: 11px; color: var(--text-3); }
+
+/* ---------------------------------------------------- attachments, phones -- */
+/* A row of boxes is read across; on a phone a 64px one of them eats the width
+   the file names need. */
+@media (max-width: 680px) {
+  .attach-row { --attach-box: 56px; }
+  .attach-chip.is-file { max-width: min(200px, 62vw); }
+}

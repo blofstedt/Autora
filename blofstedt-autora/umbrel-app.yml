@@ -98,21 +98,19 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The mark builds without drawing its own ending first.
+  A photo you are about to send is shown as the photo.
 
-  While the three pieces stack and close, the app used to draw a faint outline
-  of the finished triangle behind them, so it was clear what they were making.
-  It also gave away the last frame of every build, and read as a diagram rather
-  than as the mark being made. The outline is gone; the pieces and the close are
-  the whole animation. It is the same length and lands on the same frame, so the
-  hand-over to the thinking morph is unchanged.
+  Attachments under the message box were one flat pill whether you had picked
+  a picture or a document: the name and its size with a small icon beside them.
+  A picture is now the picture itself, in a square box at the size of the row,
+  and a document is a box with its name and size in it. Both carry the same
+  small x to take them off the message, and while an upload is running the row
+  shows one more of those boxes turning instead of the word uploading. On a
+  narrow screen the boxes are smaller so more than one still fits on a line.
 
-  The browser inside the app can now be used on a phone.
+  A photo taken with the phone no longer sits between two black bars.
 
-  A page shown in the app was watchable and not much else: no zoom, no way to
-  move a page that ran off the edge, and a dropdown on the page could not be
-  opened at all -- a tap on one went nowhere. There is a zoom control for the
-  full-screen view, press-and-drag moves the page (so a wide page or a map can
-  be reached), and tapping a dropdown opens its options and sends the choice
-  through to the page, which is the difference between reading a site and
-  filling in its form.
+  A portrait stream from the camera was being stretched to the width of its
+  frame, which letterboxed it -- a solid black column down each side of the
+  picture in the viewer and in the round camera button. The picture is now
+  given only the room it needs, so the bars are gone and the shot fills its box.
