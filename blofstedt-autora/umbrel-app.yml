@@ -99,28 +99,25 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  The agent works from a board you can watch. Ask for something that takes more
-  than one step and it writes the plan as cards in the conversation before it
-  starts -- To Do, Doing, Done -- then moves each card itself as the work goes:
-  to Doing when it begins a step, to Done when the step is finished. Nothing
-  has to be opened: the board appears in the thread where the plan was made.
+  The ball at the foot of live mode now says who has the floor by becoming what
+  they are speaking with. While you talk it stands up into a microphone and
+  moves with your voice; when the console answers it lies back into the
+  triangle and moves with its own. The change between the two is drawn rather
+  than cut, so the shape in the corner of your eye is always the thing that is
+  speaking.
 
-  The size of the plan follows the job. A coding task may be a dozen cards; an
-  errand is a few. "Check my email and draft a reply to the invoice one" is
-  read the inbox, pull the attachment, draft the reply, show it for review,
-  send it -- and each of those moves across the board as it happens. A card
-  that finishes with something to say gets a note on it, so the board carries
-  the outcome and not only the columns. A one-line answer still gets no board.
+  The speaker under each reply is one button. Press it to hear the reply, press
+  it again mid-speech and it stops -- the icon turns slashed -- and press it a
+  third time to hear it again from the start. A reply you have silenced stays
+  silenced, slashed icon and all, until you press it.
 
-  You can work the board too: drag a card to another column, add one of your
-  own, or press Run Next Autonomously to set the agent going on what is next.
-  Whatever you move and whatever it moves are the same board -- both sides
-  write the whole of it, so neither can quietly undo the other.
-
-  The board was built and never joined up until now: the cell, the drag and
-  drop, the columns and the styles were all in the app, and nothing ever wrote
-  a card, so no board had ever appeared. Put a plan on it and it does.
-
-  The rest of 0.9.99 stands, unchanged: the camera is on the live bar, and the
-  microphone opens once for the whole conversation instead of re-arming -- and
-  beeping -- on every phrase.
+  The context gauge in the sidebar used to measure every model against 100,000
+  tokens, and DeepSeek V4.1 Flash alone holds a million: it was reading a tenth
+  of the truth and condensing older turns away with most of the room still
+  spare. Models now carry their own window -- a million for DeepSeek Flash and
+  V4 Pro, a million and a little for Gemini and the newer OpenAI models, 200,000
+  for Claude -- and where a vendor publishes the figure it is read from the
+  vendor, including the models picked from a live list. When nothing can say,
+  as with a local server, the gauge says "assumed" rather than passing a house
+  number off as the model's own, and AUTORA_CONTEXT_TOKENS still overrides
+  everything.
