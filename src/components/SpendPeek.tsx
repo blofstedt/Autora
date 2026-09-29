@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Usage } from "./Billing";
 import { money } from "./Billing";
-import { spendView } from "../lib/spend";
+import { creditTotal, spendView } from "../lib/spend";
 import { IconX } from "./Icons";
 
 /**
@@ -20,7 +20,7 @@ import { IconX } from "./Icons";
  * is a snapshot from the last turn: a modal that quotes a stale total while
  * claiming to be the detail view is worse than the bar it replaced.
  */
-type Spend = Pick<Usage, "currency" | "since" | "lifetime" | "today" | "month" | "budget">;
+type Spend = Pick<Usage, "currency" | "since" | "lifetime" | "today" | "month" | "budget" | "real">;
 
 export function SpendPeek({
   session,
@@ -60,7 +60,14 @@ export function SpendPeek({
 
   const cap = usage?.budget.monthly_usd ?? null;
   const spent = usage?.month.cost ?? 0;
-  const view = spendView({ spent, session, budget: cap });
+  const paidIn = creditTotal(usage?.real);
+  const view = spendView({
+    spent,
+    session,
+    budget: cap,
+    lifetime: usage?.lifetime.cost,
+    credit: paidIn,
+  });
   const left = cap === null ? null : Math.max(0, cap - spent);
 
   const row = (label: string, value: string, sub?: string) => (
@@ -115,6 +122,13 @@ export function SpendPeek({
                   </i>
                 </span>
                 <p className="spend-peek-said">
+                  {/* The same headline the bar carries, in the words of the
+                      card: consumed of what was paid in, then the ceiling the
+                      month is measured against -- which is a different
+                      question and still worth its sentence. */}
+                  {view.onCredit &&
+                    `${money(view.drawn)} of the ${money(view.meter)} paid in — ` +
+                      `${money(Math.max(0, view.meter - view.drawn))} left. `}
                   {cap === null
                     ? `${money(spent)} this month, with no ceiling set.`
                     : view.over
@@ -130,6 +144,12 @@ export function SpendPeek({
                 money(usage.lifetime.cost),
                 usage.since ? `since ${new Date(usage.since * 1000).toLocaleDateString()}` : undefined,
               )}
+              {usage.real &&
+                row(
+                  "Paid in",
+                  money(usage.real.topped_up_usd),
+                  `${money(usage.real.balance_usd)} left at the vendor`,
+                )}
               {session > 0 && row("This session", money(session))}
             </>
           )}

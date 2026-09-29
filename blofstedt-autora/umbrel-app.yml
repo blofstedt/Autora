@@ -122,3 +122,22 @@ releaseNotes: >-
 
   One more thing, in passing: the button that makes a task is up in the
   header with the page's own name, instead of alone in a bar of its own.
+
+  The bar over the message box says money in the three spans it is actually
+  asked in: what has been consumed of what was paid in at the vendor, what the
+  month has cost, and what this conversation has cost -- "15.58 of 30.00 credit
+  · 4.12 this month · 0.42 this session". The fill is the vendor's own figure,
+  so it agrees with the balance on their page, and a phone gets the same three
+  numbers in shorter words rather than the last one cut off mid-digit.
+
+  One approval, one card. A request was being drawn twice -- once in the thread
+  where the call happened and once again in the strip above the message box, in
+  two different sets of words -- which reads as being asked the same question
+  twice. The strip above the box is where it is answered, with Run it and Deny;
+  the thread keeps the record of what was asked, the exact command, and what
+  you said, without a second pair of buttons on it.
+
+  And a menu opened in the header stays over the chat instead of behind it: on
+  a phone the header blurs what passes beneath it, which quietly trapped the
+  chat-mode menu inside the header, where the conversation painted over it and
+  no option could be pressed.

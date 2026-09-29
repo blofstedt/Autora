@@ -163,6 +163,11 @@ body::before {
 
 /* ---------------------------------------------------------------- header -- */
 .top {
+  position: relative;
+  /* Above the page's own content, so a menu opened in the header is not
+     painted over by the thread: the sticky header blurs (a stacking context)
+     at phone widths, which used to trap the mode menu inside it. */
+  z-index: 40;
   display: flex;
   align-items: center;
   gap: 14px;
@@ -3101,6 +3106,13 @@ label + .jf-hint { margin-top: -5px; }
   background: var(--s1);
   box-shadow: none;
 }
+/* The record of a yes/no request while the answer is being given above the
+   message box: the same card, without a second pair of buttons on it. */
+.perm-cell.waiting { box-shadow: none; }
+.perm-waiting {
+  margin: 0; padding-top: 9px; border-top: 1px solid rgba(234, 179, 8, 0.22);
+  font-size: calc(12px * var(--ts, 1)); color: var(--text-3); line-height: 1.5;
+}
 .perm-head {
   display: flex;
   align-items: center;
@@ -3791,8 +3803,13 @@ label + .jf-hint { margin-top: -5px; }
 }
 .spend.is-over .spend-text { color: var(--danger); }
 .spend.is-near .spend-text { color: var(--warn); }
+/* Three figures and two labels; at a phone's width the words go and the
+   compact line takes over, rather than a number being cut off mid-digit by an
+   ellipsis. Both forms are in the DOM and only one is ever laid out. */
+.spend-short { display: none; }
 @media (max-width: 639px) {
-  .spend-words { display: none; }
+  .spend-long { display: none; }
+  .spend-short { display: inline; }
 }
 
 /* In talk mode the bar is not in the composer box, so it carries its own

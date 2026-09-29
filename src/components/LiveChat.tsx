@@ -203,11 +203,16 @@ export function LiveChat({
      the browser was waiting for. */
   const listeningRef = useRef(false);
   listeningRef.current = listening;
+  /* Words count as opened whatever the engine says about itself: on Android
+     start-up is sometimes never announced, and a bar that admitted a dead
+     microphone over words that plainly arrived would be worse than the wait. */
+  const heardRef = useRef("");
+  heardRef.current = heard;
   useEffect(() => {
     if (!supported || disabled) return;
     let timer = 0;
     const look = () => {
-      if (listeningRef.current) { setStalled(false); return; }
+      if (listeningRef.current || heardRef.current) { setStalled(false); return; }
       setStalled(true);
       timer = window.setTimeout(look, MIC_CHECK_MS);
     };

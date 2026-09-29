@@ -17,6 +17,10 @@ export type SpendInputs = {
   session: number;
   /** The monthly ceiling from Settings, if one is set. */
   budget: number | null;
+  /** Everything the ledger has ever counted, when it is known. */
+  lifetime?: number;
+  /** What has been paid in to the vendor, when their own balance can be read. */
+  credit?: number | null;
 };
 
 export type SpendView = {
@@ -30,25 +34,69 @@ export type SpendView = {
   near: boolean;
   /** Whether there is anything worth drawing. */
   show: boolean;
+
+  /* --- the credit meter, when the vendor's own balance can be read --- */
+  /** The money paid in, which is then what the bar's whole width means. */
+  paid: number | null;
+  /** What the fill is measuring: the credit consumed, or the month. */
+  drawn: number;
+  /** The dollars the full width stands for. */
+  meter: number;
+  /** True when the bar is the credit consumed rather than the month. */
+  onCredit: boolean;
 };
 
 /** Anything that is not a positive number of dollars is nothing. */
-const dollars = (value: number): number =>
+const dollars = (value: number | null | undefined): number =>
   typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
 
-export function spendView({ spent, session, budget }: SpendInputs): SpendView {
+/**
+ * The money paid in at the vendor, from whatever could be read of it: the
+ * topped-up total when the page says it, and otherwise what is left plus what
+ * has gone. Null when neither can be had, which is the bar's cue to stay on
+ * the month and the ceiling it already draws.
+ */
+export function creditTotal(
+  real:
+    | { topped_up_usd?: number | null; balance_usd?: number | null; lifetime_usd?: number | null }
+    | null
+    | undefined,
+): number | null {
+  if (!real) return null;
+  if (typeof real.topped_up_usd === "number" && real.topped_up_usd > 0) return real.topped_up_usd;
+  if (
+    typeof real.balance_usd === "number" &&
+    typeof real.lifetime_usd === "number" &&
+    real.balance_usd + real.lifetime_usd > 0
+  ) {
+    return real.balance_usd + real.lifetime_usd;
+  }
+  return null;
+}
+
+export function spendView({ spent, session, budget, lifetime, credit }: SpendInputs): SpendView {
   const month = dollars(spent);
   const mine = dollars(session);
-  const cap = dollars(budget as number) || null;
+  const cap = dollars(budget) || null;
+  const paid = dollars(credit) || null;
+  const life = dollars(lifetime);
 
-  /* No ceiling: the bar is the month so far, and the session's slice of it is
-     still the honest thing to show -- it is a share of the same money. */
-  const scale = cap ?? month;
+  /* What the bar measures, when the vendor's balance can be read: what has
+     been consumed of what was actually paid in. It is the honest headline --
+     the money is bought in credit and spent down -- and the month and this
+     conversation are the two sliceings of it worth having beside it.
 
-  const used = scale > 0 ? Math.min(1, month / scale) : 0;
+     Without that reading the bar is what it always was: no ceiling, the month
+     so far; a ceiling, the month against it. The session's slice is a share of
+     the same money either way. */
+  const onCredit = paid !== null && life > 0;
+  const meter = onCredit && paid !== null ? paid : cap ?? month;
+  const drawn = onCredit ? life : month;
+
+  const used = meter > 0 ? Math.min(1, drawn / meter) : 0;
   /* A session that cost more than the month it sits in means the ledger was
      reset under it; it cannot have more of the bar than the month does. */
-  const slice = scale > 0 ? Math.min(used, mine / scale) : 0;
+  const slice = meter > 0 ? Math.min(used, mine / meter) : 0;
 
   return {
     used,
@@ -56,6 +104,11 @@ export function spendView({ spent, session, budget }: SpendInputs): SpendView {
     cap,
     over: cap !== null && month > cap,
     near: cap !== null && month <= cap && month > cap * 0.8,
-    show: month > 0 || mine > 0 || cap !== null,
+    show: month > 0 || mine > 0 || cap !== null || paid !== null,
+
+    paid,
+    drawn,
+    meter,
+    onCredit,
   };
 }

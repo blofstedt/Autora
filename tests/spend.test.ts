@@ -9,7 +9,7 @@
  *   npm test
  */
 import assert from "node:assert/strict";
-import { spendView } from "../src/lib/spend";
+import { creditTotal, spendView } from "../src/lib/spend";
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -94,6 +94,54 @@ test("rubbish reads as nothing rather than as a number", () => {
   near(v.used, 0);
   near(v.slice, 0);
   assert.equal(v.show, false);
+});
+
+test("paid-in credit is the meter: consumed of what was bought", () => {
+  const v = spendView({ spent: 15.58, session: 0.42, budget: 20, lifetime: 15.58, credit: 30 });
+  assert.equal(v.onCredit, true);
+  near(v.meter, 30);
+  near(v.drawn, 15.58);
+  near(v.used, 15.58 / 30);
+  near(v.slice, 0.42 / 30);
+  assert.equal(v.paid, 30);
+});
+
+test("without a credit reading the bar stays the month it always was", () => {
+  const v = spendView({ spent: 15.58, session: 0.42, budget: 20, lifetime: 15.58, credit: null });
+  assert.equal(v.onCredit, false);
+  near(v.meter, 20);
+  near(v.drawn, 15.58);
+  assert.equal(v.paid, null);
+});
+
+test("a credit reading with nothing consumed yet does not draw a full bar", () => {
+  const v = spendView({ spent: 0, session: 0, budget: null, lifetime: 0, credit: 30 });
+  assert.equal(v.onCredit, false);
+  near(v.used, 0);
+  assert.equal(v.show, true); // the credit is still worth saying
+});
+
+test("rubbish credit is no credit", () => {
+  for (const credit of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    const v = spendView({ spent: 3, session: 1, budget: 10, lifetime: 3, credit });
+    assert.equal(v.onCredit, false, `credit ${credit}`);
+    assert.equal(v.paid, null, `credit ${credit}`);
+  }
+});
+
+test("paid in comes from the topped-up total when the vendor says it", () => {
+  near(creditTotal({ topped_up_usd: 30, balance_usd: 14.42, lifetime_usd: 15.58 }) ?? NaN, 30);
+});
+
+test("with no topped-up total, what is left plus what has gone is what was paid in", () => {
+  near(creditTotal({ balance_usd: 14.42, lifetime_usd: 15.58 }) ?? NaN, 30);
+});
+
+test("nothing to read is null rather than zero", () => {
+  assert.equal(creditTotal(null), null);
+  assert.equal(creditTotal(undefined), null);
+  assert.equal(creditTotal({}), null);
+  assert.equal(creditTotal({ topped_up_usd: 0, balance_usd: 0, lifetime_usd: 0 }), null);
 });
 
 console.log(`${passed} passed`);

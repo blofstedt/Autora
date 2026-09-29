@@ -12,6 +12,7 @@
  *   npx tsx tests/recur.test.ts
  */
 import assert from "node:assert/strict";
+import type { Recur } from "../src/lib/recur";
 
 const recur = await import("../src/lib/recur");
 const { cronOf, parseRecur, clock, FREQS } = recur;
@@ -70,11 +71,13 @@ test("every frequency the picker offers has a shape behind it", () => {
   assert.deepEqual(kinds, ["hourly", "daily", "weekly", "monthly", "custom"]);
   for (const kind of kinds) {
     if (kind === "custom") continue;
-    const shape =
-      kind === "hourly" ? { kind, minute: 0 } as const
-        : kind === "weekly" ? { kind, days: [1], hour: 8, minute: 0 } as const
-          : kind === "monthly" ? { kind, day: 1, hour: 8, minute: 0 } as const
-            : { kind, hour: 8, minute: 0 } as const;
+    /* Typed as Recur rather than const-asserted: a readonly day list is not a
+       number[], and the shape has to be one the picker could really hold. */
+    const shape: Recur =
+      kind === "hourly" ? { kind, minute: 0 }
+        : kind === "weekly" ? { kind, days: [1], hour: 8, minute: 0 }
+          : kind === "monthly" ? { kind, day: 1, hour: 8, minute: 0 }
+            : { kind, hour: 8, minute: 0 };
     const cron = cronOf(shape, "");
     assert.equal(parseRecur(cron).kind, kind, `${kind} -> ${cron} -> ${kind}`);
   }

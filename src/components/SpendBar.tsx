@@ -1,23 +1,33 @@
 import { memo, useState } from "react";
 import { money } from "./Billing";
-import { spendView } from "../lib/spend";
+import { creditTotal, spendView } from "../lib/spend";
 import { SpendPeek } from "./SpendPeek";
 
 /** What `/api/usage` answers with, as far as this bar is concerned. */
 export type Usage = {
   month: { cost: number };
+  lifetime: { cost: number };
   budget: { monthly_usd: number | null };
+  /** What the vendor's own balance says, when it can be read at all. */
+  real?: {
+    topped_up_usd: number;
+    balance_usd: number;
+    lifetime_usd: number;
+  } | null;
 };
 
 /**
- * The month's money, and this session's share of it, over the composer.
+ * The money, in the three spans it is actually thought about, over the composer.
  *
- * The bar is the ceiling set in Settings and the fill is what the month has
- * cost against it; the brighter section at the right-hand end is what this
- * conversation accounts for. Without a ceiling the bar is the month so far,
- * which still answers the useful half of the question -- how much of this is
- * the chat I am in. A tap opens a card of the figures over the chat -- see
- * SpendPeek -- with Usage, ceiling and all, one button further on.
+ * The fill is the money consumed of what was paid in at the vendor -- the
+ * figure the account page itself shows -- and the brighter section at the
+ * right-hand end is what this conversation accounts for. The words beside it
+ * carry the same three numbers: consumed of credit, the month's share, and
+ * this session's. Without a balance to read the bar is what it always was, the
+ * month against the ceiling set in Settings, or the month alone.
+ *
+ * A tap opens a card of the figures over the chat -- see SpendPeek -- with
+ * Usage, ceiling and all, one button further on.
  *
  * Small, and never in the way: it says a number you would otherwise leave the
  * chat to look up, and the thread above it loses 14px for that.
@@ -26,15 +36,21 @@ export const SpendBar = memo(function SpendBar({
   spent,
   session,
   budget,
+  lifetime,
+  real,
   onOpen,
 }: {
   spent: number;
   session: number;
   budget: number | null;
+  /** Everything the ledger has ever counted, which is the credit consumed. */
+  lifetime: number;
+  /** The vendor's own balance, when this app was able to read it. */
+  real?: Usage["real"];
   onOpen: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const view = spendView({ spent, session, budget });
+  const view = spendView({ spent, session, budget, lifetime, credit: creditTotal(real) });
   if (!view.show) return null;
 
   const share = (n: number) => `${Math.min(100, Math.max(0, n * 100))}%`;
@@ -43,10 +59,25 @@ export const SpendBar = memo(function SpendBar({
   const ofFill = view.used > 0 ? share(view.slice / view.used) : "0%";
   const tone = view.over ? "is-over" : view.near ? "is-near" : "";
 
-  const said = view.cap !== null
-    ? `${money(spent)} of ${money(view.cap)} this month`
-    : `${money(spent)} this month`;
+  /* Consumed of what was paid in, the month, then this conversation. The month
+     is not named twice: when the whole of the lifetime fell inside it the two
+     figures are the same money, and printing it twice reads as two facts. */
+  const monthIsAll = Math.abs(view.drawn - spent) < 0.005;
+  const consumed = view.onCredit
+    ? `${money(view.drawn)} of ${money(view.meter)} credit` +
+      (monthIsAll ? " this month" : ` · ${money(spent)} this month`)
+    : view.cap !== null
+      ? `${money(spent)} of ${money(view.cap)} this month`
+      : `${money(spent)} this month`;
   const mine = session > 0 ? ` · ${money(session)} this session` : "";
+  const said = `${consumed}${mine}`;
+
+  /* A phone hides .spend-words, and "15.58 30.00" without its words is not a
+     sentence. Written out for that width instead: the two figures the fill
+     stands for, as a division, with the session after it. */
+  const short = view.onCredit || view.cap !== null
+    ? `${money(view.onCredit ? view.drawn : spent)}/${money(view.meter)}`
+    : money(spent);
 
   return (
     <>
@@ -69,8 +100,11 @@ export const SpendBar = memo(function SpendBar({
         </i>
       </span>
       <span className="spend-text">
-        {said}
-        {session > 0 && <> · {money(session)} <span className="spend-words">this session</span></>}
+        <span className="spend-long">{said}</span>
+        <span className="spend-short">
+          {short}
+          {session > 0 && <> · {money(session)}</>}
+        </span>
       </span>
     </button>
     {/* Beside the bar, not inside it: the card is a portal, so the DOM nesting

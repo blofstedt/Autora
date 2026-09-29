@@ -16,6 +16,46 @@ export function PermissionCell({
 
   const isInputRequested = prompt.inputType === "text" || prompt.inputType === "choice";
 
+  /* One card per request, and this is not it.
+     The strip above the message box is where an approval is answered: it is in
+     the same place whatever the thread has scrolled to, and it is where the
+     standing-agreement button lives. This cell used to carry its own Deny and
+     Allow as well, so one request put two cards on the screen asking the same
+     question in two different sets of words -- which reads as the console
+     asking twice. So a plain yes/no prompt waits here as the record of what was
+     asked and what the command was, and the answer is given above.
+     A prompt that wants a value is the exception: the strip has nowhere to
+     type one, so that kind is still answered here. */
+  if (!prompt.settled && !isInputRequested) {
+    return (
+      <div className="perm-cell waiting">
+        <div className="perm-header">
+          <div className="perm-badge-title">
+            <span className="perm-shield-icon">
+              <IconShield size={14} />
+            </span>
+            <b>Approval needed</b>
+            <span className="perm-tool-tag">{prompt.tool}</span>
+          </div>
+        </div>
+
+        <div className="perm-reason">{prompt.reason}</div>
+
+        {prompt.rendered && (
+          <div className="perm-code-wrap">
+            <div className="perm-code-label">Proposed Action:</div>
+            <code className="perm-code">{prompt.rendered}</code>
+          </div>
+        )}
+
+        <p className="perm-waiting">
+          Waiting on your answer — Run it and Deny are on the card above the
+          message box.
+        </p>
+      </div>
+    );
+  }
+
   const handleAllow = () => {
     onDecide(prompt.requestId, true, isInputRequested ? (chosenOption || userInput) : undefined);
   };
@@ -32,7 +72,7 @@ export function PermissionCell({
             {prompt.approved ? <IconCheck size={13} /> : <IconX size={13} />}
           </span>
           <span className="perm-status-text">
-            {prompt.approved ? "Permission granted" : "Action declined"}
+            {prompt.approved ? "You allowed it" : "You declined it"}
           </span>
           <span className="perm-tool-badge">{prompt.tool}</span>
           {prompt.response && (

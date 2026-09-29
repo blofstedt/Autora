@@ -1523,6 +1523,8 @@ export function App() {
                     spent={usage.month.cost}
                     session={sessionCost}
                     budget={usage.budget.monthly_usd}
+                    lifetime={usage.lifetime.cost}
+                    real={usage.real}
                     onOpen={() => navigate("analytics")}
                   />
                 </div>
@@ -1549,6 +1551,8 @@ export function App() {
                       spent={usage.month.cost}
                       session={sessionCost}
                       budget={usage.budget.monthly_usd}
+                      lifetime={usage.lifetime.cost}
+                      real={usage.real}
                       onOpen={() => navigate("analytics")}
                     />
                   )}
