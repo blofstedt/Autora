@@ -3,6 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import { chooseTalk, fetchSpeechStatus, turnPause, useDictation } from "../lib/voice";
 import { useLiveView } from "../lib/liveview";
 import { AutoraMark } from "./AutoraMark";
+import { IconX } from "./Icons";
 
 /** Single stray syllables are usually the room, not a request. */
 const MIN_CHARS = 2;
@@ -42,6 +43,7 @@ export function LiveChat({
   agentWorking,
   agentDoing,
   disabled,
+  onClose,
 }: {
   onUtterance: (text: string) => void;
   /* `onExit` was here, for the End button at the end of the bar. That button
@@ -60,6 +62,8 @@ export function LiveChat({
   /** What it is on, in a few words, when it is working. */
   agentDoing?: string | null;
   disabled?: boolean;
+  /** Back to typing: the X at the end of the bar. */
+  onClose?: () => void;
 }) {
   /** Phrases the engine has committed to. */
   const pending = useRef("");
@@ -317,6 +321,21 @@ export function LiveChat({
       >
         {handsFree ? "Open" : "Hold"}
       </button>
+      {/* The way back out, at the top right of the bar: an X where the eye
+          expects one. Closing the chat or pressing v both still work, but
+          neither is something you can see, and in talk mode there is no
+          composer to look at -- the X is the one visible way back to typing. */}
+      {onClose && (
+        <button
+          type="button"
+          className="btn live-bar-exit"
+          onClick={onClose}
+          title="Back to typing"
+          aria-label="Leave live voice and go back to typing"
+        >
+          <IconX size={15} />
+        </button>
+      )}
       {/* No icons along the bar. The camera switch and the way out were two
           pictures sitting next to the mark, which is itself the one thing on
           this strip worth looking at; the bar is the mark, the words and the

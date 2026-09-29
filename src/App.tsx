@@ -1424,6 +1424,7 @@ export function App() {
                 agentWorking={running}
                 agentDoing={doing}
                 disabled={!live}
+                onClose={toggleLive}
               />
             ) : (
               <>

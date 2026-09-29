@@ -99,16 +99,11 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  Spoken replies come out one at a time now. When a second thing to say was
-  started before the first had finished being heard -- the next part of a long
-  reply being made while the part before it was still playing, or the voice
-  falling back to the browser's own while the streamed one was still in the
-  air -- both went into the same audio timeline, and the voice chopped, doubled
-  or said two things at once.
+  Live voice had no way back to typing. Once you were in it the strip replaced
+  the composer, and the only ways out were ones you could not see: close the
+  chat, or press v. Talking is a mode you should be able to leave by looking
+  at it.
 
-  Every rendering now takes its turn in one line. The streamed parts, the
-  clips and the browser's own voice all wait for what is being heard to finish
-  before they start, so nothing is talked over; a barge-in clears the line
-  rather than leaving words behind it; and playing a sample in Settings hushes
-  the reply being read out first. The line is a plain object with its own
-  tests, so the rule is checked without a browser.
+  There is a small X at the top right of the strip now, beside the Hold/Open
+  switch, and pressing it leaves live voice and puts the composer back. The
+  hidden ways out still work.
