@@ -204,6 +204,11 @@ body::before {
   background: var(--text-3);
 }
 .ses-dot.is-live { background: var(--live); }
+/* Working: the same green with a halo, so a chat that is mid-turn stands out
+   from one that merely has a tab open on it. */
+.ses-dot.is-busy { background: var(--live); animation: halo 1.2s ease-out infinite; }
+/* Nothing running and nothing holding it open: over, not loading. */
+.ses-dot.is-idle { background: var(--warn); }
 
 /* ---------------------------------------------------------------- modals -- */
 .scrim {
@@ -510,6 +515,28 @@ body::before {
 
 /* A button under a reply: "Open Settings" when no model answered. */
 .msg-action { margin-top: 10px; }
+
+/* The speaker under a reply that has landed. Quiet until the pointer is on
+   it -- it is worth having and not worth looking at, and it sits under every
+   reply in the thread. */
+.msg-tools { display: flex; gap: 6px; margin-top: 8px; }
+.msg-tool {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; padding: 0; border-radius: var(--r-sm);
+  border: 1px solid transparent; background: transparent; color: var(--text-3);
+  cursor: pointer; opacity: 0.55;
+  transition: opacity 0.15s var(--ease), color 0.15s var(--ease),
+    background 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+.msg-tool:hover {
+  opacity: 1; color: var(--text-2); background: var(--s1); border-color: var(--border);
+}
+.msg-tool:active { transform: scale(0.94); }
+.msg-tool:focus-visible { opacity: 1; outline: 2px solid var(--accent-line); outline-offset: 1px; }
+/* A finger has no hover to reveal it with, and needs a bigger target. */
+@media (pointer: coarse) {
+  .msg-tool { opacity: 0.8; width: 32px; height: 32px; }
+}
 
 .frame-wrap { position: relative; max-width: 100%; max-height: 100%; line-height: 0; }
 .frame {
@@ -1305,7 +1332,7 @@ button.hint.voice-note:hover { text-decoration: underline; }
    the viewfinder being a square parked in a bar grown tall enough to hold it. */
 .live-bar {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-rows: auto;
   align-items: center; column-gap: 10px;
   /* Off, this is one row at the composer's own height, so talk mode costs the
@@ -1318,17 +1345,17 @@ button.hint.voice-note:hover { text-decoration: underline; }
   border: 1px solid rgba(var(--accent-rgb), 0.4);
   box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.08), 0 10px 32px -14px rgba(0, 0, 0, 0.7);
 }
-/* Camera on: three rows -- the switches along the top, the picture in the
-   middle, the mark and the words along the bottom -- and the middle row is the
-   picture, so the bar is as tall as live view wants to be. The same element
-   either side of the switch, so the change is one height being animated. */
+/* Camera on: three rows -- the top row is left to the way out, the middle row
+   is the picture, the mark and the words take the bottom one -- and the middle
+   row is the picture, so the bar is as tall as live view wants to be. The same
+   element either side, so the change is one height being animated. */
 .live-bar.has-view {
   grid-template-rows: auto minmax(0, 1fr) auto;
   align-items: end; min-height: 320px; padding: 14px 16px 22px;
 }
 
 /* The mark, in a clear disc: over a picture a bare triangle can land on anything,
-   and the disc is what keeps it legible. Drawn at 46px inside a 60px circle --
+   and the disc is what keeps it legible. Drawn at 54px inside a 60px circle --
    a mark bigger than its own disc hangs out of the bottom of it and into the
    words under it, which is exactly what it was doing. */
 .live-bar .live-bar-orb {
@@ -1339,8 +1366,9 @@ button.hint.voice-note:hover { text-decoration: underline; }
   background: rgba(10, 13, 20, 0.28);
   box-shadow: 0 6px 18px -10px rgba(0, 0, 0, 0.9);
   backdrop-filter: blur(9px) saturate(1.1); -webkit-backdrop-filter: blur(9px) saturate(1.1);
-  /* Held, not tapped: no scrolling, text selection or long-press menu. */
-  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  /* Nothing is pressed in here any more -- the name is the whole of it -- so
+     there is no scroll or selection to suppress either. */
+  user-select: none; -webkit-user-select: none;
   transition: transform 0.12s var(--ease), background 0.3s var(--ease);
 }
 .live-bar.has-view .live-bar-orb { grid-row: 3; }
@@ -1358,7 +1386,12 @@ button.hint.voice-note:hover { text-decoration: underline; }
 /* The halo stops just past the disc: any wider and it reaches the bar's own
    bottom edge, where being clipped turns a glow into a straight line. */
 .live-bar .live-bar-orb .mob-live-glow { inset: -5px; filter: blur(7px); }
-.live-bar .live-bar-orb.is-holding { transform: scale(1.12); }
+/* A lamp, not a button: nothing here is pressed, so nothing here reacts to a
+   pointer. Woken is the one state it shows -- the words are the person's. */
+.live-bar .live-bar-orb { cursor: default; }
+.live-bar .live-bar-orb:hover, .live-bar .live-bar-orb:active { transform: none; }
+.live-bar .live-bar-orb.is-awake,
+.live-bar .live-bar-orb.is-awake:hover { transform: scale(1.12); }
 
 /* The words: one row with the mark, indented clear of it and centred on it, so
    the line sits level with the middle of the mark instead of running under it. */
@@ -1378,52 +1411,22 @@ button.hint.voice-note:hover { text-decoration: underline; }
 .live-bar-status.is-heard { color: var(--text); }
 .live-bar-status.is-trouble { color: var(--warn); }
 
-/* The two switches, in the bar rather than in Settings: whether the camera is
-   on and whether the microphone stays open are the kind of thing that depends
-   on the room you are standing in. Over the picture they stop being chrome and
-   become glass, so the picture runs under them. */
-.live-bar .live-bar-switch, .live-bar .live-bar-exit {
+/* The way out, and the only control left on the bar: an X where the eye
+   expects one. Over the picture it stops being chrome and becomes glass, so
+   the picture runs under it. */
+.live-bar .live-bar-exit {
+  grid-row: 1; grid-column: 3; align-self: center; justify-self: end;
   background: rgba(10, 13, 20, 0.40); border: 1px solid rgba(255, 255, 255, 0.16);
   color: var(--text-2);
   backdrop-filter: blur(9px) saturate(1.1); -webkit-backdrop-filter: blur(9px) saturate(1.1);
   box-shadow: 0 6px 18px -10px rgba(0, 0, 0, 0.9);
-}
-.live-bar .live-bar-switch:hover:not(:disabled), .live-bar .live-bar-exit:hover:not(:disabled) {
-  background: rgba(22, 26, 36, 0.55); border-color: rgba(255, 255, 255, 0.26); color: var(--text);
-}
-/* Open, rather than Hold: the one switch that is a mode says so in the brand's
-   colour when it is on. The camera switch is not tinted -- the picture behind
-   it is what says the camera is on. */
-.live-bar .live-bar-switch:not(.icon).is-on {
-  background: rgba(var(--accent-rgb), 0.26); border-color: rgba(var(--accent-rgb), 0.55); color: var(--text);
-}
-.live-bar .live-bar-switch {
-  flex: 0 0 auto; height: 30px; padding: 0 12px; border-radius: 999px;
-  font-size: calc(11.5px * var(--ts, 1)); font-weight: 600; letter-spacing: 0.04em;
-}
-/* Hold or Open, on the right immediately beside the camera -- the two are read
-   together, and the row they sit on ends with the way out. */
-.live-bar .live-bar-switch:not(.icon) { grid-row: 1; grid-column: 3; align-self: center; justify-self: end; }
-
-/* The camera and the way out: the same circle, the same size, with the glyph
-   centred in each and both on the same line -- one of them a 31px pill and the
-   other a 30px disc put them on different centres. */
-.live-bar .live-bar-switch.icon, .live-bar .live-bar-exit {
-  grid-row: 1; align-self: center; justify-self: end;
   width: 30px; height: 30px; min-width: 30px; margin: 0; padding: 0;
   border-radius: 999px; display: grid; place-items: center;
-}
-.live-bar .live-bar-switch.icon { grid-column: 4; }
-.live-bar .live-bar-exit { grid-column: 5; }
-.live-bar .live-bar-switch.icon > svg, .live-bar .live-bar-exit > svg {
-  display: block; width: 16px; height: 16px; margin: 0; flex: none;
 }
 .live-bar .live-bar-exit:hover:not(:disabled) {
   background: rgba(30, 14, 16, 0.62); border-color: rgba(255, 140, 140, 0.42); color: var(--text);
 }
-/* Stop, while the agent works: on the top row beside the camera, not beside
-   the way out. */
-.live-bar .composer-stop { grid-row: 1; grid-column: 2; align-self: center; justify-self: end; }
+.live-bar .live-bar-exit > svg { display: block; width: 16px; height: 16px; margin: 0; flex: none; }
 
 /* The person's own half of live view: what the camera has, in the bar, drawn
    here and sent nowhere. The whole strip is the viewfinder -- the picture runs
@@ -1506,13 +1509,11 @@ button.hint.voice-note:hover { text-decoration: underline; }
   .live-bar.has-view { min-height: 250px; padding: 12px 13px 18px; }
   .live-bar .live-bar-orb { width: 54px; height: 54px; min-width: 54px; }
   .live-bar .live-bar-orb > .amark > svg { width: 48px; height: 48px; }
-  .live-bar .btn.live-bar-switch.icon, .live-bar .btn.live-bar-exit {
+  .live-bar .btn.live-bar-exit {
     width: 28px; height: 28px; min-width: 28px; padding: 0;
   }
-  .live-bar .btn.live-bar-switch.icon > svg, .live-bar .btn.live-bar-exit > svg { width: 15px; height: 15px; }
+  .live-bar .btn.live-bar-exit > svg { width: 15px; height: 15px; }
   .live-bar .live-bar-text { padding-left: 10px; }
-  .live-bar .live-bar-switch { height: 30px; }
-  .live-bar .live-bar-switch:not(.icon) { padding: 0 10px; font-size: calc(11px * var(--ts, 1)); }
   .live-bar-status { font-size: calc(13.5px * var(--ts, 1)); }
   .live-orb { width: 52px; height: 52px; }
   /* Thumb-sized, and given a surface: at this size the glyph alone did not
@@ -1717,6 +1718,14 @@ button.hint.voice-note:hover { text-decoration: underline; }
   border-radius: var(--r-sm); padding: 2px 7px;
 }
 .job-when span { font-size: calc(11.5px * var(--ts, 1)); color: var(--text-3); }
+/* A watcher's target is a shell command, and a command has long unbreakable
+   runs in it. Without min-width: 0 on the flex row and its items, the card is
+   as wide as its longest word and the whole list scrolls sideways on a phone. */
+.job, .job-when { min-width: 0; }
+.job-when > * { min-width: 0; overflow-wrap: anywhere; }
+.job-when code { white-space: pre-wrap; overflow-wrap: anywhere; }
+.job-runs { min-width: 0; }
+.job-run { min-width: 0; }
 .job-prompt {
   margin: 9px 0 0; font-size: calc(12.5px * var(--ts, 1)); line-height: 1.55; color: var(--text-2);
   overflow-wrap: anywhere;
@@ -3745,6 +3754,10 @@ label + .jf-hint { margin-top: -5px; }
   .spend-words { display: none; }
 }
 
+/* In talk mode the bar is not in the composer box, so it carries its own
+   spacing instead of the box's padding. */
+.spend-strip { padding: 0 8px 6px; }
+
 
 /* Four glyphs and no words. Each one keeps its name for a screen reader,
    so the row reads as a toolstrip instead of four clipped sentences, and the
@@ -4736,7 +4749,8 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
   width: 100%; padding: 4px 8px; border-radius: 6px; font: inherit; font-size: calc(14px * var(--ts, 1));
   background: var(--s1); border: 1px solid var(--accent-line); color: var(--text);
 }
-.ses-dot.is-busy { background: var(--accent); animation: halo 1.2s ease-out infinite; }
+.ses-dot.is-busy { background: var(--live); animation: halo 1.2s ease-out infinite; }
+.ses-dot.is-idle { background: var(--warn); }
 @media (max-width: 680px) {
   .ses-item { flex-wrap: wrap; }
   .ses-acts { margin-left: auto; }
@@ -5668,3 +5682,106 @@ button.dock-card:hover { border-color: var(--border-strong); }
 }
 .sm-dock-w:hover { color: var(--text); border-color: var(--border-strong); }
 .sm-dock-w.on { border-color: var(--accent-line); background: var(--accent-soft); color: var(--text); }
+
+/* ------------------------------------------------------- the chat's mode -- */
+/* How much this chat may do on its own: a pill beside the session name, and
+   a menu of the three modes. Plan is the one worth noticing -- nothing is
+   changed there -- so it is the only one that is coloured; Ask is bordered;
+   Auto is the quiet default, because a badge on every chat saying "nothing
+   special" would be on every chat. */
+.mode-pill-wrap { position: relative; display: inline-flex; flex: 0 0 auto; }
+.badge.mode-pill {
+  gap: 6px; cursor: pointer; font-family: inherit;
+  padding: 0 11px; height: 27px;
+}
+.badge.mode-pill:hover { color: var(--text); border-color: var(--border-strong); }
+.badge.mode-pill.open { border-color: var(--border-strong); background: var(--s3); color: var(--text); }
+.mode-dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); flex: 0 0 auto;
+}
+.badge.mode-pill.m-plan { color: var(--accent-light); border-color: var(--accent-line); background: var(--accent-soft); }
+.badge.mode-pill.m-plan .mode-dot { background: var(--accent-light); }
+.badge.mode-pill.m-ask { color: var(--accent-2); border-color: rgba(var(--accent2-rgb), 0.32); background: rgba(var(--accent2-rgb), 0.08); }
+.badge.mode-pill.m-ask .mode-dot { background: var(--accent-2); }
+.badge.mode-pill.m-auto { color: var(--text-3); }
+.badge.mode-pill.m-auto .mode-dot { background: var(--text-3); }
+
+.mode-menu {
+  position: absolute; top: 34px; left: 0; z-index: 60;
+  width: min(340px, calc(100vw - 28px));
+  padding: 12px; border-radius: var(--r, 14px);
+  border: 1px solid var(--border-strong); background: var(--s2);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5);
+  display: flex; flex-direction: column; gap: 6px;
+  animation: rise 0.14s var(--ease, ease-out);
+}
+.mode-menu-head {
+  margin: 0 0 2px; padding: 0 4px; color: var(--text-3);
+  font-size: calc(10.5px * var(--ts, 1)); text-transform: uppercase; letter-spacing: 0.07em;
+}
+.mode-option {
+  display: flex; flex-direction: column; gap: 3px; width: 100%;
+  padding: 9px 10px; border-radius: var(--r-sm, 10px); cursor: pointer; text-align: left;
+  border: 1px solid transparent; background: transparent; color: var(--text-2); font: inherit;
+  transition: background 0.16s var(--ease, ease), border-color 0.16s var(--ease, ease), color 0.16s var(--ease, ease);
+}
+.mode-option:hover { background: var(--s3); color: var(--text); }
+.mode-option.on { border-color: var(--accent-line); background: var(--accent-soft); color: var(--text); }
+.mode-option:disabled { opacity: 0.6; cursor: default; }
+.mode-option-top { display: flex; align-items: center; gap: 8px; }
+.mode-option-label { font-size: calc(12.5px * var(--ts, 1)); font-weight: 560; }
+.mode-option-top > svg { margin-left: auto; color: var(--accent); }
+.mode-option-blurb { font-size: calc(11.5px * var(--ts, 1)); color: var(--text-3); line-height: 1.45; }
+.mode-menu-error { margin: 2px 4px 0; font-size: calc(11.5px * var(--ts, 1)); color: var(--danger, #fb7185); }
+.mode-menu-foot {
+  margin: 4px 4px 0; padding-top: 8px; border-top: 1px solid var(--border);
+  font-size: calc(10.5px * var(--ts, 1)); color: var(--text-3); line-height: 1.5;
+}
+
+/* ------------------------------------------------------------------ triggers -- */
+/* A trigger's row is a URL and a secret, so it needs one thing a rule does
+   not: somewhere to show the secret, once, with the command that uses it. */
+.trig-secret {
+  margin: 10px 0 12px; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--accent-line); background: var(--accent-soft);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.trig-secret p { margin: 0; font-size: calc(12px * var(--ts, 1)); color: var(--text-2); line-height: 1.5; }
+.trig-secret code {
+  display: block; padding: 9px 10px; border-radius: 8px; background: var(--sink);
+  border: 1px solid var(--border); color: var(--text);
+  font-family: var(--mono); font-size: calc(11px * var(--ts, 1)); line-height: 1.6;
+  white-space: pre-wrap; word-break: break-all;
+}
+.trig-secret-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.trig-form {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px 11px; margin-bottom: 9px;
+  background: var(--surface); border: 1px solid var(--accent-line); border-radius: 9px;
+}
+.trig-input, .trig-prompt {
+  width: 100%; padding: 8px 10px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--s1); color: var(--text);
+  font: inherit; font-size: calc(12.5px * var(--ts, 1));
+}
+.trig-prompt { resize: vertical; min-height: 62px; line-height: 1.5; }
+.trig-input:focus, .trig-prompt:focus { outline: none; border-color: var(--accent-line); }
+.trig-form-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ------------------------------------------------------- suggested servers -- */
+.mcp-suggest-row {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 11px 12px; margin-top: 9px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+}
+.mcp-suggest-top { display: flex; align-items: center; gap: 10px; }
+.mcp-suggest-top b { font-size: calc(13px * var(--ts, 1)); }
+.mcp-suggest-sum { margin: 0; font-size: calc(12px * var(--ts, 1)); color: var(--text-2); line-height: 1.5; }
+.mcp-suggest-why { margin: 0; font-size: calc(11.5px * var(--ts, 1)); color: var(--accent-light); line-height: 1.5; }
+.mcp-suggest-needs { margin: 0; font-size: calc(11px * var(--ts, 1)); color: var(--text-3); font-family: var(--mono); line-height: 1.5; }
+
+/* The install offer sits where the notices do, and is one line of its own: it
+   is the only card here that is not about something that just happened. */
+.install-offer { pointer-events: auto; }
+.notice.is-info { border-left-color: var(--accent); }
+.notice .notice-act { flex: 0 0 auto; height: 26px; padding: 0 12px; font-size: calc(11.5px * var(--ts, 1)); }

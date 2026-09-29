@@ -43,7 +43,25 @@ const toDraft = (s: Server): Draft => ({
  * MCP servers: connect other programs' tools to the agent. A server's tools
  * appear to the agent as mcp__<server>__<tool> from its next step.
  */
+/**
+ * A server this install has a reason to want: a key it already holds, or a
+ * word it has already said. Ranked on the server (see suggested() in
+ * server/mcpcatalog.ts), which is also where the reason in the line comes
+ * from -- so the card says why, rather than asking to be trusted.
+ */
+type Suggestion = {
+  id: string;
+  name: string;
+  title: string;
+  summary: string;
+  better: string;
+  reason: string;
+  needs: { env: string; label: string; optional: boolean }[];
+};
+
 export function McpPage() {
+  const [suggested, setSuggested] = useState<Suggestion[]>([]);
+  const [installing, setInstalling] = useState<string | null>(null);
   const [servers, setServers] = useState<Server[] | null>(null);
   const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -54,7 +72,35 @@ export function McpPage() {
   const adopt = (data: any) => { setServers(data.servers); setCatalog(data.catalog ?? []); };
   const load = useCallback(() => {
     fetch("/api/mcp").then((r) => r.json()).then(adopt).catch(() => setError("Could not load MCP servers."));
+    fetch("/api/mcp/suggested")
+      .then((r) => r.json())
+      .then((d) => setSuggested(Array.isArray(d?.suggested) ? d.suggested : []))
+      .catch(() => undefined);
   }, []);
+
+  /** Set one up on the server, with the same offer-and-install path the agent
+      uses. Nothing is installed until this is pressed. */
+  const installSuggestion = async (s: Suggestion) => {
+    setInstalling(s.id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/mcp/suggested/${s.id}/install`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error ?? "It did not connect.");
+        return;
+      }
+      const missing = Array.isArray(data.missing) ? data.missing : [];
+      if (missing.length > 0) {
+        setError(`${s.title} is connected, but it still needs ${missing.join(", ")} — add that under Settings → API keys.`);
+      }
+      load();
+    } catch {
+      setError("Could not reach the server.");
+    } finally {
+      setInstalling(null);
+    }
+  };
   useEffect(() => {
     load();
     const t = window.setInterval(load, 5000);
@@ -109,6 +155,43 @@ export function McpPage() {
           )}
         </div>
         {error && <p className="set-warn">{error}</p>}
+
+        {/* Where the agent's offer cannot reach: the person is already on the
+            page looking for a server. Nothing here is a guess -- each card
+            carries the reason it is being suggested. */}
+        {suggested.length > 0 && (
+          <section className="set-card mcp-suggest">
+            <h3>Suggested for you</h3>
+            <p className="jf-hint">
+              From what this install already shows: a key it holds, or a word you have used. The
+              agent offers these in a conversation too, when one would do the job better than
+              the browser.
+            </p>
+            {suggested.map((s) => (
+              <article className="mcp-suggest-row" key={s.id}>
+                <div className="mcp-suggest-top">
+                  <b>{s.title}</b>
+                  <div className="spacer" />
+                  <button
+                    className="btn primary"
+                    disabled={installing !== null}
+                    onClick={() => void installSuggestion(s)}
+                  >
+                    {installing === s.id ? "Setting it up…" : "Set it up"}
+                  </button>
+                </div>
+                <p className="mcp-suggest-sum">{s.summary}</p>
+                <p className="mcp-suggest-why">{s.reason}</p>
+                {s.needs.length > 0 && (
+                  <p className="mcp-suggest-needs">
+                    {s.needs.map((n) => n.env).join(", ")} — from the secret store; a missing one is
+                    asked for after it connects.
+                  </p>
+                )}
+              </article>
+            ))}
+          </section>
+        )}
 
         {draft && (
           <section className="set-card mcp-form">

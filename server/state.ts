@@ -74,18 +74,17 @@ export interface SpeechSettings {
       a camera that comes on when somebody opens voice mode is a surprise, and
       the switch is right there in the live bar. */
   liveView: boolean;
-  /** Talk mode's microphone: whether it stays open and sends what it hears
-      (hands-free), rather than only while the mark is held. Holding is the
-      default: it is unambiguous about what is being heard, and it is what
-      makes barge-in work. Hands-free is for when the hands really are busy. */
-  handsFree: boolean;
+  /* `handsFree` was here, the switch between holding the mark and leaving the
+     microphone open. There is no such switch any more -- the microphone is
+     open in talk mode and answers to its own name, which is what makes talking
+     over an answer work -- so the field is gone. An old settings file still
+     carrying it loads fine, like the two before it: it is simply ignored. */
 }
 
 export const DEFAULT_SPEECH: SpeechSettings = {
   voice: "",
   liveThinking: false,
   liveView: false,
-  handsFree: false,
 };
 
 export function mergeSpeech(into: SpeechSettings, patch: any): SpeechSettings {
@@ -93,7 +92,7 @@ export function mergeSpeech(into: SpeechSettings, patch: any): SpeechSettings {
   if (typeof patch.voice === "string") into.voice = patch.voice.trim().slice(0, 60);
   if (typeof patch.liveThinking === "boolean") into.liveThinking = patch.liveThinking;
   if (typeof patch.liveView === "boolean") into.liveView = patch.liveView;
-  if (typeof patch.handsFree === "boolean") into.handsFree = patch.handsFree;
+
   return into;
 }
 

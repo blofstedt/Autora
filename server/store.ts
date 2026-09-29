@@ -95,6 +95,9 @@ export interface StoredMeta {
       bytes per session. Missing on sessions written before this existed; the
       counters are then filled in once, from the log, and stored. */
   counts?: SessionCounts;
+  /** How much this chat may do on its own (see server/modes.ts). Absent on
+      sessions written before there was a mode, which read as auto. */
+  mode?: "plan" | "ask" | "auto";
 }
 
 /** What a session's log holds, without holding the log. */

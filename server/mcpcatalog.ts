@@ -253,3 +253,62 @@ export function secretRefs(values: (string | undefined)[]): string[] {
   }
   return [...out];
 }
+
+/**
+ * Which servers are worth suggesting to this install, from what it already
+ * shows about itself.
+ *
+ * The agent offers a server when a request lands on one (see mcpoffer.ts and
+ * mcp_offer), which is the right moment and the wrong only-moment: the person
+ * opening the MCP page is already looking for a server, and the catalogue is
+ * twelve entries they have to read. So the same list is ranked by two things
+ * this install can be asked and not guessed at:
+ *
+ *  - a key it already holds. Somebody who has pasted a GITHUB token is using
+ *    GitHub, and a server that would use that same token is a suggestion
+ *    rather than a guess. This is the strongest signal there is here;
+ *  - a word in what they have said. Standing instructions and the titles of
+ *    recent chats are the only text this asks for, and it is asked for by
+ *    keyword, so a chat about "the pull request" counts for GitHub.
+ *
+ * A server already installed is never suggested, and neither is one whose
+ * words are nowhere: an empty "suggested" list is honest, and a list padded
+ * to look helpful is not.
+ */
+export function suggested(
+  options: {
+    /** Server names already set up on this install. */
+    installed?: string[];
+    /** Secret names in the store, upper-cased. */
+    secrets?: string[];
+    /** What the person has said, in one string: instructions and chat titles. */
+    text?: string;
+    limit?: number;
+  } = {},
+): (CatalogEntry & { score: number; reason: string })[]
+{
+  const installed = new Set((options.installed ?? []).map((n) => n.toLowerCase()));
+  const secrets = new Set((options.secrets ?? []).map((n) => n.toUpperCase()));
+  const text = (options.text ?? "").toLowerCase();
+  const out: (CatalogEntry & { score: number; reason: string })[] = [];
+
+  for (const entry of CATALOG) {
+    if (installed.has(entry.name.toLowerCase())) continue;
+    const needs = entry.needs ?? [];
+    const haveKey = needs.filter((n) => secrets.has(n.env.toUpperCase()));
+    const words = entry.keywords.filter((k) => k.length > 2 && text.includes(k.toLowerCase()));
+    if (haveKey.length === 0 && words.length === 0) continue;
+
+    /* A key they already hold outranks a word they said: one is a fact about
+       the install, the other is a subject that came up. */
+    const score = haveKey.length * 3 + Math.min(words.length, 3);
+    const reason = haveKey.length > 0
+      ? `You already have ${haveKey.map((n) => n.env).join(" and ")} saved, and this is what uses it.`
+      : `${entry.summary} It came up: ${words.slice(0, 3).join(", ")}.`;
+    out.push({ ...entry, score, reason });
+  }
+
+  return out
+    .sort((a, b) => b.score - a.score || a.title.localeCompare(b.title))
+    .slice(0, options.limit ?? 3);
+}

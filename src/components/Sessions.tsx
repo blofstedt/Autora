@@ -5,6 +5,9 @@ export type SessionRow = {
   id: string;
   title?: string;
   live?: boolean;
+  /** A turn is in flight right now (server/state.ts marks it while the agent
+      works), which is a different thing from a tab being open on it. */
+  busy?: boolean;
   pinned?: boolean;
   created_at?: number;
   updated_at?: number;
@@ -12,6 +15,9 @@ export type SessionRow = {
   /** Messages the person sent: what "how much is in it" means to them. */
   turns?: number;
   cost?: number;
+  /** How much this chat may do on its own (server/modes.ts). Absent on an
+      older server, and on an incognito chat, which is not in this list. */
+  mode?: "plan" | "ask" | "auto";
 };
 
 function when(ts: number | undefined): string {
@@ -158,7 +164,15 @@ export function Sessions({
           {shown.map((s) => (
             <div key={s.id} className={`ses-entry ${s.id === current ? "on" : ""}`}>
               <button className="ses-row" onClick={() => onPick(s.id)}>
-                <span className={`ses-dot ${s.live ? "is-live" : ""}`} />
+                {/* Three states, in the order they matter: working is the
+                    one worth a look, an open chat is next, and a chat with
+                    nothing running and nothing holding it open is over --
+                    orange rather than grey, because "not running" is a state
+                    and not an absence. */}
+                <span
+                  className={`ses-dot ${s.busy ? "is-busy" : s.live ? "is-live" : "is-idle"}`}
+                  title={s.busy ? "Working now" : s.live ? "Open" : "Not running"}
+                />
                 <span className="ses-main">
                   {/* The id is the fallback, not the headline: an unnamed session
                       is one nobody has asked anything yet. */}

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { IconCheck, IconClock, IconPlay, IconPlus, IconRepeat, IconShield, IconTrash, IconX } from "./Icons";
+import {
+  IconCheck, IconClock, IconCopy, IconPlay, IconPlug, IconPlus, IconRepeat, IconRotateCcw, IconShield, IconTrash, IconX,
+} from "./Icons";
 
 export type Job = {
   id: string;
@@ -36,6 +38,28 @@ type Agreement = {
   by: "agent" | "person";
   used: number;
   last_used: number | null;
+};
+
+/**
+ * A trigger: a URL and a secret, with a prompt attached. Anything that can
+ * make an HTTP request starts it -- a CI job, a shell script, a phone
+ * shortcut -- and the turn it starts reports in a session of its own, like a
+ * scheduled run. See server/triggers.ts.
+ */
+type TriggerRow = {
+  id: string;
+  name: string;
+  prompt: string;
+  enabled: boolean;
+  created: number;
+  fires: number;
+  last_fired: number | null;
+  last_session: string | null;
+  last_error: string | null;
+  token_hint: string;
+  url: string;
+  /** Only present in the answer that made or rotated it. */
+  token?: string;
 };
 
 type JobRun = {
@@ -147,16 +171,24 @@ export function Schedule({
 }) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [rules, setRules] = useState<Agreement[]>([]);
+  const [triggers, setTriggers] = useState<TriggerRow[]>([]);
+  /** The secret of a trigger just made or rotated, shown once, with its URL. */
+  const [secret, setSecret] = useState<{ url: string; token: string } | null>(null);
+  const [newTrigger, setNewTrigger] = useState<{ name: string; prompt: string } | null>(null);
   const [editing, setEditing] = useState<Job | "new" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [jobsRes, rulesRes] = await Promise.all([fetch("/api/jobs"), fetch("/api/autonomy")]);
+      const [jobsRes, rulesRes, triggersRes] = await Promise.all([
+        fetch("/api/jobs"), fetch("/api/autonomy"), fetch("/api/triggers"),
+      ]);
       setJobs(await jobsRes.json());
       const body = await rulesRes.json().catch(() => ({ rules: [] }));
       setRules(Array.isArray(body?.rules) ? body.rules : []);
+      const made = await triggersRes.json().catch(() => []);
+      setTriggers(Array.isArray(made) ? made : []);
     } catch {
       /* the next poll will pick it up */
     } finally {
@@ -202,6 +234,53 @@ export function Schedule({
     await fetch(`/api/jobs/${job.id}`, { method: "DELETE" });
     await load();
   }, [load]);
+
+  const saveTrigger = useCallback(
+    async (draft: { name: string; prompt: string }) => {
+      setError(null);
+      const res = await fetch("/api/triggers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(draft),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(body.error ?? "Could not make that trigger.");
+        return;
+      }
+      setNewTrigger(null);
+      setSecret({ url: body.trigger.url, token: body.trigger.token });
+      await load();
+    },
+    [load],
+  );
+
+  const patchTrigger = useCallback(
+    async (t: TriggerRow, patch: Record<string, unknown>) => {
+      const res = await fetch(`/api/triggers/${t.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(body.error ?? "That could not be changed.");
+        return;
+      }
+      if (body.trigger?.token) setSecret({ url: body.trigger.url, token: body.trigger.token });
+      await load();
+    },
+    [load],
+  );
+
+  const removeTrigger = useCallback(
+    async (t: TriggerRow) => {
+      await fetch(`/api/triggers/${t.id}`, { method: "DELETE" });
+      setSecret(null);
+      await load();
+    },
+    [load],
+  );
 
   /* With an agreement, that one; without, all of them. */
   const revokeRule = useCallback(async (rule?: Agreement) => {
@@ -343,6 +422,130 @@ export function Schedule({
             )}
           </article>
         ))}
+
+        {/* The third way work starts by itself: not a time, not a change in
+            something the console watches, but somebody else's machine saying
+            so. A schedule's row is a time and a watcher's is a target; a
+            trigger's is a URL and a secret. */}
+        <section className="agree trig">
+          <div className="agree-top">
+            <span className="brand-mark"><IconPlug size={13} /></span>
+            <b>Triggers</b>
+            <div className="spacer" />
+            <button
+              className="btn ghost"
+              onClick={() => { setError(null); setNewTrigger({ name: "", prompt: "" }); }}
+            >
+              <IconPlus size={13} /> New trigger
+            </button>
+          </div>
+          <p className="agree-why">
+            A URL that starts a turn when something calls it — a CI job that has finished, a script on
+            another machine, a shortcut on your phone. It runs in a session of its own, exactly like a
+            scheduled task, with the same budget. The secret is the only thing guarding it, so treat
+            the URL as a password.
+          </p>
+
+          {secret && (
+            <div className="trig-secret">
+              <p>
+                <b>Copy this now.</b> The secret is shown once — it is not stored anywhere it can be
+                read back, only its fingerprint.
+              </p>
+              <code>
+                curl -s -X POST {secret.url}                 {"\n"}  -H "x-autora-token: {secret.token}"
+              </code>
+              <div className="trig-secret-acts">
+                <button
+                  className="btn ghost"
+                  onClick={() => {
+                    void navigator.clipboard
+                      ?.writeText(`curl -s -X POST ${secret.url} -H "x-autora-token: ${secret.token}"`)
+                      .catch(() => undefined);
+                  }}
+                >
+                  <IconCopy size={12} /> Copy the command
+                </button>
+                <button className="btn ghost" onClick={() => setSecret(null)}>Done</button>
+              </div>
+            </div>
+          )}
+
+          {newTrigger !== null && (
+            <form
+              className="trig-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (newTrigger.name.trim() && newTrigger.prompt.trim()) void saveTrigger(newTrigger);
+              }}
+            >
+              <input
+                className="trig-input"
+                placeholder="What is it? (e.g. the nightly build)"
+                value={newTrigger.name}
+                onChange={(e) => setNewTrigger({ ...newTrigger, name: e.target.value })}
+                autoFocus
+              />
+              <textarea
+                className="trig-prompt"
+                placeholder="What should the turn do when it fires?"
+                rows={3}
+                value={newTrigger.prompt}
+                onChange={(e) => setNewTrigger({ ...newTrigger, prompt: e.target.value })}
+              />
+              <div className="trig-form-acts">
+                <button type="submit" className="btn primary" disabled={!newTrigger.name.trim() || !newTrigger.prompt.trim()}>
+                  Make the URL
+                </button>
+                <button type="button" className="btn ghost" onClick={() => setNewTrigger(null)}>Cancel</button>
+              </div>
+            </form>
+          )}
+
+          {triggers.map((t) => (
+            <article className="rule" key={t.id}>
+              <div className="rule-top">
+                <code className="rule-match">{t.name}</code>
+                <div className="spacer" />
+                <button
+                  className="btn ghost"
+                  title={t.enabled ? "Stop it firing" : "Let it fire again"}
+                  onClick={() => void patchTrigger(t, { enabled: !t.enabled })}
+                >
+                  {t.enabled ? "On" : "Off"}
+                </button>
+                <button
+                  className="btn icon ghost"
+                  title="Replace the secret"
+                  aria-label={`Rotate the secret for ${t.name}`}
+                  onClick={() => void patchTrigger(t, { rotate: true })}
+                >
+                  <IconRotateCcw size={13} />
+                </button>
+                <button
+                  className="btn icon ghost"
+                  title="Delete this trigger"
+                  aria-label={`Delete ${t.name}`}
+                  onClick={() => void removeTrigger(t)}
+                >
+                  <IconTrash size={13} />
+                </button>
+              </div>
+              <div className="rule-foot">
+                <span className="muted">
+                  {t.fires === 0 ? "never fired" : `fired ${t.fires}×`}
+                  {t.last_fired ? `, last ${ago(t.last_fired)}` : ""} · secret {t.token_hint}
+                </span>
+                {t.last_session && (
+                  <button className="btn ghost" onClick={() => onOpenSession(t.last_session as string)}>
+                    Read the last one
+                  </button>
+                )}
+              </div>
+              {t.last_error && <p className="rule-note">{t.last_error}</p>}
+            </article>
+          ))}
+        </section>
 
         {/* What the guard no longer asks about. Kept next to the schedules
             because both are "things that will happen without you", and both

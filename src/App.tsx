@@ -34,6 +34,8 @@ import { SetupCard, Welcome } from "./components/SetupCard";
 import { flySpark, visible } from "./lib/presence";
 import { useBackOut } from "./lib/back";
 import { Notices } from "./components/Notices";
+import { InstallApp } from "./components/InstallApp";
+import { ModePill, type ChatMode } from "./components/ModePill";
 import { AutoraMark, type MarkState } from "./components/AutoraMark";
 import { readActivity } from "./lib/activity";
 import {
@@ -589,6 +591,14 @@ export function App() {
     history.replaceState(null, "", `?session=${id}`);
     setSessionId(id);
     setSessionsOpen(false);
+    /* Put it in the list before anything can be drawn from that list. It is
+       only refetched on a ten-second timer, so without this the chat that was
+       just created is missing from the switcher -- and from the top of it --
+       for however long is left of that. */
+    await fetch("/api/sessions")
+      .then((r) => r.json())
+      .then(setSessions)
+      .catch(() => undefined);
     return id as string;
   }, [endIncognito]);
 
@@ -648,6 +658,22 @@ export function App() {
     setLiveOn(false);
     hush();
   }, [sessionId, hush]);
+
+  /* The speaker under one reply. A press is a real gesture, which is what iOS
+     wants before anything may be heard; anything already being read stops
+     first, so this is also how a long reply gets cut short, and pressing the
+     same speaker again starts it over. flush() is what actually renders the
+     words -- say() only hands them over, and on the server voice they would
+     otherwise wait for the next turn to end. */
+  const speakReply = useCallback(
+    (text: string) => {
+      prime();
+      hush();
+      say(text);
+      flush();
+    },
+    [prime, hush, say, flush],
+  );
 
   // Read the agent's replies out loud, a sentence at a time as they stream --
   // waiting for the whole answer is a silence as long as the answer, and
@@ -987,6 +1013,51 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [toggleLive, live, voiceReady, voiceBlocked, navigate, page]);
 
+  /* How much this chat may do on its own, and the one place it changes.
+     What the server says wins, except for a chat that is not in the list at
+     all (incognito) or a change that has not been answered yet: those live
+     here, so the pill never disagrees with what was just pressed. */
+  const [modeOverride, setModeOverride] = useState<Record<string, ChatMode>>({});
+  const [modeSaving, setModeSaving] = useState(false);
+  const [modeError, setModeError] = useState<string | null>(null);
+  const sessionMode: ChatMode =
+    (sessionId ? modeOverride[sessionId] : undefined) ??
+    (sessions.find((s) => s.id === sessionId)?.mode as ChatMode | undefined) ??
+    "auto";
+
+  const setSessionMode = useCallback(
+    async (mode: ChatMode) => {
+      if (!sessionId) return;
+      setModeSaving(true);
+      setModeError(null);
+      setModeOverride((prev) => ({ ...prev, [sessionId]: mode }));
+      const forget = () =>
+        setModeOverride((prev) => {
+          const next = { ...prev };
+          delete next[sessionId];
+          return next;
+        });
+      try {
+        const res = await fetch(`/api/sessions/${sessionId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => null);
+          forget();
+          setModeError(body?.error ?? "The mode could not be changed.");
+        }
+      } catch {
+        forget();
+        setModeError("Could not reach the server.");
+      } finally {
+        setModeSaving(false);
+      }
+    },
+    [sessionId],
+  );
+
   const sessionCost = sessions.find((s) => s.id === sessionId)?.cost ?? 0;
 
   const currentName =
@@ -1189,6 +1260,7 @@ export function App() {
             two releases old is not a detail to mention further down. */}
         <UpdateNotice />
         <Notices onOpenSession={openSession} />
+        <InstallApp />
 
         <header className="top">
           <button
@@ -1217,6 +1289,17 @@ export function App() {
             <span className="session-name">{currentName}</span>
             <IconChevron size={12} />
           </button>
+          )}
+
+          {/* What this chat may do on its own. Beside the session name,
+              because it is a property of the conversation. */}
+          {page === "chat" && sessionId && (
+            <ModePill
+              mode={sessionMode}
+              onChange={(mode) => void setSessionMode(mode)}
+              busy={modeSaving}
+              error={modeError}
+            />
           )}
 
           {/* The one state of the header worth stating outright: this chat is
@@ -1325,6 +1408,7 @@ export function App() {
             live={live}
             onPermissionDecide={handlePermissionDecide}
             onRunAutonomous={handleRunAutonomous}
+            onSpeakReply={canSpeak ? speakReply : undefined}
             driving={driving}
             browserHandedOver={browserHandedOver}
             onStop={stopFromThread}
@@ -1416,16 +1500,30 @@ export function App() {
               </div>
             )}
             {liveOn ? (
+              <>
+              {/* In talk mode too. A spoken turn costs what a typed one does,
+                  and the bar used to vanish exactly when a conversation
+                  started -- which is when the number is moving. */}
+              {usage && (
+                <div className="spend-strip">
+                  <SpendBar
+                    spent={usage.month.cost}
+                    session={sessionCost}
+                    budget={usage.budget.monthly_usd}
+                    onOpen={() => navigate("analytics")}
+                  />
+                </div>
+              )}
               <LiveChat
                 onUtterance={sendSpoken}
                 onInterrupt={hush}
                 sessionId={sessionId}
                 agentSpeaking={speaking}
                 agentWorking={running}
-                agentDoing={doing}
                 disabled={!live}
                 onClose={toggleLive}
               />
+              </>
             ) : (
               <>
                 <div className={`composer-box ${draft.trim() || attached.length > 0 ? "has-text" : ""}`}>

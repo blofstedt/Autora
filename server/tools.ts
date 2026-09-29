@@ -1508,11 +1508,27 @@ function mcpSpecs(): ToolSpec[] {
 /**
  * Does this call need a human to say yes first?
  *
- * Never. Autora runs in yolo mode: every tool call runs straight away, with
- * no approval card in the chat. The call is still shown in the thread as it
- * happens, and Stop still kills it.
+ * Almost never, and never by default: Autora runs in yolo mode, from one call
+ * to the next, with no card in the chat. What this reads is the per-group
+ * setting the Tools tab has always had -- "always" asks about every call in
+ * the group, "risky" asks only about the ones that change something (the
+ * `risky` flag on the spec) -- and, since 0.9.95, the setting is finally
+ * obeyed rather than only stored: it was written to disk, shown in Settings
+ * and then ignored by this function, which returned false whatever it said.
+ *
+ * This is one of two ways a call can be held. The other is the chat's own
+ * mode (server/modes.ts), which is about the conversation rather than the
+ * tool, and is applied first, in server.ts. Beyond both, the guard and the
+ * irrecoverable tier still stop and ask, exactly as before.
  */
-export function needsApproval(_spec: ToolSpec): boolean {
+export function needsApproval(spec: ToolSpec): boolean {
+  const group = spec.group;
+  /* "person", "files", "schedule" and "mcp" are not settings: nobody turns
+     handing over, reading an artifact or asking a question off. */
+  if (group !== "terminal" && group !== "browser" && group !== "computer" && group !== "memory") return false;
+  const approval = toolSettings()[group]?.approval;
+  if (approval === "always") return true;
+  if (approval === "risky") return Boolean(spec.risky);
   return false;
 }
 

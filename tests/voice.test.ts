@@ -5,8 +5,8 @@
  */
 import assert from "node:assert/strict";
 import {
-  chooseVoice, commit, fetchSpeechStatus, newLedger, newSpeechLine, sentences, streamParts,
-  turnPause,
+  afterName, chooseVoice, commit, fetchSpeechStatus, newLedger, newSpeechLine, sentences,
+  streamParts, turnPause, withoutName,
 } from "../src/lib/voice";
 
 let passed = 0;
@@ -225,6 +225,30 @@ test("line breaks end a piece, and nothing is lost or said twice", () => {
   const text = "First line with no stop\nSecond line here. Third one comes last";
   assert.deepEqual(sentences(text), ["First line with no stop", "Second line here.", "Third one comes last"]);
   assert.deepEqual(sentences("   "), []);
+});
+
+/* The name live mode listens for while Autora has the floor. It is what lets
+   the microphone stay open during an answer without the answer coming back as
+   a question -- so what matters is that a call is recognised, a sentence that
+   merely mentions the name is not, and the name does not go out as a request. */
+test("the name at the front of a phrase is a call, and what follows it is the request", () => {
+  assert.equal(afterName("Autora, what's the weather"), "what's the weather");
+  assert.equal(afterName("Hey Autora turn the light off"), "turn the light off");
+  assert.equal(afterName("Aurora, stop"), "stop");     // what a phone often writes
+  assert.equal(afterName("autora"), "");               // called, nothing asked yet
+});
+
+test("the name anywhere but the start is not a call", () => {
+  // Autora says its own name out loud, and the microphone is listening to that.
+  assert.equal(afterName("I'm Autora and I can hear you"), null);
+  assert.equal(afterName("the aurora was lovely last night"), null);
+});
+
+test("what goes out has the name taken off the front", () => {
+  assert.equal(withoutName("Autora, what's the weather"), "what's the weather");
+  assert.equal(withoutName("what's the weather"), "what's the weather");
+  assert.equal(withoutName("Autora"), null);           // a hand raised, not a question
+  assert.equal(withoutName("Hey Autora."), null);
 });
 
 async function consoleCalls() {

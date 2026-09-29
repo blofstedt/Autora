@@ -25,9 +25,14 @@ export interface Proactivity {
   /** Minutes since midnight, the person's local clock. */
   from: number;
   to: number;
+  /** Whether the console may start a turn by itself when a background job it
+      started finishes (see server/proactive.ts). Off by default: it is the
+      one thing here that speaks without being spoken to, and it costs what a
+      turn costs. Quiet hours and the automation budget apply to it too. */
+  wake: boolean;
 }
 
-export const DEFAULT_PROACTIVITY: Proactivity = { quiet: false, from: 23 * 60, to: 7 * 60 };
+export const DEFAULT_PROACTIVITY: Proactivity = { quiet: false, from: 23 * 60, to: 7 * 60, wake: false };
 
 const DAY = 24 * 60;
 /** A number of minutes, or null when it is not one. */
@@ -101,6 +106,7 @@ export function quietBriefing(when: number, p: Proactivity): string {
 export function mergeProactivity(current: Proactivity, patch: any): Proactivity {
   if (!patch || typeof patch !== "object") return current;
   if (typeof patch.quiet === "boolean") current.quiet = patch.quiet;
+  if (typeof patch.wake === "boolean") current.wake = patch.wake;
   const from = parseTime(patch.from);
   if (from !== null) current.from = from;
   const to = parseTime(patch.to);

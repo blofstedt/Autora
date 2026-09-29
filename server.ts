@@ -12,7 +12,7 @@ import {
 import {
   baseUrlFor, clearUsage, flushState, keyFor, keySource, maskKey, modelFor, fastModelFor, recordUsage,
   resolveProvider, save, setKey, state, stateDir, stateFilePath, type Resolved,
-  listSecrets, setSecret, deleteSecret, getSecret, secretFor, SECRET_PRESETS, redactSecrets as redactStored,
+  allSecrets, listSecrets, setSecret, deleteSecret, getSecret, secretFor, SECRET_PRESETS, redactSecrets as redactStored,
   mergeJev, mergeAppearance, mergeLoop, mergeRetention, saneMcp, THEMES, FONTS,
   mergeSpeech,
   recordToolFeed, type CostParts,
@@ -62,6 +62,7 @@ import {
 import { LiveBrowser, VIEWPORT, probeBrowser, type PageRead } from "./server/browser";
 import { mergeCaptcha } from "./server/captcha";
 import { inQuiet, mergeProactivity, quietBriefing } from "./server/quiet";
+import { chatMode, isChatMode, modeBriefing, modeGate, MODES, type ChatMode } from "./server/modes";
 import { LoopWatch } from "./server/loopwatch";
 import { healthBriefing, recordOutcome, targetOf, toolHealth } from "./server/toolhealth";
 import { Scheduler, type Job, type JobWatch } from "./server/scheduler";
@@ -69,7 +70,14 @@ import {
   addSpend, budgetLine, mergeAutomation, overDay, overRun, rollLedger, skipReason,
   stopReason, type AutomationLedger,
 } from "./server/automation";
-import { backgroundBriefing } from "./server/background";
+import { backgroundBriefing, listJobs } from "./server/background";
+import { suggested as mcpSuggested } from "./server/mcpcatalog";
+import { existing as existingMcp, install as installMcp, planOffer } from "./server/mcpoffer";
+import { WAKE_MAX_AGE_MS, WAKE_MAX_PER_HOUR, wakePrompt, wakesWanted, type WakeCandidate } from "./server/proactive";
+import {
+  firePrompt as triggerPrompt, label as triggerLabel, newId as newTriggerId, newToken as newTriggerToken,
+  refusal as triggerRefusal, tokenMatches, view as triggerView, type Trigger,
+} from "./server/triggers";
 import { addRule, autonomyBriefing, covered, listRules, matchText, revoke as revokeRule, revokeAll } from "./server/autonomy";
 import { inventoryBriefing } from "./server/inventory";
 import { htmlToText } from "./server/pages";
@@ -152,6 +160,10 @@ interface Session {
   /** A chat that is never written down and never listed: incognito. It is in
       this process's memory alone, and closing it closes it for good. */
   incognito?: boolean;
+  /** How much this chat may do on its own, chosen for this conversation:
+      plan, ask or auto (see server/modes.ts). Absent on an older session,
+      which reads as auto -- what every chat did before there was a mode. */
+  mode?: ChatMode;
   events: AutoraEvent[];
   seqCounter: number;
   /** What the log holds, kept current as events are emitted, so neither the
@@ -223,6 +235,17 @@ function saveMemory() {
 /** The graph's rules (recall, merging, confirming) over the arrays above. */
 const mind = new MemoryGraph(memoryRecords, memoryLinks, saveMemory);
 
+/** Triggers: work that starts because something outside said so. */
+const triggers: Trigger[] = [];
+(() => {
+  const stored = readDoc<Trigger[]>("triggers");
+  if (Array.isArray(stored)) triggers.push(...stored.filter((t) => t && typeof t.id === "string"));
+})();
+
+function saveTriggers() {
+  saveDoc("triggers", () => triggers);
+}
+
 function saveJobs() {
   saveDoc("jobs", () => jobs);
 }
@@ -232,6 +255,9 @@ const metaOf = (session: Session) => ({
   title: session.title,
   createdAt: session.createdAt,
   pinned: session.pinned,
+  /* Kept with the rest of what can change about a chat: a mode chosen for a
+     conversation should still be there tomorrow, and after an update. */
+  mode: session.mode,
 });
 
 // Settings used to live here, in a module-level object that lasted exactly as
@@ -284,6 +310,7 @@ for (const stored of loadSessionIndex()) {
     createdAt: stored.createdAt,
     busy: false,
     ...(stored.pinned ? { pinned: true } : {}),
+    ...(isChatMode(stored.mode) ? { mode: stored.mode } : {}),
     events: [],
     seqCounter: counts.seq,
     counts,
@@ -1938,6 +1965,12 @@ async function systemInstructionFor(
      here: a briefing about finished work, which is the agent's own
      initiative arriving at 03:40. Held, not dropped: this same turn carries
      it once the window has passed. */
+  /* The chat's mode, said every turn: it changes what a call does, so the
+     agent plans around it rather than discovering it on a card. */
+  const ownMode = sessions.get(sessionId)?.mode;
+  const modeNote = modeBriefing(chatMode(ownMode), Boolean(sessions.get(sessionId)?.incognito));
+  if (modeNote) notes.push(modeNote);
+
   const quiet = quietBriefing(Date.now(), state.proactivity);
   if (quiet) notes.push(quiet);
   if (!inQuiet(Date.now(), state.proactivity)) {
@@ -2101,6 +2134,90 @@ function sessionCost(sessionId: string): number {
   let total = 0;
   for (const entry of state.usage) if (entry.session === sessionId) total += Number(entry.cost) || 0;
   return total;
+}
+
+/* ---- the turn nobody asked for -------------------------------------------
+   *
+   * A background job outlives the turn that started it, and its result is
+   * read when the next turn happens to look -- which means the person has to
+   * come back before the answer to their own build arrives. With
+   * proactivity's wake switch on, the console takes that step itself: a turn
+   * in the job's own session, told to read the output and report.
+   *
+   * Everything that decides it lives in server/proactive.ts, so the answer
+   * can be tested without a machine or a bill; this is the part that knows
+   * what the console is like right now -- which jobs have stopped, what
+   * today's automated runs have cost, whether anybody is working in that
+   * session, and whether it is quiet hours. A wake is once per job, and it
+   * counts against the same day's automation budget as a scheduled run,
+   * because it is the same kind of spending: a whole prompt and tool list
+   * before it has done anything.
+   */
+const wokenJobs = new Set<string>();
+let wakeStamps: number[] = [];
+
+async function proactiveSweep() {
+  if (!state.proactivity.wake) return;
+  const now = Date.now();
+  wakeStamps = wakeStamps.filter((t) => now - t < 3600_000);
+  const today = dayKey(Math.floor(now / 1000));
+  automationLedger = rollLedger(automationLedger, today);
+
+  const candidates: WakeCandidate[] = listJobs()
+    .filter((j) => j.exit !== null && j.finished !== null)
+    .map((j) => ({
+      id: j.id,
+      note: j.note,
+      command: j.command.replace(/\s+/g, " ").slice(0, 200),
+      exit: j.exit,
+      session: j.session,
+      finished: j.finished as number,
+      state: j.state === "finished" || j.state === "failed" ? j.state : "gone",
+    }));
+
+  const wanted = wakesWanted(candidates, wokenJobs, (c) => ({
+    enabled: state.proactivity.wake,
+    quiet: inQuiet(now, state.proactivity),
+    spentToday: automationLedger.usd,
+    dailyUsd: state.automation.dailyUsd,
+    recentWakes: wakeStamps.length,
+    maxPerHour: WAKE_MAX_PER_HOUR,
+    busy: Boolean(sessions.get(c.session)?.busy),
+    ageMs: now - c.finished,
+    maxAgeMs: WAKE_MAX_AGE_MS,
+    sessionExists: sessions.has(c.session),
+  }));
+
+  for (const c of wanted) {
+    const session = sessions.get(c.session);
+    /* Marked before the turn starts, whatever happens next: a job that
+       cannot be woken twice is worth more than one that reports twice. */
+    wokenJobs.add(c.id);
+    if (!session) continue;
+    wakeStamps.push(now);
+    emitEvent(session, "system.log", "system", {
+      event: "proactive.wake",
+      job: c.id,
+      message: `Started on the console's own initiative: the background job ${c.id} has finished, and nobody asked for this turn. Proactivity and its wake switch are in Settings, under Configuration.`,
+    });
+    log("info", "proactive", `woke ${c.session} for ${c.id} (exit ${c.exit})`);
+    notify({
+      tone: c.exit === 0 ? "ok" : "error",
+      title: c.exit === 0 ? "A background job finished" : "A background job failed",
+      detail: `${c.note || c.command} — reading it now, in the chat that started it.`,
+      session: session.id,
+    });
+    void startTurn(session, wakePrompt(c))
+      .then((r) => {
+        if (r.error) log("info", "proactive", `the wake for ${c.id} ended: ${r.error}`);
+      })
+      .catch((err) => log("info", "proactive", `the wake for ${c.id} threw: ${err?.message ?? err}`))
+      .finally(() => {
+        automationLedger = rollLedger(automationLedger, dayKey(Math.floor(Date.now() / 1000)));
+        addSpend(automationLedger, sessionCost(session.id));
+        saveDoc("automation", () => automationLedger);
+      });
+  }
 }
 
 const scheduler = new Scheduler(jobs, {
@@ -3124,7 +3241,16 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
         /* What the model says in this step, read before this step's work is
            put in its own words. */
         workerSaid = "";
-        const turn = await askModel(pinned);
+        /* While a model call is in flight the agent is mid-sentence, and a
+           background fold must not land under it. Everything this call
+           streams to the thread is written before the fold goes in. */
+        context.beginWriting();
+        let turn: ChatTurn | null;
+        try {
+          turn = await askModel(pinned);
+        } finally {
+          context.endWriting();
+        }
         if (!turn) break;
         if (turn.calls.length === 0) {
           /* Handed over, and the reasoning model has stopped calling tools:
@@ -3139,7 +3265,12 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             emitEvent(session, "system.log", "system", {
               message: `The reasoning model finished; ${voice} is saying what it found.`,
             });
-            await answerAsVoice(turn.text.trim());
+            context.beginWriting();
+            try {
+              await answerAsVoice(turn.text.trim());
+            } finally {
+              context.endWriting();
+            }
             break;
           }
 
@@ -3256,6 +3387,48 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           emitEvent(session, "tool.call", "agent", {
             name: spec.name, args: use.args,
           }, span);
+
+          /* The chat's own mode comes first: in Plan and Ask the person
+             reads a card before the call runs, whatever the tool settings
+             say. Auto adds nothing here, and the guard and the irrecoverable
+             tier further down are untouched by it. */
+          const chat = chatMode(session.mode);
+          const gate = modeGate(chat, spec.name, use.args);
+          if (gate) {
+            const decision = await askPermission(session, {
+              tool: spec.name,
+              rendered: renderCall(spec, use.args),
+              /* Never saved as a standing agreement: a rule is about a class
+                 of work and outlives the chat, and this card is about this
+                 conversation's mode, which ends with it. */
+              remember: false,
+              reason: gate.why,
+            });
+            if (!decision.approved) {
+              emitEvent(session, "tool.error", "agent", {
+                held: true, denied: true, mode: chat,
+                error: `Held: this chat is in ${MODES[chat].label} mode.`,
+              }, span);
+              reply(
+                false,
+                chat === "plan"
+                  ? "Not run: this chat is in Plan mode, and nothing is changed there. " +
+                    "Do not retry it and do not look for another way to do the same thing. " +
+                    "Say what you would have done instead -- the files, the commands, the " +
+                    "order, the risks -- and stop there; the person takes the chat out of " +
+                    "Plan mode when they are ready for it to be done."
+                  : "Not run: this chat is in Ask mode and the person said no to this call. " +
+                    "Do not retry it. Either carry on without it or say what you needed it " +
+                    "for and why.",
+              );
+              continue;
+            }
+            if (chat === "plan") {
+              emitEvent(session, "context.note", "system", {
+                text: "The person allowed that one call in Plan mode, so it ran. The chat is still in Plan mode: everything else that would change something still waits for them.",
+              });
+            }
+          }
 
           if (needsApproval(spec)) {
             const decision = await askPermission(session, {
@@ -3452,7 +3625,12 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
         handedOver && !running.get(session.id)?.stopped &&
         !result.reply.trim() && (workerSaid.trim() || work.length > 0)
       ) {
-        await answerAsVoice(workerSaid.trim());
+        context.beginWriting();
+        try {
+          await answerAsVoice(workerSaid.trim());
+        } finally {
+          context.endWriting();
+        }
       }
     }
 
@@ -3633,6 +3811,7 @@ async function startServer() {
         live: s.live,
         busy: s.busy,
         pinned: !!s.pinned,
+        mode: chatMode(s.mode),
         created_at: s.createdAt,
         updated_at: s.counts.lastTs || s.createdAt,
         events: s.counts.events,
@@ -3641,17 +3820,36 @@ async function startServer() {
         tokens: cost ? cost.input + cost.output : 0,
       };
     });
-    // Pinned first, then most recent first
-    list.sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.created_at - a.created_at);
+    /* Pinned first, then the ones in use: order by last activity, not by
+       when the chat was first opened. A conversation started this morning and
+       still going is the one to hand, and sorting by creation sank it below
+       every throwaway chat opened after it. */
+    list.sort((a, b) =>
+      Number(b.pinned) - Number(a.pinned) ||
+      (b.updated_at || b.created_at) - (a.updated_at || a.created_at));
     res.json(list);
   });
 
   app.patch("/api/sessions/:id", (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
-    const { title: rawTitle, pinned } = req.body ?? {};
-    if (rawTitle === undefined && typeof pinned !== "boolean") {
+    const { title: rawTitle, pinned, mode: rawMode } = req.body ?? {};
+    if (rawTitle === undefined && typeof pinned !== "boolean" && rawMode === undefined) {
       return res.status(400).json({ error: "Nothing to change." });
+    }
+    /* Set for this conversation, and saved with it: the chat you are in is
+       the one whose mode you are choosing, and it should still be in it when
+       you come back to it. */
+    if (rawMode !== undefined) {
+      if (!isChatMode(rawMode)) {
+        return res.status(400).json({ error: "A mode is one of: " + Object.keys(MODES).join(", ") + "." });
+      }
+      session.mode = rawMode;
+      emitEvent(session, "context.note", "system", {
+        text: `The chat's mode is now ${MODES[rawMode].label}. ${MODES[rawMode].blurb}`,
+        mode: rawMode,
+      });
+      log("info", "sessions", `"${session.title}" is in ${rawMode} mode`);
     }
     if (rawTitle !== undefined) {
       const title = typeof rawTitle === "string" ? rawTitle.trim().slice(0, 120) : "";
@@ -3660,7 +3858,7 @@ async function startServer() {
     }
     if (typeof pinned === "boolean") session.pinned = pinned;
     saveMeta(metaOf(session));
-    res.json({ ok: true, title: session.title, pinned: !!session.pinned });
+    res.json({ ok: true, title: session.title, pinned: !!session.pinned, mode: chatMode(session.mode) });
   });
 
   /** Gone for good: its log, its pictures, and its browser. */
@@ -3729,6 +3927,65 @@ async function startServer() {
 
   app.get("/api/mcp", (_req: Request, res: Response) => {
     res.json({ servers: mcpView(), catalog: MCP_CATALOG });
+  });
+
+  /**
+   * Servers worth suggesting to this install, from what it already shows
+   * about itself: a key in the secret store, or a word in what the person has
+   * said. See suggested() in server/mcpcatalog.ts for what it weighs and why
+   * an empty list is a fine answer.
+   *
+   * The text it reads is the standing instructions and the titles of recent
+   * chats -- the two things here that are already about what this install is
+   * for. It does not read the threads themselves: ranking a suggestion is not
+   * worth walking every log on the disk for.
+   */
+  app.get("/api/mcp/suggested", (_req: Request, res: Response) => {
+    const installed = state.mcpServers.map((s) => s.name);
+    const secrets = Object.keys(allSecrets());
+    const titles = Array.from(sessions.values())
+      .filter((s) => !s.incognito)
+      .sort((a, b) => (b.counts.lastTs || 0) - (a.counts.lastTs || 0))
+      .slice(0, 12)
+      .map((s) => s.title)
+      .join("\n");
+    const found = mcpSuggested({
+      installed,
+      secrets,
+      text: `${state.systemPrompt}\n${titles}`,
+      limit: 3,
+    });
+    res.json({
+      suggested: found.map((e) => ({
+        id: e.id,
+        name: e.name,
+        title: e.title,
+        summary: e.summary,
+        better: e.better,
+        reason: e.reason,
+        needs: (e.needs ?? []).map((n) => ({ env: n.env, label: n.label, optional: !!n.optional })),
+      })),
+    });
+  });
+
+  /**
+   * Set one of them up, from the page rather than from the agent's card.
+   *
+   * The offer and the install are the same code the agent uses (see
+   * server/mcpoffer.ts): planOffer builds it from the catalog id, install
+   * writes the config and connects. Nothing here reaches past that, which is
+   * why a suggestion cannot install something the offer path could not.
+   */
+  app.post("/api/mcp/suggested/:id/install", async (req: Request, res: Response) => {
+    const plan = planOffer({ server: req.params.id });
+    if (typeof plan === "string") return res.status(400).json({ error: plan });
+    if (existingMcp(plan.name)) {
+      return res.status(400).json({ error: `There is already a server called "${plan.name}".` });
+    }
+    const outcome = await installMcp(plan);
+    log("info", "mcp", `suggested server ${plan.name} installed from the MCP page: ${outcome.ok ? "connected" : "failed"}`);
+    if (!outcome.ok) return res.status(400).json({ error: outcome.error ?? "It did not connect.", missing: outcome.missing });
+    res.json({ ok: true, name: plan.name, tools: outcome.tools, missing: outcome.missing });
   });
 
   app.post("/api/mcp", async (req: Request, res: Response) => {
@@ -4602,6 +4859,144 @@ async function startServer() {
     res.json({ session });
   });
 
+  /* ---- triggers: work that starts because something outside said so -------
+     See server/triggers.ts for what a trigger is and the rules it keeps. A
+     firing is a turn in a session of its own, billed against the same day's
+     automation budget as a scheduled run -- it is the same kind of spending,
+     and a URL that could spend without limit would be the wrong shape of
+     feature. */
+
+  /** Start a trigger's turn. Resolves with the session's id, or null. */
+  async function fireTrigger(t: Trigger, why: string, body: string): Promise<string | null> {
+    const day = dayKey(Math.floor(Date.now() / 1000));
+    automationLedger = rollLedger(automationLedger, day);
+    if (overDay(state.automation, automationLedger)) {
+      const held = skipReason(triggerLabel(t), state.automation);
+      t.last_error = held;
+      t.last_fired = Math.floor(Date.now() / 1000);
+      saveTriggers();
+      notify({ tone: "info", title: "Automation budget spent for today", detail: held, session: null });
+      return null;
+    }
+    const session = newSession(triggerLabel(t));
+    automationSessions.add(session.id);
+    t.fires += 1;
+    t.last_fired = Math.floor(Date.now() / 1000);
+    t.last_session = session.id;
+    t.last_error = null;
+    t.last_body = body.trim().slice(0, 600) || null;
+    saveTriggers();
+    emitEvent(session, "system.log", "system", {
+      event: "trigger.fired",
+      trigger: t.id,
+      name: triggerLabel(t),
+      message: why,
+    });
+    log("info", "triggers", `${t.id} fired -> ${session.id}`);
+    const done = startTurn(session, triggerPrompt(t, body)).then((r) => {
+      t.last_error = r.error ?? null;
+      saveTriggers();
+      automationLedger = rollLedger(automationLedger, dayKey(Math.floor(Date.now() / 1000)));
+      addSpend(automationLedger, sessionCost(session.id));
+      saveDoc("automation", () => automationLedger);
+      notify({
+        tone: r.ok ? "ok" : "error",
+        title: r.ok ? `${triggerLabel(t)} was triggered` : `${triggerLabel(t)} failed`,
+        detail: r.ok ? (r.reply || "").trim().slice(0, 200) || "Done." : r.error || "It did not finish.",
+        session: session.id,
+      });
+      return r;
+    });
+    void done.catch(() => undefined);
+    return session.id;
+  }
+
+  app.get("/api/triggers", (req: Request, res: Response) => {
+    const origin = `${req.protocol}://${req.get("host") ?? "localhost"}`;
+    res.json(triggers.map((t) => triggerView(t, origin)));
+  });
+
+  app.post("/api/triggers", (req: Request, res: Response) => {
+    const name = String(req.body?.name ?? "").trim().slice(0, 80);
+    const prompt = String(req.body?.prompt ?? "").trim().slice(0, 2000);
+    if (!name) return res.status(400).json({ error: "A trigger needs a name." });
+    if (!prompt) return res.status(400).json({ error: "Say what the turn should do when it fires." });
+    const made: Trigger = {
+      id: newTriggerId(),
+      name,
+      prompt,
+      /* Made here and shown once: whatever is going to call this needs the
+         secret, and there is nowhere better to put it than the answer. */
+      token: newTriggerToken(),
+      enabled: true,
+      created: Math.floor(Date.now() / 1000),
+      fires: 0,
+      last_fired: null,
+      last_session: null,
+      last_error: null,
+    };
+    triggers.push(made);
+    saveTriggers();
+    log("info", "triggers", `${made.id} created (${name})`);
+    const origin = `${req.protocol}://${req.get("host") ?? "localhost"}`;
+    res.json({ trigger: { ...triggerView(made, origin), token: made.token } });
+  });
+
+  app.patch("/api/triggers/:id", (req: Request, res: Response) => {
+    const t = triggers.find((x) => x.id === req.params.id);
+    if (!t) return res.status(404).json({ error: "No such trigger." });
+    if (typeof req.body?.enabled === "boolean") t.enabled = req.body.enabled;
+    if (typeof req.body?.name === "string" && req.body.name.trim()) t.name = req.body.name.trim().slice(0, 80);
+    if (typeof req.body?.prompt === "string" && req.body.prompt.trim()) t.prompt = req.body.prompt.trim().slice(0, 2000);
+    /* Rotated on request, and the only time the secret is shown again: a
+       secret that has been pasted somewhere it should not have been is worth
+       being able to replace without losing the trigger's history. */
+    let token: string | undefined;
+    if (req.body?.rotate === true) {
+      t.token = newTriggerToken();
+      token = t.token;
+    }
+    saveTriggers();
+    const origin = `${req.protocol}://${req.get("host") ?? "localhost"}`;
+    res.json({ trigger: { ...triggerView(t, origin), ...(token ? { token } : {}) } });
+  });
+
+  app.delete("/api/triggers/:id", (req: Request, res: Response) => {
+    const at = triggers.findIndex((x) => x.id === req.params.id);
+    if (at < 0) return res.status(404).json({ error: "No such trigger." });
+    const [gone] = triggers.splice(at, 1);
+    saveTriggers();
+    log("info", "triggers", `${gone.id} deleted`);
+    res.json({ ok: true });
+  });
+
+  /** The URL the rest of the world calls. A plain text body is accepted as
+      well as JSON, because that is what a shell script sends. */
+  app.post(
+    "/api/triggers/:id/fire",
+    express.text({ type: ["text/*", "application/x-www-form-urlencoded"], limit: "1mb" }),
+    async (req: Request, res: Response) => {
+      const t = triggers.find((x) => x.id === req.params.id);
+      const refused = triggerRefusal(t);
+      if (refused || !t) return res.status(404).json({ error: refused ?? "No such trigger." });
+      const header = String(req.get("x-autora-token") ?? "");
+      const bearer = String(req.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
+      const given = header || bearer || String(req.query.token ?? "");
+      if (!tokenMatches(t, given)) {
+        log("info", "triggers", `${t.id} refused: the secret did not match`);
+        return res.status(401).json({ error: "That token is not this trigger's." });
+      }
+      const raw = typeof req.body === "string" ? req.body : req.body ? JSON.stringify(req.body) : "";
+      const session = await fireTrigger(
+        t,
+        `Triggered from outside the console by a request to ${t.id}.`,
+        raw,
+      );
+      if (!session) return res.status(429).json({ error: t.last_error ?? "It could not start." });
+      res.json({ ok: true, session });
+    },
+  );
+
   app.get("/api/notices", (req: Request, res: Response) => {
     const after = Number(req.query.after) || 0;
     res.json({ notices: notices.filter((n) => n.id > after), latest: noticeSeq });
@@ -4959,7 +5354,6 @@ async function startServer() {
       url: status.url,
       liveThinking: state.speech.liveThinking,
       liveView: state.speech.liveView,
-      handsFree: state.speech.handsFree,
     });
   });
 
@@ -5518,6 +5912,13 @@ async function startServer() {
   });
 
   scheduler.start();
+  /* Half a minute: long enough that a job finishing between two looks is
+     still well inside the age a wake is worth making for, short enough that
+     a report does not sit behind an idle machine. */
+  const proactiveTimer = setInterval(() => {
+    proactiveSweep().catch((err) => log("info", "proactive", `sweep failed: ${err?.message ?? err}`));
+  }, 30_000);
+  proactiveTimer.unref?.();
   /* Memory housekeeping, daily and once shortly after a start: near-copies
      merged, month-old unconfirmed guesses nobody used dropped. */
   const tidy = () => {

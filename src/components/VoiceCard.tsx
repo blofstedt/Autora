@@ -50,10 +50,10 @@ export function VoiceCard() {
     });
   };
 
-  /** How talk mode opens: the camera, and whether the microphone is held or
-      left open. Saved here so it is remembered; the live bar has the same two
-      switches for the times it depends on the room. */
-  const pickTalk = (next: { liveView?: boolean; handsFree?: boolean }) => {
+  /** How talk mode opens: the camera. Saved here so it is remembered. The
+      microphone has no setting: it is open in talk mode and listens for its
+      own name, which is the only way anything is said to it there. */
+  const pickTalk = (next: { liveView?: boolean }) => {
     if (!speech) return;
     setSpeech({ ...speech, ...next });
     setComplaint(null);
@@ -139,23 +139,6 @@ export function VoiceCard() {
               <span style={{ display: "block", color: "var(--text-3)", fontSize: "calc(11.5px * var(--ts, 1))" }}>
                 Off means spoken replies start sooner, at the cost of a little
                 polish. Typed messages are not affected.
-              </span>
-            </span>
-          </label>
-
-          <label style={{ display: "flex", gap: 9, alignItems: "flex-start", margin: "12px 0 0", fontSize: "calc(12.5px * var(--ts, 1))", lineHeight: 1.5 }}>
-            <input
-              type="checkbox"
-              checked={speech.handsFree === true}
-              onChange={(e) => pickTalk({ handsFree: e.target.checked })}
-            />
-            <span>
-              Hands-free talk mode
-              <span style={{ display: "block", color: "var(--text-3)", fontSize: "calc(11.5px * var(--ts, 1))" }}>
-                The microphone stays open in talk mode and sends what it hears
-                after a pause. Off means the mark has to be held to be heard,
-                which is more certain about what is being listened to; it is also
-                what makes talking over the agent work.
               </span>
             </span>
           </label>

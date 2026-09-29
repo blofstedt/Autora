@@ -274,6 +274,24 @@ export const IconWave = ({ size = 16, className }: Props) => (
   </svg>
 );
 
+export const IconSpeaker = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className} aria-hidden="true">
+    <path d="M11 5 6 9H2v6h4l5 4V5Z" />
+    <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+    <path d="M19 4.9a10 10 0 0 1 0 14.2" />
+  </svg>
+);
+
+/** The same speaker with its sound taken out: what the button turns into
+    while it is reading, so a press that means "stop" says so. */
+export const IconSpeakerOff = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className} aria-hidden="true">
+    <path d="M11 5 6 9H2v6h4l5 4V5Z" />
+    <path d="m16 9 6 6" />
+    <path d="m22 9-6 6" />
+  </svg>
+);
+
 export const IconGrip = ({ size = 14, className }: Props) => (
   <svg {...base(size)} className={className}>
     <circle cx="8" cy="7" r="1.2" fill="currentColor" />

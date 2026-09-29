@@ -2,10 +2,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type R
 import type { Bucket, Cell, KanbanTask, MemoryTouch } from "../lib/derive";
 import { turnItems } from "../lib/steps";
 import { isPicture, sizeLabel, type Attachment } from "../lib/attachments";
-import {
-  IconAlert, IconArrow, IconArrowDown, IconBrain, IconChevron, IconFile, IconTerminal,
-  IconUser, IconWrench,
-} from "./Icons";
+import { IconAlert, IconArrow, IconArrowDown, IconBrain, IconChevron, IconFile, IconSpeaker, IconTerminal, IconUser, IconWrench } from "./Icons";
 import { AutoraMark } from "./AutoraMark";
 import type { MarkPhase } from "../lib/activity";
 import { TerminalCell } from "./TerminalCell";
@@ -285,6 +282,8 @@ type WorkState = {
   onOpenMind?: () => void;
   /** Opens Settings on the model, from a reply that needs one connected. */
   onOpenSettings?: () => void;
+  /** Reads one reply out loud, in the voice the page already speaks with. */
+  onSpeakReply?: (text: string) => void;
 };
 
 /* TurnBucket, CellView and Reply are memoised, and that is what keeps a long
@@ -520,6 +519,7 @@ const CellView = memo(function CellView({
   onStop,
   onOpenMind,
   onOpenSettings,
+  onSpeakReply,
 }: {
   cell: Cell;
   sessionId: string;
@@ -542,6 +542,7 @@ const CellView = memo(function CellView({
           phase={phase}
           onOpenMind={onOpenMind}
           onOpenSettings={cell.turn.setup ? onOpenSettings : undefined}
+          onSpeak={onSpeakReply}
         />
       );
     case "terminal":
@@ -656,12 +657,16 @@ const Reply = memo(function Reply({
   phase = "thinking",
   onOpenMind,
   onOpenSettings,
+  onSpeak,
 }: {
   text: string;
   thinking?: string;
   memories?: MemoryTouch[];
   onOpenMind?: () => void;
   onOpenSettings?: () => void;
+  /** Read this one reply out loud. Absent when the page has no voice at all,
+      which is what hides the button. */
+  onSpeak?: (text: string) => void;
   /** Still being written. The mark animates while this holds and plays its
       own ending when it drops, so the reply visibly lands rather than just
       stopping. */
@@ -703,6 +708,24 @@ const Reply = memo(function Reply({
           <MemoryCell key={index} cell={m} onOpen={onOpenMind} inline />
         ))}
         {text && <div className="msg-text is-md"><Markdown text={text} streaming={working} /></div>}
+        {/* Only on a reply that has landed: offering to read out a sentence
+            still being written is offering to read half of it. Pressing it
+            again starts the reply over, and pressing another reply's speaker
+            stops this one -- the voice never runs two at a time, because
+            there is one voice. */}
+        {onSpeak && text && !working && (
+          <div className="msg-tools">
+            <button
+              type="button"
+              className="msg-tool"
+              onClick={() => onSpeak(text)}
+              title="Read this reply aloud"
+              aria-label="Read this reply aloud"
+            >
+              <IconSpeaker size={13} />
+            </button>
+          </div>
+        )}
         {onOpenSettings && (
           <button className="btn primary msg-action" onClick={onOpenSettings}>
             Open Settings <IconArrow size={13} />

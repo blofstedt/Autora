@@ -93,6 +93,8 @@ export const speechSupported =
     becoming a restart loop that pins a phone's battery. */
 const MAX_RESTARTS = 40;
 const RESTART_MS = 220;
+/** A run this long was a working microphone, not a failing one. */
+const HEALTHY_MS = 3000;
 
 const BLOCKED = secureOrigin
   ? "Microphone blocked. Allow it in your browser's site settings."
@@ -348,7 +350,16 @@ export function useDictation({
     engine.interimResults = true;
     engine.maxAlternatives = 1;
 
+    let opened = 0;
     engine.onstart = () => {
+      /* A run that lasted a while is a healthy engine, whatever number of
+         them came before it. Without this a quietly open microphone -- live
+         mode with nobody talking, which is now most of a spoken turn --
+         reaches the restart cap after forty silences and reports a failure
+         that is not one. An engine that ends the moment it starts still
+         counts, which is what the cap is for. */
+      if (opened && Date.now() - opened > HEALTHY_MS) restarts.current = 0;
+      opened = Date.now();
       // A new session numbers its results from zero again. The ledger is
       // deliberately kept -- see above.
       heard.current.clear();
@@ -467,6 +478,41 @@ function pickVoice(): SpeechSynthesisVoice | null {
   return preferred ?? pool.find((v) => v.lang.toLowerCase() === language) ?? pool[0];
 }
 
+// -- the word that takes the microphone back ---------------------------------
+
+/**
+ * What you call Autora by, at the start of what the engine hears.
+ *
+ * A wake word is how live mode keeps the microphone open while Autora is
+ * talking without the answer coming straight back as a question: in that time
+ * nothing is a request unless it begins with the name. The engine writes the
+ * name several ways on a phone -- "aurora" is what it settles on most often,
+ * and "a tora" is not rare -- and the greeting in front of it ("hey Autora,")
+ * is how a request usually starts.
+ *
+ * Anchored, deliberately. Matching the name anywhere in the phrase would let
+ * Autora interrupt itself: it says its own name out loud, and the microphone
+ * is listening to that.
+ */
+const CALL = /^(?:(?:hey|hi|hello|ok|okay|yo)[\s,]+)?(autora|aurora|a\s+tora)(?:['’]s)?\b[\s,.:;!?\u2013\u2014-]*/i;
+
+/** What followed the name at the start of `text`, or null when `text` did not
+    start with it. An empty string is the name and nothing else. */
+export function afterName(text: string): string | null {
+  const said = text.trim().replace(/^[\s,.!?]+/, "");
+  if (!said || !CALL.test(said)) return null;
+  return said.replace(CALL, "").trim();
+}
+
+/** What to send, with the name taken off the front. Null when the whole
+    utterance was the name -- called, not asked. */
+export function withoutName(text: string): string | null {
+  const said = text.trim().replace(/^[\s,.!?]+/, "");
+  if (!said) return null;
+  const rest = afterName(said);
+  return (rest ?? said).trim() || null;
+}
+
 export type SpeechSource = "server" | "browser";
 
 /** What the console says about its own voice, from GET /api/speech. */
@@ -484,9 +530,6 @@ export type SpeechStatus = {
   /** Whether talk mode opens with live view on -- the camera, which the agent
       is then shown frames from. */
   liveView: boolean;
-  /** Whether talk mode's microphone stays open, instead of only while the
-      mark is held. */
-  handsFree: boolean;
   /** The service behind it, for the panel to name. */
   url: string | null;
 };
@@ -523,7 +566,7 @@ export async function chooseLiveThinking(liveThinking: boolean): Promise<{ ok: b
     Saved the way the voice is, so it follows the person between devices --
     the switches in the live bar are the quick ones, this is the remembered
     one. */
-export async function chooseTalk(next: { liveView?: boolean; handsFree?: boolean }): Promise<{ ok: boolean; detail?: string }> {
+export async function chooseTalk(next: { liveView?: boolean }): Promise<{ ok: boolean; detail?: string }> {
   try {
     const res = await fetch("/api/settings", {
       method: "PATCH",

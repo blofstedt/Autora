@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
-import { chooseTalk, fetchSpeechStatus, turnPause, useDictation } from "../lib/voice";
+import { afterName, fetchSpeechStatus, turnPause, useDictation, withoutName } from "../lib/voice";
 import { useLiveView } from "../lib/liveview";
 import { AutoraMark } from "./AutoraMark";
 import { IconX } from "./Icons";
@@ -8,32 +7,41 @@ import { IconX } from "./Icons";
 /** Single stray syllables are usually the room, not a request. */
 const MIN_CHARS = 2;
 
-/** How long after you let go to wait for the engine to settle the last words
-    before sending what it had. Chrome on Android may never settle them. */
-const RELEASE_GRACE_MS = 1200;
+/** What the bar carries while the microphone is open for its name alone. */
+const WAKE_LINE = "Say 'Autora' to add to the conversation…";
+
+/** Said the name and then nothing: how long the microphone waits before it
+    gives the bar back. Long enough to think of the sentence, short enough that
+    an open microphone is never a mystery. */
+const NAME_ONLY_IDLE_MS = 6000;
 
 /**
  * Live voice, in place of the composer.
  *
  * The screen above does not change: the same thread, the same stage, the same
- * steps scrolling past. Only the strip you would normally type into becomes
- * the conversation -- which is the whole point, because the reason to talk to
- * this thing is to watch it work while your hands are somewhere else.
+ * steps scrolling past. Only the strip you would normally type into becomes the
+ * conversation -- which is the whole point, because the reason to talk to this
+ * thing is to watch it work while your hands are somewhere else.
  *
- * Two things about that strip are the person's to choose, and both are here
- * rather than buried in Settings, because they are the kind of thing that
- * depends on the room you are in:
+ * There is one way in, and it is the name. The microphone opens with talk mode
+ * and stays open for as long as it lasts: what it hears is the room, Autora's
+ * own answer coming back through it, and -- every so often -- somebody saying
+ * "Autora". Only the name at the start of what was heard is a request, and
+ * everything else is dropped where it stands. Say it and the answer stops
+ * mid-sentence and the words are yours; the bar says so in as many words,
+ * because nothing else on screen does.
  *
- *  - How the microphone works. Holding the mark is the default and is
- *    unambiguous: nothing is heard unless you are pressing, and pressing cuts
- *    the agent off mid-sentence. Hands-free keeps it open and sends what it
- *    hears after a pause -- for when the hands really are busy -- and closes
- *    itself while Autora is speaking, because the microphone would otherwise
- *    hear the answer and send it back as a question.
- *  - Whether the camera is on. Off by default. On, it is two things: a small
- *    live picture in the bar for the person, and a stream at about a frame a
- *    second for the agent, so "look at this" arrives with the thing being
- *    shown. Both are switched off together the moment talk mode ends.
+ * What follows the name in the same breath -- "Autora, what's the weather" --
+ * is the request, and so is whatever you say next if you said the name alone.
+ * It goes out on a pause, the wait tuned in lib/voice: a sentence that trails
+ * off mid-thought waits longer than one that has finished. The microphone is
+ * never closed to send, which is what makes talking over an answer work.
+ *
+ * The other thing here is the camera. Off by default, and in Settings rather
+ * than in this bar: on, it is two things -- a small live picture in the bar for
+ * the person, and a stream at about a frame a second for the agent, so "look at
+ * this" arrives with the thing being shown. Both are switched off together the
+ * moment talk mode ends.
  */
 export function LiveChat({
   onUtterance,
@@ -41,7 +49,6 @@ export function LiveChat({
   sessionId,
   agentSpeaking,
   agentWorking,
-  agentDoing,
   disabled,
   onClose,
 }: {
@@ -59,8 +66,10 @@ export function LiveChat({
   sessionId: string | null;
   agentSpeaking: boolean;
   agentWorking?: boolean;
-  /** What it is on, in a few words, when it is working. */
-  agentDoing?: string | null;
+  /* `agentDoing` was here, to say what the agent was on while it worked. The
+     bar has one line now and it is the instruction to say the name: the thread
+     above already says what is being done, and a second copy of it on the strip
+     competed with the one thing the strip is for. */
   disabled?: boolean;
   /** Back to typing: the X at the end of the bar. */
   onClose?: () => void;
@@ -69,8 +78,6 @@ export function LiveChat({
   const pending = useRef("");
   /** The phrase still forming, which may never be committed to at all. */
   const live = useRef("");
-  /** Set between letting go and sending, while the last words settle. */
-  const releasing = useRef(false);
   const graceTimer = useRef(0);
   const utteranceRef = useRef(onUtterance);
   utteranceRef.current = onUtterance;
@@ -78,181 +85,159 @@ export function LiveChat({
   /** Set once the hook below exists; sending unsettled words is only half the
       job without it -- see `accept` in lib/voice. */
   const acceptRef = useRef<() => void>(() => {});
-  /** What will go out when you let go, shown so you can see it forming. */
+  /** What will go out when you pause, shown so you can see it forming. */
   const [heard, setHeard] = useState("");
-  const [holding, setHolding] = useState(false);
+  /** Woken: the name was heard, and the microphone is the person's until what
+      they said has gone out. */
+  const [awake, setAwake] = useState(false);
+  /** The same, for the engine's callbacks, which close over older renders. */
+  const awakeRef = useRef(false);
+  awakeRef.current = awake;
+  /** See NAME_ONLY_IDLE_MS. */
+  const wokeTimer = useRef(0);
 
-  /** Hands-free: the microphone stays open, and what it hears goes after a
-      pause rather than at the end of a press. Remembered between devices. */
-  const [handsFree, setHandsFree] = useState(false);
   /** Live view: the camera, and the frames the agent is shown. Remembered
-      the same way. */
+      between devices, and set in Settings -- this bar carries no switches at
+      all now, so nothing here can be unsaved or half-chosen. */
   const [view, setView] = useState(false);
-  /** A switch that could not be saved is said here rather than swallowed. */
-  const [complaint, setComplaint] = useState<string | null>(null);
-  /** The person chose something before the saved settings arrived. */
-  const touched = useRef(false);
-  const handsFreeRef = useRef(handsFree);
-  handsFreeRef.current = handsFree;
 
   const camera = useLiveView(sessionId, view);
 
-  /* What talk mode opened as last time. Applied only if nothing has been
-     touched yet: the saved answer is not worth more than the switch somebody
-     just flicked. */
+  /* Whether talk mode opens with the camera on. */
   useEffect(() => {
     let alive = true;
     void fetchSpeechStatus().then((status) => {
-      if (!alive || !status || touched.current) return;
+      if (!alive || !status) return;
       setView(status.liveView === true);
-      setHandsFree(status.handsFree === true);
     });
     return () => { alive = false; };
   }, []);
 
-  /** Send what we have, settled or not. */
+  /** Send what we have. */
   const flush = useCallback(() => {
     window.clearTimeout(graceTimer.current);
-    releasing.current = false;
+    window.clearTimeout(wokeTimer.current);
     const text = `${pending.current} ${live.current}`.trim();
     pending.current = "";
     live.current = "";
     setHeard("");
-    // These words are spent, settled or not. Without this the engine's
-    // eventual final still carries the ones just sent, and they go out again.
+    // These words are spent. Without this the engine's eventual final still
+    // carries the ones just sent, and they go out again.
     acceptRef.current();
-    if (text.length >= MIN_CHARS) {
-      utteranceRef.current(text);
+    /* The microphone stays open and goes straight back to listening for the
+       name: there is nothing to close and nothing to reopen. */
+    setAwake(false);
+    awakeRef.current = false;
+    /* "Autora, what's the weather" is a question about the weather; a bare
+       "Autora" is not a question at all, it is somebody taking the microphone,
+       which they already have. */
+    const said = withoutName(text);
+    if (said !== null && said.length >= MIN_CHARS) {
+      utteranceRef.current(said);
     }
   }, []);
 
-  /** Hands-free sends after a pause, not at the end of a press: the wait is
-      tuned in lib/voice, where a sentence that trails off mid-thought waits
-      longer than one that has finished. */
+  /** It goes out on a pause, not on a press: the wait is tuned in lib/voice,
+      where a sentence that trails off mid-thought waits longer than one that
+      has finished. */
   const arm = useCallback((settled: boolean) => {
-    if (!handsFreeRef.current) return;
     window.clearTimeout(graceTimer.current);
     const text = `${pending.current} ${live.current}`.trim();
     if (text.length < MIN_CHARS) return;
     graceTimer.current = window.setTimeout(flush, turnPause(text, settled));
   }, [flush]);
 
+  /** The name was heard: stop the answer, and take what followed it. */
+  const wakeUp = useCallback((tail: string, settled: boolean) => {
+    awakeRef.current = true;
+    setAwake(true);
+    // First, before anything else: the microphone is the person's now.
+    onInterrupt?.();
+    pending.current = tail;
+    live.current = "";
+    setHeard(tail);
+    /* Everything heard up to here is spent, so the engine's eventual final --
+       which still carries the name -- does not hand it over twice. */
+    acceptRef.current();
+    arm(settled);
+    /* Named and then nothing: the microphone does not stay open on a hope. This
+       is the one way out of being awake, and it is the same flush that sends. */
+    window.clearTimeout(wokeTimer.current);
+    wokeTimer.current = window.setTimeout(() => {
+      if (!pending.current && !live.current) flush();
+    }, NAME_ONLY_IDLE_MS);
+  }, [arm, onInterrupt, flush]);
+
   const onPhrase = useCallback((phrase: string) => {
+    /* Nothing is awake yet, so what the engine heard is the room, or Autora's
+       own answer coming back through the microphone. Only the name is meant as
+       a request, and only at the start of what was heard. */
+    if (!awakeRef.current) {
+      const tail = afterName(phrase);
+      if (tail === null) return;
+      wakeUp(tail, true);
+      return;
+    }
+    // Talking again, so the wait for a word that never came is off.
+    window.clearTimeout(wokeTimer.current);
     pending.current = `${pending.current} ${phrase}`.trim();
     // Settled, so it is no longer in flight -- keeping both would say it twice.
     live.current = "";
     setHeard(pending.current);
     arm(true);
-  }, [arm]);
+  }, [arm, wakeUp]);
 
   const dictation = useDictation({ onPhrase, continuous: true });
   const { start, stop, interim, supported, listening, error } = dictation;
   acceptRef.current = dictation.accept;
 
-  // Show the words forming as interim results stream in. In hands-free a
-  // phrase still forming is not a phrase to send: it re-arms the longer wait
-  // instead, so talking over the pause does not get cut in half.
+  /* The microphone opens with talk mode and closes with it -- nothing else in
+     here starts or stops it. It used to follow the mark, held or tapped, and
+     that is gone: the name is what decides whether what is heard is a request,
+     so there is nothing left for a press to mean. */
+  useEffect(() => {
+    if (!supported || disabled) return;
+    start();
+    return () => stop();
+  }, [supported, disabled, start, stop]);
+
+  // Show the words forming as interim results stream in. What is heard before
+  // the name is not shown and not kept: captioning the room, or Autora's own
+  // answer, as if it were the person speaking is worse than silence.
   useEffect(() => {
     if (!interim) return;
+    if (!awakeRef.current) {
+      /* The name is the one thing in it worth acting on -- and on a phone it is
+         often the one word the engine never settles on. */
+      const tail = afterName(interim);
+      if (tail !== null) wakeUp(tail, false);
+      return;
+    }
     live.current = interim;
     setHeard(`${pending.current} ${interim}`.trim());
     arm(false);
-  }, [interim, arm]);
-
-  // Once the engine has closed after you let go, everything it was going to
-  // settle has settled: send it now rather than waiting out the grace.
-  useEffect(() => {
-    if (!listening && releasing.current) flush();
-  }, [listening, flush]);
-
-  const press = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (disabled || !supported || event.button > 0) return;
-    event.preventDefault();
-    if (handsFree) {
-      /* A tap, not a hold: this opens the microphone, and the next tap closes
-         it and sends what was heard. It also cuts the agent off, which is what
-         makes talking over it work. */
-      if (holding) {
-        setHolding(false);
-        stop();
-        flush();
-        return;
-      }
-    } else {
-      // Keep the release even if the finger slides off the mark.
-      try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* not supported */ }
-    }
-    // Still settling the last thing you said: send it before starting again.
-    if (releasing.current) flush();
-    onInterrupt?.();
-    setHolding(true);
-    start();
-  }, [disabled, supported, handsFree, holding, stop, flush, onInterrupt, start]);
-
-  const release = useCallback(() => {
-    if (!holding) return;
-    setHolding(false);
-    releasing.current = true;
-    stop();
-    window.clearTimeout(graceTimer.current);
-    graceTimer.current = window.setTimeout(flush, RELEASE_GRACE_MS);
-  }, [holding, stop, flush]);
-
-  /* Autora talking into an open microphone is a loop: it hears the answer and
-     sends it back as a question. The microphone closes for the length of the
-     reply, and the mark is still there to talk over it with. */
-  useEffect(() => {
-    if (!handsFree || !holding || !agentSpeaking) return;
-    setHolding(false);
-    stop();
-    flush();
-  }, [handsFree, holding, agentSpeaking, stop, flush]);
-
-  // Hands-free switched off mid-sentence: close the microphone and send it.
-  useEffect(() => {
-    if (handsFree || !holding) return;
-    setHolding(false);
-    stop();
-    flush();
-  }, [handsFree, holding, stop, flush]);
-
-  // Losing the page (or live mode going read-only) mid-hold is a release.
-  useEffect(() => {
-    if (disabled && holding) release();
-  }, [disabled, holding, release]);
+  }, [interim, arm, wakeUp]);
 
   useEffect(() => () => {
     window.clearTimeout(graceTimer.current);
+    window.clearTimeout(wokeTimer.current);
   }, []);
 
-  /** A switch, saved for the next time talk mode opens. */
-  const pick = (next: { liveView?: boolean; handsFree?: boolean }) => {
-    touched.current = true;
-    setComplaint(null);
-    if (next.liveView !== undefined) setView(next.liveView);
-    if (next.handsFree !== undefined) setHandsFree(next.handsFree);
-    void chooseTalk(next).then((result) => {
-      if (!result.ok) setComplaint(result.detail ?? "That could not be saved.");
-    });
-  };
-
-  const hint = handsFree ? "Tap the mark to talk." : "Hold the mark to talk.";
-  const trouble = error || camera.error || complaint;
+  const trouble = error || camera.error;
   const status = trouble
+    // The microphone has the floor: what was said is the bar.
     ? trouble
     : heard
       ? heard
-      : holding
-        ? listening
-          ? handsFree ? "Listening… it goes when you stop." : "Listening… let go to send."
-          : "Starting the microphone…"
-        : agentSpeaking
-          ? `Autora is speaking. ${hint}`
-          : agentWorking
-            ? `${agentDoing || "Autora is working"}. ${hint}`
-            : hint;
+      : awake
+        ? listening ? "Listening… it goes when you pause." : "Starting the microphone…"
+        /* The whole instruction, and the same one while Autora speaks or works:
+           the way to add to the conversation is to say the name, so the bar
+           says that rather than reporting what the agent is doing -- which the
+           thread above is already showing. */
+        : WAKE_LINE;
 
-  const lit = holding || agentSpeaking;
+  const lit = awake || agentSpeaking;
   /* Your own voice works the mark too: while the microphone is carrying your
      words the star glows and morphs, instead of only breathing. */
   const talking = lit || Boolean(heard);
@@ -262,21 +247,17 @@ export function LiveChat({
   const barState = agentSpeaking ? "speaking" : agentWorking ? "thinking" : "listening";
 
   // The strip you would type into becomes the live bar: the mark, the words as
-  // they form, the two switches, and the way back out -- and with live view on,
-  // the picture the agent is being shown, running the whole width of it.
+  // they form, and the way back out -- and with live view on, the picture the
+  // agent is being shown, running the whole width of it.
   return (
     <div className={`live-bar${view ? " has-view" : ""}`} data-state={barState} role="group" aria-label="Live voice chat">
-      <button
-        type="button"
-        className={`mob-live-btn live-bar-orb is-${talking ? "working" : "live"} ${holding ? "is-holding" : ""}`}
-        onPointerDown={press}
-        onPointerUp={() => { if (!handsFree) release(); }}
-        onPointerCancel={release}
-        onContextMenu={(event) => event.preventDefault()}
-        disabled={disabled || !supported}
-        title={handsFree ? "Tap to talk, tap again to send" : "Hold to talk"}
-        aria-label={handsFree ? "Tap to talk, tap again to send" : "Hold to talk"}
-        aria-pressed={holding}
+      {/* A lamp, not a button. There is nothing to press any more -- the name
+          is the whole of it -- and a control that does nothing is worse than a
+          light that says something. The status line beside it carries the
+          words for anyone not reading the light. */}
+      <span
+        className={`mob-live-btn live-bar-orb is-${talking ? "working" : "live"} ${awake ? "is-awake" : ""}`}
+        aria-hidden="true"
       >
         <span className="mob-live-glow" aria-hidden="true" />
         {/* 54 was 46: at 46 the triangle inside the 60px disc was about 27px
@@ -284,7 +265,7 @@ export function LiveChat({
             The box can grow without touching the disc because a triangle only
             fills a little over half of its own box. */}
         <AutoraMark state={talking ? "working" : "live"} size={54} />
-      </button>
+      </span>
       {view && (
         /* The person's own half of live view: what the camera has, filling the
            bar, drawn here and sent nowhere. Tap it to turn the camera around. */
@@ -299,8 +280,8 @@ export function LiveChat({
         </button>
       )}
       {view && (
-        /* A wash over the picture: the same bar carries the preview, the words
-           and the switches, so all of them need something to sit on. */
+        /* A wash over the picture: the same bar carries the preview and the
+           words, so both need something to sit on. */
         <span className="live-bar-scrim" aria-hidden="true" />
       )}
       <div className="live-bar-text">
@@ -310,17 +291,12 @@ export function LiveChat({
       </div>
       {/* No Stop button here. It was a red badge parked in the bar while the
           agent worked -- the one thing on screen that looked like an error.
-          To stop a spoken turn, say stop or close the chat; /stop still works
+          To stop a spoken turn, say stop -- which is to say it after the name,
+          or say the name and then stop -- or close the chat; /stop still works
           when typing, and the composer's own Stop has not moved. */}
-      <button
-        type="button"
-        className={`btn live-bar-switch ${handsFree ? "is-on" : ""}`}
-        onClick={() => pick({ handsFree: !handsFree })}
-        title={handsFree ? "The microphone stays open" : "The mark has to be held"}
-        aria-pressed={handsFree}
-      >
-        {handsFree ? "Open" : "Hold"}
-      </button>
+      {/* And no Hold/Open switch. Whether the microphone was open was a mode
+          the person had to hold in their head and set before speaking; it is
+          open now, and the name is what it listens for. */}
       {/* The way back out, at the top right of the bar: an X where the eye
           expects one. Closing the chat or pressing v both still work, but
           neither is something you can see, and in talk mode there is no
@@ -338,8 +314,9 @@ export function LiveChat({
       )}
       {/* No icons along the bar. The camera switch and the way out were two
           pictures sitting next to the mark, which is itself the one thing on
-          this strip worth looking at; the bar is the mark, the words and the
-          Hold/Open switch now. The camera moves to Settings (liveView), and
-          live mode ends the way it did anyway: close the chat, or press v. */}    </div>
+          this strip worth looking at; the bar is the mark and the words now.
+          The camera moves to Settings (liveView), and live mode ends the way
+          it did anyway: close the chat, or press v. */}
+    </div>
   );
 }

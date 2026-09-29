@@ -29,8 +29,14 @@ function test(name: string, fn: () => void) {
 /** A local timestamp at hh:mm on a fixed day, in the machine's own clock. */
 const at = (hh: number, mm = 0) => new Date(2026, 8, 27, hh, mm, 0, 0).getTime();
 
+/* Written out rather than spread: spreading a Partial leaves every field
+   optional-and-undefined, which the exact-optional setting in tsconfig.test
+   refuses. */
 const night = (over: Partial<Proactivity> = {}): Proactivity => ({
-  quiet: true, from: 23 * 60, to: 7 * 60, ...over,
+  quiet: over.quiet ?? true,
+  from: over.from ?? 23 * 60,
+  to: over.to ?? 7 * 60,
+  wake: over.wake ?? false,
 });
 
 test("a window that wraps midnight holds the small hours and not the evening", () => {
@@ -68,9 +74,13 @@ test("the times it is told about are the times it was given, and survive nonsens
 
   const p = { ...DEFAULT_PROACTIVITY };
   mergeProactivity(p, { quiet: true, from: "22:15", to: 420 });
-  assert.deepEqual(p, { quiet: true, from: 1335, to: 420 });
+  assert.deepEqual(p, { quiet: true, from: 1335, to: 420, wake: false }, "wake is untouched by a patch that does not name it");
   mergeProactivity(p, { from: "nonsense", to: 99999, quiet: "yes please" });
-  assert.deepEqual(p, { quiet: true, from: 1335, to: 420 }, "nothing was changed by nonsense");
+  assert.deepEqual(p, { quiet: true, from: 1335, to: 420, wake: false }, "nothing was changed by nonsense");
+  mergeProactivity(p, { wake: true });
+  assert.equal(p.wake, true, "wake is settable on its own");
+  mergeProactivity(p, { wake: "yes please" });
+  assert.equal(p.wake, true, "a non-boolean wake leaves it alone");
 });
 
 test("inside the window it is told plainly, and told to start nothing", () => {

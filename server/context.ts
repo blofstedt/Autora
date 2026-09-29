@@ -89,6 +89,10 @@ const CHARS_PER_TOKEN = 4;
 /** A worker that failed is not retried until this has passed, so a vendor
     that is down does not get a compaction request before every step. */
 const RETRY_AFTER_MS = 60_000;
+/** How long a finished summary waits for a message in flight before folding
+    anyway. A model call that hangs must not hold a fold for ever, and the swap
+    itself is one synchronous block, so going ahead without it is safe. */
+const MAX_WAIT_FOR_OUTPUT_MS = 120_000;
 /** Frame 1 is task state, not a transcript. Past this it is cut. */
 const MAX_ANCHORED_CHARS = 12_000;
 /** How much of any one message the summariser is shown, and of all of them. */
@@ -249,6 +253,13 @@ export class ContextEngine {
   private folded = 0;
   private compacting = false;
   private retryAt = 0;
+  /** Model calls that are mid-sentence right now. Above zero the agent is
+      writing to the person, and a fold waits: the swap replaces the history
+      the reply is being written against, and landing it there is how a
+      message came out cut off. */
+  private writing = 0;
+  /** Resolvers waiting for that to fall back to zero. */
+  private writers: Array<() => void> = [];
   readonly vault: Vault;
 
   constructor(config: ContextConfig = CONTEXT_CONFIG, sessionId = "") {
@@ -265,6 +276,56 @@ export class ContextEngine {
   get isCompacting(): boolean {
     return this.compacting;
   }
+
+  /** True while something is on its way to the person. */
+  get isWriting(): boolean {
+    return this.writing > 0;
+  }
+
+  /**
+   * The agent has started writing what the person is reading -- a model call
+   * whose words stream into the thread, or the voice's spoken answer.
+   *
+   * Paired with endWriting in a finally. While one is open no fold is begun,
+   * and none already under way lands: the message in progress is finished
+   * first. A reply must never be cut off by compaction -- the person is owed
+   * the whole of it, and the fold is for the standing history behind it.
+   */
+  beginWriting(): void {
+    this.writing += 1;
+  }
+
+  endWriting(): void {
+    if (this.writing === 0) return;
+    this.writing -= 1;
+    if (this.writing > 0) return;
+    const waiting = this.writers;
+    this.writers = [];
+    for (const done of waiting) done();
+  }
+
+  /**
+   * Resolves once nothing is being written, at once if nothing is. Bounded,
+   * so a model call that never returns cannot hold a fold for ever.
+   */
+  private writingDone(limitMs = MAX_WAIT_FOR_OUTPUT_MS): Promise<boolean> {
+    if (this.writing === 0) return Promise.resolve(true);
+    return new Promise<boolean>((resolve) => {
+      /* The timer is made first and the waiter second, so neither has to be
+         declared ahead of the other and both can be const. */
+      const timer = setTimeout(() => {
+        const at = this.writers.indexOf(waiter);
+        if (at >= 0) this.writers.splice(at, 1);
+        resolve(false);
+      }, limitMs);
+      const waiter = () => {
+        clearTimeout(timer);
+        resolve(true);
+      };
+      this.writers.push(waiter);
+    });
+  }
+
 
   /** Start a turn from the history rebuilt out of the event log. */
   load(history: { message: ChatMessage; seq: number }[]) {
@@ -534,6 +595,11 @@ export class ContextEngine {
     onDone?: (report: CompactionReport) => void,
   ): boolean {
     if (this.compacting || Date.now() < this.retryAt) return false;
+    /* Never while a message is being written. Not merely deferred within
+       this call: the summariser is not even asked, since the fold would be
+       cut against a history the message is still being written into. The
+       next step asks again, and by then the message is out. */
+    if (this.writing > 0) return false;
 
     const system = this.systemFor(pinned);
     const tokens = estimateTokens(system, this.active);
@@ -607,6 +673,12 @@ export class ContextEngine {
       const written = sanitizeMemory(await summarize(compactionPrompt(job.memory, job.slice)));
       if (!written) throw new Error("the summariser returned nothing");
 
+      /* Summarising takes seconds, and the agent may have started writing in
+         the meantime -- the worker is not awaited, so the turn kept going.
+         The swap therefore waits for the message in flight to finish before
+         it lands, and can never be the reason a reply stops mid-word. */
+      await this.writingDone();
+
       // The swap. Synchronous from here to the end of the block, so no other
       // callback -- the agent loop included -- can observe it half done.
       /* Both figures are taken here, either side of the swap with
@@ -618,8 +690,16 @@ export class ContextEngine {
       const before = this.active.length;
       this.anchored = written;
       this.folded = Math.max(this.folded, job.watermark);
+      /* The newest K messages are held whatever their seq says: the message
+         the agent has just written is the newest of all, and a fold must
+         never take back something the person has already been told. */
+      const held = new Set(
+        this.active.slice(Math.max(0, this.active.length - this.config.protectedRecent)),
+      );
       this.active = this.active.filter(
-        (m) => !job.evicted.has(m) && (this.seqOf.get(m) ?? Infinity) > job.watermark,
+        (m) =>
+          held.has(m) ||
+          (!job.evicted.has(m) && (this.seqOf.get(m) ?? Infinity) > job.watermark),
       );
       report = {
         ok: true,

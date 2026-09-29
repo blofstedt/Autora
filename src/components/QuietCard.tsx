@@ -15,7 +15,7 @@ import { useEffect, useState } from "react";
  * you set still runs at the time you set it -- that was you asking. Nothing
  * inside the window is thrown away either: the next thing you say carries it.
  */
-type Proactivity = { quiet: boolean; from: number; to: number };
+type Proactivity = { quiet: boolean; from: number; to: number; wake?: boolean };
 
 async function load(): Promise<Proactivity | null> {
   try {
@@ -85,7 +85,7 @@ export function QuietCard() {
 
   return (
     <section className="set-card">
-      <h3>Quiet hours</h3>
+      <h3>Proactivity</h3>
       <p className="jf-hint">
         When the agent leaves its own initiative alone. Anything it started on its own account — a
         note about a job that has finished, work it decided to begin — is held until the window is
@@ -132,6 +132,27 @@ export function QuietCard() {
           </p>
         </>
       )}
+
+      {/* The other half of proactivity: not when it stays quiet, but
+          whether it speaks at all. A background job outlives the turn that
+          started it, so without this its result waits for you to say
+          something -- which is the one step of that work nobody takes. */}
+      <label style={{ display: "flex", gap: 9, alignItems: "flex-start", margin: "14px 0 0", fontSize: "calc(12.5px * var(--ts, 1))", lineHeight: 1.5 }}>
+        <input
+          type="checkbox"
+          checked={state?.wake === true}
+          onChange={(e) => change({ wake: e.target.checked })}
+        />
+        <span>
+          Let the console start a turn of its own when a background job finishes
+          <span style={{ display: "block", color: "var(--text-3)", fontSize: "calc(11.5px * var(--ts, 1))", lineHeight: 1.5 }}>
+            Off by default. It reads the job's output and reports it in the chat that started it,
+            at most three times an hour, never inside quiet hours, and only within the day's
+            automation budget. A turn costs what a turn costs, so this is the one setting here
+            that spends without you saying anything.
+          </span>
+        </span>
+      </label>
 
       {note && <p className="jf-hint">{note}</p>}
     </section>

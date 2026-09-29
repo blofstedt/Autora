@@ -81,6 +81,46 @@ other websites are refused either way.
 For production, `npm run build` then `npm start`. The container is the same
 two steps: `docker build -t autora . && docker run -p 8817:8817 -v autora-data:/data autora`.
 
+#### On Windows
+
+There is no Windows build and no installer: Autora is a Linux container, and
+on Windows that means **Docker Desktop**, which runs it on WSL2. Install
+Docker Desktop with the WSL2 backend, then the same commands, from PowerShell
+or WSL:
+
+```powershell
+git clone https://github.com/blofstedt/Autora; cd Autora
+docker build -t autora .
+docker run -p 8817:8817 -v autora-data:/data autora
+```
+
+Then open <http://localhost:3000> for `npm run dev`, or <http://localhost:8817>
+for the container. Four things are worth knowing before you start:
+
+- **The container is deliberately privileged** — it watches the agent's
+  terminal, browser and desktop, so it is not sandboxed and Docker Desktop's
+  defaults will not confine it. [Before you run it](#before-you-run-it) has the
+  terms, and they are the same on Windows as anywhere else.
+- **Paths are the container's, not Windows'.** A tool call's `/host/data` is
+  inside the Docker VM. `C:\Users\you\work` is mounted with
+  `-v /c/Users/you/work:/host/work` (PowerShell: `-v C:\Users\you\work:/host/work`),
+  and that mapping is what the agent sees.
+- **`npm install` for development needs the WSL side**, not a Windows Node:
+  the code runs on Linux, and a Windows install of `tsx`, `esbuild` and
+  `node-pty` produces modules the container cannot load. Do development in
+  WSL (`wsl` from PowerShell), where the repo behaves exactly as it does on
+  Linux.
+- **Line endings and file watching.** `git config core.autocrlf false` in the
+  clone: shell scripts with CRLF fail with `bad interpreter`, and the file
+  watcher makes WSL2 spin on `/mnt/c`. Keep the repo on the Linux side
+  (`~/Autora`) rather than under `/mnt/c`, which is slow for exactly this
+  kind of work.
+
+The **desktop relay** runs on the machine with the screen, so on Windows that
+is a Windows process talking out to the Autora container — see
+[Controlling a desktop](#controlling-a-desktop). Nothing about it needs the
+container to be on the same side of the WSL boundary.
+
 ### Connecting a model
 
 Replies come from whichever provider you connect, called from the server -- the
@@ -170,6 +210,36 @@ If there is none -- no key, wrong address, container down -- the panel says so
 and the browser's own voice carries on being used. Nothing goes quiet, and
 nothing is required to be set up.
 
+### Talking to it
+
+The mark at the left of the composer, or `v`, is talk mode: the strip you type
+into becomes the conversation and the thread above it keeps running. It needs a
+microphone, which browsers only open on a secure page -- `https`, or
+`localhost`.
+
+There is one thing to do, and it is to say the name. **Say "Autora"** and
+whatever follows it -- "Autora, what's the weather" -- is the request; say the
+name on its own and whatever you say next is. It goes out when you pause: a
+sentence that has finished goes about a second later, one that trails off
+mid-thought waits longer for you to come back to it. The bar says "Say 'Autora'
+to add to the conversation…" while it is listening, and shows the words as they
+form once it is yours.
+
+The microphone is open the whole time talk mode is, and everything that is not
+the name, at the start of a phrase, is dropped where it stands. That is what
+makes talking over an answer work: say the name while Autora is speaking, or
+while it is off working, and it stops and the words are yours. It is also how an
+open microphone avoids hearing the answer and sending it back as a question --
+nothing is listening for anything but its own name.
+
+There is no switch for any of it, and nothing on the bar to press except the X
+that takes you back to typing. The camera lives in Settings -> Voice; on, the
+picture runs the width of the bar, and the agent is shown about a frame a second
+of it.
+
+The month's spend stays over the live bar in talk mode: a spoken turn costs what
+a typed one does.
+
 ### Tools
 
 A model decides; tools are what it decides *with*. **Settings -> Tools** lists
@@ -235,6 +305,16 @@ Asking "what MCP servers could help with X?" gets an answer from the same list.
 
 Servers the agent set up are marked *set up by Autora* on the Integrations
 page, where they can be edited, switched off or removed like any other.
+
+The page also has a **Suggested for you** card, for the times you go looking
+rather than being offered one in a conversation. It is deliberately quiet and
+easy to satisfy: a server is suggested either because this install already
+holds the key it wants — paste a GitHub token anywhere and the GitHub server
+is a fact about the install rather than a guess — or because a word from its
+list appears in your standing instructions or in the titles of your recent
+chats. Nothing is installed by looking at the card, the line under each one
+says which of the two it was, and no suggestions at all is a normal state of
+affairs: a list padded to look helpful would be worse than an empty one.
 
 ### Billing
 
@@ -352,6 +432,33 @@ built.
 The Umbrel app publishes 8818 for this and ships with `AUTORA_TLS: "0"`. Put a
 proxy in front if you can; set it to `1` if you cannot.
 
+#### Install it to the home screen
+
+Once the page is on **https** — the tailnet URL above, or a certificate from
+`/autora-ca.crt` — the browser will install it as an app, and it is worth
+doing: it opens without the browser's chrome, it gets its own icon and
+switcher entry, and the session list, the thread and the composer use the
+whole screen.
+
+| | |
+| --- | --- |
+| **Android** (Chrome, Edge) | Menu (⋮) → **Add to Home screen** → **Install**. Or the banner Autora shows when it sees an install prompt available. |
+| **iPhone / iPad** (Safari) | Share → **Add to Home Screen**. iOS ignores the manifest's display mode, so installing is the only way to lose the browser bars. |
+| **Desktop** (Chrome, Edge) | The install icon in the address bar, or menu → **Install Autora**. |
+
+What it installs is `public/manifest.webmanifest` — standalone display,
+portrait-friendly, icons at 192, 512 and a maskable 512 for Android's adaptive
+shapes — plus the service worker in `public/sw.js`, which serves the app's
+shell from cache so it opens instantly and does not show a browser error page
+when the server is briefly away.
+
+An installed copy is a copy: it keeps working while the server is down, which
+also means it does not notice an update until it asks for one. Autora checks
+`/api/system` and says so in a bar at the top when the version on screen is
+behind the one being served — including a **Reload** button, and the service
+worker calls `skipWaiting` so the reload actually lands on the new build
+rather than the cached one.
+
 ### Controlling a desktop
 
 Autora can drive a real computer's screen — click, type, scroll — through a
@@ -440,6 +547,10 @@ diffs get room to be read at a useful size rather than shrunk into a pane.
 | `k` | the knowledge web |
 | `v` | live voice chat |
 | `esc` | close whatever is open |
+
+Every row in the session list carries a dot: green with a halo while that chat
+is working, plain green when it only has a window open on it, and amber when it
+is over -- nothing running and nothing holding it open.
 
 The tab itself carries state: the favicon and title go violet while the agent
 works, amber when it is waiting on your approval. An approval that lands while
@@ -568,14 +679,32 @@ and never leaks its own text into what the agent reads back.
 
 ## Approvals
 
-Autora runs without approval gates: no tool call pauses for approval in chat.
-Every call runs straight away and is shown in the thread as it happens; Stop
-kills whatever is running. There is no per-group setting for this -- older
-settings files that asked for approval are read as "never".
+Autora runs without approval gates by default: a call runs straight away and
+is shown in the thread as it happens, and Stop kills whatever is running. There
+are two ways to put a gate back, and they are about different things.
 
-If you want a gate back for your own deployment, it belongs in `needsApproval`
-in [`server/tools.ts`](server/tools.ts); the approval card and its plumbing are
-still in place and light up as soon as that returns true.
+**The chat's mode** — in the header of the conversation, and saved with it.
+*Plan* holds every call that would change something and tells the agent to say
+what it intends instead; *Ask* lets it look freely and holds anything that
+writes, runs or sends; *Auto* is the default. See
+[`server/modes.ts`](server/modes.ts) for what counts as looking and what
+counts as changing — the list is short and deliberate, and a tool that is not
+on it is treated as a change.
+
+**The per-group setting** — Settings → **Tools**, one approval mode for each of
+terminal, browser, computer and memory. `never` (the default) asks nothing;
+`risky` asks only about calls that change something; `always` asks about every
+call in the group. Since 0.9.95 this setting is obeyed rather than only stored
+— until then `needsApproval` in [`server/tools.ts`](server/tools.ts) returned
+false whatever it said — so an install that set `always` and saw nothing happen
+will now be asked.
+
+Both of those are about the ordinary work of a turn, and neither touches what
+comes next. Whatever the mode or the setting says, the guard's standing
+agreements decide the calls it was taught, and the irrecoverable tier — a
+format, a recursive delete of everything, a force-push over main — stops and
+asks every single time. A mode cannot be granted by the agent: it is set by you,
+on the chat, and the agent is told what it is.
 
 ## Context
 
@@ -659,6 +788,52 @@ every time, retire it, or delete it for good.
 The point is not the picture. Memory you cannot see is memory you cannot
 correct — an agent that has quietly decided something wrong about you will keep
 acting on it forever unless there is somewhere to go and say no.
+
+## Work that starts by itself
+
+Three things in Autora run without you asking, and they are deliberately
+different shapes:
+
+| Starts because | Where | What it is |
+| --- | --- | --- |
+| A time came | Settings → **Scheduled tasks** | A cron expression and a prompt. With a **watch** attached, the cron is how often to look at a page, a file or a command's output, and the prompt runs only when what it saw changed. |
+| Something outside said so | Settings → **Scheduled tasks** → **Triggers** | A URL, a secret and a prompt. Anything that can make an HTTP request starts it. |
+| The console finished something | Settings → Configuration → **Proactivity** | A background job that outlives its turn is read and reported by a turn the console starts itself. |
+
+A **trigger** exists because not everything that matters is on a clock or a
+page. A CI run knows when it has finished; a script on another box knows when
+its data landed. Give it somewhere to shout and it becomes a turn here, in a
+session of its own, exactly like a scheduled run — same notifications, same
+session list, same budget:
+
+```bash
+# shown once when the trigger is made, then never again
+curl -s -X POST https://box.example.ts.net:8443/api/triggers/trig-abc123/fire \
+  -H "x-autora-token: <the secret>"
+```
+
+The token can go in `x-autora-token`, in `Authorization: Bearer`, or as
+`?token=`, and the body is passed to the turn as *data* — it came from the
+network, so it is somebody else's words, and the turn is told so. A trigger
+with no secret cannot be armed, the secret is compared in constant time and
+can be rotated without losing the trigger's history, and a trigger is only
+ever listed with its fingerprint, never its secret.
+
+**Proactivity** is the one thing here that speaks without being spoken to. Off
+by default: with the wake switch on, a background job that finishes is read by
+a turn the console starts in the chat that began it — at most three times an
+hour, never inside your quiet hours, and only while the day's automation
+budget lasts. It is a turn, so it costs what a turn costs. With it off,
+nothing is lost: the job's result still arrives with the next thing you say.
+
+The **mode** of a chat — Plan, Ask or Auto — decides what may happen inside it,
+and is set in the header of the chat itself. **Plan** changes nothing: every
+call that would is put to you first, and the agent is told to say what it
+intends and stop. **Ask** lets it look freely and waits for your yes before it
+writes, runs or sends. **Auto** is the default and what Autora has always
+done. It is per conversation and saved with it — and it does not weaken
+anything below: the guard's standing agreements and the irrecoverable tier ask
+whatever the mode says.
 
 ## Configuration
 
