@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { IconDownload, IconEdit, IconTrash } from "../Icons";
+import { sessionDot } from "../../lib/derive";
 
 type Row = {
   id: string; title: string; live: boolean; busy: boolean;
@@ -122,7 +123,8 @@ export function SessionsPage({
           {shown.map((r) => (
             <div key={r.id} className={`ses-item ${r.id === current ? "on" : ""}`}>
               <button className="ses-item-main" onClick={() => onOpen(r.id)}>
-                <span className={`ses-dot ${r.busy ? "is-busy" : r.live ? "is-live" : ""}`} />
+                {/* Green only while the agent is working in this chat. */}
+                <span className={`ses-dot ${sessionDot(r).className}`} title={sessionDot(r).title} />
                 <span className="ses-item-text">
                   {editing === r.id ? (
                     <input

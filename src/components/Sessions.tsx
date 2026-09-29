@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { sessionDot } from "../lib/derive";
 import { IconCheck, IconMask, IconPin, IconPlus, IconSearch, IconTrash, IconX } from "./Icons";
 
 export type SessionRow = {
@@ -161,18 +162,17 @@ export function Sessions({
           {rows.length > 0 && shown.length === 0 && (
             <p className="jf-hint">No session matches “{query.trim()}”.</p>
           )}
-          {shown.map((s) => (
+          {shown.map((s) => {
+            const dot = sessionDot(s);
+            return (
             <div key={s.id} className={`ses-entry ${s.id === current ? "on" : ""}`}>
               <button className="ses-row" onClick={() => onPick(s.id)}>
-                {/* Three states, in the order they matter: working is the
-                    one worth a look, an open chat is next, and a chat with
-                    nothing running and nothing holding it open is over --
-                    orange rather than grey, because "not running" is a state
-                    and not an absence. */}
-                <span
-                  className={`ses-dot ${s.busy ? "is-busy" : s.live ? "is-live" : "is-idle"}`}
-                  title={s.busy ? "Working now" : s.live ? "Open" : "Not running"}
-                />
+                {/* Two states, and the person's rule for them: green means
+                    the agent is doing work in this chat right now, grey means
+                    it is not. Whether a window happens to have the chat open
+                    says nothing about that -- an open chat nobody is working
+                    in is grey, like every other. */}
+                <span className={`ses-dot ${dot.className}`} title={dot.title} />
                 <span className="ses-main">
                   {/* The id is the fallback, not the headline: an unnamed session
                       is one nobody has asked anything yet. */}
@@ -206,7 +206,8 @@ export function Sessions({
                 <IconTrash size={14} />
               </button>
             </div>
-          ))}
+            );
+          })}
         </div>
         <div className="modal-foot">
           <button className="setup-more" onClick={onOpenPage}>

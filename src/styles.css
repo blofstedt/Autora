@@ -212,8 +212,12 @@ body::before {
 /* Working: the same green with a halo, so a chat that is mid-turn stands out
    from one that merely has a tab open on it. */
 .ses-dot.is-busy { background: var(--live); animation: halo 1.2s ease-out infinite; }
-/* Nothing running and nothing holding it open: over, not loading. */
-.ses-dot.is-idle { background: var(--warn); }
+/* Nothing running and nothing holding it open: over, and grey says so.
+   It was amber, on the reasoning that "not running" is a state and not an
+   absence -- but amber is what this app uses for something that wants you,
+   and a chat that is simply finished wants nothing. Green is the whole of
+   "active": live, or working with the halo. */
+.ses-dot.is-idle { background: var(--text-3); }
 
 /* ---------------------------------------------------------------- modals -- */
 .scrim {
@@ -4808,7 +4812,7 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
   background: var(--s1); border: 1px solid var(--accent-line); color: var(--text);
 }
 .ses-dot.is-busy { background: var(--live); animation: halo 1.2s ease-out infinite; }
-.ses-dot.is-idle { background: var(--warn); }
+.ses-dot.is-idle { background: var(--text-3); }
 @media (max-width: 680px) {
   .ses-item { flex-wrap: wrap; }
   .ses-acts { margin-left: auto; }
@@ -5770,13 +5774,17 @@ button.dock-card:hover { border-color: var(--border-strong); }
 .badge.mode-pill.m-auto { color: var(--text-3); }
 .badge.mode-pill.m-auto .mode-dot { background: var(--text-3); }
 
+/* Position comes from the component, which measures the window and keeps the
+   menu inside it: the pill can be hard against the right edge, and a menu
+   anchored to its left edge hung off the side of the screen. */
 .mode-menu {
-  position: absolute; top: 34px; left: 0; z-index: 60;
-  width: min(340px, calc(100vw - 28px));
+  position: absolute; top: 0; left: 0; z-index: 60;
+  width: min(340px, calc(100vw - 20px));
   padding: 12px; border-radius: var(--r, 14px);
   border: 1px solid var(--border-strong); background: var(--s2);
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5);
   display: flex; flex-direction: column; gap: 6px;
+  overflow-y: auto; overscroll-behavior: contain;
   animation: rise 0.14s var(--ease, ease-out);
 }
 .mode-menu-head {

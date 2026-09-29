@@ -84,6 +84,7 @@ export interface ToolSettings {
   browser: { enabled: boolean; approval: ApprovalMode };
   computer: { enabled: boolean; approval: ApprovalMode };
   memory: { enabled: boolean; approval: ApprovalMode };
+  voice: { enabled: boolean; approval: ApprovalMode };
 }
 
 export function toolSettings(): ToolSettings {
@@ -122,7 +123,7 @@ export function updateToolSettings(patch: any): ToolSettings {
 
 // ------------------------------------------------------------- the registry --
 
-export type ToolGroup = "terminal" | "browser" | "computer" | "memory" | "schedule";
+export type ToolGroup = "terminal" | "browser" | "computer" | "memory" | "voice" | "schedule";
 
 /** A question for the person, drawn as a card in the thread. */
 export type AskRequest = {
@@ -1076,7 +1077,7 @@ const TOOLS: ToolSpec[] = [
   // -------------------------------------------------------------- voice --
   {
     name: "speak",
-    group: "person",
+    group: "voice",
     description:
       "Say something out loud to the person, right now, in the console's own " +
       "voice (a Deepgram API key when there is one, otherwise the browser's " +
@@ -1093,6 +1094,29 @@ const TOOLS: ToolSpec[] = [
         text: { type: "string", description: "Exactly what to say aloud." },
       },
       required: ["text"],
+    },
+  },
+
+  {
+    name: "voice_mute",
+    group: "voice",
+    description:
+      "Stop or start the console saying things out loud on this page, at once. " +
+      "Call it with muted true the moment the person asks you to stop talking, " +
+      "be quiet, or says the voice is annoying: it silences whatever is being " +
+      "said mid-sentence and silences the speak tool, and the switch in " +
+      "Settings -> Model & tools -> Voice shows it. It does not change whether " +
+      "replies are read out in talk mode -- that is the person's own listening " +
+      "switch.",
+    parameters: {
+      type: "object",
+      properties: {
+        muted: {
+          type: "boolean",
+          description: "True to go quiet, false to be heard again.",
+        },
+      },
+      required: ["muted"],
     },
   },
 
@@ -1384,6 +1408,7 @@ const LABELS: Record<ToolGroup, string> = {
   browser: "Web browser",
   computer: "Computer control",
   memory: "Memory",
+  voice: "Voice",
   /* Not a setting and so not in groupStates: scheduling, background work and
      the rest of what happens outside the turn are simply always on. */
   schedule: "Beyond the turn",
@@ -1447,6 +1472,17 @@ export async function groupStates(): Promise<GroupState[]> {
       tools: names("computer"),
     },
     {
+      group: "voice",
+      label: LABELS.voice,
+      enabled: settings.voice.enabled,
+      available: settings.voice.enabled,
+      detail: settings.voice.enabled
+        ? "The agent can say something out loud on this page, in the console's own voice."
+        : "The agent cannot make this page say anything. Replies read out in talk mode are unaffected.",
+      approval: settings.voice.approval,
+      tools: names("voice"),
+    },
+    {
       group: "memory",
       label: LABELS.memory,
       enabled: settings.memory.enabled,
@@ -1468,6 +1504,10 @@ export async function availableTools(): Promise<ToolSpec[]> {
   return [
     ...TOOLS.filter((t) =>
       t.group === "person" || t.group === "files" || t.group === "schedule" ||
+      /* Muting the voice is the one thing that survives having muted it: a
+         tool that takes itself away with the thing it turns off would leave
+         no way back except the settings panel. */
+      t.name === "voice_mute" ||
       usable.has(t.group as ToolGroup)),
     ...(usable.has("terminal") ? customSpecs() : []),
     ...mcpSpecs(),
@@ -1525,7 +1565,7 @@ export function needsApproval(spec: ToolSpec): boolean {
   const group = spec.group;
   /* "person", "files", "schedule" and "mcp" are not settings: nobody turns
      handing over, reading an artifact or asking a question off. */
-  if (group !== "terminal" && group !== "browser" && group !== "computer" && group !== "memory") return false;
+  if (group !== "terminal" && group !== "browser" && group !== "computer" && group !== "memory" && group !== "voice") return false;
   const approval = toolSettings()[group]?.approval;
   if (approval === "always") return true;
   if (approval === "risky") return Boolean(spec.risky);
@@ -1594,6 +1634,10 @@ export function renderCall(spec: ToolSpec, args: Record<string, any>): string {
       return `show widget "${args.title}"`;
     case "speak":
       return `say aloud: ${JSON.stringify(String(args.text ?? ""))}`;
+    case "voice_mute":
+      return String(args.muted) === "false"
+        ? "unmute the voice"
+        : "mute the voice: stop saying things out loud";
     case "camera_look":
       return "look through the camera";
     case "artifact_read":
@@ -1643,6 +1687,10 @@ export interface ToolContext {
   showImage: (blob: string, alt: string, caption: string | null, size?: { w: number; h: number }) => void;
   /** Say something aloud on the page the person has open. */
   speak?: (text: string) => void;
+  /** Stop or start the page saying things aloud, at once -- what the speak
+      tool's own mute does, so the sound stops in the same breath as the
+      setting rather than at the next turn. */
+  mute?: (muted: boolean) => void;
   /** Show an interactive widget in the conversation. */
   showWidget: (widget: { title: string; html: string; height: number; artifact?: string }) => void;
   /** Show a picture of the browser or desktop in the card already showing
@@ -3056,6 +3104,18 @@ async function runToolUnredacted(
       }
 
       // ---------------------------------------------------------- voice --
+      case "voice_mute": {
+        const muted = args.muted !== false;
+        updateToolSettings({ voice: { enabled: !muted } });
+        ctx.mute?.(muted);
+        return {
+          ok: true,
+          summary: muted
+            ? "Muted: nothing is said out loud on the page any more, and the speak " +
+              "tool is off until it is turned back on in Settings -> Model & tools -> Voice."
+            : "Unmuted: the speak tool can be heard on the page again.",
+        };
+      }
       case "speak": {
         const text = String(args.text ?? "").replace(/\s+/g, " ").trim();
         if (!text) return { ok: false, summary: "Nothing to say." };
@@ -3470,6 +3530,19 @@ const MEMORY_GUIDE =
   "is also looked back on for you, so there is no need to write down the conversation. " +
   "A recalled memory that turns out wrong is fixed with memory_update, not worked around.";
 
+/* The one tool that is about the person's ears rather than the work. It is
+   named here because the moment it is wanted is the moment somebody is being
+   talked over, and an agent that has to look for a way to stop has already
+   spent the sentence it should not have said. */
+const VOICE_GUIDE =
+  "- Speaking out loud: speak says something on the page in the console's own voice, and " +
+  "voice_mute(true) stops everything being said on that page at once -- mid-sentence, and " +
+  "for every turn after it, with the switch in Settings -> Model & tools -> Voice showing " +
+  "it. The moment the person asks you to stop talking, be quiet, or says the voice is " +
+  "annoying, call voice_mute(true) first and answer in writing only. Do not argue for the " +
+  "voice, do not offer to say it anyway, and do not call speak again in that turn. " +
+  "voice_mute(false) is how you are heard again, and only when they ask for it.";
+
 export async function capabilityBriefing(): Promise<string> {
   const groups = await groupStates();
   const lines: string[] = ["What you can actually do, right now, on this machine:"];
@@ -3489,6 +3562,7 @@ export async function capabilityBriefing(): Promise<string> {
 
   if (groups.some((g) => g.group === "browser" && g.available)) lines.push(BROWSING_GUIDE, signInBriefing(), credentialsBriefing());
   if (groups.some((g) => g.group === "memory" && g.available)) lines.push(MEMORY_GUIDE);
+  if (groups.some((g) => g.group === "voice" && g.available)) lines.push(VOICE_GUIDE);
 
   const mcp = mcpTools();
   if (mcp.length > 0) {

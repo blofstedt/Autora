@@ -152,7 +152,6 @@ interface AutoraEvent {
 interface Session {
   id: string;
   title: string;
-  live: boolean;
   createdAt: number;
   busy: boolean;
   /** Kept at the top of the session lists. */
@@ -275,7 +274,6 @@ function createInitialSession(): Session {
   const session: Session = {
     id: "session-init",
     title: "New Session",
-    live: true,
     createdAt: now,
     busy: false,
     events: [],
@@ -306,7 +304,6 @@ for (const stored of loadSessionIndex()) {
   const session: Session = {
     id: stored.id,
     title: stored.title,
-    live: true,
     createdAt: stored.createdAt,
     busy: false,
     ...(stored.pinned ? { pinned: true } : {}),
@@ -2041,7 +2038,6 @@ function newSession(title: string, incognito = false): Session {
   const session: Session = {
     id,
     title,
-    live: true,
     createdAt: Math.floor(Date.now() / 1000),
     busy: false,
     events: [],
@@ -2979,6 +2975,19 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             alt, caption, ...(size ? { w: size.w, h: size.h } : {}),
           }, null, blob),
         speak: (text) => emitEvent(session, "media.speech", "agent", { text }, span),
+        /* The agent going quiet is a setting as well as a sound: the page is
+           told to stop now, and every turn after this one is told the speak
+           tool is off, so "stop talking" is answered once rather than argued
+           with. */
+        mute: (muted) => {
+          updateToolSettings({ voice: { enabled: !muted } });
+          emitEvent(session, "media.mute", "agent", { muted }, span);
+          emitEvent(session, "system.log", "system", {
+            message: muted
+              ? "Voice muted: nothing will be said out loud on the page until it is turned back on in Settings -> Model & tools -> Voice."
+              : "Voice unmuted.",
+          });
+        },
         showWidget: ({ title, html, height, artifact }) =>
           emitEvent(session, "media.widget", "agent", {
             title, html, height, ...(artifact ? { artifact } : {}),
@@ -3808,7 +3817,13 @@ async function startServer() {
       return {
         id: s.id,
         title: s.title || `Session ${s.id.slice(-6)}`,
-        live: s.live,
+        /* Whether a window has this chat open right now, asked of the
+           connections rather than remembered: the old flag was set true when
+           the chat was made and never cleared, so every dot in the list was
+           green and the colour said nothing. A chat with nobody in it is over,
+           however recently it was used; one with a turn running is active
+           whatever else is true, and the dot shows that with its halo. */
+        live: (sessionSockets.get(s.id)?.size ?? 0) > 0,
         busy: s.busy,
         pinned: !!s.pinned,
         mode: chatMode(s.mode),

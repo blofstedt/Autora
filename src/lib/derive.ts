@@ -1147,3 +1147,22 @@ function gatherScreenWork(buckets: Bucket[]) {
     bucket.cells = out;
   }
 }
+
+/**
+ * The dot beside a chat in every list of them: green while the agent is
+ * working in that chat right now, grey for everything else.
+ *
+ * The rule is the person's, and it replaced two earlier ones that both read
+ * wrong. First every chat was green, because "live" was set true when the chat
+ * was made and nothing ever cleared it -- so the colour said nothing at all.
+ * Then green meant a window had the chat open, which is true of whichever chat
+ * you happen to be looking at and says nothing about whether anything is
+ * happening in it. What the colour is for is the one question worth answering
+ * at a glance in a list of chats: is the agent busy here. One place decides it
+ * so the lists cannot drift apart again.
+ */
+export function sessionDot(row: { busy?: boolean }): { className: string; title: string } {
+  return row.busy
+    ? { className: "is-busy", title: "Working now" }
+    : { className: "is-idle", title: "Nothing running" };
+}

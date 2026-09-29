@@ -720,6 +720,21 @@ export function App() {
   // sentence it ever spoke.
   const said = useRef(new Set<number>());
   useEffect(() => { said.current.clear(); }, [sessionId]);
+  /* The voice muted from the thread: the agent calling voice_mute. The setting
+     is saved server-side; this is the sound stopping in the same breath,
+     because a mute that takes effect at the next turn is not a mute. */
+  const muted = useRef(new Set<number>());
+  useEffect(() => { muted.current.clear(); }, [sessionId]);
+  useEffect(() => {
+    const now = Date.now() / 1000;
+    for (const e of events) {
+      if (e.kind !== Kind.MediaMute || muted.current.has(e.seq)) continue;
+      muted.current.add(e.seq);
+      if (now - e.ts > SPEAK_FRESH_S) continue;
+      if (e.payload?.muted !== false) hush();
+    }
+  }, [events, hush]);
+
   useEffect(() => {
     if (!canSpeak) return;
     const now = Date.now() / 1000;

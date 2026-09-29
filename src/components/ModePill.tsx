@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { IconCheck } from "./Icons";
 
 /**
@@ -50,6 +50,10 @@ export function ModePill({
 }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement | null>(null);
+  const menu = useRef<HTMLDivElement | null>(null);
+  /* Where the menu goes, in the pill's own coordinates, until it has been
+     measured and put inside the window. */
+  const [at, setAt] = useState<{ left: number; top: number } | null>(null);
 
   /* A menu that stays open while you look somewhere else is a menu you have
      to close twice. Same rule as the other popovers here. */
@@ -69,6 +73,53 @@ export function ModePill({
     };
   }, [open]);
 
+  /* The menu is 340px wide and the pill is not always near the left of the
+     header: with a long session name it sits hard against the right of the
+     window, and a menu anchored to the pill's left edge hung off the side of
+     the screen where it could not be read or reached. So it is measured
+     against the window and moved inside it -- and flipped above the pill when
+     there is no room below -- rather than trusting where it was anchored. */
+  useLayoutEffect(() => {
+    if (!open) {
+      setAt(null);
+      return;
+    }
+    const place = () => {
+      const el = menu.current;
+      const anchor = wrap.current;
+      if (!el || !anchor) return;
+      const pad = 10; /* clear of the window's own edge */
+      const gap = 6; /* and of the pill */
+      const a = anchor.getBoundingClientRect();
+      const winW = window.innerWidth;
+      const winH = window.innerHeight;
+
+      /* Never wider or taller than the window it has to sit in. */
+      const width = Math.min(340, winW - pad * 2);
+      el.style.width = `${width}px`;
+      el.style.maxHeight = "";
+      const height = el.offsetHeight;
+
+      const left = Math.max(pad, Math.min(a.left, winW - pad - width));
+
+      const below = winH - pad - (a.bottom + gap);
+      const above = a.top - gap - pad;
+      let top: number;
+      if (height <= below || below >= above) {
+        top = a.bottom + gap;
+        if (height > below) el.style.maxHeight = `${Math.max(140, below)}px`;
+      } else {
+        top = a.top - gap - height;
+        if (height > above) el.style.maxHeight = `${Math.max(140, above)}px`;
+      }
+
+      setAt({ left: left - a.left, top: top - a.top });
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [open]);
+
   const current = MODES.find((m) => m.id === mode) ?? MODES[2];
 
   return (
@@ -85,7 +136,12 @@ export function ModePill({
       </button>
 
       {open && (
-        <div className="mode-menu" role="menu">
+        <div
+          className="mode-menu"
+          role="menu"
+          ref={menu}
+          style={{ left: at?.left, top: at?.top, visibility: at ? "visible" : "hidden" }}
+        >
           <p className="mode-menu-head">What this chat may do on its own</p>
           {MODES.map((m) => (
             <button

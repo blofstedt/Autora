@@ -221,7 +221,7 @@ function ArtifactsWidget({ t }: { t: DockTargets }) {
   );
 }
 
-type SessionRow = { id: string; title: string; live: boolean; updated_at: number; turns: number };
+type SessionRow = { id: string; title: string; live: boolean; busy: boolean; updated_at: number; turns: number };
 
 /** Recent conversations, and a way into the list. */
 function SessionsWidget({ t }: { t: DockTargets }) {
@@ -235,11 +235,11 @@ function SessionsWidget({ t }: { t: DockTargets }) {
         <button
           key={s.id}
           className="dock-line"
-          style={{ background: "none", border: 0, padding: 0, cursor: "pointer", textAlign: "left", color: s.live ? "var(--text)" : undefined }}
+          style={{ background: "none", border: 0, padding: 0, cursor: "pointer", textAlign: "left", color: s.busy ? "var(--text)" : undefined }}
           onClick={() => t.openSession(s.id)}
           title={s.title}
         >
-          {s.live ? "● " : ""}{s.title || "Untitled"} · {ago(s.updated_at)}
+          {s.busy ? "● " : ""}{s.title || "Untitled"} · {ago(s.updated_at)}
         </button>
       ))}
       {rows.length > 3 && <p className="dock-quiet">{rows.length} in all.</p>}

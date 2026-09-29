@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  IconBrain, IconCheck, IconChevron, IconGear, IconGlobe, IconMonitor, IconRepeat,
+  IconBrain, IconCheck, IconChevron, IconGear, IconGlobe, IconMonitor, IconRepeat, IconSpeaker,
   IconTerminal, IconX,
 } from "./Icons";
 import { ModelPicker } from "./ModelPicker";
@@ -61,7 +61,7 @@ type ProviderCard = {
   models: ModelOption[];
 };
 
-export type ToolGroupName = "terminal" | "browser" | "computer" | "memory";
+export type ToolGroupName = "terminal" | "browser" | "computer" | "memory" | "voice";
 export type ApprovalMode = "always" | "risky" | "never";
 
 /** What the server says about one group of tools: whether it is on, whether it
@@ -81,6 +81,7 @@ type ToolConfig = {
   browser: { enabled: boolean; approval: ApprovalMode };
   computer: { enabled: boolean; approval: ApprovalMode };
   memory: { enabled: boolean; approval: ApprovalMode };
+  voice: { enabled: boolean; approval: ApprovalMode };
 };
 
 type LoopConfig = {
@@ -1248,6 +1249,7 @@ function ToolsCard({
     browser: <IconGlobe size={14} />,
     computer: <IconMonitor size={14} />,
     memory: <IconBrain size={14} />,
+    voice: <IconSpeaker size={14} />,
   };
 
   return (

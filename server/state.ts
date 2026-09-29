@@ -166,6 +166,10 @@ export interface ToolSettings {
   browser: { enabled: boolean; approval: ApprovalMode };
   computer: { enabled: boolean; approval: ApprovalMode };
   memory: { enabled: boolean; approval: ApprovalMode };
+  /** Whether the agent's own speak tool is heard. Off by default: the tool is
+      the agent asking to be listened to, and a switch is how somebody in a
+      quiet room says "not now" without turning the whole voice off. */
+  voice: { enabled: boolean; approval: ApprovalMode };
 }
 
 export interface UsageEntry {
@@ -306,6 +310,7 @@ function defaultTools(): ToolSettings {
     browser: { enabled: true, approval: "never" },
     computer: { enabled: true, approval: "never" },
     memory: { enabled: true, approval: "never" },
+    voice: { enabled: true, approval: "never" },
   };
 }
 
@@ -344,7 +349,7 @@ export function mergeTools(into: ToolSettings, patch: any): ToolSettings {
       }
     }
   }
-  for (const group of ["browser", "computer", "memory"] as const) {
+  for (const group of ["browser", "computer", "memory", "voice"] as const) {
     const given = patch[group];
     if (!given || typeof given !== "object") continue;
     into[group].enabled = bool(given.enabled, into[group].enabled);

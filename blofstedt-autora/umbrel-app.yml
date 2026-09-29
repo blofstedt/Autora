@@ -99,45 +99,33 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  The name that wakes it is heard the way it is actually said. On a phone the
-  speech engine writes it down a dozen ways -- atora, otora, outora, a stray
-  "um" in front of it -- and only the exact spelling used to count, which is
-  why saying the name could look like saying nothing at all. Any near spelling
-  in the first words of what was heard opens the turn now.
+  The voice can be turned off from the conversation, and it stays off. Ask for
+  it to stop talking -- or say the voice is getting annoying -- and the agent
+  mutes itself where it stands: whatever was being said stops mid-sentence, and
+  the speak tool is taken away from every turn after that, so it answers in
+  writing and does not reach for the voice again. Settings -> Model & tools ->
+  Voice carries the switch, on by default, and it is the same setting either
+  way round: nothing is said on the page while it is off, and turning it back
+  on is how the voice comes back.
 
-  The live bar also stops pretending. A phone can refuse the microphone and
-  say nothing about it, and a bar with nothing listening looks exactly like a
-  quiet room; a few seconds in, it says so, and one tap opens it. And the mark
-  in that bar is the mark and its light, with none of the pale ring it used to
-  sit in -- the disc comes back only over a camera picture, where a fill is
-  what keeps the mark legible.
+  It is a switch and not a volume: replies read out in talk mode are your own
+  listening, and are not touched by it.
 
-  Triggers have a page of their own in the menu. A schedule is a time and a
-  watcher is a target, but a trigger is somebody else's machine saying so, and
-  they are looked for in different moods. Schedules is now only work that runs
-  on a clock, in the terms you would say it in: every hour, every day, every
-  week or every month, with a time, a weekday or a day of the month -- and the
-  raw cron field kept under custom, for the schedules the four shapes cannot
-  express.
+  On a phone the switch at the top of the chat -- auto, ask, off -- opens its
+  menu inside the window. It used to hang from the pill by its left edge, which
+  is fine in a wide window and off the side of the screen in a narrow one,
+  where the options were simply not there to press. The menu is now measured
+  against the window it is in and shifted back inside it, however narrow.
 
-  One more thing, in passing: the button that makes a task is up in the
-  header with the page's own name, instead of alone in a bar of its own.
+  The dots in the chat list mean one thing now: green is a chat the agent is
+  working in at this moment, grey is every other. The dot used to be green for
+  every chat ever made, because a chat was marked open when it was created and
+  nothing ever cleared it, so the colour said nothing. Working is asked of the
+  turn that is running, and a chat nobody is working in is grey however
+  recently it was used.
 
-  The bar over the message box says money in the three spans it is actually
-  asked in: what has been consumed of what was paid in at the vendor, what the
-  month has cost, and what this conversation has cost -- "15.58 of 30.00 credit
-  · 4.12 this month · 0.42 this session". The fill is the vendor's own figure,
-  so it agrees with the balance on their page, and a phone gets the same three
-  numbers in shorter words rather than the last one cut off mid-digit.
-
-  One approval, one card. A request was being drawn twice -- once in the thread
-  where the call happened and once again in the strip above the message box, in
-  two different sets of words -- which reads as being asked the same question
-  twice. The strip above the box is where it is answered, with Run it and Deny;
-  the thread keeps the record of what was asked, the exact command, and what
-  you said, without a second pair of buttons on it.
-
-  And a menu opened in the header stays over the chat instead of behind it: on
-  a phone the header blurs what passes beneath it, which quietly trapped the
-  chat-mode menu inside the header, where the conversation painted over it and
-  no option could be pressed.
+  The rest of 0.9.97 stands, unchanged: the name that wakes it is heard the way
+  it is actually said, the live bar says when the microphone did not open and
+  opens it on a tap, triggers have a page of their own, the bar over the
+  message box counts money in the three spans it is asked in, and a menu opened
+  in the header stays over the chat.

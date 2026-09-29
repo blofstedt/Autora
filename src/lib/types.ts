@@ -63,6 +63,9 @@ export const Kind = {
   MediaWidget: "media.widget",
   /** Words the agent chose to say aloud (the speak tool): played, not shown. */
   MediaSpeech: "media.speech",
+  /** The voice muted or unmuted from the thread (the voice_mute tool): the
+      page goes quiet at once, and the setting behind it is saved. */
+  MediaMute: "media.mute",
   DesktopFrame: "desktop.frame",
   DesktopAction: "desktop.action",
   ContextNote: "context.note",

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { SessionRow } from "../Sessions";
+import { sessionDot } from "../../lib/derive";
 import type { PageId } from "../Rail";
 import { duration } from "../Settings";
 import type { SystemTab } from "./SystemPage";
@@ -273,7 +274,8 @@ export function StatusPage({
           <div className="status-sessions">
             {sessions.slice(0, 6).map((s) => (
               <button key={s.id} className="ses-row" onClick={() => onOpenSession(s.id)}>
-                <span className={`ses-dot ${s.live ? "is-live" : ""}`} />
+                {/* Green only while the agent is working in this chat. */}
+                <span className={`ses-dot ${sessionDot(s).className}`} title={sessionDot(s).title} />
                 <span className="ses-main">
                   <b>{s.title || "Untitled session"}</b>
                   <em>{s.events ?? 0} events</em>
