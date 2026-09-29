@@ -643,11 +643,70 @@ export type Speech = {
  * finished with the browser's voice rather than going silent, so a long reply
  * is never cut off because something else was restarted.
  */
+/**
+ * The line one voice speaks in.
+ *
+ * Renderings join it and come out one at a time, in the order they joined: a
+ * sentence still being heard is never talked over by the next thing the page
+ * has to say. Every way this file makes a sound -- a streamed rendering from
+ * the console, a clip, the browser's own voice -- goes through the same line,
+ * because two of them playing at once is heard as two people talking.
+ *
+ * It is a function rather than a ref inside the hook so the rule can be tested
+ * without a browser.
+ */
+export type SpeechLine = {
+  /** Add a rendering. `run` is called when everything before it has finished;
+      the returned promise settles with it, so a failure reaches its caller --
+      without wedging the line, which the next rendering still gets its turn
+      in. */
+  join: (run: () => void | Promise<void>) => Promise<void>;
+  /** Renderings in the line, the one in flight included. */
+  waiting: () => number;
+  /** Everyone gives up their place, for a barge-in: what was waiting is
+      dropped, and what is in flight is left to notice the cancellation. */
+  reset: () => void;
+  /** The line's generation: the same number while it is the same line, a new
+      one after a reset. A caller part way through a rendering compares it to
+      see whether it is still its turn. */
+  stamp: () => number;
+};
+
+export function newSpeechLine(): SpeechLine {
+  let tail: Promise<void> = Promise.resolve();
+  let queued = 0;
+  let generation = 0;
+  return {
+    join(run) {
+      const mine = generation;
+      queued += 1;
+      const call = () => { if (mine === generation) return run(); };
+      const step = tail.then(call, call).then(() => undefined);
+      /* The line itself never rejects: one rendering that threw must not stop
+         the ones behind it. */
+      tail = step.then(() => undefined, () => undefined);
+      void tail.then(() => { if (mine === generation) queued -= 1; });
+      return step;
+    },
+    waiting: () => queued,
+    stamp: () => generation,
+    reset() {
+      generation += 1;
+      queued = 0;
+      tail = Promise.resolve();
+    },
+  };
+}
+
 export function useSpeech(): Speech {
   const [speaking, setSpeaking] = useState(false);
   const [source, setSource] = useState<SpeechSource>("browser");
   const voice = useRef<SpeechSynthesisVoice | null>(null);
-  const queued = useRef(0);
+  /** The line every rendering joins, so only one voice is ever in the air. */
+  const line = useRef<SpeechLine>(newSpeechLine());
+  /** Renderings on the line now, so the page says it is speaking while any of
+      them is left, rather than each voice keeping its own tally. */
+  const inLine = useRef(0);
   /** null until the console has been asked. */
   const serverVoice = useRef<boolean | null>(null);
   const ready = useRef<Promise<void> | null>(null);
@@ -749,8 +808,11 @@ export function useSpeech(): Speech {
     };
   }, []);
 
-  const sayBrowser = useCallback((text: string) => {
-    if (!speechSupported) return;
+  /** The browser's own voice, resolvable when it has finished -- or when the
+      browser has plainly stopped reporting, so one missing event cannot hold
+      the line shut for the rest of the session. */
+  const speakBrowser = useCallback((text: string): Promise<void> => {
+    if (!speechSupported) return Promise.resolve();
     const utterance = new SpeechSynthesisUtterance(text);
     if (voice.current) {
       utterance.voice = voice.current;
@@ -758,16 +820,67 @@ export function useSpeech(): Speech {
     }
     utterance.rate = 1.03;
     utterance.pitch = 1;
-    const done = () => {
-      queued.current = Math.max(0, queued.current - 1);
-      if (queued.current === 0) setSpeaking(false);
-    };
-    utterance.onend = done;
-    utterance.onerror = done;
-    queued.current += 1;
-    setSpeaking(true);
-    speechSynthesis.speak(utterance);
+    return new Promise<void>((resolve) => {
+      let done = false;
+      let guard = 0;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        window.clearTimeout(guard);
+        resolve();
+      };
+      /* About the time this many characters take to say, and only ever a
+         backstop for a browser that never reports the end. */
+      guard = window.setTimeout(finish, Math.max(6000, text.length * 110));
+      utterance.onend = finish;
+      utterance.onerror = finish;
+      speechSynthesis.speak(utterance);
+    });
   }, []);
+
+  /** Wait until what the streamed voice has already handed to the audio thread
+      has been heard. A rendering that cannot share that timeline -- a clip
+      through the element, or the browser's own voice -- waits here first, so
+      it never starts on top of audio that is still playing. */
+  const heardOut = useCallback(async (): Promise<void> => {
+    const gen = generation.current;
+    for (let i = 0; i < 600; i += 1) {
+      const ac = output.current;
+      /* Nothing scheduled, or nothing that would play if it were: a context
+         that is not running does not advance its clock, and waiting on one
+         would wait for ever. */
+      if (!ac || ac.state !== "running") return;
+      const left = playhead.current - ac.currentTime;
+      if (left <= 0.03) return;
+      if (gen !== generation.current) return;
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, Math.min(250, Math.max(30, left * 1000)));
+      });
+    }
+  }, []);
+
+  /** Take a turn on the line: the rendering runs once everything before it has
+      finished, and the page is said to be speaking while any of them is left. */
+  const speakInTurn = useCallback((run: () => Promise<void>): Promise<void> => {
+    const stamp = line.current.stamp();
+    inLine.current += 1;
+    setSpeaking(true);
+    return line.current.join(run).finally(() => {
+      // Cancelled while this one was in flight: it belongs to the old line and
+      // has no say in whether the new one is speaking.
+      if (stamp !== line.current.stamp()) return;
+      inLine.current = Math.max(0, inLine.current - 1);
+      if (inLine.current === 0) setSpeaking(false);
+    });
+  }, []);
+
+  /** The browser's voice, in its turn on the line. */
+  const sayBrowser = useCallback((text: string) => {
+    void speakInTurn(async () => {
+      await heardOut();
+      await speakBrowser(text);
+    }).catch(() => undefined);
+  }, [heardOut, speakBrowser, speakInTurn]);
 
   const clearIdle = useCallback(() => {
     if (idle.current === null) return;
@@ -811,7 +924,6 @@ export function useSpeech(): Speech {
     playing.current.add(node);
     node.onended = () => {
       playing.current.delete(node);
-      if (playing.current.size === 0 && !pouring.current) setSpeaking(false);
     };
     return true;
   }, [context]);
@@ -929,46 +1041,59 @@ export function useSpeech(): Speech {
   const drain = useCallback(async () => {
     if (draining.current) return;
     draining.current = true;
-    while (queue.current.length > 0) {
-      const text = queue.current[0];
-      const gen = generation.current;
-      let blob: Blob;
-      try {
-        blob = await clip(text);
-      } catch {
-        // Cut off while it was being made: start again on whatever has been
-        // queued since, if anything.
+    try {
+      /* The streamed voice may have audio scheduled that is still being
+         heard, and the element cannot be put on that timeline: wait for it
+         rather than playing over the top of it. */
+      await heardOut();
+      while (queue.current.length > 0) {
+        const text = queue.current[0];
+        const gen = generation.current;
+        let blob: Blob;
+        try {
+          blob = await clip(text);
+        } catch {
+          // Cut off while it was being made: start again on whatever has been
+          // queued since, if anything.
+          if (gen !== generation.current) continue;
+          /* The server has stopped answering -- restarted, moved, or the
+             network changed. Everything still queued is said with the
+             browser's voice: the person asked for this turn to be spoken, and
+             which voice says it matters far less than it being said. This
+             rendering already has the line, so the browser's voice is awaited
+             here directly: joining the line from inside it would wait on a turn
+             that only begins when this one ends. */
+          serverVoice.current = false;
+          setSource("browser");
+          const rest = queue.current.splice(0, queue.current.length);
+          for (const sentence of rest) {
+            if (gen !== generation.current) break;
+            await speakBrowser(sentence);
+          }
+          break;
+        }
+        // Cancelled while this one was on its way: it belongs to the old queue,
+        // and the front of the queue now is something said since.
         if (gen !== generation.current) continue;
-        /* The server has stopped answering -- restarted, moved, or the
-           network changed. Everything still queued is said with the
-           browser's voice: the person asked for this turn to be spoken, and
-           which voice says it matters far less than it being said. */
-        serverVoice.current = false;
-        setSource("browser");
-        for (const line of queue.current.splice(0, queue.current.length)) sayBrowser(line);
-        break;
+        queue.current.shift();
+        // The next sentences render while this one plays. Synthesis runs faster
+        // than speech, so by the time a sentence ends the one after it is
+        // usually waiting -- no gap between them, and the first starts as soon
+        // as it alone is ready rather than when the whole reply is.
+        renderAhead();
+        await play(blob);
       }
-      // Cancelled while this one was on its way: it belongs to the old queue,
-      // and the front of the queue now is something said since.
-      if (gen !== generation.current) continue;
-      queue.current.shift();
-      // The next sentences render while this one plays. Synthesis runs faster
-      // than speech, so by the time a sentence ends the one after it is
-      // usually waiting -- no gap between them, and the first starts as soon
-      // as it alone is ready rather than when the whole reply is.
-      renderAhead();
-      await play(blob);
+    } finally {
+      draining.current = false;
     }
-    draining.current = false;
-    if (queue.current.length === 0) setSpeaking(false);
-  }, [clip, play, renderAhead, sayBrowser]);
+  }, [clip, heardOut, play, renderAhead, speakBrowser]);
 
-  /** Sentences for the fallback path: the browser's queue speaks fragments. */
+  /** Sentences for the fallback path: the clip queue speaks fragments. */
   const fallback = useCallback((text: string) => {
     queue.current.push(...sentences(text));
     setSpeaking(true);
-    void drain();
-  }, [drain]);
+    void speakInTurn(() => drain()).catch(() => undefined);
+  }, [drain, speakInTurn]);
 
   /**
    * Everything said since the last flush, as one rendering.
@@ -986,12 +1111,15 @@ export function useSpeech(): Speech {
     if (serverVoice.current !== true) { sayBrowser(text); return; }
     if (!canStream.current) { fallback(text); return; }
     const gen = generation.current;
-    setSpeaking(true);
     void (async () => {
+      /* Each part takes a turn on the line, so one is only asked for once the
+         part before it has finished being made. Two parts on the wire at once
+         used to hand their chunks to the audio timeline in whatever order they
+         came back, which is what made the voice chop and double over itself. */
       for (const part of streamParts(text)) {
         if (gen !== generation.current) return;
         try {
-          await pour(part);
+          await speakInTurn(() => pour(part));
         } catch {
           if (gen !== generation.current) return;
           /* No streaming here: an install older than this route, or a service
@@ -1003,12 +1131,8 @@ export function useSpeech(): Speech {
           return;
         }
       }
-      if (gen !== generation.current) return;
-      /* Nothing came out of it -- an empty rendering, or autoplay refused
-         before any gesture. Do not leave the page claiming to be speaking. */
-      if (playing.current.size === 0 && !pouring.current) setSpeaking(false);
     })();
-  }, [clearIdle, fallback, pour, sayBrowser]);
+  }, [clearIdle, fallback, pour, sayBrowser, speakInTurn]);
 
   /** Keep a fragment until the turn is done. */
   const hold = useCallback((clean: string) => {
@@ -1065,9 +1189,22 @@ export function useSpeech(): Speech {
       el.pause();
     }
     if (speechSupported) speechSynthesis.cancel();
-    queued.current = 0;
+    /* Everyone on the line gives up their place: what was waiting is dropped
+       rather than said over the interruption. */
+    line.current.reset();
+    inLine.current = 0;
     setSpeaking(false);
   }, [clearIdle]);
+
+  /* Settings plays a sample in the voice being chosen, and a sample that
+     played over a reply being read out is two voices at once -- the same
+     fault this file is arranged to avoid. It asks the page to stop first,
+     the way the theme asks the page to repaint. */
+  useEffect(() => {
+    const hush = () => cancel();
+    window.addEventListener("autora-hush", hush);
+    return () => window.removeEventListener("autora-hush", hush);
+  }, [cancel]);
 
   const prime = useCallback(() => {
     // iOS will not speak unless the first sound comes from a gesture, and it

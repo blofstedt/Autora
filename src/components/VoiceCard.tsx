@@ -77,6 +77,9 @@ export function VoiceCard() {
         const body = await res.json().catch(() => null);
         throw new Error(body?.error ?? `The console answered ${res.status}.`);
       }
+      /* A reply being read aloud stops first: two voices at once is the one
+         thing worse than not hearing this one. */
+      window.dispatchEvent(new CustomEvent("autora-hush"));
       const url = URL.createObjectURL(await res.blob());
       sample.current?.pause();
       const audio = new Audio(url);

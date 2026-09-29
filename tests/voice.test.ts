@@ -5,7 +5,8 @@
  */
 import assert from "node:assert/strict";
 import {
-  chooseVoice, commit, fetchSpeechStatus, newLedger, sentences, streamParts, turnPause,
+  chooseVoice, commit, fetchSpeechStatus, newLedger, newSpeechLine, sentences, streamParts,
+  turnPause,
 } from "../src/lib/voice";
 
 let passed = 0;
@@ -93,6 +94,95 @@ test("a sentence left hanging waits longer", () => {
   assert.ok(turnPause("find the", false) > turnPause("find it", false));
   assert.ok(turnPause("so first, um", true) > turnPause("so first done", true));
   assert.ok(turnPause("check the calendar,", true) > turnPause("check the calendar", true));
+});
+
+/**
+ * The line every rendering speaks in.
+ *
+ * This is where the chopping and the two voices at once came from. The
+ * streamed rendering is handed to one audio timeline, and a second rendering
+ * started before the first had finished put its own words into the same
+ * timeline in whatever order its chunks came back -- and the fallbacks (a clip
+ * through the element, the browser's own voice) played on a timeline of their
+ * own, on top of it. The line is the rule that only one of them is ever being
+ * heard: whatever joins waits for what joined before it.
+ *
+ * Awaited here and the assertions handed to test() as plain values, because
+ * test() is synchronous on purpose (see the top of this file).
+ */
+async function lineChecks() {
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  // One at a time, in the order they joined.
+  const order: string[] = [];
+  const line = newSpeechLine();
+  const first = line.join(async () => {
+    order.push("first:start");
+    await sleep(40);
+    order.push("first:end");
+  });
+  const second = line.join(() => { order.push("second"); });
+  const early = order.includes("second");
+  await Promise.all([first, second]);
+  const leftWaiting = line.waiting();
+
+  // A rendering that fails is reported to its caller, and the line stays open.
+  const afterFailure: string[] = [];
+  const failing = newSpeechLine();
+  const failure = await failing
+    .join(() => { throw new Error("speech 500"); })
+    .then(() => "said nothing about it", (err: Error) => err.message);
+  await failing.join(() => { afterFailure.push("next"); });
+
+  // A barge-in drops what was waiting, and does not hold the next rendering
+  // behind words that are no longer wanted.
+  const said: string[] = [];
+  const hushed = newSpeechLine();
+  let release = () => {};
+  const inFlight = hushed.join(() => new Promise<void>((resolve) => {
+    release = resolve;
+    said.push("in flight");
+  }));
+  const dropped = hushed.join(() => { said.push("dropped"); });
+  // Let the first one actually start: a barge-in drops what was waiting, and
+  // a rendering that had not begun is waiting like any other.
+  await sleep(10);
+  hushed.reset();
+  const next = await Promise.race([
+    hushed.join(() => { said.push("new"); }).then(() => "ran"),
+    sleep(60).then(() => "waited"),
+  ]);
+  release();
+  await Promise.all([inFlight, dropped]);
+  // The tally is written a microtask after the rendering finishes.
+  await sleep(10);
+
+  return {
+    order: order.join(","), early, leftWaiting, failure,
+    afterFailure: afterFailure.join(","), said: said.join(","), next,
+    waitingAfterReset: hushed.waiting(),
+    startedBeforeReset: said.includes("in flight"),
+  };
+}
+
+const lineHop = await lineChecks();
+
+test("renderings come out one at a time, in the order they joined", () => {
+  assert.equal(lineHop.order, "first:start,first:end,second");
+  assert.equal(lineHop.early, false);
+  assert.equal(lineHop.leftWaiting, 0);
+});
+
+test("a rendering that fails reaches its caller and leaves the line open", () => {
+  assert.equal(lineHop.failure, "speech 500");
+  assert.equal(lineHop.afterFailure, "next");
+});
+
+test("a barge-in drops what was waiting and does not wait on the old words", () => {
+  assert.equal(lineHop.said, "in flight,new");
+  assert.equal(lineHop.next, "ran");
+  assert.equal(lineHop.startedBeforeReset, true);
+  assert.equal(lineHop.waitingAfterReset, 0);
 });
 
 /**
@@ -187,4 +277,6 @@ async function consoleCalls() {
   console.log(`voice: ${passed} passed`);
 }
 
-void consoleCalls().finally(() => { globalThis.fetch = realFetch; });
+void (async () => {
+  await consoleCalls();
+})().finally(() => { globalThis.fetch = realFetch; });

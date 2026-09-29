@@ -99,25 +99,16 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  Scheduled jobs and watchers now have a budget of their own, apart from what
-  you spend talking to the agent. Every firing opens a fresh session, and a
-  fresh session loads the whole prompt, the tool list and the memory before the
-  job has done anything at all, so a watcher pointed at something that changes
-  often -- a release, a build, a feed -- pays that again every single time.
-  Left unmeasured that quietly becomes the largest line on the bill, and there
-  was nothing watching the watchers.
+  Spoken replies come out one at a time now. When a second thing to say was
+  started before the first had finished being heard -- the next part of a long
+  reply being made while the part before it was still playing, or the voice
+  falling back to the browser's own while the streamed one was still in the
+  air -- both went into the same audio timeline, and the voice chopped, doubled
+  or said two things at once.
 
-  The budget is checked twice. Before a job is allowed to start, against what
-  all of today’s automated runs have cost; and every round of a run already
-  going, against what that one run has cost, so a job that has begun to chew
-  through a session is stopped rather than left to finish. Neither check ever
-  deletes a job or clears its cron: a job held back runs again after midnight
-  and one stopped part-way runs again at its next time, and you are told once
-  when the day’s budget is what stopped it. The defaults are a dollar a day
-  across all jobs and a quarter for any one run; both are on the Settings page,
-  clamped to sane ranges so a typo cannot switch the guard off, and a turn you
-  are having is never stopped this way. Turning it off still counts what the
-  jobs spend, it just stops holding them to it.
-
-  What automation has spent today, and what the guard did about it, is on the
-  Settings page beside the budget itself.
+  Every rendering now takes its turn in one line. The streamed parts, the
+  clips and the browser's own voice all wait for what is being heard to finish
+  before they start, so nothing is talked over; a barge-in clears the line
+  rather than leaving words behind it; and playing a sample in Settings hushes
+  the reply being read out first. The line is a plain object with its own
+  tests, so the rule is checked without a browser.

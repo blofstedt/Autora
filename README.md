@@ -12,6 +12,10 @@
   <img src="https://img.shields.io/badge/umbrel-community%20store-5a5a5a.svg" alt="Umbrel community store">
 </p>
 
+<p align="center">
+  <img src="docs/screenshots/hero.png" width="880" alt="One Autora thread: the answer in the middle, the command it ran above it, and the page it has open beside it">
+</p>
+
 The agent's browser, terminal, desktop and file edits stream into the
 conversation in real time — each command, page and edit shown at the point it
 happened, and still there to scroll back to afterwards. Every session records
@@ -64,6 +68,10 @@ npm run dev
 
 Open <http://localhost:3000>. Type a task. Watch it work.
 
+<p align="center">
+  <img src="docs/screenshots/first-run.png" width="780" alt="A fresh install: one column, and a card that asks which model to connect">
+</p>
+
 It listens on this machine only. Opening it to the network is a choice, and
 [Before you run it](#before-you-run-it) has the terms: `AUTORA_HOST=0.0.0.0 npm
 run dev` when you want it from a phone or another computer, on a network you
@@ -89,6 +97,10 @@ sidebar:
 | DeepSeek | <https://platform.deepseek.com/api_keys> | Cheapest of the hosted options |
 | OpenRouter | <https://openrouter.ai/keys> | One key, hundreds of models; list and prices fetched live |
 | Local server | — | Anything speaking the OpenAI API: vLLM, Ollama, llama.cpp |
+
+<p align="center">
+  <img src="docs/screenshots/providers.png" width="820" alt="Providers and models, in Settings: the vendor list, with the key saved for each">
+</p>
 
 Each provider keeps its own key, model and endpoint, so switching between them
 costs nothing. **Which provider answers** picks one, or leave it on *Automatic*
@@ -260,6 +272,10 @@ reading the thread from another device. Two things need more than that:
 | Install to the home screen | Browsers only install a PWA from an https origin |
 | Dictation and live voice chat | Microphone capture is gated on a secure context |
 
+<p align="center">
+  <img src="docs/screenshots/mobile.png" width="300" alt="The same session on a phone: a single column, with the work in it">
+</p>
+
 A private network is not enough — `http://box.tailnet.ts.net:8817` is an
 insecure origin as far as the browser is concerned, and no amount of site
 settings changes that.
@@ -388,6 +404,10 @@ the state directory, one event per line.
 ## What you see
 
 One column: the conversation, with the work inside it.
+
+<p align="center">
+  <img src="docs/screenshots/session-live.png" width="880" alt="A session settled: the answer, the command it ran and the page it read, each at the point it happened">
+</p>
 
 | In the thread | Shows |
 |---|---|
