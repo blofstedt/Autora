@@ -99,34 +99,28 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  The camera is back on the live bar, in the corner beside the X. It was taken
-  off and left in Settings only, which put the one thing you want mid-sentence
-  -- show it what you are holding -- two taps away, in a panel you have to leave
-  talk mode to reach. One picture, where the eye already goes for a control on
-  that strip: lit when it is on, and the choice is remembered, so the next
-  conversation opens the way this one ended. Settings -> live view carries the
-  same switch, for setting it without coming into talk mode.
+  The agent works from a board you can watch. Ask for something that takes more
+  than one step and it writes the plan as cards in the conversation before it
+  starts -- To Do, Doing, Done -- then moves each card itself as the work goes:
+  to Doing when it begins a step, to Done when the step is finished. Nothing
+  has to be opened: the board appears in the thread where the plan was made.
 
-  The beep on a phone is gone. Talking to the app on Android played the
-  microphone cue every few seconds, because the Web Speech API there is not a
-  browser feature at all: it is a session handed to Google's speech service,
-  which plays its own cue when the session opens and again when it closes. A
-  recogniser cannot be kept open -- it ends after every silence and after most
-  phrases -- so staying in talk mode meant starting the next one, and every
-  re-arm was another cue. Nothing on the page could stop it; the sound is not
-  ours to make or to mute.
+  The size of the plan follows the job. A coding task may be a dozen cards; an
+  errand is a few. "Check my email and draft a reply to the invoice one" is
+  read the inbox, pull the attachment, draft the reply, show it for review,
+  send it -- and each of those moves across the board as it happens. A card
+  that finishes with something to say gets a note on it, so the board carries
+  the outcome and not only the columns. A one-line answer still gets no board.
 
-  With a Deepgram key the microphone is now opened once, when talk mode starts,
-  and one stream of raw PCM runs for as long as it lasts -- no session to end,
-  no restart, no cue. The audio goes to this machine, which holds the key and
-  passes it on; a page is never handed a credential. The name is given to the
-  transcriber as a hint, so "Autora" comes back spelled the way it is written
-  instead of the aurora/atora spelling the recogniser used to arrive with.
+  You can work the board too: drag a card to another column, add one of your
+  own, or press Run Next Autonomously to set the agent going on what is next.
+  Whatever you move and whatever it moves are the same board -- both sides
+  write the whole of it, so neither can quietly undo the other.
 
-  Without a key nothing changes: the browser's own recogniser is still there,
-  and is what the page chooses.
+  The board was built and never joined up until now: the cell, the drag and
+  drop, the columns and the styles were all in the app, and nothing ever wrote
+  a card, so no board had ever appeared. Put a plan on it and it does.
 
-  The rest of 0.9.98 stands, unchanged: the voice can be switched off from the
-  conversation and stays off, the chat-mode menu opens inside the window on a
-  phone, and the dots in the chat list mean one thing -- green is a chat the
-  agent is working in at this moment.
+  The rest of 0.9.99 stands, unchanged: the camera is on the live bar, and the
+  microphone opens once for the whole conversation instead of re-arming -- and
+  beeping -- on every phrase.

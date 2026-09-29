@@ -24,6 +24,7 @@
  * to two very different places.
  */
 
+import type { BoardResult } from "./board";
 import { callMcpTool, mcpTools, statusOf as mcpStatusOf } from "./mcp";
 import { existing as existingMcp, install as installMcp, noteDeclined, overview as mcpOverview, planOffer, wasDeclined } from "./mcpoffer";
 import {
@@ -438,6 +439,62 @@ const TOOLS: ToolSpec[] = [
       "installing a tool, after a restart, or when a fact about this machine " +
       "turns out not to hold.",
     parameters: { type: "object", properties: {} },
+  },
+
+  // --------------------------------------------------------------- board --
+  {
+    name: "kanban",
+    group: "schedule",
+    description:
+      "The task board the person watches, in the conversation. Write the plan " +
+      "on it before you start anything that takes more than one step, then " +
+      "move the cards as you go: each card to doing when you begin it and to " +
+      "done when it is finished. The board appears by itself the moment you " +
+      "write the first card; nothing has to be opened by the person. A card " +
+      "can be referred to by its id (t3) or by its title. Use it for " +
+      "programming (many cards), and for small errands too -- an email is " +
+      "read it, pull the attachment, draft the reply, show it, send it. " +
+      "Actions: plan (the cards, in order), add, move (status todo/doing/" +
+      "done), note (a line on a card), show, clear.",
+    parameters: {
+      type: "object",
+      properties: {
+        action: {
+          type: "string",
+          description: "plan, add, move, note, show or clear.",
+        },
+        title: { type: "string", description: "What the board is called, on plan." },
+        tasks: {
+          type: "array",
+          description:
+            "For plan: the cards in order, each a title or {title, status}. " +
+            "Cards start in To do unless a status says otherwise.",
+          items: {
+            anyOf: [
+              { type: "string" },
+              {
+                type: "object",
+                properties: {
+                  title: { type: "string" },
+                  status: { type: "string", description: "todo, doing or done." },
+                },
+                required: ["title"],
+              },
+            ],
+          },
+        },
+        task: {
+          type: "string",
+          description:
+            "For add: the card's title. For move or note: which card -- its id " +
+            "(t3) or its title. For add, tasks may be given instead, for " +
+            "several cards at once.",
+        },
+        status: { type: "string", description: "For move: todo, doing or done." },
+        notes: { type: "string", description: "For note or move: a line on the card." },
+      },
+      required: ["action"],
+    },
   },
 
   // ------------------------------------------------------------ browser --
@@ -1732,6 +1789,11 @@ export interface ToolContext {
   };
   /** Put a question to the person and wait for the answer. */
   ask: (request: AskRequest) => Promise<AskAnswer>;
+  /** The session's task board: the cards the person watches the work move
+      through. Written whole on every change, so the page and the next turn
+      both read the board as it stands. Absent where there is no session to
+      write to. */
+  board?: (action: Record<string, any>) => BoardResult;
 }
 
 export interface ToolOutcome {
@@ -2604,6 +2666,20 @@ async function runToolUnredacted(
           ok: true,
           summary: ["What this machine has, as of now:", ...seen.lines].join("\n"),
           preview: "looked at the machine",
+        };
+      }
+
+      case "kanban": {
+        if (!ctx.board) {
+          return { ok: false, summary: "There is no board to write to in this chat." };
+        }
+        /* The rules live in ./board.ts, which the page's own route uses too:
+           one description of what a board is, whoever is moving the cards. */
+        const result = ctx.board(args as Record<string, any>);
+        return {
+          ok: result.ok,
+          summary: result.summary,
+          ...(result.preview ? { preview: result.preview } : {}),
         };
       }
 
@@ -3543,6 +3619,31 @@ const VOICE_GUIDE =
   "voice, do not offer to say it anyway, and do not call speak again in that turn. " +
   "voice_mute(false) is how you are heard again, and only when they ask for it.";
 
+/**
+ * The board, in the instructions.
+ *
+ * Told as a rule about how work is presented rather than as a tool that
+ * happens to exist: a plan the person can watch is worth more than a promise
+ * to do the steps, and the moving of the cards is what makes it true. The
+ * sizes are given because the shape differs -- many cards for code, a handful
+ * for an errand -- and without that the board is either a wall of cards or
+ * three that say nothing.
+ */
+const BOARD_GUIDE =
+  "- The task board: always available. Tool: kanban. The plan for anything " +
+  "with more than one step goes on a board in the conversation, and you move " +
+  "the cards as you work: to doing when you begin a card, to done when it is " +
+  "finished. Write the cards before the first step, so the person watches the " +
+  "work move rather than reading a promise about it. Size it to the job: " +
+  "programming may be a dozen cards; an errand is a few -- for \"check my " +
+  "email and draft a reply to the invoice one\", read the inbox, pull the " +
+  "attachment, draft the reply, show it for review, send it. Do not ask " +
+  "whether to make a board, and do not wait to be told to move a card: the " +
+  "board appearing and the cards moving with the work is the point of it. A " +
+  "one-line answer needs no board. A card that finishes with something to say " +
+  "gets a note on it, so the board carries the outcome and not only the " +
+  "columns.";
+
 export async function capabilityBriefing(): Promise<string> {
   const groups = await groupStates();
   const lines: string[] = ["What you can actually do, right now, on this machine:"];
@@ -3563,6 +3664,7 @@ export async function capabilityBriefing(): Promise<string> {
   if (groups.some((g) => g.group === "browser" && g.available)) lines.push(BROWSING_GUIDE, signInBriefing(), credentialsBriefing());
   if (groups.some((g) => g.group === "memory" && g.available)) lines.push(MEMORY_GUIDE);
   if (groups.some((g) => g.group === "voice" && g.available)) lines.push(VOICE_GUIDE);
+  lines.push(BOARD_GUIDE);
 
   const mcp = mcpTools();
   if (mcp.length > 0) {

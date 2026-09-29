@@ -27,6 +27,7 @@ import { hostVitals } from "./server/host";
 import { ensureHostNames } from "./server/hosts";
 import { forgetSpeech, speak as synthesise, speakStream, speechStatus } from "./server/speech";
 import { attachDictation, dictationStatus } from "./server/dictation";
+import { applyBoard, latestBoard } from "./server/board";
 import { captureConsole, log, readLogs, setLogRedactor, type LogLevel } from "./server/logs";
 import { allowSocket, refuseRequest } from "./server/crosssite";
 import { certificateSource, tlsSettings } from "./server/tls";
@@ -2968,6 +2969,18 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
       /** Everything a tool needs from this session, handed in rather than
           imported, so server/tools.ts knows nothing about sessions. */
       const contextFor = (span: string): ToolContext => ({
+        board: (action) => {
+          /* The board is read back out of the session's own events, which is
+             what the page draws, so a card the person dragged and a card the
+             agent moved are the same board and neither can overwrite the
+             other. The whole board is written on every change: it is small,
+             and a partial write is how two writers disagree. */
+          const result = applyBoard(latestBoard(session.events), action);
+          if (result.board) {
+            emitEvent(session, "kanban.update", "agent", result.board as any, span);
+          }
+          return result;
+        },
         onOutput: (chunk) =>
           emitEvent(session, "pty.output", "agent", { data: chunk }, span),
         putBlob: (data, mime) => putBlob(session.id, data, mime),
@@ -4675,30 +4688,27 @@ async function startServer() {
     res.json({ ok: true, approved, who });
   });
 
-  // 7b. Session Kanban Updates
+  /* 7b. Session Kanban Updates -- the person's own hand on the board.
+     A card dragged here goes through the same rules the agent's kanban tool
+     writes through (server/board.ts), so a card the person moved and a card
+     the agent moved cannot disagree about what the board is; and because both
+     write the whole board into the session's events, each one reads the
+     other's work before changing anything. */
   app.post("/api/sessions/:id/kanban", (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
 
-    const { boardId, taskId, newStatus, task } = req.body;
-    const kanbanEvents = session.events.filter((e) => e.kind === "kanban.update");
-    const currentBoard = kanbanEvents.length > 0 ? kanbanEvents[kanbanEvents.length - 1].payload : null;
-    let tasks: any[] = currentBoard?.tasks ? [...currentBoard.tasks] : [];
+    const { taskId, newStatus, task } = req.body ?? {};
+    const action: Record<string, any> =
+      taskId && newStatus
+        ? { action: "move", task: taskId, status: newStatus }
+        : task?.title
+          ? { action: "add", task: String(task.title), status: task.status }
+          : { action: "show" };
 
-    if (taskId && newStatus) {
-      tasks = tasks.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t));
-    } else if (task) {
-      tasks.push(task);
-    }
-
-    emitEvent(session, "kanban.update", "user", {
-      id: boardId || "board-main",
-      title: currentBoard?.title || "Project Autonomy Board",
-      autonomous: true,
-      tasks,
-    });
-
-    res.json({ ok: true, tasks });
+    const result = applyBoard(latestBoard(session.events), action);
+    if (result.board) emitEvent(session, "kanban.update", "user", result.board as any);
+    res.json({ ok: result.ok, tasks: result.board?.tasks ?? [], detail: result.summary });
   });
 
   // 8. Memory / Knowledge Web
