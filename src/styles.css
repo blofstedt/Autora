@@ -1354,24 +1354,35 @@ button.hint.voice-note:hover { text-decoration: underline; }
   align-items: end; min-height: 320px; padding: 14px 16px 22px;
 }
 
-/* The mark, in a clear disc: over a picture a bare triangle can land on anything,
-   and the disc is what keeps it legible. Drawn at 54px inside a 60px circle --
-   a mark bigger than its own disc hangs out of the bottom of it and into the
-   words under it, which is exactly what it was doing. */
+/* The mark, and only the mark. The 60px box is a layout size, not something
+   drawn: what the light sits in is the halo itself. Drawn at 54px in that box,
+   because a mark bigger than the space it is centred in hangs out of the
+   bottom of it and into the words under it, which is exactly what it used to
+   do. There was a disc here -- a translucent fill, a 1px ring, a shadow and a
+   blur -- and against the bar it read as a faint circle around the light, the
+   leftover of a button that is not a button any more. */
 .live-bar .live-bar-orb {
   grid-row: 1; grid-column: 1; align-self: center; justify-self: start;
   width: 60px; height: 60px; min-width: 60px; margin: 0; padding: 0;
-  border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px; border: 0;
   display: grid; place-items: center;
-  background: rgba(10, 13, 20, 0.28);
-  box-shadow: 0 6px 18px -10px rgba(0, 0, 0, 0.9);
-  backdrop-filter: blur(9px) saturate(1.1); -webkit-backdrop-filter: blur(9px) saturate(1.1);
+  background: none; box-shadow: none;
   /* Nothing is pressed in here any more -- the name is the whole of it -- so
      there is no scroll or selection to suppress either. */
   user-select: none; -webkit-user-select: none;
+  transition: transform 0.12s var(--ease);
+}
+/* The one case that wants a disc is a picture behind it: a bare triangle can
+   land on anything, so live view gets the fill and the ring back to hold the
+   mark off what it would otherwise be read against. */
+.live-bar.has-view .live-bar-orb {
+  grid-row: 3;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(10, 13, 20, 0.28);
+  box-shadow: 0 6px 18px -10px rgba(0, 0, 0, 0.9);
+  backdrop-filter: blur(9px) saturate(1.1); -webkit-backdrop-filter: blur(9px) saturate(1.1);
   transition: transform 0.12s var(--ease), background 0.3s var(--ease);
 }
-.live-bar.has-view .live-bar-orb { grid-row: 3; }
 .live-bar .live-bar-orb::after { display: none; }
 /* The mark centres itself in the disc at every size, so a smaller one on a
    phone stays in the middle of it rather than slipping to a corner. */
@@ -1410,6 +1421,18 @@ button.hint.voice-note:hover { text-decoration: underline; }
 .live-bar.has-view .live-bar-status { text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9); }
 .live-bar-status.is-heard { color: var(--text); }
 .live-bar-status.is-trouble { color: var(--warn); }
+/* The same line, as the thing to press when the microphone never opened: a
+   button to look at, and not one to look like. */
+.live-bar-status.is-tap {
+  appearance: none; -webkit-appearance: none;
+  border: 0; background: none; padding: 0; margin: 0;
+  /* Not color: the trouble colour is set by .is-trouble above, and a reset
+     here would quietly undo it. */
+  font: inherit; text-align: left; cursor: pointer;
+  text-decoration: underline; text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+.live-bar-status.is-tap:hover, .live-bar-status.is-tap:focus-visible { color: var(--text); }
 
 /* The way out, and the only control left on the bar: an X where the eye
    expects one. Over the picture it stops being chrome and becomes glass, so
@@ -1777,6 +1800,24 @@ h4 + .jf-hint,
 p + .jf-hint,
 label + .jf-hint { margin-top: -5px; }
 .jf-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+/* The recurrence, once a shape has been chosen: the day and the time, side by
+   side, because they are one answer to one question. */
+.jf-recur { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px; margin-top: 10px; }
+.jf-bit { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.jf-bit > span {
+  font-size: calc(11px * var(--ts, 1)); color: var(--text-3); font-weight: 600;
+  letter-spacing: 0.04em; text-transform: uppercase;
+}
+.jf-bit input, .jf-bit select {
+  padding: 8px 10px; border-radius: var(--r-sm); background: var(--s2);
+  border: 1px solid var(--border); color: var(--text);
+  font-family: inherit; font-size: calc(13px * var(--ts, 1));
+}
+.jf-bit input[type="time"] { font-variant-numeric: tabular-nums; }
+.jf-bit input:focus, .jf-bit select:focus { outline: none; border-color: var(--accent-line); }
+/* The day chips sit in the same row, and their labels are not shouted. */
+.jf-bit .jf-presets { gap: 5px; }
+.jf-hint code { font-family: var(--mono); font-size: 11.5px; color: var(--text-2); }
 .jf-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2px; }
 
 /* ------------------------------------------------------------- settings -- */
@@ -4825,6 +4866,12 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 .kweb.is-embedded .kweb-top { height: auto; min-height: 58px; }
 @media (max-width: 680px) { .sched.is-embedded .sched-top { padding: 10px 12px 0; } }
 @media (max-width: 680px) {
+  /* At this width the header is already busy: the button keeps the plus and
+     drops the words, and stays where the eye expects the action. */
+  .top-action-word { display: none; }
+  .top-action-slot .btn { padding: 0 11px; }
+}
+@media (max-width: 680px) {
   .stat-grid, .stat-grid.is-compact { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .stat-card { padding: 11px 12px; }
   .stat-value { font-size: calc(17px * var(--ts, 1)); }
@@ -5737,6 +5784,20 @@ button.dock-card:hover { border-color: var(--border-strong); }
   margin: 4px 4px 0; padding-top: 8px; border-top: 1px solid var(--border);
   font-size: calc(10.5px * var(--ts, 1)); color: var(--text-3); line-height: 1.5;
 }
+
+/* ------------------------------------------------- pages in the header -- */
+/* The corner a page's own button goes in. Empty on every page that has no
+   such button, and gone rather than sitting there as a gap. */
+.top-action-slot { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.top-action-slot:empty { display: none; }
+
+/* A page's line of orientation: what this is, before the list of them. Read
+   at the width of the prose the app already uses. */
+.trig-lede {
+  margin: 0 0 2px; max-width: var(--read); color: var(--text-2);
+  font-size: calc(12.5px * var(--ts, 1)); line-height: 1.65;
+}
+.trig-lede b { color: var(--text); font-weight: 600; }
 
 /* ------------------------------------------------------------------ triggers -- */
 /* A trigger's row is a URL and a secret, so it needs one thing a rule does

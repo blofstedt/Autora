@@ -7,7 +7,7 @@
 
 export type CommandId =
   | "stop" | "new" | "retry" | "continue" | "remember" | "close" | "live"
-  | "config" | "mind" | "cron" | "sessions" | "system";
+  | "config" | "mind" | "cron" | "triggers" | "sessions" | "system";
 
 export type Command = {
   id: CommandId;
@@ -34,7 +34,8 @@ export const COMMANDS: Command[] = [
   { id: "live", name: "live", hint: "Start live voice chat" },
   { id: "sessions", name: "sessions", hint: "Open the session list" },
   { id: "mind", name: "mind", hint: "Open what Autora remembers" },
-  { id: "cron", name: "schedules", hint: "Open scheduled tasks and watchers", aliases: ["cron"] },
+  { id: "cron", name: "schedules", hint: "Open tasks that run on a clock", aliases: ["cron"] },
+  { id: "triggers", name: "triggers", hint: "Open the URLs that can start a turn", aliases: ["hooks"] },
   { id: "config", name: "settings", hint: "Open settings and API keys", aliases: ["config"] },
   { id: "system", name: "system", hint: "Open status and logs" },
 ];

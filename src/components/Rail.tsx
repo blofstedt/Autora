@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { AutoraMark, type MarkState } from "./AutoraMark";
 import {
   IconBrain, IconChart, IconClock, IconFolder, IconList, IconMask, IconMessage,
-  IconMonitor, IconPlug, IconPlus, IconServer, IconSliders,
+  IconMonitor, IconPlug, IconPlus, IconServer, IconSliders, IconZap,
   IconX, IconCheck,
 } from "./Icons";
 import {
@@ -19,7 +19,7 @@ import {
 
 export type PageId =
   | "chat" | "config" | "sessions" | "artifacts" | "analytics"
-  | "cron" | "mind" | "mcp" | "system";
+  | "cron" | "triggers" | "mind" | "mcp" | "system";
 
 /** The sidebar. Ids stay as they were, so old links (?page=cron) still land;
     the labels are what people call these things rather than how they are
@@ -29,6 +29,7 @@ export const PAGES: { id: PageId; label: string; icon: ReactNode; group: "work" 
   { id: "sessions", label: "Sessions", icon: <IconList size={16} />, group: "work" },
   { id: "artifacts", label: "Artifacts", icon: <IconFolder size={16} />, group: "work" },
   { id: "cron", label: "Schedules", icon: <IconClock size={16} />, group: "work" },
+  { id: "triggers", label: "Triggers", icon: <IconZap size={16} />, group: "work" },
   { id: "mind", label: "Mind", icon: <IconBrain size={16} />, group: "work" },
   { id: "config", label: "Settings", icon: <IconSliders size={16} />, group: "setup" },
   { id: "mcp", label: "Integrations", icon: <IconPlug size={16} />, group: "setup" },

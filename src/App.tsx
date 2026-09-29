@@ -21,6 +21,7 @@ import {
 import { Sessions, type SessionRow } from "./components/Sessions";
 import { Approvals } from "./components/Approvals";
 import { Schedule } from "./components/Schedule";
+import { Triggers } from "./components/Triggers";
 import { Settings, type ConfigTab } from "./components/Settings";
 import { DictateButton } from "./components/DictateButton";
 import { AttachButton, CameraButton } from "./components/AttachButton";
@@ -100,6 +101,10 @@ export function App() {
   const [userSpeaking] = useState(false);
   /** Which page of the app is showing. Chat is the conversation; the rest
       are the sidebar's pages. Kept in the address so a reload stays put. */
+  /** Where a page puts its own button: the header's right-hand corner. An
+      element handed to the page rather than a prop plumbed through it, because
+      what the button does belongs to the page and where it goes belongs here. */
+  const [topSlot, setTopSlot] = useState<HTMLElement | null>(null);
   const [page, setPage] = useState<PageId>(() => {
     const asked = new URLSearchParams(location.search).get("page");
     // Memory and Skills were folded into the Mind; old links still land there.
@@ -801,6 +806,7 @@ export function App() {
       case "sessions":
       case "mind":
       case "cron":
+      case "triggers":
       case "config":
       case "system":
         navigate(command.id);
@@ -1347,6 +1353,12 @@ export function App() {
               {sessionCost > 0 ? `${money(sessionCost)} this session` : `${fmt(view.tokens.in + view.tokens.out)} tokens`}
             </button>
           )}
+
+          {/* The page's own action, in the corner it is looked for in: a page
+              that can make something should say so where its name is, rather
+              than in a bar of its own under the title. Rightmost, because a
+              page's one button is the thing the eye should land on last. */}
+          <div className="top-action-slot" ref={setTopSlot} />
         </header>
 
         {page !== "chat" && (
@@ -1382,7 +1394,8 @@ export function App() {
             )}
             {page === "artifacts" && <ArtifactsPage sessions={sessions} onOpenSession={openSession} />}
             {page === "mcp" && <McpPage />}
-            {page === "cron" && <Schedule embedded onOpenSession={openSession} />}
+            {page === "cron" && <Schedule embedded topSlot={topSlot} onOpenSession={openSession} />}
+            {page === "triggers" && <Triggers topSlot={topSlot} onOpenSession={openSession} />}
             {page === "mind" && (
               <MindPage jump={mindBucket} recent={view.memories} />
             )}

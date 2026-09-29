@@ -238,6 +238,31 @@ test("the name at the front of a phrase is a call, and what follows it is the re
   assert.equal(afterName("autora"), "");               // called, nothing asked yet
 });
 
+test("the name is heard however the phone spells it", () => {
+  // Every spelling of it seen on a phone -- the engine picks one and is not
+  // going to be told which, so the name is matched by how it sounds.
+  for (const said of ["Atora", "Otora", "Autura", "Autara", "Outora", "Tora", "Taura"]) {
+    assert.equal(afterName(`${said}, what's the weather`), "what's the weather", said);
+  }
+  assert.equal(afterName("A tora, stop"), "stop");       // heard as two words
+  assert.equal(afterName("Aurora what time is it"), "what time is it");
+});
+
+test("noise in front of the name is still the start of the phrase", () => {
+  assert.equal(afterName("Um, Autora, what's the weather"), "what's the weather");
+  assert.equal(afterName("okay aurora stop"), "stop");
+  assert.equal(afterName("and outora turn it down"), "turn it down");
+});
+
+test("a word that merely sounds a bit like the name is not a call", () => {
+  // "auto" and "aura" are as close to it as "atora" is: what keeps them out is
+  // being shorter than the name, not being further from it.
+  assert.equal(afterName("auto repair on the corner"), null);
+  assert.equal(afterName("aura reading this morning"), null);
+  assert.equal(afterName("the aurora was lovely last night"), null);
+  assert.equal(afterName("dora the explorer"), null);
+});
+
 test("the name anywhere but the start is not a call", () => {
   // Autora says its own name out loud, and the microphone is listening to that.
   assert.equal(afterName("I'm Autora and I can hear you"), null);

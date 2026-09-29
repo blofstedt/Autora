@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import { FREQS, SHORT_DAYS, clock, cronOf, parseRecur, type Recur } from "../lib/recur";
 import {
-  IconCheck, IconClock, IconCopy, IconPlay, IconPlug, IconPlus, IconRepeat, IconRotateCcw, IconShield, IconTrash, IconX,
+  IconCheck, IconClock, IconPlay, IconPlus, IconRepeat, IconShield, IconTrash, IconX,
 } from "./Icons";
 
 export type Job = {
@@ -40,28 +42,7 @@ type Agreement = {
   last_used: number | null;
 };
 
-/**
- * A trigger: a URL and a secret, with a prompt attached. Anything that can
- * make an HTTP request starts it -- a CI job, a shell script, a phone
- * shortcut -- and the turn it starts reports in a session of its own, like a
- * scheduled run. See server/triggers.ts.
- */
-type TriggerRow = {
-  id: string;
-  name: string;
-  prompt: string;
-  enabled: boolean;
-  created: number;
-  fires: number;
-  last_fired: number | null;
-  last_session: string | null;
-  last_error: string | null;
-  token_hint: string;
-  url: string;
-  /** Only present in the answer that made or rotated it. */
-  token?: string;
-};
-
+/** One run of a task: when it started, how it ended, and the session it is in. */
 type JobRun = {
   at: number;
   finished: number | null;
@@ -162,33 +143,27 @@ export function ago(ts: number): string {
  * few are listed under the task, one tap from each.
  */
 export function Schedule({
-  onClose, onOpenSession, embedded = false,
+  onClose, onOpenSession, embedded = false, topSlot,
 }: {
   onClose?: () => void;
   onOpenSession: (id: string) => void;
   /** Shown as a page rather than a full-screen sheet. */
   embedded?: boolean;
+  /** The header's right-hand corner, where a page's own button goes. */
+  topSlot?: HTMLElement | null;
 }) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [rules, setRules] = useState<Agreement[]>([]);
-  const [triggers, setTriggers] = useState<TriggerRow[]>([]);
-  /** The secret of a trigger just made or rotated, shown once, with its URL. */
-  const [secret, setSecret] = useState<{ url: string; token: string } | null>(null);
-  const [newTrigger, setNewTrigger] = useState<{ name: string; prompt: string } | null>(null);
   const [editing, setEditing] = useState<Job | "new" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [jobsRes, rulesRes, triggersRes] = await Promise.all([
-        fetch("/api/jobs"), fetch("/api/autonomy"), fetch("/api/triggers"),
-      ]);
+      const [jobsRes, rulesRes] = await Promise.all([fetch("/api/jobs"), fetch("/api/autonomy")]);
       setJobs(await jobsRes.json());
       const body = await rulesRes.json().catch(() => ({ rules: [] }));
       setRules(Array.isArray(body?.rules) ? body.rules : []);
-      const made = await triggersRes.json().catch(() => []);
-      setTriggers(Array.isArray(made) ? made : []);
     } catch {
       /* the next poll will pick it up */
     } finally {
@@ -235,54 +210,7 @@ export function Schedule({
     await load();
   }, [load]);
 
-  const saveTrigger = useCallback(
-    async (draft: { name: string; prompt: string }) => {
-      setError(null);
-      const res = await fetch("/api/triggers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(draft),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(body.error ?? "Could not make that trigger.");
-        return;
-      }
-      setNewTrigger(null);
-      setSecret({ url: body.trigger.url, token: body.trigger.token });
-      await load();
-    },
-    [load],
-  );
 
-  const patchTrigger = useCallback(
-    async (t: TriggerRow, patch: Record<string, unknown>) => {
-      const res = await fetch(`/api/triggers/${t.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(body.error ?? "That could not be changed.");
-        return;
-      }
-      if (body.trigger?.token) setSecret({ url: body.trigger.url, token: body.trigger.token });
-      await load();
-    },
-    [load],
-  );
-
-  const removeTrigger = useCallback(
-    async (t: TriggerRow) => {
-      await fetch(`/api/triggers/${t.id}`, { method: "DELETE" });
-      setSecret(null);
-      await load();
-    },
-    [load],
-  );
-
-  /* With an agreement, that one; without, all of them. */
   const revokeRule = useCallback(async (rule?: Agreement) => {
     await fetch(rule ? `/api/autonomy/${encodeURIComponent(rule.id)}` : "/api/autonomy", { method: "DELETE" });
     await load();
@@ -308,9 +236,27 @@ export function Schedule({
           {embedded ? "Schedules" : "Scheduled tasks"}
         </div>
         <div className="spacer" />
-        <button className="btn primary" onClick={() => { setError(null); setEditing("new"); }}>
-          <IconPlus size={13} /> New task
-        </button>
+        {/* As a page, the button that makes a task belongs with the page's own
+            name, up in the header -- a bar holding one button and nothing else
+            reads as something left behind. As the old full-screen sheet it
+            stays where it was. */}
+        {topSlot
+          ? createPortal(
+            <button
+              className="btn primary top-action"
+              onClick={() => { setError(null); setEditing("new"); }}
+            >
+              <IconPlus size={13} /> <span className="top-action-word">New task</span>
+            </button>,
+            topSlot,
+          )
+          : embedded
+            ? null
+            : (
+              <button className="btn primary" onClick={() => { setError(null); setEditing("new"); }}>
+                <IconPlus size={13} /> New task
+              </button>
+            )}
         {onClose && !embedded && (
           <button className="btn icon ghost" onClick={onClose} aria-label="Close scheduled tasks">
             <IconX size={14} />
@@ -321,6 +267,14 @@ export function Schedule({
       {error && <div className="sched-error">{error}</div>}
 
       <div className="sched-body">
+        {/* Where the other half of "work that starts by itself" lives, said
+            once at the top rather than as a section at the bottom. */}
+        <p className="trig-lede">
+          Everything here runs on a clock: a recurrence, and for a watcher the
+          schedule it looks on. Work that something else starts — a webhook, a
+          pipeline, a shortcut on your phone — lives on <b>Triggers</b>.
+        </p>
+
         {editing && (
           <JobForm
             job={editing === "new" ? null : editing}
@@ -423,131 +377,7 @@ export function Schedule({
           </article>
         ))}
 
-        {/* The third way work starts by itself: not a time, not a change in
-            something the console watches, but somebody else's machine saying
-            so. A schedule's row is a time and a watcher's is a target; a
-            trigger's is a URL and a secret. */}
-        <section className="agree trig">
-          <div className="agree-top">
-            <span className="brand-mark"><IconPlug size={13} /></span>
-            <b>Triggers</b>
-            <div className="spacer" />
-            <button
-              className="btn ghost"
-              onClick={() => { setError(null); setNewTrigger({ name: "", prompt: "" }); }}
-            >
-              <IconPlus size={13} /> New trigger
-            </button>
-          </div>
-          <p className="agree-why">
-            A URL that starts a turn when something calls it — a CI job that has finished, a script on
-            another machine, a shortcut on your phone. It runs in a session of its own, exactly like a
-            scheduled task, with the same budget. The secret is the only thing guarding it, so treat
-            the URL as a password.
-          </p>
-
-          {secret && (
-            <div className="trig-secret">
-              <p>
-                <b>Copy this now.</b> The secret is shown once — it is not stored anywhere it can be
-                read back, only its fingerprint.
-              </p>
-              <code>
-                curl -s -X POST {secret.url}                 {"\n"}  -H "x-autora-token: {secret.token}"
-              </code>
-              <div className="trig-secret-acts">
-                <button
-                  className="btn ghost"
-                  onClick={() => {
-                    void navigator.clipboard
-                      ?.writeText(`curl -s -X POST ${secret.url} -H "x-autora-token: ${secret.token}"`)
-                      .catch(() => undefined);
-                  }}
-                >
-                  <IconCopy size={12} /> Copy the command
-                </button>
-                <button className="btn ghost" onClick={() => setSecret(null)}>Done</button>
-              </div>
-            </div>
-          )}
-
-          {newTrigger !== null && (
-            <form
-              className="trig-form"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (newTrigger.name.trim() && newTrigger.prompt.trim()) void saveTrigger(newTrigger);
-              }}
-            >
-              <input
-                className="trig-input"
-                placeholder="What is it? (e.g. the nightly build)"
-                value={newTrigger.name}
-                onChange={(e) => setNewTrigger({ ...newTrigger, name: e.target.value })}
-                autoFocus
-              />
-              <textarea
-                className="trig-prompt"
-                placeholder="What should the turn do when it fires?"
-                rows={3}
-                value={newTrigger.prompt}
-                onChange={(e) => setNewTrigger({ ...newTrigger, prompt: e.target.value })}
-              />
-              <div className="trig-form-acts">
-                <button type="submit" className="btn primary" disabled={!newTrigger.name.trim() || !newTrigger.prompt.trim()}>
-                  Make the URL
-                </button>
-                <button type="button" className="btn ghost" onClick={() => setNewTrigger(null)}>Cancel</button>
-              </div>
-            </form>
-          )}
-
-          {triggers.map((t) => (
-            <article className="rule" key={t.id}>
-              <div className="rule-top">
-                <code className="rule-match">{t.name}</code>
-                <div className="spacer" />
-                <button
-                  className="btn ghost"
-                  title={t.enabled ? "Stop it firing" : "Let it fire again"}
-                  onClick={() => void patchTrigger(t, { enabled: !t.enabled })}
-                >
-                  {t.enabled ? "On" : "Off"}
-                </button>
-                <button
-                  className="btn icon ghost"
-                  title="Replace the secret"
-                  aria-label={`Rotate the secret for ${t.name}`}
-                  onClick={() => void patchTrigger(t, { rotate: true })}
-                >
-                  <IconRotateCcw size={13} />
-                </button>
-                <button
-                  className="btn icon ghost"
-                  title="Delete this trigger"
-                  aria-label={`Delete ${t.name}`}
-                  onClick={() => void removeTrigger(t)}
-                >
-                  <IconTrash size={13} />
-                </button>
-              </div>
-              <div className="rule-foot">
-                <span className="muted">
-                  {t.fires === 0 ? "never fired" : `fired ${t.fires}×`}
-                  {t.last_fired ? `, last ${ago(t.last_fired)}` : ""} · secret {t.token_hint}
-                </span>
-                {t.last_session && (
-                  <button className="btn ghost" onClick={() => onOpenSession(t.last_session as string)}>
-                    Read the last one
-                  </button>
-                )}
-              </div>
-              {t.last_error && <p className="rule-note">{t.last_error}</p>}
-            </article>
-          ))}
-        </section>
-
-        {/* What the guard no longer asks about. Kept next to the schedules
+{/* What the guard no longer asks about. Kept next to the schedules
             because both are "things that will happen without you", and both
             need somewhere to be seen and taken back. */}
         {rules.length > 0 && (
@@ -598,6 +428,10 @@ export function Schedule({
   );
 }
 
+/** Monday to Friday, whichever order they were tapped in. */
+const isWeekdays = (days: number[]) =>
+  days.length === 5 && [1, 2, 3, 4, 5].every((d) => days.includes(d));
+
 function JobForm({
   job, onCancel, onSave,
 }: {
@@ -607,14 +441,35 @@ function JobForm({
 }) {
   const [name, setName] = useState(job?.name ?? "");
   const [cron, setCron] = useState(job?.cron ?? "0 8 * * *");
+  const [recur, setRecur] = useState<Recur>(() => parseRecur(job?.cron ?? "0 8 * * *"));
   const [prompt, setPrompt] = useState(job?.prompt ?? "");
   const [watchKind, setWatchKind] = useState<WatchKind | "">(job?.watch?.kind ?? "");
   const [target, setTarget] = useState(job?.watch?.target ?? "");
   const [saving, setSaving] = useState(false);
 
+  /** One place the two representations meet: the picker writes the cron, and
+      anything reading the cron reads what the picker just wrote. */
+  const setRecurrence = (next: Recur) => {
+    setRecur(next);
+    setCron(cronOf(next, cron));
+  };
+
   const described = describeCron(cron);
   const ready = (cron.trim().startsWith("@") || cron.trim().split(/\s+/).length === 5) &&
     prompt.trim().length > 0 && (!watchKind || target.trim().length > 0);
+
+  /* The time box only exists for the shapes that have one, so it is asked for
+     in the same terms. */
+  const at = recur.kind === "daily" || recur.kind === "weekly" || recur.kind === "monthly"
+    ? clock(recur.hour, recur.minute)
+    : "";
+  const atTime = (value: string) => {
+    const [h, m] = value.split(":").map(Number);
+    if (!Number.isInteger(h) || !Number.isInteger(m)) return;
+    if (recur.kind === "daily") setRecurrence({ ...recur, hour: h, minute: m });
+    else if (recur.kind === "weekly") setRecurrence({ ...recur, hour: h, minute: m });
+    else if (recur.kind === "monthly") setRecurrence({ ...recur, hour: h, minute: m });
+  };
 
   return (
     <form
@@ -647,9 +502,9 @@ function JobForm({
       </label>
 
       <div className="jf-row">
-        <span>Runs</span>
+        <span>{watchKind ? "Looks" : "Runs"}</span>
         <div className="jf-presets">
-          {([["", "on the schedule"], ["page", "when a page changes"], ["file", "when a file changes"], ["command", "when a command's output changes"]] as const).map(([kind, label]) => (
+          {([["", "on a schedule"], ["page", "when a page changes"], ["file", "when a file changes"], ["command", "when a command's output changes"]] as const).map(([kind, label]) => (
             <button
               type="button"
               key={kind || "cron"}
@@ -674,38 +529,131 @@ function JobForm({
             />
           </label>
           <div className="jf-hint">
-            The schedule below is how often it looks. The first look is only a baseline; after
+            The recurrence below is how often it looks. The first look is only a baseline; after
             that the task runs whenever what it sees has changed, with the change attached.
           </div>
         </>
       )}
 
-      <label className="jf-row">
-        <span>{watchKind ? "Check" : "Schedule"}</span>
-        <input
-          value={cron}
-          onChange={(e) => setCron(e.target.value)}
-          className="jf-cron"
-          spellCheck={false}
-          aria-describedby="jf-cron-hint"
-        />
-      </label>
-      <div className="jf-hint" id="jf-cron-hint">
-        {described ?? "minute hour day month weekday"}
+      <div className="jf-row">
+        <span>Repeats</span>
+        <div className="jf-presets">
+          {FREQS.map((f) => (
+            <button
+              type="button"
+              key={f.kind}
+              className={`kchip ${recur.kind === f.kind ? "on" : ""}`}
+              onClick={() => {
+                if (f.kind === "custom") { setRecur({ kind: "custom" }); return; }
+                if (f.kind === "hourly") setRecurrence({ kind: "hourly", minute: 0 });
+                if (f.kind === "daily") setRecurrence({ kind: "daily", hour: 8, minute: 0 });
+                if (f.kind === "weekly") setRecurrence({ kind: "weekly", days: [1], hour: 8, minute: 0 });
+                if (f.kind === "monthly") setRecurrence({ kind: "monthly", day: 1, hour: 8, minute: 0 });
+              }}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="jf-presets">
-        {PRESETS.map((p) => (
-          <button
-            type="button"
-            key={p.cron}
-            className={`kchip ${cron.trim() === p.cron ? "on" : ""}`}
-            onClick={() => setCron(p.cron)}
-          >
-            {p.label}
-          </button>
-        ))}
-      </div>
+      {recur.kind !== "custom" && (
+        <div className="jf-recur">
+          {recur.kind === "hourly" ? (
+            <label className="jf-bit">
+              <span>Minutes past the hour</span>
+              <input
+                type="number" min={0} max={59} value={recur.minute}
+                onChange={(e) => setRecurrence({ ...recur, minute: Math.max(0, Math.min(59, Number(e.target.value) || 0)) })}
+              />
+            </label>
+          ) : (
+            <>
+              {recur.kind === "weekly" && (
+                <div className="jf-bit">
+                  <span>On</span>
+                  <div className="jf-presets">
+                    {SHORT_DAYS.map((label, day) => (
+                      <button
+                        type="button"
+                        key={label}
+                        className={`kchip ${recur.days.includes(day) ? "on" : ""}`}
+                        onClick={() => setRecurrence({
+                          ...recur,
+                          days: recur.days.includes(day)
+                            ? recur.days.filter((d) => d !== day)
+                            : [...recur.days, day],
+                        })}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      className={`kchip ${isWeekdays(recur.days) ? "on" : ""}`}
+                      onClick={() => setRecurrence({ ...recur, days: [1, 2, 3, 4, 5] })}
+                    >
+                      weekdays
+                    </button>
+                  </div>
+                </div>
+              )}
+              {recur.kind === "monthly" && (
+                <label className="jf-bit">
+                  <span>On the</span>
+                  <select
+                    value={recur.day}
+                    onChange={(e) => setRecurrence({ ...recur, day: Number(e.target.value) })}
+                  >
+                    {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                      <option key={d} value={d}>{ordinal(d)}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <label className="jf-bit">
+                <span>At</span>
+                <input type="time" value={at} onChange={(e) => atTime(e.target.value)} />
+              </label>
+            </>
+          )}
+        </div>
+      )}
+
+      {recur.kind === "custom" ? (
+        <>
+          <label className="jf-row">
+            <span>Schedule</span>
+            <input
+              value={cron}
+              onChange={(e) => setCron(e.target.value)}
+              className="jf-cron"
+              spellCheck={false}
+              aria-describedby="jf-cron-hint"
+            />
+          </label>
+          <div className="jf-hint" id="jf-cron-hint">
+            {described ?? "minute hour day month weekday"}
+          </div>
+
+          <div className="jf-presets">
+            {PRESETS.map((p) => (
+              <button
+                type="button"
+                key={p.cron}
+                className={`kchip ${cron.trim() === p.cron ? "on" : ""}`}
+                onClick={() => { setRecur(parseRecur(p.cron)); setCron(p.cron); }}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="jf-hint">
+          {described ?? FREQS.find((f) => f.kind === recur.kind)?.label} · <code>{cron}</code>
+        </div>
+      )}
 
       <div className="jf-actions">
         <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>

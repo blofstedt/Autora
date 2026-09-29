@@ -494,14 +494,76 @@ function pickVoice(): SpeechSynthesisVoice | null {
  * Autora interrupt itself: it says its own name out loud, and the microphone
  * is listening to that.
  */
-const CALL = /^(?:(?:hey|hi|hello|ok|okay|yo)[\s,]+)?(autora|aurora|a\s+tora)(?:['’]s)?\b[\s,.:;!?\u2013\u2014-]*/i;
+const CALL = /^(?:(?:hey|hi|hello|ok|okay|yo)[\s,]+)?(autora|aurora|a\s+tora)(?:['\u2019]s)?\b[\s,.:;!?\u2013\u2014-]*/i;
+
+/** Every spelling of the name a phone has actually written, including the
+    short ones that are too short for drift to be trusted with. */
+const NAME_FORMS = new Set([
+  "autora", "aurora", "atora", "otora", "atura", "autura", "outora",
+  "autara", "tora", "taura", "torah", "tura",
+]);
+
+/** The noise people make before a name, the greeting among it. A name is only
+    a name at the start of a phrase -- Autora says its own name out loud and
+    the microphone hears that -- so this is what "the start" is read through. */
+const LEAD_IN = /^(?:(?:hey|hi|hello|ok|okay|yo|um|uh|erm|ah|so|well|and)[\s,]+)+/i;
+
+/** The name heard as two words: "a tora", "o tora". */
+const SPLIT_NAME = /^(?:a|o)[\s,]+(tora|taura|tura|torah)\b/i;
+
+/** What a phrase may continue with once the name is off it. */
+const GAP = /^[\s,.:;!?\u2013\u2014-]*/;
+
+/** How far the engine's spelling may drift from "autora" and still be the
+    name. Two edits covers aurora, atora, otora, autura, outora and autara in
+    one go -- every spelling of it seen on a phone so far. Words shorter than
+    the name are left to the list above: "auto" and "aura" are two edits away
+    as well, and hearing one of those is not a call. */
+const DRIFT = 2;
+const MIN_NAME = 5;
+
+/** Edit distance, plain and short: the words here are eight characters. */
+function drift(a: string, b: string): number {
+  let prev = Array.from({ length: b.length + 1 }, (_: unknown, i: number) => i);
+  for (let i = 1; i <= a.length; i += 1) {
+    const row = [i];
+    for (let j = 1; j <= b.length; j += 1) {
+      row.push(Math.min(
+        (prev[j] ?? 0) + 1,
+        (row[j - 1] ?? 0) + 1,
+        (prev[j - 1] ?? 0) + (a[i - 1] === b[j - 1] ? 0 : 1),
+      ));
+    }
+    prev = row;
+  }
+  return prev[b.length] ?? 0;
+}
+
+/** Whether one word on its own is the name. */
+function isName(word: string): boolean {
+  const one = bare(word).replace(/['\u2019]s$/, "");
+  if (!one) return false;
+  return NAME_FORMS.has(one) || (one.length >= MIN_NAME && drift(one, "autora") <= DRIFT);
+}
 
 /** What followed the name at the start of `text`, or null when `text` did not
     start with it. An empty string is the name and nothing else. */
 export function afterName(text: string): string | null {
   const said = text.trim().replace(/^[\s,.!?]+/, "");
-  if (!said || !CALL.test(said)) return null;
-  return said.replace(CALL, "").trim();
+  if (!said) return null;
+  if (CALL.test(said)) return said.replace(CALL, "").trim();
+  // The same name, written some other way. A phone settles on "aurora" most
+  // often, but it will not be told which words to use, so the name is matched
+  // by how it sounds rather than against a list -- and a greeting, or a "um",
+  // dropped in front of it is still the start of the phrase.
+  const rest = said.replace(LEAD_IN, "");
+  if (!rest) return null;
+  const split = rest.match(SPLIT_NAME);
+  if (split) return rest.slice(split[0].length).replace(GAP, "").trim();
+  const spoken = rest.split(/\s+/);
+  const first = spoken[0];
+  if (first === undefined || !isName(first)) return null;
+  return spoken.slice(1).join(" ").replace(GAP, "").trim();
 }
 
 /** What to send, with the name taken off the front. Null when the whole

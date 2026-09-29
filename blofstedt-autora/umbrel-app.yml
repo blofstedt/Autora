@@ -99,32 +99,26 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  A chat now says how much it may do on its own. The mode is a property of the
-  conversation rather than of the install, so one chat can be watched in Plan
-  while another runs in Auto, and a pill beside the session name says which.
+  The name that wakes it is heard the way it is actually said. On a phone the
+  speech engine writes it down a dozen ways -- atora, otora, outora, a stray
+  "um" in front of it -- and only the exact spelling used to count, which is
+  why saying the name could look like saying nothing at all. Any near spelling
+  in the first words of what was heard opens the turn now.
 
-  Plan changes nothing -- every call that would is put to you first, and the
-  agent lays out what it intends and stops there. Ask lets looking be free and
-  waits for a yes before anything changes. Auto is what Autora has always
-  done, and says nothing in the header: a mark on every chat saying "nothing
-  special" is noise, and the one worth noticing is the chat that is not in it.
+  The live bar also stops pretending. A phone can refuse the microphone and
+  say nothing about it, and a bar with nothing listening looks exactly like a
+  quiet room; a few seconds in, it says so, and one tap opens it. And the mark
+  in that bar is the mark and its light, with none of the pale ring it used to
+  sit in -- the disc comes back only over a camera picture, where a fill is
+  what keeps the mark legible.
 
-  Work can now start because something outside said so. A trigger is a URL and
-  a secret with a prompt attached, so a CI run, a webhook, a cron on another
-  host or a phone shortcut can begin a turn -- same budget, same notification,
-  same place in the thread list as a scheduled run.
+  Triggers have a page of their own in the menu. A schedule is a time and a
+  watcher is a target, but a trigger is somebody else's machine saying so, and
+  they are looked for in different moods. Schedules is now only work that runs
+  on a clock, in the terms you would say it in: every hour, every day, every
+  week or every month, with a time, a weekday or a day of the month -- and the
+  raw cron field kept under custom, for the schedules the four shapes cannot
+  express.
 
-  The console also stops waiting to be asked about a job it started. When a
-  background command finishes and its output was never read, it may open a turn
-  in that session by itself and report what happened, under the automation
-  budget, inside your quiet hours, and never while you are already working in
-  that chat.
-
-  Autora is installable, and now it says so. There is an offer in the app when
-  the browser will take one (Chrome, Edge, Android), and the written-out route
-  for iOS, where Safari fires nothing and Share -> Add to Home Screen is the
-  only way.
-
-  One smaller thing. A message can no longer be cut off by the console
-  tidying its own context: a fold waits until the message being written is
-  out, and the newest turns are never folded away.
+  One more thing, in passing: the button that makes a task is up in the
+  header with the page's own name, instead of alone in a bar of its own.

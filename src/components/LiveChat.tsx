@@ -14,6 +14,10 @@ const WAKE_LINE = "Say 'Autora' to add to the conversation…";
     gives the bar back. Long enough to think of the sentence, short enough that
     an open microphone is never a mystery. */
 const NAME_ONLY_IDLE_MS = 6000;
+/** How long to wait, after live mode opens, before believing the microphone
+    did not open. Long enough to cover the engine warming up, short enough that
+    a person who has said the name twice is told what is wrong. */
+const MIC_CHECK_MS = 2500;
 
 /**
  * Live voice, in place of the composer.
@@ -90,6 +94,8 @@ export function LiveChat({
   /** Woken: the name was heard, and the microphone is the person's until what
       they said has gone out. */
   const [awake, setAwake] = useState(false);
+  /** The microphone was asked for and did not open. See MIC_CHECK_MS. */
+  const [stalled, setStalled] = useState(false);
   /** The same, for the engine's callbacks, which close over older renders. */
   const awakeRef = useRef(false);
   awakeRef.current = awake;
@@ -190,6 +196,33 @@ export function LiveChat({
   const dictation = useDictation({ onPhrase, continuous: true });
   const { start, stop, interim, supported, listening, error } = dictation;
   acceptRef.current = dictation.accept;
+  /* Whether the engine actually opened is checked rather than assumed. A
+     microphone that never started looks exactly like a quiet room -- the bar
+     says the same words either way -- and a phone will refuse one without
+     saying why. Tap-to-open then starts a fresh one, which is also the gesture
+     the browser was waiting for. */
+  const listeningRef = useRef(false);
+  listeningRef.current = listening;
+  useEffect(() => {
+    if (!supported || disabled) return;
+    let timer = 0;
+    const look = () => {
+      if (listeningRef.current) { setStalled(false); return; }
+      setStalled(true);
+      timer = window.setTimeout(look, MIC_CHECK_MS);
+    };
+    timer = window.setTimeout(look, MIC_CHECK_MS);
+    return () => window.clearTimeout(timer);
+  }, [supported, disabled]);
+
+  /* Stop then start: the hook ignores a start while one is already wanted, and
+     a tap has to mean "open a new one" rather than "keep trying". */
+  const openAgain = useCallback(() => {
+    setStalled(false);
+    stop();
+    start();
+  }, [start, stop]);
+
 
   /* The microphone opens with talk mode and closes with it -- nothing else in
      here starts or stops it. It used to follow the mark, held or tapped, and
@@ -229,7 +262,12 @@ export function LiveChat({
     ? trouble
     : heard
       ? heard
-      : awake
+      /* Nothing has been heard because nothing is listening. The instruction
+         to say the name is not one the person can carry out, so the line says
+         what is wrong instead of what to say. */
+      : stalled
+        ? "The microphone has not opened — tap here to try."
+        : awake
         ? listening ? "Listening… it goes when you pause." : "Starting the microphone…"
         /* The whole instruction, and the same one while Autora speaks or works:
            the way to add to the conversation is to say the name, so the bar
@@ -285,9 +323,18 @@ export function LiveChat({
         <span className="live-bar-scrim" aria-hidden="true" />
       )}
       <div className="live-bar-text">
-        <span className={`live-bar-status ${heard ? "is-heard" : ""} ${trouble ? "is-trouble" : ""}`} aria-live="polite">
-          {status}
-        </span>
+        {stalled && !trouble ? (
+          /* A button where the words are, for the one thing that helps: the
+             microphone is not open and the person is the only one who can
+             open it. */
+          <button type="button" className="live-bar-status is-trouble is-tap" onClick={openAgain}>
+            {status}
+          </button>
+        ) : (
+          <span className={`live-bar-status ${heard ? "is-heard" : ""} ${trouble ? "is-trouble" : ""}`} aria-live="polite">
+            {status}
+          </span>
+        )}
       </div>
       {/* No Stop button here. It was a red badge parked in the bar while the
           agent worked -- the one thing on screen that looked like an error.
