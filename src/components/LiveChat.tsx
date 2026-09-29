@@ -3,7 +3,6 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import { chooseTalk, fetchSpeechStatus, turnPause, useDictation } from "../lib/voice";
 import { useLiveView } from "../lib/liveview";
 import { AutoraMark } from "./AutoraMark";
-import { IconCamera, IconStop, IconX } from "./Icons";
 
 /** Single stray syllables are usually the room, not a request. */
 const MIN_CHARS = 2;
@@ -37,9 +36,7 @@ const RELEASE_GRACE_MS = 1200;
  */
 export function LiveChat({
   onUtterance,
-  onExit,
   onInterrupt,
-  onStop,
   sessionId,
   agentSpeaking,
   agentWorking,
@@ -47,11 +44,15 @@ export function LiveChat({
   disabled,
 }: {
   onUtterance: (text: string) => void;
-  onExit?: () => void;
+  /* `onExit` was here, for the End button at the end of the bar. That button
+     is gone (see the note in the bar's markup) and live mode ends by closing
+     the chat or pressing v, which is what App.tsx already does. It may still
+     pass onExit and it is simply ignored. */
   /** Stop the agent talking, for barge-in. */
   onInterrupt?: () => void;
-  /** Stop the agent's turn. */
-  onStop?: () => void;
+  /* `onStop` used to be here, for the Stop badge in the bar. The badge is
+     gone (see the note in the bar's markup), so the bar no longer asks for
+     it; App.tsx may still pass it and it is simply ignored. */
   /** The conversation this is happening in: where the frames go. */
   sessionId: string | null;
   agentSpeaking: boolean;
@@ -274,7 +275,11 @@ export function LiveChat({
         aria-pressed={holding}
       >
         <span className="mob-live-glow" aria-hidden="true" />
-        <AutoraMark state={talking ? "working" : "live"} size={46} />
+        {/* 54 was 46: at 46 the triangle inside the 60px disc was about 27px
+            across and read as a detail of the disc rather than as the mark.
+            The box can grow without touching the disc because a triangle only
+            fills a little over half of its own box. */}
+        <AutoraMark state={talking ? "working" : "live"} size={54} />
       </button>
       {view && (
         /* The person's own half of live view: what the camera has, filling the
@@ -299,17 +304,10 @@ export function LiveChat({
           {status}
         </span>
       </div>
-      {agentWorking && onStop && (
-        <button
-          type="button"
-          className="composer-stop"
-          onClick={onStop}
-          title="Stop the agent"
-          aria-label="Stop the agent"
-        >
-          <IconStop size={14} />
-        </button>
-      )}
+      {/* No Stop button here. It was a red badge parked in the bar while the
+          agent worked -- the one thing on screen that looked like an error.
+          To stop a spoken turn, say stop or close the chat; /stop still works
+          when typing, and the composer's own Stop has not moved. */}
       <button
         type="button"
         className={`btn live-bar-switch ${handsFree ? "is-on" : ""}`}
@@ -319,25 +317,10 @@ export function LiveChat({
       >
         {handsFree ? "Open" : "Hold"}
       </button>
-      <button
-        type="button"
-        className={`btn ghost icon live-bar-switch ${view ? "is-on" : ""}`}
-        onClick={() => pick({ liveView: !view })}
-        title={view ? "Live view is on" : "Live view is off"}
-        aria-label={view ? "Turn live view off" : "Turn live view on"}
-        aria-pressed={view}
-      >
-        <IconCamera size={15} />
-      </button>
-      <button
-        type="button"
-        className="btn ghost icon live-bar-exit"
-        onClick={onExit}
-        title="End live voice chat (v)"
-        aria-label="End live voice chat"
-      >
-        <IconX size={16} />
-      </button>
-    </div>
+      {/* No icons along the bar. The camera switch and the way out were two
+          pictures sitting next to the mark, which is itself the one thing on
+          this strip worth looking at; the bar is the mark, the words and the
+          Hold/Open switch now. The camera moves to Settings (liveView), and
+          live mode ends the way it did anyway: close the chat, or press v. */}    </div>
   );
 }

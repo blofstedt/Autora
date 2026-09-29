@@ -1418,9 +1418,7 @@ export function App() {
             {liveOn ? (
               <LiveChat
                 onUtterance={sendSpoken}
-                onExit={toggleLive}
                 onInterrupt={hush}
-                onStop={() => void stopTurn()}
                 sessionId={sessionId}
                 agentSpeaking={speaking}
                 agentWorking={running}
@@ -1551,9 +1549,12 @@ export function App() {
                           reader anyway. The mark is drawn larger here than
                           anywhere else at this weight, because a triangle
                           fills under half of its own box -- 28 is what makes
-                          it as big on screen as the 15px mic beside it. It
-                          follows the icon size in Settings (--is, which the
-                          plain glyphs get from their own stylesheet). */}
+                          it as big on screen as the 15px mic beside it. (The
+                          one that carries the size is the mark in the live
+                          bar; this row is a toolstrip and the mark is one
+                          control in it.) It follows the icon size in Settings
+                          (--is, which the plain glyphs get from their own
+                          stylesheet). */}
                       <button
                         className="btn ghost icon composer-live"
                         onClick={voiceReady ? toggleLive : () => setVoiceHelp(true)}

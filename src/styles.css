@@ -1348,6 +1348,11 @@ button.hint.voice-note:hover { text-decoration: underline; }
 /* The mark centres itself in the disc at every size, so a smaller one on a
    phone stays in the middle of it rather than slipping to a corner. */
 .live-bar .live-bar-orb .amark { display: grid; place-items: center; }
+/* No wash in the live orb. The mark's own light, faded out from its middle,
+   was a pale disc hugging the triangle -- the one light-coloured thing on the
+   strip, and against the bar it read as a smudge rather than as light. The
+   spinning colour behind it is untouched: that is the hue the mark is lit by. */
+.live-bar .live-bar-orb .amark .amark-wash { opacity: 0; animation: none; }
 .live-bar .live-bar-orb .amark-shape { filter: drop-shadow(0 0 10px rgba(var(--glow-light-rgb), 0.95)); }
 .live-bar .live-bar-orb.is-working .amark-shape { filter: drop-shadow(0 0 18px rgba(var(--glow-light-rgb), 1)); }
 /* The halo stops just past the disc: any wider and it reaches the bar's own
@@ -1500,7 +1505,7 @@ button.hint.voice-note:hover { text-decoration: underline; }
   .live-bar { column-gap: 9px; padding: 10px 12px; min-height: 92px; }
   .live-bar.has-view { min-height: 250px; padding: 12px 13px 18px; }
   .live-bar .live-bar-orb { width: 54px; height: 54px; min-width: 54px; }
-  .live-bar .live-bar-orb > .amark > svg { width: 42px; height: 42px; }
+  .live-bar .live-bar-orb > .amark > svg { width: 48px; height: 48px; }
   .live-bar .btn.live-bar-switch.icon, .live-bar .btn.live-bar-exit {
     width: 28px; height: 28px; min-width: 28px; padding: 0;
   }
