@@ -25,7 +25,7 @@ function test(name: string, fn: () => void) {
 }
 
 test("the tailscale bridge's :8443 leads to the dashboard", () => {
-  assert.equal(umbrelHome("https://umbrel-1.tail16900.ts.net:8443/"), "https://umbrel-1.tail16900.ts.net/");
+  assert.equal(umbrelHome("https://umbrel-1.example.ts.net:8443/"), "https://umbrel-1.example.ts.net/");
 });
 
 test("the tile's :8817 leads to the dashboard, keeping the scheme", () => {
@@ -34,8 +34,8 @@ test("the tile's :8817 leads to the dashboard, keeping the scheme", () => {
 
 test("a page inside the app leads to the dashboard, not to that page", () => {
   assert.equal(
-    umbrelHome("https://umbrel-1.tail16900.ts.net:8443/?page=config&tab=keys#top"),
-    "https://umbrel-1.tail16900.ts.net/",
+    umbrelHome("https://umbrel-1.example.ts.net:8443/?page=config&tab=keys#top"),
+    "https://umbrel-1.example.ts.net/",
   );
 });
 

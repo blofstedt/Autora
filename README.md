@@ -1,12 +1,22 @@
 # Autora
 
-An agentic harness you can **watch**.
+<p align="center">
+  <img src="public/icons/icon-192.png" alt="Autora" width="96"><br>
+  <b>An agentic harness you can watch.</b>
+</p>
+
+<p align="center">
+  <a href="https://github.com/blofstedt/Autora/actions/workflows/check.yml"><img src="https://github.com/blofstedt/Autora/actions/workflows/check.yml/badge.svg" alt="Check"></a>
+  <a href="https://github.com/blofstedt/Autora/actions/workflows/docker.yml"><img src="https://github.com/blofstedt/Autora/actions/workflows/docker.yml/badge.svg" alt="Build and publish container image"></a>
+  <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT">
+  <img src="https://img.shields.io/badge/umbrel-community%20store-5a5a5a.svg" alt="Umbrel community store">
+</p>
 
 The agent's browser, terminal, desktop and file edits stream into the
 conversation in real time — each command, page and edit shown at the point it
 happened, and still there to scroll back to afterwards. Every session records
-itself, and reading one back is reading the thread. It runs in yolo mode:
-nothing waits for approval in chat, and every command is shown as it runs.
+itself, and reading one back is reading the thread. Approval in chat is off:
+nothing waits for you, and every command is still shown as it runs.
 
 Built on one idea: **the event log is the product.** Everything the agent does
 emits a typed event to an append-only log. The live view is a subscriber to that
@@ -20,6 +30,28 @@ are the same code path.
                        └── asciinema export, grep, tail -f
 ```
 
+## Before you run it
+
+Autora is an agent with your machine's reach, and it is built to use it. This is
+the part to read before installing it anywhere.
+
+- **It has no login of its own.** Run from the command line it binds `127.0.0.1`
+  and refuses everything else: whoever can reach the port is the operator.
+  Installed on Umbrel it sits behind the dashboard's own login. Do not put it on
+  the open internet, and do not forward a port to it.
+- **Approval in chat is off.** There is no per-call gate: commands run when the agent decides to run them, and
+  you watch them happen rather than being asked first. That is the whole point of
+  the app, and it is also the risk.
+- **The container is deliberately privileged.** The Umbrel compose mounts the host
+  filesystem read-write at `/host` and sets `AUTORA_WORKDIR=/host`, because
+  working on the server -- including deleting things -- is what it is for. The
+  comments in `blofstedt-autora/docker-compose.yml` say so next to the mount.
+  Run it on a machine you own, on a network you trust, in a VM if you can, and
+  treat that machine as expendable.
+- **Your provider keys stay on the server.** They are called from the server and
+  never sent to the browser; a key saved in Settings is written to
+  `.autora/settings.json`, readable only by the account Autora runs as.
+
 ## Quickstart
 
 ```bash
@@ -32,10 +64,10 @@ npm run dev
 
 Open <http://localhost:3000>. Type a task. Watch it work.
 
-It listens on this machine only. Autora has no login of its own and runs
-commands for whoever can reach it, so opening it to the network is a choice:
-`AUTORA_HOST=0.0.0.0 npm run dev` when you want it from a phone or another
-computer, on a network you trust. Requests and live connections started by
+It listens on this machine only. Opening it to the network is a choice, and
+[Before you run it](#before-you-run-it) has the terms: `AUTORA_HOST=0.0.0.0 npm
+run dev` when you want it from a phone or another computer, on a network you
+trust. Requests and live connections started by
 other websites are refused either way.
 
 For production, `npm run build` then `npm start`. The container is the same
@@ -152,7 +184,7 @@ server, no relay dialled in). Those are different sentences, and the agent
 gets the one that is true, because "I cannot browse" and "Chromium is not
 installed on the server" send you to two very different places.
 
-Nothing is gated: every call runs straight away (yolo mode) and is shown in the
+Nothing waits for approval: every call runs straight away and is shown in the
 thread as it happens. Stop kills the whole process group, so `sleep 300` inside a
 command dies with the command rather than outliving it.
 
@@ -516,7 +548,7 @@ and never leaks its own text into what the agent reads back.
 
 ## Approvals
 
-Autora always runs in **yolo mode**: no tool call pauses for approval in chat.
+Autora runs without approval gates: no tool call pauses for approval in chat.
 Every call runs straight away and is shown in the thread as it happens; Stop
 kills whatever is running. There is no per-group setting for this -- older
 settings files that asked for approval are read as "never".
@@ -677,6 +709,19 @@ request title or body.
 ```bash
 python3 .github/scripts/check_release.py --base origin/main   # the same check, locally
 ```
+
+## How this was built
+
+Every line of this repository was written by an agent. The direction, the
+decisions and the rejections were the author's; the typing was Claude Code's,
+session after session. The history says so rather than hiding it -- most commits
+are authored by Claude and carry a `Claude-Session:` trailer pointing at the
+session they came from, and `CLAUDE.md` is in the tree.
+
+That is not a disclaimer. A harness for watching agents work is best evidenced by
+having been built with one: the recordings of the sessions behind this code are
+the same recordings the app makes for anybody else, which is why fixing a bug here
+often means reading back the session that introduced it.
 
 ## Status
 
