@@ -170,7 +170,29 @@ test("the context gauge follows the newest reading and counts condensing", () =>
     ev(2, Kind.Log, { message: "Condensed 8 earlier messages", context: { used: 20_000, limit: 100_000, compact_at: 0.75, condensed: true } }),
     ev(3, Kind.UsageTurn, { input_tokens: 10, context: { used: 24_000, limit: 100_000, compact_at: 0.75 } }),
   ]);
-  assert.deepEqual(view.context, { used: 24_000, limit: 100_000, compactAt: 0.75, condensed: 1 });
+  // Nothing on the wire about where the window came from: the card says
+  // "assumed" rather than presenting the number as the model's own.
+  assert.deepEqual(view.context, {
+    used: 24_000, limit: 100_000, compactAt: 0.75, condensed: 1, windowFrom: "default",
+  });
+});
+
+test("the gauge carries where its window came from", () => {
+  const ev = (seq: number, kind: string, payload: Record<string, any>): AutoraEvent =>
+    ({ seq, ts: 1_700_000_000 + seq, kind, actor: "system", span: null, payload, blob: null });
+  const reading = (window_from?: string) =>
+    derive([ev(1, Kind.UsageTurn, {
+      input_tokens: 10,
+      context: { used: 12_000, limit: 1_000_000, compact_at: 0.75, window_from },
+    })]).context?.windowFrom;
+
+  // DeepSeek V4.1 Flash holds a million, and the gauge says so.
+  assert.equal(reading("model"), "model");
+  assert.equal(reading("vendor"), "vendor");
+  assert.equal(reading("setting"), "setting");
+  // A value from a newer server than this page understands is not trusted.
+  assert.equal(reading("whatever"), "default");
+  assert.equal(reading(undefined), "default");
 });
 
 console.log(`\nderive: ${passed} passed`);

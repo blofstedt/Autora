@@ -865,6 +865,23 @@ export function streamChat(call: ChatCall, onDelta: (text: string) => void): Pro
  * does) they come back priced, and those prices are what the billing page then
  * uses.
  */
+/** A number out of a vendor's JSON, or undefined: several of them quote a
+    limit as a string, and some omit the field entirely. */
+function numberOr(value: any): number | undefined {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : undefined;
+}
+
+/** A window as a person reads it: 1M, 128k, 400k. The old form divided by a
+    thousand and said "k", so DeepSeek's million came back as "1000k". */
+function windowLabel(tokens: number): string {
+  if (tokens >= 1_000_000) {
+    const millions = tokens / 1_048_576 > 0.9 && tokens / 1_048_576 < 1.1 ? 1 : Math.round(tokens / 1_000_000);
+    return `${millions}M`;
+  }
+  return `${Math.round(tokens / 1000)}k`;
+}
+
 export async function listModels(
   providerId: string,
   key: string,
@@ -886,6 +903,10 @@ export async function listModels(
         input: 0,
         output: 0,
         priced: false,
+        // Google states each model's input limit here, which is the number the
+        // context gauge wants -- so it comes back with the list rather than
+        // being looked up again somewhere else.
+        window: numberOr(m.inputTokenLimit),
       }));
   }
 
@@ -917,13 +938,18 @@ export async function listModels(
     const prompt = Number(m.pricing?.prompt);
     const completion = Number(m.pricing?.completion);
     const quoted = Number.isFinite(prompt) && Number.isFinite(completion);
+    // OpenRouter quotes how much each of its models holds; Orca Router is
+    // OpenAI-shaped and quotes it when it does. OpenAI's own /models says
+    // neither, and those models get their window from the table instead.
+    const window = numberOr(m.context_length) ?? numberOr(m.context_window);
     return {
       id: String(m.id),
       label: m.name || String(m.id),
       input: quoted ? prompt * 1_000_000 : 0,
       output: quoted ? completion * 1_000_000 : 0,
       priced: quoted,
-      note: m.context_length ? `${Math.round(m.context_length / 1000)}k context` : undefined,
+      window,
+      note: window ? `${windowLabel(window)} context` : undefined,
     };
   });
 }

@@ -6,7 +6,7 @@ import type { Duplex } from "node:stream";
 import express, { type Request, type Response } from "express";
 import { WebSocketServer, WebSocket } from "ws";
 import {
-  AUTO_ORDER, PRICES_CHECKED, PROVIDERS, costParts, isPriced, modelsFor,
+  AUTO_ORDER, PRICES_CHECKED, PROVIDERS, contextWindow, costParts, isPriced, modelsFor,
   providerSpec, rememberModels,
 } from "./server/providers";
 import {
@@ -55,7 +55,10 @@ import {
 import {
   MAX_FRAME_BYTES, clearFrame, frameImage, latestFrame, liveViewNote, putFrame,
 } from "./server/liveview";
-import { ContextEngine, stripAnsi, type CompactionReport } from "./server/context";
+import {
+  CONTEXT_WINDOW_SETTING, ContextEngine, stripAnsi,
+  type CompactionReport, type WindowSource,
+} from "./server/context";
 import {
   appendEvent, countsFor, countsOf, deleteSession, ephemeralId, flushStore,
   loadSessionEvents,
@@ -1472,6 +1475,38 @@ function engineFor(sessionId: string): ContextEngine {
   return engine;
 }
 
+/**
+ * Tell a session's context engine how much room this turn's model has.
+ *
+ * Everywhere it matters is measured against this: the gauge in the rail, and
+ * the point at which older turns are folded into anchored memory. So it has to
+ * be the model's own window and not a house default -- a 1M-token model held to
+ * 100k reads one tenth of the truth in the gauge and condenses a conversation
+ * that had nine tenths of its room left.
+ *
+ * Where a spoken turn hands the work between two models, the tighter of the two
+ * counts: the same conversation has to fit in whichever of them answers next.
+ * A window nobody could state leaves the shipped default in force, and the
+ * gauge says so rather than pretending.
+ */
+function applyWindow(engine: ContextEngine, providerId: string, modelIds: string[]) {
+  if (CONTEXT_WINDOW_SETTING) {
+    engine.setWindow(CONTEXT_WINDOW_SETTING, "setting");
+    return;
+  }
+  const said: Array<{ tokens: number; source: WindowSource }> = [];
+  for (const id of modelIds) {
+    const found = id ? contextWindow(providerId, id) : null;
+    if (found) said.push(found);
+  }
+  if (!said.length) {
+    engine.setWindow(null);
+    return;
+  }
+  const tightest = said.reduce((a, b) => (b.tokens < a.tokens ? b : a));
+  engine.setWindow(tightest.tokens, tightest.source);
+}
+
 /** Thinking costs tokens and seconds before a single word appears. This is a
     console you watch, so the default is off; set GEMINI_THINKING_BUDGET to a
     token count (or -1 for "let the model decide") to trade speed for depth. */
@@ -2614,6 +2649,11 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
          calls. A background compaction may swap part of it out between
          any two steps; nothing here waits for one. */
       const context = engineFor(session.id);
+      /* How much room this turn's model has, before anything is measured
+         against it. The voice is the model that answers out loud, and the
+         reasoning model is the one that does the work: both hold this same
+         conversation, so the smaller window is the one that binds. */
+      applyWindow(context, active.provider, talkFast ? [voice, active.model] : [active.model]);
       context.load(historyFor(session, context.foldedThroughSeq));
       const canReadVault = tools.some((t) => t.name === "vault_read");
 

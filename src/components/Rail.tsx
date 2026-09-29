@@ -169,6 +169,19 @@ function ContextCard({ gauge }: { gauge: ContextGauge | null }) {
   const share = gauge ? Math.min(1, gauge.used / gauge.limit) : 0;
   const mark = gauge?.compactAt ?? 0.75;
   const over = share >= mark;
+  /* Whether the window is the model's own or this app's assumption, and where
+     a set one came from. A gauge showing "12k of 100k" for a model that holds a
+     million was the app reading a tenth of the truth and keeping quiet about
+     it; saying "assumed" is the same number told honestly. */
+  const assumed = gauge?.windowFrom === "default";
+  const windowNote =
+    gauge?.windowFrom === "model"
+      ? "this model's own window"
+      : gauge?.windowFrom === "vendor"
+        ? "the window this vendor serves"
+        : gauge?.windowFrom === "setting"
+          ? "set by AUTORA_CONTEXT_TOKENS"
+          : "no window published for this model, so an assumed one is in use";
   const pct = Math.round(share * 100);
   /* The condensing mark, as a short lighter stretch of the ring itself. It
      was a radial dash, and at 75% that is a horizontal line at nine o'clock,
@@ -202,7 +215,9 @@ function ContextCard({ gauge }: { gauge: ContextGauge | null }) {
         <span className="rail-ctx-head">Context</span>
         {gauge ? (
           <>
-            <span className="rail-ctx-line">{short(gauge.used)} of {short(gauge.limit)} tokens</span>
+            <span className="rail-ctx-line" title={`${short(gauge.limit)} tokens — ${windowNote}`}>
+              {short(gauge.used)} of {short(gauge.limit)} tokens{assumed ? " (assumed)" : ""}
+            </span>
             <span className="rail-ctx-sub">
               {gauge.condensed > 0
                 ? `condensed ${gauge.condensed}× · keeps going`

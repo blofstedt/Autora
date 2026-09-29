@@ -173,6 +173,21 @@ function bbox(points: number[][]): [number, number, number, number] {
   return [x0, y0, x1, y1];
 }
 
+/**
+ * `points` moved to the middle of the mark's box.
+ *
+ * Anything drawn about the origin is placed afterwards, so a shape can be
+ * centred on the outline you can actually see: a shape that is also changing
+ * has no fixed idea of where its middle is, and a fixed offset would let it
+ * bob as it changed.
+ */
+function place(points: number[][]): number[][] {
+  const [x0, y0, x1, y1] = bbox(points);
+  const dx = MARK.cx - (x0 + x1) / 2;
+  const dy = MARK.cy - (y0 + y1) / 2;
+  return points.map(([x, y]) => [x + dx, y + dy]);
+}
+
 /** The mark as it sits: apex up, nothing moving. */
 export const REST = trianglePath();
 
@@ -296,10 +311,7 @@ export function morphFrame(p: number, options: CycleOptions = {}): string {
     scale: 1 + breath * open,
     turn: -Math.PI / 2 + (TAU / 3) * turns * p,
   });
-  const [x0, y0, x1, y1] = bbox(points);
-  const dx = MARK.cx - (x0 + x1) / 2;
-  const dy = MARK.cy - (y0 + y1) / 2;
-  return pathOf(points.map(([x, y]) => [x + dx, y + dy]));
+  return pathOf(place(points));
 }
 
 /** The cycle as the list of frames the animation interpolates between. */
@@ -573,3 +585,99 @@ export function buildWait(started: number, now: number, ms = BUILD_MS): number {
   const next = turn < ms * CLOSE_ON ? ms * CLOSE_ON : ms * (1 + CLOSE_ON);
   return next - turn;
 }
+
+// -- the microphone ----------------------------------------------------------
+
+/*
+ * The microphone is not drawn here the way the triangle is. It is a trace of
+ * the icon the person picked out, and the numbers below are the whole of it.
+ *
+ * Traced from the icon's own alpha channel: on each scanline, runs closer
+ * together than 60px were joined -- that is the gap between the capsule and
+ * the cradle around it, and at the size this is drawn at it is not a gap, it
+ * is a shade under two pixels -- then the outer edge of what was left, walked
+ * once, clockwise, from its highest point.
+ *
+ * Both ends of the change are then sampled the same way: 24 points, evenly
+ * along the outline, from the top, clockwise, in the triangle's own frame (its
+ * height, its middle on the mark's centre). That is the part that matters. The
+ * triangle's own 24 points are bunched -- eight across each corner and one
+ * stride across each straight side -- so a microphone sampled at those same
+ * places would be bunched there too and would come out flat-topped. Sampled
+ * evenly, point 12 of one is the bottom of the other and the shape simply
+ * moves: no folding through itself, and the frame between two of them is a
+ * microphone standing up out of a triangle.
+ *
+ * These are fractions of the mark's circumradius, about its centre, so this is
+ * the same drawing at every size. To re-trace after a change of icon: bridge
+ * runs closer than 60px, walk the outer edge, take 24 points evenly along it
+ * from the highest one, scale so its height is the triangle's 12.54 units, and
+ * put its middle on the mark's centre.
+ */
+
+/** The triangle, sampled evenly, so the two ends of the change correspond. */
+const TRI_24: number[][] = [
+  [-0.0006, -0.67], [0.1489, -0.5717], [0.2435, -0.4079], [0.338, -0.2441],
+  [0.4326, -0.0804], [0.5271, 0.0834], [0.6217, 0.2472], [0.7163, 0.411],
+  [0.7275, 0.5896], [0.5675, 0.67], [0.3784, 0.67], [0.1893, 0.67],
+  [0.0002, 0.67], [-0.1889, 0.67], [-0.378, 0.67], [-0.5671, 0.67],
+  [-0.7275, 0.5904], [-0.7171, 0.4117], [-0.6225, 0.2479], [-0.528, 0.0841],
+  [-0.4334, -0.0796], [-0.3389, -0.2434], [-0.2443, -0.4072], [-0.1498, -0.571],
+];
+
+/** The microphone, the same 24 points in the same order: crown, right side,
+    the cradle's shoulder, stem and foot, and back up the left. */
+const MIC_24: number[][] = [
+  [-0.0189, -0.67], [0.1504, -0.632], [0.2647, -0.5014], [0.2885, -0.3263],
+  [0.2885, -0.1413], [0.4218, -0.0831], [0.4198, 0.0853], [0.3374, 0.2362],
+  [0.197, 0.3438], [0.0528, 0.4113], [0.0721, 0.5805], [0.208, 0.6411],
+  [0.0378, 0.67], [-0.1471, 0.67], [-0.1098, 0.5805], [-0.0338, 0.468],
+  [-0.1291, 0.3626], [-0.2783, 0.2763], [-0.383, 0.1346], [-0.4218, -0.0343],
+  [-0.2778, -0.091], [-0.2696, -0.2696], [-0.2615, -0.4512], [-0.175, -0.6004],
+];
+
+/** Those, on the mark's own grid. */
+function onGrid(list: number[][]): number[][] {
+  return list.map(([x, y]) => [MARK.cx + x * MARK.R, MARK.cy + y * MARK.R]);
+}
+
+const TRI_POINTS = onGrid(TRI_24);
+const MIC_POINTS = onGrid(MIC_24);
+
+/** The microphone at rest, as a path. */
+export const MIC_PATH = pathOf(MIC_POINTS);
+
+/** How long the mark takes to stand up into the microphone, and to lie back
+    down. Short: the shape says who has the floor, and it has to have said it
+    while the syllable that opened it is still being spoken. */
+export const MIC_MS = 420;
+
+/** Frames the change is drawn in: a frame every 35ms, which is well inside
+    what a phone draws. */
+const MIC_STEPS = 12;
+
+/** The mark `t` of the way from one to the other. The ends are eased, so both
+    shapes arrive and leave at a standstill: the two still moments are the two
+    shapes, and that is what lets the animation between the frames be flat. */
+function micPose(to: "mic" | "triangle", t: number): string {
+  const from = to === "mic" ? TRI_POINTS : MIC_POINTS;
+  const into = to === "mic" ? MIC_POINTS : TRI_POINTS;
+  const eased = t * t * (3 - 2 * t);
+  return pathOf(from.map(([x, y], i) => [
+    x + (into[i][0] - x) * eased,
+    y + (into[i][1] - y) * eased,
+  ]));
+}
+
+/** The way into the microphone, or the way back out of it, as the frames an
+    animation interpolates. */
+export function micMorph(to: "mic" | "triangle", steps = MIC_STEPS): string[] {
+  const frames: string[] = [];
+  for (let i = 0; i <= steps; i += 1) frames.push(micPose(to, i / steps));
+  return frames;
+}
+
+/** Standing up, and lying back down: what the live ball plays when the floor
+    changes hands. */
+export const MIC_OPEN = micMorph("mic").join(";");
+export const MIC_SHUT = micMorph("triangle").join(";");

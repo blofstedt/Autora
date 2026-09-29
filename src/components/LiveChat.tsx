@@ -54,6 +54,7 @@ export function LiveChat({
   sessionId,
   agentSpeaking,
   agentWorking,
+  speechLevel = 0,
   disabled,
   onClose,
 }: {
@@ -71,6 +72,9 @@ export function LiveChat({
   sessionId: string | null;
   agentSpeaking: boolean;
   agentWorking?: boolean;
+  /** How loud the console's own voice is right now, 0..1, so the mark can move
+      with it rather than only with the fact that it is talking. */
+  speechLevel?: number;
   /* `agentDoing` was here, to say what the agent was on while it worked. The
      bar has one line now and it is the instruction to say the name: the thread
      above already says what is being done, and a second copy of it on the strip
@@ -303,6 +307,15 @@ export function LiveChat({
      rest of live mode uses, so the strip moves with the room rather than
      only with the mark. */
   const barState = agentSpeaking ? "speaking" : agentWorking ? "thinking" : "listening";
+  /* Who has the floor, which is the mark's shape. The microphone wins while it
+     is carrying words: interrupting is speaking, and the mark has to change
+     hands the moment it does. */
+  const voice: "you" | "agent" | null = heard
+    ? "you"
+    : agentSpeaking
+      ? "agent"
+      : null;
+  const level = voice === "you" ? dictation.level : voice === "agent" ? speechLevel : 0;
 
   // The strip you would type into becomes the live bar: the mark, the words as
   // they form, and the way back out -- and with live view on, the picture the
@@ -315,6 +328,7 @@ export function LiveChat({
           words for anyone not reading the light. */}
       <span
         className={`mob-live-btn live-bar-orb is-${talking ? "working" : "live"} ${awake ? "is-awake" : ""}`}
+        style={{ "--level": level.toFixed(3) } as React.CSSProperties}
         aria-hidden="true"
       >
         <span className="mob-live-glow" aria-hidden="true" />
@@ -322,7 +336,7 @@ export function LiveChat({
             across and read as a detail of the disc rather than as the mark.
             The box can grow without touching the disc because a triangle only
             fills a little over half of its own box. */}
-        <AutoraMark state={talking ? "working" : "live"} size={54} />
+        <AutoraMark state={talking ? "working" : "live"} voice={voice} size={54} />
       </span>
       {view && (
         /* The person's own half of live view: what the camera has, filling the

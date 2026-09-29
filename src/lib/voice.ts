@@ -1022,6 +1022,9 @@ export type Speech = {
   speaking: boolean;
   /** Where the last words out actually came from, for the panel to say. */
   source: SpeechSource;
+  /** How loud the voice is right now, 0..1, for anything that wants to move
+      with it. Zero unless something is actually being said. */
+  level: number;
   /** Queue a fragment. Fragments play in order, so streamed text stays in order. */
   say: (text: string) => void;
   /**
@@ -1111,6 +1114,10 @@ export function newSpeechLine(): SpeechLine {
 
 export function useSpeech(): Speech {
   const [speaking, setSpeaking] = useState(false);
+  /** The voice's own loudness, sampled off the audio as it plays. */
+  const [level, setLevel] = useState(0);
+  /** The analyser the streamed voice plays through. */
+  const meter = useRef<AnalyserNode | null>(null);
   const [source, setSource] = useState<SpeechSource>("browser");
   const voice = useRef<SpeechSynthesisVoice | null>(null);
   /** The line every rendering joins, so only one voice is ever in the air. */
@@ -1315,6 +1322,28 @@ export function useSpeech(): Speech {
     return output.current;
   }, []);
 
+  /**
+   * Where the voice goes on its way to the speaker, so it can be measured.
+   *
+   * An AnalyserNode passes its input through untouched, so this is the same
+   * sound with a reading taken off it -- which is the only honest way to say
+   * how loud the voice is right now. The browser's own voice and the fallback
+   * clip player are not on this graph and have no level; the mark simply does
+   * not move with those, which is better than moving to a guess.
+   */
+  const tap = useCallback((ac: AudioContext): AudioNode => {
+    if (!meter.current) {
+      const analyser = ac.createAnalyser();
+      /* Small and smoothed: what is wanted is the shape of a syllable, not the
+         waveform, and the mark's own animation is the rest of the smoothing. */
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.5;
+      analyser.connect(ac.destination);
+      meter.current = analyser;
+    }
+    return meter.current;
+  }, []);
+
   /** One chunk of raw PCM onto the end of what is already due to play. */
   const schedule = useCallback((samples: Int16Array) => {
     const ac = context();
@@ -1324,7 +1353,7 @@ export function useSpeech(): Speech {
     for (let i = 0; i < samples.length; i += 1) out[i] = samples[i] / 0x8000;
     const node = ac.createBufferSource();
     node.buffer = buffer;
-    node.connect(ac.destination);
+    node.connect(tap(ac));
     /* A short lead -- enough that the first chunk is not already late when
        the audio thread gets it, short enough not to be heard as a gap. What
        follows is queued end to end, so the rendering is heard as one
@@ -1337,7 +1366,7 @@ export function useSpeech(): Speech {
       playing.current.delete(node);
     };
     return true;
-  }, [context]);
+  }, [context, tap]);
 
   /** One rendering, played as it arrives. Resolves when the last of it has
       been handed to the audio thread, not when it has been heard. */
@@ -1617,6 +1646,46 @@ export function useSpeech(): Speech {
     return () => window.removeEventListener("autora-hush", hush);
   }, [cancel]);
 
+  /**
+   * The level, read off the voice as it plays.
+   *
+   * Up on the syllable, down slowly after it: a level that falls as fast as it
+   * rises flickers with the gaps inside a word, and the mark would look like it
+   * was stuttering. Reported in sixteenths, so a shape that is being pushed
+   * around by a voice is not a re-render for every frame of it.
+   */
+  useEffect(() => {
+    if (!speaking) {
+      setLevel(0);
+      return;
+    }
+    let raf = 0;
+    let shown = 0;
+    const wave = new Uint8Array(512);
+    const look = () => {
+      let next = 0;
+      const analyser = meter.current;
+      if (analyser) {
+        analyser.getByteTimeDomainData(wave);
+        let sum = 0;
+        for (let i = 0; i < wave.length; i += 1) {
+          const v = (wave[i] - 128) / 128;
+          sum += v * v;
+        }
+        /* Speech sits well below full scale, and the mark is a coarse thing to
+           move: a little over three times over, capped at one, is the whole of
+           the scaling. */
+        next = Math.min(1, Math.sqrt(sum / wave.length) * 3.2);
+      }
+      shown = next > shown ? next : shown + (next - shown) * 0.14;
+      const step = Math.round(shown * 16) / 16;
+      setLevel((was) => (was === step ? was : step));
+      raf = window.requestAnimationFrame(look);
+    };
+    raf = window.requestAnimationFrame(look);
+    return () => window.cancelAnimationFrame(raf);
+  }, [speaking]);
+
   const prime = useCallback(() => {
     // iOS will not speak unless the first sound comes from a gesture, and it
     // unlocks the element rather than the page: play a silence through the
@@ -1646,6 +1715,7 @@ export function useSpeech(): Speech {
     supported: speechSupported || source === "server",
     speaking,
     source,
+    level,
     say,
     flush,
     cancel,
@@ -1676,6 +1746,21 @@ const ABBREVIATIONS = new Set([
   "e.g.", "i.e.", "etc.", "vs.", "approx.", "dr.", "mr.", "mrs.", "ms.",
   "st.", "fig.", "no.", "cf.", "al.",
 ]);
+
+/**
+ * Whether two pieces of text are the same reply.
+ *
+ * The speaker under a reply has to say whether the voice is on *that* reply,
+ * and a reply read out as it streams was asked for the words written at the
+ * moment of the press -- which is a prefix of what is on screen a moment later.
+ * Compared this way rather than by identity so the button under a reply that is
+ * still arriving still knows it is the one being read.
+ */
+export function sameReply(a: string, b: string): boolean {
+  if (a === b) return true;
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+  return short.length >= 24 && long.startsWith(short);
+}
 
 /**
  * Strip what should never be read aloud, leaving prose.

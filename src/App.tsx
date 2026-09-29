@@ -40,7 +40,7 @@ import { ModePill, type ChatMode } from "./components/ModePill";
 import { AutoraMark, type MarkState } from "./components/AutoraMark";
 import { readActivity } from "./lib/activity";
 import {
-  dictationSupported, recognitionAvailable, secureOrigin, speakable,
+  dictationSupported, recognitionAvailable, sameReply, secureOrigin, speakable,
   splitSpeakable, useSpeech,
 } from "./lib/voice";
 import {
@@ -670,21 +670,61 @@ export function App() {
      same speaker again starts it over. flush() is what actually renders the
      words -- say() only hands them over, and on the server voice they would
      otherwise wait for the next turn to end. */
+  /**
+   * One button under each reply: press to hear it, press again to stop it,
+   * press again to hear it.
+   *
+   * Which reply the voice is on is remembered rather than asked for, because
+   * "is this the one being read" is a question about the press, not about the
+   * sound. A silenced reply keeps its slashed icon and its place until it is
+   * pressed again, so the button says what will happen next rather than what is
+   * happening now. Unmuting says the reply again: the voice renders a turn in
+   * one piece and holds nothing to resume from, and hearing it from the start
+   * is better than a button that appears to do nothing.
+   */
+  const [readingReply, setReadingReply] = useState<{ text: string; muted: boolean } | null>(null);
+  const readingRef = useRef(readingReply);
+  readingRef.current = readingReply;
+
   const speakReply = useCallback(
     (text: string) => {
+      const on = readingRef.current;
+      if (on && sameReply(on.text, text)) {
+        if (!on.muted) {
+          hush();
+          setReadingReply({ text, muted: true });
+          return;
+        }
+        prime();
+        say(text);
+        flush();
+        setReadingReply({ text, muted: false });
+        return;
+      }
       prime();
       hush();
       say(text);
       flush();
+      setReadingReply({ text, muted: false });
     },
     [prime, hush, say, flush],
   );
+
+  /* The voice stopping by itself puts the speaker back to plain; one that was
+     silenced keeps its slashed icon until it is pressed again. */
+  useEffect(() => {
+    if (speaking) return;
+    setReadingReply((was) => (was && !was.muted ? null : was));
+  }, [speaking]);
 
   // Read the agent's replies out loud, a sentence at a time as they stream --
   // waiting for the whole answer is a silence as long as the answer, and
   // speaking each token is a stutter.
   useEffect(() => {
     if (!liveOn || !canSpeak) return;
+    /* Silenced means silenced: a reply being read as it arrives would otherwise
+       start up again with the next sentence and the slashed icon would be a lie. */
+    if (readingRef.current?.muted) return;
     for (const bucket of view.buckets) {
       for (const reply of bucket.replies) {
         if (reply.seq <= narrateAfter.current) continue;
@@ -700,6 +740,13 @@ export function App() {
         if (prose) {
           narrating.current = reply.seq;
           say(prose);
+          /* The speaker under this reply is the one being read, so it says so --
+             and a reply that is still arriving grows under the same button. */
+          setReadingReply((was) =>
+            was && sameReply(was.text, reply.text)
+              ? { ...was, text: reply.text }
+              : { text: reply.text, muted: false },
+          );
         }
       }
     }
@@ -1437,6 +1484,7 @@ export function App() {
             onPermissionDecide={handlePermissionDecide}
             onRunAutonomous={handleRunAutonomous}
             onSpeakReply={canSpeak ? speakReply : undefined}
+            speakingReply={readingReply}
             driving={driving}
             browserHandedOver={browserHandedOver}
             onStop={stopFromThread}
@@ -1550,6 +1598,7 @@ export function App() {
                 sessionId={sessionId}
                 agentSpeaking={speaking}
                 agentWorking={running}
+                speechLevel={speech.level}
                 disabled={!live}
                 onClose={toggleLive}
               />

@@ -288,6 +288,12 @@ export type ContextGauge = {
   compactAt: number;
   /** How many times older turns have been condensed so far. */
   condensed: number;
+  /** Who said how big the window is: the model's own entry ("model"), the
+      vendor's figure for everything it serves ("vendor"), the person's own
+      AUTORA_CONTEXT_TOKENS ("setting"), or nothing and this app's assumption
+      ("default"). The card says "assumed" for the last, rather than passing a
+      house number off as a fact about the model. */
+  windowFrom: "model" | "vendor" | "setting" | "default";
 };
 
 /** Terminal tools, whose PTY output belongs in the card their call opened. */
@@ -361,7 +367,14 @@ export function derive(events: AutoraEvent[]): Derived {
     const limit = Number(raw?.limit);
     if (!Number.isFinite(used) || !(limit > 0)) return;
     if (raw.condensed) condensed += 1;
-    context = { used, limit, compactAt: Number(raw.compact_at) || 0.75, condensed };
+    const from = String(raw.window_from ?? "");
+    context = {
+      used,
+      limit,
+      compactAt: Number(raw.compact_at) || 0.75,
+      condensed,
+      windowFrom: from === "model" || from === "vendor" || from === "setting" ? from : "default",
+    };
   };
 
   /** The cell still being added to, so consecutive work of one kind stays one

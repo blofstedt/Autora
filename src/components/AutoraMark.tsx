@@ -9,6 +9,10 @@ import {
   CLOSE_ON,
   DRAWN_BOX,
   MARK,
+  MIC_MS,
+  MIC_OPEN,
+  MIC_PATH,
+  MIC_SHUT,
   MORPH,
   MORPH_MS,
   REST,
@@ -280,6 +284,7 @@ export function AutoraMark({
   idle = false,
   attention = 0,
   pulse = 0,
+  voice = null,
 }: {
   state?: MarkState;
   size?: number;
@@ -290,6 +295,19 @@ export function AutoraMark({
   attention?: number;
   /** Change it to play the settle bloom once. */
   pulse?: number;
+  /**
+   * Who has the floor, in live mode -- and with it the shape of the mark.
+   *
+   * "you" is the microphone, standing up out of the triangle while the person
+   * is being heard; "agent" is the triangle, while the console is the one
+   * talking. Left out, the mark is whatever `state` says, which is what every
+   * other place the app signs its name wants.
+   *
+   * The change between the two is drawn rather than cut (see MIC_OPEN in
+   * lib/mark.ts), so the mark says who is speaking by becoming the thing that
+   * is speaking, in the corner of the eye the conversation is already in.
+   */
+  voice?: "you" | "agent" | null;
 }) {
   const still = useStillness();
   const { shown, close } = useFinish(useWholeTurn(state, still), pulse);
@@ -301,6 +319,20 @@ export function AutoraMark({
 
   const busy = shown === "thinking" || shown === "building";
   const shifting = !still && (busy || shown === "live" || shown === "settle");
+
+  /* Who held the floor last, so the change can be drawn once rather than
+     looped: the shape is a state, not an animation. `at` only exists to give
+     the <animate> a new key -- an element React leaves in place keeps playing
+     the run it was given, and one that is replaced starts again. */
+  const held = useRef(voice);
+  const [change, setChange] = useState<{ to: "mic" | "triangle"; at: number } | null>(null);
+  useEffect(() => {
+    const now = voice ?? "agent";
+    const was = held.current ?? "agent";
+    held.current = voice;
+    if (now === was) return;
+    setChange({ to: now === "you" ? "mic" : "triangle", at: Date.now() });
+  }, [voice]);
 
 
   return (
@@ -350,7 +382,7 @@ export function AutoraMark({
 
         <circle className="amark-wash" cx="16" cy="16" r="15" fill={`url(#w${uid})`} />
 
-        {shown === "building" && !still ? (
+        {shown === "building" && !still && !voice ? (
           <g>
             {/* No ghost of the finished mark behind the stack: the three
                 pieces landing are the whole of it, and a triangle already
@@ -405,8 +437,23 @@ export function AutoraMark({
             </g>
           </g>
         ) : (
-          <path className="amark-shape" d={REST} fill={`url(#g${uid})`}>
-            {!still && busy && (
+          <path
+            className="amark-shape"
+            d={voice === "you" ? MIC_PATH : REST}
+            fill={`url(#g${uid})`}
+          >
+            {voice && !still && change !== null && (
+              <animate
+                key={`voice-${change.at}`}
+                attributeName="d"
+                values={change.to === "mic" ? MIC_OPEN : MIC_SHUT}
+                dur={`${MIC_MS}ms`}
+                repeatCount="1"
+                fill="freeze"
+                calcMode="linear"
+              />
+            )}
+            {!voice && !still && busy && (
               <animate
                 key={shown}
                 attributeName="d"
@@ -416,7 +463,7 @@ export function AutoraMark({
                 calcMode="linear"
               />
             )}
-            {!still && shown === "settle" && (
+            {!voice && !still && shown === "settle" && (
               <animate
                 key={close === null ? "settle" : "settle-home"}
                 attributeName="d"

@@ -31,6 +31,14 @@ export interface ModelSpec {
   cachedInput?: number;
   /** One short line: what this model is for, shown beside it in the picker. */
   note?: string;
+  /** How much this model actually holds, in tokens, where the vendor publishes
+      a figure. The context gauge and the point at which older turns are folded
+      away are both read from it, so a wrong number here is the difference
+      between a model being used to a tenth of its capacity and being used
+      whole. Left out where no figure has been read: a live listing that quotes
+      one fills it in (see listModels), and failing that the vendor's own
+      default applies, and failing that a plainly-labelled assumption. */
+  window?: number;
   /** False for a model we found by asking the vendor for its catalogue but
       whose price it did not publish. Such a model can still be selected and
       used; its turns are counted and marked unpriced rather than billed at a
@@ -41,6 +49,10 @@ export interface ModelSpec {
 export interface ProviderSpec {
   id: string;
   label: string;
+  /** The window every model this vendor serves shares, when there is one. Some
+      vendors publish a single figure for the family rather than a page per
+      model, and it is that figure this holds. */
+  window?: number;
   kind: ProviderKind;
   /** What this vendor is, in a sentence, for someone deciding whether to add it. */
   note: string;
@@ -106,12 +118,13 @@ export const PROVIDERS: ProviderSpec[] = [
         input: 0.3,
         output: 2.5,
         note: "Rolling alias — follows Google's current Flash",
+        window: 1_048_576,
       },
-      { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro", input: 1.25, output: 10, note: "Hardest questions" },
-      { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash", input: 0.3, output: 2.5 },
-      { id: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite", input: 0.1, output: 0.4 },
-      { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash", input: 0.1, output: 0.4 },
-      { id: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash Lite", input: 0.075, output: 0.3 },
+      { window: 1_048_576, id: "gemini-2.5-pro", label: "Gemini 2.5 Pro", input: 1.25, output: 10, note: "Hardest questions" },
+      { window: 1_048_576, id: "gemini-2.5-flash", label: "Gemini 2.5 Flash", input: 0.3, output: 2.5 },
+      { window: 1_048_576, id: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite", input: 0.1, output: 0.4 },
+      { window: 1_048_576, id: "gemini-2.0-flash", label: "Gemini 2.0 Flash", input: 0.1, output: 0.4 },
+      { window: 1_048_576, id: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash Lite", input: 0.075, output: 0.3 },
     ],
   },
   {
@@ -126,9 +139,9 @@ export const PROVIDERS: ProviderSpec[] = [
     defaultModel: "claude-haiku-4-5",
     listable: true,
     models: [
-      { id: "claude-sonnet-4-5", label: "Claude Sonnet 4.5", input: 3, output: 15, note: "Balanced" },
-      { id: "claude-haiku-4-5", label: "Claude Haiku 4.5", input: 1, output: 5, note: "Fast and cheap" },
-      { id: "claude-opus-4-1", label: "Claude Opus 4.1", input: 15, output: 75, note: "Most capable, priciest" },
+      { window: 200_000, id: "claude-sonnet-4-5", label: "Claude Sonnet 4.5", input: 3, output: 15, note: "Balanced" },
+      { window: 200_000, id: "claude-haiku-4-5", label: "Claude Haiku 4.5", input: 1, output: 5, note: "Fast and cheap" },
+      { window: 200_000, id: "claude-opus-4-1", label: "Claude Opus 4.1", input: 15, output: 75, note: "Most capable, priciest" },
     ],
   },
   {
@@ -143,6 +156,9 @@ export const PROVIDERS: ProviderSpec[] = [
     defaultModel: "deepseek-flash",
     listable: true,
     // Peak-hour list prices; see deepseekOffPeak for the half-price hours.
+      // CONTEXT LENGTH on that same page is a single 1M for both models, which
+      // is why every id here carries it -- including the retired names, whose
+      // requests are served by V4.1 Flash.
     // DeepSeek's /models names its models but does not price them, so a
     // model missing here shows as unpriced on the billing page.
     models: [
@@ -152,11 +168,11 @@ export const PROVIDERS: ProviderSpec[] = [
       // deepseek-flash IS V4.1 Flash: DeepSeek renamed nothing, it retired
       // V4 Flash and V4 Flash Vision and serves both old ids from the new
       // model (api-docs.deepseek.com/news/news260910, 10 September 2026).
-      { id: "deepseek-flash", label: "DeepSeek V4.1 Flash", input: 0.3, output: 1.2, cachedInput: 0.006, note: "Fast and very cheap; 1M context, reads images" },
-      { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro", input: 1.32, output: 3.96, cachedInput: 0.044, note: "Most capable" },
+      { window: 1_000_000, id: "deepseek-flash", label: "DeepSeek V4.1 Flash", input: 0.3, output: 1.2, cachedInput: 0.006, note: "Fast and very cheap; 1M context, reads images" },
+      { window: 1_000_000, id: "deepseek-v4-pro", label: "DeepSeek V4 Pro", input: 1.32, output: 3.96, cachedInput: 0.044, note: "Most capable" },
       // Retired names DeepSeek still accepts, served by V4.1 Flash and billed
       // at its price, so they are here as aliases and priced the same.
-      { id: "deepseek-v4-flash", label: "DeepSeek V4 Flash (retired name)", input: 0.3, output: 1.2, cachedInput: 0.006 },
+      { window: 1_000_000, id: "deepseek-v4-flash", label: "DeepSeek V4 Flash (retired name)", input: 0.3, output: 1.2, cachedInput: 0.006 },
     ],
   },
   {
@@ -264,6 +280,60 @@ export function modelsFor(providerId: string): ModelSpec[] {
     (m) => !base.some((b) => b.id === m.id),
   );
   return [...base, ...extra];
+}
+
+/**
+ * Windows for models this app does not list itself, keyed by how their id
+ * begins. OpenAI's /models says which models exist and nothing about how much
+ * they hold, so without this every OpenAI model would be measured against the
+ * assumed default -- which is smaller than every one of these, and would fold
+ * a conversation away while there was room to spare.
+ *
+ * Read off the vendors' own model pages, September 2026. A window quoted by a
+ * live listing always wins over this (see listModels), and the most specific
+ * prefix wins here, so an entry may sit above a broader one.
+ */
+const WINDOWS: Array<[string, number]> = [
+  ["gpt-4.1", 1_047_576],
+  ["gpt-4o", 128_000],
+  ["gpt-5", 400_000],
+  ["claude-", 200_000],
+  ["gemini-", 1_048_576],
+  ["deepseek-", 1_000_000],
+];
+
+/** Where a window came from: the model's own entry, or the vendor's figure for
+    everything it serves. */
+export type WindowSource = "model" | "vendor";
+
+/**
+ * How much room a model actually has, or null when nobody has said.
+ *
+ * Asked in order of how much the answer is worth: the model's own entry, then
+ * the longest id we have a window for that this model is a version of (a dated
+ * snapshot such as gpt-4o-2024-08-06 belongs to the gpt-4o family), then the
+ * family table, then the vendor's single figure. Null is a real answer and
+ * means "assume": the caller then uses the shipped default and says so, which
+ * is better than a number nobody checked presented as the truth.
+ */
+export function contextWindow(
+  providerId: string,
+  modelId: string,
+): { tokens: number; source: WindowSource } | null {
+  if (!modelId) return null;
+  const own = modelSpec(providerId, modelId)?.window;
+  if (own) return { tokens: own, source: "model" };
+
+  const family = modelsFor(providerId)
+    .filter((m) => m.window && (modelId.startsWith(m.id) || m.id.startsWith(modelId)))
+    .sort((a, b) => b.id.length - a.id.length)[0];
+  if (family?.window) return { tokens: family.window, source: "model" };
+
+  const known = WINDOWS.find(([prefix]) => modelId.startsWith(prefix));
+  if (known) return { tokens: known[1], source: "model" };
+
+  const vendor = providerSpec(providerId)?.window;
+  return vendor ? { tokens: vendor, source: "vendor" } : null;
 }
 
 export function modelSpec(providerId: string, modelId: string): ModelSpec | undefined {

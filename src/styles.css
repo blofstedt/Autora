@@ -541,6 +541,18 @@ body::before {
   opacity: 1; color: var(--text-2); background: var(--s1); border-color: var(--border);
 }
 .msg-tool:active { transform: scale(0.94); }
+/* The speaker while this reply is being read: lit, and up to full strength, so
+   the one reply that is speaking is the one with the lit button. */
+.msg-tool.is-speaking {
+  opacity: 1; color: var(--accent-2); border-color: var(--accent-line); background: var(--s1);
+}
+/* ...and once it has been silenced. It stays lit and stays put, because the
+   press that brings it back is the same press: a button that faded out when it
+   was used would look like it had gone away rather than gone quiet. */
+.msg-tool.is-muted {
+  opacity: 1; color: var(--text-3); border-color: var(--border); background: var(--s1);
+}
+.msg-tool.is-muted:hover { color: var(--text-2); }
 .msg-tool:focus-visible { opacity: 1; outline: 2px solid var(--accent-line); outline-offset: 1px; }
 /* A finger has no hover to reveal it with, and needs a bigger target. */
 @media (pointer: coarse) {
@@ -1405,6 +1417,17 @@ button.hint.voice-note:hover { text-decoration: underline; }
    spinning colour behind it is untouched: that is the hue the mark is lit by. */
 .live-bar .live-bar-orb .amark .amark-wash { opacity: 0; animation: none; }
 .live-bar .live-bar-orb .amark-shape { filter: drop-shadow(0 0 10px rgba(var(--glow-light-rgb), 0.95)); }
+/* The ball moves with whoever is speaking. --level is written by the analyser
+   watching that voice -- your microphone, or the console's own -- and the mark
+   is pushed out by it. A transform rather than a size, so the disc and the glow
+   stay where they are and only the mark answers; the transition is there to
+   smooth the steps the level arrives in, not to add a movement of its own. */
+.live-bar .live-bar-orb .amark-shape {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  transform: scale(calc(1 + var(--level, 0) * 0.22));
+  transition: transform 110ms linear;
+}
 .live-bar .live-bar-orb.is-working .amark-shape { filter: drop-shadow(0 0 18px rgba(var(--glow-light-rgb), 1)); }
 /* The halo stops just past the disc: any wider and it reaches the bar's own
    bottom edge, where being clipped turns a glow into a straight line. */

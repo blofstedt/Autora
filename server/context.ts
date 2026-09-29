@@ -37,7 +37,11 @@ import { compactJson, diffSnapshots, findPage, parseSnapshot, tagSnapshot } from
 import { readVaultText, saveVaultText } from "./store";
 
 export interface ContextConfig {
-  /** The window the prompt is kept inside, in tokens. */
+  /** The window the prompt is kept inside, in tokens, when the model's own
+      window is not known -- the last resort rather than the rule. Each engine
+      takes the window of the model answering it (see setWindow), and this is
+      what is left when nobody can say: no figure in the model's table, none
+      from the vendor, none quoted by a live listing, and no override set. */
   maxContextTokens: number;
   /** Fraction of that window at which background compaction starts. */
   highWaterPct: number;
@@ -56,6 +60,28 @@ const envNumber = (name: string, fallback: number, min: number, max: number) => 
 };
 
 /**
+ * The window assumed when no one can say what a model holds.
+ *
+ * Said out loud rather than hidden: the gauge reports where its window came
+ * from, so a model measured against this one says "assumed" instead of
+ * presenting a figure nobody checked as the model's own. Conservative on
+ * purpose, since being wrong the other way lets the vendor refuse the prompt.
+ */
+export const DEFAULT_CONTEXT_TOKENS = 100_000;
+
+/**
+ * AUTORA_CONTEXT_TOKENS, when it is set: the person has said what the window
+ * is, and that outranks anything detected. It is the way to pin a small local
+ * model, whose server publishes nothing, or to keep a session inside a limit
+ * of your own -- so an engine ignores detection when this is set.
+ */
+export const CONTEXT_WINDOW_SETTING: number | null = (() => {
+  const value = Number((process.env.AUTORA_CONTEXT_TOKENS || "").trim());
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return Math.min(2_000_000, Math.max(4_000, Math.round(value)));
+})();
+
+/**
  * The defaults suit a hosted model with a window of 128k or more. A small
  * local model needs AUTORA_CONTEXT_TOKENS set to its own window, or compaction
  * starts after the vendor has already refused the prompt.
@@ -65,12 +91,17 @@ const envNumber = (name: string, fallback: number, min: number, max: number) => 
  * under it, and the agent needs the whole page to click anything on it.
  */
 export const CONTEXT_CONFIG: ContextConfig = {
-  maxContextTokens: envNumber("AUTORA_CONTEXT_TOKENS", 100_000, 4_000, 2_000_000),
+  maxContextTokens: CONTEXT_WINDOW_SETTING ?? DEFAULT_CONTEXT_TOKENS,
   highWaterPct: envNumber("AUTORA_COMPACT_AT", 0.75, 0.2, 0.95),
   protectedRecent: Math.round(envNumber("AUTORA_PROTECTED_TURNS", 6, 2, 50)),
   maxToolTokens: Math.round(envNumber("AUTORA_MAX_TOOL_TOKENS", 3_000, 250, 50_000)),
   maxMessages: 24,
 };
+
+/** Where an engine's window came from, so the gauge can say whether it is a
+    figure somebody published or one this app assumed. "setting" is the person's
+    own AUTORA_CONTEXT_TOKENS. */
+export type WindowSource = "model" | "vendor" | "setting" | "default";
 
 /** Asks a model to write the new anchored memory; resolves to its text. */
 export type Summarizer = (prompt: string) => Promise<string>;
@@ -235,6 +266,48 @@ class Vault {
  * and the background worker that folds the one into the other.
  */
 export class ContextEngine {
+  /**
+   * The window this session is measured against, and who said so.
+   *
+   * Per engine rather than per process because it belongs to the model: one
+   * console can answer with a 1M-token model this turn and a 128k one the next
+   * after a change in Settings, and the gauge and the folding threshold have to
+   * follow the model that is actually answering. Null until the turn says,
+   * which leaves the config's own figure in force.
+   */
+  private window: { tokens: number; source: WindowSource } | null = null;
+
+  /**
+   * How much room the model answering this session actually has, in tokens.
+   *
+   * Called once at the start of a turn with whatever the provider table, the
+   * vendor's live listing or the model's own entry says. Null means nobody
+   * could say, and the shipped default applies unchanged.
+   */
+  setWindow(tokens: number | null, source: WindowSource = "model") {
+    /* A window the person set outranks anything detected: they know their local
+       model's limit and the vendors do not. */
+    if (CONTEXT_WINDOW_SETTING) {
+      this.window = { tokens: CONTEXT_WINDOW_SETTING, source: "setting" };
+      return;
+    }
+    if (!tokens || !Number.isFinite(tokens) || tokens <= 0) {
+      this.window = null;
+      return;
+    }
+    this.window = { tokens: Math.min(2_000_000, Math.max(4_000, Math.round(tokens))), source };
+  }
+
+  /** The window in force, in tokens. */
+  get limitTokens(): number {
+    return this.window?.tokens ?? this.config.maxContextTokens;
+  }
+
+  /** Where that window came from. */
+  get windowSource(): WindowSource {
+    return this.window?.source ?? (CONTEXT_WINDOW_SETTING ? "setting" : "default");
+  }
+
   private readonly config: ContextConfig;
   private anchored: string | null = null;
   /** Replaced whole on every load and swap, never spliced, so a copy taken
@@ -513,7 +586,15 @@ export class ContextEngine {
    * the prompt as it stands now.
    */
   gauge(pinned: string, used = estimateTokens(this.systemFor(pinned), this.active)) {
-    return { used, limit: this.config.maxContextTokens, compact_at: this.config.highWaterPct };
+    return {
+      used,
+      limit: this.limitTokens,
+      compact_at: this.config.highWaterPct,
+      /* Whether the window is the model's own or this app's assumption: the
+         gauge says so rather than presenting 100k as a fact about a model that
+         may hold a million. */
+      window_from: this.windowSource,
+    };
   }
 
   /** Frame 0 with Frame 1 under it: the system text for the next call. */
@@ -549,7 +630,7 @@ export class ContextEngine {
    */
   messagesFor(system: string): ChatMessage[] {
     let out = [...this.active];
-    const limit = this.config.maxContextTokens;
+    const limit = this.limitTokens;
     if (estimateTokens(system, out) > limit) {
       let cut = 0;
       while (
@@ -603,7 +684,7 @@ export class ContextEngine {
 
     const system = this.systemFor(pinned);
     const tokens = estimateTokens(system, this.active);
-    const overTokens = tokens >= this.config.maxContextTokens * this.config.highWaterPct;
+    const overTokens = tokens >= this.limitTokens * this.config.highWaterPct;
     const overCount = this.active.length > this.config.maxMessages;
     if (!overTokens && !overCount) return false;
 

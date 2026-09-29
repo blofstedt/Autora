@@ -5,8 +5,8 @@
  *   npx tsx tests/context.test.ts
  */
 import assert from "node:assert/strict";
-import { ContextEngine, pageSnapshotAt } from "../server/context";
-import { costOf } from "../server/providers";
+import { ContextEngine, DEFAULT_CONTEXT_TOKENS, pageSnapshotAt } from "../server/context";
+import { contextWindow, costOf, rememberModels } from "../server/providers";
 import { compactJson, htmlToText, textParts } from "../server/pages";
 import { outlineOf, type Ref } from "../server/browser";
 
@@ -283,6 +283,78 @@ test("the label survives the vault, where the point is the head and tail", () =>
   const big = engine.ingest("terminal", "x".repeat(400_000), true);
   assert.match(big, /^\[Content from a command's output/);
   assert.match(big, /more than fits in context/);
+});
+
+/* --- how much room the model actually has --------------------------------- */
+
+test("a model's window comes from the model, not from a house default", () => {
+  // DeepSeek states CONTEXT LENGTH 1M for both of these on its own pricing
+  // page; the retired name is served by V4.1 Flash, so it holds the same.
+  assert.equal(contextWindow("deepseek", "deepseek-flash")?.tokens, 1_000_000);
+  assert.equal(contextWindow("deepseek", "deepseek-v4-pro")?.tokens, 1_000_000);
+  assert.equal(contextWindow("deepseek", "deepseek-v4-flash")?.tokens, 1_000_000);
+  assert.equal(contextWindow("gemini", "gemini-2.5-flash")?.tokens, 1_048_576);
+  assert.equal(contextWindow("anthropic", "claude-sonnet-4-5")?.tokens, 200_000);
+});
+
+test("a model nobody has a figure for says so, rather than guessing", () => {
+  assert.equal(contextWindow("local", "llama-3.1-8b"), null);
+  assert.equal(contextWindow("local", ""), null);
+});
+
+test("a dated snapshot of a listed model gets the family's window", () => {
+  // What OpenAI's /models turns up: gpt-4o-2024-08-06, which is a gpt-4o.
+  assert.equal(contextWindow("openai", "gpt-4o-2024-08-06")?.tokens, 128_000);
+  assert.equal(contextWindow("openai", "gpt-4.1-mini-2025-04-14")?.tokens, 1_047_576);
+});
+
+test("a window quoted by a live listing beats the table", () => {
+  rememberModels("openrouter", [
+    { id: "openai/gpt-4o-mini", label: "GPT-4o mini", input: 0.15, output: 0.6, window: 999_000 },
+  ]);
+  assert.equal(contextWindow("openrouter", "openai/gpt-4o-mini")?.tokens, 999_000);
+});
+
+test("the gauge is measured against the model in play, and says where that came from", () => {
+  const engine = new ContextEngine();
+  // Nothing said: the shipped assumption, and labelled as one.
+  assert.equal(engine.gauge("").limit, DEFAULT_CONTEXT_TOKENS);
+  assert.equal(engine.gauge("").window_from, "default");
+
+  engine.setWindow(1_000_000, "model");
+  assert.equal(engine.limitTokens, 1_000_000);
+  assert.equal(engine.gauge("").limit, 1_000_000);
+  assert.equal(engine.gauge("").window_from, "model");
+
+  // A turn answered by a different model moves it: the window belongs to the
+  // model, not to the process.
+  engine.setWindow(128_000, "model");
+  assert.equal(engine.gauge("").limit, 128_000);
+
+  // Nobody able to say puts the assumption back.
+  engine.setWindow(null);
+  assert.equal(engine.gauge("").limit, DEFAULT_CONTEXT_TOKENS);
+  assert.equal(engine.gauge("").window_from, "default");
+});
+
+test("a prompt that fits the model's real window is not cut to fit an assumed one", () => {
+  const big = "x".repeat(200_000);
+  const fill = (engine: ContextEngine) => {
+    for (let i = 0; i < 8; i += 1) {
+      engine.append({ role: i % 2 ? "assistant" : "user", text: big }, i + 1);
+    }
+  };
+  // Eight messages of 50k tokens each: 400k, which is four times the assumed
+  // default and a third of what a 1M-token model holds.
+  const wide = new ContextEngine();
+  wide.setWindow(1_000_000, "model");
+  fill(wide);
+  assert.equal(wide.messagesFor(wide.systemFor("")).length, 8);
+
+  const narrow = new ContextEngine();
+  narrow.setWindow(100_000, "model");
+  fill(narrow);
+  assert.ok(narrow.messagesFor(narrow.systemFor("")).length < 8);
 });
 
 console.log(`\n${passed} passed`);

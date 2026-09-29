@@ -2,7 +2,8 @@ import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type R
 import type { Bucket, Cell, KanbanTask, MemoryTouch } from "../lib/derive";
 import { turnItems } from "../lib/steps";
 import { isPicture, sizeLabel, type Attachment } from "../lib/attachments";
-import { IconAlert, IconArrow, IconArrowDown, IconBrain, IconChevron, IconFile, IconSpeaker, IconTerminal, IconUser, IconWrench } from "./Icons";
+import { IconAlert, IconArrow, IconArrowDown, IconBrain, IconChevron, IconFile, IconSpeaker, IconSpeakerOff, IconTerminal, IconUser, IconWrench } from "./Icons";
+import { sameReply } from "../lib/voice";
 import { AutoraMark } from "./AutoraMark";
 import type { MarkPhase } from "../lib/activity";
 import { TerminalCell } from "./TerminalCell";
@@ -284,6 +285,10 @@ type WorkState = {
   onOpenSettings?: () => void;
   /** Reads one reply out loud, in the voice the page already speaks with. */
   onSpeakReply?: (text: string) => void;
+  /** Which reply the voice is on, and whether it has been silenced -- so the
+      speaker under it can be one button rather than a play button with a
+      separate way to stop it. */
+  speakingReply?: { text: string; muted: boolean } | null;
 };
 
 /* TurnBucket, CellView and Reply are memoised, and that is what keeps a long
@@ -520,6 +525,7 @@ const CellView = memo(function CellView({
   onOpenMind,
   onOpenSettings,
   onSpeakReply,
+  speakingReply,
 }: {
   cell: Cell;
   sessionId: string;
@@ -543,6 +549,7 @@ const CellView = memo(function CellView({
           onOpenMind={onOpenMind}
           onOpenSettings={cell.turn.setup ? onOpenSettings : undefined}
           onSpeak={onSpeakReply}
+          speakingReply={speakingReply}
         />
       );
     case "terminal":
@@ -658,6 +665,7 @@ const Reply = memo(function Reply({
   onOpenMind,
   onOpenSettings,
   onSpeak,
+  speakingReply,
 }: {
   text: string;
   thinking?: string;
@@ -667,6 +675,9 @@ const Reply = memo(function Reply({
   /** Read this one reply out loud. Absent when the page has no voice at all,
       which is what hides the button. */
   onSpeak?: (text: string) => void;
+  /** This reply is the one the voice is on, and whether it has been silenced.
+      Null while the voice is on some other reply or on none. */
+  speakingReply?: { text: string; muted: boolean } | null;
   /** Still being written. The mark animates while this holds and plays its
       own ending when it drops, so the reply visibly lands rather than just
       stopping. */
@@ -676,6 +687,13 @@ const Reply = memo(function Reply({
   phase?: MarkPhase;
 }) {
   const [open, setOpen] = useState(false);
+  /* Whether the voice is on this reply, and whether it has been silenced. */
+  const mine = speakingReply && sameReply(speakingReply.text, text) ? speakingReply : null;
+  const spokenLabel = mine
+    ? mine.muted
+      ? "Unmute this reply"
+      : "Mute this reply"
+    : "Read this reply aloud";
   if (!text && !thinking && memories.length === 0) return null;
 
   return (
@@ -708,21 +726,25 @@ const Reply = memo(function Reply({
           <MemoryCell key={index} cell={m} onOpen={onOpenMind} inline />
         ))}
         {text && <div className="msg-text is-md"><Markdown text={text} streaming={working} /></div>}
-        {/* Only on a reply that has landed: offering to read out a sentence
-            still being written is offering to read half of it. Pressing it
-            again starts the reply over, and pressing another reply's speaker
-            stops this one -- the voice never runs two at a time, because
-            there is one voice. */}
+        {/* One button with two faces, and it says what the next press will do
+            rather than what is happening now: the speaker to hear the reply,
+            the slashed one once it has been stopped, the speaker again to hear
+            it. Only on a reply that has landed -- offering to read out a
+            sentence still being written is offering to read half of it -- and
+            only the reply the voice is actually on shows the second face, since
+            pressing another reply's speaker stops this one: there is one
+            voice. */}
         {onSpeak && text && !working && (
           <div className="msg-tools">
             <button
               type="button"
-              className="msg-tool"
+              className={`msg-tool ${mine ? (mine.muted ? "is-muted" : "is-speaking") : ""}`.trim()}
               onClick={() => onSpeak(text)}
-              title="Read this reply aloud"
-              aria-label="Read this reply aloud"
+              title={spokenLabel}
+              aria-label={spokenLabel}
+              aria-pressed={Boolean(mine)}
             >
-              <IconSpeaker size={13} />
+              {mine?.muted ? <IconSpeakerOff size={13} /> : <IconSpeaker size={13} />}
             </button>
           </div>
         )}
