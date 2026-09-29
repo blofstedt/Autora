@@ -1341,7 +1341,10 @@ button.hint.voice-note:hover { text-decoration: underline; }
    the viewfinder being a square parked in a bar grown tall enough to hold it. */
 .live-bar {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  /* The mark, the words, and the two controls in the corner: the camera and
+     the way out. Four columns rather than three because they sit side by side
+     up there, in that order, left to right. */
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   grid-template-rows: auto;
   align-items: center; column-gap: 10px;
   /* Off, this is one row at the composer's own height, so talk mode costs the
@@ -1443,11 +1446,34 @@ button.hint.voice-note:hover { text-decoration: underline; }
 }
 .live-bar-status.is-tap:hover, .live-bar-status.is-tap:focus-visible { color: var(--text); }
 
-/* The way out, and the only control left on the bar: an X where the eye
-   expects one. Over the picture it stops being chrome and becomes glass, so
-   the picture runs under it. */
-.live-bar .live-bar-exit {
+/* The camera switch, beside the way out and the same glass as it: the two
+   controls share a corner and a look, so neither reads as the important one.
+   Off it is chrome, on it is lit -- the one piece of state on this strip that
+   is not already said by the picture filling it. */
+.live-bar .live-bar-cam {
   grid-row: 1; grid-column: 3; align-self: center; justify-self: end;
+  background: rgba(10, 13, 20, 0.40); border: 1px solid rgba(255, 255, 255, 0.16);
+  color: var(--text-2);
+  backdrop-filter: blur(9px) saturate(1.1); -webkit-backdrop-filter: blur(9px) saturate(1.1);
+  box-shadow: 0 6px 18px -10px rgba(0, 0, 0, 0.9);
+  width: 30px; height: 30px; min-width: 30px; margin: 0; padding: 0;
+  border-radius: 999px; display: grid; place-items: center;
+}
+.live-bar .live-bar-cam:hover:not(:disabled) {
+  background: rgba(14, 20, 30, 0.62); border-color: rgba(var(--accent-rgb), 0.5); color: var(--text);
+}
+.live-bar .live-bar-cam.is-on {
+  background: rgba(var(--accent-rgb), 0.22);
+  border-color: rgba(var(--accent-rgb), 0.75);
+  color: var(--text);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.14), 0 6px 18px -10px rgba(0, 0, 0, 0.9);
+}
+.live-bar .live-bar-cam > svg { display: block; width: 16px; height: 16px; margin: 0; flex: none; }
+
+/* The way out: an X where the eye expects one. Over the picture it stops being
+   chrome and becomes glass, so the picture runs under it. */
+.live-bar .live-bar-exit {
+  grid-row: 1; grid-column: 4; align-self: center; justify-self: end;
   background: rgba(10, 13, 20, 0.40); border: 1px solid rgba(255, 255, 255, 0.16);
   color: var(--text-2);
   backdrop-filter: blur(9px) saturate(1.1); -webkit-backdrop-filter: blur(9px) saturate(1.1);

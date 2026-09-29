@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { afterName, fetchSpeechStatus, turnPause, useDictation, withoutName } from "../lib/voice";
+import { afterName, chooseTalk, fetchSpeechStatus, turnPause, useDictation, useStreamDictation, withoutName } from "../lib/voice";
 import { useLiveView } from "../lib/liveview";
 import { AutoraMark } from "./AutoraMark";
-import { IconX } from "./Icons";
+import { IconCamera, IconX } from "./Icons";
 
 /** Single stray syllables are usually the room, not a request. */
 const MIN_CHARS = 2;
@@ -41,11 +41,12 @@ const MIC_CHECK_MS = 2500;
  * off mid-thought waits longer than one that has finished. The microphone is
  * never closed to send, which is what makes talking over an answer work.
  *
- * The other thing here is the camera. Off by default, and in Settings rather
- * than in this bar: on, it is two things -- a small live picture in the bar for
- * the person, and a stream at about a frame a second for the agent, so "look at
- * this" arrives with the thing being shown. Both are switched off together the
- * moment talk mode ends.
+ * The other thing here is the camera, behind the button at the top of the bar.
+ * On, it is two things -- a small live picture in the bar for the person, and a
+ * stream at about a frame a second for the agent, so "look at this" arrives
+ * with the thing being shown. Both are switched off together the moment talk
+ * mode ends. Whether talk mode opens with it on is remembered, and Settings
+ * carries the same switch for setting it without coming in here.
  */
 export function LiveChat({
   onUtterance,
@@ -102,9 +103,9 @@ export function LiveChat({
   /** See NAME_ONLY_IDLE_MS. */
   const wokeTimer = useRef(0);
 
-  /** Live view: the camera, and the frames the agent is shown. Remembered
-      between devices, and set in Settings -- this bar carries no switches at
-      all now, so nothing here can be unsaved or half-chosen. */
+  /** Live view: the camera, and the frames the agent is shown. Switched here
+      and remembered between devices -- Settings carries the same switch, for
+      setting it before talk mode rather than during it. */
   const [view, setView] = useState(false);
 
   const camera = useLiveView(sessionId, view);
@@ -115,6 +116,9 @@ export function LiveChat({
     void fetchSpeechStatus().then((status) => {
       if (!alive || !status) return;
       setView(status.liveView === true);
+      /* One microphone, one cue, for as long as talk mode lasts -- when the
+         console has a listening service to send the audio to. */
+      setStreaming(status.dictation?.available === true);
     });
     return () => { alive = false; };
   }, []);
@@ -193,7 +197,18 @@ export function LiveChat({
     arm(true);
   }, [arm, wakeUp]);
 
-  const dictation = useDictation({ onPhrase, continuous: true });
+  /* Which way the microphone is opened is decided once, at the top of talk
+     mode, from what the console says it has. With a listening service the
+     microphone opens once and stays open for the whole conversation; without
+     one, the browser's own recogniser, which re-arms -- and beeps -- on every
+     phrase. The choice is made here rather than inside a hook because the
+     two are different objects and only one of them may be running. */
+  const [streaming, setStreaming] = useState(false);
+  const browserDictation = useDictation({ onPhrase, continuous: true });
+  const streamDictation = useStreamDictation({ onPhrase });
+  const dictation = streaming
+    ? streamDictation
+    : browserDictation;
   const { start, stop, interim, supported, listening, error } = dictation;
   acceptRef.current = dictation.accept;
   /* Whether the engine actually opened is checked rather than assumed. A
@@ -353,6 +368,27 @@ export function LiveChat({
           expects one. Closing the chat or pressing v both still work, but
           neither is something you can see, and in talk mode there is no
           composer to look at -- the X is the one visible way back to typing. */}
+      {/* The camera, beside the way out. It was taken off this bar and left
+          in Settings only, which put the one thing you want mid-sentence --
+          show it what you are holding -- two taps away in a panel you have to
+          leave talk mode to reach. It is not the toolstrip it used to be: one
+          picture, in the corner with the X, where the eye already goes for a
+          control on this strip. */}
+      <button
+        type="button"
+        className={`btn live-bar-cam${view ? " is-on" : ""}`}
+        onClick={() => {
+          const next = !view;
+          setView(next);
+          // Remembered, so the next conversation opens the way this one ended.
+          void chooseTalk({ liveView: next });
+        }}
+        title={view ? "Turn the camera off" : "Show the camera what is in front of you"}
+        aria-label={view ? "Turn the camera off" : "Turn the camera on"}
+        aria-pressed={view}
+      >
+        <IconCamera size={15} />
+      </button>
       {onClose && (
         <button
           type="button"
@@ -364,11 +400,6 @@ export function LiveChat({
           <IconX size={15} />
         </button>
       )}
-      {/* No icons along the bar. The camera switch and the way out were two
-          pictures sitting next to the mark, which is itself the one thing on
-          this strip worth looking at; the bar is the mark and the words now.
-          The camera moves to Settings (liveView), and live mode ends the way
-          it did anyway: close the chat, or press v. */}
     </div>
   );
 }

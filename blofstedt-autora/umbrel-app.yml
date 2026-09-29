@@ -99,33 +99,34 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  The voice can be turned off from the conversation, and it stays off. Ask for
-  it to stop talking -- or say the voice is getting annoying -- and the agent
-  mutes itself where it stands: whatever was being said stops mid-sentence, and
-  the speak tool is taken away from every turn after that, so it answers in
-  writing and does not reach for the voice again. Settings -> Model & tools ->
-  Voice carries the switch, on by default, and it is the same setting either
-  way round: nothing is said on the page while it is off, and turning it back
-  on is how the voice comes back.
+  The camera is back on the live bar, in the corner beside the X. It was taken
+  off and left in Settings only, which put the one thing you want mid-sentence
+  -- show it what you are holding -- two taps away, in a panel you have to leave
+  talk mode to reach. One picture, where the eye already goes for a control on
+  that strip: lit when it is on, and the choice is remembered, so the next
+  conversation opens the way this one ended. Settings -> live view carries the
+  same switch, for setting it without coming into talk mode.
 
-  It is a switch and not a volume: replies read out in talk mode are your own
-  listening, and are not touched by it.
+  The beep on a phone is gone. Talking to the app on Android played the
+  microphone cue every few seconds, because the Web Speech API there is not a
+  browser feature at all: it is a session handed to Google's speech service,
+  which plays its own cue when the session opens and again when it closes. A
+  recogniser cannot be kept open -- it ends after every silence and after most
+  phrases -- so staying in talk mode meant starting the next one, and every
+  re-arm was another cue. Nothing on the page could stop it; the sound is not
+  ours to make or to mute.
 
-  On a phone the switch at the top of the chat -- auto, ask, off -- opens its
-  menu inside the window. It used to hang from the pill by its left edge, which
-  is fine in a wide window and off the side of the screen in a narrow one,
-  where the options were simply not there to press. The menu is now measured
-  against the window it is in and shifted back inside it, however narrow.
+  With a Deepgram key the microphone is now opened once, when talk mode starts,
+  and one stream of raw PCM runs for as long as it lasts -- no session to end,
+  no restart, no cue. The audio goes to this machine, which holds the key and
+  passes it on; a page is never handed a credential. The name is given to the
+  transcriber as a hint, so "Autora" comes back spelled the way it is written
+  instead of the aurora/atora spelling the recogniser used to arrive with.
 
-  The dots in the chat list mean one thing now: green is a chat the agent is
-  working in at this moment, grey is every other. The dot used to be green for
-  every chat ever made, because a chat was marked open when it was created and
-  nothing ever cleared it, so the colour said nothing. Working is asked of the
-  turn that is running, and a chat nobody is working in is grey however
-  recently it was used.
+  Without a key nothing changes: the browser's own recogniser is still there,
+  and is what the page chooses.
 
-  The rest of 0.9.97 stands, unchanged: the name that wakes it is heard the way
-  it is actually said, the live bar says when the microphone did not open and
-  opens it on a tap, triggers have a page of their own, the bar over the
-  message box counts money in the three spans it is asked in, and a menu opened
-  in the header stays over the chat.
+  The rest of 0.9.98 stands, unchanged: the voice can be switched off from the
+  conversation and stays off, the chat-mode menu opens inside the window on a
+  phone, and the dots in the chat list mean one thing -- green is a chat the
+  agent is working in at this moment.

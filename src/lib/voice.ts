@@ -461,6 +461,308 @@ export function useDictation({
   };
 }
 
+// -- words in, the other way --------------------------------------------------
+
+/**
+ * Listening through the console's own service, one microphone for the whole
+ * session.
+ *
+ * The browser's recogniser is not a browser feature on Android: it is a
+ * session handed to Google's speech service, which plays its own microphone
+ * cue when the session opens and again when it closes. A recogniser cannot be
+ * kept open -- it ends after every silence and after most phrases -- so
+ * staying in talk mode means starting the next one, and every re-arm is
+ * another cue out of the phone. That is the beep, and no page can stop it.
+ *
+ * With a Deepgram key the console opens the microphone once, when talk mode
+ * starts, and one stream of raw PCM runs for as long as it lasts: no session
+ * to end, no restart, no cue. The audio goes to the console, which holds the
+ * key and passes it on; the page is never given a credential.
+ *
+ * Same shape as useDictation, deliberately, so a caller can hold either.
+ */
+export function useStreamDictation({
+  onPhrase,
+  lang,
+}: {
+  /** A phrase Deepgram has settled. Called once per settled phrase. */
+  onPhrase?: (text: string) => void;
+  lang?: string;
+} = {}): Dictation {
+  const [listening, setListening] = useState(false);
+  const [interim, setInterim] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [level, setLevel] = useState(0);
+
+  const wanted = useRef(false);
+  const socket = useRef<WebSocket | null>(null);
+  const mic = useRef<MediaStream | null>(null);
+  const context = useRef<AudioContext | null>(null);
+  const node = useRef<ScriptProcessorNode | null>(null);
+  const phraseRef = useRef(onPhrase);
+  phraseRef.current = onPhrase;
+
+  /** What this run has handed over. Deepgram re-sends a phrase as interim
+      results and then settles it, and the settled text usually repeats the
+      tail of what was already sent -- the same double the browser engine
+      produced, and the same fix. */
+  const ledger = useRef<Ledger>(newLedger());
+  const decay = useRef(0);
+
+  const bump = useCallback(() => {
+    setLevel(0.8);
+    window.clearInterval(decay.current);
+    decay.current = window.setInterval(() => {
+      setLevel((current) => {
+        const next = current - 0.08;
+        if (next <= 0.05) {
+          window.clearInterval(decay.current);
+          return 0.05;
+        }
+        return next;
+      });
+    }, 90);
+  }, []);
+
+  const settleRing = useCallback(() => {
+    window.clearInterval(decay.current);
+    setLevel(0);
+  }, []);
+
+  /** Everything this run opened, closed. Safe to call twice, and from a
+      handler that is already unwinding. */
+  const teardown = useCallback(() => {
+    const ws = socket.current;
+    socket.current = null;
+    if (ws) {
+      try {
+        if (ws.readyState === WebSocket.OPEN) ws.send("close");
+      } catch {
+        // Going anyway.
+      }
+      try {
+        ws.close();
+      } catch {
+        // Already closed.
+      }
+    }
+    try {
+      node.current?.disconnect();
+    } catch {
+      // Not connected.
+    }
+    node.current = null;
+    try {
+      /* Closing an audio context is asynchronous and its promise is not
+         worth waiting on: nothing after this depends on it having finished,
+         and a rejection here is a context that was already gone. */
+      void context.current?.close();
+    } catch {
+      // Already closed.
+    }
+    context.current = null;
+    /* The microphone light. An audio context that is closed stops feeding
+       the processor, but the capture track is what the browser shows as
+       being on, and leaving it is a light on the phone forever. */
+    mic.current?.getTracks().forEach((track) => {
+      try {
+        track.stop();
+      } catch {
+        // Already stopped.
+      }
+    });
+    mic.current = null;
+  }, []);
+
+  const stop = useCallback(() => {
+    wanted.current = false;
+    setInterim("");
+    settleRing();
+    teardown();
+    setListening(false);
+  }, [settleRing, teardown]);
+
+  const start = useCallback(() => {
+    if (wanted.current) return;
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setError("This browser cannot open the microphone.");
+      return;
+    }
+    wanted.current = true;
+    ledger.current = newLedger();
+    setError(null);
+
+    void (async () => {
+      let stream: MediaStream;
+      try {
+        /* Echo cancellation and noise suppression are asked for and are what
+           make talking over the reply workable on a phone with the speaker
+           on. Automatic gain is left to the browser. */
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
+        });
+      } catch (err: any) {
+        wanted.current = false;
+        setError(
+          err?.name === "NotAllowedError"
+            ? BLOCKED
+            : "Could not open the microphone.",
+        );
+        return;
+      }
+      if (!wanted.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      mic.current = stream;
+
+      const Ctx: typeof AudioContext =
+        (window as any).AudioContext ?? (window as any).webkitAudioContext;
+      let ctx: AudioContext;
+      try {
+        ctx = new Ctx();
+      } catch {
+        wanted.current = false;
+        teardown();
+        setError("Could not open the microphone.");
+        return;
+      }
+      context.current = ctx;
+      const rate = Math.round(ctx.sampleRate);
+
+      const scheme = location.protocol === "https:" ? "wss:" : "ws:";
+      const query = new URLSearchParams({ rate: String(rate) });
+      if (lang) query.set("lang", lang);
+      const ws = new WebSocket(`${scheme}//${location.host}/ws/dictate?${query.toString()}`);
+      ws.binaryType = "arraybuffer";
+      socket.current = ws;
+
+      ws.onopen = () => {
+        if (!wanted.current) {
+          ws.close();
+          return;
+        }
+        /* 16-bit mono PCM, and the buffer size is the one thing here that is
+           a compromise: this node is deprecated in favour of an AudioWorklet,
+           which would need a separate module file served beside the page. A
+           2048-sample buffer is 46 ms at 44.1 kHz -- small enough that the
+           words keep up, large enough not to drown the socket in messages. */
+        const source = ctx.createMediaStreamSource(stream);
+        const processor = ctx.createScriptProcessor(2048, 1, 1);
+        node.current = processor;
+        processor.onaudioprocess = (event) => {
+          if (!wanted.current || ws.readyState !== WebSocket.OPEN) return;
+          const input = event.inputBuffer.getChannelData(0);
+          const pcm = new Int16Array(input.length);
+          let loudest = 0;
+          for (let i = 0; i < input.length; i += 1) {
+            const sample = Math.max(-1, Math.min(1, input[i]));
+            const magnitude = Math.abs(sample);
+            if (magnitude > loudest) loudest = magnitude;
+            pcm[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+          }
+          /* The ring follows the microphone here rather than the engine:
+             this stream is ours, so an honest level costs nothing and is the
+             one thing that says the microphone is really open. */
+          if (loudest > 0.02) bump();
+          try {
+            ws.send(pcm.buffer);
+          } catch {
+            // A socket that has gone is caught by onclose.
+          }
+        };
+        source.connect(processor);
+        /* A ScriptProcessor only runs while it is connected to something.
+           A zero gain keeps it from being audible. */
+        const mute = ctx.createGain();
+        mute.gain.value = 0;
+        processor.connect(mute);
+        mute.connect(ctx.destination);
+        setListening(true);
+      };
+
+      ws.onmessage = (event) => {
+        let said: { type?: string; text?: string; final?: boolean; detail?: string };
+        try {
+          said = JSON.parse(String(event.data));
+        } catch {
+          return;
+        }
+        if (said.type === "speaking") {
+          bump();
+          return;
+        }
+        if (said.type === "error") {
+          setError(said.detail ?? "Listening failed.");
+          return;
+        }
+        if (said.type === "closed") {
+          /* The console's end went away -- the key was refused, or the
+             service dropped. Say so and stop; the caller falls back to the
+             browser's recogniser rather than leaving a dead microphone. */
+          if (wanted.current) {
+            setError("The listening service stopped.");
+            stop();
+          }
+          return;
+        }
+        if (said.type !== "text" || !said.text) return;
+        bump();
+        if (said.final) {
+          const fresh = commit(ledger.current, said.text, Date.now());
+          if (fresh) phraseRef.current?.(fresh);
+          setInterim("");
+        } else {
+          const fresh = unsaid(ledger.current, said.text, Date.now());
+          setInterim(fresh);
+        }
+      };
+
+      ws.onclose = () => {
+        if (socket.current !== ws) return;
+        socket.current = null;
+        if (!wanted.current) return;
+        wanted.current = false;
+        teardown();
+        setListening(false);
+        settleRing();
+        setError("The listening service stopped.");
+      };
+
+      ws.onerror = () => {
+        // onclose follows and says it once.
+      };
+    })();
+  }, [bump, lang, settleRing, stop, teardown]);
+
+  const toggle = useCallback(() => {
+    if (wanted.current) stop();
+    else start();
+  }, [start, stop]);
+
+  /** Nothing to hand over: Deepgram settles its own phrases, and a caller
+      acting on an unsettled one would be acting on a guess. */
+  const accept = useCallback(() => {}, []);
+
+  useEffect(() => () => {
+    wanted.current = false;
+    teardown();
+    window.clearInterval(decay.current);
+  }, [teardown]);
+
+  return {
+    supported: true,
+    listening,
+    interim,
+    error,
+    level,
+    start,
+    stop,
+    toggle,
+    accept,
+  };
+}
+
 // -- words out ---------------------------------------------------------------
 
 /** Voices load asynchronously in Chrome, and the good ones are not first. */
@@ -594,6 +896,10 @@ export type SpeechStatus = {
   liveView: boolean;
   /** The service behind it, for the panel to name. */
   url: string | null;
+  /** Whether there is a listening service, so the microphone can be opened
+      once for the whole of talk mode instead of the browser's recogniser --
+      which re-arms, and beeps, on every phrase. Absent on an older server. */
+  dictation?: { available: boolean; provider: "deepgram" | null; reason: string | null };
 };
 
 /** Ask the console which voice it has, if any. Null when it cannot be asked. */

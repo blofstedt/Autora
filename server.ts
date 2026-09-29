@@ -26,6 +26,7 @@ import { prune, storageReport } from "./server/retention";
 import { hostVitals } from "./server/host";
 import { ensureHostNames } from "./server/hosts";
 import { forgetSpeech, speak as synthesise, speakStream, speechStatus } from "./server/speech";
+import { attachDictation, dictationStatus } from "./server/dictation";
 import { captureConsole, log, readLogs, setLogRedactor, type LogLevel } from "./server/logs";
 import { allowSocket, refuseRequest } from "./server/crosssite";
 import { certificateSource, tlsSettings } from "./server/tls";
@@ -5369,6 +5370,11 @@ async function startServer() {
       url: status.url,
       liveThinking: state.speech.liveThinking,
       liveView: state.speech.liveView,
+      /* Whether the microphone can be opened once for the whole of talk mode
+         instead of the browser's recogniser, which re-arms -- and beeps -- on
+         every phrase. The page asks this and chooses; nothing here is required
+         for an install with no key. */
+      dictation: dictationStatus(),
     });
   });
 
@@ -5692,6 +5698,17 @@ async function startServer() {
     ws.on("message", () => alive.set(ws, true));
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
     const pathname = url.pathname;
+
+    /* Route: /ws/dictate -- listening through Deepgram, one microphone
+       session for the whole of talk mode. The page sends raw PCM and reads
+       back words; the key never leaves this process. */
+    if (pathname === "/ws/dictate") {
+      attachDictation(ws, {
+        rate: url.searchParams.get("rate") ?? undefined,
+        lang: url.searchParams.get("lang") ?? undefined,
+      });
+      return;
+    }
 
     // Route: /ws/:sessionId
     if (pathname.startsWith("/ws/")) {
