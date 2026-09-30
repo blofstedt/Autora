@@ -89,6 +89,9 @@ export class SessionStream {
     this.lastHeard = Date.now();
     this.startHeartbeat();
 
+    // Whether this page is on screen, so the server knows if anybody is
+    // looking before it sends the phone a "done".
+    ws.onopen = () => this.sendVisibility();
     ws.onmessage = (raw) => {
       // A replaced socket can still deliver its last few messages; they are
       // harmless (seq dedupe) but its status must not overwrite the new one.
@@ -245,6 +248,11 @@ export class SessionStream {
 
   interrupt() {
     this.send({ type: "interrupt" });
+  }
+
+  /** Tell the server whether this page is on screen right now. */
+  sendVisibility() {
+    this.send({ type: "visibility", visible: document.visibilityState === "visible" });
   }
 
   close() {

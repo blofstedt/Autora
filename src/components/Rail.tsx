@@ -12,6 +12,7 @@ import {
 import { DockPicker } from "./DockPicker";
 import { ago, until, type Job } from "./Schedule";
 import type { ContextGauge } from "../lib/derive";
+import type { Noticed } from "../lib/proactive";
 import {
   BUCKETS, announceChange, confirmRecord, deleteRecord, fetchKnowledge, onKnowledgeChange,
   type Bucket, type MemoryRecord,
@@ -48,7 +49,7 @@ export const pageLabel = (id: PageId) => PAGES.find((p) => p.id === id)?.label ?
  */
 export function Rail({
   page, onNavigate, onOpenSession, onOpenMemory, context, relayOn, alert, onNew, onIncognito,
-  drawer = false, onClose,
+  onStartTask, drawer = false, onClose,
   mood = "rest", attention = 0, pulse = 0, learned = 0, bloom = 0, mindGlow = false,
 }: {
   page: PageId;
@@ -64,6 +65,8 @@ export function Rail({
   onNew: () => void;
   /** A chat that is never written down, beside the new one. */
   onIncognito: () => void;
+  /** Look into something noticed, in a new chat named after it. */
+  onStartTask?: (text: string, title?: string) => void;
   drawer?: boolean;
   onClose?: () => void;
   /** The agent's presence: what the mark at the top is doing. */
@@ -140,7 +143,7 @@ export function Rail({
           <ContextCard gauge={context} />
           <MemoryCard onOpen={onOpenMemory} />
           <Vitals onOpen={() => onNavigate("system")} />
-          <Activity onOpenSession={onOpenSession} onNavigate={onNavigate} />
+          <Activity onOpenSession={onOpenSession} onNavigate={onNavigate} onStartTask={onStartTask} />
         </div>
       </div>
     </aside>
@@ -422,21 +425,38 @@ const ACTIVITY_POLL_MS = 20_000;
  * at it, and says nothing at all when nothing is set up.
  */
 function Activity({
-  onOpenSession, onNavigate,
+  onOpenSession, onNavigate, onStartTask,
 }: {
   onOpenSession: (id: string) => void;
   onNavigate: (page: PageId) => void;
+  onStartTask?: (text: string, title?: string) => void;
 }) {
   const jobs = usePoll<Job[]>("/api/jobs", ACTIVITY_POLL_MS) ?? [];
+  /* What it has noticed and is still true: a disk filling up, an app in a
+     restart loop, a schedule that failed. One tap has it look into it, in a
+     chat of its own. See server/noticer.ts. */
+  const noticed = (usePoll<{ notices: Noticed[] }>("/api/proactive/notices", ACTIVITY_POLL_MS)?.notices ?? []).slice(0, 2);
 
   const running = jobs.filter((j) => j.running);
   const next = jobs
     .filter((j) => j.enabled && !j.running && j.next_run)
     .sort((a, b) => a.next_run! - b.next_run!)[0];
-  if (!running.length && !next) return null;
+  if (!running.length && !next && !noticed.length) return null;
 
   return (
     <section className="rail-activity" aria-label="Running on its own">
+      {onStartTask && noticed.map((n) => (
+        <button
+          key={n.key}
+          className={`rail-act-row is-noticed is-${n.tone}`}
+          onClick={() => onStartTask(n.prompt, n.title)}
+          title={`${n.detail} Look into it, in a new chat.`}
+        >
+          <span className="notice-dot" aria-hidden="true" />
+          <span className="rail-act-label">Noticed</span>
+          <span className="rail-act-name">{n.title}</span>
+        </button>
+      ))}
       {running.map((job) => {
         const started = job.runs?.[job.runs.length - 1]?.at ?? job.last_run;
         const session = job.last_session;

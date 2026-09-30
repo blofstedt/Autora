@@ -23,7 +23,17 @@ import { decide, lastDecision, resetHealth, supportFor, type JevOutcome, type Je
 import type { JevTarget } from "./server/jev/engine";
 import { guardWorthy, irreversible } from "./server/jev/guard";
 import { prune, storageReport } from "./server/retention";
-import { hostVitals } from "./server/host";
+import { diskUsage, hostVitals } from "./server/host";
+import {
+  DISCOVER, nextSteps, offers as offersFor, starters as startersFor,
+  type Container, type JobBrief, type NextStep, type Signals,
+} from "./server/suggest";
+import { Noticer, dockerContainers, findings, type NoticerMemory } from "./server/noticer";
+import {
+  HeldMessages, NTFY_TOKEN, TELEGRAM_TOKEN, deliver, mergePush, readyChannels, telegramChats,
+  type PushKind, type PushMessage, type PushTokens,
+} from "./server/push";
+import { signIns } from "./server/signins";
 import { ensureHostNames } from "./server/hosts";
 import { forgetSpeech, speak as synthesise, speakStream, speechStatus } from "./server/speech";
 import { attachDictation, dictationStatus } from "./server/dictation";
@@ -1342,6 +1352,17 @@ function askPerson(session: Session, request: AskRequest): Promise<AskAnswer> {
     // Only names and labels of keys travel: never a value.
     ...(request.offer ? { offer: request.offer } : {}),
   });
+  /* A question only the person can answer -- a code, a choice, a sign-in --
+     with nobody looking: the work waits on them, so this is the one message
+     worth a buzz. */
+  if (!session.incognito && !watched(session.id)) {
+    pushOut("asks", {
+      title: "Autora needs you",
+      body: [request.title, request.detail].filter(Boolean).join(" — ").slice(0, 400),
+      url: appLink(session.id),
+      urgent: true,
+    });
+  }
 
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
@@ -2102,9 +2123,88 @@ interface Notice {
 const notices: Notice[] = [];
 let noticeSeq = 0;
 
-function notify(notice: Omit<Notice, "id" | "ts">) {
+/** In the app's corner and, when `phone` names a kind the person wants sent,
+    on their phone too (see pushOut). */
+function notify(notice: Omit<Notice, "id" | "ts">, phone?: PushKind) {
   notices.push({ ...notice, id: ++noticeSeq, ts: Math.floor(Date.now() / 1000) });
   if (notices.length > 50) notices.shift();
+  if (phone) {
+    pushOut(phone, {
+      title: notice.title,
+      body: notice.detail,
+      url: appLink(notice.session),
+      urgent: notice.tone === "error",
+    });
+  }
+}
+
+// ------------------------------------------------------------ the phone --
+
+/* What reaches the person's phone, through ntfy or Telegram (server/push.ts).
+   The address the app was last opened at is the link in a message: the
+   server has no other way to know what the person calls it. */
+let appOrigin: string | null = null;
+
+function appLink(session?: string | null): string | null {
+  if (!appOrigin) return null;
+  return session ? `${appOrigin}/?session=${encodeURIComponent(session)}` : `${appOrigin}/`;
+}
+
+function pushTokens(): PushTokens {
+  return { ntfy: secretFor(NTFY_TOKEN), telegram: secretFor(TELEGRAM_TOKEN) };
+}
+
+/** Whether a token is set, and where from: enough for the settings card. */
+function tokenState(name: string): { set: boolean; source: "app" | "env" | null; masked: string } {
+  const saved = (state.secrets?.[name] ?? "").trim();
+  const env = (process.env[name] ?? "").trim();
+  const value = saved || env;
+  return { set: Boolean(value), source: saved ? "app" : env ? "env" : null, masked: value ? maskKey(value) : "" };
+}
+
+/** What arrived inside quiet hours, sent as one message when they end. */
+const heldPushes = new HeldMessages();
+
+function sendPush(msg: PushMessage) {
+  void deliver(msg, state.push, pushTokens()).then((out) => {
+    for (const d of out) if (!d.ok) log("warn", "push", `${d.channel}: ${d.error}`);
+  });
+}
+
+/**
+ * Send something to the phone, if the person wants this kind of news there
+ * and has somewhere set up to send it. Secrets and saved credentials are
+ * blanked first, as in the thread and the logs; inside quiet hours it is held.
+ */
+function pushOut(kind: PushKind, msg: PushMessage) {
+  if (!state.push.on[kind]) return;
+  if (readyChannels(state.push, pushTokens()).length === 0) return;
+  const safe = { ...msg, title: redactSecrets(msg.title), body: redactSecrets(msg.body) };
+  if (inQuiet(Date.now(), state.proactivity)) {
+    heldPushes.hold(safe);
+    return;
+  }
+  sendPush(safe);
+}
+
+/** Once quiet hours are over, what was held goes out as one message. */
+function flushHeldPushes() {
+  if (heldPushes.size === 0 || inQuiet(Date.now(), state.proactivity)) return;
+  const msg = heldPushes.take(appLink());
+  if (msg) sendPush(msg);
+}
+
+/* Which sockets have their page on screen. A socket counts as looking until
+   its page says otherwise, so a client from before this existed is never
+   taken for away. */
+const socketVisible = new WeakMap<WebSocket, boolean>();
+
+/** Whether anybody is actually looking at this session right now. */
+function watched(sessionId: string): boolean {
+  for (const ws of sessionSockets.get(sessionId) ?? []) {
+    if (ws.readyState === WebSocket.OPEN && socketVisible.get(ws) !== false) return true;
+  }
+  return false;
 }
 
 /** What a watcher sees, as text: the thing compared from one look to the next. */
@@ -2239,8 +2339,8 @@ async function proactiveSweep() {
       title: c.exit === 0 ? "A background job finished" : "A background job failed",
       detail: `${c.note || c.command} — reading it now, in the chat that started it.`,
       session: session.id,
-    });
-    void startTurn(session, wakePrompt(c))
+    }, "jobs");
+    void startTurn(session, wakePrompt(c), [], { automated: true })
       .then((r) => {
         if (r.error) log("info", "proactive", `the wake for ${c.id} ended: ${r.error}`);
       })
@@ -2283,7 +2383,7 @@ const scheduler = new Scheduler(jobs, {
           ? `Started by hand from the schedule "${job.name}".`
           : `Started on schedule by "${job.name}" (${job.cron}).`,
     });
-    const done = startTurn(session, prompt).then((r) => {
+    const done = startTurn(session, prompt, [], { automated: true }).then((r) => {
       /* What the run cost goes on today\u0027s ledger, so the next job knows what
          this one has already spent. */
       automationLedger = rollLedger(automationLedger, dayKey(Math.floor(Date.now() / 1000)));
@@ -2307,14 +2407,14 @@ const scheduler = new Scheduler(jobs, {
         title: "Automation budget spent for today",
         detail: `${run.error} (Held back: ${job.name}.)`,
         session: null,
-      });
+      }, "jobs");
     }
     notify({
       tone: run.ok ? "ok" : "error",
       title: run.ok ? `${job.name} finished` : `${job.name} failed`,
       detail: run.ok ? run.summary || "Done." : run.error || "It did not finish.",
       session: run.session,
-    });
+    }, "jobs");
   },
 });
 
@@ -2334,6 +2434,117 @@ function saneWatch(raw: any): JobWatch | null {
   const kind = ["page", "file", "command"].includes(raw.kind) ? raw.kind : null;
   const target = String(raw.target ?? "").trim();
   return kind && target ? { kind, target } : null;
+}
+
+/** A new schedule, planned and saved: from the Schedules page, or from an
+    offer the person said yes to. */
+function createJob(input: { name?: string; cron?: string; prompt: string; enabled?: boolean; watch?: unknown }): Job {
+  const job: Job = {
+    // With a random tail: two jobs saved in the same millisecond (a quick
+    // double-click) shared an id, and editing one edited both.
+    id: `job-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    name: (input.name || "").trim() || "Scheduled Task",
+    cron: (input.cron || "").trim() || "0 * * * *",
+    prompt: input.prompt.trim(),
+    enabled: input.enabled !== undefined ? Boolean(input.enabled) : true,
+    created: Math.floor(Date.now() / 1000),
+    last_run: null,
+    last_session: null,
+    last_error: null,
+    next_run: null,
+    cron_error: null,
+    watch: saneWatch(input.watch),
+    last_seen: null,
+    runs: [],
+  };
+  scheduler.plan(job);
+  jobs.push(job);
+  saveJobs();
+  // A watcher's first look is its baseline; take it now rather than at the
+  // first tick, so the first change after saving is the one reported.
+  if (job.watch) void scheduler.check(job);
+  return job;
+}
+
+// ------------------------------------------------ what it notices, offers --
+
+/* What the proactive side keeps between restarts: the offers already
+   answered (each is asked once), and which noticed conditions have been
+   said and which waved away. See server/suggest.ts and server/noticer.ts. */
+const proactiveDoc = readDoc<{ answered?: Record<string, string>; noticed?: Partial<NoticerMemory> }>("proactive") ?? {};
+const answeredOffers: Record<string, string> = { ...(proactiveDoc.answered ?? {}) };
+const noticedMemory: NoticerMemory = {
+  announced: { ...(proactiveDoc.noticed?.announced ?? {}) },
+  dismissed: { ...(proactiveDoc.noticed?.dismissed ?? {}) },
+};
+function saveProactive() {
+  saveDoc("proactive", () => ({ answered: answeredOffers, noticed: noticedMemory }));
+}
+const noticer = new Noticer(noticedMemory, saveProactive);
+
+/* Docker is asked at most once a minute: a new chat, the notice check and an
+   offer answered in quick succession all want the same list. */
+let containerLook: { at: number; list: Container[] | null } | null = null;
+async function containersNow(): Promise<Container[] | null> {
+  if (containerLook && Date.now() - containerLook.at < 60_000) return containerLook.list;
+  const list = await dockerContainers();
+  containerLook = { at: Date.now(), list };
+  return list;
+}
+
+/** The schedules, as suggesting needs them. A run held back by the day's
+    automation budget is not the task failing, and running is not failed. */
+function jobBriefs(): JobBrief[] {
+  return jobs.map((j) => {
+    const last = j.runs?.[j.runs.length - 1];
+    const budget = /^Today.s automation budget/.test(j.last_error ?? "");
+    const failed = !budget && !scheduler.running(j.id) &&
+      (Boolean(j.last_error) || (last?.finished != null && last.ok === false));
+    return {
+      id: j.id, name: j.name, prompt: j.prompt, cron: j.cron, enabled: j.enabled,
+      last_error: budget ? null : j.last_error, failed,
+    };
+  });
+}
+
+/** Everything a suggestion or an offer is made from. Read, never inferred. */
+async function gatherSignals(): Promise<Signals> {
+  const groups = await groupStates();
+  const has = (g: string) => groups.some((x) => x.group === g && x.available);
+  return {
+    disk: diskUsage(),
+    containers: await containersNow(),
+    signIns: signIns().map((x) => x.site),
+    memories: mind.active().map((m) => ({
+      id: m.id, kind: m.kind, title: m.title, body: m.body, tags: m.tags, status: m.status,
+      worked: m.worked ?? 0, uses: m.uses, last_used: m.last_used,
+    })),
+    jobs: jobBriefs(),
+    tools: { terminal: has("terminal"), browser: has("browser"), customTools: has("terminal") },
+  };
+}
+
+/**
+ * Look around: the disk, the apps beside this one, the schedules. What is
+ * new is said once -- in the app's corner and, if wanted, on the phone --
+ * and everything current is listed on a new chat and in the sidebar. Held
+ * phone messages go out here too, once quiet hours are over.
+ */
+async function noticeTick() {
+  try {
+    const found = findings({ disk: diskUsage(), containers: await containersNow(), jobs: jobBriefs() });
+    for (const n of noticer.update(found)) {
+      log("info", "noticer", `noticed: ${n.title}`);
+      /* A failed schedule was said the moment it failed, by the schedule's
+         own notice (and on the phone); here it is only listed, with the way
+         to look into it, rather than said a second time. */
+      if (n.key.startsWith("job:")) continue;
+      notify({ tone: n.tone === "bad" ? "error" : "info", title: n.title, detail: n.detail, session: null }, "notices");
+    }
+  } catch (err: any) {
+    log("warn", "noticer", `could not look around: ${err?.message ?? err}`);
+  }
+  flushHeldPushes();
 }
 
 /**
@@ -2377,12 +2588,12 @@ async function backgroundCall(sessionId: string, system: string, prompt: string,
  * After a turn: what to keep, what helped, what was wrong. See
  * server/learning.ts. Runs in the background and never fails the turn.
  */
-async function reflect(session: Session, request: string, startSeq: number, previousReply: string, result: TurnResult) {
+async function reflect(session: Session, request: string, startSeq: number, previousReply: string, result: TurnResult): Promise<NextStep[]> {
   /* Nothing is learned from an incognito chat: a lesson kept from one is a
      record of a conversation that was meant to leave none. */
-  if (session.incognito) return;
-  if (!state.learning || !toolSettings().memory.enabled) return;
-  if (!worthReflecting({ request, ranSomething: result.ranSomething, stopped: result.stopped, ok: result.ok })) return;
+  if (session.incognito) return [];
+  if (!state.learning || !toolSettings().memory.enabled) return [];
+  if (!worthReflecting({ request, ranSomething: result.ranSomething, stopped: result.stopped, ok: result.ok })) return [];
   const recalled = result.recalled.map((id) => mind.get(id)).filter((m): m is MemoryRecord => Boolean(m));
   const nearby = mind.recall(`${request}\n${result.reply.slice(0, 1000)}`, 8, false)
     .map((r) => r.record)
@@ -2396,7 +2607,7 @@ async function reflect(session: Session, request: string, startSeq: number, prev
     }), 1500);
   } catch (err: any) {
     console.warn(`[learning] ${session.id}: ${err?.message ?? err}`);
-    return;
+    return [];
   }
   const found = parseReflection(text, known);
 
@@ -2435,9 +2646,70 @@ async function reflect(session: Session, request: string, startSeq: number, prev
       changes.push({ id, title: record.title, change: "questioned" });
     }
   }
-  if (items.length === 0 && changes.length === 0) return;
-  emitEvent(session, "memory.learned", "agent", { items, changes });
-  log("info", "learning", `${session.id}: ${items.length} learned, ${changes.length} changed`);
+  if (items.length > 0 || changes.length > 0) {
+    emitEvent(session, "memory.learned", "agent", { items, changes });
+    log("info", "learning", `${session.id}: ${items.length} learned, ${changes.length} changed`);
+  }
+  return found.next;
+}
+
+/** The tool calls a turn made, in order, and whether each worked. Paired by
+    span, as the thread pairs them. */
+function turnCalls(session: Session, sinceSeq: number): { name: string; args: Record<string, any>; ok: boolean }[] {
+  const calls = new Map<string, { name: string; args: Record<string, any>; ok: boolean }>();
+  for (const e of session.events) {
+    if (e.seq <= sinceSeq || !e.span) continue;
+    if (e.kind === "tool.call") {
+      calls.set(e.span, { name: String(e.payload?.name ?? ""), args: e.payload?.args ?? {}, ok: false });
+    } else if (e.kind === "tool.result" || e.kind === "tool.error") {
+      const call = calls.get(e.span);
+      if (call) call.ok = e.kind === "tool.result" && e.payload?.ok !== false;
+    }
+  }
+  return [...calls.values()];
+}
+
+/**
+ * One-tap follow-ups under a finished reply (see nextSteps in
+ * server/suggest.ts), put in the thread as an event so a reload shows them
+ * too. Only after a turn that went well and that somebody asked for: a job's
+ * turn has nobody to tap them. `before` is what was offered already, so the
+ * same chips are not said twice.
+ */
+function offerNextSteps(
+  session: Session, request: string, startSeq: number, result: TurnResult, opts: TurnOptions,
+  ideas: NextStep[], before: NextStep[] = [],
+): NextStep[] {
+  if (opts.automated || automationSessions.has(session.id)) return [];
+  if (!result.ok || result.stopped) return [];
+  const steps = nextSteps({
+    request,
+    calls: turnCalls(session, startSeq),
+    customTools: toolSettings().terminal.enabled,
+  }, ideas);
+  const same = steps.length === before.length && steps.every((s, i) => s.label === before[i]?.label);
+  if (steps.length === 0 || same) return before;
+  emitEvent(session, "suggest.next", "system", { steps });
+  return steps;
+}
+
+/** A turn this long is one somebody may have walked away from. */
+const LONG_TURN_MS = 45_000;
+
+/**
+ * Tell the phone that a long piece of work is done -- when nobody is looking
+ * at it. A turn watched to the end needs no message, and neither does a
+ * short one; a job's turn says so through its own notice.
+ */
+function doneWhileAway(session: Session, result: TurnResult, began: number, opts: TurnOptions) {
+  if (opts.automated || automationSessions.has(session.id) || session.incognito) return;
+  if (result.stopped || Date.now() - began < LONG_TURN_MS || watched(session.id)) return;
+  const title = isDefaultTitle(session.title) ? "your task" : `“${session.title}”`;
+  pushOut("turns", {
+    title: result.ok ? `Done: ${title}` : `Stopped with a problem: ${title}`,
+    body: (result.reply.trim() || result.error || "Finished.").slice(0, 400),
+    url: appLink(session.id),
+  });
 }
 
 /** How a turn ended, for whoever started it: the chat route ignores it, a
@@ -2486,6 +2758,10 @@ const turnsInFlight = new Map<string, Promise<void>>();
 interface TurnOptions {
   /** It was said out loud, in live voice. See runTurn for what that changes. */
   spoken?: boolean;
+  /** Nobody typed it: a schedule, a trigger, or the console waking itself.
+      Such a turn gets no next-step chips -- nobody is there to tap them --
+      and says it finished through its own notice, not the "done" message. */
+  automated?: boolean;
 }
 
 function beginTurn(session: Session, text: string, attachments: AttachmentRef[] = [], opts: TurnOptions = {}): Promise<TurnResult> {
@@ -2509,9 +2785,20 @@ function beginTurn(session: Session, text: string, attachments: AttachmentRef[] 
   const abort = new AbortController();
   running.set(session.id, { stopped: false, cancels: new Set([() => abort.abort()]), signal: abort.signal });
   broadcastLiveStatus(session);
+  const began = Date.now();
   const done = runTurn(session, text, opts);
   void done
-    .then((result) => reflect(session, text, startSeq, previousReply, result))
+    .then(async (result) => {
+      /* What next: the chips that show what else it can do with this, at
+         once, and again with the look back's own ideas when it has them. */
+      const first = offerNextSteps(session, text, startSeq, result, opts, []);
+      doneWhileAway(session, result, began, opts);
+      const ideas = await reflect(session, text, startSeq, previousReply, result);
+      if (ideas.length > 0) {
+        const steps = offerNextSteps(session, text, startSeq, result, opts, ideas, first);
+        if (steps.length > 0) log("info", "learning", `${session.id}: ${steps.length} next steps offered`);
+      }
+    })
     // Learning is a bonus: whatever goes wrong in it must not take the server down.
     .catch((err) => console.warn(`[learning] ${session.id}: ${err?.message ?? err}`));
   return done;
@@ -3794,6 +4081,16 @@ async function startServer() {
       log("warn", "http", `${req.method} ${req.path} refused: sent from another site`);
       return res.status(403).json({ error: refused });
     }
+    /* Where the person reaches the app, for the link in a phone message: the
+       address a page was loaded from. Not this machine's own address once a
+       real one is known -- the agent opening the app in its own browser is
+       not the person. */
+    const host = req.get("host");
+    if (req.method === "GET" && host && !req.path.startsWith("/api/") &&
+        (req.headers.accept ?? "").includes("text/html") &&
+        (!appOrigin || !/^(localhost|127\.|\[::1\])/i.test(host))) {
+      appOrigin = `${req.protocol}://${host}`;
+    }
     next();
   });
 
@@ -4312,7 +4609,10 @@ async function startServer() {
        its first message is a small record of that message, and this one is
        not written down anywhere. */
     if (!session.incognito && session.counts.turns === 0 && isDefaultTitle(session.title)) {
-      const named = text || attachments.map((a) => a.name).join(", ");
+      /* A suggestion tapped says what it is in a few words, and those make a
+         better name than the start of the instruction it sends. */
+      const given = typeof req.body?.title === "string" ? req.body.title.trim() : "";
+      const named = given || text || attachments.map((a) => a.name).join(", ");
       const oneLine = named.replace(/\s+/g, " ");
       session.title = oneLine.length > 40 ? `${oneLine.slice(0, 37)}...` : oneLine;
       saveMeta(metaOf(session));
@@ -4852,31 +5152,13 @@ async function startServer() {
   app.post("/api/jobs", (req: Request, res: Response) => {
     const prompt = (req.body?.prompt || "").trim();
     if (!prompt) return res.status(400).json({ error: "A task needs a prompt" });
-
-    const newJob: Job = {
-      // With a random tail: two jobs saved in the same millisecond (a quick
-      // double-click) shared an id, and editing one edited both.
-      id: `job-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-      name: (req.body?.name || "").trim() || "Scheduled Task",
-      cron: (req.body?.cron || "").trim() || "0 * * * *",
+    const newJob = createJob({
+      name: String(req.body?.name ?? ""),
+      cron: String(req.body?.cron ?? ""),
       prompt,
-      enabled: req.body?.enabled !== undefined ? Boolean(req.body?.enabled) : true,
-      created: Math.floor(Date.now() / 1000),
-      last_run: null,
-      last_session: null,
-      last_error: null,
-      next_run: null,
-      cron_error: null,
-      watch: saneWatch(req.body?.watch),
-      last_seen: null,
-      runs: [],
-    };
-    scheduler.plan(newJob);
-    jobs.push(newJob);
-    saveJobs();
-    // A watcher's first look is its baseline; take it now rather than at the
-    // first tick, so the first change after saving is the one reported.
-    if (newJob.watch) void scheduler.check(newJob);
+      enabled: req.body?.enabled,
+      watch: req.body?.watch,
+    });
     res.json({ id: newJob.id, cron_error: newJob.cron_error });
   });
 
@@ -4941,7 +5223,7 @@ async function startServer() {
       t.last_error = held;
       t.last_fired = Math.floor(Date.now() / 1000);
       saveTriggers();
-      notify({ tone: "info", title: "Automation budget spent for today", detail: held, session: null });
+      notify({ tone: "info", title: "Automation budget spent for today", detail: held, session: null }, "jobs");
       return null;
     }
     const session = newSession(triggerLabel(t));
@@ -4959,7 +5241,7 @@ async function startServer() {
       message: why,
     });
     log("info", "triggers", `${t.id} fired -> ${session.id}`);
-    const done = startTurn(session, triggerPrompt(t, body)).then((r) => {
+    const done = startTurn(session, triggerPrompt(t, body), [], { automated: true }).then((r) => {
       t.last_error = r.error ?? null;
       saveTriggers();
       automationLedger = rollLedger(automationLedger, dayKey(Math.floor(Date.now() / 1000)));
@@ -4970,7 +5252,7 @@ async function startServer() {
         title: r.ok ? `${triggerLabel(t)} was triggered` : `${triggerLabel(t)} failed`,
         detail: r.ok ? (r.reply || "").trim().slice(0, 200) || "Done." : r.error || "It did not finish.",
         session: session.id,
-      });
+      }, "jobs");
       return r;
     });
     void done.catch(() => undefined);
@@ -5062,6 +5344,78 @@ async function startServer() {
       res.json({ ok: true, session });
     },
   );
+
+  /**
+   * What this install could do for the person, and what it has noticed:
+   * one-tap tasks for a new chat, the one schedule worth offering, and the
+   * conditions still true. Read from the install each time; no model is
+   * asked. See server/suggest.ts and server/noticer.ts.
+   */
+  app.get("/api/proactive", async (_req: Request, res: Response) => {
+    const signals = await gatherSignals();
+    res.json({
+      starters: startersFor(signals),
+      discover: DISCOVER,
+      offer: offersFor(signals, answeredOffers, state.proactivity)[0] ?? null,
+      notices: noticer.list(),
+    });
+  });
+
+  /** Only what has been noticed, for the sidebar's poll: no Docker, no disk,
+      nothing worked out -- the list the last look left. */
+  app.get("/api/proactive/notices", (_req: Request, res: Response) => {
+    res.json({ notices: noticer.list() });
+  });
+
+  /** Yes or no to an offer. Yes sets the schedule up; either way it is not
+      asked again. The offer is worked out afresh here rather than taken from
+      the request, so this route can only ever create a job it offered. */
+  app.post("/api/proactive/offers/:key", async (req: Request, res: Response) => {
+    const answer = req.body?.answer === "yes" ? "yes" : req.body?.answer === "no" ? "no" : null;
+    if (!answer) return res.status(400).json({ error: "Answer yes or no." });
+    const offer = offersFor(await gatherSignals(), answeredOffers, state.proactivity)
+      .find((o) => o.key === req.params.key);
+    if (!offer) return res.status(404).json({ error: "That offer is no longer open." });
+    answeredOffers[offer.key] = answer;
+    saveProactive();
+    if (answer === "no") return res.json({ ok: true });
+    const job = createJob(offer.job);
+    log("info", "schedule", `offer accepted: "${job.name}" (${job.cron})`);
+    res.json({ ok: true, job: job.id, name: job.name, next_run: job.next_run });
+  });
+
+  /** "Not now" on something noticed: quiet until it clears. */
+  app.post("/api/proactive/notices/:key/dismiss", (req: Request, res: Response) => {
+    if (!noticer.dismiss(req.params.key)) return res.status(404).json({ error: "That is no longer true." });
+    res.json({ ok: true });
+  });
+
+  /** A message to every channel that is set up, to see it arrive. */
+  app.post("/api/push/test", async (_req: Request, res: Response) => {
+    const tokens = pushTokens();
+    if (readyChannels(state.push, tokens).length === 0) {
+      return res.status(400).json({ error: "Nothing is set up to send to yet: turn on ntfy or Telegram and fill it in first." });
+    }
+    const results = await deliver({
+      title: "Autora can reach you here",
+      body: "This is where it will tell you when a schedule runs, when it notices something, and when it needs you.",
+      url: appLink(),
+    }, state.push, tokens);
+    for (const d of results) log(d.ok ? "info" : "warn", "push", `test to ${d.channel}: ${d.ok ? "sent" : d.error}`);
+    res.json({ results });
+  });
+
+  /** The chats that have messaged the bot, so the person can pick theirs
+      instead of looking up a chat id. A POST: it reaches out to Telegram. */
+  app.post("/api/push/telegram/chats", async (_req: Request, res: Response) => {
+    const token = secretFor(TELEGRAM_TOKEN);
+    if (!token) return res.status(400).json({ error: "Save the bot's token first." });
+    try {
+      res.json({ chats: await telegramChats(token) });
+    } catch (err: any) {
+      res.status(502).json({ error: redactSecrets(String(err?.message ?? err)) });
+    }
+  });
 
   app.get("/api/notices", (req: Request, res: Response) => {
     const after = Number(req.query.after) || 0;
@@ -5226,6 +5580,15 @@ async function startServer() {
     /* Two times of day on their clock, so the panel can show when the agent
        keeps its own initiative to itself. */
     proactivity: { ...state.proactivity },
+    /* Where news reaches the phone. The two tokens as whether they are set
+       and where from, never the tokens themselves. */
+    push: {
+      ntfy: { ...state.push.ntfy },
+      telegram: { ...state.push.telegram },
+      on: { ...state.push.on },
+      tokens: { ntfy: tokenState(NTFY_TOKEN), telegram: tokenState(TELEGRAM_TOKEN) },
+      ready: readyChannels(state.push, pushTokens()),
+    },
     jev: {
       enabled: state.jev.enabled,
       threshold: state.jev.threshold,
@@ -5363,7 +5726,18 @@ async function startServer() {
     /* How a picture challenge is answered. The key for a self-hosted solver
        comes from the panel like any other and is never sent back. */
     if (body.captcha && typeof body.captcha === "object") mergeCaptcha(state.captcha, body.captcha);
-    if (body.proactivity && typeof body.proactivity === "object") mergeProactivity(state.proactivity, body.proactivity);
+    if (body.proactivity && typeof body.proactivity === "object") {
+      mergeProactivity(state.proactivity, body.proactivity);
+      // Quiet hours switched off or moved: whatever they held can go now.
+      flushHeldPushes();
+    }
+    /* Phone notifications. A token arrives only when someone typed one, like
+       a provider key, and goes to the secret store; an empty string removes it. */
+    if (body.push && typeof body.push === "object") {
+      mergePush(state.push, body.push);
+      if (typeof body.push.ntfy_token === "string") setSecret(NTFY_TOKEN, body.push.ntfy_token);
+      if (typeof body.push.telegram_token === "string") setSecret(TELEGRAM_TOKEN, body.push.telegram_token);
+    }
     /* Which voice speaks. It is checked while Deepgram is reachable at all: a
        typo saved here would otherwise only show up at the next sentence, in the
        middle of a conversation, where it reads as the app being broken rather
@@ -5832,6 +6206,9 @@ async function startServer() {
           const msg = JSON.parse(data.toString());
           if (msg.type === "ping") {
             ws.send(JSON.stringify({ type: "pong", t: Date.now() / 1000 }));
+          } else if (msg.type === "visibility") {
+            // Whether this page is on screen: see watched().
+            socketVisible.set(ws, msg.visible !== false);
           } else if (msg.type === "interrupt") {
             stopTurn(session.id);
             session.busy = false;
@@ -6053,6 +6430,13 @@ async function startServer() {
 housekeeping();
 const housekeepingTimer = setInterval(housekeeping, SWEEP_EVERY_MS);
 housekeepingTimer.unref?.();
+
+/* What it notices: a first look just after start -- cheap, and nothing said
+   before a restart is said again (see Noticer) -- so the list is there by
+   the time anybody opens a chat; then every five minutes. */
+setTimeout(() => void noticeTick(), 2_000).unref?.();
+const noticeTimer = setInterval(() => void noticeTick(), 5 * 60_000);
+noticeTimer.unref?.();
 
 /* The vendor's balance: once on the way up, then every ten minutes. It is the
    one figure that can say what has really been spent -- counting tokens here

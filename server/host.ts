@@ -54,16 +54,21 @@ export function hostVitals(dataDir = process.env.AUTORA_HOME || process.cwd()): 
   const total = os.totalmem();
   const memory = { used: Math.max(0, total - os.freemem()), total };
 
-  let disk: HostVitals["disk"] = null;
+  return { cpu, cores, memory, disk: diskUsage(dataDir) };
+}
+
+/** The disk holding a directory: its size and what is used, or null. Apart
+    from hostVitals so a look at the disk does not take a CPU sample, which
+    would shorten the window the sidebar's next reading covers. */
+export function diskUsage(dataDir = process.env.AUTORA_HOME || process.cwd()): HostVitals["disk"] {
   try {
     const s = fs.statfsSync(dataDir);
     const size = s.blocks * s.bsize;
     // `bavail`, not `bfree`: what is left for anyone but root is what the
     // agent's own writes can actually use.
-    if (size > 0) disk = { used: size - s.bavail * s.bsize, total: size };
+    return size > 0 ? { used: size - s.bavail * s.bsize, total: size } : null;
   } catch {
     /* a path that went away, or a filesystem that will not say */
+    return null;
   }
-
-  return { cpu, cores, memory, disk };
 }
