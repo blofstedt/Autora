@@ -137,6 +137,7 @@ function doing(name: string, args: Record<string, any>): string {
     case "browser_press": return "Pressing keys on the page";
     case "browser_back": return "Going back a page";
     case "browser_screenshot": return "Looking at the page";
+    case "browser_eval": return "Running JavaScript in the page";
     case "browser_upload": return "Attaching a file";
     case "browser_captcha": return "Getting past a CAPTCHA";
     case "browser_handoff": return "Waiting for you in the browser";

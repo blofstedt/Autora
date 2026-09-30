@@ -29,6 +29,7 @@
  * what is missing and the thread says so in words.
  */
 
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -166,6 +167,225 @@ export interface PageRead {
       it did nothing. */
   notes?: string[];
 }
+
+/**
+ * Looking at the same thing again, which is where an agent gets stuck.
+ *
+ * The failure this exists for: a dialog whose buttons are not in the outline
+ * -- a script-drawn prompt with no refs -- leaves reading as the only thing
+ * that still "works". So the agent reads, and reads, and reads, and every
+ * read comes back identical, and the identical read looks like progress
+ * because it came back at all. Twenty calls went that way once.
+ *
+ * Two identical looks are enough. The third one is answered with a way out
+ * instead of the page again: what to do instead, named, in the result the
+ * model actually reads. A page that changes between looks is a new page and
+ * starts again, so ordinary work is never interrupted.
+ */
+export class SameLook {
+  /** What the last look was, and how many times in a row it has been served. */
+  private key: string | null = null;
+  private count = 0;
+
+  /** Remember this look. Returns the way-out note on the third identical one,
+      and null while the agent is still doing something that works. */
+  seen(key: string, note: string): string | null {
+    if (key === this.key) {
+      this.count += 1;
+      return this.count >= 3 ? note : null;
+    }
+    this.key = key;
+    this.count = 1;
+    return null;
+  }
+}
+
+/** A stable key for "the page as it was read this time". The outline carries
+    the elements and the scroll line carries the position, so an unchanged
+    page keys the same however long the agent stares at it. */
+export function lookKey(page: PageRead, part = 1): string {
+  return `${page.url}\u0000${page.title}\u0000${part}\u0000${page.outline}`;
+}
+
+/**
+ * The note that replaces a third look at an unchanged page.
+ *
+ * It says what to do rather than what not to do, because "stop" on its own is
+ * what the loop-check already says into the same wind: the agent needs the
+ * instrument it is missing. Here that is running JavaScript in the page --
+ * the only way to reach a control the outline cannot see.
+ */
+export const SAME_PAGE_NOTE = (
+  "NOTHING CHANGED: this is the third time you have read this same page, " +
+  "unchanged, and reading or screenshotting it again will keep coming back " +
+  "identical. Reading is not what is failing -- the elements you need are " +
+  "not in the outline. Stop reading and use one of these instead:\n" +
+  "  1. browser_eval: run JavaScript in the page. That reaches anything, " +
+  "including buttons no outline lists. To click one by its own words: " +
+  "`__autora.click(__autora.byText(\"Save as draft\"))`. To look first: " +
+  "`__autora.all(\"button\").map((b) => b.innerText)`.\n" +
+  "  2. keyboard-first, if the thing you want is the primary action of a " +
+  "dialog that is showing: focus it and Tab to the primary button, then Enter. " +
+  "Escape is never the key for a dialog you are trying to accept.\n" +
+  "  3. browser_handoff: if neither reaches it, hand the page over and ask the " +
+  "person to click it -- they can do in three seconds what twenty calls could not.\n" +
+  "Do not read this page again: nothing about it has changed, so nothing about " +
+  "the answer will either."
+);
+
+/** The same, for the fourth picture of a page that has not moved. */
+export const SAME_PICTURE_NOTE = (
+  "NOTHING CHANGED: you have already been given this exact picture twice -- " +
+  "the page has not moved a pixel since. Another screenshot will be the same " +
+  "picture again, so it is not taken. If something on the page is not in its " +
+  "text, reach it with browser_eval (run JavaScript in the page), or hand the " +
+  "page to the person with browser_handoff. Do not take this screenshot again."
+);
+
+/** One click the script made for the agent: where, and what it hit. */
+export interface ScriptHit {
+  x?: number;
+  y?: number;
+  label?: string;
+}
+
+/** How long a script may run in the page before it is called a hang. A
+    blocking loop hangs the renderer itself, which no timeout here can fix --
+    it is here for scripts that await something that never comes back. */
+const SCRIPT_TIMEOUT_MS = 8000;
+
+/** Errors that mean "that was the wrong shape, try the next one" rather than
+    "your script is broken". */
+const WRONG_SHAPE =
+  /SyntaxError|Unexpected token|Unexpected identifier|Unexpected end of input|is not a function|missing \) after argument list|Invalid or unexpected token|await is only valid/i;
+
+/**
+ * The script as the three shapes it might be, in the order that gets it right
+ * most often: a function to call, an expression to evaluate, or statements
+ * that use `return` themselves. The page's own error tells us which, because a
+ * wrong shape throws a syntax error before any of the script runs.
+ */
+/**
+ * The shapes a script may be written in -- tried in the order that cannot run
+ * anything twice.
+ *
+ * The first version called whatever it was given: a one-line click came back
+ * as a label, the call on the end of it threw "is not a function", the retry
+ * in the next shape clicked a *second* time. On a "Discard" that is the post
+ * gone. So the shape is decided before anything runs, by parsing in Node --
+ * `new Function` touches no page. An expression is run as it stands; anything
+ * else is wrapped in a function body, where `return` and `const` belong.
+ */
+export function scriptAttempts(script: string): string[] {
+  const body = script.trim();
+  const asExpression = `return (${body});`;
+  let expression = true;
+  try {
+    new Function(asExpression);
+  } catch {
+    expression = false;
+  }
+  const wrapped = `(async () => {
+  ${body}
+})()`;
+  return expression ? [body, wrapped] : [wrapped, body];
+}
+
+/**
+ * A failed script, in the page's own words. Playwright wraps every error in
+ * its own frame and a stack of internal file names -- four hundred characters
+ * for "nothing here says that" -- and the first line is the one that tells the
+ * agent what actually happened.
+ */
+export function plainScriptError(err: unknown): string {
+  const raw = err && typeof err === "object" && "message" in err
+    ? String((err as { message: unknown }).message)
+    : String(err);
+  const first = raw.split("\n")[0]!.trim();
+  if (/^(SyntaxError|Unexpected token)/.test(first)) return "the script is not valid JavaScript: " + first;
+  return first.replace(/^page\.evaluate: /, "").replace(/^Error: /, "");
+}
+
+/** What a script returned, as the model reads it. */
+export function describeScriptValue(value: unknown): string {
+  if (value === undefined) return "The script returned nothing (no return value).";
+  if (typeof value === "string") return value.length > 4000 ? `${value.slice(0, 4000)}…` : value;
+  try {
+    const json = JSON.stringify(value, null, 1);
+    if (json === undefined) return String(value);
+    return json.length > 4000 ? `${json.slice(0, 4000)}…` : json;
+  } catch {
+    return String(value);
+  }
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`the script was still running after ${ms / 1000}s (it may be waiting for something that never arrives)`)), ms);
+    promise.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}
+
+/**
+ * Injected into the page before any script runs, so the agent has a handle on
+ * things the outline cannot see -- and so its clicks are announced the way the
+ * other mouse actions are, with the pointer drawn where they land.
+ */
+export const AUTORA_HELPER_SCRIPT = `(() => {
+  /* What the page says an element is: its visible words, or failing those the
+     attribute it is named by. The outline names things the same way, so what
+     the agent reads and what it can click agree. */
+  const label = (el) => ((el.getAttribute("aria-label") || el.innerText || el.value
+    || el.getAttribute("title") || el.getAttribute("placeholder") || el.getAttribute("alt")
+    || el.getAttribute("name") || el.tagName || "") + "").trim();
+  const shown = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+  const ALL = "button, a, [role=button], [role=menuitem], [role=tab], input, textarea, select, summary, label, li, span, div, p, td, th";
+  window.__autora = {
+    hit: [],
+    all(selector) { return Array.from(document.querySelectorAll(selector)); },
+    /* The thing that says these words. An exact match wins; failing that the
+       shortest thing containing them, so a button is chosen rather than the
+       card around it. Case and surrounding space are ignored. */
+    byText(want, selector) {
+      const wanted = String(want).trim().toLowerCase();
+      const nodes = Array.from(document.querySelectorAll(selector || ALL)).filter(shown);
+      const said = (el) => label(el).toLowerCase();
+      const exact = nodes.find((el) => said(el) === wanted);
+      if (exact) return exact;
+      const inside = nodes.filter((el) => said(el).includes(wanted)).sort((a, b) => label(a).length - label(b).length);
+      return inside[0] || null;
+    },
+    el(target) {
+      if (target === null || target === undefined) {
+        throw new Error("nothing to act on: byText() found no element saying that, and el() no element with that selector");
+      }
+      if (typeof target === "object") return target;
+      const found = document.querySelector(String(target));
+      if (!found) throw new Error("no element matches the selector " + JSON.stringify(String(target)));
+      return found;
+    },
+    click(target) {
+      const el = this.el(target);
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) {
+        throw new Error(JSON.stringify(label(el)) + " is in the page but not visible, so a click on it would do nothing");
+      }
+      this.hit.push({ x: r.x + r.width / 2, y: r.y + r.height / 2, label: label(el).slice(0, 60) });
+      el.click();
+      return label(el).slice(0, 60);
+    },
+  };
+  return true;
+})()`;
 
 /** Where to scroll: by screens (or pixels), to the top or bottom, inside a
     numbered element, or to some text. */
@@ -2208,6 +2428,77 @@ export class LiveBrowser {
    * at all, because an agent told only "scrolled" scrolls a page that is
    * already at the bottom forever.
    */
+  /** The last look at the page, and the last picture, for the notes above. */
+  private lookSeen = new SameLook();
+  private shotSeen = new SameLook();
+
+  /** After serving a read: null, or the way-out note in place of a fourth
+      identical one. Called by the tool that gives the model a read, not by
+      every internal read, so the count is of what the model was shown. */
+  lookNote(page: PageRead, part = 1): string | null {
+    return this.lookSeen.seen(lookKey(page, part), SAME_PAGE_NOTE);
+  }
+
+  /** After taking a picture: null, or the note that stops a fourth identical
+      one being taken and paid for. */
+  shotNote(png: Buffer): string | null {
+    return this.shotSeen.seen(createHash("sha1").update(png).digest("hex"), SAME_PICTURE_NOTE);
+  }
+
+  /**
+   * Run JavaScript in the page.
+   *
+   * The instrument this console was missing. The outline only knows what the
+   * page announces: a dialog drawn by script has no refs, a value that lives
+   * only in the DOM has no element to click, and an iframe's own document is
+   * not visible from here -- so reading was all the agent could do, over and
+   * over. This is the DOM itself. A click made through `__autora.click()` is a
+   * real click on a real element, and the pointer is drawn where it landed, so
+   * the person still watches it happen.
+   */
+  runScript(script: string): Promise<{ page: PageRead; value: string; hits: ScriptHit[]; elapsed: number }> {
+    return this.run(async () => {
+      const page = await this.ensure();
+      await page.evaluate(AUTORA_HELPER_SCRIPT).catch(() => undefined);
+      const started = Date.now();
+      let value: unknown;
+      let failure: string | null = null;
+      for (const attempt of scriptAttempts(script)) {
+        try {
+          value = await withTimeout(page.evaluate(attempt), SCRIPT_TIMEOUT_MS);
+          failure = null;
+          break;
+        } catch (err: any) {
+          failure = plainScriptError(err);
+          // A syntax error or "not a function" means the script was the wrong
+          // *shape* -- an expression where a function was wanted, or the other
+          // way round. Anything else is the script's own failure, reported as
+          // it stands rather than retried in another shape.
+          // A syntax error or "not a function" means the script was the wrong
+          // shape -- an expression where statements were wanted, or the other
+          // way round. Anything else is the script's own failure, reported as
+          // it stands rather than run again in another shape, which for a
+          // click would mean doing it twice.
+          if (!WRONG_SHAPE.test(failure)) break;
+        }
+      }
+      const hits = (await page
+        .evaluate("(() => { const h = (window.__autora && window.__autora.hit) || []; if (window.__autora) window.__autora.hit = []; return h; })()")
+        .catch(() => [])) as ScriptHit[];
+      /* The pointer goes to the last thing it clicked, so the recording shows
+         where the click landed even though the click itself was the DOM's. */
+      const last = [...hits].reverse().find((h) => typeof h.x === "number");
+      if (last) await this.showCursor(Math.round(last.x!), Math.round(last.y!), true).catch(() => undefined);
+      this.hooks.onAction(`eval${hits.length ? ` (clicked ${hits.map((h) => h.label || "an element").join(", ")})` : ""}`, null, this.currentUrl ?? "");
+      const elapsed = Date.now() - started;
+      await this.settle(300);
+      await this.arrive();
+      const read = await this.read();
+      await this.keyframe();
+      return { page: read, value: failure ? `The script failed: ${failure}` : describeScriptValue(value), hits, elapsed };
+    });
+  }
+
   scroll(how: ScrollRequest): Promise<PageRead> {
     return this.run(async () => {
       const page = await this.ensure();

@@ -99,31 +99,30 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  On a phone the task board now fits the screen. To Do, Doing and Done share
-  the width, all three in view at once, with nothing to swipe sideways for.
+  Autora can now run JavaScript in the page it is driving -- a tool called
+  browser_eval, and the end of the worst way it used to get stuck.
 
-  A card on a phone is its title and the column's colour down the left edge,
-  and nothing else. The column already says what state the work is in, and the
-  status mark, the percentage and the progress bar were what pushed the columns
-  wider than the screen -- so they step aside here, and the title gets the room
-  instead: it wraps and shows its first three lines rather than being cut off
-  after a few characters. Everything else is still one tap away: the full
-  title, everything written on the card, its steps with the finished ones
-  marked, and the moves that column offers.
+  Some pages draw their own dialogs in script: the buttons have no number in
+  the list of elements, and no label the reader can use. Until now the agent
+  could only read the page again and again, and an unchanged page looks like
+  progress right up until the twentieth read. browser_eval reaches into the
+  page instead: __autora.click(__autora.byText("Save as draft")) clicks a
+  button by the words on it, __autora.all("button") lists what is on the page,
+  and what the script returns comes back with the page as it is afterwards.
+  Clicks are real and are drawn on your screen where they land, so you still
+  watch every one of them.
 
-  Wider screens are unchanged, cards and columns exactly as they were.
+  A read of the same unchanged page is now answered differently the third time
+  round: instead of the same page again, it says nothing has changed and names
+  the way out -- run JavaScript in the page, press Tab to the primary button,
+  or hand the page over to you. The fourth identical screenshot is not taken at
+  all, for the same reason.
 
-  A card is now one line: the work item cut off with an ellipsis, its state at
-  the end of the line, and a thin progress bar under it. Tap any card and the
-  whole thing opens -- the full title, everything written on it, its steps with
-  the finished ones marked and struck through, and the moves that column offers
-  -- so nothing has to be crammed into the card itself.
+  Also fixed: a one-line script ending in a click could run that click twice --
+  once as written and once when it was retried in another shape. A "Discard"
+  clicked twice is a post thrown away. The shape of a script is now decided
+  before anything runs, and a click happens once.
 
-  When a card changes column it is picked up out of the old one and set down in
-  the new one, with the same lift-and-place motion the drag already had, so the
-  eye can follow where it went instead of finding it gone. A card with no steps
-  and no figure no longer shows a made-up 50%: it shows a bar moving steadily
-  from left to right, which is what "working, nothing to count yet" looks like,
-  and a real figure or a step count replaces it as soon as there is one. The
-  board carries its own bar under the header -- cards finished out of cards
-  there are.
+  A script that fails says what happened in the page's own words instead of
+  four hundred characters of Playwright's stack trace, and a click that finds
+  nothing says so rather than clicking the wrong element.

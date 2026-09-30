@@ -775,6 +775,40 @@ const TOOLS: ToolSpec[] = [
     parameters: { type: "object", properties: {} },
   },
   {
+    name: "browser_eval",
+    group: "browser",
+    description:
+      "Run JavaScript in the open page, and get back what it returned with the page " +
+      "as it is afterwards. This is how to reach what the numbered outline cannot " +
+      "see: a dialog drawn by script (no refs anywhere), a control with no label, a " +
+      "value that lives only in the DOM, or a list too long to read. Use it when a " +
+      "read comes back unchanged, when a click by number does nothing, or when two " +
+      "reads have told you the same thing twice. `script` is the whole script: an " +
+      "expression (`document.title`), or statements with a return (`const b = " +
+      "__autora.all(\"button\"); return b.length;`). The page has helpers: " +
+      "__autora.byText(\"Save as draft\") finds the element that says those words " +
+      "(also matching aria-label, title and placeholder), __autora.all(css) lists " +
+      "elements, __autora.el(css) is one, and __autora.click(anything) really clicks " +
+      "it - the click is drawn on the person's screen and reported back with what it " +
+      "hit. A click that finds nothing says so rather than clicking the wrong thing. " +
+      "Scripts are given 8 seconds. Everything the script does is real: it can " +
+      "change the page, so click once and read the result.",
+    parameters: {
+      type: "object",
+      properties: {
+        script: {
+          type: "string",
+          description:
+            "The JavaScript to run in the page. E.g. " +
+            "__autora.click(__autora.byText(\"Save as draft\")) to click a button no " +
+            "outline lists, or __autora.all(\"button\").map((b) => b.innerText) to see " +
+            "what the buttons on the page say.",
+        },
+      },
+      required: ["script"],
+    },
+  },
+  {
     name: "browser_captcha",
     group: "browser",
     description:
@@ -1671,6 +1705,8 @@ export function renderCall(spec: ToolSpec, args: Record<string, any>): string {
         : `read vault artifact ${args.id}`;
     case "browser_captcha":
       return "tick the checkbox CAPTCHA on the open page";
+    case "browser_eval":
+      return `run in the page: ${String(args.script ?? "").split("\n")[0]}`;
     case "browser_upload":
       return `attach ${(Array.isArray(args.ids) ? args.ids : [args.ids]).join(", ")} to element [${args.ref}] on the open page`;
     case "browser_press":
@@ -2700,10 +2736,15 @@ async function runToolUnredacted(
         const page = await ctx.browser().snapshot();
         ctx.browserChanged();
         const part = Number(args.part ?? 1);
+        /* A third identical read used to be served as the same page again, and
+           looked like progress while the agent went round. It is replaced by
+           what to do instead -- the note names the way out rather than the
+           problem, which the loop-check already says into the same wind. */
+        const again = ctx.browser().lookNote(page, part);
         return {
           ok: true,
-          summary: describePage(page, part),
-          preview: part > 1 ? `${page.url} · part ${part}` : page.url,
+          summary: again ? `${again}\n\n(The page, unchanged, for reference:)\n${describePage(page, part)}` : describePage(page, part),
+          preview: again ? `unchanged → ${page.url}` : part > 1 ? `${page.url} · part ${part}` : page.url,
         };
       }
 
@@ -2868,6 +2909,13 @@ async function runToolUnredacted(
         const blob = ctx.putBlob(png, "image/png");
         const status = live.status();
         ctx.showScreen("browser", blob, { w: VIEWPORT.width, h: VIEWPORT.height });
+        /* Four pictures of a page that has not moved a pixel is the same loop
+           as four reads of it: the picture is still shown to the person, but
+           the model is told what to do instead of handed it again. */
+        const unmoved = live.shotNote(png);
+        if (unmoved) {
+          return { ok: true, summary: unmoved, preview: status.url ?? "screenshot" };
+        }
         /* The picture goes to the model as well, in the result. It used to
            say here that she could not see it, which left "what does the page
            look like" answerable only from the text -- and a screenshot asked
@@ -2885,6 +2933,29 @@ async function runToolUnredacted(
             (picture ? "" : " It is too large to hand back as a picture; it is on the person's screen."),
           preview: status.url ?? "screenshot",
           ...(picture ? { images: [picture] } : {}),
+        };
+      }
+
+      case "browser_eval": {
+        const script = String(args.script ?? "").trim();
+        if (!script) {
+          return {
+            ok: false,
+            summary:
+              "No script was given. `script` is the JavaScript to run in the page, " +
+              "either an expression or statements with a return.",
+          };
+        }
+        const { page, value, hits, elapsed } = await ctx.browser().runScript(script);
+        ctx.browserChanged();
+        const clicked = hits.length
+          ? `\nIt clicked: ${hits.map((h: { label?: string }) => h.label || "an element").join(", ")}.`
+          : "";
+        return {
+          ok: true,
+          summary: `${value}${clicked}\n\n${describePage(page)}`,
+          preview: `eval${hits.length ? ` (clicked ${hits.map((h: { label?: string }) => h.label || "an element").join(", ")})` : ""} → ${page.url}`,
+          ...(elapsed > 4000 ? { notes: [`The script took ${(elapsed / 1000).toFixed(1)}s.`] } : {}),
         };
       }
 
@@ -3570,6 +3641,13 @@ const BROWSING_GUIDE = [
     "with text to go to something you know is there, with a ref for a list or panel that scrolls " +
     "on its own, and stop when it says you are at the bottom. Elements not on screen are " +
     "counted, not listed, and can still be clicked by number.",
+  "  - When the page will not budge -- two reads come back identical, or the thing you need is a " +
+  "dialog drawn by script, with no numbers at all -- stop reading and use browser_eval: JavaScript " +
+  "in the page. __autora.click(__autora.byText(\"Save as draft\")) clicks a button by its own " +
+  "words, __autora.all(\"button\").map((b) => b.innerText) lists what is there, and the page " +
+  "comes back with what the script returned. An identical third read answers with this instead of " +
+  "the page. If eval cannot reach it either, browser_handoff: the person can click it in three seconds. " +
+  "That is the end of the line, not another read.",
   "  - After each action, check the page did what you meant (the URL, the new text, the field " +
     "values) before the next. When a click seems to do nothing, look for an error or a dialog " +
     "before trying again, and try a different way rather than the same click.",

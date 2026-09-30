@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Composer</title>
+<style>
+  body { font: 15px system-ui; margin: 0; padding: 24px; }
+  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: none; }
+  .prompt { position: fixed; top: 30%; left: 50%; transform: translateX(-50%); background: #fff;
+            border-radius: 10px; padding: 20px 24px; box-shadow: 0 8px 30px rgba(0,0,0,.3); }
+  .btn { display: inline-block; padding: 6px 14px; margin: 12px 8px 0 0; border-radius: 16px;
+         background: #eee; cursor: pointer; }
+  #state { margin-top: 20px; font-weight: 600; }
+</style>
+</head>
+<body>
+<h1 id="title">Write a post</h1>
+<p>The composer keeps what you typed if you save it as a draft.</p>
+<textarea id="body" rows="4" cols="40">A thought worth keeping.</textarea>
+<div><button id="close" aria-label="Close composer">&#10005;</button></div>
+
+<!-- The prompt is drawn by script and holds no button, no role and no label:
+     the outline has nothing to number, which is the whole point of this page. -->
+<div class="overlay" id="overlay">
+  <div class="prompt" id="prompt">
+    <strong>Save as draft?</strong>
+    <p>You can finish it later.</p>
+    <span class="btn" id="save">Save as draft</span>
+    <span class="btn" id="discard">Discard</span>
+  </div>
+</div>
+<div id="state"></div>
+
+<script>
+  const seen = [];
+  window.seen = seen;
+  const show = () => { document.getElementById("overlay").style.display = "block"; };
+  const hide = () => { document.getElementById("overlay").style.display = "none"; };
+  document.getElementById("close").addEventListener("click", show);
+  document.getElementById("save").addEventListener("click", () => {
+    seen.push("save");
+    hide();
+    document.getElementById("state").textContent = "Draft saved.";
+  });
+  document.getElementById("discard").addEventListener("click", () => {
+    seen.push("discard");
+    hide();
+    document.getElementById("state").textContent = "Thrown away.";
+  });
+</script>
+</body>
+</html>
