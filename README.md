@@ -512,10 +512,6 @@ the state directory, one event per line.
 
 One column: the conversation, with the work inside it.
 
-<p align="center">
-  <img src="docs/screenshots/session-live.png" width="880" alt="A session settled: the answer, the command it ran and the page it read, each at the point it happened">
-</p>
-
 | In the thread | Shows |
 |---|---|
 | **A command** | The shell call where the agent ran it, its own output under it, colours and progress bars intact, with the exit code and how long it took. |
