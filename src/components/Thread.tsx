@@ -52,11 +52,14 @@ export function Thread({
   live,
   onPermissionDecide,
   onRunAutonomous,
+  onSuggest,
   placeholder,
   dock,
   ...work
 }: {
   buckets: Bucket[];
+  /** Sends a follow-up chip's words, as though typed. */
+  onSuggest?: (text: string, title?: string) => void;
   /** What an empty session shows: the setup card, or tasks to start from. */
   placeholder?: ReactNode;
   /** The pinned corner widgets, if any: they sit in the pane's corners, over
@@ -90,7 +93,9 @@ export function Thread({
   const count = buckets.length;
   const tail = buckets[buckets.length - 1];
   const tailLength =
-    (tail?.replies.reduce((n, r) => n + r.text.length, 0) ?? 0) + (tail?.cells.length ?? 0);
+    (tail?.replies.reduce((n, r) => n + r.text.length, 0) ?? 0) + (tail?.cells.length ?? 0) +
+    // Next-step chips arriving count as the thread growing, so they are scrolled into view.
+    (tail?.next?.length ?? 0);
   const prevCount = useRef(count);
 
   const toBottom = useCallback((behavior: ScrollBehavior) => {
@@ -244,6 +249,25 @@ export function Thread({
             phase={phase}
           />
         ))}
+        {/* What to do next, under the last reply once it is finished. Outside
+            the memoised cards: they come and go without redrawing any. */}
+        {!busy && onSuggest && tail?.next && tail.next.length > 0 && (
+          <div className="next-steps" role="group" aria-label="Suggested next steps">
+            {tail.next.map((step, i) => (
+              <button
+                key={step.label}
+                type="button"
+                className="next-step"
+                style={{ animationDelay: `${i * 60}ms` }}
+                title={step.prompt}
+                onClick={() => onSuggest(step.prompt)}
+              >
+                <IconArrow size={12} />
+                <span>{step.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
         {busy && (
           <div className="working" aria-live="polite">
             {/* The line under the thread wears a glyph of its own, not the

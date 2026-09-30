@@ -61,6 +61,12 @@ description: >-
   page, a file or a command's output changes, with a history of every run.
 
 
+  • Proactive — a new chat suggests what it can do for you from what is really
+  on your server, it notices trouble (a disk filling up, an app stuck
+  restarting, a schedule that failed), and it can message your phone through
+  ntfy or Telegram when it needs you or has finished.
+
+
   • Voice (optional) — replies are read aloud through Deepgram's hosted voices
   when DEEPGRAM_API_KEY is set; without one it is the browser's own voice.
 
@@ -99,30 +105,36 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  Autora can now run JavaScript in the page it is driving -- a tool called
-  browser_eval, and the end of the worst way it used to get stuck.
+  Autora works out what it can do for you, notices when something is wrong,
+  and can reach your phone.
 
-  Some pages draw their own dialogs in script: the buttons have no number in
-  the list of elements, and no label the reader can use. Until now the agent
-  could only read the page again and again, and an unchanged page looks like
-  progress right up until the twentieth read. browser_eval reaches into the
-  page instead: __autora.click(__autora.byText("Save as draft")) clicks a
-  button by the words on it, __autora.all("button") lists what is on the page,
-  and what the script returns comes back with the page as it is afterwards.
-  Clicks are real and are drawn on your screen where they land, so you still
-  watch every one of them.
+  A new chat now opens on tasks that fit your server instead of four fixed
+  examples: find what is filling a disk that is nearly full, look at an app
+  that keeps restarting, fix a schedule that failed, a brief on the stocks you
+  have told it about, a summary of your email if its browser is signed in to
+  Google, what needs you on GitHub. They are read from what is actually there
+  -- no guessing, and no model call to make them -- and one tap starts them.
+  "What could you do for me?" is always last: it looks around and suggests.
 
-  A read of the same unchanged page is now answered differently the third time
-  round: instead of the same page again, it says nothing has changed and names
-  the way out -- run JavaScript in the page, press Tab to the primary button,
-  or hand the page over to you. The fourth identical screenshot is not taken at
-  all, for the same reason.
+  After a reply, a few one-tap next steps: watch the page it just read for
+  changes, do the same thing every morning, save a run of commands as a tool
+  of its own, or the follow-up the look back after the turn thought of.
 
-  Also fixed: a one-line script ending in a click could run that click twice --
-  once as written and once when it was retried in another shape. A "Discard"
-  clicked twice is a post thrown away. The shape of a script is now decided
-  before anything runs, and a click happens once.
+  It notices things by itself every few minutes: a disk over 90%, a Docker
+  app restarting or unhealthy (read from Docker's socket, read-only), a
+  schedule whose last run failed. Each is said once, sits in the sidebar and
+  on a new chat with "look into it", and can be waved away until it clears.
 
-  A script that fails says what happened in the page's own words instead of
-  four hundred characters of Playwright's stack trace, and a click that finds
-  nothing says so rather than clicking the wrong element.
+  Once it knows enough it offers a schedule, once: a morning brief on your
+  stocks, a morning email summary, a weekly check of your apps or disk. Every
+  one only reports, and steps out of your quiet hours.
+
+  Phone notifications, in Settings: ntfy (the app, or your own server -- it is
+  in the Umbrel app store) or a Telegram bot of your own, with a button that
+  finds your chat for you. It messages you when it needs an answer from you,
+  when a schedule, watcher or trigger finishes, when it notices something, and
+  when a long task finishes while nobody is looking. Quiet hours hold them and
+  send one message when they end. Tokens are kept with your other secrets.
+
+  Also: the empty chat scrolls instead of cutting off its top and bottom when
+  there is a lot on it, and a chat started from a suggestion is named after it.

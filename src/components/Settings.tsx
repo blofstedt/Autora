@@ -9,6 +9,7 @@ import { VoiceCard } from "./VoiceCard";
 import { CaptchaCard } from "./CaptchaCard";
 import { AutomationCard } from "./AutomationCard";
 import { QuietCard } from "./QuietCard";
+import { NotifyCard } from "./NotifyCard";
 import { RelaySetup } from "./RelaySetup";
 import { Billing } from "./Billing";
 import { SecretStore } from "./SecretStore";
@@ -719,6 +720,7 @@ export function Settings({
         {shows("config") && <VoiceCard />}
         {shows("config") && <CaptchaCard />}
         {shows("config") && <QuietCard />}
+        {shows("config") && <NotifyCard />}
         {shows("config") && <AutomationCard />}
 
         {shows("keys") && voiceKeys.length > 0 && (

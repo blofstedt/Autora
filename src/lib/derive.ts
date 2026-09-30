@@ -254,7 +254,12 @@ export type Bucket = {
   replies: TranscriptTurn[];
   /** Still working on this one: the last bucket, while the agent runs. */
   open: boolean;
+  /** What to do next, offered once the turn is over: the newest set wins. */
+  next?: NextStep[];
 };
+
+/** A follow-up the person can send with one tap. */
+export type NextStep = { label: string; prompt: string };
 
 export type Derived = {
   transcript: TranscriptTurn[];
@@ -501,6 +506,14 @@ export function derive(events: AutoraEvent[]): Derived {
         } else {
           push({ kind: "memory", ...next });
         }
+        break;
+      }
+
+      case Kind.SuggestNext: {
+        const steps: NextStep[] = (Array.isArray(e.payload.steps) ? e.payload.steps : [])
+          .filter((x: any) => typeof x?.label === "string" && typeof x?.prompt === "string")
+          .map((x: any) => ({ label: x.label, prompt: x.prompt }));
+        if (steps.length > 0) bucket.next = steps;
         break;
       }
 

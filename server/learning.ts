@@ -29,6 +29,9 @@ export interface Reflection {
   learned: Lesson[];
   helped: string[];
   misled: string[];
+  /** What the person will most likely want next: offered as one-tap chips
+      under the reply (see server/suggest.ts). */
+  next: { label: string; prompt: string }[];
 }
 
 /** Worth a look even with no tools run: the person telling it how to work. */
@@ -89,7 +92,7 @@ export function reflectionPrompt(input: {
     input.nearby.length ? `\nOther memories on the same subject:\n${input.nearby.map(show).join("\n")}` : "",
     "",
     "Answer with JSON of exactly this shape:",
-    `{"learned":[{"kind":"procedure|preference|fact","title":"...","body":"...","tags":["..."],"revises":"mem-id or null"}],"helped":["mem-id"],"misled":["mem-id"]}`,
+    `{"learned":[{"kind":"procedure|preference|fact","title":"...","body":"...","tags":["..."],"revises":"mem-id or null"}],"helped":["mem-id"],"misled":["mem-id"],"next":[{"label":"...","prompt":"..."}]}`,
     "",
     "learned: at most 3 items, only ones that will still be useful months from now in",
     "other sessions. A procedure is how something was actually done here once it worked:",
@@ -110,13 +113,17 @@ export function reflectionPrompt(input: {
     "are the words it will be found by when the subject comes up again.",
     "helped: ids of given memories that the agent used and that proved right.",
     "misled: ids of given memories that proved wrong or out of date.",
-    "Empty arrays are the usual, correct answer.",
+    "next: at most 2 things the person would most likely ask for next, specific to this",
+    "turn -- a closer look, the obvious follow-on, the other half of what they asked. The",
+    "prompt is written as their request; the label is at most five words. Never something",
+    "outward-facing (sending, posting, buying, deleting) and never what was just done.",
+    "Empty arrays are the usual, correct answer for learned, helped and misled.",
   ].filter((l) => l !== undefined).join("\n");
 }
 
 /** Pull the JSON out of a reply and keep only well-formed parts. */
 export function parseReflection(text: string, knownIds: Set<string>): Reflection {
-  const empty: Reflection = { learned: [], helped: [], misled: [] };
+  const empty: Reflection = { learned: [], helped: [], misled: [], next: [] };
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   if (start < 0 || end <= start) return empty;
@@ -144,5 +151,15 @@ export function parseReflection(text: string, knownIds: Set<string>): Reflection
       revises: typeof item?.revises === "string" && knownIds.has(item.revises) ? item.revises : null,
     });
   }
-  return { learned, helped: ids(raw?.helped), misled: ids(raw?.misled) };
+  const next: Reflection["next"] = [];
+  for (const item of Array.isArray(raw?.next) ? raw.next.slice(0, 2) : []) {
+    const label = String(item?.label ?? "").replace(/\s+/g, " ").trim();
+    const prompt = String(item?.prompt ?? "").trim();
+    // A chip is a few words; a label that is a paragraph is not one.
+    if (!label || !prompt || label.split(" ").length > 7) continue;
+    // Nothing that speaks for the person or cannot be undone, whatever the model said.
+    if (/\b(send|post|publish|buy|purchase|pay|delete|remove|tweet|reply to|email (him|her|them))\b/i.test(`${label} ${prompt}`)) continue;
+    next.push({ label: label.slice(0, 60), prompt: prompt.slice(0, 600) });
+  }
+  return { learned, helped: ids(raw?.helped), misled: ids(raw?.misled), next };
 }

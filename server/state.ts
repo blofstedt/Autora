@@ -27,6 +27,7 @@ import type { McpServerConfig } from "./mcp";
 import { DEFAULT_CAPTCHA, mergeCaptcha, type CaptchaSettings } from "./captcha";
 import { DEFAULT_PROACTIVITY, mergeProactivity, type Proactivity } from "./quiet";
 import { AUTOMATION_DEFAULTS, mergeAutomation, type AutomationBudget } from "./automation";
+import { NTFY_TOKEN, TELEGRAM_TOKEN, defaultPush, mergePush, type PushSettings } from "./push";
 
 export const THEMES = ["violet", "teal", "nous-blue", "midnight", "ember", "mono", "cyberpunk", "rose"] as const;
 export const FONTS = ["inter", "system", "rounded", "mono"] as const;
@@ -273,6 +274,9 @@ export interface PersistedState {
       from what the person spends talking to the agent. See
       server/automation.ts. */
   automation: AutomationBudget;
+  /** Where news reaches the person's phone: ntfy, Telegram, and which news.
+      The tokens are in the secret store, not here. See server/push.ts. */
+  push: PushSettings;
 }
 
 export const DEFAULT_PROMPT =
@@ -494,6 +498,7 @@ function blank(): PersistedState {
     loop: { ...LOOP_DEFAULTS },
     retention: { ...RETENTION_DEFAULTS },
     automation: { ...AUTOMATION_DEFAULTS },
+    push: defaultPush(),
   };
 }
 
@@ -534,6 +539,7 @@ function read(): PersistedState {
     if (raw.loop) mergeLoop(state.loop, raw.loop);
     if (raw.retention) mergeRetention(state.retention, raw.retention);
     if (raw.automation) mergeAutomation(state.automation, raw.automation);
+    if (raw.push) mergePush(state.push, raw.push);
     if (raw.carried && typeof raw.carried === "object") {
       carried = {
         cost: Number(raw.carried.cost) || 0,
@@ -744,6 +750,16 @@ export function allSecrets(): Record<string, string> {
 
 /** Known presets for UI suggestions */
 export const SECRET_PRESETS: Record<string, { label: string; description: string; placeholder: string }> = {
+  [TELEGRAM_TOKEN]: {
+    label: "Telegram bot token",
+    description: "The bot Autora messages you through. Set it up under Settings, Phone notifications.",
+    placeholder: "123456:ABC...",
+  },
+  [NTFY_TOKEN]: {
+    label: "ntfy access token",
+    description: "Only for a protected ntfy topic. Set it up under Settings, Phone notifications.",
+    placeholder: "tk_...",
+  },
   GITHUB_TOKEN: {
     label: "GitHub Token",
     description: "Personal access token for GitHub CLI, API requests, and private repo operations.",
@@ -856,6 +872,7 @@ export function listSecrets(): {
 const OTHER_ENV_KEYS = [
   "DEEPGRAM_API_KEY", "ASSEMBLYAI_API_KEY",
   "JEV_API_KEY", "JEV_TOKEN", "JEV_KEY", "TYPESAFE_API_KEY", "TYPESAFE_TOKEN",
+  NTFY_TOKEN, TELEGRAM_TOKEN,
 ];
 
 /**

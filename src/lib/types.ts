@@ -73,6 +73,8 @@ export const Kind = {
   MemoryWrite: "memory.write",
   /** What the agent took away from a turn, after it ended. */
   MemoryLearned: "memory.learned",
+  /** One-tap follow-ups offered under a finished reply. */
+  SuggestNext: "suggest.next",
   FileEdit: "file.edit",
   KanbanUpdate: "kanban.update",
   PermissionRequest: "permission.request",

@@ -62,6 +62,13 @@ Only when a change genuinely has no user-facing effect, skip the bump and put
   - `scheduler.ts`: cron jobs and watchers.
   - `customtools.ts`: scripts the agent saved as its own tools.
   - `toolhealth.ts`: recent failures per tool, told to the agent.
+  - `suggest.ts`: what to suggest, from what is actually on the install --
+    one-tap tasks for a new chat, a schedule offered once, next-step chips
+    after a reply. Pure, no model call.
+  - `noticer.ts`: cheap checks (disk, Docker over its socket, failed
+    schedules) said once and dismissable until they clear.
+  - `push.ts`: ntfy and Telegram, held during quiet hours. The tokens live
+    in the secret store, never in settings.
 - Every turn, from any source (the chat box, a job, a watcher), goes through
   `startTurn()` in `server.ts`, and learning runs after it.
 - `src/`: the React client. `App.tsx` holds the session and stream;

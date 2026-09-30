@@ -311,6 +311,7 @@ export function App() {
        dead or a reconnect parked behind a long backoff, so every way of
        coming back checks it at once instead of waiting it out. */
     const wake = () => {
+      stream.sendVisibility();
       if (document.visibilityState === "visible") stream.wake();
       // Going away with events waiting for a frame that will not come.
       else flush();
@@ -1149,6 +1150,39 @@ export function App() {
     composerRef.current?.focus();
   }, []);
 
+  /** A suggestion tapped -- a next step, a task on a new chat: sent as it
+      is, in this chat, without touching anything half-typed in the box. */
+  const sendSuggestion = useCallback(async (text: string, title?: string) => {
+    if (!sessionId || !text.trim()) return;
+    if (!speaking) prime();
+    flySpark(visible(".next-steps, .starters", ".composer-send"), visible(".rail-slot .presence", ".top-presence"));
+    const res = await fetch(`/api/sessions/${sessionId}/message`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // The card's own words name a new chat better than the instruction does.
+      body: JSON.stringify({ text, ...(title ? { title } : {}) }),
+    }).catch(() => null);
+    if (!res?.ok) setNotice("Could not reach the server; that was not sent.");
+  }, [sessionId, speaking, prime]);
+  const suggestFromThread = useCallback(
+    (text: string, title?: string) => void sendSuggestion(text, title),
+    [sendSuggestion],
+  );
+
+  /** Something noticed, looked into from the sidebar: in a chat of its own,
+      so whatever is open stays as it was. */
+  const startTask = useCallback(async (text: string, title?: string) => {
+    const id = await newSession();
+    navigate("chat");
+    setDrawerOpen(false);
+    const res = await fetch(`/api/sessions/${id}/message`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, ...(title ? { title } : {}) }),
+    }).catch(() => null);
+    if (!res?.ok) setNotice("Could not reach the server; that was not sent.");
+  }, [newSession, navigate]);
+
   const placeholder = modelReady === false ? (
     <SetupCard
       onConnected={() => { setModelReady(true); composerRef.current?.focus(); }}
@@ -1163,6 +1197,7 @@ export function App() {
       onOpenMind={() => navigate("mind")}
       onOpenSchedules={() => navigate("cron")}
       onPick={startFrom}
+      onSend={suggestFromThread}
     />
   ) : undefined;
 
@@ -1317,6 +1352,7 @@ export function App() {
             alert={pending > 0}
             onNew={() => { void newSession(); navigate("chat"); }}
             onIncognito={() => { void startIncognito(); }}
+            onStartTask={(text, title) => { void startTask(text, title); }}
             drawer={kind === "drawer"}
             onClose={() => setDrawerOpen(false)}
           />
@@ -1483,6 +1519,7 @@ export function App() {
             live={live}
             onPermissionDecide={handlePermissionDecide}
             onRunAutonomous={handleRunAutonomous}
+            onSuggest={suggestFromThread}
             onSpeakReply={canSpeak ? speakReply : undefined}
             speakingReply={readingReply}
             driving={driving}

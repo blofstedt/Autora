@@ -73,7 +73,14 @@ test("a reflection keeps well-formed lessons and known ids only", () => {
   assert.equal(out.learned[0].revises, "mem-a");
   assert.deepEqual(out.helped, ["mem-a"]);
   assert.deepEqual(out.misled, ["mem-b"]);
-  assert.deepEqual(parseReflection("no json here", new Set()), { learned: [], helped: [], misled: [] });
+  assert.deepEqual(parseReflection("no json here", new Set()), { learned: [], helped: [], misled: [], next: [] });
+  // Next steps: short labels, and nothing that acts for the person.
+  const next = parseReflection(JSON.stringify({ learned: [], helped: [], misled: [], next: [
+    { label: "Compare with last month", prompt: "Compare this with last month's numbers." },
+    { label: "Send it to Anna", prompt: "Email this summary to Anna." },
+    { label: "x".repeat(10) + " a b c d e f g h", prompt: "too long a label" },
+  ] }), new Set()).next;
+  assert.deepEqual(next.map((n) => n.label), ["Compare with last month"]);
 });
 
 test("a tool the agent writes is saved, replaced by name, and gets its arguments as env", () => {

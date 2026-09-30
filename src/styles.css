@@ -458,9 +458,16 @@ body::before {
 .empty {
   flex: 1; min-height: 0; height: auto;
   display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 10px; text-align: center;
+  align-items: center; justify-content: flex-start; gap: 10px; text-align: center;
   padding: 24px 16px;
+  /* Centred by auto margins rather than justify-content, and scrolling when
+     it does not fit: a centred column taller than its box spilled out of
+     both ends -- the mark cut off above, the last cards lost below -- with
+     nothing to scroll. The margins shrink to nothing instead. */
+  overflow-y: auto;
 }
+.empty > :first-child { margin-top: auto; }
+.empty > :last-child { margin-bottom: auto; }
 .empty-ring {
   width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center;
   background: var(--s2); border: 1px solid rgba(var(--accent-rgb),  0.28);
@@ -5895,6 +5902,7 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
   .md-copy { height: 32px; margin: -3px 0; }
   .seg button { height: 34px; }
   .setup-more { padding-top: 6px; padding-bottom: 6px; }
+  .next-step { height: 36px; padding: 0 14px 0 12px; }
 }
 
 /* ------------------------------------------------- text column and widgets -- */
@@ -6142,3 +6150,89 @@ button.dock-card:hover { border-color: var(--border-strong); }
 .install-offer { pointer-events: auto; }
 .notice.is-info { border-left-color: var(--accent); }
 .notice .notice-act { flex: 0 0 auto; height: 26px; padding: 0 12px; font-size: calc(11.5px * var(--ts, 1)); }
+
+/* ------------------------------------------------------- being proactive -- */
+/* A checkbox with a line under it, as the settings cards use. */
+.set-check {
+  display: flex; gap: 9px; align-items: flex-start; margin: 9px 0 0;
+  font-size: calc(12.5px * var(--ts, 1)); line-height: 1.5; cursor: pointer;
+}
+.set-check input { margin-top: 3px; accent-color: var(--accent); flex: 0 0 auto; }
+.set-check em { display: block; font-style: normal; color: var(--text-3); font-size: calc(11.5px * var(--ts, 1)); }
+
+/* Phone notifications (NotifyCard). */
+.notify-fields { display: grid; gap: 2px; margin: 4px 0 6px 25px; }
+.notify-inline { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.notify-inline input { flex: 1 1 auto; min-width: 0; }
+.notify-inline .btn { flex: 0 0 auto; }
+.notify-chats { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.notify-news { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.notify-news-head {
+  display: block; font-size: calc(11px * var(--ts, 1)); font-weight: 650; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--text-3);
+}
+.notify-note { color: var(--text-2); }
+
+/* What to do next, under a finished reply: in line with the reply's words,
+   quiet until it is wanted. */
+.next-steps {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin: 6px 0 4px; padding-left: 38px;
+}
+.next-step {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+  height: 30px; padding: 0 12px 0 10px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border-strong); background: var(--s1); color: var(--text-2);
+  font: inherit; font-size: calc(12.5px * var(--ts, 1)); text-align: left;
+  animation: rise 0.35s var(--ease) both;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+.next-step span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.next-step svg { flex: 0 0 auto; color: var(--accent-light); }
+.next-step:hover { background: var(--accent-soft); border-color: var(--accent-line); color: var(--text); }
+@media (max-width: 680px) { .next-steps { padding-left: 41px; } }
+
+/* The welcome's suggestions: a line of what it is, and why, in smaller type. */
+.starter.is-suggest, .starter.is-discover { display: grid; gap: 2px; color: var(--text); }
+.starter.is-suggest em, .starter.is-discover em, .starter-go em {
+  font-style: normal; font-size: calc(11.5px * var(--ts, 1)); color: var(--text-3);
+}
+.starter.is-discover { border-style: dashed; border-color: var(--accent-line); }
+.starter.is-discover > span { color: var(--accent-light); }
+
+/* Something noticed: the task, and a way to wave it off. */
+.starter.is-notice { display: flex; align-items: stretch; padding: 0; overflow: hidden; }
+.starter.is-notice.is-warn { border-color: color-mix(in srgb, var(--warn) 35%, var(--border)); }
+.starter.is-notice.is-bad { border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); }
+.starter-go {
+  flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; padding: 10px 14px; text-align: left;
+  border: 0; background: none; color: var(--text); font: inherit; cursor: pointer;
+}
+.starter-go > span::before {
+  content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 8px; border-radius: 50%;
+  vertical-align: 1px; background: var(--warn);
+}
+.starter.is-notice.is-bad .starter-go > span::before { background: var(--danger); }
+.starter-x {
+  flex: 0 0 auto; width: 40px; border: 0; border-left: 1px solid var(--border); background: none;
+  color: var(--text-3); font: inherit; font-size: calc(16px * var(--ts, 1)); cursor: pointer;
+}
+.starter-x:hover, .starter-go:hover { background: var(--s2); color: var(--text); }
+
+/* The one schedule worth offering. */
+.starter.is-offer {
+  display: grid; gap: 4px; cursor: default; color: var(--text);
+  border-color: var(--accent-line); background: var(--accent-soft);
+}
+.starter.is-offer:hover { background: var(--accent-soft); }
+.offer-why { font-size: calc(11.5px * var(--ts, 1)); color: var(--text-2); line-height: 1.45; }
+.offer-acts { display: flex; gap: 8px; margin-top: 4px; }
+
+/* In the sidebar: something noticed, one tap from being looked into. */
+.rail-act-row.is-noticed.is-warn { color: var(--warn); }
+.rail-act-row.is-noticed.is-bad { color: var(--danger); }
+.notice-dot { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+@media (prefers-reduced-motion: reduce) {
+  .next-step { animation: none !important; }
+}

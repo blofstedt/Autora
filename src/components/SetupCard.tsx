@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { IconArrow, IconCheck } from "./Icons";
+import { answerOffer, dismissNotice, fetchProactive, type Proactive } from "../lib/proactive";
 
 type Provider = {
   id: string;
@@ -224,11 +225,19 @@ function greeting(): string {
  * the conversation you were last in, what the schedules did while you were
  * away, what is due next, and what was learned and is waiting for a yes or
  * no. Every line is read from the server -- none of it is invented -- and each
- * one opens the thing it is about. Only an install with no history yet gets
- * the generic example tasks.
+ * one opens the thing it is about.
+ *
+ * Then what it could do, worked out from this install rather than from a list
+ * (see server/suggest.ts): anything it has noticed going wrong, one schedule
+ * worth offering, tasks that fit what is here -- the disk, the apps beside it,
+ * the sites its browser is signed in to, what it remembers about the person --
+ * and always the question it can answer best, "what could you do for me?".
+ * Those go straight out with one tap. Only when it knows nothing about the
+ * install yet do the generic examples appear, and those go into the box to be
+ * edited first, because they are examples.
  */
 export function Welcome({
-  sessions, current, onOpenSession, onOpenMind, onOpenSchedules, onPick,
+  sessions, current, onOpenSession, onOpenMind, onOpenSchedules, onPick, onSend,
 }: {
   sessions: RecentSession[];
   current: string | null;
@@ -236,12 +245,21 @@ export function Welcome({
   onOpenMind: () => void;
   onOpenSchedules: () => void;
   onPick: (text: string) => void;
+  /** Sends a suggestion as it is, the card's words naming the chat. Without
+      it, suggestions go into the box. */
+  onSend?: (text: string, title?: string) => void;
 }) {
   const [jobs, setJobs] = useState<JobBrief[]>([]);
   const [memory, setMemory] = useState<{ kept: number; waiting: number }>({ kept: 0, waiting: 0 });
+  const [ideas, setIdeas] = useState<Proactive | null>(null);
+  /** What the offer turned into once answered: a line in its place. */
+  const [answered, setAnswered] = useState<string | null>(null);
+  const [waved, setWaved] = useState<string[]>([]);
+  const send = onSend ?? onPick;
 
   useEffect(() => {
     let alive = true;
+    void fetchProactive().then((found) => { if (alive) setIdeas(found); });
     fetch("/api/jobs").then((r) => r.json()).then((rows) => {
       if (alive && Array.isArray(rows)) setJobs(rows as JobBrief[]);
     }).catch(() => undefined);
@@ -272,8 +290,10 @@ export function Welcome({
   }
 
   const dayAgo = Date.now() / 1000 - 86400;
+  // A job already said to have failed, up among what it noticed, is not said twice.
+  const noticedJobs = new Set((ideas?.notices ?? []).map((n) => n.key.startsWith("job:") ? n.key.slice(4) : ""));
   const ran = jobs
-    .filter((j) => j.last_run && j.last_run > dayAgo)
+    .filter((j) => j.last_run && j.last_run > dayAgo && !noticedJobs.has(j.id))
     .sort((a, b) => (b.last_run ?? 0) - (a.last_run ?? 0))
     .slice(0, 2);
   for (const job of ran) {
@@ -314,37 +334,97 @@ export function Welcome({
   }
 
   const fresh = threads.length === 0;
+  const noticed = (ideas?.notices ?? []).filter((n) => !waved.includes(n.key)).slice(0, 2);
+  const offer = ideas?.offer ?? null;
+  const tasks = (ideas?.starters ?? []).filter((t) => !noticed.some((n) => n.prompt === t.prompt));
+  // A screen, not a feed: fewer tasks when there is already plenty to carry on with.
+  const shownTasks = tasks.slice(0, fresh ? 4 : threads.length > 2 ? 2 : 3);
+  // The examples are for an install it knows nothing about yet.
+  const examples = tasks.length > 0 ? [] : fresh ? STARTERS : STARTERS.slice(0, 2);
+  let order = 0;
+  const delay = () => ({ animationDelay: `${120 + order++ * 70}ms` });
+
+  const answer = async (key: string, yes: boolean) => {
+    const out = await answerOffer(key, yes ? "yes" : "no");
+    if (!yes) setAnswered("");
+    else setAnswered(out.ok ? `Set up: “${out.name ?? "it"}” is on your Schedules page.` : out.error ?? "That did not work.");
+  };
 
   return (
     <div className="starters">
       <h3>{greeting()} What should we do?</h3>
       <p>
-        {fresh
+        {fresh && shownTasks.length === 0
           ? "Describe a task below and watch me do it here. Or try one of these:"
-          : "Describe a task below, or carry on from here:"}
+          : "Describe a task below, or pick up from here:"}
       </p>
       <div className="starter-list">
-        {threads.map((t, i) => (
+        {noticed.map((n) => (
+          <div key={n.key} className={`starter is-notice is-${n.tone}`} style={delay()}>
+            <button type="button" className="starter-go" onClick={() => send(n.prompt, n.title)} title={n.prompt}>
+              <span>{n.title}</span>
+              <em>{n.detail}{/[.!?]$/.test(n.detail) ? "" : "."} Look into it?</em>
+            </button>
+            <button
+              type="button"
+              className="starter-x"
+              aria-label={`Not now: ${n.title}`}
+              title="Not now -- quiet about it until it changes"
+              onClick={() => { setWaved((w) => [...w, n.key]); void dismissNotice(n.key); }}
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        {threads.map((t) => (
           <button
             key={t.key}
             className={`starter is-thread ${t.tone ? `is-${t.tone}` : ""}`}
-            style={{ animationDelay: `${120 + i * 70}ms` }}
+            style={delay()}
             onClick={t.go}
           >
             <span>{t.text}</span>
             {t.sub && <em>{t.sub}</em>}
           </button>
         ))}
-        {(fresh ? STARTERS : STARTERS.slice(0, 2)).map((text, i) => (
-          <button
-            key={text}
-            className="starter"
-            style={{ animationDelay: `${120 + (threads.length + i) * 70}ms` }}
-            onClick={() => onPick(text)}
-          >
+        {offer && answered === null && (
+          <div className="starter is-offer" style={delay()}>
+            <span className="offer-q">{offer.text}</span>
+            <span className="offer-why">{offer.why} It reports and changes nothing; you can edit or stop it on the Schedules page.</span>
+            <span className="offer-acts">
+              <button type="button" className="btn tiny primary" onClick={() => void answer(offer.key, true)}>Set it up</button>
+              <button type="button" className="btn tiny ghost" onClick={() => void answer(offer.key, false)}>No thanks</button>
+            </span>
+          </div>
+        )}
+        {answered && (
+          <button type="button" className="starter is-thread is-ok" onClick={onOpenSchedules}>
+            <span>{answered}</span>
+          </button>
+        )}
+        {shownTasks.map((t) => (
+          <button key={t.key} type="button" className="starter is-suggest" style={delay()} onClick={() => send(t.prompt, t.title)} title={t.prompt}>
+            <span>{t.title}</span>
+            <em>{t.why}</em>
+          </button>
+        ))}
+        {examples.map((text) => (
+          <button key={text} type="button" className="starter" style={delay()} onClick={() => onPick(text)}>
             {text}
           </button>
         ))}
+        {ideas?.discover && (
+          <button
+            type="button"
+            className="starter is-discover"
+            style={delay()}
+            onClick={() => send(ideas.discover.prompt, ideas.discover.title)}
+            title={ideas.discover.prompt}
+          >
+            <span>✦ {ideas.discover.title}</span>
+            <em>{ideas.discover.why}</em>
+          </button>
+        )}
       </div>
     </div>
   );
