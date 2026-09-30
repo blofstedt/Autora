@@ -7,21 +7,19 @@ import express, { type Request, type Response } from "express";
 import { WebSocketServer, WebSocket } from "ws";
 import {
   AUTO_ORDER, PRICES_CHECKED, PROVIDERS, contextWindow, costParts, isPriced, modelsFor,
-  providerSpec, rememberModels,
+  rememberModels,
 } from "./server/providers";
 import {
   baseUrlFor, clearUsage, flushState, keyFor, keySource, maskKey, modelFor, fastModelFor, recordUsage,
   resolveProvider, save, setKey, state, stateDir, stateFilePath, type Resolved,
   allSecrets, listSecrets, setSecret, deleteSecret, getSecret, secretFor, SECRET_PRESETS, redactSecrets as redactStored,
-  mergeJev, mergeAppearance, mergeLoop, mergeRetention, saneMcp, THEMES, FONTS,
+  mergeAppearance, mergeLoop, mergeRetention, saneMcp, THEMES, FONTS,
   mergeSpeech,
   recordToolFeed, type CostParts,
-  DEFAULT_PROMPT, standingRules,
+  DEFAULT_PROMPT, standingRules, applyTimezone, machineTimezone, validTimezone,
 } from "./server/state";
 import { deleteLogin, describeCredentials, redactCredentials, saveLogin, setIdentity } from "./server/credentials";
-import { decide, lastDecision, resetHealth, supportFor, type JevOutcome, type JevTask } from "./server/jev/router";
-import type { JevTarget } from "./server/jev/engine";
-import { guardWorthy, irreversible } from "./server/jev/guard";
+import { declined, guardWorthy, irreversible, judgeAction, matchesAskRule, shouldHold } from "./server/guard";
 import { prune, storageReport } from "./server/retention";
 import { diskUsage, hostVitals } from "./server/host";
 import {
@@ -30,14 +28,16 @@ import {
 } from "./server/suggest";
 import { Noticer, dockerContainers, findings, type NoticerMemory } from "./server/noticer";
 import {
-  HeldMessages, NTFY_TOKEN, TELEGRAM_TOKEN, deliver, mergePush, readyChannels, telegramChats,
-  type PushKind, type PushMessage, type PushTokens,
+  HeldMessages, deliver, mergePush, readyChannels,
+  type PushKind, type PushMessage,
 } from "./server/push";
 import { signIns } from "./server/signins";
 import { ensureHostNames } from "./server/hosts";
 import { forgetSpeech, speak as synthesise, speakStream, speechStatus } from "./server/speech";
 import { attachDictation, dictationStatus } from "./server/dictation";
-import { applyBoard, latestBoard } from "./server/board";
+import { applyTodos, latestTodos } from "./server/todos";
+import { replyStyle, standingBlock, standingReminder } from "./server/prompt";
+import { WebPush, cleanSubscription } from "./server/webpush";
 import { captureConsole, log, readLogs, setLogRedactor, type LogLevel } from "./server/logs";
 import { allowSocket, refuseRequest } from "./server/crosssite";
 import { certificateSource, tlsSettings } from "./server/tls";
@@ -77,7 +77,11 @@ import {
 import { LiveBrowser, VIEWPORT, probeBrowser, type PageRead } from "./server/browser";
 import { mergeCaptcha } from "./server/captcha";
 import { inQuiet, mergeProactivity, quietBriefing } from "./server/quiet";
-import { chatMode, isChatMode, modeBriefing, modeGate, MODES, type ChatMode } from "./server/modes";
+import {
+  askAbout, askReason, cleanAskWhen, isPermissions, isWorkMode, legacyPermissions, modeBriefing,
+  permissionBriefing, permissionsOf, phaseFor, planRefusal, PERMISSION_INFO, WORK_MODES, workMode,
+  type Permissions, type Phase, type WorkMode,
+} from "./server/modes";
 import { LoopWatch } from "./server/loopwatch";
 import { healthBriefing, recordOutcome, targetOf, toolHealth } from "./server/toolhealth";
 import { Scheduler, type Job, type JobWatch } from "./server/scheduler";
@@ -85,7 +89,14 @@ import {
   addSpend, budgetLine, mergeAutomation, overDay, overRun, rollLedger, skipReason,
   stopReason, type AutomationLedger,
 } from "./server/automation";
-import { backgroundBriefing, listJobs } from "./server/background";
+import { backgroundBriefing, findJob, listJobs, readTail, startJob, stopJob } from "./server/background";
+import {
+  addressIn, DEVICES, isDevice, isLocalUrl, serveFolder, waitForServer,
+  type Device, type StaticServer,
+} from "./server/preview";
+import {
+  pickExpression, reviewMessage, safeStyle, type ElementInfo, type ReviewComment, type StyleChange,
+} from "./server/pick";
 import { suggested as mcpSuggested } from "./server/mcpcatalog";
 import { existing as existingMcp, install as installMcp, planOffer } from "./server/mcpoffer";
 import { WAKE_MAX_AGE_MS, WAKE_MAX_PER_HOUR, wakePrompt, wakesWanted, type WakeCandidate } from "./server/proactive";
@@ -100,10 +111,10 @@ import { deleteCustomTool, listCustomTools } from "./server/customtools";
 import { REFLECT_SYSTEM, parseReflection, reflectionPrompt, worthReflecting } from "./server/learning";
 import {
   MEMORY_KINDS, MemoryGraph, doubtNote, freshness, siteOf,
-  type MemoryLink, type MemoryRecord, type Recalled,
+  type MemoryLink, type MemoryRecord,
 } from "./server/memory";
 import {
-  attachRelay, relayClientSource, relayStatus, watchDesktop,
+  attachRelay, cleanHost, relayClientSource, relayStatus, watchDesktop,
 } from "./server/desktop";
 import {
   availableTools, capabilityBriefing, findTool, groupStates, needsApproval,
@@ -174,10 +185,15 @@ interface Session {
   /** A chat that is never written down and never listed: incognito. It is in
       this process's memory alone, and closing it closes it for good. */
   incognito?: boolean;
-  /** How much this chat may do on its own, chosen for this conversation:
-      plan, ask or auto (see server/modes.ts). Absent on an older session,
-      which reads as auto -- what every chat did before there was a mode. */
-  mode?: ChatMode;
+  /** How the agent goes about work in this chat: build, plan or agent (see
+      server/modes.ts). Absent reads as agent. */
+  mode?: WorkMode;
+  /** What may run without a yes, and -- for ask -- when to ask, in the
+      person's own words. */
+  permissions?: Permissions;
+  askWhen?: string;
+  /** What Agent mode is doing right now. Not kept: every turn starts in plan. */
+  phase?: Phase;
   events: AutoraEvent[];
   seqCounter: number;
   /** What the log holds, kept current as events are emitted, so neither the
@@ -272,6 +288,8 @@ const metaOf = (session: Session) => ({
   /* Kept with the rest of what can change about a chat: a mode chosen for a
      conversation should still be there tomorrow, and after an update. */
   mode: session.mode,
+  permissions: session.permissions,
+  askWhen: session.askWhen,
 });
 
 // Settings used to live here, in a module-level object that lasted exactly as
@@ -322,7 +340,13 @@ for (const stored of loadSessionIndex()) {
     createdAt: stored.createdAt,
     busy: false,
     ...(stored.pinned ? { pinned: true } : {}),
-    ...(isChatMode(stored.mode) ? { mode: stored.mode } : {}),
+    /* An older build kept plan, ask or auto here. Ask was Build, asking: it
+       moves across as the permission it always was. */
+    ...(stored.mode ? { mode: workMode(stored.mode) } : {}),
+    ...(isPermissions(stored.permissions)
+      ? { permissions: stored.permissions }
+      : stored.mode === "ask" ? { permissions: legacyPermissions(stored.mode) } : {}),
+    ...(stored.askWhen ? { askWhen: cleanAskWhen(stored.askWhen) } : {}),
     events: [],
     seqCounter: counts.seq,
     counts,
@@ -391,7 +415,6 @@ function forgetSession(id: string) {
   releaseDesktopIfIdle(id);
   sessions.delete(id);
   contexts.delete(id);
-  jevThisTurn.delete(id);
   answeredAsks.delete(id);
   lastAnswer.delete(id);
   for (const key of heldCalls.keys()) if (key.startsWith(`${id}\u0000`)) heldCalls.delete(key);
@@ -548,11 +571,6 @@ function logEvent(session: Session, e: AutoraEvent) {
       break;
     }
     case "system.error": at("error", "agent", short(p.error ?? "error", 400)); break;
-    case "jev.decision":
-      at(p.mode === "jev" ? "info" : "debug", "jev", p.mode === "jev"
-        ? `${p.task}: fast path, ${(p.fields ?? []).length} fields in ${p.ms} ms, lowest ${Number(p.min ?? 0).toFixed(2)}`
-        : `${p.task}: fell back (${short(p.reason, 200)})`);
-      break;
     case "ask.request": at("info", "agent", `asked the person: "${short(p.title, 120)}"`); break;
     case "ask.answer": at("info", "agent", p.cancelled ? `question ${p.who === "user" ? "skipped" : p.who}` : "question answered"); break;
     case "memory.write": at("info", "memory", `wrote "${short(p.title, 100)}"`); break;
@@ -755,6 +773,217 @@ function browserFor(session: Session): LiveBrowser {
   return live;
 }
 
+// ------------------------------------------------------------ app preview --
+
+/**
+ * The app window: a page the agent is building, shown in its own browser
+ * beside the conversation so the person can watch it take shape, point at
+ * parts of it, and say what to change.
+ *
+ * It is a second browser per session, not the agent's: the agent goes on
+ * browsing the web while the preview stays on the app. The window's size is
+ * the preview's own (a phone, a tablet, a desktop), and the comments the
+ * person leaves are kept here, with a picture of what each is about, until
+ * they are sent as one message. See server/pick.ts for what a selection is.
+ */
+interface PreviewRun {
+  live: LiveBrowser;
+  opened: boolean;
+  openedAt: number;
+  url: string | null;
+  title: string | null;
+  device: Device;
+  /** How it was started, for saying so and for stopping it. */
+  how: "url" | "folder" | "command" | null;
+  serve: StaticServer | null;
+  /** Watching a served folder, so an edit shows without being asked for. */
+  watch: fs.FSWatcher | null;
+  job: string | null;
+  comments: ReviewComment[];
+}
+const previews = new Map<string, PreviewRun>();
+
+function previewRunFor(session: Session): PreviewRun {
+  const existing = previews.get(session.id);
+  if (existing) return existing;
+  const device: Device = "desktop";
+  const run: PreviewRun = {
+    live: null as unknown as LiveBrowser,
+    opened: false, openedAt: 0, url: null, title: null, device, how: null, serve: null, watch: null, job: null, comments: [],
+  };
+  run.live = new LiveBrowser({
+    watchers: () => sessionSockets.get(session.id)?.size ?? 0,
+    onFrame: (jpegBase64) => {
+      const size = run.live.viewport();
+      sendEphemeral(session.id, {
+        type: "frame", session: session.id, source: "preview", mime: "image/jpeg",
+        data: jpegBase64, w: size.width, h: size.height, ts: Date.now(),
+      });
+    },
+    onKeyframe: () => undefined,
+    onNav: (url, title) => {
+      run.url = url;
+      run.title = title;
+      broadcastPreview(session);
+    },
+    onFields: () => undefined,
+    onAction: () => undefined,
+  }, { viewport: { width: DEVICES[device].width, height: DEVICES[device].height }, fps: 12, quality: 72, sharp: true });
+  previews.set(session.id, run);
+  return run;
+}
+
+function previewState(session: Session) {
+  const run = previews.get(session.id);
+  if (!run?.opened) return { open: false, comments: [] as ReviewComment[] };
+  const size = run.live.viewport();
+  return {
+    open: true,
+    url: run.url,
+    title: run.title,
+    device: run.device,
+    viewport: size,
+    since: run.openedAt,
+    how: run.how,
+    comments: run.comments,
+    errors: run.live.consoleTail(5).filter((e) => e.kind === "error").length,
+  };
+}
+
+function broadcastPreview(session: Session) {
+  sendEphemeral(session.id, { type: "preview", session: session.id, state: previewState(session) });
+}
+
+/** Stop what a preview started -- its dev server, its file server, its page. */
+async function previewStop(session: Session, say = true): Promise<boolean> {
+  const run = previews.get(session.id);
+  if (!run) return false;
+  const was = run.opened;
+  run.opened = false;
+  if (run.job) stopJob(run.job);
+  run.job = null;
+  run.watch?.close();
+  run.watch = null;
+  await run.serve?.close().catch(() => undefined);
+  run.serve = null;
+  await run.live.close().catch(() => undefined);
+  previews.delete(session.id);
+  if (was && say) emitEvent(session, "preview.close", "agent", {});
+  broadcastPreview(session);
+  return was;
+}
+
+/**
+ * Open something on this machine in the preview: a dev server to start, a
+ * folder to serve, or an address already running.
+ */
+async function previewStart(
+  session: Session,
+  args: { command?: string; cwd?: string; dir?: string; url?: string; port?: number },
+  span: string | null,
+): Promise<{ ok: boolean; summary: string }> {
+  const probe = await probeBrowser();
+  if (!probe.ok) return { ok: false, summary: probe.detail ?? "There is no browser to show the preview in." };
+  /* Refused before anything is touched: a mistyped address must not close the
+     window that is open. */
+  if (args.url && !isLocalUrl(String(args.url).trim())) {
+    return { ok: false, summary: "The preview shows what you are building on this machine (localhost). For another site use browser_open." };
+  }
+  await previewStop(session, false);
+  const run = previewRunFor(session);
+
+  let url = String(args.url ?? "").trim();
+  let how: PreviewRun["how"] = "url";
+  try {
+    if (!url && args.dir) {
+      const dir = path.resolve(terminalDir(), String(args.dir));
+      if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+        previews.delete(session.id);
+        return { ok: false, summary: `There is no folder ${dir}.` };
+      }
+      run.serve = await serveFolder(dir);
+      url = run.serve.url;
+      how = "folder";
+      /* A folder has no dev server to hot-reload it, so it is watched: the
+         page reloads a moment after the last file changes, which is what makes
+         "watch it being built" true of plain HTML. Where the platform cannot
+         watch a tree, the agent's reload still works. */
+      try {
+        let timer: NodeJS.Timeout | null = null;
+        run.watch = fs.watch(dir, { recursive: true }, () => {
+          if (timer) clearTimeout(timer);
+          timer = setTimeout(() => { run.live.clearConsole(); void run.live.reload().catch(() => undefined); }, 350);
+          timer.unref?.();
+        });
+        run.watch.on("error", () => { run.watch?.close(); run.watch = null; });
+      } catch {
+        run.watch = null;
+      }
+    } else if (!url && args.command) {
+      const cwd = args.cwd ? path.resolve(terminalDir(), String(args.cwd)) : terminalDir();
+      const started = startJob({ command: String(args.command), cwd, note: "app preview", session: session.id });
+      if (!started.job) { previews.delete(session.id); return { ok: false, summary: started.error ?? "It did not start." }; }
+      run.job = started.job.id;
+      how = "command";
+      const port = Number(args.port);
+      if (Number.isFinite(port) && port > 0) url = `http://localhost:${Math.round(port)}/`;
+      const end = Date.now() + 90_000;
+      while (!url && Date.now() < end) {
+        const job = findJob(started.job.id);
+        url = addressIn(readTail(started.job)) ?? "";
+        if (url) break;
+        if (!job || job.state !== "running") break;
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      if (!url) {
+        const tail = readTail(started.job, 1500).trim();
+        await previewStop(session, false);
+        return {
+          ok: false,
+          summary: `The command did not say which address it is serving on. Its output so far:\n${tail || "(nothing)"}\n` +
+            "Give the port (port: 5173) or start it again with --host/--port flags, or pass url.",
+        };
+      }
+    }
+  } catch (err: any) {
+    await previewStop(session, false);
+    return { ok: false, summary: `Could not start the preview: ${err?.message ?? err}` };
+  }
+  if (!url) { previews.delete(session.id); return { ok: false, summary: "Give one of command, dir or url." }; }
+  if (!isLocalUrl(url)) {
+    await previewStop(session, false);
+    return { ok: false, summary: "The preview shows what you are building on this machine (localhost). For another site use browser_open." };
+  }
+  if (!(await waitForServer(url, how === "command" ? 60_000 : 8_000, () => running.get(session.id)?.stopped === true))) {
+    const tail = run.job ? readTail({ log: findJob(run.job)?.log ?? "" } as any, 1200).trim() : "";
+    await previewStop(session, false);
+    return { ok: false, summary: `Nothing is answering at ${url} yet.${tail ? `\nThe command said:\n${tail}` : ""}` };
+  }
+  try {
+    await run.live.goto(url);
+  } catch (err: any) {
+    await previewStop(session, false);
+    return { ok: false, summary: `The browser could not open ${url}: ${err?.message ?? err}` };
+  }
+  run.opened = true;
+  run.openedAt = Date.now();
+  run.url = url;
+  run.how = how;
+  run.device = "desktop";
+  emitEvent(session, "preview.open", "agent", { url, how }, span);
+  broadcastPreview(session);
+  void run.live.nudge();
+  const errors = run.live.consoleTail(5).filter((e) => e.kind === "error");
+  return {
+    ok: true,
+    summary:
+      `The app is open in the preview window at ${url}, where the person is watching it. ` +
+      "Keep building: a dev server with hot reload updates the window by itself; otherwise call app_preview with action reload. " +
+      "app_preview with action look shows you the page and its console errors. Comments the person leaves in the window arrive later as one message." +
+      (errors.length ? `\nThe page's console already has errors:\n${errors.map((e) => `  ${e.text}`).join("\n")}` : ""),
+  };
+}
+
 // ------------------------------------------------------ approvals & turns --
 
 /**
@@ -890,55 +1119,6 @@ function askPermission(
   });
 }
 
-// ---------------------------------------------------------------- jev mode --
-
-/** Names a Jev key may be stored under, in the Secrets store or the
-    environment. People name it whatever they like; these are the likely ones. */
-const JEV_KEY_NAMES = ["JEV_API_KEY", "JEV_TOKEN", "JEV_KEY", "TYPESAFE_API_KEY", "TYPESAFE_TOKEN"];
-
-/** The hosted Jev API key: saved in the Jev Mode card, saved as a secret in
-    the Secrets store, or from the server environment, in that order. */
-function jevKey(): { key: string; source: "app" | "secret" | "env" | null; name?: string } {
-  if (state.jev.key) return { key: state.jev.key, source: "app" };
-  for (const name of JEV_KEY_NAMES) {
-    const saved = (state.secrets?.[name] || "").trim();
-    if (saved) return { key: saved, source: "secret", name };
-  }
-  for (const name of JEV_KEY_NAMES) {
-    const env = (process.env[name] || "").trim();
-    if (env) return { key: env, source: "env", name };
-  }
-  return { key: "", source: null };
-}
-
-/** Where Jev decisions go: the hosted Jev API when a key for it is set,
-    otherwise the model the next turn will call, scored by its token
-    probabilities. Null when neither is usable. */
-function jevTarget(): JevTarget | null {
-  const hosted = jevKey();
-  if (hosted.key) {
-    return {
-      provider: "typesafe", kind: "typesafe",
-      baseUrl: (process.env.TYPESAFE_API_BASE || "").trim() || "https://api.typesafe.ai",
-      key: hosted.key,
-      model: (process.env.JEV_MODEL || "").trim() || "jev-latest",
-    };
-  }
-  const active = resolveProvider();
-  if (!active.provider || active.problem) return null;
-  const spec = providerSpec(active.provider);
-  if (!spec) return null;
-  return {
-    provider: active.provider, kind: spec.kind,
-    baseUrl: active.baseUrl, key: active.key, model: active.model,
-  };
-}
-
-/** What Jev did before this turn started, per session, so the model can
-    answer "did you use Jev?" from fact rather than guess. Cleared per turn. */
-const jevThisTurn = new Map<string, string[]>();
-
-/** The lines the model is told about Jev for this turn. */
 /** A model call's cost, whole and split, at today's prices. */
 function priceCall(
   provider: string, model: string, input: number, output: number,
@@ -946,176 +1126,6 @@ function priceCall(
 ): { cost: number; parts: CostParts } {
   const parts = costParts(provider, model, input, output, new Date(), { read: cachedRead, write: cacheWrite });
   return { cost: parts.fresh + parts.cached + parts.output, parts };
-}
-
-function jevBriefing(sessionId: string): string {
-  const notes = jevThisTurn.get(sessionId) ?? [];
-  return [
-    "Jev Mode is a fast path for small internal decisions made before and",
-    "during your turn: which memories to load, how to route the message, and",
-    "whether a risky tool call needs the person's go-ahead. It scores lettered",
-    "options from the model's token probabilities. It never writes your",
-    "replies or answers the person's questions -- you do, every time.",
-    notes.length
-      ? `This turn: ${notes.join("; ")}.`
-      : `This turn: Jev made no decisions${state.jev.enabled ? "" : " (it is switched off)"}.`,
-    "If asked whether Jev was used, answer from this, not from memory.",
-  ].join(" ");
-}
-
-/**
- * Run a decision through Jev, bill it, and say in the thread what happened.
- *
- * Reported only when something was actually tried: a model that cannot score
- * falls back silently every turn, and a note saying so each time is noise.
- */
-async function jevDecide(session: Session | null, task: JevTask): Promise<JevOutcome> {
-  const target = jevTarget();
-  const outcome = await decide(task, target, state.jev);
-  if (session) {
-    const notes = jevThisTurn.get(session.id) ?? [];
-    notes.push(outcome.mode === "jev"
-      ? `${task.name}: decided by Jev in ${outcome.ms} ms (lowest confidence ${outcome.min.toFixed(2)})`
-      : `${task.name}: not decided by Jev -- ${outcome.reason.replace(/\.$/, "")}`);
-    jevThisTurn.set(session.id, notes);
-  }
-  const usage = outcome.usage;
-  if (target && usage && (usage.input || usage.output)) {
-    recordUsage({
-      ts: Math.floor(Date.now() / 1000),
-      session: session?.id ?? "jev",
-      provider: target.provider,
-      model: target.model,
-      input: usage.input,
-      output: usage.output,
-      ...priceCall(target.provider, target.model, usage.input, usage.output, usage.cached),
-      priced: isPriced(target.provider, target.model),
-      estimated: false,
-      cached: usage.cached,
-    });
-  }
-  if (session && (outcome.mode === "jev" || outcome.attempted)) {
-    emitEvent(session, "jev.decision", "system", {
-      task: task.name,
-      mode: outcome.mode,
-      ms: outcome.ms,
-      threshold: state.jev.threshold,
-      min: outcome.mode === "jev" ? outcome.min : null,
-      reason: outcome.mode === "fallback" ? outcome.reason : null,
-      model: target?.model ?? null,
-      cached_tokens: usage?.cached ?? 0,
-      fields: (outcome.fields ?? []).map((f) => ({
-        name: task.labels?.[f.name] ?? f.name,
-        value: f.value, confidence: f.confidence, coverage: f.coverage,
-      })),
-    });
-  }
-  return outcome;
-}
-
-/**
- * Which memories bear on this request, scored rather than keyword-matched.
- *
- * One yes/no field per memory: independent of each other, two values each --
- * exactly the shape Jev is for. Returns null to mean "fall back to the
- * keyword recall", which is what happens whenever Jev is off, the model
- * cannot score, or any memory's call is too close to make.
- */
-async function jevRecall(session: Session, request: string, conversation: string): Promise<Recalled[] | null> {
-  /* The shortlist is the ranked recall, widened, rather than the most-used
-     twenty: ranked by use, a memory written this week was never a candidate
-     once there were twenty older ones. */
-  const shortlist = mind.recallForTurn(request, conversation, 20);
-  const candidates = shortlist.map((r) => r.record);
-  if (candidates.length === 0) return null;
-
-  const properties: Record<string, any> = {};
-  const labels: Record<string, string> = {};
-  const byField = new Map<string, MemoryRecord>();
-  candidates.forEach((m, i) => {
-    const field = `memory_${i + 1}`;
-    byField.set(field, m);
-    labels[field] = m.title;
-    properties[field] = {
-      type: "boolean",
-      description: `${m.title} -- ${m.body.replace(/\s+/g, " ").slice(0, 180)}`,
-    };
-  });
-
-  const outcome = await jevDecide(session, {
-    name: "memory recall",
-    /* With the exchange before it: "yes, do that" is about whatever "that"
-       was, and judged on its own words every memory was a no. */
-    context:
-      (conversation ? `The conversation just before:\n${conversation.slice(-1200)}\n\n` : "") +
-      `The person's request:\n${request.slice(0, 2000)}`,
-    instructions:
-      "Each field is one stored memory. Answer true only if it is about this " +
-      "request (read with the conversation before it, if any) and the agent " +
-      "would use it to answer it. Sharing a word or a general topic is not " +
-      "enough; when unsure, answer false.",
-    schema: { type: "object", properties },
-    labels,
-    timeoutMs: 5000,
-  });
-  if (outcome.mode !== "jev") return null;
-
-  const picked = shortlist.filter((r) => r.record.pinned);
-  for (const [field, value] of Object.entries(outcome.values)) {
-    const m = byField.get(field);
-    if (m && value === true && !picked.some((p) => p.record === m)) {
-      picked.push({ record: m, score: 0, reason: "chosen by Jev as relevant" });
-    }
-  }
-  return picked;
-}
-
-/**
- * Which kind of request this is, decided before the turn starts.
- *
- * One field, three values: answer from what the agent knows, act with tools,
- * or clarify first. The answer is a line in the system instructions -- the
- * tools stay on offer either way -- so a misjudged route costs a nudge, not a
- * capability. Returns null (no hint, the turn runs as it always has) whenever
- * Jev cannot decide confidently.
- */
-async function jevRoute(session: Session, request: string): Promise<string | null> {
-  const previous = previousAgentReply(session);
-  const outcome = await jevDecide(session, {
-    name: "question routing",
-    context:
-      (previous ? `The agent's previous reply:\n${previous.slice(-800)}\n\n` : "") +
-      `The person's new message:\n${request.slice(0, 2000)}`,
-    instructions: "Decide how the agent should handle the person's new message.",
-    schema: {
-      type: "object",
-      properties: {
-        route: {
-          description: "How to handle the message",
-          oneOf: [
-            { const: "answer", description: "answer directly from knowledge; a question, explanation or conversation that needs no tools" },
-            { const: "act", description: "do something with tools: run commands, browse, edit files, look things up" },
-            { const: "clarify", description: "too ambiguous to act on safely; ask one clarifying question first" },
-          ],
-        },
-      },
-    },
-    timeoutMs: 5000,
-  });
-  if (outcome.mode !== "jev") return null;
-  switch (outcome.values.route) {
-    case "answer":
-      return "Routing: this message looks answerable directly. Reply from what you know; " +
-        "use tools only if the answer genuinely depends on something you must check.";
-    case "act":
-      return "Routing: this message needs action. Start working with your tools rather " +
-        "than describing what you would do.";
-    case "clarify":
-      return "Routing: this message is ambiguous. Before acting, ask the person one short " +
-        "clarifying question with ask_user, offering concrete options.";
-    default:
-      return null;
-  }
 }
 
 /**
@@ -1144,30 +1154,12 @@ function conversationSoFar(session: Session): string {
   return [asked.slice(0, 1000), answered.join("").trim().slice(-1500)].filter(Boolean).join("\n");
 }
 
-/** What the agent said last, so "yes, do it" can be routed with its antecedent. */
-function previousAgentReply(session: Session): string {
-  let seenUser = 0;
-  const parts: string[] = [];
-  for (let i = session.events.length - 1; i >= 0; i--) {
-    const e = session.events[i];
-    if (e.kind === "turn.user") {
-      seenUser += 1;
-      if (seenUser === 2) break;
-      continue;
-    }
-    if (seenUser === 1 && e.kind === "turn.agent.text" && !e.payload?.local) {
-      parts.unshift(String(e.payload?.text ?? ""));
-    }
-  }
-  return parts.join("").trim();
-}
-
 /* ---- the tool guard -------------------------------------------------------
 
    Autora runs in yolo mode, and the guard does not change that for ordinary
    work: it looks only at calls that could plausibly destroy something, and
-   stops one only when Jev is confident it is destructive AND that the person
-   did not ask for it. Then the call does not run; the agent is told why and
+   stops one only when the turn's own model says it is destructive AND that the
+   person did not ask for it. Then the call does not run; the agent is told why and
    must ask the person with ask_user. Once they have answered, the same call
    goes through. Everything the guard is unsure about runs, as before. */
 
@@ -1179,7 +1171,7 @@ const lastAnswer = new Map<string, string>();
 /** Held calls, by session and exact rendering, with the count at hold time. */
 const heldCalls = new Map<string, number>();
 
-async function jevGuard(
+async function modelGuard(
   session: Session,
   spec: { name: string },
   args: Record<string, any>,
@@ -1197,6 +1189,9 @@ async function jevGuard(
     log("info", "guard", `covered by a standing agreement: ${agreed.note || agreed.match}`);
     return null;
   }
+  /* The turn's own model, asked in a few tokens and billed like any call. It
+     is only reached for the calls the filter lets through, which is rare. */
+  const ask = (system: string, prompt: string) => backgroundCall(session.id, system, prompt, 120);
   const key = `${session.id}\u0000${spec.name}\u0000${rendered}`;
   const answered = answeredAsks.get(session.id) ?? 0;
   const heldAt = heldCalls.get(key);
@@ -1206,20 +1201,7 @@ async function jevGuard(
     // agent was told not to retry after a refusal, but that is a promise,
     // and this is the check that does not depend on it.
     const said = lastAnswer.get(session.id) ?? "";
-    const verdict = await jevDecide(session, {
-      name: "tool guard · your answer",
-      context:
-        `The action:\n${rendered.slice(0, 1000)}\n\n` +
-        `The person's answer when asked about it:\n${said.slice(0, 1000)}`,
-      schema: {
-        type: "object",
-        properties: {
-          approved: { type: "boolean", description: "The person agreed to this action going ahead." },
-        },
-      },
-      timeoutMs: 5000,
-    });
-    if (verdict.mode === "jev" && verdict.values.approved === false) {
+    if (await declined(ask, rendered, said)) {
       heldCalls.set(key, answered);
       return "Held by the guard: the person declined this when asked.";
     }
@@ -1247,34 +1229,11 @@ async function jevGuard(
     return null;
   }
 
-  const outcome = await jevDecide(session, {
-    name: "tool guard",
-    context:
-      `The person's request:\n${request.slice(0, 1500)}\n\n` +
-      (reason ? `The agent's stated reason:\n${reason.slice(0, 600)}\n\n` : "") +
-      `The action about to run (${spec.name}):\n${rendered.slice(0, 1500)}`,
-    instructions: "Judge the action about to run, strictly.",
-    schema: {
-      type: "object",
-      properties: {
-        destructive: {
-          type: "boolean",
-          description: "It could permanently delete, overwrite or break data, systems or accounts in a way that cannot easily be undone.",
-        },
-        requested: {
-          type: "boolean",
-          description: "The person explicitly asked for this specific destructive action, not merely for a task it might help with.",
-        },
-      },
-    },
-    timeoutMs: 5000,
-  });
-  if (outcome.mode !== "jev") return null;
-  if (outcome.values.destructive !== true || outcome.values.requested !== false) return null;
+  const verdict = await judgeAction(ask, { request, reason, tool: spec.name, rendered });
+  if (!shouldHold(verdict)) return null;
 
   heldCalls.set(key, answered);
-  const sure = Math.min(outcome.confidence.destructive, outcome.confidence.requested);
-  return `Held by the guard: this looks destructive and the person did not ask for it (confidence ${sure.toFixed(2)}).`;
+  return "Held by the guard: this looks destructive and the person did not ask for it.";
 }
 
 // ------------------------------------------------------- asking the person --
@@ -1310,6 +1269,15 @@ function waitingOnPerson(sessionId: string): boolean {
 /** The agent is at the wheel: a turn is running and it is not waiting on the
     person. User input to the browser is refused while this holds, so two
     pairs of hands never fight over one page. */
+/** The browser an input route is about: the session's own, or -- for the app
+    preview's window, which asks with ?target=preview -- the preview's. */
+function isPreview(req: Request): boolean {
+  return req.query?.target === "preview";
+}
+function targetBrowser(session: Session, req: Request): LiveBrowser | undefined {
+  return isPreview(req) ? previews.get(session.id)?.live : browsers.get(session.id);
+}
+
 function agentDriving(session: Session): boolean {
   return session.busy && !waitingOnPerson(session.id);
 }
@@ -1856,24 +1824,17 @@ async function systemInstructionFor(
   sessionId: string,
   recalled: MemoryRecord[],
   active?: Resolved | null,
-  /** Jev's reading of what kind of request this is, when it had one. */
-  routeHint?: string | null,
 ): Promise<{ pinned: string; note: string }> {
   const lines = [DEFAULT_PROMPT];
   const notes: string[] = [];
-  if (routeHint) notes.push(routeHint);
   /* Read from Settings here, every turn, so an edit applies from the next
      one. They used to open the prompt as its first line, ahead of the whole
      capability briefing and under the console's own style rules at the end
      -- so a "be brief" was buried, and then overruled by "give your final
      answer in full". They go last now, said to be the person's and to win. */
   const rules = standingRules(state.systemPrompt);
-  if (rules) {
-    notes.push(
-      "Follow the person's standing instructions (the last section of your " +
-        "instructions) on this turn, including while you work.",
-    );
-  }
+  const reminder = standingReminder(rules);
+  if (reminder) notes.push(reminder);
 
   /* What it can actually do, generated from the tool registry rather than
      written down here. This is the section whose absence made the console
@@ -1946,7 +1907,6 @@ async function systemInstructionFor(
   const machine = inventoryBriefing(sessionId);
   if (machine) notes.push(machine);
 
-  notes.push(jevBriefing(sessionId));
 
   /* Which vendor is answering, said plainly.
      Nothing else in the prompt carries it, so a model asked "which provider
@@ -2022,9 +1982,11 @@ async function systemInstructionFor(
      it once the window has passed. */
   /* The chat's mode, said every turn: it changes what a call does, so the
      agent plans around it rather than discovering it on a card. */
-  const ownMode = sessions.get(sessionId)?.mode;
-  const modeNote = modeBriefing(chatMode(ownMode), Boolean(sessions.get(sessionId)?.incognito));
+  const own = sessions.get(sessionId);
+  const modeNote = modeBriefing(workMode(own?.mode), own?.phase, Boolean(own?.incognito));
   if (modeNote) notes.push(modeNote);
+  const permNote = permissionBriefing(permissionsOf(own?.permissions), own?.askWhen ?? "");
+  if (permNote) notes.push(permNote);
 
   const quiet = quietBriefing(Date.now(), state.proactivity);
   if (quiet) notes.push(quiet);
@@ -2047,31 +2009,7 @@ async function systemInstructionFor(
     ].join("\n"));
   }
 
-  lines.push(
-    "",
-    "Answer as the console itself: direct, concrete, and short enough to read",
-    "between steps. Plain prose -- no headings, and no markdown emphasis.",
-    "While you are working -- any message that comes with tool calls -- write",
-    "at most one short line saying what you are doing, or nothing at all. Do",
-    "not restate tool output, repeat a plan you already gave, or narrate each",
-    "step: the person sees every call and its result as it happens. When the",
-    "work is done, give your final answer in full, with everything the person",
-    "needs; brevity is for the steps in between, not for the answer.",
-    "The person's latest message may end with a console note for the turn;",
-    "the console wrote it, not the person, and it is context, not a request.",
-  );
-
-  if (rules) {
-    lines.push(
-      "",
-      "=== THE PERSON'S STANDING INSTRUCTIONS ===",
-      "Set by the person in Settings and in force on every turn and every step.",
-      "Where they conflict with anything above, these win.",
-      "",
-      rules,
-      "=== END STANDING INSTRUCTIONS ===",
-    );
-  }
+  lines.push(...replyStyle(Boolean(rules)), ...standingBlock(rules));
 
   return {
     pinned: lines.join("\n"),
@@ -2140,7 +2078,7 @@ function notify(notice: Omit<Notice, "id" | "ts">, phone?: PushKind) {
 
 // ------------------------------------------------------------ the phone --
 
-/* What reaches the person's phone, through ntfy or Telegram (server/push.ts).
+/* What reaches the person's phone, through the installed app (server/push.ts).
    The address the app was last opened at is the link in a message: the
    server has no other way to know what the person calls it. */
 let appOrigin: string | null = null;
@@ -2150,23 +2088,15 @@ function appLink(session?: string | null): string | null {
   return session ? `${appOrigin}/?session=${encodeURIComponent(session)}` : `${appOrigin}/`;
 }
 
-function pushTokens(): PushTokens {
-  return { ntfy: secretFor(NTFY_TOKEN), telegram: secretFor(TELEGRAM_TOKEN) };
-}
-
-/** Whether a token is set, and where from: enough for the settings card. */
-function tokenState(name: string): { set: boolean; source: "app" | "env" | null; masked: string } {
-  const saved = (state.secrets?.[name] ?? "").trim();
-  const env = (process.env[name] ?? "").trim();
-  const value = saved || env;
-  return { set: Boolean(value), source: saved ? "app" : env ? "env" : null, masked: value ? maskKey(value) : "" };
-}
-
 /** What arrived inside quiet hours, sent as one message when they end. */
 const heldPushes = new HeldMessages();
 
+/** The devices that have asked the installed app to notify them. Kept beside
+    the settings, in its own private file. */
+const webPush = new WebPush(path.join(stateDir(), "webpush.json"));
+
 function sendPush(msg: PushMessage) {
-  void deliver(msg, state.push, pushTokens()).then((out) => {
+  void deliver(msg, webPush).then((out) => {
     for (const d of out) if (!d.ok) log("warn", "push", `${d.channel}: ${d.error}`);
   });
 }
@@ -2178,7 +2108,7 @@ function sendPush(msg: PushMessage) {
  */
 function pushOut(kind: PushKind, msg: PushMessage) {
   if (!state.push.on[kind]) return;
-  if (readyChannels(state.push, pushTokens()).length === 0) return;
+  if (readyChannels(webPush).length === 0) return;
   const safe = { ...msg, title: redactSecrets(msg.title), body: redactSecrets(msg.body) };
   if (inQuiet(Date.now(), state.proactivity)) {
     heldPushes.hold(safe);
@@ -2762,6 +2692,10 @@ interface TurnOptions {
       Such a turn gets no next-step chips -- nobody is there to tap them --
       and says it finished through its own notice, not the "done" message. */
   automated?: boolean;
+  /** What the thread shows for this message, when it is not the words the
+      model is given (a review of the app is a long brief for the agent and a
+      single line for the person who sent it). */
+  shown?: string;
 }
 
 function beginTurn(session: Session, text: string, attachments: AttachmentRef[] = [], opts: TurnOptions = {}): Promise<TurnResult> {
@@ -2777,8 +2711,15 @@ function beginTurn(session: Session, text: string, attachments: AttachmentRef[] 
      with the message and the model still reads the note that names them. */
   emitEvent(session, "turn.user", "user", {
     text,
+    ...(opts.shown ? { shown: opts.shown } : {}),
     ...(attachments.length > 0 ? { attachments } : {}),
   });
+  /* Agent mode starts every turn planning, whatever the last one ended in:
+     the agent decides again whether this task needs a plan. */
+  if (workMode(session.mode) === "agent") {
+    session.phase = "plan";
+    emitEvent(session, "mode.switch", "system", { from: null, to: "plan", reason: "" });
+  }
   session.busy = true;
   // Stop reaches the model call too: without it, a stopped turn went on
   // streaming its sentence into the thread until the vendor finished it.
@@ -2860,15 +2801,9 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
   const fast = opts.spoken === true && !state.speech.liveThinking;
   try {
     /* Which memories this turn gets: ranked against the request (see
-       server/memory.ts), pinned ones always. When Jev can score, it makes
-       the final yes/no per memory from a wider shortlist. */
-    jevThisTurn.delete(session.id);
+       server/memory.ts), pinned ones always. */
     const conversation = conversationSoFar(session);
-    const [scored, routeHint] = await Promise.all([
-      jevRecall(session, text, conversation),
-      jevRoute(session, text),
-    ]);
-    const recalled = scored ?? mind.recallForTurn(text, conversation);
+    const recalled = mind.recallForTurn(text, conversation);
     const uniqueAccessed = recalled.map((r) => r.record);
     result.recalled = uniqueAccessed.map((r) => r.id);
     if (uniqueAccessed.length > 0) {
@@ -3296,15 +3231,67 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
       /** Everything a tool needs from this session, handed in rather than
           imported, so server/tools.ts knows nothing about sessions. */
       const contextFor = (span: string): ToolContext => ({
-        board: (action) => {
-          /* The board is read back out of the session's own events, which is
-             what the page draws, so a card the person dragged and a card the
-             agent moved are the same board and neither can overwrite the
-             other. The whole board is written on every change: it is small,
-             and a partial write is how two writers disagree. */
-          const result = applyBoard(latestBoard(session.events), action);
-          if (result.board) {
-            emitEvent(session, "kanban.update", "agent", result.board as any, span);
+        preview: {
+          start: (args) => previewStart(session, args, span),
+          stop: async () => {
+            const was = await previewStop(session);
+            return { ok: true, summary: was ? "The preview is closed, and the server it started is stopped." : "There was no preview open." };
+          },
+          reload: async () => {
+            const run = previews.get(session.id);
+            if (!run?.opened) return { ok: false, summary: "There is no preview open. Start one with app_preview start." };
+            run.live.clearConsole();
+            await run.live.reload().catch(() => undefined);
+            return { ok: true, summary: "Reloaded the preview." };
+          },
+          look: async () => {
+            const run = previews.get(session.id);
+            if (!run?.opened) return { ok: false, summary: "There is no preview open. Start one with app_preview start." };
+            const png = await run.live.capture();
+            const size = run.live.viewport();
+            const log = run.live.consoleTail(12);
+            return {
+              ok: true,
+              png,
+              summary:
+                `The preview at ${run.url}, ${size.width}×${size.height}, is in this result.` +
+                (log.length
+                  ? `\nThe page's console:\n${log.map((e) => `  [${e.kind}] ${e.text}`).join("\n")}`
+                  : "\nThe page's console is clean."),
+            };
+          },
+        },
+        setPhase: (to, reason) => {
+          const work = workMode(session.mode);
+          if (work !== "agent") {
+            return {
+              ok: false,
+              summary: work === "plan"
+                ? "This chat is in Plan mode, chosen by the person: you cannot leave it. Put the plan on the to-do list and say it."
+                : "This chat is in Build mode, chosen by the person: there is nothing to switch. Just do the work.",
+            };
+          }
+          const from = phaseFor(work, session.phase);
+          if (from === to) {
+            return { ok: true, summary: to === "plan" ? "Already planning." : "Already building." };
+          }
+          session.phase = to;
+          emitEvent(session, "mode.switch", "agent", { from, to, reason }, span);
+          return {
+            ok: true,
+            summary: to === "build"
+              ? "Building now: changes run. Work through the to-do list and keep it true."
+              : "Planning now: read-only until you switch back to build.",
+          };
+        },
+        todos: (action) => {
+          /* The list is read back out of the session's own events, which is
+             what the page draws, and the whole list is written on every
+             change: it is small, and a partial write is how two views of it
+             disagree. */
+          const result = applyTodos(latestTodos(session.events), action);
+          if (result.list) {
+            emitEvent(session, "todo.update", "agent", result.list as any, span);
           }
           return result;
         },
@@ -3509,7 +3496,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
       /* Once per turn, not per round: the instructions must open every
          round's request identically for the provider's cache to serve
          them, and so must everything the note is attached ahead of. */
-      const { pinned, note } = await systemInstructionFor(session.id, uniqueAccessed, active, routeHint);
+      const { pinned, note } = await systemInstructionFor(session.id, uniqueAccessed, active);
       context.setTurnNote(note);
       const watch = new LoopWatch(state.loop);
       let loopStop: string | null = null;
@@ -3738,45 +3725,55 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             name: spec.name, args: use.args,
           }, span);
 
-          /* The chat's own mode comes first: in Plan and Ask the person
-             reads a card before the call runs, whatever the tool settings
-             say. Auto adds nothing here, and the guard and the irrecoverable
-             tier further down are untouched by it. */
-          const chat = chatMode(session.mode);
-          const gate = modeGate(chat, spec.name, use.args);
-          if (gate) {
+          /* Planning first, and it is a refusal rather than a card: planning
+             is the agent's own state (chosen by the person in Plan, by the
+             agent in Agent), so nobody is being asked -- the call is not run
+             and the agent is told what to do instead. */
+          const work = workMode(session.mode);
+          const refusal = planRefusal(work, session.phase, spec.name, use.args);
+          if (refusal) {
+            emitEvent(session, "tool.error", "agent", {
+              held: true, planning: true, error: "Not run: planning changes nothing.",
+            }, span);
+            reply(false, refusal);
+            continue;
+          }
+
+          /* Then the person's permissions: with Ask on, a call that changes
+             something waits for a yes on a card -- every one, or the ones
+             that fall under what they wrote for when to ask. Yolo adds
+             nothing here, and the guard and the irrecoverable tier further
+             down are untouched by it. */
+          const perms = permissionsOf(session.permissions);
+          const ruling = askAbout(perms, session.askWhen ?? "", spec.name, use.args);
+          const rendered = ruling === "skip" ? "" : renderCall(spec, use.args);
+          const askHeld = ruling === "hold" ||
+            (ruling === "judge" && await matchesAskRule(
+              (system, prompt) => backgroundCall(session.id, system, prompt, 120),
+              { rules: cleanAskWhen(session.askWhen), tool: spec.name, rendered },
+            ));
+          if (askHeld) {
             const decision = await askPermission(session, {
               tool: spec.name,
-              rendered: renderCall(spec, use.args),
+              rendered,
               /* Never saved as a standing agreement: a rule is about a class
                  of work and outlives the chat, and this card is about this
-                 conversation's mode, which ends with it. */
+                 conversation's permissions, which end with it. */
               remember: false,
-              reason: gate.why,
+              reason: askReason(session.askWhen ?? ""),
             });
             if (!decision.approved) {
               emitEvent(session, "tool.error", "agent", {
-                held: true, denied: true, mode: chat,
-                error: `Held: this chat is in ${MODES[chat].label} mode.`,
+                held: true, denied: true, mode: "ask",
+                error: `Held: this chat is set to ${PERMISSION_INFO.ask.label}.`,
               }, span);
               reply(
                 false,
-                chat === "plan"
-                  ? "Not run: this chat is in Plan mode, and nothing is changed there. " +
-                    "Do not retry it and do not look for another way to do the same thing. " +
-                    "Say what you would have done instead -- the files, the commands, the " +
-                    "order, the risks -- and stop there; the person takes the chat out of " +
-                    "Plan mode when they are ready for it to be done."
-                  : "Not run: this chat is in Ask mode and the person said no to this call. " +
-                    "Do not retry it. Either carry on without it or say what you needed it " +
-                    "for and why.",
+                "Not run: this chat is set to Ask and the person said no to this call. " +
+                  "Do not retry it. Either carry on without it or say what you needed it " +
+                  "for and why.",
               );
               continue;
-            }
-            if (chat === "plan") {
-              emitEvent(session, "context.note", "system", {
-                text: "The person allowed that one call in Plan mode, so it ran. The chat is still in Plan mode: everything else that would change something still waits for them.",
-              });
             }
           }
 
@@ -3827,11 +3824,11 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             }
           }
 
-          /* The one tier that needs no key, no model and no network. Jev's
-             guard below judges a much wider set of calls and only says
-             anything when it is confident -- which, switched off or
-             unreachable, is never. This asks about the handful of commands
-             nothing can undo, whatever else is configured. */
+          /* The one tier that needs no key, no model and no network. The
+             model's check below judges a much wider set of calls and says
+             something only when it is sure -- which, unreachable, is never.
+             This asks about the handful of commands nothing can undo,
+             whatever else is configured. */
           const danger = irreversible(spec.name, use.args);
           if (danger) {
             const decision = await askPermission(session, {
@@ -3859,7 +3856,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             }
           }
 
-          const held = await jevGuard(session, spec, use.args, text, turn.text.trim());
+          const held = await modelGuard(session, spec, use.args, text, turn.text.trim());
           if (held) {
             emitEvent(session, "tool.error", "agent", {
               guarded: true, denied: true, error: held,
@@ -4177,7 +4174,9 @@ async function startServer() {
         live: (sessionSockets.get(s.id)?.size ?? 0) > 0,
         busy: s.busy,
         pinned: !!s.pinned,
-        mode: chatMode(s.mode),
+        mode: workMode(s.mode),
+        permissions: permissionsOf(s.permissions),
+        ask_when: s.askWhen ?? "",
         created_at: s.createdAt,
         updated_at: s.counts.lastTs || s.createdAt,
         events: s.counts.events,
@@ -4199,24 +4198,44 @@ async function startServer() {
   app.patch("/api/sessions/:id", (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
-    const { title: rawTitle, pinned, mode: rawMode } = req.body ?? {};
-    if (rawTitle === undefined && typeof pinned !== "boolean" && rawMode === undefined) {
+    const { title: rawTitle, pinned, mode: rawMode, permissions: rawPerms, ask_when: rawWhen } = req.body ?? {};
+    if (rawTitle === undefined && typeof pinned !== "boolean" && rawMode === undefined &&
+        rawPerms === undefined && rawWhen === undefined) {
       return res.status(400).json({ error: "Nothing to change." });
+    }
+    if (rawMode !== undefined && !isWorkMode(rawMode)) {
+      return res.status(400).json({ error: "A mode is one of: " + Object.keys(WORK_MODES).join(", ") + "." });
+    }
+    if (rawPerms !== undefined && !isPermissions(rawPerms)) {
+      return res.status(400).json({ error: "Permissions are one of: " + Object.keys(PERMISSION_INFO).join(", ") + "." });
+    }
+    if (rawWhen !== undefined && typeof rawWhen !== "string") {
+      return res.status(400).json({ error: "ask_when is text: when you want to be asked." });
     }
     /* Set for this conversation, and saved with it: the chat you are in is
        the one whose mode you are choosing, and it should still be in it when
        you come back to it. */
-    if (rawMode !== undefined) {
-      if (!isChatMode(rawMode)) {
-        return res.status(400).json({ error: "A mode is one of: " + Object.keys(MODES).join(", ") + "." });
-      }
-      session.mode = rawMode;
+    if (rawMode !== undefined && rawMode !== workMode(session.mode)) {
+      const mode = rawMode as WorkMode;
+      session.mode = mode;
+      /* A person choosing Build or Plan settles it; Agent starts over. */
+      session.phase = mode === "agent" ? "plan" : undefined;
       emitEvent(session, "context.note", "system", {
-        text: `The chat's mode is now ${MODES[rawMode].label}. ${MODES[rawMode].blurb}`,
-        mode: rawMode,
+        text: `The chat's mode is now ${WORK_MODES[mode].label}. ${WORK_MODES[mode].blurb}`,
+        mode,
       });
-      log("info", "sessions", `"${session.title}" is in ${rawMode} mode`);
+      log("info", "sessions", `"${session.title}" is in ${mode} mode`);
     }
+    if (rawPerms !== undefined && rawPerms !== permissionsOf(session.permissions)) {
+      const perms = rawPerms as Permissions;
+      session.permissions = perms;
+      emitEvent(session, "context.note", "system", {
+        text: `Permissions are now ${PERMISSION_INFO[perms].label}. ${PERMISSION_INFO[perms].blurb}`,
+        permissions: perms,
+      });
+      log("info", "sessions", `"${session.title}" permissions: ${perms}`);
+    }
+    if (rawWhen !== undefined) session.askWhen = cleanAskWhen(rawWhen);
     if (rawTitle !== undefined) {
       const title = typeof rawTitle === "string" ? rawTitle.trim().slice(0, 120) : "";
       if (!title) return res.status(400).json({ error: "A title is required." });
@@ -4224,7 +4243,10 @@ async function startServer() {
     }
     if (typeof pinned === "boolean") session.pinned = pinned;
     saveMeta(metaOf(session));
-    res.json({ ok: true, title: session.title, pinned: !!session.pinned, mode: chatMode(session.mode) });
+    res.json({
+      ok: true, title: session.title, pinned: !!session.pinned, mode: workMode(session.mode),
+      permissions: permissionsOf(session.permissions), ask_when: session.askWhen ?? "",
+    });
   });
 
   /** Gone for good: its log, its pictures, and its browser. */
@@ -4243,6 +4265,7 @@ async function startServer() {
     // The browser is closed first, so its sign-ins are saved before it goes.
     await browsers.get(session.id)?.close().catch(() => undefined);
     browsers.delete(session.id);
+    await previewStop(session, false).catch(() => undefined);
     clearFrame(session.id);
     forgetSession(session.id);
     if (!incognito) deleteSession(session.id);
@@ -4770,11 +4793,267 @@ async function startServer() {
     res.json({ ok: true, control: live.status().control });
   });
 
+  // ---- the app window -------------------------------------------------------
+  const withPreview = (req: Request, res: Response): { session: Session; run: PreviewRun } | null => {
+    const session = sessions.get(req.params.id);
+    if (!session) { res.status(404).json({ error: "Session not found" }); return null; }
+    const run = previews.get(session.id);
+    if (!run?.opened) { res.status(400).json({ error: "No app preview is open." }); return null; }
+    return { session, run };
+  };
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : Number.NaN);
+  const asInfo = (v: any): ElementInfo | null => (v && typeof v === "object" && typeof v.selector === "string" ? v as ElementInfo : null);
+
+  app.get("/api/sessions/:id/preview", (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    res.json(previewState(session));
+  });
+
+  app.post("/api/sessions/:id/preview/open", async (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    const url = typeof req.body?.url === "string" ? req.body.url.trim() : "";
+    if (!url) return res.status(400).json({ error: "Give an address on this machine, like http://localhost:5173." });
+    const r = await previewStart(session, { url }, null);
+    res.status(r.ok ? 200 : 400).json(r.ok ? { ok: true } : { error: r.summary });
+  });
+
+  app.post("/api/sessions/:id/preview/close", async (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    await previewStop(session);
+    res.json({ ok: true });
+  });
+
+  app.post("/api/sessions/:id/preview/device", async (req: Request, res: Response) => {
+    const ctx = withPreview(req, res);
+    if (!ctx) return;
+    if (!isDevice(req.body?.device)) return res.status(400).json({ error: "A device is phone, tablet or desktop." });
+    const device: Device = req.body.device;
+    ctx.run.device = device;
+    await ctx.run.live.resize(DEVICES[device].width, DEVICES[device].height);
+    broadcastPreview(ctx.session);
+    void ctx.run.live.nudge();
+    res.json({ ok: true, viewport: ctx.run.live.viewport() });
+  });
+
+  app.post("/api/sessions/:id/preview/reload", async (req: Request, res: Response) => {
+    const ctx = withPreview(req, res);
+    if (!ctx) return;
+    // Cleared first: the reload is what says again what is still wrong.
+    ctx.run.live.clearConsole();
+    await ctx.run.live.reload().catch(() => undefined);
+    res.json({ ok: true });
+  });
+
+  /* What is at a point, or what is beside / inside / around a selected
+     element. `light` is the hover's version: a box and a name, nothing else. */
+  app.post("/api/sessions/:id/preview/inspect", async (req: Request, res: Response) => {
+    const ctx = withPreview(req, res);
+    if (!ctx) return;
+    const light = req.body?.light === true;
+    let request: Record<string, unknown>;
+    if (typeof req.body?.selector === "string") {
+      const nav = ["parent", "child", "next", "prev"].includes(req.body?.nav) ? req.body.nav : undefined;
+      request = { op: "sel", selector: req.body.selector.slice(0, 600), nav, light };
+    } else {
+      const x = num(req.body?.x), y = num(req.body?.y);
+      if (Number.isNaN(x) || Number.isNaN(y)) return res.status(400).json({ error: "Give x and y, or a selector." });
+      request = { op: "at", x: Math.round(x), y: Math.round(y), light };
+    }
+    const info = await ctx.run.live.pickOp(pickExpression(request)).catch(() => null);
+    res.json({ info: info && info.ok !== false ? info : null });
+  });
+
+  /* Where the things already picked are now: the page scrolls and re-lays
+     itself out, and a pin stays on its element. */
+  app.post("/api/sessions/:id/preview/rects", async (req: Request, res: Response) => {
+    const ctx = withPreview(req, res);
+    if (!ctx) return;
+    const selectors = Array.isArray(req.body?.selectors)
+      ? req.body.selectors.filter((x: unknown) => typeof x === "string").slice(0, 60).map((x: string) => x.slice(0, 600))
+      : [];
+    const out = await ctx.run.live.pickOp(pickExpression({ op: "rects", selectors })).catch(() => null);
+    res.json(out ?? { scroll: { x: 0, y: 0 }, rects: selectors.map(() => null) });
+  });
+
+  /* Trying a change on the page to show what is meant. Only the properties in
+     EDITABLE_STYLES, only plain values: the page is not a place to run the
+     person's (or anyone's) script. */
+  app.post("/api/sessions/:id/preview/style", async (req: Request, res: Response) => {
+    const ctx = withPreview(req, res);
+    if (!ctx) return;
+    const selector = typeof req.body?.selector === "string" ? req.body.selector.slice(0, 600) : "";
+    const asked = req.body?.css && typeof req.body.css === "object" ? req.body.css as Record<string, unknown> : {};
+    const css: Record<string, string> = {};
+    for (const [k, v] of Object.entries(asked)) {
+      const value = safeStyle(k, v);
+      if (value === null) return res.status(400).json({ error: `${k} cannot be changed here.` });
+      css[k] = value;
+    }
+    if (!selector || Object.keys(css).length === 0) return res.status(400).json({ error: "Give a selector and a style." });
+    const out = await ctx.run.live.pickOp(pickExpression({ op: "style", selector, css })).catch(() => null);
+    if (!out?.ok) return res.status(400).json({ error: out?.error ?? "That could not be applied." });
+    res.json(out);
+  });
+
+  app.post("/api/sessions/:id/preview/text", async (req: Request, res: Response) => {
+    const ctx = withPreview(req, res);
+    if (!ctx) return;
+    const selector = typeof req.body?.selector === "string" ? req.body.selector.slice(0, 600) : "";
+    const text = typeof req.body?.text === "string" ? req.body.text.slice(0, 2000) : null;
+    if (!selector || text === null) return res.status(400).json({ error: "Give a selector and the new text." });
+    const out = await ctx.run.live.pickOp(pickExpression({ op: "text", selector, text })).catch(() => null);
+    if (!out?.ok) return res.status(400).json({ error: out?.error ?? "That could not be applied." });
+    res.json(out);
+  });
+
+  app.post("/api/sessions/:id/preview/reset", async (req: Request, res: Response) => {
+    const ctx = withPreview(req, res);
+    if (!ctx) return;
+    const selector = typeof req.body?.selector === "string" ? req.body.selector.slice(0, 600) : "";
+    if (!selector) return res.status(400).json({ error: "Give a selector." });
+    const out = await ctx.run.live.pickOp(pickExpression({ op: "reset", selector })).catch(() => null);
+    res.json(out ?? { ok: false });
+  });
+
+  /* A comment joins the review. What it is about is read off the page now,
+     and its picture taken now -- the page will have moved on by the time the
+     review is sent. */
+  app.post("/api/sessions/:id/preview/comments", async (req: Request, res: Response) => {
+    const ctx = withPreview(req, res);
+    if (!ctx) return;
+    const { session, run } = ctx;
+    if (run.comments.length >= 30) return res.status(400).json({ error: "That is a lot of comments for one review. Send these first." });
+    const body = req.body ?? {};
+    const kind = body.kind === "region" ? "region" : "element";
+    const text = typeof body.text === "string" ? body.text.trim().slice(0, 2000) : "";
+    const size = run.live.viewport();
+    const scroll = await run.live.pickOp(pickExpression({ op: "scroll" })).catch(() => null);
+    const elements: ElementInfo[] = [];
+    let region: ReviewComment["region"];
+    if (kind === "element") {
+      const selectors: string[] = Array.isArray(body.selectors) ? body.selectors.filter((x: unknown) => typeof x === "string").slice(0, 12) : [];
+      if (selectors.length === 0) return res.status(400).json({ error: "Select an element first." });
+      for (const selector of selectors) {
+        const info = asInfo(await run.live.pickOp(pickExpression({ op: "sel", selector: selector.slice(0, 600) })).catch(() => null));
+        if (info) elements.push(info);
+      }
+      if (elements.length === 0) return res.status(400).json({ error: "That element is no longer on the page." });
+    } else {
+      const r = body.region ?? {};
+      const x = num(r.x), y = num(r.y), w = num(r.w), h = num(r.h);
+      if ([x, y, w, h].some(Number.isNaN) || w < 4 || h < 4) return res.status(400).json({ error: "Drag a rectangle first." });
+      region = { x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) };
+      /* What is in the rectangle, so the agent has more than pixels: the
+         element at its centre, which is usually what was meant. */
+      const centre = asInfo(await run.live.pickOp(pickExpression({ op: "at", x: Math.round(x + w / 2), y: Math.round(y + h / 2) })).catch(() => null));
+      if (centre) elements.push(centre);
+    }
+    if (!text && !body.textEdit && !(Array.isArray(body.styleChanges) && body.styleChanges.length)) {
+      return res.status(400).json({ error: "Say what to change." });
+    }
+
+    /* The picture: the region as drawn, or the elements together with a
+       margin of the page around them, so what they sit among is in it. */
+    let box: { x: number; y: number; w: number; h: number };
+    if (region) {
+      box = region;
+    } else {
+      const xs = elements.map((e) => e.rect.x), ys = elements.map((e) => e.rect.y);
+      const xe = elements.map((e) => e.rect.x + e.rect.w), ye = elements.map((e) => e.rect.y + e.rect.h);
+      const pad = 16;
+      const x0 = Math.max(0, Math.min(...xs) - pad), y0 = Math.max(0, Math.min(...ys) - pad);
+      box = { x: x0, y: y0, w: Math.min(size.width, Math.max(...xe) + pad) - x0, h: Math.min(size.height, Math.max(...ye) + pad) - y0 };
+    }
+    const png = await run.live.cropShot(box);
+    const blob = png ? putBlob(session.id, png, "image/png") : null;
+
+    const styleChanges: StyleChange[] = Array.isArray(body.styleChanges)
+      ? body.styleChanges.slice(0, 20).map((c: any) => ({
+        property: String(c?.property ?? "").slice(0, 40), from: String(c?.from ?? "").slice(0, 80), to: String(c?.to ?? "").slice(0, 80),
+      })).filter((c: StyleChange) => c.property && c.to)
+      : [];
+    const textEdit = body.textEdit && typeof body.textEdit === "object"
+      ? { from: String(body.textEdit.from ?? "").slice(0, 2000), to: String(body.textEdit.to ?? "").slice(0, 2000) }
+      : undefined;
+    const comment: ReviewComment = {
+      id: `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`,
+      kind, text, elements, ...(region ? { region } : {}),
+      ...(textEdit && textEdit.from !== textEdit.to ? { textEdit } : {}),
+      styleChanges, blob,
+      scroll: { x: scroll?.x ?? 0, y: scroll?.y ?? 0 },
+      viewport: size, ts: Date.now(),
+    };
+    run.comments.push(comment);
+    broadcastPreview(session);
+    res.json({ ok: true, comment });
+  });
+
+  app.post("/api/sessions/:id/preview/comments/:cid", (req: Request, res: Response) => {
+    const ctx = withPreview(req, res);
+    if (!ctx) return;
+    const comment = ctx.run.comments.find((c) => c.id === req.params.cid);
+    if (!comment) return res.status(404).json({ error: "No such comment." });
+    if (typeof req.body?.text === "string") comment.text = req.body.text.trim().slice(0, 2000);
+    broadcastPreview(ctx.session);
+    res.json({ ok: true, comment });
+  });
+
+  app.delete("/api/sessions/:id/preview/comments/:cid", (req: Request, res: Response) => {
+    const ctx = withPreview(req, res);
+    if (!ctx) return;
+    const before = ctx.run.comments.length;
+    ctx.run.comments = ctx.run.comments.filter((c) => c.id !== req.params.cid);
+    if (ctx.run.comments.length === before) return res.status(404).json({ error: "No such comment." });
+    broadcastPreview(ctx.session);
+    res.json({ ok: true });
+  });
+
+  /* The review, sent: every comment as one message, each with its picture
+     attached, so one turn answers all of them. */
+  app.post("/api/sessions/:id/preview/send", (req: Request, res: Response) => {
+    const ctx = withPreview(req, res);
+    if (!ctx) return;
+    const { session, run } = ctx;
+    const comments = run.comments;
+    const note = typeof req.body?.text === "string" ? req.body.text.trim().slice(0, 2000) : "";
+    if (comments.length === 0 && !note) return res.status(400).json({ error: "There is nothing to send yet." });
+    const refs: AttachmentRef[] = [];
+    comments.forEach((c, i) => {
+      const blob = c.blob ? getBlob(c.blob) : null;
+      if (!blob) return;
+      try {
+        const saved = saveArtifact({
+          origin: "user", name: `review-${i + 1}.png`, data: blob.data, mime: "image/png", session: session.id,
+          note: `A picture from the app review, comment ${i + 1}`,
+        });
+        refs.push({ id: saved.id, name: saved.name, mime: saved.mime, size: saved.size });
+      } catch {
+        // A picture that cannot be kept is not worth losing the comment for.
+      }
+    });
+    const errors = run.live.consoleTail(8).filter((e) => e.kind === "error").map((e) => e.text);
+    const body = reviewMessage({
+      url: run.url ?? "", viewport: run.live.viewport(), device: DEVICES[run.device].label, comments, consoleErrors: errors,
+    });
+    const text = note ? `${note}\n\n${body}` : body;
+    const count = comments.length;
+    run.comments = [];
+    emitEvent(session, "preview.review", "user", { count });
+    broadcastPreview(session);
+    res.json({ ok: true, queued: false });
+    void startTurn(session, text, refs, {
+      shown: count > 0 ? `Reviewed the app: ${count} comment${count === 1 ? "" : "s"}${note ? ` -- ${note}` : ""}` : note,
+    });
+  });
+
   app.post("/api/sessions/:id/browser/scroll", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
-    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = browsers.get(session.id);
+    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
+    const live = targetBrowser(session, req);
     if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
 
     const dx = Number(req.body?.dx ?? 0);
@@ -4790,8 +5069,8 @@ async function startServer() {
   app.post("/api/sessions/:id/browser/reload", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
-    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = browsers.get(session.id);
+    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
+    const live = targetBrowser(session, req);
     if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
 
     try {
@@ -4805,8 +5084,8 @@ async function startServer() {
   app.post("/api/sessions/:id/browser/back", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
-    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = browsers.get(session.id);
+    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
+    const live = targetBrowser(session, req);
     if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
 
     try {
@@ -4820,8 +5099,8 @@ async function startServer() {
   app.post("/api/sessions/:id/browser/click", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
-    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = browsers.get(session.id);
+    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
+    const live = targetBrowser(session, req);
     if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
 
     const x = Number(req.body?.x);
@@ -4843,8 +5122,8 @@ async function startServer() {
   app.post("/api/sessions/:id/browser/move", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
-    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = browsers.get(session.id);
+    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
+    const live = targetBrowser(session, req);
     if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
 
     const x = Number(req.body?.x);
@@ -4866,8 +5145,8 @@ async function startServer() {
   app.post("/api/sessions/:id/browser/drag", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
-    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = browsers.get(session.id);
+    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
+    const live = targetBrowser(session, req);
     if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
 
     const phase = req.body?.phase === "start" ? "start" : req.body?.phase === "end" ? "end" : "move";
@@ -4889,8 +5168,8 @@ async function startServer() {
   app.post("/api/sessions/:id/browser/choose", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
-    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = browsers.get(session.id);
+    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
+    const live = targetBrowser(session, req);
     if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
 
     const x = Number(req.body?.x);
@@ -4911,8 +5190,8 @@ async function startServer() {
   app.post("/api/sessions/:id/browser/type", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
-    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = browsers.get(session.id);
+    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
+    const live = targetBrowser(session, req);
     if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
 
     const text = String(req.body?.text ?? "");
@@ -4927,8 +5206,8 @@ async function startServer() {
   app.post("/api/sessions/:id/browser/key", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
-    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = browsers.get(session.id);
+    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
+    const live = targetBrowser(session, req);
     if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
 
     const key = String(req.body?.key ?? "");
@@ -4945,8 +5224,8 @@ async function startServer() {
   app.post("/api/sessions/:id/browser/navigate", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
-    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = browsers.get(session.id);
+    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
+    const live = targetBrowser(session, req);
     if (!live) return res.status(400).json({ error: "No browser active." });
 
     const url = String(req.body?.url ?? "").trim();
@@ -5026,29 +5305,6 @@ async function startServer() {
     }
 
     res.json({ ok: true, approved, who });
-  });
-
-  /* 7b. Session Kanban Updates -- the person's own hand on the board.
-     A card dragged here goes through the same rules the agent's kanban tool
-     writes through (server/board.ts), so a card the person moved and a card
-     the agent moved cannot disagree about what the board is; and because both
-     write the whole board into the session's events, each one reads the
-     other's work before changing anything. */
-  app.post("/api/sessions/:id/kanban", (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-
-    const { taskId, newStatus, task } = req.body ?? {};
-    const action: Record<string, any> =
-      taskId && newStatus
-        ? { action: "move", task: taskId, status: newStatus }
-        : task?.title
-          ? { action: "add", task: String(task.title), status: task.status }
-          : { action: "show" };
-
-    const result = applyBoard(latestBoard(session.events), action);
-    if (result.board) emitEvent(session, "kanban.update", "user", result.board as any);
-    res.json({ ok: result.ok, tasks: result.board?.tasks ?? [], detail: result.summary });
   });
 
   // 8. Memory / Knowledge Web
@@ -5390,31 +5646,32 @@ async function startServer() {
     res.json({ ok: true });
   });
 
-  /** A message to every channel that is set up, to see it arrive. */
+  /** A message to every device that has asked, to see it arrive. */
   app.post("/api/push/test", async (_req: Request, res: Response) => {
-    const tokens = pushTokens();
-    if (readyChannels(state.push, tokens).length === 0) {
-      return res.status(400).json({ error: "Nothing is set up to send to yet: turn on ntfy or Telegram and fill it in first." });
+    if (readyChannels(webPush).length === 0) {
+      return res.status(400).json({ error: "No device is set up to be notified yet: turn on notifications on this device first." });
     }
     const results = await deliver({
       title: "Autora can reach you here",
       body: "This is where it will tell you when a schedule runs, when it notices something, and when it needs you.",
       url: appLink(),
-    }, state.push, tokens);
+    }, webPush);
     for (const d of results) log(d.ok ? "info" : "warn", "push", `test to ${d.channel}: ${d.ok ? "sent" : d.error}`);
     res.json({ results });
   });
 
-  /** The chats that have messaged the bot, so the person can pick theirs
-      instead of looking up a chat id. A POST: it reaches out to Telegram. */
-  app.post("/api/push/telegram/chats", async (_req: Request, res: Response) => {
-    const token = secretFor(TELEGRAM_TOKEN);
-    if (!token) return res.status(400).json({ error: "Save the bot's token first." });
-    try {
-      res.json({ chats: await telegramChats(token) });
-    } catch (err: any) {
-      res.status(502).json({ error: redactSecrets(String(err?.message ?? err)) });
-    }
+  /** This device asks to be told things. The subscription is the browser's
+      own; only a well-formed one, to a real https push service, is kept. */
+  app.post("/api/push/web/subscribe", (req: Request, res: Response) => {
+    const sub = cleanSubscription(req.body?.subscription, req.body?.label);
+    if (!sub) return res.status(400).json({ error: "That is not a subscription this can send to." });
+    webPush.add(sub);
+    res.json({ ok: true, devices: webPush.list() });
+  });
+
+  app.post("/api/push/web/unsubscribe", (req: Request, res: Response) => {
+    const endpoint = String(req.body?.endpoint ?? "");
+    res.json({ ok: true, removed: webPush.remove(endpoint), devices: webPush.list() });
   });
 
   app.get("/api/notices", (req: Request, res: Response) => {
@@ -5516,6 +5773,8 @@ async function startServer() {
       auto_order: AUTO_ORDER,
       system_prompt: state.systemPrompt,
       system_prompt_limit: 8000,
+      timezone: state.timezone,
+      machine_timezone: machineTimezone(),
       catalog,
       prices_checked: PRICES_CHECKED,
       budget_usd: state.budgetUsd,
@@ -5583,47 +5842,16 @@ async function startServer() {
     /* Where news reaches the phone. The two tokens as whether they are set
        and where from, never the tokens themselves. */
     push: {
-      ntfy: { ...state.push.ntfy },
-      telegram: { ...state.push.telegram },
       on: { ...state.push.on },
-      tokens: { ntfy: tokenState(NTFY_TOKEN), telegram: tokenState(TELEGRAM_TOKEN) },
-      ready: readyChannels(state.push, pushTokens()),
-    },
-    jev: {
-      enabled: state.jev.enabled,
-      threshold: state.jev.threshold,
-      // Never the key itself: whether one is set, and where it came from.
-      key: (() => {
-        const { key, source, name } = jevKey();
-        return { set: Boolean(key), source, name, masked: maskKey(key) };
-      })(),
-      backend: jevKey().key ? "hosted" : "model",
-      support: supportFor(jevTarget()),
-      last: lastDecision(),
+      ready: readyChannels(webPush),
+      /* The installed app's own notifications: the key a browser subscribes
+         with, and which devices have. Endpoints are never sent back. */
+      web: { publicKey: webPush.publicKey(), devices: webPush.list() },
     },
     tools: {
       config: toolSettings(),
       groups: await groupStates(),
     },
-  });
-
-  /**
-   * Score a decision directly: `{ context, schema, instructions? }` in, the
-   * outcome out -- the programmatic payload with a confidence per field, or
-   * the reason it fell back. For scripts, and for checking a backend.
-   */
-  app.post("/api/jev/evaluate", async (req: Request, res: Response) => {
-    const body = req.body ?? {};
-    if (!body.schema || typeof body.schema !== "object") {
-      return res.status(400).json({ error: "A JSON schema is required." });
-    }
-    const outcome = await jevDecide(null, {
-      name: String(body.name ?? "api"),
-      context: String(body.context ?? ""),
-      schema: body.schema,
-      instructions: typeof body.instructions === "string" ? body.instructions : undefined,
-    });
-    res.json(outcome);
   });
 
   app.get("/api/settings", async (req: Request, res: Response) => {
@@ -5677,6 +5905,24 @@ async function startServer() {
       state.systemPrompt = body.system_prompt.slice(0, 8000);
     }
 
+    /* The clock schedules and quiet hours are read on. A name the runtime does
+       not know is refused rather than taken as UTC, and empty goes back to the
+       machine's. Every job is planned again: its next run is a moment in the
+       new zone, not the old one. */
+    if (typeof body.timezone === "string") {
+      const tz = body.timezone.trim();
+      if (tz && !validTimezone(tz)) {
+        return res.status(400).json({ detail: `"${tz}" is not a time zone (try Europe/Stockholm).` });
+      }
+      if (tz !== state.timezone) {
+        state.timezone = tz;
+        applyTimezone(tz);
+        for (const job of jobs) scheduler.plan(job);
+        saveJobs();
+        flushHeldPushes();
+      }
+    }
+
     // A key arrives only when someone typed one: an untouched field sends
     // nothing, and an empty string means "remove it", not "save a blank".
     if (body.credentials && typeof body.credentials === "object") {
@@ -5717,11 +5963,6 @@ async function startServer() {
     if (body.tools && typeof body.tools === "object") {
       updateToolSettings(body.tools);
     }
-    if (body.jev && typeof body.jev === "object") {
-      mergeJev(state.jev, body.jev);
-      // A new key is a new backend: forget what the old one taught us.
-      if (typeof body.jev.key === "string") resetHealth();
-    }
     if (body.appearance && typeof body.appearance === "object") mergeAppearance(state.appearance, body.appearance);
     /* How a picture challenge is answered. The key for a self-hosted solver
        comes from the panel like any other and is never sent back. */
@@ -5731,12 +5972,10 @@ async function startServer() {
       // Quiet hours switched off or moved: whatever they held can go now.
       flushHeldPushes();
     }
-    /* Phone notifications. A token arrives only when someone typed one, like
-       a provider key, and goes to the secret store; an empty string removes it. */
+    /* Phone notifications: which kinds of news are sent. Where they go is the
+       devices that asked, kept by server/webpush.ts. */
     if (body.push && typeof body.push === "object") {
       mergePush(state.push, body.push);
-      if (typeof body.push.ntfy_token === "string") setSecret(NTFY_TOKEN, body.push.ntfy_token);
-      if (typeof body.push.telegram_token === "string") setSecret(TELEGRAM_TOKEN, body.push.telegram_token);
     }
     /* Which voice speaks. It is checked while Deepgram is reachable at all: a
        typo saved here would otherwise only show up at the next sentence, in the
@@ -6034,7 +6273,9 @@ async function startServer() {
       out from the request rather than guessed, so the download it hands out
       already knows its own address. */
   const relayAddress = (req: Request) => {
-    const host = req.headers["host"] || `127.0.0.1:${PORT}`;
+    // Written into a script that runs on somebody's machine: only a plain
+    // host and port is used, whatever the header says.
+    const host = cleanHost(req.headers["host"]) ?? `127.0.0.1:${PORT}`;
     const encrypted = Boolean((req.socket as { encrypted?: boolean }).encrypted);
     const proto = encrypted || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
     return {
@@ -6200,6 +6441,13 @@ async function startServer() {
         void openBrowser.nudge();
       }
 
+      /* The app window, if one is open: its state, and a frame to start from. */
+      const openPreview = previews.get(sessionId);
+      if (openPreview?.opened) {
+        ws.send(JSON.stringify({ type: "preview", session: sessionId, state: previewState(session) }));
+        void openPreview.live.nudge();
+      }
+
       // Handle incoming messages
       ws.on("message", (data: string) => {
         try {
@@ -6350,6 +6598,12 @@ async function startServer() {
       dropSession(id);
     }
     browsers.clear();
+    for (const [, run] of previews) {
+      if (run.job) stopJob(run.job);
+      await run.serve?.close().catch(() => undefined);
+      await run.live.close().catch(() => undefined);
+    }
+    previews.clear();
     flushStore();
     flushState();
     // stdio MCP servers are child processes; do not leave them running.

@@ -7,7 +7,10 @@
  * for that reason.
  */
 export type LiveFrame = {
-  source: "browser" | "desktop";
+  source: "browser" | "desktop" | "preview";
+  /** The window's size, sent with app-preview frames (it changes by device). */
+  w?: number;
+  h?: number;
   /** base64, no data: prefix -- the mime is alongside. */
   data: string;
   mime: string;
@@ -76,14 +79,16 @@ export const Kind = {
   /** One-tap follow-ups offered under a finished reply. */
   SuggestNext: "suggest.next",
   FileEdit: "file.edit",
+  TodoUpdate: "todo.update",
+  ModeSwitch: "mode.switch",
+  PreviewOpen: "preview.open",
+  /** Recorded before the to-do list; still read. */
   KanbanUpdate: "kanban.update",
   PermissionRequest: "permission.request",
   PermissionDecision: "permission.decision",
   /** The agent stopped to ask the person something; and the answer. */
   AskRequest: "ask.request",
   AskAnswer: "ask.answer",
-  /** A decision scored by Jev Mode, or handed back to normal reasoning. */
-  JevDecision: "jev.decision",
   Log: "system.log",
   /** One model call's tokens and cost, and how full the context now is. */
   UsageTurn: "usage.turn",

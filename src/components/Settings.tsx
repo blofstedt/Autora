@@ -9,6 +9,7 @@ import { VoiceCard } from "./VoiceCard";
 import { CaptchaCard } from "./CaptchaCard";
 import { AutomationCard } from "./AutomationCard";
 import { QuietCard } from "./QuietCard";
+import { TimeZoneCard } from "./TimeZoneCard";
 import { NotifyCard } from "./NotifyCard";
 import { RelaySetup } from "./RelaySetup";
 import { Billing } from "./Billing";
@@ -121,7 +122,6 @@ type SettingsState = {
   state_file: string;
   credentials: Credential[];
   tools: { config: ToolConfig; groups: ToolGroupState[] };
-  jev?: JevState;
   active: {
     model: string | null;
     endpoint: string | null;
@@ -268,7 +268,7 @@ export function Settings({
    * Everything but keys saves itself, a moment after the last change.
    *
    * There used to be one Save button in the corner for the whole page, while
-   * tools, themes and Jev saved the instant they changed -- two rules on one
+   * tools and themes saved the instant they changed -- two rules on one
    * screen, and leaving the page before finding the button lost the edit. Keys
    * are the exception: half a key saved on a pause in typing is worse than
    * none, so a key is saved with its own button (or Enter, or a passing
@@ -604,7 +604,6 @@ export function Settings({
 
         <ToolsCard tools={state.tools} onSaved={setState} />
 
-        {state.jev && <JevCard jev={state.jev} onSaved={setState} />}
         </>}
 
         {section && shows("keys") && (
@@ -719,6 +718,7 @@ export function Settings({
 
         {shows("config") && <VoiceCard />}
         {shows("config") && <CaptchaCard />}
+        {shows("config") && <TimeZoneCard />}
         {shows("config") && <QuietCard />}
         {shows("config") && <NotifyCard />}
         {shows("config") && <AutomationCard />}
@@ -1059,157 +1059,6 @@ function ProviderRow({
  * capability switch that needs a second click somewhere else to take effect is
  * how you end up believing the terminal is off when it is not.
  */
-type JevState = {
-  enabled: boolean;
-  threshold: number;
-  /** The hosted Jev API key: whether one is set, never the key itself. */
-  key?: { set: boolean; source: "app" | "secret" | "env" | null; name?: string; masked: string };
-  backend?: "hosted" | "model";
-  support: { state: "yes" | "no" | "unknown"; reason?: string };
-  last: {
-    task: string; mode: "jev" | "fallback"; ms: number; fields: number;
-    min: number | null; reason?: string; at: number;
-  } | null;
-};
-
-/**
- * Jev Mode: fast, scored decisions.
- *
- * Says plainly whether the current model can do it -- most reasoning models
- * and Anthropic's API cannot, because they do not return token probabilities
- * -- and what the last decision did, so "is this doing anything?" has an
- * answer on the page.
- */
-function JevCard({ jev, onSaved }: { jev: JevState; onSaved: (next: SettingsState) => void }) {
-  const [threshold, setThreshold] = useState(jev.threshold);
-  const [error, setError] = useState<string | null>(null);
-  const [keyDraft, setKeyDraft] = useState("");
-  useEffect(() => setThreshold(jev.threshold), [jev.threshold]);
-
-  const patch = async (change: { enabled?: boolean; threshold?: number; key?: string }) => {
-    setError(null);
-    try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jev: change }),
-      });
-      const body = await res.json();
-      if (!res.ok) { setError(body.detail ?? "Could not change that."); return; }
-      if (change.key !== undefined) setKeyDraft("");
-      onSaved(body);
-    } catch {
-      setError("Could not reach the server.");
-    }
-  };
-
-  const support = !jev.enabled
-    ? { cls: "", text: "off" }
-    : jev.support.state === "yes"
-      ? { cls: "ok", text: "active" }
-      : jev.support.state === "no"
-        ? { cls: "warn", text: "unavailable" }
-        : { cls: "", text: "ready" };
-
-  return (
-    <section className="set-card">
-      <div className="tool-head">
-        <h3 style={{ margin: 0 }}>Quick decisions (Jev)</h3>
-        <span className={`tool-state ${support.cls}`}>{support.text}</span>
-        <div className="spacer" />
-        <button
-          className={`job-switch ${jev.enabled ? "on" : ""}`}
-          role="switch"
-          aria-checked={jev.enabled}
-          aria-label={`Quick decisions: ${jev.enabled ? "on" : "off"}`}
-          onClick={() => void patch({ enabled: !jev.enabled })}
-        >
-          <span className="job-knob" />
-        </button>
-      </div>
-      <p className="jf-hint">
-        Makes small yes/no choices fast and cheaply, and hands anything uncertain
-        to the model as usual.
-      </p>
-      <details className="set-more">
-        <summary>How it works</summary>
-        <p className="jf-hint">
-          Quick decisions with a fixed set of answers are scored all at once
-          instead of written out: every option's probability is read in one
-          parallel pass, and the answer is taken only if each part of it clears
-          the confidence threshold. Anything less certain goes to the model's
-          normal reasoning, exactly as before. It decides three things: which
-          memories each turn recalls; whether a message needs an answer, action,
-          or a clarifying question first; and, for commands that could destroy
-          something, whether it looks destructive and unasked-for — in which case
-          the agent must ask you before it runs.
-        </p>
-      </details>
-      <p className="jf-hint">
-        {jev.backend === "hosted"
-          ? "Decisions go to the hosted Jev API (TypeSafe), whatever chat model you use."
-          : "No Jev API key is set, so decisions are scored by the chat model itself, " +
-            "which only works for models that return token probabilities (not Anthropic's)."}
-      </p>
-      {/* A row: .jf-row is a column, and in one the key field's 220px basis
-          was its height -- a box a fifth of the screen tall. */}
-      <div className="jf-row" style={{ display: "flex", flexDirection: "row", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <input
-          type="password"
-          autoComplete="off"
-          spellCheck={false}
-          placeholder={jev.key?.set
-            ? (jev.key.source === "env"
-                ? `Jev key from the server environment (${jev.key.name})`
-                : jev.key.source === "secret"
-                  ? `Jev key from Secrets (${jev.key.name}, ${jev.key.masked})`
-                  : `Jev key saved (${jev.key.masked})`)
-            : "Jev API key (jev_...)"}
-          value={keyDraft}
-          onChange={(e) => setKeyDraft(e.target.value)}
-          aria-label="Jev API key"
-          style={{ flex: "1 1 220px", minWidth: 0 }}
-        />
-        <button
-          className="btn"
-          disabled={!keyDraft.trim()}
-          onClick={() => void patch({ key: keyDraft.trim() })}
-        >
-          Save key
-        </button>
-        {jev.key?.source === "app" && (
-          <button className="btn" onClick={() => void patch({ key: "" })}>Remove</button>
-        )}
-      </div>
-      {jev.enabled && jev.support.state === "no" && jev.support.reason && (
-        <p className="set-warn">{jev.support.reason} Autora uses its normal path instead.</p>
-      )}
-      <label className="jf-row">
-        <span>Confidence threshold · {threshold.toFixed(2)}</span>
-        <input
-          type="range" min={0.5} max={0.99} step={0.01}
-          value={threshold}
-          onChange={(e) => setThreshold(Number(e.target.value))}
-          onPointerUp={() => void patch({ threshold })}
-          onKeyUp={() => void patch({ threshold })}
-          aria-label="Confidence threshold"
-          style={{ "--fill": `${((threshold - 0.5) / 0.49) * 100}%` } as React.CSSProperties}
-        />
-      </label>
-      {jev.last && (
-        <p className="jf-hint">
-          Last: {jev.last.task} ·{" "}
-          {jev.last.mode === "jev"
-            ? `fast path, ${jev.last.fields} fields in ${jev.last.ms} ms, lowest confidence ${
-                (jev.last.min ?? 0).toFixed(2)}`
-            : `fell back (${jev.last.reason ?? "unknown"})`}
-        </p>
-      )}
-      {error && <p className="set-warn">{error}</p>}
-    </section>
-  );
-}
-
 function ToolsCard({
   tools, onSaved,
 }: {

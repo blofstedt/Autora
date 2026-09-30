@@ -49,7 +49,7 @@ export interface Trigger {
 
 /** Long enough that guessing is not a strategy, and short enough to paste. */
 export function newId(): string {
-  return `trig-${Date.now().toString(36)}-${crypto.randomBytes(2).toString("hex")}`;
+  return `trig-${Date.now().toString(36)}-${crypto.randomBytes(4).toString("hex")}`;
 }
 
 export function newToken(): string {

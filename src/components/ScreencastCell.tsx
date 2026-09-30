@@ -677,6 +677,16 @@ export function ScreencastCell({
         </div>
       )}
 
+      {/* The same words, under the picture, for a phone: over it, the pill
+          hid the part of the page the agent was about to act on. The height
+          is held while the page is live, so a line coming and going does not
+          move the picture. */}
+      {stageSrc && watching && (
+        <div className={`shot-caption-bar${canUse && typing ? " is-typing" : ""}`} aria-live="polite">
+          {canUse && typing ? "typing into the page" : driving && latest ? latest : "\u00a0"}
+        </div>
+      )}
+
       {logCount > 0 && !max && (
         <div
           ref={logRef}

@@ -161,6 +161,11 @@ export interface SolverDeps {
   /** Something to say in the activity feed, with where it happened. */
   log: (what: string, at?: Point | null) => void;
   sleep: (ms: number) => Promise<void>;
+  /** What challenge is showing now. The page's own frames unless a host says
+      otherwise; here so the loop can be run against a scripted page. */
+  find?: () => Promise<Challenge | null>;
+  /** How long one backend may take to answer before it is given up on. */
+  answerTimeoutMs?: number;
 }
 
 /** Where a frame sits on the page, so a rect inside it can be made absolute. */
@@ -183,7 +188,11 @@ async function frameOrigin(frame: any): Promise<Point> {
 async function rectsIn(frame: any, selectors: string[], origin: Point): Promise<Rect[]> {
   let found: { x: number; y: number; w: number; h: number }[] = [];
   try {
-    found = await frame.evaluate(`((sels) => {
+    /* Called, not just written: a string handed to evaluate is an expression,
+       and an arrow function that is never invoked evaluates to nothing -- so
+       this returned undefined, and every widget looked as if it had no
+       squares at all. */
+    const raw = await frame.evaluate(`((sels) => {
       const out = [];
       for (const sel of sels) {
         for (const el of document.querySelectorAll(sel)) {
@@ -193,7 +202,8 @@ async function rectsIn(frame: any, selectors: string[], origin: Point): Promise<
         if (out.length) break;
       }
       return out;
-    })`, selectors);
+    })(${JSON.stringify(selectors)})`);
+    found = Array.isArray(raw) ? raw : [];
   } catch {
     return [];
   }
@@ -669,6 +679,8 @@ export interface Answer {
   slide: number | null;
   /** Words only: the characters read out of the picture. */
   text?: string | null;
+  /** The model said, outright, that nothing matches. */
+  none?: boolean;
   /** Why it could not answer, when it could not. */
   why?: string;
 }
@@ -705,10 +717,18 @@ export function parseAnswer(text: string): Answer {
     return { ...none, why: "the model's JSON did not parse" };
   }
 
-  const numbers = (v: any): number[] =>
-    Array.isArray(v) ? v.map((n) => Number(n)).filter((n) => Number.isFinite(n)) : [];
+  /* A list, a lone number, or digits in a sentence: the probe asks for
+     {"tile":4} and the grid for {"tiles":[3,7]}, and a model answers either
+     with either. A number that is not a whole square is dropped further on. */
+  const numbers = (v: any): number[] => {
+    if (Array.isArray(v)) return v.flatMap((n) => numbers(n));
+    if (typeof v === "number") return Number.isFinite(v) ? [v] : [];
+    if (typeof v === "string") return (v.match(/\d+/g) ?? []).map(Number);
+    return [];
+  };
 
-  const tiles = numbers(body.tiles ?? body.tile ?? body.squares ?? body.indices ?? body.answers).map((n) => Math.round(n));
+  const listed = body.tiles ?? body.tile ?? body.squares ?? body.indices ?? body.answers;
+  const tiles = numbers(listed).map((n) => Math.round(n));
   const points: Point[] = [];
   for (const raw of [body.points, body.clicks, body.click].flat().filter(Boolean)) {
     if (typeof raw === "object" && Number.isFinite(Number(raw?.x)) && Number.isFinite(Number(raw?.y))) {
@@ -725,12 +745,18 @@ export function parseAnswer(text: string): Answer {
     if (Number.isFinite(n)) { slide = n > 1.5 ? n / 100 : n; break; }
   }
   const typed = chars(body.text ?? body.letters ?? body.characters ?? body.words ?? body.answer ?? body.captcha);
+  /* "Nothing here matches" is an answer, and the only right one on the last
+     round of a grid that replaces squares, or where the widget says to skip
+     if there are none. It is said outright ({"tiles":[]}), which is not the
+     same as saying nothing: a list that was given and is empty. */
+  const nothing = Array.isArray(listed) && listed.length === 0 && !points.length && slide === null && !typed;
   return {
     tiles: [...new Set(tiles)].filter((n) => n >= 1 && n <= 64),
     points,
     slide,
     ...(typed ? { text: typed } : {}),
-    ...(tiles.length || points.length || slide !== null || typed ? {} : { why: "the model named nothing to click or type" }),
+    ...(nothing ? { none: true } : {}),
+    ...(tiles.length || points.length || slide !== null || typed || nothing ? {} : { why: "the model named nothing to click or type" }),
   };
 }
 
@@ -944,7 +970,7 @@ export function wordPictures(size: Bitmap, factor = 4): Buffer[] {
   return cleaned.equals(enlarged) ? [enlarged] : [cleaned, enlarged];
 }
 
-const sight = new Map<string, boolean>();
+const sight = new Map<string, { sees: boolean; at: number }>();
 
 /** A picture with one of nine squares inked in, for the sight test. */
 export function probeBitmap(cell: number): Bitmap {
@@ -979,37 +1005,58 @@ export function probeBitmap(cell: number): Bitmap {
  * Only a model that gets both right is asked anything else, and the verdict is
  * remembered per model, so it costs one small picture each.
  */
-async function sightCheck(deps: SolverDeps): Promise<boolean> {
-  if (!deps.vision) return false;
+/** How long "cannot see" is believed. A model that failed the test is not
+    asked again for a while, and then is: a key, a model or a setting may have
+    changed, and a verdict that outlived them would keep vision off for good. */
+const NO_SIGHT_TTL_MS = 10 * 60_000;
+
+/**
+ * Can the connected model read a picture at all?
+ *
+ * Asked once per model with a picture of nine squares, one inked, and cached
+ * -- but only what the model itself told us. A call that failed (the network,
+ * a rate limit, a timeout) says nothing about its eyes, and used to be cached
+ * as "blind" for the life of the process: one dropped connection switched
+ * vision off until a restart.
+ */
+async function sightCheck(deps: SolverDeps): Promise<{ sees: boolean; error?: string }> {
+  if (!deps.vision) return { sees: false };
   const name = deps.visionName?.() ?? "the connected model";
   const known = sight.get(name);
-  if (known !== undefined) return known;
-  let sees = true;
+  if (known && (known.sees || Date.now() - known.at < NO_SIGHT_TTL_MS)) return { sees: known.sees };
   for (const cell of [4, 9]) {
     let said = "";
     try {
-      said = await deps.vision(
-        `The picture is nine numbered squares, row by row, and exactly one of them is inked in. Which one? Reply as {"tile":N} with N from 1 to 9.`,
-        [encodePng(probeBitmap(cell))],
-      );
-    } catch {
-      sees = false;
-      break;
+      said = await timed(
+        deps.answerTimeoutMs ?? ANSWER_TIMEOUT_MS,
+        deps.vision(
+          `The picture is nine numbered squares, row by row, and exactly one of them is inked in. Which one? Reply as {"tile":N} with N from 1 to 9.`,
+          [encodePng(probeBitmap(cell))],
+        ),
+        null,
+      ) ?? "";
+      if (!said) return { sees: false, error: "no answer in time" };
+    } catch (err: any) {
+      return { sees: false, error: String(err?.message ?? err) };
     }
     if (!parseAnswer(said).tiles.includes(cell)) {
-      sees = false;
-      break;
+      sight.set(name, { sees: false, at: Date.now() });
+      return { sees: false };
     }
   }
-  sight.set(name, sees);
-  return sees;
+  sight.set(name, { sees: true, at: Date.now() });
+  return { sees: true };
 }
 
 /** The vision backend: the model that already runs this machine. */
 async function visionAnswer(deps: SolverDeps, challenge: Challenge): Promise<Answer> {
   const empty: Answer = { tiles: [], points: [], slide: null };
   if (!deps.vision) return { ...empty, why: "no image-reading model is connected" };
-  if (!(await sightCheck(deps))) {
+  const sees = await sightCheck(deps);
+  if (sees.error) {
+    return { ...empty, why: `the model could not be asked to prove it can see (${sees.error}); it is asked again next time` };
+  }
+  if (!sees.sees) {
     return {
       ...empty,
       why: `${deps.visionName?.() ?? "the connected model"} cannot see pictures -- it did not find the filled square in a test picture, and a model that cannot see answers a grid with confident wrong squares`,
@@ -1043,7 +1090,7 @@ async function visionAnswer(deps: SolverDeps, challenge: Challenge): Promise<Ans
     const answer = parseAnswer(said);
     // A model given tile numbers sometimes sends coordinates anyway; a model
     // given a picture sometimes sends fractions of it instead of pixels.
-    if (!answer.tiles.length && !answer.points.length && answer.slide === null && !answer.text) {
+    if (!answer.tiles.length && !answer.points.length && answer.slide === null && !answer.text && !answer.none) {
       return { ...empty, why: answer.why ?? "nothing usable came back" };
     }
     return answer;
@@ -1108,18 +1155,45 @@ async function remoteAnswer(deps: SolverDeps, challenge: Challenge): Promise<Ans
   }
 }
 
+/** How long one backend may take. A model that never answers must not hold
+    the turn, and the click that follows would be on a stale page anyway. */
+const ANSWER_TIMEOUT_MS = 60_000;
+
+/** The promise's value, or `late` if it takes longer than `ms`. */
+async function timed<T>(ms: number, promise: Promise<T>, late: T): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((resolve) => { timer = setTimeout(() => resolve(late), ms); }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function answerFrom(deps: SolverDeps, backend: CaptchaBackend, challenge: Challenge): Promise<Answer> {
-  if (backend === "local") return localAnswer(deps, challenge);
-  if (backend === "vision") return visionAnswer(deps, challenge);
-  return remoteAnswer(deps, challenge);
+  const asked = backend === "local"
+    ? localAnswer(deps, challenge)
+    : backend === "vision"
+      ? visionAnswer(deps, challenge)
+      : remoteAnswer(deps, challenge);
+  const late: Answer = { tiles: [], points: [], slide: null, why: `${backend} did not answer in time` };
+  return timed(deps.answerTimeoutMs ?? ANSWER_TIMEOUT_MS, asked.catch((err): Answer => ({
+    tiles: [], points: [], slide: null, why: `${backend} failed (${err?.message ?? err})`,
+  })), late);
 }
 
 /* --------------------------------------------------------------- acting -- */
 
 /** Turn an answer into clicks on the page, and say what was done. */
-async function act(deps: SolverDeps, challenge: Challenge, backend: CaptchaBackend, answer: Answer): Promise<string> {
-  const size = { w: challenge.box.w, h: challenge.box.h };
-
+async function act(
+  deps: SolverDeps,
+  challenge: Challenge,
+  backend: CaptchaBackend,
+  answer: Answer,
+  verify = true,
+): Promise<string> {
   if (challenge.kind === "words") {
     if (!answer.text) return "no characters to type";
     if (!challenge.field) return "the box to type them into could not be found";
@@ -1149,6 +1223,25 @@ async function act(deps: SolverDeps, challenge: Challenge, backend: CaptchaBacke
     return `dragged ${Math.round(to.x - from.x)}px`;
   }
 
+  const chosen = pointsFor(challenge, answer);
+  if (!chosen.length) {
+    // Nothing matches is only ever an answer the widget can be given by
+    // pressing its button with nothing chosen -- see solveChallenge.
+    return "nothing to click";
+  }
+
+  for (const at of chosen) {
+    deps.log(`captcha: click square ${chosen.indexOf(at) + 1} (${backend})`, at);
+    await deps.click(at);
+    await deps.sleep(320);
+  }
+  if (verify) await pressVerify(deps, challenge);
+  return `clicked ${chosen.length} square${chosen.length === 1 ? "" : "s"}`;
+}
+
+/** Where an answer's squares and points are, on the page. */
+function pointsFor(challenge: Challenge, answer: Answer): Point[] {
+  const size = { w: challenge.box.w, h: challenge.box.h };
   const chosen: Point[] = [];
   for (const index of answer.tiles) {
     const tile = challenge.tiles.find((t) => t.index === index);
@@ -1161,20 +1254,26 @@ async function act(deps: SolverDeps, challenge: Challenge, backend: CaptchaBacke
     const frac = { x: raw.x > 1.5 ? raw.x / (challenge.box.w || 1) : raw.x, y: raw.y > 1.5 ? raw.y / (challenge.box.h || 1) : raw.y };
     chosen.push({ x: challenge.box.x + frac.x * size.w, y: challenge.box.y + frac.y * size.h });
   }
-  if (!chosen.length) return "nothing to click";
-
-  for (const at of chosen) {
-    deps.log(`captcha: click square ${chosen.indexOf(at) + 1} (${backend})`, at);
-    await deps.click(at);
-    await deps.sleep(320);
-  }
-  if (challenge.verify) {
-    const at = { x: challenge.verify.x + challenge.verify.w / 2, y: challenge.verify.y + challenge.verify.h / 2 };
-    deps.log("captcha: press Check", at);
-    await deps.click(at);
-  }
-  return `clicked ${chosen.length} square${chosen.length === 1 ? "" : "s"}`;
+  return chosen;
 }
+
+async function pressVerify(deps: SolverDeps, challenge: Challenge): Promise<boolean> {
+  if (!challenge.verify) return false;
+  const at = { x: challenge.verify.x + challenge.verify.w / 2, y: challenge.verify.y + challenge.verify.h / 2 };
+  deps.log("captcha: press Check", at);
+  await deps.click(at);
+  return true;
+}
+
+/** reCAPTCHA's grid that puts a new picture in each square you click, and
+    wants you to go on until none of them match. Verifying after one round is
+    an answer to a question the widget has already changed. */
+const REPLACES = /once there are none left|until there are none|none left|no more (?:images|pictures)/i;
+/** A grid that says the way out when nothing in it matches. */
+const MAY_SKIP = /if there are none|click skip|press skip|\bskip\b/i;
+/** Rounds of clicking on a grid that replaces its squares, at most. Each
+    round is a fresh look and a fresh answer, so this is also the cost. */
+const MAX_ROUNDS = 6;
 
 export interface SolveReport {
   outcome: "none" | "solved" | "giveup";
@@ -1197,63 +1296,160 @@ export interface SolveReport {
  */
 export async function solveChallenge(deps: SolverDeps): Promise<SolveReport> {
   const settings = deps.settings;
+  const find = () => (deps.find ? deps.find() : findChallenge(deps.page));
+  /* Nothing showing is a pass; a look that threw is not knowing. The two were
+     one `null`, so a page that could not be read was reported as solved. */
+  let lookFailed: string | null = null;
+  const look = async (): Promise<Challenge | null> => {
+    try {
+      lookFailed = null;
+      return await find();
+    } catch (err: any) {
+      lookFailed = String(err?.message ?? err);
+      return null;
+    }
+  };
   if (!settings.enabled) {
     return { outcome: "none", widget: null, backend: null, detail: "Picture challenges are set to be handed to the person (Settings, CAPTCHA)." };
   }
 
   const reasons: string[] = [];
   const budget = Math.max(1, settings.attempts);
+  /* Backends that answered, were acted on, and did not pass. The same answer
+     to the same kind of challenge is not going to work the second time, so the
+     next attempt starts with one that has not been tried. */
+  const failed = new Set<CaptchaBackend>();
+  /* Rounds of a replacing grid, across every attempt: one that never runs out
+     of matching squares is a widget that will not be satisfied, and clicking at
+     it for ever is a page being hammered. */
+  let spare = MAX_ROUNDS + 2;
 
   for (let attempt = 1; attempt <= budget; attempt += 1) {
-    const challenge = await findChallenge(deps.page).catch(() => null);
+    const challenge = await look();
     if (!challenge) {
+      if (lookFailed) {
+        return { outcome: "giveup", widget: null, backend: null, detail: `The page could not be read for a challenge (${lookFailed}), so nothing was clicked.` };
+      }
       return { outcome: "solved", widget: null, backend: null, detail: "The challenge is gone; the widget has passed." };
     }
     if (await deps.passed().catch(() => false)) {
       return { outcome: "solved", widget: challenge.widget, backend: null, detail: "The widget's own token says it passed." };
     }
 
-    for (const backend of settings.backends) {
+    const fresh = settings.backends.filter((b) => !failed.has(b));
+    if (fresh.length === 0) failed.clear();
+    const order = fresh.length ? fresh : settings.backends;
+
+    for (const backend of order) {
       const answer = await answerFrom(deps, backend, challenge);
+      const skippable = challenge.kind === "grid" && !!challenge.verify &&
+        (REPLACES.test(challenge.prompt) || MAY_SKIP.test(challenge.prompt));
       const spoke = answer.tiles.length || answer.points.length || answer.slide !== null || !!answer.text;
-      if (!spoke) {
+      if (!spoke && !(answer.none && challenge.kind === "grid")) {
         reasons.push(`${backend}: ${answer.why ?? "no answer"}`);
         continue;
       }
-      const did = await act(deps, challenge, backend, answer).catch((err) => `could not act (${err?.message ?? err})`);
+      // "Nothing here matches", to a widget with no way to say so, is not an
+      // answer to press through: an empty Check is a wrong answer to it.
+      if (!spoke && !skippable) {
+        reasons.push(`${backend}: it found nothing that matches, and ${challenge.widget} has no way to skip`);
+        continue;
+      }
+
+      const replaces = challenge.kind === "grid" && REPLACES.test(challenge.prompt);
+      let did: string;
+      if (!spoke) {
+        await pressVerify(deps, challenge);
+        did = "found nothing that matches, and pressed the button with nothing chosen";
+      } else {
+        did = await act(deps, challenge, backend, answer, !replaces).catch((err) => `could not act (${err?.message ?? err})`);
+        if (replaces && /^clicked/.test(did)) {
+          const more = await goOn(deps, backend, challenge, look, Math.min(MAX_ROUNDS, spare + 1));
+          spare = Math.max(0, spare - (more.rounds - 1));
+          did += more.note;
+        }
+      }
       deps.log(`captcha: answered by ${backend} -- ${did}`);
+      // Nothing was clicked: the widget is exactly as it was, so what was
+      // looked at is still what is there, and the next backend may have its go.
+      if (/nothing to click|could not act|no characters|no distance|could not be found|nothing here can type/i.test(did)) {
+        reasons.push(`${backend}: ${did}`);
+        continue;
+      }
+
       await deps.sleep(1400);
       const after = await deps.passed().catch(() => false);
-      const still = await findChallenge(deps.page).catch(() => null);
+      const still = await look();
+      const stillFailed = lookFailed;
       if (after) {
         return { outcome: "solved", widget: challenge.widget, backend, detail: `${backend} answered it: ${did}.` };
       }
       // Its squares are redrawn between a click and the widget's verdict, so
       // one look that finds nothing is not a pass: ask again, and call it a
       // pass only when the second look finds nothing either.
-      if (!still) {
+      if (!still && stillFailed) {
+        reasons.push(`${backend}: ${did}, and the page could not be read afterwards (${stillFailed})`);
+      } else if (!still) {
         await deps.sleep(1200);
-        const gone = await findChallenge(deps.page).catch(() => null);
+        const gone = await look();
         const token = await deps.passed().catch(() => false);
-        if (token || !gone) {
+        if (token || (!gone && !lookFailed)) {
           return { outcome: "solved", widget: challenge.widget, backend, detail: `${backend} answered it: ${did}.` };
         }
         reasons.push(`${backend}: ${did}, and the challenge came back`);
-        continue;
+      } else {
+        reasons.push(`${backend}: ${did}, and ${challenge.widget} asked again`);
       }
-      if (still.kind === "grid" && /nothing to click|could not act/i.test(did)) {
-        reasons.push(`${backend}: ${did}`);
-        continue;
-      }
-      reasons.push(`${backend}: ${did}, and ${challenge.widget} asked again`);
+      /* It was clicked and it did not pass, so what is on the page is now a
+         new challenge -- new pictures, often a new question. The loop looks
+         again from the top rather than handing the old one to the next
+         backend, which is how a "buses" answer was once given to bicycles. */
+      failed.add(backend);
+      break;
     }
   }
 
   const worst = reasons.slice(-3).join("; ");
   return {
     outcome: "giveup",
-    widget: (await findChallenge(deps.page).catch(() => null))?.widget ?? null,
+    widget: (await look())?.widget ?? null,
     backend: null,
     detail: `Tried ${budget} time${budget === 1 ? "" : "s"}: ${worst || "no backend could answer"}.`,
   };
+}
+
+/**
+ * The rest of a grid that replaces what is clicked.
+ *
+ * Each square that was clicked gets a new picture, which may be one that
+ * matches too. So: wait for them to arrive, look, answer again, click what
+ * matches, and only when a round finds nothing (or the widget has passed, or
+ * the rounds are spent) press the button -- once.
+ */
+async function goOn(
+  deps: SolverDeps,
+  backend: CaptchaBackend,
+  first: Challenge,
+  look: () => Promise<Challenge | null>,
+  limit: number,
+): Promise<{ note: string; rounds: number }> {
+  let rounds = 1;
+  let last = first;
+  for (; rounds < limit; rounds += 1) {
+    await deps.sleep(2300);
+    if (await deps.passed().catch(() => false)) break;
+    const now = await look();
+    if (!now || now.kind !== "grid") break;
+    last = now;
+    const answer = await answerFrom(deps, backend, now);
+    const chosen = pointsFor(now, answer);
+    if (!chosen.length) break;
+    for (const at of chosen) {
+      deps.log(`captcha: click square ${chosen.indexOf(at) + 1} of round ${rounds + 1} (${backend})`, at);
+      await deps.click(at);
+      await deps.sleep(320);
+    }
+  }
+  await pressVerify(deps, last.verify ? last : first);
+  return { note: ` and went on for ${rounds} round${rounds === 1 ? "" : "s"}`, rounds };
 }

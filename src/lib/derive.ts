@@ -46,27 +46,31 @@ export type FileChange = {
   seq: number;
 };
 
-export type KanbanTask = {
+export type TodoItem = {
   id: string;
   title: string;
-  status: "todo" | "doing" | "done";
-  notes?: string;
-  tag?: string;
-  progress?: number;
-  subtasks?: {
-    id?: string;
-    title: string;
-    done: boolean;
-  }[];
+  status: "not-started" | "in-progress" | "completed";
 };
 
-export type KanbanBoard = {
-  id: string;
-  title: string;
-  tasks: KanbanTask[];
-  autonomous: boolean;
-  activeTaskId?: string | null;
-};
+/** Items as the page draws them; a list that predates the to-do list has its
+    old three columns mapped onto the three states. */
+function todoItems(raw: unknown): TodoItem[] {
+  if (!Array.isArray(raw)) return [];
+  const items: TodoItem[] = [];
+  for (const entry of raw) {
+    const title = String(entry?.title ?? "").trim();
+    if (!title) continue;
+    const status = String(entry?.status ?? "");
+    items.push({
+      id: String(entry?.id ?? items.length + 1),
+      title,
+      status: status === "completed" || status === "done"
+        ? "completed"
+        : status === "in-progress" || status === "doing" ? "in-progress" : "not-started",
+    });
+  }
+  return items;
+}
 
 export type PermissionPrompt = {
   requestId: string;
@@ -106,19 +110,6 @@ export type Ask = {
   open: boolean;
   answer?: { cancelled: boolean; choices: string[]; text: string; who: string };
   offer?: AskOffer;
-};
-
-/** A decision Jev Mode scored (or declined to), as the thread shows it. */
-export type JevDecision = {
-  task: string;
-  mode: "jev" | "fallback";
-  ms: number;
-  threshold: number;
-  min: number | null;
-  reason: string | null;
-  model: string | null;
-  cachedTokens: number;
-  fields: { name: string; value: unknown; confidence: number; coverage: number }[];
 };
 
 /** A memory, as the ribbon shows it: what it says, and what just happened to it. */
@@ -215,6 +206,9 @@ export type Cell =
   | {
       kind: "screen"; seq: number; source: "browser" | "desktop";
       url: string | null; shots: Shot[]; actions: string[]; live: boolean;
+      /** The last event that touched this card: what "following" the agent
+          reads to know it is here. Not `seq`, which is where the card began. */
+      touched?: number;
       /** What the agent said and did while it worked this page or desktop,
           shown inside the card rather than under it. See gatherScreenWork. */
       log: Cell[];
@@ -228,10 +222,19 @@ export type Cell =
   | { kind: "file"; seq: number; file: FileChange }
   | { kind: "tool"; seq: number; span: SpanState }
   | { kind: "note"; seq: number; tone: "bad" | "warn" | "plain"; text: string }
-  | { kind: "kanban"; seq: number; board: KanbanBoard }
+  /** Agent mode moving between planning and building: said in the thread,
+      where it happened, and nowhere else. */
+  | { kind: "mode"; seq: number; to: "plan" | "build"; reason: string }
+  /** The app window was opened here: a preview of what is being built. The
+      window itself is live state (lib/preview.ts); this marks where. */
+  | { kind: "app"; seq: number; url: string }
+  | {
+      kind: "todo"; seq: number; items: TodoItem[];
+      /** The last event that changed the list; `seq` is where it began. */
+      updated?: number;
+    }
   | { kind: "permission"; seq: number; prompt: PermissionPrompt }
   | { kind: "ask"; seq: number; ask: Ask }
-  | { kind: "jev"; seq: number; decision: JevDecision }
   | {
       kind: "learned"; seq: number; items: LearnedItem[];
       changes: { id: string; title: string; change: string }[];
@@ -431,6 +434,11 @@ export function derive(events: AutoraEvent[]): Derived {
   };
 
   const screenCell = (source: "browser" | "desktop", seq: number) => {
+    const cell = screenCellRaw(source, seq);
+    cell.touched = seq;
+    return cell;
+  };
+  const screenCellRaw = (source: "browser" | "desktop", seq: number) => {
     const cell = current();
     if (cell && cell.kind === "screen" && cell.source === source) return cell;
     // While the agent waits on a sign-in, what the person does in the page
@@ -457,10 +465,10 @@ export function derive(events: AutoraEvent[]): Derived {
 
       case Kind.UserMessage:
         transcript.push({
-          role: "user", text: e.payload.text ?? "", seq: e.seq, attachments: filesOf(e),
+          role: "user", text: e.payload.shown ?? e.payload.text ?? "", seq: e.seq, attachments: filesOf(e),
         });
         bucket = {
-          seq: e.seq, prompt: e.payload.text ?? "", attachments: filesOf(e),
+          seq: e.seq, prompt: e.payload.shown ?? e.payload.text ?? "", attachments: filesOf(e),
           cells: [], replies: [], open: true,
         };
         buckets.push(bucket);
@@ -777,24 +785,6 @@ export function derive(events: AutoraEvent[]): Derived {
         break;
       }
 
-      case Kind.JevDecision: {
-        push({
-          kind: "jev",
-          seq: e.seq,
-          decision: {
-            task: String(e.payload.task ?? "decision"),
-            mode: e.payload.mode === "jev" ? "jev" : "fallback",
-            ms: Number(e.payload.ms) || 0,
-            threshold: Number(e.payload.threshold) || 0.75,
-            min: typeof e.payload.min === "number" ? e.payload.min : null,
-            reason: e.payload.reason ? String(e.payload.reason) : null,
-            model: e.payload.model ? String(e.payload.model) : null,
-            cachedTokens: Number(e.payload.cached_tokens) || 0,
-            fields: Array.isArray(e.payload.fields) ? e.payload.fields : [],
-          },
-        });
-        break;
-      }
 
       case Kind.AskAnswer: {
         const ask = asks.get(String(e.payload.ask_id));
@@ -810,26 +800,23 @@ export function derive(events: AutoraEvent[]): Derived {
         break;
       }
 
+      /* The whole list arrives on every change, so the card is replaced, not
+         patched. A list from before the to-do list existed is a board of
+         tasks, and reads as the list it would have been. */
+      case Kind.TodoUpdate:
       case Kind.KanbanUpdate: {
-        const boardId = e.payload.id || "default";
-        const boardData: KanbanBoard = {
-          id: boardId,
-          title: e.payload.title || "Autonomous Task Board",
-          tasks: e.payload.tasks || [],
-          autonomous: Boolean(e.payload.autonomous),
-          activeTaskId: e.payload.activeTaskId,
-        };
-        const existing = bucket.cells.find(
-          (c): c is Extract<Cell, { kind: "kanban" }> => c.kind === "kanban" && c.board.id === boardId
-        );
-        if (existing) {
-          existing.board = boardData;
+        const items = todoItems(e.kind === Kind.TodoUpdate ? e.payload.items : e.payload.tasks);
+        const at = bucket.cells.findIndex((c) => c.kind === "todo");
+        if (items.length === 0) {
+          if (at >= 0) bucket.cells.splice(at, 1);
+          break;
+        }
+        const existing = at >= 0 ? bucket.cells[at] : null;
+        if (existing && existing.kind === "todo") {
+          existing.items = items;
+          existing.updated = e.seq;
         } else {
-          push({
-            kind: "kanban",
-            seq: e.seq,
-            board: boardData,
-          });
+          push({ kind: "todo", seq: e.seq, items, updated: e.seq });
         }
         break;
       }
@@ -961,6 +948,18 @@ export function derive(events: AutoraEvent[]): Derived {
         break;
       }
 
+      case Kind.PreviewOpen:
+        push({ kind: "app", seq: e.seq, url: typeof e.payload.url === "string" ? e.payload.url : "" });
+        break;
+
+      case Kind.ModeSwitch:
+        push({
+          kind: "mode", seq: e.seq,
+          to: e.payload.to === "build" ? "build" : "plan",
+          reason: typeof e.payload.reason === "string" ? e.payload.reason.slice(0, 160) : "",
+        });
+        break;
+
       case Kind.ContextNote:
         if (e.payload.text) {
           push({ kind: "note", seq: e.seq, tone: "plain", text: e.payload.text });
@@ -1072,7 +1071,7 @@ const COLOUR = /\u001b\[[0-?]*[ -/]*[@-~]/g;
     person has to answer or act on, and the pictures handed over. They sit
     beside the card without ending it -- a sign-in is part of working the
     page. Everything else said or done meanwhile is shown inside the card. */
-const KEPT_OUT = new Set<Cell["kind"]>(["ask", "permission", "kanban", "images", "widget"]);
+const KEPT_OUT = new Set<Cell["kind"]>(["ask", "permission", "todo", "images", "widget", "app", "mode"]);
 
 /** The screen card a still-running turn is working in, if it is in one. */
 const openBoxes = new WeakMap<Bucket, ScreenCell>();

@@ -123,6 +123,11 @@ export interface Ref {
   hint?: string;
   /** The fieldset, group or heading the field sits under. */
   section?: string;
+  /** Something is drawn over this element, so a click on it would land there
+      instead: a cookie bar, a newsletter pop-up, a sticky header. What it says. */
+  covered?: string;
+  /** The listed controls on that covering thing, to dismiss it with. */
+  coverRefs?: number[];
   /** A dropdown's choices, the first fifteen, and how many there are. */
   options?: string[];
   optionCount?: number;
@@ -763,8 +768,59 @@ const CURSOR_SCRIPT = `
  * inside one as not, and a div that is only clickable because of its cursor
  * is still something to click.
  */
+/**
+ * What is drawn over a point of an element, as page script.
+ *
+ * The outline lists everything that is visible, and a cookie bar or a
+ * newsletter pop-up is visible on top of things that are still listed as if
+ * they could be clicked -- so a click on one landed on the pop-up, did
+ * nothing the agent could see, and the agent tried again. This is the hit
+ * test a mouse would get: what is topmost at the element's centre, through
+ * open shadow roots and frames, and whether that is the element, part of it,
+ * or something holding it. It defines `coverOf(el, x, y)`, which is null for
+ * an element that can be clicked and otherwise says what is in the way.
+ */
+const COVER_FN = `
+  const coverUp = (n) => {
+    if (!n) return null;
+    if (n.nodeType === 9) { try { return n.defaultView && n.defaultView.frameElement; } catch (e) { return null; } }
+    return n.parentNode || n.host || null;
+  };
+  const coverInside = (n, anc) => {
+    for (let p = n, i = 0; p && i < 300; p = coverUp(p), i++) if (p === anc) return true;
+    return false;
+  };
+  const coverOf = (el, cx, cy) => {
+    const doc = el.ownerDocument;
+    const view = doc.defaultView;
+    try { if (view.getComputedStyle(el).pointerEvents === "none") return null; } catch (e) {}
+    let top = null;
+    try { top = doc.elementFromPoint(cx, cy); } catch (e) { return null; }
+    for (let i = 0; top && top.shadowRoot && i < 8; i++) {
+      const inner = top.shadowRoot.elementFromPoint(cx, cy);
+      if (!inner || inner === top) break;
+      top = inner;
+    }
+    if (!top) return null;
+    if (coverInside(top, el) || coverInside(el, top)) return null;
+    const words = (s) => String(s || "").replace(/\\s+/g, " ").trim();
+    let block = top.closest ? top.closest("dialog,[role=dialog],[role=alertdialog],[aria-modal=true]") : null;
+    if (!block) {
+      block = top;
+      for (let p = top, i = 0; p && p.nodeType === 1 && p !== doc.body && i < 14; p = p.parentElement, i++) {
+        const pos = view.getComputedStyle(p).position;
+        if (pos === "fixed" || pos === "sticky") block = p;
+      }
+    }
+    const said = words(block.getAttribute && block.getAttribute("aria-label")) ||
+      words(block.innerText !== undefined ? block.innerText : block.textContent);
+    return { block, label: (said.length > 70 ? said.slice(0, 69) + "\\u2026" : said) || String(block.tagName || "something").toLowerCase() };
+  };
+`;
+
 const SCAN_SCRIPT = `
 (() => {
+  ${COVER_FN}
   const SELECTOR = [
     "a[href]", "button", "input", "select", "textarea", "summary", "label",
     "[role=button]", "[role=link]", "[role=checkbox]", "[role=radio]",
@@ -1000,6 +1056,7 @@ const SCAN_SCRIPT = `
 
   const refs = [];
   const elements = [];
+  const blockers = [];
   const taken = new Set();
   const within = (el) => { for (let p = el.parentElement; p; p = p.parentElement) if (taken.has(p)) return p; return null; };
   for (const [el, dx, dy] of found) {
@@ -1099,12 +1156,26 @@ const SCAN_SCRIPT = `
     if (el.getAttribute("aria-current") && el.getAttribute("aria-current") !== "false") info.current = true;
     const dialog = dialogOf(el);
     if (dialog) info.dialog = dialogName(dialog);
+    if (inView) {
+      const hit = coverOf(el, box.left + box.width / 2, box.top + box.height / 2);
+      if (hit) { info.covered = hit.label; blockers.push([info, hit.block]); }
+    }
     refs.push(info);
     // The label, for a restyled checkbox: it is what is on screen to click.
     elements.push(el);
     taken.add(el);
   }
   window.__autoraRefs = elements;
+
+  /* What would dismiss the thing in the way: its own listed controls. */
+  for (const [info, block] of blockers) {
+    const controls = [];
+    for (let i = 0; i < elements.length && controls.length < 3; i++) {
+      if (refs[i].covered || refs[i].disabled || !block.contains(elements[i])) continue;
+      controls.push(i);
+    }
+    if (controls.length) info.coverRefs = controls;
+  }
 
   /* An open dialog sits on top of the page: whatever it asks comes first,
      and clicks behind it tend to land on it instead. */
@@ -1710,6 +1781,10 @@ function cookiesChanged() {
 
 /** One page, one screencast, one session's worth of browsing. */
 export class LiveBrowser {
+  /** The size this browser captures and renders at. The agent's browser is
+      always VIEWPORT; the app preview changes it to show a phone, a tablet or
+      a desktop (see resize). */
+  private vp: { width: number; height: number } = { ...VIEWPORT };
   private context: BrowserContext | null = null;
   private page: Page | null = null;
   private cdp: CDPSession | null = null;
@@ -1723,13 +1798,19 @@ export class LiveBrowser {
   /** Where the mouse is, so the next move starts from here rather than
       appearing out of nowhere. */
   private pointer: Point = {
-    x: Math.round(VIEWPORT.width * (0.3 + Math.random() * 0.4)),
-    y: Math.round(VIEWPORT.height * (0.3 + Math.random() * 0.4)),
+    x: Math.round(this.vp.width * (0.3 + Math.random() * 0.4)),
+    y: Math.round(this.vp.height * (0.3 + Math.random() * 0.4)),
   };
   private refs: Ref[] = [];
   private closing = false;
   /** A new tab's address being followed into this one. */
   private following: Promise<void> | null = null;
+  /** The page as the agent was last shown it, so that an action can be told
+      to have changed nothing. See sigOf. */
+  private lastSig = "";
+  /** The click held back because something covered its target. Asking for the
+      same one again, on the same page, means it. */
+  private heldClick: { ref: number; url: string } | null = null;
   private control: { holder: "agent" | "human" | "shared"; reason: string | null } = {
     holder: "agent",
     reason: null,
@@ -1738,7 +1819,14 @@ export class LiveBrowser {
       is impossible to read afterwards. */
   private queue: Promise<unknown> = Promise.resolve();
 
-  constructor(private hooks: BrowserHooks) {}
+  constructor(
+    private hooks: BrowserHooks,
+    /** The app preview's differences from the agent's browser: its own size,
+        and a sharper, wider stream, because it is for looking at a design. */
+    private opts: { viewport?: { width: number; height: number }; fps?: number; quality?: number; sharp?: boolean } = {},
+  ) {
+    if (opts.viewport) this.vp = { ...opts.viewport };
+  }
 
   // ------------------------------------------------------------- lifecycle --
 
@@ -1749,8 +1837,8 @@ export class LiveBrowser {
       url: this.page ? (this.currentUrl ?? null) : null,
       title: this.currentTitle,
       detail: probed?.detail ?? null,
-      fps: this.streaming ? LIVE_FPS : 0,
-      viewport: VIEWPORT,
+      fps: this.streaming ? this.opts.fps ?? LIVE_FPS : 0,
+      viewport: this.vp,
       control: this.control,
       fields: this.page ? this.fields : [],
     };
@@ -1800,6 +1888,9 @@ export class LiveBrowser {
     }
     claimed.add(this.page);
     this.wire(this.page);
+    if (this.vp.width !== VIEWPORT.width || this.vp.height !== VIEWPORT.height) {
+      await this.page.setViewportSize(this.vp).catch(() => undefined);
+    }
     await this.startStream();
     return this.page;
   }
@@ -1837,6 +1928,29 @@ export class LiveBrowser {
           await page.goto(next, { waitUntil: "domcontentloaded" }).catch(() => undefined);
         }
       })().finally(() => { this.following = null; });
+    });
+
+    /* What the page says to its own console, for whoever is building it: an
+       error the page throws is the first thing a developer looks for, and
+       the agent cannot see a console that only the screencast shows. */
+    page.on("console", (m: any) => {
+      const kind = String(m.type?.() ?? "log");
+      const said = String(m.text?.() ?? "");
+      // Chrome's own line for a failed fetch names no address; the response
+      // listener below says which one, and skips the icon every page is
+      // asked for and many do not have.
+      if (/^Failed to load resource/i.test(said)) return;
+      if (kind === "error" || kind === "warning" || kind === "warn") this.noteConsole(kind === "error" ? "error" : "warn", said);
+    });
+    page.on("pageerror", (err: any) => this.noteConsole("error", `Uncaught: ${String(err?.message ?? err)}`));
+    page.on("response", (res: any) => {
+      const status = Number(res.status?.() ?? 0);
+      const where = String(res.url?.() ?? "");
+      // Every page is asked for an icon it may not have; that is not its bug.
+      if (status >= 400 && !/\/favicon\.ico(\?|$)/.test(where)) this.noteConsole("error", `${status} ${where.slice(0, 160)}`);
+    });
+    page.on("requestfailed", (req: any) => {
+      this.noteConsole("error", `Request failed: ${String(req.url?.() ?? "").slice(0, 160)} (${String(req.failure?.()?.errorText ?? "")})`);
     });
 
     page.on("framenavigated", (frame: any) => {
@@ -1882,7 +1996,7 @@ export class LiveBrowser {
     this.wire(next);
     await cdp?.send("Page.stopScreencast").catch(() => undefined);
     await cdp?.detach().catch(() => undefined);
-    await next.setViewportSize(VIEWPORT).catch(() => undefined);
+    await next.setViewportSize(this.vp).catch(() => undefined);
     await next.bringToFront().catch(() => undefined);
     this.currentUrl = next.url();
     this.hooks.onAction(from ? "a sign-in window opened" : "the window closed; back to the page", null, this.currentUrl ?? "");
@@ -1927,9 +2041,11 @@ export class LiveBrowser {
     });
     await cdp.send("Page.startScreencast", {
       format: "jpeg",
-      quality: LIVE_QUALITY,
-      maxWidth: LIVE_WIDTH,
-      maxHeight: Math.round((LIVE_WIDTH / VIEWPORT.width) * VIEWPORT.height),
+      quality: this.opts.quality ?? LIVE_QUALITY,
+      maxWidth: this.opts.sharp ? Math.max(LIVE_WIDTH, this.vp.width) : LIVE_WIDTH,
+      maxHeight: this.opts.sharp
+        ? Math.max(Math.round((LIVE_WIDTH / this.vp.width) * this.vp.height), this.vp.height)
+        : Math.round((LIVE_WIDTH / this.vp.width) * this.vp.height),
       everyNthFrame: 1,
     });
     this.streaming = true;
@@ -1940,7 +2056,7 @@ export class LiveBrowser {
       it left the feed parked on the page mid-change until something else
       happened to move. */
   private forward(data: string) {
-    const wait = 1000 / LIVE_FPS - (Date.now() - this.lastFrameAt);
+    const wait = 1000 / (this.opts.fps ?? LIVE_FPS) - (Date.now() - this.lastFrameAt);
     if (wait <= 0) {
       this.lastFrameAt = Date.now();
       this.pendingFrame = null;
@@ -1972,13 +2088,85 @@ export class LiveBrowser {
     try {
       const shot: Buffer = await this.page.screenshot({
         type: "jpeg",
-        quality: LIVE_QUALITY,
+        quality: this.opts.quality ?? LIVE_QUALITY,
         scale: "css",
       });
       this.hooks.onFrame(shot.toString("base64"));
     } catch {
       // Mid-navigation. The next real frame is a moment away.
     }
+  }
+
+  // ------------------------------------------------ app preview (see preview.ts) --
+
+  /** The page's own console, newest last. */
+  private consoleLog: Array<{ kind: "error" | "warn"; text: string; ts: number }> = [];
+  private noteConsole(kind: "error" | "warn", text: string) {
+    const line = text.replace(/\s+/g, " ").trim().slice(0, 400);
+    if (!line) return;
+    const last = this.consoleLog[this.consoleLog.length - 1];
+    if (last && last.text === line && last.kind === kind) return;
+    this.consoleLog.push({ kind, text: line, ts: Date.now() });
+    if (this.consoleLog.length > 60) this.consoleLog.splice(0, this.consoleLog.length - 60);
+  }
+  consoleTail(n = 20): Array<{ kind: "error" | "warn"; text: string; ts: number }> {
+    return this.consoleLog.slice(-n);
+  }
+  clearConsole() { this.consoleLog = []; }
+
+  /** The size of the window the page is rendered in. */
+  viewport() { return { ...this.vp }; }
+
+  /**
+   * Render at another size -- a phone, a tablet, a desktop -- and carry on
+   * streaming at it. The page re-lays itself out as it would on that screen.
+   */
+  resize(width: number, height: number): Promise<{ width: number; height: number }> {
+    return this.run(async () => {
+      const w = Math.max(240, Math.min(2560, Math.round(width)));
+      const h = Math.max(240, Math.min(2560, Math.round(height)));
+      this.vp = { width: w, height: h };
+      this.pointer = { x: Math.round(w / 2), y: Math.round(h / 2) };
+      if (this.page) {
+        await this.page.setViewportSize(this.vp).catch(() => undefined);
+        const cdp = this.cdp;
+        this.cdp = null;
+        this.streaming = false;
+        await cdp?.send("Page.stopScreencast").catch(() => undefined);
+        await cdp?.detach().catch(() => undefined);
+        await this.startStream().catch(() => undefined);
+      }
+      return { ...this.vp };
+    });
+  }
+
+  /** Run one of the picker's operations in the page (see pick.ts). */
+  pickOp(expression: string): Promise<any> {
+    return this.run(async () => {
+      const page = this.page;
+      if (!page) return { ok: false, error: "No page is open." };
+      return page.evaluate(expression);
+    });
+  }
+
+  /** A picture of an element, or of a rectangle of the window. */
+  cropShot(target: { selector: string } | { x: number; y: number; w: number; h: number }): Promise<Buffer | null> {
+    return this.run(async () => {
+      const page = this.page;
+      if (!page) return null;
+      try {
+        if ("selector" in target) {
+          return (await page.locator(target.selector).first().screenshot({ type: "png", timeout: 4000 })) as Buffer;
+        }
+        const x = Math.max(0, Math.min(this.vp.width - 2, Math.round(target.x)));
+        const y = Math.max(0, Math.min(this.vp.height - 2, Math.round(target.y)));
+        const width = Math.max(2, Math.min(this.vp.width - x, Math.round(target.w)));
+        const height = Math.max(2, Math.min(this.vp.height - y, Math.round(target.h)));
+        return (await page.screenshot({ type: "png", clip: { x, y, width, height } })) as Buffer;
+      } catch {
+        return null;
+      }
+    });
   }
 
   async close() {
@@ -2086,9 +2274,14 @@ export class LiveBrowser {
     return this.run(async () => {
       const page = await this.ensure();
       const url = addressFor(rawUrl);
+      this.heldClick = null;
       this.hooks.onAction(`open ${url}`, null, url);
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
       await this.settle();
+      // A page that draws itself with script is a blank one at this point:
+      // give the network a moment, then give an empty page time to fill.
+      await page.waitForLoadState("networkidle", { timeout: 2500 }).catch(() => undefined);
+      await this.awaitContent(4500);
       const read = await this.read();
       await this.keyframe();
       return read;
@@ -2098,9 +2291,11 @@ export class LiveBrowser {
   back(): Promise<PageRead> {
     return this.run(async () => {
       const page = await this.ensure();
+      this.heldClick = null;
       this.hooks.onAction("back", null, this.currentUrl ?? "");
       await page.goBack({ waitUntil: "domcontentloaded" }).catch(() => undefined);
       await this.settle();
+      await this.awaitContent(3000);
       const read = await this.read();
       await this.keyframe();
       return read;
@@ -2121,21 +2316,141 @@ export class LiveBrowser {
       await this.ensure();
       const target = this.refs.find((r) => r.ref === ref);
       if (!target) throw new Error(`No element [${ref}] on this page. Read it again.`);
+      const before = this.lastSig;
+
+      /* Where a mouse would land, checked before it does: a cookie bar or a
+         pop-up over the element takes the click and the page does nothing the
+         agent can see. A sticky header is cleared by centring the element; a
+         real cover is named, and the click waits to be asked for again. */
+      let box = await this.aim(target);
+      let cover = await this.coverAt(ref);
+      if (cover) {
+        cover = await this.coverAt(ref, true);
+        box = await this.aim(target);
+      }
+      const at = this.currentUrl ?? "";
+      const held = this.heldClick;
+      const meant = !!held && held.ref === ref && held.url === at;
+      if (cover && !meant) {
+        this.heldClick = { ref, url: at };
+        const read = await this.read();
+        const close = (target.coverRefs ?? []).map((k) => {
+          const c = this.refs.find((x) => x.ref === k);
+          return c ? `[${k}] ${JSON.stringify(c.name)}` : `[${k}]`;
+        });
+        read.notes = [
+          `NOT CLICKED: [${ref}]${target.name ? ` "${target.name}"` : ""} is covered by "${cover.label}", ` +
+            "so the click would have landed on that instead." +
+            (close.length ? ` Dismiss it first with ${close.join(" or ")}.` : " Dismiss it first (its own button, or Escape).") +
+            ` If you do want this click as it is, click [${ref}] again.`,
+        ];
+        return read;
+      }
+      this.heldClick = null;
 
       // Said before the pointer sets off, so the caption on the feed names
       // what it is heading for while you watch it travel there.
       this.hooks.onAction(
         `click [${ref}] ${target.role} "${target.name}"`.trim(),
         { x: target.x, y: target.y },
-        this.currentUrl ?? "",
+        at,
       );
-      await this.humanClickAt(pointIn(await this.aim(target)));
+      await this.humanClickAt(pointIn(box));
       await this.settle(700);
       await this.arrive();
+      /* The page answers late as often as not: a search that fetches, a menu
+         that animates open. Reading it the moment the click returned showed
+         the page as it had been, which looked like a click that did nothing. */
+      const changed = await this.awaitChange(before, 2200);
+      await this.awaitContent(3500);
       const read = await this.read();
+      if (!changed) {
+        read.notes = [
+          `Nothing on the page changed after this click (waited about 2 seconds). [${ref}] may not do ` +
+            "anything, or the click did not take. Try a different element, press Enter with it focused " +
+            "(browser_press), or browser_eval with __autora.click(__autora.byText(\"its words\")).",
+        ];
+      }
       await this.keyframe();
       return read;
     });
+  }
+
+  /**
+   * What would be hit by a click on the numbered element, as it is now:
+   * nothing in the way (null), or what is. `recenter` scrolls it to the middle
+   * of the screen first, which is all a sticky header needs.
+   */
+  private async coverAt(ref: number, recenter = false): Promise<{ label: string } | null> {
+    const page = this.page;
+    if (!page) return null;
+    const hit = await page.evaluate(`(() => {
+      ${COVER_FN}
+      const el = (window.__autoraRefs || [])[${Number(ref)}];
+      if (!el || !el.isConnected) return null;
+      if (${recenter ? "true" : "false"}) el.scrollIntoView({ block: "center", inline: "center" });
+      const b = el.getBoundingClientRect();
+      if (b.width < 1 || b.height < 1) return null;
+      const hit = coverOf(el, b.left + b.width / 2, b.top + b.height / 2);
+      return hit ? { label: hit.label } : null;
+    })()`).catch(() => null);
+    return hit && typeof (hit as { label?: unknown }).label === "string" ? (hit as { label: string }) : null;
+  }
+
+  /** The page in a form that changes when anything the agent could see does:
+      where it is, what is on screen, how far down, and the text. */
+  private sigOf(s: { url: string; title: string; refs: Ref[]; text: string; scroll?: ScrollState }): string {
+    const text = String(s.text ?? "");
+    return [
+      s.url, s.title, s.scroll ? s.scroll.y : "",
+      s.refs.filter((r) => r.inView !== false).map(refLine).join("\n"),
+      text.length, text.slice(0, 160), text.slice(-160),
+    ].join("\u0000");
+  }
+
+  /** The page as it is right now -- just enough to compare, without the rest
+      of a read. Null while it is in the middle of navigating away. */
+  private async peek(): Promise<{ sig: string; shown: number; text: string } | null> {
+    const page = this.page;
+    if (!page) return null;
+    try {
+      const s = await page.evaluate(SCAN_SCRIPT);
+      return { sig: this.sigOf(s), shown: s.refs.filter((r: Ref) => r.inView).length, text: String(s.text ?? "") };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Wait, up to a limit, for the page to differ from what the agent last
+      saw. True as soon as it does -- or is mid-navigation, which is a change. */
+  private async awaitChange(before: string, maxMs: number): Promise<boolean> {
+    const page = this.page;
+    if (!page) return true;
+    const until = Date.now() + maxMs;
+    for (;;) {
+      const now = await this.peek();
+      if (!now || now.sig !== before) return true;
+      if (Date.now() >= until) return false;
+      await page.waitForTimeout(300).catch(() => undefined);
+    }
+  }
+
+  /** A page with nothing on it, or only "Loading...", is one that has not
+      drawn yet: wait for it, up to a limit, before it is read as empty. */
+  private async awaitContent(maxMs: number) {
+    const page = this.page;
+    if (!page) return;
+    const until = Date.now() + maxMs;
+    for (;;) {
+      const now = await this.peek();
+      if (!now) return;
+      const words = now.text.trim();
+      const bare = now.shown === 0 && words.length < 200;
+      const loading = words.length < 200 && /^\W*(loading|please wait|one moment)\b/i.test(words);
+      if (!bare && !loading) return;
+      if (Date.now() >= until) return;
+      await page.waitForTimeout(400).catch(() => undefined);
+    }
   }
 
   /**
@@ -2614,8 +2929,8 @@ export class LiveBrowser {
   ): Promise<PageRead> {
     return this.run(async () => {
       const page = await this.ensure();
-      const clampedX = Math.max(0, Math.min(VIEWPORT.width, Math.round(x)));
-      const clampedY = Math.max(0, Math.min(VIEWPORT.height, Math.round(y)));
+      const clampedX = Math.max(0, Math.min(this.vp.width, Math.round(x)));
+      const clampedY = Math.max(0, Math.min(this.vp.height, Math.round(y)));
       this.pointer = { x: clampedX, y: clampedY };
       await this.showCursor(clampedX, clampedY, true);
       this.hooks.onAction(
@@ -2651,8 +2966,8 @@ export class LiveBrowser {
   ): Promise<{ editable: boolean; select: SelectInfo | null }> {
     return this.run(async () => {
       const page = await this.ensure();
-      const cx = Math.max(0, Math.min(VIEWPORT.width, Math.round(x)));
-      const cy = Math.max(0, Math.min(VIEWPORT.height, Math.round(y)));
+      const cx = Math.max(0, Math.min(this.vp.width, Math.round(x)));
+      const cy = Math.max(0, Math.min(this.vp.height, Math.round(y)));
       this.pointer = { x: cx, y: cy };
       await this.showCursor(cx, cy, true);
       // A native <select> opens a popup the browser draws outside the page,
@@ -2727,8 +3042,8 @@ export class LiveBrowser {
   chooseOption(x: number, y: number, index: number): Promise<{ ok: boolean; label: string | null }> {
     return this.run(async () => {
       const page = await this.ensure();
-      const cx = Math.max(0, Math.min(VIEWPORT.width, Math.round(x)));
-      const cy = Math.max(0, Math.min(VIEWPORT.height, Math.round(y)));
+      const cx = Math.max(0, Math.min(this.vp.width, Math.round(x)));
+      const cy = Math.max(0, Math.min(this.vp.height, Math.round(y)));
       const picked: string | null = await page
         .evaluate(`(() => {
           const el = document.elementFromPoint(${cx}, ${cy});
@@ -2766,8 +3081,8 @@ export class LiveBrowser {
   userDrag(phase: "start" | "move" | "end", x: number, y: number): Promise<{ ok: boolean }> {
     return this.run(async () => {
       const page = await this.ensure();
-      const cx = Math.max(0, Math.min(VIEWPORT.width, Math.round(x)));
-      const cy = Math.max(0, Math.min(VIEWPORT.height, Math.round(y)));
+      const cx = Math.max(0, Math.min(this.vp.width, Math.round(x)));
+      const cy = Math.max(0, Math.min(this.vp.height, Math.round(y)));
       if (phase === "start") {
         this.pointer = { x: cx, y: cy };
         await this.showCursor(cx, cy, true);
@@ -2795,8 +3110,8 @@ export class LiveBrowser {
   mouseMove(x: number, y: number): Promise<void> {
     return this.run(async () => {
       const page = await this.ensure();
-      const clampedX = Math.max(0, Math.min(VIEWPORT.width, Math.round(x)));
-      const clampedY = Math.max(0, Math.min(VIEWPORT.height, Math.round(y)));
+      const clampedX = Math.max(0, Math.min(this.vp.width, Math.round(x)));
+      const clampedY = Math.max(0, Math.min(this.vp.height, Math.round(y)));
       await this.showCursor(clampedX, clampedY, false);
       await page.mouse.move(clampedX, clampedY);
       this.pointer = { x: clampedX, y: clampedY };
@@ -3314,7 +3629,7 @@ export class LiveBrowser {
       const aim = pointIn(target.box);
       this.hooks.onAction(`captcha: tick the ${labelOf(target.kind)} checkbox`, aim, this.currentUrl ?? "");
       await this.showCursor(this.pointer.x, this.pointer.y, false);
-      this.pointer = await wander(page, this.pointer, VIEWPORT);
+      this.pointer = await wander(page, this.pointer, this.vp);
       await this.humanClickAt(aim, true);
 
       // Give the widget time to decide. It usually does within a couple of
@@ -3348,8 +3663,8 @@ export class LiveBrowser {
       // Rest the pointer somewhere nearby rather than leaving it parked on
       // the box -- people move off what they just clicked.
       this.pointer = await humanMove(page, this.pointer, {
-        x: Math.min(VIEWPORT.width - 10, Math.max(10, this.pointer.x + Math.round((Math.random() - 0.3) * 200))),
-        y: Math.min(VIEWPORT.height - 10, Math.max(10, this.pointer.y + Math.round((Math.random() - 0.5) * 120))),
+        x: Math.min(this.vp.width - 10, Math.max(10, this.pointer.x + Math.round((Math.random() - 0.3) * 200))),
+        y: Math.min(this.vp.height - 10, Math.max(10, this.pointer.y + Math.round((Math.random() - 0.5) * 120))),
       });
 
       /* A picture challenge is no longer the end of the road. The solver
@@ -3411,6 +3726,7 @@ export class LiveBrowser {
       scanned = await page.evaluate(SCAN_SCRIPT);
     }
     this.refs = scanned.refs;
+    this.lastSig = this.sigOf(scanned);
     this.currentUrl = scanned.url;
     this.currentTitle = scanned.title;
     const captchas = [
@@ -3730,6 +4046,7 @@ export function refLine(r: Ref): string {
   if (r.disabled) bits.push("disabled");
   if (r.invalid) bits.push(`INVALID: ${JSON.stringify(r.invalid)}`);
   else if (r.hint) bits.push(`hint: ${JSON.stringify(r.hint)}`);
+  if (r.covered) bits.push(`COVERED by ${JSON.stringify(r.covered)}`);
   if (r.href) bits.push(`-> ${r.href}`);
   return bits.join(" ");
 }
@@ -3772,6 +4089,21 @@ export function outlineOf(
       `A dialog is open on top of the page: "${around.dialog}". Deal with it first ` +
         "(answer it, or close it with its button or Escape); what is behind it may not respond " +
         "and, while it blocks the page, is not listed.",
+    );
+  }
+  /* Things drawn over the page, and so over what is listed under them. Said
+     once per covering thing, with the way to close it. */
+  const covering = new Map<string, Ref[]>();
+  for (const r of shown) if (r.covered) covering.set(r.covered, [...(covering.get(r.covered) ?? []), r]);
+  for (const [label, hit] of covering) {
+    const close = (hit[0].coverRefs ?? []).map((k) => {
+      const c = refs.find((x) => x.ref === k);
+      return c ? `[${k}] ${JSON.stringify(c.name)}` : `[${k}]`;
+    });
+    lines.push(
+      `${hit.length} element${hit.length === 1 ? " is" : "s are"} covered by "${label}": a click on ` +
+        `${hit.length === 1 ? "it" : "them"} would land on that instead. ` +
+        (close.length ? `Dismiss it first with ${close.join(" or ")}.` : "Dismiss it first (its own button, or Escape)."),
     );
   }
   /* Fields under a heading are introduced by it once, rather than each

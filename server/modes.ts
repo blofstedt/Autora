@@ -1,33 +1,44 @@
 /**
- * How much this chat may do on its own.
+ * How a chat works, and what it may do without asking. Two separate choices,
+ * both made by the person, both per conversation.
  *
- * Autora runs in yolo mode on purpose: a call runs and is shown as it runs,
- * and only the handful of commands nothing can undo stop to ask. That is the
- * right default for a machine you are watching, and the wrong one for the two
- * moments that matter -- a chat where you want to see the plan before anything
- * is touched, and a chat where something is being changed for real.
+ * The WORK MODE is how the agent goes about a task (the selector in the
+ * message box):
  *
- * So the mode is a property of the chat, not of the install: set once for the
- * conversation you are in, shown in the header, and changed there. Nothing
- * here is a permission the agent can grant itself -- the mode is written by
- * the person, read by the server, and the agent is told what it is.
+ *  - build  do the work straight away, as Autora always has.
+ *  - plan   read-only. Look, search, browse, and write the plan on the to-do
+ *           list; nothing is written, run or sent. The person moves the chat
+ *           to Build (or Agent) when the plan is right.
+ *  - agent  the default. The agent chooses. Every turn starts in Plan; unless the task is
+ *           very simple it investigates and writes the to-do list, then
+ *           switches itself to Build and works through it, and back to Plan
+ *           if the ground moves under it. The selector stays on Agent: the
+ *           switches show in the chat.
  *
- *  - plan  nothing changes. Every call that would is put to the person first,
- *          and the agent is told to lay out what it intends and stop there.
- *  - ask   looking is free, changing waits for a yes. Every call that changes
- *          anything raises the approval card, with no judgement call in it.
- *  - auto  the default, and what Autora has always done: calls run as they
- *          come. The guard's standing agreements and the irrecoverable tier
- *          still stop and ask, and this mode does not touch either.
+ * The PERMISSIONS are what may run without the person's yes (the selector in
+ * the header):
+ *
+ *  - yolo   calls run as they come and are shown as they happen. The guard's
+ *           standing agreements and the irrecoverable tier still stop and ask.
+ *  - ask    calls that change something wait for a yes on a card, either all
+ *           of them or -- when the person wrote down when to ask -- the ones
+ *           that fall under what they wrote.
+ *
+ * Nothing here is a permission the agent can grant itself: both are written by
+ * the person and read by the server, and the agent is told what they are.
  */
 
-export type ChatMode = "plan" | "ask" | "auto";
+export type WorkMode = "build" | "plan" | "agent";
+export type Permissions = "yolo" | "ask";
+/** What the agent is doing right now: the state Agent mode switches between. */
+export type Phase = "plan" | "build";
 
-export const DEFAULT_CHAT_MODE: ChatMode = "auto";
+export const DEFAULT_WORK_MODE: WorkMode = "agent";
+export const DEFAULT_PERMISSIONS: Permissions = "yolo";
 
-export interface ModeInfo {
-  id: ChatMode;
-  /** What the pill says. */
+export interface ModeInfo<T extends string> {
+  id: T;
+  /** What the selector says. */
   short: string;
   /** What the menu says. */
   label: string;
@@ -35,37 +46,98 @@ export interface ModeInfo {
   blurb: string;
 }
 
-export const MODES: Record<ChatMode, ModeInfo> = {
+export const WORK_MODES: Record<WorkMode, ModeInfo<WorkMode>> = {
+  build: {
+    id: "build",
+    short: "Build",
+    label: "Build",
+    blurb: "Does the work straight away, and shows each step as it happens.",
+  },
   plan: {
     id: "plan",
     short: "Plan",
-    label: "Plan only",
-    blurb: "Nothing is changed. Every call that would change something is put to you first, and the agent says what it intends before it starts.",
+    label: "Plan",
+    blurb: "Looks, researches and writes a plan. Nothing is changed, run or sent.",
+  },
+  agent: {
+    id: "agent",
+    short: "Agent",
+    label: "Agent",
+    blurb: "Plans first, then builds, switching by itself. Skips the plan for a very simple task.",
+  },
+};
+
+export const PERMISSION_INFO: Record<Permissions, ModeInfo<Permissions>> = {
+  yolo: {
+    id: "yolo",
+    short: "Yolo",
+    label: "Yolo",
+    blurb: "Calls run as they come. Only what nothing can undo stops to ask.",
   },
   ask: {
     id: "ask",
     short: "Ask",
-    label: "Ask first",
-    blurb: "Looking is free. Anything that writes, runs or sends waits for your yes on the card.",
-  },
-  auto: {
-    id: "auto",
-    short: "Auto",
-    label: "Auto",
-    blurb: "The default: calls run as they come, and are shown in the thread as they happen. Standing agreements apply, and nothing irreversible runs without your answer.",
+    label: "Ask",
+    blurb: "Looking is free. Changes wait for your yes -- all of them, or only the ones you name.",
   },
 };
 
-export const CHAT_MODES: ChatMode[] = ["plan", "ask", "auto"];
+export const WORK_MODE_LIST: WorkMode[] = ["build", "plan", "agent"];
+export const PERMISSION_LIST: Permissions[] = ["yolo", "ask"];
 
-export function isChatMode(value: unknown): value is ChatMode {
-  return value === "plan" || value === "ask" || value === "auto";
+/** Ideas for "when should it ask", one tap each. The wording is what the
+    checking model reads, so each says what it means plainly. */
+export const ASK_SUGGESTIONS: { id: string; label: string; rule: string }[] = [
+  { id: "delete", label: "Deleting anything", rule: "deleting, overwriting or moving files, records or data" },
+  { id: "send", label: "Sending messages", rule: "sending an email, chat message or post to anyone" },
+  { id: "spend", label: "Spending money", rule: "spending money: purchases, paid API calls, subscriptions" },
+  { id: "install", label: "Installing software", rule: "installing, updating or removing software or packages" },
+  { id: "shell", label: "Running commands", rule: "running shell commands" },
+  { id: "forms", label: "Forms and sign-ins", rule: "submitting forms, signing in or changing account settings on a website" },
+  { id: "outside", label: "Outside the project", rule: "changing anything outside the current project or working folder" },
+  { id: "network", label: "Anything that calls out", rule: "making requests that send data to another service" },
+];
+
+const ASK_WHEN_MAX = 600;
+
+export function isWorkMode(value: unknown): value is WorkMode {
+  return value === "build" || value === "plan" || value === "agent";
 }
 
-/** Whatever was stored, as a mode: an older build's session, or a hand-edited
-    file, must not be able to leave the chat in a mode that does not exist. */
-export function chatMode(value: unknown): ChatMode {
-  return isChatMode(value) ? value : DEFAULT_CHAT_MODE;
+/** Whatever was stored, as a work mode. An older build wrote plan, ask or
+    auto here: plan is still plan, ask was "Build, asking" (see
+    legacyPermissions), and auto -- the old default -- is the new one, Agent.
+    Anything else must not strand the chat in a mode that does not exist. */
+export function workMode(value: unknown): WorkMode {
+  if (isWorkMode(value)) return value;
+  if (value === "ask") return "build";
+  return DEFAULT_WORK_MODE;
+}
+
+/** The permissions an older session's mode meant. */
+export function legacyPermissions(value: unknown): Permissions {
+  return value === "ask" ? "ask" : DEFAULT_PERMISSIONS;
+}
+
+export function isPermissions(value: unknown): value is Permissions {
+  return value === "yolo" || value === "ask";
+}
+
+export function permissionsOf(value: unknown): Permissions {
+  return isPermissions(value) ? value : DEFAULT_PERMISSIONS;
+}
+
+/** What the person wrote for "ask me when": one tidy paragraph, or nothing. */
+export function cleanAskWhen(value: unknown): string {
+  return typeof value === "string" ? value.replace(/[ \t]+/g, " ").trim().slice(0, ASK_WHEN_MAX) : "";
+}
+
+/** The state the agent is in this turn: fixed by Build and Plan, chosen by the
+    agent in Agent -- and plan until it says otherwise. */
+export function phaseFor(work: WorkMode, phase: Phase | undefined): Phase {
+  if (work === "build") return "build";
+  if (work === "plan") return "plan";
+  return phase ?? "plan";
 }
 
 /**
@@ -77,7 +149,8 @@ export function chatMode(value: unknown): ChatMode {
  * is not. Listing the directory is looking; running the command in it is not.
  *
  * A tool that is not on this list is treated as a change, which is the safe
- * way round: a new tool added later asks until somebody decides it only looks.
+ * way round: a new tool added later is held back until somebody decides it
+ * only looks.
  */
 const LOOKS_ONLY = new Set([
   "browser_open",
@@ -100,9 +173,15 @@ const LOOKS_ONLY = new Set([
   "web_search",
   "camera_look",
   "computer_screenshot",
-  "browser_status",
   "speak",
   "widget_show",
+  /* Talking to the person, the plan the person watches, and moving between
+     planning and building: none changes anything outside the console. Without
+     these, Plan would refuse the very calls that make a plan. */
+  "ask_user",
+  "todo",
+  "set_mode",
+  "browser_handoff",
 ]);
 
 /** Whether this exact call can change anything. GET and HEAD cannot; a POST
@@ -112,57 +191,99 @@ export function looksOnly(name: string, args: Record<string, any> = {}): boolean
     const method = String(args.method ?? "GET").toUpperCase();
     return method === "GET" || method === "HEAD" || method === "OPTIONS";
   }
+  /* Listing the standing agreements looks; taking one back is a change, and
+     is the same tool with an id. */
+  if (name === "pre_authorisations") return !String(args.revoke ?? "").trim();
   return LOOKS_ONLY.has(name);
 }
 
-export interface ModeGate {
-  /** Held for the person's answer before it runs. */
-  ask: boolean;
-  /** What the card says, in the mode's own words. */
-  why: string;
+/**
+ * What planning says about one call: the sentence the agent is told when the
+ * call is refused, or null when it may go ahead. A refusal is not a card --
+ * planning is the agent's own state and nobody is being asked -- so the
+ * message says what to do instead, in the words that end the round trip.
+ */
+export function planRefusal(work: WorkMode, phase: Phase | undefined, name: string, args: Record<string, any> = {}): string | null {
+  if (phaseFor(work, phase) !== "plan") return null;
+  if (looksOnly(name, args)) return null;
+  if (work === "agent") {
+    return "Not run: you are planning, and planning changes nothing. Finish the plan on the to-do " +
+      "list, then call set_mode with to \"build\" and make this call again. If the task is small " +
+      "enough not to need a plan, switch to build now.";
+  }
+  return "Not run: this chat is in Plan mode, and nothing is changed there. Do not retry it and do " +
+    "not look for another way to do the same thing. Put what you would do on the to-do list -- the " +
+    "files, the commands, the order, the risks -- and say it in your reply, then stop: the person " +
+    "moves the chat to Build or Agent when the plan is right.";
 }
 
 /**
- * What this chat's mode says about one call: whether it waits for an answer,
- * and the sentence that explains why. Null means the mode adds nothing here --
- * the call runs as it always would, and the guard and the irrecoverable tier
- * go on doing their own work further down.
+ * Whether the person's permissions want a word before this call.
+ *
+ *  - "skip"   it runs (yolo, or a call that only looks);
+ *  - "hold"   it waits for a yes, because they asked to be asked about changes
+ *             and said nothing narrower;
+ *  - "judge"  they named when to ask, so the call is read against that.
  */
-export function modeGate(mode: ChatMode, name: string, args: Record<string, any> = {}): ModeGate | null {
-  if (mode === "auto") return null;
-  if (looksOnly(name, args)) return null;
-  if (mode === "plan") {
-    return {
-      ask: true,
-      why: "This chat is in Plan mode: nothing is changed here without you saying so, and " +
-        "this call would change something. If it should run, allow it; if this is the work " +
-        "you meant by yes, say what you would do and let the answer come on the card.",
-    };
-  }
-  return {
-    ask: true,
-    why: "This chat is in Ask mode: looking is free, and anything that changes something " +
-      "waits for you. Nothing behind your back.",
-  };
+export function askAbout(
+  permissions: Permissions,
+  askWhen: string,
+  name: string,
+  args: Record<string, any> = {},
+): "skip" | "hold" | "judge" {
+  if (permissions !== "ask") return "skip";
+  if (looksOnly(name, args)) return "skip";
+  return cleanAskWhen(askWhen) ? "judge" : "hold";
 }
 
-/** What the turn is told about its own mode. Null in auto, where there is
-    nothing to say that is not already true of every turn. */
-export function modeBriefing(mode: ChatMode, incognito = false): string | null {
-  if (mode === "auto") return null;
-  const head = incognito
-    ? `This chat is in ${MODES[mode].label} mode and is incognito.`
-    : `This chat is in ${MODES[mode].label} mode, chosen by the person for this conversation.`;
-  if (mode === "plan") {
-    return [
-      head,
+/** What the card says when the permissions held a call. */
+export function askReason(askWhen: string): string {
+  const when = cleanAskWhen(askWhen);
+  return when
+    ? `You asked to be asked before: ${when}. This call falls under that.`
+    : "This chat is set to Ask: looking is free, and anything that changes something waits for you.";
+}
+
+/** The briefing every turn gets about how the chat works. Null when there is
+    nothing to add: Build with yolo is what every turn already is. */
+export function modeBriefing(
+  work: WorkMode,
+  phase: Phase | undefined,
+  incognito = false,
+): string | null {
+  const lines: string[] = [];
+  if (incognito) lines.push("This chat is incognito: nothing in it is written down.");
+  if (work === "plan") {
+    lines.push(
+      "This chat is in Plan mode, chosen by the person: read-only.",
       "Nothing is to be changed: no file written, no command that changes anything, no message sent, no form submitted. Reading, looking and searching are all allowed, and are usually what the plan needs.",
-      "Work out what you would do and say it -- the files you would touch, the commands you would run, the order, and what could go wrong. Then stop. A call that would change something is held for the person as you try it, so trying it costs a round trip and produces a card reading like a mistake; say the plan instead, and let them take the chat out of Plan mode when they are ready.",
+      "Work out what you would do and put it on the to-do list -- the files you would touch, the commands you would run, the order, what could go wrong -- and say it in your reply. Then stop. A call that would change something is refused as you try it, so trying it costs a round trip; say the plan instead. You cannot leave Plan mode yourself: the person moves the chat to Build or Agent when they are ready.",
+    );
+  } else if (work === "agent") {
+    const now = phaseFor(work, phase);
+    lines.push(
+      "This chat is in Agent mode, chosen by the person: you plan and build, and you move between the two yourself with the set_mode tool.",
+      now === "plan"
+        ? "You are PLANNING now. Everything that changes something is refused until you switch to build. Unless the task is very simple, investigate first -- read, look, search -- then write the plan on the to-do list, then call set_mode with to \"build\" and do the work. A very simple task is a question, a lookup or a one-line change: for those, call set_mode with to \"build\" in the same step as the call itself (both in one response, set_mode first), or just answer. When in doubt, plan."
+        : "You are BUILDING now. Work through the to-do list, keeping it true. If what you find means the plan was wrong, or the work turns out bigger than it looked, call set_mode with to \"plan\", fix the plan, and switch back. Do not ask the person before switching: it is yours to do, and they see each switch in the chat.",
+      "Say why in the reason of each switch, in a few words: it is what the person reads.",
+    );
+  }
+  return lines.length ? lines.join("\n") : null;
+}
+
+/** What the turn is told about what may run without a yes. Null for yolo. */
+export function permissionBriefing(permissions: Permissions, askWhen: string): string | null {
+  if (permissions !== "ask") return null;
+  const when = cleanAskWhen(askWhen);
+  if (!when) {
+    return [
+      "This chat is set to Ask, chosen by the person: looking runs straight away, and anything that changes something -- a command, an edit, a form, a message -- is held on a card for their yes before it runs.",
+      "Say what you are about to do in one line before the call, keep each call to the one thing being asked about, and do not retry something that comes back refused.",
     ].join("\n");
   }
   return [
-    head,
-    "Looking (reading pages, files, search, the state of things) runs straight away. Anything that changes something -- a command, an edit, a form, a message -- is held on a card for the person before it runs.",
-    "So say what you are about to do in one line before the call, keep each call to the one thing being asked about, and do not retry something that comes back refused.",
+    `This chat is set to Ask, chosen by the person, with this instruction for when: "${when}".`,
+    "Calls that fall under it are held on a card for their yes before they run; everything else runs as usual. Say what you are about to do in one line before such a call, and do not retry something that comes back refused.",
   ].join("\n");
 }

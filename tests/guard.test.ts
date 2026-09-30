@@ -1,5 +1,5 @@
 /**
- * The irrecoverable tier: what a call with no Jev key, no model and no
+ * The irrecoverable tier: what a call with no key, no model and no
  * network still asks the person about, and -- just as importantly -- what it
  * lets through. A guard that cries wolf on ordinary work is worse than none,
  * so most of this file is cases that must NOT be held.
@@ -7,7 +7,7 @@
  *   npx tsx tests/guard.test.ts
  */
 import assert from "node:assert/strict";
-import { guardWorthy, irreversible } from "../server/jev/guard";
+import { guardWorthy, irreversible } from "../server/guard";
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -77,7 +77,7 @@ test("what it says is what the card shows", () => {
 });
 
 test("the wider pre-filter is left alone", () => {
-  // RISKY_COMMAND decides whether to spend a Jev call, never whether to ask
+  // RISKY_COMMAND decides whether to ask the model, never whether to ask
   // the person: it still matches things that are perfectly ordinary.
   assert.equal(guardWorthy("terminal", { command: "rm -rf node_modules" }), true);
   assert.equal(guardWorthy("terminal", { command: "ls" }), false);

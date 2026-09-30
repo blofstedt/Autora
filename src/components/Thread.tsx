@@ -1,5 +1,5 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import type { Bucket, Cell, KanbanTask, MemoryTouch } from "../lib/derive";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { Bucket, Cell, MemoryTouch } from "../lib/derive";
 import { turnItems } from "../lib/steps";
 import { isPicture, sizeLabel, type Attachment } from "../lib/attachments";
 import { IconAlert, IconArrow, IconArrowDown, IconBrain, IconChevron, IconFile, IconSpeaker, IconSpeakerOff, IconTerminal, IconUser, IconWrench } from "./Icons";
@@ -10,15 +10,18 @@ import { TerminalCell } from "./TerminalCell";
 import { ScreencastCell } from "./ScreencastCell";
 import { FileCell } from "./FileCell";
 import { ToolCell, describeArgs } from "./ToolCell";
-import { KanbanCell } from "./KanbanCell";
+import { TodoCell } from "./TodoCell";
+import { AppPreview } from "./AppPreview";
+import { usePreviewState } from "../lib/preview";
 import { PermissionCell } from "./PermissionCell";
 import { ImageCell } from "./ImageCell";
 import { WidgetCell } from "./WidgetCell";
 import { AskCell } from "./AskCell";
 import { Markdown } from "./Markdown";
-import { JevCell } from "./JevCell";
 import { MemoryCell } from "./MemoryCell";
 import { LearnedCell } from "./LearnedCell";
+import { NAME, Stage, StageStub } from "./Stage";
+import { busiestSurface, cellKey, newestSurface, pickSurfaces, usePhone, type SurfaceKind } from "../lib/stage";
 
 /** Within this many pixels of the bottom counts as "watching the live edge". */
 const STICK_ZONE = 80;
@@ -49,9 +52,9 @@ export function Thread({
   phase = "thinking",
   sessionId,
   liveBrowserSeq,
+  browserOpen = false,
   live,
   onPermissionDecide,
-  onRunAutonomous,
   onSuggest,
   placeholder,
   dock,
@@ -72,9 +75,10 @@ export function Thread({
   phase?: MarkPhase;
   sessionId: string;
   liveBrowserSeq: number | null;
+  /** A page is open in the session's browser right now. */
+  browserOpen?: boolean;
   live: boolean;
   onPermissionDecide?: (requestId: string, approved: boolean, response?: string) => void;
-  onRunAutonomous?: (task: KanbanTask) => void;
 } & WorkState) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -89,6 +93,47 @@ export function Thread({
   useEffect(() => {
     if (handsOn) setStuck(false);
   }, [handsOn]);
+
+  /* The pinned stage (phones only; see lib/stage.ts). Which tab is up, and
+     whether it is folded, only mean something for the set of surfaces they
+     were chosen from: when a page opens or closes, or a new plan or explainer
+     arrives, the choice lapses and the newest one is shown, unfolded. */
+  const phone = usePhone();
+  const appOpen = usePreviewState().open;
+  const surfaces = useMemo(
+    // Held only while the session is live: a recorded one is read, not watched.
+    () => (phone && live ? pickSurfaces(buckets, browserOpen ? liveBrowserSeq : null, appOpen) : []),
+    [phone, live, buckets, browserOpen, liveBrowserSeq, appOpen],
+  );
+  const held = surfaces.map((s) => s.key).join("|");
+  const [stageView, setStageView] = useState<{ held: string; pick: SurfaceKind | null; folded: boolean }>(
+    { held: "", pick: null, folded: false },
+  );
+  /* Follow: the tab tracks whatever the agent touched last. Tapping a tab is
+     taking the wheel, so it lets go -- the way scrolling up lets go of the
+     live edge -- and the button hands it back. */
+  const [follow, setFollow] = useState(false);
+  const stageFresh = stageView.held === held;
+  const handedPage = work.browserHandedOver && surfaces.some((s) => s.kind === "browser");
+  // A page handed to the person is what they are here to use: never folded away.
+  const folded = !handedPage && stageFresh && stageView.folded;
+  const activeKind: SurfaceKind | null = handedPage
+    ? "browser"
+    : follow && surfaces.length > 1
+      ? busiestSurface(surfaces)?.kind ?? null
+      : (stageFresh && surfaces.find((s) => s.kind === stageView.pick)?.kind) || newestSurface(surfaces)?.kind || null;
+  const pickTab = useCallback((kind: SurfaceKind) => {
+    setFollow(false);
+    setStageView({ held, pick: kind, folded: false });
+  }, [held]);
+  const toggleFollow = useCallback(() => {
+    setFollow((on) => !on);
+    setStageView((v) => ({ held, pick: v.held === held ? v.pick : null, folded: false }));
+  }, [held]);
+  const foldStage = useCallback(
+    () => setStageView((v) => ({ held, pick: v.held === held ? v.pick : null, folded: !(v.held === held && v.folded) })),
+    [held],
+  );
 
   const count = buckets.length;
   const tail = buckets[buckets.length - 1];
@@ -227,6 +272,32 @@ export function Thread({
   return (
     <div className="thread-wrap">
       {dock}
+      {activeKind && (
+        <Stage
+          surfaces={surfaces}
+          active={activeKind}
+          collapsed={folded}
+          following={follow && surfaces.length > 1}
+          onPick={pickTab}
+          onFollow={toggleFollow}
+          onToggle={foldStage}
+          render={(surface) => (
+            <CellView
+              cell={surface.cell}
+              stage
+              docked=""
+              sessionId={sessionId}
+              liveBrowserSeq={liveBrowserSeq}
+              live={live}
+              open={tail?.open ?? false}
+              phase={phase}
+              active={false}
+              onPermissionDecide={onPermissionDecide}
+              {...work}
+            />
+          )}
+        />
+      )}
       <div
         className="thread"
         ref={scrollerRef}
@@ -243,8 +314,8 @@ export function Thread({
             sessionId={sessionId}
             liveBrowserSeq={liveBrowserSeq}
             live={live}
+            docked={held}
             onPermissionDecide={onPermissionDecide}
-            onRunAutonomous={onRunAutonomous}
             {...work}
             phase={phase}
           />
@@ -357,18 +428,19 @@ const TurnBucket = memo(function TurnBucket({
   sessionId,
   liveBrowserSeq,
   live,
+  docked,
   phase,
   onPermissionDecide,
-  onRunAutonomous,
   ...work
 }: {
   bucket: Bucket;
   sessionId: string;
   liveBrowserSeq: number | null;
   live: boolean;
+  /** The keys of the cards held in the stage, so the thread leaves them out. */
+  docked: string;
   phase: MarkPhase;
   onPermissionDecide?: (requestId: string, approved: boolean, response?: string) => void;
-  onRunAutonomous?: (task: KanbanTask) => void;
 } & WorkState) {
   // The agent's mark animates on its current utterance for as long as the turn
   // runs. Keyed to the last *reply* rather than the last cell: a tool card
@@ -397,29 +469,16 @@ const TurnBucket = memo(function TurnBucket({
           sessionId={sessionId}
           liveBrowserSeq={liveBrowserSeq}
           live={live}
+          docked={docked}
           open={bucket.open}
           phase={phase}
           onPermissionDecide={onPermissionDecide}
-          onRunAutonomous={onRunAutonomous}
           {...work}
         />
       </div>
     </article>
   );
 });
-
-/**
- * Who a cell is, for React: the event that started it.
- *
- * Not its position. The thread regroups cells while a turn runs -- what is
- * said on a page moves into that page's card -- and a key with the index in
- * it then named a different cell, so React tore the card down and built a
- * new one. For the browser that meant a blank stage for a beat: the black
- * flash in the middle of the conversation.
- */
-function cellKey(cell: Cell): string {
-  return `${cell.kind}-${cell.seq}`;
-}
 
 /** Everything a cell needs to draw itself, apart from which cell it is. */
 type CellContext = {
@@ -428,10 +487,11 @@ type CellContext = {
   live: boolean;
   /** The turn this belongs to is still running. */
   open: boolean;
+  /** Keys of the cards held in the pinned stage, joined with "|". */
+  docked: string;
   /** Which of the mark's two busy states suits what it is doing. */
   phase: MarkPhase;
   onPermissionDecide?: (requestId: string, approved: boolean, response?: string) => void;
-  onRunAutonomous?: (task: KanbanTask) => void;
 } & WorkState;
 
 /* ---------------------------------------------------------------- steps -- */
@@ -539,10 +599,11 @@ const CellView = memo(function CellView({
   liveBrowserSeq,
   live,
   open,
+  docked,
+  stage = false,
   phase,
   active,
   onPermissionDecide,
-  onRunAutonomous,
   driving,
   browserHandedOver,
   onStop,
@@ -556,11 +617,14 @@ const CellView = memo(function CellView({
   liveBrowserSeq: number | null;
   live: boolean;
   open: boolean;
+  docked: string;
+  /** Drawn in the pinned stage itself, so it is never left out for it. */
+  stage?: boolean;
   phase: MarkPhase;
   active: boolean;
   onPermissionDecide?: (requestId: string, approved: boolean, response?: string) => void;
-  onRunAutonomous?: (task: KanbanTask) => void;
 } & WorkState) {
+  const held = !stage && docked !== "" && docked.split("|").includes(cellKey(cell));
   switch (cell.kind) {
     case "reply":
       return (
@@ -589,6 +653,34 @@ const CellView = memo(function CellView({
       );
     case "screen": {
       const current = cell.source === "browser" && cell.seq === liveBrowserSeq;
+      const log = cell.log.length > 0 && (
+        <StepRun
+          cells={cell.log}
+          // The newest thing said, while the page is still being worked.
+          activeKey={cell.live ? cellKey(cell.log[cell.log.length - 1]) : null}
+          sessionId={sessionId}
+          liveBrowserSeq={liveBrowserSeq}
+          live={live}
+          open={open}
+          docked={docked}
+          phase={phase}
+          onPermissionDecide={onPermissionDecide}
+          driving={driving}
+          browserHandedOver={browserHandedOver}
+          onStop={onStop}
+          onOpenMind={onOpenMind}
+          onOpenSettings={onOpenSettings}
+        />
+      );
+      /* Held above: the page is in the stage, and what was said while it was
+         worked stays here, in the thread, where it scrolls. */
+      if (held) {
+        return (
+          <StageStub kind="browser" title={NAME.browser} note="pinned above">
+            {log}
+          </StageStub>
+        );
+      }
       return (
         <ScreencastCell
           sessionId={sessionId}
@@ -606,25 +698,7 @@ const CellView = memo(function CellView({
           waitingOnYou={browserHandedOver}
           onStop={onStop}
         >
-          {cell.log.length > 0 && (
-            <StepRun
-              cells={cell.log}
-              // The newest thing said, while the page is still being worked.
-              activeKey={cell.live ? cellKey(cell.log[cell.log.length - 1]) : null}
-              sessionId={sessionId}
-              liveBrowserSeq={liveBrowserSeq}
-              live={live}
-              open={open}
-              phase={phase}
-              onPermissionDecide={onPermissionDecide}
-              onRunAutonomous={onRunAutonomous}
-              driving={driving}
-              browserHandedOver={browserHandedOver}
-              onStop={onStop}
-              onOpenMind={onOpenMind}
-              onOpenSettings={onOpenSettings}
-            />
-          )}
+          {!stage && log}
         </ScreencastCell>
       );
     }
@@ -632,26 +706,30 @@ const CellView = memo(function CellView({
       return <MemoryCell cell={cell} onOpen={onOpenMind} />;
     case "learned":
       return <LearnedCell items={cell.items} changes={cell.changes} onOpen={onOpenMind} />;
-    case "jev":
-      return <JevCell decision={cell.decision} />;
     case "ask":
       return <AskCell ask={cell.ask} sessionId={sessionId} readOnly={!live} />;
     case "images":
       return <ImageCell sessionId={sessionId} pictures={cell.pictures} />;
     case "widget":
+      if (held) return <StageStub kind="widget" title={NAME.widget} note={`${cell.widget.title} · pinned above`} />;
       return <WidgetCell widget={cell.widget} sessionId={sessionId} canFix={live && !driving} />;
     case "file":
       return <FileCell file={cell.file} />;
     case "tool":
       return <ToolCell span={cell.span} />;
-    case "kanban":
-      return (
-        <KanbanCell
-          board={cell.board}
-          sessionId={sessionId}
-          onRunAutonomous={onRunAutonomous}
-        />
-      );
+    case "todo": {
+      if (held) {
+        const done = cell.items.filter((t) => t.status === "completed").length;
+        return (
+          <StageStub
+            kind="plan"
+            title={NAME.plan}
+            note={`${done} of ${cell.items.length} done · pinned above`}
+          />
+        );
+      }
+      return <TodoCell items={cell.items} />;
+    }
     case "permission":
       return (
         <PermissionCell
@@ -663,6 +741,23 @@ const CellView = memo(function CellView({
             }
           }}
         />
+      );
+    case "app": {
+      if (stage) return <AppPreview sessionId={sessionId} phone />;
+      if (held) return <StageStub kind="app" title={NAME.app} note="preview · pinned above" />;
+      return (
+        <div className="app-note-cell">
+          <StageStub kind="app" title={NAME.app} note={cell.url ? `opened ${cell.url.replace(/^https?:\/\//, "").replace(/\/$/, "")}` : "opened"} />
+        </div>
+      );
+    }
+    case "mode":
+      return (
+        <div className={`mode-chip is-${cell.to}`}>
+          <i aria-hidden="true" />
+          <b>{cell.to === "plan" ? "Planning" : "Building"}</b>
+          {cell.reason && <span>· {cell.reason}</span>}
+        </div>
       );
     case "note":
       return (

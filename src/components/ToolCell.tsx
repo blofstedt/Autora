@@ -39,10 +39,24 @@ export function describeArgs(args: Record<string, any>): string {
   if (typeof args.path === "string") return args.path;
   if (typeof args.query === "string") return args.query;
   if (typeof args.url === "string") return args.url;
+  if (typeof args.action === "string" && (args.command || args.dir || args.url)) {
+    return `${args.action} ${args.command ?? args.dir ?? args.url}`;
+  }
   if (typeof args.action === "string") {
     return `${args.action} ${args.selector ?? args.url ?? args.text ?? ""}`.trim();
   }
+  if (Array.isArray(args.todos)) return `${args.todos.length} item${args.todos.length === 1 ? "" : "s"}`;
+  if (typeof args.to === "string" && Object.keys(args).every((k) => k === "to" || k === "reason")) {
+    return `switch to ${args.to}`;
+  }
   return Object.entries(args)
-    .map(([k, v]) => `${k}=${String(v).slice(0, 30)}`)
+    .map(([k, v]) => `${k}=${shortValue(v)}`)
     .join(" ");
+}
+
+/** A value as one short piece of text: a string as it is, anything else as
+    JSON -- String() of a list of objects is "[object Object]". */
+function shortValue(value: unknown): string {
+  const text = typeof value === "string" ? value : JSON.stringify(value) ?? String(value);
+  return text.length > 30 ? `${text.slice(0, 30)}…` : text;
 }

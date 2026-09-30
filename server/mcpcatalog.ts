@@ -304,7 +304,7 @@ export function suggested(
     const score = haveKey.length * 3 + Math.min(words.length, 3);
     const reason = haveKey.length > 0
       ? `You already have ${haveKey.map((n) => n.env).join(" and ")} saved, and this is what uses it.`
-      : `${entry.summary} It came up: ${words.slice(0, 3).join(", ")}.`;
+      : `It came up: ${words.slice(0, 3).join(", ")}.`;
     out.push({ ...entry, score, reason });
   }
 
