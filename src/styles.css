@@ -2792,20 +2792,18 @@ label + .jf-hint { margin-top: -5px; }
   padding: 12px;
   align-items: start;
 }
-/* Below this the three columns cannot each be readable, so they keep their
-   order and scroll sideways instead of stacking into one long column. */
+/* On a phone the three columns share the width. A board you have to swipe
+   sideways hides a third of itself, and seeing where everything stands at once
+   is the whole point of a board. What made the columns too wide to fit was
+   what sat on a card beside the title -- so on a phone a card is a title and
+   a stripe in its column's colour, and nothing else. */
 @media (max-width: 640px) {
   .kanban-cols,
   .kanban-columns {
-    grid-template-columns: repeat(3, minmax(150px, 1fr));
-    overflow-x: auto;
-  }
-  /* On a phone a card is narrow enough that the percentage beside the tick
-     leaves the title about three characters wide. The tick still says the card
-     is finished; the figure is in the card when it is opened. */
-  .kanban-card .kanban-card-pct,
-  .kanban-task-card .kanban-task-pct {
-    display: none;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    padding: 8px 8px 10px;
+    overflow-x: visible;
   }
 }
 
@@ -3932,6 +3930,60 @@ label + .jf-hint { margin-top: -5px; }
    ============================================================================ */
 
 .kanban-card-title, .kanban-task-title, .perm-reason, .job-name { overflow-wrap: anywhere; }
+
+/* ── the board on a phone ──
+   Three columns across, and a card that is only its title. The column already
+   says what state a card is in, and the opened card carries the steps, the
+   figure and the moves -- so the state mark, the percentage and the progress
+   bar come off here, which is exactly the width that stopped the columns
+   fitting. Four to six characters per line of a title would be useless, so the
+   title wraps to three lines instead of being cut off after one. */
+@media (max-width: 640px) {
+  .kanban-col { padding: 5px; gap: 5px; min-height: 104px; border-radius: 9px; }
+  .kanban-col-head { gap: 5px; padding-bottom: 4px; }
+  /* The stripe down each card says which column it is in, so the dot in the
+     heading is one mark too many at this width. */
+  .kanban-col-head .col-indicator { display: none; }
+  .kanban-col-head .col-name { font-size: calc(9px * var(--ts, 1)); letter-spacing: 0.05em; }
+  .kanban-col-head .col-badge { font-size: calc(9px * var(--ts, 1)); padding: 0 5px; }
+  .kanban-items { gap: 4px; }
+
+  .kanban-card, .kanban-task-card {
+    display: block;
+    padding: 5px 6px 5px 7px;
+    border-radius: 6px;
+    border-left: 2px solid #7d8698;
+    cursor: pointer;
+  }
+  .kanban-col.doing .kanban-card, .kanban-col.doing .kanban-task-card { border-left-color: var(--glow-light); }
+  .kanban-col.done .kanban-card, .kanban-col.done .kanban-task-card { border-left-color: var(--live); }
+
+  /* Everything on a card that is not the title. */
+  .kanban-card .kanban-drag-grip, .kanban-task-card .kanban-drag-grip,
+  .kanban-card .kanban-card-state, .kanban-task-card .kanban-card-state,
+  .kanban-card .kanban-progress-track, .kanban-task-card .kanban-progress-track {
+    display: none;
+  }
+
+  .kanban-card-title, .kanban-task-title {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    white-space: normal;
+    overflow: hidden;
+    text-overflow: clip;
+    font-size: calc(11.5px * var(--ts, 1));
+    font-weight: 500;
+    line-height: 1.3;
+  }
+  /* A card that lifts its head under a finger is a card that moved for no
+     reason; a press should look like a press. */
+  .kanban-card:hover, .kanban-task-card:hover { transform: none; background: var(--s2); }
+  .kanban-card:active, .kanban-task-card:active { transform: scale(0.97); }
+
+  .kanban-board-progress { padding: 6px 8px 0; }
+  .kanban-empty { padding: 8px 4px; font-size: calc(10.5px * var(--ts, 1)); }
+}
 
 @media (max-width: 680px) {
   /* The memory graph is ambient, not the thing you came to read. At 145px it

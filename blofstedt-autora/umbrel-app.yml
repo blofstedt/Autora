@@ -99,11 +99,19 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  The task board is three columns side by side at last. Before, each column sat
-  under the last one on a narrow screen and the board read as a list; now To Do,
-  Doing and Done stand left to right at every width, and past the point where
-  three columns stop being readable the board scrolls sideways rather than
-  folding back into a stack.
+  On a phone the task board now fits the screen. To Do, Doing and Done share
+  the width, all three in view at once, with nothing to swipe sideways for.
+
+  A card on a phone is its title and the column's colour down the left edge,
+  and nothing else. The column already says what state the work is in, and the
+  status mark, the percentage and the progress bar were what pushed the columns
+  wider than the screen -- so they step aside here, and the title gets the room
+  instead: it wraps and shows its first three lines rather than being cut off
+  after a few characters. Everything else is still one tap away: the full
+  title, everything written on the card, its steps with the finished ones
+  marked, and the moves that column offers.
+
+  Wider screens are unchanged, cards and columns exactly as they were.
 
   A card is now one line: the work item cut off with an ellipsis, its state at
   the end of the line, and a thin progress bar under it. Tap any card and the
