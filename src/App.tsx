@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { SessionStream, mergeEvents, type StreamStatus } from "./lib/stream";
-import { derive, isRunning, type Derived, type KanbanTask } from "./lib/derive";
+import { derive, isRunning, type Derived } from "./lib/derive";
 import { share } from "./lib/share";
 import { chime, paintChrome, type Chrome } from "./lib/chrome";
 import { Kind, type AutoraEvent, type BrowserState } from "./lib/types";
 import { setLiveFields, setLiveFrame } from "./lib/liveFrame";
+import { resetPreview, setPreviewFrame, setPreviewState, usePreviewState, type PreviewState } from "./lib/preview";
+import { AppPreview } from "./components/AppPreview";
+import { usePhone } from "./lib/stage";
 import { Thread } from "./components/Thread";
 import { Dock } from "./components/Dock";
 import { Rail, pageLabel, PAGES, type PageId } from "./components/Rail";
@@ -36,15 +39,18 @@ import { flySpark, visible } from "./lib/presence";
 import { useBackOut } from "./lib/back";
 import { Notices } from "./components/Notices";
 import { InstallApp } from "./components/InstallApp";
-import { ModePill, type ChatMode } from "./components/ModePill";
+import { PermissionsPill } from "./components/PermissionsPill";
+import { ModeSelect } from "./components/ModeSelect";
+import { DEFAULT_PERMISSIONS, DEFAULT_WORK_MODE, type Permissions, type WorkMode } from "./lib/modes";
 import { AutoraMark, type MarkState } from "./components/AutoraMark";
 import { readActivity } from "./lib/activity";
+import { adoptDeviceTimezone } from "./lib/timezone";
 import {
   dictationSupported, recognitionAvailable, sameReply, secureOrigin, speakable,
   splitSpeakable, useSpeech,
 } from "./lib/voice";
 import {
-  IconArrow, IconArrowUp, IconChevron, IconFile, IconMask, IconMenu,
+  IconArrow, IconArrowUp, IconChevron, IconFile, IconMask, IconMenu, IconStop,
   IconX,
 } from "./components/Icons";
 import {
@@ -201,6 +207,13 @@ export function App() {
     };
   }, []);
 
+  // The server's clock is the container's, which is UTC unless someone said
+  // otherwise. The first device to open the app says what the person's is; once
+  // a zone is chosen, this never touches it.
+  useEffect(() => {
+    void adoptDeviceTimezone();
+  }, []);
+
   // The theme saved on the server wins over this browser's cached copy, so a
   // choice made on the desktop shows up on the phone.
   useEffect(() => {
@@ -288,6 +301,7 @@ export function App() {
         frame = requestAnimationFrame(flush);
       }, wait);
     };
+    resetPreview();
     const stream = new SessionStream(sessionId, {
       onEvents: (fresh) => {
         // A batch of nothing but repeats: a new array would re-derive the
@@ -298,7 +312,16 @@ export function App() {
         else schedule();
       },
       onStatus: setStatus,
-      onFrame: setLiveFrame,
+      onFrame: (frame) => {
+        // The app window's video is its own feed: the browser card's would
+        // otherwise show the app.
+        if (frame.source === "preview") {
+          setPreviewFrame({ data: frame.data, mime: frame.mime, w: frame.w ?? 1280, h: frame.h ?? 800, ts: frame.ts });
+        } else {
+          setLiveFrame(frame);
+        }
+      },
+      onPreview: (state) => setPreviewState(state as PreviewState),
       onBrowser: (state) => {
         setLiveFields(state?.fields);
         setBrowser(state);
@@ -1082,26 +1105,30 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [toggleLive, live, voiceReady, voiceBlocked, navigate, page]);
 
-  /* How much this chat may do on its own, and the one place it changes.
-     What the server says wins, except for a chat that is not in the list at
-     all (incognito) or a change that has not been answered yet: those live
-     here, so the pill never disagrees with what was just pressed. */
-  const [modeOverride, setModeOverride] = useState<Record<string, ChatMode>>({});
+  /* How this chat works and what it may do without asking: both live on the
+     server, per chat, and this is the one place they change. What the server
+     says wins, except for a chat that is not in the list at all (incognito)
+     or a change that has not been answered yet: those live here, so a
+     control never disagrees with what was just pressed. */
+  type ChatSettings = { mode: WorkMode; permissions: Permissions; ask_when: string };
+  const [settingsOverride, setSettingsOverride] = useState<Record<string, Partial<ChatSettings>>>({});
   const [modeSaving, setModeSaving] = useState(false);
   const [modeError, setModeError] = useState<string | null>(null);
-  const sessionMode: ChatMode =
-    (sessionId ? modeOverride[sessionId] : undefined) ??
-    (sessions.find((s) => s.id === sessionId)?.mode as ChatMode | undefined) ??
-    "auto";
+  const listedSession = sessions.find((s) => s.id === sessionId);
+  const own = sessionId ? settingsOverride[sessionId] : undefined;
+  const sessionMode: WorkMode = own?.mode ?? (listedSession?.mode as WorkMode | undefined) ?? DEFAULT_WORK_MODE;
+  const sessionPermissions: Permissions =
+    own?.permissions ?? (listedSession?.permissions as Permissions | undefined) ?? DEFAULT_PERMISSIONS;
+  const sessionAskWhen: string = own?.ask_when ?? listedSession?.ask_when ?? "";
 
-  const setSessionMode = useCallback(
-    async (mode: ChatMode) => {
+  const changeSession = useCallback(
+    async (change: Partial<ChatSettings>) => {
       if (!sessionId) return;
       setModeSaving(true);
       setModeError(null);
-      setModeOverride((prev) => ({ ...prev, [sessionId]: mode }));
+      setSettingsOverride((prev) => ({ ...prev, [sessionId]: { ...prev[sessionId], ...change } }));
       const forget = () =>
-        setModeOverride((prev) => {
+        setSettingsOverride((prev) => {
           const next = { ...prev };
           delete next[sessionId];
           return next;
@@ -1110,12 +1137,12 @@ export function App() {
         const res = await fetch(`/api/sessions/${sessionId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode }),
+          body: JSON.stringify(change),
         });
         if (!res.ok) {
           const body = await res.json().catch(() => null);
           forget();
-          setModeError(body?.error ?? "The mode could not be changed.");
+          setModeError(body?.error ?? "That could not be changed.");
         }
       } catch {
         forget();
@@ -1126,6 +1153,20 @@ export function App() {
     },
     [sessionId],
   );
+  const setSessionMode = useCallback((mode: WorkMode) => void changeSession({ mode }), [changeSession]);
+  const setSessionPermissions = useCallback(
+    (permissions: Permissions) => void changeSession({ permissions }),
+    [changeSession],
+  );
+  const setSessionAskWhen = useCallback(
+    (ask_when: string) => void changeSession({ ask_when }),
+    [changeSession],
+  );
+
+  /* The app window takes the right of the chat on a wide screen, for a live
+     session; on a phone it lives in the pinned view. */
+  const phoneLayout = usePhone();
+  const appPane = usePreviewState().open && !phoneLayout && live;
 
   const sessionCost = sessions.find((s) => s.id === sessionId)?.cost ?? 0;
 
@@ -1309,15 +1350,6 @@ export function App() {
     }).catch(() => undefined);
   }, []);
 
-  const handleRunAutonomous = useCallback(async (task: KanbanTask) => {
-    if (!sessionId) return;
-    await fetch(`/api/sessions/${sessionId}/message`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: `Autonomously execute task: "${task.title}"` }),
-    }).catch(() => undefined);
-  }, [sessionId]);
-
   return (
     <div className="app">
       {/* Wide screens get the session list in the margin instead of behind a
@@ -1398,9 +1430,11 @@ export function App() {
           {/* What this chat may do on its own. Beside the session name,
               because it is a property of the conversation. */}
           {page === "chat" && sessionId && (
-            <ModePill
-              mode={sessionMode}
-              onChange={(mode) => void setSessionMode(mode)}
+            <PermissionsPill
+              permissions={sessionPermissions}
+              askWhen={sessionAskWhen}
+              onChange={setSessionPermissions}
+              onChangeWhen={setSessionAskWhen}
               busy={modeSaving}
               error={modeError}
             />
@@ -1502,7 +1536,7 @@ export function App() {
 
         {/* The conversation stays mounted under the other pages, so leaving
             it and coming back keeps your place in the thread. */}
-        <div className="chat-view" hidden={page !== "chat"}>
+        <div className={`chat-view${appPane ? " has-app" : ""}`} hidden={page !== "chat"}>
 
         <main className="page">
           {/* The room's light: cool at rest, warmer while it works, amber
@@ -1516,9 +1550,9 @@ export function App() {
             phase={reading.phase}
             sessionId={sessionId ?? ""}
             liveBrowserSeq={view.liveBrowserSeq}
+            browserOpen={browser?.open === true}
             live={live}
             onPermissionDecide={handlePermissionDecide}
-            onRunAutonomous={handleRunAutonomous}
             onSuggest={suggestFromThread}
             onSpeakReply={canSpeak ? speakReply : undefined}
             speakingReply={readingReply}
@@ -1755,6 +1789,9 @@ export function App() {
                   )}
                   <div className="composer-foot">
                     <div className="composer-tools">
+                      {/* How the agent goes about the work, on the row above
+                          Send: it applies to the words in the box. */}
+                      <ModeSelect mode={sessionMode} onChange={setSessionMode} busy={modeSaving} compact={appPane} />
                       {/* Leftmost in the row, and the only one of the two that
                           carries a conversation: Talk sits where the hand
                           goes first. It used to float over the thread above
@@ -1829,17 +1866,24 @@ export function App() {
                     </div>
                     <div className="composer-acts">
                       <span className="composer-send-wrap">
+                        {/* While the agent is working and there is nothing to send,
+                            this is the way to stop it: the same button, the
+                            same place, so a phone never has to find /stop. With
+                            words in the box it is Send, which interrupts. */}
                         <button
-                          className="composer-send"
+                          className={`composer-send${running && !draft.trim() && attached.length === 0 ? " is-stop" : ""}`}
                           // Without a model a message can only fail; a slash
                           // command (/settings) still goes.
-                          disabled={readOnly || (!draft.trim() && attached.length === 0)
-                            || (modelReady === false && !draft.trim().startsWith("/"))}
-                          onClick={submit}
-                          title={running ? "Interrupt & send" : "Send"}
-                          aria-label={running ? "Interrupt & send" : "Send"}
+                          disabled={readOnly || (!(running && !draft.trim() && attached.length === 0)
+                            && ((!draft.trim() && attached.length === 0)
+                              || (modelReady === false && !draft.trim().startsWith("/"))))}
+                          onClick={running && !draft.trim() && attached.length === 0 ? () => void stopTurn() : submit}
+                          title={running ? (!draft.trim() && attached.length === 0 ? "Stop" : "Interrupt & send") : "Send"}
+                          aria-label={running ? (!draft.trim() && attached.length === 0 ? "Stop" : "Interrupt & send") : "Send"}
                         >
-                          <IconArrowUp size={17} />
+                          {running && !draft.trim() && attached.length === 0
+                            ? <IconStop size={15} />
+                            : <IconArrowUp size={17} />}
                         </button>
                       </span>
                     </div>
@@ -1852,6 +1896,13 @@ export function App() {
             )}
           </div>
         </main>
+        {/* The app being built, beside the conversation on a wide screen. On a
+            phone it is a tab in the pinned view instead (see Stage). */}
+        {appPane && sessionId && (
+          <aside className="app-pane" aria-label="The app being built">
+            <AppPreview sessionId={sessionId} phone={false} />
+          </aside>
+        )}
         </div>
 
       </div>

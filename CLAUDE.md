@@ -52,7 +52,11 @@ Only when a change genuinely has no user-facing effect, skip the bump and put
   relay), `store.ts` / `state.ts` (what is kept on disk under `AUTORA_HOME`),
   `credentials.ts`, `mcp.ts` (plus `mcpcatalog.ts`, `mcpoffer.ts` and
   `mcpscript.ts`: the servers the agent offers, sets up or writes itself),
-  `jev/` (the evaluator), `crosssite.ts` (refuses requests and websockets
+  `preview.ts` and `pick.ts` (the app window: a second browser per session
+  showing what the agent is building, the static server and dev-server
+  address finding, and the page-side script that reads what a person
+  selected; comments are kept in `server.ts` until sent as one review),
+  `guard.ts` (what stops and asks before a risky call), `crosssite.ts` (refuses requests and websockets
   started by other websites), `tls.ts` (the optional https listener and the
   certificates it issues), `logs.ts` (the Logs page's ring buffer).
 - How it learns and runs on its own:
@@ -67,8 +71,10 @@ Only when a change genuinely has no user-facing effect, skip the bump and put
     after a reply. Pure, no model call.
   - `noticer.ts`: cheap checks (disk, Docker over its socket, failed
     schedules) said once and dismissable until they clear.
-  - `push.ts`: ntfy and Telegram, held during quiet hours. The tokens live
-    in the secret store, never in settings.
+  - `push.ts` and `webpush.ts`: the installed app is the phone interface, so
+    notifications go through it (Web Push, encrypted to the device), held
+    during quiet hours. There is deliberately no chat-app or third-party
+    channel (Telegram, WhatsApp, ntfy): don't add one.
 - Every turn, from any source (the chat box, a job, a watcher), goes through
   `startTurn()` in `server.ts`, and learning runs after it.
 - `src/`: the React client. `App.tsx` holds the session and stream;
@@ -110,6 +116,12 @@ it, so these hold for every change:
 
 ## Standing product decisions
 
-- Autora always runs in yolo mode: no tool call waits for approval in chat.
-  `needsApproval` in `server/tools.ts` returns false. Don't reintroduce
-  approval prompts or an "Ask me first" setting unless asked.
+- Yolo is the default: no tool call waits for approval in chat, and
+  `needsApproval` in `server/tools.ts` returns false. Approval is opt-in, per
+  chat, by the person: the header's Yolo / Ask selector (`permissions`, with
+  `ask_when` for when to ask, in `server/modes.ts`). Don't make Ask the
+  default or add approval prompts anywhere else unless asked.
+- A chat also has a work mode, chosen in the message box: Agent (the default:
+  plans first, then switches itself to build with `set_mode`; the switches show in the thread, the
+  selector stays on Agent), Build (works straight away) or Plan (read-only).
+  Planning is refused, never asked about.

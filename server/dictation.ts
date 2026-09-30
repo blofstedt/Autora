@@ -32,6 +32,10 @@ import type { WebSocket } from "ws";
 import { secretFor } from "./state";
 
 const DEEPGRAM_LIVE = "wss://api.deepgram.com/v1/listen";
+/** Where to listen. Deepgram's, unless the operator points it at a compatible
+    server of their own (or a test's stand-in). The key goes wherever this is,
+    so it is the operator's setting and never the page's. */
+const liveBase = () => (process.env.AUTORA_DEEPGRAM_STT_URL || "").trim() || DEEPGRAM_LIVE;
 const DEFAULT_MODEL = "nova-2";
 const DEFAULT_LANG = "en-US";
 
@@ -119,7 +123,7 @@ function liveUrl(asked: { rate?: string; lang?: string }): string {
   });
   if (/^nova-3/.test(chosen)) query.set("keyterm", "Autora");
   else if (/^nova-[12]|^enhanced|^base|^general/.test(chosen)) query.set("keywords", "Autora:2");
-  return `${DEEPGRAM_LIVE}?${query.toString()}`;
+  return `${liveBase()}?${query.toString()}`;
 }
 
 /** What Deepgram sends that is worth passing on, and nothing else. */

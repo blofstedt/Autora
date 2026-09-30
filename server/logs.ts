@@ -4,7 +4,7 @@
  * A ring buffer of structured lines -- time, level, component, message --
  * fed from three places: anything printed to the console (so nothing that
  * used to go only to `docker logs` is lost), API requests that failed, and
- * the agent's own activity (turns, tool calls, errors, Jev decisions), which
+ * the agent's own activity (turns, tool calls, errors), which
  * server.ts reports as it emits the events the thread is built from.
  *
  * In memory only, unlike the sessions themselves: enough to answer "what just

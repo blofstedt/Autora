@@ -97,7 +97,11 @@ export interface StoredMeta {
   counts?: SessionCounts;
   /** How much this chat may do on its own (see server/modes.ts). Absent on
       sessions written before there was a mode, which read as auto. */
-  mode?: "plan" | "ask" | "auto";
+  mode?: "build" | "plan" | "agent" | "ask" | "auto";
+  /** What may run without a yes (see server/modes.ts), and -- when it is
+      ask -- the person's own words for when to ask. */
+  permissions?: "yolo" | "ask";
+  askWhen?: string;
 }
 
 /** What a session's log holds, without holding the log. */

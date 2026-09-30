@@ -10,7 +10,6 @@ type Snapshot = {
   settings: {
     active: { model: string | null; provider: string | null; hint: string | null };
     tools: { groups: { group: string; label: string; enabled: boolean; available: boolean; detail: string }[] };
-    jev?: { enabled: boolean; support: { state: string; reason?: string }; last: { task: string; mode: string; ms: number } | null };
   } | null;
   usage: { month: { cost: number; turns: number }; today: { cost: number; turns: number } } | null;
   mcp: { servers: { name: string; status: string; tools: unknown[] }[] } | null;
@@ -89,7 +88,6 @@ export function StatusPage({
   const servers = snap.mcp?.servers ?? [];
   const connected = servers.filter((s) => s.status === "connected");
   const mcpTools = connected.reduce((n, s) => n + s.tools.length, 0);
-  const jev = snap.settings?.jev;
 
   return (
     <div className="page-scroll">
@@ -136,20 +134,6 @@ export function StatusPage({
             <b className="stat-value">{servers.length ? `${connected.length} of ${servers.length} connected` : "none"}</b>
             <span className={`stat-sub ${servers.length > connected.length ? "is-warn" : ""}`}>
               {servers.length ? `${mcpTools} tool${mcpTools === 1 ? "" : "s"} offered` : "no servers added"}
-            </span>
-          </button>
-          <button className="stat-card" onClick={() => onNavigate("config")}>
-            {/* Jev is the internal name; what it is to a person is fast decisions. */}
-            <span className="stat-label">Quick decisions (Jev)</span>
-            <b className="stat-value">
-              {!jev ? "…" : !jev.enabled ? "off" : jev.support.state === "no" ? "unavailable" : jev.support.state === "yes" ? "on" : "ready"}
-            </b>
-            <span className="stat-sub">
-              {jev?.last
-                ? `last: ${jev.last.task}, ${jev.last.mode === "jev" ? `${jev.last.ms} ms` : "used the full model instead"}`
-                : jev?.support.state === "no"
-                  ? jev.support.reason ?? "This model cannot score its choices."
-                  : "Scores small yes/no choices without a full model call."}
             </span>
           </button>
           <button className="stat-card" onClick={() => onTab("logs")}>

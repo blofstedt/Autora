@@ -18,7 +18,9 @@ export type SessionRow = {
   cost?: number;
   /** How much this chat may do on its own (server/modes.ts). Absent on an
       older server, and on an incognito chat, which is not in this list. */
-  mode?: "plan" | "ask" | "auto";
+  mode?: "build" | "plan" | "agent";
+  permissions?: "yolo" | "ask";
+  ask_when?: string;
 };
 
 function when(ts: number | undefined): string {

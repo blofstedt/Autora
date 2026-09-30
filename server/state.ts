@@ -22,12 +22,11 @@ import path from "node:path";
 import { isEphemeral } from "./ephemeral";
 import { AUTO_ORDER, PROVIDERS, providerSpec } from "./providers";
 import { LOOP_DEFAULTS, type LoopWatchConfig } from "./loopwatch";
-import { DEFAULT_JEV, clampThreshold, type JevSettings } from "./jev/router";
 import type { McpServerConfig } from "./mcp";
 import { DEFAULT_CAPTCHA, mergeCaptcha, type CaptchaSettings } from "./captcha";
 import { DEFAULT_PROACTIVITY, mergeProactivity, type Proactivity } from "./quiet";
 import { AUTOMATION_DEFAULTS, mergeAutomation, type AutomationBudget } from "./automation";
-import { NTFY_TOKEN, TELEGRAM_TOKEN, defaultPush, mergePush, type PushSettings } from "./push";
+import { defaultPush, mergePush, type PushSettings } from "./push";
 
 export const THEMES = ["violet", "teal", "nous-blue", "midnight", "ember", "mono", "cyberpunk", "rose"] as const;
 export const FONTS = ["inter", "system", "rounded", "mono"] as const;
@@ -248,8 +247,6 @@ export interface PersistedState {
   /** Which of the agent's groups of tools are on, and how tightly each is
       gated. See ./tools for what each group actually is. */
   tools: ToolSettings;
-  /** Jev Mode: fast scored decisions where the model supports them. */
-  jev: JevSettings;
   /** MCP servers whose tools are offered to the agent. */
   mcpServers: McpServerConfig[];
   /** How a CAPTCHA picture challenge is answered: which backends to try,
@@ -265,6 +262,11 @@ export interface PersistedState {
   /** Whether the agent looks back over its work after a turn and writes
       down what it learned (as unconfirmed memories). */
   learning: boolean;
+  /** The person's time zone (an IANA name such as Europe/Stockholm), or empty
+      to follow the machine. The clock every schedule, watcher and quiet hour
+      is read on: in the Umbrel container that is UTC unless something sets it,
+      so "8am" was 8am somewhere the person is not. See applyTimezone. */
+  timezone: string;
   /** When a turn is called a loop: repeats that earn a note, repeats that
       stop the turn, and how often it is asked to check itself. */
   loop: LoopWatchConfig;
@@ -274,8 +276,8 @@ export interface PersistedState {
       from what the person spends talking to the agent. See
       server/automation.ts. */
   automation: AutomationBudget;
-  /** Where news reaches the person's phone: ntfy, Telegram, and which news.
-      The tokens are in the secret store, not here. See server/push.ts. */
+  /** Which kinds of news reach the person's phone, through the installed
+      app. See server/push.ts. */
   push: PushSettings;
 }
 
@@ -407,19 +409,6 @@ export function saneMcp(raw: any): McpServerConfig | null {
   };
 }
 
-/** Same trust as mergeTools: arbitrary JSON in, sane settings out. */
-export function mergeJev(into: JevSettings, patch: any): JevSettings {
-  if (!patch || typeof patch !== "object") return into;
-  if (typeof patch.enabled === "boolean") into.enabled = patch.enabled;
-  if (patch.threshold !== undefined) into.threshold = clampThreshold(patch.threshold);
-  if (typeof patch.key === "string") {
-    const key = patch.key.trim();
-    if (key) into.key = key;
-    else delete into.key;
-  }
-  return into;
-}
-
 /** How many turns of spend history to keep. Enough for a month of heavy use;
     the running totals are folded into `carried` as entries fall off the end,
     so the lifetime figure stays right even once detail is dropped. */
@@ -485,7 +474,6 @@ function blank(): PersistedState {
     toolFeed: { month: "", tools: {} },
     usage: [],
     tools: defaultTools(),
-    jev: { ...DEFAULT_JEV },
     mcpServers: [],
     appearance: {
       theme: "violet", font: "inter", text: "default", icons: "default", column: "comfort",
@@ -495,6 +483,7 @@ function blank(): PersistedState {
     captcha: { ...DEFAULT_CAPTCHA, backends: [...DEFAULT_CAPTCHA.backends] },
     proactivity: { ...DEFAULT_PROACTIVITY },
     learning: true,
+    timezone: "",
     loop: { ...LOOP_DEFAULTS },
     retention: { ...RETENTION_DEFAULTS },
     automation: { ...AUTOMATION_DEFAULTS },
@@ -518,6 +507,10 @@ function read(): PersistedState {
     if (typeof raw.balanceAt === "number") state.balanceAt = raw.balanceAt;
     if (typeof raw.topUpUsd === "number") state.topUpUsd = raw.topUpUsd;
     if (typeof raw.learning === "boolean") state.learning = raw.learning;
+    if (typeof raw.timezone === "string" && validTimezone(raw.timezone)) {
+      state.timezone = raw.timezone.trim();
+      applyTimezone(state.timezone);
+    }
     if (raw.toolFeed && typeof raw.toolFeed.month === "string" && raw.toolFeed.tools) {
       state.toolFeed = { month: raw.toolFeed.month, tools: { ...raw.toolFeed.tools } };
     }
@@ -528,7 +521,6 @@ function read(): PersistedState {
        group is merged rather than replaced: a group added in a later release
        must not be missing from a file saved before it existed. */
     if (raw.tools) mergeTools(state.tools, raw.tools);
-    if (raw.jev && typeof raw.jev === "object") mergeJev(state.jev, raw.jev);
     if (Array.isArray(raw.mcpServers)) {
       state.mcpServers = raw.mcpServers.map(saneMcp).filter(Boolean) as McpServerConfig[];
     }
@@ -632,6 +624,37 @@ export function saveNow() {
   } catch (err: any) {
     console.warn(`[state] could not save settings: ${err?.message ?? err}`);
   }
+}
+
+/** Whether this is a zone the runtime knows. Node quietly reads an unknown
+    name as UTC, so it has to be asked, not tried. */
+export function validTimezone(tz: unknown): boolean {
+  const name = typeof tz === "string" ? tz.trim() : "";
+  if (!name) return false;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: name });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** What the machine was on before anybody chose: the environment's TZ, or
+    what the runtime resolved at start. Kept so choosing "the machine's" again
+    can put it back. */
+const MACHINE_TIMEZONE = process.env.TZ?.trim() || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+
+export function machineTimezone(): string {
+  return MACHINE_TIMEZONE;
+}
+
+/**
+ * Make the person's zone the clock the process reads. Node re-reads TZ on
+ * assignment, so every local-time call from here on -- a cron field, a quiet
+ * hour, a log line -- is on their clock. Empty puts the machine's back.
+ */
+export function applyTimezone(tz: string): void {
+  process.env.TZ = validTimezone(tz) ? tz.trim() : MACHINE_TIMEZONE;
 }
 
 export function stateFilePath(): string {
@@ -750,16 +773,6 @@ export function allSecrets(): Record<string, string> {
 
 /** Known presets for UI suggestions */
 export const SECRET_PRESETS: Record<string, { label: string; description: string; placeholder: string }> = {
-  [TELEGRAM_TOKEN]: {
-    label: "Telegram bot token",
-    description: "The bot Autora messages you through. Set it up under Settings, Phone notifications.",
-    placeholder: "123456:ABC...",
-  },
-  [NTFY_TOKEN]: {
-    label: "ntfy access token",
-    description: "Only for a protected ntfy topic. Set it up under Settings, Phone notifications.",
-    placeholder: "tk_...",
-  },
   GITHUB_TOKEN: {
     label: "GitHub Token",
     description: "Personal access token for GitHub CLI, API requests, and private repo operations.",
@@ -789,11 +802,6 @@ export const SECRET_PRESETS: Record<string, { label: string; description: string
     label: "Deepgram API Key",
     description: "Reads replies aloud through Deepgram's hosted Aura voices, the same ones on every device.",
     placeholder: "a Deepgram API key",
-  },
-  JEV_API_KEY: {
-    label: "Jev API Key",
-    description: "Key for the hosted Jev API (TypeSafe) used by Jev Mode. JEV_TOKEN works too.",
-    placeholder: "jev_...",
   },
   SLACK_BOT_TOKEN: {
     label: "Slack Bot Token",
@@ -867,12 +875,10 @@ export function listSecrets(): {
   return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** Keys read from the environment by other parts of the app (voice, Jev)
+/** Keys read from the environment by other parts of the app (voice)
     that are not a provider's and not in the secret store's own list. */
 const OTHER_ENV_KEYS = [
   "DEEPGRAM_API_KEY", "ASSEMBLYAI_API_KEY",
-  "JEV_API_KEY", "JEV_TOKEN", "JEV_KEY", "TYPESAFE_API_KEY", "TYPESAFE_TOKEN",
-  NTFY_TOKEN, TELEGRAM_TOKEN,
 ];
 
 /**
@@ -881,8 +887,7 @@ const OTHER_ENV_KEYS = [
  * Not only the secret store: a provider key set in the environment used to
  * be scrubbed only for three vendors, so `env` in the terminal printed a
  * DeepSeek, OpenRouter or local-server key straight into the thread, the log
- * on disk and the next prompt. Every provider's variables are here now, as is
- * the Jev key saved in its card.
+ * on disk and the next prompt. Every provider's variables are here now.
  */
 function secretTable(): { value: string; label: string }[] {
   const table = new Map<string, string>();
@@ -894,7 +899,6 @@ function secretTable(): { value: string; label: string }[] {
   for (const [prov, key] of Object.entries(state.keys ?? {})) add(key, `[REDACTED_${prov.toUpperCase()}_KEY]`);
   for (const spec of PROVIDERS) for (const name of spec.envKeys) add(process.env[name], `[REDACTED_${name}]`);
   for (const name of OTHER_ENV_KEYS) add(process.env[name], `[REDACTED_${name}]`);
-  add(state.jev?.key, "[REDACTED_JEV_API_KEY]");
   return [...table].map(([value, label]) => ({ value, label }));
 }
 

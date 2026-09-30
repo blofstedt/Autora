@@ -172,6 +172,29 @@ await test("a model's answer is read out of whatever prose it arrives in", () =>
   assert.equal(parseAnswer('{"tiles":[]}').tiles.length, 0);
 });
 
+await test("a lone number is a square, however the model wraps it", () => {
+  // The sight test asks for {"tile":N}, and a model that does exactly that was
+  // being judged blind: only lists were read, so vision stayed off for it.
+  assert.deepEqual(parseAnswer('{"tile":4}').tiles, [4]);
+  assert.deepEqual(parseAnswer('{"tile": 9}').tiles, [9]);
+  assert.deepEqual(parseAnswer('{"tile":"4"}').tiles, [4]);
+  assert.deepEqual(parseAnswer('Answer: {"tile":[4]}').tiles, [4]);
+  assert.deepEqual(parseAnswer('{"tiles":"3, 7 and 9"}').tiles, [3, 7, 9]);
+  assert.deepEqual(parseAnswer('{"tiles":[[1,2],3]}').tiles, [1, 2, 3]);
+});
+
+await test("nothing matching is an answer, and is not the same as no answer", () => {
+  for (const said of ['{"tiles":[]}', '{"tile":[]}', 'None match: {"tiles": []}']) {
+    const a = parseAnswer(said);
+    assert.equal(a.none, true, said);
+    assert.equal(a.why, undefined, said);
+  }
+  assert.equal(parseAnswer('{"tiles":[3]}').none, undefined);
+  assert.equal(parseAnswer('{"tiles":[99]}').none, undefined, "a square that does not exist is not 'none'");
+  assert.equal(parseAnswer('{"slide":null}').none, undefined);
+  assert.ok(parseAnswer("{}").why, "saying nothing at all is still no answer");
+});
+
 await test("an unreadable answer is no answer, and says why", () => {
   assert.ok(parseAnswer("I would click the second square").why);
   assert.ok(parseAnswer("{not json at all}").why);

@@ -292,7 +292,19 @@ export function attachRelay(ws: WebSocket, onChange: () => void) {
  * run it on their own machine. Nobody should have to take a remote-control
  * agent on faith.
  */
+/** The only shape of address that may be written into the relay's source:
+    a host and port and nothing else. The script is run by whoever downloads
+    it, on their own machine, and the address comes from a request header. */
+export const RELAY_URL = /^wss?:\/\/[A-Za-z0-9._\-[\]:]{1,255}\/ws\/desktop-relay$/;
+
+/** A Host header as a safe authority, or null. */
+export function cleanHost(host: unknown): string | null {
+  const text = String(host ?? "").trim();
+  return /^[A-Za-z0-9._\-[\]:]{1,255}$/.test(text) ? text : null;
+}
+
 export function relayClientSource(wsUrl: string): string {
+  if (!RELAY_URL.test(wsUrl)) throw new Error("That is not an address the relay can be told to dial.");
   return `#!/usr/bin/env python3
 """
 Autora desktop relay.

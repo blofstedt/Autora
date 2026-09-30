@@ -28,16 +28,21 @@ export const PICTURE_MIMES = new Set(["image/jpeg", "image/png", "image/webp", "
     because a photo was large is worse than a turn that asks for it by id. */
 export const MAX_PICTURE_BYTES = 4 * 1024 * 1024;
 
-/** The artifacts a message asks for, in the order they were given. Anything
-    that is not a known artifact id is dropped rather than failing the send:
+/** The artifacts a message asks for (by id, or as refs), in the order they
+    were given. Anything that is not a known artifact is dropped rather than failing the send:
     a file deleted between picking it and pressing Send should not lose the
     words typed beside it. */
 export function attachmentRefs(raw: unknown): AttachmentRef[] {
   if (!Array.isArray(raw)) return [];
   const out: AttachmentRef[] = [];
   const seen = new Set<string>();
-  for (const id of raw.slice(0, 20)) {
-    const key = String(id ?? "");
+  for (const item of raw.slice(0, 20)) {
+    /* An id, as a request sends them -- or a ref already made from one, which
+       is what an event carries and what the history is rebuilt from every
+       turn. Reading only ids here made every attached file vanish the moment
+       the message went into the history: the model was never told it was
+       there, and a picture was never sent. */
+    const key = item && typeof item === "object" ? String((item as { id?: unknown }).id ?? "") : String(item ?? "");
     if (!key || seen.has(key)) continue;
     const meta: Artifact | null = getArtifact(key);
     if (!meta) continue;

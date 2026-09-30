@@ -81,6 +81,18 @@ test("an id that is not an artifact is dropped, and the rest kept in order", () 
   assert.deepEqual(attachmentRefs([photo.id, photo.id]).map((f) => f.id), [photo.id]);
 });
 
+test("refs already made from ids read back the same -- which is what a rebuilt history holds", () => {
+  // The event carries the refs, and the history is rebuilt from the event on
+  // every turn: reading only ids there made every attachment vanish.
+  const first = attachmentRefs([photo.id, notes.id]);
+  const again = attachmentRefs(first);
+  assert.deepEqual(again, first);
+  assert.deepEqual(attachmentRefs([first[0], notes.id]).map((f) => f.id), [photo.id, notes.id], "a mix of both");
+  assert.deepEqual(attachmentRefs([{ id: "file_ffffffffffffffff", name: "x", mime: "text/plain", size: 1 }]), [], "a ref to a deleted file is dropped");
+  assert.deepEqual(attachmentRefs([{ name: "no id" }, {}, null]), []);
+  assert.equal(picturesFor(again).length, 1, "the picture is still sent");
+});
+
 test("a message with no files has nothing added to it", () => {
   assert.equal(attachmentNote([]), "");
   assert.equal(attachmentNote(undefined), "");

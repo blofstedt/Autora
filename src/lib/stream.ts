@@ -8,6 +8,8 @@ type Handlers = {
   onFrame?: (frame: LiveFrame) => void;
   /** Whether there is a page open to watch, and where it is. */
   onBrowser?: (state: BrowserState) => void;
+  /** The app window: whether it is open, and what has been said about it. */
+  onPreview?: (state: unknown) => void;
 };
 
 /**
@@ -119,7 +121,8 @@ export class SessionStream {
           // not deduped or resumed. Missing one costs a sixth of a second of
           // video and nothing else.
           this.handlers.onFrame?.({
-            source: msg.source === "desktop" ? "desktop" : "browser",
+            source: msg.source === "desktop" ? "desktop" : msg.source === "preview" ? "preview" : "browser",
+            ...(msg.source === "preview" ? { w: Number(msg.w) || undefined, h: Number(msg.h) || undefined } : {}),
             data: String(msg.data ?? ""),
             mime: String(msg.mime ?? "image/jpeg"),
             ts: Number(msg.ts ?? Date.now()),
@@ -127,6 +130,9 @@ export class SessionStream {
           break;
         case "browser":
           this.handlers.onBrowser?.(msg.state);
+          break;
+        case "preview":
+          this.handlers.onPreview?.(msg.state);
           break;
         case "end":
           this.handlers.onStatus({ state: "recorded", length: msg.length });

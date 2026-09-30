@@ -646,6 +646,26 @@ attribute) it resolves to the file and line that rendered it; where it did not,
 it says so rather than guessing at a file. The pick is an event like any other,
 so it lands in the thread: the agent sees that you pointed and at what.
 
+### The app window
+
+When the agent builds a website or an app it starts it in the **app window**
+(`app_preview`): a second browser per chat, beside the conversation on a wide
+screen and a tab in the pinned view on a phone. A dev server it runs, a folder
+of files it serves (reloaded by itself as the files change), or something
+already running on this machine -- never another site. You see it take shape,
+at a phone, tablet or desktop size.
+
+Three tools on the page: **Use** (click, type and scroll it as normal),
+**Select** (hover outlines, a click picks an element; the arrow keys step
+outwards, inwards and sideways; shift adds more; the box can try a change right
+on the page -- retype the text, set a colour, a size, a corner, spacing -- and
+the change goes with the comment as before and after) and **Region** (drag a box
+round anything). Each comment is kept with a picture, pinned where it was made,
+and they go together as one **review**: one message to the agent, with a
+picture of each and, for every element, a unique selector, its words and styles,
+where it sits, and the component and file when the framework says. The agent can
+`look` at the page and its console errors to check its own work.
+
 ### 3D and canvas
 
 A `<canvas>` has no DOM to read, so the pick asks the engine instead. A scene
@@ -683,13 +703,21 @@ Autora runs without approval gates by default: a call runs straight away and
 is shown in the thread as it happens, and Stop kills whatever is running. There
 are two ways to put a gate back, and they are about different things.
 
-**The chat's mode** — in the header of the conversation, and saved with it.
-*Plan* holds every call that would change something and tells the agent to say
-what it intends instead; *Ask* lets it look freely and holds anything that
-writes, runs or sends; *Auto* is the default. See
+**The chat's permissions** — in the header of the conversation, and saved
+with it. *Yolo* is the default. *Ask* lets the agent look freely and holds
+anything that writes, runs or sends for your yes -- all of it, or only what you
+name: write when it should ask ("before deleting anything, before sending a
+message") or tap a suggestion, and each call is read against your words. See
 [`server/modes.ts`](server/modes.ts) for what counts as looking and what
 counts as changing — the list is short and deliberate, and a tool that is not
 on it is treated as a change.
+
+**How the agent works** is a separate choice, in the message box: *Build*
+does the work straight away, *Plan* is read-only -- it looks,
+researches and writes its plan on the to-do list, and changes are refused --
+and *Agent* (the default) plans first, then switches itself to build, and back if the plan
+needs rethinking. Only a very simple task skips the plan. The switches show in
+the thread; the selector stays on Agent.
 
 **The per-group setting** — Settings → **Tools**, one approval mode for each of
 terminal, browser, computer and memory. `never` (the default) asks nothing;
@@ -826,14 +854,10 @@ hour, never inside your quiet hours, and only while the day's automation
 budget lasts. It is a turn, so it costs what a turn costs. With it off,
 nothing is lost: the job's result still arrives with the next thing you say.
 
-The **mode** of a chat — Plan, Ask or Auto — decides what may happen inside it,
-and is set in the header of the chat itself. **Plan** changes nothing: every
-call that would is put to you first, and the agent is told to say what it
-intends and stop. **Ask** lets it look freely and waits for your yes before it
-writes, runs or sends. **Auto** is the default and what Autora has always
-done. It is per conversation and saved with it — and it does not weaken
-anything below: the guard's standing agreements and the irrecoverable tier ask
-whatever the mode says.
+A chat's **permissions** (Yolo or Ask) decide what waits for you, and its
+**mode** (Build, Plan or Agent) decides how the agent goes about the work; both
+are per conversation and saved with it. Neither weakens anything below: the
+guard's standing agreements and the irrecoverable tier ask whatever they say.
 
 ## Configuration
 
@@ -863,7 +887,6 @@ whatever the mode says.
 | `AUTORA_MAX_OUTPUT_TOKENS` | Output tokens the model may write per step of a task (default: 8192) |
 | `DEEPGRAM_API_KEY` | Speak through Deepgram's hosted Aura voices; a key saved in Settings -> Secrets wins |
 | `AUTORA_DEEPGRAM_VOICE` | The Deepgram voice to start with (default `aura-2-thalia-en`); a voice picked in Settings wins |
-| `TYPESAFE_API_KEY` | A key for the hosted Jev API, used by Jev Mode instead of the chat model. `JEV_API_KEY`, `JEV_TOKEN`, `JEV_KEY` and `TYPESAFE_TOKEN` work too, as environment variables or saved in Settings → Secrets (also settable in Settings → Jev Mode) |
 | `AUTORA_BROWSER_HEADED` | `1` shows a real browser window instead of running headless |
 | `AUTORA_BROWSER_FPS` / `AUTORA_BROWSER_QUALITY` / `AUTORA_BROWSER_STREAM_WIDTH` | How much live video to send (default `6` fps, quality `50`, scaled to `960` wide) |
 | `AUTORA_HOME` | State directory (default `~/.autora`; `/data` in the container) — the one place that survives an update |

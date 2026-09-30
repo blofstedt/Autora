@@ -87,3 +87,55 @@ self.addEventListener("fetch", (event) => {
     );
   }
 });
+
+/* ---------------------------------------------------------------- push --
+   A message from the console (server/webpush.ts), shown even with the app
+   closed. A notification is only for someone who is not already looking: if
+   a window of the app is on screen the message is already in the thread, and
+   browsers allow skipping the notification in exactly that case. */
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = { body: event.data ? event.data.text() : "" };
+  }
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
+      if (windows.some((w) => w.visibilityState === "visible")) return undefined;
+      return self.registration.showNotification(data.title || "Autora", {
+        body: data.body || "",
+        icon: "/icons/icon-192.png",
+        badge: "/icons/icon-192.png",
+        // One notification per kind: three finished schedules replace one
+        // another instead of stacking, and something that needs you stays.
+        tag: data.urgent ? "autora-needs-you" : "autora",
+        renotify: true,
+        requireInteraction: !!data.urgent,
+        data: { url: data.url || "/" },
+      });
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  // Only a place in this app: what a tap opens is never taken from the message.
+  let target = "/";
+  try {
+    const wanted = new URL((event.notification.data && event.notification.data.url) || "/", self.location.origin);
+    target = wanted.pathname + wanted.search;
+  } catch {
+    target = "/";
+  }
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
+      for (const w of windows) {
+        if ("focus" in w) {
+          return w.focus().then((c) => (c && "navigate" in c ? c.navigate(target).catch(() => c) : c));
+        }
+      }
+      return self.clients.openWindow(target);
+    }),
+  );
+});

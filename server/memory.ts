@@ -213,7 +213,7 @@ interface Indexed {
 
 /* Each memory's words, kept until it changes. Recall ran the tokenizer over
    every memory, body and all, two or three times a turn (the turn's recall,
-   Jev's shortlist, the look back afterwards) -- with a few hundred memories
+   the look back afterwards) -- with a few hundred memories
    that was most of the time a turn spent before its first word. */
 const indexCache = new WeakMap<MemoryRecord, Indexed & { title: string; body: string; tags: string }>();
 

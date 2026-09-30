@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { Noticer, findings, type NoticerMemory } from "../server/noticer";
 import {
-  HeldMessages, cleanServer, defaultPush, deliver, mergePush, telegramChats,
+  HeldMessages, defaultPush, deliver, mergePush,
 } from "../server/push";
 
 let passed = 0;
@@ -68,63 +68,45 @@ await test("said once, even across a restart; dismissed until it clears; news ag
   assert.equal(after.update(full, 700).length, 1);
 });
 
-await test("settings: a server is a plain http(s) address, a topic is ntfy's kind of name", () => {
+await test("settings: only which news is sent is kept, and nonsense leaves the old value", () => {
   const p = defaultPush();
-  mergePush(p, { ntfy: { enabled: true, server: "https://ntfy.example.com/", topic: "autora-x1" }, on: { turns: false } });
-  assert.equal(p.ntfy.server, "https://ntfy.example.com");
-  assert.equal(p.ntfy.topic, "autora-x1");
+  mergePush(p, { on: { turns: false, jobs: "yes" } });
   assert.equal(p.on.turns, false);
-  mergePush(p, { ntfy: { server: "javascript:alert(1)", topic: "has spaces" } });
-  assert.equal(p.ntfy.server, "https://ntfy.example.com", "nonsense leaves the old value");
-  assert.equal(p.ntfy.topic, "autora-x1");
-  assert.equal(cleanServer("https://user:pw@ntfy.sh"), null, "no credentials in the address");
-  mergePush(p, { telegram: { enabled: true, chat: 123456789 } });
-  assert.equal(p.telegram.chat, "123456789");
+  assert.equal(p.on.jobs, true, "a value that is not a switch is ignored");
+  mergePush(p, null);
+  mergePush(p, "nonsense");
+  assert.deepEqual(p, { on: { jobs: true, notices: true, turns: false, asks: true } });
 });
 
-await test("a message goes to each channel set up, and each token only to its own service", async () => {
+await test("settings written by an older build, which named a chat bot and a topic, load without them", () => {
   const p = defaultPush();
-  mergePush(p, { ntfy: { enabled: true, topic: "autora-x1" }, telegram: { enabled: true, chat: "42" } });
-  const seen: { url: string; headers: Record<string, string>; body: any }[] = [];
-  const fake = (async (url: string, init: any) => {
-    seen.push({ url, headers: init?.headers ?? {}, body: JSON.parse(init?.body ?? "{}") });
-    return new Response(JSON.stringify({ ok: true }), { status: 200 });
-  }) as unknown as typeof fetch;
-  const out = await deliver(
-    { title: "Backup finished", body: "All 3 disks copied.", url: "http://umbrel.local:8817/?session=s1" },
-    p, { ntfy: "tk_ntfy", telegram: "123:bot" }, fake,
-  );
-  assert.deepEqual(out.map((d) => [d.channel, d.ok]), [["ntfy", true], ["telegram", true]]);
-  const ntfy = seen.find((s) => s.url.startsWith("https://ntfy.sh"))!;
-  assert.equal(ntfy.headers.Authorization, "Bearer tk_ntfy");
-  assert.equal(ntfy.body.topic, "autora-x1");
-  assert.equal(ntfy.body.click, "http://umbrel.local:8817/?session=s1");
-  const tg = seen.find((s) => s.url.startsWith("https://api.telegram.org/"))!;
-  assert.equal(tg.url, "https://api.telegram.org/bot123:bot/sendMessage");
-  assert.equal(tg.body.chat_id, "42");
-  assert.ok(!JSON.stringify(ntfy).includes("123:bot") && !JSON.stringify(tg).includes("tk_ntfy"));
+  mergePush(p, {
+    ntfy: { enabled: true, server: "https://ntfy.sh", topic: "autora-x1" },
+    telegram: { enabled: true, chat: "42" },
+    on: { asks: false },
+  });
+  assert.deepEqual(p, { on: { jobs: true, notices: true, turns: true, asks: false } });
+  assert.ok(!("ntfy" in p) && !("telegram" in p), "nothing of the old channels is carried");
 });
 
-await test("a failure is a line, never the token", async () => {
-  const p = defaultPush();
-  mergePush(p, { telegram: { enabled: true, chat: "42" } });
-  const down = (async () => { throw new TypeError("fetch failed https://api.telegram.org/botSECRET/sendMessage"); }) as unknown as typeof fetch;
-  const [d] = await deliver({ title: "x", body: "y" }, p, { ntfy: "", telegram: "SECRET" }, down);
+await test("a message goes to the devices that asked, and nowhere else", async () => {
+  const sent: any[] = [];
+  const web = { count: () => 2, send: async (m: any) => { sent.push(m); return { ok: true, sent: 2, failed: 0 }; } };
+  const out = await deliver({ title: "Backup finished", body: "All 3 disks copied.", url: "http://umbrel.local:8817/?session=s1" }, web);
+  assert.deepEqual(out, [{ channel: "web", ok: true }]);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].url, "http://umbrel.local:8817/?session=s1");
+});
+
+await test("a failure is a line, never a throw; and with no device nothing is sent at all", async () => {
+  const down = { count: () => 1, send: async () => { throw new Error("network is down"); } };
+  const [d] = await deliver({ title: "x", body: "y" }, down);
   assert.equal(d.ok, false);
-  assert.ok(!d.error!.includes("SECRET"));
-  const refused = (async () => new Response(JSON.stringify({ ok: false, description: "Unauthorized" }), { status: 401 })) as unknown as typeof fetch;
-  await assert.rejects(telegramChats("SECRET", refused), (e: Error) => /Unauthorized/.test(e.message) && !e.message.includes("SECRET"));
-  // Nothing set up: nothing sent, nothing thrown.
-  assert.deepEqual(await deliver({ title: "x", body: "y" }, defaultPush(), { ntfy: "", telegram: "" }, down), []);
-});
-
-await test("the chats that wrote to the bot, newest first", async () => {
-  const updates = (async () => new Response(JSON.stringify({ ok: true, result: [
-    { message: { chat: { id: 1, first_name: "Ann" } } },
-    { message: { chat: { id: 2, title: "Family" } } },
-    { message: { chat: { id: 1, first_name: "Ann" } } },
-  ] }), { status: 200 })) as unknown as typeof fetch;
-  assert.deepEqual(await telegramChats("t", updates), [{ id: "1", name: "Ann" }, { id: "2", name: "Family" }]);
+  assert.match(d.error!, /network is down/);
+  let called = false;
+  const none = { count: () => 0, send: async () => { called = true; return { ok: true, sent: 0, failed: 0 }; } };
+  assert.deepEqual(await deliver({ title: "x", body: "y" }, none), []);
+  assert.equal(called, false);
 });
 
 await test("held through quiet hours, then sent as one message", () => {

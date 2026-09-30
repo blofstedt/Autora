@@ -1,0 +1,18 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Spoke &amp; Co</title><style>
+body{margin:0;font-family:Georgia,serif;background:#fff;color:#111}
+nav{display:flex;gap:16px;padding:12px 20px;border-bottom:1px solid #eee}
+.hero{padding:40px 24px}
+h1{font-size:40px;margin:0 0 8px}
+p.lead{font:16px system-ui;color:#555;max-width:420px}
+a.cta{display:inline-block;background:#6e5bff;color:#fff;padding:10px 18px;border-radius:8px;font:600 14px system-ui;text-decoration:none}
+.cards{display:flex;gap:12px;padding:0 24px}.card{flex:1;height:90px;background:#f3f1ff;border-radius:8px}
+@media (max-width:500px){ nav{flex-direction:column} }
+</style></head><body>
+<nav><b id="brand">Spoke &amp; Co</b><a href="#">Bikes</a><a href="#">Repairs</a></nav>
+<section class="hero"><h1>Ride further.</h1><p class="lead">Hand-built city bikes, serviced for life.</p><a class="cta" href="#">Shop bikes</a></section>
+<div class="search"><input id="q" placeholder="Search bikes" style="margin:0 24px 12px;padding:6px 10px"><p id="echo" style="margin:0 24px 12px;font:13px system-ui"></p></div>
+<div class="cards"><div class="card"></div><div class="card"></div><div class="card"></div></div>
+
+<script>document.getElementById("q").addEventListener("input",function(e){document.getElementById("echo").textContent=e.target.value})</script>
+<div style="height:1600px"></div>
+</body></html>

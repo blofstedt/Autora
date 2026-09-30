@@ -910,6 +910,12 @@ body::before {
   box-shadow: 0 4px 14px -4px rgba(var(--accent-rgb),  0.7);
 }
 .composer-send:disabled { cursor: default; }
+/* The same button while the agent is working and the box is empty: Stop. */
+.composer-box .composer-send.is-stop:not(:disabled) {
+  color: var(--danger); background: rgba(251, 113, 133, 0.14);
+  border: 1px solid rgba(251, 113, 133, 0.5); box-shadow: none;
+}
+.composer-box .composer-send.is-stop:not(:disabled):hover { background: rgba(251, 113, 133, 0.24); }
 .composer-send:active:not(:disabled), .composer-stop:active { transform: scale(0.94); }
 .composer-stop {
   border: 1px solid rgba(251, 113, 133, 0.45); color: var(--danger);
@@ -2670,654 +2676,62 @@ label + .jf-hint { margin-top: -5px; }
 }
 
 /* ============================================================================
-   Interactive Kanban Board Cell with Drag & Drop
+   The to-do list
    ============================================================================ */
-.kanban-cell {
+.todo-cell {
   background: var(--s1);
-  border: 1px solid rgba(var(--glow-deep-rgb),  0.28);
+  border: 1px solid var(--border);
   border-radius: var(--r);
   overflow: hidden;
-  box-shadow: 0 8px 30px -8px rgba(0, 0, 0, 0.6);
-  user-select: none;
 }
-
-.kanban-header,
-.kanban-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  background: rgba(var(--neural-1-rgb),  0.88);
-  border-bottom: 1px solid rgba(var(--glow-deep-rgb),  0.2);
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.kanban-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: calc(13.5px * var(--ts, 1));
-  font-weight: 650;
-  color: var(--glow-text);
-}
-
-.kanban-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  background: rgba(var(--glow-rgb),  0.22);
-  border: 1px solid rgba(var(--glow-rgb),  0.45);
-  color: var(--glow-light);
-}
-
-.kanban-count {
-  font-size: calc(11px * var(--ts, 1));
-  font-weight: 500;
-  color: var(--text-3);
-  background: rgba(255, 255, 255, 0.06);
-  padding: 2px 7px;
-  border-radius: 99px;
-}
-
-.kanban-dnd-hint {
-  font-size: calc(11px * var(--ts, 1));
-  font-weight: 400;
-  color: var(--glow);
-  opacity: 0.85;
-  background: rgba(var(--glow-rgb),  0.12);
-  padding: 2px 8px;
-  border-radius: 4px;
-  margin-left: 4px;
-}
-@media (max-width: 640px) {
-  .kanban-dnd-hint {
-    display: none;
-  }
-}
-
-.kanban-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.btn-accent {
-  background: linear-gradient(135deg, var(--glow-deep), var(--glow-deep));
-  color: var(--on-accent);
-  border: 1px solid rgba(var(--glow-light-rgb),  0.4);
-  font-weight: 600;
-  box-shadow: 0 2px 8px rgba(var(--glow-deep-rgb),  0.35);
-}
-.btn-accent:hover {
-  background: linear-gradient(135deg, var(--glow-deep), var(--glow));
-  box-shadow: 0 4px 14px rgba(var(--glow-deep-rgb),  0.5);
-}
-
-.kanban-pulse-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--glow-text);
-  box-shadow: 0 0 6px #fff;
-  animation: pulseSkills 1.5s infinite;
-}
-
-.kanban-add-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  background: rgba(var(--neural-0-rgb),  0.95);
-  border-bottom: 1px solid rgba(var(--glow-deep-rgb),  0.2);
-  animation: rise 0.2s ease-out;
-}
-.kanban-add-input {
-  flex: 1;
-  background: var(--sink);
-  border: 1px solid rgba(var(--glow-rgb),  0.35);
-  border-radius: 6px;
-  padding: 7px 11px;
-  color: var(--text);
-  font-size: calc(12.5px * var(--ts, 1));
-  font-family: inherit;
-}
-.kanban-add-input:focus {
-  outline: none;
-  border-color: var(--glow);
-  box-shadow: 0 0 0 2px rgba(var(--glow-rgb),  0.25);
-}
-
-.kanban-cols,
-.kanban-columns {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  padding: 12px;
-  align-items: start;
-}
-/* On a phone the three columns share the width. A board you have to swipe
-   sideways hides a third of itself, and seeing where everything stands at once
-   is the whole point of a board. What made the columns too wide to fit was
-   what sat on a card beside the title -- so on a phone a card is a title and
-   a stripe in its column's colour, and nothing else. */
-@media (max-width: 640px) {
-  .kanban-cols,
-  .kanban-columns {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 4px;
-    padding: 8px 8px 10px;
-    overflow-x: visible;
-  }
-}
-
-.kanban-col {
-  background: rgba(var(--s1-rgb),  0.7);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
-  padding: 9px;
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  min-height: 180px;
-  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
-  position: relative;
-}
-
-/* Drag over active column state */
-.kanban-col.is-drag-over {
-  border-color: rgba(var(--glow-rgb),  0.85);
-  background: rgba(var(--glow-deep-rgb),  0.1);
-  box-shadow: 0 0 24px -2px rgba(var(--glow-rgb),  0.38), inset 0 0 16px rgba(var(--glow-rgb),  0.08);
-  transform: translateY(-1px);
-}
-
-.kanban-col-head {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: calc(11.5px * var(--ts, 1));
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-2);
-  padding-bottom: 7px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-}
-
-.col-indicator {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  display: inline-block;
-}
-.col-indicator.todo-ind {
-  background: #94a3b8;
-  box-shadow: 0 0 6px rgba(148, 163, 184, 0.6);
-}
-.col-indicator.doing-ind {
-  background: var(--glow);
-  box-shadow: 0 0 8px rgba(var(--glow-rgb),  0.9);
-  animation: pulseSkills 2s infinite;
-}
-.col-indicator.done-ind {
-  background: #34d399;
-  box-shadow: 0 0 8px rgba(52, 211, 153, 0.8);
-}
-
-.col-name {
-  flex: 1;
-}
-
-.col-badge {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-2);
-  border-radius: 99px;
-  padding: 1px 7px;
-  font-size: calc(10.5px * var(--ts, 1));
-  font-variant-numeric: tabular-nums;
-}
-
-.kanban-items {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  flex: 1;
-}
-
-.kanban-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100px;
-  border: 1px dashed rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  font-size: calc(11.5px * var(--ts, 1));
-  color: var(--text-3);
-  text-align: center;
-  padding: 12px;
-  transition: all 0.18s ease;
-}
-.kanban-empty.is-drop-active {
-  border-color: var(--glow);
-  background: rgba(var(--glow-rgb),  0.15);
-  color: var(--glow-text);
-}
-
-/* Drop placeholder */
-.kanban-drop-placeholder {
-  border: 1.5px dashed rgba(var(--glow-rgb),  0.7);
-  border-radius: 8px;
-  background: rgba(var(--glow-deep-rgb),  0.15);
-  color: var(--glow-text);
-  padding: 12px 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  font-size: calc(11.5px * var(--ts, 1));
-  font-weight: 550;
-  animation: pulseDrop 1.2s ease-in-out infinite alternate;
-}
-@keyframes pulseDrop {
-  from {
-    opacity: 0.7;
-    border-color: rgba(var(--glow-rgb),  0.5);
-  }
-  to {
-    opacity: 1;
-    border-color: rgba(var(--glow-light-rgb),  0.9);
-  }
-}
-.kanban-drop-icon {
-  color: var(--glow-light);
-}
-
-/* Kanban Task Card */
-.kanban-card,
-.kanban-task-card {
-  background: var(--s2);
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 8px;
-  padding: 10px 12px;
-  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
-  cursor: grab;
-  position: relative;
-}
-
-.kanban-card:hover,
-.kanban-task-card:hover {
-  border-color: rgba(var(--glow-rgb),  0.45);
-  background: var(--s3);
-  transform: translateY(-1.5px);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
-}
-
-.kanban-card:active {
-  cursor: grabbing;
-}
-
-.kanban-card.active {
-  border-color: rgba(var(--glow-rgb),  0.4);
-  background: linear-gradient(180deg, rgba(var(--glow-deep-rgb),  0.1) 0%, rgba(var(--s2-rgb),  0.95) 100%);
-}
-
-.kanban-card.completed {
-  border-color: rgba(52, 211, 153, 0.25);
-  background: rgba(var(--s2-rgb),  0.8);
-}
-
-/* Dragging state */
-.kanban-card.is-dragging {
-  opacity: 0.35;
-  transform: scale(0.97);
-  border: 1.5px dashed rgba(var(--glow-rgb),  0.8);
-  box-shadow: 0 0 14px rgba(var(--glow-rgb),  0.25);
-}
-
-/* Drop targets before/after */
-.kanban-card.drop-target-before {
-  box-shadow: 0 -3px 0 0 var(--glow-light), 0 4px 12px rgba(0, 0, 0, 0.4);
-}
-.kanban-card.drop-target-after {
-  box-shadow: 0 3px 0 0 var(--glow-light), 0 4px 12px rgba(0, 0, 0, 0.4);
-}
-
-.kanban-drag-grip {
-  color: var(--text-3);
-  opacity: 0.55;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-top: 2px;
-  flex-shrink: 0;
-  cursor: grab;
-  transition: opacity 0.15s, color 0.15s;
-}
-.kanban-card:hover .kanban-drag-grip {
-  opacity: 0.95;
-  color: var(--glow-light);
-}
-
-.kanban-card-title,
-.kanban-task-title {
-  font-size: calc(12.5px * var(--ts, 1));
-  font-weight: 550;
-  color: var(--text);
-  line-height: 1.45;
-  flex: 1;
-}
-.kanban-card-title.completed-text {
-  color: var(--text-3);
-  text-decoration: line-through;
-}
-
-.kanban-spin-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--glow-light);
-  box-shadow: 0 0 8px var(--glow-light);
-  animation: pulseSkills 1.2s infinite;
-  margin-top: 4px;
-  flex-shrink: 0;
-}
-
-.kanban-check-icon {
-  color: #34d399;
-  display: inline-flex;
-  align-items: center;
-  margin-top: 2px;
-  flex-shrink: 0;
-}
-
-.kanban-progress-track {
-  width: 100%;
-  height: 4.5px;
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 99px;
-  overflow: hidden;
-}
-
-.kanban-progress-bar {
-  height: 100%;
-  border-radius: 99px;
-  transition: width 0.35s ease, background-color 0.3s ease;
-}
-
-.kanban-progress-bar.status-todo {
-  background: rgba(255, 255, 255, 0.18);
-}
-
-.kanban-progress-bar.status-doing {
-  background: linear-gradient(90deg, var(--glow-deep), var(--glow-light));
-  box-shadow: 0 0 8px rgba(var(--glow-rgb),  0.65);
-}
-
-.kanban-progress-bar.status-done {
-  background: linear-gradient(90deg, #10b981, #34d399);
-  box-shadow: 0 0 8px rgba(52, 211, 153, 0.55);
-}
-
-.kanban-tag,
-.kanban-tag-pill {
-  font-size: calc(10px * var(--ts, 1));
-  font-family: var(--mono);
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text-3);
-  padding: 1.5px 7px;
-  border-radius: 4px;
-  text-transform: lowercase;
-}
-.kanban-tag.doing {
-  background: rgba(var(--glow-rgb),  0.18);
-  color: var(--glow-text);
-  border: 1px solid rgba(var(--glow-rgb),  0.35);
-}
-.kanban-tag.done {
-  background: rgba(52, 211, 153, 0.14);
-  color: #a7f3d0;
-  border: 1px solid rgba(52, 211, 153, 0.28);
-}
-
-.kanban-step-btn {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: var(--text-2);
-  border-radius: 5px;
-  padding: 3px 8px;
-  font-size: calc(11px * var(--ts, 1));
-  font-weight: 500;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  transition: all 0.15s ease;
-}
-.kanban-step-btn:hover {
-  background: rgba(var(--glow-rgb),  0.28);
-  color: #fff;
-  border-color: var(--glow);
-  transform: translateY(-0.5px);
-}
-.kanban-step-btn.done:hover {
-  background: rgba(52, 211, 153, 0.25);
-  color: #a7f3d0;
-  border-color: #34d399;
-}
-.kanban-step-btn.undo:hover {
-  background: rgba(251, 191, 36, 0.2);
-  color: #fde047;
-  border-color: #f59e0b;
-}
-
-
-/* ---------------------------------------------------------------------------
-   Compact cards: one line each, cut off rather than wrapped, with the bar
-   underneath. The whole work item lives behind a tap, so nothing has to fit
-   here -- which is what lets all three columns stand side by side.
-   --------------------------------------------------------------------------- */
-.kanban-card,
-.kanban-task-card {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 8px 7px;
-  border-radius: 7px;
-}
-
-.kanban-card-title,
-.kanban-task-title {
-  min-width: 0;
-  font-size: calc(12px * var(--ts, 1));
-  font-weight: 520;
-  color: var(--text);
-  line-height: 1.35;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* A finished card is greyed and ticked, not struck through: the title is cut
-   off to one line here, and a line through a half-sentence reads as damage.
-   The steps inside the opened card keep their strikethrough. */
-.kanban-card .kanban-card-title.completed-text,
-.kanban-task-card .kanban-task-title.completed-text {
-  color: var(--text-3);
-  text-decoration: none;
-}
-.kanban-card.completed .kanban-card-title { opacity: 0.85; }
-
-.kanban-drag-grip { margin-top: 0; }
-
-.kanban-card-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.kanban-spin-dot {
-  width: 6px;
-  height: 6px;
-  margin-top: 0;
-}
-
-.kanban-check-icon { margin-top: 0; }
-
-.kanban-card-pct {
-  font-family: var(--mono);
-  font-size: calc(9.5px * var(--ts, 1));
-  color: var(--text-3);
-}
-
-/* The bar belongs to the card, one thin line across the bottom of it. */
-.kanban-card .kanban-progress-track {
-  grid-column: 1 / -1;
-  display: block;
-  height: 2.5px;
-  margin-top: 2px;
-}
-
-/* A card with nothing to count says so with motion, not with a number. */
-/* A wide, softly lit band travelling through the track: visible when still,
-   and plainly moving when not. Nothing here claims to be a percentage. */
-.kanban-progress-bar.is-unknown {
-  width: 38%;
-  background: linear-gradient(90deg, rgba(var(--glow-deep-rgb), 0.55), var(--glow-light) 45%, rgba(var(--glow-deep-rgb), 0.55));
-  background-size: 220% 100%;
-  box-shadow: 0 0 7px rgba(var(--glow-rgb), 0.55);
-  animation: kanbanUnknown 1.6s linear infinite;
-}
-
-@keyframes kanbanUnknown {
-  from { background-position: 120% 0; }
-  to   { background-position: -80% 0; }
-}
-
-/* Picked up out of one column and set down in the next. */
-.kanban-card.is-flying {
-  position: relative;
-  z-index: 30;
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(var(--glow-rgb), 0.5);
-}
-
-.kanban-card.is-open {
-  border-color: rgba(var(--glow-rgb), 0.6);
-}
-
+.todo-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 13px; border-bottom: 1px solid var(--border);
+  font-size: calc(12px * var(--ts, 1)); color: var(--text-2);
+}
+.todo-head b { font-weight: 650; color: var(--text); font-size: calc(12.5px * var(--ts, 1)); }
+.todo-count { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--text-3); }
+.todo-bar { height: 3px; background: rgba(255, 255, 255, 0.06); }
+.todo-bar > i { display: block; height: 100%; background: var(--live); transition: width 0.35s ease; }
+.todo-list { list-style: none; margin: 0; padding: 6px 0; }
+.todo-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 7px 13px; min-width: 0;
+  font-size: calc(13.5px * var(--ts, 1)); line-height: 1.45; color: var(--text);
+  overflow-wrap: anywhere;
+}
+.todo-box { flex: 0 0 auto; width: 20px; height: 20px; margin-top: 0; overflow: visible; }
+.todo-rect {
+  fill: transparent; stroke: var(--text-3); stroke-width: 1.5;
+  transform-box: fill-box; transform-origin: center;
+  transition: fill 0.25s ease, stroke 0.25s ease, transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.todo-tick {
+  fill: none; stroke: #fff; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round;
+  stroke-dasharray: 1; stroke-dashoffset: 1; opacity: 0;
+  transition: stroke-dashoffset 0.32s ease 0.12s, opacity 0.05s linear 0.12s;
+}
+.todo-item.is-doing { background: rgba(var(--glow-rgb), 0.08); }
+.todo-item.is-doing .todo-rect {
+  stroke: var(--glow-light); stroke-dasharray: 4 3.2;
+  animation: todoMarch 0.9s linear infinite;
+}
+.todo-item.is-done .todo-rect { fill: #34d399; stroke: #34d399; transform: scale(1); }
+.todo-item.is-done .todo-tick { stroke-dashoffset: 0; opacity: 1; }
+/* The browser's own line-through, so it sits where a strike belongs on every
+   font and every wrapped line; it fades in rather than wiping across. */
+.todo-words {
+  text-decoration: line-through 1.5px transparent;
+  transition: text-decoration-color 0.35s ease 0.15s, color 0.3s ease 0.15s;
+}
+.todo-item.is-done { color: var(--text-3); }
+.todo-item.is-done .todo-words { text-decoration-color: currentColor; }
+@keyframes todoMarch { to { stroke-dashoffset: -7.2; } }
 @media (prefers-reduced-motion: reduce) {
-  .kanban-progress-bar.is-unknown { animation: none; width: 60%; }
+  .todo-item.is-doing .todo-rect { animation: none; }
+  .todo-rect, .todo-tick, .todo-words, .todo-bar > i { transition: none; }
 }
 
-/* How far along the whole board is, under the header. */
-.kanban-board-progress {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 12px 0;
-}
-.kanban-board-progress .kanban-progress-track { flex: 1; height: 3px; }
-.kanban-board-pct {
-  font-family: var(--mono);
-  font-size: calc(10px * var(--ts, 1));
-  color: var(--text-3);
-  min-width: 30px;
-  text-align: right;
-}
-
-/* ---------------------------------------------------------------------------
-   One card, opened: the whole work item.
-   --------------------------------------------------------------------------- */
-.modal.kanban-peek {
-  max-width: 560px;
-  max-height: min(78vh, 640px);
-}
-
-.kanban-peek-status {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-bottom: 10px;
-  flex-wrap: wrap;
-}
-.kanban-peek-status-name {
-  font-size: calc(11.5px * var(--ts, 1));
-  font-weight: 600;
-  color: var(--text-2);
-}
-.kanban-peek-id {
-  font-family: var(--mono);
-  font-size: calc(10px * var(--ts, 1));
-  color: var(--text-3);
-}
-
-.kanban-peek-progress {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  margin-bottom: 12px;
-}
-.kanban-peek-progress .kanban-progress-track {
-  flex: 1;
-  height: 6px;
-  display: block;
-}
-.kanban-peek-progress-text {
-  font-size: calc(10.5px * var(--ts, 1));
-  color: var(--text-3);
-  white-space: nowrap;
-}
-.kanban-peek-progress-text.is-unknown { font-style: italic; }
-
-.kanban-peek-quiet {
-  margin: 0;
-  font-size: calc(12px * var(--ts, 1));
-  color: var(--text-3);
-  font-style: italic;
-}
-
-.kanban-peek-steps {
-  list-style: none;
-  margin: 12px 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-.kanban-peek-steps li {
-  display: flex;
-  align-items: flex-start;
-  gap: 7px;
-  font-size: calc(12px * var(--ts, 1));
-  color: var(--text-2);
-}
-.kanban-peek-steps li.is-done { color: var(--text-3); text-decoration: line-through; }
-.kanban-step-mark {
-  flex-shrink: 0;
-  width: 13px;
-  height: 13px;
-  margin-top: 1px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: #34d399;
-}
-.kanban-peek-steps li.is-done .kanban-step-mark {
-  border-color: rgba(52, 211, 153, 0.5);
-  background: rgba(52, 211, 153, 0.12);
-}
-
-.kanban-peek-foot {
-  flex-wrap: wrap;
-  gap: 7px;
-}
 
 /* ============================================================================
    Interactive Permission Cell
@@ -3936,61 +3350,7 @@ label + .jf-hint { margin-top: -5px; }
    specificity the later rule wins.
    ============================================================================ */
 
-.kanban-card-title, .kanban-task-title, .perm-reason, .job-name { overflow-wrap: anywhere; }
-
-/* ── the board on a phone ──
-   Three columns across, and a card that is only its title. The column already
-   says what state a card is in, and the opened card carries the steps, the
-   figure and the moves -- so the state mark, the percentage and the progress
-   bar come off here, which is exactly the width that stopped the columns
-   fitting. Four to six characters per line of a title would be useless, so the
-   title wraps to three lines instead of being cut off after one. */
-@media (max-width: 640px) {
-  .kanban-col { padding: 5px; gap: 5px; min-height: 104px; border-radius: 9px; }
-  .kanban-col-head { gap: 5px; padding-bottom: 4px; }
-  /* The stripe down each card says which column it is in, so the dot in the
-     heading is one mark too many at this width. */
-  .kanban-col-head .col-indicator { display: none; }
-  .kanban-col-head .col-name { font-size: calc(9px * var(--ts, 1)); letter-spacing: 0.05em; }
-  .kanban-col-head .col-badge { font-size: calc(9px * var(--ts, 1)); padding: 0 5px; }
-  .kanban-items { gap: 4px; }
-
-  .kanban-card, .kanban-task-card {
-    display: block;
-    padding: 5px 6px 5px 7px;
-    border-radius: 6px;
-    border-left: 2px solid #7d8698;
-    cursor: pointer;
-  }
-  .kanban-col.doing .kanban-card, .kanban-col.doing .kanban-task-card { border-left-color: var(--glow-light); }
-  .kanban-col.done .kanban-card, .kanban-col.done .kanban-task-card { border-left-color: var(--live); }
-
-  /* Everything on a card that is not the title. */
-  .kanban-card .kanban-drag-grip, .kanban-task-card .kanban-drag-grip,
-  .kanban-card .kanban-card-state, .kanban-task-card .kanban-card-state,
-  .kanban-card .kanban-progress-track, .kanban-task-card .kanban-progress-track {
-    display: none;
-  }
-
-  .kanban-card-title, .kanban-task-title {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
-    white-space: normal;
-    overflow: hidden;
-    text-overflow: clip;
-    font-size: calc(11.5px * var(--ts, 1));
-    font-weight: 500;
-    line-height: 1.3;
-  }
-  /* A card that lifts its head under a finger is a card that moved for no
-     reason; a press should look like a press. */
-  .kanban-card:hover, .kanban-task-card:hover { transform: none; background: var(--s2); }
-  .kanban-card:active, .kanban-task-card:active { transform: scale(0.97); }
-
-  .kanban-board-progress { padding: 6px 8px 0; }
-  .kanban-empty { padding: 8px 4px; font-size: calc(10.5px * var(--ts, 1)); }
-}
+.perm-reason, .job-name { overflow-wrap: anywhere; }
 
 @media (max-width: 680px) {
   /* The memory graph is ambient, not the thing you came to read. At 145px it
@@ -4033,7 +3393,6 @@ label + .jf-hint { margin-top: -5px; }
   .cell-line-top { padding: 9px 8px; }
   .term-more, .shot-acts-toggle { padding: 11px 12px; font-size: calc(12px * var(--ts, 1)); }
   .reason-toggle { padding: 8px 0; font-size: calc(12px * var(--ts, 1)); }
-  .kanban-step-btn { padding: 7px 11px; font-size: calc(12px * var(--ts, 1)); }
   .web-tag { height: 34px; }
   .jump-pill { height: 36px; padding: 0 16px; font-size: calc(12.5px * var(--ts, 1)); }
   .badge-x { width: 28px; height: 28px; }
@@ -4605,27 +3964,6 @@ input.shot-where[readonly] { cursor: default; }
   .kweb-detail { border-top-color: rgba(var(--glow-rgb),  0.28); }
 }
 
-/* ── Jev Mode: one quiet line, opening to the confidence matrix ── */
-.jev-line.is-fast .cell-line-top b { color: #6ee7b7; }
-.jev-line.is-fallback .cell-line-top b { color: var(--warn); }
-.jev-matrix {
-  margin: 4px 0 2px 22px; padding: 10px 12px; border-radius: var(--r-sm);
-  background: var(--s2); border-left: 2px solid rgba(52, 211, 153, 0.45);
-  display: grid; gap: 6px; max-width: 620px;
-}
-.jev-line.is-fallback .jev-matrix { border-left-color: rgba(251, 191, 36, 0.5); }
-.jev-row {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto 90px 36px;
-  align-items: center; gap: 10px; font-size: calc(11.5px * var(--ts, 1));
-}
-.jev-name { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.jev-value { font-family: var(--mono); font-size: calc(11px * var(--ts, 1)); color: var(--text); }
-.jev-bar { position: relative; height: 5px; border-radius: 99px; background: var(--s4); }
-.jev-bar i { position: absolute; inset: 0 auto 0 0; border-radius: 99px; background: var(--live); }
-.jev-row.is-weak .jev-bar i { background: var(--warn); }
-.jev-bar em { position: absolute; top: -3px; bottom: -3px; width: 1px; background: var(--text-2); }
-.jev-conf { font-family: var(--mono); font-size: calc(11px * var(--ts, 1)); color: var(--text-2); text-align: right; font-variant-numeric: tabular-nums; }
-.jev-foot { margin: 2px 0 0; font-size: calc(10.5px * var(--ts, 1)); color: var(--text-3); }
 /* Drawn here rather than left to the browser, which paints the unfilled part
    of an accent-coloured track near-white whatever the page's scheme. Filled
    up to --fill, set from the value by the page. Same thumb as the frame
@@ -6046,12 +5384,10 @@ button.dock-card:hover { border-color: var(--border-strong); }
 .mode-dot {
   width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); flex: 0 0 auto;
 }
-.badge.mode-pill.m-plan { color: var(--accent-light); border-color: var(--accent-line); background: var(--accent-soft); }
-.badge.mode-pill.m-plan .mode-dot { background: var(--accent-light); }
 .badge.mode-pill.m-ask { color: var(--accent-2); border-color: rgba(var(--accent2-rgb), 0.32); background: rgba(var(--accent2-rgb), 0.08); }
 .badge.mode-pill.m-ask .mode-dot { background: var(--accent-2); }
-.badge.mode-pill.m-auto { color: var(--text-3); }
-.badge.mode-pill.m-auto .mode-dot { background: var(--text-3); }
+.badge.mode-pill.m-yolo { color: var(--text-2); }
+.badge.mode-pill.m-yolo .mode-dot { background: var(--text-3); }
 
 /* Position comes from the component, which measures the window and keeps the
    menu inside it: the pill can be hard against the right edge, and a menu
@@ -6084,6 +5420,25 @@ button.dock-card:hover { border-color: var(--border-strong); }
 .mode-option-top > svg { margin-left: auto; color: var(--accent); }
 .mode-option-blurb { font-size: calc(11.5px * var(--ts, 1)); color: var(--text-3); line-height: 1.45; }
 .mode-menu-error { margin: 2px 4px 0; font-size: calc(11.5px * var(--ts, 1)); color: var(--danger, #fb7185); }
+/* When to ask: the person's own words, with ideas to tap. */
+.ask-when { margin: 6px 2px 2px; display: flex; flex-direction: column; gap: 7px; }
+.ask-when-label { font-size: calc(11.5px * var(--ts, 1)); font-weight: 600; color: var(--text-2); }
+.ask-when-text {
+  width: 100%; resize: vertical; min-height: 64px; max-height: 160px;
+  padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border-strong);
+  background: var(--bg); color: var(--text); font: inherit; font-size: calc(12.5px * var(--ts, 1)); line-height: 1.45;
+}
+.ask-when-text:focus { outline: none; border-color: var(--accent-line); }
+.ask-when-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.ask-chip {
+  padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border-strong);
+  background: transparent; color: var(--text-2); cursor: pointer; font: inherit;
+  font-size: calc(11.5px * var(--ts, 1));
+}
+.ask-chip:hover { color: var(--text); background: var(--s3); }
+.ask-chip.on { color: var(--text); border-color: var(--accent-line); background: var(--accent-soft); }
+.ask-when-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: calc(11px * var(--ts, 1)); color: var(--text-3); }
+@media (pointer: coarse) { .ask-chip { padding: 8px 12px; } .ask-when-text { min-height: 80px; } }
 .mode-menu-foot {
   margin: 4px 4px 0; padding-top: 8px; border-top: 1px solid var(--border);
   font-size: calc(10.5px * var(--ts, 1)); color: var(--text-3); line-height: 1.5;
@@ -6236,3 +5591,402 @@ button.dock-card:hover { border-color: var(--border-strong); }
 @media (prefers-reduced-motion: reduce) {
   .next-step { animation: none !important; }
 }
+
+/* ============================================================================
+   The pinned stage (phones): the page, the plan and an explainer, held above
+   the conversation so the next reply cannot push them out of sight. Drawn only
+   when the app is phone-sized (components/Stage.tsx), so nothing here is
+   behind a media query. No transform, filter or containment on it or its
+   panes: a maximised page and an expanded explainer are `position: fixed`
+   inside it, and any of those would pin them to the stage instead.
+   ============================================================================ */
+.stage {
+  flex: 0 0 auto;
+  background: var(--s1);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 8px 18px -12px rgba(0, 0, 0, 0.7);
+}
+.stage-bar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px;
+  overflow-x: auto; scrollbar-width: none;
+}
+.stage-bar::-webkit-scrollbar { display: none; }
+
+.stage-tab {
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 36px; padding: 0 11px;
+  border-radius: 99px; border: 1px solid var(--border);
+  background: var(--s2); color: var(--text-2);
+  font: inherit; font-size: calc(12px * var(--ts, 1)); font-weight: 600;
+  white-space: nowrap; cursor: pointer; touch-action: manipulation;
+}
+.stage-tab svg { flex: 0 0 auto; }
+.stage-tab.is-on { color: var(--text); border-color: var(--accent-line); background: var(--s3); }
+/* Only the tab that is up says more than its name: three long tabs would not
+   share the width. */
+/* Three tabs and the follow button do not fit beside their glyphs. */
+.stage.is-tight .stage-tab svg { display: none; }
+.stage-follow {
+  flex: 0 0 auto; margin-left: auto;
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 36px; padding: 0 11px; border-radius: 99px;
+  border: 1px solid var(--border); background: none; color: var(--text-3);
+  font: inherit; font-size: calc(12px * var(--ts, 1)); font-weight: 600;
+  cursor: pointer; touch-action: manipulation;
+}
+.stage-follow.is-on { color: var(--live); border-color: rgba(52, 211, 153, 0.45); background: rgba(52, 211, 153, 0.1); }
+.stage-follow:not(.is-on) .watch-dot { opacity: 0.35; animation: none; }
+.stage-follow + .stage-fold { margin-left: 0; }
+.stage-live {
+  flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--live, #34d399);
+  box-shadow: 0 0 7px var(--live, #34d399);
+  animation: pulseSkills 1.6s infinite;
+}
+.stage-fold {
+  margin-left: auto; flex: 0 0 auto;
+  width: 36px; height: 36px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 99px; border: 1px solid transparent;
+  background: none; color: var(--text-3); cursor: pointer; touch-action: manipulation;
+}
+.stage-fold svg { transform: rotate(-90deg); transition: transform 0.2s var(--ease); }
+.stage.is-collapsed .stage-fold svg { transform: rotate(90deg); }
+
+/* Tall enough to use, short enough that the conversation is still on screen. */
+.stage-body {
+  max-height: min(46dvh, 440px);
+  overflow-y: auto; overscroll-behavior: contain;
+  border-top: 1px solid var(--border);
+}
+.stage-body[hidden], .stage-pane[hidden] { display: none; }
+.stage-pane > .cell, .stage-pane > .todo-cell {
+  border: 0; border-radius: 0; box-shadow: none; animation: none;
+}
+
+/* Where a held card was, in the thread. */
+.stage-stub {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  padding: 7px 11px; border-radius: var(--r-sm);
+  border: 1px dashed var(--border); color: var(--text-3);
+  font-size: calc(12px * var(--ts, 1));
+}
+.stage-stub-ico { display: inline-flex; flex: 0 0 auto; }
+.stage-stub-title {
+  flex: 0 1 auto; min-width: 0; color: var(--text-2); font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.stage-stub-note {
+  flex: 1 1 0; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.stage-stub + .steps, .stage-stub + .msg { margin-top: 10px; }
+
+/* What the agent is about to do on the page, on a phone: a line under the
+   picture rather than a pill over it, so none of the page is hidden. */
+.shot-caption-bar { display: none; }
+@media (max-width: 680px) {
+  .shot-caption { display: none; }
+  .shot-caption-bar {
+    display: block; min-height: 30px; padding: 6px 12px;
+    border-top: 1px solid var(--border); background: var(--s2);
+    color: var(--text-2); font-family: var(--mono); font-size: calc(11px * var(--ts, 1));
+    line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .shot-caption-bar.is-typing { color: var(--live); }
+}
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* ---------------------------------------- how the agent works (composer) -- */
+.mode-seg {
+  display: inline-flex; gap: 2px; padding: 2px; flex: 0 0 auto;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 11px;
+}
+.mode-seg-btn {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px;
+  border: 0; border-radius: 9px; background: transparent; color: var(--text-2);
+  font: inherit; font-size: calc(12.5px * var(--ts, 1)); font-weight: 550; cursor: pointer;
+}
+.mode-seg-btn:hover:not(:disabled) { color: var(--text); }
+.mode-seg-btn.on { background: var(--s3); color: var(--text); box-shadow: 0 0 0 1px var(--border-strong); }
+.mode-seg-btn.on.m-agent { background: var(--accent-soft); color: var(--accent-light); box-shadow: 0 0 0 1px var(--accent-line); }
+.mode-seg-btn:disabled { opacity: 0.6; cursor: default; }
+.mode-sel-wrap { position: relative; flex: 0 0 auto; }
+.mode-sel-pill {
+  display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px;
+  border-radius: 999px; border: 1px solid var(--border-strong); background: var(--s2);
+  color: var(--text); font: inherit; font-size: calc(12.5px * var(--ts, 1)); font-weight: 550; cursor: pointer;
+}
+.mode-sel-pill.m-agent { color: var(--accent-light); border-color: var(--accent-line); background: var(--accent-soft); }
+.mode-sel-caret { font-size: 9px; opacity: 0.7; }
+.mode-sel-sheet {
+  position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 60;
+  width: min(300px, calc(100vw - 32px)); padding: 6px;
+  background: var(--s2); border: 1px solid var(--border-strong); border-radius: 14px;
+  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.7);
+}
+.mode-sel-opt {
+  display: flex; align-items: flex-start; gap: 10px; width: 100%; text-align: left;
+  padding: 10px; border: 0; border-radius: 10px; background: transparent; color: var(--text-2);
+  font: inherit; cursor: pointer;
+}
+.mode-sel-opt > svg:first-child { margin-top: 2px; flex: 0 0 auto; }
+.mode-sel-opt b { display: block; font-size: calc(13px * var(--ts, 1)); color: var(--text); font-weight: 600; }
+.mode-sel-opt span span { display: block; font-size: calc(12px * var(--ts, 1)); line-height: 1.4; }
+.mode-sel-opt > svg:last-child { margin-left: auto; color: var(--accent-light); flex: 0 0 auto; margin-top: 2px; }
+.mode-sel-opt.on { background: var(--accent-soft); }
+
+/* Agent switching between planning and building, said in the thread. */
+.mode-chip {
+  display: inline-flex; align-items: center; gap: 7px; align-self: flex-start; max-width: 100%;
+  padding: 4px 11px; border-radius: 999px; border: 1px solid var(--border); background: var(--s1);
+  font-size: calc(12px * var(--ts, 1)); color: var(--text-2); overflow-wrap: anywhere;
+}
+.mode-chip b { font-weight: 600; color: var(--text); }
+.mode-chip i { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--live); }
+.mode-chip.is-plan i { background: #f5b84b; }
+
+/* On a phone the two pop-ups (permissions, and how the agent works) are
+   centred in the window like any other modal, with the page dimmed behind:
+   anchored to a small pill near an edge they hung off to one side. Fixed
+   position, so what they are anchored to no longer matters. */
+@media (max-width: 680px) {
+  .mode-menu, .mode-sel-sheet {
+    position: fixed !important;
+    left: 50% !important; top: 50% !important; bottom: auto !important;
+    transform: translate(-50%, -50%);
+    width: min(360px, calc(100vw - 32px)) !important;
+    max-height: calc(100dvh - 32px) !important; overflow-y: auto;
+    z-index: 200;
+    box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.55), 0 16px 48px -8px rgba(0, 0, 0, 0.8);
+  }
+}
+
+/* ==========================================================================
+   The app window: the thing being built, live, with a way to point at it.
+   ========================================================================== */
+
+/* Wide screens: the app takes the right of the chat, the conversation keeps
+   a readable column on the left. */
+.chat-view.has-app { flex-direction: row; }
+.chat-view.has-app > .page {
+  flex: 0 0 clamp(380px, 36%, 540px); width: auto; max-width: none; margin: 0; min-width: 0;
+  border-left: 0;
+}
+.app-pane {
+  flex: 1; min-width: 0; min-height: 0; display: flex;
+  border-left: 1px solid var(--border-strong); background: var(--bg);
+  animation: appPaneIn 0.28s var(--ease, ease) both;
+}
+@keyframes appPaneIn { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+
+.app-window { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; outline: none; background: var(--bg); }
+
+.app-bar {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--border); background: var(--s1);
+}
+.app-seg, .app-tools {
+  display: inline-flex; gap: 2px; padding: 2px; border-radius: 11px;
+  background: var(--bg); border: 1px solid var(--border);
+}
+.app-seg button, .app-tools button {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 0; border-radius: 9px;
+  background: transparent; color: var(--text-2); font: inherit; font-size: calc(12.5px * var(--ts, 1)); font-weight: 550; cursor: pointer;
+}
+.app-seg button:hover, .app-tools button:hover { color: var(--text); }
+.app-seg button.on, .app-tools button.on { background: var(--s3); color: var(--text); box-shadow: 0 0 0 1px var(--border-strong); }
+.app-tools button.on[aria-checked="true"]:not(:first-child) { background: var(--accent-soft); color: var(--accent-light); box-shadow: 0 0 0 1px var(--accent-line); }
+.app-url {
+  flex: 1; min-width: 80px; display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px;
+  border-radius: 9px; border: 1px solid var(--border); background: var(--bg);
+  color: var(--text-2); font-size: calc(12px * var(--ts, 1)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.app-live { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--live); box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.18); }
+.app-errs {
+  margin-left: auto; font-style: normal; font-size: calc(11px * var(--ts, 1)); font-weight: 600;
+  color: #fb7185; background: rgba(251, 113, 133, 0.12); border-radius: 999px; padding: 1px 8px;
+}
+.app-icon {
+  width: 30px; height: 30px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 9px;
+  border: 1px solid transparent; background: transparent; color: var(--text-2); cursor: pointer;
+}
+.app-icon:hover { color: var(--text); background: var(--s3); }
+
+.app-tools { align-self: flex-start; margin: 8px 10px 0; align-items: center; flex-wrap: nowrap; }
+.app-tools .app-hint { padding: 0 10px 0 6px; font-size: calc(11.5px * var(--ts, 1)); color: var(--text-3); white-space: nowrap; }
+.app-window .app-tools { display: flex; align-self: stretch; width: auto; margin: 8px 10px 0; background: none; border: 0; padding: 0; gap: 6px; }
+.app-window .app-tools button { border: 1px solid var(--border); background: var(--s1); }
+.app-window .app-tools button.on { border-color: var(--border-strong); background: var(--s3); }
+.app-window .app-tools button.on:not(:first-child) { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent-light); }
+
+.app-area {
+  position: relative; flex: 1; min-height: 0; display: grid; place-items: center; padding: 12px; overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(var(--accent-rgb), 0.07), transparent 60%),
+    var(--bg);
+}
+.app-canvas { position: relative; flex: 0 0 auto; border-radius: 10px; box-shadow: 0 0 0 1px var(--border-strong), 0 18px 50px -14px rgba(0, 0, 0, 0.75); }
+.app-screen { position: relative; overflow: hidden; border-radius: 10px; background: #fff; touch-action: none; user-select: none; -webkit-user-select: none; }
+.app-screen.is-inspect { cursor: crosshair; }
+.app-screen.is-region { cursor: crosshair; }
+.app-frame { display: block; width: 100%; height: 100%; object-fit: fill; pointer-events: none; }
+.app-loading {
+  position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: 10px;
+  background: var(--s1); color: var(--text-3); font-size: calc(12.5px * var(--ts, 1));
+}
+.app-overlay, .app-pins { position: absolute; inset: 0; pointer-events: none; }
+.app-pins { overflow: visible; }
+
+.app-box { position: absolute; border-radius: 3px; pointer-events: none; }
+.app-box.is-hover { border: 1.5px solid rgba(var(--accent-rgb), 0.8); background: rgba(var(--accent-rgb), 0.10); }
+.app-box.is-picked {
+  border: 2px solid var(--accent); background: rgba(var(--accent-rgb), 0.14);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.55), 0 0 0 4px rgba(var(--accent-rgb), 0.22);
+}
+.app-box.is-region { border: 2px dashed #f5b84b; background: rgba(245, 184, 75, 0.12); }
+.app-box.is-region.is-set { border-style: solid; }
+.app-box.is-pinned { border: 2px solid #34d399; background: rgba(52, 211, 153, 0.12); }
+.app-tag {
+  position: absolute; max-width: 80%; padding: 2px 7px; border-radius: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: var(--accent); color: #fff; font: 600 11px/1.4 var(--mono, ui-monospace, monospace); pointer-events: none;
+}
+.app-pin {
+  position: absolute; width: 20px; height: 20px; padding: 0; border-radius: 50%; border: 2px solid #fff;
+  background: var(--accent); color: #fff; font: 700 11px/1 system-ui, sans-serif; cursor: pointer; pointer-events: auto;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45); display: grid; place-items: center;
+  transition: transform 0.12s ease;
+}
+.app-pin:hover, .app-pin.is-hover { transform: scale(1.18); background: #34d399; }
+@media (pointer: coarse) { .app-pin { width: 26px; height: 26px; } }
+
+.app-sink { position: absolute; left: -9999px; top: 0; width: 1px; height: 1px; opacity: 0; }
+.app-flash {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); padding: 7px 14px; border-radius: 999px;
+  background: var(--s3); border: 1px solid var(--border-strong); color: var(--text); font-size: calc(12.5px * var(--ts, 1));
+  box-shadow: 0 10px 28px -8px rgba(0, 0, 0, 0.7); animation: appFlash 0.25s ease both;
+}
+@keyframes appFlash { from { opacity: 0; transform: translate(-50%, 6px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* The box that opens on a selection. */
+.app-pop {
+  position: absolute; z-index: 20; width: 310px; max-height: min(520px, 100%); overflow-y: auto;
+  display: flex; flex-direction: column; gap: 8px; padding: 10px;
+  background: var(--s2); color: var(--text); border: 1px solid var(--border-strong); border-radius: 14px;
+  box-shadow: 0 16px 44px -10px rgba(0, 0, 0, 0.8); animation: appPop 0.14s ease both;
+}
+@keyframes appPop { from { opacity: 0; transform: translateY(4px) scale(0.98); } to { opacity: 1; transform: none; } }
+.app-pop-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.app-pop-head b { flex: 1; min-width: 0; font-size: calc(13px * var(--ts, 1)); font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-pop-head b span { font-weight: 500; color: var(--text-3); margin-left: 6px; font-size: calc(11.5px * var(--ts, 1)); }
+.app-x {
+  width: 28px; height: 28px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 8px;
+  border: 0; background: transparent; color: var(--text-3); cursor: pointer;
+}
+.app-x:hover { color: var(--text); background: var(--s3); }
+.app-nav { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.app-nav button {
+  padding: 5px 2px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text-2);
+  font: inherit; font-size: calc(11.5px * var(--ts, 1)); cursor: pointer; white-space: nowrap;
+}
+.app-nav button:hover { color: var(--text); border-color: var(--accent-line); }
+.app-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.app-chip {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 9px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent-light); font-size: calc(11.5px * var(--ts, 1)); font-family: var(--mono, ui-monospace, monospace);
+}
+.app-chip button { border: 0; background: transparent; color: inherit; cursor: pointer; padding: 0 5px; font-size: 14px; line-height: 1; }
+.app-src { margin: 0; font-size: calc(11px * var(--ts, 1)); color: var(--text-3); font-family: var(--mono, ui-monospace, monospace); overflow-wrap: anywhere; }
+.app-said { margin: 0; font-size: calc(12px * var(--ts, 1)); color: var(--text-2); font-style: italic; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.app-say, .app-row textarea, .app-row input:not([type="color"]):not([type="range"]), .app-row select, .app-comment-edit, .app-note {
+  width: 100%; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border-strong);
+  background: var(--bg); color: var(--text); font: inherit; font-size: calc(13px * var(--ts, 1)); line-height: 1.45;
+}
+.app-say { resize: vertical; min-height: 54px; max-height: 160px; }
+.app-say:focus, .app-row textarea:focus, .app-row input:focus, .app-row select:focus, .app-comment-edit:focus, .app-note:focus { outline: none; border-color: var(--accent-line); }
+.app-edit-toggle { border: 0; background: transparent; color: var(--text-2); font: inherit; font-size: calc(12px * var(--ts, 1)); cursor: pointer; padding: 2px 0; text-align: left; }
+.app-edit-toggle:hover { color: var(--text); }
+.app-edit-body { display: flex; flex-direction: column; gap: 8px; padding-top: 6px; }
+.app-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 8px; }
+.app-row input:not([type="color"]):not([type="range"]), .app-row select { padding: 5px 8px; }
+.app-row { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.app-row > span:first-child { font-size: calc(11px * var(--ts, 1)); color: var(--text-3); }
+.app-row.is-wide { grid-column: 1 / -1; }
+.app-row input[type="color"] { width: 100%; height: 30px; padding: 2px; border-radius: 10px; border: 1px solid var(--border-strong); background: var(--bg); cursor: pointer; }
+.app-row input[type="range"] { width: 100%; accent-color: var(--accent); height: 30px; }
+.app-seg { display: inline-flex; gap: 2px; }
+.app-row .app-seg { padding: 2px; border-radius: 10px; background: var(--bg); border: 1px solid var(--border-strong); }
+.app-row .app-seg button { flex: 1; padding: 6px 4px; border: 0; border-radius: 8px; background: transparent; color: var(--text-2); font: inherit; font-size: calc(12px * var(--ts, 1)); cursor: pointer; text-transform: capitalize; }
+.app-row .app-seg button.on { background: var(--s3); color: var(--text); box-shadow: 0 0 0 1px var(--border-strong); }
+.app-tried { margin: 0; font-size: calc(11.5px * var(--ts, 1)); color: var(--text-2); }
+.app-tried button { border: 0; background: transparent; color: var(--accent-light); font: inherit; cursor: pointer; text-decoration: underline; padding: 0; }
+.app-err { margin: 0; font-size: calc(12px * var(--ts, 1)); color: #fb7185; }
+.app-pop-foot { display: flex; justify-content: flex-end; gap: 6px; }
+
+/* On a phone (or a window with no room beside the selection) the box is a
+   centred sheet over the page, with the page dimmed behind it. */
+.app-sheet-dim {
+  position: fixed; inset: 0; z-index: 210; display: grid; place-items: center; padding: 16px;
+  background: rgba(0, 0, 0, 0.55); animation: appFade 0.15s ease both;
+}
+@keyframes appFade { from { opacity: 0; } to { opacity: 1; } }
+.app-pop.is-modal { position: relative; width: min(380px, 100%); max-height: min(86dvh, 640px); box-shadow: 0 24px 64px -12px rgba(0, 0, 0, 0.9); }
+@media (pointer: coarse) {
+  .app-nav button { padding: 10px 2px; }
+  .app-x { width: 36px; height: 36px; }
+  .app-seg button, .app-tools button { padding: 8px 12px; }
+  .app-icon { width: 36px; height: 36px; }
+}
+
+/* The review: comments collected, then sent as one. */
+.app-review { border-top: 1px solid var(--border-strong); background: var(--s1); display: flex; flex-direction: column; min-height: 0; max-height: 46%; }
+.app-review-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; }
+.app-review-toggle {
+  flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 8px; border: 0; background: transparent;
+  color: var(--text); font: inherit; font-size: calc(12.5px * var(--ts, 1)); cursor: pointer; text-align: left; padding: 4px 0;
+}
+.app-review-caret { color: var(--text-3); width: 10px; }
+.app-review-count { color: var(--text-3); }
+.app-review:not(.is-empty) .app-review-count { color: var(--accent-light); font-weight: 600; }
+.app-review-body { overflow-y: auto; padding: 0 10px 10px; display: flex; flex-direction: column; gap: 8px; }
+.app-review-hint { margin: 0; font-size: calc(12px * var(--ts, 1)); color: var(--text-3); line-height: 1.5; }
+.app-comments { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.app-comment {
+  display: flex; align-items: center; gap: 8px; padding: 6px; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--bg); transition: border-color 0.12s ease;
+}
+.app-comment.is-hover { border-color: #34d399; }
+.app-comment-n {
+  flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--accent-soft); color: var(--accent-light); font-size: 11px; font-weight: 700;
+}
+.app-comment-pic { flex: 0 0 auto; width: 54px; height: 40px; object-fit: cover; border-radius: 7px; background: #fff; border: 1px solid var(--border); }
+.app-comment-pic.is-none { background: var(--s2); }
+.app-comment-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.app-comment-what { font-size: calc(10.5px * var(--ts, 1)); color: var(--text-3); font-family: var(--mono, ui-monospace, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-comment-text {
+  border: 0; background: transparent; padding: 0; text-align: left; color: var(--text); font: inherit;
+  font-size: calc(12.5px * var(--ts, 1)); line-height: 1.4; cursor: text;
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.app-note { font-size: calc(12.5px * var(--ts, 1)); }
+
+/* The marker the thread keeps where the window opened. */
+.app-note-cell { display: block; }
+
+/* Phone: the window is a tab in the pinned view, and is taller than the other
+   tabs: a page you cannot see is not a preview. */
+.stage-body[data-active="app"] { max-height: none; overflow: visible; }
+.app-window.is-phone .app-area { padding: 8px; }
+.app-window.is-phone .app-bar { padding: 6px 8px; gap: 6px; }
+.app-window.is-phone .app-seg button span { display: none; }
+.app-window.is-phone .app-seg button { padding: 7px 11px; }
+.app-window.is-phone .app-tools { margin: 6px 8px 0; }
+.app-window.is-phone .app-tools .app-hint { display: none; }
+.app-window.is-phone .app-review { max-height: 40dvh; }

@@ -15,11 +15,11 @@
  * What a rule can never do: cover the irrecoverable tier. Formatting a disk,
  * wiping a Docker volume, force-pushing over main and deleting the whole tree
  * are asked about every single time, however many rules there are. Those are
- * checked in server/jev/guard.ts before the guard this one feeds, and this
+ * checked in server/guard.ts before the guard this one feeds, and this
  * file deliberately has no say in them.
  */
 
-import { irreversible } from "./jev/guard";
+import { irreversible } from "./guard";
 import { readDoc, saveDoc } from "./store";
 
 export interface Rule {

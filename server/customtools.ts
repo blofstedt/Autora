@@ -55,10 +55,51 @@ export function getCustomTool(toolName: string): CustomTool | undefined {
   return tools.find((t) => t.name === bare);
 }
 
+/**
+ * The arguments a tool takes, out of whatever shape the model wrote them in.
+ *
+ * The schema asks for a list of {name, description, required}, and models
+ * write a JSON Schema ({type: "object", properties: {...}, required: [...]})
+ * or a plain map of name to description about as often. Reading only the list
+ * saved those tools with no arguments at all, and the script then ran with
+ * every $ARG_ empty and nothing said why. All of them are read here; anything
+ * else is no arguments, as before.
+ */
+export function readParams(raw: unknown): { name: unknown; description?: unknown; required?: unknown }[] {
+  if (Array.isArray(raw)) {
+    return raw.map((item) => (typeof item === "string" ? { name: item } : (item as any)));
+  }
+  if (!raw || typeof raw !== "object") return [];
+  const body = raw as Record<string, any>;
+  const table = body.properties && typeof body.properties === "object" && !Array.isArray(body.properties)
+    ? (body.properties as Record<string, any>)
+    : body;
+  const required = Array.isArray(body.required) ? body.required.map(String) : null;
+  // A schema's own words are not arguments.
+  const skip = table === body ? new Set(["type", "required", "additionalProperties", "description", "title", "$schema"]) : new Set<string>();
+  return Object.entries(table)
+    .filter(([key]) => !skip.has(key))
+    .map(([key, value]) => {
+      const detail = value && typeof value === "object" ? (value as Record<string, any>) : {};
+      return {
+        name: key,
+        description: typeof value === "string" ? value : detail.description,
+        required: required ? required.includes(key) : detail.required,
+      };
+    });
+}
+
+/** What the script reads that no argument provides: it would run with those empty. */
+export function undeclaredArgs(script: string, params: CustomParam[]): string[] {
+  const declared = new Set(params.map((p) => `ARG_${p.name.toUpperCase()}`));
+  const used = script.match(/\$\{?(ARG_[A-Z0-9_]+)/g) ?? [];
+  return [...new Set(used.map((u) => u.replace(/^\$\{?/, "")))].filter((n) => !declared.has(n));
+}
+
 /** Save a tool, or replace the one of the same name. Throws with the reason. */
 export function defineCustomTool(input: {
   name: unknown; description: unknown; params?: unknown; script: unknown; session?: string | null;
-}): { tool: CustomTool; replaced: boolean } {
+}): { tool: CustomTool; replaced: boolean; warnings: string[] } {
   let name = String(input.name ?? "").trim().toLowerCase();
   if (name.startsWith(PREFIX)) name = name.slice(PREFIX.length);
   if (!NAME.test(name)) {
@@ -69,7 +110,7 @@ export function defineCustomTool(input: {
   const script = String(input.script ?? "").trim();
   if (!script) throw new Error("The tool needs a script to run.");
   const params: CustomParam[] = [];
-  for (const raw of Array.isArray(input.params) ? input.params : []) {
+  for (const raw of readParams(input.params)) {
     const pname = String((raw as any)?.name ?? "").trim().toLowerCase();
     if (!PARAM.test(pname)) throw new Error(`"${pname}" is not a usable parameter name.`);
     if (params.some((p) => p.name === pname)) throw new Error(`Parameter "${pname}" is named twice.`);
@@ -80,11 +121,15 @@ export function defineCustomTool(input: {
     });
   }
   const now = Math.floor(Date.now() / 1000);
+  const missing = undeclaredArgs(script, params);
+  const warnings = missing.length
+    ? [`The script reads ${missing.map((m) => "$" + m).join(", ")}, but no argument of that name is declared, so ${missing.length === 1 ? "it" : "they"} will always be empty. Declare ${missing.length === 1 ? "it" : "them"} in parameters and save again.`]
+    : [];
   const existing = tools.find((t) => t.name === name);
   if (existing) {
     Object.assign(existing, { description, params, script, updated: now });
     save();
-    return { tool: existing, replaced: true };
+    return { tool: existing, replaced: true, warnings };
   }
   const tool: CustomTool = {
     name, description, params, script, created: now, updated: now,
@@ -92,7 +137,7 @@ export function defineCustomTool(input: {
   };
   tools.push(tool);
   save();
-  return { tool, replaced: false };
+  return { tool, replaced: false, warnings };
 }
 
 export function deleteCustomTool(toolName: string): boolean {

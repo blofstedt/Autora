@@ -24,7 +24,8 @@
  * to two very different places.
  */
 
-import type { BoardResult } from "./board";
+import type { TodoResult } from "./todos";
+import type { Phase } from "./modes";
 import { callMcpTool, mcpTools, statusOf as mcpStatusOf } from "./mcp";
 import { existing as existingMcp, install as installMcp, noteDeclined, overview as mcpOverview, planOffer, wasDeclined } from "./mcpoffer";
 import {
@@ -441,59 +442,93 @@ const TOOLS: ToolSpec[] = [
     parameters: { type: "object", properties: {} },
   },
 
-  // --------------------------------------------------------------- board --
+  // ---------------------------------------------------------------- todo --
   {
-    name: "kanban",
+    name: "todo",
     group: "schedule",
     description:
-      "The task board the person watches, in the conversation. Write the plan " +
+      "The to-do list the person watches, in the conversation. Write the plan " +
       "on it before you start anything that takes more than one step, then " +
-      "move the cards as you go: each card to doing when you begin it and to " +
-      "done when it is finished. The board appears by itself the moment you " +
-      "write the first card; nothing has to be opened by the person. A card " +
-      "can be referred to by its id (t3) or by its title. Use it for " +
-      "programming (many cards), and for small errands too -- an email is " +
-      "read it, pull the attachment, draft the reply, show it, send it. " +
-      "Actions: plan (the cards, in order), add, move (status todo/doing/" +
-      "done), note (a line on a card), show, clear.",
+      "rewrite it as you go: an item is in-progress while you work on it and " +
+      "completed the moment it is finished. Every call is the WHOLE list as " +
+      "it now stands, in order. Keep one item in-progress at a time. The list " +
+      "appears by itself on the first call. Use it for programming (many " +
+      "items), and for small errands too -- an email is read it, pull the " +
+      "attachment, draft the reply, show it, send it. Call it with no " +
+      "arguments to read the list back.",
     parameters: {
       type: "object",
       properties: {
-        action: {
-          type: "string",
-          description: "plan, add, move, note, show or clear.",
-        },
-        title: { type: "string", description: "What the board is called, on plan." },
-        tasks: {
+        todos: {
           type: "array",
           description:
-            "For plan: the cards in order, each a title or {title, status}. " +
-            "Cards start in To do unless a status says otherwise.",
+            "The whole list, in order. Each item is a short title, or " +
+            "{title, status}. Status is not-started (the default), " +
+            "in-progress or completed.",
           items: {
             anyOf: [
               { type: "string" },
               {
                 type: "object",
                 properties: {
-                  title: { type: "string" },
-                  status: { type: "string", description: "todo, doing or done." },
+                  title: { type: "string", description: "One short line: what this step does." },
+                  status: { type: "string", description: "not-started, in-progress or completed." },
                 },
                 required: ["title"],
               },
             ],
           },
         },
-        task: {
-          type: "string",
-          description:
-            "For add: the card's title. For move or note: which card -- its id " +
-            "(t3) or its title. For add, tasks may be given instead, for " +
-            "several cards at once.",
-        },
-        status: { type: "string", description: "For move: todo, doing or done." },
-        notes: { type: "string", description: "For note or move: a line on the card." },
+      },
+    },
+  },
+
+  // ---------------------------------------------------------- app_preview --
+  {
+    name: "app_preview",
+    group: "schedule",
+    description:
+      "The app window: show the website or app you are building beside the conversation, live, so the " +
+      "person watches it take shape and can select parts of it and say what to change. start runs a " +
+      "dev server (command, and cwd if it is not the working folder; port if it does not say) or serves " +
+      "a folder of files (dir) or opens something already running (url, localhost only). Start it as " +
+      "soon as there is something to see, then keep building: hot reload updates it. reload refreshes; " +
+      "look returns a picture of the page and its console errors -- use it to check your own work; " +
+      "stop closes it. The person's comments come back as one message beginning [Autora: the person " +
+      "reviewed the app preview; make those changes in the source.",
+    parameters: {
+      type: "object",
+      properties: {
+        action: { type: "string", description: "start, reload, look or stop." },
+        command: { type: "string", description: "start: the dev server command, e.g. npm run dev." },
+        cwd: { type: "string", description: "start: where to run it." },
+        dir: { type: "string", description: "start: a folder of static files to serve." },
+        url: { type: "string", description: "start: an address on this machine that is already running." },
+        port: { type: "number", description: "start: the port the command serves on, if it does not print one." },
       },
       required: ["action"],
+    },
+  },
+
+  // ------------------------------------------------------------ set_mode --
+  {
+    name: "set_mode",
+    group: "schedule",
+    description:
+      "Agent mode only: switch between planning and building. Planning is " +
+      "read-only -- you look, search and write the to-do list, and anything " +
+      "that changes something is refused. Building does the work. Every " +
+      "turn starts in planning. Switch to build once the plan is on the " +
+      "to-do list (or straight away for a very simple task), and back to plan " +
+      "if the work turns out to need a new plan. The person sees each switch " +
+      "in the chat with your reason, so give one, in a few words.",
+    parameters: {
+      type: "object",
+      properties: {
+        to: { type: "string", description: "build or plan." },
+        reason: { type: "string", description: "Why, in a few words: shown to the person." },
+      },
+      required: ["to"],
     },
   },
 
@@ -589,6 +624,9 @@ const TOOLS: ToolSpec[] = [
       "page as it is afterwards (after any navigation it started has loaded). " +
       "An element keeps its number while the page stays the same, however far " +
       "it is scrolled, and one that is off screen is scrolled into view first. " +
+      "If something is drawn over the element (a cookie bar, a pop-up) the click " +
+      "is held back and the result says what covers it and how to dismiss it. " +
+      "If the page did not change, the result says so. " +
       "After the page changes, use the numbers from the latest result. To " +
       "choose from a dropdown or tick a checkbox, browser_fill is surer.",
     parameters: {
@@ -1825,11 +1863,19 @@ export interface ToolContext {
   };
   /** Put a question to the person and wait for the answer. */
   ask: (request: AskRequest) => Promise<AskAnswer>;
-  /** The session's task board: the cards the person watches the work move
-      through. Written whole on every change, so the page and the next turn
-      both read the board as it stands. Absent where there is no session to
-      write to. */
-  board?: (action: Record<string, any>) => BoardResult;
+  /** The session's to-do list: what the person watches the work tick off.
+      Absent where there is no session to show one in. */
+  todos?: (action: Record<string, any>) => TodoResult;
+  /** The app window: what the agent builds, shown beside the conversation. */
+  preview?: {
+    start: (args: { command?: string; cwd?: string; dir?: string; url?: string; port?: number }) => Promise<{ ok: boolean; summary: string }>;
+    stop: () => Promise<{ ok: boolean; summary: string }>;
+    reload: () => Promise<{ ok: boolean; summary: string }>;
+    look: () => Promise<{ ok: boolean; summary: string; png?: Buffer }>;
+  };
+  /** Agent mode's switch between planning and building. Absent where there is
+      no session to switch. */
+  setPhase?: (to: Phase, reason: string) => { ok: boolean; summary: string };
 }
 
 export interface ToolOutcome {
@@ -2705,13 +2751,40 @@ async function runToolUnredacted(
         };
       }
 
-      case "kanban": {
-        if (!ctx.board) {
-          return { ok: false, summary: "There is no board to write to in this chat." };
+      case "app_preview": {
+        if (!ctx.preview) return { ok: false, summary: "There is no app window in this chat." };
+        const action = String(args.action ?? "").trim().toLowerCase();
+        if (action === "start") {
+          const r = await ctx.preview.start({
+            command: args.command, cwd: args.cwd, dir: args.dir, url: args.url, port: Number(args.port) || undefined,
+          });
+          return { ok: r.ok, summary: r.summary, preview: r.ok ? "app preview open" : undefined };
         }
-        /* The rules live in ./board.ts, which the page's own route uses too:
-           one description of what a board is, whoever is moving the cards. */
-        const result = ctx.board(args as Record<string, any>);
+        if (action === "reload") return await ctx.preview.reload();
+        if (action === "stop") return await ctx.preview.stop();
+        if (action === "look") {
+          const r = await ctx.preview.look();
+          const picture = r.png ? pictureFor(r.png, "image/png") : null;
+          return { ok: r.ok, summary: r.summary, preview: r.ok ? "looked at the app" : undefined, ...(picture ? { images: [picture] } : {}) };
+        }
+        return { ok: false, summary: "action is start, reload, look or stop." };
+      }
+
+      case "set_mode": {
+        if (!ctx.setPhase) return { ok: false, summary: "There is no chat to switch here." };
+        const to = String(args.to ?? "").trim().toLowerCase();
+        if (to !== "build" && to !== "plan") {
+          return { ok: false, summary: "to is build or plan." };
+        }
+        const result = ctx.setPhase(to, String(args.reason ?? "").trim().slice(0, 160));
+        return { ok: result.ok, summary: result.summary, preview: result.ok ? to : undefined };
+      }
+
+      case "todo": {
+        if (!ctx.todos) {
+          return { ok: false, summary: "There is no to-do list to write to in this chat." };
+        }
+        const result = ctx.todos(args as Record<string, any>);
         return {
           ok: result.ok,
           summary: result.summary,
@@ -2755,10 +2828,11 @@ async function runToolUnredacted(
         }
         const page = await ctx.browser().click(ref);
         ctx.browserChanged();
+        const held = page.notes?.some((n) => n.startsWith("NOT CLICKED")) ?? false;
         return {
           ok: true,
-          summary: `Clicked [${ref}].\n\n${describePage(page)}`,
-          preview: `clicked [${ref}] → ${page.url}`,
+          summary: withNotes(page, held ? "Held back." : `Clicked [${ref}].`),
+          preview: held ? `held back [${ref}]: covered` : `clicked [${ref}] → ${page.url}`,
         };
       }
 
@@ -3558,7 +3632,7 @@ async function runToolUnredacted(
 
       case "tool_create": {
         try {
-          const { tool, replaced } = defineCustomTool({
+          const { tool, replaced, warnings } = defineCustomTool({
             name: args.name, description: args.description, params: args.parameters,
             script: args.script, session: ctx.session,
           });
@@ -3566,7 +3640,9 @@ async function runToolUnredacted(
             ok: true,
             summary:
               `${replaced ? "Replaced" : "Saved"} ${CUSTOM_PREFIX}${tool.name}. It is offered from the ` +
-              "next step on, like any other tool. Try it once now to make sure it works.",
+              "next step on, like any other tool. Try it once now to make sure it works." +
+              (tool.params.length ? ` It takes: ${tool.params.map((p) => p.name).join(", ")}.` : " It takes no arguments.") +
+              (warnings.length ? `\n\nWARNING: ${warnings.join(" ")}` : ""),
             preview: `${CUSTOM_PREFIX}${tool.name}`,
           };
         } catch (err: any) {
@@ -3698,29 +3774,34 @@ const VOICE_GUIDE =
   "voice_mute(false) is how you are heard again, and only when they ask for it.";
 
 /**
- * The board, in the instructions.
+ * The to-do list, in the instructions.
  *
  * Told as a rule about how work is presented rather than as a tool that
- * happens to exist: a plan the person can watch is worth more than a promise
- * to do the steps, and the moving of the cards is what makes it true. The
- * sizes are given because the shape differs -- many cards for code, a handful
- * for an errand -- and without that the board is either a wall of cards or
- * three that say nothing.
+ * happens to exist: a list the person can watch is worth more than a promise
+ * to do the steps, and keeping it true is what makes it worth having. The
+ * sizes are given because the shape differs -- many items for code, a handful
+ * for an errand.
  */
-const BOARD_GUIDE =
-  "- The task board: always available. Tool: kanban. The plan for anything " +
-  "with more than one step goes on a board in the conversation, and you move " +
-  "the cards as you work: to doing when you begin a card, to done when it is " +
-  "finished. Write the cards before the first step, so the person watches the " +
-  "work move rather than reading a promise about it. Size it to the job: " +
-  "programming may be a dozen cards; an errand is a few -- for \"check my " +
+const APP_GUIDE =
+  "- The app window: always available. Tool: app_preview. When you build a website or an app, start it " +
+  "in the app window as soon as there is anything to see, and keep it running while you build: the person " +
+  "watches it take shape, can select elements or regions and leave comments, and what they say comes back " +
+  "as one message you act on. Check your own work with look (a picture and the console's errors) before " +
+  "you say it is done.";
+
+const TODO_GUIDE =
+  "- The to-do list: always available. Tool: todo. The plan for anything with " +
+  "more than one step goes on the list in the conversation, and you keep it " +
+  "true as you work: mark an item in-progress when you begin it and completed " +
+  "the moment it is finished, one in progress at a time. Every call writes the " +
+  "whole list. Write it before the first step, so the person watches the work " +
+  "tick off rather than reading a promise about it. Size it to the job: " +
+  "programming may be a dozen items; an errand is a few -- for \"check my " +
   "email and draft a reply to the invoice one\", read the inbox, pull the " +
   "attachment, draft the reply, show it for review, send it. Do not ask " +
-  "whether to make a board, and do not wait to be told to move a card: the " +
-  "board appearing and the cards moving with the work is the point of it. A " +
-  "one-line answer needs no board. A card that finishes with something to say " +
-  "gets a note on it, so the board carries the outcome and not only the " +
-  "columns.";
+  "whether to make a list, and do not wait to be told to tick one off. A " +
+  "one-line answer needs no list. Titles are short: one line each. Only you " +
+  "change the list; the person watches.";
 
 export async function capabilityBriefing(): Promise<string> {
   const groups = await groupStates();
@@ -3742,7 +3823,7 @@ export async function capabilityBriefing(): Promise<string> {
   if (groups.some((g) => g.group === "browser" && g.available)) lines.push(BROWSING_GUIDE, signInBriefing(), credentialsBriefing());
   if (groups.some((g) => g.group === "memory" && g.available)) lines.push(MEMORY_GUIDE);
   if (groups.some((g) => g.group === "voice" && g.available)) lines.push(VOICE_GUIDE);
-  lines.push(BOARD_GUIDE);
+  lines.push(TODO_GUIDE, APP_GUIDE);
 
   const mcp = mcpTools();
   if (mcp.length > 0) {

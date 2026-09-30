@@ -98,7 +98,7 @@ export function writeScriptServer(name: string, tools: ScriptTool[]): string {
     .map((t) => `  ${JSON.stringify(t.name)}: async (args, env) => {\n${t.code}\n  },`)
     .join("\n");
 
-  const source = `// Written by Autora for "${name.replace(/[\r\n"]/g, " ")}". Regenerated if it is offered again.
+  const source = `// Written by Autora for "${name.replace(/[\r\n\u2028\u2029"]/g, " ")}". Regenerated if it is offered again.
 "use strict";
 const { Server } = require(${JSON.stringify(sdk.server)});
 const { StdioServerTransport } = require(${JSON.stringify(sdk.stdio)});
