@@ -2787,14 +2787,25 @@ label + .jf-hint { margin-top: -5px; }
 .kanban-cols,
 .kanban-columns {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  padding: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px;
+  align-items: start;
 }
-@media (max-width: 768px) {
+/* Below this the three columns cannot each be readable, so they keep their
+   order and scroll sideways instead of stacking into one long column. */
+@media (max-width: 640px) {
   .kanban-cols,
   .kanban-columns {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(3, minmax(150px, 1fr));
+    overflow-x: auto;
+  }
+  /* On a phone a card is narrow enough that the percentage beside the tick
+     leaves the title about three characters wide. The tick still says the card
+     is finished; the figure is in the card when it is opened. */
+  .kanban-card .kanban-card-pct,
+  .kanban-task-card .kanban-task-pct {
+    display: none;
   }
 }
 
@@ -2802,7 +2813,7 @@ label + .jf-hint { margin-top: -5px; }
   background: rgba(var(--s1-rgb),  0.7);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
-  padding: 11px;
+  padding: 9px;
   display: flex;
   flex-direction: column;
   gap: 9px;
@@ -2970,13 +2981,6 @@ label + .jf-hint { margin-top: -5px; }
   box-shadow: 0 3px 0 0 var(--glow-light), 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
-.kanban-card-head {
-  display: flex;
-  align-items: flex-start;
-  gap: 7px;
-  margin-bottom: 7px;
-}
-
 .kanban-drag-grip {
   color: var(--text-3);
   opacity: 0.55;
@@ -3025,14 +3029,6 @@ label + .jf-hint { margin-top: -5px; }
   flex-shrink: 0;
 }
 
-/* Visual Progress Bar inside each task card */
-.kanban-card-progress {
-  margin: 6px 0 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 3.5px;
-}
-
 .kanban-progress-track {
   width: 100%;
   height: 4.5px;
@@ -3059,37 +3055,6 @@ label + .jf-hint { margin-top: -5px; }
 .kanban-progress-bar.status-done {
   background: linear-gradient(90deg, #10b981, #34d399);
   box-shadow: 0 0 8px rgba(52, 211, 153, 0.55);
-}
-
-.kanban-progress-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: calc(10px * var(--ts, 1));
-  color: var(--text-3);
-  font-weight: 500;
-  line-height: 1;
-}
-
-.kanban-progress-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.kanban-progress-pct {
-  font-family: var(--mono);
-  font-size: calc(10.5px * var(--ts, 1));
-  color: var(--text-2);
-}
-
-.kanban-card-foot,
-.kanban-task-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding-top: 4px;
 }
 
 .kanban-tag,
@@ -3142,6 +3107,211 @@ label + .jf-hint { margin-top: -5px; }
   background: rgba(251, 191, 36, 0.2);
   color: #fde047;
   border-color: #f59e0b;
+}
+
+
+/* ---------------------------------------------------------------------------
+   Compact cards: one line each, cut off rather than wrapped, with the bar
+   underneath. The whole work item lives behind a tap, so nothing has to fit
+   here -- which is what lets all three columns stand side by side.
+   --------------------------------------------------------------------------- */
+.kanban-card,
+.kanban-task-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 7px;
+  border-radius: 7px;
+}
+
+.kanban-card-title,
+.kanban-task-title {
+  min-width: 0;
+  font-size: calc(12px * var(--ts, 1));
+  font-weight: 520;
+  color: var(--text);
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A finished card is greyed and ticked, not struck through: the title is cut
+   off to one line here, and a line through a half-sentence reads as damage.
+   The steps inside the opened card keep their strikethrough. */
+.kanban-card .kanban-card-title.completed-text,
+.kanban-task-card .kanban-task-title.completed-text {
+  color: var(--text-3);
+  text-decoration: none;
+}
+.kanban-card.completed .kanban-card-title { opacity: 0.85; }
+
+.kanban-drag-grip { margin-top: 0; }
+
+.kanban-card-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.kanban-spin-dot {
+  width: 6px;
+  height: 6px;
+  margin-top: 0;
+}
+
+.kanban-check-icon { margin-top: 0; }
+
+.kanban-card-pct {
+  font-family: var(--mono);
+  font-size: calc(9.5px * var(--ts, 1));
+  color: var(--text-3);
+}
+
+/* The bar belongs to the card, one thin line across the bottom of it. */
+.kanban-card .kanban-progress-track {
+  grid-column: 1 / -1;
+  display: block;
+  height: 2.5px;
+  margin-top: 2px;
+}
+
+/* A card with nothing to count says so with motion, not with a number. */
+/* A wide, softly lit band travelling through the track: visible when still,
+   and plainly moving when not. Nothing here claims to be a percentage. */
+.kanban-progress-bar.is-unknown {
+  width: 38%;
+  background: linear-gradient(90deg, rgba(var(--glow-deep-rgb), 0.55), var(--glow-light) 45%, rgba(var(--glow-deep-rgb), 0.55));
+  background-size: 220% 100%;
+  box-shadow: 0 0 7px rgba(var(--glow-rgb), 0.55);
+  animation: kanbanUnknown 1.6s linear infinite;
+}
+
+@keyframes kanbanUnknown {
+  from { background-position: 120% 0; }
+  to   { background-position: -80% 0; }
+}
+
+/* Picked up out of one column and set down in the next. */
+.kanban-card.is-flying {
+  position: relative;
+  z-index: 30;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(var(--glow-rgb), 0.5);
+}
+
+.kanban-card.is-open {
+  border-color: rgba(var(--glow-rgb), 0.6);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kanban-progress-bar.is-unknown { animation: none; width: 60%; }
+}
+
+/* How far along the whole board is, under the header. */
+.kanban-board-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px 0;
+}
+.kanban-board-progress .kanban-progress-track { flex: 1; height: 3px; }
+.kanban-board-pct {
+  font-family: var(--mono);
+  font-size: calc(10px * var(--ts, 1));
+  color: var(--text-3);
+  min-width: 30px;
+  text-align: right;
+}
+
+/* ---------------------------------------------------------------------------
+   One card, opened: the whole work item.
+   --------------------------------------------------------------------------- */
+.modal.kanban-peek {
+  max-width: 560px;
+  max-height: min(78vh, 640px);
+}
+
+.kanban-peek-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.kanban-peek-status-name {
+  font-size: calc(11.5px * var(--ts, 1));
+  font-weight: 600;
+  color: var(--text-2);
+}
+.kanban-peek-id {
+  font-family: var(--mono);
+  font-size: calc(10px * var(--ts, 1));
+  color: var(--text-3);
+}
+
+.kanban-peek-progress {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 12px;
+}
+.kanban-peek-progress .kanban-progress-track {
+  flex: 1;
+  height: 6px;
+  display: block;
+}
+.kanban-peek-progress-text {
+  font-size: calc(10.5px * var(--ts, 1));
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.kanban-peek-progress-text.is-unknown { font-style: italic; }
+
+.kanban-peek-quiet {
+  margin: 0;
+  font-size: calc(12px * var(--ts, 1));
+  color: var(--text-3);
+  font-style: italic;
+}
+
+.kanban-peek-steps {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.kanban-peek-steps li {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: calc(12px * var(--ts, 1));
+  color: var(--text-2);
+}
+.kanban-peek-steps li.is-done { color: var(--text-3); text-decoration: line-through; }
+.kanban-step-mark {
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  margin-top: 1px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #34d399;
+}
+.kanban-peek-steps li.is-done .kanban-step-mark {
+  border-color: rgba(52, 211, 153, 0.5);
+  background: rgba(52, 211, 153, 0.12);
+}
+
+.kanban-peek-foot {
+  flex-wrap: wrap;
+  gap: 7px;
 }
 
 /* ============================================================================

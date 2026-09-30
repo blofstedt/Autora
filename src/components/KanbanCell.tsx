@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { KanbanBoard, KanbanTask } from "../lib/derive";
-import { IconCheck, IconChevron, IconGrip, IconMark } from "./Icons";
+import { IconCheck, IconGrip, IconMark, IconX } from "./Icons";
 
 type ColumnKey = "todo" | "doing" | "done";
 
@@ -10,11 +11,177 @@ interface ColumnDef {
   badgeClass: string;
 }
 
+/** The three columns, left to right, in the order the work goes. */
 const COLUMNS: ColumnDef[] = [
   { key: "todo", label: "To Do", badgeClass: "todo-ind" },
   { key: "doing", label: "Doing", badgeClass: "doing-ind" },
   { key: "done", label: "Done", badgeClass: "done-ind" },
 ];
+
+const STATUS_LABEL: Record<ColumnKey, string> = { todo: "To Do", doing: "Doing", done: "Done" };
+
+/** Where a card can go from where it is, and what the button says. */
+const MOVES: Record<ColumnKey, { to: ColumnKey; label: string; kind?: string }[]> = {
+  todo: [
+    { to: "doing", label: "Start" },
+    { to: "done", label: "Done", kind: "done" },
+  ],
+  doing: [
+    { to: "done", label: "Done", kind: "done" },
+    { to: "todo", label: "Back to To Do", kind: "undo" },
+  ],
+  done: [
+    { to: "doing", label: "Reopen in Doing", kind: "undo" },
+    { to: "todo", label: "Back to To Do", kind: "undo" },
+  ],
+};
+
+/**
+ * What a card's bar can honestly say.
+ *
+ * A number only where there is one: steps counted, or a figure the agent
+ * wrote down. A card being worked on with nothing to count says so, over a bar
+ * that moves without claiming anything -- because a made-up 50% is worse than
+ * no number at all: the person reads it as the work being half done, which is
+ * the one thing a progress bar must never mean by accident.
+ */
+function taskProgress(task: KanbanTask, status: ColumnKey): { pct: number | null; label: string } {
+  const steps = task.subtasks ?? [];
+  if (steps.length > 0) {
+    const done = steps.filter((s) => s.done).length;
+    return {
+      pct: Math.round((done / steps.length) * 100),
+      label: `${done} of ${steps.length} steps`,
+    };
+  }
+  if (typeof task.progress === "number" && Number.isFinite(task.progress)) {
+    const pct = Math.max(0, Math.min(100, Math.round(task.progress)));
+    return { pct, label: `${pct}% complete` };
+  }
+  if (status === "done") return { pct: 100, label: "done" };
+  if (status === "todo") return { pct: 0, label: "not started" };
+  return { pct: null, label: "working" };
+}
+
+/** The bar itself, used on a card and again in the card's own view. */
+function ProgressTrack({ column, pct }: { column: ColumnKey; pct: number | null }) {
+  return (
+    <span className="kanban-progress-track">
+      <i
+        className={`kanban-progress-bar status-${column}${pct === null ? " is-unknown" : ""}`}
+        style={pct === null ? undefined : { width: `${pct}%` }}
+      />
+    </span>
+  );
+}
+
+/** One card, opened: the whole work item, not the two words that fit on it. */
+function TaskModal({
+  task,
+  column,
+  onClose,
+  onMove,
+  onRun,
+}: {
+  task: KanbanTask;
+  column: ColumnKey;
+  onClose: () => void;
+  onMove: (to: ColumnKey) => void;
+  onRun?: () => void;
+}) {
+  const { pct, label } = taskProgress(task, column);
+  const steps = task.subtasks ?? [];
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return createPortal(
+    <div
+      className="scrim"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClose();
+      }}
+      role="presentation"
+    >
+      <div
+        className="modal kanban-peek"
+        role="dialog"
+        aria-modal="true"
+        aria-label={task.title}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="modal-top">
+          <b className="peek-title">{task.title}</b>
+          <div className="spacer" />
+          <button className="btn icon ghost" onClick={onClose} aria-label="Close">
+            <IconX size={14} />
+          </button>
+        </div>
+
+        <div className="modal-body">
+          <div className="kanban-peek-status">
+            <span className={`col-indicator ${column}-ind`} />
+            <span className="kanban-peek-status-name">{STATUS_LABEL[column]}</span>
+            <span className="kanban-peek-id">{task.id}</span>
+            {task.tag && task.tag !== "task" && (
+              <span className={`kanban-tag ${column}`}>{task.tag}</span>
+            )}
+          </div>
+
+          <div className="kanban-peek-progress">
+            <ProgressTrack column={column} pct={pct} />
+            <span className={`kanban-peek-progress-text${pct === null ? " is-unknown" : ""}`}>
+              {pct === null ? "in progress — no count yet" : label}
+            </span>
+          </div>
+
+          {task.notes ? (
+            <p className="peek-body">{task.notes}</p>
+          ) : (
+            <p className="kanban-peek-quiet">Nothing written on this card yet.</p>
+          )}
+
+          {steps.length > 0 && (
+            <ul className="kanban-peek-steps">
+              {steps.map((step, i) => (
+                <li key={step.id ?? i} className={step.done ? "is-done" : ""}>
+                  <span className="kanban-step-mark" aria-hidden="true">
+                    {step.done ? <IconCheck size={11} /> : null}
+                  </span>
+                  <span>{step.title}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="modal-foot kanban-peek-foot">
+          {MOVES[column].map((move) => (
+            <button
+              key={move.to}
+              className={`kanban-step-btn ${move.kind ?? ""}`.trim()}
+              onClick={() => onMove(move.to)}
+            >
+              {move.label}
+            </button>
+          ))}
+          {column === "todo" && onRun && (
+            <button className="btn btn-sm btn-accent" onClick={onRun}>
+              Run this autonomously
+            </button>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
 
 export function KanbanCell({
   board,
@@ -32,6 +199,7 @@ export function KanbanCell({
   const [tasks, setTasks] = useState<KanbanTask[]>(board.tasks);
   const [newTitle, setNewTitle] = useState("");
   const [addingTo, setAddingTo] = useState(false);
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
 
   // Drag and drop state
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
@@ -42,15 +210,54 @@ export function KanbanCell({
   // Keep tasks in sync if board updates from outer stream
   const currentTasks = board.tasks.length > 0 ? board.tasks : tasks;
 
-  const todo = currentTasks.filter((t) => t.status === "todo");
-  const doing = currentTasks.filter((t) => t.status === "doing");
-  const done = currentTasks.filter((t) => t.status === "done");
-
   const columnTasks: Record<ColumnKey, KanbanTask[]> = {
-    todo,
-    doing,
-    done,
+    todo: currentTasks.filter((t) => t.status === "todo"),
+    doing: currentTasks.filter((t) => t.status === "doing"),
+    done: currentTasks.filter((t) => t.status === "done"),
   };
+  const { todo, done } = columnTasks;
+
+  const openTask = openTaskId ? currentTasks.find((t) => t.id === openTaskId) ?? null : null;
+
+  // -------------------------------------------------------------
+  // Lift and place: a card that changes column travels there
+  // -------------------------------------------------------------
+  const cardRefs = useRef(new Map<string, HTMLElement>());
+  const lastRects = useRef(new Map<string, DOMRect>());
+  const draggedRef = useRef(false);
+  const signature = currentTasks.map((t) => `${t.id}:${t.status}`).join("|");
+
+  useLayoutEffect(() => {
+    const next = new Map<string, DOMRect>();
+    for (const [id, el] of cardRefs.current) {
+      if (!el || !el.isConnected) continue;
+      const rect = el.getBoundingClientRect();
+      next.set(id, rect);
+
+      const prev = lastRects.current.get(id);
+      // A card seen for the first time arrives on its own; nothing to fly from.
+      if (!prev) continue;
+      const dx = prev.left - rect.left;
+      const dy = prev.top - rect.top;
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
+
+      /* The same motion the drag gives it: picked up out of the old column,
+         carried across, and set down in the new one. */
+      el.style.transition = "none";
+      el.style.transform = `translate(${dx}px, ${dy}px)`;
+      el.classList.add("is-flying");
+      void el.offsetWidth;
+      requestAnimationFrame(() => {
+        el.style.transition = "transform 0.42s var(--ease), box-shadow 0.2s ease";
+        el.style.transform = "";
+      });
+      window.setTimeout(() => {
+        el.classList.remove("is-flying");
+        el.style.transition = "";
+      }, 480);
+    }
+    lastRects.current = next;
+  }, [signature]);
 
   const moveTask = (
     taskId: string,
@@ -84,6 +291,7 @@ export function KanbanCell({
     }
 
     setTasks(updated);
+    setOpenTaskId(null);
 
     if (onTaskMove) {
       onTaskMove(board.id, taskId, newStatus);
@@ -122,10 +330,10 @@ export function KanbanCell({
     }).catch(() => undefined);
   };
 
-  const runNext = () => {
-    const nextTask = todo[0] || doing[0];
+  const runNext = (only?: KanbanTask) => {
+    const nextTask = only ?? todo[0] ?? columnTasks.doing[0];
     if (!nextTask) return;
-    moveTask(nextTask.id, "doing");
+    if (nextTask.status !== "doing") moveTask(nextTask.id, "doing");
     if (onRunAutonomous) {
       onRunAutonomous(nextTask);
     } else {
@@ -142,7 +350,8 @@ export function KanbanCell({
   // -------------------------------------------------------------
   // Drag and Drop Event Handlers
   // -------------------------------------------------------------
-  const handleDragStart = (e: React.DragEvent<HTMLDivElement>, task: KanbanTask) => {
+  const handleDragStart = (e: React.DragEvent<HTMLElement>, task: KanbanTask) => {
+    draggedRef.current = true;
     setDraggingTaskId(task.id);
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", task.id);
@@ -150,65 +359,48 @@ export function KanbanCell({
       "application/json",
       JSON.stringify({ taskId: task.id, fromStatus: task.status })
     );
-
-    // Set a subtle drag preview styling
-    if (e.currentTarget) {
-      e.currentTarget.classList.add("is-dragging");
-    }
   };
 
-  const handleDragEnd = (e: React.DragEvent<HTMLDivElement>) => {
-    if (e.currentTarget) {
-      e.currentTarget.classList.remove("is-dragging");
-    }
+  const handleDragEnd = () => {
     setDraggingTaskId(null);
     setDragOverCol(null);
     setDragOverTaskId(null);
+    // The click that ends a drag is not a tap on the card.
+    window.setTimeout(() => {
+      draggedRef.current = false;
+    }, 140);
   };
 
   const handleColDragOver = (e: React.DragEvent<HTMLDivElement>, colKey: ColumnKey) => {
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = "move";
-    if (dragOverCol !== colKey) {
-      setDragOverCol(colKey);
-    }
+    if (dragOverCol !== colKey) setDragOverCol(colKey);
   };
 
   const handleColDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-    // Only unset if we are leaving the column container entirely
-    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-      setDragOverCol(null);
-    }
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverCol(null);
   };
 
   const handleColDrop = (e: React.DragEvent<HTMLDivElement>, targetCol: ColumnKey) => {
     e.preventDefault();
     e.stopPropagation();
-
     const taskId = e.dataTransfer.getData("text/plain") || draggingTaskId;
-    if (taskId) {
-      moveTask(taskId, targetCol, dragOverTaskId ?? undefined, dropPosition);
-    }
-
+    if (taskId) moveTask(taskId, targetCol, dragOverTaskId ?? undefined, dropPosition);
     setDraggingTaskId(null);
     setDragOverCol(null);
     setDragOverTaskId(null);
   };
 
   const handleCardDragOver = (
-    e: React.DragEvent<HTMLDivElement>,
+    e: React.DragEvent<HTMLElement>,
     targetTask: KanbanTask,
     colKey: ColumnKey
   ) => {
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = "move";
-
-    if (dragOverCol !== colKey) {
-      setDragOverCol(colKey);
-    }
-
+    if (dragOverCol !== colKey) setDragOverCol(colKey);
     if (draggingTaskId !== targetTask.id) {
       setDragOverTaskId(targetTask.id);
       const rect = e.currentTarget.getBoundingClientRect();
@@ -217,11 +409,18 @@ export function KanbanCell({
     }
   };
 
-  const handleCardDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-      setDragOverTaskId(null);
-    }
+  const handleCardDragLeave = (e: React.DragEvent<HTMLElement>) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverTaskId(null);
   };
+
+  const openCard = (id: string) => {
+    if (draggedRef.current) return;
+    setOpenTaskId(id);
+  };
+
+  const total = currentTasks.length;
+  const finished = done.length;
+  const boardPct = total === 0 ? 0 : Math.round((finished / total) * 100);
 
   return (
     <div className="kanban-cell" role="region" aria-label={`Kanban Board: ${board.title}`}>
@@ -232,15 +431,17 @@ export function KanbanCell({
             <IconMark size={12} />
           </span>
           <b>{board.title}</b>
-          <span className="kanban-count">{currentTasks.length} tasks</span>
-          <span className="kanban-dnd-hint">Drag cards to update status</span>
+          <span className="kanban-count">
+            {finished}/{total} done
+          </span>
+          <span className="kanban-dnd-hint">Drag a card, or tap it, to move it on</span>
         </div>
 
         <div className="kanban-actions">
           {todo.length > 0 && (
             <button
               className="btn btn-sm btn-accent"
-              onClick={runNext}
+              onClick={() => runNext()}
               title="Agent autonomously works through tasks"
             >
               <span className="kanban-pulse-dot" />
@@ -256,6 +457,19 @@ export function KanbanCell({
           </button>
         </div>
       </div>
+
+      {/* How far along the whole board is: the only percentage that is real. */}
+      {total > 0 && (
+        <div className="kanban-board-progress" aria-label={`${finished} of ${total} cards done`}>
+          <span className="kanban-progress-track">
+            <i
+              className={`kanban-progress-bar${finished === total ? " status-done" : " status-doing"}`}
+              style={{ width: `${boardPct}%` }}
+            />
+          </span>
+          <span className="kanban-board-pct">{boardPct}%</span>
+        </div>
+      )}
 
       {/* Inline Add Task Bar */}
       {addingTo && (
@@ -278,7 +492,7 @@ export function KanbanCell({
         </div>
       )}
 
-      {/* 3 Columns Grid: To Do, Doing, Done */}
+      {/* Three columns, left to right: To Do, Doing, Done */}
       <div className="kanban-cols">
         {COLUMNS.map((col) => {
           const list = columnTasks[col.key];
@@ -303,147 +517,74 @@ export function KanbanCell({
               {/* Items List / Drop Zone */}
               <div className="kanban-items">
                 {list.length === 0 ? (
-                  <div
-                    className={`kanban-empty ${isColOver ? "is-drop-active" : ""}`}
-                  >
-                    {isColOver ? "Release to drop in " + col.label : "No tasks in " + col.label}
+                  <div className={`kanban-empty ${isColOver ? "is-drop-active" : ""}`}>
+                    {isColOver ? "Release to drop here" : "Empty"}
                   </div>
                 ) : (
                   list.map((task) => {
                     const isDragging = draggingTaskId === task.id;
                     const isTarget = dragOverTaskId === task.id;
-
-                    // Calculate sub-task completion or stage progress
-                    let progressPct = 0;
-                    let progressLabel = "Queued";
-                    if (task.subtasks && task.subtasks.length > 0) {
-                      const completedCount = task.subtasks.filter((s) => s.done).length;
-                      progressPct = Math.round((completedCount / task.subtasks.length) * 100);
-                      progressLabel = `${completedCount}/${task.subtasks.length} subtasks`;
-                    } else if (typeof task.progress === "number") {
-                      progressPct = Math.max(0, Math.min(100, Math.round(task.progress)));
-                      progressLabel = `${progressPct}% complete`;
-                    } else if (col.key === "done") {
-                      progressPct = 100;
-                      progressLabel = "100% complete";
-                    } else if (col.key === "doing") {
-                      progressPct = 50;
-                      progressLabel = "In progress (50%)";
-                    } else {
-                      progressPct = 0;
-                      progressLabel = "Not started (0%)";
-                    }
+                    const { pct } = taskProgress(task, col.key);
 
                     return (
-                      <div
+                      <article
                         key={task.id}
+                        ref={(el) => {
+                          if (el) cardRefs.current.set(task.id, el);
+                          else cardRefs.current.delete(task.id);
+                        }}
                         draggable
                         onDragStart={(e) => handleDragStart(e, task)}
                         onDragEnd={handleDragEnd}
                         onDragOver={(e) => handleCardDragOver(e, task, col.key)}
                         onDragLeave={handleCardDragLeave}
+                        onClick={() => openCard(task.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            openCard(task.id);
+                          }
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`${task.title} — ${STATUS_LABEL[col.key]}. Open the card.`}
                         className={`kanban-card ${col.key === "doing" ? "active" : ""} ${
                           col.key === "done" ? "completed" : ""
                         } ${isDragging ? "is-dragging" : ""} ${
                           isTarget ? `drop-target-${dropPosition}` : ""
-                        }`}
-                        title="Click and drag to move to another column"
+                        } ${openTaskId === task.id ? "is-open" : ""}`}
+                        title={task.title}
                       >
-                        <div className="kanban-card-head">
-                          {/* Drag handle grip */}
-                          <span
-                            className="kanban-drag-grip"
-                            title="Drag to reorder or move column"
-                            aria-label="Drag handle"
-                          >
-                            <IconGrip size={13} />
-                          </span>
+                        <span className="kanban-drag-grip" aria-hidden="true">
+                          <IconGrip size={12} />
+                        </span>
 
+                        <span
+                          className={`kanban-card-title ${
+                            col.key === "done" ? "completed-text" : ""
+                          }`}
+                        >
+                          {task.title}
+                        </span>
+
+                        <span className="kanban-card-state">
                           {col.key === "doing" && <span className="kanban-spin-dot" />}
                           {col.key === "done" && (
                             <span className="kanban-check-icon">
-                              <IconCheck size={12} />
+                              <IconCheck size={11} />
                             </span>
                           )}
-
-                          <div
-                            className={`kanban-card-title ${
-                              col.key === "done" ? "completed-text" : ""
-                            }`}
-                          >
-                            {task.title}
-                          </div>
-                        </div>
-
-                        {/* Visual Progress Bar inside task card */}
-                        <div
-                          className="kanban-card-progress"
-                          title={`Progress: ${progressLabel}`}
-                        >
-                          <div className="kanban-progress-track">
-                            <div
-                              className={`kanban-progress-bar status-${col.key}`}
-                              style={{ width: `${progressPct}%` }}
-                            />
-                          </div>
-                          <div className="kanban-progress-meta">
-                            <span className="kanban-progress-label">{progressLabel}</span>
-                            <span className="kanban-progress-pct">{progressPct}%</span>
-                          </div>
-                        </div>
-
-                        <div className="kanban-card-foot">
-                          {task.tag && (
-                            <span className={`kanban-tag ${col.key}`}>{task.tag}</span>
+                          {pct !== null && col.key !== "todo" && (
+                            <span className="kanban-card-pct">{pct}%</span>
                           )}
-                          <div className="spacer" />
+                        </span>
 
-                          {/* Fallback 1-click step buttons */}
-                          {col.key === "todo" && (
-                            <button
-                              className="kanban-step-btn"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                moveTask(task.id, "doing");
-                              }}
-                              title="Move to Doing"
-                            >
-                              Start <IconChevron size={10} />
-                            </button>
-                          )}
-
-                          {col.key === "doing" && (
-                            <button
-                              className="kanban-step-btn done"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                moveTask(task.id, "done");
-                              }}
-                              title="Mark as Done"
-                            >
-                              <IconCheck size={11} /> Done
-                            </button>
-                          )}
-
-                          {col.key === "done" && (
-                            <button
-                              className="kanban-step-btn undo"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                moveTask(task.id, "todo");
-                              }}
-                              title="Reopen task"
-                            >
-                              Reopen
-                            </button>
-                          )}
-                        </div>
-                      </div>
+                        <ProgressTrack column={col.key} pct={pct} />
+                      </article>
                     );
                   })
                 )}
 
-                {/* Drop placeholder indicator when dragging over column */}
                 {isColOver && draggingTaskId && (
                   <div className="kanban-drop-placeholder">
                     <span className="kanban-drop-icon">
@@ -457,6 +598,16 @@ export function KanbanCell({
           );
         })}
       </div>
+
+      {openTask && (
+        <TaskModal
+          task={openTask}
+          column={openTask.status}
+          onClose={() => setOpenTaskId(null)}
+          onMove={(to) => moveTask(openTask.id, to)}
+          onRun={openTask.status === "todo" ? () => runNext(openTask) : undefined}
+        />
+      )}
     </div>
   );
 }

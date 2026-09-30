@@ -99,25 +99,23 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  The ball at the foot of live mode now says who has the floor by becoming what
-  they are speaking with. While you talk it stands up into a microphone and
-  moves with your voice; when the console answers it lies back into the
-  triangle and moves with its own. The change between the two is drawn rather
-  than cut, so the shape in the corner of your eye is always the thing that is
-  speaking.
+  The task board is three columns side by side at last. Before, each column sat
+  under the last one on a narrow screen and the board read as a list; now To Do,
+  Doing and Done stand left to right at every width, and past the point where
+  three columns stop being readable the board scrolls sideways rather than
+  folding back into a stack.
 
-  The speaker under each reply is one button. Press it to hear the reply, press
-  it again mid-speech and it stops -- the icon turns slashed -- and press it a
-  third time to hear it again from the start. A reply you have silenced stays
-  silenced, slashed icon and all, until you press it.
+  A card is now one line: the work item cut off with an ellipsis, its state at
+  the end of the line, and a thin progress bar under it. Tap any card and the
+  whole thing opens -- the full title, everything written on it, its steps with
+  the finished ones marked and struck through, and the moves that column offers
+  -- so nothing has to be crammed into the card itself.
 
-  The context gauge in the sidebar used to measure every model against 100,000
-  tokens, and DeepSeek V4.1 Flash alone holds a million: it was reading a tenth
-  of the truth and condensing older turns away with most of the room still
-  spare. Models now carry their own window -- a million for DeepSeek Flash and
-  V4 Pro, a million and a little for Gemini and the newer OpenAI models, 200,000
-  for Claude -- and where a vendor publishes the figure it is read from the
-  vendor, including the models picked from a live list. When nothing can say,
-  as with a local server, the gauge says "assumed" rather than passing a house
-  number off as the model's own, and AUTORA_CONTEXT_TOKENS still overrides
-  everything.
+  When a card changes column it is picked up out of the old one and set down in
+  the new one, with the same lift-and-place motion the drag already had, so the
+  eye can follow where it went instead of finding it gone. A card with no steps
+  and no figure no longer shows a made-up 50%: it shows a bar moving steadily
+  from left to right, which is what "working, nothing to count yet" looks like,
+  and a real figure or a step count replaces it as soon as there is one. The
+  board carries its own bar under the header -- cards finished out of cards
+  there are.
