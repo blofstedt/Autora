@@ -1,0 +1,2 @@
+# The PDF editor's dependencies are installed in the image (Dockerfile), not copied in.
+pdf-editor/node_modules

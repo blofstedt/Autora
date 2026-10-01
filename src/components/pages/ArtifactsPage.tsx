@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode,
+} from "react";
 import type { SessionRow } from "../Sessions";
 import { LibraryPicker } from "../LibraryPicker";
 import { addToNotebook, type Notebook } from "../../lib/notebooks";
 import {
-  IconCheck, IconDownload, IconFile, IconMark, IconNotebook, IconTrash, IconUpload, IconUser,
+  IconCheck, IconDownload, IconFile, IconMark, IconNotebook, IconTrash, IconUpload, IconUser, IconX,
 } from "../Icons";
 
 type Artifact = {
@@ -42,10 +44,17 @@ const NOTEBOOK_TAB: "notebooks"[] = ["notebooks"];
  * what you uploaded for it to work with. The agent can list and read both.
  *
  * Selection mode is what makes clearing out a pile of them bearable: pick any
- * number of cards, across both piles, and delete them in one go. Everything
- * else on the page stays exactly as it was when it is off, which is why the
- * per-card buttons are only hidden while it is on rather than removed.
+ * number of cards, across both piles, and delete them in one go. It starts the
+ * way it does in a phone's gallery -- press and hold a card -- so there is no
+ * Select bar taking room when nobody is selecting. Everything else on the page
+ * stays exactly as it was when it is off, which is why the per-card buttons
+ * are only hidden while it is on rather than removed.
  */
+
+/** How long a press has to last to start selecting. */
+const HOLD_MS = 450;
+/** A press that moves further than this is a scroll, not a hold. */
+const HOLD_SLOP = 10;
 export function ArtifactsPage({
   sessions, onOpenSession,
 }: {
@@ -63,6 +72,10 @@ export function ArtifactsPage({
   const [filing, setFiling] = useState(false);
   const [filed, setFiled] = useState<string | null>(null);
   const picker = useRef<HTMLInputElement>(null);
+  /** The press being timed, and whether the last one became a hold (so the
+      click that ends it does not also open the file). */
+  const hold = useRef<{ timer: number; x: number; y: number } | null>(null);
+  const held = useRef(false);
 
   const load = useCallback(() => {
     fetch("/api/artifacts").then((r) => r.json()).then((d) => {
@@ -152,6 +165,46 @@ export function ArtifactsPage({
   const toggle = (id: string) =>
     setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
 
+  const cancelHold = () => {
+    if (hold.current) window.clearTimeout(hold.current.timer);
+    hold.current = null;
+  };
+  useEffect(() => cancelHold, []);
+
+  /** Press and hold a card: selecting starts, with that card picked. */
+  const holdProps = (id: string) => ({
+    onPointerDown: (e: PointerEvent) => {
+      // A new press starts clean: after a hold a phone often sends no click
+      // at all, and the flag left set would swallow the next tap.
+      held.current = false;
+      if (selecting || e.button !== 0) return;
+      cancelHold();
+      hold.current = {
+        x: e.clientX, y: e.clientY,
+        timer: window.setTimeout(() => {
+          hold.current = null;
+          held.current = true;
+          setSelecting(true);
+          setPicked([id]);
+          navigator.vibrate?.(10);
+        }, HOLD_MS),
+      };
+    },
+    onPointerMove: (e: PointerEvent) => {
+      const h = hold.current;
+      if (h && Math.hypot(e.clientX - h.x, e.clientY - h.y) > HOLD_SLOP) cancelHold();
+    },
+    onPointerUp: cancelHold,
+    onPointerCancel: cancelHold,
+    onPointerLeave: cancelHold,
+    // The click that ends a hold must not open the file or press a button.
+    onClickCapture: (e: MouseEvent) => {
+      if (held.current) { held.current = false; e.preventDefault(); e.stopPropagation(); }
+    },
+    // A long press on a phone also asks for the browser's own menu.
+    onContextMenu: (e: MouseEvent) => { if (hold.current || held.current || selecting) e.preventDefault(); },
+  });
+
   const file = async (books: Notebook[]) => {
     setFiling(false);
     setError(null);
@@ -185,6 +238,7 @@ export function ArtifactsPage({
         return (
           <article
             key={a.id}
+            {...holdProps(a.id)}
             className={`art-card${selecting ? " art-pickable" : ""}${on ? " is-picked" : ""}`}
             role={selecting ? "checkbox" : undefined}
             aria-checked={selecting ? on : undefined}
@@ -278,7 +332,7 @@ export function ArtifactsPage({
         <p className="jf-hint art-lede">
           Everything Autora makes for you and everything you give it: generated
           images, documents it writes, and the files and photos you upload. The
-          agent can find and read all of them.
+          agent can find and read all of them. Press and hold a file to select.
         </p>
         {error && <p className="set-warn">{error}</p>}
         {filed && <p className="jf-hint art-filed" role="status">{filed}</p>}
@@ -293,48 +347,47 @@ export function ArtifactsPage({
           />
         )}
 
-        {all.length > 0 && (
-          <div className="art-toolbar">
-            {selecting ? (
-              <>
-                <button
-                  className="btn ghost"
-                  onClick={() => setPicked(allPicked ? [] : all.map((a) => a.id))}
-                >
-                  {allPicked ? "Clear all" : "Select all"}
-                </button>
-                <span className="art-selcount" aria-live="polite">
-                  {picked.length === 0
-                    ? "Tap files to pick them"
-                    : `${picked.length} of ${all.length} selected`}
-                </span>
-                <div className="spacer" />
-                <button
-                  className="btn ghost"
-                  disabled={picked.length === 0 || removing}
-                  onClick={() => setFiling(true)}
-                >
-                  <IconNotebook size={14} /> Add to notebook
-                </button>
-                <button
-                  className="btn danger"
-                  disabled={picked.length === 0 || removing}
-                  onClick={() => void remove(all.filter((a) => picked.includes(a.id)))}
-                >
-                  <IconTrash size={14} />
-                  {removing ? "Deleting…"
-                    : picked.length > 1 ? `Delete ${picked.length}` : "Delete"}
-                </button>
-                <button className="btn ghost" onClick={leaveSelect} disabled={removing}>Done</button>
-              </>
-            ) : (
-              <>
-                <div className="spacer" />
-                <button className="btn ghost" onClick={() => setSelecting(true)}>
-                  <IconCheck size={14} /> Select
-                </button>
-              </>
-            )}
+        {selecting && all.length > 0 && (
+          /* One row, one style: leave and the count on the left, the two
+             things to do with the picked files on the right. */
+          <div className="art-toolbar" role="toolbar" aria-label="Selected files">
+            <button
+              className="btn icon ghost"
+              onClick={leaveSelect}
+              disabled={removing}
+              title="Stop selecting"
+              aria-label="Stop selecting"
+            >
+              <IconX size={15} />
+            </button>
+            {/* No count on screen, the ticks say it; only a screen reader is told. */}
+            <span className="sr-only" aria-live="polite">{picked.length} selected</span>
+            <button
+              className="art-selall"
+              onClick={() => setPicked(allPicked ? [] : all.map((a) => a.id))}
+              disabled={removing}
+            >
+              {allPicked ? "Clear" : "Select all"}
+            </button>
+            <div className="spacer" />
+            <button
+              className="btn ghost art-act"
+              disabled={picked.length === 0 || removing}
+              onClick={() => setFiling(true)}
+              aria-label="Add to notebook"
+              title="Add to notebook"
+            >
+              <IconNotebook size={15} /> <span className="art-act-word">Add to notebook</span>
+            </button>
+            <button
+              className="btn ghost art-act is-danger"
+              disabled={picked.length === 0 || removing}
+              onClick={() => void remove(all.filter((a) => picked.includes(a.id)))}
+              aria-label={picked.length > 1 ? `Delete ${picked.length} files` : "Delete"}
+              title="Delete"
+            >
+              <IconTrash size={15} /> <span className="art-act-word">Delete</span>
+            </button>
           </div>
         )}
 

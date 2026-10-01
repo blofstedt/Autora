@@ -9,7 +9,7 @@
  */
 import assert from "node:assert/strict";
 import type { Bucket, Cell } from "../src/lib/derive";
-import { busiestSurface, newestSurface, pickSurfaces } from "../src/lib/stage";
+import { busiestSurface, dockedPlan, newestSurface, pickSurfaces } from "../src/lib/stage";
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -79,6 +79,14 @@ test("a plan still being worked stays held into later turns; a finished one does
   const later = turn(reply(9));
   assert.deepEqual(kinds([turn(plan(2, "completed", "in-progress")), later]), ["plan"]);
   assert.deepEqual(kinds([turn(plan(2, "completed", "completed")), later]), []);
+});
+
+test("the plan docked above the message box: unfinished, or the latest turn's", () => {
+  const later = turn(reply(9));
+  assert.equal(dockedPlan([turn(plan(2, "completed", "in-progress")), later])?.seq, 2);
+  assert.equal(dockedPlan([turn(plan(2, "completed", "completed")), later]), null);
+  assert.equal(dockedPlan([turn(page(1), plan(2, "completed", "completed"))])?.seq, 2, "a finished one stays while its turn is the latest");
+  assert.equal(dockedPlan([turn(page(1), widget(2))]), null);
 });
 
 test("a widget from an earlier turn is a record, not the pinned thing", () => {

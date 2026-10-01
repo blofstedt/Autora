@@ -6,7 +6,8 @@ import reactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
 
 export default tseslint.config(
-  { ignores: ["dist/", "node_modules/", "ui/", ".autora/", "recordings/"] },
+  // pdf-editor/ is its own sub-project (SecurePDF's editor), typechecked by its own tsconfig.
+  { ignores: ["dist/", "node_modules/", "ui/", ".autora/", "recordings/", "pdf-editor/"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

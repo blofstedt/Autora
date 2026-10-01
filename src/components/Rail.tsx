@@ -395,7 +395,8 @@ function Vitals({ onOpen }: { onOpen: () => void }) {
     },
     {
       label: "Memory", share: v.memory.used / v.memory.total, value: `${Math.round((v.memory.used / v.memory.total) * 100)}%`,
-      detail: `${gb(v.memory.used)} of ${gb(v.memory.total)} GB`,
+      // Short enough for a third of the rail: "1.2 of 15.7 GB" was cut to "1.2 of 15.7 …".
+      detail: `${gb(v.memory.used)}/${gb(v.memory.total)} GB`,
     },
     ...(v.disk ? [{
       label: "Disk", share: v.disk.used / v.disk.total, value: `${Math.round((v.disk.used / v.disk.total) * 100)}%`,

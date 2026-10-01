@@ -267,14 +267,6 @@ export function Schedule({
       {error && <div className="sched-error">{error}</div>}
 
       <div className="sched-body">
-        {/* Where the other half of "work that starts by itself" lives, said
-            once at the top rather than as a section at the bottom. */}
-        <p className="trig-lede">
-          Everything here runs on a clock: a recurrence, and for a watcher the
-          schedule it looks on. Work that something else starts — a webhook, a
-          pipeline, a shortcut on your phone — lives on <b>Triggers</b>.
-        </p>
-
         {editing && (
           <JobForm
             job={editing === "new" ? null : editing}
@@ -292,6 +284,7 @@ export function Schedule({
               morning check of a site, a weekly tidy-up. Each run opens its own
               session you can watch or replay.
             </p>
+            <p className="empty-note">Work that something else starts, like a webhook, goes on Triggers.</p>
           </div>
         )}
 

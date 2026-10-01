@@ -98,6 +98,7 @@ import {
   addressIn, DEVICES, isDevice, isLocalUrl, localAddress, serveFolder, waitForServer,
   type Device, type StaticServer,
 } from "./server/preview";
+import { deskBriefing, deskRoutes, deskState, dropDesk, onDeskChange, serveEditor } from "./server/pdfdesk";
 import {
   pickExpression, reviewMessage, safeStyle, type ElementInfo, type ReviewComment, type StyleChange,
 } from "./server/pick";
@@ -884,6 +885,14 @@ function previewState(session: Session) {
 function broadcastPreview(session: Session) {
   sendEphemeral(session.id, { type: "preview", session: session.id, state: previewState(session) });
 }
+
+/* The PDF window (server/pdfdesk.ts): every change, to the session's tabs.
+   Its objects are the agent's and the person's own marks on their file, so
+   they are not run through the secret table -- like the app window's state,
+   this is sent as it is. */
+onDeskChange((sessionId) => {
+  sendEphemeral(sessionId, { type: "pdfdesk", session: sessionId, state: deskState(sessionId) });
+});
 
 /** Stop what a preview started -- its dev server, its file server, its page.
     `keep` is for a restart: the size and the unsent comments carry over. */
@@ -2009,6 +2018,11 @@ async function systemInstructionFor(
      ask. It can ask now -- browser_read returns the same text, on demand and
      at the point it is wanted -- so this says only that a page is open, and
      the six thousand characters of it are fetched if they turn out to matter. */
+  /* A PDF open in the window, and what the person did to it since the agent
+     last heard (said once). */
+  const pdfDesk = deskBriefing(sessionId);
+  if (pdfDesk) notes.push(pdfDesk);
+
   const open = browsers.get(sessionId)?.status();
   if (open?.open && open.url?.startsWith("chrome-error:")) {
     notes.push(
@@ -4355,6 +4369,9 @@ async function startServer() {
   });
 
   /** Gone for good: its log, its pictures, and its browser. */
+  // The PDF window: its pages, and what the person changes in it.
+  deskRoutes(app, { exists: (id) => sessions.has(id), cwd: () => terminalDir() });
+
   app.delete("/api/sessions/:id", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
@@ -4371,6 +4388,7 @@ async function startServer() {
     await browsers.get(session.id)?.close().catch(() => undefined);
     browsers.delete(session.id);
     await previewStop(session, false).catch(() => undefined);
+    dropDesk(session.id);
     forgetSession(session.id);
     if (!incognito) deleteSession(session.id);
     // No title of an incognito chat is in a log line: it may be a first message.
@@ -4470,7 +4488,10 @@ async function startServer() {
    * why a suggestion cannot install something the offer path could not.
    */
   app.post("/api/mcp/suggested/:id/install", async (req: Request, res: Response) => {
-    const plan = planOffer({ server: req.params.id });
+    // The offer path wants the agent's one line on why; pressing the button
+    // on the page is the person's own reason, so give it one. Without it every
+    // "Set it up" failed with the agent's "say why" message.
+    const plan = planOffer({ server: req.params.id, why: "Set up from the Integrations page." });
     if (typeof plan === "string") return res.status(400).json({ error: plan });
     if (existingMcp(plan.name)) {
       return res.status(400).json({ error: `There is already a server called "${plan.name}".` });
@@ -6558,6 +6579,8 @@ async function startServer() {
          it closed stops showing it. When open, a frame to start from. */
       const openPreview = previews.get(sessionId);
       ws.send(JSON.stringify({ type: "preview", session: sessionId, state: previewState(session) }));
+      // The PDF window, likewise.
+      ws.send(JSON.stringify({ type: "pdfdesk", session: sessionId, state: deskState(sessionId) }));
       if (openPreview?.opened) void openPreview.live.nudge();
 
       // Handle incoming messages
@@ -6652,6 +6675,9 @@ async function startServer() {
   });
 
   // 13. Vite Integration (Development middleware / Production static serving)
+  // The PDF window's editor, a separate build (pdf-editor/), in dev and production alike.
+  serveEditor(app, path.join(process.cwd(), "dist"));
+
   if (process.env.NODE_ENV !== "production") {
     // Imported here rather than at the top of the file: Vite is a build-time
     // dependency, and a static import would drag it into the production

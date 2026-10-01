@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { IconChevron, IconPlug, IconPlus, IconRotateCcw, IconTrash } from "../Icons";
 
 type Server = {
@@ -59,7 +60,10 @@ type Suggestion = {
   needs: { env: string; label: string; optional: boolean }[];
 };
 
-export function McpPage() {
+export function McpPage({ topSlot }: {
+  /** The header's corner for the page's own action, as on Schedules. */
+  topSlot?: HTMLElement | null;
+}) {
   const [suggested, setSuggested] = useState<Suggestion[]>([]);
   const [installing, setInstalling] = useState<string | null>(null);
   const [servers, setServers] = useState<Server[] | null>(null);
@@ -148,12 +152,18 @@ export function McpPage() {
             up in a conversation when a server would do the job better than the
             browser — those are marked here.
           </p>
-          {!draft && (
+          {!draft && !topSlot && (
             <button className="btn primary" onClick={() => setDraft({ ...blank })}>
               <IconPlus size={14} /> Add server
             </button>
           )}
         </div>
+        {!draft && topSlot && createPortal(
+          <button className="btn primary top-action" onClick={() => setDraft({ ...blank })}>
+            <IconPlus size={13} /> <span className="top-action-word">Add server</span>
+          </button>,
+          topSlot,
+        )}
         {error && <p className="set-warn">{error}</p>}
 
         {/* Where the agent's offer cannot reach: the person is already on the

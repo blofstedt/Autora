@@ -65,6 +65,8 @@ export interface App {
   log(): string;
 }
 
+const LOCAL_CHROME = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
+
 export async function startApp(opts: { env?: Record<string, string> } = {}): Promise<App> {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "autora-e2e-"));
   const seen: Seen[] = [];
@@ -129,7 +131,11 @@ export async function startApp(opts: { env?: Record<string, string> } = {}): Pro
       env: {
         ...process.env,
         AUTORA_HOME: home, AUTORA_PORT: String(port), AUTORA_HOST: "127.0.0.1", AUTORA_TLS: "0",
-        AUTORA_WORKDIR: home, AUTORA_BROWSER_PATH: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
+        AUTORA_WORKDIR: home,
+        // This sandbox's Chromium when it is here; elsewhere (CI) the server
+        // finds the system's own. Naming a path that does not exist left the
+        // server with no browser at all, so widgets went unchecked on CI.
+        ...(fs.existsSync(LOCAL_CHROME) && !process.env.AUTORA_BROWSER_PATH ? { AUTORA_BROWSER_PATH: LOCAL_CHROME } : {}),
         NODE_ENV: "development", ...opts.env,
       },
       stdio: ["ignore", "pipe", "pipe"],

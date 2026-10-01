@@ -22,6 +22,7 @@
  * deleted page or a redacted line is not still in the bytes.
  */
 
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -52,6 +53,8 @@ export interface PdfContext {
   showFile?: (file: { id: string; name: string; mime: string; size: number }) => void;
   cancelled: () => boolean;
   onCancel: (stop: () => void) => void;
+  /** The session's PDF window, when there is one to show the work in. */
+  desk?: DeskHooks;
 }
 
 export interface PdfOutcome {
@@ -69,6 +72,13 @@ function message(err: unknown): string {
 }
 
 export async function runPdfTool(name: string, args: Record<string, any>, ctx: PdfContext): Promise<PdfOutcome> {
+  const outcome = await runOne(name, args, ctx);
+  // What the person did in the PDF window meanwhile, said with the next result.
+  const news = ctx.desk?.news() ?? "";
+  return news ? { ...outcome, summary: `${outcome.summary} ${news}` } : outcome;
+}
+
+async function runOne(name: string, args: Record<string, any>, ctx: PdfContext): Promise<PdfOutcome> {
   try {
     switch (name) {
       case "pdf_read": return await readTool(args, ctx);
@@ -319,13 +329,21 @@ function outputName(input: Input, output: unknown, suffix: string): string {
   return cleanName(`${base}-${suffix}.pdf`);
 }
 
-function deliver(ctx: PdfContext, name: string, data: Buffer, note: string): Saved {
+function deliver(ctx: PdfContext, name: string, data: Buffer, note: string, input?: Input): Saved {
   if (data.byteLength > MAX_ARTIFACT_BYTES) {
     throw new Problem(`The result is ${formatSize(data.byteLength)}, over the ${formatSize(MAX_ARTIFACT_BYTES)} an artifact may be. Nothing was saved.`);
   }
   const replaced = listArtifacts().some((a) => a.origin === "agent" && a.name === name);
   const art = saveArtifact({ origin: "agent", name, data, mime: "application/pdf", session: ctx.session, note });
   ctx.showFile?.({ id: art.id, name: art.name, mime: art.mime, size: art.size });
+  // A file the agent made is the file it is working on: open it in the window.
+  // Whatever was on the pages there is part of them now (the tools that call
+  // this read the window's flattened file); pdf_edit opens it itself, with
+  // its objects kept movable.
+  if (input && ctx.desk) {
+    const source = ctx.desk.current()?.source ?? (input.artifact?.origin === "user" ? input.artifact.id : null);
+    ctx.desk.open({ name: art.name, base: data, items: [], working: art.id, source, outName: art.name });
+  }
   return { art, replaced };
 }
 
@@ -887,6 +905,12 @@ type Tools = {
 };
 
 async function picture(tools: Tools, ref: unknown): Promise<PDFImage> {
+  // A picture carried inline, as the PDF window's objects carry theirs.
+  const inline = typeof ref === "string" ? /^data:image\/(png|jpe?g);base64,(.+)$/i.exec(ref) : null;
+  if (inline) {
+    const data = Buffer.from(inline[2], "base64");
+    return /png/i.test(inline[1]) ? tools.doc.embedPng(data) : tools.doc.embedJpg(data);
+  }
   const file = readFileRef(ref, tools.cwd, "picture");
   const data = file.data;
   if (data.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return tools.doc.embedPng(data);
@@ -1202,6 +1226,413 @@ function pageNumber(sheet: Sheet, fonts: Fonts, label: string, pn: Record<string
   sheet.draw(() => sheet.page.drawText(label, { x, y: baseline, size, font, color }));
 }
 
+// ----------------------------------------------------------------- desk --
+//
+// The PDF window (server/pdfdesk.ts): the file the agent is working on, open
+// in SecurePDF's editor beside the conversation, where what the agent places
+// on a page arrives as the editor's own objects -- text, stamps, signatures,
+// shapes, notes -- that the person can move, change or remove, and add to.
+// The window keeps the pages without them (the base) and the objects; the
+// file the tools and the person download is the two flattened together,
+// rewritten whenever either changes.
+//
+// An object the agent placed keeps the pdf_edit item it came from, so until
+// the person changes it the file shows exactly what pdf_edit would have drawn
+// (bold, alignment, a background, a diagonal arrow, which the editor's own
+// objects cannot say). Moved, it is drawn the same way somewhere else; edited
+// in any other way, it is drawn from what the editor now says it is.
+
+/** One of the editor's objects (SecurePDF's AnnotationItem): points from the
+    top-left of the page as shown, the same as everywhere here. */
+export type DeskItem = {
+  id: string;
+  type: string;
+  pageNumber: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  [key: string]: any;
+  /** For one the agent placed: the pdf_edit item, and the object as first shown. */
+  autora?: { draw: Record<string, any>; shown: string };
+};
+
+export type DeskSnapshot = {
+  /** The file's name as the window shows it. */
+  name: string;
+  /** The pages without the objects. Never encrypted. */
+  base: Buffer;
+  items: DeskItem[];
+  /** The artifact the flattened file is written to, once there is one. */
+  working: string | null;
+  /** The file it was opened from, when that was an artifact. */
+  source: string | null;
+};
+
+/** What the PDF tools may do with the window of the session they run in. */
+export interface DeskHooks {
+  current(): DeskSnapshot | null;
+  /** Show this file in the window (or carry on with it), with these objects on it. */
+  open(next: DeskSnapshot & { outName: string }): void;
+  /** Bring the window back if the person put it away: the agent is working on its file. */
+  show(): void;
+  /** What the person did in the window since the agent was last told, said once; "" when nothing. */
+  news(): string;
+}
+
+const deskId = () => `agent_${crypto.randomBytes(5).toString("hex")}`;
+
+/** The object as the editor shows it, without the parts only Autora reads. */
+function shownOf(item: DeskItem): string {
+  const rest: Record<string, any> = { ...item };
+  delete rest.autora;
+  delete rest.id;
+  return JSON.stringify(rest);
+}
+
+const EDITOR_FONT = (f: unknown) => {
+  const name = String(f ?? "").toLowerCase();
+  if (/times|serif/.test(name) && !/sans/.test(name)) return "Times-Roman";
+  if (/courier|mono/.test(name)) return "Courier";
+  return "Helvetica";
+};
+
+/** The padding inside the editor's text boxes, in points at a typical zoom. */
+const EDITOR_PAD = 5;
+
+/** The editor's own stamps; any other word is shown as text. */
+const EDITOR_STAMPS = new Set(["APPROVED", "REJECTED", "SIGN_HERE", "INITIAL_HERE", "DATE", "CONFIDENTIAL", "COPY"]);
+
+/** A picture as a data URL, with its size: what the editor's objects carry. */
+async function pictureData(tools: Tools, item: Record<string, any>, signature: boolean): Promise<{ url: string; w: number; h: number }> {
+  let data: Buffer;
+  if (signature && !item.image) {
+    const text = String(item.text ?? "").trim();
+    if (!text) throw new Problem("A signature needs text (the name, written in a handwriting font) or image (a picture of the signature).");
+    if (!tools.view) throw new Problem("Writing a typed signature needs the renderer, which did not start.");
+    const color = parseColor(item.color, "ink") ?? rgb(0.12, 0.16, 0.42);
+    data = (await tools.view.signature(text.slice(0, 80), 160, cssColor(color))).data;
+  } else {
+    const file = readFileRef(item.image, tools.cwd, "picture");
+    data = file.data;
+    const png = data.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    const jpg = data[0] === 0xff && data[1] === 0xd8;
+    if (!png && !jpg) {
+      const mime = file.artifact?.mime ?? mimeFor(file.name);
+      if (!mime.startsWith("image/")) throw new Problem(`${file.name} is not a picture.`);
+      if (!tools.view) throw new Problem(`${file.name} is ${mime}; give a PNG or JPEG.`);
+      data = (await tools.view.toPng(data, mime)).data;
+    }
+  }
+  const png = data.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  const img = png ? await tools.doc.embedPng(data) : await tools.doc.embedJpg(data);
+  return { url: `data:image/${png ? "png" : "jpeg"};base64,${data.toString("base64")}`, w: img.width, h: img.height };
+}
+
+/** The numbers of a simple SVG path, as points: enough to show its shape. */
+function pathPoints(d: string, x: number, y: number): { x: number; y: number }[] {
+  const nums = (d.match(/-?\d*\.?\d+(?:e-?\d+)?/gi) ?? []).map(Number);
+  const out: { x: number; y: number }[] = [];
+  for (let i = 0; i + 1 < nums.length; i += 2) out.push({ x: x + nums[i], y: y + nums[i + 1] });
+  return out.slice(0, 2000);
+}
+
+function boundsOf(points: { x: number; y: number }[], pad: number) {
+  const xs = points.map((p) => p.x), ys = points.map((p) => p.y);
+  const x0 = Math.min(...xs) - pad, y0 = Math.min(...ys) - pad;
+  return { x: x0, y: y0, width: Math.max(10, Math.max(...xs) + pad - x0), height: Math.max(10, Math.max(...ys) + pad - y0) };
+}
+
+/**
+ * A pdf_edit item as the editor's objects on one page: usually one, one per
+ * box for a highlight found by its words, none for words not on the page.
+ */
+async function deskItemsFor(tools: Tools, sheet: Sheet, pageIndex: number, item: Record<string, any>, anchor: Rect | null): Promise<DeskItem[]> {
+  const type = String(item.type ?? "").trim().toLowerCase();
+  const page = pageIndex + 1;
+  const at = () => ({ x: anchor?.x ?? need(item.x, `${type}'s x`), y: anchor?.y ?? need(item.y, `${type}'s y`) });
+  const make = (shown: Record<string, any>, draw: Record<string, any>): DeskItem => {
+    const made = { id: deskId(), pageNumber: page, ...shown } as DeskItem;
+    const clean: Record<string, any> = { ...draw, page: String(page) };
+    delete clean.pages;
+    delete clean.field;
+    made.autora = { draw: clean, shown: shownOf(made) };
+    return made;
+  };
+
+  switch (type) {
+    case "text": {
+      const text = String(item.text ?? "");
+      if (!text.trim()) throw new Problem("A text item needs text.");
+      const { x, y } = at();
+      const size = Math.min(200, Math.max(2, num(item.size) ?? 12));
+      const font = tools.fonts.get(item.font, Boolean(item.bold), Boolean(item.italic));
+      const color = parseColor(item.color, "black") ?? rgb(0, 0, 0);
+      const width = num(item.width);
+      const lines = wrapText(text, font, size, width);
+      for (const line of lines) writable(font, line);
+      const widest = Math.max(...lines.map((l) => font.widthOfTextAtSize(l, size)));
+      // The editor shows text in a box with 6 px of padding each side and a
+      // looser line height, in the browser's font rather than this one: the
+      // box starts that padding to the left, so the words sit where they are
+      // drawn, and leaves room for a wider face.
+      return [make({
+        type: "text", x: x - EDITOR_PAD, y, width: Math.ceil((width ?? widest * 1.1) + EDITOR_PAD * 2 + 2),
+        height: Math.ceil(lines.length * size * 1.3 + 4),
+        text, fontSize: size, fontColor: cssColor(color), fontFamily: EDITOR_FONT(item.font), userResized: Boolean(width),
+      }, { ...item, x, y })];
+    }
+
+    case "stamp": {
+      const key = String(item.stamp ?? item.text ?? "approved").trim().toLowerCase().replace(/[\s-]+/g, "_");
+      const preset = STAMPS[key];
+      const label = String(item.text ?? "").trim()
+        ? String(item.text).trim().toUpperCase()
+        : preset ? (preset.label || today().toUpperCase()) : key.replace(/_/g, " ").toUpperCase();
+      const color = parseColor(item.color, preset?.color ?? "#2563eb") ?? rgb(0.15, 0.39, 0.92);
+      const font = tools.fonts.get("helvetica", true);
+      writable(font, label);
+      const h = num(item.height) ?? (num(item.size) ? (num(item.size) as number) * 2.4 : 30);
+      const arrow = preset?.arrow ? h * 0.6 : 0;
+      const w = num(item.width) ?? font.widthOfTextAtSize(label, h * 0.42) + h * 0.9 + arrow;
+      const { x, y } = at();
+      const stampType = key.toUpperCase();
+      const shown = EDITOR_STAMPS.has(stampType) && !String(item.text ?? "").trim()
+        ? { type: "stamp", x, y, width: w, height: h, stampType }
+        : { type: "text", x, y, width: w, height: h, text: label, fontSize: Math.round(h * 0.42), fontColor: cssColor(color), fontFamily: "Helvetica" };
+      return [make(shown, { ...item, x, y, width: w, height: h })];
+    }
+
+    case "signature":
+    case "image": {
+      const pic = await pictureData(tools, item, type === "signature");
+      let place: Rect;
+      if (anchor && item.field) {
+        place = fitInto(anchor, pic.w, pic.h);
+      } else {
+        const { x, y } = at();
+        const fake = { width: pic.w, height: pic.h } as PDFImage;
+        const { w, h } = sized(fake, item, type === "signature" ? (item.image ? 150 : 170) : Math.min(200, pic.w * 0.75));
+        place = { x, y, w, h };
+      }
+      const box = { x: place.x, y: place.y, width: place.w, height: place.h };
+      return [make(
+        type === "signature" ? { type, ...box, signatureDataUrl: pic.url } : { type, ...box, imageDataUrl: pic.url, signatureDataUrl: pic.url },
+        { type: "image", image: pic.url, ...box, ...(item.opacity !== undefined ? { opacity: item.opacity } : {}) },
+      )];
+    }
+
+    case "check":
+    case "cross": {
+      const s = Math.max(4, num(item.size) ?? 14);
+      const { x, y } = at();
+      return [make({ type: "stamp", x, y, width: s, height: s, stampType: type === "check" ? "CHECKMARK" : "CROSS" }, { ...item, x, y })];
+    }
+
+    case "rect":
+    case "rectangle":
+    case "box":
+    case "ellipse":
+    case "circle": {
+      const { x, y } = at();
+      const w = need(item.width, `${type}'s width`), h = need(item.height, `${type}'s height`);
+      const border = parseColor(item.color, item.fill ? "none" : "red");
+      const fill = item.fill ? parseColor(item.fill, "none") : null;
+      const thickness = num(item.thickness) ?? 2;
+      return [make({
+        type: "shape", x, y, width: w, height: h, shapeType: type === "ellipse" || type === "circle" ? "circle" : "rectangle",
+        hasFill: Boolean(fill), shapeFillColor: fill ? cssColor(fill) : "transparent",
+        hasStroke: Boolean(border) && thickness > 0, shapeStrokeColor: border ? cssColor(border) : "#000000", shapeStrokeWidth: thickness,
+      }, { ...item, x, y })];
+    }
+
+    case "line":
+    case "arrow":
+    case "path": {
+      const { x, y } = at();
+      const points = type === "path"
+        ? pathPoints(String(item.d ?? ""), x, y)
+        : [{ x, y }, { x: need(item.x2, `${type}'s x2`), y: need(item.y2, `${type}'s y2`) }];
+      if (points.length < 2) throw new Problem("A path item needs d, an SVG path.");
+      const color = parseColor(item.color, "red") ?? rgb(0.86, 0.15, 0.15);
+      const thickness = Math.max(0.3, num(item.thickness) ?? 2);
+      return [make({
+        type: "drawing", ...boundsOf(points, thickness), drawingPoints: points,
+        drawingColor: cssColor(color), drawingWidth: thickness, isHighlighter: false,
+      }, { ...item, x, y })];
+    }
+
+    case "highlight": {
+      const color = parseColor(item.color, "yellow") ?? rgb(0.98, 0.8, 0.08);
+      let boxes: Rect[];
+      if (item.text) {
+        const text = tools.texts.get(page);
+        boxes = text ? findOnPage(text, patternsFor(item.text)).flatMap((h) => h.boxes) : [];
+      } else {
+        const { x, y } = at();
+        boxes = [{ x, y, w: need(item.width, "highlight's width"), h: need(item.height, "highlight's height") }];
+      }
+      return boxes.map((b) => make({
+        type: "drawing", x: b.x, y: b.y, width: b.w, height: b.h,
+        drawingPoints: [{ x: b.x, y: b.y + b.h / 2 }, { x: b.x + b.w, y: b.y + b.h / 2 }],
+        drawingColor: cssColor(color), drawingWidth: b.h, isHighlighter: true,
+      }, { type: "highlight", x: b.x, y: b.y, width: b.w, height: b.h, color: item.color, opacity: item.opacity }));
+    }
+
+    case "note": {
+      const text = String(item.text ?? "").trim();
+      if (!text) throw new Problem("A note needs text.");
+      const { x, y } = at();
+      const color = parseColor(item.color, "#fbbf24") ?? rgb(0.98, 0.75, 0.14);
+      return [make({
+        type: "note", x, y, width: 20, height: 20, noteComment: text, noteAuthor: "Autora",
+        noteColor: cssColor(color), noteDate: new Date().toLocaleDateString(),
+      }, { ...item, x, y })];
+    }
+
+    default:
+      void sheet;
+      throw new Problem(
+        `"${String(item.type ?? "")}" is not a kind of item. Use text, stamp, signature, image, check, cross, ` +
+        "rect, ellipse, line, arrow, path, highlight or note.",
+      );
+  }
+}
+
+/** A pdf_edit item moved by (dx, dy). */
+function shifted(draw: Record<string, any>, dx: number, dy: number): Record<string, any> {
+  const out = { ...draw };
+  for (const k of ["x", "x2"]) if (num(out[k]) !== null) out[k] = (num(out[k]) as number) + dx;
+  for (const k of ["y", "y2"]) if (num(out[k]) !== null) out[k] = (num(out[k]) as number) + dy;
+  return out;
+}
+
+/** The parts of an object other than where it is. */
+function withoutPlace(json: string): string {
+  const o = JSON.parse(json);
+  delete o.x;
+  delete o.y;
+  delete o.drawingPoints;
+  return JSON.stringify(o);
+}
+
+/**
+ * What to draw for one of the editor's objects: a pdf_edit item, a box to
+ * redact, or nothing (an empty text box, a note with no words).
+ */
+export function drawFor(item: DeskItem): Record<string, any> | { redact: Rect } | null {
+  const x = Number(item.x) || 0, y = Number(item.y) || 0;
+  const w = Math.max(0, Number(item.width) || 0), h = Math.max(0, Number(item.height) || 0);
+  if (item.autora?.draw) {
+    const now = shownOf(item);
+    if (now === item.autora.shown) return item.autora.draw;
+    const was = JSON.parse(item.autora.shown);
+    if (withoutPlace(now) === withoutPlace(item.autora.shown)) return shifted(item.autora.draw, x - (Number(was.x) || 0), y - (Number(was.y) || 0));
+  }
+  switch (item.type) {
+    case "text":
+      if (!String(item.text ?? "").trim()) return null;
+      return {
+        // Inside the box's padding, where the editor shows the words.
+        type: "text", x: x + EDITOR_PAD, y: y + 1, text: String(item.text), size: Number(item.fontSize) || 12, color: item.fontColor || "#0e1118",
+        font: /times/i.test(String(item.fontFamily)) ? "times" : /courier/i.test(String(item.fontFamily)) ? "courier" : "helvetica",
+        ...(w > EDITOR_PAD * 2 ? { width: w - EDITOR_PAD * 2 } : {}),
+      };
+    case "stamp":
+      if (item.stampType === "CHECKMARK" || item.stampType === "CROSS") {
+        return { type: item.stampType === "CHECKMARK" ? "check" : "cross", x, y, size: Math.max(4, Math.min(w, h) || 14), color: item.stampType === "CHECKMARK" ? "#10b981" : "#f43f5e" };
+      }
+      return { type: "stamp", stamp: String(item.stampType || "APPROVED"), x, y, width: w || undefined, height: h || undefined };
+    case "signature":
+    case "image": {
+      const url = item.signatureDataUrl || item.imageDataUrl;
+      if (!url) return null;
+      return { type: "image", image: url, x, y, width: w, height: h };
+    }
+    case "shape": {
+      const fill = item.hasFill !== false && item.shapeFillColor && !/^(transparent|none)$/i.test(item.shapeFillColor) ? item.shapeFillColor : null;
+      const stroke = item.hasStroke !== false && (Number(item.shapeStrokeWidth ?? 2) > 0) ? (item.shapeStrokeColor || "#000000") : "none";
+      const thickness = Number(item.shapeStrokeWidth ?? 2) || 2;
+      if (item.shapeType === "line" || item.shapeType === "arrow") {
+        return { type: item.shapeType, x, y: y + h / 2, x2: x + w, y2: y + h / 2, color: stroke === "none" ? (fill ?? "#000000") : stroke, thickness };
+      }
+      return { type: item.shapeType === "circle" ? "ellipse" : "rect", x, y, width: w, height: h, color: stroke, ...(fill ? { fill } : {}), thickness };
+    }
+    case "drawing":
+    case "highlighter": {
+      const points: { x: number; y: number }[] = Array.isArray(item.drawingPoints) ? item.drawingPoints : [];
+      if (points.length < 2) return null;
+      const highlight = item.isHighlighter || item.type === "highlighter";
+      const d = points.map((p, i) => `${i ? "L" : "M"} ${Number(p.x) || 0} ${Number(p.y) || 0}`).join(" ");
+      return {
+        type: "path", x: 0, y: 0, d, color: item.drawingColor || (highlight ? "#fde047" : "#b22222"),
+        thickness: Number(item.drawingWidth) || (highlight ? 20 : 3), ...(highlight ? { opacity: 0.35 } : {}),
+      };
+    }
+    case "note":
+      if (!String(item.noteComment ?? "").trim()) return null;
+      return { type: "note", x, y, text: String(item.noteComment), color: item.noteColor || "#fef08a" };
+    case "redact":
+      return w > 0 && h > 0 ? { redact: { x, y, w, h } } : null;
+    default:
+      return null;
+  }
+}
+
+/**
+ * The window's file: the base with its objects drawn on, and redactions
+ * taken out of it. Whatever could not be drawn is left off and said.
+ */
+export async function flattenDesk(base: Buffer, items: DeskItem[], cwd: string): Promise<{ data: Buffer; skipped: string[] }> {
+  const { doc } = await openDoc(base);
+  const tools: Tools = { fonts: new Fonts(doc), doc, cwd, view: null, fields: null, texts: new Map() };
+  const count = doc.getPageCount();
+  const sheets = new Map<number, Sheet>();
+  const redact = new Map<number, Rect[]>();
+  const skipped: string[] = [];
+  for (const item of items) {
+    const p = Math.round(Number(item.pageNumber)) - 1;
+    if (!(p >= 0 && p < count)) continue;
+    const draw = drawFor(item);
+    if (!draw) continue;
+    if ("redact" in draw) {
+      redact.set(p, [...(redact.get(p) ?? []), draw.redact as Rect]);
+      continue;
+    }
+    let sheet = sheets.get(p);
+    if (!sheet) {
+      sheet = new Sheet(doc.getPage(p));
+      sheets.set(p, sheet);
+    }
+    try {
+      await drawItem(tools, sheet, p, draw, null);
+    } catch (err) {
+      skipped.push(`${item.type} on page ${p + 1}: ${message(err)}`);
+    }
+  }
+  if (redact.size === 0) return { data: await saveDoc(doc), skipped };
+  const drawn = await saveDoc(doc);
+  const out = await withPdf(drawn, undefined, async (view) => {
+    const { doc: again } = await openDoc(drawn);
+    return redrawWithBoxes(again, view, redact, REDACT_DPI, () => false);
+  });
+  return { data: await saveDoc(out), skipped };
+}
+
+/**
+ * The file a tool was given, as the window has it now: once a file is open
+ * in the window, its current version -- with what the person added -- is
+ * what every tool reads.
+ */
+function onDesk(input: Input, ctx: PdfContext): { input: Input; desk: DeskSnapshot | null } {
+  const desk = ctx.desk?.current() ?? null;
+  const id = input.artifact?.id;
+  if (!desk || !id || (id !== desk.working && id !== desk.source)) return { input, desk: null };
+  const art = desk.working ? getArtifact(desk.working) : null;
+  const data = art ? readArtifact(art.id) : null;
+  return { input: art && data ? { data, name: art.name, artifact: art } : input, desk };
+}
+
 // ---------------------------------------------------------------- tools --
 
 const PREVIEW = (name: string, pages: number, size: number) =>
@@ -1210,7 +1641,7 @@ const PREVIEW = (name: string, pages: number, size: number) =>
 // -- pdf_read --
 
 async function readTool(args: Record<string, any>, ctx: PdfContext): Promise<PdfOutcome> {
-  const input = readPdf(args.file, ctx.cwd);
+  const { input } = onDesk(readPdf(args.file, ctx.cwd), ctx);
   const pass = password(args);
   const { doc, encrypted } = await openDoc(input.data, pass);
   const count = doc.getPageCount();
@@ -1464,8 +1895,11 @@ const LOOK_PX = 1100;
 const MAX_LOOK = 4;
 
 async function lookTool(args: Record<string, any>, ctx: PdfContext): Promise<PdfOutcome> {
-  const input = readPdf(args.file, ctx.cwd);
+  const { input, desk } = onDesk(readPdf(args.file, ctx.cwd), ctx);
   const pass = password(args);
+  // What the agent looks at, the person sees too: open it in the PDF window.
+  if (ctx.desk && !desk) await showInWindow(input, pass, ctx);
+  else if (ctx.desk) ctx.desk.show();
   return withPdf(input.data, pass, async (view) => {
     const count = view.pages;
     const asked = [...new Set(parsePages(args.pages ?? "1", count).filter((p): p is number => p !== "blank"))];
@@ -1509,6 +1943,25 @@ async function lookTool(args: Record<string, any>, ctx: PdfContext): Promise<Pdf
   }, ctx);
 }
 
+/** Open a file in the PDF window as it is, with nothing on it yet. A file
+    that needs a password nobody gave stays out of it. */
+async function showInWindow(input: Input, pass: string | undefined, ctx: PdfContext) {
+  if (!ctx.desk) return;
+  let base = input.data;
+  try {
+    const { doc, encrypted } = await openDoc(input.data, pass);
+    if (encrypted) base = await saveDoc(doc);
+  } catch {
+    return;
+  }
+  ctx.desk.open({
+    name: input.name, base, items: [],
+    working: input.artifact?.origin === "agent" ? input.artifact.id : null,
+    source: input.artifact?.origin === "user" ? input.artifact.id : null,
+    outName: outputName(input, undefined, "edited"),
+  });
+}
+
 /** A round step giving about ten grid lines across. */
 function gridStep(span: number): number {
   const steps = [5, 10, 20, 25, 50, 100, 200];
@@ -1518,7 +1971,14 @@ function gridStep(span: number): number {
 // -- pdf_edit --
 
 async function editTool(args: Record<string, any>, ctx: PdfContext): Promise<PdfOutcome> {
-  const input = readPdf(args.file, ctx.cwd);
+  const given = readPdf(args.file, ctx.cwd);
+  // Carrying on with the file open in the PDF window: start from its pages
+  // without the objects, so what is already on them stays movable.
+  const desk = ctx.desk?.current() ?? null;
+  const carryOn = Boolean(desk && given.artifact && (given.artifact.id === desk.working || given.artifact.id === desk.source));
+  const working = carryOn && desk?.working ? getArtifact(desk.working) : null;
+  const input: Input = carryOn && desk ? { data: desk.base, name: working?.name ?? given.name, artifact: working ?? given.artifact } : given;
+  const placed: DeskItem[] = [];
   const pass = password(args);
   const { doc, encrypted } = await openDoc(input.data, pass);
   const count = doc.getPageCount();
@@ -1649,7 +2109,15 @@ async function editTool(args: Record<string, any>, ctx: PdfContext): Promise<Pdf
         const s = sheet(t);
         let what: string;
         try {
-          what = await drawItem(tools, s, t, item, anchor);
+          if (ctx.desk) {
+            // In the window: the editor's own objects, drawn onto the file below.
+            const made = await deskItemsFor(tools, s, t, item, anchor);
+            placed.push(...made);
+            const kind = String(item.type ?? "item").toLowerCase();
+            what = made.length === 0 ? "" : made.length > 1 ? `${made.length} ${kind}s` : kind;
+          } else {
+            what = await drawItem(tools, s, t, item, anchor);
+          }
         } catch (err) {
           if (err instanceof Problem) throw new Problem(`Item ${k + 1} (${String(item.type ?? "?")}): ${err.message} Nothing was saved.`);
           throw err;
@@ -1726,6 +2194,36 @@ async function editTool(args: Record<string, any>, ctx: PdfContext): Promise<Pdf
   } catch (err) {
     throw new Problem(`It could not be saved: ${message(err)}`);
   }
+  if (ctx.desk) {
+    const all = [...(carryOn && desk ? desk.items : []), ...placed];
+    let flat: { data: Buffer; skipped: string[] };
+    try {
+      flat = await flattenDesk(bytes, all, ctx.cwd);
+    } catch (err) {
+      throw new Problem(`It could not be saved: ${message(err)}`);
+    }
+    const name = working && !args.output ? working.name : outputName(input, args.output, values && !items.length ? "filled" : "edited");
+    const saved = deliver(ctx, name, flat.data, `Edited from ${given.name}`);
+    ctx.desk.open({
+      name: saved.art.name, base: bytes, items: all, working: saved.art.id,
+      source: carryOn && desk ? desk.source : given.artifact?.origin === "user" ? given.artifact.id : null,
+      outName: saved.art.name,
+    });
+    const summary = [
+      done.length ? `${cap(done.join("; "))}.` : "",
+      savedLine(saved, count, given),
+      "It is open in the PDF window beside the conversation, where the person watches it change: " +
+        (placed.length
+          ? "what you placed is there as objects they can move, resize, edit or remove, and they can add their own. "
+          : "they can add their own marks to it. ") +
+        "The file is kept up to date with both; what they change is told to you.",
+      ...notes,
+      ...flat.skipped.map((s) => `Not drawn into the file: ${s}.`),
+      "Look at the pages you changed with pdf_look before saying it is done.",
+    ].filter(Boolean).join(" ");
+    return { ok: true, summary, preview: PREVIEW(saved.art.name, count, saved.art.size) };
+  }
+
   const saved = deliver(ctx, outputName(input, args.output, values && !items.length ? "filled" : "edited"), bytes, `Edited from ${input.name}`);
   const summary = [
     `${cap(done.join("; "))}.`,
@@ -1750,7 +2248,7 @@ const cap = (text: string) => (text ? text[0].toUpperCase() + text.slice(1) : te
 // -- pdf_pages --
 
 async function pagesTool(args: Record<string, any>, ctx: PdfContext): Promise<PdfOutcome> {
-  const input = readPdf(args.file, ctx.cwd);
+  const { input } = onDesk(readPdf(args.file, ctx.cwd), ctx);
   const pass = password(args);
   const { doc } = await openDoc(input.data, pass);
   if (xfaKind(doc) === "dynamic") {
@@ -1854,7 +2352,7 @@ async function pagesTool(args: Record<string, any>, ctx: PdfContext): Promise<Pd
     };
   }
 
-  const saved = deliver(ctx, outputName(input, args.output, base), await saveDoc(doc), `Pages of ${input.name}, rearranged`);
+  const saved = deliver(ctx, outputName(input, args.output, base), await saveDoc(doc), `Pages of ${input.name}, rearranged`, input);
   return {
     ok: true,
     summary: `${cap(done.join("; "))}: ${total} page${total === 1 ? "" : "s"} now. ${savedLine(saved, total, input)}`,
@@ -1867,7 +2365,7 @@ async function pagesTool(args: Record<string, any>, ctx: PdfContext): Promise<Pd
 const REDACT_DPI = 150;
 
 async function redactTool(args: Record<string, any>, ctx: PdfContext): Promise<PdfOutcome> {
-  const input = readPdf(args.file, ctx.cwd);
+  const { input } = onDesk(readPdf(args.file, ctx.cwd), ctx);
   const pass = password(args);
   const patterns = patternsFor(args.find);
   const areas: Record<string, any>[] = (Array.isArray(args.areas) ? args.areas : args.areas ? [args.areas] : [])
@@ -1910,41 +2408,11 @@ async function redactTool(args: Record<string, any>, ctx: PdfContext): Promise<P
       };
     }
 
-    const scale = dpi / 72;
     const redrawn = [...boxes.keys()].sort((a, b) => a - b);
-    let out: PDFDocument;
-    if (view.xfa || count !== doc.getPageCount()) {
-      // Drawn from XFA: every page becomes its picture.
-      out = await PDFDocument.create({ updateMetadata: false });
-      for (let i = 0; i < count; i++) {
-        if (ctx.cancelled()) throw new Problem("Stopped before it was finished; nothing was saved.");
-        const pic = await view.render(i + 1, { scale, boxes: boxes.get(i), type: "image/jpeg", quality: 0.9 });
-        const img = await out.embedJpg(pic.data);
-        const page = out.addPage([pic.width / scale, pic.height / scale]);
-        page.drawImage(img, { x: 0, y: 0, width: pic.width / scale, height: pic.height / scale });
-      }
-    } else {
-      out = doc;
-      const list = doc.getPages().slice();
-      const gone = new Map<PDFRef, PDFRef | null>();
-      for (const i of redrawn) {
-        if (ctx.cancelled()) throw new Problem("Stopped before it was finished; nothing was saved.");
-        const pic = await view.render(i + 1, { scale, boxes: boxes.get(i), type: "image/jpeg", quality: 0.9 });
-        const old = list[i];
-        const { width, height } = viewOf(old);
-        const img = await doc.embedJpg(pic.data);
-        const fresh = PDFPage.create(doc);
-        fresh.setSize(width, height);
-        fresh.drawImage(img, { x: 0, y: 0, width, height });
-        list[i] = fresh;
-        gone.set(old.ref, fresh.ref);
-      }
-      forgetPages(doc, gone);
-      setPages(doc, list);
-    }
+    const out = await redrawWithBoxes(doc, view, boxes, dpi, ctx.cancelled);
 
     const bytes = await saveDoc(out);
-    const saved = deliver(ctx, outputName(input, args.output, "redacted"), bytes, `Redacted from ${input.name}`);
+    const saved = deliver(ctx, outputName(input, args.output, "redacted"), bytes, `Redacted from ${input.name}`, input);
     const list = found.slice(0, 60).map((h) => `page ${h.page}: ${JSON.stringify(h.text.slice(0, 60))}`);
     return {
       ok: true,
@@ -1964,10 +2432,51 @@ async function redactTool(args: Record<string, any>, ctx: PdfContext): Promise<P
   }, ctx);
 }
 
+/**
+ * The pages with boxes on them redrawn as pictures with the boxes blacked
+ * out, so what was under them is gone from the file rather than covered.
+ * An XFA form, drawn from XML rather than from its pages, has every page
+ * redrawn. `doc` is changed in place unless it is XFA.
+ */
+async function redrawWithBoxes(
+  doc: PDFDocument, view: PdfView, boxes: Map<number, Rect[]>, dpi: number, cancelled: () => boolean,
+): Promise<PDFDocument> {
+  const scale = dpi / 72;
+  const count = view.pages;
+  if (view.xfa || count !== doc.getPageCount()) {
+    const out = await PDFDocument.create({ updateMetadata: false });
+    for (let i = 0; i < count; i++) {
+      if (cancelled()) throw new Problem("Stopped before it was finished; nothing was saved.");
+      const pic = await view.render(i + 1, { scale, boxes: boxes.get(i), type: "image/jpeg", quality: 0.9 });
+      const img = await out.embedJpg(pic.data);
+      const page = out.addPage([pic.width / scale, pic.height / scale]);
+      page.drawImage(img, { x: 0, y: 0, width: pic.width / scale, height: pic.height / scale });
+    }
+    return out;
+  }
+  const list = doc.getPages().slice();
+  const gone = new Map<PDFRef, PDFRef | null>();
+  for (const i of [...boxes.keys()].sort((a, b) => a - b)) {
+    if (cancelled()) throw new Problem("Stopped before it was finished; nothing was saved.");
+    const pic = await view.render(i + 1, { scale, boxes: boxes.get(i), type: "image/jpeg", quality: 0.9 });
+    const old = list[i];
+    const { width, height } = viewOf(old);
+    const img = await doc.embedJpg(pic.data);
+    const fresh = PDFPage.create(doc);
+    fresh.setSize(width, height);
+    fresh.drawImage(img, { x: 0, y: 0, width, height });
+    list[i] = fresh;
+    gone.set(old.ref, fresh.ref);
+  }
+  forgetPages(doc, gone);
+  setPages(doc, list);
+  return doc;
+}
+
 // -- pdf_compress --
 
 async function compressTool(args: Record<string, any>, ctx: PdfContext): Promise<PdfOutcome> {
-  const input = readPdf(args.file, ctx.cwd);
+  const { input } = onDesk(readPdf(args.file, ctx.cwd), ctx);
   const pass = password(args);
   const mode = String(args.mode ?? "lossless").toLowerCase() === "images" ? "images" : "lossless";
   const before = input.data.byteLength;
@@ -2014,7 +2523,7 @@ async function compressTool(args: Record<string, any>, ctx: PdfContext): Promise
 
   const after = bytes.byteLength;
   if (converted) {
-    const saved = deliver(ctx, outputName(input, args.output, "flattened"), bytes, `${input.name}'s XFA form, as pages`);
+    const saved = deliver(ctx, outputName(input, args.output, "flattened"), bytes, `${input.name}'s XFA form, as pages`, input);
     return {
       ok: true,
       summary:
@@ -2032,7 +2541,7 @@ async function compressTool(args: Record<string, any>, ctx: PdfContext): Promise
       preview: "no smaller",
     };
   }
-  const saved = deliver(ctx, outputName(input, args.output, "compressed"), bytes, `Compressed from ${input.name}`);
+  const saved = deliver(ctx, outputName(input, args.output, "compressed"), bytes, `Compressed from ${input.name}`, input);
   return {
     ok: true,
     summary: `${formatSize(before)} → ${formatSize(after)} (${Math.round((1 - after / before) * 100)}% smaller): ${how}. ${savedLine(saved, pages, input)}` +

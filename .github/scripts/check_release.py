@@ -57,6 +57,8 @@ WATCHED = (
     "vite.config.ts",
     "Dockerfile",
     "blofstedt-autora/docker-compose.yml",
+    # The PDF window's editor: its own sub-project, built into the same image.
+    "pdf-editor/",
 )
 
 COMPOSE = "blofstedt-autora/docker-compose.yml"

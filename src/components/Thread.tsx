@@ -14,6 +14,8 @@ import { ToolCell, describeArgs } from "./ToolCell";
 import { TodoCell } from "./TodoCell";
 import { AppPreview } from "./AppPreview";
 import { usePreviewState } from "../lib/preview";
+import { useDeskState } from "../lib/pdfdesk";
+import { PdfWindow } from "./PdfWindow";
 import { PermissionCell } from "./PermissionCell";
 import { ImageCell } from "./ImageCell";
 import { WidgetCell } from "./WidgetCell";
@@ -59,6 +61,7 @@ export function Thread({
   onSuggest,
   placeholder,
   dock,
+  dockedPlanKey = "",
   ...work
 }: {
   buckets: Bucket[];
@@ -69,6 +72,9 @@ export function Thread({
   /** The pinned corner widgets, if any: they sit in the pane's corners, over
       the margin rather than in the scroll. See components/Dock.tsx. */
   dock?: ReactNode;
+  /** The key (cellKey) of the to-do list docked above the message box, which
+      the thread then shows as a one-line stub. */
+  dockedPlanKey?: string;
   busy: boolean;
   /** What it is on right now, in a few words (see lib/activity.ts). */
   doing?: string | null;
@@ -109,12 +115,29 @@ export function Thread({
      arrives, the choice lapses and the newest one is shown, unfolded. */
   const phone = usePhone();
   const appOpen = usePreviewState().open;
+  const desk = useDeskState();
+  const pdfSince = desk.open ? desk.since ?? 0 : null;
   const surfaces = useMemo(
     // Held only while the session is live: a recorded one is read, not watched.
-    () => (phone && live ? pickSurfaces(buckets, browserOpen ? liveBrowserSeq : null, appOpen) : []),
-    [phone, live, buckets, browserOpen, liveBrowserSeq, appOpen],
+    // The plan is not one of them: it is docked above the message box (see
+    // TodoDock), on every screen, so the stage holds only the page, the app
+    // and the explainer.
+    () => {
+      if (!phone || !live) return [];
+      const held = pickSurfaces(buckets, browserOpen ? liveBrowserSeq : null, appOpen).filter((s) => s.kind !== "plan");
+      // The PDF window is live state, not a card in the log: it is added here,
+      // after the app (the order the tabs sit in).
+      if (pdfSince === null) return held;
+      const pdf = { kind: "pdf" as const, cell: { kind: "pdf" as const, seq: pdfSince }, key: `pdf-${pdfSince}` };
+      const at = held.findIndex((s) => s.kind !== "app");
+      return at < 0 ? [...held, pdf] : [...held.slice(0, at), pdf, ...held.slice(at)];
+    },
+    [phone, live, buckets, browserOpen, liveBrowserSeq, appOpen, pdfSince],
   );
   const held = surfaces.map((s) => s.key).join("|");
+  /* What the thread shows as a stub rather than the card: whatever the stage
+     holds, and the plan docked above the message box. */
+  const docked = dockedPlanKey ? (held ? `${held}|${dockedPlanKey}` : dockedPlanKey) : held;
   const [stageView, setStageView] = useState<{ held: string; pick: SurfaceKind | null; folded: boolean }>(
     { held: "", pick: null, folded: false },
   );
@@ -323,7 +346,7 @@ export function Thread({
             sessionId={sessionId}
             liveBrowserSeq={liveBrowserSeq}
             live={live}
-            docked={held}
+            docked={docked}
             onPermissionDecide={onPermissionDecide}
             {...work}
             phase={phase}
@@ -788,7 +811,7 @@ const CellView = memo(function CellView({
           <StageStub
             kind="plan"
             title={NAME.plan}
-            note={`${done} of ${cell.items.length} done · pinned above`}
+            note={`${done} of ${cell.items.length} done · above the message box`}
           />
         );
       }
@@ -806,6 +829,8 @@ const CellView = memo(function CellView({
           }}
         />
       );
+    case "pdf":
+      return stage ? <PdfWindow sessionId={sessionId} phone /> : null;
     case "app": {
       if (stage) return <AppPreview sessionId={sessionId} phone />;
       if (held) return <StageStub kind="app" title={NAME.app} note="preview · pinned above" />;

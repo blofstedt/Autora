@@ -1,14 +1,14 @@
 {
   "name": "autora",
   "private": true,
-  "version": "0.9.108",
+  "version": "0.9.109",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && esbuild src/widget/three.ts --bundle --format=esm --minify --outfile=dist/widget/three.js",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && esbuild src/widget/three.ts --bundle --format=esm --minify --outfile=dist/widget/three.js && npm --prefix pdf-editor run build",
     "start": "node dist/server.cjs",
     "lint": "npm run typecheck && eslint .",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.test.json",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.test.json && npm --prefix pdf-editor run typecheck",
     "test": "tsx tests/run.ts"
   },
   "dependencies": {

@@ -16,9 +16,8 @@
  *
  *  - starters: one-tap tasks for an empty chat;
  *  - offers: a schedule worth setting up, asked once and never again;
- *  - next steps: what to do after a turn -- the follow-ups that teach what the
- *    agent can do besides answer (watch a page, do it every morning, keep it
- *    as a tool).
+ *  - next steps: what to do after a turn -- watching a page it read, plus
+ *    the follow-ups the look back thought of.
  *
  * Every task here reports and changes nothing, and nothing outward-facing is
  * ever suggested: a message, a post or a purchase is the person's to start.
@@ -412,22 +411,17 @@ export interface TurnSummary {
   customTools: boolean;
 }
 
-/** Requests that are worth doing again: looking, checking, summing up. */
-const REPEATABLE =
-  /\b(check|summari[sz]e|summary|find|look|what'?s new|any new|status|prices?|news|report|monitor|scan|list|how (?:is|are)|update|brief|backup)\b/i;
-
 /** Pages it makes no sense to watch: this machine, and no page at all. */
 const LOCAL = /^https?:\/\/(localhost|127\.|0\.0\.0\.0|\[::1\])/i;
 
 /**
  * Follow-ups for the end of a turn, from what it did.
  *
- * These are the ones that show what the agent can do besides answer: a page it
- * read can be watched, a check it made can be made every morning, a run of
- * commands can be kept as a tool of its own. A turn that already set a
- * schedule gets none of the first two -- it has one. `fromModel` are the
- * follow-ups the look back after the turn thought of, specific to what was
- * said; they go in the middle. Three at most.
+ * A page it read can be watched, unless the turn already set a schedule.
+ * `fromModel` are the follow-ups the look back after the turn thought of,
+ * specific to what was said; they come after. Three at most. ("Do this every
+ * morning" and "Save this as a tool" used to be offered too; they were
+ * generic, took room under every reply, and were dropped.)
  */
 export function nextSteps(turn: TurnSummary, fromModel: NextStep[] = []): NextStep[] {
   const ok = turn.calls.filter((c) => c.ok);
@@ -447,23 +441,10 @@ export function nextSteps(turn: TurnSummary, fromModel: NextStep[] = []): NextSt
     const url = page ? String(page.args.url) : "";
     if (url && !LOCAL.test(url)) {
       add({ label: "Tell me when this page changes", prompt: `Watch ${url} and tell me when it changes. Check it every hour.` });
-    } else if (ok.length > 0 && REPEATABLE.test(turn.request)) {
-      add({
-        label: "Do this every morning",
-        prompt: "Set this up as a schedule: do the same thing every weekday morning at 8 and tell me what it finds.",
-      });
     }
   }
 
   for (const step of fromModel.slice(0, 2)) add(step);
-
-  const commands = ok.filter((c) => c.name === "terminal").length;
-  if (turn.customTools && commands >= 3 && !turn.calls.some((c) => c.name === "tool_create")) {
-    add({
-      label: "Save this as a tool",
-      prompt: "Save what you just did as a tool of your own with tool_create, so next time it is one step.",
-    });
-  }
 
   return out;
 }

@@ -4,7 +4,7 @@
 
 The "Release version" workflow (`.github/scripts/check_release.py`) fails any
 change to `src/`, `server/`, `server.ts`, `package.json`, `public/`,
-`index.html`, `vite.config.ts`, `Dockerfile` or
+`index.html`, `vite.config.ts`, `Dockerfile`, `pdf-editor/` or
 `blofstedt-autora/docker-compose.yml` unless the same branch also:
 
 1. Bumps `"version"` in `package.json` to a higher number (patch bump by
@@ -33,6 +33,9 @@ Only when a change genuinely has no user-facing effect, skip the bump and put
 
 ## Other checks before pushing
 
+Once per checkout, also `npm --prefix pdf-editor ci`: the PDF window's editor
+is a sub-project with its own dependencies (see below).
+
 - `npm run lint`: typechecks the client (`tsconfig.json`), the server
   (`tsconfig.server.json`) and the tests (`tsconfig.test.json`), then runs
   ESLint (`eslint.config.js`). ESLint is type-aware and aimed at bugs, not
@@ -40,8 +43,8 @@ Only when a change genuinely has no user-facing effect, skip the bump and put
   called conditionally or with stale dependencies, unused code. It must pass
   with no errors or warnings; `.github/workflows/check.yml` and the Docker
   build both run it.
-- `npm test`
-- `npm run build`
+- `npm test` (after `npm run build`: the PDF window's test drives the built editor)
+- `npm run build`: also builds `pdf-editor/` into `dist/pdf-editor/`
 
 ## Where things are
 
@@ -60,7 +63,12 @@ Only when a change genuinely has no user-facing effect, skip the bump and put
   for encrypted files -- changes the file; pdf.js in a headless Chromium reads
   text and draws pages. Positions are top-left points of the page as shown;
   every result is a new artifact, and dropped or redacted content is removed
-  from the bytes, not covered),
+  from the bytes, not covered), `pdfdesk.ts` (the PDF window: the file the
+  agent works on, open beside the chat in SecurePDF's editor. What `pdf_edit`
+  places becomes the editor's own movable objects, each keeping the item it
+  came from so the file shows exactly what was drawn until the person changes
+  it; the file is the base pages with every object flattened on, rewritten
+  on every change; the person's changes are told to the agent once),
   `notebooks.ts` (artifacts grouped by purpose with notes between them,
   stored as `notebooks.json`; retention keeps whatever a notebook holds or
   cites), `guard.ts` (what stops and asks before a risky call), `crosssite.ts` (refuses requests and websockets
@@ -84,6 +92,13 @@ Only when a change genuinely has no user-facing effect, skip the bump and put
     channel (Telegram, WhatsApp, ntfy): don't add one.
 - Every turn, from any source (the chat box, a job, a watcher), goes through
   `startTurn()` in `server.ts`, and learning runs after it.
+- `pdf-editor/`: SecurePDF's editor (from blofstedt/SecurePDF), its own
+  sub-project with its own React 19 and Tailwind so neither touches the app.
+  It runs in a frame sandboxed without an origin (`components/PdfWindow.tsx`)
+  and talks to the page by `postMessage` only; it never calls the API. So it
+  bundles pdf.js's legacy build and runs its worker as a classic script from a
+  blob (a module worker cannot start in an origin-less frame), and fetches
+  nothing from a CDN: Autora may have no internet.
 - `src/`: the React client. `App.tsx` holds the session and stream;
   `lib/derive.ts` folds the event log into what the thread shows;
   `components/` renders it.

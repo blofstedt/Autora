@@ -42,8 +42,9 @@ description: >-
   • PDFs — attach one and say what to do: fill in and flatten forms, sign,
   stamp, highlight, annotate, watermark, number pages, reorder, merge and split,
   redact for good (the text is removed, not covered), shrink, and read scans
-  and XFA forms. Each result is a new file in the chat; yours is never
-  overwritten.
+  and XFA forms. The file opens in an editor beside the chat, where you
+  watch it change, move or edit what it placed, and add your own marks. Each
+  result is a new file in the chat; yours is never overwritten.
 
 
   • Notebooks — group files by purpose with notes between them. Autora can
@@ -123,10 +124,26 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  Fixed: the to-do list now keeps up with the work. The agent is shown the
-  chat's list at the start of every turn, so it ticks items off as it finishes
-  them instead of losing track after the first reply, and if it tries to stop
-  with items still open it is asked once to bring the list up to date.
+  New: the PDF window. When Autora works on a PDF, it opens in the SecurePDF
+  editor beside the chat (a tab at the top on a phone, with full screen). What
+  it places, like a signature, text, a stamp or a note, appears as you watch,
+  and you can move, resize, edit or remove it, or add your own. The file is
+  saved as you go, and Autora is told what you changed.
 
-  Fixed: a new chat starts with an empty to-do list. The agent is told so, and
-  no longer writes out a plan carried over from another chat.
+  The to-do list now sits on top of the message box instead of at the top of
+  the screen. It shows the task the agent is on, and slides to the next one as
+  each is done. Tap it to see every task.
+
+  Fixed: "Set it up" on the Integrations page works. It used to fail with a
+  message meant for the agent ("Say in one line why...").
+
+  Artifacts: the Select bar is gone. Press and hold a file to start selecting.
+
+  Tidier pages: every page now lines up under its title. On Notebooks and
+  Integrations the add button is in the top-right corner, as on Schedules.
+  Triggers and Schedules explain themselves in the empty page instead of a
+  block of text at the top. Settings, System and Mind tabs span the width on a
+  phone, and the message box keeps its buttons on one row.
+
+  Removed the "Do this every morning" and "Save this as a tool" suggestions
+  under replies.

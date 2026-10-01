@@ -10,6 +10,8 @@ type Handlers = {
   onBrowser?: (state: BrowserState) => void;
   /** The app window: whether it is open, and what has been said about it. */
   onPreview?: (state: unknown) => void;
+  /** The PDF window: whether a PDF is open, and what is on it. */
+  onPdfDesk?: (state: unknown) => void;
 };
 
 /**
@@ -133,6 +135,9 @@ export class SessionStream {
           break;
         case "preview":
           this.handlers.onPreview?.(msg.state);
+          break;
+        case "pdfdesk":
+          this.handlers.onPdfDesk?.(msg.state);
           break;
         case "end":
           this.handlers.onStatus({ state: "recorded", length: msg.length });

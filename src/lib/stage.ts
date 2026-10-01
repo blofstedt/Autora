@@ -14,12 +14,12 @@
 import { useSyncExternalStore } from "react";
 import type { Bucket, Cell } from "./derive";
 
-export type SurfaceKind = "app" | "browser" | "plan" | "widget";
+export type SurfaceKind = "app" | "pdf" | "browser" | "plan" | "widget";
 
 export type Surface = { kind: SurfaceKind; cell: Cell; key: string };
 
 /** The order the tabs sit in, however they arrived. */
-const ORDER: SurfaceKind[] = ["app", "browser", "plan", "widget"];
+const ORDER: SurfaceKind[] = ["app", "pdf", "browser", "plan", "widget"];
 
 /** Who a cell is, for React and for the stage: the event that started it. */
 export function cellKey(cell: Cell): string {
@@ -71,6 +71,16 @@ export function pickSurfaces(buckets: readonly Bucket[], liveBrowserSeq: number 
     const cell = found.get(kind);
     return cell ? [{ kind, cell, key: cellKey(cell) }] : [];
   });
+}
+
+/**
+ * The to-do list docked above the message box, on every screen size: the same
+ * plan the stage used to hold at the top (one with work left, or the latest
+ * turn's), now where the eye already is while typing. Null when there is none.
+ */
+export function dockedPlan(buckets: readonly Bucket[]): Extract<Cell, { kind: "todo" }> | null {
+  const cell = pickSurfaces(buckets, null).find((s) => s.kind === "plan")?.cell;
+  return cell && cell.kind === "todo" ? cell : null;
 }
 
 /** The last the agent did on a surface: a page it clicked, an item it ticked. */

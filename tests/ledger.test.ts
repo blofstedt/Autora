@@ -60,10 +60,13 @@ test("spend that falls off the ledger is still in today and this month", () => {
   const b = billingSummary();
   near(b.lifetime.cost, EACH * 5003);
   /* Before the fix this read EACH * 5000: the three that aged out were in
-     the lifetime figure and nowhere else. */
-  near(b.month.cost, EACH * 5003);
+     the lifetime figure and nowhere else. On the 1st of a month yesterday
+     is last month, and rightly not in this one: the test used to fail on
+     every 1st. */
+  const sameMonth = dayKeyOf(now - DAY).slice(0, 7) === dayKeyOf(now).slice(0, 7);
+  near(b.month.cost, EACH * (sameMonth ? 5003 : 5000));
   near(b.today.cost, EACH * 5000);
-  near(b.budget.spent, EACH * 5003);
+  near(b.budget.spent, EACH * (sameMonth ? 5003 : 5000));
 
   const today = b.daily[b.daily.length - 1];
   near(today.cost, EACH * 5000);
