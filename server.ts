@@ -35,7 +35,7 @@ import { signIns } from "./server/signins";
 import { ensureHostNames } from "./server/hosts";
 import { forgetSpeech, speak as synthesise, speakStream, speechStatus } from "./server/speech";
 import { attachDictation, dictationStatus } from "./server/dictation";
-import { applyTodos, latestTodos } from "./server/todos";
+import { applyTodos, latestTodos, todoBriefing, unfinishedTodos } from "./server/todos";
 import { replyStyle, standingBlock, standingReminder } from "./server/prompt";
 import { WebPush, cleanSubscription } from "./server/webpush";
 import { captureConsole, log, readLogs, setLogRedactor, type LogLevel } from "./server/logs";
@@ -2053,6 +2053,9 @@ async function systemInstructionFor(
   if (modeNote) notes.push(modeNote);
   const permNote = permissionBriefing(permissionsOf(own?.permissions), own?.askWhen ?? "");
   if (permNote) notes.push(permNote);
+  /* The to-do list, said every turn: the history carries words, not the
+     todo calls that wrote it, so this is the only way the agent sees it again. */
+  if (own) notes.push(todoBriefing(latestTodos(own.events)));
 
   const quiet = quietBriefing(Date.now(), state.proactivity);
   if (quiet) notes.push(quiet);
@@ -3355,7 +3358,9 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           return {
             ok: true,
             summary: to === "build"
-              ? "Building now: changes run. Work through the to-do list and keep it true."
+              ? "Building now: changes run. Work through the to-do list and keep it true: mark each item " +
+                "in-progress as you start it and completed the moment it is done.\n\n" +
+                todoBriefing(latestTodos(session.events))
               : "Planning now: read-only until you switch back to build.",
           };
         },
@@ -3643,6 +3648,8 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           telling the model to carry on. Reset by any step that asks for
           a tool. */
       let nudges = 0;
+      /** Whether this turn has been asked about open to-do items already. */
+      let todoAsked = false;
       for (;;) {
         if (running.get(session.id)?.stopped) break;
 
@@ -3695,6 +3702,27 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
              Either way the model is told so and asked again. */
           const empty = !turn.text.trim();
           const stalled = turn.cutOff || (empty && ranSomething);
+          /* A third: the work ran, but the list still says it has not. Asked
+             once a turn, and never while planning, where every item is still
+             to do on purpose. A turn that only talked is not asked. */
+          if (!stalled && !todoAsked && ranSomething && !running.get(session.id)?.stopped &&
+              phaseFor(workMode(session.mode), session.phase) === "build") {
+            const open = unfinishedTodos(latestTodos(session.events));
+            if (open) {
+              todoAsked = true;
+              if (!empty) {
+                context.append(
+                  { role: "assistant", text: turn.text, reasoning: turn.reasoning },
+                  session.seqCounter,
+                );
+              }
+              context.append({ role: "user", text: open }, session.seqCounter);
+              emitEvent(session, "system.log", "system", {
+                message: "The to-do list still had open items as the turn ended; asked the agent to bring it up to date.",
+              });
+              continue;
+            }
+          }
           if (!stalled || nudges >= MAX_NUDGES || running.get(session.id)?.stopped) break;
           nudges += 1;
           if (!empty) {

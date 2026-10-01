@@ -123,59 +123,10 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  New: Notebooks. Group files by purpose -- a case, a report, a project -- with
-  notes between them, on the new Notebooks page. Ask Autora to compile a report
-  from your emails and documents and it files every source in a notebook with
-  a line on what it shows, writes each finding or rebuttal as a note that cites
-  the files it rests on, and reads the notebook back to check nothing is
-  missing. Add notebooks or saved files to any message with the new notebook
-  button beside the message box, and export a notebook as one document with
-  its files as numbered exhibits. Files in a notebook are never cleared away.
+  Fixed: the to-do list now keeps up with the work. The agent is shown the
+  chat's list at the start of every turn, so it ticks items off as it finishes
+  them instead of losing track after the first reply, and if it tries to stop
+  with items still open it is asked once to bring the list up to date.
 
-  New: a Tools page in the sidebar, where the widget window, the browser
-  window, the construction (app) window and the PDF editor can each be
-  switched off. All are on by default; one that is off is taken away from
-  the agent and it is told so.
-
-  Screenshots: Autora can now take a screenshot of the whole page, one part
-  of it or an area, and keep it as a file or file it straight into a notebook
-  as evidence.
-
-  Also new: PDF tools. Attach a PDF and ask for what you want: Autora reads it
-  (text, form fields, attachments), looks at its pages, fills in and flattens
-  forms, signs (with a picture of a signature or your name in a handwriting
-  font), stamps APPROVED or SIGN HERE, highlights, adds notes, boxes, arrows,
-  ticks and pictures, adds a watermark or page numbers, reorders, turns, merges
-  and splits pages, redacts names, emails, card numbers or any area for good,
-  and shrinks the file. Each result appears in the chat to open or download,
-  and your own file is never changed. Password-protected PDFs open with their
-  password, and XFA forms that most viewers only say "please wait" to are read
-  and drawn.
-
-  The app window is much nicer to use. It has its own back button, reload and
-  address bar (type a path such as /about to go there), and the page in it now
-  works like a page: dropdowns list their choices, a mouse drag moves sliders
-  and selects text, right-click and keyboard shortcuts reach the page, paste
-  works, and on a phone backspace works and the keyboard comes up when you tap
-  a field. A tap shows where it landed.
-
-  The error count in the app window opens the page's console errors, the same
-  lines Autora reads, and it keeps up as errors happen. If the dev server
-  behind the window stops, the window says so and shows the last thing it
-  printed, instead of carrying on as if it were live.
-
-  Comments you have not sent yet, and the size you picked, now survive Autora
-  restarting the app window; they used to be lost. A change you tried on the
-  page and then cancelled is put back. Two quick style changes in a row no
-  longer lose the first, and a number field can be cleared while you type.
-
-  Autora can look at the app window while it is still planning, and dev
-  servers that print an https address or a base path, or listen only on the
-  IPv6 loopback, now open. A page that hangs no longer freezes the window.
-
-  Fixes: closing an incognito chat, or old chats being cleared away, now also
-  stops the app window's dev server and browser tab; coming back after the
-  connection dropped no longer shows an app window that was already closed;
-  switching chats no longer carries the "New messages" pill and the scroll
-  position across; and a model's last streamed message is no longer dropped
-  when its server does not end it with a newline.
+  Fixed: a new chat starts with an empty to-do list. The agent is told so, and
+  no longer writes out a plan carried over from another chat.

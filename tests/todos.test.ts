@@ -10,7 +10,7 @@
  */
 import assert from "node:assert/strict";
 
-const { applyTodos, describeTodos, latestTodos, statusOf, readItems } = await import("../server/todos");
+const { applyTodos, describeTodos, latestTodos, statusOf, readItems, todoBriefing, unfinishedTodos } = await import("../server/todos");
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -104,6 +104,36 @@ test("a session recorded with a board still has its plan", () => {
 test("describeTodos is a checklist", () => {
   assert.equal(describeTodos({ items: [] }), "The to-do list is empty.");
   assert.match(describeTodos({ items: [{ id: "1", title: "a", status: "completed" }] }), /1 of 1 done[\s\S]*\[x\] 1\. a/);
+});
+
+test("a new chat is told its list is empty, and nothing carries over", () => {
+  assert.equal(latestTodos([]), null);
+  assert.match(todoBriefing(null), /to-do list is empty[\s\S]*Nothing carries over/);
+  assert.match(todoBriefing({ items: [] }), /to-do list is empty/);
+});
+
+test("every turn sees the list as it stands", () => {
+  const list = { items: [
+    { id: "1", title: "read", status: "completed" as const },
+    { id: "2", title: "write", status: "in-progress" as const },
+  ] };
+  assert.match(todoBriefing(list), /1 of 2 done[\s\S]*\[~\] 2\. write[\s\S]*mark each item completed/);
+  const done = { items: list.items.map((i) => ({ ...i, status: "completed" as const })) };
+  assert.match(todoBriefing(done), /Every item is completed/);
+});
+
+test("a turn ending with open items is reminded of them, a finished list is not", () => {
+  assert.equal(unfinishedTodos(null), null);
+  assert.equal(unfinishedTodos({ items: [{ id: "1", title: "a", status: "completed" }] }), null);
+  const open = unfinishedTodos({ items: [
+    { id: "1", title: "a", status: "completed" },
+    { id: "2", title: "b", status: "in-progress" },
+    { id: "3", title: "c", status: "not-started" },
+  ] });
+  assert.ok(open);
+  assert.match(open, /2 of 3 items not completed/);
+  assert.match(open, /- 2\. b \(in-progress\)\n- 3\. c \(not-started\)/);
+  assert.doesNotMatch(open, /- 1\. a/);
 });
 
 console.log(`\n${passed} passed`);
