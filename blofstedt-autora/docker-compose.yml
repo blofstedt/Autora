@@ -54,10 +54,8 @@ services:
       # once -- not plain `tailscale serve`, whose port 443 is the one umbrelOS
       # needs for its own dashboard. See the README.
       AUTORA_TLS: "0"
-      # Agent defaults — full server access, no per-action prompts
+      # Where the agent's commands start: the host's filesystem, mounted above.
       AUTORA_WORKDIR: "/host"
-      AUTORA_AUTO_APPROVE: "1"
-      AUTORA_BROWSER_PROFILE: "/data/browser-profile"
       # API keys — set these in ~/umbrel/app-data/blofstedt-autora/.env, or
       # paste them into Settings, which saves them under /data and so keeps
       # them across an update. A key set here wins nothing and loses nothing:

@@ -52,6 +52,11 @@ import {
   readArtifact, saveArtifact, MAX_ARTIFACT_BYTES,
 } from "./artifacts";
 import { checkWidget } from "./widgets";
+import { runPdfTool } from "./pdf";
+import {
+  addEntries, createNotebook, describeNotebook, findNotebook, listNotebooks, moveEntry,
+  notebookLine, notebookMarkdown, removeEntry, updateEntry, updateNotebook, type Notebook,
+} from "./notebooks";
 import { describe as describeJob, findJob, listJobs, readTail, startJob, stopJob } from "./background";
 import { addRule, listRules, revoke as revokeRule } from "./autonomy";
 import { get as getInventory } from "./inventory";
@@ -63,6 +68,22 @@ import {
 /** What one speak call may say: a few paragraphs, the same ceiling the voice
     server route holds a sentence to. */
 const MAX_SPOKEN_CHARS = 2_000;
+
+/** The arguments every PDF tool shares. */
+const PDF_FILE = {
+  type: "string",
+  description: "The PDF: an artifact id (file_...), a path on this host, or an artifact's name.",
+};
+const PDF_PASSWORD = {
+  type: "string",
+  description: "Its password, if it is password-protected. What the tools save has none.",
+};
+const PDF_OUTPUT = {
+  type: "string",
+  description:
+    "File name for the result. Default: the original's name with -edited, -redacted... added, " +
+    "or your own earlier result, updated.",
+};
 
 /** Blank out stored secrets and the person's saved credentials. */
 function redactSecrets(text: string): string {
@@ -87,6 +108,9 @@ export interface ToolSettings {
   computer: { enabled: boolean; approval: ApprovalMode };
   memory: { enabled: boolean; approval: ApprovalMode };
   voice: { enabled: boolean; approval: ApprovalMode };
+  widgets: { enabled: boolean };
+  app: { enabled: boolean };
+  pdf: { enabled: boolean };
 }
 
 export function toolSettings(): ToolSettings {
@@ -809,8 +833,27 @@ const TOOLS: ToolSpec[] = [
       "something looks like, when a page is stuck or half drawn, or when " +
       "something is on it that its text does not mention. The person sees it " +
       "too, on the browser screen. It is the last picture kept: an earlier one " +
-      "is dropped when a new one arrives.",
-    parameters: { type: "object", properties: {} },
+      "is dropped when a new one arrives. To keep a screenshot -- as evidence, " +
+      "for a report, because the person asked for one -- give save_as (and " +
+      "notebook to file it there); full_page, selector or area choose what is in it.",
+    parameters: {
+      type: "object",
+      properties: {
+        full_page: { type: "boolean", description: "The whole page, scrolled top to bottom, not just the window." },
+        ref: { type: "number", description: "Only this numbered element, from the page's element list." },
+        selector: { type: "string", description: "Only this element, by CSS selector (e.g. main, #invoice, table.results)." },
+        area: {
+          type: "object",
+          description: "Only this rectangle of the window, in pixels from its top-left.",
+          properties: {
+            x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" },
+          },
+        },
+        save_as: { type: "string", description: "Keep it as an artifact with this file name (.png is added)." },
+        notebook: { type: "string", description: "Also file it in this notebook (id or title; a new title makes one)." },
+        note: { type: "string", description: "With save_as: one line on what it shows -- its annotation in the notebook." },
+      },
+    },
   },
   {
     name: "browser_eval",
@@ -1331,6 +1374,10 @@ const TOOLS: ToolSpec[] = [
         content: { type: "string", description: "The file's text." },
         path: { type: "string", description: "Absolute path of a file on this host to save instead." },
         note: { type: "string", description: "One line on what it is." },
+        notebook: {
+          type: "string",
+          description: "A notebook (id or title) to file it in as well. A title no notebook has makes a new one.",
+        },
       },
       required: ["name"],
     },
@@ -1358,8 +1405,9 @@ const TOOLS: ToolSpec[] = [
     group: "files",
     description:
       "Read an artifact by id. Text files come back as text (use offset and " +
-      "length for long ones); images are shown in the conversation; anything " +
-      "else is reported with the path on this host, so the terminal can open it.",
+      "length for long ones); images are shown in the conversation; for a PDF, " +
+      "use pdf_read and pdf_look instead; anything else is reported with the " +
+      "path on this host, so the terminal can open it.",
     parameters: {
       type: "object",
       properties: {
@@ -1368,6 +1416,330 @@ const TOOLS: ToolSpec[] = [
         length: { type: "number", description: "How many characters to return." },
       },
       required: ["id"],
+    },
+  },
+  {
+    name: "notebook",
+    group: "files",
+    description:
+      "Notebooks group artifacts by purpose, with notes between them, on the person's Notebooks page. " +
+      "Use one for any report, case or dossier built from several sources: file every source (email, " +
+      "document, screenshot) as an entry with a line on what it shows, and write findings, rebuttals and " +
+      "summaries as notes that cite the files they rest on. Actions: list; create (title, purpose); " +
+      "read (the whole notebook, every entry with its id -- read it before saying a notebook is done, " +
+      "and check every source is in it and every claim cites one); add (artifacts, or a note with " +
+      "title/text/cites; position to insert); edit (entry and title/text/cites, or no entry to change " +
+      "the notebook's title/purpose); remove (entry; the file stays an artifact); move (entry, position); " +
+      "export (the whole notebook as one Markdown artifact, files as numbered exhibits).",
+    parameters: {
+      type: "object",
+      properties: {
+        action: {
+          type: "string",
+          enum: ["list", "create", "read", "add", "edit", "remove", "move", "export"],
+        },
+        notebook: { type: "string", description: "The notebook's id (nb_...) or its title." },
+        title: { type: "string", description: "create: the notebook's title. add/edit: a note's heading or a file's caption." },
+        purpose: { type: "string", description: "create/edit: what the notebook is for." },
+        artifacts: {
+          type: "array",
+          items: { type: "string" },
+          description: "add: artifact ids (file_...) or names to file, each as its own entry. text becomes their annotation.",
+        },
+        text: { type: "string", description: "add/edit: a note's body, or a file's annotation, in Markdown." },
+        cites: {
+          type: "array",
+          items: { type: "string" },
+          description: "add/edit: artifact ids or names the note's claims rest on.",
+        },
+        entry: { type: "string", description: "edit/remove/move: the entry id (en_...), from read." },
+        position: { type: "number", description: "add/move: where, counting from 1. Default the end." },
+        offset: { type: "number", description: "read: character to start from, for a notebook too long to read at once." },
+      },
+      required: ["action"],
+    },
+  },
+
+  // ---------------------------------------------------------------- PDFs --
+  {
+    name: "pdf_read",
+    group: "files",
+    description:
+      "Read a PDF: its pages and their sizes, its properties, its form fields (name, kind, value, choices, " +
+      "and where each one is), its attachments and XFA, and its text page by page. Give find to search it " +
+      "instead: each match comes back with its page and box. Positions in all the PDF tools are points " +
+      "(1/72 inch) from the top-left corner of the page as it is shown, so what pdf_read reports, pdf_look's " +
+      "grid shows and pdf_edit takes all line up. extract saves embedded files (the XML inside an e-invoice, " +
+      "say) or an XFA form's XML as artifacts, to read with artifact_read.",
+    parameters: {
+      type: "object",
+      properties: {
+        file: PDF_FILE,
+        password: PDF_PASSWORD,
+        pages: {
+          type: "string",
+          description: "Which pages' text: \"1-3,7\", \"5-\", \"last\". Default all, as far as fits; the result says how to read on.",
+        },
+        find: {
+          type: "array",
+          items: { type: "string" },
+          description: "Search instead of reading: plain text (any case), a /regular expression/, or email, phone, ssn, credit_card, date.",
+        },
+        extract: {
+          type: "array",
+          items: { type: "string" },
+          description: "Embedded files to save as artifacts, by name, or \"all\"; \"xfa\" saves an XFA form's XML.",
+        },
+      },
+      required: ["file"],
+    },
+  },
+  {
+    name: "pdf_look",
+    group: "files",
+    description:
+      "See a PDF's pages as pictures: in this result, and in the conversation for the person. Use it to read " +
+      "a scan, to see where things are before putting something on a page, and to check your own edits " +
+      "before saying they are done. grid rules the page, labelled in points from its top-left corner -- the " +
+      "coordinates pdf_edit takes. area zooms into part of one page. XFA forms (the kind most viewers only say " +
+      "\"please wait\" to) are drawn too.",
+    parameters: {
+      type: "object",
+      properties: {
+        file: PDF_FILE,
+        password: PDF_PASSWORD,
+        pages: { type: "string", description: "Which pages, at most 4 at a time: \"1\", \"2-3\", \"last\". Default 1." },
+        grid: { type: "boolean", description: "Rule the page with labelled lines, for reading off positions." },
+        area: {
+          type: "object",
+          description: "Part of the (first) page to look at closely, in points from its top-left.",
+          properties: {
+            x: { type: "number" }, y: { type: "number" },
+            width: { type: "number" }, height: { type: "number" },
+          },
+          required: ["x", "y", "width", "height"],
+        },
+      },
+      required: ["file"],
+    },
+  },
+  {
+    name: "pdf_edit",
+    group: "files",
+    description:
+      "Change a PDF, saving the result as a new artifact shown in the conversation (the person's own file is " +
+      "never overwritten; your own earlier result is updated in place). In one call, in this order: fill form " +
+      "fields, flatten the form, draw items on pages, add a watermark, number the pages, set or strip the " +
+      "document's properties. Items: text, stamp (APPROVED, REJECTED, SIGN_HERE, INITIAL_HERE, DATE, " +
+      "CONFIDENTIAL, COPY, or any short word), signature (a picture of one, or a typed name in a handwriting " +
+      "font), image, check, cross, rect, ellipse, line, arrow, path, highlight (a box, or every match of some " +
+      "text) and note (a comment). Positions are points from the top-left of the page as shown -- read them " +
+      "off pdf_read, or pdf_look with grid. Drawing over something hides it but does not remove it: pdf_redact " +
+      "takes text out. Look at the pages you changed with pdf_look before saying it is done.",
+    parameters: {
+      type: "object",
+      properties: {
+        file: PDF_FILE,
+        password: PDF_PASSWORD,
+        fields: {
+          type: "object",
+          additionalProperties: true,
+          description:
+            "Form fields to fill, by the names pdf_read lists: text for a text field, true or false for a " +
+            "checkbox, the option for a radio group or dropdown, a list for a multi-select list.",
+        },
+        flatten: { type: "boolean", description: "Make the form part of the page, so its values can no longer be changed." },
+        add: {
+          type: "array",
+          description: "Things to draw on pages, in order.",
+          items: {
+            type: "object",
+            properties: {
+              type: {
+                type: "string",
+                enum: ["text", "stamp", "signature", "image", "check", "cross", "rect", "ellipse", "line", "arrow", "path", "highlight", "note"],
+              },
+              page: { type: "string", description: "Page number, or pages like \"1-3\" or \"all\" to put it on each. Default 1." },
+              x: { type: "number", description: "Left edge, in points from the page's left." },
+              y: { type: "number", description: "Top edge, in points from the page's top." },
+              width: { type: "number", description: "Width in points. Text wraps at it; a picture keeps its shape when only one side is given." },
+              height: { type: "number", description: "Height in points." },
+              x2: { type: "number", description: "Where a line or arrow ends." },
+              y2: { type: "number", description: "Where a line or arrow ends." },
+              text: {
+                type: "string",
+                description: "The words: of a text item or note, a typed signature, a stamp's own label, or the text to highlight wherever it is on the page.",
+              },
+              stamp: {
+                type: "string",
+                description: "APPROVED, REJECTED, SIGN_HERE, INITIAL_HERE, DATE (today's date), CONFIDENTIAL, COPY, or any short word.",
+              },
+              image: { type: "string", description: "A picture, as an artifact id or a path: the signature or image to place." },
+              field: { type: "string", description: "A form field's name: put the signature or picture in that field's box, instead of at x and y." },
+              size: { type: "number", description: "Font size for text (default 12); the box for check and cross (default 14)." },
+              color: { type: "string", description: "Ink or outline: a name (black, red, blue, ink...) or #rrggbb; none for no outline." },
+              fill: { type: "string", description: "Fill colour for rect, ellipse and path." },
+              background: { type: "string", description: "A colour behind text, e.g. white to cover what was there." },
+              font: { type: "string", enum: ["helvetica", "times", "courier"] },
+              bold: { type: "boolean" },
+              italic: { type: "boolean" },
+              align: { type: "string", enum: ["left", "center", "right"], description: "Within width." },
+              thickness: { type: "number", description: "Line width in points." },
+              opacity: { type: "number", description: "0 to 1." },
+              d: { type: "string", description: "For path: an SVG path in points from x, y, e.g. \"M 0 10 L 120 10\"." },
+            },
+            required: ["type"],
+          },
+        },
+        watermark: {
+          type: "object",
+          description: "Big faint text across pages, e.g. {\"text\": \"DRAFT\"}.",
+          properties: {
+            text: { type: "string" },
+            pages: { type: "string", description: "Default all." },
+            color: { type: "string" },
+            opacity: { type: "number", description: "Default 0.2." },
+            size: { type: "number", description: "Default: as big as fits." },
+            rotation: { type: "number", description: "Degrees, counter-clockwise. Default 45." },
+          },
+          required: ["text"],
+        },
+        page_numbers: {
+          type: "object",
+          description: "Number the pages, e.g. {\"format\": \"Page {n} of {total}\"}.",
+          properties: {
+            format: { type: "string", description: "With {n} and optionally {total}. Default \"Page {n} of {total}\"." },
+            position: {
+              type: "string",
+              enum: ["bottom-center", "bottom-left", "bottom-right", "top-center", "top-left", "top-right"],
+            },
+            pages: { type: "string", description: "Which pages carry a number, e.g. \"2-\" to skip a cover. Default all." },
+            start: { type: "number", description: "The first number shown. Default 1." },
+            size: { type: "number" },
+            color: { type: "string" },
+          },
+        },
+        metadata: {
+          type: "object",
+          description: "Document properties to set.",
+          properties: {
+            title: { type: "string" }, author: { type: "string" }, subject: { type: "string" },
+            keywords: { type: "string" }, creator: { type: "string" }, producer: { type: "string" },
+          },
+        },
+        strip_metadata: { type: "boolean", description: "Remove all its document properties (title, author, dates, software, XMP) first." },
+        output: PDF_OUTPUT,
+      },
+      required: ["file"],
+    },
+  },
+  {
+    name: "pdf_pages",
+    group: "files",
+    description:
+      "Rearrange a PDF's pages, saving the result as a new artifact shown in the conversation: keep some, " +
+      "drop some, change their order, repeat one, add blank pages, turn pages, add the pages of other PDFs " +
+      "after them (merge), or split the result into several files. Page numbers are this file's own, before " +
+      "any change. Dropped pages are taken out of the file, not hidden.",
+    parameters: {
+      type: "object",
+      properties: {
+        file: PDF_FILE,
+        password: PDF_PASSWORD,
+        pages: {
+          type: "string",
+          description:
+            "The pages of the result, in order, by number: \"3,1,2\" reorders, \"1-4,6-\" drops page 5, " +
+            "\"1,1,2-\" repeats page 1, \"1,blank,2-\" puts a blank page after page 1, \"last-1\" reverses. " +
+            "Default all, as they are.",
+        },
+        rotate: {
+          type: "array",
+          description: "Turn pages clockwise, e.g. [{\"pages\": \"2\", \"degrees\": 90}].",
+          items: {
+            type: "object",
+            properties: {
+              pages: { type: "string", description: "Default all." },
+              degrees: { type: "number", description: "90, 180 or 270." },
+            },
+            required: ["degrees"],
+          },
+        },
+        merge: {
+          type: "array",
+          items: { type: "string" },
+          description: "Other PDFs (artifact ids or paths) whose pages go after these, in order.",
+        },
+        split: {
+          type: "array",
+          items: { type: "string" },
+          description: "Make several files instead of one, each from pages of the result: [\"1-3\", \"4-\"], or [\"each\"] for one file per page.",
+        },
+        output: PDF_OUTPUT,
+      },
+      required: ["file"],
+    },
+  },
+  {
+    name: "pdf_redact",
+    group: "files",
+    description:
+      "Take text or areas out of a PDF for good, saving the result as a new artifact shown in the " +
+      "conversation. Each page with something to remove is redrawn as a picture with black boxes over it, so " +
+      "what was under them is gone from the file rather than covered; pages with nothing to remove keep their " +
+      "text. find takes plain text, /regular expressions/ and the presets email, phone, ssn, credit_card and " +
+      "date; areas take boxes, read off pdf_look with grid. It says what it removed where. Check the result " +
+      "with pdf_look.",
+    parameters: {
+      type: "object",
+      properties: {
+        file: PDF_FILE,
+        password: PDF_PASSWORD,
+        find: {
+          type: "array",
+          items: { type: "string" },
+          description: "What to remove wherever it appears: plain text (any case), a /regular expression/, or email, phone, ssn, credit_card, date.",
+        },
+        areas: {
+          type: "array",
+          description: "Boxes to remove, in points from the page's top-left.",
+          items: {
+            type: "object",
+            properties: {
+              page: { type: "string", description: "A page, or pages like \"all\". Default 1." },
+              x: { type: "number" }, y: { type: "number" },
+              width: { type: "number" }, height: { type: "number" },
+            },
+            required: ["x", "y", "width", "height"],
+          },
+        },
+        pages: { type: "string", description: "Only search these pages. Default all." },
+        dpi: { type: "number", description: "How sharp the redrawn pages are. Default 150." },
+        output: PDF_OUTPUT,
+      },
+      required: ["file"],
+    },
+  },
+  {
+    name: "pdf_compress",
+    group: "files",
+    description:
+      "Make a PDF smaller, saving it as a new artifact shown in the conversation. lossless (the default) " +
+      "rewrites it compactly and drops anything unused, changing nothing you can see. images redraws every " +
+      "page as a JPEG -- far smaller for scans and picture-heavy files, but the text can no longer be selected " +
+      "or searched, and links and form fields are gone; it also turns an XFA form into an ordinary PDF of how " +
+      "it looks. Nothing is saved if it does not get smaller.",
+    parameters: {
+      type: "object",
+      properties: {
+        file: PDF_FILE,
+        password: PDF_PASSWORD,
+        mode: { type: "string", enum: ["lossless", "images"] },
+        dpi: { type: "number", description: "For images: resolution. Default 110." },
+        quality: { type: "number", description: "For images: JPEG quality, 0.1 to 1. Default 0.7." },
+        output: PDF_OUTPUT,
+      },
+      required: ["file"],
     },
   },
 
@@ -1626,18 +1998,27 @@ export async function groupStates(): Promise<GroupState[]> {
   ];
 }
 
+/** A tool that lives in a built-in window the Tools page has switched off. */
+export function windowOff(name: string, settings: ToolSettings = toolSettings()): boolean {
+  if (name === "widget_show") return !settings.widgets.enabled;
+  if (name === "app_preview") return !settings.app.enabled;
+  if (name.startsWith("pdf_")) return !settings.pdf.enabled;
+  return false;
+}
+
 /** The tools to offer the model this turn: enabled, and actually usable. */
 export async function availableTools(): Promise<ToolSpec[]> {
   const groups = await groupStates();
   const usable = new Set(groups.filter((g) => g.available).map((g) => g.group));
+  const settings = toolSettings();
   return [
-    ...TOOLS.filter((t) =>
+    ...TOOLS.filter((t) => !windowOff(t.name, settings) && (
       t.group === "person" || t.group === "files" || t.group === "schedule" ||
       /* Muting the voice is the one thing that survives having muted it: a
          tool that takes itself away with the thing it turns off would leave
          no way back except the settings panel. */
       t.name === "voice_mute" ||
-      usable.has(t.group as ToolGroup)),
+      usable.has(t.group as ToolGroup))),
     ...(usable.has("terminal") ? customSpecs() : []),
     ...mcpSpecs(),
   ];
@@ -1677,18 +2058,14 @@ function mcpSpecs(): ToolSpec[] {
 /**
  * Does this call need a human to say yes first?
  *
- * Almost never, and never by default: Autora runs in yolo mode, from one call
- * to the next, with no card in the chat. What this reads is the per-group
- * setting the Tools tab has always had -- "always" asks about every call in
- * the group, "risky" asks only about the ones that change something (the
- * `risky` flag on the spec) -- and, since 0.9.95, the setting is finally
- * obeyed rather than only stored: it was written to disk, shown in Settings
- * and then ignored by this function, which returned false whatever it said.
+ * No: Autora runs in yolo mode, from one call to the next, with no card in
+ * the chat. This reads the per-group setting ("always", "risky", "never"),
+ * but mergeTools in server/state.ts pins every group to "never", so an older
+ * settings file that says otherwise cannot bring the cards back.
  *
- * This is one of two ways a call can be held. The other is the chat's own
- * mode (server/modes.ts), which is about the conversation rather than the
- * tool, and is applied first, in server.ts. Beyond both, the guard and the
- * irrecoverable tier still stop and ask, exactly as before.
+ * Asking is the chat's own choice instead (server/modes.ts), applied in
+ * server.ts. Beyond it, the guard and the irrecoverable tier still stop and
+ * ask, exactly as before.
  */
 export function needsApproval(spec: ToolSpec): boolean {
   const group = spec.group;
@@ -1760,7 +2137,9 @@ export function renderCall(spec: ToolSpec, args: Record<string, any>): string {
     case "image_generate":
       return `generate image: "${args.prompt}"`;
     case "artifact_save":
-      return `save artifact ${args.name}`;
+      return `save artifact ${args.name}${args.notebook ? ` into notebook "${args.notebook}"` : ""}`;
+    case "notebook":
+      return `notebook ${args.action ?? ""}${args.notebook ? ` "${args.notebook}"` : args.title ? ` "${args.title}"` : ""}`;
     case "widget_show":
       return `show widget "${args.title}"`;
     case "speak":
@@ -1816,6 +2195,8 @@ export interface ToolContext {
   putBlob: (data: Buffer, mime: string) => string;
   /** Show a picture in the conversation. */
   showImage: (blob: string, alt: string, caption: string | null, size?: { w: number; h: number }) => void;
+  /** Show a file a tool made (an artifact) in the conversation, to open or download. */
+  showFile?: (file: { id: string; name: string; mime: string; size: number }) => void;
   /** Say something aloud on the page the person has open. */
   speak?: (text: string) => void;
   /** Stop or start the page saying things aloud, at once -- what the speak
@@ -2429,6 +2810,185 @@ function artifactLine(a: { id: string; origin: string; name: string; mime: strin
     a.note ? ` -- ${a.note.replace(/\s+/g, " ").slice(0, 120)}` : ""}`;
 }
 
+/** A screenshot to keep or to see more than the window of. */
+async function keepScreenshot(
+  live: LiveBrowser,
+  ctx: ToolContext,
+  opts: { fullPage: boolean; ref?: number; selector: string; area: any; saveAs: string; notebook: string; note: string },
+): Promise<ToolOutcome> {
+  const area = opts.area
+    ? { x: Number(opts.area.x) || 0, y: Number(opts.area.y) || 0, w: Number(opts.area.width) || 0, h: Number(opts.area.height) || 0 }
+    : null;
+  if (area && (area.w < 2 || area.h < 2)) return { ok: false, summary: "An area needs a width and height of at least 2 pixels." };
+  let png: Buffer | null;
+  try {
+    png = area ? await live.cropShot(area) : await live.screenshot({ fullPage: opts.fullPage, ref: opts.ref, selector: opts.selector || undefined });
+  } catch (err: any) {
+    const why = String(err?.message ?? err).split("\n")[0];
+    return {
+      ok: false,
+      summary: opts.ref !== undefined
+        ? `Could not take a picture of element [${opts.ref}]: ${why}.`
+        : opts.selector
+        ? `Could not take a picture of "${opts.selector}": ${why}. Check the selector matches something visible (browser_eval can test it).`
+        : `Could not take the screenshot: ${why}`,
+    };
+  }
+  if (!png) return { ok: false, summary: "No page is open to take a picture of." };
+  const status = live.status();
+  const what = opts.ref !== undefined ? `element [${opts.ref}]` : opts.selector ? `"${opts.selector}"` : area ? "that area" : opts.fullPage ? "the whole page" : "the window";
+  const blob = ctx.putBlob(png, "image/png");
+
+  let kept = "";
+  let caption = `Screenshot of ${what}`;
+  if (opts.saveAs || opts.notebook) {
+    /* An unnamed one is stamped with the time: the agent's saves of one name
+       replace each other, and a second picture of the same page filed as
+       evidence would otherwise take the place of the first. */
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "-");
+    const base = (opts.saveAs || `screenshot-${slug(status.title || status.url || "page")}-${stamp}`).replace(/\.png$/i, "");
+    const art = saveArtifact({
+      origin: "agent", name: `${base}.png`, data: png, mime: "image/png", session: ctx.session,
+      note: opts.note || (status.url ? `Screenshot of ${status.url}` : undefined),
+    });
+    kept = ` Saved as artifact ${art.id} (${art.name}, ${formatSize(art.size)}).`;
+    caption = `Saved as ${art.name}`;
+    if (opts.notebook) {
+      const { book, made } = notebookFor(opts.notebook);
+      addEntries(book.id, [{
+        artifact: art.id,
+        text: opts.note || (status.url ? `Screenshot of ${status.url}, taken ${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC.` : undefined),
+      }], "agent");
+      kept += made ? ` Filed in a new notebook ${book.id}, "${book.title}".` : ` Filed in "${book.title}" (${book.id}).`;
+    }
+  }
+  ctx.showImage(blob, caption, caption);
+
+  // Vendors refuse a picture past about 8000 pixels a side, which a long page passes.
+  const tall = png.byteLength >= 24 && (png.readUInt32BE(16) > 7800 || png.readUInt32BE(20) > 7800);
+  const picture = tall ? null : pictureFor(png, "image/png");
+  return {
+    ok: true,
+    summary: `A picture of ${what}${status.url ? ` on ${status.url}` : ""} is in the conversation${picture ? " and in this result" : ""}.${kept}` +
+      (picture ? "" : " It is too large to hand back to you as a picture; take the window or an element to see it."),
+    preview: kept ? caption : status.url ?? "screenshot",
+    ...(picture ? { images: [picture] } : {}),
+  };
+}
+
+/** A notebook named by id or title; a title nobody has makes one. */
+function notebookFor(ref: string): { book: Notebook; made: boolean } {
+  const found = findNotebook(ref);
+  if (found) return { book: found, made: false };
+  if (/^nb_[0-9a-f]+$/.test(ref)) throw new Error(`There is no notebook "${ref}". Use notebook list to see what there is.`);
+  return { book: createNotebook({ title: ref, by: "agent" }), made: true };
+}
+
+const listOf = (raw: unknown): string[] =>
+  Array.isArray(raw) ? raw.map((v) => String(v).trim()).filter(Boolean)
+    : typeof raw === "string" && raw.trim() ? raw.split(",").map((v) => v.trim()).filter(Boolean) : [];
+
+function runNotebook(args: Record<string, any>, ctx: ToolContext): ToolOutcome {
+  const action = String(args.action ?? "").trim().toLowerCase();
+  const ref = String(args.notebook ?? "").trim();
+  const unknownNote = (unknown: string[]) => unknown.length
+    ? ` Not found, so not filed: ${unknown.join(", ")} -- check artifact_list for the right id.`
+    : "";
+
+  if (action === "list") {
+    const all = listNotebooks();
+    if (!all.length) return { ok: true, summary: "There are no notebooks yet. Make one with action create.", preview: "0 notebooks" };
+    return { ok: true, summary: all.map(notebookLine).join("\n"), preview: `${all.length} notebook${all.length === 1 ? "" : "s"}` };
+  }
+
+  if (action === "create") {
+    const title = String(args.title ?? ref).trim();
+    const had = findNotebook(title);
+    if (had) {
+      return {
+        ok: true,
+        summary: `A notebook called "${had.title}" already exists (${had.id}, ${had.entries.length} entries); use it rather than making a second.`,
+        preview: had.title,
+      };
+    }
+    const book = createNotebook({ title, purpose: args.purpose, by: "agent" });
+    return { ok: true, summary: `Made notebook ${book.id}, "${book.title}". It is on the Notebooks page.`, preview: book.title };
+  }
+
+  if (!ref) return { ok: false, summary: "Say which notebook, by id or title (notebook list shows them)." };
+
+  if (action === "add") {
+    const { book, made } = notebookFor(ref);
+    const files = listOf(args.artifacts);
+    const note = { title: args.title, text: args.text, cites: args.cites };
+    const inputs = files.length
+      ? files.map((artifact) => ({ artifact, title: files.length === 1 ? args.title : undefined, text: args.text, cites: args.cites }))
+      : [note];
+    const r = addEntries(book.id, inputs, "agent", Number(args.position) || undefined);
+    if (!r.added.length && !r.updated.length) {
+      return { ok: false, summary: `Nothing was added to "${book.title}": give artifacts, or a note's title or text.${unknownNote(r.unknown)}` };
+    }
+    const what = [
+      r.added.length ? `added ${r.added.map((e) => e.id).join(", ")}` : "",
+      r.updated.length ? `updated ${r.updated.map((e) => e.id).join(", ")} (already in it)` : "",
+    ].filter(Boolean).join("; ");
+    return {
+      ok: true,
+      summary: `${made ? `Made notebook ${book.id}, "${book.title}", and ` : `In "${book.title}" (${book.id}): `}${what}. ` +
+        `It now has ${r.notebook.entries.length} entries.${unknownNote(r.unknown)}`,
+      preview: `${book.title} · ${r.notebook.entries.length} entries`,
+    };
+  }
+
+  const book = findNotebook(ref);
+  if (!book) return { ok: false, summary: `There is no notebook "${ref}". Use notebook list to see what there is.` };
+  const entry = String(args.entry ?? "").trim();
+
+  switch (action) {
+    case "read": {
+      const text = describeNotebook(book);
+      const room = CONTEXT_CONFIG.maxToolTokens * 4 - 200;
+      const offset = Math.max(0, Number(args.offset) || 0);
+      const part = text.slice(offset, offset + room);
+      const rest = text.length - (offset + part.length);
+      return {
+        ok: true,
+        summary: `${part}${rest > 0 ? `\n\n[${rest} more characters -- read on with offset ${offset + part.length}]` : ""}`,
+        preview: `${book.title} · ${book.entries.length} entries`,
+      };
+    }
+    case "edit": {
+      if (!entry) {
+        const next = updateNotebook(book.id, { title: args.title, purpose: args.purpose });
+        return { ok: true, summary: `Updated notebook ${next.id}, "${next.title}".`, preview: next.title };
+      }
+      const r = updateEntry(book.id, entry, { title: args.title, text: args.text, cites: args.cites });
+      return { ok: true, summary: `Updated ${r.entry.id} in "${book.title}".${unknownNote(r.unknown)}`, preview: book.title };
+    }
+    case "remove": {
+      if (!entry) return { ok: false, summary: "Say which entry to remove (its en_... id, from read)." };
+      if (!removeEntry(book.id, entry)) return { ok: false, summary: `There is no entry "${entry}" in "${book.title}".` };
+      return { ok: true, summary: `Removed ${entry} from "${book.title}". Any file it was stays on the Artifacts page.`, preview: book.title };
+    }
+    case "move": {
+      if (!entry) return { ok: false, summary: "Say which entry to move (its en_... id, from read)." };
+      moveEntry(book.id, entry, Number(args.position) || 1);
+      return { ok: true, summary: `Moved ${entry} to position ${Number(args.position) || 1} in "${book.title}".`, preview: book.title };
+    }
+    case "export": {
+      const name = `${cleanName(book.title, "notebook").replace(/\.md$/i, "")}.md`;
+      const art = saveArtifact({
+        origin: "agent", name, data: Buffer.from(notebookMarkdown(book), "utf8"),
+        mime: "text/markdown", session: ctx.session, note: `Export of the notebook "${book.title}"`,
+      });
+      ctx.showFile?.({ id: art.id, name: art.name, mime: art.mime, size: art.size });
+      return { ok: true, summary: `Exported "${book.title}" as artifact ${art.id} (${art.name}, ${formatSize(art.size)}).`, preview: art.name };
+    }
+    default:
+      return { ok: false, summary: `Unknown notebook action "${action}". Use list, create, read, add, edit, remove, move or export.` };
+  }
+}
+
 async function generateImageTool(prompt: string, ctx: ToolContext): Promise<ToolOutcome> {
   // The Gemini key saved in Settings counts: it used to be only the
   // environment or the secret store, so a key pasted into the provider card
@@ -2979,6 +3539,17 @@ async function runToolUnredacted(
 
       case "browser_screenshot": {
         const live = ctx.browser();
+        const selector = String(args.selector ?? "").trim();
+        const ref = Number.isInteger(Number(args.ref)) && args.ref !== null && args.ref !== "" ? Number(args.ref) : undefined;
+        const area = args.area && typeof args.area === "object" ? args.area : null;
+        const saveAs = String(args.save_as ?? "").trim();
+        const filedIn = String(args.notebook ?? "").trim();
+        if (ref !== undefined || selector || area || args.full_page === true || saveAs || filedIn) {
+          return await keepScreenshot(live, ctx, {
+            fullPage: args.full_page === true, ref, selector, area, saveAs, notebook: filedIn,
+            note: String(args.note ?? "").trim(),
+          });
+        }
         const png = await live.capture();
         const blob = ctx.putBlob(png, "image/png");
         const status = live.status();
@@ -3468,11 +4039,18 @@ async function runToolUnredacted(
           origin: "agent", name, data, session: ctx.session,
           note: String(args.note ?? "").trim() || undefined,
         });
+        const filedIn = String(args.notebook ?? "").trim();
+        let filed = "";
+        if (filedIn) {
+          const { book, made } = notebookFor(filedIn);
+          addEntries(book.id, [{ artifact: art.id, text: args.note }], "agent");
+          filed = made ? ` Filed in a new notebook ${book.id}, "${book.title}".` : ` Filed in "${book.title}" (${book.id}).`;
+        }
         return {
           ok: true,
-          summary: had
+          summary: (had
             ? `Updated the artifact ${art.id} (${art.name}, ${formatSize(art.size)}); there is one copy of it on the Artifacts page, now holding this version.`
-            : `Saved as artifact ${art.id} (${art.name}, ${formatSize(art.size)}). The person can open and download it from the Artifacts page.`,
+            : `Saved as artifact ${art.id} (${art.name}, ${formatSize(art.size)}). The person can open and download it from the Artifacts page.`) + filed,
           preview: `${art.name} · ${formatSize(art.size)}`,
         };
       }
@@ -3505,6 +4083,13 @@ async function runToolUnredacted(
           };
         }
         if (!isText(meta.mime)) {
+          if (meta.mime === "application/pdf") {
+            return {
+              ok: true,
+              summary: `${artifactLine(meta)}\nA PDF: read it with pdf_read (text, form fields, attachments) and see its pages with pdf_look.`,
+              preview: meta.name,
+            };
+          }
           return {
             ok: true,
             summary: `${artifactLine(meta)}\nNot a text file. It is on this host at ${
@@ -3525,6 +4110,27 @@ async function runToolUnredacted(
           preview: meta.name,
         };
       }
+
+      case "notebook":
+        return runNotebook(args, ctx);
+
+      // ----------------------------------------------------------- PDFs --
+      case "pdf_read":
+      case "pdf_look":
+      case "pdf_edit":
+      case "pdf_pages":
+      case "pdf_redact":
+      case "pdf_compress":
+        return await runPdfTool(spec.name, args, {
+          session: ctx.session,
+          cwd: terminalDir(),
+          room: CONTEXT_CONFIG.maxToolTokens * 4 - 200,
+          putBlob: ctx.putBlob,
+          showImage: ctx.showImage,
+          showFile: ctx.showFile,
+          cancelled: ctx.cancelled,
+          onCancel: ctx.onCancel,
+        });
 
       // --------------------------------------------------------- memory --
       case "memory_write": {
@@ -3773,6 +4379,14 @@ const VOICE_GUIDE =
   "voice, do not offer to say it anyway, and do not call speak again in that turn. " +
   "voice_mute(false) is how you are heard again, and only when they ask for it.";
 
+/** The app window, in the instructions: start it early, keep it running, check with look. */
+const APP_GUIDE =
+  "- The app window: always available. Tool: app_preview. When you build a website or an app, start it " +
+  "in the app window as soon as there is anything to see, and keep it running while you build: the person " +
+  "watches it take shape, can select elements or regions and leave comments, and what they say comes back " +
+  "as one message you act on. Check your own work with look (a picture and the console's errors) before " +
+  "you say it is done.";
+
 /**
  * The to-do list, in the instructions.
  *
@@ -3782,13 +4396,6 @@ const VOICE_GUIDE =
  * sizes are given because the shape differs -- many items for code, a handful
  * for an errand.
  */
-const APP_GUIDE =
-  "- The app window: always available. Tool: app_preview. When you build a website or an app, start it " +
-  "in the app window as soon as there is anything to see, and keep it running while you build: the person " +
-  "watches it take shape, can select elements or regions and leave comments, and what they say comes back " +
-  "as one message you act on. Check your own work with look (a picture and the console's errors) before " +
-  "you say it is done.";
-
 const TODO_GUIDE =
   "- The to-do list: always available. Tool: todo. The plan for anything with " +
   "more than one step goes on the list in the conversation, and you keep it " +
@@ -3823,7 +4430,11 @@ export async function capabilityBriefing(): Promise<string> {
   if (groups.some((g) => g.group === "browser" && g.available)) lines.push(BROWSING_GUIDE, signInBriefing(), credentialsBriefing());
   if (groups.some((g) => g.group === "memory" && g.available)) lines.push(MEMORY_GUIDE);
   if (groups.some((g) => g.group === "voice" && g.available)) lines.push(VOICE_GUIDE);
-  lines.push(TODO_GUIDE, APP_GUIDE);
+  const windows = toolSettings();
+  const offLine = (what: string) =>
+    `- ${what}: turned off by the person on the Tools page; its tools are not yours this turn. ` +
+    "If the task needs it, say so and that it is switched on there.";
+  lines.push(TODO_GUIDE, windows.app.enabled ? APP_GUIDE : offLine("The app window"));
 
   const mcp = mcpTools();
   if (mcp.length > 0) {
@@ -3855,12 +4466,33 @@ export async function capabilityBriefing(): Promise<string> {
       "when it did not.",
   );
   lines.push(
-    "- Explainer widgets: always available. Tool: widget_show. When someone " +
+    "- Notebooks: always available. Tool: notebook (and notebook= on artifact_save " +
+      "and browser_screenshot). A notebook is the person's folder for one purpose, " +
+      "on their Notebooks page. When asked to compile, assemble or build a case, " +
+      "report or dossier from several sources -- emails, documents, pages -- work in " +
+      "a notebook: file every source, annotated with what it shows; write each " +
+      "finding, rebuttal or answer as a note that cites the files it rests on; " +
+      "quote the exact words you rely on. Go through every source, not a sample. " +
+      "Before you say it is done, read the notebook back and check each source is " +
+      "filed and each claim cites one, then say what is in it.",
+  );
+  lines.push(windows.pdf.enabled
+    ? "- PDFs: always available. Tools: pdf_read, pdf_look, pdf_edit, pdf_pages, " +
+      "pdf_redact, pdf_compress. For any PDF -- one the person uploaded, one on " +
+      "this host, one you made -- use these rather than the terminal: read it " +
+      "(text, form fields, attachments, XFA), look at its pages, fill in its form, " +
+      "sign, stamp, mark it up, watermark it, number its pages, rearrange, merge or " +
+      "split it, redact it for good, and shrink it. Each change is saved as a new " +
+      "artifact the person opens from the thread; their original is never changed. " +
+      "Look at what you changed with pdf_look before saying it is done."
+    : offLine("The PDF editor"));
+  lines.push(windows.widgets.enabled
+    ? "- Explainer widgets: always available. Tool: widget_show. When someone " +
       "asks how something works -- a physical process, a mechanism, an " +
       "algorithm, a piece of maths -- and seeing it move would help, build a " +
       "small interactive widget (2D canvas/SVG, or 3D with Three.js) and explain " +
-      "in text alongside it. Not for plain facts, lists or anything a sentence answers.",
-  );
+      "in text alongside it. Not for plain facts, lists or anything a sentence answers."
+    : offLine("The widget window"));
   lines.push(
     "- Your voice: always available. Tool: speak. It plays words aloud on the " +
       "person's page at once, in the voice chosen under Settings -> Voice. When you " +

@@ -436,6 +436,8 @@ export interface BrowserHooks {
   onAction: (action: string, at: { x: number; y: number } | null, url: string) => void;
   /** The typeable fields on the page moved, appeared or went. */
   onFields: () => void;
+  /** The page wrote an error or a warning to its console. */
+  onConsole?: () => void;
   /** Whether anyone is watching. The screencast is stopped while nobody is,
       because encoding JPEGs for an empty room is just heat. */
   watchers: () => number;
@@ -451,11 +453,11 @@ const num = (value: string | undefined, fallback: number) => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 };
 
+/** How long typing has to stop before it is logged and a frame is kept. */
+const TYPING_PAUSE_MS = 1200;
 /** How often live frames go out. Chrome offers about sixty a second; a LAN is
     not a video codec, and ten is enough to follow the pointer travelling to
     what it is about to click. */
-/** How long typing has to stop before it is logged and a frame is kept. */
-const TYPING_PAUSE_MS = 1200;
 const LIVE_FPS = Math.min(num(process.env.AUTORA_BROWSER_FPS, 10), 30);
 const LIVE_QUALITY = Math.min(num(process.env.AUTORA_BROWSER_QUALITY, 50), 100);
 /** Frames are sent narrower than the page is rendered: the picture is for
@@ -1291,117 +1293,6 @@ export async function probeBrowser(): Promise<{ ok: boolean; detail: string | nu
   return probed;
 }
 
-/**
- * What is at this point on the page.
- *
- * The click lands on whatever is topmost, which is routinely the label inside
- * a button rather than the button -- so the hit is walked up to the nearest
- * thing you could plausibly have meant, and the walk is reported rather than
- * hidden, because "I clicked the text and got the form" is worth knowing.
- *
- * Where the framework left a trail -- React's dev fiber, a `data-source`
- * attribute -- it resolves to the file and line that rendered the element.
- * Where it did not, it says so instead of guessing at a file, which is the
- * difference between a useful answer and a confident wrong one.
- */
-const PICK_SCRIPT = (x: number, y: number) => `
-(() => {
-  const hit = document.elementFromPoint(${x}, ${y});
-  if (!hit || hit.closest("[data-autora]")) return { ok: false, error: "Nothing there." };
-
-  const ACTIONABLE = "a[href],button,input,select,textarea,summary,label,[role],[onclick]";
-  let el = hit;
-  let retargeted = null;
-  const up = hit.closest(ACTIONABLE);
-  if (up && up !== hit) { el = up; retargeted = { tag: hit.tagName.toLowerCase() }; }
-
-  const selector = (() => {
-    if (el.id) return "#" + CSS.escape(el.id);
-    const parts = [];
-    for (let n = el; n && n.nodeType === 1 && parts.length < 4; n = n.parentElement) {
-      let part = n.tagName.toLowerCase();
-      const cls = (n.getAttribute("class") || "").trim().split(/\\s+/).filter(Boolean).slice(0, 2);
-      if (cls.length) part += "." + cls.map((c) => CSS.escape(c)).join(".");
-      parts.unshift(part);
-      if (n.id) { parts[0] = "#" + CSS.escape(n.id); break; }
-    }
-    return parts.join(" > ");
-  })();
-
-  /* React keeps the element that rendered a node on a __reactFiber key in
-     development builds. Production strips it, which is why the absence of a
-     file is reported rather than filled in. */
-  const source = (() => {
-    const attr = el.getAttribute("data-source") || el.getAttribute("data-testid-source");
-    if (attr) {
-      const [file, line] = attr.split(":");
-      return { file, line: Number(line) || undefined, via: "data-source" };
-    }
-    const key = Object.keys(el).find((k) => k.startsWith("__reactFiber$"));
-    if (!key) return null;
-    let fiber = el[key];
-    for (let depth = 0; fiber && depth < 8; depth++, fiber = fiber.return) {
-      const debug = fiber._debugSource || fiber._debugInfo;
-      const name = typeof fiber.type === "function"
-        ? (fiber.type.displayName || fiber.type.name) : null;
-      if (debug && debug.fileName) {
-        return {
-          file: String(debug.fileName).split("/").slice(-3).join("/"),
-          line: debug.lineNumber,
-          component: name || undefined,
-          via: "react",
-        };
-      }
-      if (name) return { component: name, via: "react" };
-    }
-    return null;
-  })();
-
-  const style = getComputedStyle(el);
-  const pick = (names) => {
-    const out = {};
-    for (const n of names) {
-      const v = style.getPropertyValue(n);
-      if (v && v !== "none" && v !== "normal" && v !== "auto" && v !== "0px") out[n] = v;
-    }
-    return out;
-  };
-
-  const box = el.getBoundingClientRect();
-  const refs = window.__autoraRefs || [];
-  const index = refs.indexOf(el);
-  const text = (el.innerText || el.value || "").trim().replace(/\\s+/g, " ");
-
-  return {
-    ok: true,
-    pick: {
-      kind: el.tagName.toLowerCase(),
-      ref: index >= 0 ? index : null,
-      selector,
-      box: {
-        x: Math.round(box.left), y: Math.round(box.top),
-        w: Math.round(box.width), h: Math.round(box.height),
-      },
-      source,
-      fingerprint: {
-        tag: el.tagName.toLowerCase(),
-        id: el.id || null,
-        classes: (el.getAttribute("class") || "").trim().split(/\\s+/).filter(Boolean).slice(0, 6),
-        text: text ? text.slice(0, 80) : null,
-      },
-      params: {
-        /* Only what this element sets, not the whole inherited cascade --
-           forty resolved properties is not an answer, it is a haystack. */
-        layout: pick(["display", "position", "width", "height", "padding", "margin", "gap"]),
-        type: pick(["font-family", "font-size", "font-weight", "line-height", "color"]),
-        paint: pick(["background-color", "border", "border-radius", "box-shadow", "opacity"]),
-      },
-      retargeted,
-    },
-  };
-})();
-`;
-
 const STEALTH_SCRIPT = `
 (() => {
   /* The functions this script replaces are marked, so that a page asking any
@@ -2108,6 +1999,7 @@ export class LiveBrowser {
     if (last && last.text === line && last.kind === kind) return;
     this.consoleLog.push({ kind, text: line, ts: Date.now() });
     if (this.consoleLog.length > 60) this.consoleLog.splice(0, this.consoleLog.length - 60);
+    this.hooks.onConsole?.();
   }
   consoleTail(n = 20): Array<{ kind: "error" | "warn"; text: string; ts: number }> {
     return this.consoleLog.slice(-n);
@@ -2135,6 +2027,8 @@ export class LiveBrowser {
         await cdp?.send("Page.stopScreencast").catch(() => undefined);
         await cdp?.detach().catch(() => undefined);
         await this.startStream().catch(() => undefined);
+        // The page re-laid itself out: its fields moved with it.
+        await this.mapFields();
       }
       return { ...this.vp };
     });
@@ -2145,7 +2039,16 @@ export class LiveBrowser {
     return this.run(async () => {
       const page = this.page;
       if (!page) return { ok: false, error: "No page is open." };
-      return page.evaluate(expression);
+      // A page stuck in its own script would otherwise hold every later input behind this one.
+      let timer: NodeJS.Timeout | undefined;
+      const late = new Promise((resolve) => {
+        timer = setTimeout(() => resolve({ ok: false, error: "The page is not responding." }), 4000);
+      });
+      try {
+        return await Promise.race([page.evaluate(expression), late]);
+      } finally {
+        clearTimeout(timer);
+      }
     });
   }
 
@@ -2893,21 +2796,20 @@ export class LiveBrowser {
     });
   }
 
-  /**
-   * What is at this point, without clicking it.
-   *
-   * Pointing at an element is how you ask about one without describing it in
-   * prose and hoping the agent finds the same one. Deliberately read-only:
-   * the page is not touched, so pointing at a Delete button is safe.
-   */
-  pickAt(x: number, y: number): Promise<any> {
+  /** A picture to keep: the window, the whole page, or one element. Throws
+      with Playwright's reason, which says what was wrong with a selector. */
+  screenshot(opts: { fullPage?: boolean; selector?: string; ref?: number }): Promise<Buffer> {
     return this.run(async () => {
-      const page = this.page;
-      if (!page) return { ok: false, error: "No page is open." };
-      // Refresh the numbering first, so the ref this comes back with is one
-      // the agent can actually act on rather than one from two pages ago.
-      await this.read().catch(() => undefined);
-      return page.evaluate(PICK_SCRIPT(Math.round(x), Math.round(y)));
+      const page = await this.ensure();
+      if (opts.ref !== undefined) {
+        const el = (await page.evaluateHandle(REF_EL(opts.ref))).asElement();
+        if (!el) throw new Error(`there is no element [${opts.ref}] on the page now; read it again for the current numbers`);
+        return (await el.screenshot({ type: "png", timeout: 5000 })) as Buffer;
+      }
+      if (opts.selector) {
+        return (await page.locator(opts.selector).first().screenshot({ type: "png", timeout: 5000 })) as Buffer;
+      }
+      return (await page.screenshot({ type: "png", fullPage: !!opts.fullPage, timeout: 20_000 })) as Buffer;
     });
   }
 
@@ -3103,18 +3005,6 @@ export class LiveBrowser {
       await this.settle(180);
       await this.keyframe();
       return { ok: true };
-    });
-  }
-
-  /** Direct mouse move from user */
-  mouseMove(x: number, y: number): Promise<void> {
-    return this.run(async () => {
-      const page = await this.ensure();
-      const clampedX = Math.max(0, Math.min(this.vp.width, Math.round(x)));
-      const clampedY = Math.max(0, Math.min(this.vp.height, Math.round(y)));
-      await this.showCursor(clampedX, clampedY, false);
-      await page.mouse.move(clampedX, clampedY);
-      this.pointer = { x: clampedX, y: clampedY };
     });
   }
 

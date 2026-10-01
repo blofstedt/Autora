@@ -80,6 +80,39 @@ async function main() {
     for (const method of ["POST", "put", "PATCH", "DELETE"]) assert.equal(m.looksOnly("http_request", { method }), false, method);
   });
 
+  test("looking at the app window is looking; starting, reloading or stopping it is not", () => {
+    assert.equal(m.looksOnly("app_preview", { action: "look" }), true);
+    assert.equal(m.looksOnly("app_preview", { action: " LOOK " }), true);
+    for (const action of ["start", "reload", "stop", ""]) assert.equal(m.looksOnly("app_preview", { action }), false, action);
+    assert.equal(m.planRefusal("plan", undefined, "app_preview", { action: "look" }), null);
+    assert.equal(m.askAbout("ask", "", "app_preview", { action: "start", command: "npm run dev" }), "hold");
+  });
+
+  test("reading and looking at a PDF is looking; extracting from it or changing it is not", () => {
+    assert.equal(m.looksOnly("pdf_read", { file: "a.pdf", find: ["email"] }), true);
+    assert.equal(m.looksOnly("pdf_look", { file: "a.pdf" }), true);
+    assert.equal(m.looksOnly("pdf_read", { file: "a.pdf", extract: ["all"] }), false);
+    assert.equal(m.looksOnly("pdf_read", { file: "a.pdf", extract: "xfa" }), false);
+    for (const name of ["pdf_edit", "pdf_pages", "pdf_redact", "pdf_compress"]) {
+      assert.equal(m.looksOnly(name, { file: "a.pdf" }), false, name);
+      assert.ok(findTool(name), `${name} is a tool`);
+    }
+    assert.equal(m.planRefusal("plan", undefined, "pdf_read", { file: "a.pdf" }), null);
+    assert.match(m.planRefusal("plan", undefined, "pdf_redact", { file: "a.pdf" })!, /Plan mode/);
+  });
+
+  test("reading notebooks is looking; filing into one, or keeping a screenshot, is not", () => {
+    assert.ok(findTool("notebook"));
+    for (const action of ["list", "read", " READ "]) assert.equal(m.looksOnly("notebook", { action }), true, action);
+    for (const action of ["create", "add", "edit", "remove", "move", "export", ""]) {
+      assert.equal(m.looksOnly("notebook", { action }), false, action);
+    }
+    assert.equal(m.looksOnly("browser_screenshot", {}), true);
+    assert.equal(m.looksOnly("browser_screenshot", { full_page: true }), true);
+    assert.equal(m.looksOnly("browser_screenshot", { save_as: "evidence" }), false);
+    assert.equal(m.looksOnly("browser_screenshot", { notebook: "Case" }), false);
+  });
+
   test("Build never refuses; Plan refuses changes and lets looking through", () => {
     assert.equal(m.planRefusal("build", undefined, "terminal", { command: "rm x" }), null);
     for (const name of ["terminal", "run_background", "browser_click", "browser_fill", "browser_eval", "mcp__github__create_issue", "brand_new_tool"]) {

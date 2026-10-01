@@ -195,4 +195,24 @@ test("the gauge carries where its window came from", () => {
   assert.equal(reading(undefined), "default");
 });
 
+test("files a tool made share one card, and a file saved again is shown once, updated", () => {
+  const ev = (seq: number, kind: string, payload: Record<string, any>, span: string | null = null): AutoraEvent =>
+    ({ seq, ts: 1_700_000_000 + seq, kind, actor: "agent", span, payload, blob: null });
+  const file = (id: string, name: string, size = 100) => ({ id, name, mime: "application/pdf", size });
+  const view = derive([
+    ev(1, Kind.UserMessage, { text: "split it" }),
+    ev(2, Kind.ToolCall, { name: "pdf_pages", args: { file: "a.pdf", split: ["each"] } }, "s1"),
+    ev(3, Kind.MediaFile, file("file_0000000000000001", "a-page-1.pdf"), "s1"),
+    ev(4, Kind.MediaFile, file("file_0000000000000002", "a-page-2.pdf"), "s1"),
+    ev(5, Kind.MediaFile, file("file_0000000000000001", "a-page-1.pdf", 250), "s1"),
+    ev(6, Kind.MediaFile, file("../../etc/passwd", "sneaky.pdf"), "s1"),
+    ev(7, Kind.ToolResult, { ok: true }, "s1"),
+    ev(8, Kind.AgentDone, {}),
+  ]);
+  const cards = view.buckets.flatMap((b) => b.cells).filter((c) => c.kind === "files");
+  assert.equal(cards.length, 1);
+  const files = cards[0].kind === "files" ? cards[0].files : [];
+  assert.deepEqual(files.map((f) => [f.name, f.size]), [["a-page-1.pdf", 250], ["a-page-2.pdf", 100]]);
+});
+
 console.log(`\nderive: ${passed} passed`);

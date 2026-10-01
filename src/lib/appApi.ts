@@ -31,9 +31,10 @@ export function previewApi(sessionId: string) {
       const res = await fetch(`/api/sessions/${sessionId}/browser/${path}?target=preview`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
       });
-      return (await res.json().catch(() => ({}))) as any;
+      const data = await res.json().catch(() => ({}));
+      return (res.ok ? data : { ...data, error: String(data?.error ?? `That did not work (${res.status}).`) }) as any;
     } catch {
-      return {};
+      return { error: "Could not reach the server." };
     }
   };
   return {
@@ -57,10 +58,14 @@ export function previewApi(sessionId: string) {
     reword: (id: string, text: string) => call("POST", `/comments/${id}`, { text }),
     remove: (id: string) => call("DELETE", `/comments/${id}`),
     send: (text: string) => call("POST", "/send", { text }),
-    click: (x: number, y: number, double = false) => input("click", { x, y, double }),
+    click: (x: number, y: number, button: "left" | "right" = "left") => input("click", { x, y, button }),
+    drag: (phase: "start" | "move" | "end", x: number, y: number) => input("drag", { phase, x, y }),
+    choose: (x: number, y: number, index: number) => input("choose", { x, y, index }),
     scroll: (dx: number, dy: number) => input("scroll", { dx, dy }),
     type: (text: string) => input("type", { text }),
     key: (key: string) => input("key", { key }),
+    back: () => input("back", {}),
+    go: (url: string) => input("navigate", { url }),
   };
 }
 

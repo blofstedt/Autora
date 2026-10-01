@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { px, toHex, type PreviewApi } from "../lib/appApi";
 import type { ElementInfo, Rect, StyleChange } from "../lib/preview";
@@ -11,17 +11,38 @@ import { IconX } from "./Icons";
  * "make it bigger". Whatever was tried is carried with the comment as a list
  * of before and after, because that is the precise version of the request.
  *
- * Changes are experiments on the live page: they last until the page reloads,
- * which is when the agent's edit arrives and replaces them.
+ * Changes are experiments on the live page: once added to the review they last
+ * until the page reloads, which is when the agent's edit arrives and replaces
+ * them. A change tried and then abandoned (cancelled, or the selection moved
+ * on) is put back, so the page never shows a request nobody made.
  */
 
 type Nav = "parent" | "child" | "prev" | "next";
 
-const WEIGHTS = ["300", "400", "500", "600", "700", "800"];
+const WEIGHTS = ["100", "200", "300", "400", "500", "600", "700", "800", "900"];
 const ALIGNS = ["left", "center", "right"] as const;
 
 function name(info: ElementInfo): string {
   return `${info.tag}${info.id ? `#${info.id}` : info.classes[0] ? `.${info.classes[0]}` : ""}`;
+}
+
+/** A number field that can be emptied on the way to a new number without the
+    page being set to 0 in between. */
+function Num({ value, max, onValue }: { value: number; max: number; onValue: (n: number) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <input
+      type="number" min={0} max={max} step={1}
+      value={draft ?? String(value)}
+      onChange={(e) => {
+        const raw = e.target.value;
+        setDraft(raw);
+        const n = Number(raw);
+        if (raw.trim() !== "" && Number.isFinite(n)) onValue(Math.max(0, Math.min(max, n)));
+      }}
+      onBlur={() => setDraft(null)}
+    />
+  );
 }
 
 export function AppInspector({
@@ -61,7 +82,18 @@ export function AppInspector({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const field = useRef<HTMLTextAreaElement>(null);
-  const tried = useRef<number | null>(null);
+  const styleTimer = useRef<number | null>(null);
+  const textTimer = useRef<number | null>(null);
+  /** Styles changed since the last were sent: a second change inside the
+      pause must join the first, not replace it. */
+  const pending = useRef<Record<string, string>>({});
+  /** Elements with a change tried on them that no comment has taken yet. */
+  const dirty = useRef(new Set<string>());
+  /** Bumped when the selection moves on or the box closes, so a change still
+      on its way knows it arrived too late and puts itself back. */
+  const generation = useRef(0);
+  /** Added to the review: what was tried stays on the page. */
+  const kept = useRef(false);
 
   /* A new pick is a new comment; stepping to a neighbour keeps what was typed
      and, because the keys that step are still under the person's fingers,
@@ -72,14 +104,31 @@ export function AppInspector({
     setError(null);
     field.current?.focus({ preventScroll: true });
   }, [epoch]);
-  /* What was tried on the page belongs to the element it was tried on. */
+
+  const revert = useCallback(() => {
+    if (kept.current) return;
+    for (const selector of dirty.current) void api.reset(selector);
+    dirty.current.clear();
+  }, [api]);
+
+  /* What was tried on the page belongs to the element it was tried on, and
+     goes back when the selection moves on or the box closes without it. */
   const where = region ? "region" : primary?.selector ?? "";
   useEffect(() => {
     setCss({});
     setBefore({});
     setWords(null);
     setOrig(null);
-  }, [where, epoch]);
+    return () => {
+      generation.current += 1;
+      if (styleTimer.current) window.clearTimeout(styleTimer.current);
+      if (textTimer.current) window.clearTimeout(textTimer.current);
+      styleTimer.current = null;
+      textTimer.current = null;
+      pending.current = {};
+      revert();
+    };
+  }, [where, epoch, revert]);
 
   const base = primary?.styles ?? {};
   const value = (prop: string, fallback: string) => css[prop] ?? fallback;
@@ -87,19 +136,30 @@ export function AppInspector({
   /** Try a style on every selected element, a moment after the last change. */
   const apply = (changes: Record<string, string>) => {
     setCss((c) => ({ ...c, ...changes }));
-    if (tried.current) window.clearTimeout(tried.current);
-    tried.current = window.setTimeout(async () => {
+    pending.current = { ...pending.current, ...changes };
+    if (styleTimer.current) window.clearTimeout(styleTimer.current);
+    const targets = selection;
+    const gen = generation.current;
+    styleTimer.current = window.setTimeout(async () => {
+      styleTimer.current = null;
+      const batch = pending.current;
+      pending.current = {};
       let last: ElementInfo | null = null;
-      for (const el of selection) {
-        const r = await api.style(el.selector, changes);
+      for (const el of targets) {
+        const r = await api.style(el.selector, batch);
+        if (generation.current !== gen) {
+          if (r.ok && !kept.current) void api.reset(el.selector);
+          return;
+        }
         if (!r.ok) { setError(r.error); return; }
+        dirty.current.add(el.selector);
         setError(null);
         setBefore((b) => {
           const next = { ...b };
           for (const [k, v] of Object.entries(r.data.before ?? {})) if (next[k] === undefined) next[k] = v;
           return next;
         });
-        if (el === primary) last = r.data.info;
+        if (el === targets[targets.length - 1]) last = r.data.info;
       }
       if (last) onTried(last);
     }, 120);
@@ -108,18 +168,32 @@ export function AppInspector({
   const retype = (next: string) => {
     if (primary) setOrig((o) => o ?? primary.fullText);
     setWords(next);
-    if (tried.current) window.clearTimeout(tried.current);
-    tried.current = window.setTimeout(async () => {
-      if (!primary) return;
-      const r = await api.text(primary.selector, next);
+    if (textTimer.current) window.clearTimeout(textTimer.current);
+    const target = primary;
+    const gen = generation.current;
+    textTimer.current = window.setTimeout(async () => {
+      textTimer.current = null;
+      if (!target) return;
+      const r = await api.text(target.selector, next);
+      if (generation.current !== gen) {
+        if (r.ok && !kept.current) void api.reset(target.selector);
+        return;
+      }
       if (!r.ok) { setError(r.error); return; }
+      dirty.current.add(target.selector);
       setError(null);
       onTried(r.data.info);
     }, 150);
   };
 
   const undo = async () => {
+    if (styleTimer.current) window.clearTimeout(styleTimer.current);
+    if (textTimer.current) window.clearTimeout(textTimer.current);
+    styleTimer.current = null;
+    textTimer.current = null;
+    pending.current = {};
     for (const el of selection) await api.reset(el.selector);
+    dirty.current.clear();
     setCss({});
     setBefore({});
     setWords(null);
@@ -139,9 +213,15 @@ export function AppInspector({
   const add = async () => {
     if (!ready || saving) return;
     setSaving(true);
+    kept.current = true;
     const problem = await onAdd({ text: text.trim(), textEdit, styleChanges: changes });
     setSaving(false);
-    if (problem) setError(problem);
+    if (problem) {
+      kept.current = false;
+      setError(problem);
+      return;
+    }
+    dirty.current.clear();
   };
 
   const box = (
@@ -226,7 +306,7 @@ export function AppInspector({
                 </label>
                 <label className="app-row">
                   <span>Size</span>
-                  <input type="number" min={6} max={200} step={1} value={Math.round(px(value("font-size", base.fontSize)))} onChange={(e) => apply({ "font-size": `${e.target.value || 0}px` })} />
+                  <Num value={Math.round(px(value("font-size", base.fontSize)))} max={200} onValue={(n) => apply({ "font-size": `${n}px` })} />
                 </label>
                 <label className="app-row">
                   <span>Weight</span>
@@ -236,15 +316,15 @@ export function AppInspector({
                 </label>
                 <label className="app-row">
                   <span>Corners</span>
-                  <input type="number" min={0} max={200} value={Math.round(px(value("border-radius", base.borderRadius)))} onChange={(e) => apply({ "border-radius": `${e.target.value || 0}px` })} />
+                  <Num value={Math.round(px(value("border-radius", base.borderRadius)))} max={200} onValue={(n) => apply({ "border-radius": `${n}px` })} />
                 </label>
                 <label className="app-row">
                   <span>Padding</span>
-                  <input type="number" min={0} max={200} value={Math.round(px(value("padding", (base.padding ?? "").split(" ")[0])))} onChange={(e) => apply({ padding: `${e.target.value || 0}px` })} />
+                  <Num value={Math.round(px(value("padding", (base.padding ?? "").split(" ")[0])))} max={200} onValue={(n) => apply({ padding: `${n}px` })} />
                 </label>
                 <label className="app-row">
                   <span>Margin</span>
-                  <input type="number" min={0} max={200} value={Math.round(px(value("margin", (base.margin ?? "").split(" ")[0])))} onChange={(e) => apply({ margin: `${e.target.value || 0}px` })} />
+                  <Num value={Math.round(px(value("margin", (base.margin ?? "").split(" ")[0])))} max={200} onValue={(n) => apply({ margin: `${n}px` })} />
                 </label>
                 <label className="app-row">
                   <span>Opacity</span>

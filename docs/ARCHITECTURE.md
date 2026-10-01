@@ -123,8 +123,8 @@ order:
 4. **It waits for the full response before speaking**, adding latency no vocoder
    wins back.
 
-`voice/narration.py` fixes 1, 3 and 4; the loop's cancellation fixes 2. Swapping
-the TTS model is the *last* thing to try.
+`speakable()` and `splitSpeakable()` in `src/lib/voice.ts` fix 1, 3 and 4; the
+loop's cancellation fixes 2. Swapping the TTS model is the *last* thing to try.
 
 One concrete detail: the blueprint flushes TTS on any `.` or `,`, which splits
 `3.5` and `e.g.` mid-token and produces stuttering. The chunker emits at genuine
@@ -136,11 +136,11 @@ before affirmatives, so "yes — no, wait" denies.
 
 ### The phone is a second voice client, not the same one
 
-`voice/engine.py` opens the *host* machine's microphone through sounddevice.
-That is right at a desk and useless from a phone, which is where watching an
-agent work actually happens — so the web UI has its own voice path built on the
-browser's speech stack (`ui/src/lib/voice.ts`), with nothing crossing the wire
-but the text.
+The first voice client opened the *host* machine's microphone. That is right at
+a desk and useless from a phone, which is where watching an agent work actually
+happens -- so the web UI has its own voice path, in the browser
+(`src/lib/voice.ts`), with nothing crossing the wire but the text and, for
+Deepgram's hosted voices, the audio the server fetches for it.
 
 Two things carry across rather than being re-invented: the scrubber that keeps
 paths, code, hashes and JSON out of the audio, and the clause chunker's
@@ -257,5 +257,7 @@ session. Variable weights keep it to two files and 77KB.
   read one after the other rather than side by side, and that a session of
   thousands of frames is a long page; the frames are content-addressed and the
   cards fold, which has been enough so far.
-- **The policy default is ASK**, which will annoy you. That is the correct
-  starting point; loosen per project once you trust it.
+- **The policy default was ASK**, and it annoyed people into not using it. The
+  default is now Yolo: every call runs and is shown as it happens, Stop reaches
+  the running process, and a chat can be switched to Ask -- all changes, or
+  only the ones the person describes -- when it is worth the interruptions.

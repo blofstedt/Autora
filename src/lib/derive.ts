@@ -218,6 +218,8 @@ export type Cell =
       late?: boolean;
     }
   | { kind: "images"; seq: number; pictures: Picture[] }
+  /** Files a tool made, to open or download: shown where they were made. */
+  | { kind: "files"; seq: number; files: Attachment[] }
   | { kind: "widget"; seq: number; widget: Widget }
   | { kind: "file"; seq: number; file: FileChange }
   | { kind: "tool"; seq: number; span: SpanState }
@@ -253,6 +255,8 @@ export type Bucket = {
   prompt: string;
   /** The files that rode with the prompt, shown beneath it. */
   attachments: Attachment[];
+  /** Notebooks handed over with the prompt. */
+  notebooks?: { id: string; title: string }[];
   cells: Cell[];
   replies: TranscriptTurn[];
   /** Still working on this one: the last bucket, while the agent runs. */
@@ -336,6 +340,15 @@ function filesOf(event: AutoraEvent): Attachment[] {
 
 const isStaged = (name: string) =>
   STAGED_TOOLS.has(name) || STAGED_TOOLS.has(name.split("_")[0]);
+
+/** The notebooks a message came with, as the server logged them. */
+function notebooksOf(event: AutoraEvent): { id: string; title: string }[] {
+  const raw = event.payload?.notebooks;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((b: any) => b && typeof b.id === "string" && typeof b.title === "string")
+    .map((b: any) => ({ id: b.id as string, title: b.title as string }));
+}
 
 /**
  * Fold the log into the conversation it records.
@@ -469,6 +482,7 @@ export function derive(events: AutoraEvent[]): Derived {
         });
         bucket = {
           seq: e.seq, prompt: e.payload.shown ?? e.payload.text ?? "", attachments: filesOf(e),
+          ...(notebooksOf(e).length ? { notebooks: notebooksOf(e) } : {}),
           cells: [], replies: [], open: true,
         };
         buckets.push(bucket);
@@ -872,6 +886,24 @@ export function derive(events: AutoraEvent[]): Derived {
             height: typeof e.payload.height === "number" ? e.payload.height : 440,
           },
         });
+        break;
+      }
+
+      /* Consecutive files share a card; a file saved again (the same
+         artifact, updated) is shown once in it. */
+      case Kind.MediaFile: {
+        const id = String(e.payload.id ?? "");
+        const name = String(e.payload.name ?? "");
+        if (!/^file_[0-9a-f]{16}$/.test(id) || !name) break;
+        const file: Attachment = { id, name, mime: String(e.payload.mime ?? ""), size: Number(e.payload.size) || 0 };
+        const cell = current();
+        if (cell && cell.kind === "files") {
+          const at = cell.files.findIndex((f) => f.id === id);
+          if (at >= 0) cell.files[at] = file;
+          else cell.files.push(file);
+        } else {
+          push({ kind: "files", seq: e.seq, files: [file] });
+        }
         break;
       }
 

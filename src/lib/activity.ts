@@ -136,7 +136,7 @@ function doing(name: string, args: Record<string, any>): string {
     case "browser_scroll": return "Scrolling the page";
     case "browser_press": return "Pressing keys on the page";
     case "browser_back": return "Going back a page";
-    case "browser_screenshot": return "Looking at the page";
+    case "browser_screenshot": return args.save_as || args.notebook ? "Taking a screenshot" : "Looking at the page";
     case "browser_eval": return "Running JavaScript in the page";
     case "browser_upload": return "Attaching a file";
     case "browser_captcha": return "Getting past a CAPTCHA";
@@ -151,6 +151,18 @@ function doing(name: string, args: Record<string, any>): string {
     case "artifact_save": return args.name ? `Saving ${args.name}` : "Saving a file";
     case "artifact_list": return "Looking through saved files";
     case "artifact_read": return "Reading a saved file";
+    case "notebook":
+      return args.action === "read" ? "Reading a notebook"
+        : args.action === "list" ? "Looking through notebooks"
+          : args.action === "export" ? "Exporting a notebook"
+            : args.action === "create" ? `Starting a notebook${args.title ? ` “${brief(String(args.title), 6)}”` : ""}`
+              : "Writing in a notebook";
+    case "pdf_read": return args.find ? `Searching the PDF for${quoted(Array.isArray(args.find) ? args.find.join(", ") : args.find)}` : "Reading the PDF";
+    case "pdf_look": return "Looking at the PDF";
+    case "pdf_edit": return args.fields && !args.add ? "Filling in the form" : "Editing the PDF";
+    case "pdf_pages": return args.merge ? "Merging PDFs" : args.split ? "Splitting the PDF" : "Rearranging the pages";
+    case "pdf_redact": return "Redacting the PDF";
+    case "pdf_compress": return "Shrinking the PDF";
     case "memory_write": return args.title ? `Remembering “${brief(args.title, 6)}”` : "Remembering something";
     case "memory_search": return `Searching its memory for${quoted(args.query)}`;
     case "memory_update":
@@ -170,6 +182,8 @@ function looked(name: string, args: Record<string, any>): string {
   if (name === "memory_search") return "what it remembers";
   if (name === "artifact_read" || name === "vault_read") return "the file";
   if (name === "artifact_list") return "the saved files";
+  if (name === "notebook") return "the notebook";
+  if (name.startsWith("pdf_")) return "the PDF";
   if (name === "ask_user") return "your answer";
   if (name === "image_generate") return "the image";
   if (name === "speak") return "what to say next";

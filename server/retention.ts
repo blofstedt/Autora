@@ -17,6 +17,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { deleteArtifact, listArtifacts } from "./artifacts";
+import { notebookArtifacts } from "./notebooks";
 import { stateDir, type RetentionPolicy } from "./state";
 import { deleteSession, sessionFolders } from "./store";
 
@@ -124,9 +125,12 @@ export function prune(
 
   const files = listArtifacts().sort((a, b) => b.ts - a.ts);
   const artifactCutoff = policy.artifactDays > 0 ? now - policy.artifactDays * DAY_MS : 0;
+  // What a notebook holds is somebody's filed work, however old.
+  const filed = notebookArtifacts();
   files.forEach((file, index) => {
     if (index < policy.keepArtifacts) return;
     if (artifactCutoff && file.ts > artifactCutoff) return;
+    if (filed.has(file.id)) return;
     if (!deleteArtifact(file.id)) return;
     result.artifacts.count += 1;
     result.artifacts.bytes += file.size || 0;

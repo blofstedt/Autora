@@ -12,7 +12,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 
-const { addressIn, answers, deviceFor, isDevice, isLocalUrl, serveFolder, waitForServer, DEVICES } = await import("../server/preview");
+const { addressIn, answers, deviceFor, isDevice, isLocalUrl, localAddress, serveFolder, waitForServer, DEVICES } = await import("../server/preview");
 const { EDITABLE_STYLES, describeElement, pickExpression, reviewMessage, safeStyle } = await import("../server/pick");
 
 let passed = 0;
@@ -42,6 +42,32 @@ await test("a dev server's address is found in whatever it printed", () => {
   assert.equal(addressIn("Server listening on port 9000"), "http://localhost:9000/");
   assert.equal(addressIn("compiling…\nwarning: something"), null);
   assert.equal(addressIn("listening on http://192.168.1.4:3000"), null, "a network address is not this machine");
+});
+
+await test("the address keeps the scheme and base path the server printed", () => {
+  assert.equal(addressIn("  ➜  Local:   https://localhost:5173/"), "https://localhost:5173/", "an https dev server does not answer http");
+  assert.equal(addressIn("  ➜  Local:   http://localhost:5173/app/"), "http://localhost:5173/app/");
+  assert.equal(addressIn("Local: http://localhost:3000/, Network: http://10.0.0.2:3000/"), "http://localhost:3000/");
+  assert.equal(addressIn("listening on http://localhost:99999"), null, "not a port");
+  assert.equal(addressIn("Server listening on port 70000"), null, "not a port either");
+  assert.equal(localAddress("http://0.0.0.0:8080/x"), "http://localhost:8080/x");
+  assert.equal(localAddress("http://[::]:8080/"), "http://localhost:8080/");
+  assert.equal(localAddress("http://127.0.0.1:3000/"), "http://127.0.0.1:3000/");
+});
+
+await test("a dev server that only bound the IPv6 loopback still answers on localhost", async () => {
+  const server = http.createServer((_q, r) => r.end("ok"));
+  const port = await new Promise<number | null>((resolve) => {
+    server.once("error", () => resolve(null));
+    server.listen(0, "::1", () => resolve((server.address() as { port: number }).port));
+  });
+  if (port === null) { console.log("  skip  no IPv6 loopback here"); return; }
+  try {
+    assert.equal(await answers(`http://localhost:${port}/`), true);
+    assert.equal(await answers(`http://[::1]:${port}/`), true);
+  } finally {
+    await new Promise((r) => server.close(r));
+  }
 });
 
 await test("devices are a phone, a tablet and a desktop, each with a real size", () => {

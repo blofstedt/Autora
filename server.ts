@@ -57,10 +57,14 @@ import { refreshVendorMoney, vendorMoneyStale } from "./server/vendor-money";
 import { dropSession, fromDataUrl, getBlob, putBlob } from "./server/blobs";
 import { threeRuntime } from "./server/widgets";
 import {
-  MAX_ARTIFACT_BYTES, deleteArtifact, getArtifact, listArtifacts, readArtifact, saveArtifact,
+  MAX_ARTIFACT_BYTES, cleanName, deleteArtifact, getArtifact, listArtifacts, readArtifact, saveArtifact,
 } from "./server/artifacts";
 import {
-  attachmentNote, attachmentRefs, picturesFor, type AttachmentRef,
+  NotebookError, addEntries, createNotebook, deleteNotebook, forgetArtifact,
+  getNotebook, listNotebooks, moveEntry, notebookMarkdown, removeEntry, updateEntry, updateNotebook,
+} from "./server/notebooks";
+import {
+  attachmentNote, attachmentRefs, notebookNote, notebookRefs, picturesFor, type AttachmentRef, type NotebookRef,
 } from "./server/attach";
 import {
   MAX_FRAME_BYTES, clearFrame, frameImage, latestFrame, liveViewNote, putFrame,
@@ -74,7 +78,7 @@ import {
   loadSessionEvents,
   loadSessionIndex, readDoc, saveDoc, saveMeta, saveSession, type SessionCounts,
 } from "./server/store";
-import { LiveBrowser, VIEWPORT, probeBrowser, type PageRead } from "./server/browser";
+import { LiveBrowser, VIEWPORT, addressFor, probeBrowser, type PageRead } from "./server/browser";
 import { mergeCaptcha } from "./server/captcha";
 import { inQuiet, mergeProactivity, quietBriefing } from "./server/quiet";
 import {
@@ -91,7 +95,7 @@ import {
 } from "./server/automation";
 import { backgroundBriefing, findJob, listJobs, readTail, startJob, stopJob } from "./server/background";
 import {
-  addressIn, DEVICES, isDevice, isLocalUrl, serveFolder, waitForServer,
+  addressIn, DEVICES, isDevice, isLocalUrl, localAddress, serveFolder, waitForServer,
   type Device, type StaticServer,
 } from "./server/preview";
 import {
@@ -409,6 +413,11 @@ function forgetSession(id: string) {
     void live.close().catch(() => undefined);
     browsers.delete(id);
   }
+  // The app window's page, file server, watcher and dev server go with it.
+  const gone = sessions.get(id);
+  if (gone) void previewStop(gone, false).catch(() => undefined);
+  previewKept.delete(id);
+  clearFrame(id);
   dropSession(id);
   for (const ws of sessionSockets.get(id) ?? []) ws.close();
   sessionSockets.delete(id);
@@ -800,17 +809,26 @@ interface PreviewRun {
   watch: fs.FSWatcher | null;
   job: string | null;
   comments: ReviewComment[];
+  /** The dev server it started has exited: what it last said, for the window. */
+  serverDown: { exit: number | null; last: string } | null;
+  /** Pending work to cancel when it closes. */
+  timers: { reload: NodeJS.Timeout | null; console: NodeJS.Timeout | null; job: NodeJS.Timeout | null };
 }
 const previews = new Map<string, PreviewRun>();
 
-function previewRunFor(session: Session): PreviewRun {
+/** What a restart of the window keeps: the size it was shown at, and the
+    comments not yet sent. Cleared when the window is closed on purpose. */
+const previewKept = new Map<string, { device: Device; comments: ReviewComment[] }>();
+
+function previewRunFor(session: Session, device: Device): PreviewRun {
   const existing = previews.get(session.id);
   if (existing) return existing;
-  const device: Device = "desktop";
   const run: PreviewRun = {
     live: null as unknown as LiveBrowser,
     opened: false, openedAt: 0, url: null, title: null, device, how: null, serve: null, watch: null, job: null, comments: [],
+    serverDown: null, timers: { reload: null, console: null, job: null },
   };
+  const current = () => previews.get(session.id) === run && run.opened;
   run.live = new LiveBrowser({
     watchers: () => sessionSockets.get(session.id)?.size ?? 0,
     onFrame: (jpegBase64) => {
@@ -824,9 +842,18 @@ function previewRunFor(session: Session): PreviewRun {
     onNav: (url, title) => {
       run.url = url;
       run.title = title;
-      broadcastPreview(session);
+      if (current()) broadcastPreview(session);
     },
-    onFields: () => undefined,
+    // Where the page's fields are, so a phone can raise its keyboard inside the tap.
+    onFields: () => { if (current()) broadcastPreview(session); },
+    onConsole: () => {
+      if (run.timers.console) return;
+      run.timers.console = setTimeout(() => {
+        run.timers.console = null;
+        if (current()) broadcastPreview(session);
+      }, 400);
+      run.timers.console.unref?.();
+    },
     onAction: () => undefined,
   }, { viewport: { width: DEVICES[device].width, height: DEVICES[device].height }, fps: 12, quality: 72, sharp: true });
   previews.set(session.id, run);
@@ -837,6 +864,7 @@ function previewState(session: Session) {
   const run = previews.get(session.id);
   if (!run?.opened) return { open: false, comments: [] as ReviewComment[] };
   const size = run.live.viewport();
+  const errors = run.live.consoleTail(60).filter((e) => e.kind === "error");
   return {
     open: true,
     url: run.url,
@@ -846,7 +874,10 @@ function previewState(session: Session) {
     since: run.openedAt,
     how: run.how,
     comments: run.comments,
-    errors: run.live.consoleTail(5).filter((e) => e.kind === "error").length,
+    errors: errors.length,
+    consoleErrors: errors.slice(-6).map((e) => e.text),
+    serverDown: run.serverDown,
+    fields: run.live.status().fields,
   };
 }
 
@@ -854,12 +885,20 @@ function broadcastPreview(session: Session) {
   sendEphemeral(session.id, { type: "preview", session: session.id, state: previewState(session) });
 }
 
-/** Stop what a preview started -- its dev server, its file server, its page. */
-async function previewStop(session: Session, say = true): Promise<boolean> {
+/** Stop what a preview started -- its dev server, its file server, its page.
+    `keep` is for a restart: the size and the unsent comments carry over. */
+async function previewStop(session: Session, say = true, keep = false): Promise<boolean> {
   const run = previews.get(session.id);
+  if (keep) {
+    if (run) previewKept.set(session.id, { device: run.device, comments: run.comments });
+  } else {
+    previewKept.delete(session.id);
+  }
   if (!run) return false;
   const was = run.opened;
   run.opened = false;
+  for (const timer of Object.values(run.timers)) if (timer) clearTimeout(timer);
+  run.timers = { reload: null, console: null, job: null };
   if (run.job) stopJob(run.job);
   run.job = null;
   run.watch?.close();
@@ -867,7 +906,7 @@ async function previewStop(session: Session, say = true): Promise<boolean> {
   await run.serve?.close().catch(() => undefined);
   run.serve = null;
   await run.live.close().catch(() => undefined);
-  previews.delete(session.id);
+  if (previews.get(session.id) === run) previews.delete(session.id);
   if (was && say) emitEvent(session, "preview.close", "agent", {});
   broadcastPreview(session);
   return was;
@@ -884,15 +923,19 @@ async function previewStart(
 ): Promise<{ ok: boolean; summary: string }> {
   const probe = await probeBrowser();
   if (!probe.ok) return { ok: false, summary: probe.detail ?? "There is no browser to show the preview in." };
+  const asked = String(args.url ?? "").trim();
   /* Refused before anything is touched: a mistyped address must not close the
      window that is open. */
-  if (args.url && !isLocalUrl(String(args.url).trim())) {
+  if (asked && !isLocalUrl(addressFor(asked))) {
     return { ok: false, summary: "The preview shows what you are building on this machine (localhost). For another site use browser_open." };
   }
-  await previewStop(session, false);
-  const run = previewRunFor(session);
+  await previewStop(session, false, true);
+  const kept = previewKept.get(session.id);
+  const run = previewRunFor(session, kept?.device ?? "desktop");
+  run.comments = kept?.comments ?? [];
+  const stopped = () => running.get(session.id)?.stopped === true;
 
-  let url = String(args.url ?? "").trim();
+  let url = asked ? localAddress(addressFor(asked)) : "";
   let how: PreviewRun["how"] = "url";
   try {
     if (!url && args.dir) {
@@ -909,11 +952,15 @@ async function previewStart(
          "watch it being built" true of plain HTML. Where the platform cannot
          watch a tree, the agent's reload still works. */
       try {
-        let timer: NodeJS.Timeout | null = null;
         run.watch = fs.watch(dir, { recursive: true }, () => {
-          if (timer) clearTimeout(timer);
-          timer = setTimeout(() => { run.live.clearConsole(); void run.live.reload().catch(() => undefined); }, 350);
-          timer.unref?.();
+          if (run.timers.reload) clearTimeout(run.timers.reload);
+          run.timers.reload = setTimeout(() => {
+            run.timers.reload = null;
+            if (!run.opened) return;
+            run.live.clearConsole();
+            void run.live.reload().catch(() => undefined);
+          }, 350);
+          run.timers.reload.unref?.();
         });
         run.watch.on("error", () => { run.watch?.close(); run.watch = null; });
       } catch {
@@ -926,9 +973,9 @@ async function previewStart(
       run.job = started.job.id;
       how = "command";
       const port = Number(args.port);
-      if (Number.isFinite(port) && port > 0) url = `http://localhost:${Math.round(port)}/`;
+      if (Number.isFinite(port) && port > 0 && port <= 65535) url = `http://localhost:${Math.round(port)}/`;
       const end = Date.now() + 90_000;
-      while (!url && Date.now() < end) {
+      while (!url && Date.now() < end && !stopped()) {
         const job = findJob(started.job.id);
         url = addressIn(readTail(started.job)) ?? "";
         if (url) break;
@@ -937,7 +984,8 @@ async function previewStart(
       }
       if (!url) {
         const tail = readTail(started.job, 1500).trim();
-        await previewStop(session, false);
+        await previewStop(session, false, true);
+        if (stopped()) return { ok: false, summary: "Stopped before the dev server said where it is." };
         return {
           ok: false,
           summary: `The command did not say which address it is serving on. Its output so far:\n${tail || "(nothing)"}\n` +
@@ -946,30 +994,44 @@ async function previewStart(
       }
     }
   } catch (err: any) {
-    await previewStop(session, false);
+    await previewStop(session, false, true);
     return { ok: false, summary: `Could not start the preview: ${err?.message ?? err}` };
   }
   if (!url) { previews.delete(session.id); return { ok: false, summary: "Give one of command, dir or url." }; }
   if (!isLocalUrl(url)) {
-    await previewStop(session, false);
+    await previewStop(session, false, true);
     return { ok: false, summary: "The preview shows what you are building on this machine (localhost). For another site use browser_open." };
   }
-  if (!(await waitForServer(url, how === "command" ? 60_000 : 8_000, () => running.get(session.id)?.stopped === true))) {
-    const tail = run.job ? readTail({ log: findJob(run.job)?.log ?? "" } as any, 1200).trim() : "";
-    await previewStop(session, false);
+  if (!(await waitForServer(url, how === "command" ? 60_000 : 8_000, stopped))) {
+    const job = run.job ? findJob(run.job) : null;
+    const tail = job ? readTail(job, 1200).trim() : "";
+    await previewStop(session, false, true);
     return { ok: false, summary: `Nothing is answering at ${url} yet.${tail ? `\nThe command said:\n${tail}` : ""}` };
   }
   try {
     await run.live.goto(url);
   } catch (err: any) {
-    await previewStop(session, false);
+    await previewStop(session, false, true);
     return { ok: false, summary: `The browser could not open ${url}: ${err?.message ?? err}` };
   }
   run.opened = true;
   run.openedAt = Date.now();
-  run.url = url;
+  // Where it landed (a redirect to /login is where it is), else where it was sent.
+  run.url = run.url || url;
   run.how = how;
-  run.device = "desktop";
+  previewKept.delete(session.id);
+  /* A dev server that crashes leaves the window on a page that no longer
+     loads; the window says so, rather than showing the last frame as live. */
+  if (run.job) {
+    const jobId = run.job;
+    run.timers.job = setInterval(() => {
+      const job = findJob(jobId);
+      if (!run.opened || run.serverDown || !job || job.state === "running") return;
+      run.serverDown = { exit: job.exit, last: job.last };
+      broadcastPreview(session);
+    }, 2000);
+    run.timers.job.unref?.();
+  }
   emitEvent(session, "preview.open", "agent", { url, how }, span);
   broadcastPreview(session);
   void run.live.nudge();
@@ -980,6 +1042,9 @@ async function previewStart(
       `The app is open in the preview window at ${url}, where the person is watching it. ` +
       "Keep building: a dev server with hot reload updates the window by itself; otherwise call app_preview with action reload. " +
       "app_preview with action look shows you the page and its console errors. Comments the person leaves in the window arrive later as one message." +
+      (run.comments.length
+        ? `\nThe person has ${run.comments.length} comment${run.comments.length === 1 ? "" : "s"} in the window from before, not sent yet.`
+        : "") +
       (errors.length ? `\nThe page's console already has errors:\n${errors.map((e) => `  ${e.text}`).join("\n")}` : ""),
   };
 }
@@ -1572,10 +1637,11 @@ function historyFor(session: Session, sinceSeq = 0): { message: ChatMessage; seq
     const said = String(event.payload?.text ?? "");
     const files = role === "user" ? attachmentRefs(event.payload?.attachments) : [];
     if (role === "user" && files.length > 0) attached.set(event.seq, files);
+    const books = role === "user" ? notebookRefs(event.payload?.notebooks, true) : [];
     /* The note goes after what they said, as a second paragraph: it is a fact
        about the message, not a continuation of the sentence. */
     const text = note
-      || [said, files.length > 0 ? attachmentNote(files) : ""].filter(Boolean).join("\n\n");
+      || [said, files.length > 0 ? attachmentNote(files) : "", notebookNote(books)].filter(Boolean).join("\n\n");
     if (!text) continue;
 
     const last = turns[turns.length - 1];
@@ -2696,6 +2762,8 @@ interface TurnOptions {
       model is given (a review of the app is a long brief for the agent and a
       single line for the person who sent it). */
   shown?: string;
+  /** Notebooks the person attached, which the model is told the contents of. */
+  notebooks?: NotebookRef[];
 }
 
 function beginTurn(session: Session, text: string, attachments: AttachmentRef[] = [], opts: TurnOptions = {}): Promise<TurnResult> {
@@ -2713,6 +2781,7 @@ function beginTurn(session: Session, text: string, attachments: AttachmentRef[] 
     text,
     ...(opts.shown ? { shown: opts.shown } : {}),
     ...(attachments.length > 0 ? { attachments } : {}),
+    ...(opts.notebooks?.length ? { notebooks: opts.notebooks } : {}),
   });
   /* Agent mode starts every turn planning, whatever the last one ended in:
      the agent decides again whether this task needs a plan. */
@@ -3234,7 +3303,8 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
         preview: {
           start: (args) => previewStart(session, args, span),
           stop: async () => {
-            const was = await previewStop(session);
+            // The person's unsent comments wait for the next start; only their own close discards them.
+            const was = await previewStop(session, true, true);
             return { ok: true, summary: was ? "The preview is closed, and the server it started is stopped." : "There was no preview open." };
           },
           reload: async () => {
@@ -3242,6 +3312,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             if (!run?.opened) return { ok: false, summary: "There is no preview open. Start one with app_preview start." };
             run.live.clearConsole();
             await run.live.reload().catch(() => undefined);
+            broadcastPreview(session);
             return { ok: true, summary: "Reloaded the preview." };
           },
           look: async () => {
@@ -3255,6 +3326,10 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
               png,
               summary:
                 `The preview at ${run.url}, ${size.width}×${size.height}, is in this result.` +
+                (run.serverDown
+                  ? `\nThe dev server it was started with has stopped (exit ${run.serverDown.exit ?? "unknown"})` +
+                    `${run.serverDown.last ? `; it last said: ${run.serverDown.last}` : ""}. Start it again with app_preview start.`
+                  : "") +
                 (log.length
                   ? `\nThe page's console:\n${log.map((e) => `  [${e.kind}] ${e.text}`).join("\n")}`
                   : "\nThe page's console is clean."),
@@ -3302,6 +3377,8 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           emitEvent(session, "media.image", "agent", {
             alt, caption, ...(size ? { w: size.w, h: size.h } : {}),
           }, null, blob),
+        showFile: ({ id, name, mime, size }) =>
+          emitEvent(session, "media.file", "agent", { id, name, mime, size }, span),
         speak: (text) => emitEvent(session, "media.speech", "agent", { text }, span),
         /* The agent going quiet is a setting as well as a sound: the page is
            told to stop now, and every turn after this one is told the speak
@@ -4266,7 +4343,6 @@ async function startServer() {
     await browsers.get(session.id)?.close().catch(() => undefined);
     browsers.delete(session.id);
     await previewStop(session, false).catch(() => undefined);
-    clearFrame(session.id);
     forgetSession(session.id);
     if (!incognito) deleteSession(session.id);
     // No title of an incognito chat is in a log line: it may be a first message.
@@ -4527,7 +4603,95 @@ async function startServer() {
 
   app.delete("/api/artifacts/:id", (req: Request, res: Response) => {
     if (!deleteArtifact(req.params.id)) return res.status(404).json({ error: "No such artifact" });
+    forgetArtifact(req.params.id);
     res.json({ ok: true });
+  });
+
+  // 3b''. Notebooks: artifacts grouped by purpose, with notes between them.
+
+  const notebookFailed = (res: Response, err: unknown) => {
+    if (err instanceof NotebookError) {
+      return res.status(/^There is no/.test(err.message) ? 404 : 400).json({ error: err.message });
+    }
+    throw err;
+  };
+
+  app.get("/api/notebooks", (_req: Request, res: Response) => {
+    res.json({ notebooks: listNotebooks() });
+  });
+
+  app.post("/api/notebooks", (req: Request, res: Response) => {
+    try {
+      res.json({ notebook: createNotebook({ title: req.body?.title, purpose: req.body?.purpose, by: "user" }) });
+    } catch (err) {
+      notebookFailed(res, err);
+    }
+  });
+
+  app.get("/api/notebooks/:id", (req: Request, res: Response) => {
+    const notebook = getNotebook(req.params.id);
+    if (!notebook) return res.status(404).json({ error: "No such notebook" });
+    res.json({ notebook });
+  });
+
+  app.get("/api/notebooks/:id/export", (req: Request, res: Response) => {
+    const notebook = getNotebook(req.params.id);
+    if (!notebook) return res.status(404).json({ error: "No such notebook" });
+    const body = Buffer.from(notebookMarkdown(notebook), "utf8");
+    res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Content-Security-Policy", "sandbox");
+    res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(`${cleanName(notebook.title, "notebook")}.md`)}`);
+    res.end(body);
+  });
+
+  app.patch("/api/notebooks/:id", (req: Request, res: Response) => {
+    try {
+      res.json({ notebook: updateNotebook(req.params.id, { title: req.body?.title, purpose: req.body?.purpose }) });
+    } catch (err) {
+      notebookFailed(res, err);
+    }
+  });
+
+  app.delete("/api/notebooks/:id", (req: Request, res: Response) => {
+    if (!deleteNotebook(req.params.id)) return res.status(404).json({ error: "No such notebook" });
+    res.json({ ok: true });
+  });
+
+  app.post("/api/notebooks/:id/entries", (req: Request, res: Response) => {
+    try {
+      const body = req.body ?? {};
+      const files: unknown[] = Array.isArray(body.artifacts) ? body.artifacts : [];
+      const inputs = files.length
+        ? files.map((artifact) => ({ artifact, text: body.text }))
+        : [{ title: body.title, text: body.text, cites: body.cites }];
+      const r = addEntries(req.params.id, inputs, "user", Number(body.position) || undefined);
+      res.json({ notebook: r.notebook, unknown: r.unknown });
+    } catch (err) {
+      notebookFailed(res, err);
+    }
+  });
+
+  app.patch("/api/notebooks/:id/entries/:entry", (req: Request, res: Response) => {
+    try {
+      const body = req.body ?? {};
+      if (body.title !== undefined || body.text !== undefined || body.cites !== undefined) {
+        updateEntry(req.params.id, req.params.entry, { title: body.title, text: body.text, cites: body.cites });
+      }
+      if (body.position !== undefined) moveEntry(req.params.id, req.params.entry, Number(body.position));
+      res.json({ notebook: getNotebook(req.params.id) });
+    } catch (err) {
+      notebookFailed(res, err);
+    }
+  });
+
+  app.delete("/api/notebooks/:id/entries/:entry", (req: Request, res: Response) => {
+    try {
+      if (!removeEntry(req.params.id, req.params.entry)) return res.status(404).json({ error: "No such entry" });
+      res.json({ notebook: getNotebook(req.params.id) });
+    } catch (err) {
+      notebookFailed(res, err);
+    }
   });
 
   // 3c. The browser: what it is doing, and telling it to do something.
@@ -4621,7 +4785,8 @@ async function startServer() {
        what arrives here are artifact ids. A message can be nothing but a
        picture: "look at this" is a complete request. */
     const attachments = attachmentRefs(req.body?.attachments);
-    if (!text && attachments.length === 0) {
+    const notebooks = notebookRefs(req.body?.notebooks);
+    if (!text && attachments.length === 0 && notebooks.length === 0) {
       return res.status(400).json({ error: "Empty message" });
     }
 
@@ -4635,7 +4800,7 @@ async function startServer() {
       /* A suggestion tapped says what it is in a few words, and those make a
          better name than the start of the instruction it sends. */
       const given = typeof req.body?.title === "string" ? req.body.title.trim() : "";
-      const named = given || text || attachments.map((a) => a.name).join(", ");
+      const named = given || text || [...notebooks.map((b) => b.title), ...attachments.map((a) => a.name)].join(", ");
       const oneLine = named.replace(/\s+/g, " ");
       session.title = oneLine.length > 40 ? `${oneLine.slice(0, 37)}...` : oneLine;
       saveMeta(metaOf(session));
@@ -4646,7 +4811,7 @@ async function startServer() {
     const spoken = req.body?.spoken === true;
 
     res.json({ ok: true, queued: false });
-    void startTurn(session, text, attachments, { spoken });
+    void startTurn(session, text, attachments, { spoken, ...(notebooks.length ? { notebooks } : {}) });
   });
 
   /* Live view: one frame, from the device, to the conversation being talked
@@ -4697,51 +4862,6 @@ async function startServer() {
     res.json({ interrupted: wasBusy });
   });
 
-  /**
-   * 6. UI Element Pick
-   *
-   * You click a spot on the live page and this says what is there. The pick
-   * lands in the thread as an event of its own, so the agent sees that you
-   * pointed and at what -- which is the whole point: describing an element in
-   * prose and hoping the agent finds the same one is the slow way to ask.
-   */
-  app.post("/api/sessions/:id/pick", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-
-    const live = browsers.get(session.id);
-    if (!live?.status().open) {
-      return res.json({ ok: false, error: "No page is open to point at." });
-    }
-
-    const x = Number(req.body?.x);
-    const y = Number(req.body?.y);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) {
-      return res.json({ ok: false, error: "That is not a point on the page." });
-    }
-
-    try {
-      const found = await live.pickAt(x, y);
-      if (found?.ok && found.pick) {
-        const f = found.pick.fingerprint;
-        const name = f?.text ? `“${f.text}”` : `<${f?.tag ?? "element"}>`;
-        emitEvent(session, "context.note", "user", {
-          text:
-            `You pointed at ${name}` +
-            (found.pick.ref != null ? ` — element [${found.pick.ref}]` : "") +
-            (found.pick.source?.file
-              ? `, rendered by ${found.pick.source.file}${
-                  found.pick.source.line ? `:${found.pick.source.line}` : ""}`
-              : `, selector ${found.pick.selector}`) +
-            ".",
-        });
-      }
-      res.json(found);
-    } catch (err: any) {
-      res.json({ ok: false, error: err?.message ?? "Could not read that point." });
-    }
-  });
-
   // 6b. Live Browser Direct Interaction & Handoff
   const DRIVING =
     "The agent is using the browser. Wait until it finishes or asks you, or stop it.";
@@ -4763,34 +4883,6 @@ async function startServer() {
       who: "user",
     });
     res.json({ ok: true });
-  });
-  app.get("/api/sessions/:id/browser/status", (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    const live = browsers.get(session.id);
-    if (!live) return res.json({ open: false, control: { holder: "agent" } });
-    res.json(live.status());
-  });
-
-  app.post("/api/sessions/:id/browser/control", (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    const live = browsers.get(session.id);
-    if (!live) return res.status(400).json({ error: "No browser active" });
-
-    const holder = req.body?.holder === "human" ? "human" : req.body?.holder === "shared" ? "shared" : "agent";
-    const reason = req.body?.reason ? String(req.body.reason) : null;
-    live.setControl(holder, reason);
-
-    broadcastBrowserState(session);
-
-    emitEvent(session, "browser.control", "user", {
-      holder,
-      reason,
-      by: "user",
-    });
-
-    res.json({ ok: true, control: live.status().control });
   });
 
   // ---- the app window -------------------------------------------------------
@@ -4815,6 +4907,7 @@ async function startServer() {
     if (!session) return res.status(404).json({ error: "Session not found" });
     const url = typeof req.body?.url === "string" ? req.body.url.trim() : "";
     if (!url) return res.status(400).json({ error: "Give an address on this machine, like http://localhost:5173." });
+    if (!toolSettings().app.enabled) return res.status(409).json({ error: "The app window is switched off on the Tools page." });
     const r = await previewStart(session, { url }, null);
     res.status(r.ok ? 200 : 400).json(r.ok ? { ok: true } : { error: r.summary });
   });
@@ -4844,6 +4937,7 @@ async function startServer() {
     // Cleared first: the reload is what says again what is still wrong.
     ctx.run.live.clearConsole();
     await ctx.run.live.reload().catch(() => undefined);
+    broadcastPreview(ctx.session);
     res.json({ ok: true });
   });
 
@@ -4875,7 +4969,7 @@ async function startServer() {
       ? req.body.selectors.filter((x: unknown) => typeof x === "string").slice(0, 60).map((x: string) => x.slice(0, 600))
       : [];
     const out = await ctx.run.live.pickOp(pickExpression({ op: "rects", selectors })).catch(() => null);
-    res.json(out ?? { scroll: { x: 0, y: 0 }, rects: selectors.map(() => null) });
+    res.json(Array.isArray(out?.rects) ? out : { scroll: { x: 0, y: 0 }, rects: selectors.map(() => null) });
   });
 
   /* Trying a change on the page to show what is meant. Only the properties in
@@ -4929,6 +5023,9 @@ async function startServer() {
     const body = req.body ?? {};
     const kind = body.kind === "region" ? "region" : "element";
     const text = typeof body.text === "string" ? body.text.trim().slice(0, 2000) : "";
+    if (!text && !body.textEdit && !(Array.isArray(body.styleChanges) && body.styleChanges.length)) {
+      return res.status(400).json({ error: "Say what to change." });
+    }
     const size = run.live.viewport();
     const scroll = await run.live.pickOp(pickExpression({ op: "scroll" })).catch(() => null);
     const elements: ElementInfo[] = [];
@@ -4951,21 +5048,20 @@ async function startServer() {
       const centre = asInfo(await run.live.pickOp(pickExpression({ op: "at", x: Math.round(x + w / 2), y: Math.round(y + h / 2) })).catch(() => null));
       if (centre) elements.push(centre);
     }
-    if (!text && !body.textEdit && !(Array.isArray(body.styleChanges) && body.styleChanges.length)) {
-      return res.status(400).json({ error: "Say what to change." });
-    }
 
     /* The picture: the region as drawn, or the elements together with a
        margin of the page around them, so what they sit among is in it. */
-    let box: { x: number; y: number; w: number; h: number };
+    let box: { x: number; y: number; w: number; h: number } | { selector: string };
     if (region) {
       box = region;
     } else {
-      const xs = elements.map((e) => e.rect.x), ys = elements.map((e) => e.rect.y);
-      const xe = elements.map((e) => e.rect.x + e.rect.w), ye = elements.map((e) => e.rect.y + e.rect.h);
       const pad = 16;
-      const x0 = Math.max(0, Math.min(...xs) - pad), y0 = Math.max(0, Math.min(...ys) - pad);
-      box = { x: x0, y: y0, w: Math.min(size.width, Math.max(...xe) + pad) - x0, h: Math.min(size.height, Math.max(...ye) + pad) - y0 };
+      const x0 = Math.max(0, Math.min(...elements.map((e) => e.rect.x)) - pad);
+      const y0 = Math.max(0, Math.min(...elements.map((e) => e.rect.y)) - pad);
+      const x1 = Math.min(size.width, Math.max(...elements.map((e) => e.rect.x + e.rect.w)) + pad);
+      const y1 = Math.min(size.height, Math.max(...elements.map((e) => e.rect.y + e.rect.h)) + pad);
+      // Scrolled out of the window since it was picked: a picture of the element itself.
+      box = x1 - x0 >= 8 && y1 - y0 >= 8 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : { selector: elements[0].selector };
     }
     const png = await run.live.cropShot(box);
     const blob = png ? putBlob(session.id, png, "image/png") : null;
@@ -5119,27 +5215,6 @@ async function startServer() {
     }
   });
 
-  app.post("/api/sessions/:id/browser/move", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = targetBrowser(session, req);
-    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
-
-    const x = Number(req.body?.x);
-    const y = Number(req.body?.y);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) {
-      return res.status(400).json({ error: "Invalid move coordinates." });
-    }
-
-    try {
-      await live.mouseMove(x, y);
-      res.json({ ok: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message ?? "Move failed" });
-    }
-  });
-
   // A drag from the person's own hand, in three parts, so what they are
   // dragging follows the pointer instead of jumping when they let go.
   app.post("/api/sessions/:id/browser/drag", async (req: Request, res: Response) => {
@@ -5230,9 +5305,13 @@ async function startServer() {
 
     const url = String(req.body?.url ?? "").trim();
     if (!url) return res.status(400).json({ error: "No URL specified." });
+    // The app window shows what is being built here, and nothing else.
+    if (isPreview(req) && !isLocalUrl(addressFor(url))) {
+      return res.status(400).json({ error: "The app window only opens addresses on this machine." });
+    }
 
     try {
-      const page = await live.goto(url);
+      const page = await live.goto(isPreview(req) ? localAddress(addressFor(url)) : url);
       res.json({ ok: true, url: page.url, title: page.title });
     } catch (err: any) {
       res.status(500).json({ error: err?.message ?? "Navigation failed" });
@@ -5962,6 +6041,12 @@ async function startServer() {
        not deliver. */
     if (body.tools && typeof body.tools === "object") {
       updateToolSettings(body.tools);
+      if (!toolSettings().app.enabled) {
+        for (const id of [...previews.keys()]) {
+          const open = sessions.get(id);
+          if (open) await previewStop(open).catch(() => undefined);
+        }
+      }
     }
     if (body.appearance && typeof body.appearance === "object") mergeAppearance(state.appearance, body.appearance);
     /* How a picture challenge is answered. The key for a self-hosted solver
@@ -6441,12 +6526,11 @@ async function startServer() {
         void openBrowser.nudge();
       }
 
-      /* The app window, if one is open: its state, and a frame to start from. */
+      /* The app window: open or not, always said, so a tab that was away while
+         it closed stops showing it. When open, a frame to start from. */
       const openPreview = previews.get(sessionId);
-      if (openPreview?.opened) {
-        ws.send(JSON.stringify({ type: "preview", session: sessionId, state: previewState(session) }));
-        void openPreview.live.nudge();
-      }
+      ws.send(JSON.stringify({ type: "preview", session: sessionId, state: previewState(session) }));
+      if (openPreview?.opened) void openPreview.live.nudge();
 
       // Handle incoming messages
       ws.on("message", (data: string) => {

@@ -1,7 +1,7 @@
 {
   "name": "autora",
   "private": true,
-  "version": "0.9.106",
+  "version": "0.9.107",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -12,9 +12,11 @@
     "test": "tsx tests/run.ts"
   },
   "dependencies": {
+    "@cantoo/pdf-lib": "^2.11.1",
     "@google/genai": "^2.23.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "express": "^4.21.2",
+    "pdfjs-dist": "^6.3.289",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "ws": "^8.18.0"

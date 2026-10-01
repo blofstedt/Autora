@@ -149,13 +149,14 @@ export function pageSnapshotAt(result: string): number {
  * console's own tools (memory, artifacts made here, the vault) are not
  * labelled: they hold what this agent or the person put there.
  */
-const UNTRUSTED = /^(browser_|http_request$|web_search$|terminal$|artifact_read$|computer_)/;
+const UNTRUSTED = /^(browser_|http_request$|web_search$|terminal$|artifact_read$|pdf_read$|computer_)/;
 
 /** The line that says so, short enough to sit above every page read. */
 function untrustedNote(toolName: string): string {
   const source = toolName.startsWith("browser_") ? "a web page"
     : toolName === "web_search" ? "search results"
     : toolName === "artifact_read" ? "an uploaded file"
+    : toolName === "pdf_read" ? "a PDF"
     : toolName === "terminal" ? "a command's output"
     : "an external source";
   return (

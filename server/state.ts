@@ -170,6 +170,11 @@ export interface ToolSettings {
       the agent asking to be listened to, and a switch is how somebody in a
       quiet room says "not now" without turning the whole voice off. */
   voice: { enabled: boolean; approval: ApprovalMode };
+  /** The built-in windows the Tools page switches beside the browser: the
+      explainer widgets, the app (construction) window and the PDF editor. */
+  widgets: { enabled: boolean };
+  app: { enabled: boolean };
+  pdf: { enabled: boolean };
 }
 
 export interface UsageEntry {
@@ -309,7 +314,7 @@ export function standingRules(prompt: string): string {
  * model's schema entirely and the agent is told, in words, that the group is
  * off rather than left to guess why it cannot do something.
  */
-function defaultTools(): ToolSettings {
+export function defaultTools(): ToolSettings {
   return {
     /* Yolo mode: nothing asks for approval in chat. */
     terminal: { enabled: true, cwd: "", timeout: 120, approval: "never", shell: "" },
@@ -317,6 +322,9 @@ function defaultTools(): ToolSettings {
     computer: { enabled: true, approval: "never" },
     memory: { enabled: true, approval: "never" },
     voice: { enabled: true, approval: "never" },
+    widgets: { enabled: true },
+    app: { enabled: true },
+    pdf: { enabled: true },
   };
 }
 
@@ -360,6 +368,10 @@ export function mergeTools(into: ToolSettings, patch: any): ToolSettings {
     if (!given || typeof given !== "object") continue;
     into[group].enabled = bool(given.enabled, into[group].enabled);
     into[group].approval = mode(given.approval, into[group].approval);
+  }
+  for (const key of ["widgets", "app", "pdf"] as const) {
+    const given = patch[key];
+    if (given && typeof given === "object") into[key].enabled = bool(given.enabled, into[key].enabled);
   }
   return into;
 }

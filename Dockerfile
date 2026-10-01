@@ -37,7 +37,18 @@ RUN npm run lint && npm run build
 # rather than a dev one: it is the driver, it downloads nothing, and it is a
 # couple of megabytes. The browser it drives is the system package installed
 # below.
-RUN npm prune --omit=dev
+#
+# Then what nothing loads. pdf.js's optional native canvas is for drawing
+# pages in Node, and here Chromium draws them (server/pdfrender.ts), so it
+# goes -- which also keeps the image free of native code built for the
+# builder's platform. So do pdf.js's modern build (the page loads the legacy
+# one, which runs on the Chromium Alpine ships), typings and source maps, and
+# pdf-lib's browser bundles and sources: tens of megabytes no request reads.
+RUN npm prune --omit=dev \
+ && rm -rf node_modules/@napi-rs \
+      node_modules/pdfjs-dist/build node_modules/pdfjs-dist/types node_modules/pdfjs-dist/image_decoders \
+      node_modules/@cantoo/pdf-lib/dist node_modules/@cantoo/pdf-lib/src node_modules/@cantoo/pdf-lib/ts3.4 \
+ && find node_modules/pdfjs-dist -name '*.map' -delete
 
 # ── stage 2: runtime ─────────────────────────────────────────────────────────
 FROM node:22-alpine

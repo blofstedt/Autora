@@ -64,6 +64,8 @@ export const Kind = {
   MediaImage: "media.image",
   /** An interactive explainer the agent wrote, run in a sandboxed frame. */
   MediaWidget: "media.widget",
+  /** A file a tool made (an artifact): a filled-in form, a redacted copy. */
+  MediaFile: "media.file",
   /** Words the agent chose to say aloud (the speak tool): played, not shown. */
   MediaSpeech: "media.speech",
   /** The voice muted or unmuted from the thread (the voice_mute tool): the

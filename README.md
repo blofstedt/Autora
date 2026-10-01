@@ -243,15 +243,21 @@ a typed one does.
 ### Tools
 
 A model decides; tools are what it decides *with*. **Settings -> Tools** lists
-the four groups, says whether each can actually be used right now, and sets how
-tightly each is held:
+the five groups, says whether each can actually be used right now, and turns
+each on or off:
 
-| Group | What it is | Asks first, by default |
-| --- | --- | --- |
-| Terminal | A real shell on the machine Autora runs on, via `bash -lc`. Output streams into the thread as it arrives. | Every command |
-| Web browser | The Chromium the agent drives: open, read, click, fill, scroll, screenshot. | Anything that changes the page |
-| Computer control | Somebody's actual desktop, over [the relay](#controlling-a-desktop). | Anything but looking |
-| Memory | The workspace graph, which outlives the session. | Never |
+| Group | What it is |
+| --- | --- |
+| Terminal | A real shell on the machine Autora runs on, via `bash -lc`. Output streams into the thread as it arrives. |
+| Web browser | The Chromium the agent drives: open, read, click, fill, scroll, screenshot. |
+| Computer control | Somebody's actual desktop, over [the relay](#controlling-a-desktop). |
+| Memory | The workspace graph, which outlives the session. |
+| Voice | Saying something out loud on the open page (`speak`), and going quiet when asked. |
+
+None of them asks first by default. A chat whose header is switched from
+**Yolo** to **Ask** holds every call that changes something -- or only the
+ones matching what you wrote under "ask me when" -- for a yes on a card;
+looking is never held.
 
 The same list generates three things that used to be written down separately:
 the tool schemas the model receives, the sentence the agent is told about what
@@ -275,6 +281,20 @@ The terminal is a shell, not a terminal emulator: there is no TTY, so `vim`,
 flags. `sudo` works wherever the account Autora runs as can use it -- in the
 Umbrel container that is usually root, where it is unnecessary rather than
 unavailable.
+
+The **Tools** page in the sidebar switches the built-in windows: the widget
+window (`widget_show`), the browser window (the same switch as Web browser
+above), the construction window where websites and apps are built
+(`app_preview`), and the PDF editor (the `pdf_*` tools). All are on by
+default. One that is off is taken out of the model's tools from its next step
+and the agent is told it is off; switching the construction window off also
+closes any that are open.
+
+`browser_screenshot` sees the window by default. With `full_page`, `ref`,
+`selector` or `area` it takes the whole page, one numbered element, one
+element by CSS selector or a rectangle, and with
+`save_as` (and `notebook`) it keeps the picture as an artifact -- filed in a
+notebook if asked -- so a screenshot can be evidence rather than a glance.
 
 ### Integrations (MCP servers)
 
@@ -634,68 +654,105 @@ can take over.
 
 ### Pointing at things
 
-Hit **Select** in the browser pane and click an element in the live video.
 Describing an element in prose and hoping the agent finds the same one is the
-slow way to ask for a change; pointing at it is not.
+slow way to ask for a change; pointing at it is not. In the app window (below)
+that is **Select**.
 
-A pick resolves what you actually meant — click the label inside a button and
-you get the button — and comes back with the element's snapshot ref, a stable
-selector, and only the styles *that element* sets, not the whole inherited
+A pick resolves what you actually meant — point at the label inside a button and
+you get the button — and comes back with a stable selector, and only the styles *that element* sets, not the whole inherited
 cascade. Where the framework left a trail (React's dev fiber, a `data-source`
 attribute) it resolves to the file and line that rendered it; where it did not,
-it says so rather than guessing at a file. The pick is an event like any other,
-so it lands in the thread: the agent sees that you pointed and at what.
+it says so rather than guessing at a file. The pick lands in the thread like any
+other event: the agent sees that you pointed and at what.
 
 ### The app window
 
 When the agent builds a website or an app it starts it in the **app window**
 (`app_preview`): a second browser per chat, beside the conversation on a wide
-screen and a tab in the pinned view on a phone. A dev server it runs, a folder
-of files it serves (reloaded by itself as the files change), or something
-already running on this machine -- never another site. You see it take shape,
-at a phone, tablet or desktop size.
+screen and a tab in the pinned view on a phone. A dev server it runs (its
+address read from what it prints, https and base path included), a folder of
+files it serves (reloaded by itself as the files change), or something already
+running on this machine -- never another site. You see it take shape, at a
+phone, tablet or desktop size, under its own back button, reload and address
+bar (a path like `/about` goes to that page of the app).
 
-Three tools on the page: **Use** (click, type and scroll it as normal),
-**Select** (hover outlines, a click picks an element; the arrow keys step
-outwards, inwards and sideways; shift adds more; the box can try a change right
-on the page -- retype the text, set a colour, a size, a corner, spacing -- and
-the change goes with the comment as before and after) and **Region** (drag a box
-round anything). Each comment is kept with a picture, pinned where it was made,
-and they go together as one **review**: one message to the agent, with a
-picture of each and, for every element, a unique selector, its words and styles,
-where it sits, and the component and file when the framework says. The agent can
-`look` at the page and its console errors to check its own work.
+Three tools on the page: **Use** (click, type, drag and scroll it as normal; a
+dropdown's choices are listed over the page, since its own popup never reaches
+the picture), **Select** (hover outlines, a click picks an element; the arrow
+keys step outwards, inwards and sideways; shift adds more; the box can try a
+change right on the page -- retype the text, set a colour, a size, a corner,
+spacing -- and the change goes with the comment as before and after; a change
+tried and then cancelled is put back) and **Region** (drag a box round
+anything). Each comment is kept with a picture, pinned where it was made, and
+they go together as one **review**: one message to the agent, with a picture of
+each and, for every element, a unique selector, its words and styles, where it
+sits, and the component and file when the framework says. Comments not yet sent
+survive the agent restarting the window, and so does the size you picked.
 
-### 3D and canvas
+The bar counts the page's console errors; tap the count to read them -- the
+agent sees the same lines. If the dev server the window was started with exits,
+the window says so, with the last thing it printed. The agent can `look` at the
+page and its console to check its own work, and may do so while it is still
+planning: looking changes nothing.
 
-A `<canvas>` has no DOM to read, so the pick asks the engine instead. A scene
-graph is the accessibility tree of a 3D app — named objects in a hierarchy — and
-where the engine is reachable (three.js, Babylon) a click becomes a raycast and
-comes back as `player_torso (Mesh)` rather than a pixel.
+### PDFs
 
-```
-3D engine: three
-Hit: player_torso (Mesh) at [-1.91, 0, 0.6], material MeshBasicMaterial
+Attach a PDF (or name one on the server) and ask for what you want done to it.
+Six tools, always on, do what [SecurePDF](https://github.com/blofstedt/SecurePDF)
+does in its editor, asked for in words instead:
 
-Scene graph:
-  world  Scene
-    player_torso  Mesh
-    enemy_drone  Mesh
-    props  Group
-      crate_01  Mesh
-```
+| Tool | What it does |
+| --- | --- |
+| `pdf_read` | Pages and sizes, properties, form fields (with their choices and where each one is), attachments, and the text page by page. `find` searches instead, for words, a `/regex/` or the presets `email`, `phone`, `ssn`, `credit_card` and `date`, and says where each match is. `extract` saves embedded files, or an XFA form's XML. |
+| `pdf_look` | Pages as pictures, for the agent and in the thread: a scan read, an edit checked. `grid` rules the page in points, which is how the agent finds where to put things; `area` zooms in. |
+| `pdf_edit` | Fill form fields by name, flatten the form, and draw on pages: text, stamps (APPROVED, REJECTED, SIGN HERE, DATE, CONFIDENTIAL...), a signature (a picture, or a typed name in a handwriting font), images, ticks and crosses, boxes, circles, lines, arrows, highlights (a box, or wherever some words are) and comments. Also a watermark, page numbers, and the document's properties, set or stripped. |
+| `pdf_pages` | Keep, drop, reorder, repeat and turn pages, add blank ones, merge other PDFs in, or split into several files. |
+| `pdf_redact` | Take words, patterns or boxes out for good. The pages concerned are redrawn as pictures with black boxes, so what was under them is gone from the file rather than covered; the rest keep their text. |
+| `pdf_compress` | Rewrite it compactly, or redraw every page as a JPEG for a much smaller scan. Nothing is saved if it would not get smaller. |
 
-Most apps keep their scene private, so the universal fallback is a tight crop of
-the click rather than a whole frame — ~136 tokens against ~1,365, and
-unambiguous about what is being asked about. If you want objects nameable,
-expose the scene as `window.scene`.
+Every result is a new file, shown in the thread to open or download; your own
+file is never overwritten. A password-protected PDF opens with its password
+(the agent asks for it), and what comes out is not protected -- the tools do
+not add passwords. Positions are points from the top-left of the page as you
+see it, whatever rotation or crop the file has underneath, so what `pdf_read`
+reports, the `pdf_look` grid shows and `pdf_edit` takes are the same numbers.
+Dropped and redacted pages are removed from the bytes, not just from view.
 
-### Guiding someone
+Dynamic XFA forms -- the ones most viewers only answer with "please wait" --
+are read and drawn, and their filled-in data is listed, but they cannot be
+filled here; `pdf_compress` with `mode: images` turns one into an ordinary PDF
+of how it looks. The built-in fonts write Western European text; other scripts
+are refused rather than written as question marks.
 
-`highlight` spotlights a region of the page: a dimmed backdrop, a slowly
-breathing ring, a label. It is painted into the page inside a shadow root, so it
-survives into the screencast and the recording, cannot be restyled by the page,
-and never leaks its own text into what the agent reads back.
+Pages are drawn, and text is read, by pdf.js in a headless Chromium -- the
+same binary the browser tool uses. Without one, the tools still read a file's
+properties and fields, fill it, draw on it, rearrange it and rewrite it
+compactly, but cannot read its text, show its pages, find where words are,
+type a signature, redact, or redraw pages as pictures.
+
+### Notebooks
+
+A notebook groups artifacts by purpose -- a case, a report, a project -- in
+order, with notes between them. Each entry is either a file (with a caption
+and a note on what it shows) or a note in Markdown that can cite the files it
+rests on. Make them on the **Notebooks** page, or file a selection from
+**Artifacts** with *Add to notebook*.
+
+The agent has the same with the `notebook` tool (list, create, read, add,
+edit, remove, move, export), and `notebook=` on `artifact_save` and
+`browser_screenshot` files what it makes as it goes. Asked to compile
+something -- a report from a set of emails, a rebuttal of a document with
+proof -- it files every source with what it shows, writes each finding as a
+note citing its evidence, and reads the notebook back to check nothing is
+missing before it says it is done.
+
+The notebook button beside the message box adds notebooks or saved files to
+a message. The agent is given an index of each notebook (every entry, notes
+to their first line) and reads the rest with `notebook read`. **Export**
+downloads a notebook as one Markdown document, its files as numbered
+exhibits. A file in a notebook is never cleared away by retention; deleting
+it from Artifacts takes it out of every notebook, and deleting a notebook
+leaves its files.
 
 ## Approvals
 
@@ -888,7 +945,13 @@ guard's standing agreements and the irrecoverable tier ask whatever they say.
 | `DEEPGRAM_API_KEY` | Speak through Deepgram's hosted Aura voices; a key saved in Settings -> Secrets wins |
 | `AUTORA_DEEPGRAM_VOICE` | The Deepgram voice to start with (default `aura-2-thalia-en`); a voice picked in Settings wins |
 | `AUTORA_BROWSER_HEADED` | `1` shows a real browser window instead of running headless |
-| `AUTORA_BROWSER_FPS` / `AUTORA_BROWSER_QUALITY` / `AUTORA_BROWSER_STREAM_WIDTH` | How much live video to send (default `6` fps, quality `50`, scaled to `960` wide) |
+| `AUTORA_BROWSER_FPS` / `AUTORA_BROWSER_QUALITY` / `AUTORA_BROWSER_STREAM_WIDTH` | How much live video to send (default `10` fps, at most `30`; quality `50`; scaled to `960` wide) |
+| `AUTORA_BROWSER_TZ` / `AUTORA_BROWSER_LOCALE` | The time zone and language the browser reports to sites (default: looked up from this machine's public address, kept a week) |
+| `AUTORA_SHELL` | The shell commands run in when Settings names none (then `$SHELL`, then bash, ash, sh) |
+| `AUTORA_DEEPGRAM_STT_MODEL` / `AUTORA_DEEPGRAM_STT_LANG` | What talk mode listens with through Deepgram (default `nova-2`, `en-US`) |
+| `AUTORA_DEEPGRAM_STT_URL` | A Deepgram-compatible listening server to use instead of Deepgram's (the key is sent there) |
+| `AUTORA_MCP_BIN_DIR` | Where downloaded MCP server binaries go (default `$AUTORA_HOME/bin`) |
+| `AUTORA_PUSH_SUBJECT` | The contact sent to push services with phone notifications (default `mailto:autora@localhost.invalid`) |
 | `AUTORA_HOME` | State directory (default `~/.autora`; `/data` in the container) — the one place that survives an update |
 
 ## Where sessions live
@@ -943,21 +1006,15 @@ often means reading back the session that introduced it.
 
 ## Status
 
-Working and tested: event store, bus backpressure, policy gate, PTY, file tools,
-browser screencast, agent loop, transport, web UI, replay, narration, context
-composition and compaction, accessibility-tree page reading, visual element
-picking (DOM and 3D), guidance overlays, memory with provenance, the knowledge
-web.
-
-Interfaces defined, adapters not shipped: speech-to-text
-(`src/autora/voice/engine.py`) and desktop control. The voice *logic* —
-barge-in, what to say aloud, voice approvals — is implemented and tested
-against fakes; text-to-speech is no longer an interface only: Deepgram's
-hosted voices are spoken to through `server/speech.ts`, with the voice picked
-in Settings.
+Working and tested: the event store and its backpressure, the agent loop and
+its tools (terminal, browser, desktop relay, memory, schedules, MCP servers),
+the web UI, replay, spoken replies and dictation through Deepgram, context
+composition and compaction, accessibility-tree page reading, element picking,
+the app window and its review, memory with provenance, the knowledge web.
 
 ```bash
-python3 tests/run_all.py
+npm test       # every tests/*.test.ts; the ones that need Chromium skip without it
+npm run lint   # typecheck (client, server, tests), then ESLint
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for why it is built this way.

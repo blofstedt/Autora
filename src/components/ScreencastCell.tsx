@@ -4,6 +4,7 @@ import {
 } from "react";
 import type { Shot } from "../lib/derive";
 import { onField, useLiveFrame } from "../lib/liveFrame";
+import { NAMED_KEYS, SENTINEL } from "../lib/pageInput";
 import { Frame } from "./Frame";
 import {
   IconArrowLeft, IconChevron, IconGlobe, IconMaximize, IconMinimize, IconMonitor, IconMousePointer,
@@ -13,17 +14,6 @@ import {
 /** The viewport the browser harness captures. Frame pixels map 1:1 to page
     pixels, so a click at 640,400 is the middle of the picture. */
 const VIEWPORT = { w: 1280, h: 800 };
-
-/** Kept in the keyboard sink so a phone's backspace has something to delete:
-    Android reports soft-keyboard keys as "Unidentified", and the only reliable
-    sign of a backspace is the field getting shorter. */
-const SENTINEL = "\u200b";
-
-/** Keys that are keys rather than text, forwarded by name. */
-const NAMED_KEYS = new Set([
-  "Enter", "Tab", "Backspace", "Delete", "Escape", "ArrowUp", "ArrowDown",
-  "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown",
-]);
 
 /**
  * A stretch of screen work -- a page, or the relayed desktop -- kept where it

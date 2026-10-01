@@ -59,7 +59,13 @@ export type PreviewState = {
   since?: number;
   how?: "url" | "folder" | "command" | null;
   comments: ReviewComment[];
+  /** Errors in the page's console, and the newest few of them. */
   errors?: number;
+  consoleErrors?: string[];
+  /** The dev server the window was started with has exited. */
+  serverDown?: { exit: number | null; last: string } | null;
+  /** Where the page's typeable fields are, in page pixels. */
+  fields?: Array<[number, number, number, number]>;
 };
 
 export type PreviewFrame = { data: string; mime: string; w: number; h: number; ts: number };

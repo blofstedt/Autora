@@ -236,6 +236,22 @@ async function main() {
       read = await live.press(["Escape"]);
       assert.doesNotMatch(read.outline, /A dialog is open/);
     });
+
+    await test("a screenshot can be the whole page or one element, and a bad selector says why", async () => {
+      await live.goto(url);
+      const height = (png: Buffer) => png.readUInt32BE(20);
+      const view = await live.capture();
+      const full = await live.screenshot({ fullPage: true });
+      const one = await live.screenshot({ selector: "h1, label" });
+      const ref = Number(/^\[(\d+)\]/m.exec((await live.snapshot()).outline)![1]);
+      const byRef = await live.screenshot({ ref });
+      for (const png of [full, one, byRef]) assert.equal(png.subarray(1, 4).toString(), "PNG");
+      assert.ok(height(full) >= height(view), `${height(full)} < ${height(view)}`);
+      assert.ok(height(one) < height(view));
+      assert.ok(height(byRef) < height(view));
+      await assert.rejects(live.screenshot({ ref: 99999 }), /no element \[99999\]/);
+      await assert.rejects(live.screenshot({ selector: "#nothing-is-called-this" }), /Timeout|waiting for/i);
+    });
   } finally {
     await live.close();
   }

@@ -39,6 +39,18 @@ description: >-
   change (or try it on the page), and send the comments as one review.
 
 
+  • PDFs — attach one and say what to do: fill in and flatten forms, sign,
+  stamp, highlight, annotate, watermark, number pages, reorder, merge and split,
+  redact for good (the text is removed, not covered), shrink, and read scans
+  and XFA forms. Each result is a new file in the chat; yours is never
+  overwritten.
+
+
+  • Notebooks — group files by purpose with notes between them. Autora can
+  compile one for you (every source filed, every claim citing its proof), and
+  you can hand a notebook or any saved file to a chat.
+
+
   • Live terminal with colour output, progress bars, and scrollback.
 
 
@@ -47,7 +59,8 @@ description: >-
 
   • Real tools, listed in Settings — a shell on this machine, the browser it
   drives, control of another computer over a small relay, and a memory that
-  outlives the session. Each can be switched off. Nothing waits for approval:
+  outlives the session. Each can be switched off, as can the built-in windows
+  on the Tools page. Nothing waits for approval:
   every command runs straight away and is shown in the thread as it runs.
 
 
@@ -110,105 +123,59 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  Jev Mode is gone. It only worked with some models, added a wait before
-  every turn, and never showed it helped. The check that matters, holding a
-  risky command when it looks destructive and you did not ask for it, now
-  asks the model you already use, once, only for those commands, and works
-  with every provider. Commands nothing can undo still always stop and ask.
+  New: Notebooks. Group files by purpose -- a case, a report, a project -- with
+  notes between them, on the new Notebooks page. Ask Autora to compile a report
+  from your emails and documents and it files every source in a notebook with
+  a line on what it shows, writes each finding or rebuttal as a note that cites
+  the files it rests on, and reads the notebook back to check nothing is
+  missing. Add notebooks or saved files to any message with the new notebook
+  button beside the message box, and export a notebook as one document with
+  its files as numbered exhibits. Files in a notebook are never cleared away.
 
-  Notifications now come from the app itself, and only from it: the
-  installed app is the phone interface, so ntfy and Telegram are gone. In
-  Settings, "Notify this device" makes Autora send to your phone or computer
-  directly, with the app closed and nothing else to install: when it needs you, when a schedule runs, when it
-  notices something. What is sent is encrypted so only your device can read
-  it. It needs the https address (your Tailscale one).
+  New: a Tools page in the sidebar, where the widget window, the browser
+  window, the construction (app) window and the PDF editor can each be
+  switched off. All are on by default; one that is off is taken away from
+  the agent and it is told so.
 
-  CAPTCHAs are far more reliable. The picture challenges were being looked for
-  in a way that never found them, so a puzzle could be reported as passed
-  without being touched; that is fixed. A model that answered the "can you see
-  pictures" check correctly was being judged blind and never used; a single
-  dropped connection could turn picture solving off until a restart; and a
-  wrong answer was followed by an answer to the old question. Grids that
-  replace squares as you click are now gone through round by round, "nothing
-  matches" can be answered, and a model that never replies no longer holds up
-  the turn.
+  Screenshots: Autora can now take a screenshot of the whole page, one part
+  of it or an area, and keep it as a file or file it straight into a notebook
+  as evidence.
 
-  Plan and Ask modes no longer put up an approval card just to let Autora ask
-  you a question or write its plan. Taking back a standing agreement is treated
-  as the change it is.
+  Also new: PDF tools. Attach a PDF and ask for what you want: Autora reads it
+  (text, form fields, attachments), looks at its pages, fills in and flattens
+  forms, signs (with a picture of a signature or your name in a handwriting
+  font), stamps APPROVED or SIGN HERE, highlights, adds notes, boxes, arrows,
+  ticks and pictures, adds a watermark or page numbers, reorders, turns, merges
+  and splits pages, redacts names, emails, card numbers or any area for good,
+  and shrinks the file. Each result appears in the chat to open or download,
+  and your own file is never changed. Password-protected PDFs open with their
+  password, and XFA forms that most viewers only say "please wait" to are read
+  and drawn.
 
-  Your standing instructions in Settings now win over Autora's own style
-  rules. Before, its built-in "plain prose" and "give your final answer in
-  full" could outweigh a request for bullet points or brevity. Now those
-  defaults give way to your instructions by name, and short instructions are
-  repeated on every turn so they are in front of the model while it writes.
+  The app window is much nicer to use. It has its own back button, reload and
+  address bar (type a path such as /about to go there), and the page in it now
+  works like a page: dropdowns list their choices, a mouse drag moves sliders
+  and selects text, right-click and keyboard shortcuts reach the page, paste
+  works, and on a phone backspace works and the keyboard comes up when you tap
+  a field. A tap shows where it landed.
 
-  Autora is better at getting around websites. It now notices when a cookie
-  bar, pop-up or sticky header is drawn over what it wants to click, and says
-  what is in the way and how to close it instead of clicking the wrong thing.
-  It waits for pages that draw themselves with script, and for results that
-  arrive a moment after a click, before deciding what is on the page, and it
-  tells itself when a click changed nothing so it tries something else rather
-  than the same thing again.
+  The error count in the app window opens the page's console errors, the same
+  lines Autora reads, and it keeps up as errors happen. If the dev server
+  behind the window stops, the window says so and shows the last thing it
+  printed, instead of carrying on as if it were live.
 
-  On a phone, the page Autora is working, its plan and any explainer it draws
-  now stay pinned above the conversation instead of scrolling away as it
-  talks. Tabs switch between them when more than one is showing, and a
-  handle folds them out of the way. Tap Follow and the view switches by
-  itself to whatever Autora is working on; tap a tab to take over again. The
-  words stay in the thread.
+  Comments you have not sent yet, and the size you picked, now survive Autora
+  restarting the app window; they used to be lost. A change you tried on the
+  page and then cancelled is put back. Two quick style changes in a row no
+  longer lose the first, and a number field can be cleared while you type.
 
-  What Autora is about to do on the page ("tap Book now") now shows under the
-  picture on a phone, instead of over it where it hid the page.
+  Autora can look at the app window while it is still planning, and dev
+  servers that print an https address or a base path, or listen only on the
+  IPv6 loopback, now open. A page that hangs no longer freezes the window.
 
-  New: the app window. When Autora builds a website or an app it opens it
-  beside the conversation (on a phone, as an App tab in the pinned view), live,
-  at a phone, tablet or desktop size, and you watch it take shape: a dev server
-  it starts, or a folder of files that reloads by itself as they change. Tap
-  Select and point at anything: hover outlines an element, a tap picks it, the
-  arrow keys step to what is around or inside it, shift adds more. Or drag a
-  Region round anything. Say what should change, or try it right on the page:
-  retype the words, change a colour, a size, a corner, the spacing. Every
-  comment is kept with a picture and pinned where you made it, and they go
-  together as one review, so one turn answers them all. Autora can look at its
-  own work too, with the page's console errors.
-
-  The kanban board is gone. Autora now keeps a plain to-do list, like the one
-  in VS Code's Copilot: a checklist it writes before it starts, then ticks off
-  as it works: the item it is on has a marching dashed box, and when it
-  finishes the box fills green, a tick draws itself in and the title is
-  struck through. You watch it; only Autora changes it. On a phone it is the
-  "To do" tab in the pinned view above the conversation. Chats recorded with
-  the old board show it as a list.
-
-  A new selector in the message box sets how Autora works: Agent (the
-  default) plans first and then builds, switching between the two by itself,
-  and skips the plan only for a very simple task; each switch shows in the
-  conversation. Build does the work straight away, as before, and Plan only
-  looks and writes a plan and changes nothing. On a phone the
-  selector is a small pill that opens a list, and both pop-ups now open
-  centred on a phone instead of off to one side.
-
-  The pill in the header is now about permissions only: Yolo, or Ask. Ask
-  holds anything that changes something for your yes, or only what you name:
-  write when it should ask ("before deleting anything, before sending a
-  message") or tap the suggestions. Plan mode no longer puts up approval
-  cards; it simply refuses changes. Chats that were set to Ask keep asking, as Build.
-
-  Two small fixes: a tool call with a list in it (the to-do list, a form) no
-  longer shows as "[object Object]" in the thread, and an integration
-  suggestion no longer says its description twice.
-
-  While Autora is working, the send button becomes a clear red Stop button
-  when the box is empty, so you can always halt a run.
-
-  Pictures and files you attach now reach the model on every turn, not only
-  the first: they were being dropped when the conversation was rebuilt.
-
-  Scripts Autora saves as its own tools are more forgiving about parameters
-  and warn when a script uses one it never declared, instead of failing
-  quietly.
-
-  Settings has a time zone. Your device's zone is adopted automatically, and
-  schedules and quiet hours follow it; an unknown zone is refused rather than
-  silently treated as UTC.
+  Fixes: closing an incognito chat, or old chats being cleared away, now also
+  stops the app window's dev server and browser tab; coming back after the
+  connection dropped no longer shows an app window that was already closed;
+  switching chats no longer carries the "New messages" pill and the scroll
+  position across; and a model's last streamed message is no longer dropped
+  when its server does not end it with a newline.

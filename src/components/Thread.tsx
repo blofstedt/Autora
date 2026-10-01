@@ -2,7 +2,8 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import type { Bucket, Cell, MemoryTouch } from "../lib/derive";
 import { turnItems } from "../lib/steps";
 import { isPicture, sizeLabel, type Attachment } from "../lib/attachments";
-import { IconAlert, IconArrow, IconArrowDown, IconBrain, IconChevron, IconFile, IconSpeaker, IconSpeakerOff, IconTerminal, IconUser, IconWrench } from "./Icons";
+import { IconAlert, IconArrow, IconArrowDown, IconBrain, IconChevron, IconDownload, IconFile, IconNotebook, IconSpeaker, IconSpeakerOff, IconTerminal, IconUser, IconWrench } from "./Icons";
+import { OPEN_NOTEBOOK } from "../lib/notebooks";
 import { sameReply } from "../lib/voice";
 import { AutoraMark } from "./AutoraMark";
 import type { MarkPhase } from "../lib/activity";
@@ -84,6 +85,14 @@ export function Thread({
   const contentRef = useRef<HTMLDivElement>(null);
   const [stuck, setStuck] = useState(true);
   const [unread, setUnread] = useState(false);
+  /* Another conversation opens at its live edge with nothing unread: where
+     the last one was left, and what arrived in it, say nothing about this. */
+  const [shownSession, setShownSession] = useState(sessionId);
+  if (shownSession !== sessionId) {
+    setShownSession(sessionId);
+    setStuck(true);
+    setUnread(false);
+  }
   // While the page in the thread is yours to use, the thread holds still:
   // following the live edge would slide the page out from under your finger
   // every time it repaints.
@@ -400,10 +409,28 @@ type WorkState = {
  * itself, anything else shows its name and opens from there. Small on purpose
  * -- this is a receipt, not a gallery.
  */
-const MessageFiles = memo(function MessageFiles({ files }: { files: Attachment[] }) {
-  if (files.length === 0) return null;
+const MessageFiles = memo(function MessageFiles({
+  files, notebooks = [],
+}: { files: Attachment[]; notebooks?: { id: string; title: string }[] }) {
+  if (files.length === 0 && notebooks.length === 0) return null;
   return (
     <div className="msg-files">
+      {notebooks.map((book) => (
+        <a
+          className="msg-file is-notebook"
+          key={book.id}
+          href={`?page=notebooks&notebook=${encodeURIComponent(book.id)}`}
+          onClick={(e) => {
+            if (e.metaKey || e.ctrlKey || e.shiftKey) return;
+            e.preventDefault();
+            window.dispatchEvent(new CustomEvent(OPEN_NOTEBOOK, { detail: book.id }));
+          }}
+          title={`Open the notebook ${book.title}`}
+        >
+          <IconNotebook size={14} />
+          <span className="msg-file-name">{book.title}</span>
+        </a>
+      ))}
       {files.map((file) => (
         <a
           className="msg-file"
@@ -418,6 +445,41 @@ const MessageFiles = memo(function MessageFiles({ files }: { files: Attachment[]
             : <IconFile size={14} />}
           <span className="msg-file-name">{file.name}</span>
         </a>
+      ))}
+    </div>
+  );
+});
+
+/**
+ * Files a tool made, where it made them -- a filled-in form, a redacted copy:
+ * the name opens it (a PDF in the browser's own viewer), the arrow downloads it.
+ */
+const FilesCell = memo(function FilesCell({ files }: { files: Attachment[] }) {
+  return (
+    <div className="out-files">
+      {files.map((file) => (
+        <div className="out-file" key={file.id}>
+          <a
+            className="out-file-open"
+            href={`/api/artifacts/${file.id}`}
+            target="_blank"
+            rel="noreferrer"
+            title={`Open ${file.name}`}
+          >
+            <IconFile size={15} />
+            <span className="out-file-name">{file.name}</span>
+            {file.size > 0 && <span className="out-file-size">{sizeLabel(file.size)}</span>}
+          </a>
+          <a
+            className="out-file-save"
+            href={`/api/artifacts/${file.id}?download`}
+            download={file.name}
+            title={`Download ${file.name}`}
+            aria-label={`Download ${file.name}`}
+          >
+            <IconDownload size={14} />
+          </a>
+        </div>
       ))}
     </div>
   );
@@ -451,13 +513,13 @@ const TurnBucket = memo(function TurnBucket({
 
   return (
     <article className="turn">
-      {(bucket.prompt || bucket.attachments.length > 0) && (
+      {(bucket.prompt || bucket.attachments.length > 0 || (bucket.notebooks?.length ?? 0) > 0) && (
         <div className="msg user">
           <span className="avatar"><IconUser size={14} /></span>
           <div className="msg-body">
             <div className="msg-who">you</div>
             {bucket.prompt && <div className="msg-text">{bucket.prompt}</div>}
-            <MessageFiles files={bucket.attachments} />
+            <MessageFiles files={bucket.attachments} notebooks={bucket.notebooks} />
           </div>
         </div>
       )}
@@ -710,6 +772,8 @@ const CellView = memo(function CellView({
       return <AskCell ask={cell.ask} sessionId={sessionId} readOnly={!live} />;
     case "images":
       return <ImageCell sessionId={sessionId} pictures={cell.pictures} />;
+    case "files":
+      return <FilesCell files={cell.files} />;
     case "widget":
       if (held) return <StageStub kind="widget" title={NAME.widget} note={`${cell.widget.title} · pinned above`} />;
       return <WidgetCell widget={cell.widget} sessionId={sessionId} canFix={live && !driving} />;

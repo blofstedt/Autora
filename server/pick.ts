@@ -312,7 +312,7 @@ export function reviewMessage(input: {
   const { comments } = input;
   const lines: string[] = [
     `[Autora: the person reviewed the app preview (${input.url}, shown at ${input.viewport.width}×${input.viewport.height}, ${input.device}) and left ` +
-      `${comments.length} comment${comments.length === 1 ? "" : "s"}. Each has a picture attached, in order. ` +
+      `${comments.length} comment${comments.length === 1 ? "" : "s"}. Each comment's picture is attached as review-N.png, N being its number. ` +
       "Make the changes in the source, then look at the preview again to check them.]",
     "",
   ];

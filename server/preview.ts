@@ -12,6 +12,7 @@
 
 import fs from "node:fs";
 import http from "node:http";
+import https from "node:https";
 import net from "node:net";
 import path from "node:path";
 
@@ -49,29 +50,50 @@ export function isLocalUrl(raw: string): boolean {
   }
 }
 
+/** The same address with a bind-all host (0.0.0.0, [::]) named as this
+    machine, which is what a browser can actually open. */
+export function localAddress(raw: string): string {
+  try {
+    const u = new URL(raw);
+    if (u.hostname === "0.0.0.0" || u.hostname === "[::]") u.hostname = "localhost";
+    return u.toString();
+  } catch {
+    return raw;
+  }
+}
+
+const validPort = (port: string) => Number(port) > 0 && Number(port) <= 65535;
+
 /** The address a dev server printed, from whatever it said while starting.
     Vite, Next, webpack, CRA, Astro, http-server and Python all say it
-    differently; all of them put a port after a host. */
+    differently; all of them put a port after a host. The scheme and the path
+    are kept: an https dev server does not answer http, and a base path is
+    where the app is. */
 export function addressIn(output: string): string | null {
   const plain = output.replace(/\u001b\[[0-9;]*[A-Za-z]/g, "");
-  const full = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\]):(\d{2,5})[^\s"')]*/i.exec(plain);
-  if (full) return `http://localhost:${full[1]}/`;
+  const full = /(https?):\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\]):(\d{2,5})(\/[^\s"')]*)?/i.exec(plain);
+  if (full && validPort(full[2])) {
+    const where = (full[3] ?? "/").replace(/[.,;:!?]+$/, "") || "/";
+    return `${full[1].toLowerCase()}://localhost:${full[2]}${where}`;
+  }
   const bare = /(?:listening|running|started|serving|ready)[^\n]{0,60}?(?:port\s*|:)(\d{2,5})\b/i.exec(plain);
   /* "listening on http://192.168.1.4:3000" names a host, and not this one:
      that is a reason to ask for the port, not to guess it. */
-  return bare && !/https?:\/\//i.test(bare[0]) ? `http://localhost:${bare[1]}/` : null;
+  return bare && validPort(bare[1]) && !/https?:\/\//i.test(bare[0]) ? `http://localhost:${bare[1]}/` : null;
 }
 
-/** Whether something answers HTTP at this address. Any status counts: a 404
-    from the root is a server, which is all this asks. */
-export function answers(url: string, timeoutMs = 1500): Promise<boolean> {
+function knock(u: URL, host: string, timeoutMs: number): Promise<boolean> {
   return new Promise((resolve) => {
     let settled = false;
     const done = (ok: boolean) => { if (!settled) { settled = true; resolve(ok); } };
     try {
-      const u = new URL(url);
-      const req = http.request(
-        { host: u.hostname === "localhost" ? "127.0.0.1" : u.hostname, port: Number(u.port || 80), path: "/", method: "GET", timeout: timeoutMs },
+      const secure = u.protocol === "https:";
+      // Only asking whether anything answers: a dev server's own certificate is fine.
+      const req = (secure ? https : http).request(
+        {
+          host, port: Number(u.port || (secure ? 443 : 80)), path: "/", method: "GET", timeout: timeoutMs,
+          ...(secure ? { rejectUnauthorized: false } : {}),
+        },
         (res) => { res.resume(); done(true); },
       );
       req.on("timeout", () => { req.destroy(); done(false); });
@@ -81,6 +103,23 @@ export function answers(url: string, timeoutMs = 1500): Promise<boolean> {
       done(false);
     }
   });
+}
+
+/** Whether something answers HTTP at this address. Any status counts: a 404
+    from the root is a server, which is all this asks. */
+export async function answers(url: string, timeoutMs = 1500): Promise<boolean> {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  const host = u.hostname.replace(/^\[|\]$/g, "");
+  // A dev server on "localhost" may have bound either loopback, not both.
+  for (const each of host === "localhost" ? ["127.0.0.1", "::1"] : [host]) {
+    if (await knock(u, each, timeoutMs)) return true;
+  }
+  return false;
 }
 
 export async function waitForServer(url: string, ms: number, stopped: () => boolean = () => false): Promise<boolean> {
@@ -133,7 +172,8 @@ export function serveFolder(dir: string): Promise<StaticServer> {
         "cache-control": "no-store",
       });
       if (req.method === "HEAD") { res.end(); return; }
-      fs.createReadStream(file).pipe(res);
+      // A file replaced between the stat and the read must not take the server down.
+      fs.createReadStream(file).on("error", () => res.destroy()).pipe(res);
     } catch {
       res.writeHead(400).end("Bad request.");
     }

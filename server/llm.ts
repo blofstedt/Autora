@@ -262,10 +262,13 @@ async function* sse(res: Response): AsyncGenerator<string> {
   const decoder = new TextDecoder();
   let buffer = "";
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+  let done = false;
+  while (!done) {
+    const next = await reader.read();
+    done = next.done;
+    buffer += done ? decoder.decode() : decoder.decode(next.value, { stream: true });
+    // A server may end on its last event with no newline after it (usage, often).
+    if (done && buffer && !buffer.endsWith("\n")) buffer += "\n";
 
     let cut = buffer.indexOf("\n");
     while (cut >= 0) {

@@ -15,6 +15,10 @@ import { SessionsPage } from "./components/pages/SessionsPage";
 import { SystemPage, isSystemTab, type SystemTab } from "./components/pages/SystemPage";
 import { McpPage } from "./components/pages/McpPage";
 import { ArtifactsPage } from "./components/pages/ArtifactsPage";
+import { NotebooksPage } from "./components/pages/NotebooksPage";
+import { ToolsPage } from "./components/pages/ToolsPage";
+import { LibraryPicker, type LibraryTab } from "./components/LibraryPicker";
+import { OPEN_NOTEBOOK, type NotebookRef } from "./lib/notebooks";
 import { MindPage } from "./components/pages/MindPage";
 import type { Bucket } from "./lib/memory";
 import {
@@ -50,7 +54,7 @@ import {
   splitSpeakable, useSpeech,
 } from "./lib/voice";
 import {
-  IconArrow, IconArrowUp, IconChevron, IconFile, IconMask, IconMenu, IconStop,
+  IconArrow, IconArrowUp, IconChevron, IconFile, IconMask, IconMenu, IconNotebook, IconStop,
   IconX,
 } from "./components/Icons";
 import {
@@ -67,6 +71,8 @@ const SPEAK_FRESH_S = 30;
     about fifteen a second, which reads as smooth text and leaves the page
     room to breathe on a long conversation. */
 const EVENT_BATCH_MS = 66;
+/** What the composer's library offers. */
+const LIBRARY_TABS: LibraryTab[] = ["notebooks", "files"];
 
 export function App() {
   /* Back, on a phone, is the system gesture, and in an installed app with
@@ -102,6 +108,13 @@ export function App() {
      were picked or taken, so what is held here is already an artifact id and
      Send does not have to wait for a photograph to travel. */
   const [attached, setAttached] = useState<Attachment[]>([]);
+  /** Notebooks going with the next message, and whether the picker is open. */
+  const [attachedBooks, setAttachedBooks] = useState<NotebookRef[]>([]);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  /** The notebook open on the Notebooks page. */
+  const [notebookOpen, setNotebookOpen] = useState<string | null>(
+    () => new URLSearchParams(location.search).get("notebook"),
+  );
   const [attaching, setAttaching] = useState(0);
   const [liveOn, setLiveOn] = useState(false);
   const [userSpeaking] = useState(false);
@@ -456,12 +469,14 @@ export function App() {
     /* A dictated turn carries nothing but words, and a message may be nothing
        but files: "look at this" with the photo is a whole request. */
     const files = spoken === undefined ? attached : [];
-    if ((!text && files.length === 0) || !sessionId) return;
+    const books = spoken === undefined ? attachedBooks : [];
+    if ((!text && files.length === 0 && books.length === 0) || !sessionId) return;
     // Dictated turns never touched the box, so there is nothing to clear and
     // clearing anyway would eat something half-typed.
     if (spoken === undefined) {
       setDraft("");
       setAttached([]);
+      setAttachedBooks([]);
       // The message is handed over: a spark from Send to the agent's mark.
       flySpark(visible(".composer-send"), visible(".rail-slot .presence", ".top-presence"));
     }
@@ -474,6 +489,7 @@ export function App() {
       body: JSON.stringify({
         text,
         ...(files.length > 0 ? { attachments: files.map((f) => f.id) } : {}),
+        ...(books.length > 0 ? { notebooks: books.map((b) => b.id) } : {}),
         /* It was said out loud, and a spoken turn answers without thinking
            first: in live voice the wait is the whole experience. */
         ...(spoken !== undefined ? { spoken: true } : {}),
@@ -487,10 +503,11 @@ export function App() {
         // The files are not lost either: the artifacts are still there, so
         // the chips come back and Send can be pressed again.
         setAttached((now) => (now.length > 0 ? now : files));
+        setAttachedBooks((now) => (now.length > 0 ? now : books));
       }
       setNotice("Could not reach the server; your message was not sent.");
     }
-  }, [draft, attached, sessionId, speaking, prime]);
+  }, [draft, attached, attachedBooks, sessionId, speaking, prime]);
 
   /** Put files into the message: up to the artifacts store now, into a chip
       beside the box while they travel, and into the message as their ids. */
@@ -517,6 +534,42 @@ export function App() {
   const dropAttachment = useCallback((id: string) => {
     setAttached((list) => list.filter((file) => file.id !== id));
   }, []);
+
+  /** Notebooks and saved files picked in the library go into the next message. */
+  const addFromLibrary = useCallback((picked: { notebooks: NotebookRef[]; files: Attachment[] }) => {
+    setLibraryOpen(false);
+    setAttachedBooks((list) => [...list, ...picked.notebooks.filter((b) => !list.some((x) => x.id === b.id))
+      .map((b) => ({ id: b.id, title: b.title }))]);
+    setAttached((list) => [...list, ...picked.files.filter((f) => !list.some((x) => x.id === f.id))
+      .map((f) => ({ id: f.id, name: f.name, mime: f.mime, size: f.size }))]);
+  }, []);
+
+  const closeLibrary = useCallback(() => setLibraryOpen(false), []);
+
+  const notebookToChat = useCallback((ref: NotebookRef) => {
+    setAttachedBooks((list) => (list.some((b) => b.id === ref.id) ? list : [...list, ref]));
+    navigate("chat");
+  }, [navigate]);
+
+  // A notebook chip in the thread opens the notebook.
+  useEffect(() => {
+    const open = (e: Event) => {
+      const id = (e as CustomEvent<string>).detail;
+      if (typeof id !== "string") return;
+      setNotebookOpen(id);
+      navigate("notebooks");
+    };
+    window.addEventListener(OPEN_NOTEBOOK, open);
+    return () => window.removeEventListener(OPEN_NOTEBOOK, open);
+  }, [navigate]);
+
+  // The open notebook is in the address too, so a reload stays on it.
+  useEffect(() => {
+    const url = new URL(location.href);
+    if (page === "notebooks" && notebookOpen) url.searchParams.set("notebook", notebookOpen);
+    else url.searchParams.delete("notebook");
+    if (url.href !== location.href) history.replaceState(null, "", url.toString());
+  }, [page, notebookOpen]);
 
   /** Stop the turn in flight.
    *
@@ -650,6 +703,7 @@ export function App() {
      away its focus) mid-sentence, at random as far as anyone typing could
      tell. Messages go over a plain request anyway, not the socket. */
   const readOnly = status.state === "recorded" || status.state === "closed";
+  const nothingAttached = attached.length === 0 && attachedBooks.length === 0;
 
   // Whether a turn is running now, read from the tail of the log so a reload
   // mid-turn comes back knowing one is in flight.
@@ -1525,6 +1579,10 @@ export function App() {
               />
             )}
             {page === "artifacts" && <ArtifactsPage sessions={sessions} onOpenSession={openSession} />}
+            {page === "notebooks" && (
+              <NotebooksPage open={notebookOpen} onOpen={setNotebookOpen} onUseInChat={notebookToChat} />
+            )}
+            {page === "tools" && <ToolsPage />}
             {page === "mcp" && <McpPage />}
             {page === "cron" && <Schedule embedded topSlot={topSlot} onOpenSession={openSession} />}
             {page === "triggers" && <Triggers topSlot={topSlot} onOpenSession={openSession} />}
@@ -1676,7 +1734,7 @@ export function App() {
               </>
             ) : (
               <>
-                <div className={`composer-box ${draft.trim() || attached.length > 0 ? "has-text" : ""}`}>
+                <div className={`composer-box ${draft.trim() || attached.length > 0 || attachedBooks.length > 0 ? "has-text" : ""}`}>
                   {/* What the month has cost against the ceiling set in
                       Settings, with this session's share at the right-hand
                       end. Nothing until the first read comes back, so the
@@ -1742,11 +1800,29 @@ export function App() {
                       }
                     }}
                   />
-                  {attached.length > 0 && (
+                  {(attached.length > 0 || attachedBooks.length > 0) && (
                     /* Boxes along the bottom of the field, left to right: a
                        picture is the picture, a file is its name. Both arrive
                        with the same small pop. */
                     <div className="attach-row">
+                      {attachedBooks.map((book) => (
+                        <span className="attach-chip is-file is-notebook" key={book.id}>
+                          <IconNotebook size={16} />
+                          <span className="attach-meta">
+                            <b title={book.title}>{book.title}</b>
+                            <em>notebook</em>
+                          </span>
+                          <button
+                            type="button"
+                            className="attach-drop"
+                            onClick={() => setAttachedBooks((list) => list.filter((b) => b.id !== book.id))}
+                            title={`Remove ${book.title}`}
+                            aria-label={`Remove ${book.title}`}
+                          >
+                            <IconX size={12} />
+                          </button>
+                        </span>
+                      ))}
                       {attached.map((file) => (
                         isPicture(file.mime) ? (
                           <span className="attach-chip is-pic" key={file.id} title={file.name}>
@@ -1846,6 +1922,26 @@ export function App() {
                         disabled={readOnly}
                         onTrouble={setNotice}
                       />
+                      <button
+                        type="button"
+                        className="btn ghost icon attach-btn"
+                        onClick={() => setLibraryOpen(true)}
+                        disabled={readOnly}
+                        title="Add a notebook or a saved file"
+                        aria-label="Add a notebook or a saved file"
+                      >
+                        <IconNotebook size={18} />
+                      </button>
+                      {libraryOpen && (
+                        <LibraryPicker
+                          tabs={LIBRARY_TABS}
+                          title="Add to this message"
+                          action="Add"
+                          exclude={new Set([...attached.map((f) => f.id), ...attachedBooks.map((b) => b.id)])}
+                          onClose={closeLibrary}
+                          onPick={addFromLibrary}
+                        />
+                      )}
                       {notice ? (
                         <button
                           className="hint voice-note"
@@ -1871,17 +1967,17 @@ export function App() {
                             same place, so a phone never has to find /stop. With
                             words in the box it is Send, which interrupts. */}
                         <button
-                          className={`composer-send${running && !draft.trim() && attached.length === 0 ? " is-stop" : ""}`}
+                          className={`composer-send${running && !draft.trim() && nothingAttached ? " is-stop" : ""}`}
                           // Without a model a message can only fail; a slash
                           // command (/settings) still goes.
-                          disabled={readOnly || (!(running && !draft.trim() && attached.length === 0)
-                            && ((!draft.trim() && attached.length === 0)
+                          disabled={readOnly || (!(running && !draft.trim() && nothingAttached)
+                            && ((!draft.trim() && nothingAttached)
                               || (modelReady === false && !draft.trim().startsWith("/"))))}
-                          onClick={running && !draft.trim() && attached.length === 0 ? () => void stopTurn() : submit}
-                          title={running ? (!draft.trim() && attached.length === 0 ? "Stop" : "Interrupt & send") : "Send"}
-                          aria-label={running ? (!draft.trim() && attached.length === 0 ? "Stop" : "Interrupt & send") : "Send"}
+                          onClick={running && !draft.trim() && nothingAttached ? () => void stopTurn() : submit}
+                          title={running ? (!draft.trim() && nothingAttached ? "Stop" : "Interrupt & send") : "Send"}
+                          aria-label={running ? (!draft.trim() && nothingAttached ? "Stop" : "Interrupt & send") : "Send"}
                         >
-                          {running && !draft.trim() && attached.length === 0
+                          {running && !draft.trim() && nothingAttached
                             ? <IconStop size={15} />
                             : <IconArrowUp size={17} />}
                         </button>

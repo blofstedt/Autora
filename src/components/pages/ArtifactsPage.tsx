@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { SessionRow } from "../Sessions";
+import { LibraryPicker } from "../LibraryPicker";
+import { addToNotebook, type Notebook } from "../../lib/notebooks";
 import {
-  IconCheck, IconDownload, IconFile, IconMark, IconTrash, IconUpload, IconUser,
+  IconCheck, IconDownload, IconFile, IconMark, IconNotebook, IconTrash, IconUpload, IconUser,
 } from "../Icons";
 
 type Artifact = {
@@ -32,6 +34,8 @@ function kind(a: Artifact): string {
 
 const isPicture = (a: Artifact) => a.mime.startsWith("image/") && a.mime !== "image/svg+xml";
 
+const NOTEBOOK_TAB: "notebooks"[] = ["notebooks"];
+
 /**
  * Artifacts: the files of the workspace, in two piles. What Autora made --
  * generated images, documents it wrote, files it built and handed over -- and
@@ -56,6 +60,8 @@ export function ArtifactsPage({
   const [selecting, setSelecting] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
   const [removing, setRemoving] = useState(false);
+  const [filing, setFiling] = useState(false);
+  const [filed, setFiled] = useState<string | null>(null);
   const picker = useRef<HTMLInputElement>(null);
 
   const load = useCallback(() => {
@@ -145,6 +151,20 @@ export function ArtifactsPage({
 
   const toggle = (id: string) =>
     setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+
+  const file = async (books: Notebook[]) => {
+    setFiling(false);
+    setError(null);
+    setFiled(null);
+    try {
+      for (const book of books) await addToNotebook(book.id, { artifacts: picked });
+      const what = picked.length === 1 ? "1 file" : `${picked.length} files`;
+      setFiled(books.length === 1 ? `Added ${what} to “${books[0].title}”.` : `Added ${what} to ${books.length} notebooks.`);
+      leaveSelect();
+    } catch (err: any) {
+      setError(err?.message ?? "Could not add them to the notebook.");
+    }
+  };
 
   const all = items ?? [];
   const made = all.filter((a) => a.origin === "agent");
@@ -261,6 +281,17 @@ export function ArtifactsPage({
           agent can find and read all of them.
         </p>
         {error && <p className="set-warn">{error}</p>}
+        {filed && <p className="jf-hint art-filed" role="status">{filed}</p>}
+        {filing && (
+          <LibraryPicker
+            tabs={NOTEBOOK_TAB}
+            title={picked.length === 1 ? "Add 1 file to…" : `Add ${picked.length} files to…`}
+            action="Add"
+            allowNew
+            onClose={() => setFiling(false)}
+            onPick={({ notebooks }) => void file(notebooks)}
+          />
+        )}
 
         {all.length > 0 && (
           <div className="art-toolbar">
@@ -278,6 +309,13 @@ export function ArtifactsPage({
                     : `${picked.length} of ${all.length} selected`}
                 </span>
                 <div className="spacer" />
+                <button
+                  className="btn ghost"
+                  disabled={picked.length === 0 || removing}
+                  onClick={() => setFiling(true)}
+                >
+                  <IconNotebook size={14} /> Add to notebook
+                </button>
                 <button
                   className="btn danger"
                   disabled={picked.length === 0 || removing}

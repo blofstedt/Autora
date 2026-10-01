@@ -194,6 +194,15 @@ export function looksOnly(name: string, args: Record<string, any> = {}): boolean
   /* Listing the standing agreements looks; taking one back is a change, and
      is the same tool with an id. */
   if (name === "pre_authorisations") return !String(args.revoke ?? "").trim();
+  // Looking at the app window is looking; starting or stopping what it runs is not.
+  if (name === "app_preview") return String(args.action ?? "").trim().toLowerCase() === "look";
+  // Reading a PDF is looking; pulling its attachments out saves new files.
+  if (name === "pdf_read") return !(Array.isArray(args.extract) ? args.extract.length : args.extract);
+  if (name === "pdf_look") return true;
+  // Reading notebooks is looking; filing into one is not.
+  if (name === "notebook") return ["list", "read"].includes(String(args.action ?? "").trim().toLowerCase());
+  // A screenshot kept as a file is a new artifact.
+  if (name === "browser_screenshot") return !String(args.save_as ?? "").trim() && !String(args.notebook ?? "").trim();
   return LOOKS_ONLY.has(name);
 }
 

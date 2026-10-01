@@ -16,8 +16,13 @@
  */
 import { getArtifact, readArtifact, formatSize, type Artifact } from "./artifacts";
 import { type ChatImage } from "./llm";
+import { describeNotebook, getNotebook } from "./notebooks";
 
 export type AttachmentRef = { id: string; name: string; mime: string; size: number };
+export type NotebookRef = { id: string; title: string };
+
+/** The longest a notebook's index may be in the note, each turn it is in the history. */
+const NOTEBOOK_INDEX_CHARS = 4000;
 
 /** What the vendors accept as a picture. SVG is deliberately not here: it is
     a document that can carry script, not a photograph. */
@@ -77,7 +82,9 @@ export function attachmentNote(list: unknown): string {
     const shown = PICTURE_MIMES.has(f.mime) && f.size <= MAX_PICTURE_BYTES;
     const how = shown
       ? `${f.mime}, ${formatSize(f.size)}, shown to you as a picture`
-      : `${f.mime}, ${formatSize(f.size)}, read it with artifact_read ${f.id}`;
+      : f.mime === "application/pdf"
+        ? `${f.mime}, ${formatSize(f.size)}, read it with pdf_read ${f.id} and see it with pdf_look`
+        : `${f.mime}, ${formatSize(f.size)}, read it with artifact_read ${f.id}`;
     return `${f.name} (${how})`;
   });
   return `[Autora: ${one ? "a file is" : `${files.length} files are`} attached to this message, part of what is being asked: ${parts.join("; ")}.]`;
@@ -95,4 +102,40 @@ export function picturesFor(list: unknown): ChatImage[] {
     out.push({ mime: f.mime, data: data.toString("base64") });
   }
   return out;
+}
+
+/** The notebooks a message asks for, by id or as refs. A request's unknown
+    ids are dropped; a ref read back from the log is kept even if the
+    notebook has since gone, so the note can say so. */
+export function notebookRefs(raw: unknown, fromLog = false): NotebookRef[] {
+  if (!Array.isArray(raw)) return [];
+  const out: NotebookRef[] = [];
+  for (const item of raw.slice(0, 10)) {
+    const id = item && typeof item === "object" ? String((item as { id?: unknown }).id ?? "") : String(item ?? "");
+    if (!id || out.some((b) => b.id === id)) continue;
+    const book = getNotebook(id);
+    if (book) out.push({ id: book.id, title: book.title });
+    else if (fromLog && typeof (item as { title?: unknown })?.title === "string") {
+      out.push({ id, title: (item as { title: string }).title });
+    }
+  }
+  return out;
+}
+
+/** The note naming the notebooks a message came with, and what is in each. */
+export function notebookNote(list: NotebookRef[]): string {
+  if (list.length === 0) return "";
+  const parts = list.map((ref) => {
+    const book = getNotebook(ref.id);
+    if (!book) return `The notebook "${ref.title}" (${ref.id}) was attached but has since been deleted.`;
+    let index = describeNotebook(book, true);
+    if (index.length > NOTEBOOK_INDEX_CHARS) {
+      index = `${index.slice(0, NOTEBOOK_INDEX_CHARS)}\n... (more -- read all of it with notebook read ${book.id})`;
+    }
+    return index;
+  });
+  const one = list.length === 1;
+  return `[Autora: ${one ? "a notebook is" : `${list.length} notebooks are`} attached to this message, part of what is being asked. ` +
+    "Its notes are shown to their first line and its files by name: read the whole of it with notebook read, " +
+    `and each file with artifact_read or pdf_read, before relying on it.\n\n${parts.join("\n\n")}]`;
 }

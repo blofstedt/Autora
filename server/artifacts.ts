@@ -159,7 +159,7 @@ export function saveArtifact(input: {
   // stay, so a link, a note or an artifact id the person already has still
   // points at the thing. Uploads are exempt -- two files with one name can be
   // two different files, and neither is ours to overwrite.
-  const at = input.origin === "agent" ? list.findIndex((a) => a.name === name) : -1;
+  const at = input.origin === "agent" ? list.findIndex((a) => a.origin === "agent" && a.name === name) : -1;
   fs.mkdirSync(DIR, { recursive: true, mode: 0o700 });
   if (at >= 0) {
     const prev = list[at];

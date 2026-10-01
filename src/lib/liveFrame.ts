@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { inField } from "./pageInput";
 import type { LiveFrame } from "./types";
 
 /**
@@ -42,6 +43,5 @@ export function setLiveFields(next: Array<[number, number, number, number]> | un
 /** Whether a point on the page lands in a field, with a little slack for a
     fingertip. */
 export function onField(x: number, y: number, slack = 6): boolean {
-  return fields.some(([fx, fy, fw, fh]) =>
-    x >= fx - slack && x <= fx + fw + slack && y >= fy - slack && y <= fy + fh + slack);
+  return inField(fields, x, y, slack);
 }

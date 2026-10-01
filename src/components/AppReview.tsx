@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { PreviewApi } from "../lib/appApi";
 import type { ReviewComment } from "../lib/preview";
 import { IconTrash } from "./Icons";
@@ -41,10 +41,13 @@ export function AppReview({
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  /** Escape leaves an edit without saving it; the blur that follows must know. */
+  const dropEdit = useRef(false);
   const n = comments.length;
+  const canSend = !sending && (n > 0 || note.trim().length > 0);
 
   const send = async () => {
-    if (sending || (n === 0 && !note.trim())) return;
+    if (!canSend) return;
     setSending(true);
     setError(null);
     const r = await api.send(note.trim());
@@ -52,6 +55,19 @@ export function AppReview({
     if (!r.ok) { setError(r.error); return; }
     setNote("");
     onSent();
+  };
+
+  const reword = async (c: ReviewComment) => {
+    setEditing(null);
+    if (dropEdit.current) { dropEdit.current = false; return; }
+    if (draft.trim() === c.text.trim()) return;
+    const r = await api.reword(c.id, draft);
+    if (!r.ok) setError(r.error);
+  };
+
+  const remove = async (id: string) => {
+    const r = await api.remove(id);
+    if (!r.ok) setError(r.error);
   };
 
   return (
@@ -62,7 +78,7 @@ export function AppReview({
           <b>Review</b>
           <span className="app-review-count">{n === 0 ? "nothing yet" : `${n} comment${n === 1 ? "" : "s"}`}</span>
         </button>
-        <button type="button" className="btn small primary app-send" disabled={sending || n === 0} onClick={() => void send()}>
+        <button type="button" className="btn small primary app-send" disabled={!canSend} onClick={() => void send()}>
           {sending ? "Sending…" : n === 0 ? "Send" : `Send ${n} comment${n === 1 ? "" : "s"}`}
         </button>
       </div>
@@ -84,7 +100,9 @@ export function AppReview({
               >
                 <span className="app-comment-n">{i + 1}</span>
                 {c.blob ? (
-                  <img className="app-comment-pic" alt="" loading="lazy" src={`/api/sessions/${sessionId}/blobs/${c.blob}`} />
+                  <a className="app-comment-pic-link" href={`/api/sessions/${sessionId}/blobs/${c.blob}`} target="_blank" rel="noreferrer" title="Open the picture">
+                    <img className="app-comment-pic" alt={`Comment ${i + 1}`} loading="lazy" src={`/api/sessions/${sessionId}/blobs/${c.blob}`} />
+                  </a>
                 ) : <span className="app-comment-pic is-none" />}
                 <div className="app-comment-main">
                   <span className="app-comment-what">{label(c)}</span>
@@ -94,9 +112,14 @@ export function AppReview({
                       autoFocus
                       rows={2}
                       value={draft}
+                      maxLength={2000}
                       onChange={(e) => setDraft(e.target.value)}
-                      onBlur={() => { void api.reword(c.id, draft); setEditing(null); }}
-                      onKeyDown={(e) => { if (e.key === "Escape") setEditing(null); if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); (e.target as HTMLTextAreaElement).blur(); } }}
+                      onBlur={() => void reword(c)}
+                      onKeyDown={(e) => {
+                        if (e.nativeEvent.isComposing) return;
+                        if (e.key === "Escape") { e.preventDefault(); dropEdit.current = true; (e.target as HTMLTextAreaElement).blur(); }
+                        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); (e.target as HTMLTextAreaElement).blur(); }
+                      }}
                     />
                   ) : (
                     <button type="button" className="app-comment-text" onClick={() => { setDraft(c.text); setEditing(c.id); }} title="Edit">
@@ -104,7 +127,7 @@ export function AppReview({
                     </button>
                   )}
                 </div>
-                <button type="button" className="app-x" onClick={() => void api.remove(c.id)} aria-label={`Remove comment ${i + 1}`}>
+                <button type="button" className="app-x" onClick={() => void remove(c.id)} aria-label={`Remove comment ${i + 1}`}>
                   <IconTrash size={14} />
                 </button>
               </li>
@@ -116,7 +139,7 @@ export function AppReview({
             maxLength={2000}
             placeholder="A word about the whole thing (optional)"
             onChange={(e) => setNote(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") void send(); }}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) void send(); }}
           />
           {error && <p className="app-err" role="alert">{error}</p>}
         </div>

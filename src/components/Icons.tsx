@@ -522,3 +522,23 @@ export const IconUpload = ({ size = 16, className }: Props) => (
     <path d="M12 15.5V4.5M7 9l5-5 5 5M5 19.5h14" />
   </svg>
 );
+
+export const IconNotebook = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M2 6h4M2 10h4M2 14h4M2 18h4" />
+    <rect x="4" y="2" width="16" height="20" rx="2" />
+    <path d="M16 2v20" />
+  </svg>
+);
+
+export const IconCode = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="m16 18 6-6-6-6M8 6l-6 6 6 6" />
+  </svg>
+);
+
+export const IconSparkle = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M12 3.5l1.9 5.1a2 2 0 0 0 1.2 1.2l5.1 1.9-5.1 1.9a2 2 0 0 0-1.2 1.2L12 20.5l-1.9-5.1a2 2 0 0 0-1.2-1.2L3.8 12.3l5.1-1.9a2 2 0 0 0 1.2-1.2z" />
+  </svg>
+);

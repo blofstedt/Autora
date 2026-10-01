@@ -47,15 +47,14 @@ WATCHED = (
     "server/",
     "server.ts",
     "package.json",
-    "public/",
-    "ui/src/",
     # Icons, the manifest and the service worker. Copied into the image
     # verbatim, so they reach a phone exactly as much as the code does -- this
     # was missing until a release that was nothing but new icons sailed past
     # the check it exists to fail.
-    "ui/public/",
-    "ui/index.html",
-    "ui/package.json",
+    "public/",
+    # The page the bundle is built from, and how it is built.
+    "index.html",
+    "vite.config.ts",
     "Dockerfile",
     "blofstedt-autora/docker-compose.yml",
 )

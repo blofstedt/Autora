@@ -3,8 +3,8 @@
 ## Release every change that reaches the container (CI enforces this)
 
 The "Release version" workflow (`.github/scripts/check_release.py`) fails any
-change to `src/`, `server/`, `server.ts`, `package.json`, `public/`, `ui/src/`,
-`ui/public/`, `ui/index.html`, `ui/package.json`, `Dockerfile` or
+change to `src/`, `server/`, `server.ts`, `package.json`, `public/`,
+`index.html`, `vite.config.ts`, `Dockerfile` or
 `blofstedt-autora/docker-compose.yml` unless the same branch also:
 
 1. Bumps `"version"` in `package.json` to a higher number (patch bump by
@@ -56,7 +56,14 @@ Only when a change genuinely has no user-facing effect, skip the bump and put
   showing what the agent is building, the static server and dev-server
   address finding, and the page-side script that reads what a person
   selected; comments are kept in `server.ts` until sent as one review),
-  `guard.ts` (what stops and asks before a risky call), `crosssite.ts` (refuses requests and websockets
+  `pdf.ts` and `pdfrender.ts` (the PDF tools: pdf-lib -- the `@cantoo` fork,
+  for encrypted files -- changes the file; pdf.js in a headless Chromium reads
+  text and draws pages. Positions are top-left points of the page as shown;
+  every result is a new artifact, and dropped or redacted content is removed
+  from the bytes, not covered),
+  `notebooks.ts` (artifacts grouped by purpose with notes between them,
+  stored as `notebooks.json`; retention keeps whatever a notebook holds or
+  cites), `guard.ts` (what stops and asks before a risky call), `crosssite.ts` (refuses requests and websockets
   started by other websites), `tls.ts` (the optional https listener and the
   certificates it issues), `logs.ts` (the Logs page's ring buffer).
 - How it learns and runs on its own:
