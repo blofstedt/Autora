@@ -6338,3 +6338,39 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 .app-window.is-phone .app-tools { margin: 6px 8px 0; }
 .app-window.is-phone .app-tools .app-hint { display: none; }
 .app-window.is-phone .app-review { max-height: 40dvh; }
+
+/* ==========================================================================
+   The PDF window: the file the agent is working on, in SecurePDF's editor
+   (components/PdfWindow.tsx). The editor brings its own toolbar; this bar
+   only says which file it is and offers it to download.
+   ========================================================================== */
+.pdf-window { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--bg); }
+.pdf-bar {
+  display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 6px 8px 6px 12px;
+  border-bottom: 1px solid var(--border); background: var(--s1);
+}
+.pdf-bar-ico { display: grid; place-items: center; color: var(--text-3); }
+.pdf-bar-name {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: calc(13px * var(--ts, 1)); font-weight: 600; color: var(--text);
+}
+.pdf-bar-note { flex: 0 0 auto; font-size: calc(11.5px * var(--ts, 1)); color: var(--text-3); white-space: nowrap; }
+.pdf-problem {
+  padding: 7px 12px; font-size: calc(12px * var(--ts, 1)); color: var(--warn);
+  background: rgba(251, 191, 36, 0.08); border-bottom: 1px solid rgba(251, 191, 36, 0.25);
+}
+.pdf-frame { flex: 1; min-height: 0; width: 100%; border: 0; background: #0f172a; display: block; }
+/* In the pinned view on a phone: the pinned view's own height, so the editor
+   scrolls its pages itself instead of the pinned view scrolling the editor. */
+.pdf-window.is-phone { height: min(46dvh, 440px); }
+/* Full screen on a phone: over everything, with the safe areas kept clear. */
+.pdf-window.is-full {
+  position: fixed; inset: 0; z-index: 80; height: auto;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  animation: fade 0.16s var(--ease) both;
+}
+/* The thread's column and the page around it are layers of their own, under
+   the header: while the window inside is full screen, both go above it. */
+.thread-wrap:has(.pdf-window.is-full) { z-index: 90; }
+.page:has(.pdf-window.is-full) { position: relative; z-index: 90; }
+@media (max-width: 680px) { .pdf-bar-note { display: none; } }

@@ -14,12 +14,12 @@
 import { useSyncExternalStore } from "react";
 import type { Bucket, Cell } from "./derive";
 
-export type SurfaceKind = "app" | "browser" | "plan" | "widget";
+export type SurfaceKind = "app" | "pdf" | "browser" | "plan" | "widget";
 
 export type Surface = { kind: SurfaceKind; cell: Cell; key: string };
 
 /** The order the tabs sit in, however they arrived. */
-const ORDER: SurfaceKind[] = ["app", "browser", "plan", "widget"];
+const ORDER: SurfaceKind[] = ["app", "pdf", "browser", "plan", "widget"];
 
 /** Who a cell is, for React and for the stage: the event that started it. */
 export function cellKey(cell: Cell): string {

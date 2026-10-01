@@ -52,6 +52,7 @@ import {
   readArtifact, saveArtifact, MAX_ARTIFACT_BYTES,
 } from "./artifacts";
 import { checkWidget } from "./widgets";
+import { deskHooks } from "./pdfdesk";
 import { runPdfTool } from "./pdf";
 import {
   addEntries, createNotebook, describeNotebook, findNotebook, listNotebooks, moveEntry,
@@ -1535,7 +1536,9 @@ const TOOLS: ToolSpec[] = [
       "font), image, check, cross, rect, ellipse, line, arrow, path, highlight (a box, or every match of some " +
       "text) and note (a comment). Positions are points from the top-left of the page as shown -- read them " +
       "off pdf_read, or pdf_look with grid. Drawing over something hides it but does not remove it: pdf_redact " +
-      "takes text out. Look at the pages you changed with pdf_look before saying it is done.",
+      "takes text out. The file opens in the PDF window beside the conversation, where what you add stays an " +
+      "object the person can move, change or remove, and they can add their own; edit the same file again to " +
+      "carry on with it. Look at the pages you changed with pdf_look before saying it is done.",
     parameters: {
       type: "object",
       properties: {
@@ -4130,6 +4133,9 @@ async function runToolUnredacted(
           showFile: ctx.showFile,
           cancelled: ctx.cancelled,
           onCancel: ctx.onCancel,
+          // The PDF window shows the work; an incognito chat keeps nothing on
+          // disk, so it works on files without one.
+          ...(ctx.memory.incognito ? {} : { desk: deskHooks(ctx.session) }),
         });
 
       // --------------------------------------------------------- memory --

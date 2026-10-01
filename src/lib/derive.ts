@@ -230,6 +230,9 @@ export type Cell =
   /** The app window was opened here: a preview of what is being built. The
       window itself is live state (lib/preview.ts); this marks where. */
   | { kind: "app"; seq: number; url: string }
+  /** The PDF window, held in the pinned view on a phone. Never derived from
+      the log: the window is live state (lib/pdfdesk.ts), added by the thread. */
+  | { kind: "pdf"; seq: number }
   | {
       kind: "todo"; seq: number; items: TodoItem[];
       /** The last event that changed the list; `seq` is where it began. */

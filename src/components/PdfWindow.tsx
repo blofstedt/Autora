@@ -1,0 +1,168 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useDeskState } from "../lib/pdfdesk";
+import { IconDownload, IconFile, IconMaximize, IconMinimize, IconX } from "./Icons";
+
+/** An ArrayBuffer as base64, in slices: a whole file at once overflows the call stack. */
+function toBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let out = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) out += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(out);
+}
+
+/**
+ * The PDF window: the file the agent is working on, in SecurePDF's editor.
+ *
+ * What the agent places arrives as the editor's own objects, which the person
+ * can move, resize, edit or remove, and add to; the server keeps the file up
+ * to date with all of it and tells the agent what the person did
+ * (server/pdfdesk.ts).
+ *
+ * The editor is its own build (pdf-editor/), in a frame sandboxed without an
+ * origin of its own -- it renders PDFs from anywhere -- so it cannot reach
+ * this app or its API. This component is its only way out: it hands the
+ * editor the pages and the objects, and passes on what the person changed.
+ */
+export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: boolean }) {
+  const desk = useDeskState();
+  const frame = useRef<HTMLIFrameElement>(null);
+  const ready = useRef(false);
+  /** The pages the editor has: a change of baseRev means fetch them again. */
+  const shown = useRef<{ baseRev: number; name: string }>({ baseRev: -1, name: "" });
+  /** Pages the person changed here, not yet echoed back by the server. */
+  const ownPages = useRef(0);
+  const deskRef = useRef(desk);
+  deskRef.current = desk;
+  const [trouble, setTrouble] = useState<string | null>(null);
+  /** On a phone the pinned view is a third of the screen: editing wants all of it. */
+  const [full, setFull] = useState(false);
+
+  const post = useCallback((msg: Record<string, unknown>, transfer?: Transferable[]) => {
+    frame.current?.contentWindow?.postMessage(msg, "*", transfer ?? []);
+  }, []);
+
+  const load = useCallback(async () => {
+    const now = deskRef.current;
+    const baseRev = now.baseRev ?? 0;
+    try {
+      const res = await fetch(`/api/pdfdesk/${encodeURIComponent(sessionId)}/base`);
+      if (!res.ok) throw new Error(`the server answered ${res.status}`);
+      const bytes = await res.arrayBuffer();
+      const latest = deskRef.current;
+      // The same file with its pages changed keeps the page you were on.
+      const keepPage = shown.current.name === latest.name;
+      shown.current = { baseRev, name: latest.name ?? "" };
+      post({ type: "autora:load", bytes, name: latest.name, items: latest.items ?? [], baseRev, keepPage }, [bytes]);
+      setTrouble(null);
+    } catch (err: any) {
+      setTrouble(`The PDF could not be loaded: ${err?.message ?? err}`);
+    }
+  }, [post, sessionId]);
+
+  const send = useCallback(async (what: "changes" | "pages", body: unknown) => {
+    try {
+      const res = await fetch(`/api/pdfdesk/${encodeURIComponent(sessionId)}/${what}`, {
+        method: "POST",
+        // Not application/json: the app-wide parser stops at 5 MB, and a
+        // placed photograph can be more. The route reads the body itself.
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? `the server answered ${res.status}`);
+      }
+      setTrouble(null);
+    } catch (err: any) {
+      setTrouble(`That change was not saved: ${err?.message ?? err}`);
+    }
+  }, [sessionId]);
+
+  // What the editor says: it is ready, the person changed objects, or the pages.
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      if (!frame.current || e.source !== frame.current.contentWindow) return;
+      const msg = e.data;
+      if (!msg || typeof msg !== "object") return;
+      if (msg.type === "autora:ready") {
+        ready.current = true;
+        void load();
+      } else if (msg.type === "autora:ops") {
+        void send("changes", { upsert: Array.isArray(msg.upsert) ? msg.upsert : [], remove: Array.isArray(msg.remove) ? msg.remove : [] });
+      } else if (msg.type === "autora:base" && msg.bytes instanceof ArrayBuffer) {
+        ownPages.current++;
+        void send("pages", { bytes: toBase64(msg.bytes), items: Array.isArray(msg.items) ? msg.items : [] });
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [load, send]);
+
+  // New pages from the server: load them, unless they are the ones just sent from here.
+  useEffect(() => {
+    if (!ready.current || desk.baseRev === undefined || desk.baseRev === shown.current.baseRev) return;
+    if (ownPages.current > 0) {
+      ownPages.current--;
+      shown.current = { ...shown.current, baseRev: desk.baseRev };
+      return;
+    }
+    void load();
+  }, [desk.baseRev, load]);
+
+  // New objects on the same pages: the agent placed something, or the server echoed the person.
+  useEffect(() => {
+    if (!ready.current || desk.baseRev !== shown.current.baseRev) return;
+    post({ type: "autora:items", items: desk.items ?? [] });
+  }, [desk.rev, desk.baseRev, desk.items, post]);
+
+  const close = useCallback(() => {
+    void fetch(`/api/pdfdesk/${encodeURIComponent(sessionId)}/close`, { method: "POST" });
+  }, [sessionId]);
+
+  const problem = trouble ?? desk.problem ?? null;
+
+  return (
+    <div className={`pdf-window${phone ? " is-phone" : ""}${phone && full ? " is-full" : ""}`}>
+      <div className="pdf-bar">
+        <span className="pdf-bar-ico" aria-hidden="true"><IconFile size={14} /></span>
+        <span className="pdf-bar-name" title={desk.name}>{desk.name ?? "PDF"}</span>
+        <span className="pdf-bar-note">{problem ? "" : "Saved as you go"}</span>
+        <div className="spacer" />
+        {desk.working && (
+          <a
+            className="btn icon ghost"
+            href={`/api/artifacts/${desk.working}?download`}
+            title="Download the file as it is now"
+            aria-label="Download the file as it is now"
+          >
+            <IconDownload size={14} />
+          </a>
+        )}
+        {phone && (
+          <button
+            className="btn icon ghost"
+            onClick={() => setFull((v) => !v)}
+            title={full ? "Back to the conversation" : "Full screen"}
+            aria-label={full ? "Back to the conversation" : "Full screen"}
+            aria-pressed={full}
+          >
+            {full ? <IconMinimize size={14} /> : <IconMaximize size={14} />}
+          </button>
+        )}
+        {!phone && (
+          <button className="btn icon ghost" onClick={close} title="Put the PDF window away" aria-label="Put the PDF window away">
+            <IconX size={14} />
+          </button>
+        )}
+      </div>
+      {problem && <div className="pdf-problem" role="status">{problem}</div>}
+      <iframe
+        ref={frame}
+        className="pdf-frame"
+        src="/pdf-editor/index.html"
+        title={`${desk.name ?? "PDF"}, in the PDF editor`}
+        sandbox="allow-scripts allow-downloads allow-modals allow-popups"
+      />
+    </div>
+  );
+}

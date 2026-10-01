@@ -22,11 +22,15 @@ jobs:
 
       - run: npm ci
 
+      # The PDF window's editor: a sub-project with its own dependencies.
+      - run: npm --prefix pdf-editor ci
+
       - name: Lint (typecheck and ESLint)
         run: npm run lint
 
-      - name: Test
-        run: npm test
-
+      # Built before the tests: the PDF window's test drives the built editor.
       - name: Build
         run: npm run build
+
+      - name: Test
+        run: npm test

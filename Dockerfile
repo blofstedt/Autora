@@ -15,6 +15,10 @@ WORKDIR /build
 # every build that did not change what we depend on, which is most of them.
 COPY package.json package-lock.json ./
 RUN npm ci
+# The PDF window's editor is a sub-project with its own dependencies (its own
+# React and Tailwind), installed the same way and for the same reason.
+COPY pdf-editor/package.json pdf-editor/package-lock.json pdf-editor/
+RUN npm --prefix pdf-editor ci
 
 COPY tsconfig.json tsconfig.server.json tsconfig.test.json eslint.config.js vite.config.ts index.html ./
 # Only so `npm run lint` can typecheck them; they stay in this stage.
@@ -23,6 +27,7 @@ COPY public/ public/
 COPY src/ src/
 COPY server.ts ./
 COPY server/ server/
+COPY pdf-editor/ pdf-editor/
 
 # Typecheck both halves before building either. A container that builds and
 # then fails at runtime on something the compiler already knew is a wasted

@@ -7,6 +7,8 @@ import { Kind, type AutoraEvent, type BrowserState } from "./lib/types";
 import { setLiveFields, setLiveFrame } from "./lib/liveFrame";
 import { resetPreview, setPreviewFrame, setPreviewState, usePreviewState, type PreviewState } from "./lib/preview";
 import { AppPreview } from "./components/AppPreview";
+import { PdfWindow } from "./components/PdfWindow";
+import { resetDesk, setDeskState, useDeskState } from "./lib/pdfdesk";
 import { cellKey, dockedPlan, usePhone } from "./lib/stage";
 import { Thread } from "./components/Thread";
 import { Dock } from "./components/Dock";
@@ -316,6 +318,7 @@ export function App() {
       }, wait);
     };
     resetPreview();
+    resetDesk();
     const stream = new SessionStream(sessionId, {
       onEvents: (fresh) => {
         // A batch of nothing but repeats: a new array would re-derive the
@@ -336,6 +339,7 @@ export function App() {
         }
       },
       onPreview: (state) => setPreviewState(state as PreviewState),
+      onPdfDesk: setDeskState,
       onBrowser: (state) => {
         setLiveFields(state?.fields);
         setBrowser(state);
@@ -1224,7 +1228,14 @@ export function App() {
   /* The app window takes the right of the chat on a wide screen, for a live
      session; on a phone it lives in the pinned view. */
   const phoneLayout = usePhone();
-  const appPane = usePreviewState().open && !phoneLayout && live;
+  const preview = usePreviewState();
+  const desk = useDeskState();
+  /* One window beside the chat at a time: the app or the PDF, whichever was
+     opened last; putting it away shows the other. */
+  const sidePane: "app" | "pdf" | null = phoneLayout || !live ? null
+    : desk.open && (!preview.open || (desk.since ?? 0) >= (preview.since ?? 0)) ? "pdf"
+      : preview.open ? "app" : null;
+  const appPane = sidePane !== null;
 
   const sessionCost = sessions.find((s) => s.id === sessionId)?.cost ?? 0;
 
@@ -2002,9 +2013,15 @@ export function App() {
         </main>
         {/* The app being built, beside the conversation on a wide screen. On a
             phone it is a tab in the pinned view instead (see Stage). */}
-        {appPane && sessionId && (
+        {sidePane === "app" && sessionId && (
           <aside className="app-pane" aria-label="The app being built">
             <AppPreview sessionId={sessionId} phone={false} />
+          </aside>
+        )}
+        {/* The PDF the agent is working on, open for the person to work on too. */}
+        {sidePane === "pdf" && sessionId && (
+          <aside className="app-pane" aria-label="The PDF being worked on">
+            <PdfWindow sessionId={sessionId} phone={false} />
           </aside>
         )}
         </div>

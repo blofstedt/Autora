@@ -1,0 +1,34 @@
+{
+  "name": "autora-pdf-editor",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "The PDF window's editor: SecurePDF's editor, built on its own so its React and Tailwind stay out of Autora's bundle.",
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fontsource/caveat": "^5.2.6",
+    "@fontsource/dancing-script": "^5.2.6",
+    "@fontsource/great-vibes": "^5.2.6",
+    "@fontsource/pacifico": "^5.2.6",
+    "@fontsource/sacramento": "^5.2.6",
+    "@fontsource/satisfy": "^5.2.6",
+    "lucide-react": "^0.546.0",
+    "motion": "^12.23.24",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.0.227",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.14",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.0.4",
+    "tailwindcss": "^4.1.14",
+    "typescript": "~5.8.2",
+    "vite": "^6.4.3"
+  }
+}

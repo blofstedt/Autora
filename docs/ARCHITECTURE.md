@@ -257,6 +257,18 @@ session. Variable weights keep it to two files and 77KB.
   read one after the other rather than side by side, and that a session of
   thousands of frames is a long page; the frames are content-addressed and the
   cards fold, which has been enough so far.
+- **A PDF is worked on together, in an editor, not handed back as a file.**
+  The PDF tools used to flatten what the agent drew into each result, so a
+  signature in the wrong place meant asking for another version. Now the file
+  opens in SecurePDF's editor beside the chat (`server/pdfdesk.ts`,
+  `pdf-editor/`), what the agent places arrives as the editor's own objects,
+  and the person moves, edits or adds to them; the file is rewritten from the
+  pages and the objects on every change, and the agent is told what the
+  person did. An object keeps the `pdf_edit` item it came from, so it is drawn
+  exactly as before until someone changes it. The editor is its own build in
+  an origin-less sandboxed frame because it renders files from anywhere; the
+  cost is a second React in the image and a bridge of messages instead of
+  shared state.
 - **The policy default was ASK**, and it annoyed people into not using it. The
   default is now Yolo: every call runs and is shown as it happens, Stop reaches
   the running process, and a chat can be switched to Ask -- all changes, or
