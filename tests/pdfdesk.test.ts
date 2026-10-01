@@ -179,6 +179,66 @@ await test("other tools read the window's file and start it over from their resu
   assert.equal((await PDFDocument.load(desk.deskBase(SESSION)!)).getPageCount(), 1);
 });
 
+await test("a reference file worked on in the background does not replace the window's file", async () => {
+  const ref = saveArtifact({ origin: "user", name: "reference.pdf", data: await letter() });
+  const before = state();
+  const r = await run("pdf_pages", { file: ref.id, pages: "1" });
+  assert.equal(r.ok, true, r.summary);
+  const after = state();
+  assert.equal(after.name, before.name, "the window keeps the working file");
+  assert.equal(after.working, before.working);
+  assert.equal(after.baseRev, before.baseRev);
+});
+
+await test("the agent's changes wait for the person: accept keeps one, deny undoes one and tells the agent", async () => {
+  desk.acceptMarks(SESSION, "all");
+  const r = await run("pdf_edit", { file: working, add: [{ type: "text", text: "Review me", x: 40, y: 40 }, { type: "rect", x: 10, y: 10, width: 30, height: 30 }] });
+  assert.equal(r.ok, true, r.summary);
+  assert.match(r.summary, /agent_\w+ \(text, page 1\)/, "the agent is told the ids");
+  let s = state();
+  assert.equal(s.marks.length, 2);
+  assert.deepEqual(s.marks.map((m: any) => m.kind), ["add", "add"]);
+  const [first, second] = s.marks;
+  desk.acceptMarks(SESSION, first.id);
+  assert.equal(state().marks.length, 1);
+  const before = state().items.length;
+  desk.denyMarks(SESSION, second.id, dir);
+  s = state();
+  assert.equal(s.marks.length, 0);
+  assert.equal(s.items.length, before - 1, "the declined object is gone");
+  assert.ok(s.items.some((i: any) => i.id === first.itemId), "the accepted one stays");
+  assert.match(desk.deskBriefing(SESSION)!, /declined your change: added/);
+  // Removing and changing are changes to review as well.
+  const id = first.itemId as string;
+  const c = await run("pdf_edit", { file: working, change: [{ id, text: "Reviewed" }] });
+  assert.equal(c.ok, true, c.summary);
+  assert.deepEqual(state().marks.map((m: any) => m.kind), ["edit"]);
+  assert.equal(state().items.find((i: any) => i.id === id).text, "Reviewed");
+  desk.denyMarks(SESSION, "all", dir);
+  assert.equal(state().items.find((i: any) => i.id === id).text, "Review me", "declined: back as it was");
+  const d = await run("pdf_edit", { file: working, remove: [id] });
+  assert.equal(d.ok, true, d.summary);
+  assert.ok(!state().items.some((i: any) => i.id === id));
+  desk.denyMarks(SESSION, "all", dir);
+  assert.ok(state().items.some((i: any) => i.id === id), "declined removal puts it back");
+  desk.acceptMarks(SESSION, "all");
+});
+
+await test("every state of the file is kept as a version that can be gone back to", async () => {
+  const versions = state().versions as { n: number; label: string }[];
+  assert.ok(versions.length >= 3, `versions: ${versions.length}`);
+  const last = versions[versions.length - 1];
+  const target = versions.find((v) => /Review me|drew|Opened/.test(v.label)) ?? versions[0];
+  assert.equal(desk.restoreVersion(SESSION, 9999, dir), "That version is not there any more.");
+  assert.equal(desk.restoreVersion(SESSION, target.n, dir), null);
+  const after = state().versions as { n: number; label: string }[];
+  assert.ok(after.length > versions.length || after[after.length - 1].n > last.n, "going back is itself a version");
+  assert.match(after[after.length - 1].label, /Went back to version/);
+  const file = await desk.versionFile(SESSION, target.n, dir);
+  assert.ok(file && file.data.subarray(0, 5).toString() === "%PDF-");
+  assert.match(desk.deskBriefing(SESSION)!, /went back to version/);
+});
+
 await test("the start of a turn says what is open and what the person did", () => {
   desk.personChanges(SESSION, [{ id: "ann_note_1", type: "note", pageNumber: 1, x: 5, y: 5, width: 20, height: 20, noteComment: "Is this right?" }], [], dir);
   const brief = desk.deskBriefing(SESSION)!;

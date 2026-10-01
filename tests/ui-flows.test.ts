@@ -37,6 +37,26 @@ async function main() {
     await page.waitForSelector('textarea[aria-label="Task"]');
 
     console.log("sending");
+    await test("an image pasted into the box is attached, and pasted text still goes into it", async () => {
+      await page.focus('textarea[aria-label="Task"]');
+      await page.evaluate(() => {
+        const png = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="), (c) => c.charCodeAt(0));
+        const data = new DataTransfer();
+        data.items.add(new File([png], "image.png", { type: "image/png" }));
+        document.querySelector('textarea[aria-label="Task"]')!.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+      });
+      await page.waitForSelector(".attach-chip.is-pic, .attach-chip.is-file", { timeout: 10_000 });
+      assert.equal(await page.inputValue('textarea[aria-label="Task"]'), "");
+      await page.evaluate(() => {
+        const data = new DataTransfer();
+        data.setData("text/plain", "pasted words");
+        document.querySelector('textarea[aria-label="Task"]')!.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+      });
+      // Text is the browser's own job; the handler must not swallow it.
+      assert.equal(await page.evaluate(() => document.querySelectorAll(".attach-chip").length), 1);
+      await page.click(".attach-chip .attach-drop");
+      assert.equal(await page.evaluate(() => document.querySelectorAll(".attach-chip").length), 0);
+    });
     await test("a message typed and sent appears, the reply streams in, and the box is cleared", async () => {
       app.decide = () => ({ text: "The reply is here, and it is complete." });
       await say("hello there");

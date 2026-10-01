@@ -20,6 +20,7 @@
  * it renders PDFs that came from anywhere.
  */
 
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import express, { type Express, type Request, type Response } from "express";
@@ -41,7 +42,40 @@ type Desk = DeskSnapshot & {
   since: number;
   /** Why the file could not be rewritten, while that is so. */
   problem: string | null;
+  /** What the agent changed that the person has not yet accepted or declined. */
+  marks: Mark[];
+  /** Earlier states of the file, oldest first. */
+  versions: Version[];
+  vseq: number;
+  /** The person changed something since the last version was kept. */
+  dirty: boolean;
 };
+
+/** One change by the agent, up for review in the window. */
+export type Mark = {
+  id: string;
+  kind: "add" | "edit" | "remove" | "page";
+  /** The object it is about (not for "page"). */
+  itemId?: string;
+  page: number;
+  label: string;
+  /** The object as it was, to put back when the change is declined. */
+  before?: DeskItem;
+  /** For "page": the pages as they were, kept as a base file. */
+  beforeBaseRev?: number;
+};
+
+export type Version = {
+  n: number;
+  label: string;
+  at: number;
+  by: "agent" | "person";
+  name: string;
+  baseRev: number;
+  items: DeskItem[];
+};
+
+const MAX_VERSIONS = 40;
 
 const desks = new Map<string, Desk>();
 const DIR = path.join(stateDir(), "desks");
@@ -69,6 +103,8 @@ function load(session: string): Desk | null {
       open: meta.open === true, outName: String(meta.outName || meta.name || "document.pdf"),
       baseRev: Number(meta.baseRev) || 1, rev: Number(meta.rev) || 1,
       news: Array.isArray(meta.news) ? meta.news.map(String) : [], since: Number(meta.since) || Date.now(), problem: null,
+      marks: Array.isArray(meta.marks) ? meta.marks : [], versions: Array.isArray(meta.versions) ? meta.versions : [],
+      vseq: Number(meta.vseq) || 0, dirty: meta.dirty === true,
     };
     desks.set(session, desk);
     return desk;
@@ -104,10 +140,50 @@ function persist(session: string) {
 export function dropDesk(session: string) {
   desks.delete(session);
   lastBase.delete(session);
-  for (const ext of ["json", "pdf"]) {
-    try {
-      fs.rmSync(path.join(DIR, `${session}.${ext}`), { force: true });
-    } catch {}
+  try {
+    for (const f of fs.readdirSync(DIR)) if (f === `${session}.json` || f === `${session}.pdf` || f.startsWith(`${session}.b`)) fs.rmSync(path.join(DIR, f), { force: true });
+  } catch {}
+}
+
+// ------------------------------------------------------------ versions --
+
+const baseFile = (session: string, baseRev: number) => path.join(DIR, `${session}.b${baseRev}.pdf`);
+
+/** Keep the pages as they are now, under their revision, once. */
+function keepBase(session: string, desk: Desk) {
+  const file = baseFile(session, desk.baseRev);
+  try {
+    if (fs.existsSync(file)) return;
+    fs.mkdirSync(DIR, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(file, desk.base, { mode: 0o600 });
+  } catch (err: any) {
+    console.warn(`[pdfdesk] ${session}: could not keep a version: ${err?.message ?? err}`);
+  }
+}
+
+/** Keep the file as it is now as a version the person can go back to. */
+function snapshot(session: string, desk: Desk, label: string, by: "agent" | "person") {
+  keepBase(session, desk);
+  desk.versions.push({
+    n: ++desk.vseq, label: label.slice(0, 140), at: Date.now(), by, name: desk.name, baseRev: desk.baseRev,
+    items: JSON.parse(JSON.stringify(desk.items)),
+  });
+  desk.dirty = false;
+  while (desk.versions.length > MAX_VERSIONS) desk.versions.shift();
+  const used = new Set<number>([desk.baseRev, ...desk.versions.map((v) => v.baseRev), ...desk.marks.flatMap((m) => (m.beforeBaseRev ? [m.beforeBaseRev] : []))]);
+  try {
+    for (const f of fs.readdirSync(DIR)) {
+      const m = f.startsWith(`${session}.b`) ? /\.b(\d+)\.pdf$/.exec(f) : null;
+      if (m && !used.has(Number(m[1]))) fs.rmSync(path.join(DIR, f), { force: true });
+    }
+  } catch {}
+}
+
+function versionBase(session: string, v: Version): Buffer | null {
+  try {
+    return fs.readFileSync(baseFile(session, v.baseRev));
+  } catch {
+    return null;
   }
 }
 
@@ -156,6 +232,8 @@ export function deskState(session: string) {
   return {
     open: desk.open, name: desk.name, working: desk.working, baseRev: desk.baseRev, rev: desk.rev,
     items: desk.items, since: desk.since, problem: desk.problem,
+    marks: desk.marks.map(({ before: _before, ...m }) => m),
+    versions: desk.versions.map(({ items: _items, ...v }) => v),
   };
 }
 
@@ -164,6 +242,36 @@ export function deskBase(session: string): Buffer | null {
 }
 
 // ------------------------------------------------- the agent's side --
+
+const markId = () => `mk_${crypto.randomBytes(4).toString("hex")}`;
+
+function dropVersions(session: string) {
+  try {
+    for (const f of fs.readdirSync(DIR)) if (f.startsWith(`${session}.b`)) fs.rmSync(path.join(DIR, f), { force: true });
+  } catch {}
+}
+
+const plain = (item: DeskItem) => {
+  const rest: Record<string, any> = { ...item };
+  delete rest.autora;
+  return JSON.stringify(rest);
+};
+
+/** What the agent added, changed or removed among the objects. */
+function diffItems(before: DeskItem[], after: DeskItem[]): Mark[] {
+  const was = new Map(before.map((i) => [i.id, i]));
+  const now = new Map(after.map((i) => [i.id, i]));
+  const out: Mark[] = [];
+  for (const item of after) {
+    const old = was.get(item.id);
+    if (!old) out.push({ id: markId(), kind: "add", itemId: item.id, page: item.pageNumber, label: `Added ${label(item, false)}` });
+    else if (plain(old) !== plain(item)) out.push({ id: markId(), kind: "edit", itemId: item.id, page: item.pageNumber, label: `Changed ${label(item, false)}`, before: old });
+  }
+  for (const item of before) {
+    if (!now.has(item.id)) out.push({ id: markId(), kind: "remove", itemId: item.id, page: item.pageNumber, label: `Removed ${label(item, false)}`, before: item });
+  }
+  return out;
+}
 
 /** The window as the PDF tools of one session see it. */
 export function deskHooks(session: string): DeskHooks {
@@ -175,16 +283,36 @@ export function deskHooks(session: string): DeskHooks {
     open(next) {
       const was = load(session);
       const sameFile = was && was.working !== null && was.working === next.working;
+      // The same document carried on, or another one that replaces it.
+      const carried = Boolean(was && (sameFile || was.name === next.name || (was.source !== null && was.source === next.source)));
+      const { review, ...snap } = next;
+      if (was && !carried) dropVersions(session);
       const desk: Desk = {
-        ...next,
+        ...snap,
         open: true,
         baseRev: (was?.baseRev ?? 0) + 1,
         rev: (was?.rev ?? 0) + 1,
         news: was?.news ?? [],
         since: sameFile && was ? was.since : Date.now(),
         problem: null,
+        marks: carried && was ? was.marks : [],
+        versions: carried && was ? was.versions : [],
+        vseq: carried && was ? was.vseq : 0,
+        dirty: false,
       };
+      if (was && carried) {
+        // What the person did so far is kept as a version before the agent's change goes on top.
+        if (was.dirty || was.versions.length === 0) snapshot(session, was, was.versions.length === 0 ? "Opened" : "Your changes", was.versions.length === 0 ? "agent" : "person");
+        if (review?.baseNote) {
+          keepBase(session, was);
+          desk.marks.push({ id: markId(), kind: "page", page: 1, label: review.baseNote, beforeBaseRev: was.baseRev });
+        }
+        if (review?.diff !== false) desk.marks.push(...diffItems(was.items, desk.items));
+        desk.versions = was.versions;
+        desk.vseq = was.vseq;
+      }
       desks.set(session, desk);
+      if (!was || !carried || review) snapshot(session, desk, review?.label ?? (was && carried ? "Changed by the agent" : "Opened"), "agent");
       persist(session);
       changed(session);
     },
@@ -229,6 +357,9 @@ export function deskBriefing(session: string): string | null {
     `${desk.name} is open in the PDF window beside the conversation${desk.working ? ` (artifact ${desk.working})` : ""}. ` +
       "pdf_edit on it places movable objects the person sees and can change; the other PDF tools read it as it is now.",
   ];
+  const mine = desk.items.filter((i) => i.autora).slice(-30);
+  if (mine.length) lines.push(`Your objects on it (ids for pdf_edit's change and remove): ${mine.map((i) => `${i.id} (${i.type}, page ${i.pageNumber})`).join(", ")}.`);
+  if (desk.marks.length) lines.push(`${desk.marks.length} of your change${desk.marks.length === 1 ? " is" : "s are"} still waiting for the person to accept or decline.`);
   if (desk.news.length) {
     lines.push(newsLine(desk));
     desk.news = [];
@@ -244,8 +375,8 @@ const LABEL: Record<string, string> = {
   highlighter: "highlight", redact: "redaction box", note: "note", text: "text",
 };
 
-function label(item: DeskItem): string {
-  const whose = item.autora ? "your " : "";
+function label(item: DeskItem, owner = true): string {
+  const whose = owner && item.autora ? "your " : "";
   const words = (t: unknown) => {
     const s = String(t ?? "").trim().replace(/\s+/g, " ");
     return s ? ` "${s.length > 40 ? `${s.slice(0, 40)}…` : s}"` : "";
@@ -295,6 +426,7 @@ export function personChanges(session: string, upsert: unknown[], remove: unknow
   }
   desk.news = squash(desk.news).slice(-40);
   desk.items = [...byId.values()];
+  desk.dirty = true;
   desk.rev++;
   persist(session);
   changed(session);
@@ -326,10 +458,83 @@ export function personBase(session: string, data: Buffer, items: unknown[], cwd:
   desk.news.push("changed the pages themselves (deleting, turning, reordering or merging pages)");
   desk.baseRev++;
   desk.rev++;
+  desk.dirty = true;
   persist(session);
   changed(session);
   rewrite(session, cwd);
   return null;
+}
+
+/** The person accepts one of the agent's changes, or all of them: it stays as it is. */
+export function acceptMarks(session: string, id: string | "all"): boolean {
+  const desk = load(session);
+  if (!desk) return false;
+  desk.marks = id === "all" ? [] : desk.marks.filter((m) => m.id !== id);
+  persist(session);
+  changed(session);
+  return true;
+}
+
+/** The person declines one of the agent's changes, or all of them: it is undone, and the agent is told. */
+export function denyMarks(session: string, id: string | "all", cwd: string): boolean {
+  const desk = load(session);
+  if (!desk) return false;
+  const marks = id === "all" ? [...desk.marks].reverse() : desk.marks.filter((m) => m.id === id);
+  if (!marks.length) return false;
+  const byId = new Map(desk.items.map((i) => [i.id, i]));
+  for (const m of marks) {
+    if (m.kind === "add" && m.itemId) byId.delete(m.itemId);
+    else if ((m.kind === "edit" || m.kind === "remove") && m.before) byId.set(m.before.id, m.before);
+    else if (m.kind === "page" && m.beforeBaseRev) {
+      try {
+        desk.base = fs.readFileSync(baseFile(session, m.beforeBaseRev));
+        desk.baseRev++;
+      } catch {
+        continue;
+      }
+    }
+    desk.news.push(`declined your change: ${m.label.charAt(0).toLowerCase()}${m.label.slice(1)}`);
+  }
+  const gone = new Set(marks.map((m) => m.id));
+  desk.marks = desk.marks.filter((m) => !gone.has(m.id));
+  desk.items = [...byId.values()];
+  desk.rev++;
+  snapshot(session, desk, marks.length === 1 ? `Declined: ${marks[0].label}` : `Declined ${marks.length} changes`, "person");
+  persist(session);
+  changed(session);
+  rewrite(session, cwd);
+  return true;
+}
+
+/** Go back to an earlier version of the file: the present one is kept too, so nothing is lost. */
+export function restoreVersion(session: string, n: number, cwd: string): string | null {
+  const desk = load(session);
+  if (!desk) return "There is no PDF open in the window.";
+  const v = desk.versions.find((x) => x.n === n);
+  const base = v ? versionBase(session, v) : null;
+  if (!v || !base) return "That version is not there any more.";
+  if (desk.dirty) snapshot(session, desk, "Your changes", "person");
+  desk.base = base;
+  desk.items = JSON.parse(JSON.stringify(v.items));
+  desk.baseRev++;
+  desk.rev++;
+  desk.marks = [];
+  desk.news.push(`went back to version ${v.n} (${v.label})`);
+  snapshot(session, desk, `Went back to version ${v.n}`, "person");
+  persist(session);
+  changed(session);
+  rewrite(session, cwd);
+  return null;
+}
+
+/** An earlier version as a PDF, flattened as it was. */
+export async function versionFile(session: string, n: number, cwd: string): Promise<{ name: string; data: Buffer } | null> {
+  const desk = load(session);
+  const v = desk?.versions.find((x) => x.n === n);
+  const base = v ? versionBase(session, v) : null;
+  if (!v || !base) return null;
+  const { data } = await flattenDesk(base, v.items, cwd);
+  return { name: v.name.replace(/\.pdf$/i, "") + `-v${v.n}.pdf`, data };
 }
 
 /** Put the window away; it comes back the next time the agent works on a PDF. */
@@ -399,6 +604,37 @@ export function deskRoutes(app: Express, opts: { exists: (session: string) => bo
     const problem = personBase(id, data, Array.isArray(body?.items) ? body.items : [], opts.cwd());
     if (problem) return res.status(400).json({ error: problem });
     res.json({ ok: true });
+  });
+
+  app.post("/api/pdfdesk/:session/review", express.json({ limit: "10kb" }), (req, res) => {
+    const id = known(req, res);
+    if (!id) return;
+    const action = String(req.body?.action ?? "");
+    const mark = req.body?.all === true ? "all" : String(req.body?.id ?? "");
+    const ok = action === "accept" ? acceptMarks(id, mark) : action === "deny" ? denyMarks(id, mark, opts.cwd()) : false;
+    if (!ok) return res.status(400).json({ error: "Nothing to review there." });
+    res.json({ ok: true });
+  });
+
+  app.post("/api/pdfdesk/:session/restore", express.json({ limit: "10kb" }), (req, res) => {
+    const id = known(req, res);
+    if (!id) return;
+    const problem = restoreVersion(id, Number(req.body?.n), opts.cwd());
+    if (problem) return res.status(400).json({ error: problem });
+    res.json({ ok: true });
+  });
+
+  app.get("/api/pdfdesk/:session/version/:n", (req, res) => {
+    const id = known(req, res);
+    if (!id) return;
+    versionFile(id, Number(req.params.n), opts.cwd()).then((f) => {
+      if (!f) return res.status(404).json({ error: "That version is not there any more." });
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="${f.name.replace(/[^\w. -]/g, "_")}"`);
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Content-Security-Policy", "sandbox");
+      res.send(f.data);
+    }).catch(() => res.status(500).json({ error: "That version could not be made." }));
   });
 
   app.post("/api/pdfdesk/:session/close", (req, res) => {

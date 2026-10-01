@@ -186,6 +186,25 @@ async function main() {
     assert.equal(client.hasRule("", a), false);
   });
 
+  test("in planning a terminal command that only reads runs; anything that could write is refused", () => {
+    for (const command of [
+      "cat /data/out/report.txt", "ls -la ~/project", "head -n 20 notes.md | grep todo", "cd app && ls && git status",
+      "git log --oneline -5", "find . -name '*.pdf'", "pdftotext out.pdf - 2>&1 | head", "wc -l a b 2>/dev/null",
+    ]) {
+      assert.equal(m.planRefusal("plan", undefined, "terminal", { command }), null, command);
+      assert.equal(m.planRefusal("agent", "plan", "terminal", { command }), null, command);
+    }
+    for (const command of [
+      "", "rm x", "cat a > b", "echo hi >> log", "ls $(rm x)", "ls `id`", "cat a | tee b", "sed -i s/a/b/ f", "sort -o out in",
+      "find . -delete", "find . -exec rm {} ;", "git commit -m x", "git push", "ls & rm x", "cat a; rm b", "curl example.com",
+      "npm install", "python -c 'open(1)'", "cat <(rm x)",
+    ]) {
+      assert.match(m.planRefusal("plan", undefined, "terminal", { command }) ?? "", /Not run/, command);
+    }
+    assert.equal(m.askAbout("ask", "", "terminal", { command: "cat file" }), "skip");
+    assert.equal(m.askAbout("ask", "", "terminal", { command: "rm file" }), "hold");
+  });
+
   console.log(`\n${passed} modes cases passed.`);
 }
 main().catch((err) => { console.error(err); process.exit(1); });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDeskState } from "../lib/pdfdesk";
 import { IconDownload, IconFile, IconMaximize, IconMinimize, IconX } from "./Icons";
 
@@ -55,6 +55,7 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
   const shown = useRef<{ baseRev: number; name: string }>({ baseRev: -1, name: "" });
   /** Pages the person changed here, not yet echoed back by the server. */
   const ownPages = useRef(0);
+  const pending = useRef<string[]>([]);
   const deskRef = useRef(desk);
   deskRef.current = desk;
   const [trouble, setTrouble] = useState<string | null>(null);
@@ -77,6 +78,7 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
       const keepPage = shown.current.name === latest.name;
       shown.current = { baseRev, name: latest.name ?? "" };
       post({ type: "autora:load", bytes, name: latest.name, items: latest.items ?? [], baseRev, keepPage }, [bytes]);
+      post({ type: "autora:pending", ids: pending.current });
       setTrouble(null);
     } catch (err: any) {
       setTrouble(`The PDF could not be loaded: ${err?.message ?? err}`);
@@ -141,6 +143,57 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
     post({ type: "autora:items", items: desk.items ?? [] });
   }, [desk.rev, desk.baseRev, desk.items, post]);
 
+  // Reviewing the agent's changes: one at a time, with next and previous.
+  const marks = useMemo(() => desk.marks ?? [], [desk.marks]);
+  const [cursor, setCursor] = useState(0);
+  const at = Math.min(cursor, Math.max(0, marks.length - 1));
+  const mark = marks[at];
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  const versions = desk.versions ?? [];
+
+  const focusMark = useCallback((m: { itemId?: string; page: number } | undefined) => {
+    if (m) post({ type: "autora:focus", id: m.itemId ?? null, page: m.page });
+  }, [post]);
+  const go = useCallback((to: number) => {
+    if (marks.length === 0) return;
+    const next = (to + marks.length) % marks.length;
+    setCursor(next);
+    focusMark(marks[next]);
+  }, [marks, focusMark]);
+
+  // Which objects the editor outlines as waiting for a decision.
+  const pendingIds = marks.filter((m) => m.itemId && m.kind !== "remove").map((m) => m.itemId as string);
+  const pendingKey = pendingIds.join(",");
+  pending.current = pendingKey ? pendingKey.split(",") : [];
+  useEffect(() => {
+    if (ready.current) post({ type: "autora:pending", ids: pending.current });
+  }, [pendingKey, desk.baseRev, post]);
+
+  const review = useCallback(async (action: "accept" | "deny", body: { id?: string; all?: boolean }) => {
+    try {
+      const res = await fetch(`/api/pdfdesk/${encodeURIComponent(sessionId)}/review`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, ...body }),
+      });
+      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `the server answered ${res.status}`);
+      setTrouble(null);
+    } catch (err: any) {
+      setTrouble(`That was not saved: ${err?.message ?? err}`);
+    }
+  }, [sessionId]);
+
+  const restore = useCallback(async (n: number) => {
+    setVersionsOpen(false);
+    try {
+      const res = await fetch(`/api/pdfdesk/${encodeURIComponent(sessionId)}/restore`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ n }),
+      });
+      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `the server answered ${res.status}`);
+      setTrouble(null);
+    } catch (err: any) {
+      setTrouble(`That version could not be restored: ${err?.message ?? err}`);
+    }
+  }, [sessionId]);
+
   const close = useCallback(() => {
     void fetch(`/api/pdfdesk/${encodeURIComponent(sessionId)}/close`, { method: "POST" });
   }, [sessionId]);
@@ -154,6 +207,16 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
         <span className="pdf-bar-name" title={desk.name}>{desk.name ?? "PDF"}</span>
         <span className="pdf-bar-note">{problem ? "" : "Saved as you go"}</span>
         <div className="spacer" />
+        {versions.length > 0 && (
+          <button
+            className="pdf-pill"
+            onClick={() => setVersionsOpen((v) => !v)}
+            aria-expanded={versionsOpen}
+            title="Earlier versions of this file"
+          >
+            Versions · {versions.length}
+          </button>
+        )}
         {desk.working && (
           <a
             className="btn icon ghost"
@@ -181,6 +244,36 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
           </button>
         )}
       </div>
+      {versionsOpen && versions.length > 0 && (
+        <ul className="pdf-versions" aria-label="Versions of this file">
+          {[...versions].reverse().map((v) => (
+            <li key={v.n}>
+              <span className="pdf-version-main">
+                <b>v{v.n}</b> {v.label}
+                <small>{v.by === "agent" ? "Agent" : "You"} · {new Date(v.at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</small>
+              </span>
+              <a className="pdf-pill" href={`/api/pdfdesk/${encodeURIComponent(sessionId)}/version/${v.n}`} download>Download</a>
+              {v.n !== versions[versions.length - 1].n && <button className="pdf-pill" onClick={() => void restore(v.n)}>Restore</button>}
+            </li>
+          ))}
+        </ul>
+      )}
+      {mark && (
+        <div className="pdf-review" role="group" aria-label="The agent's changes">
+          <button className="pdf-pill" onClick={() => go(at - 1)} aria-label="Previous change" disabled={marks.length < 2}>‹ Prev</button>
+          <span className="pdf-review-count">{at + 1} / {marks.length}</span>
+          <button className="pdf-pill" onClick={() => go(at + 1)} aria-label="Next change" disabled={marks.length < 2}>Next ›</button>
+          <button className="pdf-review-label" onClick={() => focusMark(mark)} title="Show it in the document">{mark.label}</button>
+          <button className="pdf-pill is-deny" onClick={() => void review("deny", { id: mark.id })}>Deny</button>
+          <button className="pdf-pill is-accept" onClick={() => void review("accept", { id: mark.id })}>Accept</button>
+          {marks.length > 1 && (
+            <>
+              <button className="pdf-pill is-deny" onClick={() => void review("deny", { all: true })}>Deny all</button>
+              <button className="pdf-pill is-accept" onClick={() => void review("accept", { all: true })}>Accept all</button>
+            </>
+          )}
+        </div>
+      )}
       {problem && <div className="pdf-problem" role="status">{problem}</div>}
       <iframe
         ref={frame}
