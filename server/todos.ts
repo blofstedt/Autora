@@ -149,3 +149,44 @@ export function applyTodos(current: TodoList | null, action: Record<string, any>
     preview: `${done} of ${items.length} done`,
   };
 }
+
+/**
+ * What every turn is told about this chat's list.
+ *
+ * The conversation the model reads back carries words, not tool calls, so
+ * without this the list it wrote last turn is gone by the next one: it either
+ * forgot to tick items it then finished, or -- in a chat that has never had a
+ * list -- wrote one from a plan it remembered from somewhere else. A new chat
+ * is said to have an empty list in so many words.
+ */
+export function todoBriefing(list: TodoList | null): string {
+  if (!list || list.items.length === 0) {
+    return "This chat's to-do list is empty. Nothing carries over from another chat: " +
+      "if this task needs a list, write a new one for it with todo.";
+  }
+  const open = list.items.filter((i) => i.status !== "completed").length;
+  return [
+    describeTodos(list),
+    open === 0
+      ? "Every item is completed. A new task gets a new list: write it with todo, replacing this one."
+      : "This is the list as it stands. Keep it true: mark each item completed with todo the moment it is " +
+        "finished. If the person has moved on to something else, replace the list rather than adding to it.",
+  ].join("\n");
+}
+
+/**
+ * The reminder for a turn that is about to end with items still open, or null
+ * when the list says the work is finished. The agent is asked once: it may
+ * have finished and not ticked them, or stopped early, and only it knows which.
+ */
+export function unfinishedTodos(list: TodoList | null): string | null {
+  if (!list) return null;
+  const open = list.items.filter((i) => i.status !== "completed");
+  if (open.length === 0) return null;
+  return [
+    `(Autora: the to-do list still shows ${open.length} of ${list.items.length} items not completed:`,
+    ...open.map((i) => `- ${i.id}. ${i.title} (${i.status})`),
+    "If they are done, mark them completed with todo now. If not, carry on with them, " +
+      "or take them off the list and say in your reply why they are left.)",
+  ].join("\n");
+}
