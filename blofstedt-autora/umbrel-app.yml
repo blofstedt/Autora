@@ -124,9 +124,10 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
+  Fixed: pasting an image into the message box (a screenshot, a copied
+  picture) now attaches it, as it should on desktop.
   New: in the PDF window, everything the agent adds, changes or removes is
-  marked on the document. Step through the changes with Prev and Next, and
-  Accept or Deny each one (or all at once); a denied change is undone and the
-  agent is told. Every state of the file is now kept as a version you can
-  download or go back to from the Versions button. Reference PDFs the agent
-  opens in the background no longer replace the document in the window.
+  marked on the document, with Prev/Next and Accept/Deny for each change, and
+  every state of the file is kept as a version you can download or go back to.
+  Reference PDFs the agent opens in the background no longer replace the
+  document in the window.

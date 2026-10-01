@@ -1793,6 +1793,20 @@ export function App() {
                       noticeTyping();
                     }}
                     onBlur={() => setAttention(0)}
+                    onPaste={(e) => {
+                      // Files on the clipboard (a screenshot, a copied picture) are attached;
+                      // pasted text goes into the box as usual.
+                      const files = Array.from(e.clipboardData.items)
+                        .filter((item) => item.kind === "file")
+                        .map((item) => item.getAsFile())
+                        .filter((file): file is File => file !== null);
+                      if (files.length === 0) return;
+                      e.preventDefault();
+                      const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+                      void addFiles(files.map((file, i) => (/^image\.\w+$/i.test(file.name)
+                        ? new File([file], `pasted-${stamp}${files.length > 1 ? `-${i + 1}` : ""}.${file.type.split("/")[1]?.replace(/[^a-z0-9]/gi, "") || "png"}`, { type: file.type })
+                        : file)));
+                    }}
                     onKeyDown={(e) => {
                       if (slashOpen) {
                         const n = slashOffered.length;
