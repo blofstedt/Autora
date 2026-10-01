@@ -1647,6 +1647,89 @@ const TOOLS: ToolSpec[] = [
     },
   },
   {
+    name: "pdf_compose",
+    group: "files",
+    description:
+      "Write a new PDF -- a report, brief, summary, comparison -- from a description of the document, and keep it " +
+      "as that description so you can carry on with it. You give headings, paragraphs, lists, tables, quotes, " +
+      "code and pictures; the wrapping, page breaks, page numbers and a numbered list of sources are done for you, " +
+      "so there are no coordinates to work out. Use this, not pdf_edit, to produce a document with words in it; " +
+      "pdf_edit is for marking up a file that exists (stamps, signatures, notes, form fields). The result is shown " +
+      "in the PDF window beside the conversation, where pdf_edit's objects can go on top of it and the person can " +
+      "add their own. When you find something new, do not start over: send update (change a block by id), insert " +
+      "(new blocks after a given block) or remove, and the whole document is laid out again with the same ids. The " +
+      "result tells you which heading is on which page and the id of every block. Cite as you go: give a block " +
+      "its source (a URL or a note) and it is marked [n] and listed under Sources at the end. In text, **bold**, " +
+      "*italic*, `code` and [words](https://link) work; a blank line starts a new paragraph. The built-in fonts " +
+      "cover Western European letters only. Look at the pages with pdf_look before saying it is done.",
+    parameters: {
+      type: "object",
+      properties: {
+        blocks: {
+          type: "array",
+          description:
+            "The whole document, in order (replaces what there was). Each block has a type and, optionally, an id " +
+            "(one is made up otherwise) and a source. Types: heading {text, level 1-3}; paragraph {text}; " +
+            "bullets {items: [text or {text, source}], ordered}; table {header: [..], rows: [[..]], widths: [relative " +
+            "numbers], align: [left|right|center per column], caption}; quote {text}; code {text}; image {image: " +
+            "artifact id or path of a PNG/JPEG, width in points, caption}; rule; page_break.",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string", description: "Names the block for update, insert and remove." },
+              type: { type: "string", description: "heading, paragraph, bullets, table, quote, code, image, rule or page_break." },
+              text: { type: "string" },
+              level: { type: "number", description: "For a heading: 1 (largest) to 3." },
+              items: { type: "array", items: {} },
+              ordered: { type: "boolean" },
+              header: { type: "array", items: { type: "string" } },
+              rows: { type: "array", items: { type: "array", items: { type: "string" } } },
+              widths: { type: "array", items: { type: "number" } },
+              align: { type: "array", items: { type: "string" } },
+              image: { type: "string" },
+              width: { type: "number" },
+              caption: { type: "string" },
+              source: {
+                description: "Where this came from: a URL or a note (or a list of them). Cited as [n] and listed at the end.",
+                anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
+              },
+            },
+            required: ["type"],
+          },
+        },
+        update: {
+          type: "array",
+          description: "Changes to blocks of the document already made: each {id, ...the fields to change}. The type may change too.",
+          items: { type: "object", additionalProperties: true },
+        },
+        insert: {
+          type: "array",
+          description: "New blocks to put in: each {after: a block id, or \"start\" or \"end\", blocks: [...]}.",
+          items: { type: "object", additionalProperties: true },
+        },
+        remove: { type: "array", items: { type: "string" }, description: "Ids of blocks to take out." },
+        title: { type: "string", description: "The title at the top of the first page, and the file's title." },
+        subtitle: { type: "string" },
+        author: { type: "string" },
+        date: { type: "string", description: "Shown beside the author, e.g. \"1 Oct 2026\"." },
+        paper: { type: "string", description: "a4 (default) or letter." },
+        landscape: { type: "boolean" },
+        font: { type: "string", description: "helvetica (default, sans-serif) or times (serif)." },
+        size: { type: "number", description: "Body text size in points, 8 to 16 (default 11)." },
+        margin: { type: "number", description: "Page margin in points (default 56)." },
+        page_numbers: {
+          description: "A format with {n} and {total} (default \"Page {n} of {total}\"), or false for none.",
+          anyOf: [{ type: "string" }, { type: "boolean" }],
+        },
+        sources_heading: {
+          description: "The title of the list of sources at the end (default \"Sources\"), or false to leave the list out.",
+          anyOf: [{ type: "string" }, { type: "boolean" }],
+        },
+        output: PDF_OUTPUT,
+      },
+    },
+  },
+  {
     name: "pdf_pages",
     group: "files",
     description:
@@ -4131,6 +4214,7 @@ async function runToolUnredacted(
       case "pdf_read":
       case "pdf_look":
       case "pdf_edit":
+      case "pdf_compose":
       case "pdf_pages":
       case "pdf_redact":
       case "pdf_compress":
@@ -4493,8 +4577,11 @@ export async function capabilityBriefing(): Promise<string> {
       "filed and each claim cites one, then say what is in it.",
   );
   lines.push(windows.pdf.enabled
-    ? "- PDFs: always available. Tools: pdf_read, pdf_look, pdf_edit, pdf_pages, " +
-      "pdf_redact, pdf_compress. For any PDF -- one the person uploaded, one on " +
+    ? "- PDFs: always available. Tools: pdf_read, pdf_look, pdf_edit, pdf_compose, " +
+      "pdf_pages, pdf_redact, pdf_compress. To write a report or any document as a PDF, " +
+      "use pdf_compose (headings, paragraphs, tables, sources; it lays out the pages and keeps " +
+      "the document so you can update a section when research turns up something new, " +
+      "rather than starting again). For any PDF -- one the person uploaded, one on " +
       "this host, one you made -- use these rather than the terminal: read it " +
       "(text, form fields, attachments, XFA), look at its pages, fill in its form, " +
       "sign, stamp, mark it up, watermark it, number its pages, rearrange, merge or " +

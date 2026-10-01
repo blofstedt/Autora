@@ -698,7 +698,7 @@ planning: looking changes nothing.
 ### PDFs
 
 Attach a PDF (or name one on the server) and ask for what you want done to it.
-Six tools, always on, do what [SecurePDF](https://github.com/blofstedt/SecurePDF)
+Seven tools, always on, do what [SecurePDF](https://github.com/blofstedt/SecurePDF)
 does in its editor, asked for in words instead:
 
 | Tool | What it does |
@@ -706,6 +706,7 @@ does in its editor, asked for in words instead:
 | `pdf_read` | Pages and sizes, properties, form fields (with their choices and where each one is), attachments, and the text page by page. `find` searches instead, for words, a `/regex/` or the presets `email`, `phone`, `ssn`, `credit_card` and `date`, and says where each match is. `extract` saves embedded files, or an XFA form's XML. |
 | `pdf_look` | Pages as pictures, for the agent and in the thread: a scan read, an edit checked. `grid` rules the page in points, which is how the agent finds where to put things; `area` zooms in. |
 | `pdf_edit` | Fill form fields by name, flatten the form, and draw on pages: text, stamps (APPROVED, REJECTED, SIGN HERE, DATE, CONFIDENTIAL...), a signature (a picture, or a typed name in a handwriting font), images, ticks and crosses, boxes, circles, lines, arrows, highlights (a box, or wherever some words are) and comments. Also a watermark, page numbers, and the document's properties, set or stripped. |
+| `pdf_compose` | Write a new PDF from a description of the document: headings, paragraphs, lists, tables, quotes, code and pictures, laid out onto pages with page numbers and a numbered list of the sources cited. The description is kept, so when new findings come in the agent updates, inserts or removes blocks by id and the whole document is laid out again, instead of repositioning anything. `pdf_edit` then marks it up on top. |
 | `pdf_pages` | Keep, drop, reorder, repeat and turn pages, add blank ones, merge other PDFs in, or split into several files. |
 | `pdf_redact` | Take words, patterns or boxes out for good. The pages concerned are redrawn as pictures with black boxes, so what was under them is gone from the file rather than covered; the rest keep their text. |
 | `pdf_compress` | Rewrite it compactly, or redraw every page as a JPEG for a much smaller scan. Nothing is saved if it would not get smaller. |
@@ -721,8 +722,10 @@ Dropped and redacted pages are removed from the bytes, not just from view.
 Dynamic XFA forms -- the ones most viewers only answer with "please wait" --
 are read and drawn, and their filled-in data is listed, but they cannot be
 filled here; `pdf_compress` with `mode: images` turns one into an ordinary PDF
-of how it looks. The built-in fonts write Western European text; other scripts
-are refused rather than written as question marks.
+of how it looks. The built-in fonts write Western European text; `pdf_edit`
+refuses other scripts rather than writing question marks, and `pdf_compose`
+writes the common ones another way (`->` for an arrow) and says which characters
+it had to replace with `?`.
 
 Pages are drawn, and text is read, by pdf.js in a headless Chromium -- the
 same binary the browser tool uses. Without one, the tools still read a file's

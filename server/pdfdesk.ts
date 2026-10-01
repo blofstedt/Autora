@@ -25,6 +25,7 @@ import fs from "node:fs";
 import path from "node:path";
 import express, { type Express, type Request, type Response } from "express";
 import { getArtifact, saveArtifact, MAX_ARTIFACT_BYTES } from "./artifacts";
+import { outlineLines } from "./compose";
 import { flattenDesk, type DeskHooks, type DeskItem, type DeskSnapshot } from "./pdf";
 import { stateDir } from "./state";
 
@@ -100,6 +101,8 @@ function load(session: string): Desk | null {
       name: String(meta.name || "document.pdf"), base, items: Array.isArray(meta.items) ? meta.items : [],
       working: typeof meta.working === "string" ? meta.working : null,
       source: typeof meta.source === "string" ? meta.source : null,
+      compose: meta.compose && typeof meta.compose === "object" && Array.isArray(meta.compose.blocks) ? meta.compose : null,
+      outline: Array.isArray(meta.outline) ? meta.outline : null,
       open: meta.open === true, outName: String(meta.outName || meta.name || "document.pdf"),
       baseRev: Number(meta.baseRev) || 1, rev: Number(meta.rev) || 1,
       news: Array.isArray(meta.news) ? meta.news.map(String) : [], since: Number(meta.since) || Date.now(), problem: null,
@@ -278,7 +281,7 @@ export function deskHooks(session: string): DeskHooks {
   return {
     current() {
       const desk = load(session);
-      return desk ? { name: desk.name, base: desk.base, items: desk.items, working: desk.working, source: desk.source } : null;
+      return desk ? { name: desk.name, base: desk.base, items: desk.items, working: desk.working, source: desk.source, compose: desk.compose ?? null, outline: desk.outline ?? null } : null;
     },
     open(next) {
       const was = load(session);
@@ -357,9 +360,28 @@ export function deskBriefing(session: string): string | null {
     `${desk.name} is open in the PDF window beside the conversation${desk.working ? ` (artifact ${desk.working})` : ""}. ` +
       "pdf_edit on it places movable objects the person sees and can change; the other PDF tools read it as it is now.",
   ];
+  if (desk.compose && desk.outline) {
+    const pages = Math.max(0, ...desk.outline.map((o) => o.endPage));
+    const outline = outlineLines(desk.outline);
+    lines.push(
+      `It was made with pdf_compose (${desk.compose.blocks.length} blocks, ${pages} page${pages === 1 ? "" : "s"}): to change its content send update / insert / remove with block ids -- ` +
+        "it is laid out again whole, so nothing is repositioned. Where things are (page, heading [block id], how it starts):\n" +
+        outline.join("\n"),
+    );
+  } else if (desk.working) {
+    lines.push("It was not made with pdf_compose, so changing its words means pdf_edit (objects) or composing a new document.");
+  }
   const mine = desk.items.filter((i) => i.autora).slice(-30);
-  if (mine.length) lines.push(`Your objects on it (ids for pdf_edit's change and remove): ${mine.map((i) => `${i.id} (${i.type}, page ${i.pageNumber})`).join(", ")}.`);
-  if (desk.marks.length) lines.push(`${desk.marks.length} of your change${desk.marks.length === 1 ? " is" : "s are"} still waiting for the person to accept or decline.`);
+  if (mine.length) lines.push(`Your objects on it (ids for pdf_edit's change and remove): ${mine.map((i) => `${i.id} = ${label(i, false)}`).join("; ")}.`);
+  const others = desk.items.filter((i) => !i.autora);
+  if (others.length) {
+    const pages = [...new Set(others.map((i) => i.pageNumber))].sort((a, b) => a - b);
+    lines.push(`The person has added ${others.length} object${others.length === 1 ? "" : "s"} of their own, on page${pages.length === 1 ? "" : "s"} ${pages.slice(0, 12).join(", ")}: leave them as they are.`);
+  }
+  if (desk.marks.length) {
+    const shown = desk.marks.slice(0, 8).map((m) => m.label).join("; ");
+    lines.push(`${desk.marks.length} of your change${desk.marks.length === 1 ? " is" : "s are"} still waiting for the person to accept or decline: ${shown}${desk.marks.length > 8 ? "; ..." : ""}.`);
+  }
   if (desk.news.length) {
     lines.push(newsLine(desk));
     desk.news = [];
@@ -456,6 +478,8 @@ export function personBase(session: string, data: Buffer, items: unknown[], cwd:
     return i;
   });
   desk.news.push("changed the pages themselves (deleting, turning, reordering or merging pages)");
+  desk.compose = null;
+  desk.outline = null;
   desk.baseRev++;
   desk.rev++;
   desk.dirty = true;
@@ -488,6 +512,9 @@ export function denyMarks(session: string, id: string | "all", cwd: string): boo
     else if (m.kind === "page" && m.beforeBaseRev) {
       try {
         desk.base = fs.readFileSync(baseFile(session, m.beforeBaseRev));
+        // The pages are no longer what the description laid out.
+        desk.compose = null;
+        desk.outline = null;
         desk.baseRev++;
       } catch {
         continue;
@@ -515,6 +542,8 @@ export function restoreVersion(session: string, n: number, cwd: string): string 
   if (!v || !base) return "That version is not there any more.";
   if (desk.dirty) snapshot(session, desk, "Your changes", "person");
   desk.base = base;
+  desk.compose = null;
+  desk.outline = null;
   desk.items = JSON.parse(JSON.stringify(v.items));
   desk.baseRev++;
   desk.rev++;

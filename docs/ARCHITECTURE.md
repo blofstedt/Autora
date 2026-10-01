@@ -269,6 +269,21 @@ session. Variable weights keep it to two files and 77KB.
   an origin-less sandboxed frame because it renders files from anywhere; the
   cost is a second React in the image and a bridge of messages instead of
   shared state.
+- **A document is written as a description, not drawn at coordinates.**
+  Researching and writing a PDF in one turn went badly when the only way to put
+  words on a page was `pdf_edit`'s positioned items: every new finding meant
+  working out where each line now sat. `pdf_compose` (`server/compose.ts`) takes
+  blocks (headings, paragraphs, lists, tables, pictures, each with an id and an
+  optional source), lays them out with pdf-lib's built-in fonts, and the window
+  keeps the description beside the pages. A change is `update` / `insert` /
+  `remove` by id and the whole file is laid out again; objects placed on top stay
+  where they were. The description is dropped the moment the pages change any
+  other way (the person reorders them, a page-level `pdf_edit`, declining the
+  update), since it would no longer be what the file is. The start-of-turn
+  briefing carries its outline (page, heading, block id, how it starts), which
+  rides in the anchored note and so survives compaction. The cost is the
+  built-in fonts: Western European text only, other characters replaced by "?"
+  and said.
 - **The policy default was ASK**, and it annoyed people into not using it. The
   default is now Yolo: every call runs and is shown as it happens, Stop reaches
   the running process, and a chat can be switched to Ask -- all changes, or
