@@ -10,6 +10,30 @@ function toBase64(buf: ArrayBuffer): string {
   return btoa(out);
 }
 
+const PDFJS_DIRS = new Set(["cmaps", "standard_fonts"]);
+
+/**
+ * A character map or standard font pdf.js asked for, fetched here and posted
+ * into the editor. The editor's frame has no origin, so its own requests go
+ * without cookies, and a login proxy in front of Autora (Umbrel's) turns them
+ * away: only the editor's page itself, a navigation, reaches it with them.
+ */
+async function pdfjsData(msg: { id?: unknown; dir?: unknown; filename?: unknown }, post: (m: Record<string, unknown>, t?: Transferable[]) => void) {
+  const { id, dir, filename } = msg;
+  if (typeof dir !== "string" || !PDFJS_DIRS.has(dir) || typeof filename !== "string" || !/^[\w.-]+$/.test(filename) || filename.startsWith(".")) {
+    post({ type: "autora:pdfjs-data", id, error: "not one of pdf.js's files" });
+    return;
+  }
+  try {
+    const res = await fetch(`/pdf-editor/pdfjs/${dir}/${filename}`);
+    if (!res.ok) throw new Error(`the server answered ${res.status}`);
+    const bytes = await res.arrayBuffer();
+    post({ type: "autora:pdfjs-data", id, bytes }, [bytes]);
+  } catch (err: any) {
+    post({ type: "autora:pdfjs-data", id, error: String(err?.message ?? err) });
+  }
+}
+
 /**
  * The PDF window: the file the agent is working on, in SecurePDF's editor.
  *
@@ -92,11 +116,13 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
       } else if (msg.type === "autora:base" && msg.bytes instanceof ArrayBuffer) {
         ownPages.current++;
         void send("pages", { bytes: toBase64(msg.bytes), items: Array.isArray(msg.items) ? msg.items : [] });
+      } else if (msg.type === "autora:pdfjs-data") {
+        void pdfjsData(msg, post);
       }
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [load, send]);
+  }, [load, post, send]);
 
   // New pages from the server: load them, unless they are the ones just sent from here.
   useEffect(() => {

@@ -1269,6 +1269,7 @@ function MainPdfEditor() {
           cMapUrl: PDFJS_DATA.cMapUrl,
           cMapPacked: true,
           standardFontDataUrl: PDFJS_DATA.standardFontDataUrl,
+          BinaryDataFactory: PDFJS_DATA.BinaryDataFactory as any,
         });
 
         const docProxy = await loadingTask.promise;
@@ -5432,7 +5433,7 @@ function MainPdfEditor() {
             className="flex-1 min-h-0 w-full relative overflow-auto bg-slate-100 dark:bg-slate-950 transition-colors overscroll-contain select-none flex flex-col no-scrollbar"
           >
             {pdfBytes ? (
-              <div className="min-h-full min-w-full flex-1 flex items-center justify-center p-1 sm:p-2 md:p-3 pb-20 md:pb-12">
+              <div className="min-h-full min-w-full flex-1 flex items-center-safe justify-center-safe p-1 sm:p-2 md:p-3 pb-20 md:pb-12">
                 <div className="flex items-center justify-center min-w-fit min-h-fit [perspective:1400px] relative shrink-0">
                   {/* Linked Gesture Neighbor Page Card */}
                   <div

@@ -413,8 +413,10 @@ export function deskRoutes(app: Express, opts: { exists: (session: string) => bo
  * The editor's own files. It runs in a frame sandboxed without an origin of
  * its own (it renders PDFs from anywhere, and pdf.js has had holes), so this
  * policy repeats the frame's sandbox for anyone who opens the page directly,
- * and the files say any origin may read them: from inside the sandbox, the
- * editor's own scripts and pdf.js's fonts count as another site's.
+ * and the files say any origin may read them: from inside the sandbox, they
+ * count as another site's. The editor is built as one page and asks the app
+ * for pdf.js's data, though, because such requests carry no cookies and a
+ * login proxy in front (Umbrel's) turns them away (pdf-editor/vite.config.ts).
  */
 export function serveEditor(app: Express, dist: string) {
   app.use("/pdf-editor", (_req, res, next) => {

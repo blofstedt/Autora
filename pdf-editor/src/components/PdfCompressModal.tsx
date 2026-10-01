@@ -50,6 +50,7 @@ export default function PdfCompressModal({ isOpen, onClose }: PdfCompressModalPr
         cMapUrl: PDFJS_DATA.cMapUrl,
         cMapPacked: true,
         standardFontDataUrl: PDFJS_DATA.standardFontDataUrl,
+        BinaryDataFactory: PDFJS_DATA.BinaryDataFactory as any,
       });
       const doc = await loadingTask.promise;
       setPdfDocProxy(doc);
