@@ -6359,6 +6359,31 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
   padding: 7px 12px; font-size: calc(12px * var(--ts, 1)); color: var(--warn);
   background: rgba(251, 191, 36, 0.08); border-bottom: 1px solid rgba(251, 191, 36, 0.25);
 }
+.pdf-pill {
+  flex: 0 0 auto; display: inline-flex; align-items: center; padding: 4px 11px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--s2, var(--s1)); color: var(--text-2, var(--text));
+  font: inherit; font-size: calc(12px * var(--ts, 1)); font-weight: 600; cursor: pointer; text-decoration: none; white-space: nowrap;
+}
+.pdf-pill:hover:not(:disabled) { color: var(--text); border-color: var(--text-3); }
+.pdf-pill:disabled { opacity: 0.45; cursor: default; }
+.pdf-pill.is-accept { background: rgba(52, 211, 153, 0.14); border-color: rgba(52, 211, 153, 0.5); color: #34d399; }
+.pdf-pill.is-deny { background: rgba(248, 113, 113, 0.12); border-color: rgba(248, 113, 113, 0.45); color: #f87171; }
+.pdf-review {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 6px 12px;
+  border-bottom: 1px solid var(--border); background: rgba(251, 191, 36, 0.07);
+}
+.pdf-review-count { font-size: calc(12px * var(--ts, 1)); color: var(--text-3); font-variant-numeric: tabular-nums; }
+.pdf-review-label {
+  flex: 1 1 140px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left;
+  background: none; border: 0; padding: 0 4px; font: inherit; font-size: calc(12.5px * var(--ts, 1)); color: var(--text); cursor: pointer;
+}
+.pdf-versions {
+  list-style: none; margin: 0; padding: 4px 12px; max-height: 40%; overflow: auto;
+  border-bottom: 1px solid var(--border); background: var(--s1);
+}
+.pdf-versions li { display: flex; align-items: center; gap: 6px; padding: 5px 0; }
+.pdf-version-main { flex: 1; min-width: 0; font-size: calc(12.5px * var(--ts, 1)); color: var(--text); display: flex; flex-direction: column; }
+.pdf-version-main small { color: var(--text-3); font-size: calc(11px * var(--ts, 1)); }
 .pdf-frame { flex: 1; min-height: 0; width: 100%; border: 0; background: #0f172a; display: block; }
 /* In the pinned view on a phone: the pinned view's own height, so the editor
    scrolls its pages itself instead of the pinned view scrolling the editor. */

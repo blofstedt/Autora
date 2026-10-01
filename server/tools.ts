@@ -1538,7 +1538,9 @@ const TOOLS: ToolSpec[] = [
       "off pdf_read, or pdf_look with grid. Drawing over something hides it but does not remove it: pdf_redact " +
       "takes text out. The file opens in the PDF window beside the conversation, where what you add stays an " +
       "object the person can move, change or remove, and they can add their own; edit the same file again to " +
-      "carry on with it. Look at the pages you changed with pdf_look before saying it is done.",
+      "carry on with it. Everything you add, change or remove is marked in the window for the person to accept or " +
+      "decline one by one (a declined change is undone and you are told), and each state of the file is kept as a " +
+      "version they can go back to. Look at the pages you changed with pdf_look before saying it is done.",
     parameters: {
       type: "object",
       properties: {
@@ -1594,6 +1596,14 @@ const TOOLS: ToolSpec[] = [
             required: ["type"],
           },
         },
+        change: {
+          type: "array",
+          description:
+            "Objects already on the pages to alter, by id (from the results of earlier pdf_edit calls): each is " +
+            "{id, ...} with only the fields that differ, using the same fields as add items.",
+          items: { type: "object", properties: { id: { type: "string" } }, required: ["id"], additionalProperties: true },
+        },
+        remove: { type: "array", items: { type: "string" }, description: "Ids of objects on the pages to take off." },
         watermark: {
           type: "object",
           description: "Big faint text across pages, e.g. {\"text\": \"DRAFT\"}.",

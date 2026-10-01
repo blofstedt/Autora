@@ -830,6 +830,9 @@ function MainPdfEditor() {
   }>({ base: null, baseRev: -1, synced: new Map() });
   const annotationsRef = useRef<AnnotationItem[]>([]);
   annotationsRef.current = annotations;
+  /** Autora asks to show one of the agent's changes; and which objects wait for a decision. */
+  const [focusRequest, setFocusRequest] = useState<{ id: string | null; page: number; at: number } | null>(null);
+  const [pendingIds, setPendingIds] = useState<string[]>([]);
 
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
@@ -850,6 +853,11 @@ function MainPdfEditor() {
         setCurrentPage((p) => (msg.keepPage ? p : 1));
         resetAnnotations(items);
         setSelectedAnnotationId(null);
+      } else if (msg.type === "autora:focus") {
+        // The agent's change the person is looking at: go to its page and select it.
+        setFocusRequest({ id: typeof msg.id === "string" ? msg.id : null, page: Number(msg.page) || 1, at: Date.now() });
+      } else if (msg.type === "autora:pending" && Array.isArray(msg.ids)) {
+        setPendingIds(msg.ids.filter((i: unknown): i is string => typeof i === "string" && /^[\w.-]{1,80}$/.test(i)));
       } else if (msg.type === "autora:items" && Array.isArray(msg.items)) {
         // The objects as Autora has them now. What the person changed here and
         // Autora has not heard yet stays as it is on this page.
@@ -2078,6 +2086,23 @@ function MainPdfEditor() {
     },
     [currentPage, numPages, canvasDimensions.width, zoomScale, getCachedPageImage]
   );
+
+  // The agent's changes waiting for a decision are outlined on the page.
+  useEffect(() => {
+    const el = document.createElement("style");
+    el.textContent = pendingIds
+      .map((id) => `#draggable-${CSS.escape(id)}{outline:2px dashed #f59e0b;outline-offset:2px}`)
+      .join("\n");
+    document.head.appendChild(el);
+    return () => el.remove();
+  }, [pendingIds]);
+
+  useEffect(() => {
+    if (!focusRequest || numPages === 0) return;
+    void navigateToPage(Math.min(Math.max(1, focusRequest.page), numPages));
+    setSelectedAnnotationId(focusRequest.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusRequest]);
 
   const prevPage = useCallback(() => {
     if (currentPage > 1) {

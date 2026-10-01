@@ -124,6 +124,9 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  Changed: when the agent opens other PDFs for reference while it works on a
-  document, it now does so in the background. They no longer replace the file
-  in the PDF window; only the document being worked on stays open there.
+  New: in the PDF window, everything the agent adds, changes or removes is
+  marked on the document. Step through the changes with Prev and Next, and
+  Accept or Deny each one (or all at once); a denied change is undone and the
+  agent is told. Every state of the file is now kept as a version you can
+  download or go back to from the Versions button. Reference PDFs the agent
+  opens in the background no longer replace the document in the window.

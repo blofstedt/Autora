@@ -345,7 +345,7 @@ function deliver(ctx: PdfContext, name: string, data: Buffer, note: string, inpu
   // file being worked on.
   if (input && ctx.desk && isDeskFile(input, ctx)) {
     const source = ctx.desk.current()?.source ?? (input.artifact?.origin === "user" ? input.artifact.id : null);
-    ctx.desk.open({ name: art.name, base: data, items: [], working: art.id, source, outName: art.name });
+    ctx.desk.open({ name: art.name, base: data, items: [], working: art.id, source, outName: art.name, review: { label: note, diff: false } });
   }
   return { art, replaced };
 }
@@ -1276,7 +1276,11 @@ export type DeskSnapshot = {
 export interface DeskHooks {
   current(): DeskSnapshot | null;
   /** Show this file in the window (or carry on with it), with these objects on it. */
-  open(next: DeskSnapshot & { outName: string }): void;
+  open(next: DeskSnapshot & {
+    outName: string;
+    /** From the agent changing the file: what to call this version, and what to put up for review. */
+    review?: { label: string; baseNote?: string | null; diff?: boolean };
+  }): void;
   /** Bring the window back if the person put it away: the agent is working on its file. */
   show(): void;
   /** What the person did in the window since the agent was last told, said once; "" when nothing. */
@@ -1992,6 +1996,7 @@ async function editTool(args: Record<string, any>, ctx: PdfContext): Promise<Pdf
   const working = carryOn && desk?.working ? getArtifact(desk.working) : null;
   const input: Input = carryOn && desk ? { data: desk.base, name: working?.name ?? given.name, artifact: working ?? given.artifact } : given;
   const placed: DeskItem[] = [];
+  const replaced = new Map<string, DeskItem>();
   const pass = password(args);
   const { doc, encrypted } = await openDoc(input.data, pass);
   const count = doc.getPageCount();
@@ -2008,10 +2013,18 @@ async function editTool(args: Record<string, any>, ctx: PdfContext): Promise<Pdf
   const props = args.metadata && typeof args.metadata === "object" ? args.metadata as Record<string, unknown> : null;
   const strip = args.strip_metadata === true;
   const flatten = args.flatten === true;
+  const dropIds = new Set<string>((Array.isArray(args.remove) ? args.remove : args.remove ? [args.remove] : []).map(String));
+  const changes: Record<string, any>[] = (Array.isArray(args.change) ? args.change : args.change ? [args.change] : [])
+    .filter((c: unknown) => c && typeof c === "object" && (c as any).id);
 
-  if (!values && !items.length && !wm && !numbers && !props && !strip && !flatten) {
-    throw new Problem("Nothing to change: give fields, flatten, add, watermark, page_numbers, metadata or strip_metadata.");
+  if (!values && !items.length && !wm && !numbers && !props && !strip && !flatten && !dropIds.size && !changes.length) {
+    throw new Problem("Nothing to change: give fields, flatten, add, change, remove, watermark, page_numbers, metadata or strip_metadata.");
   }
+  if ((dropIds.size || changes.length) && !(carryOn && desk)) {
+    throw new Problem("change and remove work on the objects in the PDF window: give the file open there (the one you have been editing).");
+  }
+  const unknown = [...dropIds, ...changes.map((c) => String(c.id))].filter((id) => !desk?.items.some((i) => i.id === id));
+  if (unknown.length) throw new Problem(`There is no object ${unknown.map((u) => JSON.stringify(u)).join(", ")} in the window. The ids are in the results of earlier pdf_edit calls and the start of the turn.`);
   if (xfa === "dynamic" && (values || flatten)) {
     throw new Problem(
       "This is a dynamic XFA form: its fields live in XML the PDF tools cannot fill. Write on it with add items " +
@@ -2100,6 +2113,28 @@ async function editTool(args: Record<string, any>, ctx: PdfContext): Promise<Pdf
       }
     }
 
+    // 2b. Change objects already on the pages: drawn again from what they were plus what is given.
+    for (const ch of changes) {
+      const old = desk!.items.find((i) => i.id === String(ch.id))!;
+      const { id: _id, ...rest } = ch;
+      const was: Record<string, any> = old.autora?.draw
+        ?? { type: old.type, page: String(old.pageNumber), x: old.x, y: old.y, width: old.width, height: old.height };
+      const merged = { ...was, ...rest, page: String(rest.page ?? was.page ?? old.pageNumber) };
+      const t = pageSet(merged.page, count)[0];
+      let made: DeskItem[];
+      try {
+        made = await deskItemsFor(tools, sheet(t), t, merged, null);
+      } catch (err) {
+        if (err instanceof Problem) throw new Problem(`Change of ${old.id}: ${err.message} Nothing was saved.`);
+        throw err;
+      }
+      if (!made.length) throw new Problem(`Change of ${old.id} found nothing to draw. Nothing was saved.`);
+      made[0].id = old.id;
+      replaced.set(old.id, made[0]);
+    }
+    if (changes.length) done.push(`changed ${changes.length} object${changes.length === 1 ? "" : "s"}`);
+    if (dropIds.size) done.push(`removed ${dropIds.size} object${dropIds.size === 1 ? "" : "s"}`);
+
     // 3. Items.
     const drawn: string[] = [];
     for (const [k, item] of items.entries()) {
@@ -2172,7 +2207,7 @@ async function editTool(args: Record<string, any>, ctx: PdfContext): Promise<Pdf
     }
   };
 
-  if (items.length || wm || numbers || flatten) {
+  if (items.length || wm || numbers || flatten || changes.length || dropIds.size) {
     if (needsView) await withPdf(byText ? input.data : null, pass, apply, ctx);
     else await apply(null);
   }
@@ -2208,7 +2243,7 @@ async function editTool(args: Record<string, any>, ctx: PdfContext): Promise<Pdf
     throw new Problem(`It could not be saved: ${message(err)}`);
   }
   if (ctx.desk) {
-    const all = [...(carryOn && desk ? desk.items : []), ...placed];
+    const all = [...(carryOn && desk ? desk.items.filter((i) => !dropIds.has(i.id)).map((i) => replaced.get(i.id) ?? i) : []), ...placed];
     let flat: { data: Buffer; skipped: string[] };
     try {
       flat = await flattenDesk(bytes, all, ctx.cwd);
@@ -2221,10 +2256,17 @@ async function editTool(args: Record<string, any>, ctx: PdfContext): Promise<Pdf
       name: saved.art.name, base: bytes, items: all, working: saved.art.id,
       source: carryOn && desk ? desk.source : given.artifact?.origin === "user" ? given.artifact.id : null,
       outName: saved.art.name,
+      review: {
+        label: cap(done.join("; ")) || "Edited",
+        // Pages-level work (form fields, watermark, numbers, properties) is one change to review.
+        baseNote: done.filter((d) => !/^(drew|changed \d+ object|removed \d+ object)/.test(d)).join("; ") || null,
+      },
     });
     const summary = [
       done.length ? `${cap(done.join("; "))}.` : "",
       savedLine(saved, count, given),
+      (placed.length ? `The objects: ${placed.slice(0, 12).map((i) => `${i.id} (${i.type}, page ${i.pageNumber})`).join(", ")}${placed.length > 12 ? ", ..." : ""}; pass an id to change or remove to alter it later. ` : "") +
+      "Each change is marked in the window for the person to accept or decline, one by one, and every state of the file is kept as a version they can go back to. " +
       "It is open in the PDF window beside the conversation, where the person watches it change: " +
         (placed.length
           ? "what you placed is there as objects they can move, resize, edit or remove, and they can add their own. "
