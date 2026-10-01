@@ -59,7 +59,9 @@ self.addEventListener("fetch", (event) => {
           // Only a good shell replaces the last good copy: the 502 a proxy
           // serves while the container restarts is not something to fall
           // back to.
-          if (response.ok) {
+          // A frame's page (the PDF window's editor) is a navigation too, but
+          // it is not the shell.
+          if (response.ok && request.destination === "document") {
             const copy = response.clone();
             caches.open(CACHE).then((cache) => cache.put("/", copy)).catch(() => {});
           }
