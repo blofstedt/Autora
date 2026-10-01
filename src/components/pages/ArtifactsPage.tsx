@@ -5,7 +5,7 @@ import type { SessionRow } from "../Sessions";
 import { LibraryPicker } from "../LibraryPicker";
 import { addToNotebook, type Notebook } from "../../lib/notebooks";
 import {
-  IconCheck, IconDownload, IconFile, IconMark, IconNotebook, IconTrash, IconUpload, IconUser,
+  IconCheck, IconDownload, IconFile, IconMark, IconNotebook, IconTrash, IconUpload, IconUser, IconX,
 } from "../Icons";
 
 type Artifact = {
@@ -348,38 +348,47 @@ export function ArtifactsPage({
         )}
 
         {selecting && all.length > 0 && (
-          <div className="art-toolbar">
+          /* One row, one style: leave and the count on the left, the two
+             things to do with the picked files on the right. */
+          <div className="art-toolbar" role="toolbar" aria-label="Selected files">
             <button
-              className="btn ghost"
-              onClick={() => setPicked(allPicked ? [] : all.map((a) => a.id))}
+              className="btn icon ghost"
+              onClick={leaveSelect}
+              disabled={removing}
+              title="Stop selecting"
+              aria-label="Stop selecting"
             >
-              {allPicked ? "Clear all" : "Select all"}
+              <IconX size={15} />
             </button>
             <span className="art-selcount" aria-live="polite">
-              {picked.length === 0
-                ? "Tap files to pick them"
-                : `${picked.length} of ${all.length} selected`}
+              {removing ? "Deleting…" : `${picked.length} selected`}
             </span>
+            <button
+              className="art-selall"
+              onClick={() => setPicked(allPicked ? [] : all.map((a) => a.id))}
+              disabled={removing}
+            >
+              {allPicked ? "Clear" : "Select all"}
+            </button>
             <div className="spacer" />
             <button
-              className="btn ghost"
+              className="btn ghost art-act"
               disabled={picked.length === 0 || removing}
               onClick={() => setFiling(true)}
               aria-label="Add to notebook"
               title="Add to notebook"
             >
-              <IconNotebook size={14} /> <span className="art-act-word">Add to notebook</span>
+              <IconNotebook size={15} /> <span className="art-act-word">Add to notebook</span>
             </button>
             <button
-              className="btn danger"
+              className="btn ghost art-act is-danger"
               disabled={picked.length === 0 || removing}
               onClick={() => void remove(all.filter((a) => picked.includes(a.id)))}
+              aria-label={picked.length > 1 ? `Delete ${picked.length} files` : "Delete"}
+              title="Delete"
             >
-              <IconTrash size={14} />
-              {removing ? "Deleting…"
-                : picked.length > 1 ? `Delete ${picked.length}` : "Delete"}
+              <IconTrash size={15} /> <span className="art-act-word">Delete</span>
             </button>
-            <button className="btn ghost" onClick={leaveSelect} disabled={removing}>Done</button>
           </div>
         )}
 

@@ -4779,15 +4779,26 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 /* Artifacts */
 .art-lede { margin: 0; }
 /* Only there while selecting (a press and hold starts it), and pinned to the
-   top so Delete and Done stay in reach however far down the pile you go. */
+   top so the actions stay in reach however far down the pile you go. One row
+   at every width, every control the same quiet style. */
 .art-toolbar {
   position: sticky; top: 0; z-index: 3;
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  padding: 8px 10px; border-radius: var(--r);
-  background: var(--s2); border: 1px solid var(--border); box-shadow: var(--shadow-sm);
+  display: flex; align-items: center; gap: 4px; min-height: 48px;
+  padding: 6px 8px 6px 6px; border-radius: var(--r);
+  background: var(--s3); border: 1px solid var(--accent-line); box-shadow: var(--shadow-sm);
   animation: rise 0.18s var(--ease) both;
 }
-.art-selcount { font-size: calc(12px * var(--ts, 1)); font-family: var(--mono); color: var(--text-2); }
+.art-selcount {
+  padding: 0 6px 0 2px; white-space: nowrap; font-variant-numeric: tabular-nums;
+  font-size: calc(13.5px * var(--ts, 1)); font-weight: 600; color: var(--text);
+}
+.art-selall {
+  padding: 4px 6px; border: 0; background: none; cursor: pointer; white-space: nowrap;
+  font: inherit; font-size: calc(12.5px * var(--ts, 1)); font-weight: 550; color: var(--accent-light);
+}
+.art-selall:hover:not(:disabled) { text-decoration: underline; }
+.art-act { height: 34px; padding: 0 11px; gap: 7px; }
+.art-act.is-danger { --btn-fg: var(--danger); --btn-bg-hover: rgba(251, 113, 133, 0.14); }
 .art-section { display: flex; flex-direction: column; gap: 10px; }
 .art-head { display: flex; align-items: center; gap: 9px; min-height: 36px; }
 .art-head h3 { margin: 0; font-size: calc(14px * var(--ts, 1)); font-weight: 600; }
@@ -4843,10 +4854,9 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 .art-dragging { outline: 2px dashed var(--accent-line); outline-offset: -8px; }
 @media (max-width: 680px) {
   .art-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-  /* One line saying how many, then one row of actions: the count beside the
-     buttons pushed Delete and Done onto lines of their own. */
-  .art-toolbar .art-selcount { width: 100%; order: -1; padding: 2px 4px 0; }
+  /* On a phone the two actions are their icons, so the bar stays one row. */
   .art-toolbar .art-act-word { display: none; }
+  .art-act { width: 38px; height: 38px; padding: 0; justify-content: center; }
 }
 .art-filed { margin: 0; color: var(--live); }
 
