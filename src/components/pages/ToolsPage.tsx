@@ -34,8 +34,8 @@ const WINDOWS: { key: WindowKey; name: string; icon: ReactNode; what: string; to
     key: "pdf",
     name: "PDF editor",
     icon: <IconFile size={18} />,
-    what: "Reading, filling, signing, marking up, redacting, merging, splitting and shrinking PDFs, in a window beside the chat where you can move what it placed and add your own.",
-    tools: "pdf_read, pdf_look, pdf_edit, pdf_pages, pdf_redact, pdf_compress",
+    what: "Writing reports as PDFs, reading, filling, signing, marking up, redacting, merging, splitting and shrinking PDFs, in a window beside the chat where you can move what it placed and add your own.",
+    tools: "pdf_read, pdf_look, pdf_edit, pdf_compose, pdf_pages, pdf_redact, pdf_compress",
   },
 ];
 

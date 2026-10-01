@@ -160,6 +160,7 @@ function doing(name: string, args: Record<string, any>): string {
     case "pdf_read": return args.find ? `Searching the PDF for${quoted(Array.isArray(args.find) ? args.find.join(", ") : args.find)}` : "Reading the PDF";
     case "pdf_look": return "Looking at the PDF";
     case "pdf_edit": return args.fields && !args.add ? "Filling in the form" : "Editing the PDF";
+    case "pdf_compose": return args.blocks ? "Writing the PDF" : "Updating the PDF";
     case "pdf_pages": return args.merge ? "Merging PDFs" : args.split ? "Splitting the PDF" : "Rearranging the pages";
     case "pdf_redact": return "Redacting the PDF";
     case "pdf_compress": return "Shrinking the PDF";

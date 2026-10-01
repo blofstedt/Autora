@@ -39,7 +39,8 @@ description: >-
   change (or try it on the page), and send the comments as one review.
 
 
-  • PDFs — attach one and say what to do: fill in and flatten forms, sign,
+  • PDFs — ask for a report and it is written as a PDF you can keep refining as
+  the research goes on; attach one and say what to do: fill in and flatten forms, sign,
   stamp, highlight, annotate, watermark, number pages, reorder, merge and split,
   redact for good (the text is removed, not covered), shrink, and read scans
   and XFA forms. The file opens in an editor beside the chat, where you
@@ -124,13 +125,13 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  Fixed: in Plan mode (and while Agent mode is planning) the agent can now read
-  back a file it is creating. Terminal commands that only read -- cat, ls,
-  head, grep, git status and the like -- run instead of being blocked; anything
-  that could write is still refused. Also fixed: pasting an image into the
-  message box now attaches it.
-  New: in the PDF window, everything the agent adds, changes or removes is
-  marked on the document, with Prev/Next and Accept/Deny for each change, and
-  every state of the file is kept as a version you can download or go back to.
-  Reference PDFs the agent opens in the background no longer replace the
-  document in the window.
+  New: the agent can write a report, brief or comparison as a PDF without
+  working out where every line goes. It describes the document -- headings,
+  paragraphs, lists, tables, quotes, code, pictures -- and Autora lays out the
+  pages, numbers them and lists the sources it cites. The description is kept,
+  so when research turns up something new the agent changes one section and the
+  whole document is laid out again, with anything it or you placed on top left
+  where it was. The PDF window shows it as before, and the agent is now told,
+  at the start of each turn, what the document holds: where each heading is,
+  how each section starts, what it has placed and what is still waiting for you
+  to accept or decline.

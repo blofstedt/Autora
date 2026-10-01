@@ -37,6 +37,7 @@ import {
   MAX_ARTIFACT_BYTES, type Artifact,
 } from "./artifacts";
 import { PdfRenderError, withPdf, type PageText, type PdfView, type Rect } from "./pdfrender";
+import { applyChanges, compose, ComposeError, outlineLines, type ComposeSource, type ImageLoader, type OutlineEntry } from "./compose";
 
 // ------------------------------------------------------------- context --
 
@@ -84,13 +85,14 @@ async function runOne(name: string, args: Record<string, any>, ctx: PdfContext):
       case "pdf_read": return await readTool(args, ctx);
       case "pdf_look": return await lookTool(args, ctx);
       case "pdf_edit": return await editTool(args, ctx);
+      case "pdf_compose": return await composeTool(args, ctx);
       case "pdf_pages": return await pagesTool(args, ctx);
       case "pdf_redact": return await redactTool(args, ctx);
       case "pdf_compress": return await compressTool(args, ctx);
       default: return { ok: false, summary: `There is no PDF tool called ${name}.` };
     }
   } catch (err) {
-    if (err instanceof Problem || err instanceof PdfRenderError) return { ok: false, summary: err.message };
+    if (err instanceof Problem || err instanceof PdfRenderError || err instanceof ComposeError) return { ok: false, summary: err.message };
     return { ok: false, summary: `${name} failed: ${message(err)}` };
   }
 }
@@ -1270,6 +1272,11 @@ export type DeskSnapshot = {
   working: string | null;
   /** The file it was opened from, when that was an artifact. */
   source: string | null;
+  /** When pdf_compose made the pages: the document they were laid out from,
+      and which block is on which page. Gone as soon as the pages change any
+      other way, since the description would no longer be what the file is. */
+  compose?: ComposeSource | null;
+  outline?: OutlineEntry[] | null;
 };
 
 /** What the PDF tools may do with the window of the session they run in. */
@@ -2252,15 +2259,16 @@ async function editTool(args: Record<string, any>, ctx: PdfContext): Promise<Pdf
     }
     const name = working && !args.output ? working.name : outputName(input, args.output, values && !items.length ? "filled" : "edited");
     const saved = deliver(ctx, name, flat.data, `Edited from ${given.name}`);
+    // Pages-level work (form fields, watermark, numbers, properties) is one change to review.
+    const baseNote = done.filter((d) => !/^(drew|changed \d+ object|removed \d+ object)/.test(d)).join("; ") || null;
+    // Objects alone leave the pages as pdf_compose laid them out.
+    const keep = carryOn && desk && !baseNote ? desk : null;
     ctx.desk.open({
       name: saved.art.name, base: bytes, items: all, working: saved.art.id,
       source: carryOn && desk ? desk.source : given.artifact?.origin === "user" ? given.artifact.id : null,
       outName: saved.art.name,
-      review: {
-        label: cap(done.join("; ")) || "Edited",
-        // Pages-level work (form fields, watermark, numbers, properties) is one change to review.
-        baseNote: done.filter((d) => !/^(drew|changed \d+ object|removed \d+ object)/.test(d)).join("; ") || null,
-      },
+      compose: keep?.compose ?? null, outline: keep?.outline ?? null,
+      review: { label: cap(done.join("; ")) || "Edited", baseNote },
     });
     const summary = [
       done.length ? `${cap(done.join("; "))}.` : "",
@@ -2287,6 +2295,76 @@ async function editTool(args: Record<string, any>, ctx: PdfContext): Promise<Pdf
     "Look at the pages you changed with pdf_look before saying it is done.",
   ].join(" ");
   return { ok: true, summary, preview: PREVIEW(saved.art.name, count, saved.art.size) };
+}
+
+// -- pdf_compose --
+
+/** A picture for a composed document: PNG or JPEG, by id or path. */
+function composeImages(ctx: PdfContext): ImageLoader {
+  return async (ref) => {
+    const file = readFileRef(ref, ctx.cwd, "picture");
+    const d = file.data;
+    if (d[0] === 0x89 && d[1] === 0x50) return { data: d, kind: "png" };
+    if (d[0] === 0xff && d[1] === 0xd8) return { data: d, kind: "jpg" };
+    throw new Problem(`${file.name} is not a PNG or JPEG: a picture in a composed document is one of those.`);
+  };
+}
+
+async function composeTool(args: Record<string, any>, ctx: PdfContext): Promise<PdfOutcome> {
+  const desk = ctx.desk?.current() ?? null;
+  const previous = desk?.compose ?? null;
+  const next = applyChanges(previous, args);
+  const made = await compose(next, composeImages(ctx));
+  let bytes: Buffer;
+  try {
+    bytes = await saveDoc(made.doc);
+  } catch (err) {
+    throw new Problem(`It could not be saved: ${message(err)}`);
+  }
+
+  const working = previous && desk?.working ? getArtifact(desk.working) : null;
+  const asked = String(args.output ?? "").trim();
+  const name = asked
+    ? outputName({ data: bytes, name: "document.pdf", artifact: null }, asked, "document")
+    : working?.name ?? cleanName(`${String(next.title ?? "document").replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "document"}.pdf`);
+  const kept = previous && desk ? desk.items : [];
+  const orphans = kept.filter((i) => i.pageNumber > made.pages);
+  const label = previous
+    ? `Updated the document (${made.pages} page${made.pages === 1 ? "" : "s"})`
+    : `Composed a document (${made.pages} page${made.pages === 1 ? "" : "s"})`;
+
+  let flat: { data: Buffer; skipped: string[] };
+  try {
+    flat = await flattenDesk(bytes, kept, ctx.cwd);
+  } catch (err) {
+    throw new Problem(`It could not be saved: ${message(err)}`);
+  }
+  const replacing = !previous && desk && desk.working ? getArtifact(desk.working)?.name ?? desk.name : null;
+  const saved = deliver(ctx, name, flat.data, previous ? "Updated by pdf_compose" : "Composed by pdf_compose");
+  ctx.desk?.open({
+    name: saved.art.name, base: bytes, items: kept, working: saved.art.id, source: null, outName: saved.art.name,
+    compose: made.source, outline: made.outline,
+    review: { label, baseNote: previous ? label : null, diff: false },
+  });
+
+  const lines = outlineLines(made.outline);
+  const summary = [
+    `${label}.`,
+    savedLine(saved, made.pages, { data: bytes, name, artifact: null }),
+    lines.length ? `Where things are (page, heading [block id], how it starts):\n${lines.join("\n")}` : "",
+    made.source.blocks.length ? `${made.source.blocks.length} blocks in all.` : "",
+    "To change it, send update / insert / remove with block ids (or blocks again for the whole document): the whole thing is laid out again, so nothing has to be repositioned.",
+    ctx.desk
+      ? "It is open in the PDF window beside the conversation; pdf_edit adds stamps, notes, signatures and highlights on top, as objects the person can move."
+      : "",
+    orphans.length ? `${orphans.length} object${orphans.length === 1 ? "" : "s"} placed on it earlier now sit on page${orphans.length === 1 ? "" : "s"} beyond its end and are not drawn.` : "",
+    kept.length && !orphans.length ? `The ${kept.length} object${kept.length === 1 ? "" : "s"} placed on it earlier stayed where they were; look at the pages to see they still fit.` : "",
+    replacing ? `It replaced ${replacing} in the window; that file itself is unchanged.` : "",
+    ...made.notes,
+    ...flat.skipped.map((s) => `Not drawn into the file: ${s}.`),
+    "Look at the pages with pdf_look before saying it is done.",
+  ].filter(Boolean).join(" ");
+  return { ok: true, summary, preview: PREVIEW(saved.art.name, made.pages, saved.art.size) };
 }
 
 function pngOrJpeg(ref: unknown, cwd: string): boolean {
