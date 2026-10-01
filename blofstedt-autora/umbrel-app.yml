@@ -123,10 +123,20 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  Fixed: the to-do list now keeps up with the work. The agent is shown the
-  chat's list at the start of every turn, so it ticks items off as it finishes
-  them instead of losing track after the first reply, and if it tries to stop
-  with items still open it is asked once to bring the list up to date.
+  The to-do list now sits on top of the message box instead of at the top of
+  the screen. It shows the task the agent is on, and slides to the next one as
+  each is done. Tap it to see every task.
 
-  Fixed: a new chat starts with an empty to-do list. The agent is told so, and
-  no longer writes out a plan carried over from another chat.
+  Fixed: "Set it up" on the Integrations page works. It used to fail with a
+  message meant for the agent ("Say in one line why...").
+
+  Artifacts: the Select bar is gone. Press and hold a file to start selecting.
+
+  Tidier pages: every page now lines up under its title. On Notebooks and
+  Integrations the add button is in the top-right corner, as on Schedules.
+  Triggers and Schedules explain themselves in the empty page instead of a
+  block of text at the top. Settings, System and Mind tabs span the width on a
+  phone, and the message box keeps its buttons on one row.
+
+  Removed the "Do this every morning" and "Save this as a tool" suggestions
+  under replies.

@@ -187,7 +187,9 @@ body::before {
   box-shadow: 0 2px 10px rgba(var(--accent-rgb),  0.45);
 }
 /* The app's own name is signed with the bare glowing mark, not a tile. */
-.rail-brand { display: grid; place-items: center; width: 30px; height: 30px; margin: -4px -2px -4px -6px; }
+/* Centred over the nav icons below it (the mark sat 5px left of them); the
+   name beside it stays where it was. */
+.rail-brand { display: grid; place-items: center; width: 30px; height: 30px; margin: -4px -7px -4px -1px; }
 
 /* A button that opens our own list, not an OS menu in an OS font. */
 .session-btn {
@@ -2733,6 +2735,69 @@ label + .jf-hint { margin-top: -5px; }
 }
 
 
+/* The to-do list docked to the top of the message box (TodoDock): a tab a
+   little narrower than the box, joined to it, holding one line -- the task
+   being worked. Tapped, the whole list opens above that line. */
+.todo-dock {
+  position: relative; z-index: 1;
+  width: calc(100% - 28px); margin: 0 auto -1px;
+  background: var(--s2); border: 1px solid rgba(255, 255, 255, 0.09); border-bottom: 0;
+  border-radius: 14px 14px 0 0; overflow: hidden;
+  animation: rise 0.22s var(--ease) both;
+}
+.todo-dock-list {
+  max-height: min(42vh, 320px); overflow-y: auto; overscroll-behavior: contain;
+  border-bottom: 1px solid var(--border);
+}
+.todo-dock-list .todo-list { padding: 4px 0; }
+.todo-dock-list .todo-item { font-size: calc(13px * var(--ts, 1)); padding: 6px 12px; }
+.todo-dock-bar {
+  position: relative; display: flex; align-items: center; gap: 10px; width: 100%;
+  height: 36px; padding: 0 10px 0 12px; border: 0; background: none; cursor: pointer;
+  color: var(--text); font: inherit; text-align: left;
+}
+.todo-dock-count {
+  flex: 0 0 auto; min-width: 30px; font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: calc(11.5px * var(--ts, 1)); color: var(--text-3);
+}
+/* One line tall, and the lines inside it slide: the finished task up and out,
+   the next in from below. */
+.todo-dock-now { position: relative; flex: 1 1 auto; min-width: 0; height: 20px; overflow: hidden; }
+.todo-dock-line {
+  position: absolute; inset: 0; display: flex; align-items: center; gap: 8px; min-width: 0;
+  font-size: calc(13px * var(--ts, 1));
+}
+.todo-dock-words { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.todo-dock-line.is-entering { animation: todoDockIn 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.todo-dock-line.is-leaving { color: var(--text-3); animation: todoDockOut 0.42s cubic-bezier(0.4, 0, 0.6, 1) both; }
+.todo-dock-line.is-leaving .todo-dock-words { text-decoration: line-through 1.5px currentColor; }
+@keyframes todoDockIn { from { transform: translateY(100%); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes todoDockOut { from { transform: none; opacity: 1; } to { transform: translateY(-100%); opacity: 0; } }
+.todo-dock-dot {
+  flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%;
+  border: 1.5px solid var(--text-3);
+}
+.todo-dock-dot.is-doing {
+  border-color: var(--glow-light); background: rgba(var(--glow-rgb), 0.35);
+  animation: todoDockPulse 1.4s ease-in-out infinite;
+}
+@keyframes todoDockPulse { 50% { box-shadow: 0 0 0 4px rgba(var(--glow-rgb), 0.18); } }
+.todo-dock-tick {
+  flex: 0 0 auto; display: grid; place-items: center; width: 14px; height: 14px; border-radius: 4px;
+  background: var(--live); color: #0b0f14;
+}
+.todo-dock-chev { flex: 0 0 auto; display: grid; place-items: center; color: var(--text-3); transform: rotate(-90deg); transition: transform 0.2s var(--ease); }
+.todo-dock.is-open .todo-dock-chev { transform: rotate(90deg); }
+.todo-dock-bar-fill {
+  position: absolute; left: 0; bottom: 0; height: 2px; background: var(--live);
+  transition: width 0.35s ease;
+}
+.todo-dock.is-all .todo-dock-words { color: var(--text-2); }
+@media (prefers-reduced-motion: reduce) {
+  .todo-dock, .todo-dock-line.is-entering, .todo-dock-line.is-leaving, .todo-dock-dot.is-doing { animation: none; }
+  .todo-dock-line.is-leaving { display: none; }
+}
+
 /* ============================================================================
    Interactive Permission Cell
    ============================================================================ */
@@ -3903,6 +3968,14 @@ input.shot-where[readonly] { cursor: default; }
   /* A fingertip, not a cursor: the badge grows with the button under it. */
   .composer-send-wrap .composer-stop { width: 24px; height: 24px; top: -7px; right: -7px; }
 }
+/* On a 390px phone the six tools came to 302px in a 290px row, and the last
+   one (the notebook) wrapped onto a line of its own. Two pixels off each
+   button's width and no gap between them keep them on one line; they stay
+   40px tall for a fingertip. */
+@media (pointer: coarse) and (max-width: 440px) {
+  .composer-tools { column-gap: 0; }
+  .composer-tools .btn.icon { width: 38px; }
+}
 
 /* ============================================================================
    The memory graph, full size
@@ -4406,6 +4479,12 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
      "Saving…" and "Saved" are short, and still said. */
   .sched-top .save-state:not(.is-busy):not(.is-done) { display: none; }
 }
+/* On a phone a page's tabs span the column, edge to edge with the cards under
+   them, instead of a pill stopping short on the right that read as off-centre. */
+@media (max-width: 680px) {
+  .sched.is-embedded .sched-top .seg, .system-tabs .seg, .mind-switch .seg { flex: 1 1 auto; display: flex; }
+  .sched.is-embedded .sched-top .seg button, .system-tabs .seg button, .mind-switch .seg button { flex: 1 0 auto; }
+}
 
 /* Sessions */
 .ses-table { display: flex; flex-direction: column; gap: 6px; }
@@ -4502,6 +4581,25 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 .sched.is-embedded .sched-top:not(:has(.btn, .seg, .save-state)) { display: none; }
 .kweb.is-embedded .kweb-top { height: auto; min-height: 58px; }
 @media (max-width: 680px) { .sched.is-embedded .sched-top { padding: 10px 12px 0; } }
+/* As a page, the column lines up with every other page's (.page-inner): its
+   left edge under the page's name in the header, the same width, and the
+   scrollbar still at the window's edge. The 840px sheet column centred on its
+   own made Schedules, Triggers, Settings and Usage start further in than the
+   title above them and every other page. */
+@media (min-width: 681px) {
+  .sched.is-embedded {
+    --page-gutter: max(22px, calc((100% - var(--read)) / 2 + 22px));
+  }
+  .sched.is-embedded .sched-top { padding-left: var(--page-gutter); padding-right: var(--page-gutter); }
+  .sched.is-embedded .sched-body {
+    max-width: none; margin: 0;
+    padding-left: var(--page-gutter); padding-right: var(--page-gutter);
+  }
+  .sched.is-embedded .sched-error {
+    max-width: none; width: auto; margin-left: var(--page-gutter); margin-right: var(--page-gutter);
+  }
+}
+@media (max-width: 680px) { .sched.is-embedded .sched-body { padding: 14px 12px 28px; } }
 @media (max-width: 680px) {
   /* At this width the header is already busy: the button keeps the plus and
      drops the words, and stays where the eye expects the action. */
@@ -4549,7 +4647,12 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
    ============================================================================ */
 .mind-page { position: absolute; inset: 0; display: flex; flex-direction: column; }
 .mind-page > .page-scroll { position: relative; flex: 1; min-height: 0; }
-.mind-switch { flex: 0 0 auto; display: flex; justify-content: center; padding: 10px 12px 0; }
+.mind-switch {
+  flex: 0 0 auto; display: flex; justify-content: flex-start;
+  /* Left, in line with the page's column below and its name above. */
+  padding: 12px max(22px, calc((100% - var(--read)) / 2 + 22px)) 0;
+}
+@media (max-width: 680px) { .mind-switch { padding: 10px 12px 0; } }
 .mind-page > .kweb.is-embedded {
   position: relative; inset: auto; z-index: auto; flex: 1; min-height: 0; animation: none;
 }
@@ -4640,7 +4743,12 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 
 /* System: Status, Logs and Host as sections of one page. */
 .system-page { position: absolute; inset: 0; display: flex; flex-direction: column; }
-.system-tabs { flex: 0 0 auto; display: flex; justify-content: center; padding: 12px 12px 0; }
+.system-tabs {
+  flex: 0 0 auto; display: flex; justify-content: flex-start;
+  /* Left, under the page's name, like Settings' tabs; not floating mid-page. */
+  padding: 12px max(22px, calc((100% - var(--read)) / 2 + 22px)) 0;
+}
+@media (max-width: 680px) { .system-tabs { padding: 10px 12px 0; } }
 .system-body { position: relative; flex: 1; min-height: 0; }
 .system-body > .sched.is-embedded {
   position: absolute; inset: 0; z-index: auto; animation: none; background: var(--s1);
@@ -4670,10 +4778,14 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 
 /* Artifacts */
 .art-lede { margin: 0; }
+/* Only there while selecting (a press and hold starts it), and pinned to the
+   top so Delete and Done stay in reach however far down the pile you go. */
 .art-toolbar {
+  position: sticky; top: 0; z-index: 3;
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   padding: 8px 10px; border-radius: var(--r);
-  background: var(--s2); border: 1px solid var(--border);
+  background: var(--s2); border: 1px solid var(--border); box-shadow: var(--shadow-sm);
+  animation: rise 0.18s var(--ease) both;
 }
 .art-selcount { font-size: calc(12px * var(--ts, 1)); font-family: var(--mono); color: var(--text-2); }
 .art-section { display: flex; flex-direction: column; gap: 10px; }
@@ -4692,6 +4804,8 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
   transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
 }
 .art-card:hover { border-color: var(--accent-line); }
+/* A press and hold selects: not the phone's own image menu or text selection. */
+.art-card { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 .art-pickable { cursor: pointer; }
 .art-pickable:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
 /* A picked card says so twice: the tick in the corner and the tint, so it is
@@ -4729,8 +4843,10 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 .art-dragging { outline: 2px dashed var(--accent-line); outline-offset: -8px; }
 @media (max-width: 680px) {
   .art-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-  /* The count would push Delete and Done onto a line of their own. */
-  .art-toolbar .art-selcount { width: 100%; order: 3; }
+  /* One line saying how many, then one row of actions: the count beside the
+     buttons pushed Delete and Done onto lines of their own. */
+  .art-toolbar .art-selcount { width: 100%; order: -1; padding: 2px 4px 0; }
+  .art-toolbar .art-act-word { display: none; }
 }
 .art-filed { margin: 0; color: var(--live); }
 
@@ -4990,7 +5106,7 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
   display: flex; align-items: flex-start; gap: 10px; margin: 4px 0 14px;
   font-size: calc(12.5px * var(--ts, 1)); line-height: 1.5; color: var(--text-3); cursor: pointer;
 }
-.mind-learning input { margin-top: 3px; accent-color: var(--accent); }
+.mind-learning input { margin: 3px 0 0; accent-color: var(--accent); }
 .mind-learning b { display: block; color: var(--text); font-weight: 600; }
 .mind-review h3 { display: flex; align-items: center; gap: 8px; }
 .mind-review-item {
@@ -5645,13 +5761,6 @@ button.dock-card:hover { border-color: var(--border-strong); }
 .top-action-slot { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
 .top-action-slot:empty { display: none; }
 
-/* A page's line of orientation: what this is, before the list of them. Read
-   at the width of the prose the app already uses. */
-.trig-lede {
-  margin: 0 0 2px; max-width: var(--read); color: var(--text-2);
-  font-size: calc(12.5px * var(--ts, 1)); line-height: 1.65;
-}
-.trig-lede b { color: var(--text); font-weight: 600; }
 
 /* ------------------------------------------------------------------ triggers -- */
 /* A trigger's row is a URL and a secret, so it needs one thing a rule does

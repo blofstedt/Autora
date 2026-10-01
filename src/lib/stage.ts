@@ -73,6 +73,16 @@ export function pickSurfaces(buckets: readonly Bucket[], liveBrowserSeq: number 
   });
 }
 
+/**
+ * The to-do list docked above the message box, on every screen size: the same
+ * plan the stage used to hold at the top (one with work left, or the latest
+ * turn's), now where the eye already is while typing. Null when there is none.
+ */
+export function dockedPlan(buckets: readonly Bucket[]): Extract<Cell, { kind: "todo" }> | null {
+  const cell = pickSurfaces(buckets, null).find((s) => s.kind === "plan")?.cell;
+  return cell && cell.kind === "todo" ? cell : null;
+}
+
 /** The last the agent did on a surface: a page it clicked, an item it ticked. */
 export function activityOf(cell: Cell): number {
   if (cell.kind === "screen") return cell.touched ?? cell.seq;

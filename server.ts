@@ -4470,7 +4470,10 @@ async function startServer() {
    * why a suggestion cannot install something the offer path could not.
    */
   app.post("/api/mcp/suggested/:id/install", async (req: Request, res: Response) => {
-    const plan = planOffer({ server: req.params.id });
+    // The offer path wants the agent's one line on why; pressing the button
+    // on the page is the person's own reason, so give it one. Without it every
+    // "Set it up" failed with the agent's "say why" message.
+    const plan = planOffer({ server: req.params.id, why: "Set up from the Integrations page." });
     if (typeof plan === "string") return res.status(400).json({ error: plan });
     if (existingMcp(plan.name)) {
       return res.status(400).json({ error: `There is already a server called "${plan.name}".` });

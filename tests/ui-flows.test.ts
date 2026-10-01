@@ -178,7 +178,13 @@ async function main() {
         : { text: "On it." };
       await page.goto(`${app.base}/?session=${s}`);
       await say("make a list");
-      await page.waitForSelector(".todo-item", { timeout: 15_000 });
+      // Docked above the message box, folded to the task being worked; a tap
+      // opens every task.
+      await page.waitForSelector(".todo-dock", { timeout: 15_000 });
+      assert.match(await page.locator(".todo-dock-now").innerText(), /Write it/, "folded, it shows the task in progress");
+      assert.match(await page.locator(".todo-dock-count").innerText(), /1\/3/);
+      await page.locator(".todo-dock-bar").tap();
+      await page.waitForSelector(".todo-dock .todo-item", { timeout: 5_000 });
       const look = await page.evaluate(() => [...document.querySelectorAll(".todo-item")].map((li) => ({
         tick: getComputedStyle(li.querySelector(".todo-tick")!).strokeDashoffset,
         fill: getComputedStyle(li.querySelector(".todo-rect")!).fill,

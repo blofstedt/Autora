@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
+import { createPortal } from "react-dom";
 import { Markdown } from "../Markdown";
 import { LibraryPicker } from "../LibraryPicker";
 import {
@@ -20,9 +21,11 @@ const date = (ts: number) =>
  * chat whole.
  */
 export function NotebooksPage({
-  onUseInChat, open, onOpen,
+  onUseInChat, open, onOpen, topSlot,
 }: {
   onUseInChat: (ref: NotebookRef) => void;
+  /** The header's corner for the page's own action, as on Schedules. */
+  topSlot?: HTMLElement | null;
   /** The notebook showing, when one is open. */
   open: string | null;
   onOpen: (id: string | null) => void;
@@ -117,24 +120,34 @@ export function NotebooksPage({
         </p>
         {error && <p className="set-warn">{error}</p>}
 
-        <div className="art-toolbar">
-          {(books?.length ?? 0) > 3 && (
-            <input
-              className="nb-search"
-              type="search"
-              placeholder="Search notebooks"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              aria-label="Search notebooks"
-            />
-          )}
-          <div className="spacer" />
-          {!making && (
-            <button className="btn primary" onClick={() => setMaking(true)}>
-              <IconPlus size={14} /> New notebook
-            </button>
-          )}
-        </div>
+        {/* The button that makes one sits in the header's corner, where
+            Schedules and Triggers keep theirs; inline only without a header. */}
+        {topSlot && !making && createPortal(
+          <button className="btn primary top-action" onClick={() => setMaking(true)}>
+            <IconPlus size={13} /> <span className="top-action-word">New notebook</span>
+          </button>,
+          topSlot,
+        )}
+        {((books?.length ?? 0) > 3 || (!topSlot && !making)) && (
+          <div className="art-toolbar">
+            {(books?.length ?? 0) > 3 && (
+              <input
+                className="nb-search"
+                type="search"
+                placeholder="Search notebooks"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                aria-label="Search notebooks"
+              />
+            )}
+            <div className="spacer" />
+            {!topSlot && !making && (
+              <button className="btn primary" onClick={() => setMaking(true)}>
+                <IconPlus size={14} /> New notebook
+              </button>
+            )}
+          </div>
+        )}
 
         {making && (
           <form className="nb-new" onSubmit={(e) => { e.preventDefault(); void make(); }}>

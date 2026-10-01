@@ -111,7 +111,7 @@ test("an offer's time steps out of the quiet hours", () => {
   assert.match(o.text, /08:15/);
 });
 
-test("after a turn: watch the page it read, do it every morning, keep it as a tool", () => {
+test("after a turn: watch the page it read, then what the look back thought of", () => {
   const read = nextSteps({
     request: "what is the price of ASML today",
     calls: [{ name: "browser_open", args: { url: "https://www.google.com/finance/quote/ASML:NASDAQ" }, ok: true }],
@@ -125,7 +125,7 @@ test("after a turn: watch the page it read, do it every morning, keep it as a to
     calls: [1, 2, 3].map(() => ({ name: "terminal", args: { command: "df -h" }, ok: true })),
     customTools: true,
   }, [{ label: "Clear the apt cache", prompt: "Clear the apt cache and tell me how much it freed." }]);
-  assert.deepEqual(checked.map((x) => x.label), ["Do this every morning", "Clear the apt cache", "Save this as a tool"]);
+  assert.deepEqual(checked.map((x) => x.label), ["Clear the apt cache"], "no generic every-morning or save-as-tool chips");
 });
 
 test("no next steps that make no sense", () => {

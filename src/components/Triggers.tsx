@@ -135,14 +135,6 @@ export function Triggers({
       <div className="sched-body">
         {error && <div className="sched-error">{error}</div>}
 
-        <p className="trig-lede">
-          A trigger is a URL with a prompt behind it. Something outside Autora calls the URL — a
-          pipeline that has finished, a script on another machine, a shortcut on your phone — and a
-          turn begins. It runs in a session of its own, exactly like a scheduled task, with the same
-          budget. <b>Nothing here runs on a clock:</b> times and recurrences are on{" "}
-          <b>Schedules</b>; this page is only for work that something else starts.
-        </p>
-
         {secret && (
           <div className="trig-secret">
             <p>
@@ -200,11 +192,14 @@ export function Triggers({
           <div className="empty">
             <span className="empty-ring"><IconPlug size={20} /></span>
             <h3>No triggers</h3>
+            {/* What a trigger is lives here, in the empty page, rather than as
+                a block of prose above everything. */}
             <p>
-              Make one for each thing that should be able to start a turn from outside: the build
-              that just went green, the sync that finished, the button on your phone. You get a URL
-              and a secret, and the secret is shown once.
+              A trigger is a URL that starts a turn when something outside Autora calls it: a build
+              that went green, a script on another machine, a shortcut on your phone. Each run gets a
+              session of its own. You get a URL and a secret, and the secret is shown once.
             </p>
+            <p className="empty-note">Anything on a timer goes on Schedules instead.</p>
           </div>
         )}
 

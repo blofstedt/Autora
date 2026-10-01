@@ -19,6 +19,29 @@ function Box() {
   );
 }
 
+/** The rows themselves: shared by the card and the dock above the message box. */
+export function TodoList({ items }: { items: TodoItem[] }) {
+  return (
+    <ol className="todo-list">
+      {items.map((item) => (
+        <li
+          key={item.id}
+          className={`todo-item${item.status === "in-progress" ? " is-doing" : ""}${item.status === "completed" ? " is-done" : ""}`}
+          aria-current={item.status === "in-progress" ? "step" : undefined}
+        >
+          <Box />
+          <span className="todo-title">
+            <span className="todo-words">{item.title}</span>
+            <span className="sr-only">
+              {item.status === "completed" ? " (done)" : item.status === "in-progress" ? " (in progress)" : ""}
+            </span>
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 export const TodoCell = memo(function TodoCell({ items }: { items: TodoItem[] }) {
   const done = items.filter((t) => t.status === "completed").length;
   const pct = items.length ? Math.round((done / items.length) * 100) : 0;
@@ -37,23 +60,7 @@ export const TodoCell = memo(function TodoCell({ items }: { items: TodoItem[] })
       >
         <i style={{ width: `${pct}%` }} />
       </div>
-      <ol className="todo-list">
-        {items.map((item) => (
-          <li
-            key={item.id}
-            className={`todo-item${item.status === "in-progress" ? " is-doing" : ""}${item.status === "completed" ? " is-done" : ""}`}
-            aria-current={item.status === "in-progress" ? "step" : undefined}
-          >
-            <Box />
-            <span className="todo-title">
-              <span className="todo-words">{item.title}</span>
-              <span className="sr-only">
-                {item.status === "completed" ? " (done)" : item.status === "in-progress" ? " (in progress)" : ""}
-              </span>
-            </span>
-          </li>
-        ))}
-      </ol>
+      <TodoList items={items} />
     </div>
   );
 });
