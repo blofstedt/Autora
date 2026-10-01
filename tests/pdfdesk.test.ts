@@ -179,6 +179,17 @@ await test("other tools read the window's file and start it over from their resu
   assert.equal((await PDFDocument.load(desk.deskBase(SESSION)!)).getPageCount(), 1);
 });
 
+await test("a reference file worked on in the background does not replace the window's file", async () => {
+  const ref = saveArtifact({ origin: "user", name: "reference.pdf", data: await letter() });
+  const before = state();
+  const r = await run("pdf_pages", { file: ref.id, pages: "1" });
+  assert.equal(r.ok, true, r.summary);
+  const after = state();
+  assert.equal(after.name, before.name, "the window keeps the working file");
+  assert.equal(after.working, before.working);
+  assert.equal(after.baseRev, before.baseRev);
+});
+
 await test("the start of a turn says what is open and what the person did", () => {
   desk.personChanges(SESSION, [{ id: "ann_note_1", type: "note", pageNumber: 1, x: 5, y: 5, width: 20, height: 20, noteComment: "Is this right?" }], [], dir);
   const brief = desk.deskBriefing(SESSION)!;

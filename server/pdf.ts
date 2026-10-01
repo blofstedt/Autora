@@ -340,7 +340,10 @@ function deliver(ctx: PdfContext, name: string, data: Buffer, note: string, inpu
   // Whatever was on the pages there is part of them now (the tools that call
   // this read the window's flattened file); pdf_edit opens it itself, with
   // its objects kept movable.
-  if (input && ctx.desk) {
+  // A reference file worked on in the background (cut, redacted, compressed)
+  // is saved and shown in the thread, but never takes the window from the
+  // file being worked on.
+  if (input && ctx.desk && isDeskFile(input, ctx)) {
     const source = ctx.desk.current()?.source ?? (input.artifact?.origin === "user" ? input.artifact.id : null);
     ctx.desk.open({ name: art.name, base: data, items: [], working: art.id, source, outName: art.name });
   }
@@ -1624,6 +1627,13 @@ export async function flattenDesk(base: Buffer, items: DeskItem[], cwd: string):
  * in the window, its current version -- with what the person added -- is
  * what every tool reads.
  */
+function isDeskFile(input: Input, ctx: PdfContext): boolean {
+  const desk = ctx.desk?.current() ?? null;
+  if (!desk) return true; // nothing is open: the file becomes the window's
+  const id = input.artifact?.id;
+  return Boolean(id && (id === desk.working || id === desk.source));
+}
+
 function onDesk(input: Input, ctx: PdfContext): { input: Input; desk: DeskSnapshot | null } {
   const desk = ctx.desk?.current() ?? null;
   const id = input.artifact?.id;
@@ -1897,9 +1907,12 @@ const MAX_LOOK = 4;
 async function lookTool(args: Record<string, any>, ctx: PdfContext): Promise<PdfOutcome> {
   const { input, desk } = onDesk(readPdf(args.file, ctx.cwd), ctx);
   const pass = password(args);
-  // What the agent looks at, the person sees too: open it in the PDF window.
-  if (ctx.desk && !desk) await showInWindow(input, pass, ctx);
-  else if (ctx.desk) ctx.desk.show();
+  // What the agent looks at, the person sees too: open it in the PDF window
+  // -- unless another file is already there. Then this is a reference, looked
+  // at in the background (its pictures are in the thread); the window keeps
+  // the file being worked on.
+  if (ctx.desk && desk) ctx.desk.show();
+  else if (ctx.desk && !ctx.desk.current()) await showInWindow(input, pass, ctx);
   return withPdf(input.data, pass, async (view) => {
     const count = view.pages;
     const asked = [...new Set(parsePages(args.pages ?? "1", count).filter((p): p is number => p !== "blank"))];
