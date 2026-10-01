@@ -184,6 +184,39 @@ const LOOKS_ONLY = new Set([
   "browser_handoff",
 ]);
 
+/** Commands that only read: what a terminal call may run in planning, so the
+    agent can look at a file it made (cat, head, ls, grep...) without a way to
+    change anything. Anything not here is a change. */
+const READ_COMMANDS = new Set([
+  "cat", "head", "tail", "ls", "tree", "pwd", "wc", "file", "stat", "du", "df", "grep", "egrep", "fgrep", "rg",
+  "sort", "uniq", "cut", "tr", "nl", "jq", "realpath", "basename", "dirname", "md5sum", "sha256sum", "sha1sum",
+  "strings", "od", "hexdump", "echo", "printf", "date", "which", "whoami", "uname", "ps", "id", "cd", "find",
+  "pdftotext", "pdfinfo", "identify", "git",
+]);
+const READ_GIT = new Set(["status", "log", "diff", "show", "ls-files", "rev-parse", "blame"]);
+
+/** Whether a shell command only reads: every part of it is a known reading
+    command, and nothing writes (no redirect, substitution or in-place flag).
+    Doubtful is false: it is then judged as the change it may be. */
+export function readOnlyCommand(command: string): boolean {
+  const text = command.trim();
+  if (!text || text.length > 2000) return false;
+  // Redirecting a stream to nowhere, or into the other one, writes nothing.
+  const bare = text.replace(/\d?>&\d/g, " ").replace(/\d?>\s*\/dev\/null/g, " ");
+  if (/[<>`]|\$\(|\$\{/.test(bare)) return false;
+  for (const part of bare.split(/&&|\|\||[;|\n]/)) {
+    const words = part.trim().split(/\s+/).filter(Boolean);
+    if (words.length === 0) continue;
+    if (/&/.test(part)) return false;
+    const [cmd, ...rest] = words;
+    if (!READ_COMMANDS.has(cmd)) return false;
+    if (cmd === "find" && rest.some((w) => /^-(exec|execdir|ok|okdir|delete|fprint\w*|fls)$/.test(w))) return false;
+    if (cmd === "sort" && rest.some((w) => /^-\w*o|^--output/.test(w))) return false;
+    if (cmd === "git" && (!READ_GIT.has(rest.find((w) => !w.startsWith("-")) ?? "") || rest.some((w) => /^--(output|ext-diff|textconv)/.test(w)))) return false;
+  }
+  return true;
+}
+
 /** Whether this exact call can change anything. GET and HEAD cannot; a POST
     to somebody's API can, so http_request is judged on its method. */
 export function looksOnly(name: string, args: Record<string, any> = {}): boolean {
@@ -199,6 +232,8 @@ export function looksOnly(name: string, args: Record<string, any> = {}): boolean
   // Reading a PDF is looking; pulling its attachments out saves new files.
   if (name === "pdf_read") return !(Array.isArray(args.extract) ? args.extract.length : args.extract);
   if (name === "pdf_look") return true;
+  // A command that only reads (cat a file, list a folder) is looking.
+  if (name === "terminal") return readOnlyCommand(String(args.command ?? ""));
   // Reading notebooks is looking; filing into one is not.
   if (name === "notebook") return ["list", "read"].includes(String(args.action ?? "").trim().toLowerCase());
   // A screenshot kept as a file is a new artifact.
@@ -216,11 +251,15 @@ export function planRefusal(work: WorkMode, phase: Phase | undefined, name: stri
   if (phaseFor(work, phase) !== "plan") return null;
   if (looksOnly(name, args)) return null;
   if (work === "agent") {
-    return "Not run: you are planning, and planning changes nothing. Finish the plan on the to-do " +
+    return "Not run: you are planning, and planning changes nothing" +
+      (name === "terminal" ? " (a command that only reads -- cat, ls, head, grep, git status -- does run; pdf_look shows a PDF's pages)" : "") +
+      ". Finish the plan on the to-do " +
       "list, then call set_mode with to \"build\" and make this call again. If the task is small " +
       "enough not to need a plan, switch to build now.";
   }
-  return "Not run: this chat is in Plan mode, and nothing is changed there. Do not retry it and do " +
+  return "Not run: this chat is in Plan mode, and nothing is changed there" +
+    (name === "terminal" ? " (a command that only reads -- cat, ls, head, grep, git status -- does run; pdf_look shows a PDF's pages)" : "") +
+    ". Do not retry it and do " +
     "not look for another way to do the same thing. Put what you would do on the to-do list -- the " +
     "files, the commands, the order, the risks -- and say it in your reply, then stop: the person " +
     "moves the chat to Build or Agent when the plan is right.";

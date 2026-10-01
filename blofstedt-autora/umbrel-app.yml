@@ -124,8 +124,11 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  Fixed: pasting an image into the message box (a screenshot, a copied
-  picture) now attaches it, as it should on desktop.
+  Fixed: in Plan mode (and while Agent mode is planning) the agent can now read
+  back a file it is creating. Terminal commands that only read -- cat, ls,
+  head, grep, git status and the like -- run instead of being blocked; anything
+  that could write is still refused. Also fixed: pasting an image into the
+  message box now attaches it.
   New: in the PDF window, everything the agent adds, changes or removes is
   marked on the document, with Prev/Next and Accept/Deny for each change, and
   every state of the file is kept as a version you can download or go back to.
