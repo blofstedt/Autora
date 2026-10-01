@@ -4788,12 +4788,8 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
   background: var(--s3); border: 1px solid var(--accent-line); box-shadow: var(--shadow-sm);
   animation: rise 0.18s var(--ease) both;
 }
-.art-selcount {
-  padding: 0 6px 0 2px; white-space: nowrap; font-variant-numeric: tabular-nums;
-  font-size: calc(13.5px * var(--ts, 1)); font-weight: 600; color: var(--text);
-}
 .art-selall {
-  padding: 4px 6px; border: 0; background: none; cursor: pointer; white-space: nowrap;
+  padding: 4px 8px 4px 4px; border: 0; background: none; cursor: pointer; white-space: nowrap;
   font: inherit; font-size: calc(12.5px * var(--ts, 1)); font-weight: 550; color: var(--accent-light);
 }
 .art-selall:hover:not(:disabled) { text-decoration: underline; }

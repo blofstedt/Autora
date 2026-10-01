@@ -360,9 +360,8 @@ export function ArtifactsPage({
             >
               <IconX size={15} />
             </button>
-            <span className="art-selcount" aria-live="polite">
-              {removing ? "Deleting…" : `${picked.length} selected`}
-            </span>
+            {/* No count on screen, the ticks say it; only a screen reader is told. */}
+            <span className="sr-only" aria-live="polite">{picked.length} selected</span>
             <button
               className="art-selall"
               onClick={() => setPicked(allPicked ? [] : all.map((a) => a.id))}
