@@ -575,8 +575,10 @@ const TOOLS: ToolSpec[] = [
         name: { type: "string", description: "Lowercase, underscores, e.g. check_backup." },
         description: { type: "string", description: "What it does and when to use it, for your future self." },
         parameters: {
-          type: "array",
-          description: "The arguments it takes.",
+          // The handler takes either: a list of {name, ...} or a JSON Schema
+          // object, which is what models reach for first.
+          type: ["array", "object"],
+          description: "The arguments it takes: a list of {name, description, required}, or a JSON Schema object.",
           items: {
             type: "object",
             properties: {

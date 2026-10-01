@@ -125,13 +125,10 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  New: the agent can write a report, brief or comparison as a PDF without
-  working out where every line goes. It describes the document -- headings,
-  paragraphs, lists, tables, quotes, code, pictures -- and Autora lays out the
-  pages, numbers them and lists the sources it cites. The description is kept,
-  so when research turns up something new the agent changes one section and the
-  whole document is laid out again, with anything it or you placed on top left
-  where it was. The PDF window shows it as before, and the agent is now told,
-  at the start of each turn, what the document holds: where each heading is,
-  how each section starts, what it has placed and what is still waiting for you
-  to accept or decline.
+  Fixed: the agent no longer keeps retrying the same failing thing with small
+  variations. Failures that say the same thing now add up whatever the
+  arguments were -- after three the agent is shown what it already tried and
+  told to step back, and after six the turn stops and says what failed. Calls
+  to a tool with missing or wrongly typed arguments are now refused before
+  anything runs, with a message naming each problem and the arguments the tool
+  accepts, rather than being guessed at.

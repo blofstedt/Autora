@@ -86,7 +86,9 @@ import {
   permissionBriefing, permissionsOf, phaseFor, planRefusal, PERMISSION_INFO, WORK_MODES, workMode,
   type Permissions, type Phase, type WorkMode,
 } from "./server/modes";
-import { LoopWatch } from "./server/loopwatch";
+import { LoopWatch, describe as describeCall } from "./server/loopwatch";
+import { ErrorBudget } from "./server/errorbudget";
+import { checkArgs } from "./server/argcheck";
 import { healthBriefing, recordOutcome, targetOf, toolHealth } from "./server/toolhealth";
 import { Scheduler, type Job, type JobWatch } from "./server/scheduler";
 import {
@@ -3595,6 +3597,9 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
       const { pinned, note } = await systemInstructionFor(session.id, uniqueAccessed, active);
       context.setTurnNote(note);
       const watch = new LoopWatch(state.loop);
+      /* Failures that say the same thing however the arguments were varied,
+         which the exact-call counts in the loop watch never add up. */
+      const errors = new ErrorBudget();
       let loopStop: string | null = null;
       /** Run a call's result past the loop watch before the model reads it. */
       const watched = (name: string, args: unknown, ok: boolean, raw: string, shown: string) => {
@@ -3610,6 +3615,10 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
         const verdict = watch.record(name, args, ok, raw);
         if (verdict.log) emitEvent(session, "system.log", "system", { message: verdict.log });
         if (verdict.stop) loopStop = verdict.stop;
+        const budget = errors.record(
+          name, describeCall(name, args), ok, stripAnsi(raw),
+        );
+        if (budget.stop && !loopStop) loopStop = budget.stop;
         /* A scheduled run has a budget of its own, so one job that has begun
            to chew through a session is stopped here rather than left to
            finish. A turn the person is having is never stopped this way. */
@@ -3623,7 +3632,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           }
         }
         const known = siteMemory(name, args);
-        return [shown, verdict.note, known].filter(Boolean).join("\n\n");
+        return [shown, verdict.note, budget.note, known].filter(Boolean).join("\n\n");
       };
       /* Sites this turn has been to, so what memory holds about one is said
          the first time only. */
@@ -3843,6 +3852,17 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           emitEvent(session, "tool.call", "agent", {
             name: spec.name, args: use.args,
           }, span);
+
+          /* The tool's own schema, enforced before anything else looks at the
+             call: the handlers coerce whatever arrives, so a missing or
+             mistyped argument would otherwise reach the guard, the approval
+             card and the tool. MCP tools keep their servers' own checking. */
+          const badArgs = spec.group === "mcp" ? null : checkArgs(spec.name, spec.parameters, use.args ?? {});
+          if (badArgs) {
+            emitEvent(session, "tool.error", "agent", { error: badArgs }, span);
+            reply(false, watched(spec.name, use.args, false, badArgs, badArgs));
+            continue;
+          }
 
           /* Planning first, and it is a refusal rather than a card: planning
              is the agent's own state (chosen by the person in Plan, by the
