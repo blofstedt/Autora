@@ -14,6 +14,7 @@
  *   <- {t:"push", wc, channel, args}         webContents.send
  *   <- {t:"rpc", id, op, payload}            a page to draw in (win.load / eval / pdf / shot / close)
  */
+import { setUiLang } from "@genoffice/i18n";
 import { register, extra } from "autora:register";
 
 
@@ -27,6 +28,8 @@ electron.__runtime.push = (wc: number, channel: string, args: unknown[]) => send
 electron.__runtime.page = (wc: number) => send({ t: "page", wc });
 
 try {
+  // The engines name things in the interface language (dialogs, default names of shapes): GenOffice starts in Chinese.
+  setUiLang("en");
   register();
   send({ t: "ready", channels: electron.__handlers.size });
 } catch (err: any) {

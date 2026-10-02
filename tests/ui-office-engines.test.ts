@@ -39,6 +39,8 @@ async function until(what: string, ok: () => Promise<boolean>, ms = 40_000) {
   throw new Error(`timed out waiting for ${what}`);
 }
 const bodyText = (frame: Frame) => frame.evaluate(() => document.body.innerText).catch(() => "");
+/** Every piece of text in the page, shown or not (menus and lists that are closed). */
+const allText = (frame: Frame) => frame.evaluate(() => [...document.querySelectorAll("*")].filter((e) => e.children.length === 0 && !["SCRIPT", "STYLE"].includes(e.tagName)).map((e) => e.textContent).join("\n")).catch(() => "");
 
 async function main() {
   const exe = process.env.AUTORA_BROWSER_PATH || "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
@@ -84,6 +86,9 @@ async function main() {
       await until("the deck to open", async () => /Slide 1 (\/|of) 1/.test(await bodyText(frame)), 90_000).catch(async (err) => { console.log((await bodyText(frame)).slice(0, 600).replace(/\n/g, " | ")); throw err; });
       const text = await bodyText(frame);
       assert.doesNotMatch(text, /Genspark/);
+      assert.doesNotMatch(text, /[\u3400-\u9fff]/, "no Chinese anywhere in the editor");
+      const hidden = (await allText(frame)).match(/.{0,20}[\u3400-\u9fff]+.{0,20}/g);
+      assert.equal(hidden, null, `Chinese in the page: ${hidden?.slice(0, 5).join(" | ")}`);
       assert.match(text, /Autora/);
       assert.equal(await page.locator(".pdf-bar-name").innerText(), "pitch.pptx");
       if (process.env.OFFICE_SHOT) { await sleep(1500); await page.screenshot({ path: `${process.env.OFFICE_SHOT}-deck.png` }); }
@@ -167,6 +172,7 @@ async function main() {
       await until("the formula's value", async () => /13\.5/.test(await bodyText(frame)), 90_000).catch(() => undefined);
       const text = await bodyText(frame);
       assert.doesNotMatch(text, /Genspark/);
+      assert.doesNotMatch(text, /[\u3400-\u9fff]/, "no Chinese anywhere in the editor");
       assert.match(text, /Autora/);
       assert.equal(await page.locator(".pdf-bar-name").innerText(), "budget.xlsx");
       if (process.env.OFFICE_SHOT) { await sleep(1500); await page.screenshot({ path: `${process.env.OFFICE_SHOT}-book.png` }); }
