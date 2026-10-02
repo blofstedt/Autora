@@ -82,6 +82,12 @@ export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: b
               reply(true, {});
               break;
             }
+            case "ask": {
+              // The editor's AI slot is Autora's chat: put the cursor there.
+              document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task"]')?.focus();
+              reply(true, {});
+              break;
+            }
             case "export-pdf": {
               const res = await fetch(`${base}/pdf`, { method: "POST" });
               if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `the server answered ${res.status}`);

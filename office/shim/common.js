@@ -115,10 +115,32 @@
     }));
   }
 
-  // Autora's agent is the assistant: the editor's own AI entries and panel are left out.
+  // Autora's agent is the assistant: the editor's own AI panel and one-click AI actions are
+  // left out, and its Genspark AI slot on the Home tab becomes one button that puts the
+  // cursor in Autora's chat box.
   const style = document.createElement("style");
-  style.textContent = ".ribbon-group:has(.ai-entry), .ai-dock, .ai-rail { display: none !important; }";
+  style.textContent = ".ai-dock, .ai-rail { display: none !important; } .ribbon-group:has(.ai-entry) .ai-entry:not(.autora-ask) { display: none !important; }";
   document.head.appendChild(style);
+  const MARK = '<svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 21 20H3z" fill="#8b7cf6"/></svg>';
+  const adopt = () => {
+    for (const group of document.querySelectorAll(".ribbon-group")) {
+      const entries = group.querySelectorAll(".ai-entry");
+      if (!entries.length) continue;
+      const first = entries[0];
+      if (!first.classList.contains("autora-ask")) {
+        first.classList.add("autora-ask");
+        first.classList.remove("active");
+        first.setAttribute("data-tip", "Ask Autora in the chat");
+        first.addEventListener("click", (e) => { e.stopImmediatePropagation(); e.preventDefault(); void host("ask", {}).catch(() => undefined); }, true);
+      }
+      const icon = first.querySelector(".rb-big-icon"), label = first.querySelector(":scope > span:not(.rb-big-icon)");
+      if (icon && !icon.querySelector("[data-autora]")) icon.innerHTML = '<span data-autora="1">' + MARK + "</span>";
+      if (label && label.textContent !== "Autora") label.textContent = "Autora";
+      const name = group.querySelector(".ribbon-group-label");
+      if (name && name.textContent !== "Autora") name.textContent = "Autora";
+    }
+  };
+  new MutationObserver(adopt).observe(document.documentElement, { childList: true, subtree: true });
 
   window.__autora = { host, onPush, headless, framed, b64, unb64 };
   // The editor's own script waits for this before it starts (see office/vite).

@@ -139,7 +139,8 @@ releaseNotes: >-
   without a reload (tracked by default, so you can accept or decline them). Take
   control to hold the agent off the document, Versions to go back, and File ->
   Export PDF opens the result in Autora's own PDF editor. The editor's own AI
-  panel is left out: the agent is the assistant. Built on the open-source
+  panel is replaced by an Autora button that puts the cursor in the chat: the
+  agent is the assistant. Built on the open-source
   GenOffice engines (Apache-2.0). Earlier in this release line: the agent can see
   a Word document's pages, read, edit, check, create and convert Word, Excel and
   PowerPoint files, and reads a site's official documentation before acting on it.
