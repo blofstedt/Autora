@@ -4,7 +4,7 @@
  *   npx tsx tests/verify.test.ts
  */
 import assert from "node:assert/strict";
-import { focusOutput, previewNote, previewProblems, checkLine, failedNote, mergeVerify, VERIFY_DEFAULTS } from "../server/verify";
+import { focusOutput, itemCheckNote, previewNote, previewProblems, checkLine, failedNote, mergeVerify, VERIFY_DEFAULTS } from "../server/verify";
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -86,6 +86,17 @@ test("a run that fails exactly as the last did says so instead of repeating itse
   assert.doesNotMatch(second, /expected 4 to equal 5/);
   const different = failedNote({ ...failing(1), output: "FAIL subtracts" }, 2, 3, failing(12).output);
   assert.match(different, /FAIL subtracts/);
+});
+
+test("a check run because an item was finished says so, and reopens the item on failure", () => {
+  const pass = itemCheckNote({ command: "npm test", exitCode: 0, ok: true, output: "" });
+  assert.match(pass, /after you finished that item.*passed/);
+  const fail = itemCheckNote({ command: "npm test", exitCode: 1, ok: false, output: "FAIL adds numbers" });
+  assert.match(fail, /after you marked that item done/);
+  assert.match(fail, /FAIL adds numbers/);
+  assert.match(fail, /reopen the item/);
+  const again = itemCheckNote({ command: "npm test", exitCode: 1, ok: false, output: "FAIL adds numbers" }, "FAIL adds numbers");
+  assert.match(again, /exactly as it did last time/);
 });
 
 console.log(`${passed} passed`);

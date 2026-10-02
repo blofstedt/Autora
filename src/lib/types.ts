@@ -44,6 +44,7 @@ export const Kind = {
   SessionStarted: "session.started",
   SessionEnded: "session.ended",
   UserMessage: "turn.user",
+  Amend: "turn.amend",
   AgentText: "turn.agent.text",
   AgentThinking: "turn.agent.thinking",
   AgentDone: "turn.agent.done",

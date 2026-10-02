@@ -472,7 +472,7 @@ export function App() {
     return () => { ro?.disconnect(); window.removeEventListener("resize", measure); };
   }, []);
 
-  const send = useCallback(async (spoken?: string) => {
+  const send = useCallback(async (spoken?: string, interrupt?: boolean) => {
     const text = (spoken ?? draft).trim();
     /* A dictated turn carries nothing but words, and a message may be nothing
        but files: "look at this" with the photo is a whole request. */
@@ -501,6 +501,9 @@ export function App() {
         /* It was said out loud, and a spoken turn answers without thinking
            first: in live voice the wait is the whole experience. */
         ...(spoken !== undefined ? { spoken: true } : {}),
+        /* Sent while the agent works, a message is added to what it is doing;
+           only an explicit interrupt stops it first. */
+        ...(interrupt ? { mode: "interrupt" } : {}),
       }),
     }).catch(() => null);
     // Now that the box stays open while the connection comes back, a send
@@ -967,7 +970,7 @@ export function App() {
 
   /** Enter or the send button: a command if the box holds one, otherwise
       the message as typed. */
-  const submit = useCallback(() => {
+  const submit = useCallback((interrupt?: boolean) => {
     if (slashOpen) {
       runCommand(slashOffered[slashActive], "");
       return;
@@ -981,7 +984,7 @@ export function App() {
       setNotice("No model is connected yet. Add one in Settings (/settings) first.");
       return;
     }
-    void send();
+    void send(undefined, interrupt);
   }, [slashOpen, slashOffered, slashActive, draft, runCommand, send, modelReady]);
 
   /** The same page over https, where the microphone is allowed. Built from the
@@ -1832,7 +1835,8 @@ export function App() {
                       }
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
-                        submit();
+                        // Alt, Ctrl or Cmd with Enter stops the agent first; plain Enter adds to its work.
+                        submit(e.altKey || e.ctrlKey || e.metaKey);
                       }
                     }}
                   />
@@ -2001,7 +2005,7 @@ export function App() {
                         {/* While the agent is working and there is nothing to send,
                             this is the way to stop it: the same button, the
                             same place, so a phone never has to find /stop. With
-                            words in the box it is Send, which interrupts. */}
+                            words in the box it is Send, which adds to the work. */}
                         <button
                           className={`composer-send${running && !draft.trim() && nothingAttached ? " is-stop" : ""}`}
                           // Without a model a message can only fail; a slash
@@ -2009,9 +2013,9 @@ export function App() {
                           disabled={readOnly || (!(running && !draft.trim() && nothingAttached)
                             && ((!draft.trim() && nothingAttached)
                               || (modelReady === false && !draft.trim().startsWith("/"))))}
-                          onClick={running && !draft.trim() && nothingAttached ? () => void stopTurn() : submit}
-                          title={running ? (!draft.trim() && nothingAttached ? "Stop" : "Interrupt & send") : "Send"}
-                          aria-label={running ? (!draft.trim() && nothingAttached ? "Stop" : "Interrupt & send") : "Send"}
+                          onClick={running && !draft.trim() && nothingAttached ? () => void stopTurn() : () => submit()}
+                          title={running ? (!draft.trim() && nothingAttached ? "Stop" : "Add to what it is doing (Alt+Enter interrupts & sends)") : "Send"}
+                          aria-label={running ? (!draft.trim() && nothingAttached ? "Stop" : "Add to what it is doing") : "Send"}
                         >
                           {running && !draft.trim() && nothingAttached
                             ? <IconStop size={15} />

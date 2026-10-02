@@ -39,8 +39,8 @@ async function main() {
       await app.say(s, "rename every helper in the repo to snake_case");
       await app.until(s, (ev) => ev.some((e) => e.kind === "turn.agent.text"), "the second step to start");
       const before = app.seen.length;
-      // Sent while it is still working: interrupt & send.
-      await app.say(s, "also keep the old names as aliases");
+      // Sent while it is still working, with the explicit interrupt: stop & send.
+      await app.api("POST", `/api/sessions/${s}/message`, { text: "also keep the old names as aliases", mode: "interrupt" });
       const ev = await app.until(s, (e) => done(e).length >= 2, "the second turn to end", 20_000);
       assert.equal(done(ev)[0].payload.stopped, true, "the cut turn is marked as stopped");
       const next = app.seen.slice(before).map((r) => `${r.system}\n${JSON.stringify(r.messages)}`).join("\n");

@@ -503,6 +503,12 @@ export function derive(events: AutoraEvent[]): Derived {
         busy = true;
         break;
 
+      case Kind.Amend:
+        /* Said while the agent worked and added to what it was doing, so it
+           sits in the turn it joined rather than starting a new one. */
+        push({ kind: "note", seq: e.seq, tone: "plain", text: `You added: ${e.payload.text ?? ""}` });
+        break;
+
       case Kind.MemoryRecall:
       case Kind.MemoryWrite: {
         const written = e.kind === Kind.MemoryWrite;

@@ -184,6 +184,7 @@ const LOOKS_ONLY = new Set([
   "ask_user",
   "todo",
   "ledger",
+  "requirements",
   "tools_enable",
   "set_mode",
   "browser_handoff",

@@ -29,7 +29,7 @@ async function main() {
   const bodyText = () => page.evaluate(() => document.body.innerText);
   const say = async (text: string) => {
     await page.fill('textarea[aria-label="Task"]', text);
-    await page.tap('button[aria-label="Send"], button[aria-label="Interrupt & send"]');
+    await page.tap('button[aria-label="Send"], button[aria-label="Interrupt & send"], button[aria-label="Add to what it is doing"]');
   };
   try {
     const s = await app.newSession("Flows");

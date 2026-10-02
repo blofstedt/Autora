@@ -125,17 +125,17 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  New: the agent wastes fewer tokens and gets out of loops sooner. A command that
-  keeps failing the same way is stopped sooner than a read that keeps coming
-  back the same, and a call repeated after the warning is refused in a line
-  instead of run again, so the round is spent on something different. Rounds
-  that change nothing earn a "stall" note. Old file reads and search results
-  are shrunk together once enough has piled up, with the full text a vault_read
-  away, and the project check shows only the lines that report a failure, or
-  says in one line that it failed exactly as before. When an error budget stops
-  a turn, what it learned is kept as a provisional memory, so the next chat
-  does not walk into the same dead end. The trace now counts calls that
-  read little of the provider's prompt cache mid-turn and whether a tool-list change
-  was why, and AUTORA_CACHE_TTL=1h asks Anthropic for an hour-long cache for
-  chats with long gaps. A new "npm run replay" command replays a recorded chat
-  against the loop rules so settings can be compared on the same chat.
+  New: big, changing tasks. What you ask for is now kept word for word as a
+  list of asks (a message with numbered or bulleted items becomes one ask each),
+  told to the agent every turn, and it cannot be paraphrased away when a long
+  chat is condensed. A message you send while the agent is working is added to
+  what it is doing instead of stopping it: it is told at its next step, shown in
+  the thread as "You added", and recorded as an ask the agent can merge, change
+  or drop. Alt, Ctrl or Cmd with Enter still interrupts and sends. Before the
+  agent finishes it must account for every ask (done, with how it checked, or
+  dropped, with why), and your project check now also runs when an item is
+  marked done, so a failure is found while the change is fresh. Earlier in this
+  release line: failing calls stop sooner, a call repeated after a warning is
+  refused, rounds that change nothing earn a note, old reads are shrunk
+  together, a stop teaches a provisional memory, the trace counts cache misses,
+  and "npm run replay" replays a chat against the loop rules.

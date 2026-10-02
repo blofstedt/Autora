@@ -36,7 +36,7 @@ export interface InterruptedWork {
   reason: string | null;
 }
 
-const MAX_REQUEST = 600;
+const MAX_REQUEST = 1500;
 const MAX_REQUESTS = 5;
 
 /** What a turn was asked, as the person worded it. */

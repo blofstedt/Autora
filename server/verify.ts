@@ -108,6 +108,21 @@ export function failedNote(r: CheckResult, run: number, tries: number, previous?
   ].join("\n");
 }
 
+/** What the agent is told when the check was run because it just finished an item. */
+export function itemCheckNote(r: CheckResult, previous?: string): string {
+  if (r.ok) return `(Autora ran the project's check after you finished that item: \`${r.command}\` passed.)`;
+  const unchanged = previous !== undefined && failureKey(previous) !== "" && failureKey(previous) === failureKey(r.output);
+  return [
+    `(Autora ran the project's check after you marked that item done: \`${r.command}\` ` +
+      `${r.exitCode === null ? "did not finish" : `exited ${r.exitCode}`}, so it did not pass.`,
+    unchanged
+      ? "It fails exactly as it did last time; what you changed since has not affected it."
+      : focusOutput(r.output).trim() || "(no output)",
+    "That item is not finished while this fails. Fix it now, while the change is fresh, and reopen the item if you marked it done. " +
+      "If it fails for a reason that is not yours -- already broken, or the environment -- say so plainly.)",
+  ].join("\n");
+}
+
 /** What the thread says in a line. */
 export function checkLine(r: CheckResult, run: number, tries: number): string {
   if (r.ok) return `The project's check passed (${r.command}).`;

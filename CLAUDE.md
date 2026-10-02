@@ -105,6 +105,19 @@ is a sub-project with its own dependencies (see below).
     [warnAt=3 ...]` replays a recorded chat against these rules, to compare
     settings on the same chat. `context.supersedeReads` stubs old reads in one
     batch (a mid-history edit breaks the provider's cache, so never one by one).
+  - `requirements.ts` (`requirements` tool, `requirements.update` in the log):
+    what the person asked for, verbatim, with a status. A message that lists its
+    asks is split into items; one sent while work is open is kept whole
+    (`noteAsks` in `server.ts`); the agent merges, edits, drops. Told every turn
+    from the log (so compaction cannot paraphrase it), and `finishAudit` sends
+    the agent back once per turn if an ask is neither done nor dropped.
+    A message typed while a turn runs is an *amendment* (`turn.amend`), not an
+    interrupt: queued in `amendments`, told to the turn at its next round
+    boundary (end of the last tool result) or when it is about to finish, and
+    answered by a fresh turn if it lands after the last look. Only
+    `{mode: "interrupt"}` (Alt/Ctrl/Cmd+Enter), files, voice and `/commands`
+    stop the turn first. The project check also runs when a to-do or ask is
+    marked done mid-turn (`itemCheckNote`, capped per turn).
   - `argcheck.ts`: every call is checked against its tool's own schema before
     anything else sees it.
   - `verify.ts`: the person's project check (Settings), run by the loop when the

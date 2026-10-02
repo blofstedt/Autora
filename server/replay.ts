@@ -99,7 +99,7 @@ export function replay(
       continue;
     }
     if (ok && !readOnly(call.name, (call.args ?? {}) as Record<string, any>)) watch.advance();
-    if (ok && (call.name === "todo" || call.name === "ledger")) watch.advance();
+    if (ok && (call.name === "todo" || call.name === "ledger" || call.name === "requirements")) watch.advance();
     const verdict = watch.record(call.name, call.args, ok, text);
     const spent = errors.record(call.name, describe(call.name, call.args), ok, text);
     if (verdict.note || spent.note) notes += 1;

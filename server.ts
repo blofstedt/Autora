@@ -39,6 +39,9 @@ import { missingPathIn, pathHint } from "./server/hints";
 import { FAMILIES, familyIds, loadedFamilies, loadedFromLog, unloadedIndex, withoutUnloaded } from "./server/toolload";
 import { applyLedger, latestLedger, ledgerBriefing, renderLedger, touched as touchedThings } from "./server/ledger";
 import { applyTodos, latestTodos, todoBriefing, unfinishedTodos } from "./server/todos";
+import {
+  addRequirements, amendmentNote, applyRequirements, autoAsks, finishAudit, latestRequirements, requirementsBriefing,
+} from "./server/requirements";
 import { replyStyle, standingBlock, standingReminder } from "./server/prompt";
 import { WebPush, cleanSubscription } from "./server/webpush";
 import { captureConsole, log, readLogs, setLogRedactor, type LogLevel } from "./server/logs";
@@ -97,7 +100,7 @@ import { editFile, type EditArgs } from "./server/editfile";
 import { diffDom, type ChangeCue, type DomItem } from "./server/domdiff";
 import { Workspace, type DiffLine, type FileChange as CodeChange } from "./server/codediff";
 import { runSubagent } from "./server/subagent";
-import { checkLine, failedNote, mergeVerify, previewNote, previewProblems, type CheckResult } from "./server/verify";
+import { checkLine, failedNote, itemCheckNote, mergeVerify, previewNote, previewProblems, type CheckResult } from "./server/verify";
 import { buildTrace, traceText } from "./server/trace";
 import { keepBudget, loadBudget } from "./server/budgetstore";
 import { interruptedWork, resumeNote, type InterruptedWork, type ResumeEvent } from "./server/resume";
@@ -1959,7 +1962,7 @@ function historyFor(session: Session, sinceSeq = 0): { message: ChatMessage; seq
   for (const event of session.events) {
     if (event.seq <= sinceSeq) continue;
     let role: "user" | "assistant" | null = null;
-    if (event.kind === "turn.user") role = "user";
+    if (event.kind === "turn.user" || event.kind === "turn.amend") role = "user";
     else if (event.kind === "agent.remark") role = "assistant";
     else if (event.kind === "turn.agent.text") {
       /* Text this server composed -- the no-model notice, the seeded opening
@@ -2422,6 +2425,11 @@ async function systemInstructionFor(
   /* The to-do list, said every turn: the history carries words, not the
      todo calls that wrote it, so this is the only way the agent sees it again. */
   if (own) notes.push(todoBriefing(latestTodos(own.events)));
+  /* What the person asked for, word for word: the asks the to-do list is
+     written from, kept apart so one the agent leaves off its plan is still
+     here. */
+  const asked = own ? requirementsBriefing(latestRequirements(own.events)) : null;
+  if (asked) notes.push(asked);
   /* What it worked out, which the history (words only) cannot carry. */
   const working = own ? ledgerBriefing(latestLedger(own.events), touchedThings(own.events)) : null;
   if (working) notes.push(working);
@@ -3104,6 +3112,36 @@ export interface TurnResult {
   recalled: string[];
 }
 
+/** Messages sent while a turn ran, to be told to it at its next step. */
+const amendments = new Map<string, string[]>();
+
+/** Take what is waiting for this session, once. */
+function takeAmendments(sessionId: string): string[] {
+  const waiting = amendments.get(sessionId) ?? [];
+  amendments.delete(sessionId);
+  return waiting;
+}
+
+/**
+ * Keep a requirements list up with what the person says, without anyone
+ * reading it: a list in the message becomes its items, and a message sent
+ * while there is work open is kept whole as a change to it. The agent merges,
+ * edits and drops from there; this only makes sure nothing said is lost.
+ */
+function noteAsks(session: Session, text: string, duringWork: boolean) {
+  const have = latestRequirements(session.events);
+  const asks = autoAsks(text, have, duringWork);
+  if (asks.length === 0) return;
+  const next = addRequirements(have, asks, duringWork ? "amend" : "request");
+  if (next.items.length !== have.items.length) emitEvent(session, "requirements.update", "system", next as any);
+}
+
+/** Whether a message sent now can be added to the running turn instead of stopping it. */
+function canAmend(session: Session): boolean {
+  const turn = running.get(session.id);
+  return Boolean(turn && !turn.stopped && session.busy && !waitingOnPerson(session.id));
+}
+
 /**
  * Put the person's (or a job's) words in the thread and run the turn.
  *
@@ -3123,8 +3161,16 @@ function startTurn(session: Session, text: string, attachments: AttachmentRef[] 
   const done = (prior ?? Promise.resolve()).then(() => beginTurn(session, text, attachments, opts));
   const settled = done.then(() => undefined, () => undefined);
   turnsInFlight.set(session.id, settled);
-  void settled.then(() => {
+  void settled.then(async () => {
     if (turnsInFlight.get(session.id) === settled) turnsInFlight.delete(session.id);
+    /* Added in the instant the turn was finishing, after its last look: the
+       person's words are in the thread and must be answered. Not when they
+       stopped it (then the words wait in the thread for their next message)
+       and not when a newer turn took over (it reads them from the log). */
+    const left = takeAmendments(session.id);
+    if (left.length === 0 || turnsInFlight.has(session.id)) return;
+    const result = await done.catch(() => null);
+    if (result && !result.stopped) void startTurn(session, left.join("\n\n"), [], {});
   });
   return done;
 }
@@ -3198,6 +3244,7 @@ function beginTurn(session: Session, text: string, attachments: AttachmentRef[] 
     ...(opts.notebooks?.length ? { notebooks: opts.notebooks } : {}),
   });
   autoLoadTools(session, text);
+  if (!opts.automated) noteAsks(session, text, Boolean(unfinished));
   /* Agent mode starts every turn planning, whatever the last one ended in:
      the agent decides again whether this task needs a plan. */
   if (workMode(session.mode) === "agent" && !(unfinished && session.phase === "build")) {
@@ -3878,6 +3925,11 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           emitEvent(session, "tools.enable", "agent", { family, why: "asked" }, span);
           return { ok: true, summary: `${family} tools are in your list from your next step.` };
         },
+        requirements: (action) => {
+          const result = applyRequirements(latestRequirements(session.events), action);
+          if (result.list) emitEvent(session, "requirements.update", "agent", result.list as any, span);
+          return result;
+        },
         ledger: (action) => {
           const result = applyLedger(latestLedger(session.events), action);
           if (result.ledger) emitEvent(session, "ledger.update", "agent", result.ledger as any, span);
@@ -4107,7 +4159,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
         const verdict = watch.record(name, args, ok, raw);
         /* Something moved: a change was made, or the plan or the notes were
            rewritten. Rounds without one are what the stall note counts. */
-        if (ok && (!looksOnly(name, (args ?? {}) as Record<string, any>) || name === "todo" || name === "ledger")) watch.advance();
+        if (ok && (!looksOnly(name, (args ?? {}) as Record<string, any>) || name === "todo" || name === "ledger" || name === "requirements")) watch.advance();
         if (verdict.log) emitEvent(session, "system.log", "system", { message: verdict.log });
         if (verdict.stop) loopStop = verdict.stop;
         const budget = errors.record(
@@ -4183,6 +4235,38 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
       let nudges = 0;
       /** Whether this turn has been asked about open to-do items already. */
       let todoAsked = false;
+      let requirementsAsked = false;
+      /** Run the person's project check as a visible terminal call and read what it printed. */
+      const execCheck = async (command: string): Promise<CheckResult> => {
+        const span = `span-${session.id}-${session.seqCounter}-${spans++}`;
+        emitEvent(session, "system.log", "system", { message: `Running the project's check: ${command}` });
+        emitEvent(session, "tool.call", "agent", { name: "terminal", args: { command } }, span);
+        const started = Date.now();
+        const outcome = await runTool(findTool("terminal")!, { command }, contextFor(span));
+        const durationMs = Date.now() - started;
+        if (outcome.exitCode !== undefined) {
+          emitEvent(session, "pty.exit", "agent", { exit_code: outcome.exitCode ?? null, duration_ms: durationMs }, span);
+        }
+        emitEvent(session, "tool.result", "agent", {
+          ok: outcome.ok,
+          preview: outcome.preview ?? "",
+          duration_ms: durationMs,
+          ...(outcome.exitCode !== undefined ? { display: { exit_code: outcome.exitCode } } : {}),
+        }, span);
+        const checked: CheckResult = {
+          command, exitCode: outcome.exitCode ?? null, ok: outcome.ok,
+          output: context.ingest("terminal", outcome.summary, canReadVault),
+        };
+        return checked;
+      };
+
+      /** Items finished so far: to-dos completed and asks marked done. */
+      const doneCount = () =>
+        (latestTodos(session.events)?.items.filter((i) => i.status === "completed").length ?? 0) +
+        latestRequirements(session.events).items.filter((r) => r.status === "done").length;
+      /** Checks run because an item was finished, a turn at most this many: a slow
+          check after every small item would cost more than it finds. */
+      let itemChecks = 0;
       /* What the project check printed the last time it failed this turn. */
       let lastCheckOutput: string | undefined;
       /** Whether a command that changes things has run since the project's
@@ -4314,6 +4398,18 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
              Either way the model is told so and asked again. */
           const empty = !turn.text.trim();
           const stalled = turn.cutOff || (empty && ranSomething);
+          /* The person added something just as the agent was finishing: it is
+             not finished. Told now, and the turn goes on with it. */
+          if (!running.get(session.id)?.stopped) {
+            const late = takeAmendments(session.id);
+            if (late.length > 0) {
+              if (!empty) {
+                context.append({ role: "assistant", text: turn.text, reasoning: turn.reasoning }, session.seqCounter);
+              }
+              context.append({ role: "user", text: amendmentNote(late) }, session.seqCounter);
+              continue;
+            }
+          }
           /* A third: the work ran, but the list still says it has not. Asked
              once a turn, and never while planning, where every item is still
              to do on purpose. A turn that only talked is not asked. */
@@ -4335,6 +4431,26 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
               continue;
             }
           }
+          /* The asks the person made, and whether each was met. Once a turn,
+             when something ran and an ask is still open: finish it, or say it
+             is done and how it was checked, or drop it with the reason. The
+             audit is what stops an ask the plan never mentioned from being
+             quietly skipped. */
+          if (!stalled && !requirementsAsked && ranSomething && !running.get(session.id)?.stopped &&
+              phaseFor(workMode(session.mode), session.phase) === "build") {
+            const audit = finishAudit(latestRequirements(session.events));
+            if (audit) {
+              requirementsAsked = true;
+              if (!empty) {
+                context.append({ role: "assistant", text: turn.text, reasoning: turn.reasoning }, session.seqCounter);
+              }
+              context.append({ role: "user", text: audit }, session.seqCounter);
+              emitEvent(session, "system.log", "system", {
+                message: "Some of what was asked was not marked done as the turn ended; asked the agent to account for it.",
+              });
+              continue;
+            }
+          }
           /* A fourth: the agent says it is finished and has changed things, and
              the person has named a check for their project. The check runs
              here, in plain code, and what it printed goes back to the agent:
@@ -4346,25 +4462,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             const command = state.verify.command;
             changedSinceCheck = false;
             checkRuns += 1;
-            const span = `span-${session.id}-${session.seqCounter}-${spans++}`;
-            emitEvent(session, "system.log", "system", { message: `Running the project's check: ${command}` });
-            emitEvent(session, "tool.call", "agent", { name: "terminal", args: { command } }, span);
-            const started = Date.now();
-            const outcome = await runTool(findTool("terminal")!, { command }, contextFor(span));
-            const durationMs = Date.now() - started;
-            if (outcome.exitCode !== undefined) {
-              emitEvent(session, "pty.exit", "agent", { exit_code: outcome.exitCode ?? null, duration_ms: durationMs }, span);
-            }
-            emitEvent(session, "tool.result", "agent", {
-              ok: outcome.ok,
-              preview: outcome.preview ?? "",
-              duration_ms: durationMs,
-              ...(outcome.exitCode !== undefined ? { display: { exit_code: outcome.exitCode } } : {}),
-            }, span);
-            const checked: CheckResult = {
-              command, exitCode: outcome.exitCode ?? null, ok: outcome.ok,
-              output: context.ingest("terminal", outcome.summary, canReadVault),
-            };
+            const checked = await execCheck(command);
             emitEvent(session, "system.log", "system", { message: checkLine(checked, checkRuns, state.verify.tries) });
             if (!checked.ok && !running.get(session.id)?.stopped) {
               if (!empty) {
@@ -4437,6 +4535,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           session.seqCounter,
         );
         const replies: ToolReply[] = [];
+        const finishedBefore = doneCount();
 
         for (const use of turn.calls) {
           const span = `span-${session.id}-${session.seqCounter}-${spans++}`;
@@ -4797,6 +4896,28 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
         const checkpoint = watch.endRound();
         const last = replies[replies.length - 1];
         if (checkpoint && last) last.result += `\n\n${checkpoint}`;
+        /* An item was finished this round and code changed since the check last
+           ran: the check runs now, while the change is fresh, instead of at the
+           end when a failure has to be traced back through everything. */
+        if (last && doneCount() > finishedBefore && changedSinceCheck && state.verify.command &&
+            itemChecks < Math.max(3, state.verify.tries * 2) && !loopStop && !opts.spoken &&
+            !running.get(session.id)?.stopped &&
+            phaseFor(workMode(session.mode), session.phase) === "build" && tools.some((t) => t.name === "terminal")) {
+          itemChecks += 1;
+          changedSinceCheck = false;
+          const checked = await execCheck(state.verify.command);
+          emitEvent(session, "system.log", "system", {
+            message: checked.ok
+              ? `The project's check passed after an item was finished (${checked.command}).`
+              : `The project's check failed after an item was finished; the agent was told (${checked.command}).`,
+          });
+          last.result += `\n\n${itemCheckNote(checked, lastCheckOutput)}`;
+          if (!checked.ok) lastCheckOutput = checked.output;
+        }
+        /* What the person added while this round ran, said where the model
+           reliably reads: at the end of what came back. */
+        const added = takeAmendments(session.id);
+        if (added.length > 0 && last) last.result += `\n\n${amendmentNote(added)}`;
         // What the person did while this round ran, said as it is read.
         personEdits(null);
         const heard = presenceFor(session.id).note();
@@ -5618,6 +5739,20 @@ async function startServer() {
     const notebooks = notebookRefs(req.body?.notebooks);
     if (!text && attachments.length === 0 && notebooks.length === 0) {
       return res.status(400).json({ error: "Empty message" });
+    }
+
+    /* Sent while the agent is working: unless the person asked to interrupt
+       (or it carries files, is dictated, or is a command), it is added to the
+       work in hand, not a reason to drop it. The running turn is told at its
+       next step; it was not stopped, so nothing it has done is thrown away. */
+    if (text && attachments.length === 0 && notebooks.length === 0 && req.body?.spoken !== true &&
+        req.body?.mode !== "interrupt" && !text.startsWith("/") && canAmend(session)) {
+      const waiting = amendments.get(session.id) ?? [];
+      waiting.push(text);
+      amendments.set(session.id, waiting);
+      emitEvent(session, "turn.amend", "user", { text });
+      noteAsks(session, text, true);
+      return res.json({ ok: true, queued: true });
     }
 
     // The first message names the thread -- unless it was already given a

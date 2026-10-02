@@ -26,6 +26,7 @@
 
 import type { TodoResult } from "./todos";
 import type { LedgerResult } from "./ledger";
+import type { RequirementResult } from "./requirements";
 import type { Phase } from "./modes";
 import { callMcpTool, mcpTools, statusOf as mcpStatusOf } from "./mcp";
 import { existing as existingMcp, install as installMcp, noteDeclined, overview as mcpOverview, planOffer, wasDeclined } from "./mcpoffer";
@@ -550,6 +551,42 @@ const TOOLS: ToolSpec[] = [
         next: { type: "array", items: { type: "string" }, description: "What you will do next, in order. Replaces the list." },
         forget: { type: "array", items: { type: "string" }, description: "Drop lines that hold any of these words." },
         reset: { type: "boolean", description: "Start the notes again." },
+      },
+    },
+  },
+
+  // ------------------------------------------------------- requirements --
+  {
+    name: "requirements",
+    group: "schedule",
+    description:
+      "What the person asked for, kept in their own words so none of it is lost or paraphrased away. " +
+      "When a message asks for more than one thing -- features, fixes, changes -- add each ask as its " +
+      "own item, worded as they worded it. When they add to it, change their mind or take something " +
+      "away mid-conversation (even while you work), record it here: add a new ask, edit one whose " +
+      "wording changed, drop one they no longer want (with the reason). Mark an item done only when it " +
+      "is, with how you checked it. Before you finish, every item should be done or dropped. This is " +
+      "separate from the to-do list, which is your own plan. Call with no arguments to read the list back.",
+    parameters: {
+      type: "object",
+      properties: {
+        add: { type: "array", items: { type: "string" }, description: "New asks, one per item, in the person's words." },
+        edit: {
+          type: "array",
+          description: "Asks whose wording changed: [{id, text}].",
+          items: { type: "object", properties: { id: { type: "string" }, text: { type: "string" } }, required: ["id", "text"] },
+        },
+        done: {
+          type: "array",
+          description: "Asks that are finished: [{id, how}] where how says how you checked.",
+          items: { type: "object", properties: { id: { type: "string" }, how: { type: "string" } }, required: ["id"] },
+        },
+        drop: {
+          type: "array",
+          description: "Asks no longer wanted or impossible: [{id, why}].",
+          items: { type: "object", properties: { id: { type: "string" }, why: { type: "string" } }, required: ["id"] },
+        },
+        reopen: { type: "array", items: { type: "string" }, description: "Ids to open again." },
       },
     },
   },
@@ -2563,6 +2600,8 @@ export interface ToolContext {
   enableTools?: (family: string) => { ok: boolean; summary: string };
   /** The chat's working notes (see ledger.ts). */
   ledger?: (action: Record<string, any>) => LedgerResult;
+  /** What the person asked for, kept whole (see requirements.ts). */
+  requirements?: (action: Record<string, any>) => RequirementResult;
   /** The app window: what the agent builds, shown beside the conversation. */
   preview?: {
     start: (args: { command?: string; cwd?: string; dir?: string; url?: string; port?: number }) => Promise<{ ok: boolean; summary: string }>;
@@ -3737,6 +3776,12 @@ async function runToolUnredacted(
         if (!ctx.enableTools) return { ok: false, summary: "There is nothing to load here." };
         const r = ctx.enableTools(String(args.family ?? "").trim().toLowerCase());
         return { ok: r.ok, summary: r.summary, preview: r.ok ? String(args.family) : undefined };
+      }
+
+      case "requirements": {
+        if (!ctx.requirements) return { ok: false, summary: "There is no requirements list in this chat." };
+        const result = ctx.requirements(args as Record<string, any>);
+        return { ok: result.ok, summary: result.summary, ...(result.preview ? { preview: result.preview } : {}) };
       }
 
       case "ledger": {
