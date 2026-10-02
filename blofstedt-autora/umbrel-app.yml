@@ -125,6 +125,15 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
+  New: you can watch the app being built. When the agent changes code, the
+  app window's cursor glides to what changed on the page -- the new button, the
+  rewritten heading -- and outlines it with a name. The agent can also test
+  what it built the way you would, in the window you are watching: clicking
+  and hovering by the words on things, typing into fields, pressing keys and
+  scrolling, with a visible cursor, and seeing the result. A switch in the
+  app window turns the cursor off. A previewed folder now also reloads when the
+  agent edits a file with a tool that replaces it whole, which the file
+  watcher missed.
   New: you can watch code being written. After a command that changes files,
   the thread shows a card for each file with its lines -- typed out as you
   watch, with a labelled cursor on the line being written, and a button to

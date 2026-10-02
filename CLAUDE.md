@@ -115,6 +115,15 @@ is a sub-project with its own dependencies (see below).
     Autora's own state dir are never shown; a folder over `MAX_TRACKED` files
     is not followed. `FileCell` types a card that has just arrived (a replay of
     code already written, off with the agent-cursor switch in `lib/agentCursor.ts`).
+  - `domdiff.ts` + `LiveBrowser.domMap/markAt/glideTo` (`browser.ts`): after code
+    changes the preview's page is compared with how it was (matched by tag,
+    words and class, never position) and the cursor -- drawn into the page, so
+    it is in the streamed frames -- glides to what is new or restyled and
+    outlines it with a name. A served folder is reloaded by the loop on a code
+    change as well as by its file watcher, which misses files replaced whole.
+    `app_preview` click/hover/type/press/scroll use the page as a person would,
+    in the window the person is watching, and are refused while planning.
+    All of it follows the one agent-cursor switch (`state.agentCursor`).
   - `codesearch.ts` (`code_search`): exact, regex and BM25-ranked search over a
     folder in plain code; walks afresh each time, caches only per-file indexes.
   - `suggest.ts`: what to suggest, from what is actually on the install --

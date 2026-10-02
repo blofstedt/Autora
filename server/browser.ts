@@ -29,6 +29,7 @@
  * what is missing and the thread says so in words.
  */
 
+import type { DomItem } from "./domdiff";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -717,6 +718,14 @@ const CURSOR_SCRIPT = `
       'border:2px solid rgba(139,124,246,.95);opacity:0}' +
       '@keyframes tap{from{transform:scale(.4);opacity:.95}to{transform:scale(4.2);opacity:0}}' +
       '.ring.go{animation:tap .45s ease-out forwards}' +
+      '.mark{position:fixed;box-sizing:border-box;border:2px solid rgba(139,124,246,.95);border-radius:4px;' +
+      'background:rgba(139,124,246,.14);box-shadow:0 0 0 4px rgba(139,124,246,.28);' +
+      'animation:markin .22s ease-out,markout .4s ease-in 1.2s forwards}' +
+      '.mark span{position:absolute;left:-2px;top:-22px;padding:0 7px;border-radius:9px;background:#8b7cf6;color:#fff;' +
+      'font:600 11px/17px system-ui,sans-serif;white-space:nowrap}' +
+      '.mark.low span{top:auto;bottom:-22px}' +
+      '@keyframes markin{from{opacity:0;transform:scale(1.04)}to{opacity:1;transform:scale(1)}}' +
+      '@keyframes markout{to{opacity:0}}' +
       '</style><div class="dot"></div><div class="ring"></div>';
     const dot = root.querySelector(".dot");
     const ring = root.querySelector(".ring");
@@ -733,6 +742,20 @@ const CURSOR_SCRIPT = `
         ring.classList.add("go");
       }
     };
+    // An outline round something that just changed, named, gone after a moment.
+    window.__autoraMark = (x, y, w, h, label) => {
+      const box = document.createElement("div");
+      box.className = "mark" + (y < 26 ? " low" : "");
+      box.style.left = x + "px";
+      box.style.top = y + "px";
+      box.style.width = w + "px";
+      box.style.height = h + "px";
+      const chip = document.createElement("span");
+      chip.textContent = String(label || "");
+      box.appendChild(chip);
+      root.appendChild(box);
+      setTimeout(() => box.remove(), 1700);
+    };
     /* Follow the real pointer. The agent moves the mouse with genuine input
        events along a curved path, so the dot tracks every step of it rather
        than jumping to where the click will land. */
@@ -747,6 +770,98 @@ const CURSOR_SCRIPT = `
   }
   window.__autoraCursorMount = mount;
 })();
+`;
+
+/**
+ * What is on the page, as a list that two looks can be compared by (see
+ * server/domdiff.ts): each visible element that has words of its own, or is a
+ * picture, a control or a drawn box -- what it is, how it looks, where it is.
+ */
+const DOM_MAP_SCRIPT = `
+(() => {
+  const SKIP = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "META", "LINK", "HEAD", "TITLE", "BR", "HTML", "BODY"]);
+  const CONTROL = new Set(["IMG", "INPUT", "TEXTAREA", "SELECT", "BUTTON", "CANVAS", "VIDEO", "HR", "IFRAME"]);
+  const out = [];
+  const all = document.body ? document.body.querySelectorAll("*") : [];
+  const own = (el) => {
+    let t = "";
+    for (const n of el.childNodes) if (n.nodeType === 3) t += n.nodeValue;
+    return t.replace(/\\s+/g, " ").trim();
+  };
+  for (let i = 0; i < all.length && out.length < 700; i++) {
+    const el = all[i];
+    if (SKIP.has(el.tagName) || el.closest("[data-autora]")) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width < 1 || r.height < 1) continue;
+    const cs = getComputedStyle(el);
+    if (cs.display === "none" || cs.visibility === "hidden" || Number(cs.opacity) === 0) continue;
+    const text = own(el);
+    const bg = cs.backgroundColor;
+    const boxed = bg && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent" && el.childElementCount === 0 && r.width * r.height >= 400;
+    if (!text && !CONTROL.has(el.tagName) && !boxed) continue;
+    const src = el.tagName === "IMG" ? String(el.getAttribute("src") || "").split("/").pop() : "";
+    const k = el.tagName.toLowerCase() + "|" + text.slice(0, 60) + "|" + String(el.className && el.className.baseVal !== undefined ? el.className.baseVal : el.className || "").slice(0, 60) + "|" + src;
+    const s = [cs.color, bg, cs.fontSize, cs.fontWeight, cs.borderTopColor, cs.borderRadius].join(";");
+    out.push({ k, s, tag: el.tagName.toLowerCase(), x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) });
+  }
+  return out;
+})()
+`;
+
+/**
+ * Find the thing the agent means on the page: a selector if it looks like one,
+ * otherwise the best match for some words among what can be clicked or typed
+ * into (its text, label, placeholder, title). Scrolls it into view and says
+ * where it is, or says what there is to choose from.
+ */
+const FIND_SCRIPT = (target: string) => `
+(() => {
+  const target = ${JSON.stringify(target)};
+  const norm = (s) => String(s || "").replace(/\\s+/g, " ").trim().toLowerCase();
+  const visible = (el) => {
+    if (!el || el.closest("[data-autora]")) return false;
+    const r = el.getBoundingClientRect();
+    if (r.width < 1 || r.height < 1) return false;
+    const cs = getComputedStyle(el);
+    return cs.display !== "none" && cs.visibility !== "hidden" && Number(cs.opacity) !== 0;
+  };
+  const label = (el) => String(el.getAttribute("aria-label") || el.innerText || el.value || el.placeholder || el.title || el.alt || el.name || el.id || "").replace(/\\s+/g, " ").trim().slice(0, 80);
+  let list = [];
+  if (/^[#.\\[]|[>~+]|^[a-z][a-z0-9-]*[.#\\[:]/i.test(target)) {
+    try { list = [...document.querySelectorAll(target)].filter(visible); } catch (e) { list = []; }
+  }
+  if (!list.length) {
+    const want = norm(target);
+    const CLICK = new Set(["A", "BUTTON", "INPUT", "SELECT", "TEXTAREA", "SUMMARY", "LABEL"]);
+    const scored = [];
+    for (const el of document.querySelectorAll("a,button,input,select,textarea,summary,label,[role=button],[role=link],[role=tab],[role=menuitem],[onclick],h1,h2,h3,h4,li,p,span,div,img")) {
+      if (!visible(el)) continue;
+      const texts = [el.getAttribute("aria-label"), el.innerText, el.value, el.placeholder, el.title, el.alt, el.name, el.id].map(norm).filter(Boolean);
+      let score = 0;
+      for (const t of texts) {
+        if (t === want) score = Math.max(score, 3);
+        else if (t.startsWith(want)) score = Math.max(score, 2);
+        else if (t.includes(want)) score = Math.max(score, 1);
+      }
+      if (!score) continue;
+      const clickable = CLICK.has(el.tagName) || el.getAttribute("role") || el.onclick;
+      // The tightest match wins: a button over the section that contains it.
+      score += (clickable ? 0.5 : 0) - Math.min(0.4, norm(el.innerText).length / 800);
+      scored.push({ el, score });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    list = scored.map((s) => s.el);
+  }
+  if (!list.length) {
+    const options = [...document.querySelectorAll("a,button,input,select,textarea,[role=button],[role=link]")]
+      .filter(visible).map(label).filter(Boolean).slice(0, 14);
+    return { ok: false, error: "Nothing on the page matches " + JSON.stringify(target) + ".", options };
+  }
+  const el = list[0];
+  el.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
+  const r = el.getBoundingClientRect();
+  return { ok: true, x: r.left, y: r.top, w: r.width, h: r.height, tag: el.tagName.toLowerCase(), label: label(el), count: list.length };
+})()
 `;
 
 /**
@@ -2049,6 +2164,88 @@ export class LiveBrowser {
       } finally {
         clearTimeout(timer);
       }
+    });
+  }
+
+  /** The page as a list two looks can be compared by (server/domdiff.ts), or
+      null when there is no page to look at. */
+  domMap(): Promise<DomItem[] | null> {
+    return this.run(async () => {
+      const page = this.page;
+      if (!page || page.isClosed()) return null;
+      try {
+        return (await Promise.race([
+          page.evaluate(DOM_MAP_SCRIPT),
+          new Promise((resolve) => setTimeout(() => resolve(null), 3000)),
+        ])) as DomItem[] | null;
+      } catch {
+        return null;
+      }
+    });
+  }
+
+  /**
+   * The pointer glides to a place and outlines it with a name, so a change to
+   * the page is seen being found. Real mouse movement, so the dot in the page
+   * follows every step of it, and a click is never sent.
+   */
+  async markAt(x: number, y: number, w: number, h: number, label: string): Promise<void> {
+    if (!(await this.glideTo(x + Math.min(w, 28), y + h * 0.6))) return;
+    await this.run(async () => {
+      await this.page
+        ?.evaluate(
+          `(() => { if (window.__autoraCursorMount) window.__autoraCursorMount();
+             if (window.__autoraMark) window.__autoraMark(${Math.round(x)}, ${Math.round(y)}, ${Math.round(w)}, ${Math.round(h)}, ${JSON.stringify(label)}); })()`,
+        )
+        .catch(() => undefined);
+    });
+  }
+
+  /** The pointer travels to a place in real mouse movements, so the dot in the
+      page is seen going there. False if the page went away on the way. */
+  async glideTo(x: number, y: number): Promise<boolean> {
+    const from = { ...this.pointer };
+    const to = { x: Math.max(0, Math.min(this.vp.width, Math.round(x))), y: Math.max(0, Math.min(this.vp.height, Math.round(y))) };
+    const steps = 14;
+    for (let i = 1; i <= steps; i += 1) {
+      // Eased: quick away from where it was, slow arriving.
+      const t = 1 - (1 - i / steps) ** 3;
+      const px = Math.round(from.x + (to.x - from.x) * t), py = Math.round(from.y + (to.y - from.y) * t);
+      const moved = await this.run(async () => {
+        const page = this.page;
+        if (!page || page.isClosed()) return false;
+        await page.mouse.move(px, py).catch(() => undefined);
+        this.pointer = { x: px, y: py };
+        return true;
+      });
+      if (!moved) return false;
+      await new Promise((resolve) => setTimeout(resolve, 22));
+    }
+    return true;
+  }
+
+  /** Where the thing the agent means is on the page (scrolled into view), or
+      what there is to choose from. See FIND_SCRIPT. */
+  findTarget(target: string): Promise<
+    | { ok: true; x: number; y: number; w: number; h: number; tag: string; label: string; count: number }
+    | { ok: false; error: string; options: string[] }
+  > {
+    return this.run(async () => {
+      const page = await this.ensure();
+      try {
+        return (await page.evaluate(FIND_SCRIPT(target))) as never;
+      } catch (err) {
+        return { ok: false as const, error: `Could not look for it: ${(err as Error).message.split("\n")[0]}`, options: [] };
+      }
+    });
+  }
+
+  /** Typing at a person's pace, so it is watched happening; long text is faster. */
+  typeText(text: string): Promise<void> {
+    return this.run(async () => {
+      const page = await this.ensure();
+      await page.keyboard.type(text, { delay: Math.max(4, Math.min(60, Math.floor(1400 / Math.max(1, text.length)))) });
+      this.noteTyping(text.length, null);
     });
   }
 

@@ -520,12 +520,22 @@ const TOOLS: ToolSpec[] = [
       "a folder of files (dir) or opens something already running (url, localhost only). Start it as " +
       "soon as there is something to see, then keep building: hot reload updates it. reload refreshes; " +
       "look returns a picture of the page and its console errors -- use it to check your own work; " +
-      "stop closes it. The person's comments come back as one message beginning [Autora: the person " +
+      "stop closes it. To test what you built, use it as a person would, in the same window the person is " +
+      "watching, with a visible cursor: click and hover take a target (the words on a button or link, a " +
+      "field's label or placeholder, or a CSS selector); type puts text into a target (or into the field " +
+      "already focused) and submit presses Enter after; press sends a key (Enter, Tab, Escape, ArrowDown); " +
+      "scroll moves the page by dy pixels (negative is up). Each returns a picture of the page afterwards, " +
+      "so you see what happened. The person's comments come back as one message beginning [Autora: the person " +
       "reviewed the app preview; make those changes in the source.",
     parameters: {
       type: "object",
       properties: {
-        action: { type: "string", description: "start, reload, look or stop." },
+        action: { type: "string", description: "start, reload, look, stop, click, hover, type, press or scroll." },
+        target: { type: "string", description: "click, hover, type: what to act on -- words on it, a label, a placeholder, or a CSS selector." },
+        text: { type: "string", description: "type: the text to type." },
+        key: { type: "string", description: "press: a key, e.g. Enter, Tab, Escape, ArrowDown, Control+A." },
+        dy: { type: "number", description: "scroll: pixels down (negative for up). Default 500." },
+        submit: { type: "boolean", description: "type: press Enter afterwards." },
         command: { type: "string", description: "start: the dev server command, e.g. npm run dev." },
         cwd: { type: "string", description: "start: where to run it." },
         dir: { type: "string", description: "start: a folder of static files to serve." },
@@ -2438,6 +2448,8 @@ export interface ToolContext {
     stop: () => Promise<{ ok: boolean; summary: string }>;
     reload: () => Promise<{ ok: boolean; summary: string }>;
     look: () => Promise<{ ok: boolean; summary: string; png?: Buffer }>;
+    /** Use the page as a person would: click, hover, type, press a key, scroll. */
+    act: (args: { action: string; target?: string; text?: string; key?: string; dy?: number; submit?: boolean }) => Promise<{ ok: boolean; summary: string; png?: Buffer }>;
   };
   /** Agent mode's switch between planning and building. Absent where there is
       no session to switch. */
@@ -3532,7 +3544,15 @@ async function runToolUnredacted(
           const picture = r.png ? pictureFor(r.png, "image/png") : null;
           return { ok: r.ok, summary: r.summary, preview: r.ok ? "looked at the app" : undefined, ...(picture ? { images: [picture] } : {}) };
         }
-        return { ok: false, summary: "action is start, reload, look or stop." };
+        if (["click", "hover", "type", "press", "scroll"].includes(action)) {
+          const r = await ctx.preview.act({
+            action, target: args.target === undefined ? undefined : String(args.target), text: args.text === undefined ? undefined : String(args.text),
+            key: args.key === undefined ? undefined : String(args.key), dy: args.dy === undefined ? undefined : Number(args.dy), submit: args.submit === true,
+          });
+          const picture = r.png ? pictureFor(r.png, "image/png") : null;
+          return { ok: r.ok, summary: r.summary, preview: r.ok ? `${action} in the app` : undefined, ...(picture ? { images: [picture] } : {}) };
+        }
+        return { ok: false, summary: "action is start, reload, look, stop, click, hover, type, press or scroll." };
       }
 
       case "set_mode": {

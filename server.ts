@@ -88,6 +88,7 @@ import {
 } from "./server/modes";
 import { LoopWatch, describe as describeCall } from "./server/loopwatch";
 import { ErrorBudget } from "./server/errorbudget";
+import { diffDom, type ChangeCue, type DomItem } from "./server/domdiff";
 import { Workspace, type DiffLine, type FileChange as CodeChange } from "./server/codediff";
 import { runSubagent } from "./server/subagent";
 import { checkLine, failedNote, mergeVerify, type CheckResult } from "./server/verify";
@@ -820,7 +821,16 @@ interface PreviewRun {
   /** The dev server it started has exited: what it last said, for the window. */
   serverDown: { exit: number | null; last: string } | null;
   /** Pending work to cancel when it closes. */
-  timers: { reload: NodeJS.Timeout | null; console: NodeJS.Timeout | null; job: NodeJS.Timeout | null };
+  timers: { reload: NodeJS.Timeout | null; console: NodeJS.Timeout | null; job: NodeJS.Timeout | null; follow: NodeJS.Timeout | null };
+  /** What was on the page at the last look, and at which address, to find
+      what a change touched (server/domdiff.ts). */
+  dom: DomItem[] | null;
+  domUrl: string | null;
+  /** A look at what changed is under way, and another was asked for meanwhile. */
+  following: boolean;
+  again: boolean;
+  /** Where the cursor last went, and a number that goes up each time. */
+  cues: { seq: number; items: ChangeCue[] };
 }
 const previews = new Map<string, PreviewRun>();
 
@@ -834,7 +844,8 @@ function previewRunFor(session: Session, device: Device): PreviewRun {
   const run: PreviewRun = {
     live: null as unknown as LiveBrowser,
     opened: false, openedAt: 0, url: null, title: null, device, how: null, serve: null, watch: null, job: null, comments: [],
-    serverDown: null, timers: { reload: null, console: null, job: null },
+    serverDown: null, timers: { reload: null, console: null, job: null, follow: null },
+    dom: null, domUrl: null, following: false, again: false, cues: { seq: 0, items: [] },
   };
   const current = () => previews.get(session.id) === run && run.opened;
   run.live = new LiveBrowser({
@@ -886,11 +897,190 @@ function previewState(session: Session) {
     consoleErrors: errors.slice(-6).map((e) => e.text),
     serverDown: run.serverDown,
     fields: run.live.status().fields,
+    cues: run.cues,
   };
 }
 
 function broadcastPreview(session: Session) {
   sendEphemeral(session.id, { type: "preview", session: session.id, state: previewState(session) });
+}
+
+/** A picture of the preview and its console, as the agent is given it. `done`
+    says what was just done to the page, ahead of what it now looks like. */
+async function previewLook(run: PreviewRun, done: string): Promise<{ ok: boolean; summary: string; png: Buffer }> {
+  const png = await run.live.capture();
+  const size = run.live.viewport();
+  const log = run.live.consoleTail(12);
+  return {
+    ok: true,
+    png,
+    summary:
+      (done ? `${done}\n` : "") +
+      `The preview at ${run.url}, ${size.width}×${size.height}, is in this result.` +
+      (run.serverDown
+        ? `\nThe dev server it was started with has stopped (exit ${run.serverDown.exit ?? "unknown"})` +
+          `${run.serverDown.last ? `; it last said: ${run.serverDown.last}` : ""}. Start it again with app_preview start.`
+        : "") +
+      (log.length
+        ? `\nThe page's console:\n${log.map((e) => `  [${e.kind}] ${e.text}`).join("\n")}`
+        : "\nThe page's console is clean."),
+  };
+}
+
+/**
+ * The agent uses the app as a person would, in the window the person is
+ * watching: the pointer travels to a target and clicks it, keys are typed at a
+ * readable pace, the page scrolls. Real input, so what the app does is what it
+ * does for anyone -- and the cursor drawn into the page is in the frames. What
+ * the page looks like afterwards comes back with it.
+ */
+async function previewAct(
+  session: Session,
+  args: { action: string; target?: string; text?: string; key?: string; dy?: number; submit?: boolean },
+): Promise<{ ok: boolean; summary: string; png?: Buffer }> {
+  const run = previews.get(session.id);
+  if (!run?.opened) return { ok: false, summary: "There is no preview open. Start one with app_preview start." };
+  const live = run.live;
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 450));
+  const aimed = async (target: string): Promise<{ x: number; y: number; said: string } | { error: string }> => {
+    const found = await live.findTarget(target);
+    if (!found.ok) {
+      return { error: `${found.error}${found.options.length ? ` On the page: ${found.options.map((o) => JSON.stringify(o)).join(", ")}.` : ""}` };
+    }
+    const x = found.x + found.w / 2, y = found.y + found.h / 2;
+    if (state.agentCursor) await live.glideTo(x, y);
+    return { x, y, said: `${found.tag}${found.label ? ` ${JSON.stringify(found.label)}` : ""}${found.count > 1 ? ` (the first of ${found.count} matches)` : ""}` };
+  };
+  try {
+    let done = "";
+    switch (args.action) {
+      case "click": {
+        if (!args.target?.trim()) return { ok: false, summary: "click needs a target: the words on it, its label, or a CSS selector." };
+        const at = await aimed(args.target.trim());
+        if ("error" in at) return { ok: false, summary: at.error };
+        await live.mouseClick(at.x, at.y);
+        await settle();
+        done = `Clicked ${at.said}.`;
+        break;
+      }
+      case "hover": {
+        if (!args.target?.trim()) return { ok: false, summary: "hover needs a target: the words on it, its label, or a CSS selector." };
+        const at = await aimed(args.target.trim());
+        if ("error" in at) return { ok: false, summary: at.error };
+        await live.glideTo(at.x, at.y);
+        await settle();
+        done = `Hovered over ${at.said}.`;
+        break;
+      }
+      case "type": {
+        const text = String(args.text ?? "");
+        if (!text) return { ok: false, summary: "type needs text." };
+        let where = "the focused field";
+        if (args.target?.trim()) {
+          const at = await aimed(args.target.trim());
+          if ("error" in at) return { ok: false, summary: at.error };
+          await live.mouseClick(at.x, at.y);
+          where = at.said;
+        }
+        await live.typeText(text);
+        if (args.submit) await live.keyboardPress("Enter");
+        await settle();
+        done = `Typed ${JSON.stringify(text.length > 60 ? `${text.slice(0, 57)}...` : text)} into ${where}${args.submit ? " and pressed Enter" : ""}.`;
+        break;
+      }
+      case "press": {
+        const key = String(args.key ?? "").trim();
+        if (!key) return { ok: false, summary: "press needs a key, e.g. Enter, Tab, Escape, ArrowDown." };
+        await live.keyboardPress(key);
+        await settle();
+        done = `Pressed ${key}.`;
+        break;
+      }
+      case "scroll": {
+        const dy = Number.isFinite(args.dy) && args.dy !== 0 ? Number(args.dy) : 500;
+        const size = live.viewport();
+        if (state.agentCursor) await live.glideTo(size.width / 2, size.height / 2);
+        await live.mouseWheel(0, Math.max(-5000, Math.min(5000, dy)));
+        await settle();
+        done = `Scrolled ${dy > 0 ? "down" : "up"} ${Math.abs(dy)} pixels.`;
+        break;
+      }
+      default:
+        return { ok: false, summary: "action is start, reload, look, stop, click, hover, type, press or scroll." };
+    }
+    broadcastPreview(session);
+    return await previewLook(run, done);
+  } catch (err) {
+    return { ok: false, summary: `That did not work: ${String((err as Error)?.message ?? err).split("\n")[0]}` };
+  }
+}
+
+/**
+ * The page has probably changed because the agent wrote code: find what, and
+ * take the cursor there. A dev server updates the page a moment after the file
+ * is saved, so the page is looked at a few times until it differs. What was on
+ * the page is remembered between looks; a different address starts afresh
+ * rather than marking a whole new page. Switched off with the agent cursor,
+ * the page is still remembered so a later look compares with the right thing.
+ */
+function followPreviewChange(session: Session, delayMs = 400) {
+  const run = previews.get(session.id);
+  if (!run?.opened) return;
+  if (run.following) {
+    run.again = true;
+    return;
+  }
+  if (run.timers.follow) clearTimeout(run.timers.follow);
+  run.timers.follow = setTimeout(() => {
+    run.timers.follow = null;
+    void lookForChange(session, run, 0);
+  }, delayMs);
+  run.timers.follow.unref?.();
+}
+
+async function lookForChange(session: Session, run: PreviewRun, attempt: number): Promise<void> {
+  if (previews.get(session.id) !== run || !run.opened) return;
+  run.following = true;
+  try {
+    const now = await run.live.domMap();
+    if (!now) return;
+    if (!run.dom || run.domUrl !== run.url) {
+      run.dom = now;
+      run.domUrl = run.url;
+      return;
+    }
+    const cues = diffDom(run.dom, now, run.live.viewport());
+    if (cues.length === 0 && attempt < 5) {
+      // Nothing yet: a slow hot reload. Look again shortly.
+      run.following = false;
+      run.timers.follow = setTimeout(() => {
+        run.timers.follow = null;
+        void lookForChange(session, run, attempt + 1);
+      }, 600);
+      run.timers.follow.unref?.();
+      return;
+    }
+    run.dom = now;
+    if (cues.length > 0 && state.agentCursor && previews.get(session.id) === run && run.opened) {
+      run.cues = { seq: run.cues.seq + 1, items: cues };
+      broadcastPreview(session);
+      for (const cue of cues) {
+        if (previews.get(session.id) !== run || !run.opened) break;
+        await run.live.markAt(cue.x, cue.y, cue.w, cue.h, cue.label);
+        await new Promise((resolve) => setTimeout(resolve, 850));
+      }
+    }
+  } catch (err) {
+    log("debug", "preview", `could not look for what changed: ${(err as Error)?.message ?? err}`);
+  } finally {
+    if (run.following) {
+      run.following = false;
+      if (run.again) {
+        run.again = false;
+        followPreviewChange(session, 300);
+      }
+    }
+  }
 }
 
 /* The PDF window (server/pdfdesk.ts): every change, to the session's tabs.
@@ -914,7 +1104,7 @@ async function previewStop(session: Session, say = true, keep = false): Promise<
   const was = run.opened;
   run.opened = false;
   for (const timer of Object.values(run.timers)) if (timer) clearTimeout(timer);
-  run.timers = { reload: null, console: null, job: null };
+  run.timers = { reload: null, console: null, job: null, follow: null };
   if (run.job) stopJob(run.job);
   run.job = null;
   run.watch?.close();
@@ -974,7 +1164,7 @@ async function previewStart(
             run.timers.reload = null;
             if (!run.opened) return;
             run.live.clearConsole();
-            void run.live.reload().catch(() => undefined);
+            void run.live.reload().catch(() => undefined).then(() => followPreviewChange(session, 300));
           }, 350);
           run.timers.reload.unref?.();
         });
@@ -1051,6 +1241,9 @@ async function previewStart(
   emitEvent(session, "preview.open", "agent", { url, how }, span);
   broadcastPreview(session);
   void run.live.nudge();
+  // What the page looks like now, so the first change to it can be found.
+  run.dom = null;
+  void run.live.domMap().then((map) => { if (previews.get(session.id) === run && map) { run.dom = map; run.domUrl = run.url; } });
   const errors = run.live.consoleTail(5).filter((e) => e.kind === "error");
   return {
     ok: true,
@@ -3417,28 +3610,15 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             run.live.clearConsole();
             await run.live.reload().catch(() => undefined);
             broadcastPreview(session);
+            followPreviewChange(session, 200);
             return { ok: true, summary: "Reloaded the preview." };
           },
           look: async () => {
             const run = previews.get(session.id);
             if (!run?.opened) return { ok: false, summary: "There is no preview open. Start one with app_preview start." };
-            const png = await run.live.capture();
-            const size = run.live.viewport();
-            const log = run.live.consoleTail(12);
-            return {
-              ok: true,
-              png,
-              summary:
-                `The preview at ${run.url}, ${size.width}×${size.height}, is in this result.` +
-                (run.serverDown
-                  ? `\nThe dev server it was started with has stopped (exit ${run.serverDown.exit ?? "unknown"})` +
-                    `${run.serverDown.last ? `; it last said: ${run.serverDown.last}` : ""}. Start it again with app_preview start.`
-                  : "") +
-                (log.length
-                  ? `\nThe page's console:\n${log.map((e) => `  [${e.kind}] ${e.text}`).join("\n")}`
-                  : "\nThe page's console is clean."),
-            };
+            return previewLook(run, "");
           },
+          act: (args) => previewAct(session, args),
         },
         setPhase: (to, reason) => {
           const work = workMode(session.mode);
@@ -3791,6 +3971,19 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
         }
         if (files.length > MAX_CHANGE_CARDS) {
           emitEvent(session, "system.log", "system", { message: `${files.length - MAX_CHANGE_CARDS} more files changed in that command.` });
+        }
+        /* A dev server updates the page by itself. A served folder is reloaded
+           by a file watcher, which misses a file replaced in one go (sed -i,
+           most editors) -- so the loop, which knows code just changed, does it
+           too. Then find what that changed. */
+        if (files.length > 0) {
+          const run = previews.get(session.id);
+          if (run?.opened && run.how === "folder") {
+            run.live.clearConsole();
+            void run.live.reload().catch(() => undefined).then(() => followPreviewChange(session, 300));
+          } else {
+            followPreviewChange(session);
+          }
         }
       };
       for (;;) {

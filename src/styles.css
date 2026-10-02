@@ -6411,3 +6411,8 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 .diff-caret i { position: absolute; left: 6px; top: -1.45em; font: 600 9px/13px var(--sans, system-ui); font-style: normal; padding: 0 5px; border-radius: 7px; background: #8b7cf6; color: #fff; white-space: nowrap; }
 @keyframes diff-blink { 50% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .diff-writing, .diff-caret::before { animation: none; } }
+
+/* The switch for the agent's cursor in the app window's bar. */
+.app-cursor { font: 600 11px/1 var(--sans, system-ui); padding: 5px 9px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, .12); background: transparent; color: var(--muted, #8a8f9c); cursor: pointer; white-space: nowrap; }
+.app-cursor.on { color: #cfc8ff; border-color: rgba(139, 124, 246, .55); background: rgba(139, 124, 246, .14); }
+@media (max-width: 560px) { .app-cursor { display: none; } }
