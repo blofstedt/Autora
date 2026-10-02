@@ -2711,7 +2711,9 @@ async function replaceTextTool(args: Record<string, any>, ctx: PdfContext): Prom
     throw new Problem("Its text comes from an XFA form, which has no words in the pages to change. Fill it with pdf_edit fields instead.");
   }
 
-  return withPdf(input.data, pass, async (view) => {
+  /* What the saved file should read, checked by reading it back (below). */
+  let proof: { bytes: Uint8Array; checks: { find: string; with: string; ignoreCase: boolean; pages: number[] }[] } | null = null;
+  const outcome = await withPdf(input.data, pass, async (view) => {
     const count = view.pages;
     const scope = pageSet(args.pages ?? "all", count);
     const tools: Tools = { fonts: new Fonts(doc), doc, cwd: ctx.cwd, view, fields: null, texts: new Map() };
@@ -2766,6 +2768,12 @@ async function replaceTextTool(args: Record<string, any>, ctx: PdfContext): Prom
     }
 
     const bytes = await saveDoc(doc);
+    proof = {
+      bytes,
+      checks: [...totals.entries()].map(([find, t]) => ({
+        find, with: t.with, ignoreCase: edits.find((e) => e.find === find)?.ignoreCase === true, pages: [...new Set(t.pages)],
+      })),
+    };
     const saved = deliver(ctx, outputName(input, args.output, "edited"), bytes, `Changed text in ${input.name}`, input, cues);
     const lines = [...totals.entries()].map(([find, t]) =>
       `${JSON.stringify(find)} -> ${JSON.stringify(t.with)}: ${t.matches} change${t.matches === 1 ? "" : "s"} on page${t.pages.length === 1 ? "" : "s"} ${rangeText([...new Set(t.pages)].map((p) => p - 1))}` +
@@ -2786,6 +2794,34 @@ async function replaceTextTool(args: Record<string, any>, ctx: PdfContext): Prom
       preview: PREVIEW(saved.art.name, doc.getPageCount(), saved.art.size),
     };
   }, ctx);
+
+  /* Not the edit's own word for it: the saved file, read back the way a viewer
+     reads it. The new words must be there and the old ones gone. */
+  if (proof) {
+    const { bytes, checks } = proof as { bytes: Uint8Array; checks: { find: string; with: string; ignoreCase: boolean; pages: number[] }[] };
+    try {
+      const wrong = await withPdf(Buffer.from(bytes), undefined, async (view) => {
+        const out: string[] = [];
+        for (const c of checks) {
+          for (const p of c.pages) {
+            if (c.with && (await locateText(view, p - 1, c.with, c.ignoreCase)).length === 0) {
+              out.push(`${JSON.stringify(c.with)} does not read on page ${p}`);
+            }
+            if (!c.with.toLowerCase().includes(c.find.toLowerCase()) && (await locateText(view, p - 1, c.find, c.ignoreCase)).length > 0) {
+              out.push(`${JSON.stringify(c.find)} still reads on page ${p}`);
+            }
+          }
+        }
+        return out;
+      }, ctx);
+      outcome.summary += wrong.length === 0
+        ? " Read back from the saved file: the new words are there and the old ones are gone."
+        : ` CHECK FAILED when the saved file was read back: ${wrong.slice(0, 4).join("; ")}. Look at the page with pdf_look before saying it is done.`;
+    } catch {
+      // The read-back is a check, not the edit: if it cannot run, the edit still stands.
+    }
+  }
+  return outcome;
 }
 
 /**

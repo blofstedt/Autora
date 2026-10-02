@@ -139,7 +139,9 @@ releaseNotes: >-
   and the research tool can run up to three questions at once. After code
   changes the app window's console is checked before the agent says it is
   finished, background work uses the fast model when one is set, and
-  /api/sessions/:id/trace shows where a chat's time and tokens went.
+  /api/sessions/:id/trace shows where a chat's time and tokens went. PDF text
+  edits are now checked by reading the saved file back, and the result says
+  whether the new words are there and the old ones gone.
   New: you and the agent can work in the same window at the same time. What
   you click, type or press in the app window or the agent's browser is told to
   the agent in a line a colleague would hear, and it answers in kind and carries

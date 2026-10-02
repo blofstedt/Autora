@@ -375,5 +375,8 @@ release bump applies; the two snippets are verified only in isolation.
 - **Trace** (`server/trace.ts`, `GET /api/sessions/:id/trace`): turns, rounds,
   tokens, cache share, per-tool time and failures, loop stops.
 
-Not done: re-rendering a PDF after an edit to check it automatically; switching
-to a stronger model for one hard step; a trace view in the UI.
+- **PDF read-back**: `pdf_replace_text` reads the saved file back with pdf.js and
+  says whether the new words read and the old ones are gone.
+
+Not done: switching to a stronger model for one hard step; a trace view in the
+UI (the route exists).

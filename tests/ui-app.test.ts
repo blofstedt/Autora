@@ -143,9 +143,13 @@ async function main() {
       const t = await onScreen("h1");
       await page.mouse.click(t.x, t.y);
       await page.waitForSelector(".app-pop");
+      // The editor opens by itself for a text target a moment after the popover: look before toggling, or the click closes it.
+      await sleep(400);
       if (!(await page.locator(".app-edit-body").count())) await page.locator(".app-edit-toggle").click();
+      await page.waitForSelector(".app-edit-body textarea", { timeout: 5000 });
       await page.locator(".app-edit-body textarea").fill("Ride far.");
-      await sleep(700);
+      // The edit reaches the page through the server and back: wait for it, not a fixed beat.
+      for (let waited = 0; waited < 8000 && (await info("h1")).text !== "Ride far."; waited += 250) await sleep(250);
       assert.equal((await info("h1")).text, "Ride far.");
     });
 

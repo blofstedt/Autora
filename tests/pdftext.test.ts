@@ -251,4 +251,14 @@ await test("a find that is not on the page says what the page reads nearby", asy
   assert.match(res.notes.join(" "), /nearby: "Customer: Carol White"/);
 });
 
+await test("the saved file is read back, and the result says the new words are there", async () => {
+  const art = saveArtifact({ origin: "user", name: "rb.pdf", data: plain, mime: "application/pdf", session: "s" });
+  const r = await runPdfTool("pdf_replace_text", { file: art.id, replace: [{ find: "John Smith", with: "Jane Doe" }] }, {
+    session: "s", cwd: dir, room: 20_000, putBlob: () => "b", showImage: () => undefined,
+    showFile: () => undefined, cancelled: () => false, onCancel: () => undefined,
+  } as any);
+  assert.equal(r.ok, true, r.summary);
+  assert.match(r.summary, /Read back from the saved file: the new words are there and the old ones are gone/);
+});
+
 console.log(`${passed} passed`);
