@@ -1,0 +1,139 @@
+# Backlog
+
+Ideas that are scoped but not started. Nothing here is promised. Sizes are
+rough: S is days, M is a couple of weeks, L is a month or more, XL is a
+project of its own. Move an item out of here (into an issue or a PR) when work
+starts, and say why if one is dropped.
+
+Every item below follows the pattern the PDF window set: a sandboxed editor
+sub-project that talks to the page only by `postMessage`, state and files owned
+by the server, an agent tool family loaded on demand (`server/toolload.ts`),
+cursor cues, and presence so the agent leaves what the person holds alone.
+After the second such window, pull that out into one shared "desk" abstraction
+instead of copying `pdfdesk.ts` again.
+
+## Constraints that apply to all of them
+
+- Autora runs on low-CPU Umbrel boxes, with no GPU and possibly no internet.
+  Everything is bundled; nothing is fetched from a CDN (as `pdf-editor/` does).
+- The container image grows with every engine (ffmpeg, WASM kernels, game
+  libraries) and each release publishes to GHCR. Weigh size before adding one.
+- Anything the agent produces runs in a sandboxed frame, never on the app's
+  origin.
+- Check licences (OpenCascade, ffmpeg build flags) before bundling.
+- AI-generated art needs an image-model provider and does not work on a
+  local-only install. Items that need it say so.
+
+## Suggested order
+
+1. Word tool, then Writers Block (1).
+2. 2D game engine at tier 0, then tier 1 (3).
+3. Animation layer (5), as the base for video and games.
+4. Video editor (4).
+5. 3D tool and its game mode (2).
+
+## 0. Word tool (prerequisite for 1)
+
+There is no word tool in the repo yet. Size: M.
+
+- Rich-text editor in `word-editor/`, its own sub-project like `pdf-editor/`
+  (TipTap / ProseMirror is the likely base), with comments anchored to text.
+- `.docx` import and export.
+- Agent tools to read the document and to comment on it. Decide separately
+  whether the general agent may also edit text; Writers Block must not.
+
+## 1. Writers Block
+
+Size: S once the word tool exists.
+
+A built-in skill that helps organise a story and critiques the writing, like
+an editor or reviewer. It does **not** write for the person.
+
+- Make "never writes" structural, not a prompt rule: the tool family has only
+  comment, critique and `bible_*` tools, with no insert or replace.
+- Critique arrives as anchored margin comments in the word tool.
+- A "bible" store (probably a notebook type, `server/notebooks.ts`): characters,
+  setting, background, who / what / why / when, a timeline.
+- Critique checks the text against the bible ("Mara has green eyes in ch. 1").
+- Prompts the person with questions to organise ideas, not answers.
+
+## 2. 3D tool, with a game mode
+
+Size: XL.
+
+Simple editing like Tinkercad with some of Shapr3D's feel, with AI, and
+export. A built-in run mode comes later and shares the game runtime from (3).
+
+- Start with primitives plus mesh booleans (`manifold-3d`) rendered in three.js.
+  A real B-rep kernel (OpenCascade.js, WASM) is heavy and slow on these boxes;
+  decide later, and only if fillets and precise CAD are wanted.
+- The agent works on a scene graph through ops: add, transform, boolean, group.
+  LLMs do this well; organic sculpting they do not.
+- Export STL, 3MF, glTF.
+- Game mode (create and run) comes after (3), on the same game-as-data format.
+
+## 3. 2D game engine
+
+Size: M to L, in tiers.
+
+- Tier 0 (days): templates for Phaser or Kaplay, a sprite and asset tool, and
+  the agent building and running in the existing app window.
+- Tier 1 (weeks): a visual editor (tilemap, entities, sprite painting) over a
+  game-as-data file that the agent and the person both edit, with presence
+  rules as in the PDF window.
+- Runs in a sandboxed frame.
+- Shares one runtime and one data format with the 3D game mode. Do not build
+  two engines.
+
+## 4. Video editor
+
+Size: XL. A CapCut-style editor, kept narrow.
+
+- First version: a timeline with trim, split, move, text overlays and audio;
+  export to mp4 through ffmpeg on the server. Export speed on a box with no
+  GPU is the main risk; measure early.
+- The AI parts are cheap once the timeline is data: move or trim clips,
+  transcript-based cutting (`server/speech.ts` may help), silence removal,
+  auto-captions.
+- Animations from (5) drop onto the timeline as clips.
+- Out of scope for now: effects library, transitions library, keyframes,
+  templates.
+
+## 5. Animation layer
+
+Size: L to XL. Shared by the video editor, the 2D engine and the 3D tool.
+
+"Put a character here and here and say make him walk." The pipeline:
+
+1. A character with a rig (see below).
+2. A motion library of clips (walk, run, idle, wave, jump).
+3. A path with timing from point A to point B; walk speed matches the distance
+   so feet do not slide.
+4. A language step that maps "make him walk" to a clip plus a path plus a
+   duration. The agent edits a timeline of these ops, so the person can adjust
+   them by hand.
+
+Output is reusable: a transparent render for the video timeline, or a sprite
+sheet / skeletal animation for the 2D engine.
+
+Where the character comes from is the hard part, and the choices are:
+
+- **Bring your own rigged character** (3D humanoid, or a layered 2D file).
+  Cheapest; do this first, with a small built-in cast.
+- **Auto-rig a 2D image** by splitting it into parts and fitting a skeleton
+  (Spine / DragonBones style). Works for simple characters and fails on
+  arbitrary art.
+- **Generated frames** from an image or video model. Flexible, needs a
+  provider, so not for local-only installs.
+- **3D humanoid with retargeted clips** (Mixamo style), tied to (2). Good
+  walk cycles, needs the 3D tool first.
+
+Recommendation: start with a built-in 2D skeletal cast and a procedural
+walk / run / idle library, then widen to other sources.
+
+## Open questions
+
+- Does the word tool exist elsewhere (SecurePDF-style), or is it new here?
+- Target hardware: real Umbrel boxes or stronger machines? That decides
+  whether video export and OpenCascade are viable.
+- Is AI-generated art or sprites in scope, given local-only installs?
