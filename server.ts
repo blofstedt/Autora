@@ -116,7 +116,9 @@ import {
   addressIn, DEVICES, isDevice, isLocalUrl, localAddress, serveFolder, waitForServer,
   type Device, type StaticServer,
 } from "./server/preview";
-import { deskBriefing, deskRoutes, deskState, dropDesk, onDeskChange, onDeskTouch, serveEditor } from "./server/pdfdesk";
+import { deskBriefing, deskHooks, deskRoutes, deskState, dropDesk, onDeskChange, onDeskTouch, serveEditor } from "./server/pdfdesk";
+import { dropWordDesk, onWordChange, onWordTouch, serveOfficeEditors, wordBriefing, wordData, wordRoutes, wordState } from "./server/officedesk";
+import { renderDocxToPdf, webDir as officeWebDir } from "./server/officerender";
 import {
   pickExpression, reviewMessage, safeStyle, type ElementInfo, type ReviewComment, type StyleChange,
 } from "./server/pick";
@@ -1192,6 +1194,13 @@ onDeskTouch((sessionId, subject, kind, detail, opts) => touchPresence(sessionId,
 
 onDeskChange((sessionId) => {
   sendEphemeral(sessionId, { type: "pdfdesk", session: sessionId, state: deskState(sessionId) });
+});
+
+/* The Word window, the same way: what the person types is theirs for a moment, and the window's
+   state goes to the page as it changes. */
+onWordTouch((sessionId, subject, kind, detail, opts) => touchPresence(sessionId, "word", subject, kind, detail, opts));
+onWordChange((sessionId) => {
+  sendEphemeral(sessionId, { type: "officedesk", session: sessionId, state: wordState(sessionId) });
 });
 
 /** Stop what a preview started -- its dev server, its file server, its page.
@@ -2402,6 +2411,9 @@ async function systemInstructionFor(
      last heard (said once). */
   const pdfDesk = deskBriefing(sessionId);
   if (pdfDesk) notes.push(pdfDesk);
+  // And a Word document, the same way.
+  const wordDesk = wordBriefing(sessionId);
+  if (wordDesk) notes.push(wordDesk);
 
   const open = browsers.get(sessionId)?.status();
   if (open?.open && open.url?.startsWith("chrome-error:")) {
@@ -5336,6 +5348,28 @@ async function startServer() {
   /** Gone for good: its log, its pictures, and its browser. */
   // The PDF window: its pages, and what the person changes in it.
   deskRoutes(app, { exists: (id) => sessions.has(id), cwd: () => terminalDir() });
+  wordRoutes(app, { exists: (id) => sessions.has(id) });
+
+  /* File -> Export PDF in the Word window: the server lays the document out (the same pages office_pdf
+     makes), and the PDF opens in the PDF editor -- PDFs always go to our own. */
+  app.post("/api/officedesk/:session/pdf", async (req: Request, res: Response) => {
+    const session = sessions.get(String(req.params.session));
+    const data = session ? wordData(session.id) : null;
+    if (!session || !data) return res.status(404).json({ error: "There is no document open in the window." });
+    try {
+      const name = String(wordState(session.id).name ?? "document.docx");
+      const pdf = await renderDocxToPdf(data, name);
+      const art = saveArtifact({
+        origin: "agent", name: `${name.replace(/\.docx$/i, "") || "document"}.pdf`, data: pdf, mime: "application/pdf",
+        session: session.id, note: `${name} as a PDF`,
+      });
+      emitEvent(session, "media.file", "agent", { id: art.id, name: art.name, mime: art.mime, size: art.size });
+      deskHooks(session.id).open({ name: art.name, base: pdf, items: [], working: art.id, source: null, outName: art.name });
+      res.json({ ok: true, artifact: art.id });
+    } catch (err: any) {
+      res.status(500).json({ error: String(err?.message ?? err).split("\n")[0] });
+    }
+  });
 
   app.delete("/api/sessions/:id", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
@@ -5354,6 +5388,7 @@ async function startServer() {
     browsers.delete(session.id);
     await previewStop(session, false).catch(() => undefined);
     dropDesk(session.id);
+    dropWordDesk(session.id);
     forgetSession(session.id);
     if (!incognito) deleteSession(session.id);
     // No title of an incognito chat is in a log line: it may be a first message.
@@ -5729,7 +5764,7 @@ async function startServer() {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
     const surface = String(req.body?.surface ?? "");
-    if (!["pdf", "app", "browser", "code"].includes(surface)) return res.status(400).json({ error: "surface is pdf, app, browser or code." });
+    if (!["pdf", "word", "app", "browser", "code"].includes(surface)) return res.status(400).json({ error: "surface is pdf, word, app, browser or code." });
     presenceFor(session.id).hold(surface as Surface, req.body?.hold === true);
     announcePresence(session.id);
     res.json(presenceFor(session.id).view());
@@ -7645,6 +7680,7 @@ async function startServer() {
       ws.send(JSON.stringify({ type: "preview", session: sessionId, state: previewState(session) }));
       // The PDF window, likewise.
       ws.send(JSON.stringify({ type: "pdfdesk", session: sessionId, state: deskState(sessionId) }));
+      ws.send(JSON.stringify({ type: "officedesk", session: sessionId, state: wordState(sessionId) }));
       ws.send(JSON.stringify({ type: "presence", session: sessionId, state: presenceFor(sessionId).view() }));
       if (openPreview?.opened) void openPreview.live.nudge();
 
@@ -7742,6 +7778,9 @@ async function startServer() {
   // 13. Vite Integration (Development middleware / Production static serving)
   // The PDF window's editor, a separate build (pdf-editor/), in dev and production alike.
   serveEditor(app, path.join(process.cwd(), "dist"));
+  // The Office editors, likewise: built by scripts/build-office.mjs, absent without it.
+  const officeWeb = officeWebDir();
+  if (officeWeb) serveOfficeEditors(app, officeWeb);
 
   if (process.env.NODE_ENV !== "production") {
     // Imported here rather than at the top of the file: Vite is a build-time

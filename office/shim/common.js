@@ -115,6 +115,11 @@
     }));
   }
 
+  // Autora's agent is the assistant: the editor's own AI entries and panel are left out.
+  const style = document.createElement("style");
+  style.textContent = ".ribbon-group:has(.ai-entry), .ai-dock, .ai-rail { display: none !important; }";
+  document.head.appendChild(style);
+
   window.__autora = { host, onPush, headless, framed, b64, unb64 };
   // The editor's own script waits for this before it starts (see office/vite).
   window.__autoraReady = (async () => { try { await loadFonts(); } catch (e) { console.warn(String(e)); } })();

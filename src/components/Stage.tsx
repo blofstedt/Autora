@@ -13,6 +13,7 @@ import { IconChevron, IconFile, IconGlobe, IconList, IconMark, IconMonitor } fro
 const ICON: Record<SurfaceKind, ReactNode> = {
   app: <IconMonitor size={14} />,
   pdf: <IconFile size={14} />,
+  word: <IconFile size={14} />,
   browser: <IconGlobe size={14} />,
   plan: <IconList size={14} />,
   widget: <IconMark size={14} />,
@@ -20,7 +21,7 @@ const ICON: Record<SurfaceKind, ReactNode> = {
 
 /** A tab is its name and nothing else: what is in it is what is below. The dot
     says the agent is at work in it. */
-export const NAME: Record<SurfaceKind, string> = { app: "App", pdf: "PDF", browser: "Browser", plan: "To do", widget: "Widget" };
+export const NAME: Record<SurfaceKind, string> = { app: "App", pdf: "PDF", word: "Word", browser: "Browser", plan: "To do", widget: "Widget" };
 
 const working = (surface: Surface): boolean => {
   const { cell } = surface;

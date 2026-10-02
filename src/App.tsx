@@ -7,7 +7,9 @@ import { Kind, type AutoraEvent, type BrowserState } from "./lib/types";
 import { setLiveFields, setLiveFrame } from "./lib/liveFrame";
 import { resetPreview, setPreviewFrame, setPreviewState, usePreviewState, type PreviewState } from "./lib/preview";
 import { AppPreview } from "./components/AppPreview";
+import { OfficeWindow } from "./components/OfficeWindow";
 import { PdfWindow } from "./components/PdfWindow";
+import { resetWord, setWordState, useWordState } from "./lib/officedesk";
 import { resetDesk, setDeskState, useDeskState } from "./lib/pdfdesk";
 import { resetCollab, setCollabState } from "./lib/collab";
 import { cellKey, dockedPlan, usePhone } from "./lib/stage";
@@ -320,6 +322,7 @@ export function App() {
     };
     resetPreview();
     resetDesk();
+    resetWord();
     resetCollab();
     const stream = new SessionStream(sessionId, {
       onEvents: (fresh) => {
@@ -342,6 +345,7 @@ export function App() {
       },
       onPreview: (state) => setPreviewState(state as PreviewState),
       onPdfDesk: setDeskState,
+      onOfficeDesk: setWordState,
       onPresence: setCollabState,
       onBrowser: (state) => {
         setLiveFields(state?.fields);
@@ -1236,11 +1240,18 @@ export function App() {
   const phoneLayout = usePhone();
   const preview = usePreviewState();
   const desk = useDeskState();
-  /* One window beside the chat at a time: the app or the PDF, whichever was
-     opened last; putting it away shows the other. */
-  const sidePane: "app" | "pdf" | null = phoneLayout || !live ? null
-    : desk.open && (!preview.open || (desk.since ?? 0) >= (preview.since ?? 0)) ? "pdf"
-      : preview.open ? "app" : null;
+  const word = useWordState();
+  /* One window beside the chat at a time: the app, the PDF or the Word document,
+     whichever was opened last; putting it away shows the one before. */
+  const sidePane: "app" | "pdf" | "word" | null = phoneLayout || !live ? null : (() => {
+    const open = [
+      ...(preview.open ? [{ pane: "app" as const, since: preview.since ?? 0 }] : []),
+      ...(desk.open ? [{ pane: "pdf" as const, since: desk.since ?? 0 }] : []),
+      ...(word.open ? [{ pane: "word" as const, since: word.since ?? 0 }] : []),
+    ];
+    // Ties go to the later kind in this list: the more specific window.
+    return open.length ? open.reduce((best, w) => (w.since >= best.since ? w : best)).pane : null;
+  })();
   const appPane = sidePane !== null;
 
   const sessionCost = sessions.find((s) => s.id === sessionId)?.cost ?? 0;
@@ -2043,6 +2054,12 @@ export function App() {
         {sidePane === "pdf" && sessionId && (
           <aside className="app-pane" aria-label="The PDF being worked on">
             <PdfWindow sessionId={sessionId} phone={false} />
+          </aside>
+        )}
+        {/* And a Word document, the same way. */}
+        {sidePane === "word" && sessionId && (
+          <aside className="app-pane" aria-label="The Word document being worked on">
+            <OfficeWindow sessionId={sessionId} phone={false} />
           </aside>
         )}
         </div>

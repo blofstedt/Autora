@@ -82,6 +82,18 @@ is a sub-project with its own dependencies (see below).
   came from so the file shows exactly what was drawn until the person changes
   it; the file is the base pages with every object flattened on, rewritten
   on every change; the person's changes are told to the agent once),
+  `officedesk.ts` + `src/components/OfficeWindow.tsx` (the Word window: the
+  document the agent works on, open beside the chat in GenOffice's Word editor,
+  built by `scripts/build-office.mjs` into `dist/office/web/docs` and served at
+  `/office-app` with a sandbox CSP. The editor runs in an origin-less frame, so
+  it cannot fetch anything: `OfficeWindow` answers its `autora:office` requests
+  (fonts, the document, saves, Export PDF -> the PDF window) and pushes the
+  agent's edits in; `office/shim` is the Electron stand-in, it hides the
+  editor's own AI controls and uses its dark theme. Same presence rules as the
+  PDF: `Surface` `"word"`, `touched`, held by Take control, the person's
+  changes told to the agent once), `officerender.ts` (the same editor
+  headless, for `office_look` pictures and `office_pdf`; PDFs always go to
+  Autora's own PDF window),
   `notebooks.ts` (artifacts grouped by purpose with notes between them,
   stored as `notebooks.json`; retention keeps whatever a notebook holds or
   cites), `guard.ts` (what stops and asks before a risky call), `crosssite.ts` (refuses requests and websockets

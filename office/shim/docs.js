@@ -6,7 +6,7 @@
  */
 (() => {
   "use strict";
-  const { host, onPush } = window.__autora;
+  const { host, onPush, framed, headless } = window.__autora;
   const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
   /** The document the host has for this window, as the editor's "opened" result. */
@@ -35,7 +35,8 @@
     // ---- how it looks and speaks
     getLanguage: async () => "en",
     getSystemLocale: async () => "en-US",
-    getTheme: async () => "light",
+    // Every Autora theme is dark; the editor has a dark theme of its own.
+    getTheme: async () => "dark",
     getAutoSaveDefault: async () => ({ on: true, updatedAt: 1 }),
     // Autora's agent is the assistant: the editor's own AI panel stays shut.
     getAiPanelPrefs: async () => ({ side: "right", fontSize: "medium", customFontSize: 14, spellcheck: true, openInNewDocs: false }),
@@ -68,16 +69,28 @@
     fontMetrics: async () => null,
     getPathForFile: () => "",
 
-    // ---- pictures the person brings in
-    pickImage: async () => {
-      const r = await host("pick-image", {}).catch(() => null);
-      return r && r.base64 ? r : null;
-    },
+    // ---- pictures the person brings in: chosen here, in the frame, where the click is
+    pickImage: () => new Promise((resolve) => {
+      if (!framed) { resolve(null); return; }
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/png,image/jpeg,image/gif";
+      input.onchange = async () => {
+        const file = input.files && input.files[0];
+        if (!file) { resolve(null); return; }
+        const mime = file.type === "image/jpeg" || file.type === "image/gif" ? file.type : "image/png";
+        resolve({ base64: window.__autora.b64(await file.arrayBuffer()), mime, name: file.name });
+      };
+      input.addEventListener("cancel", () => resolve(null));
+      input.click();
+    }),
 
     // ---- pages out: PDF is printed by Chromium, by the host
     print: async () => ({ ok: false }),
     exportPdf: async (name, w, h, outPath, scale) => {
       try {
+        // In the window the server draws it, the same pages office_pdf makes, and opens it in the PDF editor.
+        if (framed) { await host("export-pdf", {}); return { ok: true, path: `/autora/${String(name || "document").replace(/\.docx$/i, "")}.pdf` }; }
         await host("pdf", { w, h, scale });
         return { ok: true, path: outPath || `/autora/${String(name || "document").replace(/\.docx$/i, "")}.pdf` };
       } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
@@ -96,6 +109,19 @@
       catch (e) { return { ok: false, error: String(e && e.message || e) }; }
     },
   };
+
+  // The person is in the document: said to the host every few seconds while they type, so the agent leaves it alone.
+  if (framed && !headless) {
+    let last = 0;
+    const typing = () => {
+      const now = Date.now();
+      if (now - last < 4000) return;
+      last = now;
+      void host("presence", {}).catch(() => undefined);
+    };
+    document.addEventListener("input", typing, true);
+    document.addEventListener("keydown", typing, true);
+  }
 
   const answer = {
     get(target, prop) {

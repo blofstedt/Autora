@@ -60,6 +60,7 @@ import {
 } from "./artifacts";
 import { checkWidget } from "./widgets";
 import { deskHooks } from "./pdfdesk";
+import { wordHooks } from "./officedesk";
 import { runPdfTool } from "./pdf";
 import {
   addEntries, createNotebook, describeNotebook, findNotebook, listNotebooks, moveEntry,
@@ -2178,6 +2179,22 @@ const TOOLS: ToolSpec[] = [
     },
   },
   {
+    name: "office_open",
+    group: "files",
+    description:
+      "Open a Word document in the window beside the conversation, so the person can read it and type in it while you " +
+      "work. A document you make or change with the Office tools opens there by itself; this is for one that already " +
+      "exists (an upload, an earlier file). What they type is saved as they go and you are told what they changed. " +
+      "PowerPoint and Excel files do not open in a window yet.",
+    parameters: {
+      type: "object",
+      properties: {
+        file: { type: "string", description: "The Word document: an artifact id, a path, or an artifact's name." },
+      },
+      required: ["file"],
+    },
+  },
+  {
     name: "office_look",
     group: "files",
     description:
@@ -2762,7 +2779,7 @@ export interface ToolContext {
   code?: { edit: (args: EditArgs) => EditResult };
   /** Why something the person is using may not be touched right now (see
       server/presence.ts), or null. `subject` is an object id or a file. */
-  held?: (surface: "pdf" | "app" | "browser" | "code", subject: string) => string | null;
+  held?: (surface: "pdf" | "word" | "app" | "browser" | "code", subject: string) => string | null;
   /** Hand a question to a research worker with its own context (see
       server/subagent.ts) and get its report back. Absent inside the worker. */
   research?: (question: string) => Promise<string>;
@@ -4795,6 +4812,7 @@ async function runToolUnredacted(
       case "office_edit":
       case "office_check":
       case "office_look":
+      case "office_open":
       case "office_pdf":
       case "office_create":
       case "office_convert":
@@ -4805,7 +4823,8 @@ async function runToolUnredacted(
           showFile: ctx.showFile,
           putBlob: ctx.putBlob,
           showImage: ctx.showImage,
-          ...(ctx.memory.incognito ? {} : { desk: deskHooks(ctx.session) }),
+          ...(ctx.memory.incognito ? {} : { desk: deskHooks(ctx.session), word: wordHooks(ctx.session) }),
+          ...(ctx.held ? { held: (_surface: "word", subject: string) => ctx.held!("word", subject) } : {}),
           cancelled: ctx.cancelled,
           onCancel: ctx.onCancel,
         });

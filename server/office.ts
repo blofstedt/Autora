@@ -26,10 +26,11 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { MAX_ARTIFACT_BYTES, cleanName, formatSize, listArtifacts, saveArtifact } from "./artifacts";
+import { MAX_ARTIFACT_BYTES, cleanName, formatSize, getArtifact, listArtifacts, saveArtifact } from "./artifacts";
 import type { ChatImage } from "./llm";
 import { FileRefError, readFileRef, type FileInput } from "./fileref";
 import { lookAtPdf, type DeskHooks } from "./pdf";
+import type { WordHooks } from "./officedesk";
 import { OfficeRenderError, editorBuilt, renderDocxToPdf } from "./officerender";
 import { PdfRenderError } from "./pdfrender";
 
@@ -65,6 +66,10 @@ export interface OfficeContext {
   showImage: (blob: string, alt: string, caption: string | null, size?: { w: number; h: number }) => void;
   /** The PDF window: a PDF made here is opened in it. Absent in an incognito chat. */
   desk?: DeskHooks;
+  /** The Word window: a document made or changed here is shown in it. Absent in an incognito chat. */
+  word?: WordHooks;
+  /** Why something may not be changed right now (the person is working on it), or null. */
+  held?: (surface: "word", subject: string) => string | null;
   cancelled: () => boolean;
   onCancel: (stop: () => void) => void;
 }
@@ -102,6 +107,7 @@ export async function runOfficeTool(name: string, args: Record<string, any>, ctx
       case "office_check": return await checkTool(args, ctx);
       case "office_look": return await lookTool(args, ctx);
       case "office_pdf": return await pdfTool(args, ctx);
+      case "office_open": return await openTool(args, ctx);
       case "office_create": return await createTool(args, ctx);
       case "office_convert": return await convertTool(args, ctx);
       default: return { ok: false, summary: `There is no Office tool called ${name}.` };
@@ -216,12 +222,40 @@ const clip = (text: string, room: number, how: string): string =>
 
 // ---------------------------------------------------------------- input --
 
-function input(args: Record<string, any>, ctx: OfficeContext, wanted?: Kind): { file: FileInput; kind: Kind } {
-  const file = readFileRef(args.file, ctx.cwd, "document", "the Office tools");
+function input(args: Record<string, any>, ctx: OfficeContext, wanted?: Kind): { file: FileInput; kind: Kind; inWindow: boolean } {
+  let file = readFileRef(args.file, ctx.cwd, "document", "the Office tools");
   const kind = kindOf(file.name);
   if (!kind) throw new Problem(`${file.name} is not a Word, Excel or PowerPoint file (.docx, .xlsx, .pptx). Convert it first (office_convert) if it is another format.`);
   if (wanted && kind !== wanted) throw new Problem(`${file.name} is a ${kind} file, not ${wanted}.`);
-  return { file, kind };
+  /* The document open in the Word window is the document, as the person has it now: asked for by its
+     artifact, the file it came from, or its name, it is read from the window, not from an older copy. */
+  const here = kind === "docx" ? ctx.word?.current() : null;
+  if (here && (file.artifact?.id === here.working || file.artifact?.id === here.source || file.name === here.outName || file.name === here.name)) {
+    const working = here.working ? getArtifact(here.working) : null;
+    file = { data: here.data, name: here.name, artifact: working ?? file.artifact };
+    return { file, kind, inWindow: true };
+  }
+  return { file, kind, inWindow: false };
+}
+
+/** What the person did in the Word window since the agent last heard, to say with a result. */
+const meanwhile = (ctx: OfficeContext, kind: Kind): string => {
+  const news = kind === "docx" ? ctx.word?.news() ?? "" : "";
+  return news ? ` ${news}` : "";
+};
+
+/** Show a Word document in the window the agent and the person share. */
+function showInWindow(ctx: OfficeContext, name: string, data: Buffer, saved: { id: string; name: string } | null, from: FileInput | null, label?: string) {
+  if (!ctx.word) return;
+  const here = ctx.word.current();
+  ctx.word.open({
+    name: here && saved && here.working === saved.id ? here.name : name,
+    data,
+    working: saved?.id ?? (from?.artifact?.origin === "agent" ? from.artifact.id : null),
+    source: here?.source ?? (from?.artifact?.origin === "user" ? from.artifact.id : null),
+    outName: saved?.name ?? name,
+    ...(label ? { label } : {}),
+  });
 }
 
 function sheetNeeds(kind: Kind) {
@@ -349,8 +383,9 @@ function renderSlides(d: Record<string, any>): string {
 }
 
 async function readTool(args: Record<string, any>, ctx: OfficeContext): Promise<OfficeOutcome> {
-  const { file, kind } = input(args, ctx);
+  const { file, kind, inWindow } = input(args, ctx);
   sheetNeeds(kind);
+  if (inWindow) ctx.word?.show();
   return await withWork(async (work) => {
     const p = stage(file, kind, work);
     const a: string[] = [DOMAIN[kind], "read", p];
@@ -377,7 +412,7 @@ async function readTool(args: Record<string, any>, ctx: OfficeContext): Promise<
     const body = kind === "docx" ? renderDocx(d) : kind === "xlsx" ? renderSheet(d) : renderSlides(d);
     return {
       ok: true,
-      summary: `${run.env.summary ?? file.name}\n${clip(body, ctx.room, "ask for a narrower range, sheet or slide")}`,
+      summary: `${run.env.summary ?? file.name}\n${clip(body, ctx.room, "ask for a narrower range, sheet or slide")}${meanwhile(ctx, kind)}`,
       preview: `${file.name} · ${run.env.summary ?? kind}`,
     };
   });
@@ -434,9 +469,14 @@ function jsonArg(value: unknown, what: string): string {
 }
 
 async function editTool(args: Record<string, any>, ctx: OfficeContext): Promise<OfficeOutcome> {
-  const { file, kind } = input(args, ctx);
+  const { file, kind, inWindow } = input(args, ctx);
   sheetNeeds(kind);
   const dry = args.dry_run === true;
+  /* The person is typing in the document: not now. Not an error -- the agent is told to work on something else. */
+  if (inWindow && !dry) {
+    const why = ctx.held?.("word", "document");
+    if (why) return { ok: false, summary: why };
+  }
   if (kind === "xlsx" && args.cells === undefined && args.ops === undefined) throw new Problem("Give cells ([{cell, value|formula, style?}]) or ops (the workbook operations office_guide describes).");
   if (kind !== "xlsx" && args.ops === undefined) throw new Problem("Give ops: the edit operations office_guide describes for this format.");
   return await withWork(async (work) => {
@@ -452,7 +492,10 @@ async function editTool(args: Record<string, any>, ctx: OfficeContext): Promise<
     }
     if (dry && !(kind === "xlsx" && args.cells !== undefined)) a.push("--dry-run");
     if (args.best_effort === true) a.push("--best-effort");
-    if (kind === "docx" && args.track === true) {
+    /* A document the person has open is changed as tracked changes, which they accept or reject in the
+       editor's Review tab, unless the agent says otherwise. */
+    const track = kind === "docx" && (args.track === true || ((inWindow || ctx.word) && args.track !== false));
+    if (track) {
       a.push("--track");
       if (args.author) a.push("--author", String(args.author).slice(0, 60));
     }
@@ -468,9 +511,13 @@ async function editTool(args: Record<string, any>, ctx: OfficeContext): Promise<
     const data = fs.readFileSync(p);
     const name = outputName(file, kind, args.output, "edited");
     const saved = deliver(ctx, name, data, MIME[kind], `${file.name} edited`);
+    if (kind === "docx") showInWindow(ctx, file.name, data, saved, file, "Changed by the agent");
+    const there = kind === "docx" && ctx.word
+      ? ` It is open in the Word window${track ? ", and the changes are tracked for the person to accept or reject" : ""}.`
+      : "";
     return {
       ok: true,
-      summary: `${run.env?.summary ?? "Edited."}${refreshed} ${savedLine(saved)}${warn ? ` ${warn}` : ""}${failures}`.trim(),
+      summary: `${run.env?.summary ?? "Edited."}${refreshed} ${savedLine(saved)}${there}${warn ? ` ${warn}` : ""}${failures}${meanwhile(ctx, kind)}`.trim(),
       preview: `${saved.name} edited`,
     };
   });
@@ -479,8 +526,9 @@ async function editTool(args: Record<string, any>, ctx: OfficeContext): Promise<
 // ---------------------------------------------------------------- check --
 
 async function checkTool(args: Record<string, any>, ctx: OfficeContext): Promise<OfficeOutcome> {
-  const { file, kind } = input(args, ctx);
+  const { file, kind, inWindow } = input(args, ctx);
   sheetNeeds(kind);
+  if (inWindow) ctx.word?.show();
   return await withWork(async (work) => {
     const p = stage(file, kind, work);
     const a = kind === "pptx" ? ["slides", "audit", p] : [DOMAIN[kind], "check", p];
@@ -492,7 +540,7 @@ async function checkTool(args: Record<string, any>, ctx: OfficeContext): Promise
     void _u; void _m; void _i;
     return {
       ok: true,
-      summary: `${run.env.summary ?? `${file.name}: checked`}\n${clip(JSON.stringify(rest), ctx.room, "check one slide or sheet at a time")}`,
+      summary: `${run.env.summary ?? `${file.name}: checked`}\n${clip(JSON.stringify(rest), ctx.room, "check one slide or sheet at a time")}${meanwhile(ctx, kind)}`,
       preview: `${file.name} · ${run.env.summary ?? "checked"}`,
     };
   });
@@ -515,10 +563,28 @@ async function layOut(file: FileInput, kind: Kind, ctx: OfficeContext): Promise<
 
 /** Pictures of the pages of a Word document, as they lay out. */
 async function lookTool(args: Record<string, any>, ctx: OfficeContext): Promise<OfficeOutcome> {
-  const { file, kind } = input(args, ctx);
+  const { file, kind, inWindow } = input(args, ctx);
   const pdf = await layOut(file, kind, ctx);
+  // What the agent looks at, the person sees too -- unless another document is already in the window.
+  if (inWindow) ctx.word?.show();
+  else if (ctx.word && !ctx.word.current()) showInWindow(ctx, file.name, file.data, null, file);
   const done = await lookAtPdf(pdf, file.name, undefined, { pages: args.pages, area: args.area && typeof args.area === "object" ? args.area : null, grid: args.grid }, ctx);
-  return { ok: done.ok, summary: done.summary, preview: done.preview, images: done.images };
+  return { ok: done.ok, summary: `${done.summary}${meanwhile(ctx, kind)}`, preview: done.preview, images: done.images };
+}
+
+/** Bring a Word document into the window beside the conversation. */
+async function openTool(args: Record<string, any>, ctx: OfficeContext): Promise<OfficeOutcome> {
+  const { file, kind } = input(args, ctx);
+  if (kind !== "docx") {
+    throw new Problem(`Only Word documents open in a window so far. ${kind === "pptx" ? "A deck" : "A workbook"} is read (office_read), changed (office_edit) and checked (office_check) as a file.`);
+  }
+  if (!ctx.word) throw new Problem("There is no window to open it in here (an incognito chat keeps none).");
+  showInWindow(ctx, file.name, file.data, null, file, "Opened");
+  return {
+    ok: true,
+    summary: `${file.name} is open in the Word window beside the conversation. The person can read it and type in it as you work; what they type is saved as they go, and you are told what they changed.`,
+    preview: `${file.name} opened`,
+  };
 }
 
 /** A Word document as a PDF artifact, opened in the PDF editor. */
@@ -579,10 +645,13 @@ async function createTool(args: Record<string, any>, ctx: OfficeContext): Promis
     const run = await cli(a, work, ctx);
     if (run.env?.status !== "ok" || !fs.existsSync(out)) return { ok: false, summary: failure(run, "Creating it") };
     const name = outputName(null, kind, args.name, "new").replace(/-new\.(docx|xlsx|pptx)$/i, ".$1");
-    const saved = deliver(ctx, name, fs.readFileSync(out), MIME[kind], `Made with office_create`);
+    const bytes = fs.readFileSync(out);
+    const saved = deliver(ctx, name, bytes, MIME[kind], `Made with office_create`);
+    if (kind === "docx") showInWindow(ctx, saved.name, bytes, saved, null, "Created by the agent");
     const warn = warningsOf(run.env);
     const issues = Array.isArray(run.env.detail?.issues) && run.env.detail.issues.length ? ` Issues: ${clip(JSON.stringify(run.env.detail.issues), 1200, "office_check shows the rest")}` : "";
-    return { ok: true, summary: `${run.env.summary ?? "Created."} ${savedLine(saved)}${warn ? ` ${warn}` : ""}${issues}`.trim(), preview: saved.name };
+    const there = kind === "docx" && ctx.word ? " It is open in the Word window." : "";
+    return { ok: true, summary: `${run.env.summary ?? "Created."} ${savedLine(saved)}${there}${warn ? ` ${warn}` : ""}${issues}`.trim(), preview: saved.name };
   });
 }
 
