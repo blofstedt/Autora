@@ -44,6 +44,13 @@ export type FileChange = {
   removed: number;
   created: boolean;
   seq: number;
+  /** When it was written, in seconds like every event's: a card that has just
+      arrived is typed out. */
+  ts?: number;
+  /** Said instead of lines: a lock file, a removal. */
+  note?: string;
+  /** Written by the person, in their own editor, not by the agent. */
+  by?: "person";
 };
 
 export type TodoItem = {
@@ -222,6 +229,8 @@ export type Cell =
   | { kind: "files"; seq: number; files: Attachment[] }
   | { kind: "widget"; seq: number; widget: Widget }
   | { kind: "file"; seq: number; file: FileChange }
+  /** A word from the agent about what the person just did in a shared window. */
+  | { kind: "remark"; seq: number; text: string; surface: string }
   | { kind: "tool"; seq: number; span: SpanState }
   | { kind: "note"; seq: number; tone: "bad" | "warn" | "plain"; text: string }
   /** Agent mode moving between planning and building: said in the thread,
@@ -977,11 +986,20 @@ export function derive(events: AutoraEvent[]): Derived {
           removed: e.payload.removed ?? 0,
           created: !!e.payload.created,
           seq: e.seq,
+          ts: e.ts,
+          ...(typeof e.payload.note === "string" ? { note: e.payload.note } : {}),
+          ...(e.payload.by === "person" ? { by: "person" as const } : {}),
         };
         files.push(file);
         push({ kind: "file", seq: e.seq, file });
         break;
       }
+
+      case Kind.AgentRemark:
+        if (typeof e.payload.text === "string" && e.payload.text) {
+          push({ kind: "remark", seq: e.seq, text: e.payload.text, surface: String(e.payload.surface ?? "") });
+        }
+        break;
 
       case Kind.PreviewOpen:
         push({ kind: "app", seq: e.seq, url: typeof e.payload.url === "string" ? e.payload.url : "" });

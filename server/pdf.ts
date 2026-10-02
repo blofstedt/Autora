@@ -36,6 +36,7 @@ import {
   artifactPath, cleanName, formatSize, getArtifact, listArtifacts, mimeFor, readArtifact, saveArtifact,
   MAX_ARTIFACT_BYTES, type Artifact,
 } from "./artifacts";
+import { replaceOnPage, type TextEdit } from "./pdftext";
 import { PdfRenderError, withPdf, type PageText, type PdfView, type Rect } from "./pdfrender";
 import { applyChanges, compose, ComposeError, outlineLines, type ComposeSource, type ImageLoader, type OutlineEntry } from "./compose";
 
@@ -56,6 +57,9 @@ export interface PdfContext {
   onCancel: (stop: () => void) => void;
   /** The session's PDF window, when there is one to show the work in. */
   desk?: DeskHooks;
+  /** Why an object may not be changed right now (the person is working on
+      it), or null. */
+  held?: (objectId: string) => string | null;
 }
 
 export interface PdfOutcome {
@@ -63,6 +67,8 @@ export interface PdfOutcome {
   summary: string;
   preview?: string;
   images?: ChatImage[];
+  /** Not done because the person is working on it: not an error. */
+  held?: boolean;
 }
 
 /** A failure the agent is told in so many words. */
@@ -88,6 +94,7 @@ async function runOne(name: string, args: Record<string, any>, ctx: PdfContext):
       case "pdf_compose": return await composeTool(args, ctx);
       case "pdf_pages": return await pagesTool(args, ctx);
       case "pdf_redact": return await redactTool(args, ctx);
+      case "pdf_replace_text": return await replaceTextTool(args, ctx);
       case "pdf_compress": return await compressTool(args, ctx);
       default: return { ok: false, summary: `There is no PDF tool called ${name}.` };
     }
@@ -331,7 +338,7 @@ function outputName(input: Input, output: unknown, suffix: string): string {
   return cleanName(`${base}-${suffix}.pdf`);
 }
 
-function deliver(ctx: PdfContext, name: string, data: Buffer, note: string, input?: Input): Saved {
+function deliver(ctx: PdfContext, name: string, data: Buffer, note: string, input?: Input, cues?: Cue[]): Saved {
   if (data.byteLength > MAX_ARTIFACT_BYTES) {
     throw new Problem(`The result is ${formatSize(data.byteLength)}, over the ${formatSize(MAX_ARTIFACT_BYTES)} an artifact may be. Nothing was saved.`);
   }
@@ -347,7 +354,7 @@ function deliver(ctx: PdfContext, name: string, data: Buffer, note: string, inpu
   // file being worked on.
   if (input && ctx.desk && isDeskFile(input, ctx)) {
     const source = ctx.desk.current()?.source ?? (input.artifact?.origin === "user" ? input.artifact.id : null);
-    ctx.desk.open({ name: art.name, base: data, items: [], working: art.id, source, outName: art.name, review: { label: note, diff: false } });
+    ctx.desk.open({ name: art.name, base: data, items: [], working: art.id, source, outName: art.name, review: { label: note, diff: false }, ...(cues?.length ? { cues } : {}) });
   }
   return { art, replaced };
 }
@@ -1279,6 +1286,69 @@ export type DeskSnapshot = {
   outline?: OutlineEntry[] | null;
 };
 
+/**
+ * Where the agent just worked on a page, for the window to show it: a cursor
+ * arriving, the old words struck, the new ones typed. Positions are points
+ * from the page's top-left, as everywhere else. Purely presentation: the file
+ * is already changed when this is sent.
+ */
+export interface Cue {
+  page: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** The words struck, for a retype; empty otherwise. */
+  from: string;
+  /** The words typed, for a retype or a new text box. */
+  to: string;
+  /** What the cursor does: retypes words, types a new box, clicks to place
+      something, drags out a box, or traces a stroke. */
+  act: "retype" | "type" | "place" | "drag" | "draw";
+  /** The editor tool it would have picked up, lit on the toolbar. */
+  tool: "text" | "highlighter" | "draw" | "shape" | "note" | "stamp" | "signature" | "image" | "redact";
+  /** An object the window holds back until this cue lands it. */
+  itemId?: string;
+  /** For a stroke: where it passes, in points. */
+  points?: { x: number; y: number }[];
+}
+
+/**
+ * What the cursor does for an object the agent just placed: where, how, and
+ * with which tool. The object itself is the server's and already exists; this
+ * only says how to show it arriving. Null for something with nowhere to show.
+ */
+export function cueForItem(item: DeskItem): Cue | null {
+  const page = Math.round(Number(item.pageNumber));
+  const x = Number(item.x), y = Number(item.y), w = Number(item.width), h = Number(item.height);
+  if (!(page >= 1) || ![x, y, w, h].every(Number.isFinite)) return null;
+  const base = { page, x, y, w: Math.max(0, w), h: Math.max(0, h), from: "", to: "", itemId: String(item.id) };
+  switch (item.type) {
+    case "text": return { ...base, act: "type", tool: "text", to: String(item.text ?? "").slice(0, 200) };
+    case "stamp": return { ...base, act: "place", tool: "stamp" };
+    case "signature": return { ...base, act: "place", tool: "signature" };
+    case "image": return { ...base, act: "place", tool: "image" };
+    case "note": return { ...base, act: "place", tool: "note" };
+    case "shape": return { ...base, act: "drag", tool: "shape" };
+    case "redact": return { ...base, act: "drag", tool: "redact" };
+    case "drawing":
+    case "highlighter": {
+      const raw: { x: number; y: number }[] = Array.isArray(item.drawingPoints) ? item.drawingPoints : [];
+      const every = Math.max(1, Math.ceil(raw.length / 60));
+      const points = raw.filter((_, i) => i % every === 0 || i === raw.length - 1)
+        .map((p) => ({ x: Number(p.x), y: Number(p.y) }))
+        .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+      if (points.length < 2) return { ...base, act: "drag", tool: item.type === "drawing" ? "draw" : "highlighter" };
+      const xs = points.map((p) => p.x), ys = points.map((p) => p.y);
+      return {
+        ...base, act: "draw", tool: item.type === "drawing" ? "draw" : "highlighter", points,
+        x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys),
+      };
+    }
+    default: return null;
+  }
+}
+
 /** What the PDF tools may do with the window of the session they run in. */
 export interface DeskHooks {
   current(): DeskSnapshot | null;
@@ -1287,6 +1357,8 @@ export interface DeskHooks {
     outName: string;
     /** From the agent changing the file: what to call this version, and what to put up for review. */
     review?: { label: string; baseNote?: string | null; diff?: boolean };
+    /** Where the agent worked, played in the window as the new file loads. */
+    cues?: Cue[];
   }): void;
   /** Bring the window back if the person put it away: the agent is working on its file. */
   show(): void;
@@ -2032,6 +2104,33 @@ async function editTool(args: Record<string, any>, ctx: PdfContext): Promise<Pdf
   }
   const unknown = [...dropIds, ...changes.map((c) => String(c.id))].filter((id) => !desk?.items.some((i) => i.id === id));
   if (unknown.length) throw new Problem(`There is no object ${unknown.map((u) => JSON.stringify(u)).join(", ")} in the window. The ids are in the results of earlier pdf_edit calls and the start of the turn.`);
+  /* What the person is working on stays theirs: those objects are left as
+     they are, said so, and everything else in the call goes ahead. */
+  const leftAlone: string[] = [];
+  if (ctx.held && desk) {
+    const name = (id: string) => {
+      const it = desk.items.find((i) => i.id === id);
+      return `${id}${it ? ` (${String(it.type)} on page ${it.pageNumber})` : ""}`;
+    };
+    for (const c of [...changes]) {
+      if (!ctx.held(String(c.id))) continue;
+      changes.splice(changes.indexOf(c), 1);
+      leftAlone.push(`change of ${name(String(c.id))}`);
+    }
+    for (const id of [...dropIds]) {
+      if (!ctx.held(id)) continue;
+      dropIds.delete(id);
+      leftAlone.push(`removal of ${name(id)}`);
+    }
+    if (leftAlone.length && !values && !items.length && !wm && !numbers && !props && !strip && !flatten && !dropIds.size && !changes.length) {
+      return {
+        ok: false, held: true,
+        summary:
+          `Not done: the person is working on ${leftAlone.length === 1 ? "that object" : "those objects"} right now (${leftAlone.join("; ")}). ` +
+          "Leave it and go on to something else; come back in a little while.",
+      };
+    }
+  }
   if (xfa === "dynamic" && (values || flatten)) {
     throw new Problem(
       "This is a dynamic XFA form: its fields live in XML the PDF tools cannot fill. Write on it with add items " +
@@ -2047,7 +2146,22 @@ async function editTool(args: Record<string, any>, ctx: PdfContext): Promise<Pdf
 
   const done: string[] = [];
   const notes: string[] = [];
+  if (leftAlone.length) {
+    notes.push(
+      `Left alone, because the person is working on ${leftAlone.length === 1 ? "it" : "them"} right now: ${leftAlone.join("; ")}. ` +
+      "Everything else was done. Come back to those in a little while.",
+    );
+  }
   const fonts = new Fonts(doc);
+  /* A box with a background laid over words is the way to cover them, and the
+     way to loop: the words stay in the file, and the next look still finds
+     them. Say what changes them for real. */
+  if (items.some((i) => String(i.type).toLowerCase() === "text" && i.background)) {
+    notes.push(
+      "A text item with a background hides the words under it but leaves them in the file, selectable and searchable. " +
+      "To change words the file already has, use pdf_replace_text (it rewrites them); to take them out, pdf_redact.",
+    );
+  }
 
   // 1. Fill.
   if (values) {
@@ -2563,6 +2677,151 @@ async function redactTool(args: Record<string, any>, ctx: PdfContext): Promise<P
       preview: PREVIEW(saved.art.name, out.getPageCount(), saved.art.size),
     };
   }, ctx);
+}
+
+// -- pdf_replace_text --
+
+/** At most this many places are shown being edited in one go. */
+const MAX_CUES = 6;
+
+/** Where some words are drawn on a page: the first box of each place they appear. */
+async function locateText(view: PdfView, pageIndex: number, find: string, ignoreCase: boolean): Promise<Rect[]> {
+  const [page] = await view.text(pageIndex + 1, pageIndex + 1, true);
+  const source = find.split(/\s+/).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s*");
+  const re = new RegExp(source, ignoreCase ? "gi" : "g");
+  return findOnPage(page, [{ label: find, re }]).map((h) => h.boxes[0]);
+}
+
+/** Change the words a PDF already has. See ./pdftext.ts for how. */
+async function replaceTextTool(args: Record<string, any>, ctx: PdfContext): Promise<PdfOutcome> {
+  const { input } = onDesk(readPdf(args.file, ctx.cwd), ctx);
+  const pass = password(args);
+  const list: Record<string, any>[] = (Array.isArray(args.replace) ? args.replace : args.replace ? [args.replace] : [])
+    .filter((r: unknown) => r && typeof r === "object");
+  const edits: TextEdit[] = list.map((r) => ({
+    find: String(r.find ?? ""),
+    with: String(r.with ?? ""),
+    ignoreCase: r.ignore_case === true,
+  })).filter((e) => e.find.trim());
+  if (edits.length === 0) {
+    throw new Problem("Say what to change: replace is a list of {find, with}. find is the words as they are now; with is what they become (empty to delete them).");
+  }
+  const { doc, encrypted } = await openDoc(input.data, pass);
+  if (hasForm(doc) && doc.getForm().hasXFA()) {
+    throw new Problem("Its text comes from an XFA form, which has no words in the pages to change. Fill it with pdf_edit fields instead.");
+  }
+
+  /* What the saved file should read, checked by reading it back (below). */
+  let proof: { bytes: Uint8Array; checks: { find: string; with: string; ignoreCase: boolean; pages: number[] }[] } | null = null;
+  const outcome = await withPdf(input.data, pass, async (view) => {
+    const count = view.pages;
+    const scope = pageSet(args.pages ?? "all", count);
+    const tools: Tools = { fonts: new Fonts(doc), doc, cwd: ctx.cwd, view, fields: null, texts: new Map() };
+    const totals = new Map<string, { with: string; matches: number; how: Set<string>; pages: number[] }>();
+    const notes = new Set<string>();
+    const touched: number[] = [];
+    const cues: Cue[] = [];
+    for (const i of scope) {
+      if (ctx.cancelled()) throw new Problem("Stopped before it was finished; nothing was saved.");
+      const locate = (find: string, ignoreCase: boolean) => locateText(view, i, find, ignoreCase);
+      const done = await replaceOnPage(doc, doc.getPage(i), edits, locate);
+      done.notes.forEach((n) => notes.add(`Page ${i + 1}: ${n}`));
+      if (done.changed.length === 0) continue;
+      touched.push(i);
+      // Where each change was, for the window to show it being made. The
+      // positions are of the old words, which are where the new ones now are.
+      for (const c of done.changed) {
+        if (cues.length >= MAX_CUES) break;
+        for (const box of (await locateText(view, i, c.find, edits.find((e) => e.find === c.find)?.ignoreCase === true)).slice(0, 3)) {
+          if (cues.length < MAX_CUES) cues.push({ page: i + 1, x: box.x, y: box.y, w: box.w, h: box.h, from: c.find, to: c.with, act: "retype", tool: "text" });
+        }
+      }
+      for (const c of done.changed) {
+        const t = totals.get(c.find) ?? { with: c.with, matches: 0, how: new Set<string>(), pages: [] };
+        t.matches += c.matches;
+        t.how.add(c.how);
+        t.pages.push(i + 1);
+        totals.set(c.find, t);
+      }
+      if (done.draws.length) {
+        const sheet = new Sheet(doc.getPage(i));
+        for (const d of done.draws) {
+          try {
+            await drawItem(tools, sheet, i, { type: "text", x: d.x, y: d.y, text: d.text, size: d.size, color: d.color, font: d.font, bold: d.bold, italic: d.italic }, null);
+          } catch (err) {
+            throw new Problem(`Page ${i + 1}: the new words ${JSON.stringify(d.text)} could not be written: ${message(err)} Nothing was saved.`);
+          }
+        }
+      }
+    }
+
+    const absent = edits.filter((e) => !totals.has(e.find)).map((e) => JSON.stringify(e.find));
+    if (totals.size === 0) {
+      return {
+        ok: true,
+        summary:
+          `Nothing was changed, and no file was made. ${absent.length ? `Not found as text in the file: ${absent.join(", ")}. ` : ""}` +
+          [...notes].join(" ") +
+          " Check the wording with pdf_read find (it must be the words as the file holds them); if the page is a scan it has no text to change: look with pdf_look, cover the area with pdf_redact areas and add the words with pdf_edit.",
+        preview: "nothing matched",
+      };
+    }
+
+    const bytes = await saveDoc(doc);
+    proof = {
+      bytes,
+      checks: [...totals.entries()].map(([find, t]) => ({
+        find, with: t.with, ignoreCase: edits.find((e) => e.find === find)?.ignoreCase === true, pages: [...new Set(t.pages)],
+      })),
+    };
+    const saved = deliver(ctx, outputName(input, args.output, "edited"), bytes, `Changed text in ${input.name}`, input, cues);
+    const lines = [...totals.entries()].map(([find, t]) =>
+      `${JSON.stringify(find)} -> ${JSON.stringify(t.with)}: ${t.matches} change${t.matches === 1 ? "" : "s"} on page${t.pages.length === 1 ? "" : "s"} ${rangeText([...new Set(t.pages)].map((p) => p - 1))}` +
+      ` (${[...t.how].join(" and ")})`);
+    return {
+      ok: true,
+      summary: [
+        `Changed the text of ${input.name}: ${lines.join("; ")}.`,
+        "In place means the words were rewritten inside the file in the page's own font, so they stay selectable and searchable; " +
+        "redrawn means that font could not write them, so the old words were taken out of the file and the new ones drawn in a built-in font of the same kind, colour and size.",
+        absent.length ? `Not found: ${absent.join(", ")}.` : "",
+        [...notes].join(" "),
+        "Words are not reflowed: where the new ones are longer or shorter than the old, anything the file places separately on that line (the next column, a word it drew on its own) stays where it was, so look at the line before saying it is right.",
+        savedLine(saved, doc.getPageCount(), input),
+        encrypted && pass ? "The original is password-protected; this copy is not." : "",
+        "Check the pages with pdf_look.",
+      ].filter(Boolean).join(" "),
+      preview: PREVIEW(saved.art.name, doc.getPageCount(), saved.art.size),
+    };
+  }, ctx);
+
+  /* Not the edit's own word for it: the saved file, read back the way a viewer
+     reads it. The new words must be there and the old ones gone. */
+  if (proof) {
+    const { bytes, checks } = proof as { bytes: Uint8Array; checks: { find: string; with: string; ignoreCase: boolean; pages: number[] }[] };
+    try {
+      const wrong = await withPdf(Buffer.from(bytes), undefined, async (view) => {
+        const out: string[] = [];
+        for (const c of checks) {
+          for (const p of c.pages) {
+            if (c.with && (await locateText(view, p - 1, c.with, c.ignoreCase)).length === 0) {
+              out.push(`${JSON.stringify(c.with)} does not read on page ${p}`);
+            }
+            if (!c.with.toLowerCase().includes(c.find.toLowerCase()) && (await locateText(view, p - 1, c.find, c.ignoreCase)).length > 0) {
+              out.push(`${JSON.stringify(c.find)} still reads on page ${p}`);
+            }
+          }
+        }
+        return out;
+      }, ctx);
+      outcome.summary += wrong.length === 0
+        ? " Read back from the saved file: the new words are there and the old ones are gone."
+        : ` CHECK FAILED when the saved file was read back: ${wrong.slice(0, 4).join("; ")}. Look at the page with pdf_look before saying it is done.`;
+    } catch {
+      // The read-back is a check, not the edit: if it cannot run, the edit still stands.
+    }
+  }
+  return outcome;
 }
 
 /**

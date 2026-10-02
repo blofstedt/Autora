@@ -129,6 +129,8 @@ function doing(name: string, args: Record<string, any>): string {
       const command = String(args.command ?? "").replace(/\s+/g, " ").trim();
       return command ? `Running ${command.length > 40 ? `${command.slice(0, 39)}…` : command}` : "Running a command";
     }
+    case "research": return "Sending a worker to look into it";
+    case "code_search": return args.query ? `Searching the code for${quoted(args.query)}` : "Searching the code";
     case "browser_open": return args.url ? `Opening ${host(args.url)}` : "Opening a page";
     case "browser_read": return "Reading the page";
     case "browser_click": return "Clicking on the page";
@@ -163,6 +165,7 @@ function doing(name: string, args: Record<string, any>): string {
     case "pdf_compose": return args.blocks ? "Writing the PDF" : "Updating the PDF";
     case "pdf_pages": return args.merge ? "Merging PDFs" : args.split ? "Splitting the PDF" : "Rearranging the pages";
     case "pdf_redact": return "Redacting the PDF";
+    case "pdf_replace_text": return "Changing text in the PDF";
     case "pdf_compress": return "Shrinking the PDF";
     case "memory_write": return args.title ? `Remembering “${brief(args.title, 6)}”` : "Remembering something";
     case "memory_search": return `Searching its memory for${quoted(args.query)}`;

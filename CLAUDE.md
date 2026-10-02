@@ -63,7 +63,20 @@ is a sub-project with its own dependencies (see below).
   for encrypted files -- changes the file; pdf.js in a headless Chromium reads
   text and draws pages. Positions are top-left points of the page as shown;
   every result is a new artifact, and dropped or redacted content is removed
-  from the bytes, not covered), `pdfdesk.ts` (the PDF window: the file the
+  from the bytes, not covered), `pdftext.ts` (`pdf_replace_text`: reads a page's content stream and the fonts
+  it names, finds the words, and rewrites their bytes in place where the font
+  holds the letters -- a cut-down font is trusted only with letters the file
+  shows it drawing -- or removes the old glyphs and returns where to draw the new
+  ones. Edits run one at a time on the stream as the last left it, matches last
+  first; the page stays vector, nothing is rasterised. Where it worked, and each
+  object `pdf_edit` places (`cueForItem`), go to the window as `cues` on
+  `desk.open`; `pdf-editor/src/AgentCues.tsx` plays them -- a cursor that
+  retypes, types a box, clicks a stamp into place, drags a box or traces a
+  stroke, the toolbar ringed on the tool it would have picked up, and the
+  placed objects held back until the cursor lands them. Only ever a
+  presentation: the file and the objects are the server's, authorship stays
+  with the agent (so the changes are still up for accept/decline), nothing
+  injects input into the editor, and the window can switch it off), `pdfdesk.ts` (the PDF window: the file the
   agent works on, open beside the chat in SecurePDF's editor. What `pdf_edit`
   places becomes the editor's own movable objects, each keeping the item it
   came from so the file shows exactly what was drawn until the person changes
@@ -81,6 +94,78 @@ is a sub-project with its own dependencies (see below).
   - `scheduler.ts`: cron jobs and watchers.
   - `customtools.ts`: scripts the agent saved as its own tools.
   - `toolhealth.ts`: recent failures per tool, told to the agent.
+  - `loopwatch.ts` (the same call repeating) and `errorbudget.ts` (the same
+    error across *different* attempts; kept per chat by `budgetstore.ts`, eased
+    by a success, forgotten after hours): notes in the result the model reads,
+    then a stop that is told to the next turn (`resume.ts`).
+  - `argcheck.ts`: every call is checked against its tool's own schema before
+    anything else sees it.
+  - `verify.ts`: the person's project check (Settings), run by the loop when the
+    agent says it is finished after changing something; a failure goes back to
+    the agent with the raw output, up to `tries` runs a turn.
+  - `subagent.ts` (`research`): a worker with a fresh context and read-only
+    tools (`looksOnly` judges every call), its own loop watch and schema check,
+    a step limit; only its short report reaches the main thread. It is given
+    the model and tools by `researchFor` in `server.ts`, so it is tested with a
+    script.
+  - `codediff.ts`: the working folder, watched. After a command that changes
+    things the loop scans it (stat first, read what changed, small source
+    files kept to compare) and emits `file.edit` cards -- lines added, removed
+    and a little context; lock files, environment files, build output and
+    Autora's own state dir are never shown; a folder over `MAX_TRACKED` files
+    is not followed. `FileCell` types a card that has just arrived (a replay of
+    code already written, off with the agent-cursor switch in `lib/agentCursor.ts`).
+  - `presence.ts`: working side by side. One record per chat of what the person
+    touches (`touchPresence` in `server.ts`, from the input routes), leases that
+    run out a few seconds after their last touch, and explicit control they take
+    and hand back (`POST /api/sessions/:id/control`). `heldFor` refuses an agent
+    call that would use a held surface -- not an error, so it never feeds the loop
+    watch or error budget -- and `note()` says what they did, once, at the next
+    round (or the next turn's note). `COLLABORATION` tells the agent how to behave.
+    Client: `lib/collab.ts` and the Take control / Hand back buttons. In the PDF
+    the editor tells the server what is selected or dragged (`autora:presence`,
+    every few seconds while held) and `personChanges` touches each object the
+    person changed; `pdf_edit` skips objects they hold, does the rest of the call
+    and says what it left (`PdfOutcome.held` when nothing could be done).
+  - `domdiff.ts` + `LiveBrowser.domMap/markAt/glideTo` (`browser.ts`): after code
+    changes the preview's page is compared with how it was (matched by tag,
+    words and class, never position) and the cursor -- drawn into the page, so
+    it is in the streamed frames -- glides to what is new or restyled and
+    outlines it with a name. A served folder is reloaded by the loop on a code
+    change as well as by its file watcher, which misses files replaced whole.
+    `app_preview` click/hover/type/press/scroll use the page as a person would,
+    in the window the person is watching, and are refused while planning.
+    All of it follows the one agent-cursor switch (`state.agentCursor`).
+  - `companion.ts`: when no turn is running and nobody is mid-task, the agent
+    says one short line about what the person just did in a shared window
+    (`agent.remark`, shown in the thread and kept in its history as its own words).
+    A small unwatched model call, so: only for touches worth a word, after they
+    pause, 25s apart and at most 12 an hour, never over a running turn or with
+    nobody looking, the model may answer SKIP, and `collabRemarks` switches it
+    off (Settings -> Working together). A running turn answers in its own words
+    instead, from the presence note.
+  - `merge3.ts` + `editfile.ts` (`edit_file`): the careful way to change a file
+    the person may also edit. The loop scans the folder before each changing
+    call and at the end of each round, and what changed that the agent did not
+    do is the person's: shown as a card tagged "you", told to the agent, leased
+    to them for a while. `edit_file` applies exact replacements, keeps their
+    changes beside the agent's when the two touched different lines, and writes
+    nothing (naming what they did) when they clashed. Not while a background
+    command runs, which also writes files.
+  - `codesearch.ts` (`code_search`): exact, regex and BM25-ranked search over a
+    folder in plain code; walks afresh each time, caches only per-file indexes.
+  - `ledger.ts` (`ledger` tool): the agent's working notes (goal, decisions,
+    facts, next) in the log as `ledger.update`, plus what it touched, read off
+    its calls; said every turn so interrupts and restarts lose nothing.
+  - `readfile.ts` (`read_file`: range / outline / symbol) and `hints.ts` (the
+    nearest paths and page text said inside a failure). A long result's vault
+    id is logged as `tool.stored` and named in the recap.
+  - `toolload.ts` (`tools_enable`): specialist tool sets (pdf, widgets, mcp,
+    schedule, notebooks) are out of the model's list until a message, a PDF, a
+    call or a request brings them in (`tools.enable` in the log).
+    `AUTORA_ALL_TOOLS=1` shows all. A new tool in one of those families is
+    covered by its `match`; a new family goes in `FAMILIES`.
+  - `trace.ts`: `GET /api/sessions/:id/trace`, read from the log.
   - `suggest.ts`: what to suggest, from what is actually on the install --
     one-tap tasks for a new chat, a schedule offered once, next-step chips
     after a reply. Pure, no model call.
@@ -91,7 +176,11 @@ is a sub-project with its own dependencies (see below).
     during quiet hours. There is deliberately no chat-app or third-party
     channel (Telegram, WhatsApp, ntfy): don't add one.
 - Every turn, from any source (the chat box, a job, a watcher), goes through
-  `startTurn()` in `server.ts`, and learning runs after it.
+  `startTurn()` in `server.ts`, and learning runs after it. A turn cut short
+  (Stop, a message sent while it works, a restart) ends with
+  `turn.agent.done {stopped}`; `resume.ts` reads that from the log and the next
+  turn is told what was cut off, so it carries on rather than treating the new
+  message as the whole job (and an Agent-mode build stays a build).
 - `pdf-editor/`: SecurePDF's editor (from blofstedt/SecurePDF), its own
   sub-project with its own React 19 and Tailwind so neither touches the app.
   It runs in a frame sandboxed without an origin (`components/PdfWindow.tsx`)

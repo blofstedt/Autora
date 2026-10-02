@@ -166,6 +166,9 @@ const LOOKS_ONLY = new Set([
   "inventory",
   "memory_search",
   "memory_confirm",
+  "code_search",
+  "read_file",
+  "research",
   "vault_read",
   "artifact_list",
   "artifact_read",
@@ -180,6 +183,8 @@ const LOOKS_ONLY = new Set([
      these, Plan would refuse the very calls that make a plan. */
   "ask_user",
   "todo",
+  "ledger",
+  "tools_enable",
   "set_mode",
   "browser_handoff",
 ]);

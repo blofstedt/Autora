@@ -81,6 +81,8 @@ export const Kind = {
   /** One-tap follow-ups offered under a finished reply. */
   SuggestNext: "suggest.next",
   FileEdit: "file.edit",
+  /** A short word from the agent about what the person just did, said between turns. */
+  AgentRemark: "agent.remark",
   TodoUpdate: "todo.update",
   ModeSwitch: "mode.switch",
   PreviewOpen: "preview.open",

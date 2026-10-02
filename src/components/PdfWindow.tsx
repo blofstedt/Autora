@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAgentCursor } from "../lib/agentCursor";
+import { holdSurface, useCollab } from "../lib/collab";
 import { useDeskState } from "../lib/pdfdesk";
 import { IconDownload, IconFile, IconMaximize, IconMinimize, IconX } from "./Icons";
 
@@ -66,6 +68,25 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
     frame.current?.contentWindow?.postMessage(msg, "*", transfer ?? []);
   }, []);
 
+  /* The agent's cursor: where it just worked, replayed over the page. A choice
+     the person keeps, and never for someone who asked their system for less
+     motion. Only ever a replay -- the file is already changed. */
+  const [cursorOn, setCursorOn] = useAgentCursor();
+  const collab = useCollab();
+  const mine = collab.held.includes("pdf");
+  const cursorRef = useRef(cursorOn);
+  cursorRef.current = cursorOn;
+  const played = useRef(0);
+  const playCues = useCallback(() => {
+    const d = deskRef.current;
+    if (!d.cueSeq || d.cueSeq === played.current) return;
+    played.current = d.cueSeq;
+    if (!cursorRef.current || !d.cues?.length) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    post({ type: "autora:cues", seq: d.cueSeq, cues: d.cues });
+  }, [post]);
+  const toggleCursor = useCallback(() => setCursorOn(!cursorRef.current), [setCursorOn]);
+
   const load = useCallback(async () => {
     const now = deskRef.current;
     const baseRev = now.baseRev ?? 0;
@@ -77,13 +98,16 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
       // The same file with its pages changed keeps the page you were on.
       const keepPage = shown.current.name === latest.name;
       shown.current = { baseRev, name: latest.name ?? "" };
+      // The cues go first: what the agent placed is held back by them, so it must
+      // be told before the objects arrive.
+      playCues();
       post({ type: "autora:load", bytes, name: latest.name, items: latest.items ?? [], baseRev, keepPage }, [bytes]);
       post({ type: "autora:pending", ids: pending.current });
       setTrouble(null);
     } catch (err: any) {
       setTrouble(`The PDF could not be loaded: ${err?.message ?? err}`);
     }
-  }, [post, sessionId]);
+  }, [post, sessionId, playCues]);
 
   const send = useCallback(async (what: "changes" | "pages", body: unknown) => {
     try {
@@ -118,13 +142,20 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
       } else if (msg.type === "autora:base" && msg.bytes instanceof ArrayBuffer) {
         ownPages.current++;
         void send("pages", { bytes: toBase64(msg.bytes), items: Array.isArray(msg.items) ? msg.items : [] });
+      } else if (msg.type === "autora:presence" && typeof msg.id === "string") {
+        // What the person has hold of in the editor: the agent is asked to leave it alone.
+        void fetch(`/api/pdfdesk/${encodeURIComponent(sessionId)}/presence`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: msg.id, kind: msg.kind === "drag" ? "drag" : "select" }),
+        }).catch(() => undefined);
       } else if (msg.type === "autora:pdfjs-data") {
         void pdfjsData(msg, post);
       }
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [load, post, send]);
+  }, [load, post, send, sessionId]);
 
   // New pages from the server: load them, unless they are the ones just sent from here.
   useEffect(() => {
@@ -136,6 +167,11 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
     }
     void load();
   }, [desk.baseRev, load]);
+
+  // Cues that arrive without new pages (the file was the same): play them now.
+  useEffect(() => {
+    if (ready.current && desk.baseRev === shown.current.baseRev) playCues();
+  }, [desk.cueSeq, desk.baseRev, playCues]);
 
   // New objects on the same pages: the agent placed something, or the server echoed the person.
   useEffect(() => {
@@ -217,6 +253,22 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
             Versions · {versions.length}
           </button>
         )}
+        <button
+          className={`pdf-pill${mine ? " is-accept" : ""}`}
+          onClick={() => void holdSurface(sessionId, "pdf", !mine)}
+          aria-pressed={mine}
+          title={mine ? "Let the agent work on the PDF again" : "Work on the PDF yourself; the agent carries on with other work"}
+        >
+          {mine ? "Hand back" : "Take control"}
+        </button>
+        <button
+          className="pdf-pill pdf-cursor-pill"
+          onClick={toggleCursor}
+          aria-pressed={cursorOn}
+          title={cursorOn ? "Stop showing where the agent edits" : "Show where the agent edits, as it edits"}
+        >
+          Agent cursor {cursorOn ? "on" : "off"}
+        </button>
         {desk.working && (
           <a
             className="btn icon ghost"

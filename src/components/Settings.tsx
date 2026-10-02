@@ -1,3 +1,4 @@
+import { CollabSettings } from "./CollabSettings";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   IconBrain, IconCheck, IconChevron, IconGear, IconGlobe, IconMonitor, IconRepeat, IconSpeaker,
@@ -93,6 +94,11 @@ type LoopConfig = {
   checkEvery: number;
 };
 
+type VerifyConfig = {
+  command: string;
+  tries: number;
+};
+
 type RetentionPolicy = {
   sessionDays: number;
   keepSessions: number;
@@ -118,6 +124,8 @@ type SettingsState = {
   /** When a turn is called a loop, and how much is kept. Both sets used to be
       constants in the server's source, invisible and unchangeable. */
   loop?: LoopConfig;
+  /** The project check run when the agent says it is finished. */
+  verify?: VerifyConfig;
   retention?: RetentionPolicy;
   state_file: string;
   credentials: Credential[];
@@ -207,6 +215,7 @@ export function Settings({
   const [budget, setBudget] = useState("");
   const [topUp, setTopUp] = useState("");
   const [loop, setLoop] = useState<LoopConfig | null>(null);
+  const [verify, setVerify] = useState<VerifyConfig | null>(null);
   const [keep, setKeep] = useState<RetentionPolicy | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -220,6 +229,7 @@ export function Settings({
     setBudget(next.budget_usd === null ? "" : String(next.budget_usd));
     setTopUp(next.top_up_usd == null ? "" : String(next.top_up_usd));
     setLoop(next.loop ?? null);
+    setVerify(next.verify ?? null);
     setKeep(next.retention ?? null);
     setKeyDrafts({});
     setModelDrafts({});
@@ -283,8 +293,9 @@ export function Settings({
     budget_usd: budget.trim() === "" ? null : Number(budget),
     top_up_usd: topUp.trim() === "" ? null : Number(topUp),
     ...(loop ? { loop } : {}),
+    ...(verify ? { verify } : {}),
     ...(keep ? { retention: keep } : {}),
-  }), [provider, modelDrafts, fastDrafts, urlDrafts, prompt, budget, topUp, loop, keep]);
+  }), [provider, modelDrafts, fastDrafts, urlDrafts, prompt, budget, topUp, loop, verify, keep]);
 
   const save = useCallback(async (sent: typeof body) => {
     setSaving(true);
@@ -324,6 +335,7 @@ export function Settings({
           ? (next.top_up_usd == null ? "" : String(next.top_up_usd))
           : cur));
       setLoop((cur) => (same(cur, sent.loop ?? null) ? next.loop ?? null : cur));
+      setVerify((cur) => (same(cur, sent.verify ?? null) ? next.verify ?? null : cur));
       setKeep((cur) => (same(cur, sent.retention ?? null) ? next.retention ?? null : cur));
       setSaved(true);
     } catch {
@@ -378,6 +390,7 @@ export function Settings({
     (budget.trim() === "" ? null : Number(budget)) !== (state.budget_usd ?? null) ||
     (topUp.trim() === "" ? null : Number(topUp)) !== (state.top_up_usd ?? null) ||
     JSON.stringify(loop) !== JSON.stringify(state.loop ?? null) ||
+    JSON.stringify(verify) !== JSON.stringify(state.verify ?? null) ||
     JSON.stringify(keep) !== JSON.stringify(state.retention ?? null));
   const budgetOk = budget.trim() === "" || (Number.isFinite(Number(budget)) && Number(budget) >= 0);
   const topUpOk = topUp.trim() === "" || (Number.isFinite(Number(topUp)) && Number(topUp) >= 0);
@@ -689,6 +702,42 @@ export function Settings({
                 <span className="tool-unit">{unit}</span>
               </label>
             ))}
+          </div>
+        </section>
+        )}
+
+        {shows("config") && <CollabSettings />}
+
+        {shows("config") && verify && (
+        <section className="set-card">
+          <h3>Project check</h3>
+          <p className="jf-hint">
+            A command Autora runs itself when the agent says it is finished and has changed
+            something — your linter, tests or build, in the terminal's directory. A failure sends
+            the agent back with the real output; a pass ends the turn. Leave it empty for none.
+          </p>
+          <input
+            className="set-prompt"
+            type="text"
+            value={verify.command}
+            maxLength={500}
+            onChange={(e) => setVerify({ ...verify, command: e.target.value })}
+            placeholder="npm run lint && npm test"
+            aria-label="Project check command"
+            spellCheck={false}
+          />
+          <div className="limit-grid">
+            <label className="tool-opt">
+              <span className="tool-label">Run it at most</span>
+              <input
+                type="number"
+                min={1}
+                max={10}
+                value={verify.tries}
+                onChange={(e) => setVerify({ ...verify, tries: Number(e.target.value) })}
+              />
+              <span className="tool-unit">times a turn</span>
+            </label>
           </div>
         </section>
         )}

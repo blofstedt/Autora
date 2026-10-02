@@ -10,6 +10,7 @@ import type { MarkPhase } from "../lib/activity";
 import { TerminalCell } from "./TerminalCell";
 import { ScreencastCell } from "./ScreencastCell";
 import { FileCell } from "./FileCell";
+import { RemarkCell } from "./RemarkCell";
 import { ToolCell, describeArgs } from "./ToolCell";
 import { TodoCell } from "./TodoCell";
 import { AppPreview } from "./AppPreview";
@@ -802,6 +803,8 @@ const CellView = memo(function CellView({
       return <WidgetCell widget={cell.widget} sessionId={sessionId} canFix={live && !driving} />;
     case "file":
       return <FileCell file={cell.file} />;
+    case "remark":
+      return <RemarkCell text={cell.text} />;
     case "tool":
       return <ToolCell span={cell.span} />;
     case "todo": {

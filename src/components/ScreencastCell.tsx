@@ -1,3 +1,4 @@
+import { holdSurface, useCollab } from "../lib/collab";
 import {
   Children, useCallback, useEffect, useLayoutEffect, useRef, useState,
   type CSSProperties, type ReactNode,
@@ -31,7 +32,7 @@ const VIEWPORT = { w: 1280, h: 800 };
  */
 export function ScreencastCell({
   sessionId, source, url, shots, actions, live, followsFeed = false, current = false,
-  driving = false, waitingOnYou = false, onStop, children,
+  driving: agentDriving = false, waitingOnYou = false, onStop, children,
 }: {
   sessionId: string;
   source: "browser" | "desktop";
@@ -121,6 +122,12 @@ export function ScreencastCell({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [max]);
+
+  /* The person can take the page from the agent at any time and hand it
+     back; while they hold it the agent does not use the browser. */
+  const collab = useCollab();
+  const mine = source === "browser" && collab.held.includes("browser");
+  const driving = agentDriving && !mine;
 
   const watching = !!feed && !held;
   const canUse = source === "browser" && current && watching && !driving;
@@ -480,6 +487,15 @@ export function ScreencastCell({
             <span className="shot-state-short">{state.short}</span>
           </em>
         )}
+        {source === "browser" && current && live && (agentDriving || mine) && (
+          <button
+            className={`cell-act shot-control${mine ? " on" : ""}`}
+            onClick={() => void holdSurface(sessionId, "browser", !mine)}
+            title={mine ? "Let the agent use the browser again" : "Use the browser yourself; the agent carries on with other work"}
+          >
+            {mine ? "Hand back" : "Take control"}
+          </button>
+        )}
         {held && feed && (
           <button className="cell-act" onClick={() => { setHeld(false); setAt(shots.length - 1); }}>
             back to live
@@ -636,6 +652,11 @@ export function ScreencastCell({
             <div className="shot-nudge-layer">
               <div className="shot-nudge" role="status" onPointerUp={(e) => e.stopPropagation()}>
                 <span>{nudge.text}</span>
+                {nudge.stop && (
+                  <button className="shot-nudge-stop" onClick={() => { setNudge(null); void holdSurface(sessionId, "browser", true); }}>
+                    Take control
+                  </button>
+                )}
                 {nudge.stop && onStop && (
                   <button className="shot-nudge-stop" onClick={() => { setNudge(null); onStop(); }}>
                     <IconStop size={12} /> Stop it

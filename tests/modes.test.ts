@@ -91,9 +91,14 @@ async function main() {
   test("reading and looking at a PDF is looking; extracting from it or changing it is not", () => {
     assert.equal(m.looksOnly("pdf_read", { file: "a.pdf", find: ["email"] }), true);
     assert.equal(m.looksOnly("pdf_look", { file: "a.pdf" }), true);
+    assert.equal(m.looksOnly("code_search", { query: "x" }), true);
+    assert.equal(m.looksOnly("app_preview", { action: "look" }), true);
+    for (const action of ["click", "hover", "type", "press", "scroll", "start", "reload"]) {
+      assert.equal(m.looksOnly("app_preview", { action }), false, `${action} changes the app, so it is not looking`);
+    }
     assert.equal(m.looksOnly("pdf_read", { file: "a.pdf", extract: ["all"] }), false);
     assert.equal(m.looksOnly("pdf_read", { file: "a.pdf", extract: "xfa" }), false);
-    for (const name of ["pdf_edit", "pdf_compose", "pdf_pages", "pdf_redact", "pdf_compress"]) {
+    for (const name of ["pdf_edit", "pdf_compose", "pdf_pages", "pdf_redact", "pdf_replace_text", "pdf_compress"]) {
       assert.equal(m.looksOnly(name, { file: "a.pdf" }), false, name);
       assert.ok(findTool(name), `${name} is a tool`);
     }

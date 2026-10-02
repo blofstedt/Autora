@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { useAgentCursor } from "../lib/agentCursor";
+import { holdSurface, useCollab } from "../lib/collab";
 import { previewApi } from "../lib/appApi";
 import { NAMED_KEYS, SENTINEL, inField } from "../lib/pageInput";
 import {
@@ -56,6 +58,9 @@ function isLight(info: ElementInfo | LightInfo): info is LightInfo {
 export function AppPreview({ sessionId, phone }: { sessionId: string; phone: boolean }) {
   const state = usePreviewState();
   const frame = usePreviewFrame();
+  const [cursorOn, setCursorOn] = useAgentCursor();
+  const collab = useCollab();
+  const mine = collab.held.includes("app");
   const api = useMemo(() => previewApi(sessionId), [sessionId]);
   const vp = state.viewport ?? { width: 1280, height: 800 };
   const device: Device = state.device ?? "desktop";
@@ -607,6 +612,24 @@ export function AppPreview({ sessionId, phone }: { sessionId: string; phone: boo
             {errors} error{errors === 1 ? "" : "s"}
           </button>
         )}
+        <button
+          type="button"
+          className={`app-control${mine ? " on" : ""}`}
+          aria-pressed={mine}
+          onClick={() => void holdSurface(sessionId, "app", !mine)}
+          title={mine ? "Let the agent use the window again" : "Use the window yourself; the agent carries on with other work"}
+        >
+          {mine ? "Hand back" : "Take control"}
+        </button>
+        <button
+          type="button"
+          className={`app-cursor${cursorOn ? " on" : ""}`}
+          aria-pressed={cursorOn}
+          onClick={() => setCursorOn(!cursorOn)}
+          title={cursorOn ? "Stop showing where the agent works" : "Show where the agent works, and its cursor, as it builds"}
+        >
+          Agent cursor {cursorOn ? "on" : "off"}
+        </button>
         <button type="button" className="app-icon" onClick={() => void api.close()} title="Close the app window" aria-label="Close the app window">
           <IconX size={15} />
         </button>

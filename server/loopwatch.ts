@@ -63,7 +63,7 @@ function sameness(ok: boolean, result: string): string {
 
 /** What the person and the model see a call called: its name and a little of
     its arguments. */
-function describe(name: string, args: unknown): string {
+export function describe(name: string, args: unknown): string {
   const shown = stable(args);
   if (shown === "{}" || shown === "null") return name;
   return `${name} ${shown.length > 80 ? `${shown.slice(0, 77)}...` : shown}`;

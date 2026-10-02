@@ -22,6 +22,7 @@ import path from "node:path";
 import { isEphemeral } from "./ephemeral";
 import { AUTO_ORDER, PROVIDERS, providerSpec } from "./providers";
 import { LOOP_DEFAULTS, type LoopWatchConfig } from "./loopwatch";
+import { mergeVerify, VERIFY_DEFAULTS, type VerifyConfig } from "./verify";
 import type { McpServerConfig } from "./mcp";
 import { DEFAULT_CAPTCHA, mergeCaptcha, type CaptchaSettings } from "./captcha";
 import { DEFAULT_PROACTIVITY, mergeProactivity, type Proactivity } from "./quiet";
@@ -267,6 +268,13 @@ export interface PersistedState {
   /** Whether the agent looks back over its work after a turn and writes
       down what it learned (as unconfirmed memories). */
   learning: boolean;
+  /** Whether the agent's work is shown as it is done: the cursor in the PDF
+      and app windows, and code typed out in the thread. A presentation only --
+      off, the work is the same and simply appears. */
+  agentCursor: boolean;
+  /** Whether the agent says a short word about what the person does in the
+      windows they share, when no turn is running (server/companion.ts). */
+  collabRemarks: boolean;
   /** The person's time zone (an IANA name such as Europe/Stockholm), or empty
       to follow the machine. The clock every schedule, watcher and quiet hour
       is read on: in the Umbrel container that is UTC unless something sets it,
@@ -275,6 +283,9 @@ export interface PersistedState {
   /** When a turn is called a loop: repeats that earn a note, repeats that
       stop the turn, and how often it is asked to check itself. */
   loop: LoopWatchConfig;
+  /** The project check run when the agent says it is finished (see
+      server/verify.ts). Empty command: off. */
+  verify: VerifyConfig;
   /** How long sessions and artifacts are kept. */
   retention: RetentionPolicy;
   /** What automated runs -- schedules and watchers -- may cost, kept apart
@@ -495,8 +506,11 @@ function blank(): PersistedState {
     captcha: { ...DEFAULT_CAPTCHA, backends: [...DEFAULT_CAPTCHA.backends] },
     proactivity: { ...DEFAULT_PROACTIVITY },
     learning: true,
+    agentCursor: true,
+    collabRemarks: true,
     timezone: "",
     loop: { ...LOOP_DEFAULTS },
+    verify: { ...VERIFY_DEFAULTS },
     retention: { ...RETENTION_DEFAULTS },
     automation: { ...AUTOMATION_DEFAULTS },
     push: defaultPush(),
@@ -519,6 +533,8 @@ function read(): PersistedState {
     if (typeof raw.balanceAt === "number") state.balanceAt = raw.balanceAt;
     if (typeof raw.topUpUsd === "number") state.topUpUsd = raw.topUpUsd;
     if (typeof raw.learning === "boolean") state.learning = raw.learning;
+    if (typeof raw.agentCursor === "boolean") state.agentCursor = raw.agentCursor;
+    if (typeof raw.collabRemarks === "boolean") state.collabRemarks = raw.collabRemarks;
     if (typeof raw.timezone === "string" && validTimezone(raw.timezone)) {
       state.timezone = raw.timezone.trim();
       applyTimezone(state.timezone);
@@ -541,6 +557,7 @@ function read(): PersistedState {
     if (raw.captcha) mergeCaptcha(state.captcha, raw.captcha);
     if (raw.proactivity) mergeProactivity(state.proactivity, raw.proactivity);
     if (raw.loop) mergeLoop(state.loop, raw.loop);
+    if (raw.verify) mergeVerify(state.verify, raw.verify);
     if (raw.retention) mergeRetention(state.retention, raw.retention);
     if (raw.automation) mergeAutomation(state.automation, raw.automation);
     if (raw.push) mergePush(state.push, raw.push);

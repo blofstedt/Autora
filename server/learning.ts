@@ -72,6 +72,10 @@ export function reflectionPrompt(input: {
   reply: string;
   recalled: MemoryRecord[];
   nearby: MemoryRecord[];
+  /** Checks that passed on this turn's work (the project check, a clean page): proof it worked. */
+  proof?: string[];
+  /** What the agent wrote in its own working notes: decisions and facts it had already sorted out. */
+  notes?: string;
 }): string {
   const show = (m: MemoryRecord) =>
     `- ${m.id} [${m.kind}${m.status === "provisional" ? ", unconfirmed" : ""}` +
@@ -85,6 +89,10 @@ export function reflectionPrompt(input: {
       ? `\nHow these tools have been behaving lately. A command or a site that keeps\nfailing is worth a lesson: the procedure that avoids it, not a note that it hurt.` +
         `\n${input.trouble}`
       : "",
+    input.proof?.length
+      ? `\nChecks that passed on this work -- a procedure that ended in a passing check is the best kind to keep, because it is known to work:\n${input.proof.map((p) => `- ${p}`).join("\n")}`
+      : "",
+    input.notes ? `\nThe agent's own working notes (it already sorted these out; keep only what will matter in other sessions):\n${input.notes.slice(0, 1500)}` : "",
     "",
     `The agent's final reply:\n${input.reply.slice(0, 3000) || "(none)"}`,
     "",

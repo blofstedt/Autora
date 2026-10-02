@@ -54,6 +54,8 @@ export type StampType =
 export type ShapeType = "rectangle" | "circle" | "line" | "arrow";
 
 interface ToolbarProps {
+  /** The tool the agent is using right now, ringed as if it had reached for it. */
+  agentTool?: string | null;
   activeMode: ToolMode;
   setMode: (mode: ToolMode) => void;
   textFontSize: number;
@@ -86,6 +88,7 @@ interface ToolbarProps {
 }
 
 export default function Toolbar({
+  agentTool,
   activeMode,
   setMode,
   textFontSize,
@@ -248,7 +251,10 @@ export default function Toolbar({
               title={tool.title}
               onClick={() => handleToolSelect(tool.id)}
               whileTap={{ scale: 0.9 }}
-              className="relative flex items-center justify-center min-w-[38px] min-h-[38px] w-9.5 h-9.5 sm:min-w-[40px] sm:min-h-[40px] sm:w-10 sm:h-10 md:min-w-[38px] md:min-h-[38px] md:w-9.5 md:h-9.5 rounded-full cursor-pointer select-none shrink-0 transition-transform"
+              data-agent-using={agentTool === tool.id ? "true" : undefined}
+              className={`relative flex items-center justify-center min-w-[38px] min-h-[38px] w-9.5 h-9.5 sm:min-w-[40px] sm:min-h-[40px] sm:w-10 sm:h-10 md:min-w-[38px] md:min-h-[38px] md:w-9.5 md:h-9.5 rounded-full cursor-pointer select-none shrink-0 transition-transform ${
+                agentTool === tool.id ? "ring-2 ring-violet-500 ring-offset-2 ring-offset-white dark:ring-offset-slate-800 animate-pulse" : ""
+              }`}
             >
               {isActive && (
                 <motion.div
@@ -275,13 +281,16 @@ export default function Toolbar({
         {/* Signature Action */}
         <motion.button
           id="tool-signature-btn"
+          data-agent-using={agentTool === "signature" ? "true" : undefined}
           title="Digital Signature (S)"
           onClick={() => {
             triggerHaptic("medium");
             onOpenSignatureModal();
           }}
           whileTap={{ scale: 0.9 }}
-          className="flex items-center justify-center min-w-[38px] min-h-[38px] w-9.5 h-9.5 sm:min-w-[40px] sm:min-h-[40px] sm:w-10 sm:h-10 md:min-w-[38px] md:min-h-[38px] md:w-9.5 md:h-9.5 rounded-full cursor-pointer text-cyan-600 bg-cyan-50 dark:bg-cyan-900/40 hover:bg-cyan-100 dark:hover:bg-cyan-800/60 shrink-0"
+          className={`flex items-center justify-center min-w-[38px] min-h-[38px] w-9.5 h-9.5 sm:min-w-[40px] sm:min-h-[40px] sm:w-10 sm:h-10 md:min-w-[38px] md:min-h-[38px] md:w-9.5 md:h-9.5 rounded-full cursor-pointer text-cyan-600 bg-cyan-50 dark:bg-cyan-900/40 hover:bg-cyan-100 dark:hover:bg-cyan-800/60 shrink-0 ${
+            agentTool === "signature" ? "ring-2 ring-violet-500 ring-offset-2 ring-offset-white dark:ring-offset-slate-800 animate-pulse" : ""
+          }`}
         >
           <Signature className="w-4.5 h-4.5" />
         </motion.button>

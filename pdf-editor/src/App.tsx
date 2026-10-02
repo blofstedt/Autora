@@ -78,6 +78,7 @@ import Toolbar, { ToolMode, StampType, ShapeType } from "./components/Toolbar";
 import LayerControl from "./components/LayerControl";
 import HistoryControl from "./components/HistoryControl";
 import PurgeOverlay from "./components/PurgeOverlay";
+import { AgentCues, type Cue, type CueAct, type CueTool } from "./AgentCues";
 import PdfMergeModal from "./components/PdfMergeModal";
 import PdfCompressModal from "./components/PdfCompressModal";
 import PdfSearch from "./components/PdfSearch";
@@ -833,6 +834,18 @@ function MainPdfEditor() {
   /** Autora asks to show one of the agent's changes; and which objects wait for a decision. */
   const [focusRequest, setFocusRequest] = useState<{ id: string | null; page: number; at: number } | null>(null);
   const [pendingIds, setPendingIds] = useState<string[]>([]);
+  /** Where the agent just worked, to be played over the page (see AgentCues). */
+  const [cues, setCues] = useState<{ seq: number; items: Cue[] } | null>(null);
+  /** Objects the agent placed, held back until its cursor lands them. */
+  const [heldIds, setHeldIds] = useState<ReadonlySet<string>>(() => new Set());
+  /** The tool the agent is using now, lit on the toolbar. */
+  const [agentTool, setAgentTool] = useState<CueTool | null>(null);
+  // Whatever happens to the replay, nothing stays held for long.
+  useEffect(() => {
+    if (heldIds.size === 0) return;
+    const t = setTimeout(() => setHeldIds(new Set()), 15_000);
+    return () => clearTimeout(t);
+  }, [heldIds]);
 
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
@@ -856,6 +869,36 @@ function MainPdfEditor() {
       } else if (msg.type === "autora:focus") {
         // The agent's change the person is looking at: go to its page and select it.
         setFocusRequest({ id: typeof msg.id === "string" ? msg.id : null, page: Number(msg.page) || 1, at: Date.now() });
+      } else if (msg.type === "autora:cues" && Array.isArray(msg.cues)) {
+        const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+        const ACTS: CueAct[] = ["retype", "type", "place", "drag", "draw"];
+        const TOOLS: CueTool[] = ["text", "highlighter", "draw", "shape", "note", "stamp", "signature", "image", "redact"];
+        const items: Cue[] = [];
+        for (const c of msg.cues.slice(0, 8)) {
+          const page = num(c?.page), x = num(c?.x), y = num(c?.y), w = num(c?.w), h = num(c?.h);
+          if (page === null || x === null || y === null || w === null || h === null || page < 1 || w < 0 || h < 0) continue;
+          const act: CueAct = ACTS.includes(c?.act) ? c.act : "retype";
+          const tool: CueTool = TOOLS.includes(c?.tool) ? c.tool : "text";
+          const points: { x: number; y: number }[] = [];
+          if (Array.isArray(c?.points)) {
+            for (const p of c.points.slice(0, 80)) {
+              const px = num(p?.x), py = num(p?.y);
+              if (px !== null && py !== null) points.push({ x: px, y: py });
+            }
+          }
+          items.push({
+            page, x, y, w, h, act, tool,
+            from: String(c.from ?? "").slice(0, 200), to: String(c.to ?? "").slice(0, 200),
+            ...(typeof c.itemId === "string" && /^[\w.-]{1,80}$/.test(c.itemId) ? { itemId: c.itemId } : {}),
+            ...(points.length > 1 ? { points } : {}),
+          });
+        }
+        if (items.length > 0) {
+          // What the agent placed waits for its cursor; a failsafe lets all of it go.
+          setHeldIds(new Set(items.flatMap((c) => (c.itemId ? [c.itemId] : []))));
+          setCues({ seq: Number(msg.seq) || Date.now(), items });
+          setFocusRequest({ id: null, page: items[0].page, at: Date.now() });
+        }
       } else if (msg.type === "autora:pending" && Array.isArray(msg.ids)) {
         setPendingIds(msg.ids.filter((i: unknown): i is string => typeof i === "string" && /^[\w.-]{1,80}$/.test(i)));
       } else if (msg.type === "autora:items" && Array.isArray(msg.items)) {
@@ -878,6 +921,19 @@ function MainPdfEditor() {
     window.parent.postMessage({ type: "autora:ready" }, "*");
     return () => window.removeEventListener("message", onMessage);
   }, []);
+
+  /* What is being held in the editor right now -- an object selected or being
+     dragged -- told to Autora every few seconds while it stays so, so the agent
+     leaves it alone and works on something else. Nothing is changed by saying so. */
+  useEffect(() => {
+    const id = draggedElementId ?? selectedAnnotationId;
+    if (!id || !bridge.current.base) return;
+    const kind = draggedElementId || resizeDirection ? "drag" : "select";
+    const say = () => window.parent.postMessage({ type: "autora:presence", id, kind }, "*");
+    say();
+    const t = setInterval(say, 3000);
+    return () => clearInterval(t);
+  }, [selectedAnnotationId, draggedElementId, resizeDirection]);
 
   // What the person did to the objects, told to Autora as changes.
   useEffect(() => {
@@ -5302,6 +5358,7 @@ function MainPdfEditor() {
               {/* Toolbar responsive positioning */}
               <div className="absolute bottom-3 left-1/2 -translate-x-1/2 md:top-1/2 md:-translate-y-1/2 md:bottom-auto md:left-auto md:translate-x-0 md:right-4 z-30 pointer-events-none max-w-[98vw] md:max-w-none">
                 <Toolbar
+                  agentTool={agentTool}
                   activeMode={toolMode}
                   setMode={(mode) => {
                     setToolMode(mode);
@@ -5599,6 +5656,25 @@ function MainPdfEditor() {
                       : "cursor-default"
                   }`}
                 >
+                  {cues && (
+                    <AgentCues
+                      cues={cues.items}
+                      seq={cues.seq}
+                      page={currentPage}
+                      scale={scaleMultiplier}
+                      onDone={() => {
+                        setCues(null);
+                        setHeldIds(new Set());
+                      }}
+                      onReveal={(id) => setHeldIds((held) => {
+                        if (!held.has(id)) return held;
+                        const rest = new Set(held);
+                        rest.delete(id);
+                        return rest;
+                      })}
+                      onTool={setAgentTool}
+                    />
+                  )}
                   {/* Sensitive pattern glow highlights for smart targeting */}
                   {toolMode === "redact" &&
                     sensitiveHighlights.map((det) => {
@@ -5709,7 +5785,8 @@ function MainPdfEditor() {
                       .filter(
                         (ann) =>
                           ann.type === "drawing" &&
-                          ann.pageNumber === currentPage,
+                          ann.pageNumber === currentPage &&
+                          !heldIds.has(ann.id),
                       )
                       .map((ann) => {
                         if (
@@ -5780,7 +5857,8 @@ function MainPdfEditor() {
                     .filter(
                       (ann) =>
                         ann.type !== "drawing" &&
-                        ann.pageNumber === currentPage,
+                        ann.pageNumber === currentPage &&
+                        !heldIds.has(ann.id),
                     )
                     .map((ann) => renderDraggableAnnotation(ann))}
                 </div>

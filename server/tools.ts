@@ -25,6 +25,7 @@
  */
 
 import type { TodoResult } from "./todos";
+import type { LedgerResult } from "./ledger";
 import type { Phase } from "./modes";
 import { callMcpTool, mcpTools, statusOf as mcpStatusOf } from "./mcp";
 import { existing as existingMcp, install as installMcp, noteDeclined, overview as mcpOverview, planOffer, wasDeclined } from "./mcpoffer";
@@ -33,6 +34,9 @@ import {
   listCustomTools, missingArgs, noteCustomRun,
 } from "./customtools";
 import { spawn } from "node:child_process";
+import { searchCode } from "./codesearch";
+import { readFile } from "./readfile";
+import type { EditArgs, EditResult } from "./editfile";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -508,6 +512,48 @@ const TOOLS: ToolSpec[] = [
     },
   },
 
+  {
+    name: "tools_enable",
+    group: "schedule",
+    description:
+      "Bring in a set of tools that is not in your list yet. The console note says which sets exist and what each " +
+      "is for. Call this when the job needs one, then use its tools on your next step; they stay for the rest of " +
+      "the chat. You do not need it for tools you can already see.",
+    parameters: {
+      type: "object",
+      properties: {
+        family: { type: "string", description: "The set to load, by name (pdf, widgets, mcp, schedule, notebooks)." },
+      },
+      required: ["family"],
+    },
+  },
+
+  // -------------------------------------------------------------- ledger --
+  {
+    name: "ledger",
+    group: "schedule",
+    description:
+      "Your working notes for the job in hand, kept for you across interruptions, stops and restarts " +
+      "(a new turn starts without what you worked out in the last one; these are not lost). Record what " +
+      "you settle and what you find out as you go, so it is never worked out twice: decided is a choice " +
+      "and why; learned is a fact that cost a call to find (where something is, how a file is laid out, " +
+      "what a service returned); next is the whole list of what you will do next, in order; goal is the " +
+      "job in a line. forget drops any line holding one of the given words; reset starts again. Short " +
+      "lines. Autora already records which files and pages you touched. Call with no arguments to read " +
+      "the notes back.",
+    parameters: {
+      type: "object",
+      properties: {
+        goal: { type: "string", description: "The job, in one line." },
+        decided: { type: "array", items: { type: "string" }, description: "Choices made, with the reason." },
+        learned: { type: "array", items: { type: "string" }, description: "Facts found out that cost a call." },
+        next: { type: "array", items: { type: "string" }, description: "What you will do next, in order. Replaces the list." },
+        forget: { type: "array", items: { type: "string" }, description: "Drop lines that hold any of these words." },
+        reset: { type: "boolean", description: "Start the notes again." },
+      },
+    },
+  },
+
   // ---------------------------------------------------------- app_preview --
   {
     name: "app_preview",
@@ -519,12 +565,22 @@ const TOOLS: ToolSpec[] = [
       "a folder of files (dir) or opens something already running (url, localhost only). Start it as " +
       "soon as there is something to see, then keep building: hot reload updates it. reload refreshes; " +
       "look returns a picture of the page and its console errors -- use it to check your own work; " +
-      "stop closes it. The person's comments come back as one message beginning [Autora: the person " +
+      "stop closes it. To test what you built, use it as a person would, in the same window the person is " +
+      "watching, with a visible cursor: click and hover take a target (the words on a button or link, a " +
+      "field's label or placeholder, or a CSS selector); type puts text into a target (or into the field " +
+      "already focused) and submit presses Enter after; press sends a key (Enter, Tab, Escape, ArrowDown); " +
+      "scroll moves the page by dy pixels (negative is up). Each returns a picture of the page afterwards, " +
+      "so you see what happened. The person's comments come back as one message beginning [Autora: the person " +
       "reviewed the app preview; make those changes in the source.",
     parameters: {
       type: "object",
       properties: {
-        action: { type: "string", description: "start, reload, look or stop." },
+        action: { type: "string", description: "start, reload, look, stop, click, hover, type, press or scroll." },
+        target: { type: "string", description: "click, hover, type: what to act on -- words on it, a label, a placeholder, or a CSS selector." },
+        text: { type: "string", description: "type: the text to type." },
+        key: { type: "string", description: "press: a key, e.g. Enter, Tab, Escape, ArrowDown, Control+A." },
+        dy: { type: "number", description: "scroll: pixels down (negative for up). Default 500." },
+        submit: { type: "boolean", description: "type: press Enter afterwards." },
         command: { type: "string", description: "start: the dev server command, e.g. npm run dev." },
         cwd: { type: "string", description: "start: where to run it." },
         dir: { type: "string", description: "start: a folder of static files to serve." },
@@ -575,8 +631,10 @@ const TOOLS: ToolSpec[] = [
         name: { type: "string", description: "Lowercase, underscores, e.g. check_backup." },
         description: { type: "string", description: "What it does and when to use it, for your future self." },
         parameters: {
-          type: "array",
-          description: "The arguments it takes.",
+          // The handler takes either: a list of {name, ...} or a JSON Schema
+          // object, which is what models reach for first.
+          type: ["array", "object"],
+          description: "The arguments it takes: a list of {name, description, required}, or a JSON Schema object.",
           items: {
             type: "object",
             properties: {
@@ -1461,6 +1519,113 @@ const TOOLS: ToolSpec[] = [
     },
   },
 
+  {
+    name: "edit_file",
+    group: "terminal",
+    description:
+      "Change a file in the working folder, or make a new one, without losing anything the person saved to it " +
+      "meanwhile. Prefer this to sed or a shell redirect for any file the person might also have open: it " +
+      "compares the file with what you last read, keeps their changes next to yours when you touched different " +
+      "lines, and writes nothing -- telling you exactly what they did -- when you both changed the same lines. " +
+      "edits is a list of {old, new}: old is the exact text to replace (it must be in the file once, or set all), " +
+      "new is what it becomes. content makes a whole new file, or with overwrite replaces one. Paths are from the " +
+      "terminal's directory. Read the lines you are changing first; keep old short but exact.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "The file, from the terminal's directory." },
+        edits: {
+          type: "array",
+          description: "What to replace, in order.",
+          items: {
+            type: "object",
+            properties: {
+              old: { type: "string", description: "The exact text to replace." },
+              new: { type: "string", description: "What it becomes." },
+              all: { type: "boolean", description: "Replace every place it occurs." },
+            },
+            required: ["old", "new"],
+          },
+        },
+        content: { type: "string", description: "A whole file: to make a new one." },
+        overwrite: { type: "boolean", description: "With content: replace a file that already exists." },
+      },
+      required: ["path"],
+    },
+    risky: true,
+  },
+
+  {
+    name: "code_search",
+    group: "terminal",
+    description:
+      "Find where something is in a folder of code, without reading files one at a time. Plain code does the " +
+      "searching, not a model, so it is fast and nothing in it is a guess. Three ways: ranked (the default) finds " +
+      "the places most about some words -- \"fetch user\" finds fetchUserById and fetch_user_by_id -- and returns each " +
+      "with its best lines; exact finds every line holding some text; regex finds every line matching a pattern. " +
+      "Results are path:line, so read just that place afterwards (sed -n 'START,ENDp' file) instead of the whole " +
+      "file. It skips node_modules, build output, hidden folders, environment files and binaries. Start here when " +
+      "you do not know where something lives; use the terminal's grep only for something this cannot say.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Words to rank by, or the exact text, or a regular expression." },
+        mode: { type: "string", enum: ["ranked", "exact", "regex"], description: "Default ranked." },
+        path: { type: "string", description: "A folder to look in, from the terminal's directory. Default: the terminal's directory." },
+        glob: { type: "string", description: "Only files matching this: \"*.ts\", \"src/**/*.tsx\"." },
+        case_sensitive: { type: "boolean", description: "For exact and regex. Default any case." },
+        max: { type: "number", description: "How many places to return (ranked) -- default 8, at most 30." },
+      },
+      required: ["query"],
+    },
+  },
+
+  {
+    name: "read_file",
+    group: "terminal",
+    description:
+      "Read a text file, or part of one, with line numbers -- without the terminal. By default the first 200 " +
+      "lines; start and end read a range. outline lists the file's functions, classes and headings with their " +
+      "line numbers, so a large file costs a few lines to understand; symbol returns the whole body of one " +
+      "function, class or heading by name. Prefer outline then symbol to cat-ing a big file. Paths are from the " +
+      "terminal's directory. Reads only: use edit_file to change a file.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "The file, from the terminal's directory." },
+        start: { type: "number", description: "First line, from 1." },
+        end: { type: "number", description: "Last line, inclusive. At most 600 lines at a time." },
+        outline: { type: "boolean", description: "List declarations and headings with line numbers." },
+        symbol: { type: "string", description: "Return the body of the declaration with this name." },
+      },
+      required: ["path"],
+    },
+  },
+
+  {
+    name: "research",
+    group: "schedule",
+    description:
+      "Hand a self-contained question to a separate research worker and get a short report back. The worker has a " +
+      "clean context and read-only tools (code search, read-only commands, files, PDFs, web search where available), " +
+      "does the looking, and returns findings with where it saw each -- none of its searching or reading enters this " +
+      "conversation. Use it when answering needs a lot of looking and you only need the conclusion: \"where is X " +
+      "handled and what does it do?\", \"which of these files uses Y?\", \"what does this library say about Z?\". " +
+      "Do not use it for something one search answers, or for anything that has to change a file: it cannot. Write the " +
+      "question so it stands alone -- the worker has not seen this conversation -- and say what you need back.",
+    parameters: {
+      type: "object",
+      properties: {
+        question: { type: "string", description: "What to find out, complete in itself, and what form the answer should take." },
+        questions: {
+          type: "array",
+          items: { type: "string" },
+          description: "Two or three independent questions, each complete in itself. They are looked into at the same time by separate workers and come back together, so use this instead of calling research several times.",
+        },
+      },
+    },
+  },
+
   // ---------------------------------------------------------------- PDFs --
   {
     name: "pdf_read",
@@ -1536,7 +1701,7 @@ const TOOLS: ToolSpec[] = [
       "font), image, check, cross, rect, ellipse, line, arrow, path, highlight (a box, or every match of some " +
       "text) and note (a comment). Positions are points from the top-left of the page as shown -- read them " +
       "off pdf_read, or pdf_look with grid. Drawing over something hides it but does not remove it: pdf_redact " +
-      "takes text out. The file opens in the PDF window beside the conversation, where what you add stays an " +
+      "takes text out, and pdf_replace_text changes the words a file already has. The file opens in the PDF window beside the conversation, where what you add stays an " +
       "object the person can move, change or remove, and they can add their own; edit the same file again to " +
       "carry on with it. Everything you add, change or remove is marked in the window for the person to accept or " +
       "decline one by one (a declined change is undone and you are told), and each state of the file is kept as a " +
@@ -1774,6 +1939,44 @@ const TOOLS: ToolSpec[] = [
         output: PDF_OUTPUT,
       },
       required: ["file"],
+    },
+  },
+  {
+    name: "pdf_replace_text",
+    group: "files",
+    description:
+      "Change words that are already in a PDF -- a name, an amount, a date, a typo -- and save the result as a new " +
+      "artifact shown in the conversation. This edits the file's own text: where the page's font can write the new " +
+      "words they are rewritten in place, in the same typeface, and stay selectable and searchable; where it cannot " +
+      "(a letter the file's cut-down font never drew) the old words are taken out of the file and the new ones drawn in " +
+      "a built-in font of the same kind, colour and size. Either way the old words are gone from the bytes, and the " +
+      "rest of the page stays vector. Use this, not pdf_edit, to change what a page says: pdf_edit only draws on top, " +
+      "and covering words with a white box leaves them in the file. It does not work on a scan (a picture of text has " +
+      "no words); pdf_read find shows whether the words are text. find must be the words as pdf_read shows them. " +
+      "Words are not reflowed: if the new words are longer or shorter, text the file places separately on the same line stays put. " +
+      "Give every change in one call. Look at the result with pdf_look before saying it is done.",
+    parameters: {
+      type: "object",
+      properties: {
+        file: PDF_FILE,
+        password: PDF_PASSWORD,
+        replace: {
+          type: "array",
+          description: "The changes, each made wherever its words appear.",
+          items: {
+            type: "object",
+            properties: {
+              find: { type: "string", description: "The words as they are now. Spacing between words does not matter." },
+              with: { type: "string", description: "What they become. Empty to delete them." },
+              ignore_case: { type: "boolean", description: "Match any capitalisation. Default exact." },
+            },
+            required: ["find", "with"],
+          },
+        },
+        pages: { type: "string", description: "Which pages: \"1-3,7\", \"last\". Default all." },
+        output: PDF_OUTPUT,
+      },
+      required: ["file", "replace"],
     },
   },
   {
@@ -2210,6 +2413,8 @@ export function renderCall(spec: ToolSpec, args: Record<string, any>): string {
       return `update memory ${args.id}`;
     case "memory_forget":
       return `forget memory ${args.id}${args.replaced_by ? ` (replaced by ${args.replaced_by})` : ""}`;
+    case "read_file":
+      return `read ${args.path}${args.symbol ? ` (${args.symbol})` : args.outline ? " (outline)" : ""}`;
     case "vault_read":
       return args.search
         ? `search vault artifact ${args.id} for "${args.search}"`
@@ -2310,6 +2515,15 @@ export interface ToolContext {
   browserChanged: () => void;
   /** Start forwarding desktop frames to this session. */
   watchDesktop: () => void;
+  /** Change a file so that what the person saved meanwhile is kept (see
+      server/editfile.ts). Absent where there is no folder to work in. */
+  code?: { edit: (args: EditArgs) => EditResult };
+  /** Why something the person is using may not be touched right now (see
+      server/presence.ts), or null. `subject` is an object id or a file. */
+  held?: (surface: "pdf" | "app" | "browser" | "code", subject: string) => string | null;
+  /** Hand a question to a research worker with its own context (see
+      server/subagent.ts) and get its report back. Absent inside the worker. */
+  research?: (question: string) => Promise<string>;
   /** True once the turn has been interrupted; long tools should give up. */
   cancelled: () => boolean;
   /** Register a kill switch so an interrupt can stop a running command. */
@@ -2343,12 +2557,20 @@ export interface ToolContext {
   /** The session's to-do list: what the person watches the work tick off.
       Absent where there is no session to show one in. */
   todos?: (action: Record<string, any>) => TodoResult;
+  /** Folders that are Autora's own data, never read or edited as the agent's files. */
+  protectedPaths?: string[];
+  /** Bring in a set of tools (see toolload.ts); says what came in. */
+  enableTools?: (family: string) => { ok: boolean; summary: string };
+  /** The chat's working notes (see ledger.ts). */
+  ledger?: (action: Record<string, any>) => LedgerResult;
   /** The app window: what the agent builds, shown beside the conversation. */
   preview?: {
     start: (args: { command?: string; cwd?: string; dir?: string; url?: string; port?: number }) => Promise<{ ok: boolean; summary: string }>;
     stop: () => Promise<{ ok: boolean; summary: string }>;
     reload: () => Promise<{ ok: boolean; summary: string }>;
     look: () => Promise<{ ok: boolean; summary: string; png?: Buffer }>;
+    /** Use the page as a person would: click, hover, type, press a key, scroll. */
+    act: (args: { action: string; target?: string; text?: string; key?: string; dy?: number; submit?: boolean }) => Promise<{ ok: boolean; summary: string; png?: Buffer }>;
   };
   /** Agent mode's switch between planning and building. Absent where there is
       no session to switch. */
@@ -2366,6 +2588,9 @@ export interface ToolOutcome {
       rather than told about. The tool was asked for a look, and text about a
       picture is not a look. */
   images?: ChatImage[];
+  /** Not done because the person is using it: said to the agent, and never
+      counted as a failure. */
+  held?: boolean;
 }
 
 /**
@@ -3199,6 +3424,58 @@ async function runToolUnredacted(
         return await runCommand(command, cwd, settings.timeout, ctx);
       }
 
+      case "research": {
+        if (!ctx.research) return { ok: false, summary: "A research worker cannot start another one. Answer from what you can look at yourself." };
+        const many = (Array.isArray(args.questions) ? args.questions : []).map((q: unknown) => String(q ?? "").trim()).filter(Boolean).slice(0, 3);
+        const one = String(args.question ?? "").trim();
+        if (one && !many.includes(one)) many.unshift(one);
+        const questions = many.slice(0, 3);
+        if (questions.length === 0) return { ok: false, summary: "Say what to find out: question, or questions for several at once." };
+        if (questions.length === 1) {
+          return { ok: true, summary: await ctx.research(questions[0]), preview: "research report" };
+        }
+        /* Separate workers, at the same time: each has a clean context, so they
+           cannot step on one another, and the wait is the slowest one, not the sum. */
+        const reports = await Promise.all(questions.map((q: string) => ctx.research!(q).catch((err: Error) => `The worker failed: ${String(err.message).split("\n")[0]}`)));
+        return {
+          ok: true,
+          summary: reports.map((r, i) => `Question ${i + 1}: ${questions[i]}\n${r}`).join("\n\n---\n\n"),
+          preview: `${questions.length} research reports`,
+        };
+      }
+
+      case "edit_file": {
+        if (!ctx.code) return { ok: false, summary: "There is no folder to edit files in, in this chat." };
+        const r = ctx.code.edit({
+          path: String(args.path ?? ""),
+          edits: Array.isArray(args.edits) ? args.edits.map((e: any) => ({ old: String(e?.old ?? ""), new: String(e?.new ?? ""), all: e?.all === true })) : undefined,
+          content: typeof args.content === "string" ? args.content : undefined,
+          overwrite: args.overwrite === true,
+        });
+        return { ok: r.ok, summary: r.summary, preview: r.ok ? (r.wrote?.created ? "created a file" : "edited a file") : "not written" };
+      }
+
+      case "code_search": {
+        const where = String(args.path ?? "").trim();
+        const found = searchCode({
+          root: where ? path.resolve(terminalDir(), where) : terminalDir(),
+          query: String(args.query ?? ""),
+          mode: args.mode === "exact" || args.mode === "regex" ? args.mode : "ranked",
+          glob: typeof args.glob === "string" ? args.glob : undefined,
+          caseSensitive: args.case_sensitive === true,
+          max: typeof args.max === "number" ? args.max : undefined,
+        });
+        return { ok: found.ok, summary: found.text, preview: found.ok ? `${found.files} files searched` : "no search" };
+      }
+
+      case "read_file": {
+        const r = readFile(
+          { path: String(args.path ?? ""), start: args.start, end: args.end, outline: args.outline === true, symbol: typeof args.symbol === "string" ? args.symbol : undefined },
+          { root: terminalDir(), protect: ctx.protectedPaths ?? [] },
+        );
+        return { ok: r.ok, summary: r.text, preview: r.ok ? String(args.path ?? "") : "not read" };
+      }
+
       // --------------------------------------------------- background --
       case "run_background": {
         const command = String(args.command ?? "").trim();
@@ -3423,7 +3700,15 @@ async function runToolUnredacted(
           const picture = r.png ? pictureFor(r.png, "image/png") : null;
           return { ok: r.ok, summary: r.summary, preview: r.ok ? "looked at the app" : undefined, ...(picture ? { images: [picture] } : {}) };
         }
-        return { ok: false, summary: "action is start, reload, look or stop." };
+        if (["click", "hover", "type", "press", "scroll"].includes(action)) {
+          const r = await ctx.preview.act({
+            action, target: args.target === undefined ? undefined : String(args.target), text: args.text === undefined ? undefined : String(args.text),
+            key: args.key === undefined ? undefined : String(args.key), dy: args.dy === undefined ? undefined : Number(args.dy), submit: args.submit === true,
+          });
+          const picture = r.png ? pictureFor(r.png, "image/png") : null;
+          return { ok: r.ok, summary: r.summary, preview: r.ok ? `${action} in the app` : undefined, ...(picture ? { images: [picture] } : {}) };
+        }
+        return { ok: false, summary: "action is start, reload, look, stop, click, hover, type, press or scroll." };
       }
 
       case "set_mode": {
@@ -3446,6 +3731,18 @@ async function runToolUnredacted(
           summary: result.summary,
           ...(result.preview ? { preview: result.preview } : {}),
         };
+      }
+
+      case "tools_enable": {
+        if (!ctx.enableTools) return { ok: false, summary: "There is nothing to load here." };
+        const r = ctx.enableTools(String(args.family ?? "").trim().toLowerCase());
+        return { ok: r.ok, summary: r.summary, preview: r.ok ? String(args.family) : undefined };
+      }
+
+      case "ledger": {
+        if (!ctx.ledger) return { ok: false, summary: "There are no working notes to write to in this chat." };
+        const result = ctx.ledger(args as Record<string, any>);
+        return { ok: result.ok, summary: result.summary, ...(result.preview ? { preview: result.preview } : {}) };
       }
 
       // -------------------------------------------------------- browser --
@@ -4217,6 +4514,7 @@ async function runToolUnredacted(
       case "pdf_compose":
       case "pdf_pages":
       case "pdf_redact":
+      case "pdf_replace_text":
       case "pdf_compress":
         return await runPdfTool(spec.name, args, {
           session: ctx.session,
@@ -4230,6 +4528,7 @@ async function runToolUnredacted(
           // The PDF window shows the work; an incognito chat keeps nothing on
           // disk, so it works on files without one.
           ...(ctx.memory.incognito ? {} : { desk: deskHooks(ctx.session) }),
+          ...(ctx.held ? { held: (id: string) => ctx.held!("pdf", id) } : {}),
         });
 
       // --------------------------------------------------------- memory --
@@ -4578,7 +4877,7 @@ export async function capabilityBriefing(): Promise<string> {
   );
   lines.push(windows.pdf.enabled
     ? "- PDFs: always available. Tools: pdf_read, pdf_look, pdf_edit, pdf_compose, " +
-      "pdf_pages, pdf_redact, pdf_compress. To write a report or any document as a PDF, " +
+      "pdf_pages, pdf_redact, pdf_replace_text, pdf_compress. To write a report or any document as a PDF, " +
       "use pdf_compose (headings, paragraphs, tables, sources; it lays out the pages and keeps " +
       "the document so you can update a section when research turns up something new, " +
       "rather than starting again). For any PDF -- one the person uploaded, one on " +

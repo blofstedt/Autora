@@ -35,6 +35,9 @@ import { signIns } from "./server/signins";
 import { ensureHostNames } from "./server/hosts";
 import { forgetSpeech, speak as synthesise, speakStream, speechStatus } from "./server/speech";
 import { attachDictation, dictationStatus } from "./server/dictation";
+import { missingPathIn, pathHint } from "./server/hints";
+import { FAMILIES, familyIds, loadedFamilies, loadedFromLog, unloadedIndex, withoutUnloaded } from "./server/toolload";
+import { applyLedger, latestLedger, ledgerBriefing, renderLedger, touched as touchedThings } from "./server/ledger";
 import { applyTodos, latestTodos, todoBriefing, unfinishedTodos } from "./server/todos";
 import { replyStyle, standingBlock, standingReminder } from "./server/prompt";
 import { WebPush, cleanSubscription } from "./server/webpush";
@@ -83,10 +86,22 @@ import { mergeCaptcha } from "./server/captcha";
 import { inQuiet, mergeProactivity, quietBriefing } from "./server/quiet";
 import {
   askAbout, askReason, cleanAskWhen, isPermissions, isWorkMode, legacyPermissions, modeBriefing,
-  permissionBriefing, permissionsOf, phaseFor, planRefusal, PERMISSION_INFO, WORK_MODES, workMode,
+  looksOnly, permissionBriefing, permissionsOf, phaseFor, planRefusal, readOnlyCommand, PERMISSION_INFO, WORK_MODES, workMode,
   type Permissions, type Phase, type WorkMode,
 } from "./server/modes";
-import { LoopWatch } from "./server/loopwatch";
+import { LoopWatch, describe as describeCall } from "./server/loopwatch";
+import { ErrorBudget } from "./server/errorbudget";
+import { forgetPresence, presenceFor, type Surface } from "./server/presence";
+import { cleanRemark, REMARK_SYSTEM, remarkPrompt, RemarkGate, SETTLE_MS as REMARK_SETTLE_MS, WINDOW_MS as REMARK_WINDOW_MS, worthRemarking } from "./server/companion";
+import { editFile, type EditArgs } from "./server/editfile";
+import { diffDom, type ChangeCue, type DomItem } from "./server/domdiff";
+import { Workspace, type DiffLine, type FileChange as CodeChange } from "./server/codediff";
+import { runSubagent } from "./server/subagent";
+import { checkLine, failedNote, mergeVerify, previewNote, previewProblems, type CheckResult } from "./server/verify";
+import { buildTrace, traceText } from "./server/trace";
+import { keepBudget, loadBudget } from "./server/budgetstore";
+import { interruptedWork, resumeNote, type InterruptedWork, type ResumeEvent } from "./server/resume";
+import { checkArgs } from "./server/argcheck";
 import { healthBriefing, recordOutcome, targetOf, toolHealth } from "./server/toolhealth";
 import { Scheduler, type Job, type JobWatch } from "./server/scheduler";
 import {
@@ -98,7 +113,7 @@ import {
   addressIn, DEVICES, isDevice, isLocalUrl, localAddress, serveFolder, waitForServer,
   type Device, type StaticServer,
 } from "./server/preview";
-import { deskBriefing, deskRoutes, deskState, dropDesk, onDeskChange, serveEditor } from "./server/pdfdesk";
+import { deskBriefing, deskRoutes, deskState, dropDesk, onDeskChange, onDeskTouch, serveEditor } from "./server/pdfdesk";
 import {
   pickExpression, reviewMessage, safeStyle, type ElementInfo, type ReviewComment, type StyleChange,
 } from "./server/pick";
@@ -417,6 +432,12 @@ function forgetSession(id: string) {
   // The app window's page, file server, watcher and dev server go with it.
   const gone = sessions.get(id);
   if (gone) void previewStop(gone, false).catch(() => undefined);
+  forgetPresence(id);
+  presenceSent.delete(id);
+  const remarkTimer = remarkTimers.get(id);
+  if (remarkTimer) clearTimeout(remarkTimer);
+  remarkTimers.delete(id);
+  remarkGates.delete(id);
   previewKept.delete(id);
   clearFrame(id);
   dropSession(id);
@@ -646,6 +667,84 @@ function broadcastLiveStatus(session: Session) {
  * resumable, and the feed, which is whatever is happening now and is gone if
  * you were not looking.
  */
+/* Who is touching what, told to the page (server/presence.ts). Sent when it
+   changes, and again a moment after a lease would have run out, so the page
+   stops saying someone is working on a thing they have let go of. */
+const presenceSent = new Map<string, string>();
+const presenceTimers = new Map<string, NodeJS.Timeout>();
+
+function announcePresence(sessionId: string) {
+  const view = presenceFor(sessionId).view();
+  const raw = JSON.stringify(view);
+  if (presenceSent.get(sessionId) !== raw) {
+    presenceSent.set(sessionId, raw);
+    sendEphemeral(sessionId, { type: "presence", session: sessionId, state: view });
+  }
+  if (view.active.length > 0 && !presenceTimers.has(sessionId)) {
+    const t = setTimeout(() => {
+      presenceTimers.delete(sessionId);
+      announcePresence(sessionId);
+    }, 1_500);
+    t.unref?.();
+    presenceTimers.set(sessionId, t);
+  }
+}
+
+/* A short word from the agent about what the person just did, once they pause
+   -- only when no turn is running (a running turn answers in its own words),
+   only for what is worth a word, spaced out and capped (server/companion.ts). */
+const remarkGates = new Map<string, RemarkGate>();
+const remarkTimers = new Map<string, NodeJS.Timeout>();
+
+function scheduleRemark(sessionId: string) {
+  if (!state.collabRemarks) return;
+  const was = remarkTimers.get(sessionId);
+  if (was) clearTimeout(was);
+  const t = setTimeout(() => {
+    remarkTimers.delete(sessionId);
+    const session = sessions.get(sessionId);
+    if (session) void remarkOn(session).catch((err) => log("debug", "companion", `no remark: ${err?.message ?? err}`));
+  }, REMARK_SETTLE_MS);
+  t.unref?.();
+  remarkTimers.set(sessionId, t);
+}
+
+async function remarkOn(session: Session): Promise<void> {
+  if (!state.collabRemarks || session.busy) return;
+  // Nobody looking: nobody to say it to.
+  if (!(sessionSockets.get(session.id)?.size)) return;
+  const touches = presenceFor(session.id).recent(REMARK_WINDOW_MS);
+  if (!worthRemarking(touches)) return;
+  let gate = remarkGates.get(session.id);
+  if (!gate) remarkGates.set(session.id, (gate = new RemarkGate()));
+  if (!gate.allowed()) return;
+  gate.made();
+
+  let request = "";
+  let lastSaid = "";
+  for (let i = session.events.length - 1; i >= 0 && (!request || !lastSaid); i -= 1) {
+    const e = session.events[i];
+    if (!request && e.kind === "turn.user") request = String(e.payload?.shown ?? e.payload?.text ?? "");
+    if (!lastSaid && (e.kind === "agent.remark" || (e.kind === "turn.agent.text" && !e.payload?.local))) lastSaid = String(e.payload?.text ?? "");
+  }
+  const said = cleanRemark(await backgroundCall(
+    session.id, REMARK_SYSTEM, remarkPrompt({ request, lastSaid, actions: touches.map((t) => t.detail) }), 90,
+  ));
+  // A turn that began while this was being thought will answer in its own words.
+  if (!said || session.busy) return;
+  emitEvent(session, "agent.remark", "agent", { text: said, surface: touches[touches.length - 1].surface });
+}
+
+/** The person did something on a surface the agent shares with them. */
+function touchPresence(
+  sessionId: string, surface: Surface, subject: string, kind: string, detail: string,
+  opts: { leaseMs?: number; tell?: boolean } = {},
+) {
+  presenceFor(sessionId).touch(surface, subject, kind, detail, opts);
+  announcePresence(sessionId);
+  scheduleRemark(sessionId);
+}
+
 function sendEphemeral(sessionId: string, message: Record<string, unknown>) {
   const sockets = sessionSockets.get(sessionId);
   if (!sockets || sockets.size === 0) return;
@@ -813,7 +912,16 @@ interface PreviewRun {
   /** The dev server it started has exited: what it last said, for the window. */
   serverDown: { exit: number | null; last: string } | null;
   /** Pending work to cancel when it closes. */
-  timers: { reload: NodeJS.Timeout | null; console: NodeJS.Timeout | null; job: NodeJS.Timeout | null };
+  timers: { reload: NodeJS.Timeout | null; console: NodeJS.Timeout | null; job: NodeJS.Timeout | null; follow: NodeJS.Timeout | null };
+  /** What was on the page at the last look, and at which address, to find
+      what a change touched (server/domdiff.ts). */
+  dom: DomItem[] | null;
+  domUrl: string | null;
+  /** A look at what changed is under way, and another was asked for meanwhile. */
+  following: boolean;
+  again: boolean;
+  /** Where the cursor last went, and a number that goes up each time. */
+  cues: { seq: number; items: ChangeCue[] };
 }
 const previews = new Map<string, PreviewRun>();
 
@@ -827,7 +935,8 @@ function previewRunFor(session: Session, device: Device): PreviewRun {
   const run: PreviewRun = {
     live: null as unknown as LiveBrowser,
     opened: false, openedAt: 0, url: null, title: null, device, how: null, serve: null, watch: null, job: null, comments: [],
-    serverDown: null, timers: { reload: null, console: null, job: null },
+    serverDown: null, timers: { reload: null, console: null, job: null, follow: null },
+    dom: null, domUrl: null, following: false, again: false, cues: { seq: 0, items: [] },
   };
   const current = () => previews.get(session.id) === run && run.opened;
   run.live = new LiveBrowser({
@@ -879,6 +988,7 @@ function previewState(session: Session) {
     consoleErrors: errors.slice(-6).map((e) => e.text),
     serverDown: run.serverDown,
     fields: run.live.status().fields,
+    cues: run.cues,
   };
 }
 
@@ -886,10 +996,196 @@ function broadcastPreview(session: Session) {
   sendEphemeral(session.id, { type: "preview", session: session.id, state: previewState(session) });
 }
 
+/** A picture of the preview and its console, as the agent is given it. `done`
+    says what was just done to the page, ahead of what it now looks like. */
+async function previewLook(run: PreviewRun, done: string): Promise<{ ok: boolean; summary: string; png: Buffer }> {
+  const png = await run.live.capture();
+  const size = run.live.viewport();
+  const log = run.live.consoleTail(12);
+  return {
+    ok: true,
+    png,
+    summary:
+      (done ? `${done}\n` : "") +
+      `The preview at ${run.url}, ${size.width}×${size.height}, is in this result.` +
+      (run.serverDown
+        ? `\nThe dev server it was started with has stopped (exit ${run.serverDown.exit ?? "unknown"})` +
+          `${run.serverDown.last ? `; it last said: ${run.serverDown.last}` : ""}. Start it again with app_preview start.`
+        : "") +
+      (log.length
+        ? `\nThe page's console:\n${log.map((e) => `  [${e.kind}] ${e.text}`).join("\n")}`
+        : "\nThe page's console is clean."),
+  };
+}
+
+/**
+ * The agent uses the app as a person would, in the window the person is
+ * watching: the pointer travels to a target and clicks it, keys are typed at a
+ * readable pace, the page scrolls. Real input, so what the app does is what it
+ * does for anyone -- and the cursor drawn into the page is in the frames. What
+ * the page looks like afterwards comes back with it.
+ */
+async function previewAct(
+  session: Session,
+  args: { action: string; target?: string; text?: string; key?: string; dy?: number; submit?: boolean },
+): Promise<{ ok: boolean; summary: string; png?: Buffer }> {
+  const run = previews.get(session.id);
+  if (!run?.opened) return { ok: false, summary: "There is no preview open. Start one with app_preview start." };
+  // Whoever is using the window has it: the agent never moves a pointer under a person's hand.
+  const inUse = presenceFor(session.id).blocked("app");
+  if (inUse) return { ok: false, summary: inUse };
+  const live = run.live;
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 450));
+  const aimed = async (target: string): Promise<{ x: number; y: number; said: string } | { error: string }> => {
+    const found = await live.findTarget(target);
+    if (!found.ok) {
+      return { error: `${found.error}${found.options.length ? ` On the page: ${found.options.map((o) => JSON.stringify(o)).join(", ")}.` : ""}` };
+    }
+    const x = found.x + found.w / 2, y = found.y + found.h / 2;
+    if (state.agentCursor) await live.glideTo(x, y);
+    return { x, y, said: `${found.tag}${found.label ? ` ${JSON.stringify(found.label)}` : ""}${found.count > 1 ? ` (the first of ${found.count} matches)` : ""}` };
+  };
+  try {
+    let done = "";
+    switch (args.action) {
+      case "click": {
+        if (!args.target?.trim()) return { ok: false, summary: "click needs a target: the words on it, its label, or a CSS selector." };
+        const at = await aimed(args.target.trim());
+        if ("error" in at) return { ok: false, summary: at.error };
+        await live.mouseClick(at.x, at.y);
+        await settle();
+        done = `Clicked ${at.said}.`;
+        break;
+      }
+      case "hover": {
+        if (!args.target?.trim()) return { ok: false, summary: "hover needs a target: the words on it, its label, or a CSS selector." };
+        const at = await aimed(args.target.trim());
+        if ("error" in at) return { ok: false, summary: at.error };
+        await live.glideTo(at.x, at.y);
+        await settle();
+        done = `Hovered over ${at.said}.`;
+        break;
+      }
+      case "type": {
+        const text = String(args.text ?? "");
+        if (!text) return { ok: false, summary: "type needs text." };
+        let where = "the focused field";
+        if (args.target?.trim()) {
+          const at = await aimed(args.target.trim());
+          if ("error" in at) return { ok: false, summary: at.error };
+          await live.mouseClick(at.x, at.y);
+          where = at.said;
+        }
+        await live.typeText(text);
+        if (args.submit) await live.keyboardPress("Enter");
+        await settle();
+        done = `Typed ${JSON.stringify(text.length > 60 ? `${text.slice(0, 57)}...` : text)} into ${where}${args.submit ? " and pressed Enter" : ""}.`;
+        break;
+      }
+      case "press": {
+        const key = String(args.key ?? "").trim();
+        if (!key) return { ok: false, summary: "press needs a key, e.g. Enter, Tab, Escape, ArrowDown." };
+        await live.keyboardPress(key);
+        await settle();
+        done = `Pressed ${key}.`;
+        break;
+      }
+      case "scroll": {
+        const dy = Number.isFinite(args.dy) && args.dy !== 0 ? Number(args.dy) : 500;
+        const size = live.viewport();
+        if (state.agentCursor) await live.glideTo(size.width / 2, size.height / 2);
+        await live.mouseWheel(0, Math.max(-5000, Math.min(5000, dy)));
+        await settle();
+        done = `Scrolled ${dy > 0 ? "down" : "up"} ${Math.abs(dy)} pixels.`;
+        break;
+      }
+      default:
+        return { ok: false, summary: "action is start, reload, look, stop, click, hover, type, press or scroll." };
+    }
+    broadcastPreview(session);
+    return await previewLook(run, done);
+  } catch (err) {
+    return { ok: false, summary: `That did not work: ${String((err as Error)?.message ?? err).split("\n")[0]}` };
+  }
+}
+
+/**
+ * The page has probably changed because the agent wrote code: find what, and
+ * take the cursor there. A dev server updates the page a moment after the file
+ * is saved, so the page is looked at a few times until it differs. What was on
+ * the page is remembered between looks; a different address starts afresh
+ * rather than marking a whole new page. Switched off with the agent cursor,
+ * the page is still remembered so a later look compares with the right thing.
+ */
+function followPreviewChange(session: Session, delayMs = 400) {
+  const run = previews.get(session.id);
+  if (!run?.opened) return;
+  if (run.following) {
+    run.again = true;
+    return;
+  }
+  if (run.timers.follow) clearTimeout(run.timers.follow);
+  run.timers.follow = setTimeout(() => {
+    run.timers.follow = null;
+    void lookForChange(session, run, 0);
+  }, delayMs);
+  run.timers.follow.unref?.();
+}
+
+async function lookForChange(session: Session, run: PreviewRun, attempt: number): Promise<void> {
+  if (previews.get(session.id) !== run || !run.opened) return;
+  run.following = true;
+  try {
+    const now = await run.live.domMap();
+    if (!now) return;
+    if (!run.dom || run.domUrl !== run.url) {
+      run.dom = now;
+      run.domUrl = run.url;
+      return;
+    }
+    const cues = diffDom(run.dom, now, run.live.viewport());
+    if (cues.length === 0 && attempt < 5) {
+      // Nothing yet: a slow hot reload. Look again shortly.
+      run.following = false;
+      run.timers.follow = setTimeout(() => {
+        run.timers.follow = null;
+        void lookForChange(session, run, attempt + 1);
+      }, 600);
+      run.timers.follow.unref?.();
+      return;
+    }
+    run.dom = now;
+    // The cursor is real mouse movement: never over a page the person is using.
+    if (cues.length > 0 && state.agentCursor && !presenceFor(session.id).blocked("app") && previews.get(session.id) === run && run.opened) {
+      run.cues = { seq: run.cues.seq + 1, items: cues };
+      broadcastPreview(session);
+      for (const cue of cues) {
+        if (previews.get(session.id) !== run || !run.opened) break;
+        await run.live.markAt(cue.x, cue.y, cue.w, cue.h, cue.label);
+        await new Promise((resolve) => setTimeout(resolve, 850));
+      }
+    }
+  } catch (err) {
+    log("debug", "preview", `could not look for what changed: ${(err as Error)?.message ?? err}`);
+  } finally {
+    if (run.following) {
+      run.following = false;
+      if (run.again) {
+        run.again = false;
+        followPreviewChange(session, 300);
+      }
+    }
+  }
+}
+
 /* The PDF window (server/pdfdesk.ts): every change, to the session's tabs.
    Its objects are the agent's and the person's own marks on their file, so
    they are not run through the secret table -- like the app window's state,
    this is sent as it is. */
+/* What the person does to the PDF is theirs for a moment: the agent leaves that
+   object alone and goes on to others. */
+onDeskTouch((sessionId, subject, kind, detail, opts) => touchPresence(sessionId, "pdf", subject, kind, detail, opts));
+
 onDeskChange((sessionId) => {
   sendEphemeral(sessionId, { type: "pdfdesk", session: sessionId, state: deskState(sessionId) });
 });
@@ -907,7 +1203,7 @@ async function previewStop(session: Session, say = true, keep = false): Promise<
   const was = run.opened;
   run.opened = false;
   for (const timer of Object.values(run.timers)) if (timer) clearTimeout(timer);
-  run.timers = { reload: null, console: null, job: null };
+  run.timers = { reload: null, console: null, job: null, follow: null };
   if (run.job) stopJob(run.job);
   run.job = null;
   run.watch?.close();
@@ -967,7 +1263,7 @@ async function previewStart(
             run.timers.reload = null;
             if (!run.opened) return;
             run.live.clearConsole();
-            void run.live.reload().catch(() => undefined);
+            void run.live.reload().catch(() => undefined).then(() => followPreviewChange(session, 300));
           }, 350);
           run.timers.reload.unref?.();
         });
@@ -1044,6 +1340,9 @@ async function previewStart(
   emitEvent(session, "preview.open", "agent", { url, how }, span);
   broadcastPreview(session);
   void run.live.nudge();
+  // What the page looks like now, so the first change to it can be found.
+  run.dom = null;
+  void run.live.domMap().then((map) => { if (previews.get(session.id) === run && map) { run.dom = map; run.domUrl = run.url; } });
   const errors = run.live.consoleTail(5).filter((e) => e.kind === "error");
   return {
     ok: true,
@@ -1345,6 +1644,31 @@ function waitingOnPerson(sessionId: string): boolean {
     pairs of hands never fight over one page. */
 /** The browser an input route is about: the session's own, or -- for the app
     preview's window, which asks with ?target=preview -- the preview's. */
+/** What is under a point, or has focus, in the words a person would use. Said
+    to the agent when the person acts on a page it shares, so nothing but the
+    page is read, and a password field is never read at all. */
+async function describeOnPage(live: LiveBrowser, at: { x: number; y: number } | null): Promise<{ what: string; secret: boolean }> {
+  try {
+    const found = await live.pickOp(`(() => {
+      const el = ${at ? `document.elementFromPoint(${Math.round(at.x)}, ${Math.round(at.y)})` : "document.activeElement"};
+      if (!el || el === document.body || el === document.documentElement) return null;
+      const t = (el.closest("a,button,input,textarea,select,label,h1,h2,h3,h4,img,li,[role=button],[role=link]") || el);
+      const secret = t.tagName === "INPUT" && /^(password)$/i.test(t.type || "");
+      const label = secret ? "" : String(t.getAttribute("aria-label") || t.innerText || t.placeholder || t.title || t.alt || t.name || "").replace(/\\s+/g, " ").trim().slice(0, 50);
+      return { tag: t.tagName.toLowerCase(), label, secret };
+    })()`);
+    if (!found || typeof found !== "object") return { what: "the page", secret: false };
+    const noun: Record<string, string> = {
+      a: "link", button: "button", input: "field", textarea: "field", select: "menu", label: "label",
+      h1: "heading", h2: "heading", h3: "heading", h4: "heading", img: "image", li: "item",
+    };
+    const word = noun[String(found.tag)] ?? "text";
+    return { what: `the ${found.label ? `${JSON.stringify(found.label)} ` : ""}${word}`, secret: Boolean(found.secret) };
+  } catch {
+    return { what: "the page", secret: false };
+  }
+}
+
 function isPreview(req: Request): boolean {
   return req.query?.target === "preview";
 }
@@ -1353,7 +1677,22 @@ function targetBrowser(session: Session, req: Request): LiveBrowser | undefined 
 }
 
 function agentDriving(session: Session): boolean {
-  return session.busy && !waitingOnPerson(session.id);
+  // A person who has taken the browser is at the wheel, whatever the turn is doing.
+  return session.busy && !waitingOnPerson(session.id) && !presenceFor(session.id).holding("browser");
+}
+
+/**
+ * Whether a call would use something the person is using or has taken, and
+ * why not if so. A held call is not an error: it was not done, the agent is
+ * told in words it can act on, and it goes on to other work.
+ */
+const APP_ACTIONS = new Set(["click", "hover", "type", "press", "scroll"]);
+function heldFor(sessionId: string, name: string, args: Record<string, any> | undefined): string | null {
+  const book = presenceFor(sessionId);
+  if (name.startsWith("browser_")) return book.blocked("browser");
+  if (name === "app_preview" && APP_ACTIONS.has(String(args?.action ?? "").trim().toLowerCase())) return book.blocked("app");
+  if (name.startsWith("pdf_") && name !== "pdf_read" && name !== "pdf_look") return book.blocked("pdf");
+  return null;
 }
 
 function settleAsk(askId: string, answer: AskAnswer): boolean {
@@ -1621,6 +1960,7 @@ function historyFor(session: Session, sinceSeq = 0): { message: ChatMessage; seq
     if (event.seq <= sinceSeq) continue;
     let role: "user" | "assistant" | null = null;
     if (event.kind === "turn.user") role = "user";
+    else if (event.kind === "agent.remark") role = "assistant";
     else if (event.kind === "turn.agent.text") {
       /* Text this server composed -- the no-model notice, the seeded opening
          turn -- is not something a model said, and must not come back as if
@@ -1823,7 +2163,7 @@ function pastToolCalls(sessionId: string, sinceSeq = 0): string[] {
   const session = sessions.get(sessionId);
   if (!session) return [];
 
-  const calls = new Map<string, { name: string; args: any; outcome: string }>();
+  const calls = new Map<string, { name: string; args: any; outcome: string; stored?: string }>();
   for (const event of session.events) {
     if (!event.span || event.seq <= sinceSeq) continue;
     if (event.kind === "tool.call") {
@@ -1836,7 +2176,9 @@ function pastToolCalls(sessionId: string, sinceSeq = 0): string[] {
     }
     const found = calls.get(event.span);
     if (!found) continue;
-    if (event.kind === "tool.result") {
+    if (event.kind === "tool.stored") {
+      found.stored = `full output in vault ${event.payload?.id} (${Number(event.payload?.lines ?? 0).toLocaleString("en-US")} lines; vault_read it)`;
+    } else if (event.kind === "tool.result") {
       const code = event.payload?.display?.exit_code;
       const preview = String(event.payload?.preview ?? "").trim();
       /* How a failure failed, not only that it did: "exit 1" told the look
@@ -1870,7 +2212,7 @@ function pastToolCalls(sessionId: string, sinceSeq = 0): string[] {
     .slice(-RECAP_CALLS)
     .map((c) => {
       const what = essential(c.name, c.args);
-      return `- ${c.name}${what ? ` (${what})` : ""} -> ${c.outcome}`;
+      return `- ${c.name}${what ? ` (${what})` : ""} -> ${c.outcome}${c.stored ? ` [${c.stored}]` : ""}`;
     });
 }
 
@@ -2067,9 +2409,22 @@ async function systemInstructionFor(
   if (modeNote) notes.push(modeNote);
   const permNote = permissionBriefing(permissionsOf(own?.permissions), own?.askWhen ?? "");
   if (permNote) notes.push(permNote);
+  const unfinished = resuming.get(sessionId);
+  if (unfinished) notes.push(resumeNote(unfinished));
+  /* The agent and the person share the windows. Said every turn, and then what
+     the person did since the last one. */
+  notes.push(COLLABORATION);
+  const heard = presenceFor(sessionId).note();
+  if (heard) {
+    notes.push(heard);
+    announcePresence(sessionId);
+  }
   /* The to-do list, said every turn: the history carries words, not the
      todo calls that wrote it, so this is the only way the agent sees it again. */
   if (own) notes.push(todoBriefing(latestTodos(own.events)));
+  /* What it worked out, which the history (words only) cannot carry. */
+  const working = own ? ledgerBriefing(latestLedger(own.events), touchedThings(own.events)) : null;
+  if (working) notes.push(working);
 
   const quiet = quietBriefing(Date.now(), state.proactivity);
   if (quiet) notes.push(quiet);
@@ -2082,6 +2437,9 @@ async function systemInstructionFor(
      something the person settled days ago -- and knows it may act. */
   const agreed = autonomyBriefing();
   if (agreed) notes.push(agreed);
+
+  const unloaded = own ? unloadedIndex(loadedTools(own)) : null;
+  if (unloaded) notes.push(unloaded);
 
   const done = pastToolCalls(sessionId);
   if (done.length > 0) {
@@ -2569,7 +2927,10 @@ async function noticeTick() {
 async function backgroundCall(sessionId: string, system: string, prompt: string, maxTokens: number): Promise<string> {
   const active = resolveProvider();
   if (!active.provider || active.problem) throw new Error(active.problem ?? "No model is connected.");
-  const model = (process.env.AUTORA_COMPACTION_MODEL || "").trim() || active.model;
+  /* Unwatched work -- folding old turns, learning, remarks -- runs on the provider's
+     fast model when Settings names one, and on the chosen model otherwise;
+     AUTORA_COMPACTION_MODEL overrides both. */
+  const model = (process.env.AUTORA_COMPACTION_MODEL || "").trim() || active.fastModel || active.model;
   const turn = await streamChat({
     provider: active.provider,
     model,
@@ -2617,6 +2978,10 @@ async function reflect(session: Session, request: string, startSeq: number, prev
     text = await backgroundCall(session.id, REFLECT_SYSTEM, reflectionPrompt({
       request, previousReply, steps: pastToolCalls(session.id, startSeq), trouble: healthBriefing(),
       reply: result.reply, recalled, nearby,
+      proof: session.events
+        .filter((e) => e.seq > startSeq && e.kind === "system.log" && /check passed|console is clean/.test(String(e.payload?.message ?? "")))
+        .map((e) => String(e.payload.message)),
+      notes: renderLedger(latestLedger(session.events)),
     }), 1500);
   } catch (err: any) {
     console.warn(`[learning] ${session.id}: ${err?.message ?? err}`);
@@ -2764,6 +3129,10 @@ function startTurn(session: Session, text: string, attachments: AttachmentRef[] 
   return done;
 }
 
+/** Unfinished work each session's next turn is to pick up, until that turn
+    has read it. */
+const resuming = new Map<string, InterruptedWork>();
+
 /** The turn each session is running (or about to), settled either way. */
 const turnsInFlight = new Map<string, Promise<void>>();
 
@@ -2783,6 +3152,29 @@ interface TurnOptions {
   notebooks?: NotebookRef[];
 }
 
+/** Which specialist tool sets this chat has been given (see toolload.ts). */
+const allToolsOn = () => process.env.AUTORA_ALL_TOOLS === "1";
+const loadedTools = (session: Session) => (allToolsOn() ? new Set(familyIds()) : loadedFromLog(session.events));
+
+/** Whether a PDF is in this chat: the window is open, or one came with a message. */
+function pdfInChat(session: Session): boolean {
+  if (deskState(session.id).open) return true;
+  return session.events.some((e) =>
+    e.kind === "turn.user" && Array.isArray(e.payload?.attachments) &&
+    e.payload.attachments.some((a: any) => a?.mime === "application/pdf" || /\.pdf$/i.test(String(a?.name ?? ""))));
+}
+
+/**
+ * Bring in the specialist tools the message calls for, once, and write it in
+ * the log so the next turn has them without asking again.
+ */
+function autoLoadTools(session: Session, text: string) {
+  const have = loadedFromLog(session.events);
+  for (const id of loadedFamilies({ events: session.events, said: text, hasPdf: pdfInChat(session) })) {
+    if (!have.has(id)) emitEvent(session, "tools.enable", "system", { family: id, why: "wanted" });
+  }
+}
+
 function beginTurn(session: Session, text: string, attachments: AttachmentRef[] = [], opts: TurnOptions = {}): Promise<TurnResult> {
   // The reply this message answers: a correction only makes sense beside it.
   let previousReply = "";
@@ -2791,6 +3183,11 @@ function beginTurn(session: Session, text: string, attachments: AttachmentRef[] 
     if (e.kind === "turn.user") break;
     if (e.kind === "turn.agent.text" && !e.payload?.local) previousReply = String(e.payload?.text ?? "") + previousReply;
   }
+  /* Work the last turn left unfinished, read before this message joins the
+     log: the turn that follows carries it on rather than treating the new
+     message as the whole job. A job or watcher is not an answer to it. */
+  const unfinished = opts.automated ? null : interruptedWork(session.events as ResumeEvent[]);
+  if (unfinished) resuming.set(session.id, unfinished);
   const startSeq = session.seqCounter;
   /* The files ride on the event, so a reloaded thread still shows what came
      with the message and the model still reads the note that names them. */
@@ -2800,9 +3197,10 @@ function beginTurn(session: Session, text: string, attachments: AttachmentRef[] 
     ...(attachments.length > 0 ? { attachments } : {}),
     ...(opts.notebooks?.length ? { notebooks: opts.notebooks } : {}),
   });
+  autoLoadTools(session, text);
   /* Agent mode starts every turn planning, whatever the last one ended in:
      the agent decides again whether this task needs a plan. */
-  if (workMode(session.mode) === "agent") {
+  if (workMode(session.mode) === "agent" && !(unfinished && session.phase === "build")) {
     session.phase = "plan";
     emitEvent(session, "mode.switch", "system", { from: null, to: "plan", reason: "" });
   }
@@ -2872,6 +3270,44 @@ const THINK_LONGER = {
   },
 };
 
+/* The working folder, watched, so the code a command writes can be shown in
+   the thread (server/codediff.ts). One per chat; remade if the terminal's
+   directory is changed. */
+const workspaces = new Map<string, Workspace>();
+
+function workspaceFor(sessionId: string): Workspace {
+  const root = terminalDir();
+  let ws = workspaces.get(sessionId);
+  if (!ws || ws.root !== root) {
+    // Autora's own data is not the agent's work, wherever the terminal starts.
+    ws = new Workspace(root, [stateDir()]);
+    workspaces.set(sessionId, ws);
+  }
+  return ws;
+}
+
+/** A change as the thread's diff card reads it: one text, +/-/space lines. */
+function diffText(lines: DiffLine[], truncated: boolean): string {
+  const out = lines.map((l) => (l.t === "~" ? "@@ ... @@" : `${l.t}${l.s}`));
+  if (truncated) out.push("@@ ... more lines left out @@");
+  return out.join("\n");
+}
+
+/** At most this many files of one command get a card; the rest are counted. */
+const MAX_CHANGE_CARDS = 12;
+
+/** How the agent behaves with someone else's hands in the same window. */
+const COLLABORATION = [
+  "You work alongside the person, in the same PDF, app window, browser and folder of code, at the same time.",
+  "- They may click, type, move or edit things while you work. That is welcome, not an interruption.",
+  "  When a note tells you what they did, it is theirs: never undo it, redo it or write over it. Work around it and carry on.",
+  "- When they do something, acknowledge it in a short natural line (\"I see you moved the signature -- I'll leave it there\"),",
+  "  the way a colleague at the same desk would, and then go on. Do not make a speech of it, and do not ask permission to continue.",
+  "- If a tool says it was not done because the person is working on it or has taken control, that is not a failure:",
+  "  do something else now (another page, file or item), come back to it later, and say what you left for them.",
+  "- They can take control of a window at any time. While they hold it, do not use it; keep working on the rest.",
+].join("\n");
+
 /** The agent loop for one turn. See startTurn. */
 async function runTurn(session: Session, text: string, opts: TurnOptions = {}): Promise<TurnResult> {
   const result: TurnResult = { ok: false, reply: "", ranSomething: false, stopped: false, error: null, recalled: [] };
@@ -2932,7 +3368,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
     /* The tools of this step. think_longer is offered only while the voice
        still has work left to hand over. */
     const offered = async () => {
-      const list = await availableTools();
+      const list = withoutUnloaded(await availableTools(), loadedTools(session));
       return talkFast && !handedOver ? [...list, THINK_LONGER] : list;
     };
     let streamed = 0;
@@ -2942,6 +3378,8 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
        never wrote a closing line. Pointing at work that did not happen is
        its own small lie. */
     let ranSomething = false;
+    /* Why the loop watch ended the turn, when it did: the next turn is told. */
+    let loopReason: string | null = null;
     /* One per turn, and outside the retry loop on purpose: a retry only
        happens when nothing has been said yet, so the sieve is empty, and
        a fresh one per attempt would be the same object with more steps. */
@@ -3316,7 +3754,59 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
 
       /** Everything a tool needs from this session, handed in rather than
           imported, so server/tools.ts knows nothing about sessions. */
+      /* The tools a research worker may hold: the ones that only look. Whatever
+         else is switched on, it is read-only (looksOnly judges each call). */
+      const WORKER_TOOLS = new Set([
+        "code_search", "read_file", "terminal", "artifact_list", "artifact_read", "pdf_read", "web_search", "http_request", "memory_search",
+      ]);
+      /** A question answered by a worker with a clean context; only its report returns. */
+      const researchFor = async (question: string): Promise<string> => {
+        if (!question) return "Say what to find out.";
+        const offeredNow = (await availableTools()).filter((t) => WORKER_TOOLS.has(t.name));
+        if (offeredNow.length === 0) return "No read-only tools are available for a worker right now.";
+        const span = `span-${session.id}-${session.seqCounter}-${spans++}`;
+        const out = await runSubagent(question, {
+          tools: offeredNow,
+          cancelled: () => Boolean(running.get(session.id)?.stopped),
+          ask: async (system, messages, list) => {
+            const turn = await streamChat({
+              provider: active.provider, model: active.model, key: active.key, baseUrl: active.baseUrl,
+              system, messages, temperature: 0.2, maxTokens: 2000, thinking: "off",
+              signal: running.get(session.id)?.signal,
+              tools: list.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })),
+            }, () => undefined);
+            charge(active.model, turn.usage);
+            return turn;
+          },
+          run: async (name, args) => {
+            const spec = findTool(name);
+            if (!spec || !offeredNow.some((t) => t.name === name)) return { ok: false, summary: `${name} is not available to a worker.` };
+            if (!looksOnly(name, args)) {
+              return { ok: false, summary: "Not run: a research worker only looks. Say in the report what would need to change." };
+            }
+            const o = await runTool(spec, args, { ...contextFor(span), onOutput: () => undefined, research: undefined });
+            return { ok: o.ok, summary: o.summary };
+          },
+        });
+        emitEvent(session, "system.log", "system", {
+          message: `A research worker looked into it: ${out.calls} lookups in ${out.steps} steps (${out.ended}).`,
+        });
+        return `${out.report}\n\n(Worker: ${out.calls} lookups in ${out.steps} steps. Its searching and reading did not enter this conversation.)`;
+      };
+
       const contextFor = (span: string): ToolContext => ({
+        research: researchFor,
+        held: (surface, subject) => presenceFor(session.id).blocked(surface, subject),
+        protectedPaths: [stateDir()],
+        code: {
+          edit: (args: EditArgs) => editFile(args, {
+            root: terminalDir(),
+            // Autora's own data is not the agent's to edit, wherever the terminal starts.
+            protect: [stateDir()],
+            base: (rel) => workspaceFor(session.id).textOf(rel),
+            held: (rel) => presenceFor(session.id).blocked("code", rel),
+          }),
+        },
         preview: {
           start: (args) => previewStart(session, args, span),
           stop: async () => {
@@ -3330,28 +3820,15 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             run.live.clearConsole();
             await run.live.reload().catch(() => undefined);
             broadcastPreview(session);
+            followPreviewChange(session, 200);
             return { ok: true, summary: "Reloaded the preview." };
           },
           look: async () => {
             const run = previews.get(session.id);
             if (!run?.opened) return { ok: false, summary: "There is no preview open. Start one with app_preview start." };
-            const png = await run.live.capture();
-            const size = run.live.viewport();
-            const log = run.live.consoleTail(12);
-            return {
-              ok: true,
-              png,
-              summary:
-                `The preview at ${run.url}, ${size.width}×${size.height}, is in this result.` +
-                (run.serverDown
-                  ? `\nThe dev server it was started with has stopped (exit ${run.serverDown.exit ?? "unknown"})` +
-                    `${run.serverDown.last ? `; it last said: ${run.serverDown.last}` : ""}. Start it again with app_preview start.`
-                  : "") +
-                (log.length
-                  ? `\nThe page's console:\n${log.map((e) => `  [${e.kind}] ${e.text}`).join("\n")}`
-                  : "\nThe page's console is clean."),
-            };
+            return previewLook(run, "");
           },
+          act: (args) => previewAct(session, args),
         },
         setPhase: (to, reason) => {
           const work = workMode(session.mode);
@@ -3387,6 +3864,17 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           if (result.list) {
             emitEvent(session, "todo.update", "agent", result.list as any, span);
           }
+          return result;
+        },
+        enableTools: (family) => {
+          if (!FAMILIES.some((f) => f.id === family)) return { ok: false, summary: `There is no set called "${family}". The sets are: ${familyIds().join(", ")}.` };
+          if (loadedTools(session).has(family)) return { ok: true, summary: `${family} is already in your list.` };
+          emitEvent(session, "tools.enable", "agent", { family, why: "asked" }, span);
+          return { ok: true, summary: `${family} tools are in your list from your next step.` };
+        },
+        ledger: (action) => {
+          const result = applyLedger(latestLedger(session.events), action);
+          if (result.ledger) emitEvent(session, "ledger.update", "agent", result.ledger as any, span);
           return result;
         },
         onOutput: (chunk) =>
@@ -3595,6 +4083,9 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
       const { pinned, note } = await systemInstructionFor(session.id, uniqueAccessed, active);
       context.setTurnNote(note);
       const watch = new LoopWatch(state.loop);
+      /* Failures that say the same thing however the arguments were varied,
+         which the exact-call counts in the loop watch never add up. */
+      const errors = new ErrorBudget(3, 6, session.incognito ? {} : loadBudget(session.id));
       let loopStop: string | null = null;
       /** Run a call's result past the loop watch before the model reads it. */
       const watched = (name: string, args: unknown, ok: boolean, raw: string, shown: string) => {
@@ -3610,6 +4101,12 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
         const verdict = watch.record(name, args, ok, raw);
         if (verdict.log) emitEvent(session, "system.log", "system", { message: verdict.log });
         if (verdict.stop) loopStop = verdict.stop;
+        const budget = errors.record(
+          name, describeCall(name, args), ok, stripAnsi(raw),
+        );
+        if (budget.stop && !loopStop) loopStop = budget.stop;
+        // Kept, so "try again" after a stop does not start from nothing.
+        if (!session.incognito) keepBudget(session.id, errors.snapshot());
         /* A scheduled run has a budget of its own, so one job that has begun
            to chew through a session is stopped here rather than left to
            finish. A turn the person is having is never stopped this way. */
@@ -3623,7 +4120,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           }
         }
         const known = siteMemory(name, args);
-        return [shown, verdict.note, known].filter(Boolean).join("\n\n");
+        return [shown, verdict.note, budget.note, known].filter(Boolean).join("\n\n");
       };
       /* Sites this turn has been to, so what memory holds about one is said
          the first time only. */
@@ -3664,6 +4161,83 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
       let nudges = 0;
       /** Whether this turn has been asked about open to-do items already. */
       let todoAsked = false;
+      /** Whether a command that changes things has run since the project's
+          check last did, and how many times that check has run this turn. */
+      let changedSinceCheck = false;
+      let checkRuns = 0;
+      /* When the code last changed with the app window open, and how many times
+         the page's console has been looked at since: see previewProblems. */
+      let previewSince = 0;
+      let previewLooks = 0;
+      /* The folder's state before this turn's first command, so what each
+         command writes can be shown. A folder with too many files is said
+         once and left alone. */
+      const workspace = workspaceFor(session.id);
+      let workspaceWarned = false;
+      const canSeeCode = tools.some((t) => t.name === "terminal");
+      /* Edits to the project that the agent did not make -- the person's, in
+         their own editor -- noticed between its commands, shown as cards of
+         their own, and told to the agent so it works around them. Not when a
+         background command is running, which writes files too: whose they are
+         cannot be told. */
+      const personEdits = (span: string | null) => {
+        if (!canSeeCode) return;
+        const files = workspace.scan();
+        if (files.length === 0 || listJobs().some((j) => j.session === session.id && j.state === "running")) return;
+        for (const f of files.slice(0, MAX_CHANGE_CARDS)) {
+          emitEvent(session, "file.edit", "user", {
+            path: f.path, diff: diffText(f.lines, f.truncated), added: f.added, removed: f.removed,
+            created: f.kind === "added", by: "person",
+            ...(f.kind === "removed" ? { note: "removed" } : f.quiet ? { note: f.quiet } : {}),
+          }, span);
+          touchPresence(session.id, "code", f.path, "edit",
+            `${f.kind === "added" ? "created" : f.kind === "removed" ? "deleted" : "edited"} ${f.path}${f.added || f.removed ? ` (+${f.added} -${f.removed})` : ""}`);
+        }
+        // The page is theirs to have changed: remember it, so the cursor does not mark their work as the agent's.
+        const run = previews.get(session.id);
+        if (run?.opened) setTimeout(() => { void run.live.domMap().then((m) => { if (m && previews.get(session.id) === run) { run.dom = m; run.domUrl = run.url; } }); }, 1500).unref?.();
+      };
+      if (canSeeCode) {
+        // A folder watched before: whatever changed since the last turn is somebody else's work.
+        if (workspace.hasBaseline) personEdits(null);
+        else workspace.prime();
+      }
+      /** After a command that changes things: the code it wrote, as cards. */
+      const announceCode = (span: string) => {
+        const files: CodeChange[] = workspace.scan();
+        if (workspace.tooMany && !workspaceWarned) {
+          workspaceWarned = true;
+          emitEvent(session, "system.log", "system", {
+            message: `${workspace.root} has too many files to follow, so the code the agent writes there is not shown as it is written.`,
+          });
+        }
+        for (const f of files.slice(0, MAX_CHANGE_CARDS)) {
+          emitEvent(session, "file.edit", "agent", {
+            path: f.path,
+            diff: diffText(f.lines, f.truncated),
+            added: f.added,
+            removed: f.removed,
+            created: f.kind === "added",
+            ...(f.kind === "removed" ? { note: "removed" } : f.quiet ? { note: f.quiet } : {}),
+          }, span);
+        }
+        if (files.length > MAX_CHANGE_CARDS) {
+          emitEvent(session, "system.log", "system", { message: `${files.length - MAX_CHANGE_CARDS} more files changed in that command.` });
+        }
+        /* A dev server updates the page by itself. A served folder is reloaded
+           by a file watcher, which misses a file replaced in one go (sed -i,
+           most editors) -- so the loop, which knows code just changed, does it
+           too. Then find what that changed. */
+        if (files.length > 0) {
+          const run = previews.get(session.id);
+          if (run?.opened && run.how === "folder") {
+            run.live.clearConsole();
+            void run.live.reload().catch(() => undefined).then(() => followPreviewChange(session, 300));
+          } else {
+            followPreviewChange(session);
+          }
+        }
+      };
       for (;;) {
         if (running.get(session.id)?.stopped) break;
 
@@ -3734,6 +4308,74 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
               emitEvent(session, "system.log", "system", {
                 message: "The to-do list still had open items as the turn ended; asked the agent to bring it up to date.",
               });
+              continue;
+            }
+          }
+          /* A fourth: the agent says it is finished and has changed things, and
+             the person has named a check for their project. The check runs
+             here, in plain code, and what it printed goes back to the agent:
+             "done" is not the model's word to give. A failure sends it back
+             to fix it, up to the number of runs the person allowed. */
+          if (!stalled && changedSinceCheck && state.verify.command && checkRuns < state.verify.tries &&
+              !running.get(session.id)?.stopped && !opts.spoken &&
+              phaseFor(workMode(session.mode), session.phase) === "build" && tools.some((t) => t.name === "terminal")) {
+            const command = state.verify.command;
+            changedSinceCheck = false;
+            checkRuns += 1;
+            const span = `span-${session.id}-${session.seqCounter}-${spans++}`;
+            emitEvent(session, "system.log", "system", { message: `Running the project's check: ${command}` });
+            emitEvent(session, "tool.call", "agent", { name: "terminal", args: { command } }, span);
+            const started = Date.now();
+            const outcome = await runTool(findTool("terminal")!, { command }, contextFor(span));
+            const durationMs = Date.now() - started;
+            if (outcome.exitCode !== undefined) {
+              emitEvent(session, "pty.exit", "agent", { exit_code: outcome.exitCode ?? null, duration_ms: durationMs }, span);
+            }
+            emitEvent(session, "tool.result", "agent", {
+              ok: outcome.ok,
+              preview: outcome.preview ?? "",
+              duration_ms: durationMs,
+              ...(outcome.exitCode !== undefined ? { display: { exit_code: outcome.exitCode } } : {}),
+            }, span);
+            const checked: CheckResult = {
+              command, exitCode: outcome.exitCode ?? null, ok: outcome.ok,
+              output: context.ingest("terminal", outcome.summary, canReadVault),
+            };
+            emitEvent(session, "system.log", "system", { message: checkLine(checked, checkRuns, state.verify.tries) });
+            if (!checked.ok && !running.get(session.id)?.stopped) {
+              if (!empty) {
+                context.append(
+                  { role: "assistant", text: turn.text, reasoning: turn.reasoning },
+                  session.seqCounter,
+                );
+              }
+              context.append({ role: "user", text: failedNote(checked, checkRuns, state.verify.tries) }, session.seqCounter);
+              continue;
+            }
+          }
+          /* A fifth, with no setting: the agent changed code that the app window is
+             showing, and says it is finished. The page's own console is the check --
+             an exception or a failed request since the change is something the agent
+             has not seen. */
+          const shown = previews.get(session.id);
+          if (!stalled && previewSince > 0 && shown?.opened && previewLooks < 2 &&
+              !running.get(session.id)?.stopped && !opts.spoken &&
+              phaseFor(workMode(session.mode), session.phase) === "build") {
+            const since = previewSince;
+            previewSince = 0;
+            previewLooks += 1;
+            await new Promise((resolve) => setTimeout(resolve, 900));
+            const problems = previewProblems(shown.live.consoleTail(30), since, shown.serverDown);
+            if (problems.length === 0) {
+              emitEvent(session, "system.log", "system", { message: "Looked at the app window after the change: the page's console is clean." });
+            } else if (!running.get(session.id)?.stopped) {
+              emitEvent(session, "system.log", "system", {
+                message: `The app window reports ${problems.length} error${problems.length === 1 ? "" : "s"} after the change; the agent was sent back to fix ${problems.length === 1 ? "it" : "them"}.`,
+              });
+              if (!empty) {
+                context.append({ role: "assistant", text: turn.text, reasoning: turn.reasoning }, session.seqCounter);
+              }
+              context.append({ role: "user", text: previewNote(problems, previewLooks, 2) }, session.seqCounter);
               continue;
             }
           }
@@ -3822,6 +4464,17 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           }
 
           const spec = findTool(use.name);
+          /* A tool from a set that is not in the list yet, called by name: the
+             model knew it was there (the console note says so, and earlier
+             turns used it). Bring the set in and run the call, rather than
+             make it ask first. */
+          if (spec && !tools.some((t) => t.name === use.name)) {
+            const family = FAMILIES.find((f) => f.match(use.name));
+            if (family && !loadedTools(session).has(family.id)) {
+              emitEvent(session, "tools.enable", "system", { family: family.id, why: "called" }, span);
+              tools = await offered();
+            }
+          }
           /* Offered tools are the available ones, so an unknown name here
              means the model invented it -- or asked for something from a
              group that is switched off. Naming what it does have is more
@@ -3844,6 +4497,17 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             name: spec.name, args: use.args,
           }, span);
 
+          /* The tool's own schema, enforced before anything else looks at the
+             call: the handlers coerce whatever arrives, so a missing or
+             mistyped argument would otherwise reach the guard, the approval
+             card and the tool. MCP tools keep their servers' own checking. */
+          const badArgs = spec.group === "mcp" ? null : checkArgs(spec.name, spec.parameters, use.args ?? {});
+          if (badArgs) {
+            emitEvent(session, "tool.error", "agent", { error: badArgs }, span);
+            reply(false, watched(spec.name, use.args, false, badArgs, badArgs));
+            continue;
+          }
+
           /* Planning first, and it is a refusal rather than a card: planning
              is the agent's own state (chosen by the person in Plan, by the
              agent in Agent), so nobody is being asked -- the call is not run
@@ -3855,6 +4519,16 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
               held: true, planning: true, error: "Not run: planning changes nothing.",
             }, span);
             reply(false, refusal);
+            continue;
+          }
+
+          /* The person is using it, or has taken it: not done, said plainly,
+             and the turn goes on. It is not an error, so it is not counted
+             against the loop watch or the error budget. */
+          const heldNow = heldFor(session.id, spec.name, use.args);
+          if (heldNow) {
+            emitEvent(session, "tool.error", "agent", { held: true, error: "Not done: the person is working on this." }, span);
+            reply(false, heldNow);
             continue;
           }
 
@@ -3992,8 +4666,23 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
 
           const started = Date.now();
           ranSomething = true;
+          const willWrite = (spec.name === "terminal" && !readOnlyCommand(String(use.args?.command ?? ""))) || spec.name === "edit_file";
+          // What the person changed before this runs is theirs, not this command's.
+          if (willWrite) personEdits(null);
           const outcome = await runTool(spec, use.args, contextFor(span));
+          /* A command that failed because a path was not there: say what is near
+             it, so the next call is right instead of another guess. */
+          if (spec.name === "terminal" && !outcome.ok && !outcome.held) {
+            const gone = missingPathIn(outcome.summary);
+            const near = gone ? pathHint(terminalDir(), gone) : "";
+            if (near) outcome.summary += `\n[Autora:${near}]`;
+          }
           const durationMs = Date.now() - started;
+          const wrote = willWrite;
+          if (wrote) {
+            changedSinceCheck = true;
+            if (previews.get(session.id)?.opened) previewSince = Date.now();
+          }
 
           if (spec.group === "terminal" && outcome.exitCode !== undefined) {
             // The terminal cell reads its exit code from here, and the
@@ -4017,7 +4706,9 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             /* A command that exits non-zero is a result, not a broken
                tool: the model needs to read it and decide. Only a tool
                that could not run at all is an error. */
-            if (outcome.exitCode !== undefined) {
+            if (outcome.held) {
+              emitEvent(session, "tool.error", "agent", { held: true, error: "Not done: the person is working on this." }, span);
+            } else if (outcome.exitCode !== undefined) {
               emitEvent(session, "tool.result", "agent", {
                 ok: false,
                 preview: outcome.preview ?? "",
@@ -4033,14 +4724,24 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             }
           }
 
+          // The code the command wrote, as cards after the command's own result.
+          if (wrote) announceCode(span);
+
           /* Ingestion filter: control codes and repeated lines out, and
              anything still too long kept whole in the vault with its head
              and tail left in the prompt. The thread already showed it
              all, live; this is only what the model reads. */
-          reply(outcome.ok, watched(
-            spec.name, use.args, outcome.ok, outcome.summary,
-            context.ingest(spec.name, outcome.summary, canReadVault),
-          ), outcome.images);
+          // Not done because the person is using it: said, not counted as a failure.
+          if (outcome.held) reply(false, outcome.summary);
+          else {
+            const fitted = context.ingest(spec.name, outcome.summary, canReadVault);
+            /* Where a long result went, in the log: the next turn's recap names
+               the artifact, so it reads that part back instead of running the
+               call again. */
+            const stored = context.takeStored();
+            if (stored) emitEvent(session, "tool.stored", "agent", stored, span);
+            reply(outcome.ok, watched(spec.name, use.args, outcome.ok, outcome.summary, fitted), outcome.images);
+          }
           if (loopStop) break;
         }
 
@@ -4056,6 +4757,13 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
         const checkpoint = watch.endRound();
         const last = replies[replies.length - 1];
         if (checkpoint && last) last.result += `\n\n${checkpoint}`;
+        // What the person did while this round ran, said as it is read.
+        personEdits(null);
+        const heard = presenceFor(session.id).note();
+        if (heard && last) {
+          last.result += `\n\n${heard}`;
+          announcePresence(session.id);
+        }
 
         context.append({ role: "tool", replies }, session.seqCounter);
         context.supersedePages(canReadVault);
@@ -4080,6 +4788,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
 
         if (loopStop) {
           emitEvent(session, "system.log", "system", { message: loopStop });
+          loopReason = loopStop;
           break;
         }
       }
@@ -4139,7 +4848,13 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
       }
     }
 
-    emitEvent(session, "turn.agent.done", "agent", {});
+    /* Marked when the turn was cut short, so the next one can tell it was
+       left unfinished (see server/resume.ts). */
+    emitEvent(
+      session, "turn.agent.done", "agent",
+      running.get(session.id)?.stopped ? { stopped: true }
+        : loopReason ? { stopped: true, reason: loopReason } : {},
+    );
     closed = true;
     result.ranSomething = ranSomething;
     result.stopped = Boolean(running.get(session.id)?.stopped);
@@ -4153,6 +4868,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
     if (!closed) emitEvent(session, "turn.agent.done", "agent", { failed: true });
   } finally {
     session.busy = false;
+    resuming.delete(session.id);
     // Nothing from this turn is still cancellable, and anything left in
     // the set holds a reference to a process that has exited.
     running.delete(session.id);
@@ -4746,6 +5462,30 @@ async function startServer() {
   // 3c. The browser: what it is doing, and telling it to do something.
 
   /** Whether there is a browser at all, and whether a page is open in it. */
+  /* Taking a surface from the agent, and handing it back. While the person
+     holds one the agent does not use it, and goes on to other work. */
+  /* Where a chat's time and tokens went, read back out of its log (see trace.ts). */
+  app.get("/api/sessions/:id/trace", (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "No such session." });
+    const trace = buildTrace(session.events);
+    res.json({ ...trace, text: traceText(trace) });
+  });
+
+  app.get("/api/sessions/:id/presence", (req: Request, res: Response) => {
+    if (!sessions.get(req.params.id)) return res.status(404).json({ error: "Session not found" });
+    res.json(presenceFor(req.params.id).view());
+  });
+  app.post("/api/sessions/:id/control", (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    const surface = String(req.body?.surface ?? "");
+    if (!["pdf", "app", "browser", "code"].includes(surface)) return res.status(400).json({ error: "surface is pdf, app, browser or code." });
+    presenceFor(session.id).hold(surface as Surface, req.body?.hold === true);
+    announcePresence(session.id);
+    res.json(presenceFor(session.id).view());
+  });
+
   app.get("/api/sessions/:id/browser", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
@@ -4913,7 +5653,7 @@ async function startServer() {
 
   // 6b. Live Browser Direct Interaction & Handoff
   const DRIVING =
-    "The agent is using the browser. Wait until it finishes or asks you, or stop it.";
+    "The agent is using the browser. Take control to use it yourself -- it will carry on with other work -- or stop it.";
 
   /** An answer to a question the agent asked. */
   app.post("/api/sessions/:id/ask/:askId", (req: Request, res: Response) => {
@@ -5204,6 +5944,7 @@ async function startServer() {
     const dx = Number(req.body?.dx ?? 0);
     const dy = Number(req.body?.dy ?? 0);
     try {
+      touchPresence(session.id, isPreview(req) ? "app" : "browser", "*", "scroll", "scrolled the page", { tell: false });
       await live.mouseWheel(dx, dy);
       res.json({ ok: true });
     } catch (err: any) {
@@ -5256,6 +5997,9 @@ async function startServer() {
 
     try {
       const button = req.body?.button === "right" ? "right" : req.body?.button === "middle" ? "middle" : "left";
+      // What the person is about to click, said to the agent as they do it.
+      const under = await describeOnPage(live, { x, y });
+      touchPresence(session.id, isPreview(req) ? "app" : "browser", "*", "click", `${req.body?.double ? "double-clicked" : "clicked"} ${under.what}`);
       const { editable, select } = await live.userClick(x, y, button, !!req.body?.double);
       // A dropdown answers with its choices: the app shows them itself.
       res.json({ ok: true, editable, select: select ?? null });
@@ -5281,6 +6025,7 @@ async function startServer() {
     }
 
     try {
+      touchPresence(session.id, isPreview(req) ? "app" : "browser", "*", "drag", "dragged on the page", { tell: false });
       const out = await live.userDrag(phase, x, y);
       res.json({ ...out, ok: true });
     } catch (err: any) {
@@ -5304,6 +6049,7 @@ async function startServer() {
     }
 
     try {
+      touchPresence(session.id, isPreview(req) ? "app" : "browser", "*", "choose", "picked an option from a menu", { tell: true });
       const out = await live.chooseOption(x, y, index);
       res.json({ ...out, ok: true });
     } catch (err: any) {
@@ -5320,6 +6066,11 @@ async function startServer() {
 
     const text = String(req.body?.text ?? "");
     try {
+      const into = await describeOnPage(live, null);
+      touchPresence(
+        session.id, isPreview(req) ? "app" : "browser", "*", "type",
+        into.secret ? "typed into a password field" : `typed ${JSON.stringify(text.length > 40 ? `${text.slice(0, 37)}...` : text)} into ${into.what}`,
+      );
       await live.keyboardType(text);
       res.json({ ok: true });
     } catch (err: any) {
@@ -5338,6 +6089,7 @@ async function startServer() {
     if (!key) return res.status(400).json({ error: "No key specified." });
 
     try {
+      touchPresence(session.id, isPreview(req) ? "app" : "browser", "*", "key", `pressed ${key}`, { tell: /^(Enter|Escape|Tab|Delete|Backspace)$/i.test(key) });
       await live.keyboardPress(key);
       res.json({ ok: true });
     } catch (err: any) {
@@ -5360,6 +6112,7 @@ async function startServer() {
     }
 
     try {
+      touchPresence(session.id, isPreview(req) ? "app" : "browser", "*", "navigate", `went to ${url.length > 80 ? `${url.slice(0, 77)}...` : url}`);
       const page = await live.goto(isPreview(req) ? localAddress(addressFor(url)) : url);
       res.json({ ok: true, url: page.url, title: page.title });
     } catch (err: any) {
@@ -5455,6 +6208,30 @@ async function startServer() {
       enabled: true,
       learning: state.learning,
     });
+  });
+
+  /** Whether the agent says a word about what the person does in the windows they share. */
+  app.get("/api/collaboration", (_req: Request, res: Response) => {
+    res.json({ remarks: state.collabRemarks });
+  });
+  app.patch("/api/collaboration", (req: Request, res: Response) => {
+    if (typeof req.body?.remarks === "boolean") {
+      state.collabRemarks = req.body.remarks;
+      save();
+    }
+    res.json({ remarks: state.collabRemarks });
+  });
+
+  /** Whether the agent's work is shown as it is done (the cursor, the typed code). */
+  app.get("/api/agent-cursor", (_req: Request, res: Response) => {
+    res.json({ on: state.agentCursor });
+  });
+  app.patch("/api/agent-cursor", (req: Request, res: Response) => {
+    if (typeof req.body?.on === "boolean") {
+      state.agentCursor = req.body.on;
+      save();
+    }
+    res.json({ on: state.agentCursor });
   });
 
   /** Whether the agent writes down what it learns after a turn. */
@@ -5908,6 +6685,7 @@ async function startServer() {
       budget_usd: state.budgetUsd,
       top_up_usd: state.topUpUsd,
       loop: { ...state.loop },
+      verify: { ...state.verify },
       retention: { ...state.retention },
       automation: { ...state.automation },
       state_file: stateFilePath(),
@@ -6132,6 +6910,7 @@ async function startServer() {
        constants in the source: a turn could be stopped by a rule nobody could
        see, and nothing ever deleted anything. */
     if (body.loop && typeof body.loop === "object") mergeLoop(state.loop, body.loop);
+    if (body.verify && typeof body.verify === "object") mergeVerify(state.verify, body.verify);
     if (body.retention && typeof body.retention === "object") mergeRetention(state.retention, body.retention);
     /* What automated runs may cost. Enforced in the scheduler and again in
        the agent loop -- see server/automation.ts. */
@@ -6581,6 +7360,7 @@ async function startServer() {
       ws.send(JSON.stringify({ type: "preview", session: sessionId, state: previewState(session) }));
       // The PDF window, likewise.
       ws.send(JSON.stringify({ type: "pdfdesk", session: sessionId, state: deskState(sessionId) }));
+      ws.send(JSON.stringify({ type: "presence", session: sessionId, state: presenceFor(sessionId).view() }));
       if (openPreview?.opened) void openPreview.live.nudge();
 
       // Handle incoming messages
