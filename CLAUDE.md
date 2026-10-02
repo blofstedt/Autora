@@ -57,7 +57,9 @@ is a sub-project with its own dependencies (see below).
   step down when `hooks.backlog` says a viewer is behind, the rate rises while
   `touched()`, and one sharp screenshot follows when the page has been still), `desktop.ts` (the
   relay), `store.ts` / `state.ts` (what is kept on disk under `AUTORA_HOME`),
-  `credentials.ts`, `mcp.ts` (plus `mcpcatalog.ts`, `mcpoffer.ts` and
+  `browsedata.ts` (the browser's history, bookmarks and downloads, one list for the install in
+  `browser-data.json`; a download becomes an artifact via `hooks.onDownload`; `LiveBrowser.find`
+  walks text nodes itself because headless `window.find` finds nothing), `credentials.ts`, `mcp.ts` (plus `mcpcatalog.ts`, `mcpoffer.ts` and
   `mcpscript.ts`: the servers the agent offers, sets up or writes itself),
   `preview.ts` and `pick.ts` (the app window: a second browser per session
   showing what the agent is building, the static server and dev-server

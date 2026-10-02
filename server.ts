@@ -66,6 +66,9 @@ import {
   MAX_ARTIFACT_BYTES, cleanName, deleteArtifact, getArtifact, listArtifacts, readArtifact, saveArtifact,
 } from "./server/artifacts";
 import {
+  addBookmark, bookmarks, clearHistory, downloads, history, recordDownload, recordVisit, removeBookmark,
+} from "./server/browsedata";
+import {
   NotebookError, addEntries, createNotebook, deleteNotebook, forgetArtifact,
   getNotebook, listNotebooks, moveEntry, notebookMarkdown, removeEntry, updateEntry, updateNotebook,
 } from "./server/notebooks";
@@ -873,7 +876,17 @@ function browserFor(session: Session): LiveBrowser {
       emitEvent(session, "browser.frame", "agent", { url, w: VIEWPORT.width, h: VIEWPORT.height }, null, blob);
     },
     onNav: (url, title) => {
+      recordVisit(url, title);
       emitEvent(session, "browser.nav", "agent", { url, title });
+    },
+    onDownload: ({ name, bytes, url }) => {
+      try {
+        const artifact = saveArtifact({ origin: "user", name, data: bytes, session: session.id, note: `Downloaded from ${url.slice(0, 200)}` });
+        recordDownload({ artifact: artifact.id, name: artifact.name, url, size: artifact.size, ts: Date.now() });
+        emitEvent(session, "browser.download", "agent", { artifact: artifact.id, name: artifact.name, size: artifact.size, url });
+      } catch (err: any) {
+        emitEvent(session, "browser.download", "agent", { name, error: String(err?.message ?? err) });
+      }
     },
     onFields: () => broadcastBrowserState(session),
     onAction: (action, at, url) => {
@@ -6432,6 +6445,37 @@ async function startServer() {
     } catch (err: any) {
       res.status(500).json({ error: err?.message ?? "Navigation failed" });
     }
+  });
+
+  /** Pages visited, bookmarks and downloads: the browser's own lists. */
+  app.get("/api/browser/data", (req: Request, res: Response) => {
+    res.json({
+      history: history(String(req.query.q ?? "")).slice(0, 200),
+      bookmarks: bookmarks(),
+      downloads: downloads(),
+    });
+  });
+
+  app.post("/api/browser/bookmarks", (req: Request, res: Response) => {
+    const url = String(req.body?.url ?? "");
+    if (req.body?.remove) { removeBookmark(url); return res.json({ ok: true }); }
+    const mark = addBookmark(url, String(req.body?.title ?? ""));
+    if (!mark) return res.status(400).json({ error: "Only web pages can be bookmarked." });
+    res.json({ ok: true, bookmark: mark });
+  });
+
+  app.post("/api/browser/history/clear", (_req: Request, res: Response) => {
+    clearHistory();
+    res.json({ ok: true });
+  });
+
+  app.post("/api/sessions/:id/browser/find", async (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    const live = targetBrowser(session, req);
+    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
+    const found = await live.find(String(req.body?.text ?? "").slice(0, 200), !!req.body?.backwards);
+    res.json({ ok: true, found });
   });
 
   app.post("/api/sessions/:id/browser/forward", async (req: Request, res: Response) => {

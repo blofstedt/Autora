@@ -133,8 +133,7 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  New: the browser has tabs. A strip above the page lists them (tap to switch, x to close, + for a
-  new one), a link that opens a new tab opens one as in any browser, and the agent has a
-  browser_tabs tool to keep a page open while it looks at another. Forward joins back and reload.
-  Faster: the picture is rougher and quicker while you tap or scroll and sharp once you stop, and
-  it steps down by itself on a slow link instead of lagging.
+  New: the browser has a menu with Find on page, Bookmarks (a star beside the address), History
+  and Downloads. A file a page downloads is kept in Files, and History and Bookmarks are remembered
+  across restarts. Earlier in this release line: tabs, a Forward button, and a picture that is
+  quick while you tap and sharp once you stop.

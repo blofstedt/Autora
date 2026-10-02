@@ -6,10 +6,11 @@ import {
 import type { Shot } from "../lib/derive";
 import { onField, useLiveFrame, useLiveTabs } from "../lib/liveFrame";
 import { NAMED_KEYS, SENTINEL } from "../lib/pageInput";
+import { BrowserPanel, setBookmark, useBrowserData, type BrowserPanelKind } from "./BrowserPanel";
 import { Frame } from "./Frame";
 import {
   IconArrowLeft, IconArrowRight, IconChevron, IconGlobe, IconMaximize, IconMinimize, IconMonitor, IconMousePointer,
-  IconPlus, IconRotateCcw, IconStop, IconX,
+  IconDownload, IconMenu, IconPlus, IconRotateCcw, IconSearch, IconStar, IconStop, IconX,
 } from "./Icons";
 
 /** The viewport the browser harness captures. Frame pixels map 1:1 to page
@@ -55,6 +56,9 @@ export function ScreencastCell({
 }) {
   const feed = useLiveFrame(followsFeed);
   const tabs = useLiveTabs(source === "browser" && current);
+  const [panel, setPanel] = useState<BrowserPanelKind | null>(null);
+  const [menu, setMenu] = useState(false);
+  const { data: lists, reload: reloadLists } = useBrowserData(source === "browser" && current, url);
   const logRef = useRef<HTMLDivElement>(null);
   const logFollows = useRef(true);
   const logCount = Children.count(children);
@@ -481,6 +485,34 @@ export function ScreencastCell({
                 spellCheck={false}
               />
             </form>
+            {(() => {
+              const marked = !!url && !!lists?.bookmarks.some((b) => b.url === url);
+              return (
+                <button
+                  className={`shot-tool${marked ? " on" : ""}`}
+                  disabled={!url || !/^https?:/i.test(url)}
+                  onClick={() => void setBookmark(url ?? "", tabs.find((t) => t.active)?.title ?? "", marked).then(reloadLists)}
+                  aria-label={marked ? "Remove bookmark" : "Bookmark this page"}
+                  aria-pressed={marked}
+                  title={marked ? "Remove bookmark" : "Bookmark this page"}
+                >
+                  <IconStar size={15} />
+                </button>
+              );
+            })()}
+            <span className="shot-menu-wrap">
+              <button className="shot-tool" onClick={() => setMenu((v) => !v)} aria-label="Browser menu" aria-expanded={menu} title="Menu">
+                <IconMenu size={15} />
+              </button>
+              {menu && (
+                <div className="shot-menu" role="menu" onClick={() => setMenu(false)}>
+                  <button role="menuitem" onClick={() => setPanel("find")}><IconSearch size={13} /> Find on page</button>
+                  <button role="menuitem" onClick={() => setPanel("bookmarks")}><IconStar size={13} /> Bookmarks</button>
+                  <button role="menuitem" onClick={() => setPanel("history")}><IconRotateCcw size={13} /> History</button>
+                  <button role="menuitem" onClick={() => setPanel("downloads")}><IconDownload size={13} /> Downloads</button>
+                </div>
+              )}
+            </span>
           </>
         ) : (
           <>
@@ -566,6 +598,17 @@ export function ScreencastCell({
           </button>
         )}
       </header>
+      {toolbar && panel && (
+        <BrowserPanel
+          kind={panel}
+          data={lists}
+          canUse={canUse}
+          onClose={() => setPanel(null)}
+          onOpen={(u) => void send("navigate", { url: u })}
+          onFind={(text, backwards) => send("find", { text, backwards }).then((r) => !!r?.found)}
+          onChanged={reloadLists}
+        />
+      )}
       {toolbar && tabs.length > 0 && (
         <div className="shot-tabs" role="tablist" aria-label="Tabs">
           {tabs.map((tab) => (

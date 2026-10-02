@@ -448,6 +448,8 @@ export interface BrowserHooks {
   onFields: () => void;
   /** The page wrote an error or a warning to its console. */
   onConsole?: () => void;
+  /** The page downloaded a file. `bytes` is the whole of it. */
+  onDownload?: (file: { name: string; bytes: Buffer; url: string }) => void;
   /** Whether anyone is watching. The screencast is stopped while nobody is,
       because encoding JPEGs for an empty room is just heat. */
   watchers: () => number;
@@ -1970,6 +1972,44 @@ export class LiveBrowser {
     });
   }
 
+  /** Find text on the page and select it, the way a browser's find bar
+      does; the next call with the same text goes on to the next match. */
+  find(text: string, backwards = false): Promise<boolean> {
+    return this.run(async () => {
+      const page = this.page;
+      if (!page || !text) return false;
+      // The browser's own window.find reports nothing in a headless page, so
+      // the matches are walked here: the text nodes, case-insensitively, the
+      // current one remembered so Next goes on from it.
+      return !!(await page.evaluate(`(() => {
+        const q = ${JSON.stringify(text.toLowerCase())};
+        const back = ${backwards ? "true" : "false"};
+        const hits = [];
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+          const parent = n.parentElement;
+          if (!parent || /^(SCRIPT|STYLE|NOSCRIPT)$/.test(parent.tagName)) continue;
+          const hay = n.nodeValue.toLowerCase();
+          for (let i = hay.indexOf(q); i >= 0; i = hay.indexOf(q, i + q.length)) hits.push([n, i]);
+        }
+        if (!hits.length) return false;
+        const state = window.__autoraFind;
+        let at = state && state.q === q ? state.at + (back ? -1 : 1) : (back ? hits.length - 1 : 0);
+        at = (at + hits.length) % hits.length;
+        window.__autoraFind = { q, at };
+        const [node, i] = hits[at];
+        const range = document.createRange();
+        range.setStart(node, i);
+        range.setEnd(node, i + q.length);
+        const sel = getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        node.parentElement.scrollIntoView({ block: "center", inline: "nearest" });
+        return true;
+      })()`).catch(() => false));
+    });
+  }
+
   /** Forward in this tab's history. */
   goForward(): Promise<PageRead | null> {
     return this.run(async () => {
@@ -2073,6 +2113,18 @@ export class LiveBrowser {
       // asked for and many do not have.
       if (/^Failed to load resource/i.test(said)) return;
       if (kind === "error" || kind === "warning" || kind === "warn") this.noteConsole(kind === "error" ? "error" : "warn", said);
+    });
+    page.on("download", (download: any) => {
+      void (async () => {
+        try {
+          const tmp = await download.path();
+          if (!tmp) return;
+          const bytes = fs.readFileSync(tmp);
+          this.hooks.onDownload?.({ name: String(download.suggestedFilename?.() ?? "download"), bytes, url: String(download.url?.() ?? "") });
+        } catch {
+          // Cancelled or failed; nothing to keep.
+        }
+      })();
     });
     page.on("pageerror", (err: any) => this.noteConsole("error", `Uncaught: ${String(err?.message ?? err)}`));
     page.on("response", (res: any) => {
