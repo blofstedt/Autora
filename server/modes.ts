@@ -166,6 +166,7 @@ const LOOKS_ONLY = new Set([
   "inventory",
   "memory_search",
   "memory_confirm",
+  "code_search",
   "vault_read",
   "artifact_list",
   "artifact_read",

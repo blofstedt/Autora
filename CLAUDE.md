@@ -86,6 +86,17 @@ is a sub-project with its own dependencies (see below).
   - `scheduler.ts`: cron jobs and watchers.
   - `customtools.ts`: scripts the agent saved as its own tools.
   - `toolhealth.ts`: recent failures per tool, told to the agent.
+  - `loopwatch.ts` (the same call repeating) and `errorbudget.ts` (the same
+    error across *different* attempts; kept per chat by `budgetstore.ts`, eased
+    by a success, forgotten after hours): notes in the result the model reads,
+    then a stop that is told to the next turn (`resume.ts`).
+  - `argcheck.ts`: every call is checked against its tool's own schema before
+    anything else sees it.
+  - `verify.ts`: the person's project check (Settings), run by the loop when the
+    agent says it is finished after changing something; a failure goes back to
+    the agent with the raw output, up to `tries` runs a turn.
+  - `codesearch.ts` (`code_search`): exact, regex and BM25-ranked search over a
+    folder in plain code; walks afresh each time, caches only per-file indexes.
   - `suggest.ts`: what to suggest, from what is actually on the install --
     one-tap tasks for a new chat, a schedule offered once, next-step chips
     after a reply. Pure, no model call.

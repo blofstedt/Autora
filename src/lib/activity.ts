@@ -129,6 +129,7 @@ function doing(name: string, args: Record<string, any>): string {
       const command = String(args.command ?? "").replace(/\s+/g, " ").trim();
       return command ? `Running ${command.length > 40 ? `${command.slice(0, 39)}…` : command}` : "Running a command";
     }
+    case "code_search": return args.query ? `Searching the code for${quoted(args.query)}` : "Searching the code";
     case "browser_open": return args.url ? `Opening ${host(args.url)}` : "Opening a page";
     case "browser_read": return "Reading the page";
     case "browser_click": return "Clicking on the page";

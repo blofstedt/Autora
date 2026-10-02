@@ -32,6 +32,8 @@ export interface InterruptedWork {
   open: TodoItem[];
   /** Stopped by the person (or a new message), or the server restarted. */
   cause: "stopped" | "restart";
+  /** When the loop watch ended the turn: what it said. */
+  reason: string | null;
 }
 
 const MAX_REQUEST = 600;
@@ -54,7 +56,7 @@ export function interruptedWork(events: readonly ResumeEvent[]): InterruptedWork
     if (e.kind === "turn.user") starts.push(i);
   });
 
-  const chain: { index: number; request: string; tools: number; cause: "stopped" | "restart" }[] = [];
+  const chain: { index: number; request: string; tools: number; cause: "stopped" | "restart"; reason: string | null }[] = [];
   for (let t = starts.length - 1; t >= 0; t -= 1) {
     const from = starts[t];
     const to = t + 1 < starts.length ? starts[t + 1] : events.length;
@@ -67,6 +69,7 @@ export function interruptedWork(events: readonly ResumeEvent[]): InterruptedWork
       request: asked(events[from]),
       tools: segment.filter((e) => e.kind === "tool.call").length,
       cause,
+      reason: typeof done?.payload?.reason === "string" ? done.payload.reason : null,
     });
   }
   if (chain.length === 0) return null;
@@ -89,14 +92,17 @@ export function interruptedWork(events: readonly ResumeEvent[]): InterruptedWork
     tools,
     open,
     cause: chain[chain.length - 1].cause,
+    reason: chain[chain.length - 1].reason,
   };
 }
 
 /** What the agent is told at the start of the turn that follows. */
 export function resumeNote(work: InterruptedWork): string {
-  const how = work.cause === "restart"
-    ? "Autora restarted while you were working, so that turn stopped partway."
-    : "The person stopped you, or sent a message, while you were working, so that turn stopped partway.";
+  const how = work.reason
+    ? "Autora ended that turn because it was going in circles."
+    : work.cause === "restart"
+      ? "Autora restarted while you were working, so that turn stopped partway."
+      : "The person stopped you, or sent a message, while you were working, so that turn stopped partway.";
   const asks = work.requests.length === 1
     ? [`What you were asked: ${JSON.stringify(work.requests[0])}`]
     : [
@@ -109,6 +115,9 @@ export function resumeNote(work: InterruptedWork): string {
     ...asks,
     work.tools > 0
       ? `You had made ${work.tools} tool call${work.tools === 1 ? "" : "s"} on it (listed under what you have already done).`
+      : "",
+    work.reason
+      ? `${work.reason} Do not make those attempts again: find what is actually blocking you, take a different approach, or say what you need from the person.`
       : "",
     work.open.length > 0
       ? ["Still open on your to-do list:", ...work.open.map((i) => `- ${i.id}. ${i.title} (${i.status})`)].join("\n")

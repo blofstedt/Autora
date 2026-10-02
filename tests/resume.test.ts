@@ -93,4 +93,12 @@ test("a long request is shortened, and a shown line is preferred", () => {
   assert.ok(long!.requests[0].length < 700);
 });
 
+test("a turn the loop watch ended says why, and not to repeat it", () => {
+  const w = interruptedWork([user("fix the deploy"), call(), done({ stopped: true, reason: "Stopped: terminal failed with the same error across 6 different attempts." })]);
+  assert.match(w!.reason ?? "", /6 different attempts/);
+  const note = resumeNote(w!);
+  assert.match(note, /going in circles/);
+  assert.match(note, /Do not make those attempts again/);
+});
+
 console.log(`${passed} passed`);

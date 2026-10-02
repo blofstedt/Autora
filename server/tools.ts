@@ -33,6 +33,7 @@ import {
   listCustomTools, missingArgs, noteCustomRun,
 } from "./customtools";
 import { spawn } from "node:child_process";
+import { searchCode } from "./codesearch";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -1460,6 +1461,31 @@ const TOOLS: ToolSpec[] = [
         offset: { type: "number", description: "read: character to start from, for a notebook too long to read at once." },
       },
       required: ["action"],
+    },
+  },
+
+  {
+    name: "code_search",
+    group: "terminal",
+    description:
+      "Find where something is in a folder of code, without reading files one at a time. Plain code does the " +
+      "searching, not a model, so it is fast and nothing in it is a guess. Three ways: ranked (the default) finds " +
+      "the places most about some words -- \"fetch user\" finds fetchUserById and fetch_user_by_id -- and returns each " +
+      "with its best lines; exact finds every line holding some text; regex finds every line matching a pattern. " +
+      "Results are path:line, so read just that place afterwards (sed -n 'START,ENDp' file) instead of the whole " +
+      "file. It skips node_modules, build output, hidden folders, environment files and binaries. Start here when " +
+      "you do not know where something lives; use the terminal's grep only for something this cannot say.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Words to rank by, or the exact text, or a regular expression." },
+        mode: { type: "string", enum: ["ranked", "exact", "regex"], description: "Default ranked." },
+        path: { type: "string", description: "A folder to look in, from the terminal's directory. Default: the terminal's directory." },
+        glob: { type: "string", description: "Only files matching this: \"*.ts\", \"src/**/*.tsx\"." },
+        case_sensitive: { type: "boolean", description: "For exact and regex. Default any case." },
+        max: { type: "number", description: "How many places to return (ranked) -- default 8, at most 30." },
+      },
+      required: ["query"],
     },
   },
 
@@ -3237,6 +3263,19 @@ async function runToolUnredacted(
         // A relative directory is taken from the terminal's own, like `cd`.
         const cwd = asked ? path.resolve(terminalDir(), asked) : terminalDir();
         return await runCommand(command, cwd, settings.timeout, ctx);
+      }
+
+      case "code_search": {
+        const where = String(args.path ?? "").trim();
+        const found = searchCode({
+          root: where ? path.resolve(terminalDir(), where) : terminalDir(),
+          query: String(args.query ?? ""),
+          mode: args.mode === "exact" || args.mode === "regex" ? args.mode : "ranked",
+          glob: typeof args.glob === "string" ? args.glob : undefined,
+          caseSensitive: args.case_sensitive === true,
+          max: typeof args.max === "number" ? args.max : undefined,
+        });
+        return { ok: found.ok, summary: found.text, preview: found.ok ? `${found.files} files searched` : "no search" };
       }
 
       // --------------------------------------------------- background --

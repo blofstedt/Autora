@@ -83,11 +83,13 @@ import { mergeCaptcha } from "./server/captcha";
 import { inQuiet, mergeProactivity, quietBriefing } from "./server/quiet";
 import {
   askAbout, askReason, cleanAskWhen, isPermissions, isWorkMode, legacyPermissions, modeBriefing,
-  permissionBriefing, permissionsOf, phaseFor, planRefusal, PERMISSION_INFO, WORK_MODES, workMode,
+  permissionBriefing, permissionsOf, phaseFor, planRefusal, readOnlyCommand, PERMISSION_INFO, WORK_MODES, workMode,
   type Permissions, type Phase, type WorkMode,
 } from "./server/modes";
 import { LoopWatch, describe as describeCall } from "./server/loopwatch";
 import { ErrorBudget } from "./server/errorbudget";
+import { checkLine, failedNote, mergeVerify, type CheckResult } from "./server/verify";
+import { keepBudget, loadBudget } from "./server/budgetstore";
 import { interruptedWork, resumeNote, type InterruptedWork, type ResumeEvent } from "./server/resume";
 import { checkArgs } from "./server/argcheck";
 import { healthBriefing, recordOutcome, targetOf, toolHealth } from "./server/toolhealth";
@@ -2956,6 +2958,8 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
        never wrote a closing line. Pointing at work that did not happen is
        its own small lie. */
     let ranSomething = false;
+    /* Why the loop watch ended the turn, when it did: the next turn is told. */
+    let loopReason: string | null = null;
     /* One per turn, and outside the retry loop on purpose: a retry only
        happens when nothing has been said yet, so the sieve is empty, and
        a fresh one per attempt would be the same object with more steps. */
@@ -3611,7 +3615,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
       const watch = new LoopWatch(state.loop);
       /* Failures that say the same thing however the arguments were varied,
          which the exact-call counts in the loop watch never add up. */
-      const errors = new ErrorBudget();
+      const errors = new ErrorBudget(3, 6, session.incognito ? {} : loadBudget(session.id));
       let loopStop: string | null = null;
       /** Run a call's result past the loop watch before the model reads it. */
       const watched = (name: string, args: unknown, ok: boolean, raw: string, shown: string) => {
@@ -3631,6 +3635,8 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           name, describeCall(name, args), ok, stripAnsi(raw),
         );
         if (budget.stop && !loopStop) loopStop = budget.stop;
+        // Kept, so "try again" after a stop does not start from nothing.
+        if (!session.incognito) keepBudget(session.id, errors.snapshot());
         /* A scheduled run has a budget of its own, so one job that has begun
            to chew through a session is stopped here rather than left to
            finish. A turn the person is having is never stopped this way. */
@@ -3685,6 +3691,10 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
       let nudges = 0;
       /** Whether this turn has been asked about open to-do items already. */
       let todoAsked = false;
+      /** Whether a command that changes things has run since the project's
+          check last did, and how many times that check has run this turn. */
+      let changedSinceCheck = false;
+      let checkRuns = 0;
       for (;;) {
         if (running.get(session.id)?.stopped) break;
 
@@ -3755,6 +3765,48 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
               emitEvent(session, "system.log", "system", {
                 message: "The to-do list still had open items as the turn ended; asked the agent to bring it up to date.",
               });
+              continue;
+            }
+          }
+          /* A fourth: the agent says it is finished and has changed things, and
+             the person has named a check for their project. The check runs
+             here, in plain code, and what it printed goes back to the agent:
+             "done" is not the model's word to give. A failure sends it back
+             to fix it, up to the number of runs the person allowed. */
+          if (!stalled && changedSinceCheck && state.verify.command && checkRuns < state.verify.tries &&
+              !running.get(session.id)?.stopped && !opts.spoken &&
+              phaseFor(workMode(session.mode), session.phase) === "build" && tools.some((t) => t.name === "terminal")) {
+            const command = state.verify.command;
+            changedSinceCheck = false;
+            checkRuns += 1;
+            const span = `span-${session.id}-${session.seqCounter}-${spans++}`;
+            emitEvent(session, "system.log", "system", { message: `Running the project's check: ${command}` });
+            emitEvent(session, "tool.call", "agent", { name: "terminal", args: { command } }, span);
+            const started = Date.now();
+            const outcome = await runTool(findTool("terminal")!, { command }, contextFor(span));
+            const durationMs = Date.now() - started;
+            if (outcome.exitCode !== undefined) {
+              emitEvent(session, "pty.exit", "agent", { exit_code: outcome.exitCode ?? null, duration_ms: durationMs }, span);
+            }
+            emitEvent(session, "tool.result", "agent", {
+              ok: outcome.ok,
+              preview: outcome.preview ?? "",
+              duration_ms: durationMs,
+              ...(outcome.exitCode !== undefined ? { display: { exit_code: outcome.exitCode } } : {}),
+            }, span);
+            const checked: CheckResult = {
+              command, exitCode: outcome.exitCode ?? null, ok: outcome.ok,
+              output: context.ingest("terminal", outcome.summary, canReadVault),
+            };
+            emitEvent(session, "system.log", "system", { message: checkLine(checked, checkRuns, state.verify.tries) });
+            if (!checked.ok && !running.get(session.id)?.stopped) {
+              if (!empty) {
+                context.append(
+                  { role: "assistant", text: turn.text, reasoning: turn.reasoning },
+                  session.seqCounter,
+                );
+              }
+              context.append({ role: "user", text: failedNote(checked, checkRuns, state.verify.tries) }, session.seqCounter);
               continue;
             }
           }
@@ -4026,6 +4078,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           ranSomething = true;
           const outcome = await runTool(spec, use.args, contextFor(span));
           const durationMs = Date.now() - started;
+          if (spec.name === "terminal" && !readOnlyCommand(String(use.args?.command ?? ""))) changedSinceCheck = true;
 
           if (spec.group === "terminal" && outcome.exitCode !== undefined) {
             // The terminal cell reads its exit code from here, and the
@@ -4112,6 +4165,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
 
         if (loopStop) {
           emitEvent(session, "system.log", "system", { message: loopStop });
+          loopReason = loopStop;
           break;
         }
       }
@@ -4173,7 +4227,11 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
 
     /* Marked when the turn was cut short, so the next one can tell it was
        left unfinished (see server/resume.ts). */
-    emitEvent(session, "turn.agent.done", "agent", running.get(session.id)?.stopped ? { stopped: true } : {});
+    emitEvent(
+      session, "turn.agent.done", "agent",
+      running.get(session.id)?.stopped ? { stopped: true }
+        : loopReason ? { stopped: true, reason: loopReason } : {},
+    );
     closed = true;
     result.ranSomething = ranSomething;
     result.stopped = Boolean(running.get(session.id)?.stopped);
@@ -5943,6 +6001,7 @@ async function startServer() {
       budget_usd: state.budgetUsd,
       top_up_usd: state.topUpUsd,
       loop: { ...state.loop },
+      verify: { ...state.verify },
       retention: { ...state.retention },
       automation: { ...state.automation },
       state_file: stateFilePath(),
@@ -6167,6 +6226,7 @@ async function startServer() {
        constants in the source: a turn could be stopped by a rule nobody could
        see, and nothing ever deleted anything. */
     if (body.loop && typeof body.loop === "object") mergeLoop(state.loop, body.loop);
+    if (body.verify && typeof body.verify === "object") mergeVerify(state.verify, body.verify);
     if (body.retention && typeof body.retention === "object") mergeRetention(state.retention, body.retention);
     /* What automated runs may cost. Enforced in the scheduler and again in
        the agent loop -- see server/automation.ts. */

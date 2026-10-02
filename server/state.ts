@@ -22,6 +22,7 @@ import path from "node:path";
 import { isEphemeral } from "./ephemeral";
 import { AUTO_ORDER, PROVIDERS, providerSpec } from "./providers";
 import { LOOP_DEFAULTS, type LoopWatchConfig } from "./loopwatch";
+import { mergeVerify, VERIFY_DEFAULTS, type VerifyConfig } from "./verify";
 import type { McpServerConfig } from "./mcp";
 import { DEFAULT_CAPTCHA, mergeCaptcha, type CaptchaSettings } from "./captcha";
 import { DEFAULT_PROACTIVITY, mergeProactivity, type Proactivity } from "./quiet";
@@ -275,6 +276,9 @@ export interface PersistedState {
   /** When a turn is called a loop: repeats that earn a note, repeats that
       stop the turn, and how often it is asked to check itself. */
   loop: LoopWatchConfig;
+  /** The project check run when the agent says it is finished (see
+      server/verify.ts). Empty command: off. */
+  verify: VerifyConfig;
   /** How long sessions and artifacts are kept. */
   retention: RetentionPolicy;
   /** What automated runs -- schedules and watchers -- may cost, kept apart
@@ -497,6 +501,7 @@ function blank(): PersistedState {
     learning: true,
     timezone: "",
     loop: { ...LOOP_DEFAULTS },
+    verify: { ...VERIFY_DEFAULTS },
     retention: { ...RETENTION_DEFAULTS },
     automation: { ...AUTOMATION_DEFAULTS },
     push: defaultPush(),
@@ -541,6 +546,7 @@ function read(): PersistedState {
     if (raw.captcha) mergeCaptcha(state.captcha, raw.captcha);
     if (raw.proactivity) mergeProactivity(state.proactivity, raw.proactivity);
     if (raw.loop) mergeLoop(state.loop, raw.loop);
+    if (raw.verify) mergeVerify(state.verify, raw.verify);
     if (raw.retention) mergeRetention(state.retention, raw.retention);
     if (raw.automation) mergeAutomation(state.automation, raw.automation);
     if (raw.push) mergePush(state.push, raw.push);

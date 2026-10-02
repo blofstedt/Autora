@@ -106,6 +106,43 @@ async function main() {
       assert.ok(first.some((e) => e.kind === "mode.switch" && e.payload.to === "build"));
       app.decide = null;
     });
+    await test("a turn the loop watch ends is followed by a turn that knows why, and the budget carries over", async () => {
+      app.seen.length = 0;
+      let n = 0;
+      app.decide = (req) => {
+        if (/You check one action/.test(req.system)) return { text: '{"destructive": false, "requested": true}' };
+        if (n < 12) {
+          n += 1;
+          // Different arguments each time, the same failure.
+          return { tools: [{ name: "terminal", args: { command: `cat /no/such/file-${n}.txt` } }] };
+        }
+        return { text: "Done." };
+      };
+      const s = await app.newSession("loop", "build");
+      const ev = await app.turn(s, "read the config file", 60_000);
+      const stop = ev.find((e) => e.kind === "system.log" && /Stopped: terminal failed with the same error/.test(e.payload.message ?? ""));
+      assert.ok(stop, "the turn was stopped by the error budget: " + JSON.stringify(ev.filter((e) => /^(system|tool)\./.test(e.kind)).map((e) => [e.kind, JSON.stringify(e.payload).slice(0, 160)])));
+      const end = ev.filter((e) => e.kind === "turn.agent.done").at(-1)!;
+      assert.equal(end.payload.stopped, true);
+      assert.match(end.payload.reason, /different attempts/);
+      const before = app.seen.length;
+      // The next turn meets the same wall once: what the chat has used is remembered.
+      app.decide = (req) => (/You check one action/.test(req.system)
+        ? { text: '{"destructive": false, "requested": true}' }
+        : { tools: [{ name: "terminal", args: { command: "cat /no/such/file-99.txt" } }] });
+      const again = await app.turn(s, "ok, try something else", 60_000);
+      assert.ok(
+        again.some((e) => e.kind === "system.log" && /Stopped: terminal failed with the same error/.test(e.payload.message ?? "")),
+        "one more failure with the same error stopped the next turn at once",
+      );
+      const lastUser = again.filter((e) => e.kind === "turn.user").at(-1)!;
+      assert.equal(again.filter((e) => e.seq > lastUser.seq && e.kind === "tool.call").length, 1);
+      const next = app.seen.slice(before).map((r) => `${r.system}\n${JSON.stringify(r.messages)}`).join("\n");
+      assert.match(next, /\[Interrupted work\]/);
+      assert.match(next, /going in circles/);
+      assert.match(next, /Do not make those attempts again/);
+      app.decide = null;
+    });
   } finally {
     const log = app.log();
     await app.stop();

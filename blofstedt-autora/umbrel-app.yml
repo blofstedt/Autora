@@ -125,6 +125,14 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
+  New: a project check. Name a command in Settings (your linter, tests or
+  build) and Autora runs it itself when the agent says it is finished after
+  changing something; a failure sends the agent back with the real output, and
+  a pass ends the turn, instead of taking the agent's word. New: code_search
+  finds where something is in a folder of code -- by the words in a name, an
+  exact phrase or a pattern -- without reading file after file. The loop watch
+  now remembers a chat's failures between turns, so "try again" after a stop
+  does not walk into the same wall, and the next turn is told why it stopped.
   Fixed: interrupting the agent no longer makes it lose track. A message sent
   while it works, or one after pressing Stop, is now answered together with the
   work it cut off: the agent is told what it was doing, what you asked, and
