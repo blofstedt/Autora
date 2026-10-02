@@ -15,10 +15,11 @@
   // quiet for a while after the workbook opened.
   let lastIpc = Date.now();
   let opened = false;
+  let openedAt = 0;
   const invoke = window.__autora.ipc.invoke;
   window.__autora.ipc.invoke = (channel, ...args) => {
     lastIpc = Date.now();
-    if (channel === "workbook:select") opened = true;
+    if (channel === "workbook:select") { opened = true; openedAt = Date.now(); }
     return invoke(channel, ...args).finally(() => { lastIpc = Date.now(); });
   };
   const consumeHeadlessExport = api.consumeHeadlessExport;
@@ -28,7 +29,7 @@
       const out = await consumeHeadlessExport();
       if (!out) return out;
       const started = Date.now();
-      while ((!opened || Date.now() - lastIpc < 2500) && Date.now() - started < 120000) await new Promise((r) => setTimeout(r, 250));
+      while ((!opened || Date.now() - lastIpc < 1000 || Date.now() - openedAt < 1700) && Date.now() - started < 120000) await new Promise((r) => setTimeout(r, 250));
       return out;
     },
     // Every Autora theme is dark; the editor has a dark theme of its own.

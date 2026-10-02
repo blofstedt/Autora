@@ -101,6 +101,7 @@ export const renderDocxToPdf = (data: Buffer, name: string, stopper: Stopper = {
 const EDITOR_NAME = { docs: "Word", slides: "PowerPoint", sheets: "Excel" } as const;
 
 async function render(kind: OfficeKind, data: Buffer, name: string, stopper: Stopper): Promise<Buffer> {
+  const t0 = Date.now();
   const app = APP_OF[kind];
   if (!editorBuilt(app)) throw new OfficeRenderError(`The ${EDITOR_NAME[app]} editor is not built on this server (node scripts/build-office.mjs), so pages cannot be drawn.`);
   // The engines keep the document in a file of their own to open and write.
@@ -111,6 +112,7 @@ async function render(kind: OfficeKind, data: Buffer, name: string, stopper: Sto
   let host: OfficeHost | null = null;
   try {
     return await withBrowserContext(async (context, stop) => {
+      if (process.env.AUTORA_OFFICE_DEBUG) console.error("[time] browser ready", `+${Date.now() - t0}ms`);
       let pdf: Buffer | null = null;
       let verdict: { ok: boolean; error?: string } | null = null;
       const tmp = fs.realpathSync(os.tmpdir());
@@ -196,6 +198,7 @@ async function render(kind: OfficeKind, data: Buffer, name: string, stopper: Sto
       let engineDone: Promise<unknown> | null = null;
       if (app !== "docs") {
         host = await OfficeHost.start(app as HostApp, windows, { AUTORA_OFFICE_HOME: path.join(work!, "state") });
+        if (process.env.AUTORA_OFFICE_DEBUG) console.error("[time] engine started", `+${Date.now() - t0}ms`);
         if (app === "sheets") {
           // A workbook is opened and exported by the engine, which makes the editor's window and queues the file in it.
           const made = host.expectPage();
@@ -218,7 +221,7 @@ async function render(kind: OfficeKind, data: Buffer, name: string, stopper: Sto
           case "open": return app === "docs" ? { bytes64: data.toString("base64"), name } : { path: input, name };
           case "ipc": {
             if (!host) throw new Error("no engine");
-            if (process.env.AUTORA_OFFICE_DEBUG) console.error("[ipc]", payload?.channel);
+            if (process.env.AUTORA_OFFICE_DEBUG) console.error("[ipc]", `+${Date.now() - t0}ms`, payload?.channel);
             const value = await host.invoke(wc, String(payload?.channel), wire.dec(payload?.args ?? []));
             if (process.env.AUTORA_OFFICE_DEBUG && /export|read-range/.test(String(payload?.channel))) console.error("[ipc result]", JSON.stringify(value)?.slice(0, 900));
             return wire.enc(value);
@@ -247,6 +250,7 @@ async function render(kind: OfficeKind, data: Buffer, name: string, stopper: Sto
       const timer = setTimeout(stop, EXPORT_MS);
       try {
         await page.goto(`${ORIGIN}/${app}/index.html`);
+        if (process.env.AUTORA_OFFICE_DEBUG) console.error("[time] page loaded", `+${Date.now() - t0}ms`);
         const pageDone = page.waitForFunction(() => Boolean((globalThis as any).__autoraDone), undefined, { timeout: EXPORT_MS });
         // An engine that made its own window (Excel) says when it is finished, or why it could not be.
         await Promise.race([pageDone, ...(engineDone ? [engineDone.then(() => pageDone, (e) => { throw e; })] : [])]);
@@ -256,6 +260,7 @@ async function render(kind: OfficeKind, data: Buffer, name: string, stopper: Sto
       } finally {
         clearTimeout(timer);
       }
+      if (process.env.AUTORA_OFFICE_DEBUG) console.error("[time] finished", `+${Date.now() - t0}ms`);
       const done = verdict as { ok: boolean; error?: string } | null;
       if (!done?.ok) throw new OfficeRenderError(`The ${label} editor could not export it: ${done?.error ?? "no reason given"}.`);
       // The engines write the file themselves.

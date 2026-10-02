@@ -202,7 +202,11 @@ is a sub-project with its own dependencies (see below).
     open it in the **PDF editor window** (PDFs go to our editor, never GenOffice's).
     A deck takes ~10 s, a workbook ~11 s (Excel's export waits until the engine has
     been quiet after the workbook opened: its formulas settle a moment late).
-    `AUTORA_OFFICE_DEBUG=1` prints the page's console and the ipc channels.
+    `AUTORA_OFFICE_DEBUG=1` prints the page's console, the ipc channels and where the time goes.
+    The engine is forked with `execArgv: []` (under tsx it would start the loader too: 5 s),
+    Excel's export waits for the engine to be quiet 1 s and the workbook to have been open
+    1.7 s (formulas settle late), and `serveOfficeEditors` sends pages and fonts compressed
+    (brotli, kept after the first time; the Excel page is 14 MB, 3 MB sent).
   - `mindrules.ts` (+ `site.ts`): the rules the mind is kept by. Every
     `memory_write` / `memory_update` goes through `checkEntry` / `checkText`: a
     title that starts with its subject, one topic per record (length limit by

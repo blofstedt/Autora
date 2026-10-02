@@ -1057,11 +1057,49 @@ export function officeRoutes(app: Express, opts: { exists: (session: string) => 
  * fonts, because requests from the frame carry no cookies and a login proxy in
  * front (Umbrel's) turns them away (office/vite/editor.mjs).
  */
+/** A page or font, compressed once and kept: the Excel editor is 14 MB as it is and under 3 MB sent compressed. */
+const squeezed = new Map<string, { stamp: string; br: Buffer; gz: Buffer }>();
+const SQUEEZE = /\.(html|js|css|ttf|otf|json|svg)$/i;
+
 export function serveOfficeEditors(app: Express, webDir: string) {
   app.use("/office-app", (_req, res, next) => {
     res.setHeader("Content-Security-Policy", "sandbox allow-scripts allow-downloads allow-modals allow-popups");
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("X-Content-Type-Options", "nosniff");
     next();
+  }, (req, res, next) => {
+    if (req.method !== "GET" || !SQUEEZE.test(req.path)) return next();
+    const accepts = String(req.headers["accept-encoding"] ?? "");
+    const want = /\bbr\b/.test(accepts) ? "br" : /\bgzip\b/.test(accepts) ? "gz" : null;
+    if (!want) return next();
+    try {
+      const file = path.resolve(webDir, "." + path.posix.normalize("/" + decodeURIComponent(req.path)));
+      if (!file.startsWith(path.resolve(webDir) + path.sep)) return next();
+      const st = fs.statSync(file);
+      if (!st.isFile()) return next();
+      const stamp = `${st.mtimeMs}-${st.size}`;
+      let kept = squeezed.get(file);
+      if (!kept || kept.stamp !== stamp) {
+        const raw = fs.readFileSync(file);
+        kept = {
+          stamp,
+          // Quality 5: most of the size for a fraction of the time, and it is done once.
+          br: zlib.brotliCompressSync(raw, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5, [zlib.constants.BROTLI_PARAM_SIZE_HINT]: raw.length } }),
+          gz: zlib.gzipSync(raw, { level: 6 }),
+        };
+        squeezed.set(file, kept);
+      }
+      const etag = `"${stamp}-${want}"`;
+      res.setHeader("Vary", "Accept-Encoding");
+      res.setHeader("ETag", etag);
+      res.setHeader("Cache-Control", "private, no-cache");
+      if (req.headers["if-none-match"] === etag) return void res.status(304).end();
+      const type = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml" }[path.extname(file).toLowerCase()] ?? "application/octet-stream";
+      res.setHeader("Content-Type", type);
+      res.setHeader("Content-Encoding", want === "br" ? "br" : "gzip");
+      res.send(want === "br" ? kept.br : kept.gz);
+    } catch {
+      next();
+    }
   }, express.static(webDir, { fallthrough: false }));
 }

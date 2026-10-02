@@ -53,6 +53,8 @@ export class OfficeHost {
     if (!fs.existsSync(script)) throw new Error(`the ${app} editor's engine is not built on this server (node scripts/build-office.mjs)`);
     this.child = fork(script, [], {
       serialization: "advanced",
+      // Not the parent's own flags: under a loader (tsx in development and in the tests) the engine would start that too, for seconds.
+      execArgv: [],
       stdio: ["ignore", "ignore", "pipe", "ipc"],
       env: { ...process.env, ...env, ELECTRON_RUN_AS_NODE: "" },
     });

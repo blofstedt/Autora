@@ -133,6 +133,8 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
+  Faster: Excel workbooks open and draw about twice as fast, and the editors' pages are sent
+  compressed (Excel's goes from 14 MB to 3 MB).
   Fix: Word no longer warns that Calibri, Cambria, Arial, Times New Roman or Courier New are missing. They are
   drawn in their open metric twins, so pages lay out the same.
   New: Word, Excel and PowerPoint can be switched off on the Tools page. Tapping a slide on a phone
