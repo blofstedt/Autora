@@ -107,7 +107,7 @@ import {
   addressIn, DEVICES, isDevice, isLocalUrl, localAddress, serveFolder, waitForServer,
   type Device, type StaticServer,
 } from "./server/preview";
-import { deskBriefing, deskRoutes, deskState, dropDesk, onDeskChange, serveEditor } from "./server/pdfdesk";
+import { deskBriefing, deskRoutes, deskState, dropDesk, onDeskChange, onDeskTouch, serveEditor } from "./server/pdfdesk";
 import {
   pickExpression, reviewMessage, safeStyle, type ElementInfo, type ReviewComment, type StyleChange,
 } from "./server/pick";
@@ -1126,6 +1126,10 @@ async function lookForChange(session: Session, run: PreviewRun, attempt: number)
    Its objects are the agent's and the person's own marks on their file, so
    they are not run through the secret table -- like the app window's state,
    this is sent as it is. */
+/* What the person does to the PDF is theirs for a moment: the agent leaves that
+   object alone and goes on to others. */
+onDeskTouch((sessionId, subject, kind, detail, opts) => touchPresence(sessionId, "pdf", subject, kind, detail, opts));
+
 onDeskChange((sessionId) => {
   sendEphemeral(sessionId, { type: "pdfdesk", session: sessionId, state: deskState(sessionId) });
 });
@@ -3696,6 +3700,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
 
       const contextFor = (span: string): ToolContext => ({
         research: researchFor,
+        held: (surface, subject) => presenceFor(session.id).blocked(surface, subject),
         preview: {
           start: (args) => previewStart(session, args, span),
           stop: async () => {
@@ -4503,7 +4508,9 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             /* A command that exits non-zero is a result, not a broken
                tool: the model needs to read it and decide. Only a tool
                that could not run at all is an error. */
-            if (outcome.exitCode !== undefined) {
+            if (outcome.held) {
+              emitEvent(session, "tool.error", "agent", { held: true, error: "Not done: the person is working on this." }, span);
+            } else if (outcome.exitCode !== undefined) {
               emitEvent(session, "tool.result", "agent", {
                 ok: false,
                 preview: outcome.preview ?? "",
@@ -4526,7 +4533,9 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
              anything still too long kept whole in the vault with its head
              and tail left in the prompt. The thread already showed it
              all, live; this is only what the model reads. */
-          reply(outcome.ok, watched(
+          // Not done because the person is using it: said, not counted as a failure.
+          if (outcome.held) reply(false, outcome.summary);
+          else reply(outcome.ok, watched(
             spec.name, use.args, outcome.ok, outcome.summary,
             context.ingest(spec.name, outcome.summary, canReadVault),
           ), outcome.images);

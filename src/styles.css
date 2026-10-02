@@ -6423,3 +6423,7 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 .app-control.on { color: #fff; background: #6a58e0; border-color: #6a58e0; }
 .shot-control.on { color: #fff; background: #6a58e0; border-radius: 999px; }
 @media (max-width: 560px) { .app-control { padding: 5px 8px; } }
+
+/* A phone's PDF bar has room for the name, Take control and Full screen; the
+   cursor switch is in Settings there. */
+.pdf-window.is-phone .pdf-cursor-pill, .pdf-window.is-phone .pdf-bar-note { display: none; }

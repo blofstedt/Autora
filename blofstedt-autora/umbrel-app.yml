@@ -129,7 +129,8 @@ releaseNotes: >-
   you click, type or press in the app window or the agent's browser is told to
   the agent in a line a colleague would hear, and it answers in kind and carries
   on without undoing it. While you are using a window the agent leaves it alone
-  and works on something else, and "Take control" in the app window, the PDF
+  and works on something else -- in a PDF, per object: move or select one and the
+  agent changes the others and says what it left for you -- and "Take control" in the app window, the PDF
   window and the browser card takes it fully until you "Hand back". Held
   actions are skipped, not counted as failures, and never stop the turn.
   New: you can watch the app being built. When the agent changes code, the

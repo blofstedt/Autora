@@ -122,7 +122,11 @@ is a sub-project with its own dependencies (see below).
     call that would use a held surface -- not an error, so it never feeds the loop
     watch or error budget -- and `note()` says what they did, once, at the next
     round (or the next turn's note). `COLLABORATION` tells the agent how to behave.
-    Client: `lib/collab.ts` and the Take control / Hand back buttons.
+    Client: `lib/collab.ts` and the Take control / Hand back buttons. In the PDF
+    the editor tells the server what is selected or dragged (`autora:presence`,
+    every few seconds while held) and `personChanges` touches each object the
+    person changed; `pdf_edit` skips objects they hold, does the rest of the call
+    and says what it left (`PdfOutcome.held` when nothing could be done).
   - `domdiff.ts` + `LiveBrowser.domMap/markAt/glideTo` (`browser.ts`): after code
     changes the preview's page is compared with how it was (matched by tag,
     words and class, never position) and the cursor -- drawn into the page, so

@@ -57,6 +57,9 @@ export interface PdfContext {
   onCancel: (stop: () => void) => void;
   /** The session's PDF window, when there is one to show the work in. */
   desk?: DeskHooks;
+  /** Why an object may not be changed right now (the person is working on
+      it), or null. */
+  held?: (objectId: string) => string | null;
 }
 
 export interface PdfOutcome {
@@ -64,6 +67,8 @@ export interface PdfOutcome {
   summary: string;
   preview?: string;
   images?: ChatImage[];
+  /** Not done because the person is working on it: not an error. */
+  held?: boolean;
 }
 
 /** A failure the agent is told in so many words. */
@@ -2099,6 +2104,33 @@ async function editTool(args: Record<string, any>, ctx: PdfContext): Promise<Pdf
   }
   const unknown = [...dropIds, ...changes.map((c) => String(c.id))].filter((id) => !desk?.items.some((i) => i.id === id));
   if (unknown.length) throw new Problem(`There is no object ${unknown.map((u) => JSON.stringify(u)).join(", ")} in the window. The ids are in the results of earlier pdf_edit calls and the start of the turn.`);
+  /* What the person is working on stays theirs: those objects are left as
+     they are, said so, and everything else in the call goes ahead. */
+  const leftAlone: string[] = [];
+  if (ctx.held && desk) {
+    const name = (id: string) => {
+      const it = desk.items.find((i) => i.id === id);
+      return `${id}${it ? ` (${String(it.type)} on page ${it.pageNumber})` : ""}`;
+    };
+    for (const c of [...changes]) {
+      if (!ctx.held(String(c.id))) continue;
+      changes.splice(changes.indexOf(c), 1);
+      leftAlone.push(`change of ${name(String(c.id))}`);
+    }
+    for (const id of [...dropIds]) {
+      if (!ctx.held(id)) continue;
+      dropIds.delete(id);
+      leftAlone.push(`removal of ${name(id)}`);
+    }
+    if (leftAlone.length && !values && !items.length && !wm && !numbers && !props && !strip && !flatten && !dropIds.size && !changes.length) {
+      return {
+        ok: false, held: true,
+        summary:
+          `Not done: the person is working on ${leftAlone.length === 1 ? "that object" : "those objects"} right now (${leftAlone.join("; ")}). ` +
+          "Leave it and go on to something else; come back in a little while.",
+      };
+    }
+  }
   if (xfa === "dynamic" && (values || flatten)) {
     throw new Problem(
       "This is a dynamic XFA form: its fields live in XML the PDF tools cannot fill. Write on it with add items " +
@@ -2114,6 +2146,12 @@ async function editTool(args: Record<string, any>, ctx: PdfContext): Promise<Pdf
 
   const done: string[] = [];
   const notes: string[] = [];
+  if (leftAlone.length) {
+    notes.push(
+      `Left alone, because the person is working on ${leftAlone.length === 1 ? "it" : "them"} right now: ${leftAlone.join("; ")}. ` +
+      "Everything else was done. Come back to those in a little while.",
+    );
+  }
   const fonts = new Fonts(doc);
   /* A box with a background laid over words is the way to cover them, and the
      way to loop: the words stay in the file, and the next look still finds

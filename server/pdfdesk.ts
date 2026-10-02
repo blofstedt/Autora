@@ -89,6 +89,13 @@ const DIR = path.join(stateDir(), "desks");
 const validSession = (id: string) => /^[A-Za-z0-9_-]{1,80}$/.test(id);
 const isPdf = (data: Buffer) => data.subarray(0, 1024).includes("%PDF-");
 
+/** What the person does to the file, for whoever shares it with them
+    (server/presence.ts): an object they touched is theirs for a moment. */
+let touched: (session: string, subject: string, kind: string, detail: string, opts?: { tell?: boolean }) => void = () => undefined;
+export function onDeskTouch(fn: typeof touched) {
+  touched = fn;
+}
+
 let changed: (session: string) => void = () => undefined;
 /** Who to tell when a window changes: server.ts sends it to the session's sockets. */
 export function onDeskChange(fn: (session: string) => void) {
@@ -446,11 +453,17 @@ export function personChanges(session: string, upsert: unknown[], remove: unknow
     // An object the agent placed keeps what it came from, whatever the page sends.
     if (was?.autora) item.autora = was.autora;
     else delete item.autora;
-    if (!was) desk.news.push(`added ${label(item)}`);
-    else if (JSON.stringify({ ...was, x: 0, y: 0, drawingPoints: 0 }) === JSON.stringify({ ...item, x: 0, y: 0, drawingPoints: 0 })) {
-      if (was.x !== item.x || was.y !== item.y) desk.news.push(`moved ${label(item)}`);
+    if (!was) {
+      desk.news.push(`added ${label(item)}`);
+      touched(session, item.id, "add", `added ${label(item)}`);
+    } else if (JSON.stringify({ ...was, x: 0, y: 0, drawingPoints: 0 }) === JSON.stringify({ ...item, x: 0, y: 0, drawingPoints: 0 })) {
+      if (was.x !== item.x || was.y !== item.y) {
+        desk.news.push(`moved ${label(item)}`);
+        touched(session, item.id, "move", `moved ${label(item)}`);
+      }
     } else {
       desk.news.push(`changed ${label(item)}`);
+      touched(session, item.id, "edit", `changed ${label(item)}`);
     }
     byId.set(item.id, item);
   }
@@ -458,6 +471,7 @@ export function personChanges(session: string, upsert: unknown[], remove: unknow
     const was = byId.get(id);
     if (!was) continue;
     desk.news.push(`removed ${label(was)}`);
+    touched(session, id, "remove", `removed ${label(was)}`);
     byId.delete(id);
   }
   desk.news = squash(desk.news).slice(-40);
@@ -492,6 +506,7 @@ export function personBase(session: string, data: Buffer, items: unknown[], cwd:
     return i;
   });
   desk.news.push("changed the pages themselves (deleting, turning, reordering or merging pages)");
+  touched(session, "*", "pages", "changed the pages themselves (deleting, turning, reordering or merging pages)");
   desk.compose = null;
   desk.outline = null;
   desk.baseRev++;
@@ -637,6 +652,22 @@ export function deskRoutes(app: Express, opts: { exists: (session: string) => bo
     const remove = Array.isArray(body?.remove) ? body.remove : [];
     if (!personChanges(id, upsert, remove, opts.cwd())) return res.status(404).json({ error: "There is no PDF open in the window." });
     res.json({ ok: true, rev: deskState(id).rev });
+  });
+
+  /* What the person has hold of in the editor right now: an object selected or
+     being dragged. Nothing changes in the file; the agent is simply asked to
+     leave it alone and work on something else. Sent every few seconds while it
+     stays held. */
+  app.post("/api/pdfdesk/:session/presence", express.json({ limit: "2kb" }), (req, res) => {
+    const id = known(req, res);
+    if (!id) return;
+    const target = String(req.body?.id ?? "");
+    const kind = String(req.body?.kind ?? "select");
+    if (!/^[\w.-]{1,80}$/.test(target) || !["select", "drag", "edit"].includes(kind)) return res.status(400).json({ error: "Not an object." });
+    const item = load(id)?.items.find((i) => i.id === target);
+    if (!item) return res.json({ ok: true });
+    touched(id, target, kind, `${kind === "drag" ? "is moving" : "has selected"} ${label(item)}`, { tell: false });
+    res.json({ ok: true });
   });
 
   app.post("/api/pdfdesk/:session/pages", bigJson, (req, res) => {

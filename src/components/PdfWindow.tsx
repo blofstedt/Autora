@@ -142,13 +142,20 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
       } else if (msg.type === "autora:base" && msg.bytes instanceof ArrayBuffer) {
         ownPages.current++;
         void send("pages", { bytes: toBase64(msg.bytes), items: Array.isArray(msg.items) ? msg.items : [] });
+      } else if (msg.type === "autora:presence" && typeof msg.id === "string") {
+        // What the person has hold of in the editor: the agent is asked to leave it alone.
+        void fetch(`/api/pdfdesk/${encodeURIComponent(sessionId)}/presence`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: msg.id, kind: msg.kind === "drag" ? "drag" : "select" }),
+        }).catch(() => undefined);
       } else if (msg.type === "autora:pdfjs-data") {
         void pdfjsData(msg, post);
       }
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [load, post, send]);
+  }, [load, post, send, sessionId]);
 
   // New pages from the server: load them, unless they are the ones just sent from here.
   useEffect(() => {
@@ -255,7 +262,7 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
           {mine ? "Hand back" : "Take control"}
         </button>
         <button
-          className="pdf-pill"
+          className="pdf-pill pdf-cursor-pill"
           onClick={toggleCursor}
           aria-pressed={cursorOn}
           title={cursorOn ? "Stop showing where the agent edits" : "Show where the agent edits, as it edits"}

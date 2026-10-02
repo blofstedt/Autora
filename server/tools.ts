@@ -2406,6 +2406,9 @@ export interface ToolContext {
   browserChanged: () => void;
   /** Start forwarding desktop frames to this session. */
   watchDesktop: () => void;
+  /** Why something the person is using may not be touched right now (see
+      server/presence.ts), or null. `subject` is an object id or a file. */
+  held?: (surface: "pdf" | "app" | "browser" | "code", subject: string) => string | null;
   /** Hand a question to a research worker with its own context (see
       server/subagent.ts) and get its report back. Absent inside the worker. */
   research?: (question: string) => Promise<string>;
@@ -2467,6 +2470,9 @@ export interface ToolOutcome {
       rather than told about. The tool was asked for a look, and text about a
       picture is not a look. */
   images?: ChatImage[];
+  /** Not done because the person is using it: said to the agent, and never
+      counted as a failure. */
+  held?: boolean;
 }
 
 /**
@@ -4360,6 +4366,7 @@ async function runToolUnredacted(
           // The PDF window shows the work; an incognito chat keeps nothing on
           // disk, so it works on files without one.
           ...(ctx.memory.incognito ? {} : { desk: deskHooks(ctx.session) }),
+          ...(ctx.held ? { held: (id: string) => ctx.held!("pdf", id) } : {}),
         });
 
       // --------------------------------------------------------- memory --

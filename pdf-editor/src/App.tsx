@@ -922,6 +922,19 @@ function MainPdfEditor() {
     return () => window.removeEventListener("message", onMessage);
   }, []);
 
+  /* What is being held in the editor right now -- an object selected or being
+     dragged -- told to Autora every few seconds while it stays so, so the agent
+     leaves it alone and works on something else. Nothing is changed by saying so. */
+  useEffect(() => {
+    const id = draggedElementId ?? selectedAnnotationId;
+    if (!id || !bridge.current.base) return;
+    const kind = draggedElementId || resizeDirection ? "drag" : "select";
+    const say = () => window.parent.postMessage({ type: "autora:presence", id, kind }, "*");
+    say();
+    const t = setInterval(say, 3000);
+    return () => clearInterval(t);
+  }, [selectedAnnotationId, draggedElementId, resizeDirection]);
+
   // What the person did to the objects, told to Autora as changes.
   useEffect(() => {
     // Mid-drag the object is still moving: say where it ends up.
