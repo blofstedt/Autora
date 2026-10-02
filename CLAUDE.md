@@ -57,6 +57,8 @@ is a sub-project with its own dependencies (see below).
   step down when `hooks.backlog` says a viewer is behind, the rate rises while
   `touched()`, and one sharp screenshot follows when the page has been still), `desktop.ts` (the
   relay), `store.ts` / `state.ts` (what is kept on disk under `AUTORA_HOME`),
+  `LiveBrowser.devtools()` (every console line and request of every tab, 400 kept; the menu's
+  Developer tools panel polls `GET /browser/devtools`, the agent has `browser_devtools`),
   `extensions.ts` (Chrome extensions, unpacked under `AUTORA_HOME/extensions/<name>/pkg`; `launchArgs()`
   adds `--load-extension` and `--headless=new` when any is enabled, `browser.ts` then drops Playwright's
   `--disable-extensions`; the id is Chrome's, from the folder's path; the popup opens as a tab),

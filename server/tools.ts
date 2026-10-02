@@ -925,6 +925,24 @@ const TOOLS: ToolSpec[] = [
     parameters: { type: "object", properties: {} },
   },
   {
+    name: "browser_devtools",
+    group: "browser",
+    description:
+      "What DevTools shows for the open tab: its console (log, info, warn, error and uncaught errors) or the " +
+      "network requests it made (method, status, type, time, size, and the ones that failed). Use it to find " +
+      "out why a page is blank or a button does nothing. `errors_only` keeps just the errors and failed or " +
+      "4xx/5xx requests.",
+    parameters: {
+      type: "object",
+      properties: {
+        panel: { type: "string", enum: ["console", "network"] },
+        errors_only: { type: "boolean" },
+        limit: { type: "integer", description: "Newest entries to return (default 40)." },
+      },
+      required: ["panel"],
+    },
+  },
+  {
     name: "browser_tabs",
     group: "browser",
     description:
@@ -4222,6 +4240,19 @@ async function runToolUnredacted(
         const page = await ctx.browser().back();
         ctx.browserChanged();
         return { ok: true, summary: describePage(page), preview: page.url };
+      }
+
+      case "browser_devtools": {
+        const rows = ctx.browser().devtools({
+          kind: args.panel === "network" ? "request" : "console",
+          errorsOnly: !!args.errors_only,
+          limit: Math.min(Math.max(Number(args.limit) || 40, 1), 200),
+        });
+        if (!rows.length) return { ok: true, summary: `Nothing in the ${args.panel === "network" ? "network" : "console"} log${args.errors_only ? " that is an error" : ""}.` };
+        const line = (e: (typeof rows)[number]) => e.kind === "console"
+          ? `[${e.level}] ${e.text}`
+          : `${e.method} ${e.failed ? `FAILED (${e.failed})` : e.status} ${e.level} ${e.ms ?? 0}ms${e.bytes ? ` ${e.bytes}B` : ""} ${e.text}`;
+        return { ok: true, summary: rows.map(line).join("\n") };
       }
 
       case "browser_tabs": {

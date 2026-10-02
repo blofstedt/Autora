@@ -64,6 +64,23 @@ export interface SelectInfo {
   options: SelectChoice[];
 }
 
+/** One line of the page's console or one request it made: what DevTools shows. */
+export interface DevEntry {
+  n: number;
+  tab: number;
+  ts: number;
+  kind: "console" | "request";
+  /** Console: log, info, warn, error. Request: the resource type. */
+  level: string;
+  /** Console: the text. Request: the address. */
+  text: string;
+  method?: string;
+  status?: number;
+  ms?: number;
+  bytes?: number;
+  failed?: string;
+}
+
 export interface BrowserTab {
   id: number;
   url: string;
@@ -2113,6 +2130,7 @@ export class LiveBrowser {
     page.on("console", (m: any) => {
       const kind = String(m.type?.() ?? "log");
       const said = String(m.text?.() ?? "");
+      this.noteDev(page, { kind: "console", level: kind === "warning" ? "warn" : kind, text: said.slice(0, 600) });
       // Chrome's own line for a failed fetch names no address; the response
       // listener below says which one, and skips the icon every page is
       // asked for and many do not have.
@@ -2131,7 +2149,23 @@ export class LiveBrowser {
         }
       })();
     });
-    page.on("pageerror", (err: any) => this.noteConsole("error", `Uncaught: ${String(err?.message ?? err)}`));
+    page.on("pageerror", (err: any) => {
+      this.noteDev(page, { kind: "console", level: "error", text: `Uncaught: ${String(err?.message ?? err).slice(0, 600)}` });
+      this.noteConsole("error", `Uncaught: ${String(err?.message ?? err)}`);
+    });
+    const began = new WeakMap<object, number>();
+    page.on("request", (req: any) => { began.set(req, Date.now()); });
+    page.on("requestfinished", (req: any) => {
+      void (async () => {
+        const res = await req.response?.().catch(() => null);
+        const length = Number(res?.headers?.()["content-length"] ?? 0);
+        this.noteDev(page, {
+          kind: "request", level: String(req.resourceType?.() ?? "other"), text: String(req.url?.() ?? "").slice(0, 400),
+          method: String(req.method?.() ?? "GET"), status: Number(res?.status?.() ?? 0),
+          ms: Date.now() - (began.get(req) ?? Date.now()), ...(length ? { bytes: length } : {}),
+        });
+      })();
+    });
     page.on("response", (res: any) => {
       const status = Number(res.status?.() ?? 0);
       const where = String(res.url?.() ?? "");
@@ -2139,6 +2173,11 @@ export class LiveBrowser {
       if (status >= 400 && !/\/favicon\.ico(\?|$)/.test(where)) this.noteConsole("error", `${status} ${where.slice(0, 160)}`);
     });
     page.on("requestfailed", (req: any) => {
+      this.noteDev(page, {
+        kind: "request", level: String(req.resourceType?.() ?? "other"), text: String(req.url?.() ?? "").slice(0, 400),
+        method: String(req.method?.() ?? "GET"), failed: String(req.failure?.()?.errorText ?? "failed"),
+        ms: Date.now() - (began.get(req) ?? Date.now()),
+      });
       this.noteConsole("error", `Request failed: ${String(req.url?.() ?? "").slice(0, 160)} (${String(req.failure?.()?.errorText ?? "")})`);
     });
 
@@ -2378,6 +2417,23 @@ export class LiveBrowser {
   }
 
   // ------------------------------------------------ app preview (see preview.ts) --
+
+  /** Everything the pages said and asked for, newest last: DevTools' console
+      and network panels, for the person and for the agent. */
+  private dev: DevEntry[] = [];
+  private devCount = 0;
+  private noteDev(page: Page, entry: Omit<DevEntry, "n" | "tab" | "ts">) {
+    this.dev.push({ n: ++this.devCount, tab: this.tabIds.get(page) ?? 0, ts: Date.now(), ...entry });
+    if (this.dev.length > 400) this.dev.splice(0, this.dev.length - 400);
+  }
+  devtools(opts: { kind?: "console" | "request"; tab?: number; since?: number; errorsOnly?: boolean; limit?: number } = {}): DevEntry[] {
+    const tab = opts.tab ?? (this.page ? this.tabIds.get(this.page) : undefined);
+    return this.dev
+      .filter((e) => (!opts.kind || e.kind === opts.kind) && (tab === undefined || e.tab === tab) && e.n > (opts.since ?? 0))
+      .filter((e) => !opts.errorsOnly || e.failed || (e.kind === "console" && e.level === "error") || (e.status ?? 0) >= 400)
+      .slice(-(opts.limit ?? 200));
+  }
+  clearDevtools() { this.dev = []; }
 
   /** The page's own console, newest last. */
   private consoleLog: Array<{ kind: "error" | "warn"; text: string; ts: number }> = [];

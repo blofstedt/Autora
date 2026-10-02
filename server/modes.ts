@@ -159,6 +159,7 @@ const LOOKS_ONLY = new Set([
   "browser_screenshot",
   "browser_back",
   "browser_tabs",
+  "browser_devtools",
   "browser_captcha",
   "background_jobs",
   "background_output",

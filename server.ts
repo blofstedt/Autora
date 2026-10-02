@@ -6522,6 +6522,27 @@ async function startServer() {
     res.json({ ok: true, found });
   });
 
+  /** DevTools' console and network for the open tab (polled by the panel). */
+  app.get("/api/sessions/:id/browser/devtools", (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    const live = isPreview(req) ? previews.get(session.id)?.live : browsers.get(session.id);
+    if (!live) return res.json({ entries: [] });
+    res.json({
+      entries: live.devtools({
+        kind: req.query.kind === "request" ? "request" : req.query.kind === "console" ? "console" : undefined,
+        since: Number(req.query.since) || 0,
+      }),
+    });
+  });
+
+  app.post("/api/sessions/:id/browser/devtools/clear", (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    targetBrowser(session, req)?.clearDevtools();
+    res.json({ ok: true });
+  });
+
   app.post("/api/sessions/:id/browser/forward", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });

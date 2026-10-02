@@ -7,6 +7,7 @@ import type { Shot } from "../lib/derive";
 import { onField, useLiveFrame, useLiveTabs } from "../lib/liveFrame";
 import { NAMED_KEYS, SENTINEL } from "../lib/pageInput";
 import { BrowserPanel, setBookmark, useBrowserData, type BrowserPanelKind } from "./BrowserPanel";
+import { DevtoolsPanel } from "./DevtoolsPanel";
 import { Frame } from "./Frame";
 import {
   IconArrowLeft, IconArrowRight, IconChevron, IconGlobe, IconMaximize, IconMinimize, IconMonitor, IconMousePointer,
@@ -56,7 +57,7 @@ export function ScreencastCell({
 }) {
   const feed = useLiveFrame(followsFeed);
   const tabs = useLiveTabs(source === "browser" && current);
-  const [panel, setPanel] = useState<BrowserPanelKind | null>(null);
+  const [panel, setPanel] = useState<BrowserPanelKind | "devtools" | null>(null);
   const [menu, setMenu] = useState(false);
   const { data: lists, reload: reloadLists } = useBrowserData(source === "browser" && current, url);
   const logRef = useRef<HTMLDivElement>(null);
@@ -510,6 +511,7 @@ export function ScreencastCell({
                   <button role="menuitem" onClick={() => setPanel("bookmarks")}><IconStar size={13} /> Bookmarks</button>
                   <button role="menuitem" onClick={() => setPanel("history")}><IconRotateCcw size={13} /> History</button>
                   <button role="menuitem" onClick={() => setPanel("downloads")}><IconDownload size={13} /> Downloads</button>
+                  <button role="menuitem" onClick={() => setPanel("devtools")}><IconMonitor size={13} /> Developer tools</button>
                   <button role="menuitem" onClick={() => setPanel("extensions")}><IconPlus size={13} /> Extensions</button>
                 </div>
               )}
@@ -599,7 +601,8 @@ export function ScreencastCell({
           </button>
         )}
       </header>
-      {toolbar && panel && (
+      {toolbar && panel === "devtools" && <DevtoolsPanel sessionId={sessionId} onClose={() => setPanel(null)} />}
+      {toolbar && panel && panel !== "devtools" && (
         <BrowserPanel
           kind={panel}
           data={lists}

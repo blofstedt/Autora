@@ -70,8 +70,9 @@ async function main() {
       res.end("hello download");
       return;
     }
+    if (req.url === "/gone") { res.statusCode = 404; res.end("no"); return; }
     res.setHeader("Content-Type", "text/html");
-    res.end(`<title>T</title><a href="/file.txt">get it</a><p>The quick brown fox jumps over the lazy dog.</p>`);
+    res.end(`<script>console.log("hello console"); fetch("/gone"); fetch("http://127.0.0.1:1/x").catch(() => {});</script><title>T</title><a href="/file.txt">get it</a><p>The quick brown fox jumps over the lazy dog.</p>`);
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const origin = `http://127.0.0.1:${(server.address() as any).port}`;
@@ -88,6 +89,17 @@ async function main() {
       for (let i = 0; i < 30 && got.length === 0; i++) await new Promise((r) => setTimeout(r, 100));
       assert.equal(got[0]?.name, "hello.txt");
       assert.equal(got[0]?.bytes.toString(), "hello download");
+    });
+    await test("the console and the network are kept, and errors can be picked out", async () => {
+      await live.goto(origin + "/");
+      await new Promise((r) => setTimeout(r, 500));
+      const said = live.devtools({ kind: "console" });
+      assert.ok(said.some((e) => e.level === "log" && e.text === "hello console"));
+      const asked = live.devtools({ kind: "request" });
+      assert.ok(asked.some((e) => e.text.endsWith("/gone") && e.status === 404));
+      assert.ok(asked.some((e) => e.failed));
+      const bad = live.devtools({ kind: "request", errorsOnly: true });
+      assert.ok(bad.length >= 2 && bad.every((e) => e.failed || (e.status ?? 0) >= 400));
     });
     await test("find selects the word on the page, and says when it is not there", async () => {
       await live.goto(origin + "/");

@@ -133,8 +133,8 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  New (experimental): Chrome extensions in the browser. Add one from the Chrome Web Store (its address
-  or id) or from a .zip/.crx file in the browser's menu, switch it on and off, open its popup, remove
-  it; they load when the browser restarts (a button does that). Earlier in this release line: find on
-  page, bookmarks, history and downloads, tabs, and a picture that is quick while you tap and sharp
-  once you stop.
+  New: developer tools in the browser's menu: the open tab's console (logs, warnings, errors, uncaught
+  errors) and network (every request with its status, type, time and size, failures in red), live,
+  with a filter for errors. The agent reads the same lists with browser_devtools to find out why a
+  page is blank or a button does nothing. Earlier in this release line: Chrome extensions
+  (experimental), find on page, bookmarks, history, downloads, tabs, and a faster picture.
