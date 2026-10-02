@@ -46,6 +46,15 @@ export default tseslint.config(
     languageOptions: { globals: globals.node },
   },
   {
+    // The editors' stand-in for Electron runs in the editor's page (office/shim); their build config runs in Node (office/vite).
+    files: ["office/shim/**/*.js"],
+    languageOptions: { globals: { ...globals.browser, FontFace: "readonly" }, sourceType: "script" },
+  },
+  {
+    files: ["office/vite/**/*.mjs"],
+    languageOptions: { globals: globals.node },
+  },
+  {
     files: ["public/sw.js"],
     languageOptions: { globals: globals.serviceworker },
   },
