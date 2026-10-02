@@ -18,7 +18,7 @@
  * The class holds the arrays and nothing else; the server owns saving them.
  */
 
-export type MemoryKind = "fact" | "preference" | "procedure" | "skill";
+export type MemoryKind = "fact" | "preference" | "procedure" | "skill" | "reference";
 export const MEMORY_KINDS: MemoryKind[] = ["preference", "procedure", "fact", "skill"];
 
 export interface MemoryRecord {
@@ -46,6 +46,14 @@ export interface MemoryRecord {
   worked?: number;
   /** A provisional rewrite of this record, which replaces it on confirm. */
   replaces?: string | null;
+  /** What it is about, as filed (lowercase): the product, site or app. See mindrules.ts. */
+  subject?: string;
+  /** For knowledge about a product: interface, api, docs, workflow or quirk. */
+  facet?: "interface" | "api" | "docs" | "workflow" | "quirk";
+  /** For a reference: the page it was read from, when (seconds), and the version it described. */
+  source?: string | null;
+  fetched?: number | null;
+  version?: string;
   /** Times a turn that used it found it wrong, since it last held. A
       confirmed memory is not deleted for one bad turn -- it may be the turn
       that was wrong -- but it ranks lower, and says so when it is recalled,
