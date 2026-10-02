@@ -44,6 +44,10 @@ export interface Trace {
   cached: number;
   /** Share of input tokens that came from the cache, 0 to 1. */
   cacheRate: number;
+  /** Calls that mostly missed the cache after the first of a turn, and how
+      many of those came with a change in the tool list. */
+  cacheMisses: number;
+  cacheMissesFromTools: number;
   costUsd: number;
   tools: ToolTrace[];
   /** The most recent turns, newest last. */
@@ -61,7 +65,7 @@ export function buildTrace(events: readonly TraceEvent[], recentTurns = 8): Trac
   const names = new Map<string, string>();
   const turns: TurnTrace[] = [];
   let cur: TurnTrace | null = null;
-  const total = { rounds: 0, input: 0, output: 0, cached: 0, cost: 0, loopStops: 0 };
+  const total = { rounds: 0, input: 0, output: 0, cached: 0, cost: 0, loopStops: 0, misses: 0, toolMisses: 0 };
   const loaded = new Set<string>();
 
   const tool = (name: string): ToolTrace => {
@@ -79,6 +83,13 @@ export function buildTrace(events: readonly TraceEvent[], recentTurns = 8): Trac
         break;
       case "usage.turn": {
         const input = num(p.input_tokens), output = num(p.output_tokens), cached = num(p.cached_tokens);
+        /* A call after the turn's first that read little of a large prompt from the
+           cache: something early in it changed. Judged on what was not read, since
+           only some providers (Anthropic) report what was written. */
+        if (cur && cur.rounds > 0 && input - cached > 2000 && cached < input / 2) {
+          total.misses += 1;
+          if (p.tools_changed === true) total.toolMisses += 1;
+        }
         total.rounds += 1; total.input += input; total.output += output; total.cached += cached; total.cost += num(p.cost_usd);
         if (cur) { cur.rounds += 1; cur.input += input; cur.output += output; cur.cached += cached; }
         break;
@@ -124,6 +135,8 @@ export function buildTrace(events: readonly TraceEvent[], recentTurns = 8): Trac
     output: total.output,
     cached: total.cached,
     cacheRate: total.input > 0 ? total.cached / total.input : 0,
+    cacheMisses: total.misses,
+    cacheMissesFromTools: total.toolMisses,
     costUsd: total.cost,
     tools: [...byTool.values()].sort((a, b) => b.totalMs - a.totalMs || b.calls - a.calls),
     recent: turns.slice(-recentTurns),
@@ -141,6 +154,9 @@ export function traceText(t: Trace): string {
       (t.costUsd > 0 ? `, about $${t.costUsd.toFixed(t.costUsd < 1 ? 3 : 2)}` : "") + ".",
   ];
   if (t.loopStops > 0) out.push(`${t.loopStops} turn${t.loopStops === 1 ? " was" : "s were"} ended by the loop watch or error budget.`);
+  if (t.cacheMisses > 0) {
+    out.push(`${t.cacheMisses} call${t.cacheMisses === 1 ? "" : "s"} rewrote the cache mid-turn (${t.cacheMissesFromTools} with a change in the tool list).`);
+  }
   if (t.loaded.length > 0) out.push(`Tool sets brought in: ${t.loaded.join(", ")}.`);
   if (t.tools.length > 0) {
     out.push("Tools, by time spent:");

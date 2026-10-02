@@ -89,8 +89,11 @@ test("the note says to carry on, not start over, unless told to drop it", () => 
 test("a long request is shortened, and a shown line is preferred", () => {
   const w = interruptedWork([ev("turn.user", { text: "x".repeat(2000), shown: "review the app" }), call(), done({ stopped: true })]);
   assert.deepEqual(w!.requests, ["review the app"]);
-  const long = interruptedWork([user("y".repeat(2000)), call(), done({ stopped: true })]);
-  assert.ok(long!.requests[0].length < 700);
+  // Long enough to hold a big, multi-part request whole; the requirements list carries the rest.
+  const mid = interruptedWork([user("y".repeat(1400)), call(), done({ stopped: true })]);
+  assert.equal(mid!.requests[0].length, 1400, "a big request is not cut");
+  const long = interruptedWork([user("y".repeat(3000)), call(), done({ stopped: true })]);
+  assert.ok(long!.requests[0].length < 1600);
 });
 
 test("a turn the loop watch ended says why, and not to repeat it", () => {

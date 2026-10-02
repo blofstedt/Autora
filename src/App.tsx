@@ -4,10 +4,15 @@ import { derive, isRunning, type Derived } from "./lib/derive";
 import { share } from "./lib/share";
 import { chime, paintChrome, type Chrome } from "./lib/chrome";
 import { Kind, type AutoraEvent, type BrowserState } from "./lib/types";
-import { setLiveFields, setLiveFrame } from "./lib/liveFrame";
+import { setLiveFields, setLiveFrame, setLiveTabs } from "./lib/liveFrame";
 import { resetPreview, setPreviewFrame, setPreviewState, usePreviewState, type PreviewState } from "./lib/preview";
 import { AppPreview } from "./components/AppPreview";
+import { OfficeWindow } from "./components/OfficeWindow";
 import { PdfWindow } from "./components/PdfWindow";
+import { ResizeHandle } from "./components/ResizeHandle";
+import { CHAT, RAIL, setChatWidth, setRailCollapsed, setRailWidth, usePanes, wideScreen } from "./lib/panes";
+import { clearOfficePick, getOfficePick, pickLabel, pickSentence, useOfficePick } from "./lib/officeSelection";
+import { emitOfficePush, resetWord, setWordState, useWordState } from "./lib/officedesk";
 import { resetDesk, setDeskState, useDeskState } from "./lib/pdfdesk";
 import { resetCollab, setCollabState } from "./lib/collab";
 import { cellKey, dockedPlan, usePhone } from "./lib/stage";
@@ -286,6 +291,7 @@ export function App() {
     noticed.current = 0;
     setLiveFrame(null);
     setLiveFields([]);
+    setLiveTabs([]);
     setBrowser(null);
     /* Events are added to the thread in batches, at most every
        EVENT_BATCH_MS and on a frame, not one at a time. A streamed reply is
@@ -320,6 +326,7 @@ export function App() {
     };
     resetPreview();
     resetDesk();
+    resetWord();
     resetCollab();
     const stream = new SessionStream(sessionId, {
       onEvents: (fresh) => {
@@ -342,9 +349,12 @@ export function App() {
       },
       onPreview: (state) => setPreviewState(state as PreviewState),
       onPdfDesk: setDeskState,
+      onOfficeDesk: setWordState,
+      onOfficePush: emitOfficePush,
       onPresence: setCollabState,
       onBrowser: (state) => {
         setLiveFields(state?.fields);
+        setLiveTabs(state?.tabs);
         setBrowser(state);
       },
     });
@@ -472,8 +482,11 @@ export function App() {
     return () => { ro?.disconnect(); window.removeEventListener("resize", measure); };
   }, []);
 
-  const send = useCallback(async (spoken?: string) => {
-    const text = (spoken ?? draft).trim();
+  const send = useCallback(async (spoken?: string, interrupt?: boolean) => {
+    const typed = (spoken ?? draft).trim();
+    /* What they pointed at in a document's pages goes in front of what they say about it. */
+    const pointed = getOfficePick();
+    const text = pointed && pointed.session === sessionId && typed ? `${pickSentence(pointed)}\n${typed}` : typed;
     /* A dictated turn carries nothing but words, and a message may be nothing
        but files: "look at this" with the photo is a whole request. */
     const files = spoken === undefined ? attached : [];
@@ -481,6 +494,7 @@ export function App() {
     if ((!text && files.length === 0 && books.length === 0) || !sessionId) return;
     // Dictated turns never touched the box, so there is nothing to clear and
     // clearing anyway would eat something half-typed.
+    if (pointed && typed) clearOfficePick();
     if (spoken === undefined) {
       setDraft("");
       setAttached([]);
@@ -501,6 +515,9 @@ export function App() {
         /* It was said out loud, and a spoken turn answers without thinking
            first: in live voice the wait is the whole experience. */
         ...(spoken !== undefined ? { spoken: true } : {}),
+        /* Sent while the agent works, a message is added to what it is doing;
+           only an explicit interrupt stops it first. */
+        ...(interrupt ? { mode: "interrupt" } : {}),
       }),
     }).catch(() => null);
     // Now that the box stays open while the connection comes back, a send
@@ -967,7 +984,7 @@ export function App() {
 
   /** Enter or the send button: a command if the box holds one, otherwise
       the message as typed. */
-  const submit = useCallback(() => {
+  const submit = useCallback((interrupt?: boolean) => {
     if (slashOpen) {
       runCommand(slashOffered[slashActive], "");
       return;
@@ -981,7 +998,7 @@ export function App() {
       setNotice("No model is connected yet. Add one in Settings (/settings) first.");
       return;
     }
-    void send();
+    void send(undefined, interrupt);
   }, [slashOpen, slashOffered, slashActive, draft, runCommand, send, modelReady]);
 
   /** The same page over https, where the microphone is allowed. Built from the
@@ -1233,11 +1250,20 @@ export function App() {
   const phoneLayout = usePhone();
   const preview = usePreviewState();
   const desk = useDeskState();
-  /* One window beside the chat at a time: the app or the PDF, whichever was
-     opened last; putting it away shows the other. */
-  const sidePane: "app" | "pdf" | null = phoneLayout || !live ? null
-    : desk.open && (!preview.open || (desk.since ?? 0) >= (preview.since ?? 0)) ? "pdf"
-      : preview.open ? "app" : null;
+  const word = useWordState();
+  const pointedAt = useOfficePick();
+  const panes = usePanes();
+  /* One window beside the chat at a time: the app, the PDF or the Office document,
+     whichever was opened last; putting it away shows the one before. */
+  const sidePane: "app" | "pdf" | "word" | null = phoneLayout || !live ? null : (() => {
+    const open = [
+      ...(preview.open ? [{ pane: "app" as const, since: preview.since ?? 0 }] : []),
+      ...(desk.open ? [{ pane: "pdf" as const, since: desk.since ?? 0 }] : []),
+      ...(word.open ? [{ pane: "word" as const, since: word.since ?? 0 }] : []),
+    ];
+    // Ties go to the later kind in this list: the more specific window.
+    return open.length ? open.reduce((best, w) => (w.since >= best.since ? w : best)).pane : null;
+  })();
   const appPane = sidePane !== null;
 
   const sessionCost = sessions.find((s) => s.id === sessionId)?.cost ?? 0;
@@ -1423,7 +1449,13 @@ export function App() {
   }, []);
 
   return (
-    <div className="app">
+    <div
+      className={`app${panes.collapsed ? " rail-collapsed" : ""}`}
+      style={{
+        ...(panes.rail ? { "--rail-w": `${panes.rail}px` } : {}),
+        ...(panes.chat ? { "--chat-w": `${panes.chat}px` } : {}),
+      } as React.CSSProperties}
+    >
       {/* Wide screens get the session list in the margin instead of behind a
           sheet; narrow ones never render it at all. */}
       {/* The sidebar: in the margin on a desktop, a drawer on a phone. */}
@@ -1459,9 +1491,20 @@ export function App() {
             onStartTask={(text, title) => { void startTask(text, title); }}
             drawer={kind === "drawer"}
             onClose={() => setDrawerOpen(false)}
+            onFold={() => setRailCollapsed(true)}
           />
         </div>
       ))}
+      {/* The seam between the menu and the conversation, on a desktop. */}
+      <ResizeHandle
+        className="is-rail"
+        label="Resize the menu"
+        value={panes.rail ?? RAIL.fallback}
+        min={RAIL.min}
+        max={RAIL.max}
+        onChange={setRailWidth}
+        onReset={() => setRailWidth(null)}
+      />
 
       <div className="shell">
         {/* Above everything, including the header: an app running code that is
@@ -1473,7 +1516,7 @@ export function App() {
         <header className="top">
           <button
             className="btn icon ghost menu-btn"
-            onClick={() => setDrawerOpen(true)}
+            onClick={() => { if (panes.collapsed && wideScreen()) setRailCollapsed(false); else setDrawerOpen(true); }}
             aria-label="Open the menu"
             title="Menu"
           >
@@ -1832,15 +1875,28 @@ export function App() {
                       }
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
-                        submit();
+                        // Alt, Ctrl or Cmd with Enter stops the agent first; plain Enter adds to its work.
+                        submit(e.altKey || e.ctrlKey || e.metaKey);
                       }
                     }}
                   />
-                  {(attached.length > 0 || attachedBooks.length > 0) && (
+                  {(attached.length > 0 || attachedBooks.length > 0 || (pointedAt && pointedAt.session === sessionId)) && (
                     /* Boxes along the bottom of the field, left to right: a
                        picture is the picture, a file is its name. Both arrive
                        with the same small pop. */
                     <div className="attach-row">
+                      {pointedAt && pointedAt.session === sessionId && (
+                        <span className="attach-chip is-file is-pointer">
+                          <IconFile size={16} />
+                          <span className="attach-meta">
+                            <b title={pickLabel(pointedAt)}>{pickLabel(pointedAt)}</b>
+                            <em>{pointedAt.file}</em>
+                          </span>
+                          <button type="button" className="attach-drop" onClick={clearOfficePick} title="Stop pointing at this" aria-label="Stop pointing at this">
+                            <IconX size={12} />
+                          </button>
+                        </span>
+                      )}
                       {attachedBooks.map((book) => (
                         <span className="attach-chip is-file is-notebook" key={book.id}>
                           <IconNotebook size={16} />
@@ -2001,7 +2057,7 @@ export function App() {
                         {/* While the agent is working and there is nothing to send,
                             this is the way to stop it: the same button, the
                             same place, so a phone never has to find /stop. With
-                            words in the box it is Send, which interrupts. */}
+                            words in the box it is Send, which adds to the work. */}
                         <button
                           className={`composer-send${running && !draft.trim() && nothingAttached ? " is-stop" : ""}`}
                           // Without a model a message can only fail; a slash
@@ -2009,9 +2065,9 @@ export function App() {
                           disabled={readOnly || (!(running && !draft.trim() && nothingAttached)
                             && ((!draft.trim() && nothingAttached)
                               || (modelReady === false && !draft.trim().startsWith("/"))))}
-                          onClick={running && !draft.trim() && nothingAttached ? () => void stopTurn() : submit}
-                          title={running ? (!draft.trim() && nothingAttached ? "Stop" : "Interrupt & send") : "Send"}
-                          aria-label={running ? (!draft.trim() && nothingAttached ? "Stop" : "Interrupt & send") : "Send"}
+                          onClick={running && !draft.trim() && nothingAttached ? () => void stopTurn() : () => submit()}
+                          title={running ? (!draft.trim() && nothingAttached ? "Stop" : "Add to what it is doing (Alt+Enter interrupts & sends)") : "Send"}
+                          aria-label={running ? (!draft.trim() && nothingAttached ? "Stop" : "Add to what it is doing") : "Send"}
                         >
                           {running && !draft.trim() && nothingAttached
                             ? <IconStop size={15} />
@@ -2028,6 +2084,18 @@ export function App() {
             )}
           </div>
         </main>
+        {/* The seam between the conversation and whatever window is beside it. */}
+        {sidePane !== null && (
+          <ResizeHandle
+            className="is-chat"
+            label="Resize the conversation"
+            value={panes.chat ?? 480}
+            min={CHAT.min}
+            max={CHAT.max}
+            onChange={setChatWidth}
+            onReset={() => setChatWidth(null)}
+          />
+        )}
         {/* The app being built, beside the conversation on a wide screen. On a
             phone it is a tab in the pinned view instead (see Stage). */}
         {sidePane === "app" && sessionId && (
@@ -2039,6 +2107,12 @@ export function App() {
         {sidePane === "pdf" && sessionId && (
           <aside className="app-pane" aria-label="The PDF being worked on">
             <PdfWindow sessionId={sessionId} phone={false} />
+          </aside>
+        )}
+        {/* And a Word, PowerPoint or Excel document, the same way. */}
+        {sidePane === "word" && sessionId && (
+          <aside className="app-pane" aria-label="The document being worked on">
+            <OfficeWindow sessionId={sessionId} phone={false} />
           </aside>
         )}
         </div>

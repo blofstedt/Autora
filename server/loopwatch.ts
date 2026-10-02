@@ -24,6 +24,8 @@ export interface LoopWatchConfig {
   staleAfter: number;
   /** A checkpoint every this many rounds. */
   checkEvery: number;
+  /** This many rounds in a row that changed nothing earns a note. */
+  stallAfter: number;
 }
 
 export const LOOP_DEFAULTS: LoopWatchConfig = {
@@ -31,6 +33,7 @@ export const LOOP_DEFAULTS: LoopWatchConfig = {
   stopAt: 8,
   staleAfter: 10,
   checkEvery: 20,
+  stallAfter: 8,
 };
 
 export interface LoopVerdict {
@@ -82,9 +85,53 @@ export class LoopWatch {
   private rounds = 0;
   /** Problems already said in the thread, so each is said once. */
   private logged = new Set<string>();
+  /** Exact calls that were repeated after being told not to, and how many
+      times they have been refused since. */
+  private withheld = new Map<string, { label: string; refused: number }>();
+  /** Whether the round in progress changed anything, and how many rounds in a
+      row have not. */
+  private advanced = false;
+  private idleRounds = 0;
 
   constructor(config: Partial<LoopWatchConfig> = {}) {
     this.config = { ...LOOP_DEFAULTS, ...config };
+  }
+
+  /**
+   * Before a call runs: refuse the exact call that was repeated after a
+   * warning. Cache-safe -- the tool list does not change -- and cheap, since
+   * the refusal is one line. Only that call with those arguments is refused:
+   * the same tool tried differently is the change of approach being asked for.
+   * Refused over and over, the turn is stopped.
+   */
+  gate(name: string, args: unknown): { refuse: string | null; stop: string | null } {
+    const call = `${name}\u0000${stable(args)}`;
+    const held = this.withheld.get(call);
+    if (!held) return { refuse: null, stop: null };
+    held.refused += 1;
+    if (held.refused >= REFUSALS_BEFORE_STOP) {
+      return {
+        refuse: null,
+        stop:
+          `Stopped: the agent kept calling ${held.label} after it was refused ` +
+          `${held.refused - 1} times for repeating itself. Tell it what to try instead.`,
+      };
+    }
+    return {
+      refuse:
+        `Not run: you have made this exact call, ${held.label}, several times with the same ` +
+        "result, and were told to stop. Change something -- the arguments, the tool, the " +
+        "assumption behind it -- or tell the person what is blocking you.",
+      stop: null,
+    };
+  }
+
+  /** The call changed something in the world or in what the agent knows. */
+  advance() {
+    this.advanced = true;
+    /* The same command after an edit is ordinary work, not a loop: once
+       something has changed, what was refused may be tried again. */
+    this.withheld.clear();
   }
 
   /** One call has run. Says whether it is part of a loop. */
@@ -109,7 +156,11 @@ export class LoopWatch {
       return message;
     };
 
-    if (times >= stopAt) {
+    /* A call that fails the same way is the expensive kind of stuck -- it
+       changes nothing and costs a round each time -- so it gets a shorter
+       rope than a read that keeps coming back the same. */
+    const stopHere = ok ? stopAt : Math.max(warnAt + 1, Math.ceil(stopAt * 0.6));
+    if (times >= stopHere) {
       return {
         note: null,
         log: null,
@@ -120,6 +171,11 @@ export class LoopWatch {
       };
     }
 
+    /* The note was read and the call was made again anyway. A note is easy to
+       skip; from here the exact call is refused (see gate) so the round is
+       spent on something else. */
+    if (times > warnAt) this.withheld.set(call, { label, refused: 0 });
+
     if (times >= warnAt) {
       return {
         note:
@@ -128,7 +184,7 @@ export class LoopWatch {
           "change the outcome. Do not repeat it. Work out why it is not " +
           "working and try something genuinely different, or stop and tell " +
           "the person what is blocking you and what you need from them. " +
-          `The turn will be stopped if this call repeats ${stopAt - times} ` +
+          `The turn will be stopped if this call repeats ${stopHere - times} ` +
           "more time(s).",
         log: once(`repeat:${pair}`, `Loop check: ${label} has come back the same ${times} times; the agent was told to change approach.`),
         stop: null,
@@ -167,6 +223,16 @@ export class LoopWatch {
   /** One round of calls is done. Every so often, a checkpoint. */
   endRound(): string | null {
     this.rounds += 1;
+    this.idleRounds = this.advanced ? 0 : this.idleRounds + 1;
+    this.advanced = false;
+    if (this.idleRounds > 0 && this.idleRounds % this.config.stallAfter === 0) {
+      return (
+        `[Stall] The last ${this.idleRounds} rounds changed nothing: no file written, ` +
+        "no command with an effect, no plan or notes updated. If you have what you need, " +
+        "answer now. If you are still searching, say what you are looking for and why " +
+        "the last searches did not find it, then try a different way of looking."
+      );
+    }
     if (this.rounds % this.config.checkEvery !== 0) return null;
     const repeated = [...this.calls.values()]
       .filter((c) => c.count >= 3)
@@ -182,6 +248,9 @@ export class LoopWatch {
     );
   }
 }
+
+/** Refusals of one repeated call before the turn is stopped. */
+const REFUSALS_BEFORE_STOP = 4;
 
 function ordinal(n: number): string {
   const tens = n % 100;

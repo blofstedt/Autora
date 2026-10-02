@@ -5,7 +5,7 @@
  *   npx tsx tests/memory.test.ts
  */
 import assert from "node:assert/strict";
-import { MemoryGraph, doubtNote, siteOf, similarity, tokens, type MemoryRecord } from "../server/memory";
+import { MemoryGraph, doubtNote, freshness, siteOf, similarity, tokens, type MemoryRecord } from "../server/memory";
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -236,6 +236,47 @@ test("new tags are lowercased and keep the bookkeeping", () => {
   const r = g.write({ title: "A guess", body: "Something learned from a turn", status: "provisional" }).record;
   g.update(r.id, { tags: ["Jellyfin", "jellyfin"] });
   assert.deepEqual(r.tags, ["jellyfin", "learned"]);
+});
+
+test("a reference keeps where and when it was read, and is found by its site and its subject", () => {
+  const { g } = graph();
+  const { record } = g.write({
+    title: "GitHub: where repository settings are", body: "Settings tab on the repository page.", kind: "reference",
+    subject: "github", facet: "interface", source: "https://docs.github.com/en/repositories",
+  });
+  assert.equal(record.subject, "github");
+  assert.ok(record.fetched && record.fetched > 0);
+  g.write({ title: "Cooking: pasta", body: "Boil it." });
+  assert.deepEqual(g.referencesFor("github.com").map((r) => r.id), [record.id]);
+  assert.deepEqual(g.referencesFor("gist.github.com").map((r) => r.id), [record.id], "a subdomain is the same site");
+  assert.deepEqual(g.referencesFor("example.com"), []);
+  assert.equal(g.aboutSite("github.com")[0].id, record.id, "what was read from the site's docs comes first");
+});
+
+test("what is held about a site is none, old or fresh, at the pace of its facet", () => {
+  const { g } = graph();
+  assert.equal(g.groundingOf("acme.com"), "none");
+  const { record } = g.write({ title: "Acme: menu", body: "Top left.", kind: "reference", subject: "acme", facet: "interface", source: "https://acme.com/help" });
+  assert.equal(g.groundingOf("acme.com"), "fresh");
+  const day = 86400, t = Math.floor(Date.now() / 1000);
+  record.fetched = t - 30 * day;
+  assert.equal(g.groundingOf("acme.com"), "stale", "an interface read 30 days ago is past 21");
+  record.facet = "docs";
+  assert.equal(g.groundingOf("acme.com"), "fresh", "docs are trusted for 90 days");
+  record.fetched = t - 100 * day;
+  assert.match(freshness(record, t) ?? "", /read from its source 100 days ago/);
+  g.update(record.id, { body: "Top right, since the redesign." });
+  assert.equal(g.groundingOf("acme.com"), "fresh", "rewriting it from the source reads as read today");
+  assert.equal(freshness(g.get(record.id)!, t), null);
+});
+
+test("a reference is a kind the mind can hold and edit", () => {
+  const { g } = graph();
+  const { record } = g.write({ title: "Acme: api", body: "POST /v1.", kind: "reference", subject: "acme", source: "https://acme.com/api" });
+  const r = g.update(record.id, { subject: "Acme Cloud", facet: "api", version: "2" })!;
+  assert.equal(r.subject, "acme cloud");
+  assert.equal(r.facet, "api");
+  assert.equal(r.version, "2");
 });
 
 console.log(`${passed} passed`);

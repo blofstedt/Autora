@@ -116,4 +116,21 @@ test("proof that the work held, and the agent's own notes, are put to the review
   assert.doesNotMatch(bare, /Checks that passed|working notes/);
 });
 
+test("a lesson is filed under its subject, and one that breaks the mind's rules is dropped", () => {
+  const reply = JSON.stringify({
+    learned: [
+      { kind: "procedure", subject: "Docker", title: "restarting the jellyfin container", body: "docker restart jellyfin works; compose down loses the volume mapping.", tags: ["docker"] },
+      { kind: "fact", subject: "nas", title: "Too long", body: "x".repeat(900), tags: [] },
+      { kind: "fact", title: "Working", body: "I am working on the login page right now, so remember that", tags: [] },
+      { kind: "fact", title: "Key", body: "the api key: sk-abcdef123456 is used for the nas", tags: [] },
+    ],
+    helped: [], misled: [], next: [],
+  });
+  const r = parseReflection(reply, new Set());
+  assert.equal(r.learned.length, 1);
+  assert.equal(r.learned[0].subject, "docker");
+  assert.equal(r.learned[0].title, "Docker: restarting the jellyfin container");
+  assert.match(reflectionPrompt({ request: "x", previousReply: "", steps: [], reply: "y", recalled: [], nearby: [] }), /title:\s*starts with the subject/);
+});
+
 console.log(`${passed} passed`);

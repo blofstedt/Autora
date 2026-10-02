@@ -4,12 +4,14 @@ import {
   type CSSProperties, type ReactNode,
 } from "react";
 import type { Shot } from "../lib/derive";
-import { onField, useLiveFrame } from "../lib/liveFrame";
+import { onField, useLiveFrame, useLiveTabs } from "../lib/liveFrame";
 import { NAMED_KEYS, SENTINEL } from "../lib/pageInput";
+import { BrowserPanel, setBookmark, useBrowserData, type BrowserPanelKind } from "./BrowserPanel";
+import { DevtoolsPanel } from "./DevtoolsPanel";
 import { Frame } from "./Frame";
 import {
-  IconArrowLeft, IconChevron, IconGlobe, IconMaximize, IconMinimize, IconMonitor, IconMousePointer,
-  IconRotateCcw, IconStop,
+  IconArrowLeft, IconArrowRight, IconChevron, IconGlobe, IconMaximize, IconMinimize, IconMonitor, IconMousePointer,
+  IconDownload, IconMenu, IconPlus, IconRotateCcw, IconSearch, IconStar, IconStop, IconX,
 } from "./Icons";
 
 /** The viewport the browser harness captures. Frame pixels map 1:1 to page
@@ -54,6 +56,10 @@ export function ScreencastCell({
   children?: ReactNode;
 }) {
   const feed = useLiveFrame(followsFeed);
+  const tabs = useLiveTabs(source === "browser" && current);
+  const [panel, setPanel] = useState<BrowserPanelKind | "devtools" | null>(null);
+  const [menu, setMenu] = useState(false);
+  const { data: lists, reload: reloadLists } = useBrowserData(source === "browser" && current, url);
   const logRef = useRef<HTMLDivElement>(null);
   const logFollows = useRef(true);
   const logCount = Children.count(children);
@@ -443,6 +449,15 @@ export function ScreencastCell({
             <button
               className="shot-tool"
               disabled={!canUse}
+              onClick={() => void send("forward", {})}
+              aria-label="Forward"
+              title="Forward"
+            >
+              <IconArrowRight size={15} />
+            </button>
+            <button
+              className="shot-tool"
+              disabled={!canUse}
               onClick={() => void send("reload", {})}
               aria-label="Reload"
               title="Reload"
@@ -471,6 +486,36 @@ export function ScreencastCell({
                 spellCheck={false}
               />
             </form>
+            {(() => {
+              const marked = !!url && !!lists?.bookmarks.some((b) => b.url === url);
+              return (
+                <button
+                  className={`shot-tool${marked ? " on" : ""}`}
+                  disabled={!url || !/^https?:/i.test(url)}
+                  onClick={() => void setBookmark(url ?? "", tabs.find((t) => t.active)?.title ?? "", marked).then(reloadLists)}
+                  aria-label={marked ? "Remove bookmark" : "Bookmark this page"}
+                  aria-pressed={marked}
+                  title={marked ? "Remove bookmark" : "Bookmark this page"}
+                >
+                  <IconStar size={15} />
+                </button>
+              );
+            })()}
+            <span className="shot-menu-wrap">
+              <button className="shot-tool" onClick={() => setMenu((v) => !v)} aria-label="Browser menu" aria-expanded={menu} title="Menu">
+                <IconMenu size={15} />
+              </button>
+              {menu && (
+                <div className="shot-menu" role="menu" onClick={() => setMenu(false)}>
+                  <button role="menuitem" onClick={() => setPanel("find")}><IconSearch size={13} /> Find on page</button>
+                  <button role="menuitem" onClick={() => setPanel("bookmarks")}><IconStar size={13} /> Bookmarks</button>
+                  <button role="menuitem" onClick={() => setPanel("history")}><IconRotateCcw size={13} /> History</button>
+                  <button role="menuitem" onClick={() => setPanel("downloads")}><IconDownload size={13} /> Downloads</button>
+                  <button role="menuitem" onClick={() => setPanel("devtools")}><IconMonitor size={13} /> Developer tools</button>
+                  <button role="menuitem" onClick={() => setPanel("extensions")}><IconPlus size={13} /> Extensions</button>
+                </div>
+              )}
+            </span>
           </>
         ) : (
           <>
@@ -556,6 +601,56 @@ export function ScreencastCell({
           </button>
         )}
       </header>
+      {toolbar && panel === "devtools" && <DevtoolsPanel sessionId={sessionId} onClose={() => setPanel(null)} />}
+      {toolbar && panel && panel !== "devtools" && (
+        <BrowserPanel
+          kind={panel}
+          data={lists}
+          canUse={canUse}
+          onClose={() => setPanel(null)}
+          onOpen={(u) => void send("navigate", { url: u })}
+          onFind={(text, backwards) => send("find", { text, backwards }).then((r) => !!r?.found)}
+          onChanged={reloadLists}
+          onNewTab={(u) => void send("tabs", { action: "new", url: u })}
+        />
+      )}
+      {toolbar && tabs.length > 0 && (
+        <div className="shot-tabs" role="tablist" aria-label="Tabs">
+          {tabs.map((tab) => (
+            <div key={tab.id} className={`shot-tab${tab.active ? " on" : ""}`} role="presentation">
+              <button
+                role="tab"
+                aria-selected={tab.active}
+                className="shot-tab-main"
+                disabled={!canUse}
+                onClick={() => { if (!tab.active) void send("tabs", { action: "switch", id: tab.id }); }}
+                title={tab.url}
+              >
+                {tab.title || tab.url.replace(/^https?:\/\//, "") || "New tab"}
+              </button>
+              {(tabs.length > 1 || tab.url !== "about:blank") && (
+                <button
+                  className="shot-tab-x"
+                  disabled={!canUse}
+                  onClick={() => void send("tabs", { action: "close", id: tab.id })}
+                  aria-label={`Close ${tab.title || "tab"}`}
+                >
+                  <IconX size={11} />
+                </button>
+              )}
+            </div>
+          ))}
+          <button
+            className="shot-tool shot-tab-new"
+            disabled={!canUse}
+            onClick={() => void send("tabs", { action: "new" })}
+            aria-label="New tab"
+            title="New tab"
+          >
+            <IconPlus size={14} />
+          </button>
+        </div>
+      )}
 
       {waiting && (
         <div className="shot-stage is-waiting">

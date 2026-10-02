@@ -139,6 +139,7 @@ const LOOP_LIMITS: Record<keyof LoopWatchConfig, [number, number]> = {
   stopAt: [3, 200],
   staleAfter: [2, 200],
   checkEvery: [1, 500],
+  stallAfter: [3, 200],
 };
 
 /** The knobs were fixed in code and invisible, so a turn could be stopped by
@@ -176,6 +177,8 @@ export interface ToolSettings {
   widgets: { enabled: boolean };
   app: { enabled: boolean };
   pdf: { enabled: boolean };
+  /** Word, Excel and PowerPoint: the tools and the window beside the chat. */
+  office: { enabled: boolean };
 }
 
 export interface UsageEntry {
@@ -275,6 +278,8 @@ export interface PersistedState {
   /** Whether the agent says a short word about what the person does in the
       windows they share, when no turn is running (server/companion.ts). */
   collabRemarks: boolean;
+  /** Whether the agent reads a site's official documentation before acting on a site it has nothing current on. */
+  groundFirst: boolean;
   /** The person's time zone (an IANA name such as Europe/Stockholm), or empty
       to follow the machine. The clock every schedule, watcher and quiet hour
       is read on: in the Umbrel container that is UTC unless something sets it,
@@ -336,6 +341,7 @@ export function defaultTools(): ToolSettings {
     widgets: { enabled: true },
     app: { enabled: true },
     pdf: { enabled: true },
+    office: { enabled: true },
   };
 }
 
@@ -380,7 +386,7 @@ export function mergeTools(into: ToolSettings, patch: any): ToolSettings {
     into[group].enabled = bool(given.enabled, into[group].enabled);
     into[group].approval = mode(given.approval, into[group].approval);
   }
-  for (const key of ["widgets", "app", "pdf"] as const) {
+  for (const key of ["widgets", "app", "pdf", "office"] as const) {
     const given = patch[key];
     if (given && typeof given === "object") into[key].enabled = bool(given.enabled, into[key].enabled);
   }
@@ -508,6 +514,7 @@ function blank(): PersistedState {
     learning: true,
     agentCursor: true,
     collabRemarks: true,
+    groundFirst: true,
     timezone: "",
     loop: { ...LOOP_DEFAULTS },
     verify: { ...VERIFY_DEFAULTS },
@@ -535,6 +542,7 @@ function read(): PersistedState {
     if (typeof raw.learning === "boolean") state.learning = raw.learning;
     if (typeof raw.agentCursor === "boolean") state.agentCursor = raw.agentCursor;
     if (typeof raw.collabRemarks === "boolean") state.collabRemarks = raw.collabRemarks;
+    if (typeof raw.groundFirst === "boolean") state.groundFirst = raw.groundFirst;
     if (typeof raw.timezone === "string" && validTimezone(raw.timezone)) {
       state.timezone = raw.timezone.trim();
       applyTimezone(state.timezone);

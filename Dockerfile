@@ -1,3 +1,28 @@
+# ── stage 0: the Office tools' spreadsheet engine ────────────────────────────
+# The Word and PowerPoint half of the Office tools is JavaScript and is built in
+# the next stage like everything else. The spreadsheet half is a Rust program
+# (GenOffice's, pinned in office/PIN.json) with a C compression library in it,
+# so it is built here, on the build machine, for both CPUs the image runs on,
+# static against musl: `cargo zigbuild` brings the C cross-compiler (Zig), so
+# there is no emulated arm64 build to wait hours for. Only the pin and the
+# script are copied in, so this layer is rebuilt when the pin changes and not
+# when the app does. It is optional: if it fails to build the image still
+# builds, and only the Excel tools are missing (the script says so).
+FROM --platform=$BUILDPLATFORM rust:1-bookworm AS office-engine
+WORKDIR /build
+RUN (apt-get update \
+ && apt-get install -y --no-install-recommends python3-pip nodejs git ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
+ && pip install --break-system-packages ziglang \
+ && cargo install cargo-zigbuild --locked) \
+ || echo "the Office tools' spreadsheet engine could not be set up; the image will build without it"
+COPY office/PIN.json office/PIN.json
+COPY scripts/build-office.mjs scripts/build-office.mjs
+# The folder is made first so the copy out of this stage has something to copy
+# even when the engine could not be built.
+RUN mkdir -p dist/office/native \
+ && node scripts/build-office.mjs --only-sidecar --targets=x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
+
 # ── stage 1: build ───────────────────────────────────────────────────────────
 # The app is a Vite bundle and an esbuild'd Express server. Both come out of
 # `npm run build` into dist/, so one build stage produces everything the
@@ -10,6 +35,8 @@
 # hung the release for hours when it did not.
 FROM --platform=$BUILDPLATFORM node:22-alpine AS builder
 WORKDIR /build
+# git, for the Office tools: they are built from a pinned commit of GenOffice.
+RUN apk add --no-cache git
 
 # Dependencies first, from the lockfile alone: this layer is then reused on
 # every build that did not change what we depend on, which is most of them.
@@ -33,6 +60,16 @@ COPY pdf-editor/ pdf-editor/
 # then fails at runtime on something the compiler already knew is a wasted
 # round trip through the registry and an update on somebody's box.
 RUN npm run lint && npm run build
+
+# The Office tools' command line (Word, PowerPoint and Excel documents, read and
+# edited without a window), the three editors' windows and the engines behind the
+# PowerPoint and Excel ones, from the commit pinned in office/PIN.json. After the
+# build, which empties dist/. It is JavaScript, so this one build serves both
+# CPUs; the spreadsheet engine comes from the first stage. If this fails the
+# image still builds, without the Office tools -- see scripts/build-office.mjs.
+COPY office/ office/
+COPY scripts/build-office.mjs scripts/build-office.mjs
+RUN node scripts/build-office.mjs --no-sidecar
 
 # The runtime needs express, ws, the Gemini SDK and the Playwright driver --
 # not vite, esbuild or typescript. Pruning here rather than reinstalling in the
@@ -105,6 +142,8 @@ ENV NODE_ENV=production \
 
 COPY --from=builder /build/node_modules node_modules/
 COPY --from=builder /build/dist dist/
+# Static, one per CPU (the server picks by process.arch): see stage 0.
+COPY --from=office-engine /build/dist/office/native dist/office/native/
 # The server reads its own version out of this to stamp the page and answer
 # /api/origin, so it is a runtime file rather than a build artefact.
 COPY package.json ./

@@ -242,6 +242,8 @@ export type Cell =
   /** The PDF window, held in the pinned view on a phone. Never derived from
       the log: the window is live state (lib/pdfdesk.ts), added by the thread. */
   | { kind: "pdf"; seq: number }
+  /** And the Word window (lib/officedesk.ts), likewise. */
+  | { kind: "word"; seq: number }
   | {
       kind: "todo"; seq: number; items: TodoItem[];
       /** The last event that changed the list; `seq` is where it began. */
@@ -501,6 +503,12 @@ export function derive(events: AutoraEvent[]): Derived {
         openAgentTurn = null;
         open = null;
         busy = true;
+        break;
+
+      case Kind.Amend:
+        /* Said while the agent worked and added to what it was doing, so it
+           sits in the turn it joined rather than starting a new one. */
+        push({ kind: "note", seq: e.seq, tone: "plain", text: `You added: ${e.payload.text ?? ""}` });
         break;
 
       case Kind.MemoryRecall:

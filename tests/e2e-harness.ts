@@ -67,6 +67,20 @@ export interface App {
 
 const LOCAL_CHROME = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
 
+/** The servers started by this test run, and the end of every way it can stop: they go with it. */
+const running = new Set<ChildProcess>();
+function killGroup(c: ChildProcess, signal: NodeJS.Signals) {
+  try { if (c.pid) process.kill(-c.pid, signal); else c.kill(signal); } catch { try { c.kill(signal); } catch { /* gone */ } }
+}
+let hooked = false;
+function killAtExit() {
+  if (hooked) return;
+  hooked = true;
+  const all = () => { for (const c of running) killGroup(c, "SIGKILL"); };
+  process.on("exit", all);
+  for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(sig, () => { all(); process.exit(1); });
+}
+
 export async function startApp(opts: { env?: Record<string, string> } = {}): Promise<App> {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "autora-e2e-"));
   const seen: Seen[] = [];
@@ -139,24 +153,30 @@ export async function startApp(opts: { env?: Record<string, string> } = {}): Pro
         NODE_ENV: "development", ...opts.env,
       },
       stdio: ["ignore", "pipe", "pipe"],
+      // Its own process group: tsx starts the server as a grandchild, and a test that is stopped (a timeout, Ctrl-C)
+      // would otherwise leave that running, with its Chromium and engines, for the next run to fight over the machine.
+      detached: true,
     });
+    running.add(c);
+    c.once("exit", () => running.delete(c));
     c.stdout?.on("data", (d) => { output += d; });
     c.stderr?.on("data", (d) => { output += d; });
     return c;
   };
   let child = boot();
+  killAtExit();
   app.base = `http://127.0.0.1:${port}`;
   app.log = () => output;
   const ready = async () => {
     const end = Date.now() + 40_000;
     for (;;) {
       try { if ((await fetch(app.base + "/api/settings")).ok) return; } catch { /* not yet */ }
-      if (Date.now() > end) { child.kill(); throw new Error(`the app did not start:\n${output}`); }
+      if (Date.now() > end) { killGroup(child, "SIGKILL"); throw new Error(`the app did not start:\n${output}`); }
       await sleep(150);
     }
   };
   const down = async () => {
-    child.kill("SIGTERM");
+    killGroup(child, "SIGTERM");
     await new Promise((r) => { child.on("exit", r); setTimeout(r, 4000); });
   };
 

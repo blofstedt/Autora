@@ -39,6 +39,9 @@ import { missingPathIn, pathHint } from "./server/hints";
 import { FAMILIES, familyIds, loadedFamilies, loadedFromLog, unloadedIndex, withoutUnloaded } from "./server/toolload";
 import { applyLedger, latestLedger, ledgerBriefing, renderLedger, touched as touchedThings } from "./server/ledger";
 import { applyTodos, latestTodos, todoBriefing, unfinishedTodos } from "./server/todos";
+import {
+  addRequirements, amendmentNote, applyRequirements, autoAsks, finishAudit, latestRequirements, requirementsBriefing,
+} from "./server/requirements";
 import { replyStyle, standingBlock, standingReminder } from "./server/prompt";
 import { WebPush, cleanSubscription } from "./server/webpush";
 import { captureConsole, log, readLogs, setLogRedactor, type LogLevel } from "./server/logs";
@@ -62,6 +65,13 @@ import { threeRuntime } from "./server/widgets";
 import {
   MAX_ARTIFACT_BYTES, cleanName, deleteArtifact, getArtifact, listArtifacts, readArtifact, saveArtifact,
 } from "./server/artifacts";
+import { restore as restoreVersion, snapshot as snapshotFolder, versions as folderVersions } from "./server/snapshots";
+import {
+  installFromStore, installPackage, listExtensions, removeExtension, setExtensionEnabled,
+} from "./server/extensions";
+import {
+  addBookmark, bookmarks, clearHistory, downloads, history, recordDownload, recordVisit, removeBookmark,
+} from "./server/browsedata";
 import {
   NotebookError, addEntries, createNotebook, deleteNotebook, forgetArtifact,
   getNotebook, listNotebooks, moveEntry, notebookMarkdown, removeEntry, updateEntry, updateNotebook,
@@ -97,7 +107,7 @@ import { editFile, type EditArgs } from "./server/editfile";
 import { diffDom, type ChangeCue, type DomItem } from "./server/domdiff";
 import { Workspace, type DiffLine, type FileChange as CodeChange } from "./server/codediff";
 import { runSubagent } from "./server/subagent";
-import { checkLine, failedNote, mergeVerify, previewNote, previewProblems, type CheckResult } from "./server/verify";
+import { checkLine, failedNote, itemCheckNote, mergeVerify, previewNote, previewProblems, type CheckResult } from "./server/verify";
 import { buildTrace, traceText } from "./server/trace";
 import { keepBudget, loadBudget } from "./server/budgetstore";
 import { interruptedWork, resumeNote, type InterruptedWork, type ResumeEvent } from "./server/resume";
@@ -113,7 +123,9 @@ import {
   addressIn, DEVICES, isDevice, isLocalUrl, localAddress, serveFolder, waitForServer,
   type Device, type StaticServer,
 } from "./server/preview";
-import { deskBriefing, deskRoutes, deskState, dropDesk, onDeskChange, onDeskTouch, serveEditor } from "./server/pdfdesk";
+import { deskBriefing, deskHooks, deskRoutes, deskState, dropDesk, onDeskChange, onDeskTouch, serveEditor } from "./server/pdfdesk";
+import { dropOfficeDesk, onOfficeChange, onOfficePush, onOfficeTouch, officeBriefing, officeData, officeRoutes, officeState, officeHooks, serveOfficeEditors } from "./server/officedesk";
+import { renderToPdf, webDir as officeWebDir } from "./server/officerender";
 import {
   pickExpression, reviewMessage, safeStyle, type ElementInfo, type ReviewComment, type StyleChange,
 } from "./server/pick";
@@ -133,6 +145,7 @@ import {
   MEMORY_KINDS, MemoryGraph, doubtNote, freshness, siteOf,
   type MemoryLink, type MemoryRecord,
 } from "./server/memory";
+import { actsOnSite, checkSource, checkText, groundingRefusal, tidyRecords } from "./server/mindrules";
 import {
   attachRelay, cleanHost, relayClientSource, relayStatus, watchDesktop,
 } from "./server/desktop";
@@ -745,6 +758,13 @@ function touchPresence(
   scheduleRemark(sessionId);
 }
 
+/** Bytes waiting to be written to the slowest of a session's viewers. */
+function socketBacklog(sessionId: string): number {
+  let most = 0;
+  for (const ws of sessionSockets.get(sessionId) ?? []) most = Math.max(most, ws.bufferedAmount);
+  return most;
+}
+
 function sendEphemeral(sessionId: string, message: Record<string, unknown>) {
   const sockets = sessionSockets.get(sessionId);
   if (!sockets || sockets.size === 0) return;
@@ -843,6 +863,7 @@ function browserFor(session: Session): LiveBrowser {
 
   const live = new LiveBrowser({
     watchers: () => sessionSockets.get(session.id)?.size ?? 0,
+    backlog: () => socketBacklog(session.id),
     onFrame: (jpegBase64) =>
       sendEphemeral(session.id, {
         type: "frame",
@@ -859,7 +880,17 @@ function browserFor(session: Session): LiveBrowser {
       emitEvent(session, "browser.frame", "agent", { url, w: VIEWPORT.width, h: VIEWPORT.height }, null, blob);
     },
     onNav: (url, title) => {
+      recordVisit(url, title);
       emitEvent(session, "browser.nav", "agent", { url, title });
+    },
+    onDownload: ({ name, bytes, url }) => {
+      try {
+        const artifact = saveArtifact({ origin: "user", name, data: bytes, session: session.id, note: `Downloaded from ${url.slice(0, 200)}` });
+        recordDownload({ artifact: artifact.id, name: artifact.name, url, size: artifact.size, ts: Date.now() });
+        emitEvent(session, "browser.download", "agent", { artifact: artifact.id, name: artifact.name, size: artifact.size, url });
+      } catch (err: any) {
+        emitEvent(session, "browser.download", "agent", { name, error: String(err?.message ?? err) });
+      }
     },
     onFields: () => broadcastBrowserState(session),
     onAction: (action, at, url) => {
@@ -1188,6 +1219,16 @@ onDeskTouch((sessionId, subject, kind, detail, opts) => touchPresence(sessionId,
 
 onDeskChange((sessionId) => {
   sendEphemeral(sessionId, { type: "pdfdesk", session: sessionId, state: deskState(sessionId) });
+});
+
+/* The Office window, the same way: what the person types is theirs for a moment, and the window's
+   state goes to the page as it changes. What a PowerPoint or Excel engine sends its editor page goes too. */
+onOfficeTouch((sessionId, subject, kind, detail, opts) => touchPresence(sessionId, "office", subject, kind, detail, opts));
+onOfficeChange((sessionId) => {
+  sendEphemeral(sessionId, { type: "officedesk", session: sessionId, state: officeState(sessionId) });
+});
+onOfficePush((sessionId, rev, channel, args) => {
+  sendEphemeral(sessionId, { type: "officedesk.push", session: sessionId, rev, channel, args });
 });
 
 /** Stop what a preview started -- its dev server, its file server, its page.
@@ -1673,7 +1714,10 @@ function isPreview(req: Request): boolean {
   return req.query?.target === "preview";
 }
 function targetBrowser(session: Session, req: Request): LiveBrowser | undefined {
-  return isPreview(req) ? previews.get(session.id)?.live : browsers.get(session.id);
+  const live = isPreview(req) ? previews.get(session.id)?.live : browsers.get(session.id);
+  // Every route that asks is a person working the page: the stream speeds up.
+  live?.touched();
+  return live;
 }
 
 function agentDriving(session: Session): boolean {
@@ -1959,7 +2003,7 @@ function historyFor(session: Session, sinceSeq = 0): { message: ChatMessage; seq
   for (const event of session.events) {
     if (event.seq <= sinceSeq) continue;
     let role: "user" | "assistant" | null = null;
-    if (event.kind === "turn.user") role = "user";
+    if (event.kind === "turn.user" || event.kind === "turn.amend") role = "user";
     else if (event.kind === "agent.remark") role = "assistant";
     else if (event.kind === "turn.agent.text") {
       /* Text this server composed -- the no-model notice, the seeded opening
@@ -2216,12 +2260,45 @@ function pastToolCalls(sessionId: string, sinceSeq = 0): string[] {
     });
 }
 
+/** Addresses the person's words name: full URLs and bare domains. */
+const NAMED_SITE = /\bhttps?:\/\/([a-z0-9.-]+\.[a-z]{2,})|\b((?:[a-z0-9-]+\.)+(?:com|org|net|io|app|dev|co|ai|edu|gov|me|tv|so|sh|cloud|tech|xyz)(?:\.[a-z]{2})?)\b/gi;
+
+/**
+ * What is stored, or not, about the sites a message names, said before the
+ * turn starts: the agent reads the official documentation for a site it has
+ * nothing current on before it acts there (and the gate holds it to that).
+ */
+function groundingNote(said: string): string | null {
+  const sites = new Set<string>();
+  for (const m of said.matchAll(NAMED_SITE)) {
+    const site = siteOf(m[1] ?? m[2] ?? "");
+    if (site) sites.add(site);
+  }
+  const lines: string[] = [];
+  for (const site of [...sites].slice(0, 5)) {
+    const g = mind.groundingOf(site);
+    if (g === "fresh") continue;
+    lines.push(`- ${site}: ${g === "none" ? "nothing stored about how it works" : "what is stored was read from its source too long ago"}`);
+  }
+  if (lines.length === 0) return null;
+  return [
+    "The request names sites you have nothing current on. Before you act on them, read their official documentation " +
+      "(web_search, then the docs or help page; or the research tool) and write what you learn as references:",
+    ...lines,
+  ].join("\n");
+}
+
 /** One memory as the model reads it: id, kind, how far to trust it, and what it says. */
 function memoryLine(m: MemoryRecord): string {
   const old = freshness(m);
   const doubt = doubtNote(m);
-  return `- ${m.id} [${m.kind}${m.status === "provisional" ? ", unconfirmed" : ""}]` +
-    `${doubt ? ` (${doubt})` : old ? ` (this is old knowledge: ${old})` : ""} ${m.title}: ${m.body}`;
+  /* A reference says where it was read and when, so it can be trusted for what
+     it is -- the product's own word, as of a date -- and checked at the source. */
+  const from = m.kind === "reference" && m.source
+    ? ` (official source ${m.source}${m.fetched ? `, read ${new Date(m.fetched * 1000).toISOString().slice(0, 10)}` : ""}${m.version ? `, version ${m.version}` : ""})`
+    : "";
+  return `- ${m.id} [${m.kind}${m.facet ? `, ${m.facet}` : ""}${m.status === "provisional" ? ", unconfirmed" : ""}]` +
+    `${doubt ? ` (${doubt})` : old ? ` (this is old knowledge: ${old})` : ""} ${m.title}: ${m.body}${from}`;
 }
 
 /**
@@ -2241,6 +2318,7 @@ async function systemInstructionFor(
   sessionId: string,
   recalled: MemoryRecord[],
   active?: Resolved | null,
+  said = "",
 ): Promise<{ pinned: string; note: string }> {
   const lines = [DEFAULT_PROMPT];
   const notes: string[] = [];
@@ -2364,6 +2442,9 @@ async function systemInstructionFor(
      last heard (said once). */
   const pdfDesk = deskBriefing(sessionId);
   if (pdfDesk) notes.push(pdfDesk);
+  // And a Word, PowerPoint or Excel document, the same way.
+  const officeDesk = officeBriefing(sessionId);
+  if (officeDesk) notes.push(officeDesk);
 
   const open = browsers.get(sessionId)?.status();
   if (open?.open && open.url?.startsWith("chrome-error:")) {
@@ -2422,6 +2503,14 @@ async function systemInstructionFor(
   /* The to-do list, said every turn: the history carries words, not the
      todo calls that wrote it, so this is the only way the agent sees it again. */
   if (own) notes.push(todoBriefing(latestTodos(own.events)));
+  /* What the person asked for, word for word: the asks the to-do list is
+     written from, kept apart so one the agent leaves off its plan is still
+     here. */
+  const asked = own ? requirementsBriefing(latestRequirements(own.events)) : null;
+  if (asked) notes.push(asked);
+  /* Sites the message names, and whether anything current is stored about how each works. */
+  const grounding = state.groundFirst ? groundingNote(said) : null;
+  if (grounding) notes.push(grounding);
   /* What it worked out, which the history (words only) cannot carry. */
   const working = own ? ledgerBriefing(latestLedger(own.events), touchedThings(own.events)) : null;
   if (working) notes.push(working);
@@ -2993,6 +3082,7 @@ async function reflect(session: Session, request: string, startSeq: number, prev
   for (const lesson of found.learned) {
     const { record, action } = mind.write({
       title: lesson.title, body: lesson.body, kind: lesson.kind, tags: lesson.tags,
+      ...(lesson.subject ? { subject: lesson.subject } : {}),
       status: "provisional", source_session: session.id, source_seq: session.seqCounter,
     });
     if (lesson.revises && action === "added" && lesson.revises !== record.id) {
@@ -3104,6 +3194,36 @@ export interface TurnResult {
   recalled: string[];
 }
 
+/** Messages sent while a turn ran, to be told to it at its next step. */
+const amendments = new Map<string, string[]>();
+
+/** Take what is waiting for this session, once. */
+function takeAmendments(sessionId: string): string[] {
+  const waiting = amendments.get(sessionId) ?? [];
+  amendments.delete(sessionId);
+  return waiting;
+}
+
+/**
+ * Keep a requirements list up with what the person says, without anyone
+ * reading it: a list in the message becomes its items, and a message sent
+ * while there is work open is kept whole as a change to it. The agent merges,
+ * edits and drops from there; this only makes sure nothing said is lost.
+ */
+function noteAsks(session: Session, text: string, duringWork: boolean) {
+  const have = latestRequirements(session.events);
+  const asks = autoAsks(text, have, duringWork);
+  if (asks.length === 0) return;
+  const next = addRequirements(have, asks, duringWork ? "amend" : "request");
+  if (next.items.length !== have.items.length) emitEvent(session, "requirements.update", "system", next as any);
+}
+
+/** Whether a message sent now can be added to the running turn instead of stopping it. */
+function canAmend(session: Session): boolean {
+  const turn = running.get(session.id);
+  return Boolean(turn && !turn.stopped && session.busy && !waitingOnPerson(session.id));
+}
+
 /**
  * Put the person's (or a job's) words in the thread and run the turn.
  *
@@ -3123,8 +3243,16 @@ function startTurn(session: Session, text: string, attachments: AttachmentRef[] 
   const done = (prior ?? Promise.resolve()).then(() => beginTurn(session, text, attachments, opts));
   const settled = done.then(() => undefined, () => undefined);
   turnsInFlight.set(session.id, settled);
-  void settled.then(() => {
+  void settled.then(async () => {
     if (turnsInFlight.get(session.id) === settled) turnsInFlight.delete(session.id);
+    /* Added in the instant the turn was finishing, after its last look: the
+       person's words are in the thread and must be answered. Not when they
+       stopped it (then the words wait in the thread for their next message)
+       and not when a newer turn took over (it reads them from the log). */
+    const left = takeAmendments(session.id);
+    if (left.length === 0 || turnsInFlight.has(session.id)) return;
+    const result = await done.catch(() => null);
+    if (result && !result.stopped) void startTurn(session, left.join("\n\n"), [], {});
   });
   return done;
 }
@@ -3198,6 +3326,7 @@ function beginTurn(session: Session, text: string, attachments: AttachmentRef[] 
     ...(opts.notebooks?.length ? { notebooks: opts.notebooks } : {}),
   });
   autoLoadTools(session, text);
+  if (!opts.automated) noteAsks(session, text, Boolean(unfinished));
   /* Agent mode starts every turn planning, whatever the last one ended in:
      the agent decides again whether this task needs a plan. */
   if (workMode(session.mode) === "agent" && !(unfinished && session.phase === "build")) {
@@ -3214,6 +3343,12 @@ function beginTurn(session: Session, text: string, attachments: AttachmentRef[] 
   const done = runTurn(session, text, opts);
   void done
     .then(async (result) => {
+      /* The turn changed code: save a version of the folder to go back to. */
+      if (codeTouched.delete(session.id)) {
+        void snapshotFolder(terminalDir(), text.slice(0, 120)).then((saved) => {
+          if (saved) emitEvent(session, "version.saved", "system", { id: saved.id, label: saved.label, files: saved.files });
+        });
+      }
       /* What next: the chips that show what else it can do with this, at
          once, and again with the look back's own ideas when it has them. */
       const first = offerNextSteps(session, text, startSeq, result, opts, []);
@@ -3274,6 +3409,8 @@ const THINK_LONGER = {
    the thread (server/codediff.ts). One per chat; remade if the terminal's
    directory is changed. */
 const workspaces = new Map<string, Workspace>();
+/** Chats whose turn wrote code, to be saved as a version when it ends. */
+const codeTouched = new Set<string>();
 
 function workspaceFor(sessionId: string): Workspace {
   const root = terminalDir();
@@ -3389,6 +3526,9 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
       /* Refreshed every step, not once per turn: a tool the agent writes
          with tool_create is usable on the very next step. */
       let tools = await offered();
+      /* The tool list of the last model call: a change in it breaks the
+         provider's cache, and the usage record says when that was why. */
+      let lastToolKey: string | null = null;
       /* The conversation lives in the session's context engine for the
          length of the turn: rebuilt from the log (minus whatever has been
          folded into anchored memory), then grown by each round of tool
@@ -3658,12 +3798,15 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
               input_tokens: turn.usage.input,
               output_tokens: turn.usage.output,
               cached_tokens: cache.read,
+              cache_write_tokens: cache.write,
+              tools_changed: lastToolKey !== null && lastToolKey !== tools.map((t) => t.name).join(","),
               cost_usd: cost,
               priced,
               estimated: turn.usage.estimated,
               context: context.gauge(pinned),
             });
 
+            lastToolKey = tools.map((t) => t.name).join(",");
             return turn;
           } catch (err: any) {
             // Stopped mid-stream: the abort is ours, not the vendor failing.
@@ -3872,6 +4015,11 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           emitEvent(session, "tools.enable", "agent", { family, why: "asked" }, span);
           return { ok: true, summary: `${family} tools are in your list from your next step.` };
         },
+        requirements: (action) => {
+          const result = applyRequirements(latestRequirements(session.events), action);
+          if (result.list) emitEvent(session, "requirements.update", "agent", result.list as any, span);
+          return result;
+        },
         ledger: (action) => {
           const result = applyLedger(latestLedger(session.events), action);
           if (result.ledger) emitEvent(session, "ledger.update", "agent", result.ledger as any, span);
@@ -3919,11 +4067,12 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
              tool layer says so in words when the agent tries to write (see
              server/tools.ts), and these guards are the second line of it. */
           incognito: Boolean(session.incognito),
-          write: ({ title, body, kind, tags }) => {
+          write: ({ title, body, kind, tags, subject, facet, source, version, status }) => {
             if (session.incognito) return { id: "", action: "refused" };
             const { record, action } = mind.write({
               title, body, kind, tags: [...(tags ?? []), "agent-authored"],
-              status: "confirmed", source_session: session.id, source_seq: session.seqCounter,
+              status: status ?? "confirmed", source_session: session.id, source_seq: session.seqCounter,
+              subject, facet: facet as MemoryRecord["facet"], source, version,
             });
             emitEvent(session, "memory.write", "agent", {
               id: record.id, title: record.title, kind: record.kind, action,
@@ -3951,11 +4100,24 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             }
             return hits.map(({ record: m }) => ({
               id: m.id, kind: m.kind, title: m.title, body: m.body, status: m.status,
+              subject: m.subject, source: m.source ?? undefined, fetched: m.fetched ?? undefined,
             }));
           },
           update: (id, patch) => {
             if (session.incognito) return false;
-            const record = mind.update(id, patch);
+            const before = mind.get(id);
+            if (!before) return false;
+            /* The same rules as a new write, applied to what the record would become. */
+            const wrong = checkText(
+              patch.kind ?? before.kind, patch.title ?? before.title, patch.body ?? before.body,
+            );
+            if (wrong) return wrong;
+            if (patch.source) {
+              const checked = checkSource(patch.source, patch.subject ?? before.subject ?? "");
+              if (!checked.ok) return checked.error ?? "That source cannot be used.";
+              patch = { ...patch, source: checked.url };
+            }
+            const record = mind.update(id, patch as Parameters<typeof mind.update>[1]);
             if (record) {
               emitEvent(session, "memory.write", "agent", {
                 id: record.id, title: record.title, kind: record.kind, action: "updated",
@@ -4080,7 +4242,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
       /* Once per turn, not per round: the instructions must open every
          round's request identically for the provider's cache to serve
          them, and so must everything the note is attached ahead of. */
-      const { pinned, note } = await systemInstructionFor(session.id, uniqueAccessed, active);
+      const { pinned, note } = await systemInstructionFor(session.id, uniqueAccessed, active, text);
       context.setTurnNote(note);
       const watch = new LoopWatch(state.loop);
       /* Failures that say the same thing however the arguments were varied,
@@ -4099,12 +4261,28 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           target: targetOf(name, (args ?? {}) as Record<string, any>, browsers.get(session.id)?.status().url ?? ""),
         });
         const verdict = watch.record(name, args, ok, raw);
+        /* Something moved: a change was made, or the plan or the notes were
+           rewritten. Rounds without one are what the stall note counts. */
+        if (ok && (!looksOnly(name, (args ?? {}) as Record<string, any>) || name === "todo" || name === "ledger" || name === "requirements")) watch.advance();
         if (verdict.log) emitEvent(session, "system.log", "system", { message: verdict.log });
         if (verdict.stop) loopStop = verdict.stop;
         const budget = errors.record(
           name, describeCall(name, args), ok, stripAnsi(raw),
         );
         if (budget.stop && !loopStop) loopStop = budget.stop;
+        /* What the stop taught outlasts the chat: written down as a provisional
+           memory, so the next one does not walk the same dead end. It is
+           confirmed or dropped by the same use-and-doubt the others are. */
+        if (budget.stop && !session.incognito) {
+          const lesson = errors.deadEnd(name, stripAnsi(raw));
+          if (lesson) {
+            const { record, action } = mind.write({
+              ...lesson, kind: "fact", status: "provisional",
+              source_session: session.id, source_seq: session.seqCounter,
+            });
+            emitEvent(session, "memory.write", "agent", { id: record.id, title: record.title, kind: record.kind, action });
+          }
+        }
         // Kept, so "try again" after a stop does not start from nothing.
         if (!session.incognito) keepBudget(session.id, errors.snapshot());
         /* A scheduled run has a budget of its own, so one job that has begun
@@ -4140,7 +4318,11 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
         if (!site || sitesSeen.has(site)) return "";
         sitesSeen.add(site);
         const found = mind.aboutSite(site, new Set(result.recalled));
-        if (found.length === 0) return "";
+        const g = state.groundFirst ? mind.groundingOf(site) : "fresh";
+        const ground = g === "fresh" ? "" :
+          `[Autora] ${g === "none" ? `Nothing is stored about how ${site} works` : `What is stored about ${site} is old`}. ` +
+          "Before you act here (click, fill, post), read its official documentation and write what you learn as references (memory_write, kind reference).";
+        if (found.length === 0) return ground;
         const ids = found.map((m) => m.id);
         mind.touch(ids);
         result.recalled.push(...ids);
@@ -4153,6 +4335,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
         return [
           `[From your memory graph, not from the page] What you have written down about ${site}:`,
           ...found.map(memoryLine),
+          ...(ground ? [ground] : []),
         ].join("\n");
       };
       /** Steps in a row that came back empty or cut off, each answered by
@@ -4161,6 +4344,42 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
       let nudges = 0;
       /** Whether this turn has been asked about open to-do items already. */
       let todoAsked = false;
+      let requirementsAsked = false;
+      /* Sites this turn was sent to read up on before acting, and how often. */
+      const groundingTold = new Map<string, number>();
+      /** Run the person's project check as a visible terminal call and read what it printed. */
+      const execCheck = async (command: string): Promise<CheckResult> => {
+        const span = `span-${session.id}-${session.seqCounter}-${spans++}`;
+        emitEvent(session, "system.log", "system", { message: `Running the project's check: ${command}` });
+        emitEvent(session, "tool.call", "agent", { name: "terminal", args: { command } }, span);
+        const started = Date.now();
+        const outcome = await runTool(findTool("terminal")!, { command }, contextFor(span));
+        const durationMs = Date.now() - started;
+        if (outcome.exitCode !== undefined) {
+          emitEvent(session, "pty.exit", "agent", { exit_code: outcome.exitCode ?? null, duration_ms: durationMs }, span);
+        }
+        emitEvent(session, "tool.result", "agent", {
+          ok: outcome.ok,
+          preview: outcome.preview ?? "",
+          duration_ms: durationMs,
+          ...(outcome.exitCode !== undefined ? { display: { exit_code: outcome.exitCode } } : {}),
+        }, span);
+        const checked: CheckResult = {
+          command, exitCode: outcome.exitCode ?? null, ok: outcome.ok,
+          output: context.ingest("terminal", outcome.summary, canReadVault),
+        };
+        return checked;
+      };
+
+      /** Items finished so far: to-dos completed and asks marked done. */
+      const doneCount = () =>
+        (latestTodos(session.events)?.items.filter((i) => i.status === "completed").length ?? 0) +
+        latestRequirements(session.events).items.filter((r) => r.status === "done").length;
+      /** Checks run because an item was finished, a turn at most this many: a slow
+          check after every small item would cost more than it finds. */
+      let itemChecks = 0;
+      /* What the project check printed the last time it failed this turn. */
+      let lastCheckOutput: string | undefined;
       /** Whether a command that changes things has run since the project's
           check last did, and how many times that check has run this turn. */
       let changedSinceCheck = false;
@@ -4211,6 +4430,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             message: `${workspace.root} has too many files to follow, so the code the agent writes there is not shown as it is written.`,
           });
         }
+        if (files.length > 0) codeTouched.add(session.id);
         for (const f of files.slice(0, MAX_CHANGE_CARDS)) {
           emitEvent(session, "file.edit", "agent", {
             path: f.path,
@@ -4290,6 +4510,18 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
              Either way the model is told so and asked again. */
           const empty = !turn.text.trim();
           const stalled = turn.cutOff || (empty && ranSomething);
+          /* The person added something just as the agent was finishing: it is
+             not finished. Told now, and the turn goes on with it. */
+          if (!running.get(session.id)?.stopped) {
+            const late = takeAmendments(session.id);
+            if (late.length > 0) {
+              if (!empty) {
+                context.append({ role: "assistant", text: turn.text, reasoning: turn.reasoning }, session.seqCounter);
+              }
+              context.append({ role: "user", text: amendmentNote(late) }, session.seqCounter);
+              continue;
+            }
+          }
           /* A third: the work ran, but the list still says it has not. Asked
              once a turn, and never while planning, where every item is still
              to do on purpose. A turn that only talked is not asked. */
@@ -4311,6 +4543,26 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
               continue;
             }
           }
+          /* The asks the person made, and whether each was met. Once a turn,
+             when something ran and an ask is still open: finish it, or say it
+             is done and how it was checked, or drop it with the reason. The
+             audit is what stops an ask the plan never mentioned from being
+             quietly skipped. */
+          if (!stalled && !requirementsAsked && ranSomething && !running.get(session.id)?.stopped &&
+              phaseFor(workMode(session.mode), session.phase) === "build") {
+            const audit = finishAudit(latestRequirements(session.events));
+            if (audit) {
+              requirementsAsked = true;
+              if (!empty) {
+                context.append({ role: "assistant", text: turn.text, reasoning: turn.reasoning }, session.seqCounter);
+              }
+              context.append({ role: "user", text: audit }, session.seqCounter);
+              emitEvent(session, "system.log", "system", {
+                message: "Some of what was asked was not marked done as the turn ended; asked the agent to account for it.",
+              });
+              continue;
+            }
+          }
           /* A fourth: the agent says it is finished and has changed things, and
              the person has named a check for their project. The check runs
              here, in plain code, and what it printed goes back to the agent:
@@ -4322,25 +4574,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             const command = state.verify.command;
             changedSinceCheck = false;
             checkRuns += 1;
-            const span = `span-${session.id}-${session.seqCounter}-${spans++}`;
-            emitEvent(session, "system.log", "system", { message: `Running the project's check: ${command}` });
-            emitEvent(session, "tool.call", "agent", { name: "terminal", args: { command } }, span);
-            const started = Date.now();
-            const outcome = await runTool(findTool("terminal")!, { command }, contextFor(span));
-            const durationMs = Date.now() - started;
-            if (outcome.exitCode !== undefined) {
-              emitEvent(session, "pty.exit", "agent", { exit_code: outcome.exitCode ?? null, duration_ms: durationMs }, span);
-            }
-            emitEvent(session, "tool.result", "agent", {
-              ok: outcome.ok,
-              preview: outcome.preview ?? "",
-              duration_ms: durationMs,
-              ...(outcome.exitCode !== undefined ? { display: { exit_code: outcome.exitCode } } : {}),
-            }, span);
-            const checked: CheckResult = {
-              command, exitCode: outcome.exitCode ?? null, ok: outcome.ok,
-              output: context.ingest("terminal", outcome.summary, canReadVault),
-            };
+            const checked = await execCheck(command);
             emitEvent(session, "system.log", "system", { message: checkLine(checked, checkRuns, state.verify.tries) });
             if (!checked.ok && !running.get(session.id)?.stopped) {
               if (!empty) {
@@ -4349,7 +4583,8 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
                   session.seqCounter,
                 );
               }
-              context.append({ role: "user", text: failedNote(checked, checkRuns, state.verify.tries) }, session.seqCounter);
+              context.append({ role: "user", text: failedNote(checked, checkRuns, state.verify.tries, lastCheckOutput) }, session.seqCounter);
+              lastCheckOutput = checked.output;
               continue;
             }
           }
@@ -4412,6 +4647,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           session.seqCounter,
         );
         const replies: ToolReply[] = [];
+        const finishedBefore = doneCount();
 
         for (const use of turn.calls) {
           const span = `span-${session.id}-${session.seqCounter}-${spans++}`;
@@ -4530,6 +4766,48 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             emitEvent(session, "tool.error", "agent", { held: true, error: "Not done: the person is working on this." }, span);
             reply(false, heldNow);
             continue;
+          }
+
+          /* An exact call that was repeated after the loop watch said not to:
+             refused in a line, without running, and without the tool list
+             changing under the provider's cache. */
+          const gated = watch.gate(spec.name, use.args);
+          if (gated.stop) {
+            loopStop = gated.stop;
+            reply(false, "Not run: the turn was stopped.");
+            break;
+          }
+          if (gated.refuse) {
+            emitEvent(session, "tool.error", "agent", { held: true, error: gated.refuse }, span);
+            reply(false, gated.refuse);
+            continue;
+          }
+
+          /* Acting on a site nothing current is stored about: find out from its own
+             documentation first (see mindrules.groundingRefusal). Reading the
+             page is never held, and a few refusals on one site let it through so
+             a docs site that is down cannot wedge the turn. */
+          if (state.groundFirst && actsOnSite(spec.name, (use.args ?? {}) as Record<string, any>)) {
+            const page = spec.name.startsWith("browser_") ? browsers.get(session.id)?.status().url ?? "" : "";
+            const site = siteOf(targetOf(spec.name, (use.args ?? {}) as Record<string, any>, page));
+            if (site) {
+              const grounding = mind.groundingOf(site);
+              const told = groundingTold.get(site) ?? 0;
+              const why = groundingRefusal({
+                enabled: true, site, fresh: grounding === "fresh", stale: grounding === "stale", refused: told,
+              });
+              if (why) {
+                groundingTold.set(site, told + 1);
+                emitEvent(session, "tool.error", "agent", { held: true, grounding: true, error: `Not done yet: reading ${site}'s own documentation first.` }, span);
+                if (told === 0) {
+                  emitEvent(session, "system.log", "system", {
+                    message: `Nothing current is stored about ${site}; the agent was sent to read its official documentation before acting on it.`,
+                  });
+                }
+                reply(false, why);
+                continue;
+              }
+            }
           }
 
           /* Then the person's permissions: with Ask on, a call that changes
@@ -4757,6 +5035,28 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
         const checkpoint = watch.endRound();
         const last = replies[replies.length - 1];
         if (checkpoint && last) last.result += `\n\n${checkpoint}`;
+        /* An item was finished this round and code changed since the check last
+           ran: the check runs now, while the change is fresh, instead of at the
+           end when a failure has to be traced back through everything. */
+        if (last && doneCount() > finishedBefore && changedSinceCheck && state.verify.command &&
+            itemChecks < Math.max(3, state.verify.tries * 2) && !loopStop && !opts.spoken &&
+            !running.get(session.id)?.stopped &&
+            phaseFor(workMode(session.mode), session.phase) === "build" && tools.some((t) => t.name === "terminal")) {
+          itemChecks += 1;
+          changedSinceCheck = false;
+          const checked = await execCheck(state.verify.command);
+          emitEvent(session, "system.log", "system", {
+            message: checked.ok
+              ? `The project's check passed after an item was finished (${checked.command}).`
+              : `The project's check failed after an item was finished; the agent was told (${checked.command}).`,
+          });
+          last.result += `\n\n${itemCheckNote(checked, lastCheckOutput)}`;
+          if (!checked.ok) lastCheckOutput = checked.output;
+        }
+        /* What the person added while this round ran, said where the model
+           reliably reads: at the end of what came back. */
+        const added = takeAmendments(session.id);
+        if (added.length > 0 && last) last.result += `\n\n${amendmentNote(added)}`;
         // What the person did while this round ran, said as it is read.
         personEdits(null);
         const heard = presenceFor(session.id).note();
@@ -4768,6 +5068,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
         context.append({ role: "tool", replies }, session.seqCounter);
         context.supersedePages(canReadVault);
         context.supersedePictures();
+        context.supersedeReads(canReadVault);
 
         /* The person has heard nothing from the reasoning model -- it does not
            speak. So the voice reads what was just said and done and says it,
@@ -5087,6 +5388,30 @@ async function startServer() {
   /** Gone for good: its log, its pictures, and its browser. */
   // The PDF window: its pages, and what the person changes in it.
   deskRoutes(app, { exists: (id) => sessions.has(id), cwd: () => terminalDir() });
+  officeRoutes(app, { exists: (id: string) => sessions.has(id) });
+
+  /* File -> Export PDF in the Office window: the server lays the document out (the same pages office_pdf
+     makes), and the PDF opens in the PDF editor -- PDFs always go to our own. */
+  app.post("/api/officedesk/:session/pdf", async (req: Request, res: Response) => {
+    const session = sessions.get(String(req.params.session));
+    if (session) await officeHooks(session.id).settle();
+    const data = session ? officeData(session.id) : null;
+    if (!session || !data) return res.status(404).json({ error: "There is no document open in the window." });
+    try {
+      const state = officeState(session.id);
+      const name = String(state.name ?? "document.docx");
+      const pdf = await renderToPdf(state.kind === "pptx" || state.kind === "xlsx" ? state.kind : "docx", data, name);
+      const art = saveArtifact({
+        origin: "agent", name: `${name.replace(/\.(docx|pptx|xlsx)$/i, "") || "document"}.pdf`, data: pdf, mime: "application/pdf",
+        session: session.id, note: `${name} as a PDF`,
+      });
+      emitEvent(session, "media.file", "agent", { id: art.id, name: art.name, mime: art.mime, size: art.size });
+      deskHooks(session.id).open({ name: art.name, base: pdf, items: [], working: art.id, source: null, outName: art.name });
+      res.json({ ok: true, artifact: art.id });
+    } catch (err: any) {
+      res.status(500).json({ error: String(err?.message ?? err).split("\n")[0] });
+    }
+  });
 
   app.delete("/api/sessions/:id", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
@@ -5105,6 +5430,7 @@ async function startServer() {
     browsers.delete(session.id);
     await previewStop(session, false).catch(() => undefined);
     dropDesk(session.id);
+    dropOfficeDesk(session.id);
     forgetSession(session.id);
     if (!incognito) deleteSession(session.id);
     // No title of an incognito chat is in a log line: it may be a first message.
@@ -5480,7 +5806,7 @@ async function startServer() {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
     const surface = String(req.body?.surface ?? "");
-    if (!["pdf", "app", "browser", "code"].includes(surface)) return res.status(400).json({ error: "surface is pdf, app, browser or code." });
+    if (!["pdf", "office", "app", "browser", "code"].includes(surface)) return res.status(400).json({ error: "surface is pdf, office, app, browser or code." });
     presenceFor(session.id).hold(surface as Surface, req.body?.hold === true);
     announcePresence(session.id);
     res.json(presenceFor(session.id).view());
@@ -5577,6 +5903,20 @@ async function startServer() {
     const notebooks = notebookRefs(req.body?.notebooks);
     if (!text && attachments.length === 0 && notebooks.length === 0) {
       return res.status(400).json({ error: "Empty message" });
+    }
+
+    /* Sent while the agent is working: unless the person asked to interrupt
+       (or it carries files, is dictated, or is a command), it is added to the
+       work in hand, not a reason to drop it. The running turn is told at its
+       next step; it was not stopped, so nothing it has done is thrown away. */
+    if (text && attachments.length === 0 && notebooks.length === 0 && req.body?.spoken !== true &&
+        req.body?.mode !== "interrupt" && !text.startsWith("/") && canAmend(session)) {
+      const waiting = amendments.get(session.id) ?? [];
+      waiting.push(text);
+      amendments.set(session.id, waiting);
+      emitEvent(session, "turn.amend", "user", { text });
+      noteAsks(session, text, true);
+      return res.json({ ok: true, queued: true });
     }
 
     // The first message names the thread -- unless it was already given a
@@ -6120,6 +6460,156 @@ async function startServer() {
     }
   });
 
+  /** Pages visited, bookmarks and downloads: the browser's own lists. */
+  app.get("/api/browser/data", (req: Request, res: Response) => {
+    res.json({
+      history: history(String(req.query.q ?? "")).slice(0, 200),
+      bookmarks: bookmarks(),
+      downloads: downloads(),
+    });
+  });
+
+  app.post("/api/browser/bookmarks", (req: Request, res: Response) => {
+    const url = String(req.body?.url ?? "");
+    if (req.body?.remove) { removeBookmark(url); return res.json({ ok: true }); }
+    const mark = addBookmark(url, String(req.body?.title ?? ""));
+    if (!mark) return res.status(400).json({ error: "Only web pages can be bookmarked." });
+    res.json({ ok: true, bookmark: mark });
+  });
+
+  /** Chrome extensions. They see every page, so each is installed by name. */
+  app.get("/api/extensions", (_req: Request, res: Response) => {
+    res.json({ extensions: listExtensions() });
+  });
+
+  app.post("/api/extensions/install", async (req: Request, res: Response) => {
+    try {
+      res.json({ ok: true, extension: await installFromStore(String(req.body?.source ?? "")) });
+    } catch (err: any) {
+      res.status(400).json({ error: err?.message ?? "Could not install that." });
+    }
+  });
+
+  app.post("/api/extensions/upload", express.raw({ type: "*/*", limit: "60mb" }), (req: Request, res: Response) => {
+    try {
+      if (!Buffer.isBuffer(req.body) || req.body.length === 0) throw new Error("Send the extension's .zip or .crx file.");
+      const name = String(req.query.name ?? "extension").replace(/\.(zip|crx)$/i, "");
+      res.json({ ok: true, extension: installPackage(req.body, "file", name) });
+    } catch (err: any) {
+      res.status(400).json({ error: err?.message ?? "Could not install that." });
+    }
+  });
+
+  app.post("/api/extensions/item/:id", (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    const done = req.body?.remove ? removeExtension(id) : setExtensionEnabled(id, !!req.body?.enabled);
+    res.status(done ? 200 : 404).json(done ? { ok: true } : { error: "No such extension." });
+  });
+
+  /** Extensions load when the browser starts: close every chat's browser so
+      the next page opens with the current set. */
+  app.post("/api/extensions/restart", async (_req: Request, res: Response) => {
+    for (const [id, live] of [...browsers]) {
+      await live.close().catch(() => undefined);
+      browsers.delete(id);
+      const session = sessions.get(id);
+      if (session) broadcastBrowserState(session);
+    }
+    res.json({ ok: true });
+  });
+
+  app.post("/api/browser/history/clear", (_req: Request, res: Response) => {
+    clearHistory();
+    res.json({ ok: true });
+  });
+
+  app.post("/api/sessions/:id/browser/find", async (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    const live = targetBrowser(session, req);
+    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
+    const found = await live.find(String(req.body?.text ?? "").slice(0, 200), !!req.body?.backwards);
+    res.json({ ok: true, found });
+  });
+
+  /** DevTools' console and network for the open tab (polled by the panel). */
+  app.get("/api/sessions/:id/browser/devtools", (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    const live = isPreview(req) ? previews.get(session.id)?.live : browsers.get(session.id);
+    if (!live) return res.json({ entries: [] });
+    res.json({
+      entries: live.devtools({
+        kind: req.query.kind === "request" ? "request" : req.query.kind === "console" ? "console" : undefined,
+        since: Number(req.query.since) || 0,
+      }),
+    });
+  });
+
+  app.post("/api/sessions/:id/browser/devtools/clear", (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    targetBrowser(session, req)?.clearDevtools();
+    res.json({ ok: true });
+  });
+
+  /** The folder the agent builds in: its saved versions, and going back to one. */
+  app.get("/api/versions", async (_req: Request, res: Response) => {
+    res.json({ folder: terminalDir(), versions: await folderVersions(terminalDir()) });
+  });
+
+  app.post("/api/versions/restore", async (req: Request, res: Response) => {
+    const session = req.body?.session ? sessions.get(String(req.body.session)) : undefined;
+    if (session && agentDriving(session)) return res.status(409).json({ error: "The agent is working; wait for it to finish or stop it first." });
+    try {
+      const saved = await restoreVersion(terminalDir(), String(req.body?.id ?? ""));
+      if (session) {
+        emitEvent(session, "version.restored", "user", { id: String(req.body?.id), label: saved?.label ?? "" });
+        const run = previews.get(session.id);
+        if (run?.opened) void run.live.reload().catch(() => undefined);
+      }
+      res.json({ ok: true, versions: await folderVersions(terminalDir()) });
+    } catch (err: any) {
+      res.status(400).json({ error: err?.message ?? "Could not restore that." });
+    }
+  });
+
+  app.post("/api/sessions/:id/browser/forward", async (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
+    const live = targetBrowser(session, req);
+    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
+    try {
+      const page = await live.goForward();
+      res.json({ ok: true, url: page?.url, title: page?.title });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message ?? "Forward navigation failed" });
+    }
+  });
+
+  /** The tab strip: open, switch to and close tabs. */
+  app.post("/api/sessions/:id/browser/tabs", async (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    if (isPreview(req)) return res.status(400).json({ error: "The app window has one page." });
+    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
+    const live = targetBrowser(session, req) ?? browserFor(session);
+    const action = String(req.body?.action ?? "");
+    const id = Number(req.body?.id);
+    try {
+      touchPresence(session.id, "browser", "*", "tabs", `${action === "new" ? "opened" : action === "close" ? "closed" : "switched"} a tab`);
+      if (action === "new") await live.newTab(typeof req.body?.url === "string" ? req.body.url : undefined);
+      else if (action === "switch" && Number.isInteger(id)) await live.switchTab(id);
+      else if (action === "close" && Number.isInteger(id)) await live.closeTab(id);
+      else return res.status(400).json({ error: "Say action new, switch or close, and the tab's id." });
+      broadcastBrowserState(session);
+      res.json({ ok: true, tabs: live.tabList() });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message ?? "That did not work." });
+    }
+  });
+
   // 7. Policy Approvals
   /**
    * Yes or no to a waiting tool call.
@@ -6207,6 +6697,7 @@ async function startServer() {
       links: memoryLinks,
       enabled: true,
       learning: state.learning,
+      groundFirst: state.groundFirst,
     });
   });
 
@@ -6240,7 +6731,26 @@ async function startServer() {
       state.learning = req.body.learning;
       save();
     }
-    res.json({ learning: state.learning });
+    if (typeof req.body?.groundFirst === "boolean") {
+      state.groundFirst = req.body.groundFirst;
+      save();
+    }
+    res.json({ learning: state.learning, groundFirst: state.groundFirst });
+  });
+
+  /**
+   * Bring the existing memories up to the mind's rules (server/mindrules.ts): filed under a
+   * subject, tidy titles. What needs judgment is listed, not rewritten. `dry` only reports.
+   * A POST because it changes records.
+   */
+  app.post("/api/memory/tidy", (req: Request, res: Response) => {
+    if (req.body?.dry === true) {
+      const copy = structuredClone(mind.records) as MemoryRecord[];
+      return res.json({ dry: true, ...tidyRecords(copy) });
+    }
+    const report = tidyRecords(mind.records);
+    if (report.fixed.length > 0) mind.save();
+    res.json({ dry: false, ...report });
   });
 
   app.post("/api/memory", (req: Request, res: Response) => {
@@ -6253,6 +6763,7 @@ async function startServer() {
       tags: Array.isArray(req.body?.tags) ? req.body.tags : [],
       status: "confirmed",
       source_session: req.body?.source_session || null,
+      ...(typeof req.body?.subject === "string" && req.body.subject.trim() ? { subject: req.body.subject.trim().toLowerCase().slice(0, 60) } : {}),
     });
     if (typeof req.body?.pinned === "boolean") mind.update(record.id, { pinned: req.body.pinned });
     res.json(record);
@@ -6273,6 +6784,7 @@ async function startServer() {
       kind: req.body.kind,
       tags: Array.isArray(req.body.tags) ? req.body.tags : undefined,
       pinned: req.body.pinned !== undefined ? Boolean(req.body.pinned) : undefined,
+      subject: typeof req.body.subject === "string" ? req.body.subject : undefined,
     });
     // Confirming is more than a field: a confirmed rewrite retires what it
     // rewrote.
@@ -7360,6 +7872,7 @@ async function startServer() {
       ws.send(JSON.stringify({ type: "preview", session: sessionId, state: previewState(session) }));
       // The PDF window, likewise.
       ws.send(JSON.stringify({ type: "pdfdesk", session: sessionId, state: deskState(sessionId) }));
+      ws.send(JSON.stringify({ type: "officedesk", session: sessionId, state: officeState(sessionId) }));
       ws.send(JSON.stringify({ type: "presence", session: sessionId, state: presenceFor(sessionId).view() }));
       if (openPreview?.opened) void openPreview.live.nudge();
 
@@ -7457,6 +7970,9 @@ async function startServer() {
   // 13. Vite Integration (Development middleware / Production static serving)
   // The PDF window's editor, a separate build (pdf-editor/), in dev and production alike.
   serveEditor(app, path.join(process.cwd(), "dist"));
+  // The Office editors, likewise: built by scripts/build-office.mjs, absent without it.
+  const officeWeb = officeWebDir();
+  if (officeWeb) serveOfficeEditors(app, officeWeb);
 
   if (process.env.NODE_ENV !== "production") {
     // Imported here rather than at the top of the file: Vite is a build-time

@@ -51,9 +51,25 @@ is a sub-project with its own dependencies (see below).
 - `server.ts`: the Express app, every `/api/*` route, the `/ws/:session`
   event stream and the agent turn loop.
 - `server/`: the pieces it uses. `tools.ts` (the agent's tools), `llm.ts` and
-  `providers.ts` (model calls), `browser.ts` (Playwright), `desktop.ts` (the
+  `providers.ts` (model calls), `browser.ts` (Playwright; the session's browser has tabs --
+  `tabPages`, `newTab/switchTab/closeTab`, a link to a new tab opens and shows one, the
+  sign-in popup returns to its opener when it closes -- and an adaptive stream: `TIERS`
+  step down when `hooks.backlog` says a viewer is behind, the rate rises while
+  `touched()`, and one sharp screenshot follows when the page has been still), `desktop.ts` (the
   relay), `store.ts` / `state.ts` (what is kept on disk under `AUTORA_HOME`),
-  `credentials.ts`, `mcp.ts` (plus `mcpcatalog.ts`, `mcpoffer.ts` and
+  `LiveBrowser.devtools()` (every console line and request of every tab, 400 kept; the menu's
+  Developer tools panel polls `GET /browser/devtools`, the agent has `browser_devtools`),
+  `snapshots.ts` (version history of the working folder: a git directory of its own under the state
+  dir with the project as work tree, so the project's `.git` is never touched; a version is saved
+  at the end of a turn that wrote code (`codeTouched` in `server.ts`), `restore` saves the present
+  first and uses `read-tree --reset -u`; `GET /api/versions`, `POST /api/versions/restore`; the app
+  window's Versions, Templates and Console panels are `AppVersions.tsx` and `DevtoolsPanel.tsx`),
+  `extensions.ts` (Chrome extensions, unpacked under `AUTORA_HOME/extensions/<name>/pkg`; `launchArgs()`
+  adds `--load-extension` and `--headless=new` when any is enabled, `browser.ts` then drops Playwright's
+  `--disable-extensions`; the id is Chrome's, from the folder's path; the popup opens as a tab),
+  `browsedata.ts` (the browser's history, bookmarks and downloads, one list for the install in
+  `browser-data.json`; a download becomes an artifact via `hooks.onDownload`; `LiveBrowser.find`
+  walks text nodes itself because headless `window.find` finds nothing), `credentials.ts`, `mcp.ts` (plus `mcpcatalog.ts`, `mcpoffer.ts` and
   `mcpscript.ts`: the servers the agent offers, sets up or writes itself),
   `preview.ts` and `pick.ts` (the app window: a second browser per session
   showing what the agent is building, the static server and dev-server
@@ -82,6 +98,43 @@ is a sub-project with its own dependencies (see below).
   came from so the file shows exactly what was drawn until the person changes
   it; the file is the base pages with every object flattened on, rewritten
   on every change; the person's changes are told to the agent once),
+  `officedesk.ts` + `src/components/OfficeWindow.tsx` (the Office window, switched on and off with the other windows on the Tools page --
+  `office` in `ToolSettings`: the
+  Word, PowerPoint or Excel document the agent works on, open beside the chat in
+  GenOffice's own editor for it, built by `scripts/build-office.mjs` into
+  `dist/office/web/{docs,slides,sheets}` and served at `/office-app` with a sandbox
+  CSP. The editor runs in an origin-less frame, so it cannot fetch anything:
+  `OfficeWindow` answers its `autora:office` requests (fonts, the document, saves,
+  Export PDF -> the PDF window, presence) and passes on the agent's edits;
+  `office/shim` is the Electron stand-in, it hides the editor's own AI panel and
+  turns its AI group into an "Autora" button that focuses the chat box, and uses
+  the editor's dark theme. **Word** keeps the document in the page: the page sends
+  the bytes on every save and the agent's edit is pushed in. **PowerPoint and Excel**
+  keep it in an engine (`officehost.ts`, one child process per window, started on the
+  first ipc): the frame's ipc goes `POST /api/officedesk/:session/ipc?rev=N`, `rev`
+  being the window's `loadRev` so a replaced page cannot reach the new one; the
+  engine saves to `<session>.work.<ext>`, which is polled every 800 ms
+  (`checkEngineFile`) and becomes the document (`personSaved`); the agent's edit is
+  written there and handed to the open editor where it stands (`reloadLive`: a deck is read
+  again and the page told `slides:deck-changed`, which keeps the slide it was on; a
+  workbook is queued again and nudged to open it), and only if that fails is the frame
+  remounted (its key follows `loadRev`). `settle()` runs before every Office tool so the person's last edit has
+  reached the file. The person's changes are told to the agent once in words made by
+  comparing text (`describeChange` for paragraphs and slide text, `describeCells` for
+  cells). One surface, `"office"`, for presence and Take control (`touched`, held), as
+  for the PDF. **On a phone** the window is not the editor but `components/OfficePages.tsx`:
+  pictures of the pages (`officepages.ts`: the editor's PDF, drawn by pdf.js, kept per
+  session by a hash of the file's bytes -- the last two -- with each run of text and
+  where it sits; `POST /api/officedesk/:session/pages` until `ready`, the previous
+  pictures shown dimmed meanwhile). Tapping words points at them (`lib/officeSelection.ts`):
+  a chip beside the message box, and `send` in `App.tsx` puts "(Pointing at ... on slide 2
+  of pitch.pptx.)" in front of what they type, which is how a phone edits; "Full editor"
+  is one button away. `renderToPdf` also keeps the last six PDFs by hash, so the agent
+  and the phone share one layout. A tap names what it landed on: a deck's element by the
+  id `office_edit` takes (`slideElements` in `office.ts` reads their boxes; shapes and
+  pictures with no words are pointed at by their box), a workbook's cell when the value
+  is in only one; `locatorFor` in `officedesk.ts`), `officerender.ts` (the same editors headless, for `office_look`
+  pictures and `office_pdf`; PDFs always go to Autora's own PDF window),
   `notebooks.ts` (artifacts grouped by purpose with notes between them,
   stored as `notebooks.json`; retention keeps whatever a notebook holds or
   cites), `guard.ts` (what stops and asks before a risky call), `crosssite.ts` (refuses requests and websockets
@@ -98,6 +151,98 @@ is a sub-project with its own dependencies (see below).
     error across *different* attempts; kept per chat by `budgetstore.ts`, eased
     by a success, forgotten after hours): notes in the result the model reads,
     then a stop that is told to the next turn (`resume.ts`).
+    `loopwatch.gate` refuses (in a line, tool list unchanged, so the provider's
+    cache holds) an exact call repeated after its warning; rounds that change
+    nothing earn a `[Stall]` note; an error-budget stop is kept as a provisional
+    "dead end" memory. `server/replay.ts` + `npm run replay -- events.json
+    [warnAt=3 ...]` replays a recorded chat against these rules, to compare
+    settings on the same chat. `context.supersedeReads` stubs old reads in one
+    batch (a mid-history edit breaks the provider's cache, so never one by one).
+  - `requirements.ts` (`requirements` tool, `requirements.update` in the log):
+    what the person asked for, verbatim, with a status. A message that lists its
+    asks is split into items; one sent while work is open is kept whole
+    (`noteAsks` in `server.ts`); the agent merges, edits, drops. Told every turn
+    from the log (so compaction cannot paraphrase it), and `finishAudit` sends
+    the agent back once per turn if an ask is neither done nor dropped.
+    A message typed while a turn runs is an *amendment* (`turn.amend`), not an
+    interrupt: queued in `amendments`, told to the turn at its next round
+    boundary (end of the last tool result) or when it is about to finish, and
+    answered by a fresh turn if it lands after the last look. Only
+    `{mode: "interrupt"}` (Alt/Ctrl/Cmd+Enter), files, voice and `/commands`
+    stop the turn first. The project check also runs when a to-do or ask is
+    marked done mid-turn (`itemCheckNote`, capped per turn).
+  - `office.ts` (`office_guide|read|edit|check|create|convert`, family `office` in
+    `toolload.ts`): Word, Excel and PowerPoint files, read and edited without a
+    window by running GenOffice's command line (Apache-2.0, github.com/genspark-ai/genoffice)
+    as a child process. Nothing of it is copied into this repo:
+    `scripts/build-office.mjs` fetches the commit in `office/PIN.json`, bundles its
+    CLI and builds its Rust spreadsheet engine into `dist/office/` in GenOffice's
+    own "packaged" layout (`cli/`, `wasm/`, `native/`; `office/NOTICE.md`). Bump the
+    sha to take a newer one. `npm run build:office` runs it; the Dockerfile builds
+    the engine in its own stage with `cargo zigbuild` for musl amd64+arm64 (it has a
+    C dependency, so plain `rust-lld` cross-linking does not work) and the CLI in
+    the builder; CI runs it before the tests. Without the build the tools are not
+    offered (`officeDir()`), without the engine only the Excel ones say so, and
+    `tests/office.test.ts` / `e2e-office.test.ts` skip. Results are artifacts like the
+    PDF tools' (an edit works on a copy; the agent's own file is updated in place);
+    after an Excel edit `refreshFormulas` rewrites every formula so stored results
+    of dependents are current (the engine only sets fullCalcOnLoad). **Pictures and
+    PDF come from the editors themselves**: laying a page out is GenOffice's *editor's*
+    job, not the engines'. Each editor is built (`office/vite/editor.mjs`, run with the
+    checkout's own Vite by `build-office.mjs`) as one page for a sandboxed frame --
+    `dist/office/web/{docs,slides,sheets}/index.html`: script, styles and worker
+    inline, fonts listed in a manifest and supplied by the host, PDF import stubbed
+    (the PDF editor does that) -- with `office/shim/` standing in for Electron
+    (`common.js` is the host bridge: `postMessage` in a frame, `window.__autoraHost`
+    in headless Chromium; `docs.js` answers Word's `window.desktop` itself).
+    **PowerPoint and Excel keep their document in Electron's main process**, so that
+    code runs too, as a child process (`server/officehost.ts`, built per app into
+    `dist/office/host/<app>.cjs` by `office/host/build.mjs`): GenOffice's real
+    `slides-main` / `sheets-main` bundled over `office/host/electron-main.cjs`, a
+    stand-in for the `electron` module (ipcMain registry, web contents whose
+    `send` is a push to the parent, a `BrowserWindow` that is a page in the server's
+    Chromium via rpc -- how it prints, nativeImage sizes read from the file header;
+    menus, dialogs and the dock do nothing). The page side is the app's *real*
+    preload, bundled by `office/host/preload.mjs` over `office/shim/electron-renderer.js`
+    (ipcRenderer -> the host's `ipc`, JSON with tagged buffers: `common.js` `enc/dec`,
+    `wire` in `officehost.ts`), so every one of the 160-odd channels works without
+    being listed; `slides.js` / `sheets.js` only override where Autora is the host
+    (theme, which file is open, Export PDF). `autora:<name>` invokes are Autora's
+    own requests to the app's main code (`extra` in `office/host/build.mjs`: Excel
+    makes the editor's window and queues the workbook itself). `server/officerender.ts`
+    opens the editor page in the shared Chromium (`withBrowserContext` in
+    `pdfrender.ts`), serves it from memory over a made-up origin and refuses
+    everything else, lets the editor's own headless-export path run, and returns the
+    PDF; `office_look` draws pages from it (`lookAtPdf` in `pdf.ts`, shared with
+    `pdf_look`) and `office_pdf` / `office_convert to pdf` save it as an artifact and
+    open it in the **PDF editor window** (PDFs go to our editor, never GenOffice's).
+    A deck takes ~10 s, a workbook ~11 s (Excel's export waits until the engine has
+    been quiet after the workbook opened: its formulas settle a moment late).
+    `AUTORA_OFFICE_DEBUG=1` prints the page's console, the ipc channels and where the time goes.
+    The engine is forked with `execArgv: []` (under tsx it would start the loader too: 5 s),
+    Excel's export waits for the engine to be quiet 1 s and the workbook to have been open
+    1.7 s (formulas settle late), and `serveOfficeEditors` sends pages and fonts compressed
+    (brotli, kept after the first time; the Excel page is 14 MB, 3 MB sent).
+  - `mindrules.ts` (+ `site.ts`): the rules the mind is kept by. Every
+    `memory_write` / `memory_update` goes through `checkEntry` / `checkText`: a
+    title that starts with its subject, one topic per record (length limit by
+    kind), nothing about the moment, no secrets, and a `reference` (what a
+    product's *official* docs say: kind `reference`, with `subject`, `facet`
+    interface|api|docs|workflow|quirk, `source` URL, `fetched`) that names its
+    source -- one not recognisably the subject's own site is kept `provisional`.
+    Interface references go stale in 21 days, docs in 90 (`REFERENCE_FRESH_DAYS`);
+    `MemoryGraph.groundingOf(site)` says none/stale/fresh. **Ground first**
+    (`state.groundFirst`, Mind page): `actsOnSite` calls (browser click/fill/
+    press/upload, non-GET `http_request`) on a site with nothing fresh stored are
+    refused up to three times a turn with "read the official docs and write a
+    reference", then let through so a missing docs site cannot wedge a turn;
+    `groundingNote` names such sites from the request, `siteMemory` says it on the
+    first visit, and `MEMORY_GUIDE` (tools.ts) tells the agent to do it for any
+    product, API or app interface before working or answering "where is X in Y".
+    `POST /api/memory/tidy {dry?}` files old records under a subject and lists
+    what needs a rewrite (the Mind page's Tidy up button). The reflection prompt
+    (`learning.ts`) asks for subject-first titles and drops lessons that break
+    the same rules.
   - `argcheck.ts`: every call is checked against its tool's own schema before
     anything else sees it.
   - `verify.ts`: the person's project check (Settings), run by the loop when the
@@ -188,7 +333,10 @@ is a sub-project with its own dependencies (see below).
   bundles pdf.js's legacy build and runs its worker as a classic script from a
   blob (a module worker cannot start in an origin-less frame), and fetches
   nothing from a CDN: Autora may have no internet.
-- `src/`: the React client. `App.tsx` holds the session and stream;
+- `src/`: the React client. `App.tsx` holds the session and stream; on a desktop the
+  menu, the conversation and the window beside it are three panes whose seams drag
+  (`components/ResizeHandle.tsx`, widths and "menu folded away" kept per browser by
+  `lib/panes.ts`, applied as `--rail-w` / `--chat-w`);
   `lib/derive.ts` folds the event log into what the thread shows;
   `components/` renders it.
 - Keeping long threads fast (measured: a 150-turn thread went from 100% CPU

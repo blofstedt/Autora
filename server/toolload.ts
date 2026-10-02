@@ -32,6 +32,12 @@ export const FAMILIES: Family[] = [
     words: /\bpdfs?\b|\.pdf\b|\bacrobat\b|\bfill (?:in |out )?(?:the |this |a )?form\b|\bredact|\bsignature\b|\bstamp\b/i,
   },
   {
+    id: "office",
+    about: "read, edit, check, make and convert Word, Excel and PowerPoint files",
+    match: (n) => n.startsWith("office_"),
+    words: /\.(?:docx|xlsx|pptx)\b|\bword (?:doc|document|file)\b|\bexcel\b|\bspreadsheet|\bworkbook\b|\bpowerpoint\b|\bslide ?deck\b|\bslides?\b|\bpresentation\b|\bpitch deck\b|\bgoogle (?:docs|sheets|slides)\b/i,
+  },
+  {
     id: "widgets",
     about: "show a chart, table or small interactive widget in the thread",
     match: (n) => n === "widget_show",

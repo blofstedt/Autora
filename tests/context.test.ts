@@ -357,4 +357,34 @@ test("a prompt that fits the model's real window is not cut to fit an assumed on
   assert.ok(narrow.messagesFor(narrow.systemFor("")).length < 8);
 });
 
+test("old reads are shrunk together once enough has piled up, and the newest are left alone", () => {
+  const engine = new ContextEngine();
+  const big = (tag: string) => `${tag} ` + "line of file content\n".repeat(400);
+  const history: { message: any; seq: number }[] = [{ message: { role: "user", text: "go" }, seq: 1 }];
+  for (let i = 0; i < 14; i += 1) {
+    history.push({ message: { role: "assistant", text: "", calls: [{ id: `c${i}`, name: "read_file", args: {} }] }, seq: 2 + i * 2 });
+    history.push({ message: { role: "tool", replies: [{ id: `c${i}`, name: "read_file", ok: true, result: big(`file${i}`) }] }, seq: 3 + i * 2 });
+  }
+  engine.load(history);
+  assert.equal(engine.supersedeReads(false), 0, "nothing is removed that cannot be read back");
+  const shrunk = engine.supersedeReads(true);
+  assert.ok(shrunk >= 1, "the old reads were stubbed");
+  const out = engine.messagesFor("system");
+  const replies = out.flatMap((m) => m.replies ?? []);
+  assert.match(replies[0].result, /\[Older result:.*vault_read/s);
+  assert.ok(replies[0].result.length < 1000);
+  assert.ok(replies[replies.length - 1].result.length > 5000, "the newest read is whole");
+  assert.equal(engine.supersedeReads(true), 0, "already shrunk, nothing more to do");
+});
+
+test("a little old reading is left alone, since changing it would only break the cache", () => {
+  const engine = new ContextEngine();
+  engine.load([
+    { message: { role: "user", text: "go" }, seq: 1 },
+    { message: { role: "tool", replies: [{ id: "a", name: "read_file", ok: true, result: "x".repeat(3000) }] }, seq: 2 },
+    ...Array.from({ length: 12 }, (_, i) => ({ message: { role: "user" as const, text: `m${i}` }, seq: 3 + i })),
+  ]);
+  assert.equal(engine.supersedeReads(true), 0);
+});
+
 console.log(`\n${passed} passed`);

@@ -3580,6 +3580,29 @@ label + .jf-hint { margin-top: -5px; }
 }
 .shot-tool:hover:not(:disabled) { color: var(--text); background: var(--s3); }
 .shot-tool:disabled { opacity: 0.35; cursor: not-allowed; }
+/* The tab strip: scrolls sideways, so a phone holds as many as a desktop. */
+.shot-tabs {
+  display: flex; align-items: center; gap: 4px; padding: 4px 8px;
+  overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--border);
+}
+.shot-tabs::-webkit-scrollbar { display: none; }
+.shot-tab {
+  flex: 0 0 auto; display: inline-flex; align-items: center; max-width: 180px;
+  border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--sink);
+}
+.shot-tab.on { background: var(--s3); border-color: var(--accent-line); }
+.shot-tab-main {
+  min-width: 0; max-width: 150px; padding: 4px 4px 4px 9px; border: 0; background: none;
+  color: var(--text-2); font: inherit; font-size: 12px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+}
+.shot-tab.on .shot-tab-main { color: var(--text); }
+.shot-tab-x {
+  display: inline-grid; place-items: center; width: 22px; height: 22px; margin-right: 2px;
+  border: 0; border-radius: 50%; background: none; color: var(--text-3); cursor: pointer;
+}
+.shot-tab-x:hover:not(:disabled) { background: var(--s3); color: var(--text); }
+.shot-tab-new { flex: 0 0 auto; margin: 0; }
 .shot-address { flex: 1 1 auto; min-width: 0; display: flex; }
 input.shot-where {
   width: 100%; height: 28px; margin: -3px 0; padding: 0 10px;
@@ -4162,7 +4185,7 @@ html[data-font="mono"] body { font-size: calc(13.5px * var(--ts, 1)); }
    ============================================================================ */
 .menu-btn { flex: 0 0 auto; margin-left: -6px; }
 .top-title { margin: 0; font-size: calc(15px * var(--ts, 1)); font-weight: 650; letter-spacing: -0.01em; }
-@media (min-width: 1180px) { .menu-btn { display: none; } }
+@media (min-width: 1180px) { .app:not(.rail-collapsed) .menu-btn { display: none; } }
 
 .rail-top { gap: 9px; }
 .rail-icon-btn {
@@ -5249,7 +5272,7 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 
 /* The presence in the header, only where the sidebar is folded away. */
 .top-presence { display: inline-grid; place-items: center; flex: 0 0 auto; margin: 0 -6px 0 -4px; }
-@media (min-width: 1180px) { .top-presence { display: none; } }
+@media (min-width: 1180px) { .app:not(.rail-collapsed) .top-presence { display: none; } }
 
 /* The room's light. Two soft blooms of the theme's own colours, drifting very
    slowly; the mood only changes their colour and strength. */
@@ -6086,7 +6109,9 @@ button.dock-card:hover { border-color: var(--border-strong); }
    a readable column on the left. */
 .chat-view.has-app { flex-direction: row; }
 .chat-view.has-app > .page {
-  flex: 0 0 clamp(380px, 36%, 540px); width: auto; max-width: none; margin: 0; min-width: 0;
+  flex: 0 0 var(--chat-w, clamp(380px, 36%, 540px)); width: auto; margin: 0; min-width: 0;
+  /* Whatever the person drags it to, the window beside it keeps room to be used. */
+  max-width: calc(100% - 320px);
   border-left: 0;
 }
 .app-pane {
@@ -6388,6 +6413,8 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 /* In the pinned view on a phone: the pinned view's own height, so the editor
    scrolls its pages itself instead of the pinned view scrolling the editor. */
 .pdf-window.is-phone { height: min(46dvh, 440px); }
+/* The pages leave the message box in view: pointing at something is followed by saying what to do with it. */
+.pdf-window.is-phone.is-pages { height: min(54dvh, 520px); }
 /* Full screen on a phone: over everything, with the safe areas kept clear. */
 .pdf-window.is-full {
   position: fixed; inset: 0; z-index: 80; height: auto;
@@ -6427,6 +6454,22 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 /* A phone's PDF bar has room for the name, Take control and Full screen; the
    cursor switch is in Settings there. */
 .pdf-window.is-phone .pdf-cursor-pill, .pdf-window.is-phone .pdf-bar-note { display: none; }
+/* A document as pictures of its pages, for a phone (components/OfficePages.tsx). */
+.office-pages { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--bg); }
+.office-pages-bar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--border); font-size: 12.5px; color: var(--text-2); }
+.office-pages-bar .spacer { flex: 1; }
+.office-pages-updating { color: var(--text-3); }
+.office-pages-scroll { flex: 1; min-height: 0; overflow: auto; padding: 10px; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y pinch-zoom; }
+.office-pages-list { display: flex; flex-direction: column; gap: 10px; }
+.office-page { position: relative; width: 100%; background: #fff; border-radius: 4px; box-shadow: 0 1px 6px rgb(0 0 0 / 35%); overflow: hidden; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.office-page img { display: block; width: 100%; height: 100%; user-select: none; }
+.office-page.is-stale img { opacity: 0.6; }
+.office-pick { position: absolute; border: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 22%, transparent); border-radius: 3px; pointer-events: none; }
+.office-pick.is-page { inset: 0; border-radius: 4px; background: none; }
+.office-pages-note { padding: 16px 8px; text-align: center; color: var(--text-3); font-size: 13px; }
+.office-pages-clear { margin: 6px 10px 10px; padding: 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--s2); color: var(--text-2); font-size: 13px; }
+.attach-chip.is-pointer { border-color: var(--accent); }
+
 
 /* An edit the person made themselves, shown among the agent's. */
 .tag-you { background: rgba(94, 200, 160, .18); color: #7ee0b9; }
@@ -6444,3 +6487,100 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 .set-switch input { margin-top: 3px; accent-color: #8b7cf6; }
 .set-switch b { display: block; font-weight: 600; font-size: calc(13px * var(--ts, 1)); }
 .set-switch small { display: block; color: var(--muted, #9aa0b0); font-size: calc(12px * var(--ts, 1)); margin-top: 2px; }
+
+/* Mind: the tidy-up button and what it found. */
+.mind-tidy { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 14px; }
+.mind-tidy-list {
+  flex-basis: 100%; margin: 0; padding-left: 18px; font-size: calc(12px * var(--ts, 1));
+  color: var(--text-3); line-height: 1.5;
+}
+.mind-tidy-list b { color: var(--text-2, var(--text)); font-weight: 600; }
+
+/* ============================================================================
+   Panes you can drag (desktop): the menu, the conversation, the window beside it
+   ============================================================================ */
+.pane-handle { display: none; flex: 0 0 6px; width: 6px; margin: 0 -3px; position: relative; z-index: 6; cursor: col-resize; touch-action: none; outline: none; }
+.pane-handle::after { content: ""; position: absolute; inset: 0 2px; border-radius: 2px; background: transparent; transition: background 0.15s var(--ease); }
+.pane-handle:hover::after, .pane-handle:focus-visible::after, body.is-resizing .pane-handle::after { background: var(--accent); }
+body.is-resizing { cursor: col-resize; user-select: none; }
+/* A frame under the pointer would swallow the drag. */
+body.is-resizing iframe { pointer-events: none; }
+.pane-handle.is-chat { display: none; }
+@media (min-width: 1180px) {
+  .pane-handle.is-rail { display: block; }
+  .pane-handle.is-chat { display: block; }
+  .rail-slot { flex-basis: var(--rail-w, clamp(300px, 22vw, 340px)); }
+  /* Folded away: the menu button and the mark are back in the header, at the far left. */
+  .app.rail-collapsed .rail-slot, .app.rail-collapsed .pane-handle.is-rail { display: none; }
+}
+
+/* The browser's menu and its panels: find, bookmarks, history, downloads. */
+.shot-tool.on { color: var(--accent); }
+.shot-tool.on svg { fill: currentColor; }
+.shot-menu-wrap { position: relative; flex: 0 0 auto; }
+.shot-menu {
+  position: absolute; right: 0; top: 30px; z-index: 5; min-width: 170px; padding: 4px;
+  display: flex; flex-direction: column; border: 1px solid var(--border);
+  border-radius: var(--r-sm); background: var(--s2); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.shot-menu button {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 0; border-radius: 6px;
+  background: none; color: var(--text); font: inherit; font-size: 13px; text-align: left; cursor: pointer;
+}
+.shot-menu button:hover { background: var(--s3); }
+.shot-panel { border-bottom: 1px solid var(--border); background: var(--sink); }
+.shot-find { display: flex; align-items: center; gap: 6px; padding: 6px 8px; }
+.shot-find input {
+  flex: 1 1 auto; min-width: 0; height: 28px; padding: 0 10px; border: 1px solid var(--border);
+  border-radius: 99px; background: var(--s2); color: var(--text); outline: none;
+}
+.shot-find-none { font-size: 12px; color: var(--text-3); white-space: nowrap; }
+.shot-panel-head { display: flex; align-items: center; gap: 8px; padding: 6px 8px 2px; }
+.shot-panel-head strong { flex: 1 1 auto; font-size: 12px; color: var(--text-2); }
+.shot-panel-list { max-height: 220px; overflow-y: auto; padding: 4px 4px 6px; }
+.shot-panel-row {
+  display: flex; flex-direction: column; gap: 1px; width: 100%; padding: 6px 8px; border: 0;
+  border-radius: 6px; background: none; color: var(--text); font: inherit; font-size: 13px;
+  text-align: left; text-decoration: none; cursor: pointer;
+}
+.shot-panel-row:hover:not(:disabled) { background: var(--s3); }
+.shot-panel-row span, .shot-panel-row em {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: normal;
+}
+.shot-panel-row em { font-size: 11px; color: var(--text-3); }
+.shot-panel-empty { margin: 8px; font-size: 12px; color: var(--text-3); }
+
+.shot-exp { margin-left: 6px; font-size: 10px; font-style: normal; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.04em; }
+.shot-ext { display: flex; align-items: center; gap: 6px; padding: 5px 8px; }
+.shot-ext-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.shot-ext-name em { font-style: normal; font-size: 11px; color: var(--text-3); }
+.shot-ext-add { display: flex; align-items: center; gap: 6px; padding: 6px 8px; }
+.shot-ext-add input[type="text"], .shot-ext-add input:not([type]) {
+  flex: 1 1 auto; min-width: 0; height: 28px; padding: 0 10px; border: 1px solid var(--border);
+  border-radius: 99px; background: var(--s2); color: var(--text); outline: none;
+}
+
+.shot-dev .cell-act.on { background: var(--s3); color: var(--text); }
+.shot-dev-only { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-2); }
+.shot-dev-list { max-height: 260px; font-family: var(--mono, ui-monospace, monospace); font-size: 11.5px; }
+.shot-dev-row { display: flex; gap: 8px; padding: 2px 8px; border-bottom: 1px solid var(--border); align-items: baseline; }
+.shot-dev-row b { flex: 0 0 auto; min-width: 38px; color: var(--text-3); font-weight: 600; }
+.shot-dev-row span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shot-dev-row em { flex: 0 0 auto; font-style: normal; color: var(--text-3); }
+.shot-dev-row.is-error, .shot-dev-row.is-error b { color: #f87171; }
+.shot-dev-row.is-warn, .shot-dev-row.is-warn b { color: #fbbf24; }
+
+/* A phone or a tablet is drawn in a bezel, so the window reads as the device
+   the page is being laid out for. It sits outside the page, on shadows, so no
+   coordinate on the screen moves. */
+.app-canvas.is-phone { border-radius: 30px; box-shadow: 0 0 0 9px #0b0b0d, 0 0 0 10px #3a3a42, 0 22px 60px -14px rgba(0, 0, 0, 0.8); }
+.app-canvas.is-phone .app-screen { border-radius: 22px; }
+.app-canvas.is-phone::before {
+  content: ""; position: absolute; z-index: 2; top: 6px; left: 50%; width: 64px; height: 6px;
+  margin-left: -32px; border-radius: 4px; background: #0b0b0d; pointer-events: none; opacity: 0.85;
+}
+.app-canvas.is-tablet { border-radius: 20px; box-shadow: 0 0 0 11px #0b0b0d, 0 0 0 12px #3a3a42, 0 22px 60px -14px rgba(0, 0, 0, 0.8); }
+.app-canvas.is-tablet .app-screen { border-radius: 10px; }
+.app-errs.has { color: #f87171; }
+.app-errs:not(.has) { color: var(--text-2); background: var(--s3); }
+.app-errs:not(.has):hover, .app-errs:not(.has).on { border-color: var(--border-strong); color: var(--text); }

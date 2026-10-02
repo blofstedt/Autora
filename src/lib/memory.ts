@@ -1,6 +1,6 @@
 export type MemoryRecord = {
   id: string;
-  kind: "fact" | "preference" | "procedure" | "skill";
+  kind: "fact" | "preference" | "procedure" | "skill" | "reference";
   scope: string;
   title: string;
   body: string;
@@ -20,6 +20,14 @@ export type MemoryRecord = {
   replaces?: string | null;
   /** Times a turn that used it found it wrong, since it last held. */
   doubted?: number;
+  /** What it is about (a product, site, app or project). */
+  subject?: string;
+  /** For knowledge about a product: interface, api, docs, workflow or quirk. */
+  facet?: "interface" | "api" | "docs" | "workflow" | "quirk";
+  /** For a reference: the official page it was read from, and when (seconds). */
+  source?: string | null;
+  fetched?: number | null;
+  version?: string;
 };
 
 export type MemoryLink = { src: string; dst: string; rel: string };
@@ -30,6 +38,8 @@ export type Knowledge = {
   enabled: boolean;
   /** Whether the agent writes down what it learns after a turn. */
   learning?: boolean;
+  /** Whether the agent reads a site's official documentation before acting on a site it has nothing current on. */
+  groundFirst?: boolean;
 };
 
 export const KIND_COLOR: Record<MemoryRecord["kind"], string> = {
@@ -37,6 +47,7 @@ export const KIND_COLOR: Record<MemoryRecord["kind"], string> = {
   procedure: "var(--live)",
   fact: "var(--accent)",
   skill: "var(--glow-light)",
+  reference: "var(--accent-3, var(--accent))",
 };
 
 export type Bucket = MemoryRecord["kind"];
@@ -47,6 +58,7 @@ export const BUCKETS: { kind: Bucket; label: string; blurb: string }[] = [
   { kind: "procedure", label: "Procedures", blurb: "Steps it follows for a recurring job." },
   { kind: "fact", label: "Facts", blurb: "What is true about your setup." },
   { kind: "skill", label: "Skills", blurb: "Things it knows how to do." },
+  { kind: "reference", label: "References", blurb: "What a product's own documentation says, with where and when it was read." },
 ];
 
 /** Said when a record is changed from the page, so the graph beside it
@@ -98,6 +110,32 @@ export async function setLearning(learning: boolean) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ learning }),
   });
+}
+
+export async function setGroundFirst(groundFirst: boolean) {
+  await fetch("/api/memory-settings", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ groundFirst }),
+  });
+}
+
+export interface TidyReport {
+  dry: boolean;
+  total: number;
+  fixed: { id: string; title: string; did: string[] }[];
+  flagged: { id: string; title: string; problems: string[] }[];
+}
+
+/** Bring the memories up to the mind's rules; `dry` only says what would change. */
+export async function tidyMemory(dry = false): Promise<TidyReport> {
+  const res = await fetch("/api/memory/tidy", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dry }),
+  });
+  if (!res.ok) throw new Error("Could not tidy the memory");
+  return res.json();
 }
 
 /**

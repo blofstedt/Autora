@@ -158,6 +158,8 @@ const LOOKS_ONLY = new Set([
   "browser_scroll",
   "browser_screenshot",
   "browser_back",
+  "browser_tabs",
+  "browser_devtools",
   "browser_captcha",
   "background_jobs",
   "background_output",
@@ -184,6 +186,7 @@ const LOOKS_ONLY = new Set([
   "ask_user",
   "todo",
   "ledger",
+  "requirements",
   "tools_enable",
   "set_mode",
   "browser_handoff",
@@ -237,6 +240,9 @@ export function looksOnly(name: string, args: Record<string, any> = {}): boolean
   // Reading a PDF is looking; pulling its attachments out saves new files.
   if (name === "pdf_read") return !(Array.isArray(args.extract) ? args.extract.length : args.extract);
   if (name === "pdf_look") return true;
+  // Reading, checking and the guide look; an edit that is only a dry run looks too.
+  if (name === "office_read" || name === "office_check" || name === "office_guide" || name === "office_look" || name === "office_open") return true;
+  if (name === "office_edit") return args.dry_run === true;
   // A command that only reads (cat a file, list a folder) is looking.
   if (name === "terminal") return readOnlyCommand(String(args.command ?? ""));
   // Reading notebooks is looking; filing into one is not.

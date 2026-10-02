@@ -564,9 +564,17 @@ export function anthropicMessages(call: ChatCall): any[] {
      so a turn's first round still finds the instructions cached. */
   const last = out[out.length - 1];
   const block = last?.content?.[last.content.length - 1];
-  if (block) block.cache_control = { type: "ephemeral" };
+  if (block) block.cache_control = { ...CACHE_CONTROL };
   return out;
 }
+
+/* The provider keeps a cached prompt for five minutes after its last use. A
+   long command, a build or a person thinking leaves a gap longer than that,
+   and the next round then pays full price for the whole prompt. AUTORA_CACHE_TTL=1h
+   asks for the hour instead (written at twice the price, so it is for chats
+   where such gaps are common, and off by default). */
+const CACHE_CONTROL: { type: "ephemeral"; ttl?: "1h" } =
+  (process.env.AUTORA_CACHE_TTL || "").trim() === "1h" ? { type: "ephemeral", ttl: "1h" } : { type: "ephemeral" };
 
 async function streamAnthropic(call: ChatCall, onDelta: (text: string) => void): Promise<ChatTurn> {
   const res = await request(`${trimSlash(call.baseUrl)}/v1/messages`, {
@@ -583,7 +591,7 @@ async function streamAnthropic(call: ChatCall, onDelta: (text: string) => void):
       max_tokens: call.maxTokens ?? 2048,
       temperature: call.temperature ?? 0.7,
       system: call.system
-        ? [{ type: "text", text: call.system, cache_control: { type: "ephemeral" } }]
+        ? [{ type: "text", text: call.system, cache_control: { ...CACHE_CONTROL } }]
         : undefined,
       messages: anthropicMessages(call),
       ...(call.tools?.length

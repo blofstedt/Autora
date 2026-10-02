@@ -33,6 +33,7 @@ import type { DomItem } from "./domdiff";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import { launchArgs } from "./extensions";
 import os from "node:os";
 import path from "node:path";
 
@@ -63,7 +64,33 @@ export interface SelectInfo {
   options: SelectChoice[];
 }
 
+/** One line of the page's console or one request it made: what DevTools shows. */
+export interface DevEntry {
+  n: number;
+  tab: number;
+  ts: number;
+  kind: "console" | "request";
+  /** Console: log, info, warn, error. Request: the resource type. */
+  level: string;
+  /** Console: the text. Request: the address. */
+  text: string;
+  method?: string;
+  status?: number;
+  ms?: number;
+  bytes?: number;
+  failed?: string;
+}
+
+export interface BrowserTab {
+  id: number;
+  url: string;
+  title: string;
+  active: boolean;
+}
+
 export interface BrowserStatus {
+  /** The tabs this session has open, in order. */
+  tabs?: BrowserTab[];
   /** Playwright and a browser binary are both present. */
   available: boolean;
   /** A page is open right now. */
@@ -439,9 +466,14 @@ export interface BrowserHooks {
   onFields: () => void;
   /** The page wrote an error or a warning to its console. */
   onConsole?: () => void;
+  /** The page downloaded a file. `bytes` is the whole of it. */
+  onDownload?: (file: { name: string; bytes: Buffer; url: string }) => void;
   /** Whether anyone is watching. The screencast is stopped while nobody is,
       because encoding JPEGs for an empty room is just heat. */
   watchers: () => number;
+  /** Bytes queued to the slowest viewer. A phone on a bad link backs up
+      first; the stream then thins and softens itself rather than lag. */
+  backlog?: () => number;
 }
 
 /** The capture size. Frame pixels map 1:1 to page pixels so a click at
@@ -465,6 +497,18 @@ const LIVE_QUALITY = Math.min(num(process.env.AUTORA_BROWSER_QUALITY, 50), 100);
     watching, not for reading nine-point text, and halving the width quarters
     the bytes. */
 const LIVE_WIDTH = num(process.env.AUTORA_BROWSER_STREAM_WIDTH, 960);
+/** How hard the stream squeezes: speed over resolution when the link is
+    slow or a person is working the page, sharp when they stop. */
+const TIERS = [
+  { width: LIVE_WIDTH, quality: LIVE_QUALITY },
+  { width: Math.round(LIVE_WIDTH * 0.75), quality: Math.max(LIVE_QUALITY - 12, 20) },
+  { width: Math.round(LIVE_WIDTH * 0.55), quality: Math.max(LIVE_QUALITY - 20, 15) },
+];
+/** After the last frame, how long the page must sit still before it is sent
+    again sharp. */
+const SHARP_AFTER_MS = 650;
+/** Tabs one session may hold open. */
+const MAX_TABS = 12;
 
 /**
  * Where Chrome is.
@@ -1612,9 +1656,12 @@ async function launchShared(): Promise<BrowserContext> {
   const dir = profileDir();
   const geo = await browserGeo();
   const agent = browserUserAgent();
+  const extensionArgs = launchArgs();
   const launch = () =>
     chromium.launchPersistentContext(dir, {
-      headless: process.env.AUTORA_BROWSER_HEADED !== "1",
+      // Extensions need Chrome's new headless mode, which is the whole
+      // browser without a window; it is asked for by flag (see extensions.ts).
+      headless: process.env.AUTORA_BROWSER_HEADED !== "1" && !extensionArgs.length,
       ...(executablePath ? { executablePath } : {}),
       viewport: VIEWPORT,
       deviceScaleFactor: 1,
@@ -1623,8 +1670,9 @@ async function launchShared(): Promise<BrowserContext> {
       ...(agent ? { userAgent: agent } : {}),
       locale: geo.locale || "en-US",
       ...(geo.tz ? { timezoneId: geo.tz } : {}),
-      ignoreDefaultArgs: ["--enable-automation"],
+      ignoreDefaultArgs: extensionArgs.length ? ["--enable-automation", "--disable-extensions"] : ["--enable-automation"],
       args: [
+        ...(process.env.AUTORA_BROWSER_HEADED === "1" ? extensionArgs.filter((a) => a !== "--headless=new") : extensionArgs),
         "--no-sandbox",
         "--disable-dev-shm-usage",
         "--hide-scrollbars",
@@ -1796,6 +1844,14 @@ export class LiveBrowser {
   private cdp: CDPSession | null = null;
   private streaming = false;
   private lastFrameAt = 0;
+  /** Which of TIERS the screencast runs at, and when it last changed. */
+  private tier = 0;
+  private tierAt = 0;
+  private sharpTimer: NodeJS.Timeout | null = null;
+  private sharpBusy = false;
+  /** Until when a person is working the page (a tap, a scroll): frames come
+      faster and rougher, then one sharp one when they stop. */
+  private activeUntil = 0;
   /** The newest frame that arrived too soon after the last one sent. It goes
       out when the interval is up, so the feed always ends on the page as it
       finally is rather than one step before it. */
@@ -1847,7 +1903,156 @@ export class LiveBrowser {
       viewport: this.vp,
       control: this.control,
       fields: this.page ? this.fields : [],
+      tabs: this.tabList(),
     };
+  }
+
+  // ----------------------------------------------------------------- tabs --
+
+  /** The pages this session has open, in the order they were opened. */
+  private tabPages: Page[] = [];
+  private tabIds = new WeakMap<object, number>();
+  private tabNumber = 0;
+  private tabInfo = new WeakMap<object, { url: string; title: string }>();
+  /** Set while a tab is being closed on purpose, so that closing the last
+      one leaves a blank tab rather than letting go of the browser. */
+  private closingTab = false;
+
+  private addTab(page: Page) {
+    if (this.tabPages.includes(page)) return;
+    this.tabIds.set(page, ++this.tabNumber);
+    this.tabPages.push(page);
+    // A tab left open in the background by a page that opens many is the
+    // oldest idle one to go, never the one being watched or its opener.
+    while (this.tabPages.length > MAX_TABS) {
+      const old = this.tabPages.find((p) => p !== this.page && p !== page && !this.openers.includes(p));
+      if (!old) break;
+      void old.close().catch(() => undefined);
+      this.tabPages.splice(this.tabPages.indexOf(old), 1);
+    }
+  }
+
+  tabList(): BrowserTab[] {
+    return this.tabPages.filter((p) => !p.isClosed()).map((p) => ({
+      id: this.tabIds.get(p) ?? 0,
+      url: p === this.page ? (this.currentUrl ?? p.url()) : this.tabInfo.get(p)?.url ?? p.url(),
+      title: p === this.page ? (this.currentTitle ?? "") : this.tabInfo.get(p)?.title ?? "",
+      active: p === this.page,
+    }));
+  }
+
+  private tabById(id: number): Page | undefined {
+    return this.tabPages.find((p) => this.tabIds.get(p) === id && !p.isClosed());
+  }
+
+  /** A new tab, opened and shown; with an address, loaded. */
+  newTab(rawUrl?: string): Promise<PageRead | { tabs: BrowserTab[] }> {
+    return this.run(async () => {
+      await this.ensure();
+      const context = this.context;
+      if (!context) throw new Error("No browser is open.");
+      const page = await context.newPage();
+      claimed.add(page);
+      this.wire(page);
+      this.addTab(page);
+      await this.show(page, null, "a new tab");
+      if (rawUrl && rawUrl.trim()) {
+        const url = addressFor(rawUrl);
+        this.hooks.onAction(`open ${url}`, null, url);
+        await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 }).catch(() => undefined);
+        await this.settle();
+        const read = await this.read();
+        await this.keyframe();
+        return read;
+      }
+      return { tabs: this.tabList() };
+    });
+  }
+
+  switchTab(id: number): Promise<{ tabs: BrowserTab[] }> {
+    return this.run(async () => {
+      const page = this.tabById(id);
+      if (!page) throw new Error(`There is no tab ${id}.`);
+      if (page !== this.page) await this.show(page, null, "switched tab");
+      return { tabs: this.tabList() };
+    });
+  }
+
+  closeTab(id: number): Promise<{ tabs: BrowserTab[] }> {
+    return this.run(async () => {
+      const page = this.tabById(id);
+      if (!page) throw new Error(`There is no tab ${id}.`);
+      /* The last tab is replaced before it is closed: Chrome ends its
+         browsing session, and drops the session cookies with it, the moment
+         no tab is open. */
+      if (this.tabPages.filter((p) => !p.isClosed()).length <= 1 && this.context) {
+        const fresh = await this.context.newPage();
+        claimed.add(fresh);
+        this.wire(fresh);
+        this.addTab(fresh);
+        await this.show(fresh, null, "a new tab");
+      }
+      this.closingTab = true;
+      try {
+        await page.close().catch(() => undefined);
+        // The page's own close handler picks the tab to show next.
+        await this.following?.catch(() => undefined);
+      } finally {
+        this.closingTab = false;
+      }
+      return { tabs: this.tabList() };
+    });
+  }
+
+  /** Find text on the page and select it, the way a browser's find bar
+      does; the next call with the same text goes on to the next match. */
+  find(text: string, backwards = false): Promise<boolean> {
+    return this.run(async () => {
+      const page = this.page;
+      if (!page || !text) return false;
+      // The browser's own window.find reports nothing in a headless page, so
+      // the matches are walked here: the text nodes, case-insensitively, the
+      // current one remembered so Next goes on from it.
+      return !!(await page.evaluate(`(() => {
+        const q = ${JSON.stringify(text.toLowerCase())};
+        const back = ${backwards ? "true" : "false"};
+        const hits = [];
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+          const parent = n.parentElement;
+          if (!parent || /^(SCRIPT|STYLE|NOSCRIPT)$/.test(parent.tagName)) continue;
+          const hay = n.nodeValue.toLowerCase();
+          for (let i = hay.indexOf(q); i >= 0; i = hay.indexOf(q, i + q.length)) hits.push([n, i]);
+        }
+        if (!hits.length) return false;
+        const state = window.__autoraFind;
+        let at = state && state.q === q ? state.at + (back ? -1 : 1) : (back ? hits.length - 1 : 0);
+        at = (at + hits.length) % hits.length;
+        window.__autoraFind = { q, at };
+        const [node, i] = hits[at];
+        const range = document.createRange();
+        range.setStart(node, i);
+        range.setEnd(node, i + q.length);
+        const sel = getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        node.parentElement.scrollIntoView({ block: "center", inline: "nearest" });
+        return true;
+      })()`).catch(() => false));
+    });
+  }
+
+  /** Forward in this tab's history. */
+  goForward(): Promise<PageRead | null> {
+    return this.run(async () => {
+      const page = await this.ensure();
+      this.hooks.onAction("navigated forward", null, this.currentUrl ?? "");
+      await page.goForward({ waitUntil: "domcontentloaded", timeout: 15_000 }).catch(() => undefined);
+      await this.settle();
+      const read = await this.read();
+      await this.keyframe();
+      return read;
+    });
   }
 
   getControl() {
@@ -1894,6 +2099,7 @@ export class LiveBrowser {
     }
     claimed.add(this.page);
     this.wire(this.page);
+    this.addTab(this.page);
     if (this.vp.width !== VIEWPORT.width || this.vp.height !== VIEWPORT.height) {
       await this.page.setViewportSize(this.vp).catch(() => undefined);
     }
@@ -1913,26 +2119,18 @@ export class LiveBrowser {
 
     page.on("popup", (popup: Page) => {
       claimed.add(popup);
+      this.wire(popup);
+      this.addTab(popup);
+      /* A link to a new tab opens one, as in any browser, and it is the tab
+         shown; a sign-in window ("Sign in with Google", a bank's 2FA) is the
+         same and closes itself when done, returning to the page that opened
+         it, which is waiting for its answer. A popup from a tab that is not
+         the one watched is kept in the background. */
+      if (this.page !== page) return;
       this.following = (async () => {
-        /* A window the page keeps a hold of -- "Sign in with Google", a
-           LinkedIn or Microsoft sign-in, a bank's 2FA -- has to stay open:
-           it reports back to the page that opened it and then closes
-           itself, and loading its address here instead leaves the sign-in
-           with nobody to report to. So it is shown in place of this tab
-           until it closes. A plain link to a new tab has no hold on this
-           page and is followed here, the tab being watched. */
-        const opener = await popup.opener().catch(() => null);
-        if (opener && this.page === page && !popup.isClosed()) {
-          await this.show(popup, page);
-          await popup.waitForLoadState("domcontentloaded", { timeout: 8000 }).catch(() => undefined);
-          return;
-        }
-        await popup.waitForLoadState("commit").catch(() => undefined);
-        const next = popup.url();
-        await popup.close().catch(() => undefined);
-        if (next && next !== "about:blank" && this.page === page) {
-          await page.goto(next, { waitUntil: "domcontentloaded" }).catch(() => undefined);
-        }
+        if (popup.isClosed()) return;
+        await this.show(popup, page, "a new tab opened");
+        await popup.waitForLoadState("domcontentloaded", { timeout: 8000 }).catch(() => undefined);
       })().finally(() => { this.following = null; });
     });
 
@@ -1942,13 +2140,42 @@ export class LiveBrowser {
     page.on("console", (m: any) => {
       const kind = String(m.type?.() ?? "log");
       const said = String(m.text?.() ?? "");
+      this.noteDev(page, { kind: "console", level: kind === "warning" ? "warn" : kind, text: said.slice(0, 600) });
       // Chrome's own line for a failed fetch names no address; the response
       // listener below says which one, and skips the icon every page is
       // asked for and many do not have.
       if (/^Failed to load resource/i.test(said)) return;
       if (kind === "error" || kind === "warning" || kind === "warn") this.noteConsole(kind === "error" ? "error" : "warn", said);
     });
-    page.on("pageerror", (err: any) => this.noteConsole("error", `Uncaught: ${String(err?.message ?? err)}`));
+    page.on("download", (download: any) => {
+      void (async () => {
+        try {
+          const tmp = await download.path();
+          if (!tmp) return;
+          const bytes = fs.readFileSync(tmp);
+          this.hooks.onDownload?.({ name: String(download.suggestedFilename?.() ?? "download"), bytes, url: String(download.url?.() ?? "") });
+        } catch {
+          // Cancelled or failed; nothing to keep.
+        }
+      })();
+    });
+    page.on("pageerror", (err: any) => {
+      this.noteDev(page, { kind: "console", level: "error", text: `Uncaught: ${String(err?.message ?? err).slice(0, 600)}` });
+      this.noteConsole("error", `Uncaught: ${String(err?.message ?? err)}`);
+    });
+    const began = new WeakMap<object, number>();
+    page.on("request", (req: any) => { began.set(req, Date.now()); });
+    page.on("requestfinished", (req: any) => {
+      void (async () => {
+        const res = await req.response?.().catch(() => null);
+        const length = Number(res?.headers?.()["content-length"] ?? 0);
+        this.noteDev(page, {
+          kind: "request", level: String(req.resourceType?.() ?? "other"), text: String(req.url?.() ?? "").slice(0, 400),
+          method: String(req.method?.() ?? "GET"), status: Number(res?.status?.() ?? 0),
+          ms: Date.now() - (began.get(req) ?? Date.now()), ...(length ? { bytes: length } : {}),
+        });
+      })();
+    });
     page.on("response", (res: any) => {
       const status = Number(res.status?.() ?? 0);
       const where = String(res.url?.() ?? "");
@@ -1956,23 +2183,59 @@ export class LiveBrowser {
       if (status >= 400 && !/\/favicon\.ico(\?|$)/.test(where)) this.noteConsole("error", `${status} ${where.slice(0, 160)}`);
     });
     page.on("requestfailed", (req: any) => {
+      this.noteDev(page, {
+        kind: "request", level: String(req.resourceType?.() ?? "other"), text: String(req.url?.() ?? "").slice(0, 400),
+        method: String(req.method?.() ?? "GET"), failed: String(req.failure?.()?.errorText ?? "failed"),
+        ms: Date.now() - (began.get(req) ?? Date.now()),
+      });
       this.noteConsole("error", `Request failed: ${String(req.url?.() ?? "").slice(0, 160)} (${String(req.failure?.()?.errorText ?? "")})`);
     });
 
     page.on("framenavigated", (frame: any) => {
-      if (this.page !== page || frame !== page.mainFrame()) return;
+      if (frame !== page.mainFrame()) return;
+      const info = this.tabInfo.get(page) ?? { url: "", title: "" };
+      info.url = frame.url();
+      this.tabInfo.set(page, info);
+      if (this.page !== page) { this.hooks.onFields(); return; }
       this.currentUrl = frame.url();
       void this.announceNav();
+    });
+    page.on("domcontentloaded", () => {
+      void page.title().then((title: string) => {
+        const info = this.tabInfo.get(page) ?? { url: page.url(), title: "" };
+        if (info.title === title) return;
+        info.title = title;
+        this.tabInfo.set(page, info);
+        if (this.page === page) this.currentTitle = title;
+        this.hooks.onFields();
+      }).catch(() => undefined);
     });
     page.on("close", () => {
       const waiting = this.openers.indexOf(page);
       if (waiting >= 0) this.openers.splice(waiting, 1);
-      if (this.page !== page || this.closing) return;
-      // A sign-in window that closed itself, done: back to the page it
-      // opened from, which now has the sign-in.
-      const back = this.openers.pop();
+      const at = this.tabPages.indexOf(page);
+      if (at >= 0) this.tabPages.splice(at, 1);
+      if (this.closing) return;
+      if (this.page !== page) { this.hooks.onFields(); return; }
+      // The tab being watched closed. A sign-in window that closed itself
+      // goes back to the page it opened from, which now has the sign-in;
+      // otherwise the tab beside it, or the one before.
+      const back = this.openers.pop()
+        ?? this.tabPages[Math.min(Math.max(at, 0), this.tabPages.length - 1)];
       if (back && !back.isClosed()) {
-        this.following = this.show(back, null).finally(() => { this.following = null; });
+        this.following = this.show(back, null, "the tab closed; back to the page").finally(() => { this.following = null; });
+        return;
+      }
+      if (this.closingTab && this.context) {
+        // Closing the last tab leaves a blank one, as on a phone.
+        const context = this.context;
+        this.following = (async () => {
+          const fresh = await context.newPage();
+          claimed.add(fresh);
+          this.wire(fresh);
+          this.addTab(fresh);
+          await this.show(fresh, null, "a new tab");
+        })().catch(() => undefined).finally(() => { this.following = null; });
         return;
       }
       this.page = null;
@@ -1991,7 +2254,7 @@ export class LiveBrowser {
    * sees it and can type into it. `from`, when given, is kept underneath to
    * come back to.
    */
-  private async show(next: Page, from: Page | null) {
+  private async show(next: Page, from: Page | null, why = "a new tab opened") {
     if (from) this.openers.push(from);
     // Switched at once, so whatever reads the page next reads this one.
     const cdp = this.cdp;
@@ -2005,7 +2268,8 @@ export class LiveBrowser {
     await next.setViewportSize(this.vp).catch(() => undefined);
     await next.bringToFront().catch(() => undefined);
     this.currentUrl = next.url();
-    this.hooks.onAction(from ? "a sign-in window opened" : "the window closed; back to the page", null, this.currentUrl ?? "");
+    this.currentTitle = this.tabInfo.get(next)?.title ?? this.currentTitle;
+    this.hooks.onAction(why, null, this.currentUrl ?? "");
     await this.startStream().catch(() => undefined);
     await this.announceNav();
   }
@@ -2047,14 +2311,68 @@ export class LiveBrowser {
     });
     await cdp.send("Page.startScreencast", {
       format: "jpeg",
-      quality: this.opts.quality ?? LIVE_QUALITY,
-      maxWidth: this.opts.sharp ? Math.max(LIVE_WIDTH, this.vp.width) : LIVE_WIDTH,
+      quality: this.opts.quality ?? TIERS[this.tier].quality,
+      maxWidth: this.opts.sharp ? Math.max(LIVE_WIDTH, this.vp.width) : TIERS[this.tier].width,
       maxHeight: this.opts.sharp
         ? Math.max(Math.round((LIVE_WIDTH / this.vp.width) * this.vp.height), this.vp.height)
-        : Math.round((LIVE_WIDTH / this.vp.width) * this.vp.height),
+        : Math.round((TIERS[this.tier].width / this.vp.width) * this.vp.height),
       everyNthFrame: 1,
     });
     this.streaming = true;
+  }
+
+  /** Someone is working the page: raise the frame rate for a moment. */
+  touched() {
+    this.activeUntil = Date.now() + 1800;
+  }
+
+  /** Step the screencast down a tier when a viewer is backing up, and back
+      up when the link has been clear for a while. Rare, and never twice
+      within three seconds: restarting the screencast costs a frame. */
+  private adapt() {
+    if (this.opts.sharp || !this.hooks.backlog || Date.now() - this.tierAt < 3000) return;
+    const behind = this.hooks.backlog();
+    let next = this.tier;
+    if (behind > 256 * 1024 && this.tier < TIERS.length - 1) next = this.tier + 1;
+    else if (behind < 16 * 1024 && this.tier > 0 && Date.now() - this.tierAt > 8000) next = this.tier - 1;
+    if (next === this.tier) return;
+    this.tier = next;
+    this.tierAt = Date.now();
+    const cdp = this.cdp;
+    this.cdp = null;
+    this.streaming = false;
+    void (async () => {
+      await cdp?.send("Page.stopScreencast").catch(() => undefined);
+      await cdp?.detach().catch(() => undefined);
+      await this.startStream().catch(() => undefined);
+    })();
+  }
+
+  /** One crisp frame once the page has been still for a moment. Skipped
+      while a viewer is behind: sharp is for a link that can afford it. */
+  private armSharp() {
+    if (this.opts.sharp) return;
+    if (this.sharpTimer) clearTimeout(this.sharpTimer);
+    this.sharpTimer = setTimeout(() => {
+      this.sharpTimer = null;
+      void this.sharpFrame();
+    }, SHARP_AFTER_MS);
+    this.sharpTimer.unref?.();
+  }
+
+  private async sharpFrame() {
+    if (!this.page || this.sharpBusy || this.hooks.watchers() === 0) return;
+    if (Date.now() - this.lastFrameAt < SHARP_AFTER_MS - 50) return;
+    if ((this.hooks.backlog?.() ?? 0) > 32 * 1024) return;
+    this.sharpBusy = true;
+    try {
+      const shot: Buffer = await this.page.screenshot({ type: "jpeg", quality: 82, scale: "css", timeout: 3000 });
+      this.hooks.onFrame(shot.toString("base64"));
+    } catch {
+      // Mid-navigation; the next frame covers it.
+    } finally {
+      this.sharpBusy = false;
+    }
   }
 
   /** Throttle with a trailing edge: a burst of frames is thinned to the
@@ -2062,11 +2380,16 @@ export class LiveBrowser {
       it left the feed parked on the page mid-change until something else
       happened to move. */
   private forward(data: string) {
-    const wait = 1000 / (this.opts.fps ?? LIVE_FPS) - (Date.now() - this.lastFrameAt);
+    const rate = this.opts.fps ?? (Date.now() < this.activeUntil ? Math.min(LIVE_FPS * 2, 24) : LIVE_FPS);
+    const wait = 1000 / rate - (Date.now() - this.lastFrameAt);
     if (wait <= 0) {
       this.lastFrameAt = Date.now();
       this.pendingFrame = null;
+      this.adapt();
+      // A viewer that is behind gets nothing new until it has caught up.
+      if ((this.hooks.backlog?.() ?? 0) > 1024 * 1024) { this.armSharp(); return; }
       this.hooks.onFrame(data);
+      this.armSharp();
       return;
     }
     this.pendingFrame = data;
@@ -2104,6 +2427,23 @@ export class LiveBrowser {
   }
 
   // ------------------------------------------------ app preview (see preview.ts) --
+
+  /** Everything the pages said and asked for, newest last: DevTools' console
+      and network panels, for the person and for the agent. */
+  private dev: DevEntry[] = [];
+  private devCount = 0;
+  private noteDev(page: Page, entry: Omit<DevEntry, "n" | "tab" | "ts">) {
+    this.dev.push({ n: ++this.devCount, tab: this.tabIds.get(page) ?? 0, ts: Date.now(), ...entry });
+    if (this.dev.length > 400) this.dev.splice(0, this.dev.length - 400);
+  }
+  devtools(opts: { kind?: "console" | "request"; tab?: number; since?: number; errorsOnly?: boolean; limit?: number } = {}): DevEntry[] {
+    const tab = opts.tab ?? (this.page ? this.tabIds.get(this.page) : undefined);
+    return this.dev
+      .filter((e) => (!opts.kind || e.kind === opts.kind) && (tab === undefined || e.tab === tab) && e.n > (opts.since ?? 0))
+      .filter((e) => !opts.errorsOnly || e.failed || (e.kind === "console" && e.level === "error") || (e.status ?? 0) >= 400)
+      .slice(-(opts.limit ?? 200));
+  }
+  clearDevtools() { this.dev = []; }
 
   /** The page's own console, newest last. */
   private consoleLog: Array<{ kind: "error" | "warn"; text: string; ts: number }> = [];
@@ -2301,6 +2641,9 @@ export class LiveBrowser {
     await cdp?.detach().catch(() => undefined);
     await page?.close().catch(() => undefined);
     for (const under of openers) await under.close().catch(() => undefined);
+    const others = this.tabPages.filter((p) => p !== page);
+    this.tabPages = [];
+    for (const other of others) await other.close().catch(() => undefined);
     if (context) await releaseContext(context, saved);
     this.closing = false;
   }

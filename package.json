@@ -1,7 +1,7 @@
 {
   "name": "autora",
   "private": true,
-  "version": "0.9.116",
+  "version": "0.9.137",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -9,13 +9,16 @@
     "start": "node dist/server.cjs",
     "lint": "npm run typecheck && eslint .",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.test.json && npm --prefix pdf-editor run typecheck",
-    "test": "tsx tests/run.ts"
+    "test": "tsx tests/run.ts",
+    "build:office": "node scripts/build-office.mjs",
+    "replay": "tsx scripts/replay.ts"
   },
   "dependencies": {
     "@cantoo/pdf-lib": "^2.11.1",
     "@google/genai": "^2.23.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "express": "^4.21.2",
+    "fflate": "^0.8.3",
     "pdfjs-dist": "^6.3.289",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

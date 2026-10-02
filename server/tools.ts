@@ -26,6 +26,9 @@
 
 import type { TodoResult } from "./todos";
 import type { LedgerResult } from "./ledger";
+import type { RequirementResult } from "./requirements";
+import { checkEntry } from "./mindrules";
+import { officeDir, runOfficeTool } from "./office";
 import type { Phase } from "./modes";
 import { callMcpTool, mcpTools, statusOf as mcpStatusOf } from "./mcp";
 import { existing as existingMcp, install as installMcp, noteDeclined, overview as mcpOverview, planOffer, wasDeclined } from "./mcpoffer";
@@ -57,6 +60,7 @@ import {
 } from "./artifacts";
 import { checkWidget } from "./widgets";
 import { deskHooks } from "./pdfdesk";
+import { officeHooks } from "./officedesk";
 import { runPdfTool } from "./pdf";
 import {
   addEntries, createNotebook, describeNotebook, findNotebook, listNotebooks, moveEntry,
@@ -116,6 +120,7 @@ export interface ToolSettings {
   widgets: { enabled: boolean };
   app: { enabled: boolean };
   pdf: { enabled: boolean };
+  office: { enabled: boolean };
 }
 
 export function toolSettings(): ToolSettings {
@@ -554,6 +559,42 @@ const TOOLS: ToolSpec[] = [
     },
   },
 
+  // ------------------------------------------------------- requirements --
+  {
+    name: "requirements",
+    group: "schedule",
+    description:
+      "What the person asked for, kept in their own words so none of it is lost or paraphrased away. " +
+      "When a message asks for more than one thing -- features, fixes, changes -- add each ask as its " +
+      "own item, worded as they worded it. When they add to it, change their mind or take something " +
+      "away mid-conversation (even while you work), record it here: add a new ask, edit one whose " +
+      "wording changed, drop one they no longer want (with the reason). Mark an item done only when it " +
+      "is, with how you checked it. Before you finish, every item should be done or dropped. This is " +
+      "separate from the to-do list, which is your own plan. Call with no arguments to read the list back.",
+    parameters: {
+      type: "object",
+      properties: {
+        add: { type: "array", items: { type: "string" }, description: "New asks, one per item, in the person's words." },
+        edit: {
+          type: "array",
+          description: "Asks whose wording changed: [{id, text}].",
+          items: { type: "object", properties: { id: { type: "string" }, text: { type: "string" } }, required: ["id", "text"] },
+        },
+        done: {
+          type: "array",
+          description: "Asks that are finished: [{id, how}] where how says how you checked.",
+          items: { type: "object", properties: { id: { type: "string" }, how: { type: "string" } }, required: ["id"] },
+        },
+        drop: {
+          type: "array",
+          description: "Asks no longer wanted or impossible: [{id, why}].",
+          items: { type: "object", properties: { id: { type: "string" }, why: { type: "string" } }, required: ["id"] },
+        },
+        reopen: { type: "array", items: { type: "string" }, description: "Ids to open again." },
+      },
+    },
+  },
+
   // ---------------------------------------------------------- app_preview --
   {
     name: "app_preview",
@@ -882,6 +923,42 @@ const TOOLS: ToolSpec[] = [
     group: "browser",
     description: "Go back one entry in the open page's history.",
     parameters: { type: "object", properties: {} },
+  },
+  {
+    name: "browser_devtools",
+    group: "browser",
+    description:
+      "What DevTools shows for the open tab: its console (log, info, warn, error and uncaught errors) or the " +
+      "network requests it made (method, status, type, time, size, and the ones that failed). Use it to find " +
+      "out why a page is blank or a button does nothing. `errors_only` keeps just the errors and failed or " +
+      "4xx/5xx requests.",
+    parameters: {
+      type: "object",
+      properties: {
+        panel: { type: "string", enum: ["console", "network"] },
+        errors_only: { type: "boolean" },
+        limit: { type: "integer", description: "Newest entries to return (default 40)." },
+      },
+      required: ["panel"],
+    },
+  },
+  {
+    name: "browser_tabs",
+    group: "browser",
+    description:
+      "The browser's tabs. action 'list' names them (id, address, title; the one you are working in is " +
+      "marked); 'new' opens a tab (with `url`, loads it); 'switch' makes tab `id` the one browser_read, " +
+      "browser_click and the rest act on; 'close' closes tab `id`. A link that opens a new tab switches " +
+      "to it on its own. Use this to keep a page open while you look at another.",
+    parameters: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["list", "new", "switch", "close"] },
+        id: { type: "integer", description: "Tab number, for switch and close." },
+        url: { type: "string", description: "Address to open, for new." },
+      },
+      required: ["action"],
+    },
   },
   {
     name: "browser_screenshot",
@@ -2042,15 +2119,212 @@ const TOOLS: ToolSpec[] = [
     },
   },
 
+  // ---------------------------------------------------------------- Office --
+  {
+    name: "office_guide",
+    group: "files",
+    description:
+      "How to edit a Word, Excel or PowerPoint file: the operations office_edit takes, with their fields and examples. " +
+      "Read it BEFORE your first office_edit or office_create of a kind -- the operation names are exact and a wrong one is " +
+      "rejected. domain is docs (Word), sheets (Excel) or slides (PowerPoint). With no topic it lists the operation groups; " +
+      "topic is one group (e.g. text, insert, table) or one operation by name (e.g. setText); for slides, topic design or " +
+      "spec describes building a new deck.",
+    parameters: {
+      type: "object",
+      properties: {
+        domain: { type: "string", description: "docs, sheets or slides." },
+        topic: { type: "string", description: "An operation group or one operation; omit to list the groups." },
+      },
+      required: ["domain"],
+    },
+  },
+  {
+    name: "office_read",
+    group: "files",
+    description:
+      "Read a Word (.docx), Excel (.xlsx) or PowerPoint (.pptx) file. Word: its blocks, each with the [index] edits target; " +
+      "range \"0-20\" for part of it; include comments, revisions, styles, header-footer, sections, fields or notes for those. " +
+      "Excel: the cells of a sheet and range (values, with each formula alongside), the sheet's features; stats gives counts " +
+      "and the sheet list. PowerPoint: every slide's elements with their durable ids (s_1, e_...), positions in EMU (914400 " +
+      "to the inch), text and effective font; slide for one slide, full for whole text and speaker notes, layouts for the " +
+      "deck's layouts. This reads the file as saved; it cannot show you a page or a slide as a picture.",
+    parameters: {
+      type: "object",
+      properties: {
+        file: { type: "string", description: "The document: an artifact id (file_...), a path on this host, or an artifact's name." },
+        range: { type: "string", description: "Word: block range like \"0-20\". Excel: cell range like \"A1:D20\"." },
+        sheet: { type: "string", description: "Excel: the worksheet (default: the active one)." },
+        slide: { type: "number", description: "PowerPoint: only this 0-based slide." },
+        full: { type: "boolean", description: "Whole text instead of previews (Word blocks, slide text, tables, notes)." },
+        include: {
+          type: "array",
+          items: { type: "string" },
+          description: "Word extras: comments, revisions, styles, header-footer, sections, fields, notes.",
+        },
+        formats: { type: "boolean", description: "Excel: also return cell formats, column widths and row heights." },
+        stats: { type: "boolean", description: "Excel: counts, used range and the sheet list instead of cells." },
+        where: { type: "string", description: "Excel: only cells of one kind: formula, error, empty, number or text." },
+        layouts: { type: "boolean", description: "PowerPoint: also list the deck's layouts." },
+      },
+      required: ["file"],
+    },
+  },
+  {
+    name: "office_edit",
+    group: "files",
+    description:
+      "Change a Word, Excel or PowerPoint file with operations (call office_guide for the exact names and fields first). " +
+      "Only what you edit is rewritten; the rest of the file survives byte for byte. The result is saved as a new artifact " +
+      "beside the original (your own earlier result is updated in place). ops is the array of operations, targeted by the ids " +
+      "office_read shows (Word: block [index]; PowerPoint: s_/e_ ids; Excel: cell addresses). Excel also takes cells: " +
+      "[{cell:\"B2\", value|formula, sheet?, style?}] for plain cell edits -- formulas are recalculated, and the results are " +
+      "in the file. Word: track:true records edits as tracked changes the person can accept or reject. dry_run validates and " +
+      "reports each step without writing; best_effort applies every operation that can and lists the ones that cannot. " +
+      "Check the result with office_check.",
+    parameters: {
+      type: "object",
+      properties: {
+        file: { type: "string", description: "The document: an artifact id, a path, or an artifact's name." },
+        ops: { type: "array", items: { type: "object" }, description: "The operations, in order. See office_guide." },
+        cells: { type: "array", items: { type: "object" }, description: "Excel: [{cell, value|formula, sheet?, style?}]." },
+        track: { type: "boolean", description: "Word: record the edits as tracked changes." },
+        author: { type: "string", description: "Word with track: the author shown on the changes." },
+        dry_run: { type: "boolean", description: "Validate and report without writing." },
+        best_effort: { type: "boolean", description: "Apply what can be applied and list what cannot." },
+        output: { type: "string", description: "File name for the result. Default: the original's name with -edited added." },
+      },
+      required: ["file"],
+    },
+  },
+  {
+    name: "office_check",
+    group: "files",
+    description:
+      "Look a Word, Excel or PowerPoint file over for problems, in place of seeing it. PowerPoint: text that overflows its " +
+      "box, elements off the slide or overlapping, distorted pictures, each with a ready setTransform fix. Excel: formula " +
+      "errors, references to sheets that are not there, broken names, chart ranges off the data, columns too narrow to show " +
+      "their numbers (###), placeholder text. Word: fields with no result, broken bookmark references, a stale table of " +
+      "contents, missing images, heading levels that skip, placeholder text, pending tracked changes, open comments. Run it " +
+      "after you build or change a document, and fix what it reports before you say it is done.",
+    parameters: {
+      type: "object",
+      properties: {
+        file: { type: "string", description: "The document: an artifact id, a path, or an artifact's name." },
+        slide: { type: "number", description: "PowerPoint: only this 0-based slide." },
+      },
+      required: ["file"],
+    },
+  },
+  {
+    name: "office_open",
+    group: "files",
+    description:
+      "Open a Word, PowerPoint or Excel file in the window beside the conversation, in its own editor, so the person can " +
+      "read it and change it while you work. A file you make or change with the Office tools opens there by itself; this is " +
+      "for one that already exists (an upload, an earlier file). What they change is saved as they go and you are told what.",
+    parameters: {
+      type: "object",
+      properties: {
+        file: { type: "string", description: "The file: an artifact id, a path, or an artifact's name." },
+      },
+      required: ["file"],
+    },
+  },
+  {
+    name: "office_look",
+    group: "files",
+    description:
+      "See a Word, PowerPoint or Excel file's pages as they lay out: pictures of its pages (a deck's slides, a workbook's " +
+      "printed sheets), drawn by the same editor a person would use, shown in the conversation and handed to you. pages is " +
+      "a list like \"1\", \"1-3\" or \"2,4\" (a few at a time); area {x,y,width,height} in points from the page's " +
+      "top-left looks closer at part of one page, and grid draws a ruler. Use it after you build or change a file, to check " +
+      "it looks right; office_check still finds what looking would not (overflow, broken formulas). A deck or workbook " +
+      "takes ten seconds or so to draw.",
+    parameters: {
+      type: "object",
+      properties: {
+        file: { type: "string", description: "The file: an artifact id, a path, or an artifact's name." },
+        pages: { type: "string", description: "Which pages: \"1\", \"1-3\", \"2,4\". Default 1." },
+        area: {
+          type: "object",
+          description: "Look closer at one part of one page, in points from its top-left.",
+          properties: { x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" } },
+        },
+        grid: { type: "boolean", description: "Draw a ruler in points over the picture." },
+      },
+      required: ["file"],
+    },
+  },
+  {
+    name: "office_pdf",
+    group: "files",
+    description:
+      "Turn a Word, PowerPoint or Excel file into a PDF, laid out by its own editor (a deck one slide per page, a workbook as printed). The PDF is saved as an artifact and opens " +
+      "in the PDF editor, where it can be marked up, signed, redacted or sent on (the PDF tools work on it from there).",
+    parameters: {
+      type: "object",
+      properties: {
+        file: { type: "string", description: "The file: an artifact id, a path, or an artifact's name." },
+        output: { type: "string", description: "File name for the PDF. Default: the document's name with .pdf." },
+      },
+      required: ["file"],
+    },
+  },
+  {
+    name: "office_create",
+    group: "files",
+    description:
+      "Make a new Word, Excel or PowerPoint file, saved as an artifact. docx: markdown (headings, lists, tables, bold/italic, " +
+      "links) or restricted html. xlsx: rows -- a 2-D array of cells where a string starting with = is a formula, or " +
+      "{sheets:[{name, rows}]} for several sheets -- or csv text (header:true to treat the first row as a header). pptx: " +
+      "spec, the deck as {pages:[...]} (a 1280x720 px canvas of shapes, text, pictures, tables and charts; call " +
+      "office_guide slides design and spec first), or ops for the editing operations. Refine it afterwards with office_edit, " +
+      "and check it with office_check.",
+    parameters: {
+      type: "object",
+      properties: {
+        type: { type: "string", description: "docx, xlsx or pptx." },
+        name: { type: "string", description: "File name for the result (the extension is added)." },
+        markdown: { type: "string", description: "docx: the content as Markdown." },
+        html: { type: "string", description: "docx: the content as restricted HTML." },
+        rows: { description: "xlsx: a 2-D array, or {sheets:[{name, rows}]}." },
+        csv: { type: "string", description: "xlsx: the content as CSV text." },
+        header: { type: "boolean", description: "xlsx csv: the first row is a header." },
+        spec: { description: "pptx: the deck, {pages:[...]}." },
+        ops: { type: "array", items: { type: "object" }, description: "pptx: operations that build the deck." },
+      },
+      required: ["type"],
+    },
+  },
+  {
+    name: "office_convert",
+    group: "files",
+    description:
+      "Convert between formats that need no page layout: .docx to .md or .html; .md to .docx or .html; .html to .docx; " +
+      ".csv to .xlsx; .xlsx to .csv (sheet names the worksheet). The result is saved as an artifact. PDF is not here: " +
+      "the PDF tools handle PDFs.",
+    parameters: {
+      type: "object",
+      properties: {
+        file: { type: "string", description: "The document: an artifact id, a path, or an artifact's name." },
+        to: { type: "string", description: "docx, md, html, csv or xlsx." },
+        sheet: { type: "string", description: "xlsx to csv: the worksheet (default: the active one)." },
+        output: { type: "string", description: "File name for the result." },
+      },
+      required: ["file", "to"],
+    },
+  },
+
   // --------------------------------------------------------------- memory --
   {
     name: "memory_write",
     group: "memory",
     description:
       "Write something down in the workspace memory graph, where it will be " +
-      "recalled in later sessions. For durable facts, preferences and " +
-      "procedures worth keeping -- not for a running commentary on this " +
-      "conversation, which is already recorded.",
+      "recalled in later sessions. For durable facts, preferences, procedures and " +
+      "references worth keeping -- not for a running commentary on this " +
+      "conversation, which is already recorded. One topic per memory, a title that " +
+      "names its subject, short. Secrets are refused.",
     parameters: {
       type: "object",
       properties: {
@@ -2064,11 +2338,27 @@ const TOOLS: ToolSpec[] = [
         },
         kind: {
           type: "string",
-          enum: ["fact", "preference", "procedure", "skill"],
+          enum: ["fact", "preference", "procedure", "skill", "reference"],
           description:
             "What sort of thing this is. Default fact. A procedure is how to do " +
-            "something here that worked -- the steps, commands and gotchas.",
+            "something here that worked -- the steps, commands and gotchas. A reference is what a product's " +
+            "OFFICIAL documentation or help says about how it works (where things are in an interface, what an " +
+            "API call is named): it needs subject and source.",
         },
+        subject: {
+          type: "string",
+          description: "What it is about: the product, site, app or project, in a word or two (\"github\", \"google sheets\"). The title is filed under it.",
+        },
+        facet: {
+          type: "string",
+          enum: ["interface", "api", "docs", "workflow", "quirk"],
+          description: "For knowledge about a product: interface (where things are, what they are called -- goes stale fastest), api, docs, workflow, quirk.",
+        },
+        source: {
+          type: "string",
+          description: "A reference's source: the address of the official page you read it from.",
+        },
+        version: { type: "string", description: "The version it describes, if the page says." },
         tags: {
           type: "array",
           items: { type: "string" },
@@ -2092,7 +2382,11 @@ const TOOLS: ToolSpec[] = [
         id: { type: "string", description: "The memory's id, e.g. mem-abc123." },
         title: { type: "string", description: "A new title, if it should change." },
         body: { type: "string", description: "The whole new body, replacing the old one." },
-        kind: { type: "string", enum: ["fact", "preference", "procedure", "skill"] },
+        kind: { type: "string", enum: ["fact", "preference", "procedure", "skill", "reference"] },
+        subject: { type: "string", description: "What it is about, if that should change." },
+        facet: { type: "string", enum: ["interface", "api", "docs", "workflow", "quirk"] },
+        source: { type: "string", description: "For a reference: the page it was read from again. Stamps today as when it was read." },
+        version: { type: "string" },
         tags: { type: "array", items: { type: "string" } },
       },
       required: ["id"],
@@ -2302,6 +2596,8 @@ export function windowOff(name: string, settings: ToolSettings = toolSettings())
   if (name === "widget_show") return !settings.widgets.enabled;
   if (name === "app_preview") return !settings.app.enabled;
   if (name.startsWith("pdf_")) return !settings.pdf.enabled;
+  // Built by scripts/build-office.mjs; a server without the build does not offer tools that cannot work.
+  if (name.startsWith("office_")) return !officeDir() || !settings.office.enabled;
   return false;
 }
 
@@ -2520,7 +2816,7 @@ export interface ToolContext {
   code?: { edit: (args: EditArgs) => EditResult };
   /** Why something the person is using may not be touched right now (see
       server/presence.ts), or null. `subject` is an object id or a file. */
-  held?: (surface: "pdf" | "app" | "browser" | "code", subject: string) => string | null;
+  held?: (surface: "pdf" | "office" | "app" | "browser" | "code", subject: string) => string | null;
   /** Hand a question to a research worker with its own context (see
       server/subagent.ts) and get its report back. Absent inside the worker. */
   research?: (question: string) => Promise<string>;
@@ -2533,9 +2829,17 @@ export interface ToolContext {
     /** True in an incognito chat: a read is fine, a write is refused, because
         nothing in that chat is written down anywhere. */
     incognito?: boolean;
-    write: (entry: { title: string; body: string; kind: string; tags?: string[] }) => { id: string; action: string };
-    search: (query: string) => { id: string; kind: string; title: string; body: string; status: string }[];
-    update: (id: string, patch: { title?: string; body?: string; kind?: string; tags?: string[] }) => boolean;
+    write: (entry: {
+      title: string; body: string; kind: string; tags?: string[]; subject?: string; facet?: string;
+      source?: string; version?: string; status?: "confirmed" | "provisional";
+    }) => { id: string; action: string };
+    search: (query: string) => {
+      id: string; kind: string; title: string; body: string; status: string; subject?: string; source?: string; fetched?: number;
+    }[];
+    /** true when changed, false when there is no such memory, or why the change was refused. */
+    update: (id: string, patch: {
+      title?: string; body?: string; kind?: string; tags?: string[]; subject?: string; facet?: string; source?: string; version?: string;
+    }) => boolean | string;
     /** Say that a memory still holds, and stamp it checked today. */
     confirm: (id: string, note?: string) => boolean;
     forget: (id: string, replacedBy?: string | null) => boolean;
@@ -2563,6 +2867,8 @@ export interface ToolContext {
   enableTools?: (family: string) => { ok: boolean; summary: string };
   /** The chat's working notes (see ledger.ts). */
   ledger?: (action: Record<string, any>) => LedgerResult;
+  /** What the person asked for, kept whole (see requirements.ts). */
+  requirements?: (action: Record<string, any>) => RequirementResult;
   /** The app window: what the agent builds, shown beside the conversation. */
   preview?: {
     start: (args: { command?: string; cwd?: string; dir?: string; url?: string; port?: number }) => Promise<{ ok: boolean; summary: string }>;
@@ -3739,6 +4045,12 @@ async function runToolUnredacted(
         return { ok: r.ok, summary: r.summary, preview: r.ok ? String(args.family) : undefined };
       }
 
+      case "requirements": {
+        if (!ctx.requirements) return { ok: false, summary: "There is no requirements list in this chat." };
+        const result = ctx.requirements(args as Record<string, any>);
+        return { ok: result.ok, summary: result.summary, ...(result.preview ? { preview: result.preview } : {}) };
+      }
+
       case "ledger": {
         if (!ctx.ledger) return { ok: false, summary: "There are no working notes to write to in this chat." };
         const result = ctx.ledger(args as Record<string, any>);
@@ -3928,6 +4240,46 @@ async function runToolUnredacted(
         const page = await ctx.browser().back();
         ctx.browserChanged();
         return { ok: true, summary: describePage(page), preview: page.url };
+      }
+
+      case "browser_devtools": {
+        const rows = ctx.browser().devtools({
+          kind: args.panel === "network" ? "request" : "console",
+          errorsOnly: !!args.errors_only,
+          limit: Math.min(Math.max(Number(args.limit) || 40, 1), 200),
+        });
+        if (!rows.length) return { ok: true, summary: `Nothing in the ${args.panel === "network" ? "network" : "console"} log${args.errors_only ? " that is an error" : ""}.` };
+        const line = (e: (typeof rows)[number]) => e.kind === "console"
+          ? `[${e.level}] ${e.text}`
+          : `${e.method} ${e.failed ? `FAILED (${e.failed})` : e.status} ${e.level} ${e.ms ?? 0}ms${e.bytes ? ` ${e.bytes}B` : ""} ${e.text}`;
+        return { ok: true, summary: rows.map(line).join("\n") };
+      }
+
+      case "browser_tabs": {
+        const live = ctx.browser();
+        const action = String(args.action ?? "list");
+        const show = (tabs: Array<{ id: number; url: string; title: string; active: boolean }>) =>
+          tabs.length
+            ? tabs.map((t) => `${t.active ? "*" : " "} [${t.id}] ${t.title || "(untitled)"} -- ${t.url}`).join("\n")
+            : "No tabs are open.";
+        if (action === "new") {
+          const out = await live.newTab(typeof args.url === "string" ? args.url : undefined);
+          ctx.browserChanged();
+          if ("text" in out) return { ok: true, summary: `${describePage(out)}\n\n${show(live.tabList())}`, preview: out.url };
+          return { ok: true, summary: `Opened a blank tab.\n${show(out.tabs)}` };
+        }
+        if (action === "switch" || action === "close") {
+          const id = Number(args.id);
+          if (!Number.isInteger(id)) return { ok: false, summary: `${action} needs the tab's id (see action 'list').` };
+          try {
+            const out = action === "switch" ? await live.switchTab(id) : await live.closeTab(id);
+            ctx.browserChanged();
+            return { ok: true, summary: show(out.tabs) };
+          } catch (err: any) {
+            return { ok: false, summary: `${err?.message ?? err}\n${show(live.tabList())}` };
+          }
+        }
+        return { ok: true, summary: show(live.tabList()) };
       }
 
       case "browser_screenshot": {
@@ -4531,6 +4883,29 @@ async function runToolUnredacted(
           ...(ctx.held ? { held: (id: string) => ctx.held!("pdf", id) } : {}),
         });
 
+      // ---------------------------------------------------------- Office --
+      case "office_guide":
+      case "office_read":
+      case "office_edit":
+      case "office_check":
+      case "office_look":
+      case "office_open":
+      case "office_pdf":
+      case "office_create":
+      case "office_convert":
+        return await runOfficeTool(spec.name, args, {
+          session: ctx.session,
+          cwd: terminalDir(),
+          room: CONTEXT_CONFIG.maxToolTokens * 4 - 200,
+          showFile: ctx.showFile,
+          putBlob: ctx.putBlob,
+          showImage: ctx.showImage,
+          ...(ctx.memory.incognito ? {} : { desk: deskHooks(ctx.session), win: officeHooks(ctx.session) }),
+          ...(ctx.held ? { held: (_surface: "office", subject: string) => ctx.held!("office", subject) } : {}),
+          cancelled: ctx.cancelled,
+          onCancel: ctx.onCancel,
+        });
+
       // --------------------------------------------------------- memory --
       case "memory_write": {
         if (ctx.memory.incognito) return incognitoMemory();
@@ -4539,16 +4914,26 @@ async function runToolUnredacted(
         if (!title || !body) {
           return { ok: false, summary: "A memory needs both a title and a body." };
         }
-        const kinds = new Set(["fact", "preference", "procedure", "skill"]);
-        const kind = kinds.has(String(args.kind)) ? String(args.kind) : "fact";
-        const tags = Array.isArray(args.tags) ? args.tags.map(String) : [];
-        const { id, action } = ctx.memory.write({ title, body, kind, tags });
+        /* Held to the mind's rules (see mindrules.ts): a subject in the title, one
+           topic, nothing about the moment, a reference with its source. The refusal
+           says what to change, so the next call can be right. */
+        const verdict = checkEntry({
+          title, body, kind: args.kind, tags: args.tags, subject: args.subject,
+          facet: args.facet, source: args.source, version: args.version,
+        });
+        if (!verdict.ok) return { ok: false, summary: `Not written down. ${verdict.error}` };
+        const e = verdict.entry;
+        const { id, action } = ctx.memory.write({
+          title: e.title, body: e.body, kind: e.kind, tags: e.tags, subject: e.subject,
+          facet: e.facet, source: e.source, version: e.version, status: e.status,
+        });
+        const asked = verdict.notes.length ? ` ${verdict.notes.join(" ")}` : "";
         return {
           ok: true,
-          summary: action === "merged"
-            ? `That was close to ${id}, so ${id} was updated rather than a copy added: "${title}".`
-            : `Written down as ${id}: "${title}".`,
-          preview: title,
+          summary: (action === "merged"
+            ? `That was close to ${id}, so ${id} was updated rather than a copy added: "${e.title}".`
+            : `Written down as ${id}: "${e.title}".`) + asked,
+          preview: e.title,
         };
       }
 
@@ -4561,8 +4946,14 @@ async function runToolUnredacted(
           body: typeof args.body === "string" ? args.body : undefined,
           kind: typeof args.kind === "string" ? args.kind : undefined,
           tags: Array.isArray(args.tags) ? args.tags.map(String) : undefined,
+          subject: typeof args.subject === "string" ? args.subject : undefined,
+          facet: typeof args.facet === "string" ? args.facet : undefined,
+          source: typeof args.source === "string" ? args.source : undefined,
+          version: typeof args.version === "string" ? args.version : undefined,
         };
-        if (!ctx.memory.update(id, patch)) {
+        const changed = ctx.memory.update(id, patch);
+        if (typeof changed === "string") return { ok: false, summary: `Not changed. ${changed}` };
+        if (!changed) {
           return { ok: false, summary: `There is no memory ${id}. memory_search shows the ids.` };
         }
         return { ok: true, summary: `Updated ${id}.`, preview: id };
@@ -4611,7 +5002,8 @@ async function runToolUnredacted(
         return {
           ok: true,
           summary: found
-            .map((m) => `- ${m.id} [${m.kind}${m.status === "provisional" ? ", unconfirmed" : ""}] ${m.title}: ${m.body}`)
+            .map((m) => `- ${m.id} [${m.kind}${m.status === "provisional" ? ", unconfirmed" : ""}] ${m.title}: ${m.body}` +
+              (m.kind === "reference" && m.source ? ` (source ${m.source}${m.fetched ? `, read ${new Date(m.fetched * 1000).toISOString().slice(0, 10)}` : ""})` : ""))
             .join("\n"),
           preview: `${found.length} found`,
         };
@@ -4758,11 +5150,27 @@ const MEMORY_GUIDE =
   "- Using your memory: what was recalled for this turn is in the console note, found by " +
   "the words of the request. When the work turns to a subject, site, service or project " +
   "that note did not cover, memory_search it by name before working it out again: how it " +
-  "was done here last time may be written down. When you find out something that will " +
-  "matter again -- how a site or API actually behaves, the command that finally worked, " +
-  "something the person tells you about themselves or their work -- memory_write it, with " +
-  "tags naming its subject, so it comes back when that subject does. Each finished turn " +
-  "is also looked back on for you, so there is no need to write down the conversation. " +
+  "was done here last time may be written down. Each finished turn is also looked back on " +
+  "for you, so there is no need to write down the conversation.\n" +
+  "- Know it before you do it: you do not carry current knowledge of products, websites, apps, " +
+  "APIs or their interfaces -- they change, and a guess from training is how you end up clicking " +
+  "the wrong menu or calling an endpoint that was renamed. Before you start work that depends on " +
+  "how one of them works, or answer where something is in one (\"where do I find X in Y\"): " +
+  "(1) memory_search its name for a reference; one marked old, or with no official source, is not " +
+  "enough; (2) if there is none, or it is old, read the OFFICIAL source -- web_search the vendor's own " +
+  "documentation or help pages, then http_request or browser_read the page that covers the task " +
+  "(or give the lookup to the research tool, which keeps your context clean); an answer from a forum " +
+  "or a blog is not the product's word; (3) write what you learned down with memory_write, kind " +
+  "reference, with subject, facet (interface for where things are and what they are called, api for " +
+  "calls, docs, workflow, quirk) and source (the page's address): one topic per record, short, as " +
+  "exact as the page, with the version if it says; (4) only then do the work, from what you wrote. " +
+  "An interface reference older than three weeks is read again before you rely on it; when you " +
+  "see in practice that the page was wrong or has changed, fix the reference with memory_update.\n" +
+  "- Writing to memory: one topic per record; the title starts with its subject (\"GitHub: where " +
+  "repository settings are\"); short; true months from now (nothing about this conversation: the log " +
+  "has it); nothing secret; no near-copies -- memory_update the one that exists. Procedures: the " +
+  "steps, commands and gotchas that worked. Preferences: what the person told you about how they " +
+  "want things done. A write that breaks these is refused with what to change.\n" +
   "A recalled memory that turns out wrong is fixed with memory_update, not worked around.";
 
 /* The one tool that is about the person's ears rather than the work. It is
@@ -4895,6 +5303,7 @@ export async function capabilityBriefing(): Promise<string> {
       "small interactive widget (2D canvas/SVG, or 3D with Three.js) and explain " +
       "in text alongside it. Not for plain facts, lists or anything a sentence answers."
     : offLine("The widget window"));
+  if (!windows.office.enabled) lines.push(offLine("The Office tools (Word, Excel and PowerPoint)"));
   lines.push(
     "- Your voice: always available. Tool: speak. It plays words aloud on the " +
       "person's page at once, in the voice chosen under Settings -> Voice. When you " +

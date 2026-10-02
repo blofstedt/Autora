@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { AutoraMark, type MarkState } from "./AutoraMark";
 import {
-  IconBrain, IconChart, IconClock, IconFolder, IconList, IconMask, IconMessage,
+  IconBrain, IconChart, IconClock, IconFolder, IconList, IconMask, IconMenu, IconMessage,
   IconMonitor, IconNotebook, IconPlug, IconPlus, IconServer, IconSliders, IconWrench, IconZap,
   IconX, IconCheck,
 } from "./Icons";
@@ -51,7 +51,7 @@ export const pageLabel = (id: PageId) => PAGES.find((p) => p.id === id)?.label ?
  */
 export function Rail({
   page, onNavigate, onOpenSession, onOpenMemory, context, relayOn, alert, onNew, onIncognito,
-  onStartTask, drawer = false, onClose,
+  onStartTask, drawer = false, onClose, onFold,
   mood = "rest", attention = 0, pulse = 0, learned = 0, bloom = 0, mindGlow = false,
 }: {
   page: PageId;
@@ -71,6 +71,8 @@ export function Rail({
   onStartTask?: (text: string, title?: string) => void;
   drawer?: boolean;
   onClose?: () => void;
+  /** Fold the menu away to the far left (a desktop only). */
+  onFold?: () => void;
   /** The agent's presence: what the mark at the top is doing. */
   mood?: MarkState;
   attention?: number;
@@ -126,6 +128,11 @@ export function Rail({
         <button className="rail-icon-btn" onClick={onNew} title="New session" aria-label="New session">
           <IconPlus size={15} />
         </button>
+        {!drawer && onFold && (
+          <button className="rail-icon-btn" onClick={onFold} title="Fold the menu away" aria-label="Fold the menu away">
+            <IconMenu size={15} />
+          </button>
+        )}
         {drawer && (
           <button className="rail-icon-btn" onClick={onClose} aria-label="Close menu">
             <IconX size={15} />

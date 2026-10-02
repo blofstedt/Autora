@@ -16,6 +16,8 @@ import { TodoCell } from "./TodoCell";
 import { AppPreview } from "./AppPreview";
 import { usePreviewState } from "../lib/preview";
 import { useDeskState } from "../lib/pdfdesk";
+import { useWordState } from "../lib/officedesk";
+import { OfficeWindow } from "./OfficeWindow";
 import { PdfWindow } from "./PdfWindow";
 import { PermissionCell } from "./PermissionCell";
 import { ImageCell } from "./ImageCell";
@@ -118,6 +120,8 @@ export function Thread({
   const appOpen = usePreviewState().open;
   const desk = useDeskState();
   const pdfSince = desk.open ? desk.since ?? 0 : null;
+  const word = useWordState();
+  const wordSince = word.open ? word.since ?? 0 : null;
   const surfaces = useMemo(
     // Held only while the session is live: a recorded one is read, not watched.
     // The plan is not one of them: it is docked above the message box (see
@@ -128,12 +132,16 @@ export function Thread({
       const held = pickSurfaces(buckets, browserOpen ? liveBrowserSeq : null, appOpen).filter((s) => s.kind !== "plan");
       // The PDF window is live state, not a card in the log: it is added here,
       // after the app (the order the tabs sit in).
-      if (pdfSince === null) return held;
-      const pdf = { kind: "pdf" as const, cell: { kind: "pdf" as const, seq: pdfSince }, key: `pdf-${pdfSince}` };
+      // The Word window is the same kind of thing and sits beside it.
+      const windows = [
+        ...(pdfSince === null ? [] : [{ kind: "pdf" as const, cell: { kind: "pdf" as const, seq: pdfSince }, key: `pdf-${pdfSince}` }]),
+        ...(wordSince === null ? [] : [{ kind: "word" as const, cell: { kind: "word" as const, seq: wordSince }, key: `word-${wordSince}` }]),
+      ];
+      if (windows.length === 0) return held;
       const at = held.findIndex((s) => s.kind !== "app");
-      return at < 0 ? [...held, pdf] : [...held.slice(0, at), pdf, ...held.slice(at)];
+      return at < 0 ? [...held, ...windows] : [...held.slice(0, at), ...windows, ...held.slice(at)];
     },
-    [phone, live, buckets, browserOpen, liveBrowserSeq, appOpen, pdfSince],
+    [phone, live, buckets, browserOpen, liveBrowserSeq, appOpen, pdfSince, wordSince],
   );
   const held = surfaces.map((s) => s.key).join("|");
   /* What the thread shows as a stub rather than the card: whatever the stage
@@ -834,6 +842,8 @@ const CellView = memo(function CellView({
       );
     case "pdf":
       return stage ? <PdfWindow sessionId={sessionId} phone /> : null;
+    case "word":
+      return stage ? <OfficeWindow sessionId={sessionId} phone /> : null;
     case "app": {
       if (stage) return <AppPreview sessionId={sessionId} phone />;
       if (held) return <StageStub kind="app" title={NAME.app} note="preview · pinned above" />;

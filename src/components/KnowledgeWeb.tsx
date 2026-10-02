@@ -28,7 +28,7 @@ type Node = {
   r: number;
 };
 
-const KINDS: MemoryRecord["kind"][] = ["preference", "procedure", "fact", "skill"];
+const KINDS: MemoryRecord["kind"][] = ["preference", "procedure", "fact", "skill", "reference"];
 
 export function KnowledgeWeb({
   onClose,

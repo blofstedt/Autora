@@ -4,7 +4,7 @@
  *   npx tsx tests/verify.test.ts
  */
 import assert from "node:assert/strict";
-import { previewNote, previewProblems, checkLine, failedNote, mergeVerify, VERIFY_DEFAULTS } from "../server/verify";
+import { focusOutput, itemCheckNote, previewNote, previewProblems, checkLine, failedNote, mergeVerify, VERIFY_DEFAULTS } from "../server/verify";
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -65,6 +65,38 @@ test("a dev server that stopped is a problem, and the note says how many looks a
   assert.match(p[0], /dev server stopped \(exit 1\).*EADDRINUSE/);
   assert.match(previewNote(["boom"], 1, 2), /1 more look this turn/);
   assert.match(previewNote(["boom"], 2, 2), /last look/);
+});
+
+test("a long failing output is cut down to the lines that report the failure", () => {
+  const noise = Array.from({ length: 400 }, (_, i) => `ok ${i} passes quietly with a long enough name to matter`);
+  const output = [...noise.slice(0, 200), "FAIL adds numbers", "  expected 4 to equal 5", ...noise.slice(200)].join("\n");
+  const note = failedNote({ command: "npm test", exitCode: 1, ok: false, output }, 1, 3);
+  assert.match(note, /FAIL adds numbers/);
+  assert.match(note, /expected 4 to equal 5/);
+  assert.ok(note.length < output.length / 4, "the noise is gone");
+  assert.equal(focusOutput("short output"), "short output");
+});
+
+test("a run that fails exactly as the last did says so instead of repeating itself", () => {
+  const failing = (n: number) => ({ command: "npm test", exitCode: 1, ok: false, output: `FAIL adds numbers (${n}ms)\nexpected 4 to equal 5` });
+  const first = failedNote(failing(12), 1, 3);
+  const second = failedNote(failing(15), 2, 3, failing(12).output);
+  assert.match(first, /expected 4 to equal 5/);
+  assert.match(second, /exactly as it did on the last run/);
+  assert.doesNotMatch(second, /expected 4 to equal 5/);
+  const different = failedNote({ ...failing(1), output: "FAIL subtracts" }, 2, 3, failing(12).output);
+  assert.match(different, /FAIL subtracts/);
+});
+
+test("a check run because an item was finished says so, and reopens the item on failure", () => {
+  const pass = itemCheckNote({ command: "npm test", exitCode: 0, ok: true, output: "" });
+  assert.match(pass, /after you finished that item.*passed/);
+  const fail = itemCheckNote({ command: "npm test", exitCode: 1, ok: false, output: "FAIL adds numbers" });
+  assert.match(fail, /after you marked that item done/);
+  assert.match(fail, /FAIL adds numbers/);
+  assert.match(fail, /reopen the item/);
+  const again = itemCheckNote({ command: "npm test", exitCode: 1, ok: false, output: "FAIL adds numbers" }, "FAIL adds numbers");
+  assert.match(again, /exactly as it did last time/);
 });
 
 console.log(`${passed} passed`);
