@@ -140,6 +140,14 @@ test("a repeat made after the warning is refused, only that exact call, and refu
   assert.match(stop ?? "", /kept calling/);
 });
 
+test("a refused call may be tried again once something has changed", () => {
+  const watch = new LoopWatch();
+  for (let i = 0; i <= LOOP_DEFAULTS.warnAt; i += 1) watch.record("terminal", { command: "npm test" }, false, "1 failing");
+  assert.match(watch.gate("terminal", { command: "npm test" }).refuse ?? "", /Not run/);
+  watch.advance(); // an edit happened
+  assert.deepEqual(watch.gate("terminal", { command: "npm test" }), { refuse: null, stop: null });
+});
+
 test("rounds that change nothing earn a stall note, and a change resets the count", () => {
   const watch = new LoopWatch({ stallAfter: 3, checkEvery: 500 });
   assert.equal(watch.endRound(), null);

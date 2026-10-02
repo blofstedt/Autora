@@ -129,6 +129,9 @@ export class LoopWatch {
   /** The call changed something in the world or in what the agent knows. */
   advance() {
     this.advanced = true;
+    /* The same command after an edit is ordinary work, not a loop: once
+       something has changed, what was refused may be tried again. */
+    this.withheld.clear();
   }
 
   /** One call has run. Says whether it is part of a loop. */
