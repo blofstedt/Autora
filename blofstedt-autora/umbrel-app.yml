@@ -133,6 +133,8 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
+  Fix: closing the last browser tab no longer signs you out of sites (a blank tab opens first, so
+  the browser's session cookies are kept).
   New: the app window gets the tools of a real builder. A Console button opens the page's console and
   network (the same lists the agent reads); phone and tablet previews are drawn in a device frame;
   Versions lists a saved version of your project after every turn that changed code, and Go back to

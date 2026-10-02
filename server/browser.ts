@@ -1982,6 +1982,16 @@ export class LiveBrowser {
     return this.run(async () => {
       const page = this.tabById(id);
       if (!page) throw new Error(`There is no tab ${id}.`);
+      /* The last tab is replaced before it is closed: Chrome ends its
+         browsing session, and drops the session cookies with it, the moment
+         no tab is open. */
+      if (this.tabPages.filter((p) => !p.isClosed()).length <= 1 && this.context) {
+        const fresh = await this.context.newPage();
+        claimed.add(fresh);
+        this.wire(fresh);
+        this.addTab(fresh);
+        await this.show(fresh, null, "a new tab");
+      }
       this.closingTab = true;
       try {
         await page.close().catch(() => undefined);
