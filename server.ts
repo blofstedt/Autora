@@ -3389,6 +3389,9 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
       /* Refreshed every step, not once per turn: a tool the agent writes
          with tool_create is usable on the very next step. */
       let tools = await offered();
+      /* The tool list of the last model call: a change in it breaks the
+         provider's cache, and the usage record says when that was why. */
+      let lastToolKey: string | null = null;
       /* The conversation lives in the session's context engine for the
          length of the turn: rebuilt from the log (minus whatever has been
          folded into anchored memory), then grown by each round of tool
@@ -3658,12 +3661,15 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
               input_tokens: turn.usage.input,
               output_tokens: turn.usage.output,
               cached_tokens: cache.read,
+              cache_write_tokens: cache.write,
+              tools_changed: lastToolKey !== null && lastToolKey !== tools.map((t) => t.name).join(","),
               cost_usd: cost,
               priced,
               estimated: turn.usage.estimated,
               context: context.gauge(pinned),
             });
 
+            lastToolKey = tools.map((t) => t.name).join(",");
             return turn;
           } catch (err: any) {
             // Stopped mid-stream: the abort is ours, not the vendor failing.
@@ -4099,12 +4105,28 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           target: targetOf(name, (args ?? {}) as Record<string, any>, browsers.get(session.id)?.status().url ?? ""),
         });
         const verdict = watch.record(name, args, ok, raw);
+        /* Something moved: a change was made, or the plan or the notes were
+           rewritten. Rounds without one are what the stall note counts. */
+        if (ok && (!looksOnly(name, (args ?? {}) as Record<string, any>) || name === "todo" || name === "ledger")) watch.advance();
         if (verdict.log) emitEvent(session, "system.log", "system", { message: verdict.log });
         if (verdict.stop) loopStop = verdict.stop;
         const budget = errors.record(
           name, describeCall(name, args), ok, stripAnsi(raw),
         );
         if (budget.stop && !loopStop) loopStop = budget.stop;
+        /* What the stop taught outlasts the chat: written down as a provisional
+           memory, so the next one does not walk the same dead end. It is
+           confirmed or dropped by the same use-and-doubt the others are. */
+        if (budget.stop && !session.incognito) {
+          const lesson = errors.deadEnd(name, stripAnsi(raw));
+          if (lesson) {
+            const { record, action } = mind.write({
+              ...lesson, kind: "fact", status: "provisional",
+              source_session: session.id, source_seq: session.seqCounter,
+            });
+            emitEvent(session, "memory.write", "agent", { id: record.id, title: record.title, kind: record.kind, action });
+          }
+        }
         // Kept, so "try again" after a stop does not start from nothing.
         if (!session.incognito) keepBudget(session.id, errors.snapshot());
         /* A scheduled run has a budget of its own, so one job that has begun
@@ -4161,6 +4183,8 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
       let nudges = 0;
       /** Whether this turn has been asked about open to-do items already. */
       let todoAsked = false;
+      /* What the project check printed the last time it failed this turn. */
+      let lastCheckOutput: string | undefined;
       /** Whether a command that changes things has run since the project's
           check last did, and how many times that check has run this turn. */
       let changedSinceCheck = false;
@@ -4349,7 +4373,8 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
                   session.seqCounter,
                 );
               }
-              context.append({ role: "user", text: failedNote(checked, checkRuns, state.verify.tries) }, session.seqCounter);
+              context.append({ role: "user", text: failedNote(checked, checkRuns, state.verify.tries, lastCheckOutput) }, session.seqCounter);
+              lastCheckOutput = checked.output;
               continue;
             }
           }
@@ -4529,6 +4554,21 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           if (heldNow) {
             emitEvent(session, "tool.error", "agent", { held: true, error: "Not done: the person is working on this." }, span);
             reply(false, heldNow);
+            continue;
+          }
+
+          /* An exact call that was repeated after the loop watch said not to:
+             refused in a line, without running, and without the tool list
+             changing under the provider's cache. */
+          const gated = watch.gate(spec.name, use.args);
+          if (gated.stop) {
+            loopStop = gated.stop;
+            reply(false, "Not run: the turn was stopped.");
+            break;
+          }
+          if (gated.refuse) {
+            emitEvent(session, "tool.error", "agent", { held: true, error: gated.refuse }, span);
+            reply(false, gated.refuse);
             continue;
           }
 
@@ -4768,6 +4808,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
         context.append({ role: "tool", replies }, session.seqCounter);
         context.supersedePages(canReadVault);
         context.supersedePictures();
+        context.supersedeReads(canReadVault);
 
         /* The person has heard nothing from the reasoning model -- it does not
            speak. So the voice reads what was just said and done and says it,

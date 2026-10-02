@@ -1,7 +1,7 @@
 {
   "name": "autora",
   "private": true,
-  "version": "0.9.116",
+  "version": "0.9.117",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -9,7 +9,8 @@
     "start": "node dist/server.cjs",
     "lint": "npm run typecheck && eslint .",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.test.json && npm --prefix pdf-editor run typecheck",
-    "test": "tsx tests/run.ts"
+    "test": "tsx tests/run.ts",
+    "replay": "tsx scripts/replay.ts"
   },
   "dependencies": {
     "@cantoo/pdf-lib": "^2.11.1",

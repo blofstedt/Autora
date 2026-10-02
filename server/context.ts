@@ -116,6 +116,17 @@ export interface CompactionReport {
   error?: string;
 }
 
+/** Reads that are stubbed once they are old (see supersedeReads). A command's
+    output is left alone: what it printed is often the only record of it. */
+const STALE_READS = new Set(["read_file", "code_search", "artifact_read", "pdf_read", "web_search", "http_request"]);
+/** Messages at the end of the history that are never shrunk. */
+const STALE_KEEP_RECENT = 10;
+const STALE_MIN_CHARS = 2_000;
+/** Old reading worth one break of the cache, in characters (about 6,000 tokens). */
+const STALE_BATCH_CHARS = 24_000;
+const STALE_HEAD_CHARS = 400;
+const STALE_MARK = "[Older result:";
+
 const CHARS_PER_TOKEN = 4;
 /** A worker that failed is not retried until this has passed, so a vendor
     that is down does not get a compaction request before every step. */
@@ -499,6 +510,42 @@ export class ContextEngine {
         delete reply.images;
       }
     }
+  }
+
+  /**
+   * Old reads, shrunk in one go.
+   *
+   * A file read or a search result is wanted for the step that follows it and
+   * rarely after. Left whole it rides in every later request. But changing a
+   * message in the middle of the history breaks the provider's cache from that
+   * point on, so doing it round by round would cost more than it saves. This
+   * waits until enough old reading has piled up to be worth one break, then
+   * stubs all of it together: the first lines stay, the rest goes to the vault
+   * with a note on how to read it back. The newest messages are never touched.
+   * Returns how many results were shrunk.
+   */
+  supersedeReads(canRead: boolean): number {
+    if (!canRead) return 0;
+    const cutoff = this.active.length - STALE_KEEP_RECENT;
+    const stale: ToolReply[] = [];
+    let chars = 0;
+    for (let i = 0; i < cutoff; i += 1) {
+      for (const reply of this.active[i].replies ?? []) {
+        if (!STALE_READS.has(reply.name) || reply.result.length < STALE_MIN_CHARS) continue;
+        if (reply.result.includes(STALE_MARK)) continue;
+        stale.push(reply);
+        chars += reply.result.length;
+      }
+    }
+    if (chars < STALE_BATCH_CHARS) return 0;
+    for (const reply of stale) {
+      const id = this.vault.put(reply.result);
+      const head = reply.result.slice(0, STALE_HEAD_CHARS).trimEnd();
+      reply.result =
+        `${head}\n${STALE_MARK} ${reply.result.length.toLocaleString("en-US")} characters, ` +
+        `removed from the conversation to keep it short. Call vault_read with id "${id}" if you need it again.]`;
+    }
+    return stale.length;
   }
 
   /** Whether a snapshot the model was given is still in what it is sent. */

@@ -65,3 +65,15 @@ console.log("  ok  successes and different errors are left alone");
   assert.equal(a.record("terminal", "x3", false, err(3)).note, null, "a success counts against what it had failed at");
   console.log("  ok  a success by the same tool eases the count");
 }
+
+{
+  const a = new ErrorBudget();
+  assert.equal(a.deadEnd("terminal", err(1)), null, "nothing tried, nothing to keep");
+  a.record("terminal", "npm test a", false, err(1));
+  a.record("terminal", "npm test b", false, err(2));
+  const lesson = a.deadEnd("terminal", err(3));
+  assert.match(lesson?.title ?? "", /Dead end: terminal/);
+  assert.match(lesson?.body ?? "", /npm test a; npm test b/);
+  assert.deepEqual(lesson?.tags, ["dead-end", "terminal"]);
+  console.log("  ok  a stop can be written as a lesson");
+}

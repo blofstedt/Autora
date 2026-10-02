@@ -45,13 +45,61 @@ export interface CheckResult {
   output: string;
 }
 
-/** What the agent is told when the check failed. */
-export function failedNote(r: CheckResult, run: number, tries: number): string {
+const FAILURE_LINE = /\b(error|fail(?:ed|ure|ing)?|exception|assert\w*|expected|panic|cannot|unable|not found|undefined|TS\d{4})\b|✗|✘|×/i;
+/** Output past this is cut down to what reports a failure. */
+const FOCUS_OVER_CHARS = 4_000;
+const FOCUS_MAX_LINES = 60;
+
+/**
+ * The part of a failing check's output worth reading: the lines that report a
+ * failure with one line of context either side, in order. A passing test's
+ * name or a progress bar carries nothing, and a long run of them buries the
+ * one line that matters. Short output is returned as it is, and so is long
+ * output that names no failure (cutting it would leave nothing).
+ */
+export function focusOutput(output: string): string {
+  if (output.length <= FOCUS_OVER_CHARS) return output;
+  const lines = output.split("\n");
+  const keep = new Set<number>();
+  let hits = 0;
+  for (let i = 0; i < lines.length && hits < FOCUS_MAX_LINES; i += 1) {
+    if (!FAILURE_LINE.test(lines[i])) continue;
+    hits += 1;
+    for (const j of [i - 1, i, i + 1]) if (j >= 0 && j < lines.length) keep.add(j);
+  }
+  if (keep.size === 0) return output;
+  const out: string[] = [];
+  let last = -2;
+  for (const i of [...keep].sort((a, b) => a - b)) {
+    if (i > last + 1) out.push("...");
+    out.push(lines[i]);
+    last = i;
+  }
+  if (last < lines.length - 1) out.push("...");
+  return `(${lines.length} lines of output; the ones reporting a failure:)\n${out.join("\n")}`;
+}
+
+/** The failure lines of an output, as a set, so one run can be compared with the next. */
+export function failureKey(output: string): string {
+  return output.split("\n").filter((l) => FAILURE_LINE.test(l))
+    .map((l) => l.replace(/\d+/g, "#").replace(/\s+/g, " ").trim()).sort().join("\n");
+}
+
+/** What the agent is told when the check failed. `previous` is the failing
+    output of the run before, when there was one: a run that fails exactly as
+    the last did is told so in a line, not shown the same wall of text again. */
+export function failedNote(r: CheckResult, run: number, tries: number, previous?: string): string {
   const left = tries - run;
+  const unchanged = previous !== undefined && previous.trim() !== "" &&
+    failureKey(previous) !== "" && failureKey(previous) === failureKey(r.output);
+  const shown = unchanged
+    ? "It fails exactly as it did on the last run: nothing you changed since has affected these failures. " +
+      "Look at what you changed against what it reports, rather than repeating the fix."
+    : focusOutput(r.output).trim() || "(no output)";
   return [
     `(Autora ran the project's check after your changes: \`${r.command}\` ` +
       `${r.exitCode === null ? "did not finish" : `exited ${r.exitCode}`}, so it did not pass. Its output:`,
-    r.output.trim() || "(no output)",
+    shown,
     left > 0
       ? `Fix what it reports and carry on; the check will run again when you are done (${left} more run${left === 1 ? "" : "s"} this turn). ` +
         "Do not say the work is finished while it is failing. If it fails for a reason that is not yours -- something already broken, " +

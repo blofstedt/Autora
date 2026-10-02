@@ -98,6 +98,13 @@ is a sub-project with its own dependencies (see below).
     error across *different* attempts; kept per chat by `budgetstore.ts`, eased
     by a success, forgotten after hours): notes in the result the model reads,
     then a stop that is told to the next turn (`resume.ts`).
+    `loopwatch.gate` refuses (in a line, tool list unchanged, so the provider's
+    cache holds) an exact call repeated after its warning; rounds that change
+    nothing earn a `[Stall]` note; an error-budget stop is kept as a provisional
+    "dead end" memory. `server/replay.ts` + `npm run replay -- events.json
+    [warnAt=3 ...]` replays a recorded chat against these rules, to compare
+    settings on the same chat. `context.supersedeReads` stubs old reads in one
+    batch (a mid-history edit breaks the provider's cache, so never one by one).
   - `argcheck.ts`: every call is checked against its tool's own schema before
     anything else sees it.
   - `verify.ts`: the person's project check (Settings), run by the loop when the

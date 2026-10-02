@@ -57,6 +57,25 @@ export class ErrorBudget {
     return `${tool}|${plain}`;
   }
 
+  /**
+   * What a stop taught, written as a memory the next chat can be told: the tool,
+   * the error and what was tried that did not get past it. Null when the
+   * error has no attempts on record (nothing worth keeping).
+   */
+  deadEnd(tool: string, result: string): { title: string; body: string; tags: string[] } | null {
+    const key = ErrorBudget.signature(tool, result);
+    const entry = this.byKey.get(key);
+    if (!entry || entry.tried.length === 0) return null;
+    const error = key.slice(tool.length + 1) || "an error";
+    return {
+      title: `Dead end: ${tool} fails with "${error}"`.slice(0, 200),
+      body:
+        `${tool} failed with this error (${error}) and ${entry.tried.length} different attempts did not get ` +
+        `past it: ${entry.tried.slice(-5).join("; ")}. Do not try these again; find the cause or use another route.`,
+      tags: ["dead-end", tool],
+    };
+  }
+
   /** What to keep between turns. */
   snapshot(): BudgetSnapshot {
     return Object.fromEntries(this.byKey);

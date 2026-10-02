@@ -73,4 +73,17 @@ test("an empty log is empty, not an error", () => {
   assert.match(traceText(t), /0 turns, 0 model calls/);
 });
 
+test("a call that rewrites the cache mid-turn is counted, with the tool list when that was why", () => {
+  const t = buildTrace([
+    ev("turn.user", { text: "go" }),
+    ev("usage.turn", { input_tokens: 9000, cached_tokens: 0, cache_write_tokens: 9000 }),
+    ev("usage.turn", { input_tokens: 9500, cached_tokens: 9000, cache_write_tokens: 500 }),
+    ev("usage.turn", { input_tokens: 9800, cached_tokens: 0, cache_write_tokens: 9800, tools_changed: true }),
+    ev("usage.turn", { input_tokens: 9900, cached_tokens: 0, cache_write_tokens: 9900 }),
+  ]);
+  assert.equal(t.cacheMisses, 2);
+  assert.equal(t.cacheMissesFromTools, 1);
+  assert.match(traceText(t), /2 calls rewrote the cache mid-turn \(1 with a change in the tool list\)/);
+});
+
 console.log(`${passed} passed`);
