@@ -28,6 +28,7 @@ import type { TodoResult } from "./todos";
 import type { LedgerResult } from "./ledger";
 import type { RequirementResult } from "./requirements";
 import { checkEntry } from "./mindrules";
+import { officeDir, runOfficeTool } from "./office";
 import type { Phase } from "./modes";
 import { callMcpTool, mcpTools, statusOf as mcpStatusOf } from "./mcp";
 import { existing as existingMcp, install as installMcp, noteDeclined, overview as mcpOverview, planOffer, wasDeclined } from "./mcpoffer";
@@ -2080,6 +2081,147 @@ const TOOLS: ToolSpec[] = [
     },
   },
 
+  // ---------------------------------------------------------------- Office --
+  {
+    name: "office_guide",
+    group: "files",
+    description:
+      "How to edit a Word, Excel or PowerPoint file: the operations office_edit takes, with their fields and examples. " +
+      "Read it BEFORE your first office_edit or office_create of a kind -- the operation names are exact and a wrong one is " +
+      "rejected. domain is docs (Word), sheets (Excel) or slides (PowerPoint). With no topic it lists the operation groups; " +
+      "topic is one group (e.g. text, insert, table) or one operation by name (e.g. setText); for slides, topic design or " +
+      "spec describes building a new deck.",
+    parameters: {
+      type: "object",
+      properties: {
+        domain: { type: "string", description: "docs, sheets or slides." },
+        topic: { type: "string", description: "An operation group or one operation; omit to list the groups." },
+      },
+      required: ["domain"],
+    },
+  },
+  {
+    name: "office_read",
+    group: "files",
+    description:
+      "Read a Word (.docx), Excel (.xlsx) or PowerPoint (.pptx) file. Word: its blocks, each with the [index] edits target; " +
+      "range \"0-20\" for part of it; include comments, revisions, styles, header-footer, sections, fields or notes for those. " +
+      "Excel: the cells of a sheet and range (values, with each formula alongside), the sheet's features; stats gives counts " +
+      "and the sheet list. PowerPoint: every slide's elements with their durable ids (s_1, e_...), positions in EMU (914400 " +
+      "to the inch), text and effective font; slide for one slide, full for whole text and speaker notes, layouts for the " +
+      "deck's layouts. This reads the file as saved; it cannot show you a page or a slide as a picture.",
+    parameters: {
+      type: "object",
+      properties: {
+        file: { type: "string", description: "The document: an artifact id (file_...), a path on this host, or an artifact's name." },
+        range: { type: "string", description: "Word: block range like \"0-20\". Excel: cell range like \"A1:D20\"." },
+        sheet: { type: "string", description: "Excel: the worksheet (default: the active one)." },
+        slide: { type: "number", description: "PowerPoint: only this 0-based slide." },
+        full: { type: "boolean", description: "Whole text instead of previews (Word blocks, slide text, tables, notes)." },
+        include: {
+          type: "array",
+          items: { type: "string" },
+          description: "Word extras: comments, revisions, styles, header-footer, sections, fields, notes.",
+        },
+        formats: { type: "boolean", description: "Excel: also return cell formats, column widths and row heights." },
+        stats: { type: "boolean", description: "Excel: counts, used range and the sheet list instead of cells." },
+        where: { type: "string", description: "Excel: only cells of one kind: formula, error, empty, number or text." },
+        layouts: { type: "boolean", description: "PowerPoint: also list the deck's layouts." },
+      },
+      required: ["file"],
+    },
+  },
+  {
+    name: "office_edit",
+    group: "files",
+    description:
+      "Change a Word, Excel or PowerPoint file with operations (call office_guide for the exact names and fields first). " +
+      "Only what you edit is rewritten; the rest of the file survives byte for byte. The result is saved as a new artifact " +
+      "beside the original (your own earlier result is updated in place). ops is the array of operations, targeted by the ids " +
+      "office_read shows (Word: block [index]; PowerPoint: s_/e_ ids; Excel: cell addresses). Excel also takes cells: " +
+      "[{cell:\"B2\", value|formula, sheet?, style?}] for plain cell edits -- formulas are recalculated, and the results are " +
+      "in the file. Word: track:true records edits as tracked changes the person can accept or reject. dry_run validates and " +
+      "reports each step without writing; best_effort applies every operation that can and lists the ones that cannot. " +
+      "Check the result with office_check.",
+    parameters: {
+      type: "object",
+      properties: {
+        file: { type: "string", description: "The document: an artifact id, a path, or an artifact's name." },
+        ops: { type: "array", items: { type: "object" }, description: "The operations, in order. See office_guide." },
+        cells: { type: "array", items: { type: "object" }, description: "Excel: [{cell, value|formula, sheet?, style?}]." },
+        track: { type: "boolean", description: "Word: record the edits as tracked changes." },
+        author: { type: "string", description: "Word with track: the author shown on the changes." },
+        dry_run: { type: "boolean", description: "Validate and report without writing." },
+        best_effort: { type: "boolean", description: "Apply what can be applied and list what cannot." },
+        output: { type: "string", description: "File name for the result. Default: the original's name with -edited added." },
+      },
+      required: ["file"],
+    },
+  },
+  {
+    name: "office_check",
+    group: "files",
+    description:
+      "Look a Word, Excel or PowerPoint file over for problems, in place of seeing it. PowerPoint: text that overflows its " +
+      "box, elements off the slide or overlapping, distorted pictures, each with a ready setTransform fix. Excel: formula " +
+      "errors, references to sheets that are not there, broken names, chart ranges off the data, columns too narrow to show " +
+      "their numbers (###), placeholder text. Word: fields with no result, broken bookmark references, a stale table of " +
+      "contents, missing images, heading levels that skip, placeholder text, pending tracked changes, open comments. Run it " +
+      "after you build or change a document, and fix what it reports before you say it is done.",
+    parameters: {
+      type: "object",
+      properties: {
+        file: { type: "string", description: "The document: an artifact id, a path, or an artifact's name." },
+        slide: { type: "number", description: "PowerPoint: only this 0-based slide." },
+      },
+      required: ["file"],
+    },
+  },
+  {
+    name: "office_create",
+    group: "files",
+    description:
+      "Make a new Word, Excel or PowerPoint file, saved as an artifact. docx: markdown (headings, lists, tables, bold/italic, " +
+      "links) or restricted html. xlsx: rows -- a 2-D array of cells where a string starting with = is a formula, or " +
+      "{sheets:[{name, rows}]} for several sheets -- or csv text (header:true to treat the first row as a header). pptx: " +
+      "spec, the deck as {pages:[...]} (a 1280x720 px canvas of shapes, text, pictures, tables and charts; call " +
+      "office_guide slides design and spec first), or ops for the editing operations. Refine it afterwards with office_edit, " +
+      "and check it with office_check.",
+    parameters: {
+      type: "object",
+      properties: {
+        type: { type: "string", description: "docx, xlsx or pptx." },
+        name: { type: "string", description: "File name for the result (the extension is added)." },
+        markdown: { type: "string", description: "docx: the content as Markdown." },
+        html: { type: "string", description: "docx: the content as restricted HTML." },
+        rows: { description: "xlsx: a 2-D array, or {sheets:[{name, rows}]}." },
+        csv: { type: "string", description: "xlsx: the content as CSV text." },
+        header: { type: "boolean", description: "xlsx csv: the first row is a header." },
+        spec: { description: "pptx: the deck, {pages:[...]}." },
+        ops: { type: "array", items: { type: "object" }, description: "pptx: operations that build the deck." },
+      },
+      required: ["type"],
+    },
+  },
+  {
+    name: "office_convert",
+    group: "files",
+    description:
+      "Convert between formats that need no page layout: .docx to .md or .html; .md to .docx or .html; .html to .docx; " +
+      ".csv to .xlsx; .xlsx to .csv (sheet names the worksheet). The result is saved as an artifact. PDF is not here: " +
+      "the PDF tools handle PDFs.",
+    parameters: {
+      type: "object",
+      properties: {
+        file: { type: "string", description: "The document: an artifact id, a path, or an artifact's name." },
+        to: { type: "string", description: "docx, md, html, csv or xlsx." },
+        sheet: { type: "string", description: "xlsx to csv: the worksheet (default: the active one)." },
+        output: { type: "string", description: "File name for the result." },
+      },
+      required: ["file", "to"],
+    },
+  },
+
   // --------------------------------------------------------------- memory --
   {
     name: "memory_write",
@@ -2361,6 +2503,8 @@ export function windowOff(name: string, settings: ToolSettings = toolSettings())
   if (name === "widget_show") return !settings.widgets.enabled;
   if (name === "app_preview") return !settings.app.enabled;
   if (name.startsWith("pdf_")) return !settings.pdf.enabled;
+  // Built by scripts/build-office.mjs; a server without the build does not offer tools that cannot work.
+  if (name.startsWith("office_")) return !officeDir();
   return false;
 }
 
@@ -4604,6 +4748,22 @@ async function runToolUnredacted(
           // disk, so it works on files without one.
           ...(ctx.memory.incognito ? {} : { desk: deskHooks(ctx.session) }),
           ...(ctx.held ? { held: (id: string) => ctx.held!("pdf", id) } : {}),
+        });
+
+      // ---------------------------------------------------------- Office --
+      case "office_guide":
+      case "office_read":
+      case "office_edit":
+      case "office_check":
+      case "office_create":
+      case "office_convert":
+        return await runOfficeTool(spec.name, args, {
+          session: ctx.session,
+          cwd: terminalDir(),
+          room: CONTEXT_CONFIG.maxToolTokens * 4 - 200,
+          showFile: ctx.showFile,
+          cancelled: ctx.cancelled,
+          onCancel: ctx.onCancel,
         });
 
       // --------------------------------------------------------- memory --

@@ -1,7 +1,7 @@
 {
   "name": "autora",
   "private": true,
-  "version": "0.9.119",
+  "version": "0.9.120",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -10,6 +10,7 @@
     "lint": "npm run typecheck && eslint .",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.test.json && npm --prefix pdf-editor run typecheck",
     "test": "tsx tests/run.ts",
+    "build:office": "node scripts/build-office.mjs",
     "replay": "tsx scripts/replay.ts"
   },
   "dependencies": {

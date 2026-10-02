@@ -7,7 +7,8 @@ import globals from "globals";
 
 export default tseslint.config(
   // pdf-editor/ is its own sub-project (SecurePDF's editor), typechecked by its own tsconfig.
-  { ignores: ["dist/", "node_modules/", "ui/", ".autora/", "recordings/", "pdf-editor/"] },
+  // .cache/ holds the pinned GenOffice checkout the Office tools are built from (scripts/build-office.mjs).
+  { ignores: ["dist/", "node_modules/", "ui/", ".autora/", "recordings/", "pdf-editor/", ".cache/"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -41,7 +42,7 @@ export default tseslint.config(
     rules: reactHooks.configs.recommended.rules,
   },
   {
-    files: ["server.ts", "server/**/*.ts", "tests/**/*.{ts,mjs}", "*.config.{js,ts}"],
+    files: ["server.ts", "server/**/*.ts", "tests/**/*.{ts,mjs}", "scripts/**/*.{ts,mjs}", "*.config.{js,ts}"],
     languageOptions: { globals: globals.node },
   },
   {

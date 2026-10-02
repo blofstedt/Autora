@@ -48,6 +48,14 @@ description: >-
   result is a new file in the chat; yours is never overwritten.
 
 
+  • Word, Excel and PowerPoint — attach a document, workbook or deck, or ask for
+  a new one: Autora reads it, edits it in place (Word changes can be tracked
+  changes), makes new files from your description, converts between Word,
+  Markdown, HTML and CSV, and checks its own work. Formulas really calculate,
+  and your file is never overwritten. Built on the open-source GenOffice
+  engines.
+
+
   • Notebooks — group files by purpose with notes between them. Autora can
   compile one for you (every source filed, every claim citing its proof), and
   you can hand a notebook or any saved file to a chat.
@@ -125,22 +133,18 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  New: the agent learns a site or app from its official documentation before it
-  acts on it. When it is about to click, fill or post on a site it has nothing
-  current stored about, it is sent to read that site's own docs or help pages
-  first and write down what it finds as a "Reference" (with the page it came
-  from and the date), then carries on from that. Interfaces change, so an
-  interface reference is read again after three weeks, other documentation
-  after three months. The same goes for answering where something is in an app.
-  It can be switched off on the Mind page. The Mind is also more orderly: every
-  note is filed under a subject, with the subject at the front of its title, one
-  topic per note, nothing about the moment and nothing secret -- a note that
-  breaks these is refused with what to change, and what the agent learns after a
-  turn is held to the same rules. A new Tidy up button on the Mind page files the
-  notes you already have under subjects and lists the ones that need a rewrite,
-  and References is a new bucket. Also new in this release line: what you ask
-  for is kept word for word as a list the agent must account for, a message you
-  send while it works is added to the work instead of stopping it (Alt, Ctrl or
-  Cmd with Enter still interrupts), your project check runs when an item is
-  finished, failing calls stop sooner, and "npm run replay" replays a chat
-  against the loop rules.
+  New: the agent can work with Word, Excel and PowerPoint files. It can read a
+  document, a workbook or a deck; change it (only what it edits is rewritten, the
+  rest of the file survives byte for byte, and Word edits can be recorded as
+  tracked changes you accept or reject); make new ones from Markdown, rows or a
+  deck design; convert between Word, Markdown, HTML and CSV; and check its own
+  work for overflowing text, broken formulas, stale fields and the like. Formulas
+  really calculate, and the numbers in the saved file are always current. Every
+  result is saved as a file in the thread, and your own file is never overwritten.
+  This is built on the open-source GenOffice engines (Apache-2.0). It cannot yet
+  show a page or a slide as a picture, so it checks them instead; editor windows
+  like the PDF one are next. Earlier in this release line: the agent reads a
+  site's official documentation before acting on it and keeps what it learns as
+  References in a tidier Mind, what you ask for is kept word for word as a list it
+  must account for, a message you send while it works is added to the work instead
+  of stopping it, and failing calls stop sooner.

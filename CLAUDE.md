@@ -118,6 +118,26 @@ is a sub-project with its own dependencies (see below).
     `{mode: "interrupt"}` (Alt/Ctrl/Cmd+Enter), files, voice and `/commands`
     stop the turn first. The project check also runs when a to-do or ask is
     marked done mid-turn (`itemCheckNote`, capped per turn).
+  - `office.ts` (`office_guide|read|edit|check|create|convert`, family `office` in
+    `toolload.ts`): Word, Excel and PowerPoint files, read and edited without a
+    window by running GenOffice's command line (Apache-2.0, github.com/genspark-ai/genoffice)
+    as a child process. Nothing of it is copied into this repo:
+    `scripts/build-office.mjs` fetches the commit in `office/PIN.json`, bundles its
+    CLI and builds its Rust spreadsheet engine into `dist/office/` in GenOffice's
+    own "packaged" layout (`cli/`, `wasm/`, `native/`; `office/NOTICE.md`). Bump the
+    sha to take a newer one. `npm run build:office` runs it; the Dockerfile builds
+    the engine in its own stage with `cargo zigbuild` for musl amd64+arm64 (it has a
+    C dependency, so plain `rust-lld` cross-linking does not work) and the CLI in
+    the builder; CI runs it before the tests. Without the build the tools are not
+    offered (`officeDir()`), without the engine only the Excel ones say so, and
+    `tests/office.test.ts` / `e2e-office.test.ts` skip. Results are artifacts like the
+    PDF tools' (an edit works on a copy; the agent's own file is updated in place);
+    after an Excel edit `refreshFormulas` rewrites every formula so stored results
+    of dependents are current (the engine only sets fullCalcOnLoad). **No pictures**:
+    laying a page out belongs to GenOffice's Electron renderer, so there is no
+    page/slide image or PDF export yet -- `office_check` (overflow, overlap, broken
+    references, stale fields) stands in. The editor windows (a sandboxed frame over
+    `postMessage`, like `pdf-editor/`) are the next step and would also bring that.
   - `mindrules.ts` (+ `site.ts`): the rules the mind is kept by. Every
     `memory_write` / `memory_update` goes through `checkEntry` / `checkText`: a
     title that starts with its subject, one topic per record (length limit by

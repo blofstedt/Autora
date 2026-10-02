@@ -32,5 +32,10 @@ jobs:
       - name: Build
         run: npm run build
 
+      # The Office tools' command line and spreadsheet engine, from the commit
+      # pinned in office/PIN.json, so their tests run against the real engines.
+      - name: Build the Office tools
+        run: node scripts/build-office.mjs
+
       - name: Test
         run: npm test

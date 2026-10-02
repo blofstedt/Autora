@@ -26,3 +26,6 @@ recordings/
 
 # OS
 .DS_Store
+
+# Office tools: the pinned GenOffice checkout and what is built from it
+.cache/

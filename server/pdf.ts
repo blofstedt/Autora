@@ -23,8 +23,6 @@
  */
 
 import crypto from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
 import {
   BlendMode, LineCapStyle, PDFArray, PDFBool, PDFButton, PDFCheckBox, PDFDict, PDFDocument, PDFDropdown,
   PDFHexString, PDFName, PDFNull, PDFNumber, PDFOptionList, PDFPage, PDFRadioGroup, PDFRawStream, PDFRef, PDFSignature,
@@ -36,6 +34,7 @@ import {
   artifactPath, cleanName, formatSize, getArtifact, listArtifacts, mimeFor, readArtifact, saveArtifact,
   MAX_ARTIFACT_BYTES, type Artifact,
 } from "./artifacts";
+import { readFileRef as sharedFileRef, FileRefError, type FileInput } from "./fileref";
 import { replaceOnPage, type TextEdit } from "./pdftext";
 import { PdfRenderError, withPdf, type PageText, type PdfView, type Rect } from "./pdfrender";
 import { applyChanges, compose, ComposeError, outlineLines, type ComposeSource, type ImageLoader, type OutlineEntry } from "./compose";
@@ -106,37 +105,19 @@ async function runOne(name: string, args: Record<string, any>, ctx: PdfContext):
 
 // --------------------------------------------------------------- input --
 
-type Input = { data: Buffer; name: string; artifact: Artifact | null };
+type Input = FileInput;
 
 const isPdf = (data: Buffer) => data.subarray(0, 1024).includes("%PDF-");
 
 /** A file named the ways the agent names one: an artifact id, a path on this
     host, or an artifact's name. */
 function readFileRef(given: unknown, cwd: string, what: string): Input {
-  const ref = String(given ?? "").trim();
-  if (!ref) throw new Problem(`Say which ${what}: an artifact id (file_...) or a path on this host.`);
-  const artifact = /^file_[0-9a-f]{16}$/.test(ref) ? getArtifact(ref) : null;
-  if (artifact) {
-    const data = readArtifact(artifact.id);
-    if (data) return { data, name: artifact.name, artifact };
-  }
-  const full = path.resolve(cwd, ref);
-  let stat: fs.Stats | null = null;
   try {
-    stat = fs.statSync(full);
-  } catch {
-    stat = null;
+    return sharedFileRef(given, cwd, what, "the PDF tools");
+  } catch (err) {
+    if (err instanceof FileRefError) throw new Problem(err.message);
+    throw err;
   }
-  if (stat?.isFile()) {
-    if (stat.size > MAX_ARTIFACT_BYTES) {
-      throw new Problem(`${full} is ${formatSize(stat.size)}; the PDF tools take files up to ${formatSize(MAX_ARTIFACT_BYTES)}.`);
-    }
-    return { data: fs.readFileSync(full), name: path.basename(full), artifact: null };
-  }
-  const named = listArtifacts().find((a) => a.name.toLowerCase() === path.basename(ref).toLowerCase());
-  const data = named ? readArtifact(named.id) : null;
-  if (named && data) return { data, name: named.name, artifact: named };
-  throw new Problem(`There is no ${what} "${ref}": give an artifact id (artifact_list shows them) or a path on this host.`);
 }
 
 function readPdf(given: unknown, cwd: string): Input {

@@ -1,0 +1,5 @@
+{
+  "repo": "https://github.com/genspark-ai/genoffice",
+  "sha": "db347087628281d49e53d009183d2fb506c3a444",
+  "note": "GenOffice (Apache-2.0). Its command line is built from this commit and run by server/office.ts; bump the sha to take a newer one."
+}
