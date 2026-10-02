@@ -361,7 +361,7 @@ test("old reads are shrunk together once enough has piled up, and the newest are
   const engine = new ContextEngine();
   const big = (tag: string) => `${tag} ` + "line of file content\n".repeat(400);
   const history: { message: any; seq: number }[] = [{ message: { role: "user", text: "go" }, seq: 1 }];
-  for (let i = 0; i < 6; i += 1) {
+  for (let i = 0; i < 14; i += 1) {
     history.push({ message: { role: "assistant", text: "", calls: [{ id: `c${i}`, name: "read_file", args: {} }] }, seq: 2 + i * 2 });
     history.push({ message: { role: "tool", replies: [{ id: `c${i}`, name: "read_file", ok: true, result: big(`file${i}`) }] }, seq: 3 + i * 2 });
   }
