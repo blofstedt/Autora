@@ -157,7 +157,7 @@ await test("a subset font is not trusted with a letter it never drew: that is re
 
 await test("through the tool: redrawn words land where the old ones were, at their size and colour", async () => {
   const { chromium } = await import("playwright-core");
-  const b = await chromium.launch({ executablePath: process.env.AUTORA_BROWSER_PATH });
+  const b = await chromium.launch({ executablePath: (await import("../server/browser")).systemBrowser() ?? undefined });
   let data: Buffer;
   try {
     const p = await b.newPage();
@@ -192,7 +192,7 @@ await test("through the tool: redrawn words land where the old ones were, at the
 
 await test("several different changes in one long run of text each land on their own words", async () => {
   const { chromium } = await import("playwright-core");
-  const b = await chromium.launch({ executablePath: process.env.AUTORA_BROWSER_PATH });
+  const b = await chromium.launch({ executablePath: (await import("../server/browser")).systemBrowser() ?? undefined });
   let data: Buffer;
   try {
     const p = await b.newPage();
