@@ -268,6 +268,10 @@ export interface PersistedState {
   /** Whether the agent looks back over its work after a turn and writes
       down what it learned (as unconfirmed memories). */
   learning: boolean;
+  /** Whether the agent's work is shown as it is done: the cursor in the PDF
+      and app windows, and code typed out in the thread. A presentation only --
+      off, the work is the same and simply appears. */
+  agentCursor: boolean;
   /** The person's time zone (an IANA name such as Europe/Stockholm), or empty
       to follow the machine. The clock every schedule, watcher and quiet hour
       is read on: in the Umbrel container that is UTC unless something sets it,
@@ -499,6 +503,7 @@ function blank(): PersistedState {
     captcha: { ...DEFAULT_CAPTCHA, backends: [...DEFAULT_CAPTCHA.backends] },
     proactivity: { ...DEFAULT_PROACTIVITY },
     learning: true,
+    agentCursor: true,
     timezone: "",
     loop: { ...LOOP_DEFAULTS },
     verify: { ...VERIFY_DEFAULTS },
@@ -524,6 +529,7 @@ function read(): PersistedState {
     if (typeof raw.balanceAt === "number") state.balanceAt = raw.balanceAt;
     if (typeof raw.topUpUsd === "number") state.topUpUsd = raw.topUpUsd;
     if (typeof raw.learning === "boolean") state.learning = raw.learning;
+    if (typeof raw.agentCursor === "boolean") state.agentCursor = raw.agentCursor;
     if (typeof raw.timezone === "string" && validTimezone(raw.timezone)) {
       state.timezone = raw.timezone.trim();
       applyTimezone(state.timezone);

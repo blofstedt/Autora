@@ -108,6 +108,13 @@ is a sub-project with its own dependencies (see below).
     a step limit; only its short report reaches the main thread. It is given
     the model and tools by `researchFor` in `server.ts`, so it is tested with a
     script.
+  - `codediff.ts`: the working folder, watched. After a command that changes
+    things the loop scans it (stat first, read what changed, small source
+    files kept to compare) and emits `file.edit` cards -- lines added, removed
+    and a little context; lock files, environment files, build output and
+    Autora's own state dir are never shown; a folder over `MAX_TRACKED` files
+    is not followed. `FileCell` types a card that has just arrived (a replay of
+    code already written, off with the agent-cursor switch in `lib/agentCursor.ts`).
   - `codesearch.ts` (`code_search`): exact, regex and BM25-ranked search over a
     folder in plain code; walks afresh each time, caches only per-file indexes.
   - `suggest.ts`: what to suggest, from what is actually on the install --

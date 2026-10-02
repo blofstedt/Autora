@@ -88,6 +88,7 @@ import {
 } from "./server/modes";
 import { LoopWatch, describe as describeCall } from "./server/loopwatch";
 import { ErrorBudget } from "./server/errorbudget";
+import { Workspace, type DiffLine, type FileChange as CodeChange } from "./server/codediff";
 import { runSubagent } from "./server/subagent";
 import { checkLine, failedNote, mergeVerify, type CheckResult } from "./server/verify";
 import { keepBudget, loadBudget } from "./server/budgetstore";
@@ -2889,6 +2890,32 @@ const THINK_LONGER = {
   },
 };
 
+/* The working folder, watched, so the code a command writes can be shown in
+   the thread (server/codediff.ts). One per chat; remade if the terminal's
+   directory is changed. */
+const workspaces = new Map<string, Workspace>();
+
+function workspaceFor(sessionId: string): Workspace {
+  const root = terminalDir();
+  let ws = workspaces.get(sessionId);
+  if (!ws || ws.root !== root) {
+    // Autora's own data is not the agent's work, wherever the terminal starts.
+    ws = new Workspace(root, [stateDir()]);
+    workspaces.set(sessionId, ws);
+  }
+  return ws;
+}
+
+/** A change as the thread's diff card reads it: one text, +/-/space lines. */
+function diffText(lines: DiffLine[], truncated: boolean): string {
+  const out = lines.map((l) => (l.t === "~" ? "@@ ... @@" : `${l.t}${l.s}`));
+  if (truncated) out.push("@@ ... more lines left out @@");
+  return out.join("\n");
+}
+
+/** At most this many files of one command get a card; the rest are counted. */
+const MAX_CHANGE_CARDS = 12;
+
 /** The agent loop for one turn. See startTurn. */
 async function runTurn(session: Session, text: string, opts: TurnOptions = {}): Promise<TurnResult> {
   const result: TurnResult = { ok: false, reply: "", ranSomething: false, stopped: false, error: null, recalled: [] };
@@ -3737,6 +3764,35 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           check last did, and how many times that check has run this turn. */
       let changedSinceCheck = false;
       let checkRuns = 0;
+      /* The folder's state before this turn's first command, so what each
+         command writes can be shown. A folder with too many files is said
+         once and left alone. */
+      const workspace = workspaceFor(session.id);
+      let workspaceWarned = false;
+      if (tools.some((t) => t.name === "terminal")) workspace.prime();
+      /** After a command that changes things: the code it wrote, as cards. */
+      const announceCode = (span: string) => {
+        const files: CodeChange[] = workspace.scan();
+        if (workspace.tooMany && !workspaceWarned) {
+          workspaceWarned = true;
+          emitEvent(session, "system.log", "system", {
+            message: `${workspace.root} has too many files to follow, so the code the agent writes there is not shown as it is written.`,
+          });
+        }
+        for (const f of files.slice(0, MAX_CHANGE_CARDS)) {
+          emitEvent(session, "file.edit", "agent", {
+            path: f.path,
+            diff: diffText(f.lines, f.truncated),
+            added: f.added,
+            removed: f.removed,
+            created: f.kind === "added",
+            ...(f.kind === "removed" ? { note: "removed" } : f.quiet ? { note: f.quiet } : {}),
+          }, span);
+        }
+        if (files.length > MAX_CHANGE_CARDS) {
+          emitEvent(session, "system.log", "system", { message: `${files.length - MAX_CHANGE_CARDS} more files changed in that command.` });
+        }
+      };
       for (;;) {
         if (running.get(session.id)?.stopped) break;
 
@@ -4120,7 +4176,8 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           ranSomething = true;
           const outcome = await runTool(spec, use.args, contextFor(span));
           const durationMs = Date.now() - started;
-          if (spec.name === "terminal" && !readOnlyCommand(String(use.args?.command ?? ""))) changedSinceCheck = true;
+          const wrote = spec.name === "terminal" && !readOnlyCommand(String(use.args?.command ?? ""));
+          if (wrote) changedSinceCheck = true;
 
           if (spec.group === "terminal" && outcome.exitCode !== undefined) {
             // The terminal cell reads its exit code from here, and the
@@ -4159,6 +4216,9 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
               }, span);
             }
           }
+
+          // The code the command wrote, as cards after the command's own result.
+          if (wrote) announceCode(span);
 
           /* Ingestion filter: control codes and repeated lines out, and
              anything still too long kept whole in the vault with its head
@@ -5590,6 +5650,18 @@ async function startServer() {
       enabled: true,
       learning: state.learning,
     });
+  });
+
+  /** Whether the agent's work is shown as it is done (the cursor, the typed code). */
+  app.get("/api/agent-cursor", (_req: Request, res: Response) => {
+    res.json({ on: state.agentCursor });
+  });
+  app.patch("/api/agent-cursor", (req: Request, res: Response) => {
+    if (typeof req.body?.on === "boolean") {
+      state.agentCursor = req.body.on;
+      save();
+    }
+    res.json({ on: state.agentCursor });
   });
 
   /** Whether the agent writes down what it learns after a turn. */

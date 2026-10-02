@@ -125,6 +125,12 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
+  New: you can watch code being written. After a command that changes files,
+  the thread shows a card for each file with its lines -- typed out as you
+  watch, with a labelled cursor on the line being written, and a button to
+  play it again. Environment files and lock files are never shown line by
+  line, and Autora's own data is left out. One switch, "Agent cursor", in the
+  PDF window turns every kind of this replay off.
   New: the PDF window shows the agent at work. When it changes the words in a
   PDF, a labelled cursor arrives where they are, strikes the old ones and types
   the new; when it adds text, a stamp, a signature, a note, a shape, a box or a

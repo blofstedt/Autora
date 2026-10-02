@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAgentCursor } from "../lib/agentCursor";
 import { useDeskState } from "../lib/pdfdesk";
 import { IconDownload, IconFile, IconMaximize, IconMinimize, IconX } from "./Icons";
 
@@ -69,9 +70,7 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
   /* The agent's cursor: where it just worked, replayed over the page. A choice
      the person keeps, and never for someone who asked their system for less
      motion. Only ever a replay -- the file is already changed. */
-  const [cursorOn, setCursorOn] = useState(() => {
-    try { return localStorage.getItem("autora.agentCursor") !== "off"; } catch { return true; }
-  });
+  const [cursorOn, setCursorOn] = useAgentCursor();
   const cursorRef = useRef(cursorOn);
   cursorRef.current = cursorOn;
   const played = useRef(0);
@@ -83,12 +82,7 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
     post({ type: "autora:cues", seq: d.cueSeq, cues: d.cues });
   }, [post]);
-  const toggleCursor = useCallback(() => {
-    setCursorOn((on) => {
-      try { localStorage.setItem("autora.agentCursor", on ? "off" : "on"); } catch { /* a private window */ }
-      return !on;
-    });
-  }, []);
+  const toggleCursor = useCallback(() => setCursorOn(!cursorRef.current), [setCursorOn]);
 
   const load = useCallback(async () => {
     const now = deskRef.current;

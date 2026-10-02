@@ -6399,3 +6399,15 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 .thread-wrap:has(.pdf-window.is-full) { z-index: 90; }
 .page:has(.pdf-window.is-full) { position: relative; z-index: 90; }
 @media (max-width: 680px) { .pdf-bar-note { display: none; } }
+
+/* Code written out in the thread: the card's header says so, and a small
+   cursor with the agent's name rides the end of the line being typed. */
+.diff-writing { font-size: 11px; color: var(--accent, #8b7cf6); animation: diff-pulse 1s ease-in-out infinite; }
+@keyframes diff-pulse { 50% { opacity: .45; } }
+.diff-replay { background: none; border: 0; color: var(--muted, #8a8f9c); cursor: pointer; padding: 3px 6px; border-radius: 6px; display: inline-flex; }
+.diff-replay:hover { color: var(--text, #fff); background: rgba(255, 255, 255, .06); }
+.diff-caret { display: inline-block; width: 0; position: relative; }
+.diff-caret::before { content: ""; position: absolute; left: 1px; top: -1px; width: 2px; height: 1.1em; background: #8b7cf6; animation: diff-blink .8s steps(1) infinite; }
+.diff-caret i { position: absolute; left: 6px; top: -1.45em; font: 600 9px/13px var(--sans, system-ui); font-style: normal; padding: 0 5px; border-radius: 7px; background: #8b7cf6; color: #fff; white-space: nowrap; }
+@keyframes diff-blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .diff-writing, .diff-caret::before { animation: none; } }

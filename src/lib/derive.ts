@@ -44,6 +44,11 @@ export type FileChange = {
   removed: number;
   created: boolean;
   seq: number;
+  /** When it was written, in seconds like every event's: a card that has just
+      arrived is typed out. */
+  ts?: number;
+  /** Said instead of lines: a lock file, a removal. */
+  note?: string;
 };
 
 export type TodoItem = {
@@ -977,6 +982,8 @@ export function derive(events: AutoraEvent[]): Derived {
           removed: e.payload.removed ?? 0,
           created: !!e.payload.created,
           seq: e.seq,
+          ts: e.ts,
+          ...(typeof e.payload.note === "string" ? { note: e.payload.note } : {}),
         };
         files.push(file);
         push({ kind: "file", seq: e.seq, file });
