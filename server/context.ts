@@ -541,7 +541,17 @@ export class ContextEngine {
    * the prompt keeps its head and tail -- the start says what ran, the end is
    * where the errors are -- with a note saying how to read the rest.
    */
+  /** The vault artifact the last ingest made, once: so the log can say where a long result went. */
+  takeStored(): { id: string; chars: number; lines: number } | null {
+    const held = this.stored;
+    this.stored = null;
+    return held;
+  }
+
+  private stored: { id: string; chars: number; lines: number } | null = null;
+
   ingest(toolName: string, raw: string, canRead: boolean): string {
+    this.stored = null;
     const clean = this.condensePage(compactJson(sanitizeToolOutput(raw)));
     if (UNTRUSTED.test(toolName)) return `${untrustedNote(toolName)}\n${this.fit(toolName, clean, canRead)}`;
     return this.fit(toolName, clean, canRead);
@@ -560,6 +570,7 @@ export class ContextEngine {
 
     const id = this.vault.put(clean);
     const lines = clean.split("\n").length;
+    this.stored = { id, chars: clean.length, lines };
     const head = clean.slice(0, Math.floor(cap * 0.5));
     const tail = clean.slice(-Math.floor(cap * 0.25));
     const how = canRead

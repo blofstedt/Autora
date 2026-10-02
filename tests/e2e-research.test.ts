@@ -72,7 +72,30 @@ async function main() {
       };
       const s = await app.newSession("noquestion", "build");
       await app.turn(s, "look into it");
-      assert.match(JSON.stringify(app.seen.at(-1)!.messages.filter((m) => m.role === "tool")), /missing required \\"question\\"/);
+      assert.match(JSON.stringify(app.seen.at(-1)!.messages.filter((m) => m.role === "tool")), /Say what to find out/);
+      app.decide = null;
+    });
+
+    await test("several questions are looked into by separate workers and come back together", async () => {
+      app.seen.length = 0;
+      app.decide = (req) => {
+        if (/You check one action/.test(req.system)) return { text: '{"destructive": false, "requested": true}' };
+        if (/research worker for another agent/.test(req.system)) {
+          const q = JSON.stringify(req.messages);
+          return { text: /first thing/.test(q) ? "Answer about the first thing." : "Answer about the second thing." };
+        }
+        if (req.messages.some((m) => m.role === "tool")) return { text: "Both answered." };
+        return { tools: [{ name: "research", args: { questions: ["Tell me the first thing.", "Tell me the second thing."] } }] };
+      };
+      const s = await app.newSession("parallel", "build");
+      await app.turn(s, "look into two things", 60_000);
+      const workers = app.seen.filter((r) => /research worker for another agent/.test(r.system));
+      assert.equal(workers.length, 2, "one worker each");
+      const told = JSON.stringify(app.seen.at(-1)!.messages.filter((m) => m.role === "tool"));
+      assert.match(told, /Question 1: Tell me the first thing/);
+      assert.match(told, /Answer about the first thing/);
+      assert.match(told, /Question 2: Tell me the second thing/);
+      assert.match(told, /Answer about the second thing/);
       app.decide = null;
     });
   } finally {

@@ -103,4 +103,17 @@ test("a tool the agent writes is saved, replaced by name, and gets its arguments
   assert.equal(custom.listCustomTools().length, 0);
 });
 
+test("proof that the work held, and the agent's own notes, are put to the reviewer", () => {
+  const prompt = reflectionPrompt({
+    request: "fix the build", previousReply: "", steps: ["- terminal (npm test) -> exit 0"], reply: "Fixed.", recalled: [], nearby: [],
+    proof: ["The project's check passed (npm test)."], notes: "Goal: fix the build\nFound out:\n- the lockfile was stale",
+  });
+  assert.match(prompt, /Checks that passed on this work/);
+  assert.match(prompt, /- The project's check passed \(npm test\)\./);
+  assert.match(prompt, /own working notes/);
+  assert.match(prompt, /the lockfile was stale/);
+  const bare = reflectionPrompt({ request: "x", previousReply: "", steps: [], reply: "", recalled: [], nearby: [] });
+  assert.doesNotMatch(bare, /Checks that passed|working notes/);
+});
+
 console.log(`${passed} passed`);

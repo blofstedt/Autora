@@ -4,7 +4,7 @@
  *   npx tsx tests/verify.test.ts
  */
 import assert from "node:assert/strict";
-import { checkLine, failedNote, mergeVerify, VERIFY_DEFAULTS } from "../server/verify";
+import { previewNote, previewProblems, checkLine, failedNote, mergeVerify, VERIFY_DEFAULTS } from "../server/verify";
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -47,6 +47,24 @@ test("the thread line says what happened", () => {
   assert.match(checkLine({ command: "make", exitCode: 1, ok: false, output: "" }, 1, 3), /sent back to fix/);
   assert.match(checkLine({ command: "make", exitCode: 1, ok: false, output: "" }, 3, 3), /still failing after 3 runs/);
   assert.match(checkLine({ command: "make", exitCode: null, ok: false, output: "" }, 1, 3), /did not finish/);
+});
+
+test("only errors raised since the change count, once each, and warnings never", () => {
+  const log = [
+    { kind: "error" as const, text: "old failure", ts: 100 },
+    { kind: "warn" as const, text: "deprecated", ts: 600 },
+    { kind: "error" as const, text: "TypeError: x is not a function", ts: 600 },
+    { kind: "error" as const, text: "TypeError:   x is not a function", ts: 700 },
+  ];
+  assert.deepEqual(previewProblems(log, 500), ["TypeError: x is not a function"]);
+  assert.deepEqual(previewProblems(log, 900), []);
+});
+
+test("a dev server that stopped is a problem, and the note says how many looks are left", () => {
+  const p = previewProblems([], 0, { exit: 1, last: "EADDRINUSE" });
+  assert.match(p[0], /dev server stopped \(exit 1\).*EADDRINUSE/);
+  assert.match(previewNote(["boom"], 1, 2), /1 more look this turn/);
+  assert.match(previewNote(["boom"], 2, 2), /last look/);
 });
 
 console.log(`${passed} passed`);

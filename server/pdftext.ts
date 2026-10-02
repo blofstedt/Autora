@@ -23,6 +23,7 @@
  * ligature.
  */
 
+import { similarText } from "./hints";
 import {
   decodePDFRawStream, PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream, PDFRef,
   PDFStream, type PDFPage,
@@ -784,7 +785,23 @@ export async function replaceOnPage(
     if (split) {
       result.notes.push(`${JSON.stringify(edit.find)}: ${split} match${split === 1 ? "" : "es"} began or ended inside a ligature (such as fi), which this does not split; left as it was.`);
     }
-    if (matches.length === 0) continue;
+    if (matches.length === 0) {
+      /* Said, with what the page does read near it: a wrong guess at wording is
+         the usual reason, and the nearest real text saves a round trip. */
+      if (!hidden && !split) {
+        const lines = units.flatMap(({ unit }) => {
+          const byLine = new Map<number, string>();
+          for (const c of unit.cells) if (!c.invisible) byLine.set(c.line, (byLine.get(c.line) ?? "") + c.text);
+          return [...byLine.values()];
+        });
+        const near = similarText(lines, edit.find);
+        result.notes.push(
+          `${JSON.stringify(edit.find)} is not on this page.` +
+          (near.length ? ` The page reads, nearby: ${near.map((n) => JSON.stringify(n)).join("; ")}.` : " Use pdf_read for the page's text."),
+        );
+      }
+      continue;
+    }
 
     const chars = [...edit.with];
     const sameFont = (m: Match) => m.cells.every((c) => c.font === m.cells[0].font);

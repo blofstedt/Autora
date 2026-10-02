@@ -35,6 +35,9 @@ import { signIns } from "./server/signins";
 import { ensureHostNames } from "./server/hosts";
 import { forgetSpeech, speak as synthesise, speakStream, speechStatus } from "./server/speech";
 import { attachDictation, dictationStatus } from "./server/dictation";
+import { missingPathIn, pathHint } from "./server/hints";
+import { FAMILIES, familyIds, loadedFamilies, loadedFromLog, unloadedIndex, withoutUnloaded } from "./server/toolload";
+import { applyLedger, latestLedger, ledgerBriefing, renderLedger, touched as touchedThings } from "./server/ledger";
 import { applyTodos, latestTodos, todoBriefing, unfinishedTodos } from "./server/todos";
 import { replyStyle, standingBlock, standingReminder } from "./server/prompt";
 import { WebPush, cleanSubscription } from "./server/webpush";
@@ -94,7 +97,8 @@ import { editFile, type EditArgs } from "./server/editfile";
 import { diffDom, type ChangeCue, type DomItem } from "./server/domdiff";
 import { Workspace, type DiffLine, type FileChange as CodeChange } from "./server/codediff";
 import { runSubagent } from "./server/subagent";
-import { checkLine, failedNote, mergeVerify, type CheckResult } from "./server/verify";
+import { checkLine, failedNote, mergeVerify, previewNote, previewProblems, type CheckResult } from "./server/verify";
+import { buildTrace, traceText } from "./server/trace";
 import { keepBudget, loadBudget } from "./server/budgetstore";
 import { interruptedWork, resumeNote, type InterruptedWork, type ResumeEvent } from "./server/resume";
 import { checkArgs } from "./server/argcheck";
@@ -2159,7 +2163,7 @@ function pastToolCalls(sessionId: string, sinceSeq = 0): string[] {
   const session = sessions.get(sessionId);
   if (!session) return [];
 
-  const calls = new Map<string, { name: string; args: any; outcome: string }>();
+  const calls = new Map<string, { name: string; args: any; outcome: string; stored?: string }>();
   for (const event of session.events) {
     if (!event.span || event.seq <= sinceSeq) continue;
     if (event.kind === "tool.call") {
@@ -2172,7 +2176,9 @@ function pastToolCalls(sessionId: string, sinceSeq = 0): string[] {
     }
     const found = calls.get(event.span);
     if (!found) continue;
-    if (event.kind === "tool.result") {
+    if (event.kind === "tool.stored") {
+      found.stored = `full output in vault ${event.payload?.id} (${Number(event.payload?.lines ?? 0).toLocaleString("en-US")} lines; vault_read it)`;
+    } else if (event.kind === "tool.result") {
       const code = event.payload?.display?.exit_code;
       const preview = String(event.payload?.preview ?? "").trim();
       /* How a failure failed, not only that it did: "exit 1" told the look
@@ -2206,7 +2212,7 @@ function pastToolCalls(sessionId: string, sinceSeq = 0): string[] {
     .slice(-RECAP_CALLS)
     .map((c) => {
       const what = essential(c.name, c.args);
-      return `- ${c.name}${what ? ` (${what})` : ""} -> ${c.outcome}`;
+      return `- ${c.name}${what ? ` (${what})` : ""} -> ${c.outcome}${c.stored ? ` [${c.stored}]` : ""}`;
     });
 }
 
@@ -2416,6 +2422,9 @@ async function systemInstructionFor(
   /* The to-do list, said every turn: the history carries words, not the
      todo calls that wrote it, so this is the only way the agent sees it again. */
   if (own) notes.push(todoBriefing(latestTodos(own.events)));
+  /* What it worked out, which the history (words only) cannot carry. */
+  const working = own ? ledgerBriefing(latestLedger(own.events), touchedThings(own.events)) : null;
+  if (working) notes.push(working);
 
   const quiet = quietBriefing(Date.now(), state.proactivity);
   if (quiet) notes.push(quiet);
@@ -2428,6 +2437,9 @@ async function systemInstructionFor(
      something the person settled days ago -- and knows it may act. */
   const agreed = autonomyBriefing();
   if (agreed) notes.push(agreed);
+
+  const unloaded = own ? unloadedIndex(loadedTools(own)) : null;
+  if (unloaded) notes.push(unloaded);
 
   const done = pastToolCalls(sessionId);
   if (done.length > 0) {
@@ -2915,7 +2927,10 @@ async function noticeTick() {
 async function backgroundCall(sessionId: string, system: string, prompt: string, maxTokens: number): Promise<string> {
   const active = resolveProvider();
   if (!active.provider || active.problem) throw new Error(active.problem ?? "No model is connected.");
-  const model = (process.env.AUTORA_COMPACTION_MODEL || "").trim() || active.model;
+  /* Unwatched work -- folding old turns, learning, remarks -- runs on the provider's
+     fast model when Settings names one, and on the chosen model otherwise;
+     AUTORA_COMPACTION_MODEL overrides both. */
+  const model = (process.env.AUTORA_COMPACTION_MODEL || "").trim() || active.fastModel || active.model;
   const turn = await streamChat({
     provider: active.provider,
     model,
@@ -2963,6 +2978,10 @@ async function reflect(session: Session, request: string, startSeq: number, prev
     text = await backgroundCall(session.id, REFLECT_SYSTEM, reflectionPrompt({
       request, previousReply, steps: pastToolCalls(session.id, startSeq), trouble: healthBriefing(),
       reply: result.reply, recalled, nearby,
+      proof: session.events
+        .filter((e) => e.seq > startSeq && e.kind === "system.log" && /check passed|console is clean/.test(String(e.payload?.message ?? "")))
+        .map((e) => String(e.payload.message)),
+      notes: renderLedger(latestLedger(session.events)),
     }), 1500);
   } catch (err: any) {
     console.warn(`[learning] ${session.id}: ${err?.message ?? err}`);
@@ -3133,6 +3152,29 @@ interface TurnOptions {
   notebooks?: NotebookRef[];
 }
 
+/** Which specialist tool sets this chat has been given (see toolload.ts). */
+const allToolsOn = () => process.env.AUTORA_ALL_TOOLS === "1";
+const loadedTools = (session: Session) => (allToolsOn() ? new Set(familyIds()) : loadedFromLog(session.events));
+
+/** Whether a PDF is in this chat: the window is open, or one came with a message. */
+function pdfInChat(session: Session): boolean {
+  if (deskState(session.id).open) return true;
+  return session.events.some((e) =>
+    e.kind === "turn.user" && Array.isArray(e.payload?.attachments) &&
+    e.payload.attachments.some((a: any) => a?.mime === "application/pdf" || /\.pdf$/i.test(String(a?.name ?? ""))));
+}
+
+/**
+ * Bring in the specialist tools the message calls for, once, and write it in
+ * the log so the next turn has them without asking again.
+ */
+function autoLoadTools(session: Session, text: string) {
+  const have = loadedFromLog(session.events);
+  for (const id of loadedFamilies({ events: session.events, said: text, hasPdf: pdfInChat(session) })) {
+    if (!have.has(id)) emitEvent(session, "tools.enable", "system", { family: id, why: "wanted" });
+  }
+}
+
 function beginTurn(session: Session, text: string, attachments: AttachmentRef[] = [], opts: TurnOptions = {}): Promise<TurnResult> {
   // The reply this message answers: a correction only makes sense beside it.
   let previousReply = "";
@@ -3155,6 +3197,7 @@ function beginTurn(session: Session, text: string, attachments: AttachmentRef[] 
     ...(attachments.length > 0 ? { attachments } : {}),
     ...(opts.notebooks?.length ? { notebooks: opts.notebooks } : {}),
   });
+  autoLoadTools(session, text);
   /* Agent mode starts every turn planning, whatever the last one ended in:
      the agent decides again whether this task needs a plan. */
   if (workMode(session.mode) === "agent" && !(unfinished && session.phase === "build")) {
@@ -3325,7 +3368,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
     /* The tools of this step. think_longer is offered only while the voice
        still has work left to hand over. */
     const offered = async () => {
-      const list = await availableTools();
+      const list = withoutUnloaded(await availableTools(), loadedTools(session));
       return talkFast && !handedOver ? [...list, THINK_LONGER] : list;
     };
     let streamed = 0;
@@ -3714,7 +3757,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
       /* The tools a research worker may hold: the ones that only look. Whatever
          else is switched on, it is read-only (looksOnly judges each call). */
       const WORKER_TOOLS = new Set([
-        "code_search", "terminal", "artifact_list", "artifact_read", "pdf_read", "web_search", "http_request", "memory_search",
+        "code_search", "read_file", "terminal", "artifact_list", "artifact_read", "pdf_read", "web_search", "http_request", "memory_search",
       ]);
       /** A question answered by a worker with a clean context; only its report returns. */
       const researchFor = async (question: string): Promise<string> => {
@@ -3754,6 +3797,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
       const contextFor = (span: string): ToolContext => ({
         research: researchFor,
         held: (surface, subject) => presenceFor(session.id).blocked(surface, subject),
+        protectedPaths: [stateDir()],
         code: {
           edit: (args: EditArgs) => editFile(args, {
             root: terminalDir(),
@@ -3820,6 +3864,17 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           if (result.list) {
             emitEvent(session, "todo.update", "agent", result.list as any, span);
           }
+          return result;
+        },
+        enableTools: (family) => {
+          if (!FAMILIES.some((f) => f.id === family)) return { ok: false, summary: `There is no set called "${family}". The sets are: ${familyIds().join(", ")}.` };
+          if (loadedTools(session).has(family)) return { ok: true, summary: `${family} is already in your list.` };
+          emitEvent(session, "tools.enable", "agent", { family, why: "asked" }, span);
+          return { ok: true, summary: `${family} tools are in your list from your next step.` };
+        },
+        ledger: (action) => {
+          const result = applyLedger(latestLedger(session.events), action);
+          if (result.ledger) emitEvent(session, "ledger.update", "agent", result.ledger as any, span);
           return result;
         },
         onOutput: (chunk) =>
@@ -4110,6 +4165,10 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           check last did, and how many times that check has run this turn. */
       let changedSinceCheck = false;
       let checkRuns = 0;
+      /* When the code last changed with the app window open, and how many times
+         the page's console has been looked at since: see previewProblems. */
+      let previewSince = 0;
+      let previewLooks = 0;
       /* The folder's state before this turn's first command, so what each
          command writes can be shown. A folder with too many files is said
          once and left alone. */
@@ -4294,6 +4353,32 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
               continue;
             }
           }
+          /* A fifth, with no setting: the agent changed code that the app window is
+             showing, and says it is finished. The page's own console is the check --
+             an exception or a failed request since the change is something the agent
+             has not seen. */
+          const shown = previews.get(session.id);
+          if (!stalled && previewSince > 0 && shown?.opened && previewLooks < 2 &&
+              !running.get(session.id)?.stopped && !opts.spoken &&
+              phaseFor(workMode(session.mode), session.phase) === "build") {
+            const since = previewSince;
+            previewSince = 0;
+            previewLooks += 1;
+            await new Promise((resolve) => setTimeout(resolve, 900));
+            const problems = previewProblems(shown.live.consoleTail(30), since, shown.serverDown);
+            if (problems.length === 0) {
+              emitEvent(session, "system.log", "system", { message: "Looked at the app window after the change: the page's console is clean." });
+            } else if (!running.get(session.id)?.stopped) {
+              emitEvent(session, "system.log", "system", {
+                message: `The app window reports ${problems.length} error${problems.length === 1 ? "" : "s"} after the change; the agent was sent back to fix ${problems.length === 1 ? "it" : "them"}.`,
+              });
+              if (!empty) {
+                context.append({ role: "assistant", text: turn.text, reasoning: turn.reasoning }, session.seqCounter);
+              }
+              context.append({ role: "user", text: previewNote(problems, previewLooks, 2) }, session.seqCounter);
+              continue;
+            }
+          }
           if (!stalled || nudges >= MAX_NUDGES || running.get(session.id)?.stopped) break;
           nudges += 1;
           if (!empty) {
@@ -4379,6 +4464,17 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           }
 
           const spec = findTool(use.name);
+          /* A tool from a set that is not in the list yet, called by name: the
+             model knew it was there (the console note says so, and earlier
+             turns used it). Bring the set in and run the call, rather than
+             make it ask first. */
+          if (spec && !tools.some((t) => t.name === use.name)) {
+            const family = FAMILIES.find((f) => f.match(use.name));
+            if (family && !loadedTools(session).has(family.id)) {
+              emitEvent(session, "tools.enable", "system", { family: family.id, why: "called" }, span);
+              tools = await offered();
+            }
+          }
           /* Offered tools are the available ones, so an unknown name here
              means the model invented it -- or asked for something from a
              group that is switched off. Naming what it does have is more
@@ -4574,9 +4670,19 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           // What the person changed before this runs is theirs, not this command's.
           if (willWrite) personEdits(null);
           const outcome = await runTool(spec, use.args, contextFor(span));
+          /* A command that failed because a path was not there: say what is near
+             it, so the next call is right instead of another guess. */
+          if (spec.name === "terminal" && !outcome.ok && !outcome.held) {
+            const gone = missingPathIn(outcome.summary);
+            const near = gone ? pathHint(terminalDir(), gone) : "";
+            if (near) outcome.summary += `\n[Autora:${near}]`;
+          }
           const durationMs = Date.now() - started;
           const wrote = willWrite;
-          if (wrote) changedSinceCheck = true;
+          if (wrote) {
+            changedSinceCheck = true;
+            if (previews.get(session.id)?.opened) previewSince = Date.now();
+          }
 
           if (spec.group === "terminal" && outcome.exitCode !== undefined) {
             // The terminal cell reads its exit code from here, and the
@@ -4627,10 +4733,15 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
              all, live; this is only what the model reads. */
           // Not done because the person is using it: said, not counted as a failure.
           if (outcome.held) reply(false, outcome.summary);
-          else reply(outcome.ok, watched(
-            spec.name, use.args, outcome.ok, outcome.summary,
-            context.ingest(spec.name, outcome.summary, canReadVault),
-          ), outcome.images);
+          else {
+            const fitted = context.ingest(spec.name, outcome.summary, canReadVault);
+            /* Where a long result went, in the log: the next turn's recap names
+               the artifact, so it reads that part back instead of running the
+               call again. */
+            const stored = context.takeStored();
+            if (stored) emitEvent(session, "tool.stored", "agent", stored, span);
+            reply(outcome.ok, watched(spec.name, use.args, outcome.ok, outcome.summary, fitted), outcome.images);
+          }
           if (loopStop) break;
         }
 
@@ -5353,6 +5464,14 @@ async function startServer() {
   /** Whether there is a browser at all, and whether a page is open in it. */
   /* Taking a surface from the agent, and handing it back. While the person
      holds one the agent does not use it, and goes on to other work. */
+  /* Where a chat's time and tokens went, read back out of its log (see trace.ts). */
+  app.get("/api/sessions/:id/trace", (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "No such session." });
+    const trace = buildTrace(session.events);
+    res.json({ ...trace, text: traceText(trace) });
+  });
+
   app.get("/api/sessions/:id/presence", (req: Request, res: Response) => {
     if (!sessions.get(req.params.id)) return res.status(404).json({ error: "Session not found" });
     res.json(presenceFor(req.params.id).view());

@@ -125,6 +125,21 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
+  New: the agent remembers and finds things better. It keeps working notes --
+  its goal, what it decided, what it found out, what comes next -- that survive
+  interruptions, stops and restarts, plus a record of the files and pages it
+  touched, so a message sent mid-task no longer makes it forget what it had
+  worked out. Long results say where the full text is stored, so it reads that
+  part back instead of running the command again. A new read_file tool reads a
+  line range, an outline of a big file, or one function by name, and code
+  search says which function each hit is in. When a path or a word on a PDF is
+  a little off, the error now says what is nearby. Specialist tools (PDF,
+  widgets, scheduling, notebooks, connectors) load when a message or file calls
+  for them instead of being sent every time -- a shorter list, cheaper calls --
+  and the research tool can run up to three questions at once. After code
+  changes the app window's console is checked before the agent says it is
+  finished, background work uses the fast model when one is set, and
+  /api/sessions/:id/trace shows where a chat's time and tokens went.
   New: you and the agent can work in the same window at the same time. What
   you click, type or press in the app window or the agent's browser is told to
   the agent in a line a colleague would hear, and it answers in kind and carries

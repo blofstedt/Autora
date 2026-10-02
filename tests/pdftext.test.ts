@@ -239,4 +239,16 @@ await test("invisible text over a picture is left alone and said so", async () =
   assert.match(res.notes.join(" "), /invisible text/);
 });
 
+await test("a find that is not on the page says what the page reads nearby", async () => {
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([300, 100]);
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  page.drawText("Customer: Carol White", { x: 20, y: 50, size: 14, font });
+  const data = Buffer.from(await doc.save());
+  const { res } = await run(data, [{ find: "Costumer: Carol Whyte", with: "x" }]);
+  assert.equal(res.changed.length, 0);
+  assert.match(res.notes.join(" "), /is not on this page/);
+  assert.match(res.notes.join(" "), /nearby: "Customer: Carol White"/);
+});
+
 console.log(`${passed} passed`);

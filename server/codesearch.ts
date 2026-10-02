@@ -14,6 +14,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { declarations, enclosing, type Decl } from "./readfile";
 
 const SKIP_DIRS = new Set([
   ".git", "node_modules", "dist", "build", ".next", ".nuxt", "target", "venv", ".venv", "__pycache__",
@@ -55,6 +56,7 @@ interface Indexed {
   size: number;
   lines: string[];
   chunks: Chunk[];
+  decls?: Decl[];
 }
 
 interface Walk {
@@ -182,6 +184,13 @@ function load(file: string, rel: string): Indexed | null {
   return entry;
 }
 
+/** What a place is inside, as " in function fetchUser", for the code files that have declarations. */
+function inside(entry: Indexed, line: number): string {
+  entry.decls ??= declarations(entry.lines);
+  const d = enclosing(entry.decls, line);
+  return d ? ` in ${d.kind} ${d.name}` : "";
+}
+
 const clip = (line: string) => {
   const t = line.trim().replace(/\s+/g, " ");
   return t.length > 160 ? `${t.slice(0, 157)}...` : t;
@@ -237,7 +246,7 @@ export function searchCode(opts: SearchOptions): SearchResult {
         total += 1;
         if (!any) inFiles += 1;
         any = true;
-        if (found.length < cap) found.push(`${f.rel}:${i + 1}: ${clip(line)}`);
+        if (found.length < cap) found.push(`${f.rel}:${i + 1}: ${clip(line)}${found.length < 12 ? `  [${inside(entry, i + 1).trim() || "top level"}]` : ""}`);
       });
     }
     if (total === 0) return { ok: true, text: `No lines match ${JSON.stringify(query)} in ${files.length} files under ${root}.${note}`, files: files.length };
@@ -255,9 +264,13 @@ export function searchCode(opts: SearchOptions): SearchResult {
   const terms = [...new Set(words(query))];
   if (terms.length === 0) return { ok: false, text: "That query has no words in it to rank by; try mode exact.", files: files.length };
   const chunks: Chunk[] = [];
+  const entries = new Map<string, Indexed>();
   for (const f of files) {
     const entry = load(f.full, f.rel);
-    if (entry) chunks.push(...entry.chunks);
+    if (entry) {
+      chunks.push(...entry.chunks);
+      entries.set(f.rel, entry);
+    }
   }
   if (chunks.length === 0) return { ok: true, text: `No text files under ${root}.`, files: files.length };
   const avg = chunks.reduce((n, c) => n + c.length, 0) / chunks.length;
@@ -299,8 +312,10 @@ export function searchCode(opts: SearchOptions): SearchResult {
       .sort((a, z) => z.hits - a.hits || a.i - z.i)
       .slice(0, 4)
       .sort((a, z) => a.i - z.i);
+    const top = best.length ? c.start + best.reduce((a, l) => (l.hits > a.hits ? l : a), best[0]).i + 1 : c.start + 1;
+    const owner = entries.get(c.file) ? inside(entries.get(c.file)!, top) : "";
     return [
-      `${c.file}:${c.start + 1}-${c.start + c.lines.length}  (score ${score.toFixed(1)})`,
+      `${c.file}:${c.start + 1}-${c.start + c.lines.length}${owner}  (score ${score.toFixed(1)})`,
       ...best.map((l) => `  ${c.start + l.i + 1}: ${clip(l.line)}`),
     ].join("\n");
   });
@@ -309,6 +324,6 @@ export function searchCode(opts: SearchOptions): SearchResult {
     files: files.length,
     text:
       `Best matches for ${JSON.stringify(query)} (${files.length} files searched under ${root}).${note}\n` +
-      `${lines.join("\n")}\nRead a place with the terminal (sed -n 'START,ENDp' file) rather than the whole file.`,
+      `${lines.join("\n")}\nRead a place with read_file (start/end, or symbol) rather than the whole file.`,
   };
 }

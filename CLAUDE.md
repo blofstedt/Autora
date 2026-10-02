@@ -154,6 +154,18 @@ is a sub-project with its own dependencies (see below).
     command runs, which also writes files.
   - `codesearch.ts` (`code_search`): exact, regex and BM25-ranked search over a
     folder in plain code; walks afresh each time, caches only per-file indexes.
+  - `ledger.ts` (`ledger` tool): the agent's working notes (goal, decisions,
+    facts, next) in the log as `ledger.update`, plus what it touched, read off
+    its calls; said every turn so interrupts and restarts lose nothing.
+  - `readfile.ts` (`read_file`: range / outline / symbol) and `hints.ts` (the
+    nearest paths and page text said inside a failure). A long result's vault
+    id is logged as `tool.stored` and named in the recap.
+  - `toolload.ts` (`tools_enable`): specialist tool sets (pdf, widgets, mcp,
+    schedule, notebooks) are out of the model's list until a message, a PDF, a
+    call or a request brings them in (`tools.enable` in the log).
+    `AUTORA_ALL_TOOLS=1` shows all. A new tool in one of those families is
+    covered by its `match`; a new family goes in `FAMILIES`.
+  - `trace.ts`: `GET /api/sessions/:id/trace`, read from the log.
   - `suggest.ts`: what to suggest, from what is actually on the install --
     one-tap tasks for a new chat, a schedule offered once, next-step chips
     after a reply. Pure, no model call.

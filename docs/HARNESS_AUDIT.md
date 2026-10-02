@@ -344,3 +344,36 @@ console.log("  ok  argument check");
 
 Nothing here has been wired into `src/`, `server/` or `server.ts`, so no
 release bump applies; the two snippets are verified only in isolation.
+
+
+## Second pass: making the agent smarter with its tools
+
+- **Working notes** (`server/ledger.ts`, `ledger` tool): goal, decisions, facts
+  and next steps kept in the log (`ledger.update`), plus an automatic record of
+  files, pages and PDFs touched. Said every turn, so an interrupt cannot drop
+  what the agent had worked out. Every event is written as it happens, so each
+  round of tool calls is already a checkpoint.
+- **Reusable results**: a long output's vault artifact is written to the log
+  (`tool.stored`) and named in the next turn's recap; `read_file` (range,
+  outline, symbol) and `code_search` naming the enclosing function replace
+  `cat`/`sed` round trips (`server/readfile.ts`).
+- **Errors that say what to do** (`server/hints.ts`): nearest real paths for a
+  missing file (read_file and shell errors), nearest text for a PDF
+  `pdf_replace_text` that found nothing.
+- **Shorter tool list** (`server/toolload.ts`, `tools_enable`): PDF, widgets,
+  connectors, scheduling and notebooks (about 8k of the 18k tokens of schemas)
+  load on the person's words, a PDF in the chat, a call, or a request; kept via
+  `tools.enable`. `AUTORA_ALL_TOOLS=1` turns it off.
+- **Cheaper unwatched calls**: `backgroundCall` uses the provider's fast model
+  when Settings names one.
+- **Parallel research**: `research` takes up to three `questions`, each its own
+  clean-context worker, run at once.
+- **Checking the app**: after code changes the app window's console is read
+  before the agent may finish (`previewProblems`); errors go back to it, up to
+  two looks a turn. Passing checks and the agent's notes are shown to the
+  learning step, so procedures that ended in a pass are the ones kept.
+- **Trace** (`server/trace.ts`, `GET /api/sessions/:id/trace`): turns, rounds,
+  tokens, cache share, per-tool time and failures, loop stops.
+
+Not done: re-rendering a PDF after an edit to check it automatically; switching
+to a stronger model for one hard step; a trace view in the UI.

@@ -68,3 +68,49 @@ export function checkLine(r: CheckResult, run: number, tries: number): string {
     ? `The project's check ${how}; the agent was sent back to fix it (${r.command}).`
     : `The project's check is still failing after ${tries} runs (${r.command}).`;
 }
+
+/** An entry of the app window's console, as the browser keeps it. */
+export interface ConsoleEntry {
+  kind: "error" | "warn";
+  text: string;
+  ts: number;
+}
+
+/**
+ * What the running app says is wrong, once the agent says it has finished.
+ *
+ * Needs no setting: when the app window is open and the code changed, the page's
+ * own console is the check -- an uncaught exception or a failed request after
+ * the change is something the agent has not seen, because it wrote code and
+ * did not run it. Only errors raised since the change count (an old one is the
+ * last version's), the same message once, and warnings are left out. A dev
+ * server that has stopped is a problem too.
+ */
+export function previewProblems(log: readonly ConsoleEntry[], sinceMs: number, serverDown?: { exit?: number | null; last?: string } | null): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const e of log) {
+    if (e.kind !== "error" || e.ts < sinceMs) continue;
+    const text = e.text.replace(/\s+/g, " ").trim().slice(0, 300);
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    out.push(text);
+  }
+  if (serverDown) {
+    out.push(`The dev server stopped (exit ${serverDown.exit ?? "unknown"})${serverDown.last ? `; it last said: ${serverDown.last}` : ""}.`);
+  }
+  return out.slice(0, 8);
+}
+
+/** What the agent is told when the app it built raised errors. */
+export function previewNote(problems: readonly string[], run: number, tries: number): string {
+  const left = tries - run;
+  return [
+    "(Autora looked at the app window after your changes, and the page reported errors:",
+    ...problems.map((p) => `- ${p}`),
+    left > 0
+      ? `Fix them and carry on; it will be looked at again when you are done (${left} more look${left === 1 ? "" : "s"} this turn). ` +
+        "Do not say the app works while it is raising errors. If one is not caused by your change, say so.)"
+      : "That was the last look this turn. Say plainly that the page still reports errors; do not say the app works.)",
+  ].join("\n");
+}

@@ -25,6 +25,7 @@
  */
 
 import type { TodoResult } from "./todos";
+import type { LedgerResult } from "./ledger";
 import type { Phase } from "./modes";
 import { callMcpTool, mcpTools, statusOf as mcpStatusOf } from "./mcp";
 import { existing as existingMcp, install as installMcp, noteDeclined, overview as mcpOverview, planOffer, wasDeclined } from "./mcpoffer";
@@ -34,6 +35,7 @@ import {
 } from "./customtools";
 import { spawn } from "node:child_process";
 import { searchCode } from "./codesearch";
+import { readFile } from "./readfile";
 import type { EditArgs, EditResult } from "./editfile";
 import fs from "node:fs";
 import os from "node:os";
@@ -506,6 +508,48 @@ const TOOLS: ToolSpec[] = [
             ],
           },
         },
+      },
+    },
+  },
+
+  {
+    name: "tools_enable",
+    group: "schedule",
+    description:
+      "Bring in a set of tools that is not in your list yet. The console note says which sets exist and what each " +
+      "is for. Call this when the job needs one, then use its tools on your next step; they stay for the rest of " +
+      "the chat. You do not need it for tools you can already see.",
+    parameters: {
+      type: "object",
+      properties: {
+        family: { type: "string", description: "The set to load, by name (pdf, widgets, mcp, schedule, notebooks)." },
+      },
+      required: ["family"],
+    },
+  },
+
+  // -------------------------------------------------------------- ledger --
+  {
+    name: "ledger",
+    group: "schedule",
+    description:
+      "Your working notes for the job in hand, kept for you across interruptions, stops and restarts " +
+      "(a new turn starts without what you worked out in the last one; these are not lost). Record what " +
+      "you settle and what you find out as you go, so it is never worked out twice: decided is a choice " +
+      "and why; learned is a fact that cost a call to find (where something is, how a file is laid out, " +
+      "what a service returned); next is the whole list of what you will do next, in order; goal is the " +
+      "job in a line. forget drops any line holding one of the given words; reset starts again. Short " +
+      "lines. Autora already records which files and pages you touched. Call with no arguments to read " +
+      "the notes back.",
+    parameters: {
+      type: "object",
+      properties: {
+        goal: { type: "string", description: "The job, in one line." },
+        decided: { type: "array", items: { type: "string" }, description: "Choices made, with the reason." },
+        learned: { type: "array", items: { type: "string" }, description: "Facts found out that cost a call." },
+        next: { type: "array", items: { type: "string" }, description: "What you will do next, in order. Replaces the list." },
+        forget: { type: "array", items: { type: "string" }, description: "Drop lines that hold any of these words." },
+        reset: { type: "boolean", description: "Start the notes again." },
       },
     },
   },
@@ -1537,6 +1581,28 @@ const TOOLS: ToolSpec[] = [
   },
 
   {
+    name: "read_file",
+    group: "terminal",
+    description:
+      "Read a text file, or part of one, with line numbers -- without the terminal. By default the first 200 " +
+      "lines; start and end read a range. outline lists the file's functions, classes and headings with their " +
+      "line numbers, so a large file costs a few lines to understand; symbol returns the whole body of one " +
+      "function, class or heading by name. Prefer outline then symbol to cat-ing a big file. Paths are from the " +
+      "terminal's directory. Reads only: use edit_file to change a file.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "The file, from the terminal's directory." },
+        start: { type: "number", description: "First line, from 1." },
+        end: { type: "number", description: "Last line, inclusive. At most 600 lines at a time." },
+        outline: { type: "boolean", description: "List declarations and headings with line numbers." },
+        symbol: { type: "string", description: "Return the body of the declaration with this name." },
+      },
+      required: ["path"],
+    },
+  },
+
+  {
     name: "research",
     group: "schedule",
     description:
@@ -1551,8 +1617,12 @@ const TOOLS: ToolSpec[] = [
       type: "object",
       properties: {
         question: { type: "string", description: "What to find out, complete in itself, and what form the answer should take." },
+        questions: {
+          type: "array",
+          items: { type: "string" },
+          description: "Two or three independent questions, each complete in itself. They are looked into at the same time by separate workers and come back together, so use this instead of calling research several times.",
+        },
       },
-      required: ["question"],
     },
   },
 
@@ -2343,6 +2413,8 @@ export function renderCall(spec: ToolSpec, args: Record<string, any>): string {
       return `update memory ${args.id}`;
     case "memory_forget":
       return `forget memory ${args.id}${args.replaced_by ? ` (replaced by ${args.replaced_by})` : ""}`;
+    case "read_file":
+      return `read ${args.path}${args.symbol ? ` (${args.symbol})` : args.outline ? " (outline)" : ""}`;
     case "vault_read":
       return args.search
         ? `search vault artifact ${args.id} for "${args.search}"`
@@ -2485,6 +2557,12 @@ export interface ToolContext {
   /** The session's to-do list: what the person watches the work tick off.
       Absent where there is no session to show one in. */
   todos?: (action: Record<string, any>) => TodoResult;
+  /** Folders that are Autora's own data, never read or edited as the agent's files. */
+  protectedPaths?: string[];
+  /** Bring in a set of tools (see toolload.ts); says what came in. */
+  enableTools?: (family: string) => { ok: boolean; summary: string };
+  /** The chat's working notes (see ledger.ts). */
+  ledger?: (action: Record<string, any>) => LedgerResult;
   /** The app window: what the agent builds, shown beside the conversation. */
   preview?: {
     start: (args: { command?: string; cwd?: string; dir?: string; url?: string; port?: number }) => Promise<{ ok: boolean; summary: string }>;
@@ -3348,9 +3426,22 @@ async function runToolUnredacted(
 
       case "research": {
         if (!ctx.research) return { ok: false, summary: "A research worker cannot start another one. Answer from what you can look at yourself." };
-        const question = String(args.question ?? "").trim();
-        const report = await ctx.research(question);
-        return { ok: true, summary: report, preview: "research report" };
+        const many = (Array.isArray(args.questions) ? args.questions : []).map((q: unknown) => String(q ?? "").trim()).filter(Boolean).slice(0, 3);
+        const one = String(args.question ?? "").trim();
+        if (one && !many.includes(one)) many.unshift(one);
+        const questions = many.slice(0, 3);
+        if (questions.length === 0) return { ok: false, summary: "Say what to find out: question, or questions for several at once." };
+        if (questions.length === 1) {
+          return { ok: true, summary: await ctx.research(questions[0]), preview: "research report" };
+        }
+        /* Separate workers, at the same time: each has a clean context, so they
+           cannot step on one another, and the wait is the slowest one, not the sum. */
+        const reports = await Promise.all(questions.map((q: string) => ctx.research!(q).catch((err: Error) => `The worker failed: ${String(err.message).split("\n")[0]}`)));
+        return {
+          ok: true,
+          summary: reports.map((r, i) => `Question ${i + 1}: ${questions[i]}\n${r}`).join("\n\n---\n\n"),
+          preview: `${questions.length} research reports`,
+        };
       }
 
       case "edit_file": {
@@ -3375,6 +3466,14 @@ async function runToolUnredacted(
           max: typeof args.max === "number" ? args.max : undefined,
         });
         return { ok: found.ok, summary: found.text, preview: found.ok ? `${found.files} files searched` : "no search" };
+      }
+
+      case "read_file": {
+        const r = readFile(
+          { path: String(args.path ?? ""), start: args.start, end: args.end, outline: args.outline === true, symbol: typeof args.symbol === "string" ? args.symbol : undefined },
+          { root: terminalDir(), protect: ctx.protectedPaths ?? [] },
+        );
+        return { ok: r.ok, summary: r.text, preview: r.ok ? String(args.path ?? "") : "not read" };
       }
 
       // --------------------------------------------------- background --
@@ -3632,6 +3731,18 @@ async function runToolUnredacted(
           summary: result.summary,
           ...(result.preview ? { preview: result.preview } : {}),
         };
+      }
+
+      case "tools_enable": {
+        if (!ctx.enableTools) return { ok: false, summary: "There is nothing to load here." };
+        const r = ctx.enableTools(String(args.family ?? "").trim().toLowerCase());
+        return { ok: r.ok, summary: r.summary, preview: r.ok ? String(args.family) : undefined };
+      }
+
+      case "ledger": {
+        if (!ctx.ledger) return { ok: false, summary: "There are no working notes to write to in this chat." };
+        const result = ctx.ledger(args as Record<string, any>);
+        return { ok: result.ok, summary: result.summary, ...(result.preview ? { preview: result.preview } : {}) };
       }
 
       // -------------------------------------------------------- browser --
