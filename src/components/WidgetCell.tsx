@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Widget } from "../lib/derive";
+import { useFullscreen } from "../lib/fullscreen";
 import {
   DEFAULT_PALETTE, usesThree, widgetDocument, WIDGET_MAX_HEIGHT, type WidgetPalette,
 } from "../lib/widget";
@@ -67,18 +68,27 @@ const MAX_GROWTHS = 8;
  * that have no element fullscreen.
  */
 export function WidgetCell({
-  widget, sessionId, canFix,
+  widget, sessionId, canFix, pinned = false,
 }: {
   widget: Widget;
   sessionId: string;
   /** The session is live and the agent is not busy, so it can be asked. */
   canFix: boolean;
+  /** In the pinned stage on a phone: its expand is the shared full screen (lib/fullscreen.ts). */
+  pinned?: boolean;
 }) {
   const needsThree = useMemo(() => usesThree(widget.html), [widget.html]);
   const [bundle, setBundle] = useState<string | null | undefined>(needsThree ? undefined : null);
   const [height, setHeight] = useState(widget.height);
   const [errors, setErrors] = useState<string[]>([]);
-  const [expanded, setExpanded] = useState(false);
+  const [localExpanded, setLocalExpanded] = useState(false);
+  const [fsOn, setFs] = useFullscreen();
+  /* Pinned on a phone, the widget's expand is the shared full screen, so follow carries it to the next tool. */
+  const expanded = pinned ? fsOn : localExpanded;
+  const setExpanded = useCallback((v: boolean | ((x: boolean) => boolean)) => {
+    const next = typeof v === "function" ? v(expanded) : v;
+    if (pinned) setFs(next); else setLocalExpanded(next);
+  }, [expanded, pinned, setFs]);
   const [run, setRun] = useState(0);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const growths = useRef(0);
@@ -134,7 +144,7 @@ export function WidgetCell({
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [expanded]);
+  }, [expanded, setExpanded]);
 
   const doc = useMemo(
     () => bundle === undefined ? null : widgetDocument({

@@ -6,6 +6,8 @@ import { IconAlert, IconArrow, IconArrowDown, IconBrain, IconCheck, IconChevron,
 import { OPEN_NOTEBOOK } from "../lib/notebooks";
 import { copyText } from "../lib/clipboard";
 import { sameReply } from "../lib/voice";
+import { ImmersiveChat } from "./ImmersiveChat";
+import { setFullscreen, useFullscreen } from "../lib/fullscreen";
 import { AutoraMark } from "./AutoraMark";
 import type { MarkPhase } from "../lib/activity";
 import { TerminalCell } from "./TerminalCell";
@@ -179,6 +181,15 @@ export function Thread({
 
   const count = buckets.length;
   const tail = buckets[buckets.length - 1];
+  /* Full screen on a phone: follow moves between tools with the screen kept full (the flag is shared, so the
+     next tool opens full too), and the agent's words and a small message box are laid over it. */
+  const [fullscreen] = useFullscreen();
+  const immersive = phone && live && fullscreen && activeKind !== null;
+  useEffect(() => {
+    if (fullscreen && (!phone || activeKind === null)) setFullscreen(false);
+  }, [fullscreen, phone, activeKind]);
+  useEffect(() => () => setFullscreen(false), [sessionId]);
+  const lastSaid = tail?.replies.length ? tail.replies[tail.replies.length - 1].text : "";
   const tailLength =
     (tail?.replies.reduce((n, r) => n + r.text.length, 0) ?? 0) + (tail?.cells.length ?? 0) +
     // Next-step chips arriving count as the thread growing, so they are scrolled into view.
@@ -312,8 +323,17 @@ export function Thread({
   }
 
   return (
-    <div className="thread-wrap">
+    <div className={`thread-wrap${immersive ? " is-immersive" : ""}`}>
       {dock}
+      {immersive && (
+        <ImmersiveChat
+          say={lastSaid}
+          onSend={(text) => onSuggest?.(text)}
+          canFollow={surfaces.length > 1}
+          following={follow && surfaces.length > 1}
+          onFollow={toggleFollow}
+        />
+      )}
       {activeKind && (
         <Stage
           surfaces={surfaces}
@@ -791,6 +811,7 @@ const CellView = memo(function CellView({
           current={live && current}
           driving={driving}
           waitingOnYou={browserHandedOver}
+          pinned={stage}
           onStop={onStop}
         >
           {!stage && log}
@@ -809,7 +830,7 @@ const CellView = memo(function CellView({
       return <FilesCell files={cell.files} />;
     case "widget":
       if (held) return <StageStub kind="widget" title={NAME.widget} note={`${cell.widget.title} · pinned above`} />;
-      return <WidgetCell widget={cell.widget} sessionId={sessionId} canFix={live && !driving} />;
+      return <WidgetCell widget={cell.widget} sessionId={sessionId} canFix={live && !driving} pinned={stage} />;
     case "file":
       return <FileCell file={cell.file} />;
     case "remark":

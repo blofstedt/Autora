@@ -134,10 +134,11 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  New: Word, Excel and PowerPoint are now Autora Pages, Autora Sheets and Autora Slides, each with
-  its own switch on the Tools page; the PDF editor is Autora PDF. Watch Autora work in all four:
-  its cursor now moves like the browser's (arcs, easing, overshoot) and types at a human pace, in
-  the PDF window and in Pages, Sheets and Slides. PDFs can take curved lines (a new curve item and
-  full SVG paths). Every reply has a Copy button. Autora is now told it has the three office apps,
-  the PDF window and the construction window, and when to use each. Fix: the browser's bookmark
-  star is centred.
+  New on phones: any tool can go full screen (browser, app window, PDF, Pages, Sheets, Slides,
+  widgets) and stay there. With Follow on, full screen carries over as Autora moves from one tool
+  to the next. Over a full-screen tool, what Autora is saying shows for a few seconds as a short
+  line, and a small translucent chat button in the corner opens a one-line box to message it
+  without leaving full screen. The app window gains a full-screen button.
+  Earlier: Word, Excel and PowerPoint are now Autora Pages, Sheets and Slides (a switch each) and
+  the PDF editor is Autora PDF; Autora's cursor moves and types like a person in all of them; PDFs
+  take curved lines; every reply has a Copy button; the bookmark star is centred.

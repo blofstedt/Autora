@@ -1,3 +1,4 @@
+import { useFullscreen } from "../lib/fullscreen";
 import { holdSurface, useCollab } from "../lib/collab";
 import {
   Children, useCallback, useEffect, useLayoutEffect, useRef, useState,
@@ -34,7 +35,7 @@ const VIEWPORT = { w: 1280, h: 800 };
  */
 export function ScreencastCell({
   sessionId, source, url, shots, actions, live, followsFeed = false, current = false,
-  driving: agentDriving = false, waitingOnYou = false, onStop, children,
+  driving: agentDriving = false, waitingOnYou = false, pinned = false, onStop, children,
 }: {
   sessionId: string;
   source: "browser" | "desktop";
@@ -50,6 +51,8 @@ export function ScreencastCell({
   driving?: boolean;
   /** The agent has handed the page to you and is waiting. */
   waitingOnYou?: boolean;
+  /** In the pinned stage on a phone: enlarging is the shared full screen (lib/fullscreen.ts), which follow carries to the next tool. */
+  pinned?: boolean;
   onStop?: () => void;
   /** What the agent said while it worked this screen, shown in the card so
       the page stays put rather than being pushed up by each sentence. */
@@ -69,7 +72,13 @@ export function ScreencastCell({
   /** Big while the agent is driving the page right now, inline otherwise;
       either way the corner button overrides it. */
   const [bigChoice, setBigChoice] = useState<boolean | null>(null);
-  const [max, setMax] = useState(false);
+  const [localMax, setLocalMax] = useState(false);
+  const [sharedMax, setSharedMax] = useFullscreen();
+  const max = pinned ? sharedMax : localMax;
+  const setMax = useCallback((v: boolean | ((m: boolean) => boolean)) => {
+    const next = typeof v === "function" ? v(max) : v;
+    if (pinned) setSharedMax(next); else setLocalMax(next);
+  }, [max, pinned, setSharedMax]);
   /** How much bigger than the card the picture is drawn. A page of small
       type on a phone is unreadable at fit; this is the magnifier. */
   const [zoom, setZoom] = useState(1);
@@ -127,7 +136,7 @@ export function ScreencastCell({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [max]);
+  }, [max, setMax]);
 
   /* The person can take the page from the agent at any time and hand it
      back; while they hold it the agent does not use the browser. */

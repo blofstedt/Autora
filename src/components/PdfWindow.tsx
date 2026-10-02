@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useFullscreen } from "../lib/fullscreen";
 import { useAgentCursor } from "../lib/agentCursor";
 import { holdSurface, useCollab } from "../lib/collab";
 import { useDeskState } from "../lib/pdfdesk";
@@ -62,7 +63,7 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
   deskRef.current = desk;
   const [trouble, setTrouble] = useState<string | null>(null);
   /** On a phone the pinned view is a third of the screen: editing wants all of it. */
-  const [full, setFull] = useState(false);
+  const [full, setFull] = useFullscreen();
 
   const post = useCallback((msg: Record<string, unknown>, transfer?: Transferable[]) => {
     frame.current?.contentWindow?.postMessage(msg, "*", transfer ?? []);
@@ -283,7 +284,7 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
         {phone && (
           <button
             className="btn icon ghost"
-            onClick={() => setFull((v) => !v)}
+            onClick={() => setFull(!full)}
             title={full ? "Back to the conversation" : "Full screen"}
             aria-label={full ? "Back to the conversation" : "Full screen"}
             aria-pressed={full}

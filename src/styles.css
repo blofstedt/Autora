@@ -6453,8 +6453,56 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 }
 /* The thread's column and the page around it are layers of their own, under
    the header: while the window inside is full screen, both go above it. */
-.thread-wrap:has(.pdf-window.is-full) { z-index: 90; }
-.page:has(.pdf-window.is-full) { position: relative; z-index: 90; }
+.thread-wrap:has(.pdf-window.is-full, .app-window.is-full, .cell.widget.is-expanded) { z-index: 90; }
+.page:has(.pdf-window.is-full, .app-window.is-full, .cell.widget.is-expanded) { position: relative; z-index: 90; }
+/* The app window, full screen on a phone: the same cover as the PDF's. */
+.app-window.is-full {
+  position: fixed; inset: 0; z-index: 80; height: auto;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  animation: fade 0.16s var(--ease) both;
+}
+.cell.shot.is-max { animation: fade 0.16s var(--ease) both; }
+.thread-wrap.is-immersive { z-index: 90; }
+
+/* Messaging lite over a full-screen tool (components/ImmersiveChat.tsx). */
+.immersive { position: fixed; inset: 0; pointer-events: none; z-index: 200; }
+.immersive-say {
+  position: absolute; left: 12px; right: 64px; top: calc(env(safe-area-inset-top, 0px) + 54px);
+  display: flex; align-items: baseline; gap: 8px; width: fit-content; max-width: calc(100% - 76px);
+  padding: 6px 11px; border-radius: 12px; background: rgba(20, 18, 34, 0.78); color: #f1efff;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  font-size: calc(13px * var(--ts, 1)); line-height: 1.35; box-shadow: 0 0 0 1px rgba(124, 92, 255, 0.5);
+  opacity: 0; transform: translateY(-4px); transition: opacity 0.5s var(--ease), transform 0.5s var(--ease);
+}
+.immersive-say.is-on { opacity: 1; transform: none; transition-duration: 0.18s; }
+.immersive-name { flex: 0 0 auto; font-weight: 700; font-size: 0.8em; color: #a99bff; }
+.immersive-corner {
+  position: absolute; right: 12px; bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+  display: flex; align-items: center; gap: 8px; pointer-events: none;
+}
+.immersive-chat, .immersive-follow {
+  pointer-events: auto; border: 1px solid rgba(255, 255, 255, 0.18); color: #fff; cursor: pointer;
+  background: rgba(24, 22, 40, 0.5); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+.immersive-chat { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; opacity: 0.72; }
+.immersive-chat:active { opacity: 1; transform: scale(0.94); }
+.immersive-follow { height: 30px; padding: 0 11px; border-radius: 99px; font: inherit; font-size: calc(12px * var(--ts, 1)); font-weight: 600; opacity: 0.7; }
+.immersive-follow.on { opacity: 1; background: rgba(124, 92, 255, 0.55); }
+.immersive-sheet {
+  position: absolute; left: 0; right: 0; pointer-events: auto; display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px calc(env(safe-area-inset-bottom, 0px) + 10px); background: rgba(20, 18, 34, 0.94);
+  border-top: 1px solid rgba(255, 255, 255, 0.14); border-radius: 16px 16px 0 0; animation: fade 0.14s var(--ease) both;
+}
+.immersive-sheet input {
+  flex: 1; min-width: 0; height: 40px; padding: 0 14px; border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08); color: #fff; font: inherit; font-size: 16px; outline: none;
+}
+.immersive-send, .immersive-close {
+  flex: 0 0 auto; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; border: 0; cursor: pointer; color: #fff;
+}
+.immersive-send { background: #7c5cff; }
+.immersive-send:disabled { opacity: 0.4; }
+.immersive-close { background: rgba(255, 255, 255, 0.1); }
 @media (max-width: 680px) { .pdf-bar-note { display: none; } }
 
 /* Code written out in the thread: the card's header says so, and a small

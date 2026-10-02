@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useFullscreen } from "../lib/fullscreen";
 import { useAgentCursor } from "../lib/agentCursor";
 import { holdSurface, useCollab } from "../lib/collab";
 import { onOfficePush, useWordState, type OfficeCue, type OfficeKind } from "../lib/officedesk";
@@ -37,7 +38,7 @@ export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: b
   const [trouble, setTrouble] = useState<string | null>(null);
   const [versionsOpen, setVersionsOpen] = useState(false);
   /** On a phone the pinned view is a third of the screen: editing wants all of it. */
-  const [full, setFull] = useState(false);
+  const [full, setFull] = useFullscreen();
   /* A phone starts with the pages as pictures (fast, kept, readable); the full editor is a tap away. */
   const [editing, setEditing] = useState(false);
   const pages = phone && !editing;
@@ -268,7 +269,7 @@ export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: b
         {phone && !pages && (
           <button
             className="btn icon ghost"
-            onClick={() => setFull((v) => !v)}
+            onClick={() => setFull(!full)}
             title={full ? "Back to the conversation" : "Full screen"}
             aria-label={full ? "Back to the conversation" : "Full screen"}
             aria-pressed={full}
