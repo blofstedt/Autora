@@ -125,17 +125,22 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  New: big, changing tasks. What you ask for is now kept word for word as a
-  list of asks (a message with numbered or bulleted items becomes one ask each),
-  told to the agent every turn, and it cannot be paraphrased away when a long
-  chat is condensed. A message you send while the agent is working is added to
-  what it is doing instead of stopping it: it is told at its next step, shown in
-  the thread as "You added", and recorded as an ask the agent can merge, change
-  or drop. Alt, Ctrl or Cmd with Enter still interrupts and sends. Before the
-  agent finishes it must account for every ask (done, with how it checked, or
-  dropped, with why), and your project check now also runs when an item is
-  marked done, so a failure is found while the change is fresh. Earlier in this
-  release line: failing calls stop sooner, a call repeated after a warning is
-  refused, rounds that change nothing earn a note, old reads are shrunk
-  together, a stop teaches a provisional memory, the trace counts cache misses,
-  and "npm run replay" replays a chat against the loop rules.
+  New: the agent learns a site or app from its official documentation before it
+  acts on it. When it is about to click, fill or post on a site it has nothing
+  current stored about, it is sent to read that site's own docs or help pages
+  first and write down what it finds as a "Reference" (with the page it came
+  from and the date), then carries on from that. Interfaces change, so an
+  interface reference is read again after three weeks, other documentation
+  after three months. The same goes for answering where something is in an app.
+  It can be switched off on the Mind page. The Mind is also more orderly: every
+  note is filed under a subject, with the subject at the front of its title, one
+  topic per note, nothing about the moment and nothing secret -- a note that
+  breaks these is refused with what to change, and what the agent learns after a
+  turn is held to the same rules. A new Tidy up button on the Mind page files the
+  notes you already have under subjects and lists the ones that need a rewrite,
+  and References is a new bucket. Also new in this release line: what you ask
+  for is kept word for word as a list the agent must account for, a message you
+  send while it works is added to the work instead of stopping it (Alt, Ctrl or
+  Cmd with Enter still interrupts), your project check runs when an item is
+  finished, failing calls stop sooner, and "npm run replay" replays a chat
+  against the loop rules.

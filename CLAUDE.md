@@ -118,6 +118,26 @@ is a sub-project with its own dependencies (see below).
     `{mode: "interrupt"}` (Alt/Ctrl/Cmd+Enter), files, voice and `/commands`
     stop the turn first. The project check also runs when a to-do or ask is
     marked done mid-turn (`itemCheckNote`, capped per turn).
+  - `mindrules.ts` (+ `site.ts`): the rules the mind is kept by. Every
+    `memory_write` / `memory_update` goes through `checkEntry` / `checkText`: a
+    title that starts with its subject, one topic per record (length limit by
+    kind), nothing about the moment, no secrets, and a `reference` (what a
+    product's *official* docs say: kind `reference`, with `subject`, `facet`
+    interface|api|docs|workflow|quirk, `source` URL, `fetched`) that names its
+    source -- one not recognisably the subject's own site is kept `provisional`.
+    Interface references go stale in 21 days, docs in 90 (`REFERENCE_FRESH_DAYS`);
+    `MemoryGraph.groundingOf(site)` says none/stale/fresh. **Ground first**
+    (`state.groundFirst`, Mind page): `actsOnSite` calls (browser click/fill/
+    press/upload, non-GET `http_request`) on a site with nothing fresh stored are
+    refused up to three times a turn with "read the official docs and write a
+    reference", then let through so a missing docs site cannot wedge a turn;
+    `groundingNote` names such sites from the request, `siteMemory` says it on the
+    first visit, and `MEMORY_GUIDE` (tools.ts) tells the agent to do it for any
+    product, API or app interface before working or answering "where is X in Y".
+    `POST /api/memory/tidy {dry?}` files old records under a subject and lists
+    what needs a rewrite (the Mind page's Tidy up button). The reflection prompt
+    (`learning.ts`) asks for subject-first titles and drops lessons that break
+    the same rules.
   - `argcheck.ts`: every call is checked against its tool's own schema before
     anything else sees it.
   - `verify.ts`: the person's project check (Settings), run by the loop when the

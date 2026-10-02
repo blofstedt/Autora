@@ -136,6 +136,7 @@ import {
   MEMORY_KINDS, MemoryGraph, doubtNote, freshness, siteOf,
   type MemoryLink, type MemoryRecord,
 } from "./server/memory";
+import { actsOnSite, checkSource, checkText, groundingRefusal, tidyRecords } from "./server/mindrules";
 import {
   attachRelay, cleanHost, relayClientSource, relayStatus, watchDesktop,
 } from "./server/desktop";
@@ -2219,12 +2220,45 @@ function pastToolCalls(sessionId: string, sinceSeq = 0): string[] {
     });
 }
 
+/** Addresses the person's words name: full URLs and bare domains. */
+const NAMED_SITE = /\bhttps?:\/\/([a-z0-9.-]+\.[a-z]{2,})|\b((?:[a-z0-9-]+\.)+(?:com|org|net|io|app|dev|co|ai|edu|gov|me|tv|so|sh|cloud|tech|xyz)(?:\.[a-z]{2})?)\b/gi;
+
+/**
+ * What is stored, or not, about the sites a message names, said before the
+ * turn starts: the agent reads the official documentation for a site it has
+ * nothing current on before it acts there (and the gate holds it to that).
+ */
+function groundingNote(said: string): string | null {
+  const sites = new Set<string>();
+  for (const m of said.matchAll(NAMED_SITE)) {
+    const site = siteOf(m[1] ?? m[2] ?? "");
+    if (site) sites.add(site);
+  }
+  const lines: string[] = [];
+  for (const site of [...sites].slice(0, 5)) {
+    const g = mind.groundingOf(site);
+    if (g === "fresh") continue;
+    lines.push(`- ${site}: ${g === "none" ? "nothing stored about how it works" : "what is stored was read from its source too long ago"}`);
+  }
+  if (lines.length === 0) return null;
+  return [
+    "The request names sites you have nothing current on. Before you act on them, read their official documentation " +
+      "(web_search, then the docs or help page; or the research tool) and write what you learn as references:",
+    ...lines,
+  ].join("\n");
+}
+
 /** One memory as the model reads it: id, kind, how far to trust it, and what it says. */
 function memoryLine(m: MemoryRecord): string {
   const old = freshness(m);
   const doubt = doubtNote(m);
-  return `- ${m.id} [${m.kind}${m.status === "provisional" ? ", unconfirmed" : ""}]` +
-    `${doubt ? ` (${doubt})` : old ? ` (this is old knowledge: ${old})` : ""} ${m.title}: ${m.body}`;
+  /* A reference says where it was read and when, so it can be trusted for what
+     it is -- the product's own word, as of a date -- and checked at the source. */
+  const from = m.kind === "reference" && m.source
+    ? ` (official source ${m.source}${m.fetched ? `, read ${new Date(m.fetched * 1000).toISOString().slice(0, 10)}` : ""}${m.version ? `, version ${m.version}` : ""})`
+    : "";
+  return `- ${m.id} [${m.kind}${m.facet ? `, ${m.facet}` : ""}${m.status === "provisional" ? ", unconfirmed" : ""}]` +
+    `${doubt ? ` (${doubt})` : old ? ` (this is old knowledge: ${old})` : ""} ${m.title}: ${m.body}${from}`;
 }
 
 /**
@@ -2244,6 +2278,7 @@ async function systemInstructionFor(
   sessionId: string,
   recalled: MemoryRecord[],
   active?: Resolved | null,
+  said = "",
 ): Promise<{ pinned: string; note: string }> {
   const lines = [DEFAULT_PROMPT];
   const notes: string[] = [];
@@ -2430,6 +2465,9 @@ async function systemInstructionFor(
      here. */
   const asked = own ? requirementsBriefing(latestRequirements(own.events)) : null;
   if (asked) notes.push(asked);
+  /* Sites the message names, and whether anything current is stored about how each works. */
+  const grounding = state.groundFirst ? groundingNote(said) : null;
+  if (grounding) notes.push(grounding);
   /* What it worked out, which the history (words only) cannot carry. */
   const working = own ? ledgerBriefing(latestLedger(own.events), touchedThings(own.events)) : null;
   if (working) notes.push(working);
@@ -3001,6 +3039,7 @@ async function reflect(session: Session, request: string, startSeq: number, prev
   for (const lesson of found.learned) {
     const { record, action } = mind.write({
       title: lesson.title, body: lesson.body, kind: lesson.kind, tags: lesson.tags,
+      ...(lesson.subject ? { subject: lesson.subject } : {}),
       status: "provisional", source_session: session.id, source_seq: session.seqCounter,
     });
     if (lesson.revises && action === "added" && lesson.revises !== record.id) {
@@ -3977,11 +4016,12 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
              tool layer says so in words when the agent tries to write (see
              server/tools.ts), and these guards are the second line of it. */
           incognito: Boolean(session.incognito),
-          write: ({ title, body, kind, tags }) => {
+          write: ({ title, body, kind, tags, subject, facet, source, version, status }) => {
             if (session.incognito) return { id: "", action: "refused" };
             const { record, action } = mind.write({
               title, body, kind, tags: [...(tags ?? []), "agent-authored"],
-              status: "confirmed", source_session: session.id, source_seq: session.seqCounter,
+              status: status ?? "confirmed", source_session: session.id, source_seq: session.seqCounter,
+              subject, facet: facet as MemoryRecord["facet"], source, version,
             });
             emitEvent(session, "memory.write", "agent", {
               id: record.id, title: record.title, kind: record.kind, action,
@@ -4009,11 +4049,24 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             }
             return hits.map(({ record: m }) => ({
               id: m.id, kind: m.kind, title: m.title, body: m.body, status: m.status,
+              subject: m.subject, source: m.source ?? undefined, fetched: m.fetched ?? undefined,
             }));
           },
           update: (id, patch) => {
             if (session.incognito) return false;
-            const record = mind.update(id, patch);
+            const before = mind.get(id);
+            if (!before) return false;
+            /* The same rules as a new write, applied to what the record would become. */
+            const wrong = checkText(
+              patch.kind ?? before.kind, patch.title ?? before.title, patch.body ?? before.body,
+            );
+            if (wrong) return wrong;
+            if (patch.source) {
+              const checked = checkSource(patch.source, patch.subject ?? before.subject ?? "");
+              if (!checked.ok) return checked.error ?? "That source cannot be used.";
+              patch = { ...patch, source: checked.url };
+            }
+            const record = mind.update(id, patch as Parameters<typeof mind.update>[1]);
             if (record) {
               emitEvent(session, "memory.write", "agent", {
                 id: record.id, title: record.title, kind: record.kind, action: "updated",
@@ -4138,7 +4191,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
       /* Once per turn, not per round: the instructions must open every
          round's request identically for the provider's cache to serve
          them, and so must everything the note is attached ahead of. */
-      const { pinned, note } = await systemInstructionFor(session.id, uniqueAccessed, active);
+      const { pinned, note } = await systemInstructionFor(session.id, uniqueAccessed, active, text);
       context.setTurnNote(note);
       const watch = new LoopWatch(state.loop);
       /* Failures that say the same thing however the arguments were varied,
@@ -4214,7 +4267,11 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
         if (!site || sitesSeen.has(site)) return "";
         sitesSeen.add(site);
         const found = mind.aboutSite(site, new Set(result.recalled));
-        if (found.length === 0) return "";
+        const g = state.groundFirst ? mind.groundingOf(site) : "fresh";
+        const ground = g === "fresh" ? "" :
+          `[Autora] ${g === "none" ? `Nothing is stored about how ${site} works` : `What is stored about ${site} is old`}. ` +
+          "Before you act here (click, fill, post), read its official documentation and write what you learn as references (memory_write, kind reference).";
+        if (found.length === 0) return ground;
         const ids = found.map((m) => m.id);
         mind.touch(ids);
         result.recalled.push(...ids);
@@ -4227,6 +4284,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
         return [
           `[From your memory graph, not from the page] What you have written down about ${site}:`,
           ...found.map(memoryLine),
+          ...(ground ? [ground] : []),
         ].join("\n");
       };
       /** Steps in a row that came back empty or cut off, each answered by
@@ -4236,6 +4294,8 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
       /** Whether this turn has been asked about open to-do items already. */
       let todoAsked = false;
       let requirementsAsked = false;
+      /* Sites this turn was sent to read up on before acting, and how often. */
+      const groundingTold = new Map<string, number>();
       /** Run the person's project check as a visible terminal call and read what it printed. */
       const execCheck = async (command: string): Promise<CheckResult> => {
         const span = `span-${session.id}-${session.seqCounter}-${spans++}`;
@@ -4669,6 +4729,33 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             emitEvent(session, "tool.error", "agent", { held: true, error: gated.refuse }, span);
             reply(false, gated.refuse);
             continue;
+          }
+
+          /* Acting on a site nothing current is stored about: find out from its own
+             documentation first (see mindrules.groundingRefusal). Reading the
+             page is never held, and a few refusals on one site let it through so
+             a docs site that is down cannot wedge the turn. */
+          if (state.groundFirst && actsOnSite(spec.name, (use.args ?? {}) as Record<string, any>)) {
+            const page = spec.name.startsWith("browser_") ? browsers.get(session.id)?.status().url ?? "" : "";
+            const site = siteOf(targetOf(spec.name, (use.args ?? {}) as Record<string, any>, page));
+            if (site) {
+              const grounding = mind.groundingOf(site);
+              const told = groundingTold.get(site) ?? 0;
+              const why = groundingRefusal({
+                enabled: true, site, fresh: grounding === "fresh", stale: grounding === "stale", refused: told,
+              });
+              if (why) {
+                groundingTold.set(site, told + 1);
+                emitEvent(session, "tool.error", "agent", { held: true, grounding: true, error: `Not done yet: reading ${site}'s own documentation first.` }, span);
+                if (told === 0) {
+                  emitEvent(session, "system.log", "system", {
+                    message: `Nothing current is stored about ${site}; the agent was sent to read its official documentation before acting on it.`,
+                  });
+                }
+                reply(false, why);
+                continue;
+              }
+            }
           }
 
           /* Then the person's permissions: with Ask on, a call that changes
@@ -6383,6 +6470,7 @@ async function startServer() {
       links: memoryLinks,
       enabled: true,
       learning: state.learning,
+      groundFirst: state.groundFirst,
     });
   });
 
@@ -6416,7 +6504,26 @@ async function startServer() {
       state.learning = req.body.learning;
       save();
     }
-    res.json({ learning: state.learning });
+    if (typeof req.body?.groundFirst === "boolean") {
+      state.groundFirst = req.body.groundFirst;
+      save();
+    }
+    res.json({ learning: state.learning, groundFirst: state.groundFirst });
+  });
+
+  /**
+   * Bring the existing memories up to the mind's rules (server/mindrules.ts): filed under a
+   * subject, tidy titles. What needs judgment is listed, not rewritten. `dry` only reports.
+   * A POST because it changes records.
+   */
+  app.post("/api/memory/tidy", (req: Request, res: Response) => {
+    if (req.body?.dry === true) {
+      const copy = structuredClone(mind.records) as MemoryRecord[];
+      return res.json({ dry: true, ...tidyRecords(copy) });
+    }
+    const report = tidyRecords(mind.records);
+    if (report.fixed.length > 0) mind.save();
+    res.json({ dry: false, ...report });
   });
 
   app.post("/api/memory", (req: Request, res: Response) => {
@@ -6429,6 +6536,7 @@ async function startServer() {
       tags: Array.isArray(req.body?.tags) ? req.body.tags : [],
       status: "confirmed",
       source_session: req.body?.source_session || null,
+      ...(typeof req.body?.subject === "string" && req.body.subject.trim() ? { subject: req.body.subject.trim().toLowerCase().slice(0, 60) } : {}),
     });
     if (typeof req.body?.pinned === "boolean") mind.update(record.id, { pinned: req.body.pinned });
     res.json(record);
@@ -6449,6 +6557,7 @@ async function startServer() {
       kind: req.body.kind,
       tags: Array.isArray(req.body.tags) ? req.body.tags : undefined,
       pinned: req.body.pinned !== undefined ? Boolean(req.body.pinned) : undefined,
+      subject: typeof req.body.subject === "string" ? req.body.subject : undefined,
     });
     // Confirming is more than a field: a confirmed rewrite retires what it
     // rewrote.

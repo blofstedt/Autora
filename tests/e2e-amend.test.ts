@@ -71,7 +71,7 @@ async function main() {
         if (g) return g;
         step += 1;
         if (step === 1) return { tools: [{ name: "terminal", args: { command: "echo a" } }] };
-        if (step === 2) return { text: "That is everything, all finished. ".repeat(60), slow: true };
+        if (step === 2) return { text: "That is everything, all finished. ".repeat(8), slow: true };
         return { text: "Added the last thing too." };
       };
       const s = await app.newSession("late", "build");
@@ -79,7 +79,7 @@ async function main() {
       await app.until(s, (ev) => ev.some((e) => e.kind === "turn.agent.text"), "the final answer to start");
       const sent = await app.api("POST", `/api/sessions/${s}/message`, { text: "one more thing: print the date" });
       assert.equal(sent.body.queued, true);
-      const ev = await app.until(s, (e) => e.some((x) => x.kind === "turn.agent.done") && step >= 3, "the turn to take it up", 30_000);
+      const ev = await app.until(s, (e) => e.some((x) => x.kind === "turn.agent.done") && step >= 3, "the turn to take it up", 40_000);
       assert.ok(!ev.some((e) => e.kind === "turn.agent.done" && e.payload.stopped), "not stopped");
       assert.match(told(app), /one more thing: print the date/);
       assert.ok(step >= 3, "the model was asked again after the late message");

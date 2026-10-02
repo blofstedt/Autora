@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BUCKETS, KIND_COLOR, announceChange, confirmRecord, createRecord, deleteRecord, edgesFor,
-  fetchKnowledge, onKnowledgeChange, patchRecord, setLearning,
-  type Bucket, type Knowledge, type MemoryRecord,
+  fetchKnowledge, onKnowledgeChange, patchRecord, setGroundFirst, setLearning, tidyMemory,
+  type Bucket, type Knowledge, type MemoryRecord, type TidyReport,
 } from "../../lib/memory";
 import type { MemoryMark } from "../../lib/derive";
 import { KnowledgeWeb } from "../KnowledgeWeb";
@@ -57,6 +57,7 @@ export function MindPage({
   const [view, setView] = useState<"buckets" | "map">("buckets");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tidied, setTidied] = useState<TidyReport | null>(null);
 
   const load = useCallback(() => {
     fetchKnowledge().then(setData).catch(() => setData(null));
@@ -109,7 +110,7 @@ export function MindPage({
   }, [data, edges]);
 
   const counts = useMemo(() => {
-    const c = { preference: 0, procedure: 0, fact: 0, skill: 0 } as Record<Bucket, number>;
+    const c = { preference: 0, procedure: 0, fact: 0, skill: 0, reference: 0 } as Record<Bucket, number>;
     for (const r of records) c[r.kind]++;
     return c;
   }, [records]);
@@ -245,6 +246,48 @@ export function MindPage({
                 to keep or discard.
               </span>
             </label>
+          )}
+
+          {data && (
+            <label className="mind-learning">
+              <input
+                type="checkbox"
+                checked={data.groundFirst !== false}
+                onChange={(e) => void run(() => setGroundFirst(e.target.checked))}
+              />
+              <span>
+                <b>Read the official documentation first</b>
+                Before acting on a site it has nothing current on, the agent reads that site's own
+                documentation and keeps what it learns as References. Interfaces change, so these are
+                read again after a few weeks.
+              </span>
+            </label>
+          )}
+
+          {data && records.length > 0 && (
+            <div className="mind-tidy">
+              <button
+                className="btn tiny ghost"
+                disabled={busy}
+                title="File each memory under a subject and tidy its title. Anything that needs a rewrite is listed, not changed."
+                onClick={() => void run(async () => setTidied(await tidyMemory(false)))}
+              >
+                Tidy up
+              </button>
+              {tidied && (
+                <span className="jf-hint">
+                  {tidied.fixed.length} tidied of {tidied.total}
+                  {tidied.flagged.length > 0 ? `; ${tidied.flagged.length} need a rewrite` : ""}.
+                </span>
+              )}
+              {tidied && tidied.flagged.length > 0 && (
+                <ul className="mind-tidy-list">
+                  {tidied.flagged.slice(0, 12).map((f) => (
+                    <li key={f.id}><b>{f.title}</b>: {f.problems.join("; ")}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
 
           {unconfirmed.length > 0 && (
@@ -432,6 +475,12 @@ export function MindPage({
                         <i />
                         <b>{r.title}</b>
                         {r.pinned && <span className="mind-flag">pinned</span>}
+                        {r.kind === "reference" && r.facet && <span className="mind-flag">{r.facet}</span>}
+                        {r.kind === "reference" && r.fetched ? (
+                          <span className="mind-flag" title={r.source ?? undefined}>
+                            read {new Date(r.fetched * 1000).toISOString().slice(0, 10)}
+                          </span>
+                        ) : null}
                         {r.status === "provisional" && <span className="mind-flag">unconfirmed</span>}
                         {(r.doubted ?? 0) > 0 && (
                           <span className="mind-flag is-doubted" title="A turn that used this found it wrong. It is recalled with a warning, and ranked lower, until it is checked or edited.">

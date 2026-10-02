@@ -96,7 +96,7 @@ async function main() {
       const s = await app.newSession("agent resume", "agent");
       await app.say(s, "convert the scripts to modules");
       await app.until(s, (ev) => ev.some((e) => e.kind === "turn.agent.text"), "the build to be under way");
-      await app.say(s, "and keep the tests green");
+      await app.api("POST", `/api/sessions/${s}/message`, { text: "and keep the tests green", mode: "interrupt" });
       const ev = await app.until(s, (e) => done(e).length >= 2, "the second turn to end", 20_000);
       const users = ev.filter((e) => e.kind === "turn.user");
       assert.equal(users.length, 2);

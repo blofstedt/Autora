@@ -27,6 +27,7 @@
 import type { TodoResult } from "./todos";
 import type { LedgerResult } from "./ledger";
 import type { RequirementResult } from "./requirements";
+import { checkEntry } from "./mindrules";
 import type { Phase } from "./modes";
 import { callMcpTool, mcpTools, statusOf as mcpStatusOf } from "./mcp";
 import { existing as existingMcp, install as installMcp, noteDeclined, overview as mcpOverview, planOffer, wasDeclined } from "./mcpoffer";
@@ -2085,9 +2086,10 @@ const TOOLS: ToolSpec[] = [
     group: "memory",
     description:
       "Write something down in the workspace memory graph, where it will be " +
-      "recalled in later sessions. For durable facts, preferences and " +
-      "procedures worth keeping -- not for a running commentary on this " +
-      "conversation, which is already recorded.",
+      "recalled in later sessions. For durable facts, preferences, procedures and " +
+      "references worth keeping -- not for a running commentary on this " +
+      "conversation, which is already recorded. One topic per memory, a title that " +
+      "names its subject, short. Secrets are refused.",
     parameters: {
       type: "object",
       properties: {
@@ -2101,11 +2103,27 @@ const TOOLS: ToolSpec[] = [
         },
         kind: {
           type: "string",
-          enum: ["fact", "preference", "procedure", "skill"],
+          enum: ["fact", "preference", "procedure", "skill", "reference"],
           description:
             "What sort of thing this is. Default fact. A procedure is how to do " +
-            "something here that worked -- the steps, commands and gotchas.",
+            "something here that worked -- the steps, commands and gotchas. A reference is what a product's " +
+            "OFFICIAL documentation or help says about how it works (where things are in an interface, what an " +
+            "API call is named): it needs subject and source.",
         },
+        subject: {
+          type: "string",
+          description: "What it is about: the product, site, app or project, in a word or two (\"github\", \"google sheets\"). The title is filed under it.",
+        },
+        facet: {
+          type: "string",
+          enum: ["interface", "api", "docs", "workflow", "quirk"],
+          description: "For knowledge about a product: interface (where things are, what they are called -- goes stale fastest), api, docs, workflow, quirk.",
+        },
+        source: {
+          type: "string",
+          description: "A reference's source: the address of the official page you read it from.",
+        },
+        version: { type: "string", description: "The version it describes, if the page says." },
         tags: {
           type: "array",
           items: { type: "string" },
@@ -2129,7 +2147,11 @@ const TOOLS: ToolSpec[] = [
         id: { type: "string", description: "The memory's id, e.g. mem-abc123." },
         title: { type: "string", description: "A new title, if it should change." },
         body: { type: "string", description: "The whole new body, replacing the old one." },
-        kind: { type: "string", enum: ["fact", "preference", "procedure", "skill"] },
+        kind: { type: "string", enum: ["fact", "preference", "procedure", "skill", "reference"] },
+        subject: { type: "string", description: "What it is about, if that should change." },
+        facet: { type: "string", enum: ["interface", "api", "docs", "workflow", "quirk"] },
+        source: { type: "string", description: "For a reference: the page it was read from again. Stamps today as when it was read." },
+        version: { type: "string" },
         tags: { type: "array", items: { type: "string" } },
       },
       required: ["id"],
@@ -2570,9 +2592,17 @@ export interface ToolContext {
     /** True in an incognito chat: a read is fine, a write is refused, because
         nothing in that chat is written down anywhere. */
     incognito?: boolean;
-    write: (entry: { title: string; body: string; kind: string; tags?: string[] }) => { id: string; action: string };
-    search: (query: string) => { id: string; kind: string; title: string; body: string; status: string }[];
-    update: (id: string, patch: { title?: string; body?: string; kind?: string; tags?: string[] }) => boolean;
+    write: (entry: {
+      title: string; body: string; kind: string; tags?: string[]; subject?: string; facet?: string;
+      source?: string; version?: string; status?: "confirmed" | "provisional";
+    }) => { id: string; action: string };
+    search: (query: string) => {
+      id: string; kind: string; title: string; body: string; status: string; subject?: string; source?: string; fetched?: number;
+    }[];
+    /** true when changed, false when there is no such memory, or why the change was refused. */
+    update: (id: string, patch: {
+      title?: string; body?: string; kind?: string; tags?: string[]; subject?: string; facet?: string; source?: string; version?: string;
+    }) => boolean | string;
     /** Say that a memory still holds, and stamp it checked today. */
     confirm: (id: string, note?: string) => boolean;
     forget: (id: string, replacedBy?: string | null) => boolean;
@@ -4584,16 +4614,26 @@ async function runToolUnredacted(
         if (!title || !body) {
           return { ok: false, summary: "A memory needs both a title and a body." };
         }
-        const kinds = new Set(["fact", "preference", "procedure", "skill"]);
-        const kind = kinds.has(String(args.kind)) ? String(args.kind) : "fact";
-        const tags = Array.isArray(args.tags) ? args.tags.map(String) : [];
-        const { id, action } = ctx.memory.write({ title, body, kind, tags });
+        /* Held to the mind's rules (see mindrules.ts): a subject in the title, one
+           topic, nothing about the moment, a reference with its source. The refusal
+           says what to change, so the next call can be right. */
+        const verdict = checkEntry({
+          title, body, kind: args.kind, tags: args.tags, subject: args.subject,
+          facet: args.facet, source: args.source, version: args.version,
+        });
+        if (!verdict.ok) return { ok: false, summary: `Not written down. ${verdict.error}` };
+        const e = verdict.entry;
+        const { id, action } = ctx.memory.write({
+          title: e.title, body: e.body, kind: e.kind, tags: e.tags, subject: e.subject,
+          facet: e.facet, source: e.source, version: e.version, status: e.status,
+        });
+        const asked = verdict.notes.length ? ` ${verdict.notes.join(" ")}` : "";
         return {
           ok: true,
-          summary: action === "merged"
-            ? `That was close to ${id}, so ${id} was updated rather than a copy added: "${title}".`
-            : `Written down as ${id}: "${title}".`,
-          preview: title,
+          summary: (action === "merged"
+            ? `That was close to ${id}, so ${id} was updated rather than a copy added: "${e.title}".`
+            : `Written down as ${id}: "${e.title}".`) + asked,
+          preview: e.title,
         };
       }
 
@@ -4606,8 +4646,14 @@ async function runToolUnredacted(
           body: typeof args.body === "string" ? args.body : undefined,
           kind: typeof args.kind === "string" ? args.kind : undefined,
           tags: Array.isArray(args.tags) ? args.tags.map(String) : undefined,
+          subject: typeof args.subject === "string" ? args.subject : undefined,
+          facet: typeof args.facet === "string" ? args.facet : undefined,
+          source: typeof args.source === "string" ? args.source : undefined,
+          version: typeof args.version === "string" ? args.version : undefined,
         };
-        if (!ctx.memory.update(id, patch)) {
+        const changed = ctx.memory.update(id, patch);
+        if (typeof changed === "string") return { ok: false, summary: `Not changed. ${changed}` };
+        if (!changed) {
           return { ok: false, summary: `There is no memory ${id}. memory_search shows the ids.` };
         }
         return { ok: true, summary: `Updated ${id}.`, preview: id };
@@ -4656,7 +4702,8 @@ async function runToolUnredacted(
         return {
           ok: true,
           summary: found
-            .map((m) => `- ${m.id} [${m.kind}${m.status === "provisional" ? ", unconfirmed" : ""}] ${m.title}: ${m.body}`)
+            .map((m) => `- ${m.id} [${m.kind}${m.status === "provisional" ? ", unconfirmed" : ""}] ${m.title}: ${m.body}` +
+              (m.kind === "reference" && m.source ? ` (source ${m.source}${m.fetched ? `, read ${new Date(m.fetched * 1000).toISOString().slice(0, 10)}` : ""})` : ""))
             .join("\n"),
           preview: `${found.length} found`,
         };
@@ -4803,11 +4850,27 @@ const MEMORY_GUIDE =
   "- Using your memory: what was recalled for this turn is in the console note, found by " +
   "the words of the request. When the work turns to a subject, site, service or project " +
   "that note did not cover, memory_search it by name before working it out again: how it " +
-  "was done here last time may be written down. When you find out something that will " +
-  "matter again -- how a site or API actually behaves, the command that finally worked, " +
-  "something the person tells you about themselves or their work -- memory_write it, with " +
-  "tags naming its subject, so it comes back when that subject does. Each finished turn " +
-  "is also looked back on for you, so there is no need to write down the conversation. " +
+  "was done here last time may be written down. Each finished turn is also looked back on " +
+  "for you, so there is no need to write down the conversation.\n" +
+  "- Know it before you do it: you do not carry current knowledge of products, websites, apps, " +
+  "APIs or their interfaces -- they change, and a guess from training is how you end up clicking " +
+  "the wrong menu or calling an endpoint that was renamed. Before you start work that depends on " +
+  "how one of them works, or answer where something is in one (\"where do I find X in Y\"): " +
+  "(1) memory_search its name for a reference; one marked old, or with no official source, is not " +
+  "enough; (2) if there is none, or it is old, read the OFFICIAL source -- web_search the vendor's own " +
+  "documentation or help pages, then http_request or browser_read the page that covers the task " +
+  "(or give the lookup to the research tool, which keeps your context clean); an answer from a forum " +
+  "or a blog is not the product's word; (3) write what you learned down with memory_write, kind " +
+  "reference, with subject, facet (interface for where things are and what they are called, api for " +
+  "calls, docs, workflow, quirk) and source (the page's address): one topic per record, short, as " +
+  "exact as the page, with the version if it says; (4) only then do the work, from what you wrote. " +
+  "An interface reference older than three weeks is read again before you rely on it; when you " +
+  "see in practice that the page was wrong or has changed, fix the reference with memory_update.\n" +
+  "- Writing to memory: one topic per record; the title starts with its subject (\"GitHub: where " +
+  "repository settings are\"); short; true months from now (nothing about this conversation: the log " +
+  "has it); nothing secret; no near-copies -- memory_update the one that exists. Procedures: the " +
+  "steps, commands and gotchas that worked. Preferences: what the person told you about how they " +
+  "want things done. A write that breaks these is refused with what to change.\n" +
   "A recalled memory that turns out wrong is fixed with memory_update, not worked around.";
 
 /* The one tool that is about the person's ears rather than the work. It is

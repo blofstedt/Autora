@@ -6444,3 +6444,11 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 .set-switch input { margin-top: 3px; accent-color: #8b7cf6; }
 .set-switch b { display: block; font-weight: 600; font-size: calc(13px * var(--ts, 1)); }
 .set-switch small { display: block; color: var(--muted, #9aa0b0); font-size: calc(12px * var(--ts, 1)); margin-top: 2px; }
+
+/* Mind: the tidy-up button and what it found. */
+.mind-tidy { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 14px; }
+.mind-tidy-list {
+  flex-basis: 100%; margin: 0; padding-left: 18px; font-size: calc(12px * var(--ts, 1));
+  color: var(--text-3); line-height: 1.5;
+}
+.mind-tidy-list b { color: var(--text-2, var(--text)); font-weight: 600; }

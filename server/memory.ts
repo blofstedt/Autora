@@ -18,8 +18,11 @@
  * The class holds the arrays and nothing else; the server owns saving them.
  */
 
+import { siteOf } from "./site";
+import { REFERENCE_FRESH_DAYS, referenceAgeDays } from "./mindrules";
+
 export type MemoryKind = "fact" | "preference" | "procedure" | "skill" | "reference";
-export const MEMORY_KINDS: MemoryKind[] = ["preference", "procedure", "fact", "skill"];
+export const MEMORY_KINDS: MemoryKind[] = ["preference", "procedure", "fact", "skill", "reference"];
 
 export interface MemoryRecord {
   id: string;
@@ -193,19 +196,7 @@ export function isFollowUp(request: string): boolean {
   return words <= 1 || (words <= FOLLOW_UP_WORDS && REFERS.test(request));
 }
 
-/**
- * The site a host belongs to: "shop.example.com" is "example.com", and
- * "news.bbc.co.uk" is "bbc.co.uk". Empty for anything that is not a named
- * site -- an address, localhost -- since a note that mentions 192.168.1.1 is
- * not about every device on the network.
- */
-export function siteOf(host: string): string {
-  const h = String(host ?? "").toLowerCase().trim().replace(/:\d+$/, "").replace(/^www\./, "");
-  if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(h)) return "";
-  const parts = h.split(".");
-  const n = parts.length >= 3 && parts[parts.length - 1].length === 2 && parts[parts.length - 2].length <= 3 ? 3 : 2;
-  return parts.slice(-n).join(".");
-}
+export { siteOf };
 
 interface Indexed {
   /** Words of the title and topical tags: what the memory is about. */
@@ -226,12 +217,18 @@ interface Indexed {
 const indexCache = new WeakMap<MemoryRecord, Indexed & { title: string; body: string; tags: string }>();
 
 function indexOf(r: MemoryRecord): Indexed {
-  const tags = r.tags.join("\u0000");
+  const tags = [...r.tags, r.subject ?? "", r.facet ?? "", r.source ?? ""].join("\u0000");
   const hit = indexCache.get(r);
   if (hit && hit.title === r.title && hit.body === r.body && hit.tags === tags) return hit;
   // Bookkeeping tags ("skill", "learned") say how a memory came to be,
   // not what it is about; matched, they would recall every skill at once.
-  const topical = r.tags.filter((t) => !GENERIC_TAGS.has(t)).flatMap((t) => tokens(t));
+  const sourceSite = r.source ? siteOf(hostOf(r.source)) : "";
+  const topical = [
+    ...r.tags.filter((t) => !GENERIC_TAGS.has(t)),
+    ...(r.subject ? [r.subject] : []),
+    ...(r.facet ? [r.facet] : []),
+    ...(sourceSite ? [sourceSite] : []),
+  ].flatMap((t) => tokens(t));
   const title = tokens(r.title);
   const body = tokens(r.body);
   const tf = new Map<string, number>();
@@ -248,6 +245,10 @@ function indexOf(r: MemoryRecord): Indexed {
   };
   indexCache.set(r, entry);
   return entry;
+}
+
+function hostOf(url: string): string {
+  try { return new URL(url).hostname; } catch { return ""; }
 }
 
 // ----------------------------------------------------------------- graph --
@@ -269,6 +270,11 @@ export class MemoryGraph {
       }
     }
     if (unpinned) this.changed();
+  }
+
+  /** Saved after a change made to the records from outside (the tidy pass). */
+  save() {
+    this.changed();
   }
 
   /** Everything still current: superseded records are history. */
@@ -378,13 +384,39 @@ export class MemoryGraph {
     const rank = (r: MemoryRecord) =>
       (r.pinned ? 8 : 0) + (r.tags.includes("proven") ? 4 : 0) + (r.status === "confirmed" ? 2 : 0) -
       (r.doubted ?? 0) * 2 + Math.log1p(r.worked ?? 0) + 0.1 * Math.log1p(r.uses);
-    return this.active()
-      .filter((r) => !exclude.has(r.id))
+    // What was read from the site's own documentation comes first: it is the most reliable thing held about it.
+    const refs = this.referencesFor(host).filter((r) => !exclude.has(r.id));
+    const have = new Set(refs.map((r) => r.id));
+    const others = this.active()
+      .filter((r) => !exclude.has(r.id) && !have.has(r.id))
       .filter((r) =>
         inText.test(r.title) || inText.test(r.body) || r.tags.some((t) => inText.test(t)) ||
         (byName !== null && (byName.test(r.title) || r.tags.some((t) => byName.test(t)))))
-      .sort((a, b) => rank(b) - rank(a) || b.updated - a.updated)
-      .slice(0, limit);
+      .sort((a, b) => rank(b) - rank(a) || b.updated - a.updated);
+    return [...refs, ...others].slice(0, limit);
+  }
+
+  /**
+   * The references held for a site or product, newest first. A reference
+   * belongs to a site when it was read from it, or is filed under its name
+   * ("github" for github.com), so a note read from docs.github.com and one
+   * about "GitHub" are found together.
+   */
+  referencesFor(host: string): MemoryRecord[] {
+    const site = siteOf(host);
+    if (!site) return [];
+    const name = site.split(".")[0];
+    return this.active()
+      .filter((r) => r.kind === "reference")
+      .filter((r) => (r.source ? siteOf(hostOf(r.source)) === site : false) || r.subject === name)
+      .sort((a, b) => Math.max(b.fetched ?? 0, b.checked ?? 0) - Math.max(a.fetched ?? 0, a.checked ?? 0));
+  }
+
+  /** What is held about a site and how current: none, only old, or fresh. */
+  groundingOf(host: string, at = now()): "none" | "stale" | "fresh" {
+    const found = this.referencesFor(host);
+    if (found.length === 0) return "none";
+    return found.some((r) => referenceAgeDays(r, at) <= REFERENCE_FRESH_DAYS[r.facet ?? "docs"]) ? "fresh" : "stale";
   }
 
   /** Counted as used: it was put in front of the model. */
@@ -409,6 +441,7 @@ export class MemoryGraph {
       if (r.kind !== kind) continue;
       const known = indexOf(r);
       if (wanted && known.titleKey === wanted) return r;
+      // Two references to the same page are one record, however the body was reworded.
       const sim = overlap(known.vocab, vocab);
       if (sim > bestSim) { bestSim = sim; best = r; }
     }
@@ -432,6 +465,11 @@ export class MemoryGraph {
     status?: "confirmed" | "provisional";
     source_session?: string | null;
     source_seq?: number | null;
+    subject?: string;
+    facet?: MemoryRecord["facet"];
+    /** For a reference: the page it was read from. */
+    source?: string;
+    version?: string;
   }): { record: MemoryRecord; action: "added" | "merged" | "reinforced" | "proposed" } {
     const kind: MemoryKind = MEMORY_KINDS.includes(input.kind as MemoryKind) ? (input.kind as MemoryKind) : "fact";
     const status = input.status ?? "confirmed";
@@ -446,6 +484,10 @@ export class MemoryGraph {
       dup.body = body || dup.body;
       dup.tags = [...new Set([...dup.tags, ...tags])];
       dup.updated = t;
+      if (input.subject) dup.subject = input.subject;
+      if (input.facet) dup.facet = input.facet;
+      if (input.source) { dup.source = input.source; dup.fetched = t; }
+      if (input.version) dup.version = input.version;
       if (status === "confirmed") this.confirm(dup.id, false);
       this.changed();
       return { record: dup, action: "merged" };
@@ -473,6 +515,10 @@ export class MemoryGraph {
       superseded_by: null,
       worked: 0,
       replaces: dup ? dup.id : null,
+      ...(input.subject ? { subject: input.subject } : {}),
+      ...(input.facet ? { facet: input.facet } : {}),
+      ...(input.source ? { source: input.source, fetched: t } : {}),
+      ...(input.version ? { version: input.version } : {}),
     };
     this.records.push(record);
     if (dup) this.links.push({ src: record.id, dst: dup.id, rel: "revises" });
@@ -501,7 +547,10 @@ export class MemoryGraph {
     }
   }
 
-  update(id: string, patch: { title?: string; body?: string; kind?: string; tags?: string[]; pinned?: boolean }): MemoryRecord | null {
+  update(id: string, patch: {
+    title?: string; body?: string; kind?: string; tags?: string[]; pinned?: boolean;
+    subject?: string; facet?: MemoryRecord["facet"]; source?: string; version?: string;
+  }): MemoryRecord | null {
     const r = this.get(id);
     if (!r) return null;
     if (typeof patch.title === "string" && patch.title.trim()) r.title = patch.title.trim().slice(0, 200);
@@ -519,6 +568,16 @@ export class MemoryGraph {
       r.tags = [...new Set([...patch.tags.map((t) => String(t).trim().toLowerCase()).filter(Boolean), ...kept])];
     }
     if (typeof patch.pinned === "boolean") r.pinned = patch.pinned;
+    if (typeof patch.subject === "string" && patch.subject.trim()) r.subject = patch.subject.trim().toLowerCase().slice(0, 60);
+    if (patch.facet) r.facet = patch.facet;
+    if (typeof patch.version === "string") r.version = patch.version.trim().slice(0, 40) || undefined;
+    if (typeof patch.source === "string" && patch.source.trim()) {
+      r.source = patch.source.trim();
+      r.fetched = now();
+    } else if (r.kind === "reference" && r.source && typeof patch.body === "string" && patch.body.trim()) {
+      // Rewritten from its source: read again today.
+      r.fetched = now();
+    }
     r.updated = now();
     this.changed();
     return r;
@@ -693,6 +752,12 @@ export class MemoryGraph {
  * so the rule for when a memory counts as fresh is in one place.
  */
 export function freshness(r: MemoryRecord, at = now()): string | null {
+  if (r.kind === "reference") {
+    const age = referenceAgeDays(r, at);
+    if (age <= REFERENCE_FRESH_DAYS[r.facet ?? "docs"]) return null;
+    return `read from its source ${age} days ago and ${r.facet === "interface" ? "interfaces change often" : "may have changed"}: ` +
+      "open the source again and confirm it before relying on it";
+  }
   const when = r.checked ?? r.updated;
   if (!when) return null;
   const days = Math.floor((at - when) / 86400);

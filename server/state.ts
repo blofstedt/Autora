@@ -276,6 +276,8 @@ export interface PersistedState {
   /** Whether the agent says a short word about what the person does in the
       windows they share, when no turn is running (server/companion.ts). */
   collabRemarks: boolean;
+  /** Whether the agent reads a site's official documentation before acting on a site it has nothing current on. */
+  groundFirst: boolean;
   /** The person's time zone (an IANA name such as Europe/Stockholm), or empty
       to follow the machine. The clock every schedule, watcher and quiet hour
       is read on: in the Umbrel container that is UTC unless something sets it,
@@ -509,6 +511,7 @@ function blank(): PersistedState {
     learning: true,
     agentCursor: true,
     collabRemarks: true,
+    groundFirst: true,
     timezone: "",
     loop: { ...LOOP_DEFAULTS },
     verify: { ...VERIFY_DEFAULTS },
@@ -536,6 +539,7 @@ function read(): PersistedState {
     if (typeof raw.learning === "boolean") state.learning = raw.learning;
     if (typeof raw.agentCursor === "boolean") state.agentCursor = raw.agentCursor;
     if (typeof raw.collabRemarks === "boolean") state.collabRemarks = raw.collabRemarks;
+    if (typeof raw.groundFirst === "boolean") state.groundFirst = raw.groundFirst;
     if (typeof raw.timezone === "string" && validTimezone(raw.timezone)) {
       state.timezone = raw.timezone.trim();
       applyTimezone(state.timezone);

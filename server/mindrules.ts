@@ -18,7 +18,7 @@
  * Pure: text in, a verdict or a normalised entry out.
  */
 
-import { siteOf } from "./memory";
+import { siteOf } from "./site";
 import type { MemoryRecord } from "./memory";
 
 export type Facet = "interface" | "api" | "docs" | "workflow" | "quirk";
@@ -123,6 +123,21 @@ export interface Entry {
   status: "confirmed" | "provisional";
 }
 
+/** What is wrong with the words of a memory, or null: too long for its kind, about the moment, holding a secret. */
+export function checkText(kind: string, title: string, body: string): string | null {
+  if (SECRET.test(body) || SECRET.test(title)) {
+    return "That holds what looks like a password, key or token. Secrets are never written to memory; say where it is kept instead.";
+  }
+  const limit = MAX_BODY[kind] ?? 600;
+  if (body.length > limit) {
+    return `Too long for a ${kind} (${body.length} characters; at most ${limit}). One topic per memory: split it into separate records, each with a title naming what it covers, or keep only what will matter again.`;
+  }
+  if (kind !== "reference" && (EPHEMERAL.test(title) || EPHEMERAL.test(body))) {
+    return "That reads as a note about this conversation or this moment, which is already in the log. Memory is for what will still be true and useful in other sessions; rewrite it as that, or leave it out.";
+  }
+  return null;
+}
+
 export type EntryVerdict = { ok: true; entry: Entry; notes: string[] } | { ok: false; error: string };
 
 const KINDS = new Set(["fact", "preference", "procedure", "skill", "reference"]);
@@ -144,22 +159,8 @@ export function checkEntry(input: EntryInput): EntryVerdict {
   const body = String(input.body ?? "").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
   if (!title || !body) return { ok: false, error: "A memory needs both a title and a body." };
   const kind = (KINDS.has(String(input.kind)) ? String(input.kind) : "fact") as Entry["kind"];
-  if (SECRET.test(body) || SECRET.test(title)) {
-    return { ok: false, error: "That holds what looks like a password, key or token. Secrets are never written to memory; say where it is kept instead." };
-  }
-  const limit = MAX_BODY[kind] ?? 600;
-  if (body.length > limit) {
-    return {
-      ok: false,
-      error: `Too long for a ${kind} (${body.length} characters; at most ${limit}). One topic per memory: split it into separate records, each with a title naming what it covers, or keep only what will matter again.`,
-    };
-  }
-  if (kind !== "reference" && (EPHEMERAL.test(title) || EPHEMERAL.test(body))) {
-    return {
-      ok: false,
-      error: "That reads as a note about this conversation or this moment, which is already in the log. Memory is for what will still be true and useful in other sessions; rewrite it as that, or leave it out.",
-    };
-  }
+  const wrong = checkText(kind, title, body);
+  if (wrong) return { ok: false, error: wrong };
 
   let subject = subjectKey(String(input.subject ?? "")) || undefined;
   const sourceRaw = String(input.source ?? "").trim();

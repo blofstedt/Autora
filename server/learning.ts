@@ -15,12 +15,15 @@
  */
 
 import type { MemoryRecord } from "./memory";
+import { checkText, subjectKey } from "./mindrules";
 
 export interface Lesson {
   kind: "fact" | "preference" | "procedure";
   title: string;
   body: string;
   tags: string[];
+  /** What it is about (a product, site, app or project), lowercase. */
+  subject?: string;
   /** The memory this corrects or extends, when it does. */
   revises: string | null;
 }
@@ -100,7 +103,7 @@ export function reflectionPrompt(input: {
     input.nearby.length ? `\nOther memories on the same subject:\n${input.nearby.map(show).join("\n")}` : "",
     "",
     "Answer with JSON of exactly this shape:",
-    `{"learned":[{"kind":"procedure|preference|fact","title":"...","body":"...","tags":["..."],"revises":"mem-id or null"}],"helped":["mem-id"],"misled":["mem-id"],"next":[{"label":"...","prompt":"..."}]}`,
+    `{"learned":[{"kind":"procedure|preference|fact","subject":"...","title":"...","body":"...","tags":["..."],"revises":"mem-id or null"}],"helped":["mem-id"],"misled":["mem-id"],"next":[{"label":"...","prompt":"..."}]}`,
     "",
     "learned: at most 3 items, only ones that will still be useful months from now in",
     "other sessions. A procedure is how something was actually done here once it worked:",
@@ -116,6 +119,11 @@ export function reflectionPrompt(input: {
     "status), anything secret (passwords, tokens, keys, account numbers), or anything",
     "already in the memories above unless it corrects them -- then set \"revises\" to that",
     "memory's id and write the corrected version in full.",
+    "subject: what it is about, in a word or two (\"github\", \"docker\", \"the person's NAS\"). title:",
+    "starts with the subject and says what the note is (\"GitHub: where repository settings are\").",
+    "One topic per item; a fact in at most 600 characters, a preference 400, a procedure 1200.",
+    "Never about this conversation or this moment. Never how a product's interface or API works",
+    "from memory of the page (that is read from the official source and written as a reference, not here).",
     "tags: the subject it belongs to (e.g. \"stocks\", \"docker\", \"email\", \"travel\"), the",
     "site's host name if a site was involved, and the names of things it is about -- these",
     "are the words it will be found by when the subject comes up again.",
@@ -149,12 +157,14 @@ export function parseReflection(text: string, knownIds: Set<string>): Reflection
     const title = String(item?.title ?? "").trim();
     const body = String(item?.body ?? "").trim();
     if (!kind || !title || body.length < 12) continue;
-    // A secret has no business in memory, however it got into the reply.
-    if (/(password|passwd|api[_ -]?key|secret|token)\s*[:=]\s*\S{6,}/i.test(body)) continue;
+    // Held to the same rules as a note the agent writes itself: no secrets, one topic, not about the moment.
+    if (checkText(kind, title, body)) continue;
+    const subject = subjectKey(String(item?.subject ?? "")) || undefined;
     learned.push({
       kind,
-      title: title.slice(0, 120),
-      body: body.slice(0, 2000),
+      subject,
+      title: (subject && !title.toLowerCase().includes(subject) ? `${subject[0].toUpperCase()}${subject.slice(1)}: ${title}` : title).slice(0, 160),
+      body,
       tags: Array.isArray(item?.tags) ? item.tags.map(String).slice(0, 6) : [],
       revises: typeof item?.revises === "string" && knownIds.has(item.revises) ? item.revises : null,
     });
