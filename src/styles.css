@@ -6569,3 +6569,18 @@ body.is-resizing iframe { pointer-events: none; }
 .shot-dev-row em { flex: 0 0 auto; font-style: normal; color: var(--text-3); }
 .shot-dev-row.is-error, .shot-dev-row.is-error b { color: #f87171; }
 .shot-dev-row.is-warn, .shot-dev-row.is-warn b { color: #fbbf24; }
+
+/* A phone or a tablet is drawn in a bezel, so the window reads as the device
+   the page is being laid out for. It sits outside the page, on shadows, so no
+   coordinate on the screen moves. */
+.app-canvas.is-phone { border-radius: 30px; box-shadow: 0 0 0 9px #0b0b0d, 0 0 0 10px #3a3a42, 0 22px 60px -14px rgba(0, 0, 0, 0.8); }
+.app-canvas.is-phone .app-screen { border-radius: 22px; }
+.app-canvas.is-phone::before {
+  content: ""; position: absolute; z-index: 2; top: 6px; left: 50%; width: 64px; height: 6px;
+  margin-left: -32px; border-radius: 4px; background: #0b0b0d; pointer-events: none; opacity: 0.85;
+}
+.app-canvas.is-tablet { border-radius: 20px; box-shadow: 0 0 0 11px #0b0b0d, 0 0 0 12px #3a3a42, 0 22px 60px -14px rgba(0, 0, 0, 0.8); }
+.app-canvas.is-tablet .app-screen { border-radius: 10px; }
+.app-errs.has { color: #f87171; }
+.app-errs:not(.has) { color: var(--text-2); background: var(--s3); }
+.app-errs:not(.has):hover, .app-errs:not(.has).on { border-color: var(--border-strong); color: var(--text); }

@@ -59,6 +59,11 @@ is a sub-project with its own dependencies (see below).
   relay), `store.ts` / `state.ts` (what is kept on disk under `AUTORA_HOME`),
   `LiveBrowser.devtools()` (every console line and request of every tab, 400 kept; the menu's
   Developer tools panel polls `GET /browser/devtools`, the agent has `browser_devtools`),
+  `snapshots.ts` (version history of the working folder: a git directory of its own under the state
+  dir with the project as work tree, so the project's `.git` is never touched; a version is saved
+  at the end of a turn that wrote code (`codeTouched` in `server.ts`), `restore` saves the present
+  first and uses `read-tree --reset -u`; `GET /api/versions`, `POST /api/versions/restore`; the app
+  window's Versions, Templates and Console panels are `AppVersions.tsx` and `DevtoolsPanel.tsx`),
   `extensions.ts` (Chrome extensions, unpacked under `AUTORA_HOME/extensions/<name>/pkg`; `launchArgs()`
   adds `--load-extension` and `--headless=new` when any is enabled, `browser.ts` then drops Playwright's
   `--disable-extensions`; the id is Chrome's, from the folder's path; the popup opens as a tab),

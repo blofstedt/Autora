@@ -1,3 +1,5 @@
+import { DevtoolsPanel } from "./DevtoolsPanel";
+import { TemplatesPanel, VersionsPanel } from "./AppVersions";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { useAgentCursor } from "../lib/agentCursor";
 import { holdSurface, useCollab } from "../lib/collab";
@@ -83,6 +85,7 @@ export function AppPreview({ sessionId, phone }: { sessionId: string; phone: boo
   /** The address being typed, or null while the bar just shows where the page is. */
   const [address, setAddress] = useState<string | null>(null);
   const [consoleOpen, setConsoleOpen] = useState(false);
+  const [side, setSide] = useState<"versions" | "templates" | null>(null);
 
   const areaRef = useRef<HTMLDivElement>(null);
   const screenRef = useRef<HTMLDivElement>(null);
@@ -604,14 +607,18 @@ export function AppPreview({ sessionId, phone }: { sessionId: string; phone: boo
             />
           </form>
         )}
-        {errors > 0 && (
-          <button
-            type="button" className={`app-errs${consoleOpen ? " on" : ""}`} aria-expanded={consoleOpen}
-            title="The page's console has errors; Autora can see them" onClick={() => setConsoleOpen((v) => !v)}
-          >
-            {errors} error{errors === 1 ? "" : "s"}
-          </button>
-        )}
+        <button
+          type="button" className={`app-errs${errors > 0 ? " has" : ""}${consoleOpen ? " on" : ""}`} aria-expanded={consoleOpen}
+          title="The page's console and network; Autora can see them too" onClick={() => setConsoleOpen((v) => !v)}
+        >
+          {errors > 0 ? `${errors} error${errors === 1 ? "" : "s"}` : "Console"}
+        </button>
+        <button type="button" className={`app-errs${side === "versions" ? " on" : ""}`} onClick={() => setSide(side === "versions" ? null : "versions")} title="Saved versions of what is being built, and going back to one">
+          Versions
+        </button>
+        <button type="button" className={`app-errs${side === "templates" ? " on" : ""}`} onClick={() => setSide(side === "templates" ? null : "templates")} title="Start from a template">
+          Templates
+        </button>
         <button
           type="button"
           className={`app-control${mine ? " on" : ""}`}
@@ -635,16 +642,9 @@ export function AppPreview({ sessionId, phone }: { sessionId: string; phone: boo
         </button>
       </div>
 
-      {consoleOpen && errors > 0 && (
-        <div className="app-console" role="log" aria-label="The page's console errors">
-          <ol>
-            {(state.consoleErrors ?? []).map((line, i) => <li key={i}>{line}</li>)}
-          </ol>
-          {errors > (state.consoleErrors?.length ?? 0) && (
-            <p className="app-console-more">and {errors - (state.consoleErrors?.length ?? 0)} earlier. Reload to start the count again.</p>
-          )}
-        </div>
-      )}
+      {side === "versions" && <VersionsPanel sessionId={sessionId} busy={false} onClose={() => setSide(null)} />}
+      {side === "templates" && <TemplatesPanel sessionId={sessionId} onClose={() => setSide(null)} />}
+      {consoleOpen && <DevtoolsPanel sessionId={sessionId} target="preview" onClose={() => setConsoleOpen(false)} />}
 
       <div className="app-tools" role="radiogroup" aria-label="What a tap does">
         {([
@@ -673,7 +673,7 @@ export function AppPreview({ sessionId, phone }: { sessionId: string; phone: boo
             </span>
           </div>
         )}
-        <div className="app-canvas" style={{ width: box.w, height: box.h }}>
+        <div className={`app-canvas is-${device}`} style={{ width: box.w, height: box.h }}>
           <div
             ref={screenRef}
             className={`app-screen is-${mode}`}

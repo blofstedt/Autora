@@ -133,8 +133,10 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  New: developer tools in the browser's menu: the open tab's console (logs, warnings, errors, uncaught
-  errors) and network (every request with its status, type, time and size, failures in red), live,
-  with a filter for errors. The agent reads the same lists with browser_devtools to find out why a
-  page is blank or a button does nothing. Earlier in this release line: Chrome extensions
-  (experimental), find on page, bookmarks, history, downloads, tabs, and a faster picture.
+  New: the app window gets the tools of a real builder. A Console button opens the page's console and
+  network (the same lists the agent reads); phone and tablet previews are drawn in a device frame;
+  Versions lists a saved version of your project after every turn that changed code, and Go back to
+  this puts the files back as they were (what was there is saved first, so a restore can be undone);
+  Templates starts a landing page, dashboard, to-do app, portfolio, blog or sign-up form with one tap.
+  Earlier in this release line: the browser's tabs, Chrome extensions (experimental), find, bookmarks,
+  history, downloads and developer tools.

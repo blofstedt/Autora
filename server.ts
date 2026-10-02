@@ -65,6 +65,7 @@ import { threeRuntime } from "./server/widgets";
 import {
   MAX_ARTIFACT_BYTES, cleanName, deleteArtifact, getArtifact, listArtifacts, readArtifact, saveArtifact,
 } from "./server/artifacts";
+import { restore as restoreVersion, snapshot as snapshotFolder, versions as folderVersions } from "./server/snapshots";
 import {
   installFromStore, installPackage, listExtensions, removeExtension, setExtensionEnabled,
 } from "./server/extensions";
@@ -3342,6 +3343,12 @@ function beginTurn(session: Session, text: string, attachments: AttachmentRef[] 
   const done = runTurn(session, text, opts);
   void done
     .then(async (result) => {
+      /* The turn changed code: save a version of the folder to go back to. */
+      if (codeTouched.delete(session.id)) {
+        void snapshotFolder(terminalDir(), text.slice(0, 120)).then((saved) => {
+          if (saved) emitEvent(session, "version.saved", "system", { id: saved.id, label: saved.label, files: saved.files });
+        });
+      }
       /* What next: the chips that show what else it can do with this, at
          once, and again with the look back's own ideas when it has them. */
       const first = offerNextSteps(session, text, startSeq, result, opts, []);
@@ -3402,6 +3409,8 @@ const THINK_LONGER = {
    the thread (server/codediff.ts). One per chat; remade if the terminal's
    directory is changed. */
 const workspaces = new Map<string, Workspace>();
+/** Chats whose turn wrote code, to be saved as a version when it ends. */
+const codeTouched = new Set<string>();
 
 function workspaceFor(sessionId: string): Workspace {
   const root = terminalDir();
@@ -4421,6 +4430,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             message: `${workspace.root} has too many files to follow, so the code the agent writes there is not shown as it is written.`,
           });
         }
+        if (files.length > 0) codeTouched.add(session.id);
         for (const f of files.slice(0, MAX_CHANGE_CARDS)) {
           emitEvent(session, "file.edit", "agent", {
             path: f.path,
@@ -6541,6 +6551,27 @@ async function startServer() {
     if (!session) return res.status(404).json({ error: "Session not found" });
     targetBrowser(session, req)?.clearDevtools();
     res.json({ ok: true });
+  });
+
+  /** The folder the agent builds in: its saved versions, and going back to one. */
+  app.get("/api/versions", async (_req: Request, res: Response) => {
+    res.json({ folder: terminalDir(), versions: await folderVersions(terminalDir()) });
+  });
+
+  app.post("/api/versions/restore", async (req: Request, res: Response) => {
+    const session = req.body?.session ? sessions.get(String(req.body.session)) : undefined;
+    if (session && agentDriving(session)) return res.status(409).json({ error: "The agent is working; wait for it to finish or stop it first." });
+    try {
+      const saved = await restoreVersion(terminalDir(), String(req.body?.id ?? ""));
+      if (session) {
+        emitEvent(session, "version.restored", "user", { id: String(req.body?.id), label: saved?.label ?? "" });
+        const run = previews.get(session.id);
+        if (run?.opened) void run.live.reload().catch(() => undefined);
+      }
+      res.json({ ok: true, versions: await folderVersions(terminalDir()) });
+    } catch (err: any) {
+      res.status(400).json({ error: err?.message ?? "Could not restore that." });
+    }
   });
 
   app.post("/api/sessions/:id/browser/forward", async (req: Request, res: Response) => {
