@@ -125,6 +125,10 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
+  New: the agent can send a research worker to look into something -- where a
+  feature lives, what a library says, which files use a thing. The worker has
+  its own clean context and can only look; all it brings back is a short
+  report, so a dozen searches no longer crowd the conversation.
   New: a project check. Name a command in Settings (your linter, tests or
   build) and Autora runs it itself when the agent says it is finished after
   changing something; a failure sends the agent back with the real output, and

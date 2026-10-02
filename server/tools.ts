@@ -1489,6 +1489,26 @@ const TOOLS: ToolSpec[] = [
     },
   },
 
+  {
+    name: "research",
+    group: "schedule",
+    description:
+      "Hand a self-contained question to a separate research worker and get a short report back. The worker has a " +
+      "clean context and read-only tools (code search, read-only commands, files, PDFs, web search where available), " +
+      "does the looking, and returns findings with where it saw each -- none of its searching or reading enters this " +
+      "conversation. Use it when answering needs a lot of looking and you only need the conclusion: \"where is X " +
+      "handled and what does it do?\", \"which of these files uses Y?\", \"what does this library say about Z?\". " +
+      "Do not use it for something one search answers, or for anything that has to change a file: it cannot. Write the " +
+      "question so it stands alone -- the worker has not seen this conversation -- and say what you need back.",
+    parameters: {
+      type: "object",
+      properties: {
+        question: { type: "string", description: "What to find out, complete in itself, and what form the answer should take." },
+      },
+      required: ["question"],
+    },
+  },
+
   // ---------------------------------------------------------------- PDFs --
   {
     name: "pdf_read",
@@ -2376,6 +2396,9 @@ export interface ToolContext {
   browserChanged: () => void;
   /** Start forwarding desktop frames to this session. */
   watchDesktop: () => void;
+  /** Hand a question to a research worker with its own context (see
+      server/subagent.ts) and get its report back. Absent inside the worker. */
+  research?: (question: string) => Promise<string>;
   /** True once the turn has been interrupted; long tools should give up. */
   cancelled: () => boolean;
   /** Register a kill switch so an interrupt can stop a running command. */
@@ -3263,6 +3286,13 @@ async function runToolUnredacted(
         // A relative directory is taken from the terminal's own, like `cd`.
         const cwd = asked ? path.resolve(terminalDir(), asked) : terminalDir();
         return await runCommand(command, cwd, settings.timeout, ctx);
+      }
+
+      case "research": {
+        if (!ctx.research) return { ok: false, summary: "A research worker cannot start another one. Answer from what you can look at yourself." };
+        const question = String(args.question ?? "").trim();
+        const report = await ctx.research(question);
+        return { ok: true, summary: report, preview: "research report" };
       }
 
       case "code_search": {

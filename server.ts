@@ -83,11 +83,12 @@ import { mergeCaptcha } from "./server/captcha";
 import { inQuiet, mergeProactivity, quietBriefing } from "./server/quiet";
 import {
   askAbout, askReason, cleanAskWhen, isPermissions, isWorkMode, legacyPermissions, modeBriefing,
-  permissionBriefing, permissionsOf, phaseFor, planRefusal, readOnlyCommand, PERMISSION_INFO, WORK_MODES, workMode,
+  looksOnly, permissionBriefing, permissionsOf, phaseFor, planRefusal, readOnlyCommand, PERMISSION_INFO, WORK_MODES, workMode,
   type Permissions, type Phase, type WorkMode,
 } from "./server/modes";
 import { LoopWatch, describe as describeCall } from "./server/loopwatch";
 import { ErrorBudget } from "./server/errorbudget";
+import { runSubagent } from "./server/subagent";
 import { checkLine, failedNote, mergeVerify, type CheckResult } from "./server/verify";
 import { keepBudget, loadBudget } from "./server/budgetstore";
 import { interruptedWork, resumeNote, type InterruptedWork, type ResumeEvent } from "./server/resume";
@@ -3334,7 +3335,48 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
 
       /** Everything a tool needs from this session, handed in rather than
           imported, so server/tools.ts knows nothing about sessions. */
+      /* The tools a research worker may hold: the ones that only look. Whatever
+         else is switched on, it is read-only (looksOnly judges each call). */
+      const WORKER_TOOLS = new Set([
+        "code_search", "terminal", "artifact_list", "artifact_read", "pdf_read", "web_search", "http_request", "memory_search",
+      ]);
+      /** A question answered by a worker with a clean context; only its report returns. */
+      const researchFor = async (question: string): Promise<string> => {
+        if (!question) return "Say what to find out.";
+        const offeredNow = (await availableTools()).filter((t) => WORKER_TOOLS.has(t.name));
+        if (offeredNow.length === 0) return "No read-only tools are available for a worker right now.";
+        const span = `span-${session.id}-${session.seqCounter}-${spans++}`;
+        const out = await runSubagent(question, {
+          tools: offeredNow,
+          cancelled: () => Boolean(running.get(session.id)?.stopped),
+          ask: async (system, messages, list) => {
+            const turn = await streamChat({
+              provider: active.provider, model: active.model, key: active.key, baseUrl: active.baseUrl,
+              system, messages, temperature: 0.2, maxTokens: 2000, thinking: "off",
+              signal: running.get(session.id)?.signal,
+              tools: list.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })),
+            }, () => undefined);
+            charge(active.model, turn.usage);
+            return turn;
+          },
+          run: async (name, args) => {
+            const spec = findTool(name);
+            if (!spec || !offeredNow.some((t) => t.name === name)) return { ok: false, summary: `${name} is not available to a worker.` };
+            if (!looksOnly(name, args)) {
+              return { ok: false, summary: "Not run: a research worker only looks. Say in the report what would need to change." };
+            }
+            const o = await runTool(spec, args, { ...contextFor(span), onOutput: () => undefined, research: undefined });
+            return { ok: o.ok, summary: o.summary };
+          },
+        });
+        emitEvent(session, "system.log", "system", {
+          message: `A research worker looked into it: ${out.calls} lookups in ${out.steps} steps (${out.ended}).`,
+        });
+        return `${out.report}\n\n(Worker: ${out.calls} lookups in ${out.steps} steps. Its searching and reading did not enter this conversation.)`;
+      };
+
       const contextFor = (span: string): ToolContext => ({
+        research: researchFor,
         preview: {
           start: (args) => previewStart(session, args, span),
           stop: async () => {

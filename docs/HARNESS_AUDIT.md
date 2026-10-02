@@ -5,6 +5,27 @@ Scope: the harness only (turn loop, context, state, tools, guardrails). Read:
 `server/context.ts`, `server/tools.ts` (`runTool`), `server/todos.ts`,
 `server/guard.ts`, `server/toolhealth.ts`, `server/modes.ts`.
 
+## Status after remediation
+
+The sections below are the audit as first written. What has been done since,
+each with tests, and one correction.
+
+| Finding | Now |
+|---|---|
+| G3.1/G3.2 varied retries never add up | `server/errorbudget.ts`: counts *different* attempts by error signature, names them in the note, stops at six. Repeats of one command are left to the loop watch (a failing test run after each edit is ordinary work). |
+| G3.3 loop state dies with the turn | Kept per chat (`server/budgetstore.ts`), eased by a success, forgotten after 6 hours, none for incognito chats. |
+| G3.4 stop is terminal, no handover | A turn the loop watch ends records why; the next turn is told, and told not to repeat those attempts (`server/resume.ts`). The same mechanism carries work through Stop and through a message sent mid-turn. |
+| Dim 1 no evaluator | `server/verify.ts`: the person's project check (Settings) runs when the agent says it is finished after a command that changes things; the raw failure goes back, up to `tries` runs a turn. Off until a command is set, because Autora is not tied to one kind of project. |
+| Dim 2 no sub-agents | `research` tool (`server/subagent.ts`): clean context, read-only tools, step limit, own loop watch and schema check; only a short report returns. |
+| Dim 4 schemas not enforced | `server/argcheck.ts`, before the guard, the approval card and the tool. |
+| Dim 6 no deterministic narrowing | `code_search` (`server/codesearch.ts`): exact, regex and BM25-ranked search in plain code. |
+| Dim 5 "no read-only mode for the terminal" | **Wrong as first written.** Plan mode is exactly that: it refuses everything that is not looking, and lets only read-only commands run (`readOnlyCommand` in `server/modes.ts`). `code_search` and `research` are allowed there. Nothing to build. |
+
+Still open, by choice: reflowing text after `pdf_replace_text` (see its tool
+description), and a sandbox per command (the container is the sandbox).
+
+---
+
 ## Summary
 
 | # | Dimension | Verdict | One line |

@@ -95,6 +95,11 @@ is a sub-project with its own dependencies (see below).
   - `verify.ts`: the person's project check (Settings), run by the loop when the
     agent says it is finished after changing something; a failure goes back to
     the agent with the raw output, up to `tries` runs a turn.
+  - `subagent.ts` (`research`): a worker with a fresh context and read-only
+    tools (`looksOnly` judges every call), its own loop watch and schema check,
+    a step limit; only its short report reaches the main thread. It is given
+    the model and tools by `researchFor` in `server.ts`, so it is tested with a
+    script.
   - `codesearch.ts` (`code_search`): exact, regex and BM25-ranked search over a
     folder in plain code; walks afresh each time, caches only per-file indexes.
   - `suggest.ts`: what to suggest, from what is actually on the install --
