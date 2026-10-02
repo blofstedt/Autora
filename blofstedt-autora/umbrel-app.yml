@@ -133,7 +133,8 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  New: the browser has a menu with Find on page, Bookmarks (a star beside the address), History
-  and Downloads. A file a page downloads is kept in Files, and History and Bookmarks are remembered
-  across restarts. Earlier in this release line: tabs, a Forward button, and a picture that is
-  quick while you tap and sharp once you stop.
+  New (experimental): Chrome extensions in the browser. Add one from the Chrome Web Store (its address
+  or id) or from a .zip/.crx file in the browser's menu, switch it on and off, open its popup, remove
+  it; they load when the browser restarts (a button does that). Earlier in this release line: find on
+  page, bookmarks, history and downloads, tabs, and a picture that is quick while you tap and sharp
+  once you stop.

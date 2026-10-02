@@ -66,6 +66,9 @@ import {
   MAX_ARTIFACT_BYTES, cleanName, deleteArtifact, getArtifact, listArtifacts, readArtifact, saveArtifact,
 } from "./server/artifacts";
 import {
+  installFromStore, installPackage, listExtensions, removeExtension, setExtensionEnabled,
+} from "./server/extensions";
+import {
   addBookmark, bookmarks, clearHistory, downloads, history, recordDownload, recordVisit, removeBookmark,
 } from "./server/browsedata";
 import {
@@ -6462,6 +6465,47 @@ async function startServer() {
     const mark = addBookmark(url, String(req.body?.title ?? ""));
     if (!mark) return res.status(400).json({ error: "Only web pages can be bookmarked." });
     res.json({ ok: true, bookmark: mark });
+  });
+
+  /** Chrome extensions. They see every page, so each is installed by name. */
+  app.get("/api/extensions", (_req: Request, res: Response) => {
+    res.json({ extensions: listExtensions() });
+  });
+
+  app.post("/api/extensions/install", async (req: Request, res: Response) => {
+    try {
+      res.json({ ok: true, extension: await installFromStore(String(req.body?.source ?? "")) });
+    } catch (err: any) {
+      res.status(400).json({ error: err?.message ?? "Could not install that." });
+    }
+  });
+
+  app.post("/api/extensions/upload", express.raw({ type: "*/*", limit: "60mb" }), (req: Request, res: Response) => {
+    try {
+      if (!Buffer.isBuffer(req.body) || req.body.length === 0) throw new Error("Send the extension's .zip or .crx file.");
+      const name = String(req.query.name ?? "extension").replace(/\.(zip|crx)$/i, "");
+      res.json({ ok: true, extension: installPackage(req.body, "file", name) });
+    } catch (err: any) {
+      res.status(400).json({ error: err?.message ?? "Could not install that." });
+    }
+  });
+
+  app.post("/api/extensions/item/:id", (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    const done = req.body?.remove ? removeExtension(id) : setExtensionEnabled(id, !!req.body?.enabled);
+    res.status(done ? 200 : 404).json(done ? { ok: true } : { error: "No such extension." });
+  });
+
+  /** Extensions load when the browser starts: close every chat's browser so
+      the next page opens with the current set. */
+  app.post("/api/extensions/restart", async (_req: Request, res: Response) => {
+    for (const [id, live] of [...browsers]) {
+      await live.close().catch(() => undefined);
+      browsers.delete(id);
+      const session = sessions.get(id);
+      if (session) broadcastBrowserState(session);
+    }
+    res.json({ ok: true });
   });
 
   app.post("/api/browser/history/clear", (_req: Request, res: Response) => {

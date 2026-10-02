@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconX } from "./Icons";
 
-export type BrowserPanelKind = "history" | "bookmarks" | "downloads" | "find";
+export type BrowserPanelKind = "history" | "bookmarks" | "downloads" | "find" | "extensions";
 
 type Data = {
   history: Array<{ url: string; title: string; ts: number }>;
@@ -37,7 +37,7 @@ const size = (n: number) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `$
  * Opening an entry navigates the open tab; a download is the artifact it
  * became.
  */
-export function BrowserPanel({
+function ListPanel({
   kind, data, canUse, onClose, onOpen, onFind, onChanged,
 }: {
   kind: BrowserPanelKind;
@@ -105,6 +105,97 @@ export function BrowserPanel({
                 <span>{r.title || r.url}</span><em>{r.url.replace(/^https?:\/\//, "")}</em>
               </button>
             ))}
+      </div>
+    </div>
+  );
+}
+
+export function BrowserPanel(props: Parameters<typeof ListPanel>[0] & { onNewTab: (url: string) => void }) {
+  const { onNewTab, ...rest } = props;
+  if (props.kind === "extensions") return <ExtensionsPanel canUse={props.canUse} onClose={props.onClose} onNewTab={onNewTab} />;
+  return <ListPanel {...rest} />;
+}
+
+type Ext = {
+  id: string; name: string; version: string; enabled: boolean; source: string;
+  popup: string | null; options: string | null;
+};
+
+/** Chrome extensions: add one from the Web Store or a file, switch it on and
+    off, open its popup, remove it. They load when the browser restarts. */
+function ExtensionsPanel({ canUse, onClose, onNewTab }: { canUse: boolean; onClose: () => void; onNewTab: (url: string) => void }) {
+  const [list, setList] = useState<Ext[]>([]);
+  const [source, setSource] = useState("");
+  const [note, setNote] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [changed, setChanged] = useState(false);
+  const file = useRef<HTMLInputElement>(null);
+
+  const load = useCallback(() => {
+    fetch("/api/extensions").then((r) => r.json()).then((d) => setList(d.extensions ?? [])).catch(() => undefined);
+  }, []);
+  useEffect(load, [load]);
+
+  const done = (r: Response) => r.json().then((d) => {
+    if (!r.ok) throw new Error(d.error ?? "That did not work.");
+    setNote(null);
+    setChanged(true);
+    load();
+  }).catch((e: Error) => setNote(e.message)).finally(() => setBusy(false));
+
+  const install = () => {
+    if (!source.trim()) return;
+    setBusy(true);
+    void fetch("/api/extensions/install", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source }),
+    }).then(done).then(() => setSource(""));
+  };
+  const upload = (f: File) => {
+    setBusy(true);
+    void fetch(`/api/extensions/upload?name=${encodeURIComponent(f.name)}`, { method: "POST", body: f }).then(done);
+  };
+  const patch = (id: string, body: object) =>
+    void fetch(`/api/extensions/item/${id}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    }).then(done);
+
+  return (
+    <div className="shot-panel">
+      <div className="shot-panel-head">
+        <strong>Extensions <em className="shot-exp">experimental</em></strong>
+        <button className="shot-tool" onClick={onClose} aria-label="Close"><IconX size={13} /></button>
+      </div>
+      <div className="shot-panel-list">
+        {list.length === 0 && <p className="shot-panel-empty">None yet. An extension sees every page the browser opens, so add only ones you trust.</p>}
+        {list.map((x) => (
+          <div key={x.id} className="shot-ext">
+            <span className="shot-ext-name">{x.name} <em>{x.version}</em></span>
+            {x.popup && <button className="cell-act" disabled={!canUse || !x.enabled || changed} onClick={() => onNewTab(x.popup!)}>Open</button>}
+            <button className="cell-act" onClick={() => patch(x.id, { enabled: !x.enabled })}>{x.enabled ? "On" : "Off"}</button>
+            <button className="cell-act" onClick={() => patch(x.id, { remove: true })}>Remove</button>
+          </div>
+        ))}
+        <div className="shot-ext-add">
+          <input
+            value={source}
+            placeholder="Web Store address or id"
+            onChange={(e) => setSource(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") install(); }}
+            aria-label="Chrome Web Store address or extension id"
+          />
+          <button className="cell-act" disabled={busy || !source.trim()} onClick={install}>Add</button>
+          <button className="cell-act" disabled={busy} onClick={() => file.current?.click()}>From file</button>
+          <input ref={file} type="file" accept=".zip,.crx" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); e.target.value = ""; }} />
+        </div>
+        {note && <p className="shot-panel-empty">{note}</p>}
+        {changed && (
+          <p className="shot-panel-empty">
+            Changes apply when the browser restarts.{" "}
+            <button className="cell-act" onClick={() => void fetch("/api/extensions/restart", { method: "POST" }).then(() => setChanged(false))}>
+              Restart browser
+            </button>
+          </p>
+        )}
       </div>
     </div>
   );

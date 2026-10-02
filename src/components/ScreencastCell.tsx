@@ -510,6 +510,7 @@ export function ScreencastCell({
                   <button role="menuitem" onClick={() => setPanel("bookmarks")}><IconStar size={13} /> Bookmarks</button>
                   <button role="menuitem" onClick={() => setPanel("history")}><IconRotateCcw size={13} /> History</button>
                   <button role="menuitem" onClick={() => setPanel("downloads")}><IconDownload size={13} /> Downloads</button>
+                  <button role="menuitem" onClick={() => setPanel("extensions")}><IconPlus size={13} /> Extensions</button>
                 </div>
               )}
             </span>
@@ -607,6 +608,7 @@ export function ScreencastCell({
           onOpen={(u) => void send("navigate", { url: u })}
           onFind={(text, backwards) => send("find", { text, backwards }).then((r) => !!r?.found)}
           onChanged={reloadLists}
+          onNewTab={(u) => void send("tabs", { action: "new", url: u })}
         />
       )}
       {toolbar && tabs.length > 0 && (

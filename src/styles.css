@@ -6549,3 +6549,13 @@ body.is-resizing iframe { pointer-events: none; }
 }
 .shot-panel-row em { font-size: 11px; color: var(--text-3); }
 .shot-panel-empty { margin: 8px; font-size: 12px; color: var(--text-3); }
+
+.shot-exp { margin-left: 6px; font-size: 10px; font-style: normal; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.04em; }
+.shot-ext { display: flex; align-items: center; gap: 6px; padding: 5px 8px; }
+.shot-ext-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.shot-ext-name em { font-style: normal; font-size: 11px; color: var(--text-3); }
+.shot-ext-add { display: flex; align-items: center; gap: 6px; padding: 6px 8px; }
+.shot-ext-add input[type="text"], .shot-ext-add input:not([type]) {
+  flex: 1 1 auto; min-width: 0; height: 28px; padding: 0 10px; border: 1px solid var(--border);
+  border-radius: 99px; background: var(--s2); color: var(--text); outline: none;
+}

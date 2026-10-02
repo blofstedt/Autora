@@ -33,6 +33,7 @@ import type { DomItem } from "./domdiff";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import { launchArgs } from "./extensions";
 import os from "node:os";
 import path from "node:path";
 
@@ -1638,9 +1639,12 @@ async function launchShared(): Promise<BrowserContext> {
   const dir = profileDir();
   const geo = await browserGeo();
   const agent = browserUserAgent();
+  const extensionArgs = launchArgs();
   const launch = () =>
     chromium.launchPersistentContext(dir, {
-      headless: process.env.AUTORA_BROWSER_HEADED !== "1",
+      // Extensions need Chrome's new headless mode, which is the whole
+      // browser without a window; it is asked for by flag (see extensions.ts).
+      headless: process.env.AUTORA_BROWSER_HEADED !== "1" && !extensionArgs.length,
       ...(executablePath ? { executablePath } : {}),
       viewport: VIEWPORT,
       deviceScaleFactor: 1,
@@ -1649,8 +1653,9 @@ async function launchShared(): Promise<BrowserContext> {
       ...(agent ? { userAgent: agent } : {}),
       locale: geo.locale || "en-US",
       ...(geo.tz ? { timezoneId: geo.tz } : {}),
-      ignoreDefaultArgs: ["--enable-automation"],
+      ignoreDefaultArgs: extensionArgs.length ? ["--enable-automation", "--disable-extensions"] : ["--enable-automation"],
       args: [
+        ...(process.env.AUTORA_BROWSER_HEADED === "1" ? extensionArgs.filter((a) => a !== "--headless=new") : extensionArgs),
         "--no-sandbox",
         "--disable-dev-shm-usage",
         "--hide-scrollbars",
