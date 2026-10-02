@@ -49,6 +49,8 @@ export type FileChange = {
   ts?: number;
   /** Said instead of lines: a lock file, a removal. */
   note?: string;
+  /** Written by the person, in their own editor, not by the agent. */
+  by?: "person";
 };
 
 export type TodoItem = {
@@ -984,6 +986,7 @@ export function derive(events: AutoraEvent[]): Derived {
           seq: e.seq,
           ts: e.ts,
           ...(typeof e.payload.note === "string" ? { note: e.payload.note } : {}),
+          ...(e.payload.by === "person" ? { by: "person" as const } : {}),
         };
         files.push(file);
         push({ kind: "file", seq: e.seq, file });

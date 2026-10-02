@@ -136,6 +136,14 @@ is a sub-project with its own dependencies (see below).
     `app_preview` click/hover/type/press/scroll use the page as a person would,
     in the window the person is watching, and are refused while planning.
     All of it follows the one agent-cursor switch (`state.agentCursor`).
+  - `merge3.ts` + `editfile.ts` (`edit_file`): the careful way to change a file
+    the person may also edit. The loop scans the folder before each changing
+    call and at the end of each round, and what changed that the agent did not
+    do is the person's: shown as a card tagged "you", told to the agent, leased
+    to them for a while. `edit_file` applies exact replacements, keeps their
+    changes beside the agent's when the two touched different lines, and writes
+    nothing (naming what they did) when they clashed. Not while a background
+    command runs, which also writes files.
   - `codesearch.ts` (`code_search`): exact, regex and BM25-ranked search over a
     folder in plain code; walks afresh each time, caches only per-file indexes.
   - `suggest.ts`: what to suggest, from what is actually on the install --

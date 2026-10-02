@@ -32,7 +32,8 @@ export function FileCell({ file }: { file: FileChange }) {
   /* How far the writing has got, in characters of the lines being typed; null
      once it is done (or was never played). */
   const total = shown.reduce((n, l) => n + (isAdded(l) ? l.length : 1), 0);
-  const fresh = useRef(file.ts !== undefined && Date.now() - file.ts * 1000 < FRESH_MS);
+  // The person's own edits happened in their editor: they are shown, not typed out.
+  const fresh = useRef(file.by !== "person" && file.ts !== undefined && Date.now() - file.ts * 1000 < FRESH_MS);
   const [at, setAt] = useState<number | null>(() => (fresh.current && cursorOn && !reducedMotion() && lines.length > 0 ? 0 : null));
   const code = useRef<HTMLPreElement>(null);
 
@@ -76,7 +77,7 @@ export function FileCell({ file }: { file: FileChange }) {
   const writing = at !== null;
 
   return (
-    <section className="cell diff" data-writing={writing ? "true" : undefined}>
+    <section className={`cell diff${file.by === "person" ? " by-person" : ""}`} data-writing={writing ? "true" : undefined}>
       <header className="cell-top">
         <button
           className={`diff-name ${open ? "on" : ""}`}
@@ -96,6 +97,7 @@ export function FileCell({ file }: { file: FileChange }) {
           </button>
         )}
         <span className="stats">
+          {file.by === "person" && <em className="tag tag-you">you</em>}
           {file.created && <em className="tag">new</em>}
           {file.note && <em className="tag">{file.note}</em>}
           <span className="plus">+{file.added}</span>

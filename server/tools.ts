@@ -34,6 +34,7 @@ import {
 } from "./customtools";
 import { spawn } from "node:child_process";
 import { searchCode } from "./codesearch";
+import type { EditArgs, EditResult } from "./editfile";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -1475,6 +1476,42 @@ const TOOLS: ToolSpec[] = [
   },
 
   {
+    name: "edit_file",
+    group: "terminal",
+    description:
+      "Change a file in the working folder, or make a new one, without losing anything the person saved to it " +
+      "meanwhile. Prefer this to sed or a shell redirect for any file the person might also have open: it " +
+      "compares the file with what you last read, keeps their changes next to yours when you touched different " +
+      "lines, and writes nothing -- telling you exactly what they did -- when you both changed the same lines. " +
+      "edits is a list of {old, new}: old is the exact text to replace (it must be in the file once, or set all), " +
+      "new is what it becomes. content makes a whole new file, or with overwrite replaces one. Paths are from the " +
+      "terminal's directory. Read the lines you are changing first; keep old short but exact.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "The file, from the terminal's directory." },
+        edits: {
+          type: "array",
+          description: "What to replace, in order.",
+          items: {
+            type: "object",
+            properties: {
+              old: { type: "string", description: "The exact text to replace." },
+              new: { type: "string", description: "What it becomes." },
+              all: { type: "boolean", description: "Replace every place it occurs." },
+            },
+            required: ["old", "new"],
+          },
+        },
+        content: { type: "string", description: "A whole file: to make a new one." },
+        overwrite: { type: "boolean", description: "With content: replace a file that already exists." },
+      },
+      required: ["path"],
+    },
+    risky: true,
+  },
+
+  {
     name: "code_search",
     group: "terminal",
     description:
@@ -2406,6 +2443,9 @@ export interface ToolContext {
   browserChanged: () => void;
   /** Start forwarding desktop frames to this session. */
   watchDesktop: () => void;
+  /** Change a file so that what the person saved meanwhile is kept (see
+      server/editfile.ts). Absent where there is no folder to work in. */
+  code?: { edit: (args: EditArgs) => EditResult };
   /** Why something the person is using may not be touched right now (see
       server/presence.ts), or null. `subject` is an object id or a file. */
   held?: (surface: "pdf" | "app" | "browser" | "code", subject: string) => string | null;
@@ -3311,6 +3351,17 @@ async function runToolUnredacted(
         const question = String(args.question ?? "").trim();
         const report = await ctx.research(question);
         return { ok: true, summary: report, preview: "research report" };
+      }
+
+      case "edit_file": {
+        if (!ctx.code) return { ok: false, summary: "There is no folder to edit files in, in this chat." };
+        const r = ctx.code.edit({
+          path: String(args.path ?? ""),
+          edits: Array.isArray(args.edits) ? args.edits.map((e: any) => ({ old: String(e?.old ?? ""), new: String(e?.new ?? ""), all: e?.all === true })) : undefined,
+          content: typeof args.content === "string" ? args.content : undefined,
+          overwrite: args.overwrite === true,
+        });
+        return { ok: r.ok, summary: r.summary, preview: r.ok ? (r.wrote?.created ? "created a file" : "edited a file") : "not written" };
       }
 
       case "code_search": {

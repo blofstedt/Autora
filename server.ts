@@ -89,6 +89,7 @@ import {
 import { LoopWatch, describe as describeCall } from "./server/loopwatch";
 import { ErrorBudget } from "./server/errorbudget";
 import { forgetPresence, presenceFor, type Surface } from "./server/presence";
+import { editFile, type EditArgs } from "./server/editfile";
 import { diffDom, type ChangeCue, type DomItem } from "./server/domdiff";
 import { Workspace, type DiffLine, type FileChange as CodeChange } from "./server/codediff";
 import { runSubagent } from "./server/subagent";
@@ -3701,6 +3702,15 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
       const contextFor = (span: string): ToolContext => ({
         research: researchFor,
         held: (surface, subject) => presenceFor(session.id).blocked(surface, subject),
+        code: {
+          edit: (args: EditArgs) => editFile(args, {
+            root: terminalDir(),
+            // Autora's own data is not the agent's to edit, wherever the terminal starts.
+            protect: [stateDir()],
+            base: (rel) => workspaceFor(session.id).textOf(rel),
+            held: (rel) => presenceFor(session.id).blocked("code", rel),
+          }),
+        },
         preview: {
           start: (args) => previewStart(session, args, span),
           stop: async () => {
@@ -4053,7 +4063,34 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
          once and left alone. */
       const workspace = workspaceFor(session.id);
       let workspaceWarned = false;
-      if (tools.some((t) => t.name === "terminal")) workspace.prime();
+      const canSeeCode = tools.some((t) => t.name === "terminal");
+      /* Edits to the project that the agent did not make -- the person's, in
+         their own editor -- noticed between its commands, shown as cards of
+         their own, and told to the agent so it works around them. Not when a
+         background command is running, which writes files too: whose they are
+         cannot be told. */
+      const personEdits = (span: string | null) => {
+        if (!canSeeCode) return;
+        const files = workspace.scan();
+        if (files.length === 0 || listJobs().some((j) => j.session === session.id && j.state === "running")) return;
+        for (const f of files.slice(0, MAX_CHANGE_CARDS)) {
+          emitEvent(session, "file.edit", "user", {
+            path: f.path, diff: diffText(f.lines, f.truncated), added: f.added, removed: f.removed,
+            created: f.kind === "added", by: "person",
+            ...(f.kind === "removed" ? { note: "removed" } : f.quiet ? { note: f.quiet } : {}),
+          }, span);
+          touchPresence(session.id, "code", f.path, "edit",
+            `${f.kind === "added" ? "created" : f.kind === "removed" ? "deleted" : "edited"} ${f.path}${f.added || f.removed ? ` (+${f.added} -${f.removed})` : ""}`);
+        }
+        // The page is theirs to have changed: remember it, so the cursor does not mark their work as the agent's.
+        const run = previews.get(session.id);
+        if (run?.opened) setTimeout(() => { void run.live.domMap().then((m) => { if (m && previews.get(session.id) === run) { run.dom = m; run.domUrl = run.url; } }); }, 1500).unref?.();
+      };
+      if (canSeeCode) {
+        // A folder watched before: whatever changed since the last turn is somebody else's work.
+        if (workspace.hasBaseline) personEdits(null);
+        else workspace.prime();
+      }
       /** After a command that changes things: the code it wrote, as cards. */
       const announceCode = (span: string) => {
         const files: CodeChange[] = workspace.scan();
@@ -4481,9 +4518,12 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
 
           const started = Date.now();
           ranSomething = true;
+          const willWrite = (spec.name === "terminal" && !readOnlyCommand(String(use.args?.command ?? ""))) || spec.name === "edit_file";
+          // What the person changed before this runs is theirs, not this command's.
+          if (willWrite) personEdits(null);
           const outcome = await runTool(spec, use.args, contextFor(span));
           const durationMs = Date.now() - started;
-          const wrote = spec.name === "terminal" && !readOnlyCommand(String(use.args?.command ?? ""));
+          const wrote = willWrite;
           if (wrote) changedSinceCheck = true;
 
           if (spec.group === "terminal" && outcome.exitCode !== undefined) {
@@ -4555,6 +4595,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
         const last = replies[replies.length - 1];
         if (checkpoint && last) last.result += `\n\n${checkpoint}`;
         // What the person did while this round ran, said as it is read.
+        personEdits(null);
         const heard = presenceFor(session.id).note();
         if (heard && last) {
           last.result += `\n\n${heard}`;

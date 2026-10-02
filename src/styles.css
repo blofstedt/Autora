@@ -6427,3 +6427,7 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 /* A phone's PDF bar has room for the name, Take control and Full screen; the
    cursor switch is in Settings there. */
 .pdf-window.is-phone .pdf-cursor-pill, .pdf-window.is-phone .pdf-bar-note { display: none; }
+
+/* An edit the person made themselves, shown among the agent's. */
+.tag-you { background: rgba(94, 200, 160, .18); color: #7ee0b9; }
+.cell.diff.by-person { border-left: 2px solid rgba(126, 224, 185, .55); }

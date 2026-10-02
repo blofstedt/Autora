@@ -219,6 +219,16 @@ export class Workspace {
     return text;
   }
 
+  /** A file as the last scan saw it, when it was small enough to keep. */
+  textOf(rel: string): string | null {
+    return this.files.get(rel)?.text ?? null;
+  }
+
+  /** Whether a baseline has been taken: later scans say what changed since. */
+  get hasBaseline(): boolean {
+    return this.primed;
+  }
+
   /** Take the folder as it is now as the one later scans compare against. */
   prime(): void {
     this.scan();

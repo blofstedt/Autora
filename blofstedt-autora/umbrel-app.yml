@@ -132,7 +132,12 @@ releaseNotes: >-
   and works on something else -- in a PDF, per object: move or select one and the
   agent changes the others and says what it left for you -- and "Take control" in the app window, the PDF
   window and the browser card takes it fully until you "Hand back". Held
-  actions are skipped, not counted as failures, and never stop the turn.
+  actions are skipped, not counted as failures, and never stop the turn. In code,
+  what you save in your own editor while the agent works is noticed between its
+  steps, shown among its changes tagged "you", and kept: the agent has a new
+  edit_file tool that merges its change with yours when you touched different
+  lines, and writes nothing -- telling it exactly what you did -- when you both
+  changed the same ones.
   New: you can watch the app being built. When the agent changes code, the
   app window's cursor glides to what changed on the page -- the new button, the
   rewritten heading -- and outlines it with a name. The agent can also test
