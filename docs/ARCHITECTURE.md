@@ -237,6 +237,36 @@ Fonts are vendored rather than loaded from a CDN. This tool runs on localhost
 and should work on a plane; a webfont host also learns every time you open a
 session. Variable weights keep it to two files and 77KB.
 
+## Tools that are programs, not commands
+
+A tool earns its own module when the job has state, structure and failure modes
+that a string typed into a shell hides. Each of these is a small program with
+its own tests, and `server/extratools.ts` holds only what the model is told and
+the glue to the turn:
+
+- `git` (`gittool.ts`): a repository as actions. Reads return compact structure;
+  changes go through git directly, never a shell; what destroys work (force push,
+  hard reset, clean, rebase) is not an action.
+- `python` (`pykernel.ts`): one long-lived kernel per chat, over a private pipe
+  (fd 3) so nothing the code prints can be mistaken for an answer. A timeout or a
+  stop kills it and the result says the namespace is gone.
+- `library` (`library.ts`): what the person owns, cut into passages that keep
+  their place and ranked with BM25 -- plain code, offline, with a citation on
+  every answer. No embeddings, so a result is never a guess about what a passage says.
+- `media` (`media.ts`): ffmpeg for the media work, the speech service the person
+  already has a key for for transcripts, Tesseract for OCR -- and when OCR is not
+  installed the pictures go to the model with that said, so a scan is never a dead end.
+- `browser_network` and `browser_flow` (`browser.ts`, `flows.ts`): the Network tab,
+  and browser jobs recorded once and replayed by code. A flow finds each element
+  again by what it is (role, name, link), never by its number; stops rather than
+  guesses; keeps no secret (a password becomes a parameter).
+- `app_preview` network / a11y / baseline / diff (`appcheck.ts`): the checks a
+  picture cannot make, over the preview's own browser. The screen diff decodes and
+  compares in a throwaway browser tab: Node here has no image library.
+
+Which of their calls only look is in `server/readonly.ts`, so Plan mode and Ask
+can decide without loading the tools. A call not known to look is a change.
+
 ## Choices I'd revisit
 
 - **Sequential tool execution.** Parallel calls would be faster, but watching two

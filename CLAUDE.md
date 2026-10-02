@@ -87,6 +87,14 @@ is a sub-project with its own dependencies (see below).
   cites), `guard.ts` (what stops and asks before a risky call), `crosssite.ts` (refuses requests and websockets
   started by other websites), `tls.ts` (the optional https listener and the
   certificates it issues), `logs.ts` (the Logs page's ring buffer).
+- The program-like tools (see `docs/ARCHITECTURE.md`): `gittool.ts` (`git`),
+  `pykernel.ts` (`python`, a kernel per chat), `library.ts` (`library`: the
+  person's documents, BM25, citations), `media.ts` (`media`: ffmpeg, transcripts,
+  OCR), `flows.ts` (`browser_flow`: recorded browser jobs, replayed by code, no
+  secrets kept), `appcheck.ts` (`app_preview` network / a11y / baseline / diff),
+  and `extratools.ts` (their registry entries and glue). `readonly.ts` says which
+  of their actions only look: add a new action there on purpose, or Plan mode
+  treats it as a change.
 - How it learns and runs on its own:
   - `memory.ts`: the memory graph (ranked recall, merging near-copies,
     provisional to confirmed).

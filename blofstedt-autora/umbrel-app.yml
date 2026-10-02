@@ -125,95 +125,14 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  New: the agent remembers and finds things better. It keeps working notes --
-  its goal, what it decided, what it found out, what comes next -- that survive
-  interruptions, stops and restarts, plus a record of the files and pages it
-  touched, so a message sent mid-task no longer makes it forget what it had
-  worked out. Long results say where the full text is stored, so it reads that
-  part back instead of running the command again. A new read_file tool reads a
-  line range, an outline of a big file, or one function by name, and code
-  search says which function each hit is in. When a path or a word on a PDF is
-  a little off, the error now says what is nearby. Specialist tools (PDF,
-  widgets, scheduling, notebooks, connectors) load when a message or file calls
-  for them instead of being sent every time -- a shorter list, cheaper calls --
-  and the research tool can run up to three questions at once. After code
-  changes the app window's console is checked before the agent says it is
-  finished, background work uses the fast model when one is set, and
-  /api/sessions/:id/trace shows where a chat's time and tokens went. PDF text
-  edits are now checked by reading the saved file back, and the result says
-  whether the new words are there and the old ones gone.
-  New: you and the agent can work in the same window at the same time. What
-  you click, type or press in the app window or the agent's browser is told to
-  the agent in a line a colleague would hear, and it answers in kind and carries
-  on without undoing it. While you are using a window the agent leaves it alone
-  and works on something else -- in a PDF, per object: move or select one and the
-  agent changes the others and says what it left for you -- and "Take control" in the app window, the PDF
-  window and the browser card takes it fully until you "Hand back". Held
-  actions are skipped, not counted as failures, and never stop the turn. In code,
-  what you save in your own editor while the agent works is noticed between its
-  steps, shown among its changes tagged "you", and kept: the agent has a new
-  edit_file tool that merges its change with yours when you touched different
-  lines, and writes nothing -- telling it exactly what you did -- when you both
-  changed the same ones.
-  New: the agent speaks up. When it is not in the middle of a turn and you move
-  or change something in a window you share -- a PDF object, a field in the app,
-  a file you save -- it says one short line about it, like a colleague at the
-  next desk, in the thread. It is held back: only for what is worth a word, after
-  you pause, at most one every 25 seconds and twelve an hour, never over a turn
-  that is running or when nobody is looking, and it can choose to say nothing.
-  Each one is a small model call; "Working together" in Settings turns it off,
-  and has the switch for the cursor and typed code as well.
-  New: you can watch the app being built. When the agent changes code, the
-  app window's cursor glides to what changed on the page -- the new button, the
-  rewritten heading -- and outlines it with a name. The agent can also test
-  what it built the way you would, in the window you are watching: clicking
-  and hovering by the words on things, typing into fields, pressing keys and
-  scrolling, with a visible cursor, and seeing the result. A switch in the
-  app window turns the cursor off. A previewed folder now also reloads when the
-  agent edits a file with a tool that replaces it whole, which the file
-  watcher missed.
-  New: you can watch code being written. After a command that changes files,
-  the thread shows a card for each file with its lines -- typed out as you
-  watch, with a labelled cursor on the line being written, and a button to
-  play it again. Environment files and lock files are never shown line by
-  line, and Autora's own data is left out. One switch, "Agent cursor", in the
-  PDF window turns every kind of this replay off.
-  New: the PDF window shows the agent at work. When it changes the words in a
-  PDF, a labelled cursor arrives where they are, strikes the old ones and types
-  the new; when it adds text, a stamp, a signature, a note, a shape, a box or a
-  stroke, the cursor types it, clicks it into place, drags it out or traces it,
-  with the matching tool lit on the toolbar, and the object lands as the
-  editor's own, still marked for you to accept or decline. It is a replay of
-  work already done, not the work itself, and a button in the window turns it
-  off.
-  New: the agent can send a research worker to look into something -- where a
-  feature lives, what a library says, which files use a thing. The worker has
-  its own clean context and can only look; all it brings back is a short
-  report, so a dozen searches no longer crowd the conversation.
-  New: a project check. Name a command in Settings (your linter, tests or
-  build) and Autora runs it itself when the agent says it is finished after
-  changing something; a failure sends the agent back with the real output, and
-  a pass ends the turn, instead of taking the agent's word. New: code_search
-  finds where something is in a folder of code -- by the words in a name, an
-  exact phrase or a pattern -- without reading file after file. The loop watch
-  now remembers a chat's failures between turns, so "try again" after a stop
-  does not walk into the same wall, and the next turn is told why it stopped.
-  Fixed: interrupting the agent no longer makes it lose track. A message sent
-  while it works, or one after pressing Stop, is now answered together with the
-  work it cut off: the agent is told what it was doing, what you asked, and
-  what is still open on its to-do list, does what you asked, and then carries
-  on from where it stopped instead of starting over or treating your new
-  message as the whole job. In Agent mode an interrupted build stays a build.
-  New: the agent can change the words a PDF already has -- a name, an amount,
-  a date, a typo -- instead of covering them with a white box and trying
-  again. The words are rewritten inside the file in the page's own font when
-  it can write them, so the page stays selectable and searchable; when the
-  file's cut-down font lacks a letter, the old words are taken out of the file
-  and the new ones drawn in a matching built-in font, in the same place, size
-  and colour. Nothing is turned into a picture. Fixed: the agent no longer
-  keeps retrying the same failing thing with small variations -- failures
-  that say the same thing add up whatever the arguments were: after three it
-  is shown what it already tried and told to step back, after six the turn
-  stops and says what failed. A call with missing or wrongly typed arguments
-  is now refused before anything runs, with a message naming each problem and
-  the arguments the tool accepts.
+  New tools for the agent, each a small program rather than a shell command.
+  git: status, diff, log, blame, commit, branch, merge and push as structured
+  actions (no force push or hard reset). python: a notebook-style kernel that
+  keeps its variables between runs and returns charts as pictures. library: search
+  your own PDFs, notes and web pages, with a citation (file and page) on every
+  answer. media: video frames, transcripts, OCR, trimming and converting. The
+  browser gains a network log (what a page fetched, what failed) and recorded
+  flows: do a job once, replay it by name with no model, with checks and
+  parameters, and no passwords kept. The app window gains network, accessibility
+  and before/after screen checks. The image now includes Python (with pandas,
+  numpy and matplotlib), ffmpeg and Tesseract.

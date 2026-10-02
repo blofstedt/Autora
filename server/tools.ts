@@ -58,6 +58,7 @@ import {
 import { checkWidget } from "./widgets";
 import { deskHooks } from "./pdfdesk";
 import { runPdfTool } from "./pdf";
+import { EXTRA_TOOLS, runExtra, watchBrowserCall } from "./extratools";
 import {
   addEntries, createNotebook, describeNotebook, findNotebook, listNotebooks, moveEntry,
   notebookLine, notebookMarkdown, removeEntry, updateEntry, updateNotebook, type Notebook,
@@ -565,7 +566,11 @@ const TOOLS: ToolSpec[] = [
       "a folder of files (dir) or opens something already running (url, localhost only). Start it as " +
       "soon as there is something to see, then keep building: hot reload updates it. reload refreshes; " +
       "look returns a picture of the page and its console errors -- use it to check your own work; " +
-      "stop closes it. To test what you built, use it as a person would, in the same window the person is " +
+      "stop closes it. Developer checks on the running app: network reports what it fetched (what failed, " +
+      "what was slow or huge, the API calls it makes); a11y audits the page's structure for accessibility " +
+      "(labels, alt text, names, contrast, headings, tap targets); baseline keeps how the page looks now and " +
+      "diff, after you change the code, says how much of the screen changed and where, with the changes in red. " +
+      "To test what you built, use it as a person would, in the same window the person is " +
       "watching, with a visible cursor: click and hover take a target (the words on a button or link, a " +
       "field's label or placeholder, or a CSS selector); type puts text into a target (or into the field " +
       "already focused) and submit presses Enter after; press sends a key (Enter, Tab, Escape, ArrowDown); " +
@@ -575,7 +580,7 @@ const TOOLS: ToolSpec[] = [
     parameters: {
       type: "object",
       properties: {
-        action: { type: "string", description: "start, reload, look, stop, click, hover, type, press or scroll." },
+        action: { type: "string", description: "start, reload, look, stop, click, hover, type, press, scroll, network, a11y, baseline or diff." },
         target: { type: "string", description: "click, hover, type: what to act on -- words on it, a label, a placeholder, or a CSS selector." },
         text: { type: "string", description: "type: the text to type." },
         key: { type: "string", description: "press: a key, e.g. Enter, Tab, Escape, ArrowDown, Control+A." },
@@ -2188,6 +2193,9 @@ const TOOLS: ToolSpec[] = [
       required: ["id"],
     },
   },
+
+  // ---------- git, python, library, media and the browser's own tools --
+  ...EXTRA_TOOLS,
 ];
 
 // ------------------------------------------------------------ availability --
@@ -2571,6 +2579,8 @@ export interface ToolContext {
     look: () => Promise<{ ok: boolean; summary: string; png?: Buffer }>;
     /** Use the page as a person would: click, hover, type, press a key, scroll. */
     act: (args: { action: string; target?: string; text?: string; key?: string; dy?: number; submit?: boolean }) => Promise<{ ok: boolean; summary: string; png?: Buffer }>;
+    /** Developer checks: the network log, an accessibility audit, a baseline and a diff of the screen. */
+    inspect?: (args: { action: string }) => Promise<{ ok: boolean; summary: string; png?: Buffer }>;
   };
   /** Agent mode's switch between planning and building. Absent where there is
       no session to switch. */
@@ -3398,7 +3408,9 @@ export async function runTool(
   /* Whatever the tool read -- a page that now shows the address it was
      given, a form echoing a username -- goes back to the model with the
      person's saved details blanked out. */
+  const recorded = watchBrowserCall(spec.name, args, ctx, (text) => redactSecrets(text) !== text);
   const outcome = await runToolUnredacted(spec, args, ctx);
+  recorded?.(outcome);
   return {
     ...outcome,
     summary: redactSecrets(outcome.summary),
@@ -3454,6 +3466,18 @@ async function runToolUnredacted(
         });
         return { ok: r.ok, summary: r.summary, preview: r.ok ? (r.wrote?.created ? "created a file" : "edited a file") : "not written" };
       }
+
+      case "git":
+      case "python":
+      case "library":
+      case "media":
+      case "browser_network":
+      case "browser_flow":
+        return await runExtra(spec.name, args, ctx, {
+          terminalDir: terminalDir(),
+          describePage: (page, part) => describePage(page, part),
+          resolvePlaceholders: (text, url) => fillPlaceholders(text, url),
+        });
 
       case "code_search": {
         const where = String(args.path ?? "").trim();
@@ -3708,7 +3732,13 @@ async function runToolUnredacted(
           const picture = r.png ? pictureFor(r.png, "image/png") : null;
           return { ok: r.ok, summary: r.summary, preview: r.ok ? `${action} in the app` : undefined, ...(picture ? { images: [picture] } : {}) };
         }
-        return { ok: false, summary: "action is start, reload, look, stop, click, hover, type, press or scroll." };
+        if (["network", "a11y", "baseline", "diff"].includes(action)) {
+          if (!ctx.preview.inspect) return { ok: false, summary: "The app checks are not available here." };
+          const r = await ctx.preview.inspect({ action });
+          const picture = r.png ? pictureFor(r.png, "image/png") : null;
+          return { ok: r.ok, summary: r.summary, preview: r.ok ? `app ${action}` : undefined, ...(picture ? { images: [picture] } : {}) };
+        }
+        return { ok: false, summary: "action is start, reload, look, stop, click, hover, type, press, scroll, network, a11y, baseline or diff." };
       }
 
       case "set_mode": {

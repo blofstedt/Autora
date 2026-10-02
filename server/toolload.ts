@@ -32,6 +32,36 @@ export const FAMILIES: Family[] = [
     words: /\bpdfs?\b|\.pdf\b|\bacrobat\b|\bfill (?:in |out )?(?:the |this |a )?form\b|\bredact|\bsignature\b|\bstamp\b/i,
   },
   {
+    id: "git",
+    about: "work with a git repository: status, diff, log, blame, commit, branch, merge, push",
+    match: (n) => n === "git",
+    words: /\bgit\b|\bcommit\b|\bbranch(?:es)?\b|\bmerge\b|\bpull request\b|\brepo(?:sitory)?\b|\bdiff\b|\bblame\b|\bstash\b/i,
+  },
+  {
+    id: "python",
+    about: "a Python kernel that remembers its variables, for analysing data and drawing charts",
+    match: (n) => n === "python",
+    words: /\bpython\b|\bpandas\b|\bnumpy\b|\bdataframe\b|\bcsv\b|\bspreadsheet\b|\banaly[sz]e (?:the |this |my )?data\b|\bstatistic|\bregression\b|\bplot\b|\bmatplotlib\b/i,
+  },
+  {
+    id: "library",
+    about: "search the person's own documents and notes, with citations",
+    match: (n) => n === "library",
+    words: /\blibrary\b|\bmy (?:documents|files|notes|contracts?|manuals?)\b|\bsearch (?:my|the) (?:documents|files|notes)\b|\bwhat does (?:the|my) (?:contract|lease|manual|policy)\b|\bcite\b|\bcitations?\b/i,
+  },
+  {
+    id: "media",
+    about: "audio, video and images: info, frames, transcribe, OCR, trim, convert",
+    match: (n) => n === "media",
+    words: /\b(?:video|audio|recording|podcast|mp3|mp4|wav|mov|webm)\b|\btranscri(?:be|pt)|\bocr\b|\bscanned?\b|\bsubtitles?\b|\bffmpeg\b|\bconvert (?:the |this )?(?:image|video|audio)/i,
+  },
+  {
+    id: "browserdev",
+    about: "the browser's network log, and recorded browser flows replayed by name",
+    match: (n) => n === "browser_network" || n === "browser_flow",
+    words: /\bnetwork (?:tab|log|requests?)\b|\bapi calls?\b|\bhar\b|\brecord (?:a |this |the )?(?:flow|workflow|macro)\b|\breplay\b|\bmacro\b|\bflows?\b/i,
+  },
+  {
     id: "widgets",
     about: "show a chart, table or small interactive widget in the thread",
     match: (n) => n === "widget_show",

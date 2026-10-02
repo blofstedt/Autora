@@ -75,6 +75,17 @@ RUN apk add --no-cache \
       bash \
       curl \
       git \
+      # The python tool's kernel and the libraries data work reaches for
+      # (server/pykernel.ts), ffmpeg for the media tool, and Tesseract for its
+      # OCR (server/media.ts). Alpine's own builds: pip has no musl wheels for
+      # numpy or pandas, and the system ones install in seconds.
+      python3 \
+      py3-numpy \
+      py3-pandas \
+      py3-matplotlib \
+      ffmpeg \
+      tesseract-ocr \
+      tesseract-ocr-data-eng \
       chromium \
       # WebGL without a graphics card, for the CAPTCHAs and games that are a
       # canvas: ANGLE over Mesa's software Vulkan (llvmpipe). See webglArgs in

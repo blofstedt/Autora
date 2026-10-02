@@ -210,6 +210,24 @@ async function main() {
     assert.equal(m.askAbout("ask", "", "terminal", { command: "rm file" }), "hold");
   });
 
+  test("the program-like tools look only where the action does", () => {
+    const look = (name: string, args: Record<string, any>) => m.planRefusal("plan", undefined, name, args) === null;
+    for (const [name, args] of [
+      ["git", { action: "status" }], ["git", { action: "diff" }], ["library", { action: "search" }], ["library", { action: "list" }],
+      ["media", { action: "info" }], ["media", { action: "frames" }], ["media", { action: "ocr" }], ["media", { action: "transcribe" }],
+      ["browser_network", {}], ["browser_flow", { action: "list" }], ["browser_flow", { action: "show" }],
+      ["app_preview", { action: "network" }], ["app_preview", { action: "a11y" }], ["app_preview", { action: "diff" }], ["app_preview", { action: "baseline" }],
+    ] as [string, Record<string, any>][]) assert.equal(look(name, args), true, `${name} ${JSON.stringify(args)}`);
+    for (const [name, args] of [
+      ["git", { action: "commit" }], ["git", { action: "push" }], ["git", {}], ["library", { action: "add" }], ["library", { action: "remove" }],
+      ["media", { action: "convert" }], ["media", { action: "trim" }], ["media", { action: "audio" }],
+      ["browser_flow", { action: "run" }], ["browser_flow", { action: "record" }], ["browser_flow", { action: "delete" }],
+      ["python", { action: "run" }], ["python", {}], ["app_preview", { action: "start" }],
+    ] as [string, Record<string, any>][]) assert.equal(look(name, args), false, `${name} ${JSON.stringify(args)}`);
+    assert.equal(m.askAbout("ask", "", "git", { action: "log" }), "skip");
+    assert.equal(m.askAbout("ask", "", "git", { action: "commit" }), "hold");
+  });
+
   console.log(`\n${passed} modes cases passed.`);
 }
 main().catch((err) => { console.error(err); process.exit(1); });

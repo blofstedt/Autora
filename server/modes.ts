@@ -28,6 +28,8 @@
  * the person and read by the server, and the agent is told what they are.
  */
 
+import { extraLooksOnly } from "./readonly";
+
 export type WorkMode = "build" | "plan" | "agent";
 export type Permissions = "yolo" | "ask";
 /** What the agent is doing right now: the state Agent mode switches between. */
@@ -225,6 +227,8 @@ export function readOnlyCommand(command: string): boolean {
 /** Whether this exact call can change anything. GET and HEAD cannot; a POST
     to somebody's API can, so http_request is judged on its method. */
 export function looksOnly(name: string, args: Record<string, any> = {}): boolean {
+  const own = extraLooksOnly(name, args);
+  if (own !== null) return own;
   if (name === "http_request") {
     const method = String(args.method ?? "GET").toUpperCase();
     return method === "GET" || method === "HEAD" || method === "OPTIONS";
@@ -233,7 +237,7 @@ export function looksOnly(name: string, args: Record<string, any> = {}): boolean
      is the same tool with an id. */
   if (name === "pre_authorisations") return !String(args.revoke ?? "").trim();
   // Looking at the app window is looking; starting or stopping what it runs is not.
-  if (name === "app_preview") return String(args.action ?? "").trim().toLowerCase() === "look";
+  if (name === "app_preview") return ["look", "network", "a11y", "baseline", "diff"].includes(String(args.action ?? "").trim().toLowerCase());
   // Reading a PDF is looking; pulling its attachments out saves new files.
   if (name === "pdf_read") return !(Array.isArray(args.extract) ? args.extract.length : args.extract);
   if (name === "pdf_look") return true;

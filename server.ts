@@ -36,6 +36,8 @@ import { ensureHostNames } from "./server/hosts";
 import { forgetSpeech, speak as synthesise, speakStream, speechStatus } from "./server/speech";
 import { attachDictation, dictationStatus } from "./server/dictation";
 import { missingPathIn, pathHint } from "./server/hints";
+import { keepBaseline, networkReport, runA11y, runDiff, dropBaseline } from "./server/appcheck";
+import { stopKernel } from "./server/pykernel";
 import { FAMILIES, familyIds, loadedFamilies, loadedFromLog, unloadedIndex, withoutUnloaded } from "./server/toolload";
 import { applyLedger, latestLedger, ledgerBriefing, renderLedger, touched as touchedThings } from "./server/ledger";
 import { applyTodos, latestTodos, todoBriefing, unfinishedTodos } from "./server/todos";
@@ -3829,6 +3831,22 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             return previewLook(run, "");
           },
           act: (args) => previewAct(session, args),
+          inspect: async ({ action }) => {
+            const run = previews.get(session.id);
+            if (!run?.opened) return { ok: false, summary: "There is no preview open. Start one with app_preview start." };
+            try {
+              if (action === "network") return { ok: true, summary: `The preview at ${run.url}:\n${networkReport(run.live.networkLog())}` };
+              if (action === "a11y") return { ok: true, summary: `The preview at ${run.url}:\n${await runA11y(run.live)}` };
+              if (action === "baseline") {
+                keepBaseline(session.id, await run.live.capture(), run.url ?? "");
+                return { ok: true, summary: "Baseline kept: how the page looks now. Change the code, then app_preview diff." };
+              }
+              const d = await runDiff(run.live, session.id, await run.live.capture());
+              return { ok: true, summary: d.summary, ...(d.marked ? { png: d.marked } : {}) };
+            } catch (err: any) {
+              return { ok: false, summary: `The check could not be made: ${String(err?.message ?? err).split("\n")[0]}` };
+            }
+          },
         },
         setPhase: (to, reason) => {
           const work = workMode(session.mode);
@@ -5105,6 +5123,8 @@ async function startServer() {
     browsers.delete(session.id);
     await previewStop(session, false).catch(() => undefined);
     dropDesk(session.id);
+    stopKernel(session.id);
+    dropBaseline(session.id);
     forgetSession(session.id);
     if (!incognito) deleteSession(session.id);
     // No title of an incognito chat is in a log line: it may be a first message.

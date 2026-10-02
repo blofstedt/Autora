@@ -148,6 +148,106 @@ export interface ScrollState {
   pane: boolean;
 }
 
+
+/** Runs in a blank tab: decodes two PNG data URLs, compares them, and returns where they differ. */
+const COMPARE_PAGE_SOURCE = `async ([da, db, cs]) => {
+  const load = (src) => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => no(new Error("A picture could not be decoded.")); i.src = src; });
+  const [ia, ib] = await Promise.all([load(da), load(db)]);
+  const w = Math.max(ia.naturalWidth, ib.naturalWidth), h = Math.max(ia.naturalHeight, ib.naturalHeight);
+  const draw = (img) => {
+    const c = document.createElement("canvas"); c.width = w; c.height = h;
+    const g = c.getContext("2d", { willReadFrequently: true });
+    g.fillStyle = "#ff00ff"; g.fillRect(0, 0, w, h); g.drawImage(img, 0, 0);
+    return { c, g, d: g.getImageData(0, 0, w, h) };
+  };
+  const A = draw(ia), B = draw(ib);
+  const cols = Math.ceil(w / cs), rows = Math.ceil(h / cs);
+  const counts = new Uint32Array(cols * rows);
+  let changed = 0;
+  for (let i = 0; i < A.d.data.length; i += 4) {
+    const diff = Math.abs(A.d.data[i] - B.d.data[i]) + Math.abs(A.d.data[i + 1] - B.d.data[i + 1]) + Math.abs(A.d.data[i + 2] - B.d.data[i + 2]);
+    if (diff > 48) {
+      changed++;
+      const px = (i / 4) % w, py = Math.floor(i / 4 / w);
+      counts[Math.floor(py / cs) * cols + Math.floor(px / cs)]++;
+      B.d.data[i] = 255; B.d.data[i + 1] = 0; B.d.data[i + 2] = 0; B.d.data[i + 3] = 255;
+    } else {
+      B.d.data[i + 3] = 110;
+    }
+  }
+  B.g.putImageData(B.d, 0, 0);
+  const cells = [];
+  counts.forEach((n, i) => { if (n > 0) cells.push({ x: i % cols, y: Math.floor(i / cols), n }); });
+  return { width: w, height: h, changed, total: w * h, cells, cols, rows, url: B.c.toDataURL("image/png") };
+}`;
+
+/** One request the page made. */
+export interface NetEntry {
+  id: number;
+  method: string;
+  url: string;
+  /** Playwright's resource type: document, xhr, fetch, script, stylesheet, image, font... */
+  type: string;
+  status: number | null;
+  mime: string | null;
+  ms: number | null;
+  size: number | null;
+  failed: string | null;
+  requestHeaders: Record<string, string>;
+  responseHeaders?: Record<string, string>;
+  postData: string | null;
+  page: string;
+  at: number;
+}
+
+export interface NetFilter {
+  url?: string;
+  method?: string;
+  type?: string;
+  failed?: boolean;
+  status?: number;
+  /** Only requests after this id (a mark taken earlier). */
+  since?: number;
+  limit?: number;
+}
+
+/** What identifies an element across page loads: not its number, which changes. */
+export interface RefInfo {
+  role: string;
+  name: string;
+  href: string | null;
+  type: string | null;
+  placeholder: string | null;
+  purpose: string | null;
+  /** Its place among elements of the same role, as a last tie-break. */
+  nth: number;
+}
+
+const NET_KEEP = 400;
+const NET_BODIES = 60;
+const SECRET_HEADER = /^(authorization|cookie|set-cookie|proxy-authorization|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token)$/i;
+const SECRET_PARAM = /^(token|access_token|id_token|refresh_token|key|api_key|apikey|secret|password|passwd|auth|sig|signature|session|sessionid|code)$/i;
+
+export function redactHeaders(headers: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(headers)) out[k] = SECRET_HEADER.test(k) ? "[redacted]" : String(v).slice(0, 300);
+  return out;
+}
+
+/** An address with the values of secret-looking query parameters blanked. */
+export function redactUrl(raw: string): string {
+  try {
+    const u = new URL(raw);
+    let changed = false;
+    for (const k of [...u.searchParams.keys()]) {
+      if (SECRET_PARAM.test(k)) { u.searchParams.set(k, "[redacted]"); changed = true; }
+    }
+    return changed ? u.toString().replace(/%5Bredacted%5D/g, "[redacted]") : raw.slice(0, 600);
+  } catch {
+    return raw.slice(0, 600);
+  }
+}
+
 export interface PageRead {
   url: string;
   title: string;
@@ -1958,6 +2058,7 @@ export class LiveBrowser {
     page.on("requestfailed", (req: any) => {
       this.noteConsole("error", `Request failed: ${String(req.url?.() ?? "").slice(0, 160)} (${String(req.failure?.()?.errorText ?? "")})`);
     });
+    this.watchNetwork(page);
 
     page.on("framenavigated", (frame: any) => {
       if (this.page !== page || frame !== page.mainFrame()) return;
@@ -2116,6 +2217,135 @@ export class LiveBrowser {
     if (this.consoleLog.length > 60) this.consoleLog.splice(0, this.consoleLog.length - 60);
     this.hooks.onConsole?.();
   }
+  // ---------------------------------------------------------------- network --
+
+  /* What the page asked for and what came back: the thing a developer opens
+     the Network tab for. The agent otherwise sees only the page, so it clicks
+     around for data the site fetches from an API it could call directly, and
+     cannot tell why a form did nothing. Kept for this session's browser, the
+     last NET_KEEP requests; bodies are fetched on demand, for the newest few. */
+  private netLog: NetEntry[] = [];
+  private netSeq = 0;
+  private netBodies = new Map<number, any>();
+  private netStarted = new WeakMap<object, { id: number; at: number }>();
+
+  private watchNetwork(page: Page) {
+    page.on("request", (req: any) => {
+      const id = ++this.netSeq;
+      this.netStarted.set(req, { id, at: Date.now() });
+      let post: string | null = null;
+      try { post = req.postData?.() ?? null; } catch { post = null; }
+      this.netLog.push({
+        id, method: String(req.method?.() ?? "GET"), url: redactUrl(String(req.url?.() ?? "")), type: String(req.resourceType?.() ?? "other"),
+        status: null, mime: null, ms: null, size: null, failed: null,
+        requestHeaders: redactHeaders(req.headers?.() ?? {}), postData: post ? post.slice(0, 4000) : null, page: this.currentUrl ?? "", at: Date.now(),
+      });
+      if (this.netLog.length > NET_KEEP) {
+        const drop = this.netLog.splice(0, this.netLog.length - NET_KEEP);
+        for (const d of drop) this.netBodies.delete(d.id);
+      }
+    });
+    page.on("response", (res: any) => {
+      const req = res.request?.();
+      const started = req ? this.netStarted.get(req) : undefined;
+      const entry = started ? this.netLog.find((e) => e.id === started.id) : undefined;
+      if (!entry || !started) return;
+      const headers = res.headers?.() ?? {};
+      entry.status = Number(res.status?.() ?? 0);
+      entry.mime = String(headers["content-type"] ?? "").split(";")[0] || null;
+      entry.ms = Date.now() - started.at;
+      entry.size = headers["content-length"] ? Number(headers["content-length"]) : null;
+      entry.responseHeaders = redactHeaders(headers);
+      this.netBodies.set(entry.id, res);
+      for (const id of [...this.netBodies.keys()]) if (id <= entry.id - NET_BODIES) this.netBodies.delete(id);
+    });
+    page.on("requestfailed", (req: any) => {
+      const started = this.netStarted.get(req);
+      const entry = started ? this.netLog.find((e) => e.id === started.id) : undefined;
+      if (entry) { entry.failed = String(req.failure?.()?.errorText ?? "failed"); entry.ms = Date.now() - (started?.at ?? Date.now()); }
+    });
+  }
+
+  /** Requests so far, oldest first, optionally narrowed. */
+  networkLog(filter: NetFilter = {}): NetEntry[] {
+    const needle = (filter.url ?? "").toLowerCase();
+    let rows = this.netLog.filter((e) => {
+      if (needle && !e.url.toLowerCase().includes(needle)) return false;
+      if (filter.method && e.method.toUpperCase() !== filter.method.toUpperCase()) return false;
+      if (filter.type && !filter.type.split(",").map((t) => t.trim().toLowerCase()).includes(e.type)) return false;
+      if (filter.failed && !(e.failed || (e.status !== null && e.status >= 400))) return false;
+      if (filter.status !== undefined && e.status !== filter.status) return false;
+      if (filter.since !== undefined && e.id <= filter.since) return false;
+      return true;
+    });
+    if (filter.limit !== undefined) rows = rows.slice(-Math.max(1, filter.limit));
+    return rows;
+  }
+
+  /** What one response said, as text (JSON compacted), or why it cannot be had. */
+  async networkBody(id: number, max = 12000): Promise<{ ok: boolean; text: string }> {
+    const entry = this.netLog.find((e) => e.id === id);
+    if (!entry) return { ok: false, text: `There is no request #${id} in the log (it keeps the last ${NET_KEEP}).` };
+    const res = this.netBodies.get(id);
+    if (!res) return { ok: false, text: `The body of #${id} is no longer kept (only the newest ${NET_BODIES} responses are); make the request again.` };
+    try {
+      const buf: Buffer = await res.body();
+      const mime = entry.mime ?? "";
+      if (!/text|json|xml|javascript|html|form|svg/.test(mime) && buf.subarray(0, 4000).includes(0)) {
+        return { ok: true, text: `(${mime || "binary"}, ${buf.byteLength} bytes: not shown as text)` };
+      }
+      let text = buf.toString("utf8");
+      if (/json/.test(mime)) { try { text = JSON.stringify(JSON.parse(text), null, 1); } catch { /* as it came */ } }
+      return { ok: true, text: text.length > max ? `${text.slice(0, max)}\n... (${text.length - max} more characters)` : text };
+    } catch (err: any) {
+      return { ok: false, text: `The body could not be read: ${String(err?.message ?? err).split("\n")[0]}` };
+    }
+  }
+
+  /** Run a function in the open page and return what it returns (JSON-shaped). For the checks that
+      read the page's own structure, which no screenshot shows. */
+  async evalJson<T = unknown>(source: string): Promise<T> {
+    const page = await this.ensure();
+    return (await page.evaluate(`(${source})()`)) as T;
+  }
+
+  /**
+   * Compare two pictures of a page, pixel by pixel, in a throwaway tab (the
+   * browser can decode and draw them; Node here has no image library). The
+   * pictures need not be the same size: the rest of the larger one counts as
+   * changed. Returns what fraction changed, where (as a grid of cells), and a
+   * picture of the second with the changes marked in red.
+   */
+  async compareImages(a: Buffer, b: Buffer, cell = 40): Promise<{ width: number; height: number; changed: number; total: number; cells: { x: number; y: number; n: number }[]; cols: number; rows: number; marked: Buffer }> {
+    await this.ensure();
+    const context = this.context;
+    if (!context) throw new Error("The browser is not open.");
+    const tab = await context.newPage();
+    try {
+      const out = (await tab.evaluate(
+        `(${COMPARE_PAGE_SOURCE})(${JSON.stringify([`data:image/png;base64,${a.toString("base64")}`, `data:image/png;base64,${b.toString("base64")}`, cell])})`,
+      )) as { width: number; height: number; changed: number; total: number; cells: { x: number; y: number; n: number }[]; cols: number; rows: number; url: string };
+      const { url, ...rest } = out;
+      return { ...rest, marked: Buffer.from(url.split(",")[1], "base64") };
+    } finally {
+      await tab.close().catch(() => undefined);
+    }
+  }
+
+  clearNetwork() { this.netLog = []; this.netBodies.clear(); }
+  networkMark(): number { return this.netSeq; }
+
+  /** How an element was described when it was read, so a recorded step can find it again. */
+  refInfo(ref: number): RefInfo | null {
+    const r = this.refs.find((x) => x.ref === ref);
+    if (!r) return null;
+    const same = this.refs.filter((x) => x.role === r.role);
+    return {
+      role: r.role, name: r.name, href: r.href, type: r.type ?? null, placeholder: r.placeholder ?? null,
+      purpose: r.purpose ?? null, nth: same.indexOf(r),
+    };
+  }
+
   consoleTail(n = 20): Array<{ kind: "error" | "warn"; text: string; ts: number }> {
     return this.consoleLog.slice(-n);
   }

@@ -130,6 +130,15 @@ function doing(name: string, args: Record<string, any>): string {
       return command ? `Running ${command.length > 40 ? `${command.slice(0, 39)}…` : command}` : "Running a command";
     }
     case "research": return "Sending a worker to look into it";
+    case "git": return args.action ? `Git: ${String(args.action)}` : "Using git";
+    case "python": return args.action === "vars" ? "Looking at the Python variables" : args.action === "reset" ? "Resetting the Python kernel" : "Running Python";
+    case "library": {
+      const a = String(args.action ?? "");
+      return a === "search" ? `Searching your documents${args.query ? ` for${quoted(args.query)}` : ""}` : a === "add" ? "Adding to the library" : a === "read" ? "Reading from the library" : "Using the library";
+    }
+    case "media": return args.action ? `Media: ${String(args.action)}` : "Working with media";
+    case "browser_network": return "Reading the network log";
+    case "browser_flow": return args.action === "run" ? `Running the flow${args.name ? ` ${String(args.name)}` : ""}` : args.action === "record" ? "Recording a flow" : "Working with flows";
     case "code_search": return args.query ? `Searching the code for${quoted(args.query)}` : "Searching the code";
     case "browser_open": return args.url ? `Opening ${host(args.url)}` : "Opening a page";
     case "browser_read": return "Reading the page";
