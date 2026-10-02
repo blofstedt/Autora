@@ -127,7 +127,9 @@ await test("the words before and after a change keep their place", async () => {
 // A file as a browser makes it: a subset font that holds only the letters it used.
 const browser = await (async () => {
   const { chromium } = await import("playwright-core");
-  const b = await chromium.launch({ executablePath: process.env.AUTORA_BROWSER_PATH });
+  // The browser the app itself would use (its own search, then the runner's), not Playwright's download, which CI does not have.
+  const { systemBrowser } = await import("../server/browser");
+  const b = await chromium.launch({ executablePath: systemBrowser() ?? undefined });
   try {
     const p = await b.newPage();
     await p.setContent("<body style='font:20px sans-serif'><p>Invoice for Acme Ltd</p><p>Amount 120 due 2024</p></body>");
