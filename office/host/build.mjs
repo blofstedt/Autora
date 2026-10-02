@@ -26,10 +26,13 @@ const APPS = {
   sheets: {
     main: "apps/sheets/src/main/sheets-main.ts", register: "registerSheetsIpc", tsconfig: "apps/sheets/tsconfig.json",
     // A tab for the workbook at `path` (the editor page shown under the returned id opens it), or a headless PDF export of it.
-    extra: `import { createSheetsView, queueWorkbookForView, exportSheetsPdfHeadless } from ${JSON.stringify("MAIN")};
+    extra: `import { createSheetsView, queueWorkbookForView, nudgeQueuedWorkbook, exportSheetsPdfHeadless } from ${JSON.stringify("MAIN")};
 import { setHeadlessMode } from "@genoffice/electron-utils";
+import { webContents } from "electron";
 export const extra = {
   view(path: string) { const view = createSheetsView({ includeAiHandlers: false }); queueWorkbookForView(view.webContents, path); return view.webContents.id; },
+  // The file changed under an open editor: queue it again and nudge the page, which opens it as it would a new one.
+  requeue(wc: number, path: string) { const contents = webContents.fromId(wc); if (!contents) return false; queueWorkbookForView(contents, path); nudgeQueuedWorkbook(contents); return true; },
   async headlessExport(input: string, out: string) { setHeadlessMode(true); await exportSheetsPdfHeadless(input, out); return true; },
 };`,
   },

@@ -9,6 +9,8 @@ import { resetPreview, setPreviewFrame, setPreviewState, usePreviewState, type P
 import { AppPreview } from "./components/AppPreview";
 import { OfficeWindow } from "./components/OfficeWindow";
 import { PdfWindow } from "./components/PdfWindow";
+import { ResizeHandle } from "./components/ResizeHandle";
+import { CHAT, RAIL, setChatWidth, setRailCollapsed, setRailWidth, usePanes, wideScreen } from "./lib/panes";
 import { clearOfficePick, getOfficePick, pickLabel, pickSentence, useOfficePick } from "./lib/officeSelection";
 import { emitOfficePush, resetWord, setWordState, useWordState } from "./lib/officedesk";
 import { resetDesk, setDeskState, useDeskState } from "./lib/pdfdesk";
@@ -1248,6 +1250,7 @@ export function App() {
   const desk = useDeskState();
   const word = useWordState();
   const pointedAt = useOfficePick();
+  const panes = usePanes();
   /* One window beside the chat at a time: the app, the PDF or the Office document,
      whichever was opened last; putting it away shows the one before. */
   const sidePane: "app" | "pdf" | "word" | null = phoneLayout || !live ? null : (() => {
@@ -1444,7 +1447,13 @@ export function App() {
   }, []);
 
   return (
-    <div className="app">
+    <div
+      className={`app${panes.collapsed ? " rail-collapsed" : ""}`}
+      style={{
+        ...(panes.rail ? { "--rail-w": `${panes.rail}px` } : {}),
+        ...(panes.chat ? { "--chat-w": `${panes.chat}px` } : {}),
+      } as React.CSSProperties}
+    >
       {/* Wide screens get the session list in the margin instead of behind a
           sheet; narrow ones never render it at all. */}
       {/* The sidebar: in the margin on a desktop, a drawer on a phone. */}
@@ -1480,9 +1489,20 @@ export function App() {
             onStartTask={(text, title) => { void startTask(text, title); }}
             drawer={kind === "drawer"}
             onClose={() => setDrawerOpen(false)}
+            onFold={() => setRailCollapsed(true)}
           />
         </div>
       ))}
+      {/* The seam between the menu and the conversation, on a desktop. */}
+      <ResizeHandle
+        className="is-rail"
+        label="Resize the menu"
+        value={panes.rail ?? RAIL.fallback}
+        min={RAIL.min}
+        max={RAIL.max}
+        onChange={setRailWidth}
+        onReset={() => setRailWidth(null)}
+      />
 
       <div className="shell">
         {/* Above everything, including the header: an app running code that is
@@ -1494,7 +1514,7 @@ export function App() {
         <header className="top">
           <button
             className="btn icon ghost menu-btn"
-            onClick={() => setDrawerOpen(true)}
+            onClick={() => { if (panes.collapsed && wideScreen()) setRailCollapsed(false); else setDrawerOpen(true); }}
             aria-label="Open the menu"
             title="Menu"
           >
@@ -2062,6 +2082,18 @@ export function App() {
             )}
           </div>
         </main>
+        {/* The seam between the conversation and whatever window is beside it. */}
+        {sidePane !== null && (
+          <ResizeHandle
+            className="is-chat"
+            label="Resize the conversation"
+            value={panes.chat ?? 480}
+            min={CHAT.min}
+            max={CHAT.max}
+            onChange={setChatWidth}
+            onReset={() => setChatWidth(null)}
+          />
+        )}
         {/* The app being built, beside the conversation on a wide screen. On a
             phone it is a tab in the pinned view instead (see Stage). */}
         {sidePane === "app" && sessionId && (

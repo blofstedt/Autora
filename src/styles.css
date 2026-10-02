@@ -4162,7 +4162,7 @@ html[data-font="mono"] body { font-size: calc(13.5px * var(--ts, 1)); }
    ============================================================================ */
 .menu-btn { flex: 0 0 auto; margin-left: -6px; }
 .top-title { margin: 0; font-size: calc(15px * var(--ts, 1)); font-weight: 650; letter-spacing: -0.01em; }
-@media (min-width: 1180px) { .menu-btn { display: none; } }
+@media (min-width: 1180px) { .app:not(.rail-collapsed) .menu-btn { display: none; } }
 
 .rail-top { gap: 9px; }
 .rail-icon-btn {
@@ -5249,7 +5249,7 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 
 /* The presence in the header, only where the sidebar is folded away. */
 .top-presence { display: inline-grid; place-items: center; flex: 0 0 auto; margin: 0 -6px 0 -4px; }
-@media (min-width: 1180px) { .top-presence { display: none; } }
+@media (min-width: 1180px) { .app:not(.rail-collapsed) .top-presence { display: none; } }
 
 /* The room's light. Two soft blooms of the theme's own colours, drifting very
    slowly; the mood only changes their colour and strength. */
@@ -6086,7 +6086,9 @@ button.dock-card:hover { border-color: var(--border-strong); }
    a readable column on the left. */
 .chat-view.has-app { flex-direction: row; }
 .chat-view.has-app > .page {
-  flex: 0 0 clamp(380px, 36%, 540px); width: auto; max-width: none; margin: 0; min-width: 0;
+  flex: 0 0 var(--chat-w, clamp(380px, 36%, 540px)); width: auto; margin: 0; min-width: 0;
+  /* Whatever the person drags it to, the window beside it keeps room to be used. */
+  max-width: calc(100% - 320px);
   border-left: 0;
 }
 .app-pane {
@@ -6470,3 +6472,21 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
   color: var(--text-3); line-height: 1.5;
 }
 .mind-tidy-list b { color: var(--text-2, var(--text)); font-weight: 600; }
+
+/* ============================================================================
+   Panes you can drag (desktop): the menu, the conversation, the window beside it
+   ============================================================================ */
+.pane-handle { display: none; flex: 0 0 6px; width: 6px; margin: 0 -3px; position: relative; z-index: 6; cursor: col-resize; touch-action: none; outline: none; }
+.pane-handle::after { content: ""; position: absolute; inset: 0 2px; border-radius: 2px; background: transparent; transition: background 0.15s var(--ease); }
+.pane-handle:hover::after, .pane-handle:focus-visible::after, body.is-resizing .pane-handle::after { background: var(--accent); }
+body.is-resizing { cursor: col-resize; user-select: none; }
+/* A frame under the pointer would swallow the drag. */
+body.is-resizing iframe { pointer-events: none; }
+.pane-handle.is-chat { display: none; }
+@media (min-width: 1180px) {
+  .pane-handle.is-rail { display: block; }
+  .pane-handle.is-chat { display: block; }
+  .rail-slot { flex-basis: var(--rail-w, clamp(300px, 22vw, 340px)); }
+  /* Folded away: the menu button and the mark are back in the header, at the far left. */
+  .app.rail-collapsed .rail-slot, .app.rail-collapsed .pane-handle.is-rail { display: none; }
+}

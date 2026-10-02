@@ -133,6 +133,10 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
+  New: on a desktop, drag the seams between the menu, the conversation and the window beside it to
+  size them (double-click a seam to reset it), and fold the menu away to the far left; both are
+  remembered. When the agent changes a deck or workbook you have open, the editor updates where
+  it is instead of reloading, so you keep your slide and place.
   New: on a phone, Word, PowerPoint and Excel documents open as pictures of their pages
   (drawn once and kept, so they open at once) instead of as the full editor. Tap text
   to point at it and tell Autora what to change; the full editor is one button away.

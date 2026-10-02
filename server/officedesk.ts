@@ -471,6 +471,8 @@ type Engine = {
   size: number;
   timer: NodeJS.Timeout;
   lastIpc: number;
+  /** The width the deck's page asked its slides to be laid out for. */
+  fit: number;
   /** Pages are made one at a time. */
   lock: Promise<unknown>;
 };
@@ -502,6 +504,28 @@ function engineFileChanged(session: string, desk: Desk) {
     }
   } catch (err: any) {
     console.warn(`[officedesk] ${session}: could not write the document for the editor: ${err?.message ?? err}`);
+  }
+}
+
+/**
+ * The agent changed the file while the person has the editor open: the editor takes the new one where it is, so the slide
+ * or sheet they were on stays. A deck is read again by the engine and handed to the page as the page expects a changed
+ * deck (the editor keeps the slide it was on); a workbook is queued again and the page nudged to open it. False when
+ * there is no page to do it in, and the window loads the document again instead.
+ */
+async function reloadLive(session: string): Promise<boolean> {
+  const engine = engines.get(session);
+  if (!engine || engine.wc === null) return false;
+  try {
+    if (engine.kind === "pptx") {
+      const opened = await engine.host.invoke(engine.wc, "slides:open-path", [engine.file, engine.fit]);
+      if (!opened || !Array.isArray(opened.slides)) return false;
+      pushed(session, engine.rev, "slides:deck-changed", wire.enc([{ slides: opened.slides, size: opened.size }]));
+      return true;
+    }
+    return Boolean(await engine.host.invoke(0, "autora:requeue", [engine.wc, engine.file]));
+  } catch {
+    return false;
   }
 }
 
@@ -545,7 +569,7 @@ async function ensureEngine(session: string): Promise<Engine> {
   if (raced) { host.stop(); return raced; }
   const st = fs.statSync(file);
   const engine: Engine = {
-    host, kind: desk.kind, file, rev: 0, wc: null, mtime: st.mtimeMs, size: st.size, lastIpc: Date.now(), lock: Promise.resolve(),
+    host, kind: desk.kind, file, rev: 0, wc: null, mtime: st.mtimeMs, size: st.size, lastIpc: Date.now(), fit: 1200, lock: Promise.resolve(),
     timer: setInterval(() => {
       checkEngineFile(session);
       if (Date.now() - engine.lastIpc > ENGINE_IDLE_MS) stopEngine(session);
@@ -660,10 +684,12 @@ export function officeHooks(session: string): OfficeHooks {
         for (const v of was.versions) fs.rmSync(versionFile(session, v.n, was.kind), { force: true });
         if (was.kind !== kind) stopEngine(session);
       }
+      // A deck or workbook the person has open is changed in place; only if that fails does the window load it again.
+      const live = Boolean(was && carried && kind !== "docx" && was.open && engines.get(session)?.wc != null);
       const desk: Desk = {
         open: true, kind,
         name: next.name, data: next.data, working: next.working, source: next.source, outName: next.outName,
-        rev: (was?.rev ?? 0) + 1, loadRev: (was?.loadRev ?? 0) + 1,
+        rev: (was?.rev ?? 0) + 1, loadRev: (was?.loadRev ?? 0) + (live ? 0 : 1),
         since: carried && was ? was.since : Date.now(),
         news: was?.news ?? [], problem: null,
         versions: carried && was ? was.versions : [], vseq: carried && was ? was.vseq : 0, dirty: false,
@@ -680,6 +706,16 @@ export function officeHooks(session: string): OfficeHooks {
       persist(session);
       changed(session);
       if (!desk.working) rewrite(session);
+      if (live) {
+        void reloadLive(session).then((ok) => {
+          if (ok) return;
+          const now = desks.get(session);
+          if (!now) return;
+          now.loadRev++;
+          persist(session);
+          changed(session);
+        });
+      }
     },
     show() {
       const desk = load(session);
@@ -899,6 +935,10 @@ export function officeRoutes(app: Express, opts: { exists: (session: string) => 
     try {
       const { engine, wc } = await pageFor(id, Number(req.query.rev) || 0);
       engine.lastIpc = Date.now();
+      if (channel === "slides:open-path" || channel === "slides:consume-pending-open") {
+        const fit = Number((Array.isArray(args) ? args : [])[channel === "slides:open-path" ? 1 : 0]);
+        if (Number.isFinite(fit) && fit > 100) engine.fit = fit;
+      }
       const value = await engine.host.invoke(wc, channel, wire.dec(Array.isArray(args) ? args : []));
       engine.lastIpc = Date.now();
       res.json({ value: wire.enc(value) });

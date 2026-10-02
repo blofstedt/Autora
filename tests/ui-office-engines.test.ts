@@ -135,16 +135,18 @@ async function main() {
         return { text: "Renamed." };
       };
       // They were typing a moment ago, so the deck is theirs: wait out the lease.
+      await frame.evaluate(() => { (window as any).__kept = "same page"; });
       await sleep(22_000);
       const ev = await app.turn(s, "rename the title to Annual review", 120_000);
       if (process.env.OFFICE_DEBUG) console.log("last events:", JSON.stringify(ev.slice(-10).map((e) => [e.kind, JSON.stringify(e.payload).slice(0, 200)])));
       const bytes = (await fileOf())!;
       const text = (pptxParagraphs(bytes) ?? []).join("\n");
       assert.match(text, /Annual review.*moved to Monday/);
-      // The frame loaded the document again: the new title is on the slide's thumbnail and in the engine's file.
-      frame = await editorIn(page, "slides");
-      await until("the deck to open again", async () => /Slide 1 (\/|of) 1/.test(await bodyText(frame)), 90_000);
+      // The editor took the change where it stood: the same page, not a new one.
+      await sleep(3000);
+      assert.equal(await frame.evaluate(() => (window as any).__kept).catch(() => null), "same page", "the window was not reloaded");
       assert.equal(page.frames().filter((f) => f.url().includes("/office-app/slides/")).length, 1);
+      if (process.env.OFFICE_SHOT) await page.screenshot({ path: `${process.env.OFFICE_SHOT}-deck-after.png` });
     });
 
     await test("File -> Export PDF for a deck opens the PDF in the PDF editor", async () => {
@@ -207,14 +209,16 @@ async function main() {
         if (n === 1) return { tools: [{ name: "office_edit", args: { file: "budget.xlsx", cells: [{ cell: "A3", value: "Gadget" }, { cell: "B3", value: 2 }] } }] };
         return { text: "Added a row." };
       };
+      await frame.evaluate(() => { (window as any).__kept = "same page"; });
       await sleep(22_000);
       await app.turn(s, "add a Gadget row with quantity 2", 120_000);
       const cells = xlsxCells((await fileOf())!)!;
       assert.ok([...cells.entries()].some(([k, v]) => /A3$/.test(k) && v === "Gadget"), JSON.stringify([...cells]));
       assert.ok([...cells.entries()].some(([k, v]) => /B2$/.test(k) && v === "7"), "their change is still there");
-      frame = await editorIn(page, "sheets");
-      await until("the new row in the grid", async () => /Gadget/.test(await bodyText(frame)) || true, 5000);
+      await sleep(4000);
+      assert.equal(await frame.evaluate(() => (window as any).__kept).catch(() => null), "same page", "the window was not reloaded");
       assert.equal(page.frames().filter((f) => f.url().includes("/office-app/sheets/")).length, 1);
+      if (process.env.OFFICE_SHOT) await page.screenshot({ path: `${process.env.OFFICE_SHOT}-book-after.png` });
     });
 
     await test("with control taken, the agent's edit to the workbook is held", async () => {
