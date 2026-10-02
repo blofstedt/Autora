@@ -6388,6 +6388,8 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 /* In the pinned view on a phone: the pinned view's own height, so the editor
    scrolls its pages itself instead of the pinned view scrolling the editor. */
 .pdf-window.is-phone { height: min(46dvh, 440px); }
+/* The pages leave the message box in view: pointing at something is followed by saying what to do with it. */
+.pdf-window.is-phone.is-pages { height: min(54dvh, 520px); }
 /* Full screen on a phone: over everything, with the safe areas kept clear. */
 .pdf-window.is-full {
   position: fixed; inset: 0; z-index: 80; height: auto;
@@ -6427,6 +6429,22 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 /* A phone's PDF bar has room for the name, Take control and Full screen; the
    cursor switch is in Settings there. */
 .pdf-window.is-phone .pdf-cursor-pill, .pdf-window.is-phone .pdf-bar-note { display: none; }
+/* A document as pictures of its pages, for a phone (components/OfficePages.tsx). */
+.office-pages { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--bg); }
+.office-pages-bar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--border); font-size: 12.5px; color: var(--text-2); }
+.office-pages-bar .spacer { flex: 1; }
+.office-pages-updating { color: var(--text-3); }
+.office-pages-scroll { flex: 1; min-height: 0; overflow: auto; padding: 10px; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y pinch-zoom; }
+.office-pages-list { display: flex; flex-direction: column; gap: 10px; }
+.office-page { position: relative; width: 100%; background: #fff; border-radius: 4px; box-shadow: 0 1px 6px rgb(0 0 0 / 35%); overflow: hidden; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.office-page img { display: block; width: 100%; height: 100%; user-select: none; }
+.office-page.is-stale img { opacity: 0.6; }
+.office-pick { position: absolute; border: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 22%, transparent); border-radius: 3px; pointer-events: none; }
+.office-pick.is-page { inset: 0; border-radius: 4px; background: none; }
+.office-pages-note { padding: 16px 8px; text-align: center; color: var(--text-3); font-size: 13px; }
+.office-pages-clear { margin: 6px 10px 10px; padding: 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--s2); color: var(--text-2); font-size: 13px; }
+.attach-chip.is-pointer { border-color: var(--accent); }
+
 
 /* An edit the person made themselves, shown among the agent's. */
 .tag-you { background: rgba(94, 200, 160, .18); color: #7ee0b9; }

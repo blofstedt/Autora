@@ -168,7 +168,7 @@ async function main() {
       await app.turn(s, "make a small budget workbook", 120_000);
       assert.equal((await state()).kind, "xlsx");
       frame = await editorIn(page, "sheets");
-      await until("the grid", async () => /Widget/.test(await bodyText(frame)) || (await frame.locator("canvas").count().catch(() => 0)) > 0, 90_000);
+      await until("the editor", async () => /Autora/.test(await bodyText(frame)) && /Formulas/.test(await bodyText(frame)), 120_000);
       await until("the formula's value", async () => /13\.5/.test(await bodyText(frame)), 90_000).catch(() => undefined);
       const text = await bodyText(frame);
       assert.doesNotMatch(text, /Genspark/);

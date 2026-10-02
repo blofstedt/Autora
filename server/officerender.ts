@@ -19,6 +19,7 @@
  * everything else is refused: a document cannot reach out from the renderer.
  */
 
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -75,10 +76,25 @@ let queue: Promise<unknown> = Promise.resolve();
  * reason when it cannot open the file (damaged, or password-protected).
  */
 export function renderToPdf(kind: OfficeKind, data: Buffer, name: string, stopper: Stopper = {}): Promise<Buffer> {
+  /* The same bytes are the same pages: kept for a while, so looking again, saving as PDF after looking, or a phone
+     and the agent asking for the same file do not each pay for ten seconds of layout. */
+  const key = createHash("sha1").update(kind).update("\0").update(data).digest("hex");
+  const kept = pdfCache.get(key);
+  if (kept) {
+    pdfCache.delete(key);
+    pdfCache.set(key, kept);
+    return kept.then((pdf) => Buffer.from(pdf));
+  }
   const run = queue.then(() => render(kind, data, name, stopper));
   queue = run.catch(() => undefined);
+  // A stopped or failed render is not kept; one that worked is, and the oldest go first.
+  pdfCache.set(key, run);
+  run.catch(() => { if (pdfCache.get(key) === run) pdfCache.delete(key); });
+  while (pdfCache.size > PDF_CACHE) pdfCache.delete(pdfCache.keys().next().value as string);
   return run;
 }
+const PDF_CACHE = 6;
+const pdfCache = new Map<string, Promise<Buffer>>();
 
 export const renderDocxToPdf = (data: Buffer, name: string, stopper: Stopper = {}) => renderToPdf("docx", data, name, stopper);
 

@@ -133,7 +133,10 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  Fix: the PowerPoint and Excel editors' dialogs and default names are in English, not Chinese.
+  New: on a phone, Word, PowerPoint and Excel documents open as pictures of their pages
+  (drawn once and kept, so they open at once) instead of as the full editor. Tap text
+  to point at it and tell Autora what to change; the full editor is one button away.
+  Also: the PowerPoint and Excel engines name things in English.
   New: PowerPoint decks and Excel workbooks open in their own editors beside the
   chat, like Word documents and PDFs do. The agent works on the one you are looking
   at; what you change in the editor is saved as you go and told to the agent, and

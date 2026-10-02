@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { holdSurface, useCollab } from "../lib/collab";
 import { onOfficePush, useWordState, type OfficeKind } from "../lib/officedesk";
+import { OfficePages } from "./OfficePages";
 import { IconDownload, IconFile, IconMaximize, IconMinimize, IconX } from "./Icons";
 
 /**
@@ -33,6 +34,9 @@ export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: b
   const [versionsOpen, setVersionsOpen] = useState(false);
   /** On a phone the pinned view is a third of the screen: editing wants all of it. */
   const [full, setFull] = useState(false);
+  /* A phone starts with the pages as pictures (fast, kept, readable); the full editor is a tap away. */
+  const [editing, setEditing] = useState(false);
+  const pages = phone && !editing;
   const collab = useCollab();
   const mine = collab.held.includes("office");
   const base = `/api/officedesk/${encodeURIComponent(sessionId)}`;
@@ -170,7 +174,7 @@ export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: b
   const problem = trouble ?? word.problem ?? null;
 
   return (
-    <div className={`pdf-window office-window${phone ? " is-phone" : ""}${phone && full ? " is-full" : ""}`}>
+    <div className={`pdf-window office-window${phone ? " is-phone" : ""}${phone && full ? " is-full" : ""}${pages ? " is-pages" : ""}`}>
       <div className="pdf-bar">
         <span className="pdf-bar-ico" aria-hidden="true"><IconFile size={14} /></span>
         <span className="pdf-bar-name" title={word.name}>{word.name ?? THING[kind]}</span>
@@ -204,7 +208,10 @@ export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: b
             <IconDownload size={14} />
           </a>
         )}
-        {phone && (
+        {phone && editing && (
+          <button className="pdf-pill" onClick={() => setEditing(false)} title="Back to the pages">Pages</button>
+        )}
+        {phone && !pages && (
           <button
             className="btn icon ghost"
             onClick={() => setFull((v) => !v)}
@@ -236,14 +243,18 @@ export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: b
         </ul>
       )}
       {problem && <div className="pdf-problem" role="status">{problem}</div>}
-      <iframe
-        key={engine ? `${kind}-${word.loadRev ?? 0}` : kind}
-        ref={frame}
-        className="pdf-frame"
-        src={`/office-app/${APP[kind]}/index.html`}
-        title={`${word.name ?? THING[kind]}, in its editor`}
-        sandbox="allow-scripts allow-downloads allow-modals allow-popups"
-      />
+      {pages ? (
+        <OfficePages sessionId={sessionId} name={word.name ?? THING[kind]} rev={word.rev ?? 0} onEdit={() => { setEditing(true); setFull(true); }} />
+      ) : (
+        <iframe
+          key={engine ? `${kind}-${word.loadRev ?? 0}` : kind}
+          ref={frame}
+          className="pdf-frame"
+          src={`/office-app/${APP[kind]}/index.html`}
+          title={`${word.name ?? THING[kind]}, in its editor`}
+          sandbox="allow-scripts allow-downloads allow-modals allow-popups"
+        />
+      )}
     </div>
   );
 }

@@ -30,6 +30,7 @@ import zlib from "node:zlib";
 import express, { type Express, type Request, type Response } from "express";
 import { MAX_ARTIFACT_BYTES, getArtifact, saveArtifact } from "./artifacts";
 import { OfficeHost, hostBuilt, wire } from "./officehost";
+import { dropPages, latestPages, pageFile, pagesFor } from "./officepages";
 import { stateDir } from "./state";
 
 export const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -393,6 +394,7 @@ function persist(session: string) {
 /** A session that is deleted takes its window with it. */
 export function dropOfficeDesk(session: string) {
   stopEngine(session);
+  dropPages(session);
   desks.delete(session);
   try {
     for (const f of fs.readdirSync(DIR)) if (f === `${session}.json` || f.startsWith(`${session}.`)) fs.rmSync(path.join(DIR, f), { recursive: true, force: true });
@@ -918,6 +920,38 @@ export function officeRoutes(app: Express, opts: { exists: (session: string) => 
     } catch (err: any) {
       res.status(500).json({ error: String(err?.message ?? err) });
     }
+  });
+
+  /* The document as pictures of its pages, for a phone: drawn once and kept by what the file holds (./officepages.ts).
+     Asked again until it says ready; what was drawn before is offered meanwhile, marked out of date. */
+  app.post("/api/officedesk/:session/pages", async (req, res) => {
+    const id = known(req, res);
+    if (!id) return;
+    const desk = load(id);
+    if (!desk) return res.status(404).json({ error: "There is no document open in the window." });
+    await settleEngine(id);
+    const now = load(id) ?? desk;
+    const got = pagesFor(id, now.kind, now.name, now.data);
+    const stale = got.status === "ready" ? null : latestPages(id);
+    res.json({
+      kind: now.kind, name: now.name, status: got.status,
+      ...(got.status === "ready" ? { hash: got.manifest.hash, pages: got.manifest.pages, total: got.manifest.total } : {}),
+      ...(got.status === "failed" ? { error: got.error } : {}),
+      ...(stale ? { stale: { hash: stale.hash, pages: stale.pages, total: stale.total } } : {}),
+    });
+  });
+
+  app.get("/api/officedesk/:session/pages/:hash/:file", (req, res) => {
+    const id = known(req, res);
+    if (!id) return;
+    const m = /^(\d{1,3})\.(jpg|json)$/.exec(String(req.params.file));
+    const data = m ? pageFile(id, String(req.params.hash), Number(m[1]), m[2] as "jpg" | "json") : null;
+    if (!m || !data) return res.status(404).json({ error: "That page is not there." });
+    res.setHeader("Content-Type", m[2] === "jpg" ? "image/jpeg" : "application/json");
+    res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Content-Security-Policy", "sandbox");
+    res.send(data);
   });
 
   app.post("/api/officedesk/:session/close", (req, res) => {

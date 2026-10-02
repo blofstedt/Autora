@@ -9,6 +9,7 @@ import { resetPreview, setPreviewFrame, setPreviewState, usePreviewState, type P
 import { AppPreview } from "./components/AppPreview";
 import { OfficeWindow } from "./components/OfficeWindow";
 import { PdfWindow } from "./components/PdfWindow";
+import { clearOfficePick, getOfficePick, pickLabel, pickSentence, useOfficePick } from "./lib/officeSelection";
 import { emitOfficePush, resetWord, setWordState, useWordState } from "./lib/officedesk";
 import { resetDesk, setDeskState, useDeskState } from "./lib/pdfdesk";
 import { resetCollab, setCollabState } from "./lib/collab";
@@ -478,7 +479,10 @@ export function App() {
   }, []);
 
   const send = useCallback(async (spoken?: string, interrupt?: boolean) => {
-    const text = (spoken ?? draft).trim();
+    const typed = (spoken ?? draft).trim();
+    /* What they pointed at in a document's pages goes in front of what they say about it. */
+    const pointed = getOfficePick();
+    const text = pointed && pointed.session === sessionId && typed ? `${pickSentence(pointed)}\n${typed}` : typed;
     /* A dictated turn carries nothing but words, and a message may be nothing
        but files: "look at this" with the photo is a whole request. */
     const files = spoken === undefined ? attached : [];
@@ -486,6 +490,7 @@ export function App() {
     if ((!text && files.length === 0 && books.length === 0) || !sessionId) return;
     // Dictated turns never touched the box, so there is nothing to clear and
     // clearing anyway would eat something half-typed.
+    if (pointed && typed) clearOfficePick();
     if (spoken === undefined) {
       setDraft("");
       setAttached([]);
@@ -1242,6 +1247,7 @@ export function App() {
   const preview = usePreviewState();
   const desk = useDeskState();
   const word = useWordState();
+  const pointedAt = useOfficePick();
   /* One window beside the chat at a time: the app, the PDF or the Office document,
      whichever was opened last; putting it away shows the one before. */
   const sidePane: "app" | "pdf" | "word" | null = phoneLayout || !live ? null : (() => {
@@ -1852,11 +1858,23 @@ export function App() {
                       }
                     }}
                   />
-                  {(attached.length > 0 || attachedBooks.length > 0) && (
+                  {(attached.length > 0 || attachedBooks.length > 0 || (pointedAt && pointedAt.session === sessionId)) && (
                     /* Boxes along the bottom of the field, left to right: a
                        picture is the picture, a file is its name. Both arrive
                        with the same small pop. */
                     <div className="attach-row">
+                      {pointedAt && pointedAt.session === sessionId && (
+                        <span className="attach-chip is-file is-pointer">
+                          <IconFile size={16} />
+                          <span className="attach-meta">
+                            <b title={pickLabel(pointedAt)}>{pickLabel(pointedAt)}</b>
+                            <em>{pointedAt.file}</em>
+                          </span>
+                          <button type="button" className="attach-drop" onClick={clearOfficePick} title="Stop pointing at this" aria-label="Stop pointing at this">
+                            <IconX size={12} />
+                          </button>
+                        </span>
+                      )}
                       {attachedBooks.map((book) => (
                         <span className="attach-chip is-file is-notebook" key={book.id}>
                           <IconNotebook size={16} />

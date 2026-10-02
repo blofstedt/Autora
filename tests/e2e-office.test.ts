@@ -77,7 +77,7 @@ async function main() {
       app.decide = null;
     });
 
-    await test("a deck cannot be drawn yet, and the model is told what stands in for looking", async () => {
+    await test("a deck is drawn slide by slide, and the model is shown the slide", async () => {
       app.seen.length = 0;
       let step = 0;
       app.decide = (req) => {
@@ -91,7 +91,8 @@ async function main() {
       const s = await app.newSession("office3", "build");
       const ev = await app.turn(s, "make a one-slide PowerPoint deck and show me it", 120_000);
       const said = ev.filter((e) => e.kind === "tool.result" || e.kind === "tool.error").map((e) => JSON.stringify(e.payload).slice(0, 300)).join("\n");
-      assert.match(told(app), /A deck cannot be drawn yet/, said);
+      assert.match(said, /deck2\.pptx · page 1/);
+      assert.doesNotMatch(told(app), /cannot be drawn/);
       app.decide = null;
     });
   } finally {

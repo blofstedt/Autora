@@ -103,7 +103,15 @@ is a sub-project with its own dependencies (see below).
   reached the file. The person's changes are told to the agent once in words made by
   comparing text (`describeChange` for paragraphs and slide text, `describeCells` for
   cells). One surface, `"office"`, for presence and Take control (`touched`, held), as
-  for the PDF), `officerender.ts` (the same editors headless, for `office_look`
+  for the PDF. **On a phone** the window is not the editor but `components/OfficePages.tsx`:
+  pictures of the pages (`officepages.ts`: the editor's PDF, drawn by pdf.js, kept per
+  session by a hash of the file's bytes -- the last two -- with each run of text and
+  where it sits; `POST /api/officedesk/:session/pages` until `ready`, the previous
+  pictures shown dimmed meanwhile). Tapping words points at them (`lib/officeSelection.ts`):
+  a chip beside the message box, and `send` in `App.tsx` puts "(Pointing at ... on slide 2
+  of pitch.pptx.)" in front of what they type, which is how a phone edits; "Full editor"
+  is one button away. `renderToPdf` also keeps the last six PDFs by hash, so the agent
+  and the phone share one layout), `officerender.ts` (the same editors headless, for `office_look`
   pictures and `office_pdf`; PDFs always go to Autora's own PDF window),
   `notebooks.ts` (artifacts grouped by purpose with notes between them,
   stored as `notebooks.json`; retention keeps whatever a notebook holds or
