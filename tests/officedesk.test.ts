@@ -11,11 +11,33 @@ import path from "node:path";
 import zlib from "node:zlib";
 
 process.env.AUTORA_STATE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "autora-officedesk-test-"));
-const { describeChange, fragment, docxParagraphs, isDocx } = await import("../server/officedesk");
+const { describeChange, fragment, docxParagraphs, isDocx, pptxParagraphs, xlsxCells, describeCells, isOffice } = await import("../server/officedesk");
 
 let passed = 0;
 function test(name: string, fn: () => void) {
   try { fn(); passed += 1; console.log(`  ok  ${name}`); } catch (err) { console.error(`  FAIL ${name}`); throw err; }
+}
+
+/** A zip of several deflated entries. */
+function zipMany(entries: [string, string][]): Buffer {
+  const parts: Buffer[] = [], central: Buffer[] = [];
+  let offset = 0;
+  for (const [name, body] of entries) {
+    const raw = Buffer.from(body), data = zlib.deflateRawSync(raw), n = Buffer.from(name);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(8, 8);
+    local.writeUInt32LE(data.length, 18); local.writeUInt32LE(raw.length, 22); local.writeUInt16LE(n.length, 26);
+    const c = Buffer.alloc(46);
+    c.writeUInt32LE(0x02014b50, 0); c.writeUInt16LE(20, 4); c.writeUInt16LE(20, 6); c.writeUInt16LE(8, 10);
+    c.writeUInt32LE(data.length, 20); c.writeUInt32LE(raw.length, 24); c.writeUInt16LE(n.length, 28); c.writeUInt32LE(offset, 42);
+    parts.push(local, n, data); central.push(c, n);
+    offset += local.length + n.length + data.length;
+  }
+  const cd = Buffer.concat(central);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(entries.length, 8); end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(cd.length, 12); end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...parts, cd, end]);
 }
 
 /** A minimal zip with one deflated entry: enough for the reader. */
@@ -67,6 +89,30 @@ test("a .docx is read in-process, entities and tabs included", () => {
   assert.equal(isDocx(Buffer.concat([data, Buffer.alloc(100)])), true);
   assert.deepEqual(docxParagraphs(data), ["Tom & Jerry", "a\tb"]);
   assert.equal(docxParagraphs(Buffer.from("not a zip")), null);
+});
+
+test("a deck is read slide by slide, in order", () => {
+  const slide = (t: string) => `<p:sld><a:p><a:r><a:t>${t}</a:t></a:r></a:p></p:sld>`;
+  const entries: [string, string][] = [["ppt/presentation.xml", "<p:presentation/>"], ["ppt/slides/slide2.xml", slide("Second")], ["ppt/slides/slide1.xml", slide("First &amp; best")]];
+  const data = zipMany(entries);
+  assert.deepEqual(pptxParagraphs(data), ["Slide 1: First & best", "Slide 2: Second"]);
+  assert.ok(isOffice(data, "pptx") && !isOffice(data, "docx") && !isOffice(data, "xlsx"));
+  assert.match(describeChange(pptxParagraphs(data)!, ["Slide 1: First & better", "Slide 2: Second"]).join(" "), /changed "best" to "better".*Slide 1/);
+});
+
+test("a workbook is read cell by cell, shared strings, formulas and values included, and changes are said as cells", () => {
+  const book = '<workbook><sheets><sheet name="Data" sheetId="1"/></sheets></workbook>';
+  const sheet = (b2: string) => `<worksheet><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c></row><row r="2"><c r="B2"><v>${b2}</v></c><c r="C2"><f>B2*2</f><v>${Number(b2) * 2}</v></c></row></sheetData></worksheet>`;
+  const make = (b2: string) => zipMany([["xl/workbook.xml", book], ["xl/sharedStrings.xml", "<sst><si><t>Item</t></si></sst>"], ["xl/worksheets/sheet1.xml", sheet(b2)]]);
+  const a = xlsxCells(make("3"))!, b = xlsxCells(make("4"))!;
+  assert.equal(a.get("Data!A1"), "Item");
+  assert.equal(a.get("Data!C2"), "=B2*2 (6)");
+  assert.deepEqual(describeCells(a, a), ["changed the formatting or the structure"]);
+  const said = describeCells(a, b).join("; ");
+  assert.match(said, /changed Data!B2 from "3" to "4"/);
+  assert.match(said, /Data!C2/);
+  const gone = new Map(b); gone.delete("Data!A1"); gone.set("Data!D9", "new");
+  assert.match(describeCells(b, gone).join("; "), /filled in Data!D9.*cleared Data!A1/);
 });
 
 console.log(`${passed} passed`);

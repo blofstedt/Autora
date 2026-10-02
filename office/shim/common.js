@@ -30,6 +30,9 @@
     try { Object.defineProperty(window, name, { value: store, configurable: true }); } catch { /* nothing more to do */ }
   }
 
+  // Some of the editors' libraries ask for Node's `process`.
+  if (typeof window.process === "undefined") window.process = { env: {}, platform: "linux", versions: {}, browser: true, nextTick: (f, ...a) => queueMicrotask(() => f(...a)) };
+
   // ---- the host ----
   const headless = typeof window.__autoraHeadless !== "undefined" || typeof window.__autoraHost === "function";
   const framed = !headless && window.parent !== window;
@@ -68,6 +71,41 @@
     });
   }
 
+  // ---- the editor's ipc, carried to the engine that holds its document ----
+  // Arguments and answers hold buffers (pictures, workbooks); they travel as JSON with the bytes tagged.
+  const TYPED = { Uint8Array, Int8Array, Uint16Array, Int16Array, Uint32Array, Int32Array, Float32Array, Float64Array, Uint8ClampedArray };
+  function enc(v) {
+    if (v instanceof ArrayBuffer) return { $b: b64(v), t: "ArrayBuffer" };
+    if (ArrayBuffer.isView(v)) return { $b: b64(v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength)), t: v.constructor.name };
+    if (Array.isArray(v)) return v.map(enc);
+    if (v && typeof v === "object") {
+      const out = {};
+      for (const k of Object.keys(v)) out[k] = enc(v[k]);
+      return out;
+    }
+    return v;
+  }
+  function dec(v) {
+    if (Array.isArray(v)) return v.map(dec);
+    if (v && typeof v === "object") {
+      if (typeof v.$b === "string") {
+        const buf = unb64(v.$b);
+        const T = TYPED[v.t];
+        return T ? new T(buf) : buf;
+      }
+      const out = {};
+      for (const k of Object.keys(v)) out[k] = dec(v[k]);
+      return out;
+    }
+    return v;
+  }
+  const ipc = {
+    invoke: async (channel, ...args) => dec(await host("ipc", { channel, args: enc(args) })),
+    send: (channel, ...args) => { void host("ipc-send", { channel, args: enc(args) }).catch(() => undefined); },
+    /** Pushes from the engine (webContents.send) arrive as host pushes named "ipc". */
+    on: (channel, fn) => onPush("ipc", (m) => { if (m && m.channel === channel) fn({}, ...dec(m.args)); }),
+  };
+
   /** Be told when the host pushes something (a new version of the document, the person's choice...). */
   function onPush(op, fn) {
     let set = pushes.get(op);
@@ -75,6 +113,9 @@
     set.add(fn);
     return () => set.delete(fn);
   }
+
+  // The headless host has no postMessage: the server calls this to push.
+  window.__autoraPush = (op, payload) => { for (const fn of pushes.get(op) ?? []) { try { fn(payload); } catch (e) { console.error(e); } } };
 
   window.addEventListener("message", (event) => {
     if (event.source !== window.parent) return;
@@ -119,7 +160,8 @@
   // left out, and its Genspark AI slot on the Home tab becomes one button that puts the
   // cursor in Autora's chat box.
   const style = document.createElement("style");
-  style.textContent = ".ai-dock, .ai-rail { display: none !important; } .ribbon-group:has(.ai-entry) .ai-entry:not(.autora-ask) { display: none !important; }";
+  // The panel, its edge button, and the bar over a slide; the Home tab's AI group becomes the one button below.
+  style.textContent = ".ai-dock, .ai-rail, .stage-ai-bar { display: none !important; } .ribbon-group:has(.ai-entry) .ai-entry:not(.autora-ask) { display: none !important; }";
   document.head.appendChild(style);
   const MARK = '<svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 21 20H3z" fill="#8b7cf6"/></svg>';
   const adopt = () => {
@@ -133,16 +175,19 @@
         first.setAttribute("data-tip", "Ask Autora in the chat");
         first.addEventListener("click", (e) => { e.stopImmediatePropagation(); e.preventDefault(); void host("ask", {}).catch(() => undefined); }, true);
       }
-      const icon = first.querySelector(".rb-big-icon"), label = first.querySelector(":scope > span:not(.rb-big-icon)");
+      // Word and PowerPoint draw the icon in .rb-big-icon and the name in a span; Excel in .tool-icon-row and <strong>.
+      const icon = first.querySelector(".rb-big-icon, .tool-icon-row");
+      const label = first.querySelector("strong") || first.querySelector(":scope > span:not(.rb-big-icon):not(.tool-icon-row)");
       if (icon && !icon.querySelector("[data-autora]")) icon.innerHTML = '<span data-autora="1">' + MARK + "</span>";
       if (label && label.textContent !== "Autora") label.textContent = "Autora";
       const name = group.querySelector(".ribbon-group-label");
       if (name && name.textContent !== "Autora") name.textContent = "Autora";
+      if (group.getAttribute("aria-label") && group.getAttribute("aria-label") !== "Autora") group.setAttribute("aria-label", "Autora");
     }
   };
   new MutationObserver(adopt).observe(document.documentElement, { childList: true, subtree: true });
 
-  window.__autora = { host, onPush, headless, framed, b64, unb64 };
+  window.__autora = { host, onPush, headless, framed, b64, unb64, ipc, enc, dec };
   // The editor's own script waits for this before it starts (see office/vite).
   window.__autoraReady = (async () => { try { await loadFonts(); } catch (e) { console.warn(String(e)); } })();
 })();

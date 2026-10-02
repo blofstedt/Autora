@@ -60,7 +60,7 @@ import {
 } from "./artifacts";
 import { checkWidget } from "./widgets";
 import { deskHooks } from "./pdfdesk";
-import { wordHooks } from "./officedesk";
+import { officeHooks } from "./officedesk";
 import { runPdfTool } from "./pdf";
 import {
   addEntries, createNotebook, describeNotebook, findNotebook, listNotebooks, moveEntry,
@@ -2182,14 +2182,13 @@ const TOOLS: ToolSpec[] = [
     name: "office_open",
     group: "files",
     description:
-      "Open a Word document in the window beside the conversation, so the person can read it and type in it while you " +
-      "work. A document you make or change with the Office tools opens there by itself; this is for one that already " +
-      "exists (an upload, an earlier file). What they type is saved as they go and you are told what they changed. " +
-      "PowerPoint and Excel files do not open in a window yet.",
+      "Open a Word, PowerPoint or Excel file in the window beside the conversation, in its own editor, so the person can " +
+      "read it and change it while you work. A file you make or change with the Office tools opens there by itself; this is " +
+      "for one that already exists (an upload, an earlier file). What they change is saved as they go and you are told what.",
     parameters: {
       type: "object",
       properties: {
-        file: { type: "string", description: "The Word document: an artifact id, a path, or an artifact's name." },
+        file: { type: "string", description: "The file: an artifact id, a path, or an artifact's name." },
       },
       required: ["file"],
     },
@@ -2198,15 +2197,16 @@ const TOOLS: ToolSpec[] = [
     name: "office_look",
     group: "files",
     description:
-      "See a Word document's pages as they lay out: pictures of its pages, drawn by Word's own editor engine, shown in " +
-      "the conversation and handed to you. pages is a list like \"1\", \"1-3\" or \"2,4\" (a few at a time); area " +
-      "{x,y,width,height} in points from the page's top-left looks closer at part of one page, and grid draws a ruler. " +
-      "Use it after you build or change a document, to check it looks right. (PowerPoint and Excel files cannot be drawn " +
-      "yet: office_check is what finds their problems.)",
+      "See a Word, PowerPoint or Excel file's pages as they lay out: pictures of its pages (a deck's slides, a workbook's " +
+      "printed sheets), drawn by the same editor a person would use, shown in the conversation and handed to you. pages is " +
+      "a list like \"1\", \"1-3\" or \"2,4\" (a few at a time); area {x,y,width,height} in points from the page's " +
+      "top-left looks closer at part of one page, and grid draws a ruler. Use it after you build or change a file, to check " +
+      "it looks right; office_check still finds what looking would not (overflow, broken formulas). A deck or workbook " +
+      "takes ten seconds or so to draw.",
     parameters: {
       type: "object",
       properties: {
-        file: { type: "string", description: "The Word document: an artifact id, a path, or an artifact's name." },
+        file: { type: "string", description: "The file: an artifact id, a path, or an artifact's name." },
         pages: { type: "string", description: "Which pages: \"1\", \"1-3\", \"2,4\". Default 1." },
         area: {
           type: "object",
@@ -2222,12 +2222,12 @@ const TOOLS: ToolSpec[] = [
     name: "office_pdf",
     group: "files",
     description:
-      "Turn a Word document into a PDF, laid out by Word's own editor engine. The PDF is saved as an artifact and opens " +
+      "Turn a Word, PowerPoint or Excel file into a PDF, laid out by its own editor (a deck one slide per page, a workbook as printed). The PDF is saved as an artifact and opens " +
       "in the PDF editor, where it can be marked up, signed, redacted or sent on (the PDF tools work on it from there).",
     parameters: {
       type: "object",
       properties: {
-        file: { type: "string", description: "The Word document: an artifact id, a path, or an artifact's name." },
+        file: { type: "string", description: "The file: an artifact id, a path, or an artifact's name." },
         output: { type: "string", description: "File name for the PDF. Default: the document's name with .pdf." },
       },
       required: ["file"],
@@ -2779,7 +2779,7 @@ export interface ToolContext {
   code?: { edit: (args: EditArgs) => EditResult };
   /** Why something the person is using may not be touched right now (see
       server/presence.ts), or null. `subject` is an object id or a file. */
-  held?: (surface: "pdf" | "word" | "app" | "browser" | "code", subject: string) => string | null;
+  held?: (surface: "pdf" | "office" | "app" | "browser" | "code", subject: string) => string | null;
   /** Hand a question to a research worker with its own context (see
       server/subagent.ts) and get its report back. Absent inside the worker. */
   research?: (question: string) => Promise<string>;
@@ -4823,8 +4823,8 @@ async function runToolUnredacted(
           showFile: ctx.showFile,
           putBlob: ctx.putBlob,
           showImage: ctx.showImage,
-          ...(ctx.memory.incognito ? {} : { desk: deskHooks(ctx.session), word: wordHooks(ctx.session) }),
-          ...(ctx.held ? { held: (_surface: "word", subject: string) => ctx.held!("word", subject) } : {}),
+          ...(ctx.memory.incognito ? {} : { desk: deskHooks(ctx.session), win: officeHooks(ctx.session) }),
+          ...(ctx.held ? { held: (_surface: "office", subject: string) => ctx.held!("office", subject) } : {}),
           cancelled: ctx.cancelled,
           onCancel: ctx.onCancel,
         });

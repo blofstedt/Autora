@@ -8,7 +8,8 @@ import globals from "globals";
 export default tseslint.config(
   // pdf-editor/ is its own sub-project (SecurePDF's editor), typechecked by its own tsconfig.
   // .cache/ holds the pinned GenOffice checkout the Office tools are built from (scripts/build-office.mjs).
-  { ignores: ["dist/", "node_modules/", "ui/", ".autora/", "recordings/", "pdf-editor/", ".cache/"] },
+  // office/host/entry.ts is bundled with GenOffice's own tsconfig (esbuild, office/host/build.mjs), not this one.
+  { ignores: ["dist/", "node_modules/", "ui/", ".autora/", "recordings/", "pdf-editor/", ".cache/", "office/host/entry.ts"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -46,8 +47,24 @@ export default tseslint.config(
     languageOptions: { globals: globals.node },
   },
   {
+    // The stand-in for Electron's main process runs under Node (office/host), as a CommonJS module.
+    files: ["office/host/**/*.cjs"],
+    languageOptions: { globals: globals.node, sourceType: "commonjs" },
+    rules: { "@typescript-eslint/no-require-imports": "off" },
+  },
+  {
+    files: ["office/host/**/*.mjs"],
+    languageOptions: { globals: globals.node },
+  },
+  {
+    // The preload's stand-in for `electron` is an ES module the preload is bundled over.
+    files: ["office/shim/electron-renderer.js"],
+    languageOptions: { globals: globals.browser, sourceType: "module" },
+  },
+  {
     // The editors' stand-in for Electron runs in the editor's page (office/shim); their build config runs in Node (office/vite).
     files: ["office/shim/**/*.js"],
+    ignores: ["office/shim/electron-renderer.js"],
     languageOptions: { globals: { ...globals.browser, FontFace: "readonly" }, sourceType: "script" },
   },
   {

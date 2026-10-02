@@ -9,7 +9,7 @@ import { resetPreview, setPreviewFrame, setPreviewState, usePreviewState, type P
 import { AppPreview } from "./components/AppPreview";
 import { OfficeWindow } from "./components/OfficeWindow";
 import { PdfWindow } from "./components/PdfWindow";
-import { resetWord, setWordState, useWordState } from "./lib/officedesk";
+import { emitOfficePush, resetWord, setWordState, useWordState } from "./lib/officedesk";
 import { resetDesk, setDeskState, useDeskState } from "./lib/pdfdesk";
 import { resetCollab, setCollabState } from "./lib/collab";
 import { cellKey, dockedPlan, usePhone } from "./lib/stage";
@@ -346,6 +346,7 @@ export function App() {
       onPreview: (state) => setPreviewState(state as PreviewState),
       onPdfDesk: setDeskState,
       onOfficeDesk: setWordState,
+      onOfficePush: emitOfficePush,
       onPresence: setCollabState,
       onBrowser: (state) => {
         setLiveFields(state?.fields);
@@ -1241,7 +1242,7 @@ export function App() {
   const preview = usePreviewState();
   const desk = useDeskState();
   const word = useWordState();
-  /* One window beside the chat at a time: the app, the PDF or the Word document,
+  /* One window beside the chat at a time: the app, the PDF or the Office document,
      whichever was opened last; putting it away shows the one before. */
   const sidePane: "app" | "pdf" | "word" | null = phoneLayout || !live ? null : (() => {
     const open = [
@@ -2056,9 +2057,9 @@ export function App() {
             <PdfWindow sessionId={sessionId} phone={false} />
           </aside>
         )}
-        {/* And a Word document, the same way. */}
+        {/* And a Word, PowerPoint or Excel document, the same way. */}
         {sidePane === "word" && sessionId && (
-          <aside className="app-pane" aria-label="The Word document being worked on">
+          <aside className="app-pane" aria-label="The document being worked on">
             <OfficeWindow sessionId={sessionId} phone={false} />
           </aside>
         )}

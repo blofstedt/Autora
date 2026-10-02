@@ -19,11 +19,11 @@
  * Pure -- a clock in, text out -- so the rules are tested without a page.
  */
 
-export type Surface = "pdf" | "word" | "app" | "browser" | "code";
+export type Surface = "pdf" | "office" | "app" | "browser" | "code";
 
 const NAME: Record<Surface, string> = {
   pdf: "the PDF",
-  word: "the Word document",
+  office: "the document in the Office window",
   app: "the app window",
   browser: "the browser",
   code: "the code",
@@ -184,7 +184,7 @@ export class Presence {
   }
 
   view(): PresenceView {
-    const active = (["pdf", "word", "app", "browser", "code"] as Surface[]).filter((s) => {
+    const active = (["pdf", "office", "app", "browser", "code"] as Surface[]).filter((s) => {
       if (this.held.has(s)) return true;
       for (const k of this.leases.keys()) {
         if (!k.startsWith(`${s}\u0000`)) continue;

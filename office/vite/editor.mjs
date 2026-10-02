@@ -26,6 +26,23 @@ const shimDir = path.resolve(process.env.OFFICE_SHIM || path.join(here, "../../o
 const root = path.join(here, "src/renderer");
 
 const ALIASES = {
+  slides: {
+    "@genoffice/pptx-engine/table-grid": "../../packages/pptx-engine/src/table-grid.ts",
+    "@genoffice/pptx-engine/identity": "../../packages/pptx-engine/src/identity.ts",
+    "@genoffice/pptx-engine/named-action": "../../packages/pptx-engine/src/named-action.ts",
+    "@genoffice/pptx-engine/custgeom": "../../packages/pptx-engine/src/custgeom.ts",
+    "@genoffice/pptx-engine/background-promote": "../../packages/pptx-engine/src/background-promote.ts",
+    "@genoffice/pptx-engine": "../../packages/pptx-engine/src/index.ts",
+    "@genoffice/pptx-ops/op-docs": "../../packages/pptx-ops/src/op-docs.ts",
+    "@genoffice/pptx-ops/font-size": "../../packages/pptx-ops/src/font-size.ts",
+    "@genoffice/pptx-ops": "../../packages/pptx-ops/src/index.ts",
+    "@genoffice/pptx-render/preset-geometry": "../../packages/pptx-render/src/preset-geometry.ts",
+    "@genoffice/pptx-render": "../../packages/pptx-render/src/index.ts",
+    "@genoffice/pipelines/slides/layout-audit": "../../packages/pipelines/src/slides/layout-audit.ts",
+    "@genoffice/pipelines/slides": "../../packages/pipelines/src/slides/index.ts",
+    "@genoffice/docx-engine/metafile": "../../packages/docx-engine/src/metafile.ts",
+    "@genoffice/docx-engine/math": "../../packages/docx-engine/src/math.ts",
+  },
   docs: {
     "@genoffice/docx-engine/lazy-media": "../../packages/docx-engine/src/lazy-media.ts",
     "@genoffice/docx-engine/zip-splice": "../../packages/docx-engine/src/zip-splice.ts",
@@ -38,6 +55,12 @@ const alias = Object.fromEntries(Object.entries(ALIASES[app] ?? {}).map(([k, v])
 const SKIP_FONT = /CJK|GenOffice(?:Serif|Sans|Gothic|CheLatin)KR/i;
 
 const read = (f) => fs.readFileSync(path.join(shimDir, f), "utf8");
+/** Slides and Sheets: the app's real preload (built by scripts/build-office.mjs over the stand-in for electron), which speaks to the engine. */
+const preload = () => {
+  const file = process.env.OFFICE_PRELOAD;
+  if (!file) return "";
+  return `<script>${fs.readFileSync(file, "utf8").replace(/<\/script/gi, "<\\/script")}</script>`;
+};
 
 function autoraPage() {
   return {
@@ -48,7 +71,7 @@ function autoraPage() {
       order: "pre",
       handler: (html) => html
         .replace(/<meta\s+http-equiv="Content-Security-Policy"[^>]*>/i, "")
-        .replace("<head>", `<head><script>${read("common.js")}</script><script>${read(`${app}.js`)}</script>`),
+        .replace("<head>", () => `<head><script>${read("common.js")}</script>${preload()}<script>${read(`${app}.js`)}</script>`),
     },
     // The parse worker as an inline classic worker: a frame with no origin cannot start a module one.
     transform(code, id) {
@@ -124,7 +147,7 @@ function singlePage() {
 
       // Inside a <script>, "</script" would end it and "<!--" would change how it is read. Both occur in the
       // editor's HTML handling, in strings and regular expressions; <\/script and <\x21-- mean the same there.
-      const inlineScript = (code) => code.replace(/<\/script/gi, "<\\/script").replace(/<!--/g, "<\\x21--");
+      const inlineScript = (code) => code.replace(/__VITE_PRELOAD__/g, "void 0").replace(/<\/script/gi, "<\\/script").replace(/<!--/g, "<\\x21--");
       for (const file of Object.values(bundle)) {
         if (file.type === "chunk" && file.isEntry) {
           if (file.imports.length || file.dynamicImports.length) throw new Error(`autora: ${file.fileName} imports others at runtime`);

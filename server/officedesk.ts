@@ -1,19 +1,24 @@
 /**
- * The Word window: the document the agent is working on, open beside the
- * conversation in GenOffice's Word editor, for the person to watch and to work
- * on too.
+ * The Office window: the document the agent is working on (Word, PowerPoint or
+ * Excel), open beside the conversation in GenOffice's own editor for it, for
+ * the person to watch and to work on too.
  *
  * One per session, the sibling of the PDF window (./pdfdesk.ts). It holds the
- * document as bytes. The editor (built into dist/office/web/docs, shown in a
- * sandboxed frame by src/components/OfficeWindow.tsx) saves as the person
- * types, and each save lands here: the file everyone else sees -- the Office
- * tools, the thread's file card, a download -- is an artifact kept current from
- * it, so there is no save button to forget. When the agent changes the
- * document, the new bytes replace these and the window loads them.
+ * document as bytes. The editor (built into dist/office/web/<docs|slides|sheets>,
+ * shown in a sandboxed frame by src/components/OfficeWindow.tsx) saves, and each
+ * save lands here: the file everyone else sees -- the Office tools, the
+ * thread's file card, a download -- is an artifact kept current from it, so
+ * there is no save button to forget. When the agent changes the document, the
+ * new bytes replace these and the window loads them.
+ *
+ * Word keeps its document in the page: the page sends the bytes. PowerPoint and
+ * Excel keep it in an engine (GenOffice's main-process code, run by
+ * ./officehost.ts as a child process, one per window): the page reaches it
+ * through /ipc, the engine saves to a file of its own, and that file is watched.
  *
  * What the person did is told to the agent once, in a sentence made by
- * comparing the paragraphs before and after: with the next Office tool result,
- * or at the start of its next turn.
+ * comparing the text before and after (paragraphs, slide text, cells): with
+ * the next Office tool result, or at the start of its next turn.
  *
  * The editor runs in a frame with no origin of its own and talks to the page by
  * messages only; it never calls this server (see office/shim/common.js).
@@ -24,14 +29,25 @@ import path from "node:path";
 import zlib from "node:zlib";
 import express, { type Express, type Request, type Response } from "express";
 import { MAX_ARTIFACT_BYTES, getArtifact, saveArtifact } from "./artifacts";
+import { OfficeHost, hostBuilt, wire } from "./officehost";
 import { stateDir } from "./state";
 
 export const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+export type OfficeKind = "docx" | "pptx" | "xlsx";
+const MIME: Record<OfficeKind, string> = {
+  docx: DOCX_MIME,
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+};
+const kindOfName = (name: string): OfficeKind => (/\.pptx$/i.test(name) ? "pptx" : /\.xlsx$/i.test(name) ? "xlsx" : "docx");
+/** What the person calls the document, and the surface they hold with Take control. */
+const THING: Record<OfficeKind, string> = { docx: "Word", pptx: "PowerPoint", xlsx: "Excel" };
 
 export type WordVersion = { n: number; label: string; at: number; by: "agent" | "person"; name: string };
 
 type Desk = {
   open: boolean;
+  kind: OfficeKind;
   name: string;
   /** The document as it is now. */
   data: Buffer;
@@ -58,20 +74,25 @@ type Desk = {
 const MAX_VERSIONS = 30;
 const desks = new Map<string, Desk>();
 const DIR = path.join(stateDir(), "worddesks");
+const extOf = (kind: OfficeKind) => kind;
 const validSession = (id: string) => /^[A-Za-z0-9_-]{1,80}$/.test(id);
 
-/** A .docx is a zip. */
-export const isDocx = (data: Buffer) => data.length > 100 && data[0] === 0x50 && data[1] === 0x4b && data[2] === 0x03 && data[3] === 0x04;
+/** Every Office file is a zip. */
+const isZip = (data: Buffer) => data.length > 100 && data[0] === 0x50 && data[1] === 0x4b && data[2] === 0x03 && data[3] === 0x04;
+export const isDocx = isZip;
+const MAIN_PART: Record<OfficeKind, string> = { docx: "word/document.xml", pptx: "ppt/presentation.xml", xlsx: "xl/workbook.xml" };
+/** A zip that holds the part which makes it this kind of document. */
+export const isOffice = (data: Buffer, kind: OfficeKind) => isZip(data) && zipEntry(data, MAIN_PART[kind]) !== null;
 
 /** What the person does to the document, for whoever shares it with them (server/presence.ts). */
 let touched: (session: string, subject: string, kind: string, detail: string, opts?: { tell?: boolean }) => void = () => undefined;
-export function onWordTouch(fn: typeof touched) {
+export function onOfficeTouch(fn: typeof touched) {
   touched = fn;
 }
 
 let changed: (session: string) => void = () => undefined;
 /** Who to tell when a window changes: server.ts sends it to the session's sockets. */
-export function onWordChange(fn: (session: string) => void) {
+export function onOfficeChange(fn: (session: string) => void) {
   changed = fn;
 }
 
@@ -204,6 +225,127 @@ export function describeChange(before: string[], after: string[]): string[] {
   return out;
 }
 
+// ------------------------------- reading a deck and a workbook --
+
+/** The names of a zip's entries. */
+function zipNames(zip: Buffer): string[] {
+  let end = -1;
+  for (let i = zip.length - 22; i >= Math.max(0, zip.length - 22 - 0xffff); i -= 1) {
+    if (zip.readUInt32LE(i) === 0x06054b50) { end = i; break; }
+  }
+  if (end < 0) return [];
+  const count = zip.readUInt16LE(end + 10);
+  let at = zip.readUInt32LE(end + 16);
+  const names: string[] = [];
+  for (let n = 0; n < count && at + 46 <= zip.length; n += 1) {
+    if (zip.readUInt32LE(at) !== 0x02014b50) break;
+    const nameLen = zip.readUInt16LE(at + 28);
+    names.push(zip.toString("utf8", at + 46, at + 46 + nameLen));
+    at += 46 + nameLen + zip.readUInt16LE(at + 30) + zip.readUInt16LE(at + 32);
+  }
+  return names;
+}
+
+const unescapeXml = (text: string) => text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (whole, e: string) => {
+  if (e[0] === "#") {
+    const code = e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+    return Number.isFinite(code) && code > 0 && code < 0x110000 ? String.fromCodePoint(code) : whole;
+  }
+  return ENTITIES[e.toLowerCase()] ?? whole;
+});
+
+/** The text of each paragraph on each slide, in order, each tagged with its slide ("Slide 2: Agenda"). */
+export function pptxParagraphs(data: Buffer): string[] | null {
+  try {
+    const slides = zipNames(data)
+      .map((n) => /^ppt\/slides\/slide(\d+)\.xml$/.exec(n))
+      .filter((m): m is RegExpExecArray => m !== null)
+      .sort((a, b) => Number(a[1]) - Number(b[1]));
+    if (slides.length === 0 && zipEntry(data, "ppt/presentation.xml") === null) return null;
+    const out: string[] = [];
+    slides.forEach((m, index) => {
+      const xml = zipEntry(data, m[0])?.toString("utf8") ?? "";
+      for (const p of xml.matchAll(/<a:p[ >][\s\S]*?<\/a:p>/g)) {
+        let text = "";
+        for (const t of p[0].matchAll(/<a:t(?:\s[^>]*)?>([\s\S]*?)<\/a:t>|<a:br\s*\/>/g)) text += t[1] === undefined ? "\n" : t[1];
+        text = unescapeXml(text);
+        if (text.trim()) out.push(`Slide ${index + 1}: ${text}`);
+      }
+      if (out.length > 20000) return;
+    });
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+/** Each filled cell as "Sheet1!B2" -> its value (and formula), or null when the file cannot be read this way. */
+export function xlsxCells(data: Buffer): Map<string, string> | null {
+  try {
+    const book = zipEntry(data, "xl/workbook.xml")?.toString("utf8");
+    if (!book) return null;
+    const names = [...book.matchAll(/<sheet\b[^>]*\bname="([^"]*)"/g)].map((m) => unescapeXml(m[1]));
+    const shared: string[] = [];
+    const sst = zipEntry(data, "xl/sharedStrings.xml")?.toString("utf8");
+    if (sst) for (const si of sst.matchAll(/<si>([\s\S]*?)<\/si>/g)) shared.push(unescapeXml([...si[1].matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)].map((t) => t[1]).join("")));
+    const cells = new Map<string, string>();
+    const sheets = zipNames(data)
+      .map((n) => /^xl\/worksheets\/sheet(\d+)\.xml$/.exec(n))
+      .filter((m): m is RegExpExecArray => m !== null)
+      .sort((a, b) => Number(a[1]) - Number(b[1]));
+    sheets.forEach((m, index) => {
+      const xml = zipEntry(data, m[0])?.toString("utf8") ?? "";
+      const sheet = names[index] ?? `Sheet${index + 1}`;
+      for (const c of xml.matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+        const ref = /\br="([A-Z]+\d+)"/.exec(c[1])?.[1];
+        if (!ref || !c[2]) continue;
+        const type = /\bt="(\w+)"/.exec(c[1])?.[1];
+        const f = /<f(?:\s[^>]*)?>([\s\S]*?)<\/f>/.exec(c[2])?.[1];
+        const v = /<v>([\s\S]*?)<\/v>/.exec(c[2])?.[1];
+        const inline = /<is>([\s\S]*?)<\/is>/.exec(c[2]);
+        let value = "";
+        if (type === "s" && v !== undefined) value = shared[Number(v)] ?? "";
+        else if (type === "inlineStr" && inline) value = unescapeXml([...inline[1].matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)].map((t) => t[1]).join(""));
+        else if (v !== undefined) value = unescapeXml(v);
+        const formula = f ? `=${unescapeXml(f)}` : "";
+        if (value === "" && !formula) continue;
+        cells.set(`${sheet}!${ref}`, formula ? `${formula}${value !== "" ? ` (${value})` : ""}` : value);
+        if (cells.size > 200000) return;
+      }
+    });
+    return cells;
+  } catch {
+    return null;
+  }
+}
+
+const clipCell = (t: string) => (t.length > 40 ? `${t.slice(0, 40)}…` : t);
+
+/** What differs between two versions of a workbook, as a colleague would say it. */
+export function describeCells(before: Map<string, string>, after: Map<string, string>): string[] {
+  const changed: string[] = [], added: string[] = [], cleared: string[] = [];
+  for (const [ref, now] of after) {
+    const was = before.get(ref);
+    if (was === undefined) added.push(`${ref} (${JSON.stringify(clipCell(now))})`);
+    else if (was !== now) changed.push(`${ref} from ${JSON.stringify(clipCell(was))} to ${JSON.stringify(clipCell(now))}`);
+  }
+  for (const [ref, was] of before) if (!after.has(ref)) cleared.push(`${ref} (was ${JSON.stringify(clipCell(was))})`);
+  const list = (verb: string, items: string[]) => (items.length ? `${verb} ${items.slice(0, 5).join(", ")}${items.length > 5 ? ` and ${items.length - 5} more` : ""}` : "");
+  const out = [list("changed", changed), list("filled in", added), list("cleared", cleared)].filter(Boolean);
+  return out.length ? out : ["changed the formatting or the structure"];
+}
+
+/** What the person did between two versions of the file, whatever the kind. */
+function describeFiles(kind: OfficeKind, before: Buffer, after: Buffer): string[] {
+  if (kind === "xlsx") {
+    const a = xlsxCells(before), b = xlsxCells(after);
+    return a && b ? describeCells(a, b) : ["edited the workbook"];
+  }
+  const a = kind === "pptx" ? pptxParagraphs(before) : docxParagraphs(before);
+  const b = kind === "pptx" ? pptxParagraphs(after) : docxParagraphs(after);
+  return a && b ? describeChange(a, b) : [kind === "pptx" ? "edited the deck" : "edited the document"];
+}
+
 // ---------------------------------------------------------- on disk --
 
 function load(session: string): Desk | null {
@@ -211,8 +353,10 @@ function load(session: string): Desk | null {
   if (!validSession(session)) return null;
   try {
     const meta = JSON.parse(fs.readFileSync(path.join(DIR, `${session}.json`), "utf8"));
+    const name = String(meta.name || "document.docx");
+    const kind: OfficeKind = meta.kind === "pptx" || meta.kind === "xlsx" || meta.kind === "docx" ? meta.kind : kindOfName(name);
     const desk: Desk = {
-      open: meta.open === true, name: String(meta.name || "document.docx"), data: fs.readFileSync(path.join(DIR, `${session}.docx`)),
+      open: meta.open === true, kind, name, data: fs.readFileSync(path.join(DIR, `${session}.${extOf(kind)}`)),
       working: typeof meta.working === "string" ? meta.working : null,
       source: typeof meta.source === "string" ? meta.source : null,
       outName: String(meta.outName || meta.name || "document.docx"),
@@ -237,7 +381,7 @@ function persist(session: string) {
     if (!desk) return;
     try {
       fs.mkdirSync(DIR, { recursive: true, mode: 0o700 });
-      fs.writeFileSync(path.join(DIR, `${session}.docx`), desk.data, { mode: 0o600 });
+      fs.writeFileSync(path.join(DIR, `${session}.${extOf(desk.kind)}`), desk.data, { mode: 0o600 });
       const { data: _data, problem: _problem, ...meta } = desk;
       fs.writeFileSync(path.join(DIR, `${session}.json`), JSON.stringify(meta), { mode: 0o600 });
     } catch (err: any) {
@@ -247,10 +391,11 @@ function persist(session: string) {
 }
 
 /** A session that is deleted takes its window with it. */
-export function dropWordDesk(session: string) {
+export function dropOfficeDesk(session: string) {
+  stopEngine(session);
   desks.delete(session);
   try {
-    for (const f of fs.readdirSync(DIR)) if (f === `${session}.json` || f === `${session}.docx` || f.startsWith(`${session}.v`)) fs.rmSync(path.join(DIR, f), { force: true });
+    for (const f of fs.readdirSync(DIR)) if (f === `${session}.json` || f.startsWith(`${session}.`)) fs.rmSync(path.join(DIR, f), { recursive: true, force: true });
   } catch {
     // Nothing was kept.
   }
@@ -258,14 +403,14 @@ export function dropWordDesk(session: string) {
 
 // ------------------------------------------------------------ versions --
 
-const versionFile = (session: string, n: number) => path.join(DIR, `${session}.v${n}.docx`);
+const versionFile = (session: string, n: number, kind: OfficeKind) => path.join(DIR, `${session}.v${n}.${extOf(kind)}`);
 
 /** Keep the document as it is now as a version the person can go back to. */
 function snapshot(session: string, desk: Desk, label: string, by: "agent" | "person") {
   const n = ++desk.vseq;
   try {
     fs.mkdirSync(DIR, { recursive: true, mode: 0o700 });
-    fs.writeFileSync(versionFile(session, n), desk.data, { mode: 0o600 });
+    fs.writeFileSync(versionFile(session, n, desk.kind), desk.data, { mode: 0o600 });
   } catch (err: any) {
     console.warn(`[worddesk] ${session}: could not keep a version: ${err?.message ?? err}`);
   }
@@ -273,7 +418,7 @@ function snapshot(session: string, desk: Desk, label: string, by: "agent" | "per
   desk.dirty = false;
   while (desk.versions.length > MAX_VERSIONS) {
     const old = desk.versions.shift();
-    if (old) fs.rmSync(versionFile(session, old.n), { force: true });
+    if (old) fs.rmSync(versionFile(session, old.n, desk.kind), { force: true });
   }
 }
 
@@ -298,8 +443,8 @@ function writeArtifact(session: string) {
     if (desk.data.byteLength > MAX_ARTIFACT_BYTES) throw new Error("the document has grown past the 50 MB an artifact may be");
     const keep = desk.working ? getArtifact(desk.working) : null;
     const art = saveArtifact({
-      origin: "agent", name: keep?.name ?? desk.outName, data: desk.data, mime: DOCX_MIME, session,
-      note: "Edited in the Word window",
+      origin: "agent", name: keep?.name ?? desk.outName, data: desk.data, mime: MIME[desk.kind], session,
+      note: `Edited in the ${THING[desk.kind]} window`,
     });
     desk.working = art.id;
     desk.problem = null;
@@ -310,26 +455,184 @@ function writeArtifact(session: string) {
   changed(session);
 }
 
+// ------------------------------ PowerPoint and Excel: the engine --
+
+type Engine = {
+  host: OfficeHost;
+  kind: Exclude<OfficeKind, "docx">;
+  /** The file the engine has open and saves to; the person's changes arrive by it. */
+  file: string;
+  /** The page (window load) that owns `wc`. */
+  rev: number;
+  wc: number | null;
+  mtime: number;
+  size: number;
+  timer: NodeJS.Timeout;
+  lastIpc: number;
+  /** Pages are made one at a time. */
+  lock: Promise<unknown>;
+};
+const engines = new Map<string, Engine>();
+const ENGINE_IDLE_MS = 15 * 60_000;
+
+const workFile = (session: string, kind: OfficeKind) => path.join(DIR, `${session}.work.${extOf(kind)}`);
+
+let pushed: (session: string, rev: number, channel: string, args: unknown) => void = () => undefined;
+/** Who to tell when the engine sends its editor page something (server.ts forwards it to the window). */
+export function onOfficePush(fn: typeof pushed) {
+  pushed = fn;
+}
+
+/** The document the agent changed (or an earlier version came back): the engine's file becomes it. */
+function engineFileChanged(session: string, desk: Desk) {
+  if (desk.kind === "docx") return;
+  try {
+    fs.mkdirSync(DIR, { recursive: true, mode: 0o700 });
+    const file = workFile(session, desk.kind);
+    const tmp = `${file}.tmp`;
+    fs.writeFileSync(tmp, desk.data, { mode: 0o600 });
+    fs.renameSync(tmp, file);
+    const engine = engines.get(session);
+    if (engine) {
+      const st = fs.statSync(file);
+      engine.mtime = st.mtimeMs;
+      engine.size = st.size;
+    }
+  } catch (err: any) {
+    console.warn(`[officedesk] ${session}: could not write the document for the editor: ${err?.message ?? err}`);
+  }
+}
+
+/** The person saved in the editor: the file changed under the engine. */
+function checkEngineFile(session: string) {
+  const engine = engines.get(session);
+  const desk = load(session);
+  if (!engine || !desk || desk.kind !== engine.kind) return;
+  try {
+    const st = fs.statSync(engine.file);
+    if (st.mtimeMs === engine.mtime && st.size === engine.size) return;
+    engine.mtime = st.mtimeMs;
+    engine.size = st.size;
+    const data = fs.readFileSync(engine.file);
+    if (!data.equals(desk.data)) {
+      const problem = personSaved(session, data);
+      if (problem) {
+        desk.problem = `That change was not kept: ${problem}`;
+        changed(session);
+      }
+    }
+  } catch {
+    // Mid-write, or gone: the next look sees it.
+  }
+}
+
+async function ensureEngine(session: string): Promise<Engine> {
+  const desk = load(session);
+  if (!desk || desk.kind === "docx") throw new Error("There is no PowerPoint or Excel document in the window.");
+  const have = engines.get(session);
+  if (have && have.kind === desk.kind) return have;
+  if (have) stopEngine(session);
+  if (!hostBuilt(desk.kind === "pptx" ? "slides" : "sheets")) throw new Error(`The ${THING[desk.kind]} editor's engine is not built on this server.`);
+  const file = workFile(session, desk.kind);
+  if (!fs.existsSync(file)) engineFileChanged(session, desk);
+  const home = path.join(DIR, `${session}.engine`);
+  fs.mkdirSync(home, { recursive: true, mode: 0o700 });
+  const host = await OfficeHost.start(desk.kind === "pptx" ? "slides" : "sheets", null, { AUTORA_OFFICE_HOME: home });
+  // Someone else may have started one while this waited.
+  const raced = engines.get(session);
+  if (raced) { host.stop(); return raced; }
+  const st = fs.statSync(file);
+  const engine: Engine = {
+    host, kind: desk.kind, file, rev: 0, wc: null, mtime: st.mtimeMs, size: st.size, lastIpc: Date.now(), lock: Promise.resolve(),
+    timer: setInterval(() => {
+      checkEngineFile(session);
+      if (Date.now() - engine.lastIpc > ENGINE_IDLE_MS) stopEngine(session);
+    }, 800),
+  };
+  engine.timer.unref?.();
+  engines.set(session, engine);
+  host.onPush((wc, channel, args) => {
+    if (wc === engine.wc) pushed(session, engine.rev, channel, wire.enc(args));
+  });
+  void host.exited.then(() => {
+    if (engines.get(session) !== engine) return;
+    clearInterval(engine.timer);
+    engines.delete(session);
+    const now = load(session);
+    if (now) {
+      now.problem = `The ${THING[now.kind]} editor's engine stopped. Close the window and open the document again.`;
+      changed(session);
+    }
+  });
+  return engine;
+}
+
+function stopEngine(session: string) {
+  const engine = engines.get(session);
+  if (!engine) return;
+  engines.delete(session);
+  clearInterval(engine.timer);
+  engine.host.stop();
+}
+
+/** The engine's id for the page that is asking: a new page (the window loaded again) gets a new one. */
+async function pageFor(session: string, rev: number): Promise<{ engine: Engine; wc: number }> {
+  const engine = await ensureEngine(session);
+  const run = engine.lock.then(async () => {
+    if (rev < engine.rev) throw new Error("That page is out of date: the window has loaded the document again.");
+    if (rev > engine.rev || engine.wc === null) {
+      if (engine.wc !== null) engine.host.closed(engine.wc);
+      engine.wc = null;
+      engine.rev = rev;
+      // A deck's sessions are made when the page opens its file; a workbook's editor window is made by the engine.
+      engine.wc = engine.kind === "pptx" ? rev : Number(await engine.host.invoke(0, "autora:view", [engine.file]));
+    }
+    return engine.wc;
+  });
+  engine.lock = run.catch(() => undefined);
+  return { engine, wc: await run };
+}
+
+/** Wait for what the person has just done in the editor to reach the file, then read it. */
+async function settleEngine(session: string) {
+  const engine = engines.get(session);
+  if (!engine || engine.wc === null) return;
+  const until = Date.now() + 8000;
+  if (engine.kind === "pptx") {
+    // Its save is the editor's own, a moment after the change: ask whether anything is waiting.
+    while (Date.now() < until) {
+      const dirty = await engine.host.invoke(engine.wc, "slides:is-dirty", []).catch(() => false);
+      if (!dirty) break;
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  } else {
+    while (Date.now() < until && Date.now() - engine.lastIpc < 1200) await new Promise((r) => setTimeout(r, 200));
+  }
+  checkEngineFile(session);
+}
+
 // --------------------------------------------------- what is shown --
 
 /** The window as the page needs it: everything but the document itself. */
-export function wordState(session: string) {
+export function officeState(session: string) {
   const desk = load(session);
   if (!desk) return { open: false };
   return {
-    open: desk.open, name: desk.name, working: desk.working, rev: desk.rev, loadRev: desk.loadRev,
+    open: desk.open, kind: desk.kind, name: desk.name, working: desk.working, rev: desk.rev, loadRev: desk.loadRev,
     since: desk.since, problem: desk.problem, versions: desk.versions,
   };
 }
 
-export function wordData(session: string): Buffer | null {
+export function officeData(session: string): Buffer | null {
   return load(session)?.data ?? null;
 }
 
 // ------------------------------------------------- the agent's side --
 
-export interface WordHooks {
-  current(): { name: string; data: Buffer; working: string | null; source: string | null; outName: string } | null;
+export interface OfficeHooks {
+  current(): { kind: OfficeKind; name: string; data: Buffer; working: string | null; source: string | null; outName: string } | null;
+  /** PowerPoint and Excel: wait for what the person has just done in the editor to reach the file, so `current()` has it. */
+  settle(): Promise<void>;
   /** Show this document in the window, or carry on with it after the agent changed it. */
   open(next: { name: string; data: Buffer; working: string | null; source: string | null; outName: string; label?: string }): void;
   /** Bring the window back if the person put it away: the agent is working on its document. */
@@ -338,20 +641,25 @@ export interface WordHooks {
   news(): string;
 }
 
-export function wordHooks(session: string): WordHooks {
+export function officeHooks(session: string): OfficeHooks {
   return {
+    async settle() {
+      await settleEngine(session);
+    },
     current() {
       const desk = load(session);
-      return desk ? { name: desk.name, data: desk.data, working: desk.working, source: desk.source, outName: desk.outName } : null;
+      return desk ? { kind: desk.kind, name: desk.name, data: desk.data, working: desk.working, source: desk.source, outName: desk.outName } : null;
     },
     open(next) {
       const was = load(session);
-      const carried = Boolean(was && ((was.working !== null && was.working === next.working) || was.name === next.name || (was.source !== null && was.source === next.source)));
+      const kind = kindOfName(next.name);
+      const carried = Boolean(was && was.kind === kind && ((was.working !== null && was.working === next.working) || was.name === next.name || (was.source !== null && was.source === next.source)));
       if (was && !carried) {
-        for (const v of was.versions) fs.rmSync(versionFile(session, v.n), { force: true });
+        for (const v of was.versions) fs.rmSync(versionFile(session, v.n, was.kind), { force: true });
+        if (was.kind !== kind) stopEngine(session);
       }
       const desk: Desk = {
-        open: true,
+        open: true, kind,
         name: next.name, data: next.data, working: next.working, source: next.source, outName: next.outName,
         rev: (was?.rev ?? 0) + 1, loadRev: (was?.loadRev ?? 0) + 1,
         since: carried && was ? was.since : Date.now(),
@@ -366,6 +674,7 @@ export function wordHooks(session: string): WordHooks {
       }
       desks.set(session, desk);
       snapshot(session, desk, next.label ?? (was && carried ? "Changed by the agent" : "Opened"), "agent");
+      if (kind !== "docx") engineFileChanged(session, desk);
       persist(session);
       changed(session);
       if (!desk.working) rewrite(session);
@@ -394,7 +703,7 @@ function newsLine(desk: Desk): string {
   const list = desk.news.slice(-6);
   const more = desk.news.length - list.length;
   return (
-    `Meanwhile, in the Word window, the person ${list.join("; then ")}${more > 0 ? `; and ${more} earlier change${more === 1 ? "" : "s"}` : ""}. ` +
+    `Meanwhile, in the ${THING[desk.kind]} window, the person ${list.join("; then ")}${more > 0 ? `; and ${more} earlier change${more === 1 ? "" : "s"}` : ""}. ` +
     `${desk.working ? `The file (${desk.working}) has these changes in it` : "These are in the window"}: ` +
     "work with them, and do not undo what they did unless they ask."
   );
@@ -404,13 +713,16 @@ function newsLine(desk: Desk): string {
  * For the start of a turn: that a document is open in the window, and what the
  * person did there since the agent last heard. Null when there is no window.
  */
-export function wordBriefing(session: string): string | null {
+export function officeBriefing(session: string): string | null {
   const desk = load(session);
   if (!desk || !desk.open) return null;
   const lines = [
-    `${desk.name} is open in the Word window beside the conversation${desk.working ? ` (artifact ${desk.working})` : ""}. ` +
-      "The person can read it and type in it as you work, and what they type is saved as they go. office_edit on it is recorded as tracked changes " +
-      "(unless you say track:false) that they accept or reject in the editor's Review tab; office_read, office_look and office_check read it as it is now.",
+    `${desk.name} is open in the ${THING[desk.kind]} window beside the conversation${desk.working ? ` (artifact ${desk.working})` : ""}. ` +
+      (desk.kind === "docx"
+        ? "The person can read it and type in it as you work, and what they type is saved as they go. office_edit on it is recorded as tracked changes " +
+          "(unless you say track:false) that they accept or reject in the editor's Review tab; office_read, office_look and office_check read it as it is now."
+        : "The person can look at it and edit it as you work, and what they change is saved as they go. office_edit on it replaces the window's copy (the window reloads, so what they were looking at moves); " +
+          "office_read, office_look and office_check read it as it is now."),
   ];
   if (desk.news.length) {
     lines.push(newsLine(desk));
@@ -426,13 +738,12 @@ export function wordBriefing(session: string): string | null {
 export function personSaved(session: string, data: Buffer): string | null {
   const desk = load(session);
   if (!desk) return "There is no document open in the window.";
-  if (!isDocx(data)) return "That is not a Word document.";
+  if (!isOffice(data, desk.kind)) return `That is not a ${THING[desk.kind]} document.`;
   if (data.byteLength > MAX_ARTIFACT_BYTES) return "That file is over 50 MB.";
   if (data.equals(desk.data)) return null;
   const before = desk.data;
   desk.data = data;
-  const a = docxParagraphs(before), b = docxParagraphs(data);
-  const said = a && b ? describeChange(a, b) : ["edited the document"];
+  const said = describeFiles(desk.kind, before, data);
   if (said.length) {
     const line = said.join(" and ");
     desk.news.push(line);
@@ -448,13 +759,13 @@ export function personSaved(session: string, data: Buffer): string | null {
 }
 
 /** Go back to an earlier version of the document: the present one is kept too, so nothing is lost. */
-export function restoreWordVersion(session: string, n: number): string | null {
+export function restoreOfficeVersion(session: string, n: number): string | null {
   const desk = load(session);
   if (!desk) return "There is no document open in the window.";
   const v = desk.versions.find((x) => x.n === n);
   let data: Buffer | null = null;
   try {
-    data = v ? fs.readFileSync(versionFile(session, v.n)) : null;
+    data = v ? fs.readFileSync(versionFile(session, v.n, desk.kind)) : null;
   } catch {
     data = null;
   }
@@ -463,6 +774,7 @@ export function restoreWordVersion(session: string, n: number): string | null {
   desk.data = data;
   desk.rev++;
   desk.loadRev++;
+  if (desk.kind !== "docx") engineFileChanged(session, desk);
   desk.news.push(`went back to version ${v.n} (${v.label})`);
   snapshot(session, desk, `Went back to version ${v.n}`, "person");
   persist(session);
@@ -471,22 +783,23 @@ export function restoreWordVersion(session: string, n: number): string | null {
   return null;
 }
 
-export function wordVersionFile(session: string, n: number): { name: string; data: Buffer } | null {
+export function officeVersionFile(session: string, n: number): { name: string; data: Buffer } | null {
   const desk = load(session);
   const v = desk?.versions.find((x) => x.n === n);
   if (!v) return null;
   try {
-    return { name: v.name.replace(/\.docx$/i, "") + `-v${v.n}.docx`, data: fs.readFileSync(versionFile(session, v.n)) };
+    return { name: v.name.replace(/\.(docx|pptx|xlsx)$/i, "") + `-v${v.n}.${extOf(desk!.kind)}`, data: fs.readFileSync(versionFile(session, v.n, desk!.kind)) };
   } catch {
     return null;
   }
 }
 
 /** Put the window away; it comes back the next time the agent works on a document. */
-export function closeWord(session: string) {
+export function closeOffice(session: string) {
   const desk = load(session);
   if (!desk || !desk.open) return;
   desk.open = false;
+  stopEngine(session);
   persist(session);
   changed(session);
 }
@@ -495,7 +808,7 @@ export function closeWord(session: string) {
 
 const rawBody = express.raw({ type: () => true, limit: MAX_ARTIFACT_BYTES + 1024 });
 
-export function wordRoutes(app: Express, opts: { exists: (session: string) => boolean }) {
+export function officeRoutes(app: Express, opts: { exists: (session: string) => boolean }) {
   const known = (req: Request, res: Response): string | null => {
     const id = String(req.params.session);
     if (!validSession(id) || !opts.exists(id)) {
@@ -507,15 +820,15 @@ export function wordRoutes(app: Express, opts: { exists: (session: string) => bo
 
   app.get("/api/officedesk/:session", (req, res) => {
     const id = known(req, res);
-    if (id) res.json(wordState(id));
+    if (id) res.json(officeState(id));
   });
 
   app.get("/api/officedesk/:session/data", (req, res) => {
     const id = known(req, res);
     if (!id) return;
-    const data = wordData(id);
+    const data = officeData(id);
     if (!data) return res.status(404).json({ error: "There is no document open in the window." });
-    res.setHeader("Content-Type", DOCX_MIME);
+    res.setHeader("Content-Type", MIME[load(id)?.kind ?? "docx"]);
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Content-Security-Policy", "sandbox");
@@ -527,7 +840,7 @@ export function wordRoutes(app: Express, opts: { exists: (session: string) => bo
     if (!id) return;
     const problem = personSaved(id, Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0));
     if (problem) return res.status(400).json({ error: problem });
-    res.json({ ok: true, rev: wordState(id).rev });
+    res.json({ ok: true, rev: officeState(id).rev });
   });
 
   /* The person is in the editor right now. Nothing changes in the file; the
@@ -544,7 +857,7 @@ export function wordRoutes(app: Express, opts: { exists: (session: string) => bo
   app.post("/api/officedesk/:session/restore", express.json({ limit: "10kb" }), (req, res) => {
     const id = known(req, res);
     if (!id) return;
-    const problem = restoreWordVersion(id, Number(req.body?.n));
+    const problem = restoreOfficeVersion(id, Number(req.body?.n));
     if (problem) return res.status(400).json({ error: problem });
     res.json({ ok: true });
   });
@@ -552,19 +865,65 @@ export function wordRoutes(app: Express, opts: { exists: (session: string) => bo
   app.get("/api/officedesk/:session/version/:n", (req, res) => {
     const id = known(req, res);
     if (!id) return;
-    const f = wordVersionFile(id, Number(req.params.n));
+    const f = officeVersionFile(id, Number(req.params.n));
     if (!f) return res.status(404).json({ error: "That version is not there any more." });
-    res.setHeader("Content-Type", DOCX_MIME);
+    res.setHeader("Content-Type", MIME[load(id)?.kind ?? "docx"]);
     res.setHeader("Content-Disposition", `attachment; filename="${f.name.replace(/[^\w. -]/g, "_")}"`);
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Content-Security-Policy", "sandbox");
     res.send(f.data);
   });
 
+  /* The editor page's ipc, for the engines behind PowerPoint and Excel. `rev` says which load of the window
+     the page is, so a page that has been replaced cannot reach the engine's new one. */
+  const channelOk = (c: unknown): c is string => typeof c === "string" && /^[\w:.-]{1,80}$/.test(c) && !c.startsWith("autora:");
+  /* A PowerPoint or Excel editor page has loaded: the file its engine has open (a deck's page opens it itself). */
+  app.post("/api/officedesk/:session/page", async (req, res) => {
+    const id = known(req, res);
+    if (!id) return;
+    try {
+      const { engine } = await pageFor(id, Number(req.query.rev) || 0);
+      res.json({ path: engine.file, name: load(id)?.name ?? "document" });
+    } catch (err: any) {
+      res.status(500).json({ error: String(err?.message ?? err) });
+    }
+  });
+
+  app.post("/api/officedesk/:session/ipc", express.json({ limit: "80mb" }), async (req, res) => {
+    const id = known(req, res);
+    if (!id) return;
+    const { channel, args } = req.body ?? {};
+    if (!channelOk(channel)) return res.status(400).json({ error: "Not a channel." });
+    try {
+      const { engine, wc } = await pageFor(id, Number(req.query.rev) || 0);
+      engine.lastIpc = Date.now();
+      const value = await engine.host.invoke(wc, channel, wire.dec(Array.isArray(args) ? args : []));
+      engine.lastIpc = Date.now();
+      res.json({ value: wire.enc(value) });
+    } catch (err: any) {
+      res.status(500).json({ error: String(err?.message ?? err) });
+    }
+  });
+
+  app.post("/api/officedesk/:session/ipc-send", express.json({ limit: "80mb" }), async (req, res) => {
+    const id = known(req, res);
+    if (!id) return;
+    const { channel, args } = req.body ?? {};
+    if (!channelOk(channel)) return res.status(400).json({ error: "Not a channel." });
+    try {
+      const { engine, wc } = await pageFor(id, Number(req.query.rev) || 0);
+      engine.lastIpc = Date.now();
+      engine.host.send(wc, channel, wire.dec(Array.isArray(args) ? args : []));
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: String(err?.message ?? err) });
+    }
+  });
+
   app.post("/api/officedesk/:session/close", (req, res) => {
     const id = known(req, res);
     if (!id) return;
-    closeWord(id);
+    closeOffice(id);
     res.json({ ok: true });
   });
 }

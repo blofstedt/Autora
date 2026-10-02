@@ -157,7 +157,7 @@ async function main() {
       app.seen.length = 0;
       await app.turn(s, "change the heading again", 120_000);
       const told = app.seen.map((r) => JSON.stringify(r.messages)).join("\n");
-      assert.match(told, /taken control of the Word document/);
+      assert.match(told, /taken control of the document in the Office window/);
       assert.doesNotMatch(await bodyText(frame), /SHOULD NOT APPEAR/);
       await page.getByRole("button", { name: "Hand back" }).click();
     });

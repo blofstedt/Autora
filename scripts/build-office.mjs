@@ -47,7 +47,9 @@ const targets = (args.find((a) => a.startsWith("--targets="))?.slice(10) ?? args
   .split(",").map((t) => t.trim()).filter((t) => /^[a-z0-9_-]+$/.test(t));
 
 /** The editors built as windows; the others (slides, sheets) keep their document in Electron's main process. */
-const EDITORS = ["docs"];
+const EDITORS = ["docs", "slides", "sheets"];
+/** The editors whose document lives in the engine (Electron's main process in GenOffice): it runs here as a child process. */
+const ENGINES = ["slides", "sheets"];
 
 const log = (m) => console.log(`[office] ${m}`);
 function run(cmd, a, opts = {}) {
@@ -60,7 +62,7 @@ const has = (cmd, a = ["--version"]) => spawnSync(cmd, a, { stdio: "ignore" }).s
 const stamp = path.join(out, "BUILT");
 /* Our own build recipe is part of what was built: change a shim or the config and it builds again. */
 const recipe = createHash("sha1");
-for (const f of ["office/vite/editor.mjs", ...fs.readdirSync(path.join(root, "office/shim")).sort().map((n) => `office/shim/${n}`)]) {
+for (const f of ["office/vite/editor.mjs", ...["shim", "host"].flatMap((d) => fs.readdirSync(path.join(root, "office", d)).sort().map((n) => `office/${d}/${n}`))]) {
   recipe.update(fs.readFileSync(path.join(root, f)));
 }
 const marker = `${pin.sha}:${recipe.digest("hex").slice(0, 12)}${wantSidecar ? ":sidecar" : ""}:${targets.join("+")}`;
@@ -106,14 +108,27 @@ try {
     for (const app of EDITORS) {
       try {
         log(`building the ${app} editor`);
+        const preload = path.join(src, "apps", app, "autora-preload.js");
+        if (ENGINES.includes(app)) {
+          run("node", [path.join(root, "office/host/preload.mjs"), src], { env: { OFFICE_APP: app, OFFICE_PRELOAD: preload } });
+        }
         const config = path.join(src, "apps", app, "vite.autora.mjs");
         fs.copyFileSync(path.join(root, "office/vite/editor.mjs"), config);
         run(path.join(src, "node_modules/.bin/vite"), ["build", "--config", config], {
           cwd: path.join(src, "apps", app),
-          env: { OFFICE_APP: app, OFFICE_OUT: path.join(out, "web"), OFFICE_SHIM: path.join(root, "office/shim") },
+          env: { OFFICE_APP: app, OFFICE_OUT: path.join(out, "web"), OFFICE_SHIM: path.join(root, "office/shim"), ...(ENGINES.includes(app) ? { OFFICE_PRELOAD: preload } : {}) },
         });
       } catch (err) {
         console.warn(`[office] the ${app} editor was not built: ${err.message}`);
+      }
+    }
+    /* The engines: GenOffice's main-process code for each editor, under a stand-in for Electron. */
+    for (const app of ENGINES) {
+      try {
+        log(`bundling the ${app} engine`);
+        run("node", [path.join(root, "office/host/build.mjs"), src], { env: { OFFICE_APP: app, OFFICE_OUT: path.join(out, "host") } });
+      } catch (err) {
+        console.warn(`[office] the ${app} engine was not built: ${err.message}`);
       }
     }
     for (const f of ["LICENSE", "NOTICE"]) fs.copyFileSync(path.join(src, f), path.join(out, f));

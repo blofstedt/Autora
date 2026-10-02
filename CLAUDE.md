@@ -82,18 +82,29 @@ is a sub-project with its own dependencies (see below).
   came from so the file shows exactly what was drawn until the person changes
   it; the file is the base pages with every object flattened on, rewritten
   on every change; the person's changes are told to the agent once),
-  `officedesk.ts` + `src/components/OfficeWindow.tsx` (the Word window: the
-  document the agent works on, open beside the chat in GenOffice's Word editor,
-  built by `scripts/build-office.mjs` into `dist/office/web/docs` and served at
-  `/office-app` with a sandbox CSP. The editor runs in an origin-less frame, so
-  it cannot fetch anything: `OfficeWindow` answers its `autora:office` requests
-  (fonts, the document, saves, Export PDF -> the PDF window) and pushes the
-  agent's edits in; `office/shim` is the Electron stand-in, it hides the
-  editor's own AI controls and uses its dark theme. Same presence rules as the
-  PDF: `Surface` `"word"`, `touched`, held by Take control, the person's
-  changes told to the agent once), `officerender.ts` (the same editor
-  headless, for `office_look` pictures and `office_pdf`; PDFs always go to
-  Autora's own PDF window),
+  `officedesk.ts` + `src/components/OfficeWindow.tsx` (the Office window: the
+  Word, PowerPoint or Excel document the agent works on, open beside the chat in
+  GenOffice's own editor for it, built by `scripts/build-office.mjs` into
+  `dist/office/web/{docs,slides,sheets}` and served at `/office-app` with a sandbox
+  CSP. The editor runs in an origin-less frame, so it cannot fetch anything:
+  `OfficeWindow` answers its `autora:office` requests (fonts, the document, saves,
+  Export PDF -> the PDF window, presence) and passes on the agent's edits;
+  `office/shim` is the Electron stand-in, it hides the editor's own AI panel and
+  turns its AI group into an "Autora" button that focuses the chat box, and uses
+  the editor's dark theme. **Word** keeps the document in the page: the page sends
+  the bytes on every save and the agent's edit is pushed in. **PowerPoint and Excel**
+  keep it in an engine (`officehost.ts`, one child process per window, started on the
+  first ipc): the frame's ipc goes `POST /api/officedesk/:session/ipc?rev=N`, `rev`
+  being the window's `loadRev` so a replaced page cannot reach the new one; the
+  engine saves to `<session>.work.<ext>`, which is polled every 800 ms
+  (`checkEngineFile`) and becomes the document (`personSaved`); the agent's edit is
+  written there and the frame is remounted (its key follows `loadRev`), which opens
+  the new file. `settle()` runs before every Office tool so the person's last edit has
+  reached the file. The person's changes are told to the agent once in words made by
+  comparing text (`describeChange` for paragraphs and slide text, `describeCells` for
+  cells). One surface, `"office"`, for presence and Take control (`touched`, held), as
+  for the PDF), `officerender.ts` (the same editors headless, for `office_look`
+  pictures and `office_pdf`; PDFs always go to Autora's own PDF window),
   `notebooks.ts` (artifacts grouped by purpose with notes between them,
   stored as `notebooks.json`; retention keeps whatever a notebook holds or
   cites), `guard.ts` (what stops and asks before a risky call), `crosssite.ts` (refuses requests and websockets
@@ -145,24 +156,39 @@ is a sub-project with its own dependencies (see below).
     `tests/office.test.ts` / `e2e-office.test.ts` skip. Results are artifacts like the
     PDF tools' (an edit works on a copy; the agent's own file is updated in place);
     after an Excel edit `refreshFormulas` rewrites every formula so stored results
-    of dependents are current (the engine only sets fullCalcOnLoad). **No pictures**:
-    laying a page out is GenOffice's *editor's* job (its renderer), not the
-    engines'. For Word that renderer is built too: `office/vite/editor.mjs` (run with
-    the checkout's own Vite by `build-office.mjs`) makes `dist/office/web/docs/index.html`,
-    one page for a sandboxed frame (script, styles and worker inline; fonts listed
-    in a manifest and supplied by the host; PDF import stubbed -- the PDF editor does
-    that), with `office/shim/` standing in for Electron's preload API
-    (`window.desktop`: `common.js` is the host bridge -- `postMessage` in a frame,
-    `window.__autoraHost` in headless Chromium -- and `docs.js` the Word-specific
-    answers). `server/officerender.ts` opens that page in the shared Chromium
-    (`withBrowserContext` in `pdfrender.ts`), lets the editor's own headless-export
-    path run, and returns its PDF; `office_look` draws pages from it (`lookAtPdf`
-    in `pdf.ts`, shared with `pdf_look`) and `office_pdf` / `office_convert to pdf`
-    save it as an artifact and open it in the **PDF editor window** (PDFs go to our
-    editor, never GenOffice's). Only Word is drawn so far: PowerPoint and Excel keep
-    their document in Electron's main process (184 and 58 IPC calls), so a deck or a
-    workbook is checked (`office_check`: overflow, overlap, broken references, stale
-    fields) rather than looked at.
+    of dependents are current (the engine only sets fullCalcOnLoad). **Pictures and
+    PDF come from the editors themselves**: laying a page out is GenOffice's *editor's*
+    job, not the engines'. Each editor is built (`office/vite/editor.mjs`, run with the
+    checkout's own Vite by `build-office.mjs`) as one page for a sandboxed frame --
+    `dist/office/web/{docs,slides,sheets}/index.html`: script, styles and worker
+    inline, fonts listed in a manifest and supplied by the host, PDF import stubbed
+    (the PDF editor does that) -- with `office/shim/` standing in for Electron
+    (`common.js` is the host bridge: `postMessage` in a frame, `window.__autoraHost`
+    in headless Chromium; `docs.js` answers Word's `window.desktop` itself).
+    **PowerPoint and Excel keep their document in Electron's main process**, so that
+    code runs too, as a child process (`server/officehost.ts`, built per app into
+    `dist/office/host/<app>.cjs` by `office/host/build.mjs`): GenOffice's real
+    `slides-main` / `sheets-main` bundled over `office/host/electron-main.cjs`, a
+    stand-in for the `electron` module (ipcMain registry, web contents whose
+    `send` is a push to the parent, a `BrowserWindow` that is a page in the server's
+    Chromium via rpc -- how it prints, nativeImage sizes read from the file header;
+    menus, dialogs and the dock do nothing). The page side is the app's *real*
+    preload, bundled by `office/host/preload.mjs` over `office/shim/electron-renderer.js`
+    (ipcRenderer -> the host's `ipc`, JSON with tagged buffers: `common.js` `enc/dec`,
+    `wire` in `officehost.ts`), so every one of the 160-odd channels works without
+    being listed; `slides.js` / `sheets.js` only override where Autora is the host
+    (theme, which file is open, Export PDF). `autora:<name>` invokes are Autora's
+    own requests to the app's main code (`extra` in `office/host/build.mjs`: Excel
+    makes the editor's window and queues the workbook itself). `server/officerender.ts`
+    opens the editor page in the shared Chromium (`withBrowserContext` in
+    `pdfrender.ts`), serves it from memory over a made-up origin and refuses
+    everything else, lets the editor's own headless-export path run, and returns the
+    PDF; `office_look` draws pages from it (`lookAtPdf` in `pdf.ts`, shared with
+    `pdf_look`) and `office_pdf` / `office_convert to pdf` save it as an artifact and
+    open it in the **PDF editor window** (PDFs go to our editor, never GenOffice's).
+    A deck takes ~10 s, a workbook ~11 s (Excel's export waits until the engine has
+    been quiet after the workbook opened: its formulas settle a moment late).
+    `AUTORA_OFFICE_DEBUG=1` prints the page's console and the ipc channels.
   - `mindrules.ts` (+ `site.ts`): the rules the mind is kept by. Every
     `memory_write` / `memory_update` goes through `checkEntry` / `checkText`: a
     title that starts with its subject, one topic per record (length limit by

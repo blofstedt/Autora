@@ -228,12 +228,34 @@ if (!render.editorBuilt("docs")) {
   });
 }
 
-await test("a deck cannot be drawn yet, and the refusal says what stands in for it", async () => {
-  const deck = artifacts.listArtifacts().find((a) => a.name === "deck.pptx")!;
-  const r = await run("office_look", { file: deck.id });
-  assert.equal(r.ok, false);
-  assert.match(r.summary, /office_check/);
-});
+if (!render.editorBuilt("slides")) {
+  console.log("  (the PowerPoint editor is not built -- the deck page tests are skipped)");
+} else {
+  await test("a deck is drawn slide by slide, by the PowerPoint editor itself, and goes to the PDF editor as a PDF", async () => {
+    const deck = artifacts.listArtifacts().find((a) => a.name === "deck.pptx")!;
+    const r = await run("office_look", { file: deck.id, pages: "1" });
+    assert.ok(r.ok, r.summary);
+    assert.equal(r.images?.length, 1);
+    assert.match(r.summary, /deck\.pptx, page 1/);
+    const pdf = await run("office_pdf", { file: deck.id });
+    assert.ok(pdf.ok, pdf.summary);
+    assert.equal(opened.at(-1)?.name, "deck.pdf");
+  });
+}
+
+if (!render.editorBuilt("sheets") || !office.sidecarPath()) {
+  console.log("  (the Excel editor or its engine is not built -- the workbook page tests are skipped)");
+} else {
+  await test("a workbook is drawn as printed, with its formulas worked out", async () => {
+    const book = artifacts.listArtifacts().find((a) => a.name === "budget.xlsx")!;
+    const r = await run("office_look", { file: book.id, pages: "1" });
+    assert.ok(r.ok, r.summary);
+    assert.equal(r.images?.length, 1);
+    const pdf = await run("office_pdf", { file: book.id });
+    assert.ok(pdf.ok, pdf.summary);
+    assert.equal(opened.at(-1)?.name, "budget.pdf");
+  });
+}
 
 function artifactPathOf(id: string): string {
   return artifacts.artifactPath(id);

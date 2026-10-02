@@ -13,6 +13,7 @@ type Handlers = {
   /** The PDF window: whether a PDF is open, and what is on it. */
   onPdfDesk?: (state: unknown) => void;
   onOfficeDesk?: (state: unknown) => void;
+  onOfficePush?: (msg: unknown) => void;
   /** Who has hold of what: surfaces the person has taken, and ones in use. */
   onPresence?: (state: unknown) => void;
 };
@@ -141,6 +142,9 @@ export class SessionStream {
           break;
         case "pdfdesk":
           this.handlers.onPdfDesk?.(msg.state);
+          break;
+        case "officedesk.push":
+          this.handlers.onOfficePush?.(msg);
           break;
         case "officedesk":
           this.handlers.onOfficeDesk?.(msg.state);

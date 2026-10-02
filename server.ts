@@ -117,8 +117,8 @@ import {
   type Device, type StaticServer,
 } from "./server/preview";
 import { deskBriefing, deskHooks, deskRoutes, deskState, dropDesk, onDeskChange, onDeskTouch, serveEditor } from "./server/pdfdesk";
-import { dropWordDesk, onWordChange, onWordTouch, serveOfficeEditors, wordBriefing, wordData, wordRoutes, wordState } from "./server/officedesk";
-import { renderDocxToPdf, webDir as officeWebDir } from "./server/officerender";
+import { dropOfficeDesk, onOfficeChange, onOfficePush, onOfficeTouch, officeBriefing, officeData, officeRoutes, officeState, officeHooks, serveOfficeEditors } from "./server/officedesk";
+import { renderToPdf, webDir as officeWebDir } from "./server/officerender";
 import {
   pickExpression, reviewMessage, safeStyle, type ElementInfo, type ReviewComment, type StyleChange,
 } from "./server/pick";
@@ -1196,11 +1196,14 @@ onDeskChange((sessionId) => {
   sendEphemeral(sessionId, { type: "pdfdesk", session: sessionId, state: deskState(sessionId) });
 });
 
-/* The Word window, the same way: what the person types is theirs for a moment, and the window's
-   state goes to the page as it changes. */
-onWordTouch((sessionId, subject, kind, detail, opts) => touchPresence(sessionId, "word", subject, kind, detail, opts));
-onWordChange((sessionId) => {
-  sendEphemeral(sessionId, { type: "officedesk", session: sessionId, state: wordState(sessionId) });
+/* The Office window, the same way: what the person types is theirs for a moment, and the window's
+   state goes to the page as it changes. What a PowerPoint or Excel engine sends its editor page goes too. */
+onOfficeTouch((sessionId, subject, kind, detail, opts) => touchPresence(sessionId, "office", subject, kind, detail, opts));
+onOfficeChange((sessionId) => {
+  sendEphemeral(sessionId, { type: "officedesk", session: sessionId, state: officeState(sessionId) });
+});
+onOfficePush((sessionId, rev, channel, args) => {
+  sendEphemeral(sessionId, { type: "officedesk.push", session: sessionId, rev, channel, args });
 });
 
 /** Stop what a preview started -- its dev server, its file server, its page.
@@ -2411,9 +2414,9 @@ async function systemInstructionFor(
      last heard (said once). */
   const pdfDesk = deskBriefing(sessionId);
   if (pdfDesk) notes.push(pdfDesk);
-  // And a Word document, the same way.
-  const wordDesk = wordBriefing(sessionId);
-  if (wordDesk) notes.push(wordDesk);
+  // And a Word, PowerPoint or Excel document, the same way.
+  const officeDesk = officeBriefing(sessionId);
+  if (officeDesk) notes.push(officeDesk);
 
   const open = browsers.get(sessionId)?.status();
   if (open?.open && open.url?.startsWith("chrome-error:")) {
@@ -5348,19 +5351,21 @@ async function startServer() {
   /** Gone for good: its log, its pictures, and its browser. */
   // The PDF window: its pages, and what the person changes in it.
   deskRoutes(app, { exists: (id) => sessions.has(id), cwd: () => terminalDir() });
-  wordRoutes(app, { exists: (id) => sessions.has(id) });
+  officeRoutes(app, { exists: (id: string) => sessions.has(id) });
 
-  /* File -> Export PDF in the Word window: the server lays the document out (the same pages office_pdf
+  /* File -> Export PDF in the Office window: the server lays the document out (the same pages office_pdf
      makes), and the PDF opens in the PDF editor -- PDFs always go to our own. */
   app.post("/api/officedesk/:session/pdf", async (req: Request, res: Response) => {
     const session = sessions.get(String(req.params.session));
-    const data = session ? wordData(session.id) : null;
+    if (session) await officeHooks(session.id).settle();
+    const data = session ? officeData(session.id) : null;
     if (!session || !data) return res.status(404).json({ error: "There is no document open in the window." });
     try {
-      const name = String(wordState(session.id).name ?? "document.docx");
-      const pdf = await renderDocxToPdf(data, name);
+      const state = officeState(session.id);
+      const name = String(state.name ?? "document.docx");
+      const pdf = await renderToPdf(state.kind === "pptx" || state.kind === "xlsx" ? state.kind : "docx", data, name);
       const art = saveArtifact({
-        origin: "agent", name: `${name.replace(/\.docx$/i, "") || "document"}.pdf`, data: pdf, mime: "application/pdf",
+        origin: "agent", name: `${name.replace(/\.(docx|pptx|xlsx)$/i, "") || "document"}.pdf`, data: pdf, mime: "application/pdf",
         session: session.id, note: `${name} as a PDF`,
       });
       emitEvent(session, "media.file", "agent", { id: art.id, name: art.name, mime: art.mime, size: art.size });
@@ -5388,7 +5393,7 @@ async function startServer() {
     browsers.delete(session.id);
     await previewStop(session, false).catch(() => undefined);
     dropDesk(session.id);
-    dropWordDesk(session.id);
+    dropOfficeDesk(session.id);
     forgetSession(session.id);
     if (!incognito) deleteSession(session.id);
     // No title of an incognito chat is in a log line: it may be a first message.
@@ -5764,7 +5769,7 @@ async function startServer() {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
     const surface = String(req.body?.surface ?? "");
-    if (!["pdf", "word", "app", "browser", "code"].includes(surface)) return res.status(400).json({ error: "surface is pdf, word, app, browser or code." });
+    if (!["pdf", "office", "app", "browser", "code"].includes(surface)) return res.status(400).json({ error: "surface is pdf, office, app, browser or code." });
     presenceFor(session.id).hold(surface as Surface, req.body?.hold === true);
     announcePresence(session.id);
     res.json(presenceFor(session.id).view());
@@ -7680,7 +7685,7 @@ async function startServer() {
       ws.send(JSON.stringify({ type: "preview", session: sessionId, state: previewState(session) }));
       // The PDF window, likewise.
       ws.send(JSON.stringify({ type: "pdfdesk", session: sessionId, state: deskState(sessionId) }));
-      ws.send(JSON.stringify({ type: "officedesk", session: sessionId, state: wordState(sessionId) }));
+      ws.send(JSON.stringify({ type: "officedesk", session: sessionId, state: officeState(sessionId) }));
       ws.send(JSON.stringify({ type: "presence", session: sessionId, state: presenceFor(sessionId).view() }));
       if (openPreview?.opened) void openPreview.live.nudge();
 

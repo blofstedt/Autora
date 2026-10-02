@@ -62,7 +62,8 @@ COPY pdf-editor/ pdf-editor/
 RUN npm run lint && npm run build
 
 # The Office tools' command line (Word, PowerPoint and Excel documents, read and
-# edited without a window), from the commit pinned in office/PIN.json. After the
+# edited without a window), the three editors' windows and the engines behind the
+# PowerPoint and Excel ones, from the commit pinned in office/PIN.json. After the
 # build, which empties dist/. It is JavaScript, so this one build serves both
 # CPUs; the spreadsheet engine comes from the first stage. If this fails the
 # image still builds, without the Office tools -- see scripts/build-office.mjs.
