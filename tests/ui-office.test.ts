@@ -84,6 +84,8 @@ async function main() {
       assert.ok(await laidOut(frame), "the editor never laid the document out");
       await until("the heading", async () => /Launch memo/.test(await bodyText(frame)));
       assert.match(await bodyText(frame), /The launch is on Friday/);
+      // Calibri is drawn in its metric twin, so the pages are the same: no warning about it.
+      assert.doesNotMatch(await bodyText(frame), /Missing document fonts/);
       assert.equal(await page.locator(".pdf-bar-name").innerText(), "memo.docx");
       if (process.env.OFFICE_SHOT) { await sleep(1500); await page.screenshot({ path: process.env.OFFICE_SHOT }); }
       assert.equal(errors.length, 0, errors.join("\n"));

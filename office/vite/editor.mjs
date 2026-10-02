@@ -125,6 +125,25 @@ function slimLanguages() {
   };
 }
 
+/**
+ * Word warns that "Calibri" is missing, because on a machine without Microsoft's fonts it is drawn in the editor's
+ * own copy of its metric twin (Carlito). The pages are laid out identically, so there is nothing to tell the person:
+ * the fonts that have such a twin among the ones bundled are not reported. Any other font that is really absent still is.
+ */
+const TWINS = ["calibri", "cambria", "arial", "helvetica", "times new roman", "courier new"];
+function knownTwins() {
+  return {
+    name: "autora-font-twins",
+    enforce: "pre",
+    transform(code, id) {
+      if (!/renderer\/font-check\.ts$/.test(id.split("?")[0])) return null;
+      const head = "export function checkMissingFonts(names: string[]): FontSubstitution[] {";
+      if (!code.includes(head)) throw new Error("autora: checkMissingFonts is written differently now");
+      return { code: code.replace(head, `${head}\n  names = names.filter((n) => !${JSON.stringify(TWINS)}.includes(n.trim().toLowerCase()))`), map: null };
+    },
+  };
+}
+
 /** The editor as one page, its fonts listed for the host to supply. */
 function singlePage() {
   return {
@@ -200,7 +219,7 @@ function singlePage() {
 export default defineConfig({
   root,
   base: "./",
-  plugins: [react(), slimLanguages(), autoraPage(), singlePage()],
+  plugins: [react(), slimLanguages(), knownTwins(), autoraPage(), singlePage()],
   resolve: { alias },
   worker: { format: "iife" },
   build: {

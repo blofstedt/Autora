@@ -133,6 +133,8 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
+  Fix: Word no longer warns that Calibri, Cambria, Arial, Times New Roman or Courier New are missing. They are
+  drawn in their open metric twins, so pages lay out the same.
   New: Word, Excel and PowerPoint can be switched off on the Tools page. Tapping a slide on a phone
   now names the element (or a workbook's cell) so the agent knows exactly which one you mean. The
   Excel editor is a third smaller to load (it no longer carries its translations).
