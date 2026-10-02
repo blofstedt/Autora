@@ -63,7 +63,12 @@ is a sub-project with its own dependencies (see below).
   for encrypted files -- changes the file; pdf.js in a headless Chromium reads
   text and draws pages. Positions are top-left points of the page as shown;
   every result is a new artifact, and dropped or redacted content is removed
-  from the bytes, not covered), `pdfdesk.ts` (the PDF window: the file the
+  from the bytes, not covered), `pdftext.ts` (`pdf_replace_text`: reads a page's content stream and the fonts
+  it names, finds the words, and rewrites their bytes in place where the font
+  holds the letters -- a cut-down font is trusted only with letters the file
+  shows it drawing -- or removes the old glyphs and returns where to draw the new
+  ones. Edits run one at a time on the stream as the last left it, matches last
+  first; the page stays vector, nothing is rasterised), `pdfdesk.ts` (the PDF window: the file the
   agent works on, open beside the chat in SecurePDF's editor. What `pdf_edit`
   places becomes the editor's own movable objects, each keeping the item it
   came from so the file shows exactly what was drawn until the person changes

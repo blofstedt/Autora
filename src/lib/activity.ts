@@ -163,6 +163,7 @@ function doing(name: string, args: Record<string, any>): string {
     case "pdf_compose": return args.blocks ? "Writing the PDF" : "Updating the PDF";
     case "pdf_pages": return args.merge ? "Merging PDFs" : args.split ? "Splitting the PDF" : "Rearranging the pages";
     case "pdf_redact": return "Redacting the PDF";
+    case "pdf_replace_text": return "Changing text in the PDF";
     case "pdf_compress": return "Shrinking the PDF";
     case "memory_write": return args.title ? `Remembering “${brief(args.title, 6)}”` : "Remembering something";
     case "memory_search": return `Searching its memory for${quoted(args.query)}`;

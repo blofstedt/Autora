@@ -382,6 +382,28 @@ if (missing) {
     assert.match(again.summary, /Nothing matched/);
   });
 
+  await test("pdf_replace_text changes the words the file holds, and the old ones are gone", async () => {
+    const r = await run("pdf_replace_text", {
+      file: upload.id,
+      replace: [{ find: "jane.doe@example.com", with: "sam@example.org" }, { find: "I agree to the terms", with: "I do not agree" }],
+    });
+    assert.equal(r.ok, true, r.summary);
+    assert.match(r.summary, /"jane.doe@example.com" -> "sam@example.org": 2 changes on pages 1-2 \(in place\)/);
+    const bytes = readArtifact(newest().id)!;
+    const out = await PDFDocument.load(bytes);
+    assert.equal(holds(bytes, "jane.doe", out), false, "the old address is still in the file");
+    assert.equal(holds(bytes, "agree to the terms", out), false);
+    const again = await run("pdf_read", { file: newest().id, find: ["sam@example.org", "I do not agree"] });
+    assert.doesNotMatch(again.summary, /Nothing matched/);
+    assert.match(again.summary, /sam@example\.org/);
+    const none = await run("pdf_replace_text", { file: upload.id, replace: [{ find: "no such words", with: "x" }] });
+    assert.equal(none.ok, true);
+    assert.match(none.summary, /Nothing was changed/);
+    const bad = await run("pdf_replace_text", { file: upload.id, replace: [] });
+    assert.equal(bad.ok, false);
+    assert.match(bad.summary, /Say what to change/);
+  });
+
   await test("image compression redraws the pages, or says it would not help", async () => {
     const r = await run("pdf_compress", { file: upload.id, mode: "images", dpi: 60 });
     assert.equal(r.ok, true, r.summary);

@@ -36,6 +36,7 @@ import {
   artifactPath, cleanName, formatSize, getArtifact, listArtifacts, mimeFor, readArtifact, saveArtifact,
   MAX_ARTIFACT_BYTES, type Artifact,
 } from "./artifacts";
+import { replaceOnPage, type TextEdit } from "./pdftext";
 import { PdfRenderError, withPdf, type PageText, type PdfView, type Rect } from "./pdfrender";
 import { applyChanges, compose, ComposeError, outlineLines, type ComposeSource, type ImageLoader, type OutlineEntry } from "./compose";
 
@@ -88,6 +89,7 @@ async function runOne(name: string, args: Record<string, any>, ctx: PdfContext):
       case "pdf_compose": return await composeTool(args, ctx);
       case "pdf_pages": return await pagesTool(args, ctx);
       case "pdf_redact": return await redactTool(args, ctx);
+      case "pdf_replace_text": return await replaceTextTool(args, ctx);
       case "pdf_compress": return await compressTool(args, ctx);
       default: return { ok: false, summary: `There is no PDF tool called ${name}.` };
     }
@@ -2048,6 +2050,15 @@ async function editTool(args: Record<string, any>, ctx: PdfContext): Promise<Pdf
   const done: string[] = [];
   const notes: string[] = [];
   const fonts = new Fonts(doc);
+  /* A box with a background laid over words is the way to cover them, and the
+     way to loop: the words stay in the file, and the next look still finds
+     them. Say what changes them for real. */
+  if (items.some((i) => String(i.type).toLowerCase() === "text" && i.background)) {
+    notes.push(
+      "A text item with a background hides the words under it but leaves them in the file, selectable and searchable. " +
+      "To change words the file already has, use pdf_replace_text (it rewrites them); to take them out, pdf_redact.",
+    );
+  }
 
   // 1. Fill.
   if (values) {
@@ -2561,6 +2572,100 @@ async function redactTool(args: Record<string, any>, ctx: PdfContext): Promise<P
         "Check the result with pdf_look.",
       ].filter(Boolean).join(" "),
       preview: PREVIEW(saved.art.name, out.getPageCount(), saved.art.size),
+    };
+  }, ctx);
+}
+
+// -- pdf_replace_text --
+
+/** Change the words a PDF already has. See ./pdftext.ts for how. */
+async function replaceTextTool(args: Record<string, any>, ctx: PdfContext): Promise<PdfOutcome> {
+  const { input } = onDesk(readPdf(args.file, ctx.cwd), ctx);
+  const pass = password(args);
+  const list: Record<string, any>[] = (Array.isArray(args.replace) ? args.replace : args.replace ? [args.replace] : [])
+    .filter((r: unknown) => r && typeof r === "object");
+  const edits: TextEdit[] = list.map((r) => ({
+    find: String(r.find ?? ""),
+    with: String(r.with ?? ""),
+    ignoreCase: r.ignore_case === true,
+  })).filter((e) => e.find.trim());
+  if (edits.length === 0) {
+    throw new Problem("Say what to change: replace is a list of {find, with}. find is the words as they are now; with is what they become (empty to delete them).");
+  }
+  const { doc, encrypted } = await openDoc(input.data, pass);
+  if (hasForm(doc) && doc.getForm().hasXFA()) {
+    throw new Problem("Its text comes from an XFA form, which has no words in the pages to change. Fill it with pdf_edit fields instead.");
+  }
+
+  return withPdf(input.data, pass, async (view) => {
+    const count = view.pages;
+    const scope = pageSet(args.pages ?? "all", count);
+    const tools: Tools = { fonts: new Fonts(doc), doc, cwd: ctx.cwd, view, fields: null, texts: new Map() };
+    const totals = new Map<string, { with: string; matches: number; how: Set<string>; pages: number[] }>();
+    const notes = new Set<string>();
+    const touched: number[] = [];
+    for (const i of scope) {
+      if (ctx.cancelled()) throw new Problem("Stopped before it was finished; nothing was saved.");
+      const locate = async (find: string, ignoreCase: boolean) => {
+        const [page] = await view.text(i + 1, i + 1, true);
+        const source = find.split(/\s+/).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s*");
+        const re = new RegExp(source, ignoreCase ? "gi" : "g");
+        return findOnPage(page, [{ label: find, re }]).map((h) => h.boxes[0]);
+      };
+      const done = await replaceOnPage(doc, doc.getPage(i), edits, locate);
+      done.notes.forEach((n) => notes.add(`Page ${i + 1}: ${n}`));
+      if (done.changed.length === 0) continue;
+      touched.push(i);
+      for (const c of done.changed) {
+        const t = totals.get(c.find) ?? { with: c.with, matches: 0, how: new Set<string>(), pages: [] };
+        t.matches += c.matches;
+        t.how.add(c.how);
+        t.pages.push(i + 1);
+        totals.set(c.find, t);
+      }
+      if (done.draws.length) {
+        const sheet = new Sheet(doc.getPage(i));
+        for (const d of done.draws) {
+          try {
+            await drawItem(tools, sheet, i, { type: "text", x: d.x, y: d.y, text: d.text, size: d.size, color: d.color, font: d.font, bold: d.bold, italic: d.italic }, null);
+          } catch (err) {
+            throw new Problem(`Page ${i + 1}: the new words ${JSON.stringify(d.text)} could not be written: ${message(err)} Nothing was saved.`);
+          }
+        }
+      }
+    }
+
+    const absent = edits.filter((e) => !totals.has(e.find)).map((e) => JSON.stringify(e.find));
+    if (totals.size === 0) {
+      return {
+        ok: true,
+        summary:
+          `Nothing was changed, and no file was made. ${absent.length ? `Not found as text in the file: ${absent.join(", ")}. ` : ""}` +
+          [...notes].join(" ") +
+          " Check the wording with pdf_read find (it must be the words as the file holds them); if the page is a scan it has no text to change: look with pdf_look, cover the area with pdf_redact areas and add the words with pdf_edit.",
+        preview: "nothing matched",
+      };
+    }
+
+    const bytes = await saveDoc(doc);
+    const saved = deliver(ctx, outputName(input, args.output, "edited"), bytes, `Changed text in ${input.name}`, input);
+    const lines = [...totals.entries()].map(([find, t]) =>
+      `${JSON.stringify(find)} -> ${JSON.stringify(t.with)}: ${t.matches} change${t.matches === 1 ? "" : "s"} on page${t.pages.length === 1 ? "" : "s"} ${rangeText([...new Set(t.pages)].map((p) => p - 1))}` +
+      ` (${[...t.how].join(" and ")})`);
+    return {
+      ok: true,
+      summary: [
+        `Changed the text of ${input.name}: ${lines.join("; ")}.`,
+        "In place means the words were rewritten inside the file in the page's own font, so they stay selectable and searchable; " +
+        "redrawn means that font could not write them, so the old words were taken out of the file and the new ones drawn in a built-in font of the same kind, colour and size.",
+        absent.length ? `Not found: ${absent.join(", ")}.` : "",
+        [...notes].join(" "),
+        "Words are not reflowed: where the new ones are longer or shorter than the old, anything the file places separately on that line (the next column, a word it drew on its own) stays where it was, so look at the line before saying it is right.",
+        savedLine(saved, doc.getPageCount(), input),
+        encrypted && pass ? "The original is password-protected; this copy is not." : "",
+        "Check the pages with pdf_look.",
+      ].filter(Boolean).join(" "),
+      preview: PREVIEW(saved.art.name, doc.getPageCount(), saved.art.size),
     };
   }, ctx);
 }

@@ -93,7 +93,7 @@ async function main() {
     assert.equal(m.looksOnly("pdf_look", { file: "a.pdf" }), true);
     assert.equal(m.looksOnly("pdf_read", { file: "a.pdf", extract: ["all"] }), false);
     assert.equal(m.looksOnly("pdf_read", { file: "a.pdf", extract: "xfa" }), false);
-    for (const name of ["pdf_edit", "pdf_compose", "pdf_pages", "pdf_redact", "pdf_compress"]) {
+    for (const name of ["pdf_edit", "pdf_compose", "pdf_pages", "pdf_redact", "pdf_replace_text", "pdf_compress"]) {
       assert.equal(m.looksOnly(name, { file: "a.pdf" }), false, name);
       assert.ok(findTool(name), `${name} is a tool`);
     }

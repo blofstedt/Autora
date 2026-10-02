@@ -125,10 +125,16 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  Fixed: the agent no longer keeps retrying the same failing thing with small
-  variations. Failures that say the same thing now add up whatever the
-  arguments were -- after three the agent is shown what it already tried and
-  told to step back, and after six the turn stops and says what failed. Calls
-  to a tool with missing or wrongly typed arguments are now refused before
-  anything runs, with a message naming each problem and the arguments the tool
-  accepts, rather than being guessed at.
+  New: the agent can change the words a PDF already has -- a name, an amount,
+  a date, a typo -- instead of covering them with a white box and trying
+  again. The words are rewritten inside the file in the page's own font when
+  it can write them, so the page stays selectable and searchable; when the
+  file's cut-down font lacks a letter, the old words are taken out of the file
+  and the new ones drawn in a matching built-in font, in the same place, size
+  and colour. Nothing is turned into a picture. Fixed: the agent no longer
+  keeps retrying the same failing thing with small variations -- failures
+  that say the same thing add up whatever the arguments were: after three it
+  is shown what it already tried and told to step back, after six the turn
+  stops and says what failed. A call with missing or wrongly typed arguments
+  is now refused before anything runs, with a message naming each problem and
+  the arguments the tool accepts.

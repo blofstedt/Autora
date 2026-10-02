@@ -1538,7 +1538,7 @@ const TOOLS: ToolSpec[] = [
       "font), image, check, cross, rect, ellipse, line, arrow, path, highlight (a box, or every match of some " +
       "text) and note (a comment). Positions are points from the top-left of the page as shown -- read them " +
       "off pdf_read, or pdf_look with grid. Drawing over something hides it but does not remove it: pdf_redact " +
-      "takes text out. The file opens in the PDF window beside the conversation, where what you add stays an " +
+      "takes text out, and pdf_replace_text changes the words a file already has. The file opens in the PDF window beside the conversation, where what you add stays an " +
       "object the person can move, change or remove, and they can add their own; edit the same file again to " +
       "carry on with it. Everything you add, change or remove is marked in the window for the person to accept or " +
       "decline one by one (a declined change is undone and you are told), and each state of the file is kept as a " +
@@ -1776,6 +1776,44 @@ const TOOLS: ToolSpec[] = [
         output: PDF_OUTPUT,
       },
       required: ["file"],
+    },
+  },
+  {
+    name: "pdf_replace_text",
+    group: "files",
+    description:
+      "Change words that are already in a PDF -- a name, an amount, a date, a typo -- and save the result as a new " +
+      "artifact shown in the conversation. This edits the file's own text: where the page's font can write the new " +
+      "words they are rewritten in place, in the same typeface, and stay selectable and searchable; where it cannot " +
+      "(a letter the file's cut-down font never drew) the old words are taken out of the file and the new ones drawn in " +
+      "a built-in font of the same kind, colour and size. Either way the old words are gone from the bytes, and the " +
+      "rest of the page stays vector. Use this, not pdf_edit, to change what a page says: pdf_edit only draws on top, " +
+      "and covering words with a white box leaves them in the file. It does not work on a scan (a picture of text has " +
+      "no words); pdf_read find shows whether the words are text. find must be the words as pdf_read shows them. " +
+      "Words are not reflowed: if the new words are longer or shorter, text the file places separately on the same line stays put. " +
+      "Give every change in one call. Look at the result with pdf_look before saying it is done.",
+    parameters: {
+      type: "object",
+      properties: {
+        file: PDF_FILE,
+        password: PDF_PASSWORD,
+        replace: {
+          type: "array",
+          description: "The changes, each made wherever its words appear.",
+          items: {
+            type: "object",
+            properties: {
+              find: { type: "string", description: "The words as they are now. Spacing between words does not matter." },
+              with: { type: "string", description: "What they become. Empty to delete them." },
+              ignore_case: { type: "boolean", description: "Match any capitalisation. Default exact." },
+            },
+            required: ["find", "with"],
+          },
+        },
+        pages: { type: "string", description: "Which pages: \"1-3,7\", \"last\". Default all." },
+        output: PDF_OUTPUT,
+      },
+      required: ["file", "replace"],
     },
   },
   {
@@ -4219,6 +4257,7 @@ async function runToolUnredacted(
       case "pdf_compose":
       case "pdf_pages":
       case "pdf_redact":
+      case "pdf_replace_text":
       case "pdf_compress":
         return await runPdfTool(spec.name, args, {
           session: ctx.session,
@@ -4580,7 +4619,7 @@ export async function capabilityBriefing(): Promise<string> {
   );
   lines.push(windows.pdf.enabled
     ? "- PDFs: always available. Tools: pdf_read, pdf_look, pdf_edit, pdf_compose, " +
-      "pdf_pages, pdf_redact, pdf_compress. To write a report or any document as a PDF, " +
+      "pdf_pages, pdf_redact, pdf_replace_text, pdf_compress. To write a report or any document as a PDF, " +
       "use pdf_compose (headings, paragraphs, tables, sources; it lays out the pages and keeps " +
       "the document so you can update a section when research turns up something new, " +
       "rather than starting again). For any PDF -- one the person uploaded, one on " +
