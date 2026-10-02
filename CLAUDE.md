@@ -51,7 +51,11 @@ is a sub-project with its own dependencies (see below).
 - `server.ts`: the Express app, every `/api/*` route, the `/ws/:session`
   event stream and the agent turn loop.
 - `server/`: the pieces it uses. `tools.ts` (the agent's tools), `llm.ts` and
-  `providers.ts` (model calls), `browser.ts` (Playwright), `desktop.ts` (the
+  `providers.ts` (model calls), `browser.ts` (Playwright; the session's browser has tabs --
+  `tabPages`, `newTab/switchTab/closeTab`, a link to a new tab opens and shows one, the
+  sign-in popup returns to its opener when it closes -- and an adaptive stream: `TIERS`
+  step down when `hooks.backlog` says a viewer is behind, the rate rises while
+  `touched()`, and one sharp screenshot follows when the page has been still), `desktop.ts` (the
   relay), `store.ts` / `state.ts` (what is kept on disk under `AUTORA_HOME`),
   `credentials.ts`, `mcp.ts` (plus `mcpcatalog.ts`, `mcpoffer.ts` and
   `mcpscript.ts`: the servers the agent offers, sets up or writes itself),

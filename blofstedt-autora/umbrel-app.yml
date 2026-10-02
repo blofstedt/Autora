@@ -133,29 +133,8 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  Faster: Excel workbooks open and draw about twice as fast, and the editors' pages are sent
-  compressed (Excel's goes from 14 MB to 3 MB).
-  Fix: Word no longer warns that Calibri, Cambria, Arial, Times New Roman or Courier New are missing. They are
-  drawn in their open metric twins, so pages lay out the same.
-  New: Word, Excel and PowerPoint can be switched off on the Tools page. Tapping a slide on a phone
-  now names the element (or a workbook's cell) so the agent knows exactly which one you mean. The
-  Excel editor is a third smaller to load (it no longer carries its translations).
-  New: on a desktop, drag the seams between the menu, the conversation and the window beside it to
-  size them (double-click a seam to reset it), and fold the menu away to the far left; both are
-  remembered. When the agent changes a deck or workbook you have open, the editor updates where
-  it is instead of reloading, so you keep your slide and place.
-  New: on a phone, Word, PowerPoint and Excel documents open as pictures of their pages
-  (drawn once and kept, so they open at once) instead of as the full editor. Tap text
-  to point at it and tell Autora what to change; the full editor is one button away.
-  Also: the PowerPoint and Excel engines name things in English.
-  New: PowerPoint decks and Excel workbooks open in their own editors beside the
-  chat, like Word documents and PDFs do. The agent works on the one you are looking
-  at; what you change in the editor is saved as you go and told to the agent, and
-  its changes appear in the window. The agent can also see a deck's slides and a
-  workbook's printed sheets (office_look) and hand either to the PDF editor
-  (office_pdf), where you can mark it up, sign it, redact it or send it on. The
-  editors' own AI panel is replaced by an Autora button that puts the cursor in
-  the chat. Built on the open-source GenOffice engines (Apache-2.0). Earlier in
-  this release line: Word documents in a window of their own, the agent reading,
-  editing, checking and creating Word, Excel and PowerPoint files, and reading a
-  site's official documentation before acting on it.
+  New: the browser has tabs. A strip above the page lists them (tap to switch, x to close, + for a
+  new one), a link that opens a new tab opens one as in any browser, and the agent has a
+  browser_tabs tool to keep a page open while it looks at another. Forward joins back and reload.
+  Faster: the picture is rougher and quicker while you tap or scroll and sharp once you stop, and
+  it steps down by itself on a slow link instead of lagging.

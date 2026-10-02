@@ -3580,6 +3580,29 @@ label + .jf-hint { margin-top: -5px; }
 }
 .shot-tool:hover:not(:disabled) { color: var(--text); background: var(--s3); }
 .shot-tool:disabled { opacity: 0.35; cursor: not-allowed; }
+/* The tab strip: scrolls sideways, so a phone holds as many as a desktop. */
+.shot-tabs {
+  display: flex; align-items: center; gap: 4px; padding: 4px 8px;
+  overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--border);
+}
+.shot-tabs::-webkit-scrollbar { display: none; }
+.shot-tab {
+  flex: 0 0 auto; display: inline-flex; align-items: center; max-width: 180px;
+  border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--sink);
+}
+.shot-tab.on { background: var(--s3); border-color: var(--accent-line); }
+.shot-tab-main {
+  min-width: 0; max-width: 150px; padding: 4px 4px 4px 9px; border: 0; background: none;
+  color: var(--text-2); font: inherit; font-size: 12px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+}
+.shot-tab.on .shot-tab-main { color: var(--text); }
+.shot-tab-x {
+  display: inline-grid; place-items: center; width: 22px; height: 22px; margin-right: 2px;
+  border: 0; border-radius: 50%; background: none; color: var(--text-3); cursor: pointer;
+}
+.shot-tab-x:hover:not(:disabled) { background: var(--s3); color: var(--text); }
+.shot-tab-new { flex: 0 0 auto; margin: 0; }
 .shot-address { flex: 1 1 auto; min-width: 0; display: flex; }
 input.shot-where {
   width: 100%; height: 28px; margin: -3px 0; padding: 0 10px;

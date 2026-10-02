@@ -399,6 +399,13 @@ export const IconArrowLeft = ({ size = 16, className }: Props) => (
   </svg>
 );
 
+export const IconArrowRight = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="m12 5 7 7-7 7" />
+    <path d="M5 12h14" />
+  </svg>
+);
+
 export const IconRotateCcw = ({ size = 16, className }: Props) => (
   <svg {...base(size)} className={className}>
     <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />

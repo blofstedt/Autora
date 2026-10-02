@@ -28,6 +28,8 @@ export type BrowserState = {
   viewport: { width: number; height: number };
   /** The page's typeable fields, [x, y, w, h] in page pixels. */
   fields?: Array<[number, number, number, number]>;
+  /** The tabs open in the session's browser. */
+  tabs?: Array<{ id: number; url: string; title: string; active: boolean }>;
 };
 
 export type AutoraEvent = {

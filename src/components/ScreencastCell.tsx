@@ -4,12 +4,12 @@ import {
   type CSSProperties, type ReactNode,
 } from "react";
 import type { Shot } from "../lib/derive";
-import { onField, useLiveFrame } from "../lib/liveFrame";
+import { onField, useLiveFrame, useLiveTabs } from "../lib/liveFrame";
 import { NAMED_KEYS, SENTINEL } from "../lib/pageInput";
 import { Frame } from "./Frame";
 import {
-  IconArrowLeft, IconChevron, IconGlobe, IconMaximize, IconMinimize, IconMonitor, IconMousePointer,
-  IconRotateCcw, IconStop,
+  IconArrowLeft, IconArrowRight, IconChevron, IconGlobe, IconMaximize, IconMinimize, IconMonitor, IconMousePointer,
+  IconPlus, IconRotateCcw, IconStop, IconX,
 } from "./Icons";
 
 /** The viewport the browser harness captures. Frame pixels map 1:1 to page
@@ -54,6 +54,7 @@ export function ScreencastCell({
   children?: ReactNode;
 }) {
   const feed = useLiveFrame(followsFeed);
+  const tabs = useLiveTabs(source === "browser" && current);
   const logRef = useRef<HTMLDivElement>(null);
   const logFollows = useRef(true);
   const logCount = Children.count(children);
@@ -443,6 +444,15 @@ export function ScreencastCell({
             <button
               className="shot-tool"
               disabled={!canUse}
+              onClick={() => void send("forward", {})}
+              aria-label="Forward"
+              title="Forward"
+            >
+              <IconArrowRight size={15} />
+            </button>
+            <button
+              className="shot-tool"
+              disabled={!canUse}
               onClick={() => void send("reload", {})}
               aria-label="Reload"
               title="Reload"
@@ -556,6 +566,43 @@ export function ScreencastCell({
           </button>
         )}
       </header>
+      {toolbar && tabs.length > 0 && (
+        <div className="shot-tabs" role="tablist" aria-label="Tabs">
+          {tabs.map((tab) => (
+            <div key={tab.id} className={`shot-tab${tab.active ? " on" : ""}`} role="presentation">
+              <button
+                role="tab"
+                aria-selected={tab.active}
+                className="shot-tab-main"
+                disabled={!canUse}
+                onClick={() => { if (!tab.active) void send("tabs", { action: "switch", id: tab.id }); }}
+                title={tab.url}
+              >
+                {tab.title || tab.url.replace(/^https?:\/\//, "") || "New tab"}
+              </button>
+              {(tabs.length > 1 || tab.url !== "about:blank") && (
+                <button
+                  className="shot-tab-x"
+                  disabled={!canUse}
+                  onClick={() => void send("tabs", { action: "close", id: tab.id })}
+                  aria-label={`Close ${tab.title || "tab"}`}
+                >
+                  <IconX size={11} />
+                </button>
+              )}
+            </div>
+          ))}
+          <button
+            className="shot-tool shot-tab-new"
+            disabled={!canUse}
+            onClick={() => void send("tabs", { action: "new" })}
+            aria-label="New tab"
+            title="New tab"
+          >
+            <IconPlus size={14} />
+          </button>
+        </div>
+      )}
 
       {waiting && (
         <div className="shot-stage is-waiting">

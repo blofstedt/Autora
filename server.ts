@@ -751,6 +751,13 @@ function touchPresence(
   scheduleRemark(sessionId);
 }
 
+/** Bytes waiting to be written to the slowest of a session's viewers. */
+function socketBacklog(sessionId: string): number {
+  let most = 0;
+  for (const ws of sessionSockets.get(sessionId) ?? []) most = Math.max(most, ws.bufferedAmount);
+  return most;
+}
+
 function sendEphemeral(sessionId: string, message: Record<string, unknown>) {
   const sockets = sessionSockets.get(sessionId);
   if (!sockets || sockets.size === 0) return;
@@ -849,6 +856,7 @@ function browserFor(session: Session): LiveBrowser {
 
   const live = new LiveBrowser({
     watchers: () => sessionSockets.get(session.id)?.size ?? 0,
+    backlog: () => socketBacklog(session.id),
     onFrame: (jpegBase64) =>
       sendEphemeral(session.id, {
         type: "frame",
@@ -1689,7 +1697,10 @@ function isPreview(req: Request): boolean {
   return req.query?.target === "preview";
 }
 function targetBrowser(session: Session, req: Request): LiveBrowser | undefined {
-  return isPreview(req) ? previews.get(session.id)?.live : browsers.get(session.id);
+  const live = isPreview(req) ? previews.get(session.id)?.live : browsers.get(session.id);
+  // Every route that asks is a person working the page: the stream speeds up.
+  live?.touched();
+  return live;
 }
 
 function agentDriving(session: Session): boolean {
@@ -6420,6 +6431,42 @@ async function startServer() {
       res.json({ ok: true, url: page.url, title: page.title });
     } catch (err: any) {
       res.status(500).json({ error: err?.message ?? "Navigation failed" });
+    }
+  });
+
+  app.post("/api/sessions/:id/browser/forward", async (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
+    const live = targetBrowser(session, req);
+    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
+    try {
+      const page = await live.goForward();
+      res.json({ ok: true, url: page?.url, title: page?.title });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message ?? "Forward navigation failed" });
+    }
+  });
+
+  /** The tab strip: open, switch to and close tabs. */
+  app.post("/api/sessions/:id/browser/tabs", async (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    if (isPreview(req)) return res.status(400).json({ error: "The app window has one page." });
+    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
+    const live = targetBrowser(session, req) ?? browserFor(session);
+    const action = String(req.body?.action ?? "");
+    const id = Number(req.body?.id);
+    try {
+      touchPresence(session.id, "browser", "*", "tabs", `${action === "new" ? "opened" : action === "close" ? "closed" : "switched"} a tab`);
+      if (action === "new") await live.newTab(typeof req.body?.url === "string" ? req.body.url : undefined);
+      else if (action === "switch" && Number.isInteger(id)) await live.switchTab(id);
+      else if (action === "close" && Number.isInteger(id)) await live.closeTab(id);
+      else return res.status(400).json({ error: "Say action new, switch or close, and the tab's id." });
+      broadcastBrowserState(session);
+      res.json({ ok: true, tabs: live.tabList() });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message ?? "That did not work." });
     }
   });
 

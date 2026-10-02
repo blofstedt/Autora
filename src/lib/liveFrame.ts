@@ -30,6 +30,26 @@ export function useLiveFrame(following: boolean): LiveFrame | null {
   return useSyncExternalStore(subscribe, () => (following ? current : null));
 }
 
+/** The browser's tabs, kept the same way: they change with the page. */
+export type LiveTab = { id: number; url: string; title: string; active: boolean };
+let tabs: LiveTab[] = [];
+const tabListeners = new Set<() => void>();
+
+export function setLiveTabs(next: LiveTab[] | undefined) {
+  const value = next ?? [];
+  if (JSON.stringify(value) === JSON.stringify(tabs)) return;
+  tabs = value;
+  for (const listener of tabListeners) listener();
+}
+
+export function useLiveTabs(on: boolean): LiveTab[] {
+  return useSyncExternalStore(
+    (listener) => { tabListeners.add(listener); return () => { tabListeners.delete(listener); }; },
+    () => (on ? tabs : NO_TABS),
+  );
+}
+const NO_TABS: LiveTab[] = [];
+
 /**
  * Where the open page's typeable fields are, in page pixels. Read at the
  * moment of a tap rather than rendered from, so it lives here too.

@@ -4,7 +4,7 @@ import { derive, isRunning, type Derived } from "./lib/derive";
 import { share } from "./lib/share";
 import { chime, paintChrome, type Chrome } from "./lib/chrome";
 import { Kind, type AutoraEvent, type BrowserState } from "./lib/types";
-import { setLiveFields, setLiveFrame } from "./lib/liveFrame";
+import { setLiveFields, setLiveFrame, setLiveTabs } from "./lib/liveFrame";
 import { resetPreview, setPreviewFrame, setPreviewState, usePreviewState, type PreviewState } from "./lib/preview";
 import { AppPreview } from "./components/AppPreview";
 import { OfficeWindow } from "./components/OfficeWindow";
@@ -291,6 +291,7 @@ export function App() {
     noticed.current = 0;
     setLiveFrame(null);
     setLiveFields([]);
+    setLiveTabs([]);
     setBrowser(null);
     /* Events are added to the thread in batches, at most every
        EVENT_BATCH_MS and on a frame, not one at a time. A streamed reply is
@@ -353,6 +354,7 @@ export function App() {
       onPresence: setCollabState,
       onBrowser: (state) => {
         setLiveFields(state?.fields);
+        setLiveTabs(state?.tabs);
         setBrowser(state);
       },
     });

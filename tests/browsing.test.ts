@@ -298,6 +298,37 @@ async function main() {
   } finally {
     await first.close();
   }
+  const tabbed = new LiveBrowser({
+    onFrame: () => {}, onKeyframe: () => {}, onNav: () => {}, onAction: () => {},
+    onFields: () => {}, watchers: () => 0,
+  });
+  try {
+    console.log("tabs");
+    await test("tabs open, switch and close, and closing the last leaves a blank one", async () => {
+      await tabbed.goto(origin + "/me");
+      assert.equal(tabbed.tabList().length, 1);
+      await tabbed.newTab(origin + "/");
+      let tabs = tabbed.tabList();
+      assert.equal(tabs.length, 2);
+      assert.equal(tabs.filter((t) => t.active).length, 1);
+      assert.match(tabs[1].url, /127\.0\.0\.1/);
+      assert.ok(tabs[1].active);
+      const out = await tabbed.switchTab(tabs[0].id);
+      assert.ok(out.tabs[0].active && !out.tabs[1].active);
+      assert.match((await tabbed.snapshot()).url, /\/me$/);
+      await tabbed.closeTab(tabs[0].id);
+      tabs = tabbed.tabList();
+      assert.equal(tabs.length, 1);
+      assert.ok(tabs[0].active);
+      assert.match((await tabbed.snapshot()).url, new RegExp(`${origin}/$`));
+      // The last tab closed leaves a blank one.
+      await tabbed.closeTab(tabs[0].id);
+      for (let i = 0; i < 20 && tabbed.tabList().length === 0; i++) await new Promise((r) => setTimeout(r, 100));
+      assert.equal(tabbed.tabList().length, 1);
+    });
+  } finally {
+    await tabbed.close();
+  }
   const second = new LiveBrowser({
     onFrame: () => {}, onKeyframe: () => {}, onNav: () => {}, onAction: () => {},
     onFields: () => {}, watchers: () => 0,

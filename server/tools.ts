@@ -925,6 +925,24 @@ const TOOLS: ToolSpec[] = [
     parameters: { type: "object", properties: {} },
   },
   {
+    name: "browser_tabs",
+    group: "browser",
+    description:
+      "The browser's tabs. action 'list' names them (id, address, title; the one you are working in is " +
+      "marked); 'new' opens a tab (with `url`, loads it); 'switch' makes tab `id` the one browser_read, " +
+      "browser_click and the rest act on; 'close' closes tab `id`. A link that opens a new tab switches " +
+      "to it on its own. Use this to keep a page open while you look at another.",
+    parameters: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["list", "new", "switch", "close"] },
+        id: { type: "integer", description: "Tab number, for switch and close." },
+        url: { type: "string", description: "Address to open, for new." },
+      },
+      required: ["action"],
+    },
+  },
+  {
     name: "browser_screenshot",
     group: "browser",
     description:
@@ -4204,6 +4222,33 @@ async function runToolUnredacted(
         const page = await ctx.browser().back();
         ctx.browserChanged();
         return { ok: true, summary: describePage(page), preview: page.url };
+      }
+
+      case "browser_tabs": {
+        const live = ctx.browser();
+        const action = String(args.action ?? "list");
+        const show = (tabs: Array<{ id: number; url: string; title: string; active: boolean }>) =>
+          tabs.length
+            ? tabs.map((t) => `${t.active ? "*" : " "} [${t.id}] ${t.title || "(untitled)"} -- ${t.url}`).join("\n")
+            : "No tabs are open.";
+        if (action === "new") {
+          const out = await live.newTab(typeof args.url === "string" ? args.url : undefined);
+          ctx.browserChanged();
+          if ("text" in out) return { ok: true, summary: `${describePage(out)}\n\n${show(live.tabList())}`, preview: out.url };
+          return { ok: true, summary: `Opened a blank tab.\n${show(out.tabs)}` };
+        }
+        if (action === "switch" || action === "close") {
+          const id = Number(args.id);
+          if (!Number.isInteger(id)) return { ok: false, summary: `${action} needs the tab's id (see action 'list').` };
+          try {
+            const out = action === "switch" ? await live.switchTab(id) : await live.closeTab(id);
+            ctx.browserChanged();
+            return { ok: true, summary: show(out.tabs) };
+          } catch (err: any) {
+            return { ok: false, summary: `${err?.message ?? err}\n${show(live.tabList())}` };
+          }
+        }
+        return { ok: true, summary: show(live.tabList()) };
       }
 
       case "browser_screenshot": {
