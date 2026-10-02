@@ -9,6 +9,7 @@ import { resetPreview, setPreviewFrame, setPreviewState, usePreviewState, type P
 import { AppPreview } from "./components/AppPreview";
 import { PdfWindow } from "./components/PdfWindow";
 import { resetDesk, setDeskState, useDeskState } from "./lib/pdfdesk";
+import { resetCollab, setCollabState } from "./lib/collab";
 import { cellKey, dockedPlan, usePhone } from "./lib/stage";
 import { Thread } from "./components/Thread";
 import { Dock } from "./components/Dock";
@@ -319,6 +320,7 @@ export function App() {
     };
     resetPreview();
     resetDesk();
+    resetCollab();
     const stream = new SessionStream(sessionId, {
       onEvents: (fresh) => {
         // A batch of nothing but repeats: a new array would re-derive the
@@ -340,6 +342,7 @@ export function App() {
       },
       onPreview: (state) => setPreviewState(state as PreviewState),
       onPdfDesk: setDeskState,
+      onPresence: setCollabState,
       onBrowser: (state) => {
         setLiveFields(state?.fields);
         setBrowser(state);

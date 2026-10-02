@@ -6416,3 +6416,10 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 .app-cursor { font: 600 11px/1 var(--sans, system-ui); padding: 5px 9px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, .12); background: transparent; color: var(--muted, #8a8f9c); cursor: pointer; white-space: nowrap; }
 .app-cursor.on { color: #cfc8ff; border-color: rgba(139, 124, 246, .55); background: rgba(139, 124, 246, .14); }
 @media (max-width: 560px) { .app-cursor { display: none; } }
+
+/* Taking a window from the agent, and giving it back. */
+.app-control { font: 600 11px/1 var(--sans, system-ui); padding: 5px 9px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, .16); background: transparent; color: var(--text, #e8e8ee); cursor: pointer; white-space: nowrap; }
+.app-control:hover { background: rgba(255, 255, 255, .07); }
+.app-control.on { color: #fff; background: #6a58e0; border-color: #6a58e0; }
+.shot-control.on { color: #fff; background: #6a58e0; border-radius: 999px; }
+@media (max-width: 560px) { .app-control { padding: 5px 8px; } }

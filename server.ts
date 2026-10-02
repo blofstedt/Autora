@@ -88,6 +88,7 @@ import {
 } from "./server/modes";
 import { LoopWatch, describe as describeCall } from "./server/loopwatch";
 import { ErrorBudget } from "./server/errorbudget";
+import { forgetPresence, presenceFor, type Surface } from "./server/presence";
 import { diffDom, type ChangeCue, type DomItem } from "./server/domdiff";
 import { Workspace, type DiffLine, type FileChange as CodeChange } from "./server/codediff";
 import { runSubagent } from "./server/subagent";
@@ -425,6 +426,8 @@ function forgetSession(id: string) {
   // The app window's page, file server, watcher and dev server go with it.
   const gone = sessions.get(id);
   if (gone) void previewStop(gone, false).catch(() => undefined);
+  forgetPresence(id);
+  presenceSent.delete(id);
   previewKept.delete(id);
   clearFrame(id);
   dropSession(id);
@@ -654,6 +657,38 @@ function broadcastLiveStatus(session: Session) {
  * resumable, and the feed, which is whatever is happening now and is gone if
  * you were not looking.
  */
+/* Who is touching what, told to the page (server/presence.ts). Sent when it
+   changes, and again a moment after a lease would have run out, so the page
+   stops saying someone is working on a thing they have let go of. */
+const presenceSent = new Map<string, string>();
+const presenceTimers = new Map<string, NodeJS.Timeout>();
+
+function announcePresence(sessionId: string) {
+  const view = presenceFor(sessionId).view();
+  const raw = JSON.stringify(view);
+  if (presenceSent.get(sessionId) !== raw) {
+    presenceSent.set(sessionId, raw);
+    sendEphemeral(sessionId, { type: "presence", session: sessionId, state: view });
+  }
+  if (view.active.length > 0 && !presenceTimers.has(sessionId)) {
+    const t = setTimeout(() => {
+      presenceTimers.delete(sessionId);
+      announcePresence(sessionId);
+    }, 1_500);
+    t.unref?.();
+    presenceTimers.set(sessionId, t);
+  }
+}
+
+/** The person did something on a surface the agent shares with them. */
+function touchPresence(
+  sessionId: string, surface: Surface, subject: string, kind: string, detail: string,
+  opts: { leaseMs?: number; tell?: boolean } = {},
+) {
+  presenceFor(sessionId).touch(surface, subject, kind, detail, opts);
+  announcePresence(sessionId);
+}
+
 function sendEphemeral(sessionId: string, message: Record<string, unknown>) {
   const sockets = sessionSockets.get(sessionId);
   if (!sockets || sockets.size === 0) return;
@@ -940,6 +975,9 @@ async function previewAct(
 ): Promise<{ ok: boolean; summary: string; png?: Buffer }> {
   const run = previews.get(session.id);
   if (!run?.opened) return { ok: false, summary: "There is no preview open. Start one with app_preview start." };
+  // Whoever is using the window has it: the agent never moves a pointer under a person's hand.
+  const inUse = presenceFor(session.id).blocked("app");
+  if (inUse) return { ok: false, summary: inUse };
   const live = run.live;
   const settle = () => new Promise((resolve) => setTimeout(resolve, 450));
   const aimed = async (target: string): Promise<{ x: number; y: number; said: string } | { error: string }> => {
@@ -1061,7 +1099,8 @@ async function lookForChange(session: Session, run: PreviewRun, attempt: number)
       return;
     }
     run.dom = now;
-    if (cues.length > 0 && state.agentCursor && previews.get(session.id) === run && run.opened) {
+    // The cursor is real mouse movement: never over a page the person is using.
+    if (cues.length > 0 && state.agentCursor && !presenceFor(session.id).blocked("app") && previews.get(session.id) === run && run.opened) {
       run.cues = { seq: run.cues.seq + 1, items: cues };
       broadcastPreview(session);
       for (const cue of cues) {
@@ -1545,6 +1584,31 @@ function waitingOnPerson(sessionId: string): boolean {
     pairs of hands never fight over one page. */
 /** The browser an input route is about: the session's own, or -- for the app
     preview's window, which asks with ?target=preview -- the preview's. */
+/** What is under a point, or has focus, in the words a person would use. Said
+    to the agent when the person acts on a page it shares, so nothing but the
+    page is read, and a password field is never read at all. */
+async function describeOnPage(live: LiveBrowser, at: { x: number; y: number } | null): Promise<{ what: string; secret: boolean }> {
+  try {
+    const found = await live.pickOp(`(() => {
+      const el = ${at ? `document.elementFromPoint(${Math.round(at.x)}, ${Math.round(at.y)})` : "document.activeElement"};
+      if (!el || el === document.body || el === document.documentElement) return null;
+      const t = (el.closest("a,button,input,textarea,select,label,h1,h2,h3,h4,img,li,[role=button],[role=link]") || el);
+      const secret = t.tagName === "INPUT" && /^(password)$/i.test(t.type || "");
+      const label = secret ? "" : String(t.getAttribute("aria-label") || t.innerText || t.placeholder || t.title || t.alt || t.name || "").replace(/\\s+/g, " ").trim().slice(0, 50);
+      return { tag: t.tagName.toLowerCase(), label, secret };
+    })()`);
+    if (!found || typeof found !== "object") return { what: "the page", secret: false };
+    const noun: Record<string, string> = {
+      a: "link", button: "button", input: "field", textarea: "field", select: "menu", label: "label",
+      h1: "heading", h2: "heading", h3: "heading", h4: "heading", img: "image", li: "item",
+    };
+    const word = noun[String(found.tag)] ?? "text";
+    return { what: `the ${found.label ? `${JSON.stringify(found.label)} ` : ""}${word}`, secret: Boolean(found.secret) };
+  } catch {
+    return { what: "the page", secret: false };
+  }
+}
+
 function isPreview(req: Request): boolean {
   return req.query?.target === "preview";
 }
@@ -1553,7 +1617,22 @@ function targetBrowser(session: Session, req: Request): LiveBrowser | undefined 
 }
 
 function agentDriving(session: Session): boolean {
-  return session.busy && !waitingOnPerson(session.id);
+  // A person who has taken the browser is at the wheel, whatever the turn is doing.
+  return session.busy && !waitingOnPerson(session.id) && !presenceFor(session.id).holding("browser");
+}
+
+/**
+ * Whether a call would use something the person is using or has taken, and
+ * why not if so. A held call is not an error: it was not done, the agent is
+ * told in words it can act on, and it goes on to other work.
+ */
+const APP_ACTIONS = new Set(["click", "hover", "type", "press", "scroll"]);
+function heldFor(sessionId: string, name: string, args: Record<string, any> | undefined): string | null {
+  const book = presenceFor(sessionId);
+  if (name.startsWith("browser_")) return book.blocked("browser");
+  if (name === "app_preview" && APP_ACTIONS.has(String(args?.action ?? "").trim().toLowerCase())) return book.blocked("app");
+  if (name.startsWith("pdf_") && name !== "pdf_read" && name !== "pdf_look") return book.blocked("pdf");
+  return null;
 }
 
 function settleAsk(askId: string, answer: AskAnswer): boolean {
@@ -2269,6 +2348,14 @@ async function systemInstructionFor(
   if (permNote) notes.push(permNote);
   const unfinished = resuming.get(sessionId);
   if (unfinished) notes.push(resumeNote(unfinished));
+  /* The agent and the person share the windows. Said every turn, and then what
+     the person did since the last one. */
+  notes.push(COLLABORATION);
+  const heard = presenceFor(sessionId).note();
+  if (heard) {
+    notes.push(heard);
+    announcePresence(sessionId);
+  }
   /* The to-do list, said every turn: the history carries words, not the
      todo calls that wrote it, so this is the only way the agent sees it again. */
   if (own) notes.push(todoBriefing(latestTodos(own.events)));
@@ -3108,6 +3195,18 @@ function diffText(lines: DiffLine[], truncated: boolean): string {
 
 /** At most this many files of one command get a card; the rest are counted. */
 const MAX_CHANGE_CARDS = 12;
+
+/** How the agent behaves with someone else's hands in the same window. */
+const COLLABORATION = [
+  "You work alongside the person, in the same PDF, app window, browser and folder of code, at the same time.",
+  "- They may click, type, move or edit things while you work. That is welcome, not an interruption.",
+  "  When a note tells you what they did, it is theirs: never undo it, redo it or write over it. Work around it and carry on.",
+  "- When they do something, acknowledge it in a short natural line (\"I see you moved the signature -- I'll leave it there\"),",
+  "  the way a colleague at the same desk would, and then go on. Do not make a speech of it, and do not ask permission to continue.",
+  "- If a tool says it was not done because the person is working on it or has taken control, that is not a failure:",
+  "  do something else now (another page, file or item), come back to it later, and say what you left for them.",
+  "- They can take control of a window at any time. While they hold it, do not use it; keep working on the rest.",
+].join("\n");
 
 /** The agent loop for one turn. See startTurn. */
 async function runTurn(session: Session, text: string, opts: TurnOptions = {}): Promise<TurnResult> {
@@ -4233,6 +4332,16 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             continue;
           }
 
+          /* The person is using it, or has taken it: not done, said plainly,
+             and the turn goes on. It is not an error, so it is not counted
+             against the loop watch or the error budget. */
+          const heldNow = heldFor(session.id, spec.name, use.args);
+          if (heldNow) {
+            emitEvent(session, "tool.error", "agent", { held: true, error: "Not done: the person is working on this." }, span);
+            reply(false, heldNow);
+            continue;
+          }
+
           /* Then the person's permissions: with Ask on, a call that changes
              something waits for a yes on a card -- every one, or the ones
              that fall under what they wrote for when to ask. Yolo adds
@@ -4436,6 +4545,12 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
         const checkpoint = watch.endRound();
         const last = replies[replies.length - 1];
         if (checkpoint && last) last.result += `\n\n${checkpoint}`;
+        // What the person did while this round ran, said as it is read.
+        const heard = presenceFor(session.id).note();
+        if (heard && last) {
+          last.result += `\n\n${heard}`;
+          announcePresence(session.id);
+        }
 
         context.append({ role: "tool", replies }, session.seqCounter);
         context.supersedePages(canReadVault);
@@ -5134,6 +5249,22 @@ async function startServer() {
   // 3c. The browser: what it is doing, and telling it to do something.
 
   /** Whether there is a browser at all, and whether a page is open in it. */
+  /* Taking a surface from the agent, and handing it back. While the person
+     holds one the agent does not use it, and goes on to other work. */
+  app.get("/api/sessions/:id/presence", (req: Request, res: Response) => {
+    if (!sessions.get(req.params.id)) return res.status(404).json({ error: "Session not found" });
+    res.json(presenceFor(req.params.id).view());
+  });
+  app.post("/api/sessions/:id/control", (req: Request, res: Response) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    const surface = String(req.body?.surface ?? "");
+    if (!["pdf", "app", "browser", "code"].includes(surface)) return res.status(400).json({ error: "surface is pdf, app, browser or code." });
+    presenceFor(session.id).hold(surface as Surface, req.body?.hold === true);
+    announcePresence(session.id);
+    res.json(presenceFor(session.id).view());
+  });
+
   app.get("/api/sessions/:id/browser", async (req: Request, res: Response) => {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
@@ -5301,7 +5432,7 @@ async function startServer() {
 
   // 6b. Live Browser Direct Interaction & Handoff
   const DRIVING =
-    "The agent is using the browser. Wait until it finishes or asks you, or stop it.";
+    "The agent is using the browser. Take control to use it yourself -- it will carry on with other work -- or stop it.";
 
   /** An answer to a question the agent asked. */
   app.post("/api/sessions/:id/ask/:askId", (req: Request, res: Response) => {
@@ -5592,6 +5723,7 @@ async function startServer() {
     const dx = Number(req.body?.dx ?? 0);
     const dy = Number(req.body?.dy ?? 0);
     try {
+      touchPresence(session.id, isPreview(req) ? "app" : "browser", "*", "scroll", "scrolled the page", { tell: false });
       await live.mouseWheel(dx, dy);
       res.json({ ok: true });
     } catch (err: any) {
@@ -5644,6 +5776,9 @@ async function startServer() {
 
     try {
       const button = req.body?.button === "right" ? "right" : req.body?.button === "middle" ? "middle" : "left";
+      // What the person is about to click, said to the agent as they do it.
+      const under = await describeOnPage(live, { x, y });
+      touchPresence(session.id, isPreview(req) ? "app" : "browser", "*", "click", `${req.body?.double ? "double-clicked" : "clicked"} ${under.what}`);
       const { editable, select } = await live.userClick(x, y, button, !!req.body?.double);
       // A dropdown answers with its choices: the app shows them itself.
       res.json({ ok: true, editable, select: select ?? null });
@@ -5669,6 +5804,7 @@ async function startServer() {
     }
 
     try {
+      touchPresence(session.id, isPreview(req) ? "app" : "browser", "*", "drag", "dragged on the page", { tell: false });
       const out = await live.userDrag(phase, x, y);
       res.json({ ...out, ok: true });
     } catch (err: any) {
@@ -5692,6 +5828,7 @@ async function startServer() {
     }
 
     try {
+      touchPresence(session.id, isPreview(req) ? "app" : "browser", "*", "choose", "picked an option from a menu", { tell: true });
       const out = await live.chooseOption(x, y, index);
       res.json({ ...out, ok: true });
     } catch (err: any) {
@@ -5708,6 +5845,11 @@ async function startServer() {
 
     const text = String(req.body?.text ?? "");
     try {
+      const into = await describeOnPage(live, null);
+      touchPresence(
+        session.id, isPreview(req) ? "app" : "browser", "*", "type",
+        into.secret ? "typed into a password field" : `typed ${JSON.stringify(text.length > 40 ? `${text.slice(0, 37)}...` : text)} into ${into.what}`,
+      );
       await live.keyboardType(text);
       res.json({ ok: true });
     } catch (err: any) {
@@ -5726,6 +5868,7 @@ async function startServer() {
     if (!key) return res.status(400).json({ error: "No key specified." });
 
     try {
+      touchPresence(session.id, isPreview(req) ? "app" : "browser", "*", "key", `pressed ${key}`, { tell: /^(Enter|Escape|Tab|Delete|Backspace)$/i.test(key) });
       await live.keyboardPress(key);
       res.json({ ok: true });
     } catch (err: any) {
@@ -5748,6 +5891,7 @@ async function startServer() {
     }
 
     try {
+      touchPresence(session.id, isPreview(req) ? "app" : "browser", "*", "navigate", `went to ${url.length > 80 ? `${url.slice(0, 77)}...` : url}`);
       const page = await live.goto(isPreview(req) ? localAddress(addressFor(url)) : url);
       res.json({ ok: true, url: page.url, title: page.title });
     } catch (err: any) {
@@ -6983,6 +7127,7 @@ async function startServer() {
       ws.send(JSON.stringify({ type: "preview", session: sessionId, state: previewState(session) }));
       // The PDF window, likewise.
       ws.send(JSON.stringify({ type: "pdfdesk", session: sessionId, state: deskState(sessionId) }));
+      ws.send(JSON.stringify({ type: "presence", session: sessionId, state: presenceFor(sessionId).view() }));
       if (openPreview?.opened) void openPreview.live.nudge();
 
       // Handle incoming messages

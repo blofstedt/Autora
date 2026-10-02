@@ -115,6 +115,14 @@ is a sub-project with its own dependencies (see below).
     Autora's own state dir are never shown; a folder over `MAX_TRACKED` files
     is not followed. `FileCell` types a card that has just arrived (a replay of
     code already written, off with the agent-cursor switch in `lib/agentCursor.ts`).
+  - `presence.ts`: working side by side. One record per chat of what the person
+    touches (`touchPresence` in `server.ts`, from the input routes), leases that
+    run out a few seconds after their last touch, and explicit control they take
+    and hand back (`POST /api/sessions/:id/control`). `heldFor` refuses an agent
+    call that would use a held surface -- not an error, so it never feeds the loop
+    watch or error budget -- and `note()` says what they did, once, at the next
+    round (or the next turn's note). `COLLABORATION` tells the agent how to behave.
+    Client: `lib/collab.ts` and the Take control / Hand back buttons.
   - `domdiff.ts` + `LiveBrowser.domMap/markAt/glideTo` (`browser.ts`): after code
     changes the preview's page is compared with how it was (matched by tag,
     words and class, never position) and the cursor -- drawn into the page, so

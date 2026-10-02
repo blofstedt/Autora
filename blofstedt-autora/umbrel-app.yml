@@ -125,6 +125,13 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
+  New: you and the agent can work in the same window at the same time. What
+  you click, type or press in the app window or the agent's browser is told to
+  the agent in a line a colleague would hear, and it answers in kind and carries
+  on without undoing it. While you are using a window the agent leaves it alone
+  and works on something else, and "Take control" in the app window, the PDF
+  window and the browser card takes it fully until you "Hand back". Held
+  actions are skipped, not counted as failures, and never stop the turn.
   New: you can watch the app being built. When the agent changes code, the
   app window's cursor glides to what changed on the page -- the new button, the
   rewritten heading -- and outlines it with a name. The agent can also test

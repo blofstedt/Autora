@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgentCursor } from "../lib/agentCursor";
+import { holdSurface, useCollab } from "../lib/collab";
 import { useDeskState } from "../lib/pdfdesk";
 import { IconDownload, IconFile, IconMaximize, IconMinimize, IconX } from "./Icons";
 
@@ -71,6 +72,8 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
      the person keeps, and never for someone who asked their system for less
      motion. Only ever a replay -- the file is already changed. */
   const [cursorOn, setCursorOn] = useAgentCursor();
+  const collab = useCollab();
+  const mine = collab.held.includes("pdf");
   const cursorRef = useRef(cursorOn);
   cursorRef.current = cursorOn;
   const played = useRef(0);
@@ -243,6 +246,14 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
             Versions · {versions.length}
           </button>
         )}
+        <button
+          className={`pdf-pill${mine ? " is-accept" : ""}`}
+          onClick={() => void holdSurface(sessionId, "pdf", !mine)}
+          aria-pressed={mine}
+          title={mine ? "Let the agent work on the PDF again" : "Work on the PDF yourself; the agent carries on with other work"}
+        >
+          {mine ? "Hand back" : "Take control"}
+        </button>
         <button
           className="pdf-pill"
           onClick={toggleCursor}
