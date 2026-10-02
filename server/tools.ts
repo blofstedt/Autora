@@ -120,6 +120,7 @@ export interface ToolSettings {
   widgets: { enabled: boolean };
   app: { enabled: boolean };
   pdf: { enabled: boolean };
+  office: { enabled: boolean };
 }
 
 export function toolSettings(): ToolSettings {
@@ -2560,7 +2561,7 @@ export function windowOff(name: string, settings: ToolSettings = toolSettings())
   if (name === "app_preview") return !settings.app.enabled;
   if (name.startsWith("pdf_")) return !settings.pdf.enabled;
   // Built by scripts/build-office.mjs; a server without the build does not offer tools that cannot work.
-  if (name.startsWith("office_")) return !officeDir();
+  if (name.startsWith("office_")) return !officeDir() || !settings.office.enabled;
   return false;
 }
 
@@ -5226,6 +5227,7 @@ export async function capabilityBriefing(): Promise<string> {
       "small interactive widget (2D canvas/SVG, or 3D with Three.js) and explain " +
       "in text alongside it. Not for plain facts, lists or anything a sentence answers."
     : offLine("The widget window"));
+  if (!windows.office.enabled) lines.push(offLine("The Office tools (Word, Excel and PowerPoint)"));
   lines.push(
     "- Your voice: always available. Tool: speak. It plays words aloud on the " +
       "person's page at once, in the voice chosen under Settings -> Voice. When you " +

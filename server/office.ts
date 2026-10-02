@@ -384,6 +384,33 @@ function renderSlides(d: Record<string, any>): string {
   return out.join("\n");
 }
 
+/**
+ * Where each element of a deck sits, in points from the slide's top-left, for pointing at one from a picture of the
+ * slide (server/officepages.ts). The ids are the ones office_read shows and office_edit takes.
+ */
+export async function slideElements(data: Buffer): Promise<{ page: number; id: string; type: string; name: string; box: [number, number, number, number]; text: string }[]> {
+  if (!officeDir()) return [];
+  const idle = { cancelled: () => false, onCancel: () => undefined } as unknown as OfficeContext;
+  return await withWork(async (work) => {
+    const p = path.join(work, "in.pptx");
+    fs.writeFileSync(p, data);
+    const run = await cli(["slides", "read", p, "--full"], work, idle);
+    if (run.env?.status !== "ok") return [];
+    const out: { page: number; id: string; type: string; name: string; box: [number, number, number, number]; text: string }[] = [];
+    for (const page of run.env.detail?.pages ?? []) {
+      for (const e of page.elements ?? []) {
+        if (!e.box || typeof e.id !== "string") continue;
+        const x = Number(e.box.x) / 12700, y = Number(e.box.y) / 12700;
+        out.push({
+          page: Number(page.index) + 1, id: e.id, type: String(e.type ?? "element"), name: String(e.name ?? ""),
+          box: [x, y, x + Number(e.box.cx) / 12700, y + Number(e.box.cy) / 12700], text: typeof e.text === "string" ? e.text : "",
+        });
+      }
+    }
+    return out;
+  });
+}
+
 async function readTool(args: Record<string, any>, ctx: OfficeContext): Promise<OfficeOutcome> {
   const { file, kind, inWindow } = input(args, ctx);
   sheetNeeds(kind);

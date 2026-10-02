@@ -48,6 +48,14 @@ const run = (name: string, args: Record<string, any>) => office.runOfficeTool(na
 
 console.log("office tools");
 
+await test("the Tools page can switch them off, and they are then not offered", async () => {
+  const tools = await import("../server/tools");
+  const on = tools.toolSettings();
+  assert.equal(tools.windowOff("office_read", on), false);
+  assert.equal(tools.windowOff("office_read", { ...on, office: { enabled: false } }), true);
+  assert.equal(tools.windowOff("pdf_read", { ...on, office: { enabled: false } }), false, "the PDF tools are a switch of their own");
+});
+
 await test("they are registered, held in planning only where they change something, and loaded on demand", () => {
   const family = toolload.FAMILIES.find((f) => f.id === "office")!;
   for (const n of ["office_guide", "office_read", "office_edit", "office_check", "office_look", "office_pdf", "office_create", "office_convert"]) assert.ok(family.match(n), n);

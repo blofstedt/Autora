@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { IconCode, IconFile, IconGlobe, IconSparkle } from "../Icons";
 
-type WindowKey = "widgets" | "browser" | "app" | "pdf";
+type WindowKey = "widgets" | "browser" | "app" | "pdf" | "office";
 
 type ToolsState = {
   config: Record<WindowKey, { enabled: boolean }>;
@@ -36,6 +36,13 @@ const WINDOWS: { key: WindowKey; name: string; icon: ReactNode; what: string; to
     icon: <IconFile size={18} />,
     what: "Writing reports as PDFs, reading, filling, signing, marking up, changing the words in, redacting, merging, splitting and shrinking PDFs, in a window beside the chat where you can move what it placed and add your own.",
     tools: "pdf_read, pdf_look, pdf_edit, pdf_compose, pdf_pages, pdf_redact, pdf_replace_text, pdf_compress",
+  },
+  {
+    key: "office",
+    name: "Word, Excel and PowerPoint",
+    icon: <IconFile size={18} />,
+    what: "Reading, writing, checking and converting Word, Excel and PowerPoint files, drawing their pages, and a window beside the chat where each opens in its own editor (on a phone, as pictures of its pages you can point at).",
+    tools: "office_*",
   },
 ];
 

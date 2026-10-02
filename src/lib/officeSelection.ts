@@ -14,6 +14,10 @@ export type OfficePick = {
   text: string | null;
   /** Where they sit on the page, in points from its top-left. */
   box: [number, number, number, number] | null;
+  /** Which element (a deck's, by the id office_edit takes) or cell it is, when the document could say. */
+  ref?: string | null;
+  /** What to call a thing with no words of its own (a picture, a shape). */
+  label?: string | null;
 };
 
 let pick: OfficePick | null = null;
@@ -38,13 +42,15 @@ const UNIT = { docx: "page", pptx: "slide", xlsx: "printed page" } as const;
 /** What the chip says. */
 export function pickLabel(p: OfficePick): string {
   const where = `${UNIT[p.kind]} ${p.page}`;
-  return p.text ? `“${p.text.length > 40 ? `${p.text.slice(0, 40)}…` : p.text}”` : where;
+  if (p.text) return `“${p.text.length > 40 ? `${p.text.slice(0, 40)}…` : p.text}”`;
+  return p.label ?? where;
 }
 
 /** The sentence that goes in front of the message. */
 export function pickSentence(p: OfficePick): string {
   const where = `${UNIT[p.kind]} ${p.page} of ${p.file}`;
-  return p.text
-    ? `(Pointing at “${p.text.length > 200 ? `${p.text.slice(0, 200)}…` : p.text}” on ${where}.)`
-    : `(Pointing at ${where}.)`;
+  const what = p.ref ? (p.kind === "xlsx" ? ` (cell ${p.ref})` : ` (element ${p.ref})`) : "";
+  if (p.text) return `(Pointing at “${p.text.length > 200 ? `${p.text.slice(0, 200)}…` : p.text}”${what} on ${where}.)`;
+  if (p.label) return `(Pointing at the ${p.label}${what} on ${where}.)`;
+  return `(Pointing at ${where}.)`;
 }

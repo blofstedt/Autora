@@ -26,7 +26,13 @@ const validSession = (id: string) => /^[A-Za-z0-9_-]{1,80}$/.test(id);
 
 export type PageMeta = { w: number; h: number };
 export type Manifest = { hash: string; kind: OfficeKind; pages: PageMeta[]; total: number };
-export type PageWords = { s: string; box: [number, number, number, number] }[];
+/** A run of text and where it sits; `ref` says which cell or element it belongs to, when that is known. */
+export type PageWords = { s: string; box: [number, number, number, number]; ref?: string }[];
+/** A thing on the page that can be pointed at without words (a picture, a shape): its box and what to call it. */
+export type PageArea = { box: [number, number, number, number]; ref: string; label: string };
+export type PageInfo = { words: PageWords; areas: PageArea[] };
+/** Knows the document's own structure, to name what a tap landed on. */
+export type Locator = { page(n: number, words: PageWords): PageInfo };
 
 type Job = { hash: string; promise: Promise<void>; error: string | null; done: boolean };
 const jobs = new Map<string, Job>();
@@ -44,14 +50,14 @@ function readManifest(session: string, hash: string): Manifest | null {
 }
 
 /** The pages of this document if they are drawn; otherwise start drawing them. */
-export function pagesFor(session: string, kind: OfficeKind, name: string, data: Buffer): { status: "ready"; manifest: Manifest } | { status: "working"; hash: string } | { status: "failed"; hash: string; error: string } {
+export function pagesFor(session: string, kind: OfficeKind, name: string, data: Buffer, locate?: () => Promise<Locator | null>): { status: "ready"; manifest: Manifest } | { status: "working"; hash: string } | { status: "failed"; hash: string; error: string } {
   if (!validSession(session)) return { status: "failed", hash: "", error: "No such session." };
   const hash = hashOf(kind, data);
   const have = readManifest(session, hash);
   if (have) return { status: "ready", manifest: have };
   const job = jobs.get(`${session}/${hash}`);
   if (job?.error) return { status: "failed", hash, error: job.error };
-  if (!job) start(session, hash, kind, name, data);
+  if (!job) start(session, hash, kind, name, data, locate);
   return { status: "working", hash };
 }
 
@@ -69,11 +75,13 @@ export function latestPages(session: string): Manifest | null {
   }
 }
 
-function start(session: string, hash: string, kind: OfficeKind, name: string, data: Buffer) {
+function start(session: string, hash: string, kind: OfficeKind, name: string, data: Buffer, locate?: () => Promise<Locator | null>) {
   const key = `${session}/${hash}`;
   const job: Job = { hash, error: null, done: false, promise: Promise.resolve() };
   job.promise = (async () => {
     const pdf = await renderToPdf(kind, data, name);
+    // What is where in the document itself; without it a tap still finds the words.
+    const locator = await (locate?.() ?? Promise.resolve(null)).catch(() => null);
     const out = dirOf(session, hash);
     const tmp = `${out}.part`;
     fs.rmSync(tmp, { recursive: true, force: true });
@@ -92,7 +100,8 @@ function start(session: string, hash: string, kind: OfficeKind, name: string, da
           .filter((t) => t.box && t.s.trim())
           // The reader's boxes are x, y, width, height from the page's top-left; a tap is tested against corners.
           .map((t) => { const [x, y, w, h] = t.box as number[]; return { s: t.s, box: [x, y, x + w, y + h] as [number, number, number, number] }; });
-        fs.writeFileSync(path.join(tmp, `${i}.json`), JSON.stringify(words), { mode: 0o600 });
+        const info: PageInfo = locator ? locator.page(i, words) : { words, areas: [] };
+        fs.writeFileSync(path.join(tmp, `${i}.json`), JSON.stringify(info), { mode: 0o600 });
         metas.push({ w: size.width, h: size.height });
       }
     });

@@ -177,6 +177,8 @@ export interface ToolSettings {
   widgets: { enabled: boolean };
   app: { enabled: boolean };
   pdf: { enabled: boolean };
+  /** Word, Excel and PowerPoint: the tools and the window beside the chat. */
+  office: { enabled: boolean };
 }
 
 export interface UsageEntry {
@@ -339,6 +341,7 @@ export function defaultTools(): ToolSettings {
     widgets: { enabled: true },
     app: { enabled: true },
     pdf: { enabled: true },
+    office: { enabled: true },
   };
 }
 
@@ -383,7 +386,7 @@ export function mergeTools(into: ToolSettings, patch: any): ToolSettings {
     into[group].enabled = bool(given.enabled, into[group].enabled);
     into[group].approval = mode(given.approval, into[group].approval);
   }
-  for (const key of ["widgets", "app", "pdf"] as const) {
+  for (const key of ["widgets", "app", "pdf", "office"] as const) {
     const given = patch[key];
     if (given && typeof given === "object") into[key].enabled = bool(given.enabled, into[key].enabled);
   }

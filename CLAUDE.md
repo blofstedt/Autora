@@ -82,7 +82,8 @@ is a sub-project with its own dependencies (see below).
   came from so the file shows exactly what was drawn until the person changes
   it; the file is the base pages with every object flattened on, rewritten
   on every change; the person's changes are told to the agent once),
-  `officedesk.ts` + `src/components/OfficeWindow.tsx` (the Office window: the
+  `officedesk.ts` + `src/components/OfficeWindow.tsx` (the Office window, switched on and off with the other windows on the Tools page --
+  `office` in `ToolSettings`: the
   Word, PowerPoint or Excel document the agent works on, open beside the chat in
   GenOffice's own editor for it, built by `scripts/build-office.mjs` into
   `dist/office/web/{docs,slides,sheets}` and served at `/office-app` with a sandbox
@@ -98,8 +99,10 @@ is a sub-project with its own dependencies (see below).
   being the window's `loadRev` so a replaced page cannot reach the new one; the
   engine saves to `<session>.work.<ext>`, which is polled every 800 ms
   (`checkEngineFile`) and becomes the document (`personSaved`); the agent's edit is
-  written there and the frame is remounted (its key follows `loadRev`), which opens
-  the new file. `settle()` runs before every Office tool so the person's last edit has
+  written there and handed to the open editor where it stands (`reloadLive`: a deck is read
+  again and the page told `slides:deck-changed`, which keeps the slide it was on; a
+  workbook is queued again and nudged to open it), and only if that fails is the frame
+  remounted (its key follows `loadRev`). `settle()` runs before every Office tool so the person's last edit has
   reached the file. The person's changes are told to the agent once in words made by
   comparing text (`describeChange` for paragraphs and slide text, `describeCells` for
   cells). One surface, `"office"`, for presence and Take control (`touched`, held), as
@@ -111,7 +114,10 @@ is a sub-project with its own dependencies (see below).
   a chip beside the message box, and `send` in `App.tsx` puts "(Pointing at ... on slide 2
   of pitch.pptx.)" in front of what they type, which is how a phone edits; "Full editor"
   is one button away. `renderToPdf` also keeps the last six PDFs by hash, so the agent
-  and the phone share one layout), `officerender.ts` (the same editors headless, for `office_look`
+  and the phone share one layout. A tap names what it landed on: a deck's element by the
+  id `office_edit` takes (`slideElements` in `office.ts` reads their boxes; shapes and
+  pictures with no words are pointed at by their box), a workbook's cell when the value
+  is in only one; `locatorFor` in `officedesk.ts`), `officerender.ts` (the same editors headless, for `office_look`
   pictures and `office_pdf`; PDFs always go to Autora's own PDF window),
   `notebooks.ts` (artifacts grouped by purpose with notes between them,
   stored as `notebooks.json`; retention keeps whatever a notebook holds or
@@ -307,7 +313,10 @@ is a sub-project with its own dependencies (see below).
   bundles pdf.js's legacy build and runs its worker as a classic script from a
   blob (a module worker cannot start in an origin-less frame), and fetches
   nothing from a CDN: Autora may have no internet.
-- `src/`: the React client. `App.tsx` holds the session and stream;
+- `src/`: the React client. `App.tsx` holds the session and stream; on a desktop the
+  menu, the conversation and the window beside it are three panes whose seams drag
+  (`components/ResizeHandle.tsx`, widths and "menu folded away" kept per browser by
+  `lib/panes.ts`, applied as `--rail-w` / `--chat-w`);
   `lib/derive.ts` folds the event log into what the thread shows;
   `components/` renders it.
 - Keeping long threads fast (measured: a 150-turn thread went from 100% CPU

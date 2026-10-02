@@ -241,6 +241,19 @@ async function main() {
       await page.getByRole("button", { name: "Hand back" }).click();
     });
 
+    await test("the printed pages of a workbook say which cell a value is, when it is only in one", async () => {
+      let info: any = null;
+      await until("the pages", async () => {
+        const r = (await app.api("POST", `/api/officedesk/${s}/pages`)).body;
+        if (r.status !== "ready") return false;
+        info = await (await fetch(`${app.base}/api/officedesk/${s}/pages/${r.hash}/1.json`)).json();
+        return true;
+      }, 120_000);
+      const words: { s: string; ref?: string }[] = info.words;
+      const seven = words.find((w) => w.s.trim() === "7");
+      assert.ok(seven?.ref && /B2$/.test(seven.ref), JSON.stringify(words.slice(0, 12)));
+    });
+
     await test("File -> Export PDF for a workbook opens the PDF in the PDF editor", async () => {
       const r = await fetch(`${app.base}/api/officedesk/${s}/pdf`, { method: "POST" });
       assert.equal(r.status, 200, await r.text());

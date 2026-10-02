@@ -15,7 +15,10 @@ type Reply = {
   hash?: string; pages?: Meta[]; total?: number; error?: string;
   stale?: { hash: string; pages: Meta[]; total: number };
 };
-type Words = { s: string; box: [number, number, number, number] }[];
+type Box = [number, number, number, number];
+type Words = { s: string; box: Box; ref?: string }[];
+type Area = { box: Box; ref: string; label: string };
+type Info = { words: Words; areas: Area[] };
 
 const ZOOMS = [1, 1.6, 2.4];
 
@@ -23,7 +26,7 @@ export function OfficePages({ sessionId, name, rev, onEdit }: { sessionId: strin
   const base = `/api/officedesk/${encodeURIComponent(sessionId)}`;
   const [reply, setReply] = useState<Reply | null>(null);
   const [zoom, setZoom] = useState(0);
-  const words = useRef(new Map<string, Promise<Words>>());
+  const words = useRef(new Map<string, Promise<Info>>());
   const pick = useOfficePick();
 
   // Ask until the pages are drawn; a change to the document (rev) asks again after a moment.
@@ -53,7 +56,11 @@ export function OfficePages({ sessionId, name, rev, onEdit }: { sessionId: strin
     const key = `${hash}:${n}`;
     let got = words.current.get(key);
     if (!got) {
-      got = fetch(`${base}/pages/${hash}/${n}.json`).then((r) => (r.ok ? r.json() : [])).catch(() => []) as Promise<Words>;
+      // Older pictures kept a plain list of words; newer ones also say which cell or element is where.
+      got = fetch(`${base}/pages/${hash}/${n}.json`)
+        .then((r) => (r.ok ? r.json() : []))
+        .then((v: unknown): Info => (Array.isArray(v) ? { words: v as Words, areas: [] } : { words: (v as Info).words ?? [], areas: (v as Info).areas ?? [] }))
+        .catch((): Info => ({ words: [], areas: [] }));
       words.current.set(key, got);
     }
     return got;
@@ -63,11 +70,11 @@ export function OfficePages({ sessionId, name, rev, onEdit }: { sessionId: strin
     const r = e.currentTarget.getBoundingClientRect();
     const x = ((e.clientX - r.left) / r.width) * meta.w;
     const y = ((e.clientY - r.top) / r.height) * meta.h;
-    const items = await wordsOf(hash, n);
+    const info = await wordsOf(hash, n);
     // The words under the finger; a finger is not a pixel, so the nearest within a thumb's width will do.
     let best: Words[number] | null = null;
     let bestD = Infinity;
-    for (const it of items) {
+    for (const it of info.words) {
       const [x0, y0, x1, y1] = it.box;
       const dx = x < x0 ? x0 - x : x > x1 ? x - x1 : 0;
       const dy = y < y0 ? y0 - y : y > y1 ? y - y1 : 0;
@@ -75,9 +82,14 @@ export function OfficePages({ sessionId, name, rev, onEdit }: { sessionId: strin
       if (d < bestD) { best = it; bestD = d; }
     }
     const hit = best && bestD <= 24 ? best : null;
+    // No words there: a picture or a shape, the smallest thing the finger is inside.
+    const thing = hit ? null : info.areas
+      .filter((a) => x >= a.box[0] && x <= a.box[2] && y >= a.box[1] && y <= a.box[3])
+      .sort((a, b) => (a.box[2] - a.box[0]) * (a.box[3] - a.box[1]) - (b.box[2] - b.box[0]) * (b.box[3] - b.box[1]))[0] ?? null;
     setOfficePick({
       session: sessionId, file: name, kind: reply?.kind ?? "docx", page: n,
-      text: hit ? hit.s.trim() : null, box: hit ? hit.box : null,
+      text: hit ? hit.s.trim() : null, box: hit ? hit.box : thing ? thing.box : null,
+      ref: hit ? hit.ref ?? null : thing ? thing.ref : null, label: thing ? thing.label : null,
     });
   }, [name, reply?.kind, sessionId, wordsOf]);
 

@@ -30,7 +30,8 @@ import zlib from "node:zlib";
 import express, { type Express, type Request, type Response } from "express";
 import { MAX_ARTIFACT_BYTES, getArtifact, saveArtifact } from "./artifacts";
 import { OfficeHost, hostBuilt, wire } from "./officehost";
-import { dropPages, latestPages, pageFile, pagesFor } from "./officepages";
+import { slideElements } from "./office";
+import { dropPages, latestPages, pageFile, pagesFor, type Locator } from "./officepages";
 import { stateDir } from "./state";
 
 export const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -334,6 +335,51 @@ export function describeCells(before: Map<string, string>, after: Map<string, st
   const list = (verb: string, items: string[]) => (items.length ? `${verb} ${items.slice(0, 5).join(", ")}${items.length > 5 ? ` and ${items.length - 5} more` : ""}` : "");
   const out = [list("changed", changed), list("filled in", added), list("cleared", cleared)].filter(Boolean);
   return out.length ? out : ["changed the formatting or the structure"];
+}
+
+/**
+ * What a tap on a page of pictures can be told about the document it came from: a deck's elements (by the ids
+ * office_edit takes), a workbook's cells (when the tapped value is in only one).
+ */
+async function locatorFor(kind: OfficeKind, data: Buffer): Promise<Locator | null> {
+  if (kind === "pptx") {
+    const elements = await slideElements(data);
+    if (elements.length === 0) return null;
+    return {
+      page(n, words) {
+        const here = elements.filter((e) => e.page === n);
+        const area = (x: number, y: number) => here
+          .filter((e) => x >= e.box[0] && x <= e.box[2] && y >= e.box[1] && y <= e.box[3])
+          .sort((a, b) => (a.box[2] - a.box[0]) * (a.box[3] - a.box[1]) - (b.box[2] - b.box[0]) * (b.box[3] - b.box[1]))[0];
+        return {
+          words: words.map((w) => {
+            const e = area((w.box[0] + w.box[2]) / 2, (w.box[1] + w.box[3]) / 2);
+            return e ? { ...w, ref: `${e.id}` } : w;
+          }),
+          areas: here.map((e) => ({ box: e.box, ref: e.id, label: e.text ? `${e.type} “${e.text.slice(0, 40)}”` : `${e.type}${e.name ? ` “${e.name}”` : ""}` })),
+        };
+      },
+    };
+  }
+  if (kind === "xlsx") {
+    const cells = xlsxCells(data);
+    if (!cells) return null;
+    // A value shown on the page is a cell's value; named only when it is in just one cell.
+    const byValue = new Map<string, string[]>();
+    for (const [ref, text] of cells) {
+      const shown = text.startsWith("=") ? /\(([^)]*)\)$/.exec(text)?.[1] ?? "" : text;
+      if (!shown) continue;
+      const list = byValue.get(shown.trim()) ?? [];
+      list.push(ref);
+      byValue.set(shown.trim(), list);
+    }
+    return {
+      page(_n, words) {
+        return { words: words.map((w) => { const refs = byValue.get(w.s.trim()); return refs && refs.length === 1 ? { ...w, ref: refs[0] } : w; }), areas: [] };
+      },
+    };
+  }
+  return null;
 }
 
 /** What the person did between two versions of the file, whatever the kind. */
@@ -971,7 +1017,7 @@ export function officeRoutes(app: Express, opts: { exists: (session: string) => 
     if (!desk) return res.status(404).json({ error: "There is no document open in the window." });
     await settleEngine(id);
     const now = load(id) ?? desk;
-    const got = pagesFor(id, now.kind, now.name, now.data);
+    const got = pagesFor(id, now.kind, now.name, now.data, () => locatorFor(now.kind, now.data));
     const stale = got.status === "ready" ? null : latestPages(id);
     res.json({
       kind: now.kind, name: now.name, status: got.status,

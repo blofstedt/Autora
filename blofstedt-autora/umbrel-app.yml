@@ -133,6 +133,9 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
+  New: Word, Excel and PowerPoint can be switched off on the Tools page. Tapping a slide on a phone
+  now names the element (or a workbook's cell) so the agent knows exactly which one you mean. The
+  Excel editor is a third smaller to load (it no longer carries its translations).
   New: on a desktop, drag the seams between the menu, the conversation and the window beside it to
   size them (double-click a seam to reset it), and fold the menu away to the far left; both are
   remembered. When the agent changes a deck or workbook you have open, the editor updates where

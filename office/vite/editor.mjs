@@ -96,6 +96,35 @@ function autoraPage() {
   };
 }
 
+/**
+ * The editors speak English here (the shim answers getLanguage with "en"), so the translations into the other
+ * languages are weight: each app carries its strings in ~19 languages, and Univer (Excel) its own packs in as many for
+ * every one of its plugins -- most of a 21 MB page. English and the source language (Chinese, which the strings fall
+ * back to) stay; the rest are empty.
+ */
+const OTHER_LANGUAGES = new Set(["ja", "ko", "fr", "de", "es", "th", "id", "ru", "ar", "pt", "it", "pl", "cs", "nl", "ms", "he", "hi", "zh-TW", "vi", "tr", "sv", "uk"]);
+function slimLanguages() {
+  return {
+    name: "autora-slim-languages",
+    enforce: "pre",
+    resolveId(id) {
+      // Univer's packs: .../locales/ja-JP and so on; en-US stays.
+      const m = /^@univerjs\/[\w-]+\/locales\/([\w-]+)$/.exec(id);
+      if (m && m[1] !== "en-US") return "\0autora-empty-locale";
+      return null;
+    },
+    load(id) {
+      if (id === "\0autora-empty-locale") return "export default {}";
+      const file = id.split("?")[0];
+      const m = /\/i18n\/(?:[\w-]+\/)*([\w-]+)\.ts$/.exec(file);
+      if (!m || !OTHER_LANGUAGES.has(m[1])) return null;
+      // The same exports, with nothing in them: what is missing falls back to English.
+      const names = [...fs.readFileSync(file, "utf8").matchAll(/export const (\w+)/g)].map((x) => x[1]);
+      return names.length ? names.map((n) => `export const ${n} = {}`).join("\n") : null;
+    },
+  };
+}
+
 /** The editor as one page, its fonts listed for the host to supply. */
 function singlePage() {
   return {
@@ -171,7 +200,7 @@ function singlePage() {
 export default defineConfig({
   root,
   base: "./",
-  plugins: [react(), autoraPage(), singlePage()],
+  plugins: [react(), slimLanguages(), autoraPage(), singlePage()],
   resolve: { alias },
   worker: { format: "iife" },
   build: {
