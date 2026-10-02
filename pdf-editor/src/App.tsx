@@ -78,6 +78,7 @@ import Toolbar, { ToolMode, StampType, ShapeType } from "./components/Toolbar";
 import LayerControl from "./components/LayerControl";
 import HistoryControl from "./components/HistoryControl";
 import PurgeOverlay from "./components/PurgeOverlay";
+import { AgentCues, type Cue } from "./AgentCues";
 import PdfMergeModal from "./components/PdfMergeModal";
 import PdfCompressModal from "./components/PdfCompressModal";
 import PdfSearch from "./components/PdfSearch";
@@ -833,6 +834,8 @@ function MainPdfEditor() {
   /** Autora asks to show one of the agent's changes; and which objects wait for a decision. */
   const [focusRequest, setFocusRequest] = useState<{ id: string | null; page: number; at: number } | null>(null);
   const [pendingIds, setPendingIds] = useState<string[]>([]);
+  /** Where the agent just worked, to be played over the page (see AgentCues). */
+  const [cues, setCues] = useState<{ seq: number; items: Cue[] } | null>(null);
 
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
@@ -856,6 +859,18 @@ function MainPdfEditor() {
       } else if (msg.type === "autora:focus") {
         // The agent's change the person is looking at: go to its page and select it.
         setFocusRequest({ id: typeof msg.id === "string" ? msg.id : null, page: Number(msg.page) || 1, at: Date.now() });
+      } else if (msg.type === "autora:cues" && Array.isArray(msg.cues)) {
+        const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+        const items: Cue[] = [];
+        for (const c of msg.cues.slice(0, 6)) {
+          const page = num(c?.page), x = num(c?.x), y = num(c?.y), w = num(c?.w), h = num(c?.h);
+          if (page === null || x === null || y === null || w === null || h === null || page < 1 || w <= 0 || h <= 0) continue;
+          items.push({ page, x, y, w, h, from: String(c.from ?? "").slice(0, 200), to: String(c.to ?? "").slice(0, 200) });
+        }
+        if (items.length > 0) {
+          setCues({ seq: Number(msg.seq) || Date.now(), items });
+          setFocusRequest({ id: null, page: items[0].page, at: Date.now() });
+        }
       } else if (msg.type === "autora:pending" && Array.isArray(msg.ids)) {
         setPendingIds(msg.ids.filter((i: unknown): i is string => typeof i === "string" && /^[\w.-]{1,80}$/.test(i)));
       } else if (msg.type === "autora:items" && Array.isArray(msg.items)) {
@@ -5599,6 +5614,15 @@ function MainPdfEditor() {
                       : "cursor-default"
                   }`}
                 >
+                  {cues && (
+                    <AgentCues
+                      cues={cues.items}
+                      seq={cues.seq}
+                      page={currentPage}
+                      scale={scaleMultiplier}
+                      onDone={() => setCues(null)}
+                    />
+                  )}
                   {/* Sensitive pattern glow highlights for smart targeting */}
                   {toolMode === "redact" &&
                     sensitiveHighlights.map((det) => {

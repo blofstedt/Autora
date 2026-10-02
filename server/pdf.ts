@@ -333,7 +333,7 @@ function outputName(input: Input, output: unknown, suffix: string): string {
   return cleanName(`${base}-${suffix}.pdf`);
 }
 
-function deliver(ctx: PdfContext, name: string, data: Buffer, note: string, input?: Input): Saved {
+function deliver(ctx: PdfContext, name: string, data: Buffer, note: string, input?: Input, cues?: Cue[]): Saved {
   if (data.byteLength > MAX_ARTIFACT_BYTES) {
     throw new Problem(`The result is ${formatSize(data.byteLength)}, over the ${formatSize(MAX_ARTIFACT_BYTES)} an artifact may be. Nothing was saved.`);
   }
@@ -349,7 +349,7 @@ function deliver(ctx: PdfContext, name: string, data: Buffer, note: string, inpu
   // file being worked on.
   if (input && ctx.desk && isDeskFile(input, ctx)) {
     const source = ctx.desk.current()?.source ?? (input.artifact?.origin === "user" ? input.artifact.id : null);
-    ctx.desk.open({ name: art.name, base: data, items: [], working: art.id, source, outName: art.name, review: { label: note, diff: false } });
+    ctx.desk.open({ name: art.name, base: data, items: [], working: art.id, source, outName: art.name, review: { label: note, diff: false }, ...(cues?.length ? { cues } : {}) });
   }
   return { art, replaced };
 }
@@ -1281,6 +1281,22 @@ export type DeskSnapshot = {
   outline?: OutlineEntry[] | null;
 };
 
+/**
+ * Where the agent just worked on a page, for the window to show it: a cursor
+ * arriving, the old words struck, the new ones typed. Positions are points
+ * from the page's top-left, as everywhere else. Purely presentation: the file
+ * is already changed when this is sent.
+ */
+export interface Cue {
+  page: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  from: string;
+  to: string;
+}
+
 /** What the PDF tools may do with the window of the session they run in. */
 export interface DeskHooks {
   current(): DeskSnapshot | null;
@@ -1289,6 +1305,8 @@ export interface DeskHooks {
     outName: string;
     /** From the agent changing the file: what to call this version, and what to put up for review. */
     review?: { label: string; baseNote?: string | null; diff?: boolean };
+    /** Where the agent worked, played in the window as the new file loads. */
+    cues?: Cue[];
   }): void;
   /** Bring the window back if the person put it away: the agent is working on its file. */
   show(): void;
@@ -2578,6 +2596,17 @@ async function redactTool(args: Record<string, any>, ctx: PdfContext): Promise<P
 
 // -- pdf_replace_text --
 
+/** At most this many places are shown being edited in one go. */
+const MAX_CUES = 6;
+
+/** Where some words are drawn on a page: the first box of each place they appear. */
+async function locateText(view: PdfView, pageIndex: number, find: string, ignoreCase: boolean): Promise<Rect[]> {
+  const [page] = await view.text(pageIndex + 1, pageIndex + 1, true);
+  const source = find.split(/\s+/).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s*");
+  const re = new RegExp(source, ignoreCase ? "gi" : "g");
+  return findOnPage(page, [{ label: find, re }]).map((h) => h.boxes[0]);
+}
+
 /** Change the words a PDF already has. See ./pdftext.ts for how. */
 async function replaceTextTool(args: Record<string, any>, ctx: PdfContext): Promise<PdfOutcome> {
   const { input } = onDesk(readPdf(args.file, ctx.cwd), ctx);
@@ -2604,18 +2633,22 @@ async function replaceTextTool(args: Record<string, any>, ctx: PdfContext): Prom
     const totals = new Map<string, { with: string; matches: number; how: Set<string>; pages: number[] }>();
     const notes = new Set<string>();
     const touched: number[] = [];
+    const cues: Cue[] = [];
     for (const i of scope) {
       if (ctx.cancelled()) throw new Problem("Stopped before it was finished; nothing was saved.");
-      const locate = async (find: string, ignoreCase: boolean) => {
-        const [page] = await view.text(i + 1, i + 1, true);
-        const source = find.split(/\s+/).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s*");
-        const re = new RegExp(source, ignoreCase ? "gi" : "g");
-        return findOnPage(page, [{ label: find, re }]).map((h) => h.boxes[0]);
-      };
+      const locate = (find: string, ignoreCase: boolean) => locateText(view, i, find, ignoreCase);
       const done = await replaceOnPage(doc, doc.getPage(i), edits, locate);
       done.notes.forEach((n) => notes.add(`Page ${i + 1}: ${n}`));
       if (done.changed.length === 0) continue;
       touched.push(i);
+      // Where each change was, for the window to show it being made. The
+      // positions are of the old words, which are where the new ones now are.
+      for (const c of done.changed) {
+        if (cues.length >= MAX_CUES) break;
+        for (const box of (await locateText(view, i, c.find, edits.find((e) => e.find === c.find)?.ignoreCase === true)).slice(0, 3)) {
+          if (cues.length < MAX_CUES) cues.push({ page: i + 1, x: box.x, y: box.y, w: box.w, h: box.h, from: c.find, to: c.with });
+        }
+      }
       for (const c of done.changed) {
         const t = totals.get(c.find) ?? { with: c.with, matches: 0, how: new Set<string>(), pages: [] };
         t.matches += c.matches;
@@ -2648,7 +2681,7 @@ async function replaceTextTool(args: Record<string, any>, ctx: PdfContext): Prom
     }
 
     const bytes = await saveDoc(doc);
-    const saved = deliver(ctx, outputName(input, args.output, "edited"), bytes, `Changed text in ${input.name}`, input);
+    const saved = deliver(ctx, outputName(input, args.output, "edited"), bytes, `Changed text in ${input.name}`, input, cues);
     const lines = [...totals.entries()].map(([find, t]) =>
       `${JSON.stringify(find)} -> ${JSON.stringify(t.with)}: ${t.matches} change${t.matches === 1 ? "" : "s"} on page${t.pages.length === 1 ? "" : "s"} ${rangeText([...new Set(t.pages)].map((p) => p - 1))}` +
       ` (${[...t.how].join(" and ")})`);

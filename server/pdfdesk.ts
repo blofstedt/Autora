@@ -26,7 +26,7 @@ import path from "node:path";
 import express, { type Express, type Request, type Response } from "express";
 import { getArtifact, saveArtifact, MAX_ARTIFACT_BYTES } from "./artifacts";
 import { outlineLines } from "./compose";
-import { flattenDesk, type DeskHooks, type DeskItem, type DeskSnapshot } from "./pdf";
+import { flattenDesk, type Cue, type DeskHooks, type DeskItem, type DeskSnapshot } from "./pdf";
 import { stateDir } from "./state";
 
 type Desk = DeskSnapshot & {
@@ -50,6 +50,10 @@ type Desk = DeskSnapshot & {
   vseq: number;
   /** The person changed something since the last version was kept. */
   dirty: boolean;
+  /** Where the agent last worked, for the window to play; not kept on disk. */
+  cues?: Cue[];
+  /** Goes up each time there are cues to play, so each plays once. */
+  cueSeq?: number;
 };
 
 /** One change by the agent, up for review in the window. */
@@ -235,6 +239,7 @@ export function deskState(session: string) {
   return {
     open: desk.open, name: desk.name, working: desk.working, baseRev: desk.baseRev, rev: desk.rev,
     items: desk.items, since: desk.since, problem: desk.problem,
+    cues: desk.cues, cueSeq: desk.cueSeq,
     marks: desk.marks.map(({ before: _before, ...m }) => m),
     versions: desk.versions.map(({ items: _items, ...v }) => v),
   };
@@ -288,7 +293,7 @@ export function deskHooks(session: string): DeskHooks {
       const sameFile = was && was.working !== null && was.working === next.working;
       // The same document carried on, or another one that replaces it.
       const carried = Boolean(was && (sameFile || was.name === next.name || (was.source !== null && was.source === next.source)));
-      const { review, ...snap } = next;
+      const { review, cues, ...snap } = next;
       if (was && !carried) dropVersions(session);
       const desk: Desk = {
         ...snap,
@@ -302,6 +307,8 @@ export function deskHooks(session: string): DeskHooks {
         versions: carried && was ? was.versions : [],
         vseq: carried && was ? was.vseq : 0,
         dirty: false,
+        cues: cues?.length ? cues : undefined,
+        cueSeq: (was?.cueSeq ?? 0) + (cues?.length ? 1 : 0),
       };
       if (was && carried) {
         // What the person did so far is kept as a version before the agent's change goes on top.

@@ -10,6 +10,9 @@ export type DeskObject = { id: string; type: string; pageNumber: number; [key: s
 /** One change by the agent, waiting for the person to accept or decline it. */
 export type DeskMark = { id: string; kind: "add" | "edit" | "remove" | "page"; itemId?: string; page: number; label: string };
 
+/** Where the agent just worked on a page, to be played in the window. */
+export type DeskCue = { page: number; x: number; y: number; w: number; h: number; from: string; to: string };
+
 /** An earlier state of the file. */
 export type DeskVersion = { n: number; label: string; at: number; by: "agent" | "person"; name: string };
 
@@ -25,6 +28,9 @@ export type DeskState = {
   problem?: string | null;
   marks?: DeskMark[];
   versions?: DeskVersion[];
+  /** The agent's last edits, and a number that goes up when there are new ones to play. */
+  cues?: DeskCue[];
+  cueSeq?: number;
 };
 
 const CLOSED: DeskState = { open: false };

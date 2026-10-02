@@ -66,6 +66,30 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
     frame.current?.contentWindow?.postMessage(msg, "*", transfer ?? []);
   }, []);
 
+  /* The agent's cursor: where it just worked, replayed over the page. A choice
+     the person keeps, and never for someone who asked their system for less
+     motion. Only ever a replay -- the file is already changed. */
+  const [cursorOn, setCursorOn] = useState(() => {
+    try { return localStorage.getItem("autora.agentCursor") !== "off"; } catch { return true; }
+  });
+  const cursorRef = useRef(cursorOn);
+  cursorRef.current = cursorOn;
+  const played = useRef(0);
+  const playCues = useCallback(() => {
+    const d = deskRef.current;
+    if (!d.cueSeq || d.cueSeq === played.current) return;
+    played.current = d.cueSeq;
+    if (!cursorRef.current || !d.cues?.length) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    post({ type: "autora:cues", seq: d.cueSeq, cues: d.cues });
+  }, [post]);
+  const toggleCursor = useCallback(() => {
+    setCursorOn((on) => {
+      try { localStorage.setItem("autora.agentCursor", on ? "off" : "on"); } catch { /* a private window */ }
+      return !on;
+    });
+  }, []);
+
   const load = useCallback(async () => {
     const now = deskRef.current;
     const baseRev = now.baseRev ?? 0;
@@ -79,11 +103,12 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
       shown.current = { baseRev, name: latest.name ?? "" };
       post({ type: "autora:load", bytes, name: latest.name, items: latest.items ?? [], baseRev, keepPage }, [bytes]);
       post({ type: "autora:pending", ids: pending.current });
+      playCues();
       setTrouble(null);
     } catch (err: any) {
       setTrouble(`The PDF could not be loaded: ${err?.message ?? err}`);
     }
-  }, [post, sessionId]);
+  }, [post, sessionId, playCues]);
 
   const send = useCallback(async (what: "changes" | "pages", body: unknown) => {
     try {
@@ -136,6 +161,11 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
     }
     void load();
   }, [desk.baseRev, load]);
+
+  // Cues that arrive without new pages (the file was the same): play them now.
+  useEffect(() => {
+    if (ready.current && desk.baseRev === shown.current.baseRev) playCues();
+  }, [desk.cueSeq, desk.baseRev, playCues]);
 
   // New objects on the same pages: the agent placed something, or the server echoed the person.
   useEffect(() => {
@@ -217,6 +247,14 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
             Versions · {versions.length}
           </button>
         )}
+        <button
+          className="pdf-pill"
+          onClick={toggleCursor}
+          aria-pressed={cursorOn}
+          title={cursorOn ? "Stop showing where the agent edits" : "Show where the agent edits, as it edits"}
+        >
+          Agent cursor {cursorOn ? "on" : "off"}
+        </button>
         {desk.working && (
           <a
             className="btn icon ghost"

@@ -68,7 +68,10 @@ is a sub-project with its own dependencies (see below).
   holds the letters -- a cut-down font is trusted only with letters the file
   shows it drawing -- or removes the old glyphs and returns where to draw the new
   ones. Edits run one at a time on the stream as the last left it, matches last
-  first; the page stays vector, nothing is rasterised), `pdfdesk.ts` (the PDF window: the file the
+  first; the page stays vector, nothing is rasterised. Where it worked goes to
+  the window as `cues` on `desk.open`, replayed by `pdf-editor/src/AgentCues.tsx`
+  -- a cursor, the old words struck, the new ones typed -- only ever a replay,
+  never the edit, and switchable in the window), `pdfdesk.ts` (the PDF window: the file the
   agent works on, open beside the chat in SecurePDF's editor. What `pdf_edit`
   places becomes the editor's own movable objects, each keeping the item it
   came from so the file shows exactly what was drawn until the person changes
