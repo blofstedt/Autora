@@ -54,20 +54,44 @@ async function main() {
       app.decide = null;
     });
 
-    console.log("a deck, and what the tools cannot do");
-    await test("a model that wants a picture of a slide is told what stands in for it", async () => {
+    console.log("pages, and PDFs for the PDF editor");
+    await test("a model can see the pages of a Word document, and turn it into a PDF that opens in the PDF editor", async () => {
       app.seen.length = 0;
       let step = 0;
       app.decide = (req) => {
         const g = guardOk(req);
         if (g) return g;
         step += 1;
-        if (step === 1) return { tools: [{ name: "office_convert", args: { file: "memo.docx", to: "pdf" } }] };
-        return { text: "Understood." };
+        if (step === 1) return { tools: [{ name: "office_look", args: { file: "memo.docx" } }] };
+        if (step === 2) return { tools: [{ name: "office_pdf", args: { file: "memo.docx" } }] };
+        return { text: "I looked at it, and the PDF is open in the editor." };
       };
       const s = await app.newSession("office2", "build");
-      await app.turn(s, "turn memo.docx into a pdf of the Word document", 60_000);
-      assert.match(told(app), /converts to md or html/);
+      const ev = await app.turn(s, "show me the pages of memo.docx, then make it a PDF for the PDF editor", 120_000);
+      assert.ok(ev.some((e) => e.kind === "media.image" && /memo\.docx/.test(String(e.payload.alt))), "the page is a picture in the thread");
+      assert.ok(ev.some((e) => e.kind === "media.file" && e.payload.name === "memo.pdf"), "the PDF is a card in the thread");
+      const desk = (await app.api("GET", `/api/pdfdesk/${s}`)).body;
+      assert.equal(desk.open, true, "and it is open in the PDF editor");
+      assert.equal(desk.name, "memo.pdf");
+      assert.ok(told(app).includes("It is open in the PDF editor"));
+      app.decide = null;
+    });
+
+    await test("a deck cannot be drawn yet, and the model is told what stands in for looking", async () => {
+      app.seen.length = 0;
+      let step = 0;
+      app.decide = (req) => {
+        const g = guardOk(req);
+        if (g) return g;
+        step += 1;
+        if (step === 1) return { tools: [{ name: "office_create", args: { type: "pptx", name: "deck2", spec: { pages: [{ title: "Hi", type: "cover", background: "#0E1A2B", elements: [{ type: "shape", shape: "rect", x: 80, y: 80, w: 400, h: 100, fill: "#1F3A5F", paragraphs: [{ align: "left", runs: [{ text: "Hi", sizePt: 32, color: "#FFFFFF" }] }] }] }] } } }] };
+        if (step === 2) return { tools: [{ name: "office_look", args: { file: "deck2.pptx" } }] };
+        return { text: "Understood." };
+      };
+      const s = await app.newSession("office3", "build");
+      const ev = await app.turn(s, "make a one-slide PowerPoint deck and show me it", 120_000);
+      const said = ev.filter((e) => e.kind === "tool.result" || e.kind === "tool.error").map((e) => JSON.stringify(e.payload).slice(0, 300)).join("\n");
+      assert.match(told(app), /A deck cannot be drawn yet/, said);
       app.decide = null;
     });
   } finally {

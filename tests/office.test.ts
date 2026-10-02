@@ -17,6 +17,7 @@ const office = await import("../server/office");
 const artifacts = await import("../server/artifacts");
 const modes = await import("../server/modes");
 const toolload = await import("../server/toolload");
+const render = await import("../server/officerender");
 
 let passed = 0;
 async function test(name: string, fn: () => Promise<void> | void) {
@@ -24,11 +25,22 @@ async function test(name: string, fn: () => Promise<void> | void) {
 }
 
 const shown: { id: string; name: string }[] = [];
+const pictures: { alt: string; caption: string | null }[] = [];
+const opened: { name: string; working: string | null }[] = [];
 const ctx = {
   session: "s-test",
   cwd: os.tmpdir(),
   room: 12_000,
   showFile: (f: { id: string; name: string }) => { shown.push(f); },
+  putBlob: () => "blob",
+  showImage: (_blob: string, alt: string, caption: string | null) => { pictures.push({ alt, caption }); },
+  // The PDF window, as far as these tools use it.
+  desk: {
+    current: () => null,
+    open: (next: { name: string; working: string | null }) => { opened.push({ name: next.name, working: next.working }); },
+    show: () => undefined,
+    news: () => "",
+  } as any,
   cancelled: () => false,
   onCancel: () => undefined,
 };
@@ -38,10 +50,10 @@ console.log("office tools");
 
 await test("they are registered, held in planning only where they change something, and loaded on demand", () => {
   const family = toolload.FAMILIES.find((f) => f.id === "office")!;
-  for (const n of ["office_guide", "office_read", "office_edit", "office_check", "office_create", "office_convert"]) assert.ok(family.match(n), n);
+  for (const n of ["office_guide", "office_read", "office_edit", "office_check", "office_look", "office_pdf", "office_create", "office_convert"]) assert.ok(family.match(n), n);
   assert.ok(family.words.test("make me a PowerPoint deck") && family.words.test("fix report.docx") && family.words.test("the budget spreadsheet"));
   assert.ok(!family.words.test("what time is it"));
-  assert.ok(modes.looksOnly("office_read") && modes.looksOnly("office_check") && modes.looksOnly("office_guide"));
+  assert.ok(modes.looksOnly("office_read") && modes.looksOnly("office_check") && modes.looksOnly("office_guide") && modes.looksOnly("office_look"));
   assert.ok(!modes.looksOnly("office_edit", {}) && modes.looksOnly("office_edit", { dry_run: true }));
   assert.ok(!modes.looksOnly("office_create", {}) && !modes.looksOnly("office_convert", {}));
 });
@@ -181,13 +193,46 @@ if (!office.sidecarPath()) {
   });
 }
 
-await test("Word converts to Markdown and HTML; formats that need page layout are refused plainly", async () => {
+await test("Word converts to Markdown and HTML, and other formats it cannot make are said so", async () => {
   const md = await run("office_convert", { file: docId, to: "md" });
   assert.ok(md.ok, md.summary);
   assert.match(fs.readFileSync(artifactPathOf(artifacts.listArtifacts().find((a) => a.name === "report.md")!.id), "utf8"), /# Quarterly report/);
-  const pdf = await run("office_convert", { file: docId, to: "pdf" });
-  assert.equal(pdf.ok, false);
-  assert.match(pdf.summary, /converts to md or html/);
+  const odt = await run("office_convert", { file: docId, to: "odt" });
+  assert.equal(odt.ok, false);
+  assert.match(odt.summary, /converts to md or html/);
+});
+
+if (!render.editorBuilt("docs")) {
+  console.log("  (the Word editor is not built -- the page and PDF tests are skipped)");
+} else {
+  await test("a Word document is drawn as pages, by the editor's own layout", async () => {
+    const r = await run("office_look", { file: docId, pages: "1" });
+    assert.ok(r.ok, r.summary);
+    assert.equal(r.images?.length, 1, "the picture is in the result for the model");
+    assert.match(r.summary, /report\.docx, page 1/);
+    assert.equal(pictures.length, 1, "and in the conversation");
+    assert.match(pictures[0].caption ?? "", /report\.docx · page 1 of \d+/);
+  });
+
+  await test("Word to PDF is a PDF artifact that opens in the PDF editor", async () => {
+    const r = await run("office_pdf", { file: docId });
+    assert.ok(r.ok, r.summary);
+    const pdf = artifacts.listArtifacts().find((a) => a.name === "report.pdf")!;
+    assert.ok(pdf && pdf.mime === "application/pdf");
+    assert.equal(fs.readFileSync(artifactPathOf(pdf.id)).subarray(0, 5).toString(), "%PDF-");
+    assert.deepEqual(opened.at(-1), { name: "report.pdf", working: pdf.id });
+    // The same through convert.
+    const again = await run("office_convert", { file: docId, to: "pdf", output: "second.pdf" });
+    assert.ok(again.ok, again.summary);
+    assert.equal(opened.at(-1)?.name, "second.pdf");
+  });
+}
+
+await test("a deck cannot be drawn yet, and the refusal says what stands in for it", async () => {
+  const deck = artifacts.listArtifacts().find((a) => a.name === "deck.pptx")!;
+  const r = await run("office_look", { file: deck.id });
+  assert.equal(r.ok, false);
+  assert.match(r.summary, /office_check/);
 });
 
 function artifactPathOf(id: string): string {

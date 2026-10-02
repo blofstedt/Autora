@@ -9,6 +9,8 @@
  * command line looks for the rest of itself:
  *   cli/genoffice.cjs        the command line, one file
  *   cli/node_modules/        jsdom and what it needs (Word documents run under it)
+ *   web/<app>/index.html     the editor's window, one page (docs; see office/vite/editor.mjs), and
+ *   web/<app>/assets/        its fonts, which the page asks the host for
  *   wasm/pdfium.wasm         marks the folder as the resources folder
  *   native/xlsx-sidecar[-x64|-arm64]   the Rust spreadsheet engine, when it could be built
  *   LICENSE, NOTICE          GenOffice's
@@ -27,6 +29,7 @@
  * and no npm install can build just the engine.
  */
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -43,6 +46,9 @@ const wantSidecar = !args.includes("--no-sidecar");
 const targets = (args.find((a) => a.startsWith("--targets="))?.slice(10) ?? args[args.indexOf("--targets") + 1] ?? "")
   .split(",").map((t) => t.trim()).filter((t) => /^[a-z0-9_-]+$/.test(t));
 
+/** The editors built as windows; the others (slides, sheets) keep their document in Electron's main process. */
+const EDITORS = ["docs"];
+
 const log = (m) => console.log(`[office] ${m}`);
 function run(cmd, a, opts = {}) {
   const r = spawnSync(cmd, a, { stdio: "inherit", ...opts, env: { ...process.env, ...(opts.env ?? {}) } });
@@ -52,7 +58,12 @@ const has = (cmd, a = ["--version"]) => spawnSync(cmd, a, { stdio: "ignore" }).s
 
 /** Already built from this commit: nothing to do. */
 const stamp = path.join(out, "BUILT");
-const marker = `${pin.sha}${wantSidecar ? ":sidecar" : ""}:${targets.join("+")}`;
+/* Our own build recipe is part of what was built: change a shim or the config and it builds again. */
+const recipe = createHash("sha1");
+for (const f of ["office/vite/editor.mjs", ...fs.readdirSync(path.join(root, "office/shim")).sort().map((n) => `office/shim/${n}`)]) {
+  recipe.update(fs.readFileSync(path.join(root, f)));
+}
+const marker = `${pin.sha}:${recipe.digest("hex").slice(0, 12)}${wantSidecar ? ":sidecar" : ""}:${targets.join("+")}`;
 if (!onlySidecar && fs.existsSync(stamp) && fs.readFileSync(stamp, "utf8").trim() === marker && fs.existsSync(path.join(out, "cli/genoffice.cjs"))) {
   log(`up to date (${pin.sha.slice(0, 8)})`);
   process.exit(0);
@@ -89,6 +100,22 @@ try {
     fs.copyFileSync(path.join(dist, "genoffice.cjs"), path.join(out, "cli/genoffice.cjs"));
     fs.cpSync(path.join(dist, "node_modules"), path.join(out, "cli/node_modules"), { recursive: true });
     fs.copyFileSync(path.join(src, "node_modules/@embedpdf/pdfium/dist/pdfium.wasm"), path.join(out, "wasm/pdfium.wasm"));
+
+    /* The editors' windows, built with the checkout's own Vite from a config of ours. A window that
+       does not build is not the end of the tools: the rest still works, and says what is missing. */
+    for (const app of EDITORS) {
+      try {
+        log(`building the ${app} editor`);
+        const config = path.join(src, "apps", app, "vite.autora.mjs");
+        fs.copyFileSync(path.join(root, "office/vite/editor.mjs"), config);
+        run(path.join(src, "node_modules/.bin/vite"), ["build", "--config", config], {
+          cwd: path.join(src, "apps", app),
+          env: { OFFICE_APP: app, OFFICE_OUT: path.join(out, "web"), OFFICE_SHIM: path.join(root, "office/shim") },
+        });
+      } catch (err) {
+        console.warn(`[office] the ${app} editor was not built: ${err.message}`);
+      }
+    }
     for (const f of ["LICENSE", "NOTICE"]) fs.copyFileSync(path.join(src, f), path.join(out, f));
   }
   fs.mkdirSync(path.join(out, "native"), { recursive: true });

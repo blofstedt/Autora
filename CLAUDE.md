@@ -134,10 +134,23 @@ is a sub-project with its own dependencies (see below).
     PDF tools' (an edit works on a copy; the agent's own file is updated in place);
     after an Excel edit `refreshFormulas` rewrites every formula so stored results
     of dependents are current (the engine only sets fullCalcOnLoad). **No pictures**:
-    laying a page out belongs to GenOffice's Electron renderer, so there is no
-    page/slide image or PDF export yet -- `office_check` (overflow, overlap, broken
-    references, stale fields) stands in. The editor windows (a sandboxed frame over
-    `postMessage`, like `pdf-editor/`) are the next step and would also bring that.
+    laying a page out is GenOffice's *editor's* job (its renderer), not the
+    engines'. For Word that renderer is built too: `office/vite/editor.mjs` (run with
+    the checkout's own Vite by `build-office.mjs`) makes `dist/office/web/docs/index.html`,
+    one page for a sandboxed frame (script, styles and worker inline; fonts listed
+    in a manifest and supplied by the host; PDF import stubbed -- the PDF editor does
+    that), with `office/shim/` standing in for Electron's preload API
+    (`window.desktop`: `common.js` is the host bridge -- `postMessage` in a frame,
+    `window.__autoraHost` in headless Chromium -- and `docs.js` the Word-specific
+    answers). `server/officerender.ts` opens that page in the shared Chromium
+    (`withBrowserContext` in `pdfrender.ts`), lets the editor's own headless-export
+    path run, and returns its PDF; `office_look` draws pages from it (`lookAtPdf`
+    in `pdf.ts`, shared with `pdf_look`) and `office_pdf` / `office_convert to pdf`
+    save it as an artifact and open it in the **PDF editor window** (PDFs go to our
+    editor, never GenOffice's). Only Word is drawn so far: PowerPoint and Excel keep
+    their document in Electron's main process (184 and 58 IPC calls), so a deck or a
+    workbook is checked (`office_check`: overflow, overlap, broken references, stale
+    fields) rather than looked at.
   - `mindrules.ts` (+ `site.ts`): the rules the mind is kept by. Every
     `memory_write` / `memory_update` goes through `checkEntry` / `checkText`: a
     title that starts with its subject, one topic per record (length limit by

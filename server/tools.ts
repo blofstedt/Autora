@@ -2178,6 +2178,45 @@ const TOOLS: ToolSpec[] = [
     },
   },
   {
+    name: "office_look",
+    group: "files",
+    description:
+      "See a Word document's pages as they lay out: pictures of its pages, drawn by Word's own editor engine, shown in " +
+      "the conversation and handed to you. pages is a list like \"1\", \"1-3\" or \"2,4\" (a few at a time); area " +
+      "{x,y,width,height} in points from the page's top-left looks closer at part of one page, and grid draws a ruler. " +
+      "Use it after you build or change a document, to check it looks right. (PowerPoint and Excel files cannot be drawn " +
+      "yet: office_check is what finds their problems.)",
+    parameters: {
+      type: "object",
+      properties: {
+        file: { type: "string", description: "The Word document: an artifact id, a path, or an artifact's name." },
+        pages: { type: "string", description: "Which pages: \"1\", \"1-3\", \"2,4\". Default 1." },
+        area: {
+          type: "object",
+          description: "Look closer at one part of one page, in points from its top-left.",
+          properties: { x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" } },
+        },
+        grid: { type: "boolean", description: "Draw a ruler in points over the picture." },
+      },
+      required: ["file"],
+    },
+  },
+  {
+    name: "office_pdf",
+    group: "files",
+    description:
+      "Turn a Word document into a PDF, laid out by Word's own editor engine. The PDF is saved as an artifact and opens " +
+      "in the PDF editor, where it can be marked up, signed, redacted or sent on (the PDF tools work on it from there).",
+    parameters: {
+      type: "object",
+      properties: {
+        file: { type: "string", description: "The Word document: an artifact id, a path, or an artifact's name." },
+        output: { type: "string", description: "File name for the PDF. Default: the document's name with .pdf." },
+      },
+      required: ["file"],
+    },
+  },
+  {
     name: "office_create",
     group: "files",
     description:
@@ -4755,6 +4794,8 @@ async function runToolUnredacted(
       case "office_read":
       case "office_edit":
       case "office_check":
+      case "office_look":
+      case "office_pdf":
       case "office_create":
       case "office_convert":
         return await runOfficeTool(spec.name, args, {
@@ -4762,6 +4803,9 @@ async function runToolUnredacted(
           cwd: terminalDir(),
           room: CONTEXT_CONFIG.maxToolTokens * 4 - 200,
           showFile: ctx.showFile,
+          putBlob: ctx.putBlob,
+          showImage: ctx.showImage,
+          ...(ctx.memory.incognito ? {} : { desk: deskHooks(ctx.session) }),
           cancelled: ctx.cancelled,
           onCancel: ctx.onCancel,
         });

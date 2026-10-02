@@ -27,7 +27,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { MAX_ARTIFACT_BYTES, cleanName, formatSize, listArtifacts, saveArtifact } from "./artifacts";
+import type { ChatImage } from "./llm";
 import { FileRefError, readFileRef, type FileInput } from "./fileref";
+import { lookAtPdf, type DeskHooks } from "./pdf";
+import { OfficeRenderError, editorBuilt, renderDocxToPdf } from "./officerender";
+import { PdfRenderError } from "./pdfrender";
 
 // ----------------------------------------------------------- the build --
 
@@ -57,6 +61,10 @@ export interface OfficeContext {
   /** How many characters of text a result may carry. */
   room: number;
   showFile?: (file: { id: string; name: string; mime: string; size: number }) => void;
+  putBlob: (data: Buffer, mime: string) => string;
+  showImage: (blob: string, alt: string, caption: string | null, size?: { w: number; h: number }) => void;
+  /** The PDF window: a PDF made here is opened in it. Absent in an incognito chat. */
+  desk?: DeskHooks;
   cancelled: () => boolean;
   onCancel: (stop: () => void) => void;
 }
@@ -65,6 +73,7 @@ export interface OfficeOutcome {
   ok: boolean;
   summary: string;
   preview?: string;
+  images?: ChatImage[];
 }
 
 /** A failure the agent is told in so many words. */
@@ -91,12 +100,16 @@ export async function runOfficeTool(name: string, args: Record<string, any>, ctx
       case "office_read": return await readTool(args, ctx);
       case "office_edit": return await editTool(args, ctx);
       case "office_check": return await checkTool(args, ctx);
+      case "office_look": return await lookTool(args, ctx);
+      case "office_pdf": return await pdfTool(args, ctx);
       case "office_create": return await createTool(args, ctx);
       case "office_convert": return await convertTool(args, ctx);
       default: return { ok: false, summary: `There is no Office tool called ${name}.` };
     }
   } catch (err) {
-    if (err instanceof Problem || err instanceof FileRefError) return { ok: false, summary: err.message };
+    if (err instanceof Problem || err instanceof FileRefError || err instanceof OfficeRenderError || err instanceof PdfRenderError) {
+      return { ok: false, summary: err.message };
+    }
     return { ok: false, summary: `${name} failed: ${String((err as Error)?.message ?? err).split("\n")[0]}` };
   }
 }
@@ -485,6 +498,46 @@ async function checkTool(args: Record<string, any>, ctx: OfficeContext): Promise
   });
 }
 
+// ----------------------------------------------------- pages and PDF --
+
+/** The document laid out as the editor lays it out: its PDF. Only Word so far. */
+async function layOut(file: FileInput, kind: Kind, ctx: OfficeContext): Promise<Buffer> {
+  if (kind !== "docx") {
+    throw new Problem(
+      kind === "pptx"
+        ? "A deck cannot be drawn yet (only Word documents can). office_check finds overflowing or overlapping text and off-slide elements, which is what stands in for looking."
+        : "A workbook cannot be drawn yet (only Word documents can). office_check finds broken formulas, missing references and columns too narrow for their numbers, and office_read shows the cells.",
+    );
+  }
+  if (!editorBuilt("docs")) throw new Problem("The Word editor is not built on this server, so pages cannot be drawn (node scripts/build-office.mjs).");
+  return await renderDocxToPdf(file.data, file.name, ctx);
+}
+
+/** Pictures of the pages of a Word document, as they lay out. */
+async function lookTool(args: Record<string, any>, ctx: OfficeContext): Promise<OfficeOutcome> {
+  const { file, kind } = input(args, ctx);
+  const pdf = await layOut(file, kind, ctx);
+  const done = await lookAtPdf(pdf, file.name, undefined, { pages: args.pages, area: args.area && typeof args.area === "object" ? args.area : null, grid: args.grid }, ctx);
+  return { ok: done.ok, summary: done.summary, preview: done.preview, images: done.images };
+}
+
+/** A Word document as a PDF artifact, opened in the PDF editor. */
+async function pdfTool(args: Record<string, any>, ctx: OfficeContext): Promise<OfficeOutcome> {
+  const { file, kind } = input(args, ctx);
+  const pdf = await layOut(file, kind, ctx);
+  const asked = String(args.output ?? "").trim();
+  const base = file.name.replace(/\.(docx|xlsx|pptx)$/i, "").trim() || "document";
+  const name = cleanName(asked ? (/\.pdf$/i.test(asked) ? asked : `${asked}.pdf`) : `${base}.pdf`);
+  const saved = deliver(ctx, name, pdf, "application/pdf", `${file.name} as a PDF`);
+  // The PDF is the PDF editor's: it opens there to mark up, sign, redact or send on.
+  ctx.desk?.open({ name: saved.name, base: pdf, items: [], working: saved.id, source: null, outName: saved.name });
+  return {
+    ok: true,
+    summary: `${savedLine(saved)}${ctx.desk ? " It is open in the PDF editor." : ""}`,
+    preview: saved.name,
+  };
+}
+
 // --------------------------------------------------------------- create --
 
 async function createTool(args: Record<string, any>, ctx: OfficeContext): Promise<OfficeOutcome> {
@@ -551,10 +604,11 @@ const TO_MIME: Record<string, string> = {
 
 async function convertTool(args: Record<string, any>, ctx: OfficeContext): Promise<OfficeOutcome> {
   const file = readFileRef(args.file, ctx.cwd, "document", "the Office tools");
+  if (String(args.to ?? "").trim().toLowerCase().replace(/^\./, "") === "pdf" && kindOf(file.name)) return await pdfTool(args, ctx);
   const from = path.extname(file.name).slice(1).toLowerCase();
   const to = String(args.to ?? "").trim().toLowerCase().replace(/^\./, "");
   const can = CONVERSIONS[from];
-  if (!can) throw new Problem(`${file.name}: converting from .${from || "?"} is not available. From .docx: ${CONVERSIONS.docx.join(", ")}; .md: ${CONVERSIONS.md.join(", ")}; .html: docx; .csv: xlsx; .xlsx: csv. (Page layout, so PDF, belongs to the editor windows.)`);
+  if (!can) throw new Problem(`${file.name}: converting from .${from || "?"} is not available. From .docx: ${CONVERSIONS.docx.join(", ")}; .md: ${CONVERSIONS.md.join(", ")}; .html: docx; .csv: xlsx; .xlsx: csv. (Word to PDF is office_pdf.)`);
   if (!can.includes(to)) throw new Problem(`.${from} converts to ${can.join(" or ")}, not ${to || "(nothing named)"}.`);
   if ((from === "xlsx" || to === "xlsx") && !sidecarPath()) sheetNeeds("xlsx");
   return await withWork(async (work) => {

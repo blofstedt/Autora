@@ -133,18 +133,16 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  New: the agent can work with Word, Excel and PowerPoint files. It can read a
-  document, a workbook or a deck; change it (only what it edits is rewritten, the
-  rest of the file survives byte for byte, and Word edits can be recorded as
-  tracked changes you accept or reject); make new ones from Markdown, rows or a
-  deck design; convert between Word, Markdown, HTML and CSV; and check its own
-  work for overflowing text, broken formulas, stale fields and the like. Formulas
-  really calculate, and the numbers in the saved file are always current. Every
-  result is saved as a file in the thread, and your own file is never overwritten.
-  This is built on the open-source GenOffice engines (Apache-2.0). It cannot yet
-  show a page or a slide as a picture, so it checks them instead; editor windows
-  like the PDF one are next. Earlier in this release line: the agent reads a
-  site's official documentation before acting on it and keeps what it learns as
-  References in a tidier Mind, what you ask for is kept word for word as a list it
-  must account for, a message you send while it works is added to the work instead
-  of stopping it, and failing calls stop sooner.
+  New: the agent can see a Word document's pages and hand it to the PDF editor.
+  It lays the document out with Word's own editor engine (the same pagination and
+  print code GenOffice's Word editor uses), then shows you and itself pictures of
+  the pages, so it can check what it built looks right. "Make it a PDF" saves a PDF
+  and opens it in the PDF editor beside the chat, where you can mark it up, sign it,
+  redact it or send it on -- PDFs always go to Autora's own editor. This is built
+  on the open-source GenOffice engines (Apache-2.0). PowerPoint decks and Excel
+  workbooks are checked for problems rather than drawn for now. Earlier in this
+  release line: the agent can read, edit, check, create and convert Word, Excel and
+  PowerPoint files, reads a site's official documentation before acting on it,
+  keeps what you ask for word for word as a list it must account for, takes a
+  message you send while it works as an addition instead of stopping, and stops
+  sooner when a call keeps failing.

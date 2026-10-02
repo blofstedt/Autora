@@ -1977,10 +1977,24 @@ async function lookTool(args: Record<string, any>, ctx: PdfContext): Promise<Pdf
   // the file being worked on.
   if (ctx.desk && desk) ctx.desk.show();
   else if (ctx.desk && !ctx.desk.current()) await showInWindow(input, pass, ctx);
-  return withPdf(input.data, pass, async (view) => {
+  return lookAtPdf(input.data, input.name, pass, args, ctx);
+}
+
+/**
+ * Pictures of a PDF's pages, shown in the conversation and handed to the model.
+ * The PDF look tool's body, shared with the Office tools (which look at a
+ * document by laying it out as a PDF first): `name` is what the captions call it.
+ */
+export async function lookAtPdf(
+  data: Buffer, name: string, pass: string | undefined,
+  args: { pages?: unknown; area?: Record<string, any> | null; grid?: unknown },
+  ctx: Pick<PdfContext, "putBlob" | "showImage" | "cancelled" | "onCancel">,
+): Promise<PdfOutcome> {
+  const input = { name };
+  return withPdf(data, pass, async (view) => {
     const count = view.pages;
     const asked = [...new Set(parsePages(args.pages ?? "1", count).filter((p): p is number => p !== "blank"))];
-    const area = args.area && typeof args.area === "object" ? args.area : null;
+    const area: Record<string, any> | null = args.area && typeof args.area === "object" ? args.area : null;
     const pages = area ? asked.slice(0, 1) : asked.slice(0, MAX_LOOK);
     const images: ChatImage[] = [];
     const said: string[] = [];

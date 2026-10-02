@@ -383,6 +383,39 @@ function release() {
   idleTimer.unref?.();
 }
 
+/**
+ * A fresh, isolated browser context in the same Chromium, for the other things
+ * on this server that need a page drawn (the Office editors, server/officerender.ts).
+ * Shares the browser's launch and its idle close with the PDF renderer.
+ */
+export async function withBrowserContext<T>(
+  use: (context: BrowserContext, stop: () => void) => Promise<T>,
+  stopper: Stopper = {},
+  options: { viewport?: { width: number; height: number } } = {},
+): Promise<T> {
+  const probe = await probeBrowser();
+  if (!probe.ok) throw new PdfRenderError(`There is no browser to draw it with: ${lowerFirst(probe.detail ?? "no Chromium on this server")}`, "no-browser");
+  busy++;
+  let context: BrowserContext | null = null;
+  const stop = () => { void context?.close().catch(() => undefined); };
+  try {
+    const b = await launch();
+    context = await b.newContext({
+      viewport: options.viewport ?? { width: 1360, height: 900 }, deviceScaleFactor: 1,
+      serviceWorkers: "block", acceptDownloads: false,
+    });
+    stopper.onCancel?.(stop);
+    return await use(context, stop);
+  } catch (err) {
+    if (stopper.cancelled?.()) throw new PdfRenderError("Stopped.", "cancelled");
+    throw err;
+  } finally {
+    stop();
+    busy--;
+    release();
+  }
+}
+
 /** A step that gives up: pdf.js stuck on a hostile file must not hold a tool call for ever. */
 async function within<T>(work: Promise<T>, what: string, stop: () => void): Promise<T> {
   let timer: NodeJS.Timeout | null = null;
