@@ -136,6 +136,14 @@ is a sub-project with its own dependencies (see below).
     `app_preview` click/hover/type/press/scroll use the page as a person would,
     in the window the person is watching, and are refused while planning.
     All of it follows the one agent-cursor switch (`state.agentCursor`).
+  - `companion.ts`: when no turn is running and nobody is mid-task, the agent
+    says one short line about what the person just did in a shared window
+    (`agent.remark`, shown in the thread and kept in its history as its own words).
+    A small unwatched model call, so: only for touches worth a word, after they
+    pause, 25s apart and at most 12 an hour, never over a running turn or with
+    nobody looking, the model may answer SKIP, and `collabRemarks` switches it
+    off (Settings -> Working together). A running turn answers in its own words
+    instead, from the presence note.
   - `merge3.ts` + `editfile.ts` (`edit_file`): the careful way to change a file
     the person may also edit. The loop scans the folder before each changing
     call and at the end of each round, and what changed that the agent did not

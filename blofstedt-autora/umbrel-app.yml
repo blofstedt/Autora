@@ -138,6 +138,14 @@ releaseNotes: >-
   edit_file tool that merges its change with yours when you touched different
   lines, and writes nothing -- telling it exactly what you did -- when you both
   changed the same ones.
+  New: the agent speaks up. When it is not in the middle of a turn and you move
+  or change something in a window you share -- a PDF object, a field in the app,
+  a file you save -- it says one short line about it, like a colleague at the
+  next desk, in the thread. It is held back: only for what is worth a word, after
+  you pause, at most one every 25 seconds and twelve an hour, never over a turn
+  that is running or when nobody is looking, and it can choose to say nothing.
+  Each one is a small model call; "Working together" in Settings turns it off,
+  and has the switch for the cursor and typed code as well.
   New: you can watch the app being built. When the agent changes code, the
   app window's cursor glides to what changed on the page -- the new button, the
   rewritten heading -- and outlines it with a name. The agent can also test

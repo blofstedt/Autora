@@ -1,3 +1,4 @@
+import { CollabSettings } from "./CollabSettings";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   IconBrain, IconCheck, IconChevron, IconGear, IconGlobe, IconMonitor, IconRepeat, IconSpeaker,
@@ -704,6 +705,8 @@ export function Settings({
           </div>
         </section>
         )}
+
+        {shows("config") && <CollabSettings />}
 
         {shows("config") && verify && (
         <section className="set-card">

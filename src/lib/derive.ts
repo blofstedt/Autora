@@ -229,6 +229,8 @@ export type Cell =
   | { kind: "files"; seq: number; files: Attachment[] }
   | { kind: "widget"; seq: number; widget: Widget }
   | { kind: "file"; seq: number; file: FileChange }
+  /** A word from the agent about what the person just did in a shared window. */
+  | { kind: "remark"; seq: number; text: string; surface: string }
   | { kind: "tool"; seq: number; span: SpanState }
   | { kind: "note"; seq: number; tone: "bad" | "warn" | "plain"; text: string }
   /** Agent mode moving between planning and building: said in the thread,
@@ -992,6 +994,12 @@ export function derive(events: AutoraEvent[]): Derived {
         push({ kind: "file", seq: e.seq, file });
         break;
       }
+
+      case Kind.AgentRemark:
+        if (typeof e.payload.text === "string" && e.payload.text) {
+          push({ kind: "remark", seq: e.seq, text: e.payload.text, surface: String(e.payload.surface ?? "") });
+        }
+        break;
 
       case Kind.PreviewOpen:
         push({ kind: "app", seq: e.seq, url: typeof e.payload.url === "string" ? e.payload.url : "" });

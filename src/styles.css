@@ -6431,3 +6431,16 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 /* An edit the person made themselves, shown among the agent's. */
 .tag-you { background: rgba(94, 200, 160, .18); color: #7ee0b9; }
 .cell.diff.by-person { border-left: 2px solid rgba(126, 224, 185, .55); }
+
+/* The agent's passing word about what you just did: a line, not a message. */
+.cell-remark { display: flex; align-items: baseline; gap: 8px; padding: 2px 4px 2px 6px; color: var(--muted, #9aa0b0); font-size: calc(13px * var(--ts, 1)); animation: remark-in .35s ease-out; }
+.cell-remark span { font-style: italic; }
+.remark-mark { flex: none; width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 9px solid #8b7cf6; transform: translateY(1px); opacity: .85; }
+@keyframes remark-in { from { opacity: 0; transform: translateY(3px); } }
+@media (prefers-reduced-motion: reduce) { .cell-remark { animation: none; } }
+
+/* A switch with a title and a line under it, in Settings. */
+.set-switch { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; cursor: pointer; }
+.set-switch input { margin-top: 3px; accent-color: #8b7cf6; }
+.set-switch b { display: block; font-weight: 600; font-size: calc(13px * var(--ts, 1)); }
+.set-switch small { display: block; color: var(--muted, #9aa0b0); font-size: calc(12px * var(--ts, 1)); margin-top: 2px; }

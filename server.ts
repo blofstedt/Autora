@@ -89,6 +89,7 @@ import {
 import { LoopWatch, describe as describeCall } from "./server/loopwatch";
 import { ErrorBudget } from "./server/errorbudget";
 import { forgetPresence, presenceFor, type Surface } from "./server/presence";
+import { cleanRemark, REMARK_SYSTEM, remarkPrompt, RemarkGate, SETTLE_MS as REMARK_SETTLE_MS, WINDOW_MS as REMARK_WINDOW_MS, worthRemarking } from "./server/companion";
 import { editFile, type EditArgs } from "./server/editfile";
 import { diffDom, type ChangeCue, type DomItem } from "./server/domdiff";
 import { Workspace, type DiffLine, type FileChange as CodeChange } from "./server/codediff";
@@ -429,6 +430,10 @@ function forgetSession(id: string) {
   if (gone) void previewStop(gone, false).catch(() => undefined);
   forgetPresence(id);
   presenceSent.delete(id);
+  const remarkTimer = remarkTimers.get(id);
+  if (remarkTimer) clearTimeout(remarkTimer);
+  remarkTimers.delete(id);
+  remarkGates.delete(id);
   previewKept.delete(id);
   clearFrame(id);
   dropSession(id);
@@ -681,6 +686,51 @@ function announcePresence(sessionId: string) {
   }
 }
 
+/* A short word from the agent about what the person just did, once they pause
+   -- only when no turn is running (a running turn answers in its own words),
+   only for what is worth a word, spaced out and capped (server/companion.ts). */
+const remarkGates = new Map<string, RemarkGate>();
+const remarkTimers = new Map<string, NodeJS.Timeout>();
+
+function scheduleRemark(sessionId: string) {
+  if (!state.collabRemarks) return;
+  const was = remarkTimers.get(sessionId);
+  if (was) clearTimeout(was);
+  const t = setTimeout(() => {
+    remarkTimers.delete(sessionId);
+    const session = sessions.get(sessionId);
+    if (session) void remarkOn(session).catch((err) => log("debug", "companion", `no remark: ${err?.message ?? err}`));
+  }, REMARK_SETTLE_MS);
+  t.unref?.();
+  remarkTimers.set(sessionId, t);
+}
+
+async function remarkOn(session: Session): Promise<void> {
+  if (!state.collabRemarks || session.busy) return;
+  // Nobody looking: nobody to say it to.
+  if (!(sessionSockets.get(session.id)?.size)) return;
+  const touches = presenceFor(session.id).recent(REMARK_WINDOW_MS);
+  if (!worthRemarking(touches)) return;
+  let gate = remarkGates.get(session.id);
+  if (!gate) remarkGates.set(session.id, (gate = new RemarkGate()));
+  if (!gate.allowed()) return;
+  gate.made();
+
+  let request = "";
+  let lastSaid = "";
+  for (let i = session.events.length - 1; i >= 0 && (!request || !lastSaid); i -= 1) {
+    const e = session.events[i];
+    if (!request && e.kind === "turn.user") request = String(e.payload?.shown ?? e.payload?.text ?? "");
+    if (!lastSaid && (e.kind === "agent.remark" || (e.kind === "turn.agent.text" && !e.payload?.local))) lastSaid = String(e.payload?.text ?? "");
+  }
+  const said = cleanRemark(await backgroundCall(
+    session.id, REMARK_SYSTEM, remarkPrompt({ request, lastSaid, actions: touches.map((t) => t.detail) }), 90,
+  ));
+  // A turn that began while this was being thought will answer in its own words.
+  if (!said || session.busy) return;
+  emitEvent(session, "agent.remark", "agent", { text: said, surface: touches[touches.length - 1].surface });
+}
+
 /** The person did something on a surface the agent shares with them. */
 function touchPresence(
   sessionId: string, surface: Surface, subject: string, kind: string, detail: string,
@@ -688,6 +738,7 @@ function touchPresence(
 ) {
   presenceFor(sessionId).touch(surface, subject, kind, detail, opts);
   announcePresence(sessionId);
+  scheduleRemark(sessionId);
 }
 
 function sendEphemeral(sessionId: string, message: Record<string, unknown>) {
@@ -1905,6 +1956,7 @@ function historyFor(session: Session, sinceSeq = 0): { message: ChatMessage; seq
     if (event.seq <= sinceSeq) continue;
     let role: "user" | "assistant" | null = null;
     if (event.kind === "turn.user") role = "user";
+    else if (event.kind === "agent.remark") role = "assistant";
     else if (event.kind === "turn.agent.text") {
       /* Text this server composed -- the no-model notice, the seeded opening
          turn -- is not something a model said, and must not come back as if
@@ -6037,6 +6089,18 @@ async function startServer() {
       enabled: true,
       learning: state.learning,
     });
+  });
+
+  /** Whether the agent says a word about what the person does in the windows they share. */
+  app.get("/api/collaboration", (_req: Request, res: Response) => {
+    res.json({ remarks: state.collabRemarks });
+  });
+  app.patch("/api/collaboration", (req: Request, res: Response) => {
+    if (typeof req.body?.remarks === "boolean") {
+      state.collabRemarks = req.body.remarks;
+      save();
+    }
+    res.json({ remarks: state.collabRemarks });
   });
 
   /** Whether the agent's work is shown as it is done (the cursor, the typed code). */

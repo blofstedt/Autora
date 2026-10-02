@@ -272,6 +272,9 @@ export interface PersistedState {
       and app windows, and code typed out in the thread. A presentation only --
       off, the work is the same and simply appears. */
   agentCursor: boolean;
+  /** Whether the agent says a short word about what the person does in the
+      windows they share, when no turn is running (server/companion.ts). */
+  collabRemarks: boolean;
   /** The person's time zone (an IANA name such as Europe/Stockholm), or empty
       to follow the machine. The clock every schedule, watcher and quiet hour
       is read on: in the Umbrel container that is UTC unless something sets it,
@@ -504,6 +507,7 @@ function blank(): PersistedState {
     proactivity: { ...DEFAULT_PROACTIVITY },
     learning: true,
     agentCursor: true,
+    collabRemarks: true,
     timezone: "",
     loop: { ...LOOP_DEFAULTS },
     verify: { ...VERIFY_DEFAULTS },
@@ -530,6 +534,7 @@ function read(): PersistedState {
     if (typeof raw.topUpUsd === "number") state.topUpUsd = raw.topUpUsd;
     if (typeof raw.learning === "boolean") state.learning = raw.learning;
     if (typeof raw.agentCursor === "boolean") state.agentCursor = raw.agentCursor;
+    if (typeof raw.collabRemarks === "boolean") state.collabRemarks = raw.collabRemarks;
     if (typeof raw.timezone === "string" && validTimezone(raw.timezone)) {
       state.timezone = raw.timezone.trim();
       applyTimezone(state.timezone);
