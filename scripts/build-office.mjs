@@ -62,8 +62,10 @@ const has = (cmd, a = ["--version"]) => spawnSync(cmd, a, { stdio: "ignore" }).s
 const stamp = path.join(out, "BUILT");
 /* Our own build recipe is part of what was built: change a shim or the config and it builds again. */
 const recipe = createHash("sha1");
-for (const f of ["office/vite/editor.mjs", ...["shim", "host"].flatMap((d) => fs.readdirSync(path.join(root, "office", d)).sort().map((n) => `office/${d}/${n}`))]) {
-  recipe.update(fs.readFileSync(path.join(root, f)));
+/* The Docker stage that builds only the spreadsheet engine copies just this script and the pin, so what is
+   not there is not part of what that stage builds. */
+for (const f of ["office/vite/editor.mjs", ...["shim", "host"].flatMap((d) => (fs.existsSync(path.join(root, "office", d)) ? fs.readdirSync(path.join(root, "office", d)).sort() : []).map((n) => `office/${d}/${n}`))]) {
+  if (fs.existsSync(path.join(root, f))) recipe.update(fs.readFileSync(path.join(root, f)));
 }
 const marker = `${pin.sha}:${recipe.digest("hex").slice(0, 12)}${wantSidecar ? ":sidecar" : ""}:${targets.join("+")}`;
 if (!onlySidecar && fs.existsSync(stamp) && fs.readFileSync(stamp, "utf8").trim() === marker && fs.existsSync(path.join(out, "cli/genoffice.cjs"))) {
