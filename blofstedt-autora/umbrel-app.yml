@@ -125,6 +125,12 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
+  Fixed: interrupting the agent no longer makes it lose track. A message sent
+  while it works, or one after pressing Stop, is now answered together with the
+  work it cut off: the agent is told what it was doing, what you asked, and
+  what is still open on its to-do list, does what you asked, and then carries
+  on from where it stopped instead of starting over or treating your new
+  message as the whole job. In Agent mode an interrupted build stays a build.
   New: the agent can change the words a PDF already has -- a name, an amount,
   a date, a typo -- instead of covering them with a white box and trying
   again. The words are rewritten inside the file in the page's own font when

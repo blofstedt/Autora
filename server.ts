@@ -88,6 +88,7 @@ import {
 } from "./server/modes";
 import { LoopWatch, describe as describeCall } from "./server/loopwatch";
 import { ErrorBudget } from "./server/errorbudget";
+import { interruptedWork, resumeNote, type InterruptedWork, type ResumeEvent } from "./server/resume";
 import { checkArgs } from "./server/argcheck";
 import { healthBriefing, recordOutcome, targetOf, toolHealth } from "./server/toolhealth";
 import { Scheduler, type Job, type JobWatch } from "./server/scheduler";
@@ -2069,6 +2070,8 @@ async function systemInstructionFor(
   if (modeNote) notes.push(modeNote);
   const permNote = permissionBriefing(permissionsOf(own?.permissions), own?.askWhen ?? "");
   if (permNote) notes.push(permNote);
+  const unfinished = resuming.get(sessionId);
+  if (unfinished) notes.push(resumeNote(unfinished));
   /* The to-do list, said every turn: the history carries words, not the
      todo calls that wrote it, so this is the only way the agent sees it again. */
   if (own) notes.push(todoBriefing(latestTodos(own.events)));
@@ -2766,6 +2769,10 @@ function startTurn(session: Session, text: string, attachments: AttachmentRef[] 
   return done;
 }
 
+/** Unfinished work each session's next turn is to pick up, until that turn
+    has read it. */
+const resuming = new Map<string, InterruptedWork>();
+
 /** The turn each session is running (or about to), settled either way. */
 const turnsInFlight = new Map<string, Promise<void>>();
 
@@ -2793,6 +2800,11 @@ function beginTurn(session: Session, text: string, attachments: AttachmentRef[] 
     if (e.kind === "turn.user") break;
     if (e.kind === "turn.agent.text" && !e.payload?.local) previousReply = String(e.payload?.text ?? "") + previousReply;
   }
+  /* Work the last turn left unfinished, read before this message joins the
+     log: the turn that follows carries it on rather than treating the new
+     message as the whole job. A job or watcher is not an answer to it. */
+  const unfinished = opts.automated ? null : interruptedWork(session.events as ResumeEvent[]);
+  if (unfinished) resuming.set(session.id, unfinished);
   const startSeq = session.seqCounter;
   /* The files ride on the event, so a reloaded thread still shows what came
      with the message and the model still reads the note that names them. */
@@ -2804,7 +2816,7 @@ function beginTurn(session: Session, text: string, attachments: AttachmentRef[] 
   });
   /* Agent mode starts every turn planning, whatever the last one ended in:
      the agent decides again whether this task needs a plan. */
-  if (workMode(session.mode) === "agent") {
+  if (workMode(session.mode) === "agent" && !(unfinished && session.phase === "build")) {
     session.phase = "plan";
     emitEvent(session, "mode.switch", "system", { from: null, to: "plan", reason: "" });
   }
@@ -4159,7 +4171,9 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
       }
     }
 
-    emitEvent(session, "turn.agent.done", "agent", {});
+    /* Marked when the turn was cut short, so the next one can tell it was
+       left unfinished (see server/resume.ts). */
+    emitEvent(session, "turn.agent.done", "agent", running.get(session.id)?.stopped ? { stopped: true } : {});
     closed = true;
     result.ranSomething = ranSomething;
     result.stopped = Boolean(running.get(session.id)?.stopped);
@@ -4173,6 +4187,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
     if (!closed) emitEvent(session, "turn.agent.done", "agent", { failed: true });
   } finally {
     session.busy = false;
+    resuming.delete(session.id);
     // Nothing from this turn is still cancellable, and anything left in
     // the set holds a reference to a process that has exited.
     running.delete(session.id);

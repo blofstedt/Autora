@@ -96,7 +96,11 @@ is a sub-project with its own dependencies (see below).
     during quiet hours. There is deliberately no chat-app or third-party
     channel (Telegram, WhatsApp, ntfy): don't add one.
 - Every turn, from any source (the chat box, a job, a watcher), goes through
-  `startTurn()` in `server.ts`, and learning runs after it.
+  `startTurn()` in `server.ts`, and learning runs after it. A turn cut short
+  (Stop, a message sent while it works, a restart) ends with
+  `turn.agent.done {stopped}`; `resume.ts` reads that from the log and the next
+  turn is told what was cut off, so it carries on rather than treating the new
+  message as the whole job (and an Agent-mode build stays a build).
 - `pdf-editor/`: SecurePDF's editor (from blofstedt/SecurePDF), its own
   sub-project with its own React 19 and Tailwind so neither touches the app.
   It runs in a frame sandboxed without an origin (`components/PdfWindow.tsx`)
