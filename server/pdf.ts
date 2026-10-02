@@ -1293,8 +1293,55 @@ export interface Cue {
   y: number;
   w: number;
   h: number;
+  /** The words struck, for a retype; empty otherwise. */
   from: string;
+  /** The words typed, for a retype or a new text box. */
   to: string;
+  /** What the cursor does: retypes words, types a new box, clicks to place
+      something, drags out a box, or traces a stroke. */
+  act: "retype" | "type" | "place" | "drag" | "draw";
+  /** The editor tool it would have picked up, lit on the toolbar. */
+  tool: "text" | "highlighter" | "draw" | "shape" | "note" | "stamp" | "signature" | "image" | "redact";
+  /** An object the window holds back until this cue lands it. */
+  itemId?: string;
+  /** For a stroke: where it passes, in points. */
+  points?: { x: number; y: number }[];
+}
+
+/**
+ * What the cursor does for an object the agent just placed: where, how, and
+ * with which tool. The object itself is the server's and already exists; this
+ * only says how to show it arriving. Null for something with nowhere to show.
+ */
+export function cueForItem(item: DeskItem): Cue | null {
+  const page = Math.round(Number(item.pageNumber));
+  const x = Number(item.x), y = Number(item.y), w = Number(item.width), h = Number(item.height);
+  if (!(page >= 1) || ![x, y, w, h].every(Number.isFinite)) return null;
+  const base = { page, x, y, w: Math.max(0, w), h: Math.max(0, h), from: "", to: "", itemId: String(item.id) };
+  switch (item.type) {
+    case "text": return { ...base, act: "type", tool: "text", to: String(item.text ?? "").slice(0, 200) };
+    case "stamp": return { ...base, act: "place", tool: "stamp" };
+    case "signature": return { ...base, act: "place", tool: "signature" };
+    case "image": return { ...base, act: "place", tool: "image" };
+    case "note": return { ...base, act: "place", tool: "note" };
+    case "shape": return { ...base, act: "drag", tool: "shape" };
+    case "redact": return { ...base, act: "drag", tool: "redact" };
+    case "drawing":
+    case "highlighter": {
+      const raw: { x: number; y: number }[] = Array.isArray(item.drawingPoints) ? item.drawingPoints : [];
+      const every = Math.max(1, Math.ceil(raw.length / 60));
+      const points = raw.filter((_, i) => i % every === 0 || i === raw.length - 1)
+        .map((p) => ({ x: Number(p.x), y: Number(p.y) }))
+        .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+      if (points.length < 2) return { ...base, act: "drag", tool: item.type === "drawing" ? "draw" : "highlighter" };
+      const xs = points.map((p) => p.x), ys = points.map((p) => p.y);
+      return {
+        ...base, act: "draw", tool: item.type === "drawing" ? "draw" : "highlighter", points,
+        x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys),
+      };
+    }
+    default: return null;
+  }
 }
 
 /** What the PDF tools may do with the window of the session they run in. */
@@ -2646,7 +2693,7 @@ async function replaceTextTool(args: Record<string, any>, ctx: PdfContext): Prom
       for (const c of done.changed) {
         if (cues.length >= MAX_CUES) break;
         for (const box of (await locateText(view, i, c.find, edits.find((e) => e.find === c.find)?.ignoreCase === true)).slice(0, 3)) {
-          if (cues.length < MAX_CUES) cues.push({ page: i + 1, x: box.x, y: box.y, w: box.w, h: box.h, from: c.find, to: c.with });
+          if (cues.length < MAX_CUES) cues.push({ page: i + 1, x: box.x, y: box.y, w: box.w, h: box.h, from: c.find, to: c.with, act: "retype", tool: "text" });
         }
       }
       for (const c of done.changed) {

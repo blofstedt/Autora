@@ -26,7 +26,7 @@ import path from "node:path";
 import express, { type Express, type Request, type Response } from "express";
 import { getArtifact, saveArtifact, MAX_ARTIFACT_BYTES } from "./artifacts";
 import { outlineLines } from "./compose";
-import { flattenDesk, type Cue, type DeskHooks, type DeskItem, type DeskSnapshot } from "./pdf";
+import { cueForItem, flattenDesk, type Cue, type DeskHooks, type DeskItem, type DeskSnapshot } from "./pdf";
 import { stateDir } from "./state";
 
 type Desk = DeskSnapshot & {
@@ -81,6 +81,8 @@ export type Version = {
 };
 
 const MAX_VERSIONS = 40;
+/** At most this many places are shown being worked on in one go; the rest simply arrive. */
+const MAX_SHOWN = 8;
 
 const desks = new Map<string, Desk>();
 const DIR = path.join(stateDir(), "desks");
@@ -295,6 +297,11 @@ export function deskHooks(session: string): DeskHooks {
       const carried = Boolean(was && (sameFile || was.name === next.name || (was.source !== null && was.source === next.source)));
       const { review, cues, ...snap } = next;
       if (was && !carried) dropVersions(session);
+      /* What the window shows the agent doing: the words it retyped, and each
+         object it placed, in the order they were added. */
+      const had = new Set((was?.items ?? []).map((i) => i.id));
+      const placed = snap.items.filter((i) => !had.has(i.id)).map(cueForItem).filter((c): c is Cue => c !== null);
+      const shown = [...(cues ?? []), ...placed].slice(0, MAX_SHOWN);
       const desk: Desk = {
         ...snap,
         open: true,
@@ -307,8 +314,8 @@ export function deskHooks(session: string): DeskHooks {
         versions: carried && was ? was.versions : [],
         vseq: carried && was ? was.vseq : 0,
         dirty: false,
-        cues: cues?.length ? cues : undefined,
-        cueSeq: (was?.cueSeq ?? 0) + (cues?.length ? 1 : 0),
+        cues: shown.length ? shown : undefined,
+        cueSeq: (was?.cueSeq ?? 0) + (shown.length ? 1 : 0),
       };
       if (was && carried) {
         // What the person did so far is kept as a version before the agent's change goes on top.

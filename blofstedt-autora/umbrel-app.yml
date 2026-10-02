@@ -125,10 +125,14 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  New: when the agent changes the words in a PDF, the PDF window shows it
-  happening -- a labelled cursor arrives where the words are, the old ones are
-  struck through and the new ones typed in -- and a button in the window turns
-  it off. It is a replay of an edit already made, not the edit itself.
+  New: the PDF window shows the agent at work. When it changes the words in a
+  PDF, a labelled cursor arrives where they are, strikes the old ones and types
+  the new; when it adds text, a stamp, a signature, a note, a shape, a box or a
+  stroke, the cursor types it, clicks it into place, drags it out or traces it,
+  with the matching tool lit on the toolbar, and the object lands as the
+  editor's own, still marked for you to accept or decline. It is a replay of
+  work already done, not the work itself, and a button in the window turns it
+  off.
   New: the agent can send a research worker to look into something -- where a
   feature lives, what a library says, which files use a thing. The worker has
   its own clean context and can only look; all it brings back is a short

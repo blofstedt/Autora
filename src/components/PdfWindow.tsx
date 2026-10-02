@@ -101,9 +101,11 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
       // The same file with its pages changed keeps the page you were on.
       const keepPage = shown.current.name === latest.name;
       shown.current = { baseRev, name: latest.name ?? "" };
+      // The cues go first: what the agent placed is held back by them, so it must
+      // be told before the objects arrive.
+      playCues();
       post({ type: "autora:load", bytes, name: latest.name, items: latest.items ?? [], baseRev, keepPage }, [bytes]);
       post({ type: "autora:pending", ids: pending.current });
-      playCues();
       setTrouble(null);
     } catch (err: any) {
       setTrouble(`The PDF could not be loaded: ${err?.message ?? err}`);

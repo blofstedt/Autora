@@ -107,6 +107,49 @@ async function main() {
       for (let i = 0; i < 60 && (await editor.locator("[data-agent-cue]").count()) > 0; i++) await sleep(100);
     });
 
+    await test("what the agent places is held back, performed with the toolbar lit, then lands as the editor's own object", async () => {
+      // A clean slate: a window the cue of the last test has finished with.
+      for (let i = 0; i < 60 && (await editor.locator("[data-agent-cue]").count()) > 0; i++) await sleep(100);
+      const working = (await app.api("GET", `/api/pdfdesk/${s}`)).body.working;
+      let n = 0;
+      app.decide = () => n++ === 0
+        ? { tools: [{ name: "pdf_edit", args: { file: working, add: [
+          { type: "text", text: "Approved by Jane", page: 1, x: 60, y: 520, size: 14 },
+          { type: "stamp", stamp: "approved", page: 1, x: 380, y: 520 },
+        ] } }] }
+        : { text: "Placed them." };
+      await app.turn(s, "approve it");
+      const acts = new Set<string>();
+      const tools = new Set<string>();
+      let heldWhileTyping = false;
+      let litButtons: string[] = [];
+      for (let i = 0; i < 150; i++) {
+        const state = await editor.evaluate(() => ({
+          act: document.querySelector("[data-agent-cue]")?.getAttribute("data-agent-act") ?? null,
+          phase: document.querySelector("[data-agent-cue]")?.getAttribute("data-agent-cue") ?? null,
+          tool: document.querySelector("[data-agent-cue]")?.getAttribute("data-agent-tool") ?? null,
+          boxes: document.querySelectorAll("textarea").length,
+          lit: [...document.querySelectorAll("[data-agent-using]")].map((e) => e.id),
+        }));
+        if (state.act) acts.add(state.act);
+        if (state.tool) tools.add(state.tool);
+        if (state.act === "type" && state.phase === "type" && state.boxes === 0) heldWhileTyping = true;
+        if (state.lit.length) litButtons = state.lit;
+        if (acts.size > 0 && !state.act) break;
+        await sleep(80);
+      }
+      assert.deepEqual([...acts].sort(), ["place", "type"]);
+      assert.deepEqual([...tools].sort(), ["stamp", "text"]);
+      assert.ok(heldWhileTyping, "the text box was not on the page while the cursor was still typing it");
+      assert.ok(litButtons.includes("tool-text-btn") || litButtons.includes("tool-stamp-btn"), `the toolbar was lit: ${litButtons.join(",")}`);
+      // It landed: the editor's own text object, with the words typed.
+      for (let i = 0; i < 40 && (await editor.locator("textarea").count()) === 0; i++) await sleep(100);
+      assert.deepEqual(await editor.locator("textarea").evaluateAll((els) => els.map((e) => (e as HTMLTextAreaElement).value)), ["Approved by Jane"]);
+      assert.equal(await editor.locator("[data-agent-using]").count(), 0, "and the toolbar went quiet");
+      const st = (await app.api("GET", `/api/pdfdesk/${s}`)).body;
+      assert.equal(st.items.filter((it: any) => it.type === "text" || it.type === "stamp").length, 2, "the server had both all along");
+    });
+
     await test("turned off, nothing is played", async () => {
       await page.getByRole("button", { name: /Agent cursor on/ }).click();
       assert.ok(await page.getByRole("button", { name: /Agent cursor off/ }).count());
