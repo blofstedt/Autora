@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useAgentCursor } from "../lib/agentCursor";
 import { holdSurface, useCollab } from "../lib/collab";
-import { onOfficePush, useWordState, type OfficeKind } from "../lib/officedesk";
+import { onOfficePush, useWordState, type OfficeCue, type OfficeKind } from "../lib/officedesk";
+import { OfficeCursor, type Located } from "./OfficeCursor";
 import { OfficePages } from "./OfficePages";
 import { IconDownload, IconFile, IconMaximize, IconMinimize, IconX } from "./Icons";
 
 /**
- * The Office window: the Word, PowerPoint or Excel document the agent is working
- * on, in GenOffice's own editor for it, beside the conversation
+ * The Pages, Slides or Sheets window: the document, presentation or spreadsheet the agent is
+ * working on, in GenOffice's own editor for it, beside the conversation
  * (server/officedesk.ts).
  *
  * The editor is its own build (scripts/build-office.mjs), in a frame sandboxed
@@ -18,12 +20,14 @@ import { IconDownload, IconFile, IconMaximize, IconMinimize, IconX } from "./Ico
  */
 /** The editor each kind of document opens in (dist/office/web/<app>), and what a person calls the document. */
 const APP: Record<OfficeKind, string> = { docx: "docs", pptx: "slides", xlsx: "sheets" };
-const THING: Record<OfficeKind, string> = { docx: "Word document", pptx: "deck", xlsx: "workbook" };
+const THING: Record<OfficeKind, string> = { docx: "document", pptx: "presentation", xlsx: "spreadsheet" };
+/** The app each kind opens in, by its name. */
+const NAME: Record<OfficeKind, string> = { docx: "Autora Pages", pptx: "Autora Slides", xlsx: "Autora Sheets" };
 
 export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: boolean }) {
   const word = useWordState();
   const kind: OfficeKind = word.kind ?? "docx";
-  /** PowerPoint and Excel keep their document in an engine on the server, which the frame reaches through here. */
+  /** Slides and Sheets keep their document in an engine on the server, which the frame reaches through here. */
   const engine = kind !== "docx";
   const frame = useRef<HTMLIFrameElement>(null);
   /** The version of the document the editor was last given. */
@@ -39,6 +43,12 @@ export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: b
   const pages = phone && !editing;
   const collab = useCollab();
   const mine = collab.held.includes("office");
+  const [cursorOn, setCursorOn] = useAgentCursor();
+  /** The agent's last change, being played over the editor (see OfficeCursor). */
+  const [play, setPlay] = useState<{ seq: number; items: OfficeCue[] } | null>(null);
+  const played = useRef<number | undefined>(undefined);
+  /** Questions to the editor about where things are, waiting for its answer. */
+  const asking = useRef(new Map<number, (found: Located | null) => void>());
   const base = `/api/officedesk/${encodeURIComponent(sessionId)}`;
 
   const post = useCallback((msg: Record<string, unknown>, transfer?: Transferable[]) => {
@@ -109,6 +119,16 @@ export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: b
               reply(true, { ok: true });
               break;
             }
+            case "located": {
+              // The editor's answer to where the cursor should go (office/shim/cursor.js).
+              const found = asking.current.get(Number(payload.id));
+              if (found && Array.isArray(payload.rects) && payload.rects.some(Boolean)) {
+                asking.current.delete(Number(payload.id));
+                found({ rects: payload.rects, view: payload.view ?? { w: 800, h: 600 } });
+              }
+              reply(true, {});
+              break;
+            }
             case "presence": {
               void fetch(`${base}/presence`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => undefined);
               reply(true, {});
@@ -155,6 +175,29 @@ export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: b
       .catch((err: any) => setTrouble(`The document could not be loaded: ${err?.message ?? err}`));
   }, [engine, word.loadRev, fetchDocument, post]);
 
+  // The agent changed the document: play where it worked, once, if the window is on screen now.
+  useEffect(() => {
+    if (!cursorOn || pages || !word.cues || word.cues.length === 0 || word.cueRev === undefined) return;
+    if (played.current === word.cueRev || (word.cueAge ?? 0) > 6000) return;
+    played.current = word.cueRev;
+    setPlay({ seq: word.cueRev, items: word.cues });
+  }, [cursorOn, pages, word.cues, word.cueRev, word.cueAge]);
+
+  const locate = useCallback((items: OfficeCue[]) => new Promise<Located | null>((resolve) => {
+    const id = Date.now() + Math.floor(Math.random() * 1000);
+    const targets = items.map((c) => ({ text: c.text, cell: c.cell, sheet: c.sheet }));
+    let tries = 0;
+    const finish = (found: Located | null) => { clearInterval(timer); asking.current.delete(id); resolve(found); };
+    asking.current.set(id, finish);
+    // The frame may still be starting (a window just opened, a document loading): ask again until it answers.
+    const send = () => {
+      post({ type: "autora:office-locate", id, targets, wait: 1400 });
+      if (++tries > 6) finish(null);
+    };
+    const timer = setInterval(send, 1500);
+    send();
+  }), [post]);
+
   const restore = useCallback(async (n: number) => {
     setVersionsOpen(false);
     try {
@@ -177,6 +220,7 @@ export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: b
     <div className={`pdf-window office-window${phone ? " is-phone" : ""}${phone && full ? " is-full" : ""}${pages ? " is-pages" : ""}`}>
       <div className="pdf-bar">
         <span className="pdf-bar-ico" aria-hidden="true"><IconFile size={14} /></span>
+        <span className="pdf-bar-app">{NAME[kind]}</span>
         <span className="pdf-bar-name" title={word.name}>{word.name ?? THING[kind]}</span>
         <span className="pdf-bar-note">{problem ? "" : "Saved as you go"}</span>
         <div className="spacer" />
@@ -198,6 +242,16 @@ export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: b
         >
           {mine ? "Hand back" : "Take control"}
         </button>
+        {!pages && (
+          <button
+            className="pdf-pill pdf-cursor-pill"
+            onClick={() => setCursorOn(!cursorOn)}
+            aria-pressed={cursorOn}
+            title={cursorOn ? "Stop showing where the agent edits" : "Show where the agent edits, as it edits"}
+          >
+            Agent cursor {cursorOn ? "on" : "off"}
+          </button>
+        )}
         {word.working && (
           <a
             className="btn icon ghost"
@@ -209,7 +263,7 @@ export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: b
           </a>
         )}
         {phone && editing && (
-          <button className="pdf-pill" onClick={() => setEditing(false)} title="Back to the pages">Pages</button>
+          <button className="pdf-pill" onClick={() => setEditing(false)} title="Back to the pictures of the pages">Page view</button>
         )}
         {phone && !pages && (
           <button
@@ -246,14 +300,17 @@ export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: b
       {pages ? (
         <OfficePages sessionId={sessionId} name={word.name ?? THING[kind]} rev={word.rev ?? 0} onEdit={() => { setEditing(true); setFull(true); }} />
       ) : (
-        <iframe
-          key={engine ? `${kind}-${word.loadRev ?? 0}` : kind}
-          ref={frame}
-          className="pdf-frame"
-          src={`/office-app/${APP[kind]}/index.html`}
-          title={`${word.name ?? THING[kind]}, in its editor`}
-          sandbox="allow-scripts allow-downloads allow-modals allow-popups"
-        />
+        <div className="office-stage">
+          <iframe
+            key={engine ? `${kind}-${word.loadRev ?? 0}` : kind}
+            ref={frame}
+            className="pdf-frame"
+            src={`/office-app/${APP[kind]}/index.html`}
+            title={`${word.name ?? THING[kind]}, in ${NAME[kind]}`}
+            sandbox="allow-scripts allow-downloads allow-modals allow-popups"
+          />
+          {cursorOn && play && <OfficeCursor cues={play.items} seq={play.seq} locate={locate} onDone={() => setPlay(null)} />}
+        </div>
       )}
     </div>
   );

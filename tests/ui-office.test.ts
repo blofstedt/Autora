@@ -114,7 +114,7 @@ async function main() {
       app.decide = (req) => guardOk(req) ?? { text: "Noted." };
       await app.turn(s, "what do you see in the memo now?");
       const told = app.seen.map((r) => `${r.system}\n${JSON.stringify(r.messages)}`).join("\n");
-      assert.match(told, /in the Word window, the person/);
+      assert.match(told, /in the Autora Pages window, the person/);
       assert.match(told, /Moved by the person to Monday/);
     });
 
@@ -131,6 +131,9 @@ async function main() {
       // Wait out the lease, as the agent would by working on something else.
       await sleep(22_000);
       const frameBefore = frame;
+      // The agent's cursor goes to the heading and types it over the editor, with the same motion as in the browser.
+      const cursor = page.waitForSelector(".office-cursor-layer .office-cursor", { state: "attached", timeout: 60_000 });
+      const typed = page.waitForSelector(".office-ghost:not(.is-caption)", { state: "attached", timeout: 60_000 });
       const ev = await app.turn(s, "rename the heading to Launch notes", 120_000);
       if (process.env.OFFICE_DEBUG) {
         console.log("last events:", JSON.stringify(ev.slice(-14).map((e) => [e.kind, JSON.stringify(e.payload).slice(0, 160)])));
@@ -139,6 +142,9 @@ async function main() {
         console.log("frame text:", (await bodyText(frame)).slice(0, 300).replace(/\n/g, " | "));
       }
       await until("the new heading", async () => /Launch notes/.test(await bodyText(frame)), 40_000);
+      await cursor;
+      // Found in the editor, so the words are drawn over the heading itself, not in a caption beside the cursor.
+      await typed;
       assert.equal(page.frames().filter((f) => f.url().includes("/office-app/docs/")).length, 1);
       assert.strictEqual(frameBefore, frame);
       // Their typing survived the agent's change.

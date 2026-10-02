@@ -48,10 +48,11 @@ description: >-
   result is a new file in the chat; yours is never overwritten.
 
 
-  • Word, Excel and PowerPoint — attach a document, workbook or deck, or ask for
-  a new one: Autora reads it, edits it in place (Word changes can be tracked
-  changes), makes new files from your description, converts between Word,
-  Markdown, HTML and CSV, and checks its own work. Formulas really calculate,
+  • Autora Pages, Sheets and Slides — attach a document (.docx), spreadsheet (.xlsx)
+  or presentation (.pptx), or ask for a new one: Autora reads it, edits it in place
+  (document changes can be tracked changes), makes new files from your description,
+  converts between Markdown, HTML and CSV, and checks its own work. Each app has its
+  own window and its own switch on the Tools page. Formulas really calculate,
   and your file is never overwritten. Built on the open-source GenOffice
   engines.
 
@@ -133,12 +134,10 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  Fix: closing the last browser tab no longer signs you out of sites (a blank tab opens first, so
-  the browser's session cookies are kept).
-  New: the app window gets the tools of a real builder. A Console button opens the page's console and
-  network (the same lists the agent reads); phone and tablet previews are drawn in a device frame;
-  Versions lists a saved version of your project after every turn that changed code, and Go back to
-  this puts the files back as they were (what was there is saved first, so a restore can be undone);
-  Templates starts a landing page, dashboard, to-do app, portfolio, blog or sign-up form with one tap.
-  Earlier in this release line: the browser's tabs, Chrome extensions (experimental), find, bookmarks,
-  history, downloads and developer tools.
+  New: Word, Excel and PowerPoint are now Autora Pages, Autora Sheets and Autora Slides, each with
+  its own switch on the Tools page; the PDF editor is Autora PDF. Watch Autora work in all four:
+  its cursor now moves like the browser's (arcs, easing, overshoot) and types at a human pace, in
+  the PDF window and in Pages, Sheets and Slides. PDFs can take curved lines (a new curve item and
+  full SVG paths). Every reply has a Copy button. Autora is now told it has the three office apps,
+  the PDF window and the construction window, and when to use each. Fix: the browser's bookmark
+  star is centred.

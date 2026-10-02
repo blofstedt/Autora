@@ -43,7 +43,7 @@ const MIME: Record<OfficeKind, string> = {
 };
 const kindOfName = (name: string): OfficeKind => (/\.pptx$/i.test(name) ? "pptx" : /\.xlsx$/i.test(name) ? "xlsx" : "docx");
 /** What the person calls the document, and the surface they hold with Take control. */
-const THING: Record<OfficeKind, string> = { docx: "Word", pptx: "PowerPoint", xlsx: "Excel" };
+const THING: Record<OfficeKind, string> = { docx: "Autora Pages", pptx: "Autora Slides", xlsx: "Autora Sheets" };
 
 export type WordVersion = { n: number; label: string; at: number; by: "agent" | "person"; name: string };
 
@@ -71,7 +71,57 @@ type Desk = {
   vseq: number;
   /** The person changed something since the last version was kept. */
   dirty: boolean;
+  /** Where the agent just worked, to be played in the window over the editor (see OfficeCue). Never kept on disk. */
+  cues?: OfficeCue[];
+  /** The `rev` the cues belong to, so the window plays each set once. */
+  cueRev?: number;
+  /** When they were made, so a page that loads later does not play them again. */
+  cueAt?: number;
 };
+
+/**
+ * One thing the agent did in the document, to be shown as a cursor that goes to the place and types the words,
+ * the way it does in the PDF window. A presentation of a change already made: the document is the real one.
+ * `text` is what ends up there (what is typed, and what the editor is searched for); `cell`/`sheet` name a
+ * workbook's cell. The window finds the place in the editor and falls back to a spot in the middle.
+ */
+export type OfficeCue = { act: "type" | "point"; text: string; cell?: string; sheet?: string };
+
+const MAX_CUES = 6;
+const cueText = (t: string) => t.replace(/\s+/g, " ").trim().slice(0, 160);
+
+/** What the agent changed, as cues: the paragraphs or cells that are new or different, in document order. */
+export function cuesFor(kind: OfficeKind, before: Buffer | null, after: Buffer): OfficeCue[] {
+  if (kind === "xlsx") {
+    const b = before ? xlsxCells(before) : new Map<string, string>();
+    const a = xlsxCells(after);
+    if (!a || !b) return [];
+    const out: OfficeCue[] = [];
+    for (const [ref, now] of a) {
+      if (out.length >= MAX_CUES) break;
+      if (b.get(ref) === now) continue;
+      const bang = ref.lastIndexOf("!");
+      // A formula is typed as the formula; its stored result is only what the sheet shows.
+      const typed = now.startsWith("=") ? now.replace(/ \([^)]*\)$/, "") : now;
+      if (!typed.trim()) continue;
+      out.push({ act: "type", text: cueText(typed), sheet: bang > 0 ? ref.slice(0, bang) : undefined, cell: ref.slice(bang + 1) });
+    }
+    return out;
+  }
+  const a = kind === "pptx" ? pptxParagraphs(after) : docxParagraphs(after);
+  if (!a) return [];
+  const b = before ? (kind === "pptx" ? pptxParagraphs(before) : docxParagraphs(before)) : [];
+  if (!b) return [];
+  let head = 0;
+  while (head < b.length && head < a.length && b[head] === a[head]) head += 1;
+  let tail = 0;
+  while (tail < b.length - head && tail < a.length - head && b[b.length - 1 - tail] === a[a.length - 1 - tail]) tail += 1;
+  const fresh = a.slice(head, a.length - tail).map(cueText).filter(Boolean).slice(0, MAX_CUES);
+  if (fresh.length > 0) return fresh.map((text) => ({ act: "type", text }));
+  // Only deletions: point at where the words were.
+  const near = cueText(a[Math.max(0, head - 1)] ?? "");
+  return near && before && b.length > a.length ? [{ act: "point", text: near }] : [];
+}
 
 const MAX_VERSIONS = 30;
 const desks = new Map<string, Desk>();
@@ -600,11 +650,11 @@ function checkEngineFile(session: string) {
 
 async function ensureEngine(session: string): Promise<Engine> {
   const desk = load(session);
-  if (!desk || desk.kind === "docx") throw new Error("There is no PowerPoint or Excel document in the window.");
+  if (!desk || desk.kind === "docx") throw new Error("There is no presentation or spreadsheet in the window.");
   const have = engines.get(session);
   if (have && have.kind === desk.kind) return have;
   if (have) stopEngine(session);
-  if (!hostBuilt(desk.kind === "pptx" ? "slides" : "sheets")) throw new Error(`The ${THING[desk.kind]} editor's engine is not built on this server.`);
+  if (!hostBuilt(desk.kind === "pptx" ? "slides" : "sheets")) throw new Error(`${THING[desk.kind]}'s engine is not built on this server.`);
   const file = workFile(session, desk.kind);
   if (!fs.existsSync(file)) engineFileChanged(session, desk);
   const home = path.join(DIR, `${session}.engine`);
@@ -632,7 +682,7 @@ async function ensureEngine(session: string): Promise<Engine> {
     engines.delete(session);
     const now = load(session);
     if (now) {
-      now.problem = `The ${THING[now.kind]} editor's engine stopped. Close the window and open the document again.`;
+      now.problem = `${THING[now.kind]}'s engine stopped. Close the window and open the document again.`;
       changed(session);
     }
   });
@@ -692,6 +742,10 @@ export function officeState(session: string) {
   return {
     open: desk.open, kind: desk.kind, name: desk.name, working: desk.working, rev: desk.rev, loadRev: desk.loadRev,
     since: desk.since, problem: desk.problem, versions: desk.versions,
+    cues: desk.cues && desk.cues.length > 0 ? desk.cues : undefined,
+    cueRev: desk.cues && desk.cues.length > 0 ? desk.cueRev : undefined,
+    /** How long ago they were made: a page that opens the window much later has missed them. */
+    cueAge: desk.cues && desk.cues.length > 0 ? Date.now() - (desk.cueAt ?? 0) : undefined,
   };
 }
 
@@ -746,6 +800,10 @@ export function officeHooks(session: string): OfficeHooks {
         desk.versions = was.versions;
         desk.vseq = was.vseq;
       }
+      // A document the agent made is typed in from its first lines; one it changed, where it changed.
+      desk.cues = cuesFor(kind, was && carried ? was.data : null, next.data).slice(0, was && carried ? MAX_CUES : 3);
+      desk.cueRev = desk.rev;
+      desk.cueAt = Date.now();
       desks.set(session, desk);
       snapshot(session, desk, next.label ?? (was && carried ? "Changed by the agent" : "Opened"), "agent");
       if (kind !== "docx") engineFileChanged(session, desk);
@@ -822,7 +880,7 @@ export function officeBriefing(session: string): string | null {
 export function personSaved(session: string, data: Buffer): string | null {
   const desk = load(session);
   if (!desk) return "There is no document open in the window.";
-  if (!isOffice(data, desk.kind)) return `That is not a ${THING[desk.kind]} document.`;
+  if (!isOffice(data, desk.kind)) return `That is not a file ${THING[desk.kind]} opens.`;
   if (data.byteLength > MAX_ARTIFACT_BYTES) return "That file is over 50 MB.";
   if (data.equals(desk.data)) return null;
   const before = desk.data;

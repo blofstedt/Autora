@@ -2,8 +2,9 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import type { Bucket, Cell, MemoryTouch } from "../lib/derive";
 import { turnItems } from "../lib/steps";
 import { isPicture, sizeLabel, type Attachment } from "../lib/attachments";
-import { IconAlert, IconArrow, IconArrowDown, IconBrain, IconChevron, IconDownload, IconFile, IconNotebook, IconSpeaker, IconSpeakerOff, IconTerminal, IconUser, IconWrench } from "./Icons";
+import { IconAlert, IconArrow, IconArrowDown, IconBrain, IconCheck, IconChevron, IconCopy, IconDownload, IconFile, IconNotebook, IconSpeaker, IconSpeakerOff, IconTerminal, IconUser, IconWrench } from "./Icons";
 import { OPEN_NOTEBOOK } from "../lib/notebooks";
+import { copyText } from "../lib/clipboard";
 import { sameReply } from "../lib/voice";
 import { AutoraMark } from "./AutoraMark";
 import type { MarkPhase } from "../lib/activity";
@@ -908,6 +909,7 @@ const Reply = memo(function Reply({
   phase?: MarkPhase;
 }) {
   const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
   /* Whether the voice is on this reply, and whether it has been silenced. */
   const mine = speakingReply && sameReply(speakingReply.text, text) ? speakingReply : null;
   const spokenLabel = mine
@@ -955,9 +957,24 @@ const Reply = memo(function Reply({
             only the reply the voice is actually on shows the second face, since
             pressing another reply's speaker stops this one: there is one
             voice. */}
-        {onSpeak && text && !working && (
+        {text && !working && (
           <div className="msg-tools">
             <button
+              type="button"
+              className={`msg-tool ${copied ? "is-copied" : ""}`.trim()}
+              onClick={() => {
+                void copyText(text).then((ok) => {
+                  if (!ok) return;
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1600);
+                });
+              }}
+              title={copied ? "Copied" : "Copy this reply"}
+              aria-label={copied ? "Copied" : "Copy this reply"}
+            >
+              {copied ? <IconCheck size={13} /> : <IconCopy size={13} />}
+            </button>
+            {onSpeak && <button
               type="button"
               className={`msg-tool ${mine ? (mine.muted ? "is-muted" : "is-speaking") : ""}`.trim()}
               onClick={() => onSpeak(text)}
@@ -966,7 +983,7 @@ const Reply = memo(function Reply({
               aria-pressed={Boolean(mine)}
             >
               {mine?.muted ? <IconSpeakerOff size={13} /> : <IconSpeaker size={13} />}
-            </button>
+            </button>}
           </div>
         )}
         {onOpenSettings && (

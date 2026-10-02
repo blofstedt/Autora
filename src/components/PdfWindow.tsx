@@ -240,6 +240,7 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
     <div className={`pdf-window${phone ? " is-phone" : ""}${phone && full ? " is-full" : ""}`}>
       <div className="pdf-bar">
         <span className="pdf-bar-ico" aria-hidden="true"><IconFile size={14} /></span>
+        <span className="pdf-bar-app">Autora PDF</span>
         <span className="pdf-bar-name" title={desk.name}>{desk.name ?? "PDF"}</span>
         <span className="pdf-bar-note">{problem ? "" : "Saved as you go"}</span>
         <div className="spacer" />
@@ -291,7 +292,7 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
           </button>
         )}
         {!phone && (
-          <button className="btn icon ghost" onClick={close} title="Put the PDF window away" aria-label="Put the PDF window away">
+          <button className="btn icon ghost" onClick={close} title="Put Autora PDF away" aria-label="Put Autora PDF away">
             <IconX size={14} />
           </button>
         )}
@@ -331,7 +332,7 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
         ref={frame}
         className="pdf-frame"
         src="/pdf-editor/index.html"
-        title={`${desk.name ?? "PDF"}, in the PDF editor`}
+        title={`${desk.name ?? "PDF"}, in Autora PDF`}
         sandbox="allow-scripts allow-downloads allow-modals allow-popups"
       />
     </div>

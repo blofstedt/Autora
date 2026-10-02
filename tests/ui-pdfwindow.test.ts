@@ -131,7 +131,7 @@ async function main() {
     });
 
     await test("put away, it stays away until the agent works on a PDF again", async () => {
-      await page.click('.pdf-bar button[aria-label="Put the PDF window away"]');
+      await page.click('.pdf-bar button[aria-label="Put Autora PDF away"]');
       await page.waitForSelector(".pdf-window", { state: "detached", timeout: 5_000 });
       assert.equal((await app.api("GET", `/api/pdfdesk/${s}`)).body.open, false);
     });

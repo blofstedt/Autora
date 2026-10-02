@@ -177,8 +177,11 @@ export interface ToolSettings {
   widgets: { enabled: boolean };
   app: { enabled: boolean };
   pdf: { enabled: boolean };
-  /** Word, Excel and PowerPoint: the tools and the window beside the chat. */
-  office: { enabled: boolean };
+  /** Autora Pages (.docx), Autora Sheets (.xlsx) and Autora Slides (.pptx): each its own switch, for the
+      Office tools' work on that kind of file and its window beside the chat. */
+  pages: { enabled: boolean };
+  sheets: { enabled: boolean };
+  slides: { enabled: boolean };
 }
 
 export interface UsageEntry {
@@ -341,7 +344,9 @@ export function defaultTools(): ToolSettings {
     widgets: { enabled: true },
     app: { enabled: true },
     pdf: { enabled: true },
-    office: { enabled: true },
+    pages: { enabled: true },
+    sheets: { enabled: true },
+    slides: { enabled: true },
   };
 }
 
@@ -386,7 +391,11 @@ export function mergeTools(into: ToolSettings, patch: any): ToolSettings {
     into[group].enabled = bool(given.enabled, into[group].enabled);
     into[group].approval = mode(given.approval, into[group].approval);
   }
-  for (const key of ["widgets", "app", "pdf", "office"] as const) {
+  /* One switch for all three, as it was before they were told apart (older settings files, stale clients). */
+  if (patch.office && typeof patch.office === "object" && typeof patch.office.enabled === "boolean") {
+    for (const key of ["pages", "sheets", "slides"] as const) into[key].enabled = patch.office.enabled;
+  }
+  for (const key of ["widgets", "app", "pdf", "pages", "sheets", "slides"] as const) {
     const given = patch[key];
     if (given && typeof given === "object") into[key].enabled = bool(given.enabled, into[key].enabled);
   }

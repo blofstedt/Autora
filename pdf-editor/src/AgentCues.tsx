@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { along, ease, humanRoute, restMs, routeMs, typingDelays, type Point } from "../../src/lib/humanPath";
 
 /**
  * The agent working on a page, played over it: a labelled cursor arrives and
@@ -37,13 +38,11 @@ export interface Cue {
 
 type Phase = "arrive" | "strike" | "type" | "click" | "move" | "hold";
 
-const ARRIVE_MS = 520;
 const STRIKE_MS = 650;
 const CLICK_MS = 380;
-const MOVE_MS = 800;
 const HOLD_MS = 520;
-/** All of a cue's typing takes about this long, however long the words are. */
-const TYPE_TOTAL_MS = 1400;
+/** All of a cue's typing takes at most about this long, however long the words are. */
+const TYPE_TOTAL_MS = 2600;
 
 /** What comes after each phase, for each kind of action. */
 function after(act: CueAct, phase: Phase, hasFrom: boolean): Phase | null {
@@ -58,6 +57,24 @@ function after(act: CueAct, phase: Phase, hasFrom: boolean): Phase | null {
     case "draw":
       return phase === "arrive" ? "move" : phase === "move" ? "hold" : null;
   }
+}
+
+/** Where the cursor goes first, in pixels: the start of a drag or stroke, the middle of a click, the start of the words. */
+function arrivePoint(cue: Cue, scale: number): Point {
+  const left = cue.x * scale, top = cue.y * scale, w = cue.w * scale, h = cue.h * scale;
+  if (cue.act === "place") return { x: left + w / 2, y: top + h / 2 };
+  if (cue.act === "drag") return { x: left, y: top };
+  if (cue.act === "draw" && cue.points?.[0]) return { x: cue.points[0].x * scale, y: cue.points[0].y * scale };
+  return { x: left + Math.min(w, 24), y: top + h * 0.7 };
+}
+
+/** Where a cue leaves the cursor, in points. */
+function endPoint(cue: Cue): Point {
+  if (cue.act === "place") return { x: cue.x + cue.w / 2, y: cue.y + cue.h / 2 };
+  if (cue.act === "drag") return { x: cue.x + cue.w, y: cue.y + cue.h };
+  const last = cue.points?.[cue.points.length - 1];
+  if (cue.act === "draw" && last) return last;
+  return { x: cue.x + Math.min(cue.w, 24 + cue.to.length * 5), y: cue.y + cue.h * 0.7 };
 }
 
 /** The objects are landed as the motion ends. */
@@ -78,8 +95,20 @@ export function AgentCues({
   const [phase, setPhase] = useState<Phase>("arrive");
   const [typed, setTyped] = useState(0);
   const [t, setT] = useState(0);
-  const [landed, setLanded] = useState(false);
+  /** Where the cursor is while it travels to a cue, in pixels. */
+  const [travel, setTravel] = useState<Point | null>(null);
   const cue = cues[i];
+  /** Where the last cue left the cursor, in points, so the next one starts from there. */
+  const lastPt = useRef<Point | null>(null);
+  /** The gap before each character of the words being typed. */
+  const gaps = useRef<number[]>([]);
+  /** The path a drag's cursor takes, as a bend to either side of the straight line. */
+  const bend = useRef(0);
+  /** How long the drag or stroke being played takes. */
+  const moveMs = useRef(800);
+  // Read inside the timers below, which must not restart when the page is zoomed.
+  const scaleRef = useRef(scale);
+  scaleRef.current = scale;
 
   // Held in refs: the caller passes fresh functions each render, and a timer
   // restarted by every render would never finish.
@@ -96,7 +125,8 @@ export function AgentCues({
     setPhase("arrive");
     setTyped(0);
     setT(0);
-    setLanded(false);
+    setTravel(null);
+    lastPt.current = null;
   }, [seq]);
 
   // The toolbar shows what the agent is using, for as long as it uses it.
@@ -111,11 +141,12 @@ export function AgentCues({
       return;
     }
     const next = () => {
+      lastPt.current = endPoint(cue);
       setI((n) => n + 1);
       setPhase("arrive");
       setTyped(0);
       setT(0);
-      setLanded(false);
+      setTravel(null);
     };
     // Another page's change is not shown here; what it placed just appears.
     if (cue.page !== page) {
@@ -126,9 +157,30 @@ export function AgentCues({
     if (landsOn(cue.act, phase) && cue.itemId) reveal.current(cue.itemId);
 
     if (phase === "arrive") {
-      const move = requestAnimationFrame(() => setLanded(true));
-      const timer = setTimeout(() => setPhase(after(cue.act, "arrive", Boolean(cue.from)) ?? "hold"), ARRIVE_MS);
-      return () => { cancelAnimationFrame(move); clearTimeout(timer); };
+      // The cursor reaches for the place along the same kind of arc, speed and
+      // tremor the browser's pointer has, from where the last cue left it.
+      const target = arrivePoint(cue, scaleRef.current);
+      const prev = lastPt.current;
+      const from = prev ? { x: prev.x * scaleRef.current, y: prev.y * scaleRef.current } : { x: target.x - 70, y: target.y - 55 };
+      const route = humanRoute(from, target);
+      const ms = routeMs(Math.hypot(target.x - from.x, target.y - from.y));
+      gaps.current = typingDelays(cue.to, TYPE_TOTAL_MS);
+      moveMs.current = cue.act === "draw"
+        ? Math.min(2400, Math.max(500, (cue.points?.length ?? 0) * 22))
+        : routeMs(Math.hypot(cue.w, cue.h) * scaleRef.current);
+      bend.current = (Math.random() < 0.5 ? -1 : 1) * (6 + Math.random() * 16);
+      setTravel(from);
+      const started = performance.now();
+      let frame = 0;
+      const step = () => {
+        const p = Math.min(1, (performance.now() - started) / ms);
+        setTravel(along(route, p));
+        if (p < 1) frame = requestAnimationFrame(step);
+      };
+      frame = requestAnimationFrame(step);
+      // A beat on the spot before it acts, as a hand rests before pressing.
+      const timer = setTimeout(() => setPhase(after(cue.act, "arrive", Boolean(cue.from)) ?? "hold"), ms + restMs());
+      return () => { cancelAnimationFrame(frame); clearTimeout(timer); };
     }
     if (phase === "strike") {
       const timer = setTimeout(() => setPhase("type"), STRIKE_MS);
@@ -139,7 +191,7 @@ export function AgentCues({
         setPhase(after(cue.act, "type", false) ?? "hold");
         return;
       }
-      const timer = setTimeout(() => setTyped((n) => n + 1), Math.max(14, Math.min(40, TYPE_TOTAL_MS / Math.max(1, cue.to.length))));
+      const timer = setTimeout(() => setTyped((n) => n + 1), gaps.current[typed] ?? 40);
       return () => clearTimeout(timer);
     }
     if (phase === "click") {
@@ -150,7 +202,7 @@ export function AgentCues({
       // A drag or a stroke, as a number from 0 to 1.
       const started = performance.now();
       const id = setInterval(() => {
-        const p = Math.min(1, (performance.now() - started) / MOVE_MS);
+        const p = Math.min(1, (performance.now() - started) / moveMs.current);
         setT(p);
         if (p >= 1) {
           clearInterval(id);
@@ -171,20 +223,25 @@ export function AgentCues({
   const w = cue.w * scale;
   const h = cue.h * scale;
 
-  // Where the cursor is: arriving, then wherever the action takes it.
+  // Where the cursor is: travelling there, then wherever the action takes it.
+  // A drag leaves the straight line a little, as a hand does; a stroke follows its points.
   const pts = cue.points ?? [];
-  let cursor = { x: left + Math.min(w, 24), y: top + h * 0.7 };
-  if (cue.act === "place") cursor = { x: left + w / 2, y: top + h / 2 };
-  if (cue.act === "drag" && phase !== "arrive") cursor = { x: left + w * (phase === "hold" ? 1 : t), y: top + h * (phase === "hold" ? 1 : t) };
+  const arrival = arrivePoint(cue, scale);
+  const eased = ease(phase === "hold" ? 1 : t);
+  let cursor: Point = arrival;
+  if (cue.act === "drag" && phase !== "arrive") {
+    const arc = Math.sin(Math.PI * eased) * bend.current;
+    const len = Math.hypot(w, h) || 1;
+    cursor = { x: left + w * eased - (h / len) * arc, y: top + h * eased + (w / len) * arc };
+  }
   if (cue.act === "draw" && pts.length > 1 && phase !== "arrive") {
-    const p = pts[Math.min(pts.length - 1, Math.floor((phase === "hold" ? 1 : t) * (pts.length - 1)))];
+    const p = pts[Math.min(pts.length - 1, Math.floor(eased * (pts.length - 1)))];
     cursor = { x: p.x * scale, y: p.y * scale };
   }
-  const start = cue.act === "drag" ? { x: left, y: top } : cue.act === "draw" && pts[0] ? { x: pts[0].x * scale, y: pts[0].y * scale } : cursor;
-  const placed = landed || phase !== "arrive";
+  const shown = phase === "arrive" ? travel ?? { x: arrival.x - 70, y: arrival.y - 55 } : cursor;
   const showing = phase === "arrive" ? "" : phase === "strike" ? cue.from : cue.to.slice(0, typed);
   const textual = cue.act === "retype" || cue.act === "type";
-  const progress = phase === "hold" ? 1 : phase === "move" ? t : 0;
+  const progress = phase === "hold" ? 1 : phase === "move" ? eased : 0;
 
   return (
     <div
@@ -254,10 +311,7 @@ export function AgentCues({
       <div
         style={{
           position: "absolute", left: 0, top: 0, willChange: "transform",
-          transform: placed
-            ? `translate(${cursor.x}px, ${cursor.y}px)`
-            : `translate(${start.x - 70}px, ${start.y - 55}px)`,
-          transition: phase === "arrive" ? `transform ${ARRIVE_MS}ms cubic-bezier(.2,.8,.2,1)` : "none",
+          transform: `translate(${shown.x}px, ${shown.y}px)`,
         }}
       >
         <svg width="16" height="20" viewBox="0 0 16 20" style={{ display: "block", filter: "drop-shadow(0 1px 2px rgba(0,0,0,.35))" }}>
