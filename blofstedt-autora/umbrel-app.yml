@@ -135,7 +135,7 @@ releaseNotes: >-
   says in one line that it failed exactly as before. When an error budget stops
   a turn, what it learned is kept as a provisional memory, so the next chat
   does not walk into the same dead end. The trace now counts calls that
-  rewrote the provider's prompt cache mid-turn and whether a tool-list change
+  read little of the provider's prompt cache mid-turn and whether a tool-list change
   was why, and AUTORA_CACHE_TTL=1h asks Anthropic for an hour-long cache for
   chats with long gaps. A new "npm run replay" command replays a recorded chat
   against the loop rules so settings can be compared on the same chat.

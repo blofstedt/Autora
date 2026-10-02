@@ -73,6 +73,17 @@ test("an empty log is empty, not an error", () => {
   assert.match(traceText(t), /0 turns, 0 model calls/);
 });
 
+test("a provider that reports no cache writes (DeepSeek) is counted the same way", () => {
+  const t = buildTrace([
+    ev("turn.user", { text: "go" }),
+    ev("usage.turn", { input_tokens: 9000, cached_tokens: 0 }),
+    ev("usage.turn", { input_tokens: 9500, cached_tokens: 9000 }),
+    ev("usage.turn", { input_tokens: 9800, cached_tokens: 128, tools_changed: true }),
+  ]);
+  assert.equal(t.cacheMisses, 1);
+  assert.equal(t.cacheMissesFromTools, 1);
+});
+
 test("a call that rewrites the cache mid-turn is counted, with the tool list when that was why", () => {
   const t = buildTrace([
     ev("turn.user", { text: "go" }),

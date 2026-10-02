@@ -83,9 +83,10 @@ export function buildTrace(events: readonly TraceEvent[], recentTurns = 8): Trac
         break;
       case "usage.turn": {
         const input = num(p.input_tokens), output = num(p.output_tokens), cached = num(p.cached_tokens);
-        /* A call after the turn's first that wrote a large prompt to the cache
-           instead of reading it: something earlier in the prompt changed. */
-        if (cur && cur.rounds > 0 && num(p.cache_write_tokens) > 2000 && cached < input / 2) {
+        /* A call after the turn's first that read little of a large prompt from the
+           cache: something early in it changed. Judged on what was not read, since
+           only some providers (Anthropic) report what was written. */
+        if (cur && cur.rounds > 0 && input - cached > 2000 && cached < input / 2) {
           total.misses += 1;
           if (p.tools_changed === true) total.toolMisses += 1;
         }
