@@ -32,6 +32,9 @@ instead of copying `pdfdesk.ts` again.
 4. Video editor (4).
 5. 3D tool and its game mode (2).
 
+The store (6) is independent of the rest and can start whenever there are
+enough skills and tools worth sharing; free listings first.
+
 ## 0. Word tool (prerequisite for 1)
 
 There is no word tool in the repo yet. Size: M.
@@ -131,7 +134,51 @@ Where the character comes from is the hard part, and the choices are:
 Recommendation: start with a built-in 2D skeletal cast and a procedural
 walk / run / idle library, then widen to other sources.
 
+## 6. Autora Store
+
+Size: XL. Not a window like the others: a marketplace, so it does not follow
+the sandboxed-editor pattern above. It needs a hosted service Autora talks to,
+which is new, since everything else runs on the person's own box.
+
+A place where people list skills and tools for others to install, free or
+paid.
+
+- **Free listings are free.** Paid listings pay the seller, and the store keeps
+  a small cut. That is the monetisation: many small cuts instead of charging
+  for Autora itself. Autora stays free to run.
+- **Ratings are the reason to pay.** A skill or tool that is rated well by
+  other people is worth a dollar or two against building and testing one
+  yourself. Ratings (and probably review text and install counts) are
+  therefore the core of the store, not an extra. Only people who installed an
+  item can rate it, so ratings are hard to fake.
+- What can be listed: skills, and tools (`server/customtools.ts` scripts, MCP
+  setups from `server/mcpcatalog.ts`). Listings carry a name, description,
+  version, price, screenshots and what the item needs access to.
+- Installing puts the item where the agent already finds it, so the store
+  adds no new way of running things.
+- Safety is the main risk. A tool runs shell commands for whoever installed it
+  and Autora has no login, so a paid or free listing is untrusted code. At
+  minimum: show what an item can touch before install, run listed tools
+  through `server/guard.ts`, scan or review listings, and let people report
+  and the store pull an item. Credentials are never part of a listing
+  (`server/credentials.ts`).
+- Needs sellers and buyers to have accounts, payments and payouts, refunds,
+  tax handling and seller terms. A payment provider with marketplace payouts
+  (Stripe Connect or similar) is the likely base; decide before building.
+- Autora may have no internet (see the constraints above), so the store is
+  opt-in and the app works fully without it. Paid items need to keep working
+  offline once bought.
+- No chat-app or third-party notification channels for store activity, as
+  elsewhere: notifications go through the installed app (`server/push.ts`).
+
+First version to try: free listings with ratings only, to get the catalogue,
+the install path and the safety checks right before any money moves. Add paid
+listings and the cut once there is something worth paying for.
+
 ## Open questions
+
+- Store: what cut, and a minimum price? Who hosts it, and does a store
+  account exist separately from the install (Autora has no login today)?
 
 - Does the word tool exist elsewhere (SecurePDF-style), or is it new here?
 - Target hardware: real Umbrel boxes or stronger machines? That decides
