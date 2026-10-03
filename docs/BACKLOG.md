@@ -179,6 +179,19 @@ paid.
 - No chat-app or third-party notification channels for store activity, as
   elsewhere: notifications go through the installed app (`server/push.ts`).
 
+- **Every listing is labelled by how the agent behaves in it**, following the
+  core principle in `CLAUDE.md`:
+  - *Full agentic* (productivity: documents, data, files, automation): the
+    agent does the whole job.
+  - *Guided* (creative: writing, art, music, games, 3D): the agent removes
+    friction and coaches, and the person keeps the creative decisions and
+    granular controls.
+  The label is a promise, so it is checked, not self-declared. A guided
+  listing's tool set must not include tools that write or replace the person's
+  creative work (the same structural rule as Writers Block), and the install
+  safety review looks at this. Browse and filter by label; a listing that
+  mixes both says which part is which.
+
 First version to try: free listings with ratings only, to get the catalogue,
 the install path and the safety checks right before any money moves. Add paid
 listings and the cut once there is something worth paying for.
