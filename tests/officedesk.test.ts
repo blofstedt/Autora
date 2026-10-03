@@ -142,4 +142,9 @@ test("a workbook's cues name the cell and sheet, and type a formula as the formu
   assert.deepEqual(cues, [{ act: "type", text: "=SUM(A2:A9)", sheet: "Data", cell: "B1" }]);
 });
 
+test("a deck's cue is the words, without the \"Slide 1:\" the reader puts in front", () => {
+  const deck = (t: string) => zipMany([["ppt/presentation.xml", "<p:presentation/>"], ["ppt/slides/slide1.xml", `<p:sld><a:p><a:r><a:t>${t}</a:t></a:r></a:p></p:sld>`]]);
+  assert.deepEqual(cuesFor("pptx", deck("Quarterly review"), deck("Annual review")), [{ act: "type", text: "Annual review" }]);
+});
+
 console.log(`${passed} passed`);

@@ -215,6 +215,15 @@ export function AgentCues({
     return () => clearTimeout(timer);
   }, [cue, phase, typed, page]);
 
+  // Tell the page around the frame where the cursor is, for the line the agent says beside it.
+  const holder = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = holder.current;
+    if (!el || !cue || cue.page !== page) return;
+    const r = el.getBoundingClientRect();
+    window.parent.postMessage({ type: "autora:cursor", x: r.left, y: r.top }, "*");
+  });
+
   if (!cue || cue.page !== page) return null;
 
   const size = Math.max(6, (cue.h / 1.15) * scale);
@@ -309,6 +318,7 @@ export function AgentCues({
       )}
 
       <div
+        ref={holder}
         style={{
           position: "absolute", left: 0, top: 0, willChange: "transform",
           transform: `translate(${shown.x}px, ${shown.y}px)`,

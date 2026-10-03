@@ -186,7 +186,7 @@ export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: b
 
   const locate = useCallback((items: OfficeCue[]) => new Promise<Located | null>((resolve) => {
     const id = Date.now() + Math.floor(Math.random() * 1000);
-    const targets = items.map((c) => ({ text: c.text, cell: c.cell, sheet: c.sheet }));
+    const targets = items.map((c) => ({ text: c.text, cell: c.cell, sheet: c.sheet, box: c.box }));
     let tries = 0;
     const finish = (found: Located | null) => { clearInterval(timer); asking.current.delete(id); resolve(found); };
     asking.current.set(id, finish);

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { along, humanRoute, restMs, routeMs, typingDelays, type Point } from "../lib/humanPath";
+import { clearCursor, reportCursor } from "../lib/cursorPos";
 import type { OfficeCue } from "../lib/officedesk";
 
 /**
@@ -39,6 +40,7 @@ export function OfficeCursor({
   const [gone, setGone] = useState(false);
   const done = useRef(onDone);
   done.current = onDone;
+  const layer = useRef<HTMLDivElement>(null);
   const ask = useRef(locate);
   ask.current = locate;
 
@@ -102,9 +104,16 @@ export function OfficeCursor({
     return () => { dead = true; setGhost(null); setRing(null); setCursor(null); };
   }, [cues, seq]);
 
+  // Where it is on screen, for the line the agent says beside it.
+  useEffect(() => {
+    const r = layer.current?.getBoundingClientRect();
+    if (cursor && r) reportCursor(r.left + cursor.x, r.top + cursor.y);
+  }, [cursor]);
+  useEffect(() => clearCursor, []);
+
   if (!cursor) return null;
   return (
-    <div className="office-cursor-layer" aria-hidden="true" data-office-cursor={gone ? "gone" : "on"}>
+    <div ref={layer} className="office-cursor-layer" aria-hidden="true" data-office-cursor={gone ? "gone" : "on"}>
       {ghost && <GhostText ghost={ghost} />}
       {ring && <span className="office-click" style={{ left: ring.x - 14, top: ring.y - 14 }} />}
       <div className="office-cursor" style={{ transform: `translate(${cursor.x}px, ${cursor.y}px)`, opacity: gone ? 0 : 1 }}>

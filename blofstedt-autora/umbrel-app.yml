@@ -134,11 +134,11 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  New on phones: any tool can go full screen (browser, app window, PDF, Pages, Sheets, Slides,
-  widgets) and stay there. With Follow on, full screen carries over as Autora moves from one tool
-  to the next. Over a full-screen tool, what Autora is saying shows for a few seconds as a short
-  line, and a small translucent chat button in the corner opens a one-line box to message it
-  without leaving full screen. The app window gains a full-screen button.
-  Earlier: Word, Excel and PowerPoint are now Autora Pages, Sheets and Slides (a switch each) and
-  the PDF editor is Autora PDF; Autora's cursor moves and types like a person in all of them; PDFs
-  take curved lines; every reply has a Copy button; the bookmark star is centred.
+  Fix: in Autora Slides and Sheets, Autora's cursor now goes to the title or cell it changed and types
+  it there (before, it typed in a caption). On phones, the line Autora is saying over a full-screen
+  tool now sits beside its cursor in the PDF and the office apps, and Follow keeps you full screen as
+  it moves between tools.
+  Earlier on phones: any tool can go full screen; a translucent chat button opens a one-line box to
+  message Autora without leaving it. Also: Autora Pages, Sheets and Slides (a switch each) and Autora
+  PDF; a human-like cursor and typing in all of them; curved lines in PDFs; a Copy button on every
+  reply; the bookmark star centred.

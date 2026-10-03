@@ -85,7 +85,29 @@ type Desk = {
  * `text` is what ends up there (what is typed, and what the editor is searched for); `cell`/`sheet` name a
  * workbook's cell. The window finds the place in the editor and falls back to a spot in the middle.
  */
-export type OfficeCue = { act: "type" | "point"; text: string; cell?: string; sheet?: string };
+export type OfficeCue = {
+  act: "type" | "point"; text: string; cell?: string; sheet?: string;
+  /** A deck's cue: the element it is in, as fractions (x, y, width, height) of the slide, for an editor that draws on a canvas. */
+  box?: [number, number, number, number];
+};
+
+/** Where on its slide each cue's words sit, from the deck itself: the editor draws slides on a canvas, so the page cannot be searched for them. */
+export async function withSlideBoxes(cues: OfficeCue[], deck: Buffer): Promise<OfficeCue[]> {
+  const size = /<p:sldSz\b[^>]*\bcx="(\d+)"[^>]*\bcy="(\d+)"/.exec(zipEntry(deck, "ppt/presentation.xml")?.toString("utf8") ?? "");
+  const w = size ? Number(size[1]) / 12700 : 960, h = size ? Number(size[2]) / 12700 : 540;
+  const elements = await slideElements(deck).catch(() => []);
+  const norm = (t: string) => t.replace(/\s+/g, " ").trim().toLowerCase();
+  return cues.map((cue) => {
+    const needle = norm(cue.text).slice(0, 40);
+    // The smallest element holding the words: a title, not the text box that happens to contain it.
+    const hit = needle.length < 2 ? undefined : elements
+      .filter((e) => norm(e.text).includes(needle))
+      .sort((a, b) => (a.box[2] - a.box[0]) * (a.box[3] - a.box[1]) - (b.box[2] - b.box[0]) * (b.box[3] - b.box[1]))[0];
+    if (!hit) return cue;
+    const [x0, y0, x1, y1] = hit.box;
+    return { ...cue, box: [x0 / w, y0 / h, (x1 - x0) / w, (y1 - y0) / h] as [number, number, number, number] };
+  });
+}
 
 const MAX_CUES = 6;
 const cueText = (t: string) => t.replace(/\s+/g, " ").trim().slice(0, 160);
@@ -116,10 +138,12 @@ export function cuesFor(kind: OfficeKind, before: Buffer | null, after: Buffer):
   while (head < b.length && head < a.length && b[head] === a[head]) head += 1;
   let tail = 0;
   while (tail < b.length - head && tail < a.length - head && b[b.length - 1 - tail] === a[a.length - 1 - tail]) tail += 1;
-  const fresh = a.slice(head, a.length - tail).map(cueText).filter(Boolean).slice(0, MAX_CUES);
+  // A deck's paragraphs are read as "Slide 2: words"; the words are what is typed and looked for.
+  const bare = (t: string) => cueText(kind === "pptx" ? t.replace(/^Slide \d+:\s*/, "") : t);
+  const fresh = a.slice(head, a.length - tail).map(bare).filter(Boolean).slice(0, MAX_CUES);
   if (fresh.length > 0) return fresh.map((text) => ({ act: "type", text }));
   // Only deletions: point at where the words were.
-  const near = cueText(a[Math.max(0, head - 1)] ?? "");
+  const near = bare(a[Math.max(0, head - 1)] ?? "");
   return near && before && b.length > a.length ? [{ act: "point", text: near }] : [];
 }
 
@@ -801,9 +825,23 @@ export function officeHooks(session: string): OfficeHooks {
         desk.vseq = was.vseq;
       }
       // A document the agent made is typed in from its first lines; one it changed, where it changed.
-      desk.cues = cuesFor(kind, was && carried ? was.data : null, next.data).slice(0, was && carried ? MAX_CUES : 3);
-      desk.cueRev = desk.rev;
-      desk.cueAt = Date.now();
+      const cues = cuesFor(kind, was && carried ? was.data : null, next.data).slice(0, was && carried ? MAX_CUES : 3);
+      if (kind === "pptx" && cues.length > 0) {
+        // The boxes come from reading the deck, a second or two: the cursor is held until it has them.
+        const rev = desk.rev;
+        void withSlideBoxes(cues, next.data).then((boxed) => {
+          const now = desks.get(session);
+          if (!now || now.rev < rev || now.kind !== "pptx") return;
+          now.cues = boxed;
+          now.cueRev = rev;
+          now.cueAt = Date.now();
+          changed(session);
+        });
+      } else {
+        desk.cues = cues;
+        desk.cueRev = desk.rev;
+        desk.cueAt = Date.now();
+      }
       desks.set(session, desk);
       snapshot(session, desk, next.label ?? (was && carried ? "Changed by the agent" : "Opened"), "agent");
       if (kind !== "docx") engineFileChanged(session, desk);

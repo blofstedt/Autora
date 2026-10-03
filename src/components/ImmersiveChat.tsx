@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { recentCursor } from "../lib/cursorPos";
 import { IconArrow, IconX } from "./Icons";
 
 /**
@@ -26,6 +27,17 @@ export function glance(text: string, max = 110): string {
 
 const SHOWN_MS = 5200;
 
+/** Where to put the line so it sits beside the cursor and stays on the screen: to its right, or its left near the edge. */
+function sideOf(at: { x: number; y: number }): React.CSSProperties {
+  const w = typeof window === "undefined" ? 390 : window.innerWidth;
+  const h = typeof window === "undefined" ? 800 : window.innerHeight;
+  const room = w - at.x - 28;
+  const top = Math.max(48, Math.min(h - 120, at.y + 6));
+  return room >= 160
+    ? { left: at.x + 22, right: "auto", top, maxWidth: Math.min(room, 280) }
+    : { left: "auto", right: Math.max(8, w - at.x + 10), top, maxWidth: Math.min(at.x - 18, 280) };
+}
+
 export function ImmersiveChat({
   say, onSend, canFollow, following, onFollow,
 }: {
@@ -41,6 +53,8 @@ export function ImmersiveChat({
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [lift, setLift] = useState(0);
+  /** Where the agent's cursor is, when the tool can say; the line sits beside it. Otherwise it stays at the top. */
+  const [beside, setBeside] = useState<{ x: number; y: number } | null>(null);
   /** What was said before the screen went full is not news. */
   const seen = useRef(glance(say));
   const input = useRef<HTMLInputElement>(null);
@@ -50,6 +64,7 @@ export function ImmersiveChat({
     if (!next || next === seen.current) return;
     seen.current = next;
     setLine(next);
+    setBeside(recentCursor());
     setVisible(true);
     const timer = window.setTimeout(() => setVisible(false), SHOWN_MS);
     return () => window.clearTimeout(timer);
@@ -79,7 +94,12 @@ export function ImmersiveChat({
   return (
     <div className="immersive" data-immersive>
       {line && (
-        <div className={`immersive-say${visible ? " is-on" : ""}`} role="status" aria-live="polite">
+        <div
+          className={`immersive-say${visible ? " is-on" : ""}${beside ? " is-beside" : ""}`}
+          style={beside ? sideOf(beside) : undefined}
+          role="status"
+          aria-live="polite"
+        >
           <span className="immersive-name">Autora</span>
           <span>{line}</span>
         </div>

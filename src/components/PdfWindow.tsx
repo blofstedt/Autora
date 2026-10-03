@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFullscreen } from "../lib/fullscreen";
+import { reportCursor } from "../lib/cursorPos";
 import { useAgentCursor } from "../lib/agentCursor";
 import { holdSurface, useCollab } from "../lib/collab";
 import { useDeskState } from "../lib/pdfdesk";
@@ -143,6 +144,10 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
       } else if (msg.type === "autora:base" && msg.bytes instanceof ArrayBuffer) {
         ownPages.current++;
         void send("pages", { bytes: toBase64(msg.bytes), items: Array.isArray(msg.items) ? msg.items : [] });
+      } else if (msg.type === "autora:cursor" && Number.isFinite(msg.x) && Number.isFinite(msg.y)) {
+        // Where the agent's cursor is in the editor, in the frame's pixels: on screen, for the line beside it.
+        const r = frame.current.getBoundingClientRect();
+        reportCursor(r.left + msg.x, r.top + msg.y);
       } else if (msg.type === "autora:presence" && typeof msg.id === "string") {
         // What the person has hold of in the editor: the agent is asked to leave it alone.
         void fetch(`/api/pdfdesk/${encodeURIComponent(sessionId)}/presence`, {

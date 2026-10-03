@@ -19,6 +19,7 @@
   function byText(text) {
     const needle = norm(text).slice(0, 40);
     if (needle.length < 2) return null;
+    if (!document.body) return null;
     const hits = [];
     for (const el of document.body.querySelectorAll("*")) {
       if (el.tagName === "SCRIPT" || el.tagName === "STYLE" || el.tagName === "IFRAME") continue;
@@ -45,16 +46,53 @@
     return { size: parseFloat(st.fontSize) || 14, family: st.fontFamily, color: st.color, bg: bg || "#ffffff", weight: st.fontWeight };
   }
 
+  /** The editor's main drawing surface: the biggest canvas that is on screen (a deck's slide, a workbook's grid). */
+  function mainCanvas() {
+    let best = null;
+    let area = 0;
+    for (const c of document.querySelectorAll("canvas")) {
+      const r = c.getBoundingClientRect();
+      if (r.left < -50 || r.top < -50 || !visible(r)) continue;
+      if (r.width * r.height > area) { area = r.width * r.height; best = r; }
+    }
+    return best;
+  }
+
+  /** "B3" -> { col: 1, row: 2 }. */
+  function addr(cell) {
+    const m = /^\$?([A-Z]{1,3})\$?(\d+)$/.exec(String(cell || "").toUpperCase());
+    if (!m) return null;
+    let col = 0;
+    for (const ch of m[1]) col = col * 26 + ch.charCodeAt(0) - 64;
+    return { col: col - 1, row: Number(m[2]) - 1 };
+  }
+
+  // The workbook's grid is drawn on a canvas, so a cell has no element to ask. Its default layout is measured
+  // from the editor itself: a row-number gutter, a column-letter band, default-size cells. A sheet whose columns
+  // were resized puts the cursor a little off, and a cell out of view is not pointed at.
+  const GRID = { gutter: 46, band: 20, col: 69.3, row: 20 };
+
   function find(t) {
-    let el = null;
-    if (t.cell) {
-      const c = String(t.cell).toUpperCase();
-      for (const sel of [`[data-cell="${c}"]`, `[data-ref="${c}"]`, `[data-address="${c}"]`, `[data-addr="${c}"]`, `[aria-label="${c}"]`, `[title="${c}"]`]) {
-        const e = document.querySelector(sel);
-        if (e && visible(e.getBoundingClientRect())) { el = e; break; }
+    const rc = t.cell ? addr(t.cell) : null;
+    if (rc) {
+      const r = mainCanvas();
+      if (r) {
+        const x = r.left + GRID.gutter + rc.col * GRID.col;
+        const y = r.top + GRID.band + rc.row * GRID.row;
+        if (x + GRID.col <= r.right && y + GRID.row <= r.bottom) {
+          return { x, y, w: GRID.col, h: GRID.row, size: 13, family: "Calibri, Arial, sans-serif", color: "#ffffff", bg: "#1f2023", weight: "400" };
+        }
       }
     }
-    if (!el) el = byText(t.text);
+    if (Array.isArray(t.box) && t.box.length === 4) {
+      const r = mainCanvas();
+      if (r) {
+        const [fx, fy, fw, fh] = t.box;
+        const h = fh * r.height;
+        return { x: r.left + fx * r.width, y: r.top + fy * r.height, w: fw * r.width, h, size: Math.max(12, Math.min(34, h * 0.55)), family: "Calibri, Arial, sans-serif", color: "#111111", bg: "#ffffff", weight: "400" };
+      }
+    }
+    const el = byText(t.text);
     if (!el) return null;
     const r = el.getBoundingClientRect();
     return { x: r.left, y: r.top, w: r.width, h: r.height, ...look(el) };

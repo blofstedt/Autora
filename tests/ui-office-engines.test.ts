@@ -144,7 +144,7 @@ async function main() {
       const text = (pptxParagraphs(bytes) ?? []).join("\n");
       assert.match(text, /Annual review.*moved to Monday/);
       // The agent's cursor went to the title and typed it, with the browser's kind of motion.
-      console.log("    deck ghost:", await ghost);
+      assert.doesNotMatch(String(await ghost), /is-caption/, "the words are typed over the title on the slide, not in a caption");
       // The editor took the change where it stood: the same page, not a new one.
       await sleep(3000);
       assert.equal(await frame.evaluate(() => (window as any).__kept).catch(() => null), "same page", "the window was not reloaded");
@@ -218,7 +218,7 @@ async function main() {
       await app.turn(s, "add a Gadget row with quantity 2", 120_000);
       const cells = xlsxCells((await fileOf())!)!;
       assert.ok([...cells.entries()].some(([k, v]) => /A3$/.test(k) && v === "Gadget"), JSON.stringify([...cells]));
-      console.log("    workbook ghost:", await ghost);
+      assert.doesNotMatch(String(await ghost), /is-caption/, "the words are typed in the cell, not in a caption");
       assert.ok([...cells.entries()].some(([k, v]) => /B2$/.test(k) && v === "7"), "their change is still there");
       await sleep(4000);
       assert.equal(await frame.evaluate(() => (window as any).__kept).catch(() => null), "same page", "the window was not reloaded");

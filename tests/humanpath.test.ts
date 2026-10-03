@@ -5,6 +5,8 @@
  *   npx tsx tests/humanpath.test.ts
  */
 import assert from "node:assert/strict";
+import { clearCursor, recentCursor, reportCursor } from "../src/lib/cursorPos";
+import { glance } from "../src/components/ImmersiveChat";
 import { along, ease, humanRoute, routeMs, typingDelays } from "../src/lib/humanPath";
 
 let passed = 0;
@@ -62,6 +64,25 @@ test("keys come at uneven gaps, and all of it fits the budget", () => {
 test("short words are typed at a person's pace, not squeezed", () => {
   const total = typingDelays("Hello", 2600).reduce((a, b) => a + b, 0);
   assert.ok(total > 150 && total < 1400, String(total));
+});
+
+console.log("the agent's line over a full-screen tool");
+
+test("the cursor's place is known while it moves, and forgotten once it has gone", () => {
+  assert.equal(recentCursor(), null);
+  reportCursor(120, 340);
+  assert.deepEqual(recentCursor(), { x: 120, y: 340 });
+  assert.equal(recentCursor(-1), null, "an old position is no position");
+  clearCursor();
+  assert.equal(recentCursor(), null);
+});
+
+test("a reply is cut to a glance: its first sentence, plain, short", () => {
+  assert.equal(glance("I'll **redraw** the chart. Then check it."), "I'll redraw the chart.");
+  assert.equal(glance("```js\nlet x\n```\nDone with the [report](http://a.b)."), "Done with the report.");
+  const long = glance("word ".repeat(80));
+  assert.ok(long.length <= 110 && long.endsWith("…"));
+  assert.equal(glance(""), "");
 });
 
 console.log(`${passed} passed`);

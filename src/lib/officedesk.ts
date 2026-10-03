@@ -11,7 +11,7 @@ export type WordVersion = { n: number; label: string; at: number; by: "agent" | 
 export type OfficeKind = "docx" | "pptx" | "xlsx";
 
 /** One thing the agent did in the document, played as a cursor that goes there and types it (server/officedesk.ts). */
-export type OfficeCue = { act: "type" | "point"; text: string; cell?: string; sheet?: string };
+export type OfficeCue = { act: "type" | "point"; text: string; cell?: string; sheet?: string; box?: [number, number, number, number] };
 
 export type WordState = {
   open: boolean;
