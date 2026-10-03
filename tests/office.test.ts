@@ -52,8 +52,21 @@ await test("the Tools page can switch them off, and they are then not offered", 
   const tools = await import("../server/tools");
   const on = tools.toolSettings();
   assert.equal(tools.windowOff("office_read", on), false);
-  assert.equal(tools.windowOff("office_read", { ...on, office: { enabled: false } }), true);
-  assert.equal(tools.windowOff("pdf_read", { ...on, office: { enabled: false } }), false, "the PDF tools are a switch of their own");
+  const none = { ...on, pages: { enabled: false }, sheets: { enabled: false }, slides: { enabled: false } };
+  assert.equal(tools.windowOff("office_read", none), true);
+  assert.equal(tools.windowOff("office_read", { ...none, sheets: { enabled: true } }), false, "one app left on keeps the tools");
+  assert.equal(tools.windowOff("pdf_read", none), false, "the PDF tools are a switch of their own");
+});
+
+await test("each app is a switch of its own: a file of a kind that is off is refused, the others are not", async () => {
+  const state = await import("../server/state");
+  const into = state.mergeTools(structuredClone((await import("../server/tools")).toolSettings()), { office: { enabled: false } });
+  assert.deepEqual([into.pages.enabled, into.sheets.enabled, into.slides.enabled], [false, false, false], "an older settings file's one switch turns all three");
+  const back = state.mergeTools(into, { sheets: { enabled: true } });
+  assert.deepEqual([back.pages.enabled, back.sheets.enabled, back.slides.enabled], [false, true, false]);
+  const refused = await office.runOfficeTool("office_create", { type: "pptx", name: "x" }, { ...ctx, off: ["pptx"] });
+  assert.equal(refused.ok, false);
+  assert.match(refused.summary, /Autora Slides.*switched off/);
 });
 
 await test("they are registered, held in planning only where they change something, and loaded on demand", () => {
@@ -139,7 +152,7 @@ await test("a bad operation is refused with the engine's reason, and nothing is 
 
 await test("files that are not Office files, or are not there, are said so", async () => {
   const txt = artifacts.saveArtifact({ origin: "user", name: "notes.txt", data: Buffer.from("hi") });
-  assert.match((await run("office_read", { file: txt.id })).summary, /not a Word, Excel or PowerPoint file/);
+  assert.match((await run("office_read", { file: txt.id })).summary, /not a document, spreadsheet or presentation file/);
   assert.match((await run("office_read", { file: "file_0000000000000000" })).summary, /There is no document/);
 });
 

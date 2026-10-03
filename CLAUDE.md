@@ -98,9 +98,12 @@ is a sub-project with its own dependencies (see below).
   came from so the file shows exactly what was drawn until the person changes
   it; the file is the base pages with every object flattened on, rewritten
   on every change; the person's changes are told to the agent once),
-  `officedesk.ts` + `src/components/OfficeWindow.tsx` (the Office window, switched on and off with the other windows on the Tools page --
-  `office` in `ToolSettings`: the
-  Word, PowerPoint or Excel document the agent works on, open beside the chat in
+  `officedesk.ts` + `src/components/OfficeWindow.tsx` (the Office window -- Autora Pages (.docx), Sheets (.xlsx) and Slides (.pptx), each its own switch on the Tools page,
+  `pages`/`sheets`/`slides` in `ToolSettings`, an old `office` in a settings file turns all three; the PDF window is "Autora PDF". The agent's cursor:
+  `officedesk.ts` `cuesFor` diffs before/after into `cues` on the state, `OfficeCursor.tsx` plays them over the frame
+  asking `office/shim/cursor.js` where the text/cell is (caption fallback), with `src/lib/humanPath.ts` -- the browser pointer's
+  motion and a human typing rhythm, shared with `pdf-editor/src/AgentCues.tsx`. Briefing text: `OFFICE_GUIDE`/`WINDOWS_GUIDE` in `tools.ts`. The
+  document the agent works on, open beside the chat in
   GenOffice's own editor for it, built by `scripts/build-office.mjs` into
   `dist/office/web/{docs,slides,sheets}` and served at `/office-app` with a sandbox
   CSP. The editor runs in an origin-less frame, so it cannot fetch anything:
@@ -333,6 +336,14 @@ is a sub-project with its own dependencies (see below).
   bundles pdf.js's legacy build and runs its worker as a classic script from a
   blob (a module worker cannot start in an origin-less frame), and fetches
   nothing from a CDN: Autora may have no internet.
+- Full screen on a phone (`lib/fullscreen.ts`): one shared flag for every pinned tool (browser, app window, PDF,
+  Pages/Sheets/Slides, widget), so Follow (`busiestSurface` in `Thread`) moves the stage to the next tool with the
+  screen still full. While it is up, `components/ImmersiveChat.tsx` is laid over it: the agent's last reply as a
+  `glance` (first sentence, fades after ~5 s) placed beside the cursor when the tool reports one (`lib/cursorPos.ts`:
+  the Office cursor and the PDF cues -- `autora:cursor` from the editor frame), else at the top; a translucent chat
+  button and a one-line box that sends through `onSuggest`; and a Follow toggle. Office cues locate the place in
+  the editor (`office/shim/cursor.js`): text in the DOM for Pages; a deck's element box as fractions of the slide
+  (`withSlideBoxes`, the canvas is not searchable); a workbook cell by the grid's measured default layout.
 - `src/`: the React client. `App.tsx` holds the session and stream; on a desktop the
   menu, the conversation and the window beside it are three panes whose seams drag
   (`components/ResizeHandle.tsx`, widths and "menu folded away" kept per browser by

@@ -10,7 +10,8 @@ import {
 } from "../lib/preview";
 import { AppInspector } from "./AppInspector";
 import { AppReview } from "./AppReview";
-import { IconAlert, IconArrowLeft, IconRotateCcw, IconX } from "./Icons";
+import { useFullscreen } from "../lib/fullscreen";
+import { IconAlert, IconArrowLeft, IconMaximize, IconMinimize, IconRotateCcw, IconX } from "./Icons";
 
 /**
  * The app window: the thing being built, live, with a way to point at it.
@@ -61,6 +62,8 @@ export function AppPreview({ sessionId, phone }: { sessionId: string; phone: boo
   const state = usePreviewState();
   const frame = usePreviewFrame();
   const [cursorOn, setCursorOn] = useAgentCursor();
+  const [full, setFull] = useFullscreen();
+  const isFull = phone && full;
   const collab = useCollab();
   const mine = collab.held.includes("app");
   const api = useMemo(() => previewApi(sessionId), [sessionId]);
@@ -136,7 +139,7 @@ export function AppPreview({ sessionId, phone }: { sessionId: string; phone: boo
     return () => ro.disconnect();
   }, []);
 
-  const maxH = phone ? Math.min(Math.round((typeof window !== "undefined" ? window.innerHeight : 800) * 0.5), 480) : Math.max(area.h, 200);
+  const maxH = phone ? (isFull ? Math.max(200, area.h) : Math.min(Math.round((typeof window !== "undefined" ? window.innerHeight : 800) * 0.5), 480)) : Math.max(area.h, 200);
   const scale = Math.max(0.05, Math.min((area.w || vp.width) / vp.width, maxH / vp.height, 1.5));
   const box = { w: Math.round(vp.width * scale), h: Math.round(vp.height * scale) };
   /** A popover beside the selection needs room; without it, a sheet. */
@@ -560,7 +563,7 @@ export function AppPreview({ sessionId, phone }: { sessionId: string; phone: boo
   const errors = state.errors ?? 0;
 
   return (
-    <div className={`app-window${phone ? " is-phone" : ""}`} tabIndex={-1}>
+    <div className={`app-window${phone ? " is-phone" : ""}${isFull ? " is-full" : ""}`} tabIndex={-1}>
       <div className="app-bar">
         <div className="app-seg" role="radiogroup" aria-label="Device size">
           {(["phone", "tablet", "desktop"] as Device[]).map((d) => (
@@ -637,6 +640,11 @@ export function AppPreview({ sessionId, phone }: { sessionId: string; phone: boo
         >
           Agent cursor {cursorOn ? "on" : "off"}
         </button>
+        {phone && (
+          <button type="button" className="app-icon" onClick={() => setFull(!full)} title={full ? "Back to the conversation" : "Full screen"} aria-label={full ? "Back to the conversation" : "Full screen"} aria-pressed={full}>
+            {full ? <IconMinimize size={15} /> : <IconMaximize size={15} />}
+          </button>
+        )}
         <button type="button" className="app-icon" onClick={() => void api.close()} title="Close the app window" aria-label="Close the app window">
           <IconX size={15} />
         </button>

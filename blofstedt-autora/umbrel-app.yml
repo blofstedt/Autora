@@ -48,10 +48,11 @@ description: >-
   result is a new file in the chat; yours is never overwritten.
 
 
-  • Word, Excel and PowerPoint — attach a document, workbook or deck, or ask for
-  a new one: Autora reads it, edits it in place (Word changes can be tracked
-  changes), makes new files from your description, converts between Word,
-  Markdown, HTML and CSV, and checks its own work. Formulas really calculate,
+  • Autora Pages, Sheets and Slides — attach a document (.docx), spreadsheet (.xlsx)
+  or presentation (.pptx), or ask for a new one: Autora reads it, edits it in place
+  (document changes can be tracked changes), makes new files from your description,
+  converts between Markdown, HTML and CSV, and checks its own work. Each app has its
+  own window and its own switch on the Tools page. Formulas really calculate,
   and your file is never overwritten. Built on the open-source GenOffice
   engines.
 
@@ -133,12 +134,12 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  Fix: closing the last browser tab no longer signs you out of sites (a blank tab opens first, so
-  the browser's session cookies are kept).
-  New: the app window gets the tools of a real builder. A Console button opens the page's console and
-  network (the same lists the agent reads); phone and tablet previews are drawn in a device frame;
-  Versions lists a saved version of your project after every turn that changed code, and Go back to
-  this puts the files back as they were (what was there is saved first, so a restore can be undone);
-  Templates starts a landing page, dashboard, to-do app, portfolio, blog or sign-up form with one tap.
-  Earlier in this release line: the browser's tabs, Chrome extensions (experimental), find, bookmarks,
-  history, downloads and developer tools.
+  Fix: the line Autora says over a full-screen tool waits until the words settle, so it never flashes half a word.
+  Also: in Autora Slides and Sheets, Autora's cursor now goes to the title or cell it changed and types
+  it there (before, it typed in a caption). On phones, the line Autora is saying over a full-screen
+  tool now sits beside its cursor in the PDF and the office apps, and Follow keeps you full screen as
+  it moves between tools.
+  Earlier on phones: any tool can go full screen; a translucent chat button opens a one-line box to
+  message Autora without leaving it. Also: Autora Pages, Sheets and Slides (a switch each) and Autora
+  PDF; a human-like cursor and typing in all of them; curved lines in PDFs; a Copy button on every
+  reply; the bookmark star centred.

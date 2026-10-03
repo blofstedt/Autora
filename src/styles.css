@@ -550,6 +550,8 @@ body::before {
   opacity: 1; color: var(--text-2); background: var(--s1); border-color: var(--border);
 }
 .msg-tool:active { transform: scale(0.94); }
+/* Copied: lit for a moment, so the press is seen to have worked. */
+.msg-tool.is-copied { opacity: 1; color: var(--accent-2); border-color: var(--accent-line); background: var(--s1); }
 /* The speaker while this reply is being read: lit, and up to full strength, so
    the one reply that is speaking is the one with the lit button. */
 .msg-tool.is-speaking {
@@ -6375,6 +6377,10 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
   border-bottom: 1px solid var(--border); background: var(--s1);
 }
 .pdf-bar-ico { display: grid; place-items: center; color: var(--text-3); }
+.pdf-bar-app {
+  flex: 0 0 auto; font-size: calc(11px * var(--ts, 1)); font-weight: 600; letter-spacing: 0.02em;
+  color: var(--accent-2); padding: 1px 7px; border-radius: 999px; border: 1px solid var(--accent-line); white-space: nowrap;
+}
 .pdf-bar-name {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: calc(13px * var(--ts, 1)); font-weight: 600; color: var(--text);
@@ -6409,6 +6415,30 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 .pdf-versions li { display: flex; align-items: center; gap: 6px; padding: 5px 0; }
 .pdf-version-main { flex: 1; min-width: 0; font-size: calc(12.5px * var(--ts, 1)); color: var(--text); display: flex; flex-direction: column; }
 .pdf-version-main small { color: var(--text-3); font-size: calc(11px * var(--ts, 1)); }
+/* The editor and, over it, the agent's cursor (components/OfficeCursor.tsx). */
+.office-stage { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.office-cursor-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 5; }
+.office-cursor { position: absolute; left: 0; top: 0; will-change: transform; transition: opacity 0.4s var(--ease); }
+.office-cursor-name {
+  position: absolute; left: 14px; top: 14px; padding: 1px 6px; border-radius: 8px; background: #7c5cff; color: #fff;
+  font: 600 10px/14px Inter, system-ui, sans-serif; white-space: nowrap;
+}
+.office-ghost {
+  position: absolute; box-sizing: border-box; padding: 1px 3px; border-radius: 3px; overflow: hidden;
+  box-shadow: 0 0 0 2px rgba(124, 92, 255, 0.6); line-height: 1.3; white-space: pre-wrap; overflow-wrap: anywhere;
+  transition: opacity 0.3s var(--ease);
+}
+.office-ghost.is-fading { opacity: 0; }
+.office-ghost.is-caption {
+  padding: 4px 9px; background: #1d1b2e; color: #e8e6ff; border-radius: 8px; font: 500 12px/1.4 Inter, system-ui, sans-serif;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(124, 92, 255, 0.6);
+}
+.office-ghost.is-caption b { color: #a99bff; font-weight: 600; }
+.office-caret { display: inline-block; width: 0; height: 1em; margin-left: 1px; vertical-align: text-bottom; border-right: 2px solid #7c5cff; animation: office-blink 0.9s steps(1) infinite; }
+.office-click { position: absolute; width: 28px; height: 28px; border-radius: 14px; border: 2px solid #7c5cff; animation: office-click 420ms ease-out forwards; }
+@keyframes office-blink { 50% { opacity: 0; } }
+@keyframes office-click { from { transform: scale(0.4); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .office-caret, .office-click { animation: none; } }
 .pdf-frame { flex: 1; min-height: 0; width: 100%; border: 0; background: #0f172a; display: block; }
 /* In the pinned view on a phone: the pinned view's own height, so the editor
    scrolls its pages itself instead of the pinned view scrolling the editor. */
@@ -6423,8 +6453,56 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 }
 /* The thread's column and the page around it are layers of their own, under
    the header: while the window inside is full screen, both go above it. */
-.thread-wrap:has(.pdf-window.is-full) { z-index: 90; }
-.page:has(.pdf-window.is-full) { position: relative; z-index: 90; }
+.thread-wrap:has(.pdf-window.is-full, .app-window.is-full, .cell.widget.is-expanded) { z-index: 90; }
+.page:has(.pdf-window.is-full, .app-window.is-full, .cell.widget.is-expanded) { position: relative; z-index: 90; }
+/* The app window, full screen on a phone: the same cover as the PDF's. */
+.app-window.is-full {
+  position: fixed; inset: 0; z-index: 80; height: auto;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  animation: fade 0.16s var(--ease) both;
+}
+.cell.shot.is-max { animation: fade 0.16s var(--ease) both; }
+.thread-wrap.is-immersive { z-index: 90; }
+
+/* Messaging lite over a full-screen tool (components/ImmersiveChat.tsx). */
+.immersive { position: fixed; inset: 0; pointer-events: none; z-index: 200; }
+.immersive-say {
+  position: absolute; left: 12px; right: 64px; top: calc(env(safe-area-inset-top, 0px) + 54px);
+  display: flex; align-items: baseline; gap: 8px; width: fit-content; max-width: calc(100% - 76px);
+  padding: 6px 11px; border-radius: 12px; background: rgba(20, 18, 34, 0.78); color: #f1efff;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  font-size: calc(13px * var(--ts, 1)); line-height: 1.35; box-shadow: 0 0 0 1px rgba(124, 92, 255, 0.5);
+  opacity: 0; transform: translateY(-4px); transition: opacity 0.5s var(--ease), transform 0.5s var(--ease);
+}
+.immersive-say.is-on { opacity: 1; transform: none; transition-duration: 0.18s; }
+.immersive-name { flex: 0 0 auto; font-weight: 700; font-size: 0.8em; color: #a99bff; }
+.immersive-corner {
+  position: absolute; right: 12px; bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+  display: flex; align-items: center; gap: 8px; pointer-events: none;
+}
+.immersive-chat, .immersive-follow {
+  pointer-events: auto; border: 1px solid rgba(255, 255, 255, 0.18); color: #fff; cursor: pointer;
+  background: rgba(24, 22, 40, 0.5); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+.immersive-chat { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; opacity: 0.72; }
+.immersive-chat:active { opacity: 1; transform: scale(0.94); }
+.immersive-follow { height: 30px; padding: 0 11px; border-radius: 99px; font: inherit; font-size: calc(12px * var(--ts, 1)); font-weight: 600; opacity: 0.7; }
+.immersive-follow.on { opacity: 1; background: rgba(124, 92, 255, 0.55); }
+.immersive-sheet {
+  position: absolute; left: 0; right: 0; pointer-events: auto; display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px calc(env(safe-area-inset-bottom, 0px) + 10px); background: rgba(20, 18, 34, 0.94);
+  border-top: 1px solid rgba(255, 255, 255, 0.14); border-radius: 16px 16px 0 0; animation: fade 0.14s var(--ease) both;
+}
+.immersive-sheet input {
+  flex: 1; min-width: 0; height: 40px; padding: 0 14px; border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08); color: #fff; font: inherit; font-size: 16px; outline: none;
+}
+.immersive-send, .immersive-close {
+  flex: 0 0 auto; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; border: 0; cursor: pointer; color: #fff;
+}
+.immersive-send { background: #7c5cff; }
+.immersive-send:disabled { opacity: 0.4; }
+.immersive-close { background: rgba(255, 255, 255, 0.1); }
 @media (max-width: 680px) { .pdf-bar-note { display: none; } }
 
 /* Code written out in the thread: the card's header says so, and a small

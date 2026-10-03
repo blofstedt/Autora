@@ -121,7 +121,7 @@ async function main() {
       app.decide = (req) => guardOk(req) ?? { text: "Noted." };
       await app.turn(s, "what do you see in the deck now?");
       const told = app.seen.map((r) => `${r.system}\n${JSON.stringify(r.messages)}`).join("\n");
-      assert.match(told, /in the PowerPoint window, the person/);
+      assert.match(told, /in the Autora Slides window, the person/);
       assert.match(told, /moved to Monday/);
     });
 
@@ -137,11 +137,14 @@ async function main() {
       // They were typing a moment ago, so the deck is theirs: wait out the lease.
       await frame.evaluate(() => { (window as any).__kept = "same page"; });
       await sleep(22_000);
+      const ghost = page.waitForSelector(".office-ghost", { state: "attached", timeout: 90_000 }).then((h) => h.getAttribute("class"));
       const ev = await app.turn(s, "rename the title to Annual review", 120_000);
       if (process.env.OFFICE_DEBUG) console.log("last events:", JSON.stringify(ev.slice(-10).map((e) => [e.kind, JSON.stringify(e.payload).slice(0, 200)])));
       const bytes = (await fileOf())!;
       const text = (pptxParagraphs(bytes) ?? []).join("\n");
       assert.match(text, /Annual review.*moved to Monday/);
+      // The agent's cursor went to the title and typed it, with the browser's kind of motion.
+      assert.doesNotMatch(String(await ghost), /is-caption/, "the words are typed over the title on the slide, not in a caption");
       // The editor took the change where it stood: the same page, not a new one.
       await sleep(3000);
       assert.equal(await frame.evaluate(() => (window as any).__kept).catch(() => null), "same page", "the window was not reloaded");
@@ -196,7 +199,7 @@ async function main() {
       app.decide = (req) => guardOk(req) ?? { text: "Noted." };
       await app.turn(s, "what do you see in the workbook now?");
       const told = app.seen.map((r) => `${r.system}\n${JSON.stringify(r.messages)}`).join("\n");
-      assert.match(told, /in the Excel window, the person/);
+      assert.match(told, /in the Autora Sheets window, the person/);
       assert.match(told, /B2/);
     });
 
@@ -211,9 +214,11 @@ async function main() {
       };
       await frame.evaluate(() => { (window as any).__kept = "same page"; });
       await sleep(22_000);
+      const ghost = page.waitForSelector(".office-ghost", { state: "attached", timeout: 90_000 }).then((h) => h.getAttribute("class"));
       await app.turn(s, "add a Gadget row with quantity 2", 120_000);
       const cells = xlsxCells((await fileOf())!)!;
       assert.ok([...cells.entries()].some(([k, v]) => /A3$/.test(k) && v === "Gadget"), JSON.stringify([...cells]));
+      assert.doesNotMatch(String(await ghost), /is-caption/, "the words are typed in the cell, not in a caption");
       assert.ok([...cells.entries()].some(([k, v]) => /B2$/.test(k) && v === "7"), "their change is still there");
       await sleep(4000);
       assert.equal(await frame.evaluate(() => (window as any).__kept).catch(() => null), "same page", "the window was not reloaded");

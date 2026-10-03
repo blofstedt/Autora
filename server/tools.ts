@@ -120,7 +120,9 @@ export interface ToolSettings {
   widgets: { enabled: boolean };
   app: { enabled: boolean };
   pdf: { enabled: boolean };
-  office: { enabled: boolean };
+  pages: { enabled: boolean };
+  sheets: { enabled: boolean };
+  slides: { enabled: boolean };
 }
 
 export function toolSettings(): ToolSettings {
@@ -1775,7 +1777,7 @@ const TOOLS: ToolSpec[] = [
       "fields, flatten the form, draw items on pages, add a watermark, number the pages, set or strip the " +
       "document's properties. Items: text, stamp (APPROVED, REJECTED, SIGN_HERE, INITIAL_HERE, DATE, " +
       "CONFIDENTIAL, COPY, or any short word), signature (a picture of one, or a typed name in a handwriting " +
-      "font), image, check, cross, rect, ellipse, line, arrow, path, highlight (a box, or every match of some " +
+      "font), image, check, cross, rect, ellipse, line, arrow, curve (a line that bends through a control point), path (any SVG path: curves, waves, loops), highlight (a box, or every match of some " +
       "text) and note (a comment). Positions are points from the top-left of the page as shown -- read them " +
       "off pdf_read, or pdf_look with grid. Drawing over something hides it but does not remove it: pdf_redact " +
       "takes text out, and pdf_replace_text changes the words a file already has. The file opens in the PDF window beside the conversation, where what you add stays an " +
@@ -1804,7 +1806,7 @@ const TOOLS: ToolSpec[] = [
             properties: {
               type: {
                 type: "string",
-                enum: ["text", "stamp", "signature", "image", "check", "cross", "rect", "ellipse", "line", "arrow", "path", "highlight", "note"],
+                enum: ["text", "stamp", "signature", "image", "check", "cross", "rect", "ellipse", "line", "arrow", "curve", "path", "highlight", "note"],
               },
               page: { type: "string", description: "Page number, or pages like \"1-3\" or \"all\" to put it on each. Default 1." },
               x: { type: "number", description: "Left edge, in points from the page's left." },
@@ -1813,6 +1815,10 @@ const TOOLS: ToolSpec[] = [
               height: { type: "number", description: "Height in points." },
               x2: { type: "number", description: "Where a line or arrow ends." },
               y2: { type: "number", description: "Where a line or arrow ends." },
+              cx: { type: "number", description: "For curve: the control point the line bends toward (x), in points from the page's left." },
+              cy: { type: "number", description: "For curve: the control point (y), in points from the page's top." },
+              cx2: { type: "number", description: "For curve: a second control point (x), for an S-bend. Give cy2 with it." },
+              cy2: { type: "number", description: "For curve: the second control point (y)." },
               text: {
                 type: "string",
                 description: "The words: of a text item or note, a typed signature, a stamp's own label, or the text to highlight wherever it is on the page.",
@@ -1833,7 +1839,7 @@ const TOOLS: ToolSpec[] = [
               align: { type: "string", enum: ["left", "center", "right"], description: "Within width." },
               thickness: { type: "number", description: "Line width in points." },
               opacity: { type: "number", description: "0 to 1." },
-              d: { type: "string", description: "For path: an SVG path in points from x, y, e.g. \"M 0 10 L 120 10\"." },
+              d: { type: "string", description: "For path: an SVG path in points from x, y, with any commands (M L H V C S Q T A Z, upper or lower case): curves, loops, waves, arcs. E.g. \"M 0 40 C 30 0, 90 80, 120 40\"." },
             },
             required: ["type"],
           },
@@ -2124,9 +2130,9 @@ const TOOLS: ToolSpec[] = [
     name: "office_guide",
     group: "files",
     description:
-      "How to edit a Word, Excel or PowerPoint file: the operations office_edit takes, with their fields and examples. " +
+      "How to edit a document (.docx), spreadsheet (.xlsx) or presentation (.pptx) file: the operations office_edit takes, with their fields and examples. " +
       "Read it BEFORE your first office_edit or office_create of a kind -- the operation names are exact and a wrong one is " +
-      "rejected. domain is docs (Word), sheets (Excel) or slides (PowerPoint). With no topic it lists the operation groups; " +
+      "rejected. domain is docs (Autora Pages, .docx), sheets (Autora Sheets, .xlsx) or slides (Autora Slides, .pptx). With no topic it lists the operation groups; " +
       "topic is one group (e.g. text, insert, table) or one operation by name (e.g. setText); for slides, topic design or " +
       "spec describes building a new deck.",
     parameters: {
@@ -2142,29 +2148,29 @@ const TOOLS: ToolSpec[] = [
     name: "office_read",
     group: "files",
     description:
-      "Read a Word (.docx), Excel (.xlsx) or PowerPoint (.pptx) file. Word: its blocks, each with the [index] edits target; " +
+      "Read a document (.docx, Autora Pages), spreadsheet (.xlsx, Autora Sheets) or presentation (.pptx, Autora Slides) file. Pages (.docx): its blocks, each with the [index] edits target; " +
       "range \"0-20\" for part of it; include comments, revisions, styles, header-footer, sections, fields or notes for those. " +
-      "Excel: the cells of a sheet and range (values, with each formula alongside), the sheet's features; stats gives counts " +
-      "and the sheet list. PowerPoint: every slide's elements with their durable ids (s_1, e_...), positions in EMU (914400 " +
+      "Sheets (.xlsx): the cells of a sheet and range (values, with each formula alongside), the sheet's features; stats gives counts " +
+      "and the sheet list. Slides (.pptx): every slide's elements with their durable ids (s_1, e_...), positions in EMU (914400 " +
       "to the inch), text and effective font; slide for one slide, full for whole text and speaker notes, layouts for the " +
       "deck's layouts. This reads the file as saved; it cannot show you a page or a slide as a picture.",
     parameters: {
       type: "object",
       properties: {
         file: { type: "string", description: "The document: an artifact id (file_...), a path on this host, or an artifact's name." },
-        range: { type: "string", description: "Word: block range like \"0-20\". Excel: cell range like \"A1:D20\"." },
-        sheet: { type: "string", description: "Excel: the worksheet (default: the active one)." },
-        slide: { type: "number", description: "PowerPoint: only this 0-based slide." },
-        full: { type: "boolean", description: "Whole text instead of previews (Word blocks, slide text, tables, notes)." },
+        range: { type: "string", description: "Pages (.docx): block range like \"0-20\". Sheets (.xlsx): cell range like \"A1:D20\"." },
+        sheet: { type: "string", description: "Sheets (.xlsx): the worksheet (default: the active one)." },
+        slide: { type: "number", description: "Slides (.pptx): only this 0-based slide." },
+        full: { type: "boolean", description: "Whole text instead of previews (Pages blocks, slide text, tables, notes)." },
         include: {
           type: "array",
           items: { type: "string" },
-          description: "Word extras: comments, revisions, styles, header-footer, sections, fields, notes.",
+          description: "Pages extras: comments, revisions, styles, header-footer, sections, fields, notes.",
         },
-        formats: { type: "boolean", description: "Excel: also return cell formats, column widths and row heights." },
-        stats: { type: "boolean", description: "Excel: counts, used range and the sheet list instead of cells." },
-        where: { type: "string", description: "Excel: only cells of one kind: formula, error, empty, number or text." },
-        layouts: { type: "boolean", description: "PowerPoint: also list the deck's layouts." },
+        formats: { type: "boolean", description: "Sheets (.xlsx): also return cell formats, column widths and row heights." },
+        stats: { type: "boolean", description: "Sheets (.xlsx): counts, used range and the sheet list instead of cells." },
+        where: { type: "string", description: "Sheets (.xlsx): only cells of one kind: formula, error, empty, number or text." },
+        layouts: { type: "boolean", description: "Slides (.pptx): also list the deck's layouts." },
       },
       required: ["file"],
     },
@@ -2173,12 +2179,12 @@ const TOOLS: ToolSpec[] = [
     name: "office_edit",
     group: "files",
     description:
-      "Change a Word, Excel or PowerPoint file with operations (call office_guide for the exact names and fields first). " +
+      "Change a document (.docx), spreadsheet (.xlsx) or presentation (.pptx) file with operations (call office_guide for the exact names and fields first). " +
       "Only what you edit is rewritten; the rest of the file survives byte for byte. The result is saved as a new artifact " +
       "beside the original (your own earlier result is updated in place). ops is the array of operations, targeted by the ids " +
-      "office_read shows (Word: block [index]; PowerPoint: s_/e_ ids; Excel: cell addresses). Excel also takes cells: " +
+      "office_read shows (Pages (.docx): block [index]; Slides (.pptx): s_/e_ ids; Sheets (.xlsx): cell addresses). Excel also takes cells: " +
       "[{cell:\"B2\", value|formula, sheet?, style?}] for plain cell edits -- formulas are recalculated, and the results are " +
-      "in the file. Word: track:true records edits as tracked changes the person can accept or reject. dry_run validates and " +
+      "in the file. Pages (.docx): track:true records edits as tracked changes the person can accept or reject. dry_run validates and " +
       "reports each step without writing; best_effort applies every operation that can and lists the ones that cannot. " +
       "Check the result with office_check.",
     parameters: {
@@ -2186,9 +2192,9 @@ const TOOLS: ToolSpec[] = [
       properties: {
         file: { type: "string", description: "The document: an artifact id, a path, or an artifact's name." },
         ops: { type: "array", items: { type: "object" }, description: "The operations, in order. See office_guide." },
-        cells: { type: "array", items: { type: "object" }, description: "Excel: [{cell, value|formula, sheet?, style?}]." },
-        track: { type: "boolean", description: "Word: record the edits as tracked changes." },
-        author: { type: "string", description: "Word with track: the author shown on the changes." },
+        cells: { type: "array", items: { type: "object" }, description: "Sheets (.xlsx): [{cell, value|formula, sheet?, style?}]." },
+        track: { type: "boolean", description: "Pages (.docx): record the edits as tracked changes." },
+        author: { type: "string", description: "Pages with track: the author shown on the changes." },
         dry_run: { type: "boolean", description: "Validate and report without writing." },
         best_effort: { type: "boolean", description: "Apply what can be applied and list what cannot." },
         output: { type: "string", description: "File name for the result. Default: the original's name with -edited added." },
@@ -2200,17 +2206,17 @@ const TOOLS: ToolSpec[] = [
     name: "office_check",
     group: "files",
     description:
-      "Look a Word, Excel or PowerPoint file over for problems, in place of seeing it. PowerPoint: text that overflows its " +
-      "box, elements off the slide or overlapping, distorted pictures, each with a ready setTransform fix. Excel: formula " +
+      "Look a document (.docx), spreadsheet (.xlsx) or presentation (.pptx) file over for problems, in place of seeing it. Slides (.pptx): text that overflows its " +
+      "box, elements off the slide or overlapping, distorted pictures, each with a ready setTransform fix. Sheets (.xlsx): formula " +
       "errors, references to sheets that are not there, broken names, chart ranges off the data, columns too narrow to show " +
-      "their numbers (###), placeholder text. Word: fields with no result, broken bookmark references, a stale table of " +
+      "their numbers (###), placeholder text. Pages (.docx): fields with no result, broken bookmark references, a stale table of " +
       "contents, missing images, heading levels that skip, placeholder text, pending tracked changes, open comments. Run it " +
       "after you build or change a document, and fix what it reports before you say it is done.",
     parameters: {
       type: "object",
       properties: {
         file: { type: "string", description: "The document: an artifact id, a path, or an artifact's name." },
-        slide: { type: "number", description: "PowerPoint: only this 0-based slide." },
+        slide: { type: "number", description: "Slides (.pptx): only this 0-based slide." },
       },
       required: ["file"],
     },
@@ -2219,7 +2225,7 @@ const TOOLS: ToolSpec[] = [
     name: "office_open",
     group: "files",
     description:
-      "Open a Word, PowerPoint or Excel file in the window beside the conversation, in its own editor, so the person can " +
+      "Open a document (.docx), presentation (.pptx) or spreadsheet (.xlsx) file in the window beside the conversation, in its own editor, so the person can " +
       "read it and change it while you work. A file you make or change with the Office tools opens there by itself; this is " +
       "for one that already exists (an upload, an earlier file). What they change is saved as they go and you are told what.",
     parameters: {
@@ -2234,7 +2240,7 @@ const TOOLS: ToolSpec[] = [
     name: "office_look",
     group: "files",
     description:
-      "See a Word, PowerPoint or Excel file's pages as they lay out: pictures of its pages (a deck's slides, a workbook's " +
+      "See a document (.docx), presentation (.pptx) or spreadsheet (.xlsx) file's pages as they lay out: pictures of its pages (a deck's slides, a workbook's " +
       "printed sheets), drawn by the same editor a person would use, shown in the conversation and handed to you. pages is " +
       "a list like \"1\", \"1-3\" or \"2,4\" (a few at a time); area {x,y,width,height} in points from the page's " +
       "top-left looks closer at part of one page, and grid draws a ruler. Use it after you build or change a file, to check " +
@@ -2259,7 +2265,7 @@ const TOOLS: ToolSpec[] = [
     name: "office_pdf",
     group: "files",
     description:
-      "Turn a Word, PowerPoint or Excel file into a PDF, laid out by its own editor (a deck one slide per page, a workbook as printed). The PDF is saved as an artifact and opens " +
+      "Turn a document (.docx), presentation (.pptx) or spreadsheet (.xlsx) file into a PDF, laid out by its own editor (a deck one slide per page, a workbook as printed). The PDF is saved as an artifact and opens " +
       "in the PDF editor, where it can be marked up, signed, redacted or sent on (the PDF tools work on it from there).",
     parameters: {
       type: "object",
@@ -2274,7 +2280,7 @@ const TOOLS: ToolSpec[] = [
     name: "office_create",
     group: "files",
     description:
-      "Make a new Word, Excel or PowerPoint file, saved as an artifact. docx: markdown (headings, lists, tables, bold/italic, " +
+      "Make a new document (.docx), spreadsheet (.xlsx) or presentation (.pptx) file, saved as an artifact. docx: markdown (headings, lists, tables, bold/italic, " +
       "links) or restricted html. xlsx: rows -- a 2-D array of cells where a string starting with = is a formula, or " +
       "{sheets:[{name, rows}]} for several sheets -- or csv text (header:true to treat the first row as a header). pptx: " +
       "spec, the deck as {pages:[...]} (a 1280x720 px canvas of shapes, text, pictures, tables and charts; call " +
@@ -2597,7 +2603,7 @@ export function windowOff(name: string, settings: ToolSettings = toolSettings())
   if (name === "app_preview") return !settings.app.enabled;
   if (name.startsWith("pdf_")) return !settings.pdf.enabled;
   // Built by scripts/build-office.mjs; a server without the build does not offer tools that cannot work.
-  if (name.startsWith("office_")) return !officeDir() || !settings.office.enabled;
+  if (name.startsWith("office_")) return !officeDir() || !(settings.pages.enabled || settings.sheets.enabled || settings.slides.enabled);
   return false;
 }
 
@@ -4902,6 +4908,7 @@ async function runToolUnredacted(
           showImage: ctx.showImage,
           ...(ctx.memory.incognito ? {} : { desk: deskHooks(ctx.session), win: officeHooks(ctx.session) }),
           ...(ctx.held ? { held: (_surface: "office", subject: string) => ctx.held!("office", subject) } : {}),
+          off: (["docx", "xlsx", "pptx"] as const).filter((k) => !toolSettings()[{ docx: "pages", xlsx: "sheets", pptx: "slides" }[k] as "pages" | "sheets" | "slides"].enabled),
           cancelled: ctx.cancelled,
           onCancel: ctx.onCancel,
         });
@@ -5188,7 +5195,7 @@ const VOICE_GUIDE =
 
 /** The app window, in the instructions: start it early, keep it running, check with look. */
 const APP_GUIDE =
-  "- The app window: always available. Tool: app_preview. When you build a website or an app, start it " +
+  "- The construction window (the app window): always available. Tool: app_preview. When you build a website or an app, start it " +
   "in the app window as soon as there is anything to see, and keep it running while you build: the person " +
   "watches it take shape, can select elements or regions and leave comments, and what they say comes back " +
   "as one message you act on. Check your own work with look (a picture and the console's errors) before " +
@@ -5217,6 +5224,36 @@ const TODO_GUIDE =
   "one-line answer needs no list. Titles are short: one line each. Only you " +
   "change the list; the person watches.";
 
+/**
+ * The office suite, said every turn. The tools themselves are brought in with
+ * tools_enable (server/toolload.ts), so without this the agent does not know
+ * it has a word processor, a spreadsheet and a slide editor of its own and
+ * reaches for python-docx, a CSV or an HTML page instead.
+ */
+const OFFICE_GUIDE = (pages: boolean, sheets: boolean, slides: boolean): string =>
+  "- The office suite -- three apps of your own, each with its window beside the conversation: " +
+  [
+    pages && "Autora Pages (documents, .docx: reports, letters, contracts, memos, anything written to be read or printed)",
+    sheets && "Autora Sheets (spreadsheets, .xlsx: tables of numbers, budgets, trackers, formulas, charts, data to sort and total)",
+    slides && "Autora Slides (presentations, .pptx: decks, pitches, talks)",
+  ].filter(Boolean).join("; ") +
+  ". Tools: office_guide, office_create, office_read, office_edit, office_check, office_look, office_open, office_pdf, " +
+  "office_convert (load them with tools_enable office if they are not in your list). Make the file with office_create, " +
+  "not with a script or a library in the terminal and not as an HTML page: it opens in the right window by itself, the " +
+  "person watches you work in it, can type in it too, and what they change is told to you. Read office_guide for the " +
+  "kind first, change files with office_edit (edit the open document rather than making a new one), run office_check, " +
+  "and look at the pages with office_look before you say it is done. Someone who says Word, Excel, PowerPoint, Google " +
+  "Docs, Sheets or Slides means these: work in them, and say which Autora app you used. Save a PDF of one with office_pdf.";
+
+/** Which window is for what: they are all open to you, and the right one is the one the work belongs in. */
+const WINDOWS_GUIDE =
+  "- Choosing a window: a website or app you are building belongs in the construction window (app_preview), running " +
+  "live while you build; a document, spreadsheet or deck in Autora Pages, Sheets or Slides; a PDF in Autora PDF; " +
+  "a live site you must use or read in the browser window; and a small interactive explanation in a widget. " +
+  "Do not build a report as a web page, a deck as HTML, or a table as a script's printed output when the " +
+  "person wants a document, a deck or a spreadsheet; and do not open a document in the browser. Each window is the " +
+  "person's view of your work, so open the one the work belongs in as soon as there is something to show.";
+
 export async function capabilityBriefing(): Promise<string> {
   const groups = await groupStates();
   const lines: string[] = ["What you can actually do, right now, on this machine:"];
@@ -5241,7 +5278,7 @@ export async function capabilityBriefing(): Promise<string> {
   const offLine = (what: string) =>
     `- ${what}: turned off by the person on the Tools page; its tools are not yours this turn. ` +
     "If the task needs it, say so and that it is switched on there.";
-  lines.push(TODO_GUIDE, windows.app.enabled ? APP_GUIDE : offLine("The app window"));
+  lines.push(TODO_GUIDE, windows.app.enabled ? APP_GUIDE : offLine("The construction window"));
 
   const mcp = mcpTools();
   if (mcp.length > 0) {
@@ -5284,7 +5321,7 @@ export async function capabilityBriefing(): Promise<string> {
       "filed and each claim cites one, then say what is in it.",
   );
   lines.push(windows.pdf.enabled
-    ? "- PDFs: always available. Tools: pdf_read, pdf_look, pdf_edit, pdf_compose, " +
+    ? "- Autora PDF (the PDF window): always available. Tools: pdf_read, pdf_look, pdf_edit, pdf_compose, " +
       "pdf_pages, pdf_redact, pdf_replace_text, pdf_compress. To write a report or any document as a PDF, " +
       "use pdf_compose (headings, paragraphs, tables, sources; it lays out the pages and keeps " +
       "the document so you can update a section when research turns up something new, " +
@@ -5295,7 +5332,7 @@ export async function capabilityBriefing(): Promise<string> {
       "split it, redact it for good, and shrink it. Each change is saved as a new " +
       "artifact the person opens from the thread; their original is never changed. " +
       "Look at what you changed with pdf_look before saying it is done."
-    : offLine("The PDF editor"));
+    : offLine("Autora PDF"));
   lines.push(windows.widgets.enabled
     ? "- Explainer widgets: always available. Tool: widget_show. When someone " +
       "asks how something works -- a physical process, a mechanism, an " +
@@ -5303,7 +5340,14 @@ export async function capabilityBriefing(): Promise<string> {
       "small interactive widget (2D canvas/SVG, or 3D with Three.js) and explain " +
       "in text alongside it. Not for plain facts, lists or anything a sentence answers."
     : offLine("The widget window"));
-  if (!windows.office.enabled) lines.push(offLine("The Office tools (Word, Excel and PowerPoint)"));
+  const officeOn = Boolean(officeDir());
+  for (const [on, name] of [[windows.pages.enabled, "Autora Pages"], [windows.sheets.enabled, "Autora Sheets"], [windows.slides.enabled, "Autora Slides"]] as const) {
+    if (!on) lines.push(offLine(name));
+  }
+  if (officeOn && (windows.pages.enabled || windows.sheets.enabled || windows.slides.enabled)) {
+    lines.push(OFFICE_GUIDE(windows.pages.enabled, windows.sheets.enabled, windows.slides.enabled));
+  }
+  lines.push(WINDOWS_GUIDE);
   lines.push(
     "- Your voice: always available. Tool: speak. It plays words aloud on the " +
       "person's page at once, in the voice chosen under Settings -> Voice. When you " +

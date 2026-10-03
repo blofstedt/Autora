@@ -957,7 +957,8 @@ function sized(img: PDFImage, item: Record<string, any>, defaultWidth: number): 
 /**
  * Draw one item on one page. Returns what was drawn, in a few words.
  */
-async function drawItem(tools: Tools, sheet: Sheet, pageIndex: number, item: Record<string, any>, anchor: Rect | null): Promise<string> {
+async function drawItem(tools: Tools, sheet: Sheet, pageIndex: number, given: Record<string, any>, anchor: Rect | null): Promise<string> {
+  const item = asPath(given);
   const type = String(item.type ?? "").trim().toLowerCase();
   const opacity = Math.min(1, Math.max(0.05, num(item.opacity) ?? 1));
   const at = () => ({ x: anchor?.x ?? need(item.x, `${type}'s x`), y: anchor?.y ?? need(item.y, `${type}'s y`) });
@@ -1160,7 +1161,7 @@ async function drawItem(tools: Tools, sheet: Sheet, pageIndex: number, item: Rec
     default:
       throw new Problem(
         `"${String(item.type ?? "")}" is not a kind of item. Use text, stamp, signature, image, check, cross, ` +
-        "rect, ellipse, line, arrow, path, highlight or note.",
+        "rect, ellipse, line, arrow, curve, path, highlight or note.",
       );
   }
 }
@@ -1396,12 +1397,118 @@ async function pictureData(tools: Tools, item: Record<string, any>, signature: b
   return { url: `data:image/${png ? "png" : "jpeg"};base64,${data.toString("base64")}`, w: img.width, h: img.height };
 }
 
-/** The numbers of a simple SVG path, as points: enough to show its shape. */
-function pathPoints(d: string, x: number, y: number): { x: number; y: number }[] {
-  const nums = (d.match(/-?\d*\.?\d+(?:e-?\d+)?/gi) ?? []).map(Number);
+/**
+ * A `curve` item (a line that bends: x,y to x2,y2 through the control point
+ * cx,cy, or cx,cy and cx2,cy2 for an S-bend) as the `path` it is drawn as.
+ */
+export function asPath(item: Record<string, any>): Record<string, any> {
+  if (String(item.type ?? "").trim().toLowerCase() !== "curve") return item;
+  const x = need(item.x, "curve's x"), y = need(item.y, "curve's y");
+  const x2 = need(item.x2, "curve's x2"), y2 = need(item.y2, "curve's y2");
+  const cx = need(item.cx, "curve's cx"), cy = need(item.cy, "curve's cy");
+  const two = num(item.cx2) !== null && num(item.cy2) !== null;
+  const rel = (a: number, b: number) => `${a - x} ${b - y}`;
+  const d = two
+    ? `M 0 0 C ${rel(cx, cy)} ${rel(num(item.cx2) as number, num(item.cy2) as number)} ${rel(x2, y2)}`
+    : `M 0 0 Q ${rel(cx, cy)} ${rel(x2, y2)}`;
+  const rest: Record<string, any> = { ...item };
+  for (const k of ["x2", "y2", "cx", "cy", "cx2", "cy2"]) delete rest[k];
+  return { ...rest, type: "path", d };
+}
+
+/**
+ * An SVG path as the points the editor's drawing object holds: lines as they
+ * are, curves (cubic, quadratic and arcs) sampled finely enough to look smooth.
+ */
+export function pathPoints(d: string, x: number, y: number): { x: number; y: number }[] {
+  const tokens = d.match(/[a-zA-Z]|-?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?/g) ?? [];
   const out: { x: number; y: number }[] = [];
-  for (let i = 0; i + 1 < nums.length; i += 2) out.push({ x: x + nums[i], y: y + nums[i + 1] });
+  let cx = 0, cy = 0, sx = 0, sy = 0;
+  let last: { kind: "c" | "q"; x: number; y: number } | null = null;
+  let cmd = "";
+  let i = 0;
+  const arity: Record<string, number> = { m: 2, l: 2, h: 1, v: 1, c: 6, s: 4, q: 4, t: 2, a: 7, z: 0 };
+  const push = (px: number, py: number) => { out.push({ x: x + px, y: y + py }); };
+  const sample = (f: (t: number) => [number, number], steps: number) => {
+    for (let k = 1; k <= steps; k++) { const [px, py] = f(k / steps); push(px, py); }
+  };
+  while (i < tokens.length && out.length < 2000) {
+    if (/^[a-zA-Z]$/.test(tokens[i])) { cmd = tokens[i++]; if (cmd === "z" || cmd === "Z") { cx = sx; cy = sy; push(cx, cy); last = null; continue; } }
+    const lower = cmd.toLowerCase();
+    const n = arity[lower];
+    if (!n) break;
+    const a = tokens.slice(i, i + n).map(Number);
+    if (a.length < n || a.some((v) => !Number.isFinite(v))) break;
+    i += n;
+    const rel = cmd === lower;
+    const ox = rel ? cx : 0, oy = rel ? cy : 0;
+    if (lower === "m") {
+      cx = ox + a[0]; cy = oy + a[1]; sx = cx; sy = cy; push(cx, cy); last = null;
+      cmd = rel ? "l" : "L"; // further pairs after a move are lines
+    } else if (lower === "l") {
+      cx = ox + a[0]; cy = oy + a[1]; push(cx, cy); last = null;
+    } else if (lower === "h") {
+      cx = ox + a[0]; push(cx, cy); last = null;
+    } else if (lower === "v") {
+      cy = oy + a[0]; push(cx, cy); last = null;
+    } else if (lower === "c" || lower === "s") {
+      const x1 = lower === "c" ? ox + a[0] : last?.kind === "c" ? 2 * cx - last.x : cx;
+      const y1 = lower === "c" ? oy + a[1] : last?.kind === "c" ? 2 * cy - last.y : cy;
+      const k = lower === "c" ? 2 : 0;
+      const x2 = ox + a[k], y2 = oy + a[k + 1], x3 = ox + a[k + 2], y3 = oy + a[k + 3];
+      const [x0, y0] = [cx, cy];
+      sample((t) => {
+        const u = 1 - t;
+        return [u * u * u * x0 + 3 * u * u * t * x1 + 3 * u * t * t * x2 + t * t * t * x3, u * u * u * y0 + 3 * u * u * t * y1 + 3 * u * t * t * y2 + t * t * t * y3];
+      }, 24);
+      cx = x3; cy = y3; last = { kind: "c", x: x2, y: y2 };
+    } else if (lower === "q" || lower === "t") {
+      const x1: number = lower === "q" ? ox + a[0] : last?.kind === "q" ? 2 * cx - last.x : cx;
+      const y1: number = lower === "q" ? oy + a[1] : last?.kind === "q" ? 2 * cy - last.y : cy;
+      const k = lower === "q" ? 2 : 0;
+      const x2 = ox + a[k], y2 = oy + a[k + 1];
+      const [x0, y0] = [cx, cy];
+      sample((t) => {
+        const u = 1 - t;
+        return [u * u * x0 + 2 * u * t * x1 + t * t * x2, u * u * y0 + 2 * u * t * y1 + t * t * y2];
+      }, 20);
+      cx = x2; cy = y2; last = { kind: "q", x: x1, y: y1 };
+    } else if (lower === "a") {
+      const ex = ox + a[5], ey = oy + a[6];
+      for (const p of arcPoints(cx, cy, a[0], a[1], a[2], a[3] !== 0, a[4] !== 0, ex, ey)) push(p[0], p[1]);
+      cx = ex; cy = ey; last = null;
+    }
+  }
   return out.slice(0, 2000);
+}
+
+/** The points along an SVG elliptical arc (endpoint form, as the A command gives it). */
+function arcPoints(x1: number, y1: number, rxIn: number, ryIn: number, rotation: number, large: boolean, sweep: boolean, x2: number, y2: number): [number, number][] {
+  let rx = Math.abs(rxIn), ry = Math.abs(ryIn);
+  if (!rx || !ry || (x1 === x2 && y1 === y2)) return [[x2, y2]];
+  const phi = (rotation * Math.PI) / 180, cos = Math.cos(phi), sin = Math.sin(phi);
+  const dx = (x1 - x2) / 2, dy = (y1 - y2) / 2;
+  const xp = cos * dx + sin * dy, yp = -sin * dx + cos * dy;
+  const scale = (xp * xp) / (rx * rx) + (yp * yp) / (ry * ry);
+  if (scale > 1) { rx *= Math.sqrt(scale); ry *= Math.sqrt(scale); }
+  const num2 = rx * rx * ry * ry - rx * rx * yp * yp - ry * ry * xp * xp;
+  const den = rx * rx * yp * yp + ry * ry * xp * xp;
+  const k = (large === sweep ? -1 : 1) * Math.sqrt(Math.max(0, num2 / den));
+  const cxp = (k * rx * yp) / ry, cyp = (-k * ry * xp) / rx;
+  const cxx = cos * cxp - sin * cyp + (x1 + x2) / 2, cyy = sin * cxp + cos * cyp + (y1 + y2) / 2;
+  const angle = (ux: number, uy: number, vx: number, vy: number) => Math.atan2(ux * vy - uy * vx, ux * vx + uy * vy);
+  const theta = angle(1, 0, (xp - cxp) / rx, (yp - cyp) / ry);
+  let delta = angle((xp - cxp) / rx, (yp - cyp) / ry, (-xp - cxp) / rx, (-yp - cyp) / ry);
+  if (!sweep && delta > 0) delta -= 2 * Math.PI;
+  if (sweep && delta < 0) delta += 2 * Math.PI;
+  const steps = Math.max(8, Math.ceil(Math.abs(delta) / (Math.PI / 24)));
+  const out: [number, number][] = [];
+  for (let s = 1; s <= steps; s++) {
+    const t = theta + (delta * s) / steps;
+    out.push([cos * rx * Math.cos(t) - sin * ry * Math.sin(t) + cxx, sin * rx * Math.cos(t) + cos * ry * Math.sin(t) + cyy]);
+  }
+  out[out.length - 1] = [x2, y2];
+  return out;
 }
 
 function boundsOf(points: { x: number; y: number }[], pad: number) {
@@ -1414,7 +1521,8 @@ function boundsOf(points: { x: number; y: number }[], pad: number) {
  * A pdf_edit item as the editor's objects on one page: usually one, one per
  * box for a highlight found by its words, none for words not on the page.
  */
-async function deskItemsFor(tools: Tools, sheet: Sheet, pageIndex: number, item: Record<string, any>, anchor: Rect | null): Promise<DeskItem[]> {
+async function deskItemsFor(tools: Tools, sheet: Sheet, pageIndex: number, given: Record<string, any>, anchor: Rect | null): Promise<DeskItem[]> {
+  const item = asPath(given);
   const type = String(item.type ?? "").trim().toLowerCase();
   const page = pageIndex + 1;
   const at = () => ({ x: anchor?.x ?? need(item.x, `${type}'s x`), y: anchor?.y ?? need(item.y, `${type}'s y`) });
@@ -1561,7 +1669,7 @@ async function deskItemsFor(tools: Tools, sheet: Sheet, pageIndex: number, item:
       void sheet;
       throw new Problem(
         `"${String(item.type ?? "")}" is not a kind of item. Use text, stamp, signature, image, check, cross, ` +
-        "rect, ellipse, line, arrow, path, highlight or note.",
+        "rect, ellipse, line, arrow, curve, path, highlight or note.",
       );
   }
 }
@@ -1569,8 +1677,8 @@ async function deskItemsFor(tools: Tools, sheet: Sheet, pageIndex: number, item:
 /** A pdf_edit item moved by (dx, dy). */
 function shifted(draw: Record<string, any>, dx: number, dy: number): Record<string, any> {
   const out = { ...draw };
-  for (const k of ["x", "x2"]) if (num(out[k]) !== null) out[k] = (num(out[k]) as number) + dx;
-  for (const k of ["y", "y2"]) if (num(out[k]) !== null) out[k] = (num(out[k]) as number) + dy;
+  for (const k of ["x", "x2", "cx", "cx2"]) if (num(out[k]) !== null) out[k] = (num(out[k]) as number) + dx;
+  for (const k of ["y", "y2", "cy", "cy2"]) if (num(out[k]) !== null) out[k] = (num(out[k]) as number) + dy;
   return out;
 }
 

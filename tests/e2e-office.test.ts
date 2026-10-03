@@ -73,7 +73,7 @@ async function main() {
       const desk = (await app.api("GET", `/api/pdfdesk/${s}`)).body;
       assert.equal(desk.open, true, "and it is open in the PDF editor");
       assert.equal(desk.name, "memo.pdf");
-      assert.ok(told(app).includes("It is open in the PDF editor"));
+      assert.ok(told(app).includes("It is open in Autora PDF"));
       app.decide = null;
     });
 

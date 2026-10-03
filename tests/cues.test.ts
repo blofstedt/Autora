@@ -4,7 +4,7 @@
  *   npx tsx tests/cues.test.ts
  */
 import assert from "node:assert/strict";
-import { cueForItem } from "../server/pdf";
+import { asPath, cueForItem, pathPoints } from "../server/pdf";
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -53,6 +53,31 @@ test("something with nowhere to show gives nothing", () => {
   assert.equal(cueForItem({ id: "x", type: "text", pageNumber: 0, x: 1, y: 1, width: 1, height: 1 }), null);
   assert.equal(cueForItem({ id: "x", type: "text", pageNumber: 1, x: NaN, y: 1, width: 1, height: 1 }), null);
   assert.equal(cueForItem({ id: "x", type: "mystery", ...at }), null);
+});
+
+console.log("curves");
+
+test("a cubic path is sampled along its bend, not read as numbers", () => {
+  const pts = pathPoints("M 0 40 C 30 0, 90 80, 120 40", 10, 100);
+  assert.ok(pts.length > 20, "sampled finely");
+  assert.deepEqual(pts[0], { x: 10, y: 140 });
+  assert.deepEqual(pts.at(-1), { x: 130, y: 140 });
+  assert.ok(pts.some((p) => p.y < 135) && pts.some((p) => p.y > 145), "it swings both sides of the chord");
+});
+
+test("relative commands, H, V and arcs end where they say", () => {
+  const pts = pathPoints("M 0 0 l 10 0 h 10 v 10 a 5 5 0 0 1 10 0 q 5 -10 10 0 z", 0, 0);
+  assert.deepEqual(pts.at(-1), { x: 0, y: 0 }, "z closes to the start");
+  assert.ok(pts.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y)));
+  assert.ok(pts.some((p) => p.x === 30 && p.y === 10), "the arc ends on its end point");
+});
+
+test("a curve item becomes a path from its start through its control point", () => {
+  const p = asPath({ type: "curve", x: 50, y: 60, x2: 150, y2: 60, cx: 100, cy: 0 });
+  assert.equal(p.type, "path");
+  assert.equal(p.d, "M 0 0 Q 50 -60 100 0");
+  assert.equal(asPath({ type: "curve", x: 0, y: 0, x2: 10, y2: 0, cx: 3, cy: 3, cx2: 6, cy2: -3 }).d, "M 0 0 C 3 3 6 -3 10 0");
+  assert.throws(() => asPath({ type: "curve", x: 0, y: 0, x2: 1, y2: 1 }));
 });
 
 console.log(`${passed} passed`);

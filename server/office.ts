@@ -66,10 +66,12 @@ export interface OfficeContext {
   showImage: (blob: string, alt: string, caption: string | null, size?: { w: number; h: number }) => void;
   /** The PDF window: a PDF made here is opened in it. Absent in an incognito chat. */
   desk?: DeskHooks;
-  /** The Word window: a document made or changed here is shown in it. Absent in an incognito chat. */
+  /** The Pages / Sheets / Slides window: a document made or changed here is shown in it. Absent in an incognito chat. */
   win?: OfficeHooks;
   /** Why something may not be changed right now (the person is working on it), or null. */
   held?: (surface: "office", subject: string) => string | null;
+  /** Kinds of document the person has switched off on the Tools page (Autora Pages, Sheets or Slides). */
+  off?: Kind[];
   cancelled: () => boolean;
   onCancel: (stop: () => void) => void;
 }
@@ -94,6 +96,16 @@ const MIME: Record<Kind, string> = {
 const DOMAIN: Record<Kind, "docs" | "sheet" | "slides"> = { docx: "docs", xlsx: "sheet", pptx: "slides" };
 
 export const kindOf = (name: string): Kind | null => KINDS[path.extname(name).toLowerCase()] ?? null;
+
+/** What each kind of document is called, as an app. */
+export const APP_NAME: Record<Kind, string> = { docx: "Autora Pages", xlsx: "Autora Sheets", pptx: "Autora Slides" };
+
+/** Refuse work on a kind of document the person switched off, saying where it is switched on. */
+function allowed(ctx: OfficeContext, kind: Kind) {
+  if (ctx.off?.includes(kind)) {
+    throw new Problem(`${APP_NAME[kind]} (.${kind} files) is switched off on the Tools page, so it is not yours this turn. If the task needs it, say so and that it is switched on there.`);
+  }
+}
 
 export async function runOfficeTool(name: string, args: Record<string, any>, ctx: OfficeContext): Promise<OfficeOutcome> {
   try {
@@ -209,7 +221,7 @@ function failure(run: Run, doing: string): string {
   const e = run.env;
   const detail = e?.detail ?? {};
   if (e?.error === "conversion_failed" && /xlsx engine/.test(e.message ?? "")) {
-    return "The spreadsheet engine is not installed on this server, so Excel files cannot be read or changed here (Word and PowerPoint can).";
+    return "The spreadsheet engine is not installed on this server, so spreadsheets (.xlsx, Autora Sheets) cannot be read or changed here (documents and presentations can).";
   }
   if (/GenOffice app not found/.test(e?.message ?? "")) {
     return `${doing} needs the page layout engine, which belongs to GenOffice's windows and is not part of these tools. A check (office_check) is what stands in for looking.`;
@@ -227,8 +239,9 @@ const clip = (text: string, room: number, how: string): string =>
 function input(args: Record<string, any>, ctx: OfficeContext, wanted?: Kind): { file: FileInput; kind: Kind; inWindow: boolean } {
   let file = readFileRef(args.file, ctx.cwd, "document", "the Office tools");
   const kind = kindOf(file.name);
-  if (!kind) throw new Problem(`${file.name} is not a Word, Excel or PowerPoint file (.docx, .xlsx, .pptx). Convert it first (office_convert) if it is another format.`);
+  if (!kind) throw new Problem(`${file.name} is not a document, spreadsheet or presentation file (.docx, .xlsx, .pptx). Convert it first (office_convert) if it is another format.`);
   if (wanted && kind !== wanted) throw new Problem(`${file.name} is a ${kind} file, not ${wanted}.`);
+  allowed(ctx, kind);
   /* The document open in the window is the document, as the person has it now: asked for by its
      artifact, the file it came from, or its name, it is read from the window, not from an older copy. */
   const here = ctx.win?.current();
@@ -262,7 +275,7 @@ function showInWindow(ctx: OfficeContext, name: string, data: Buffer, saved: { i
 
 function sheetNeeds(kind: Kind) {
   if (kind === "xlsx" && !sidecarPath()) {
-    throw new Problem("The spreadsheet engine is not installed on this server, so Excel files cannot be read or changed here (Word and PowerPoint can).");
+    throw new Problem("The spreadsheet engine is not installed on this server, so spreadsheets (.xlsx, Autora Sheets) cannot be read or changed here (documents and presentations can).");
   }
 }
 
@@ -312,7 +325,7 @@ async function guideTool(args: Record<string, any>, ctx: OfficeContext): Promise
   const domain = String(args.domain ?? "").trim().toLowerCase();
   const map: Record<string, string> = { docs: "docs", word: "docs", docx: "docs", sheets: "sheets", sheet: "sheets", excel: "sheets", xlsx: "sheets", slides: "slides", powerpoint: "slides", pptx: "slides" };
   const d = map[domain];
-  if (!d) throw new Problem("domain is docs (Word), sheets (Excel) or slides (PowerPoint).");
+  if (!d) throw new Problem("domain is docs (Autora Pages), sheets (Autora Sheets) or slides (Autora Slides).");
   const topic = String(args.topic ?? "").trim();
   if (topic && !/^[\w.-]+$/.test(topic)) throw new Problem("topic is one word: an op group or an op name.");
   return await withWork(async (work) => {
@@ -458,7 +471,7 @@ const REFRESH_CAP = 5000;
  * The engine writes the new value of a cell it changed and the result of a
  * formula it wrote, and asks Excel to recalculate everything when the file is
  * opened -- but the formulas that depend on what changed keep their old stored
- * result until then. Excel shows the right numbers; a viewer that does not
+ * result until then. a spreadsheet app shows the right numbers; a viewer that does not
  * recalculate (a phone preview, a library) and this agent's own next read show
  * the old ones. Writing each formula back through the same path recalculates it
  * against the edited workbook. Best effort: a workbook it cannot do this for is
@@ -477,14 +490,14 @@ async function refreshFormulas(p: string, work: string, ctx: OfficeContext): Pro
       for (const c of found.env?.detail?.cells ?? []) {
         if (typeof c.formula === "string" && c.formula.startsWith("=") && typeof c.ref === "string") cells.push({ cell: c.ref, sheet: name, formula: c.formula });
       }
-      if (cells.length > REFRESH_CAP) return " The workbook has a lot of formulas: Excel recalculates them when it opens the file, but until then the stored results of the ones that depend on your change may be out of date.";
+      if (cells.length > REFRESH_CAP) return " The workbook has a lot of formulas: a spreadsheet app recalculates them when it opens the file, but until then the stored results of the ones that depend on your change may be out of date.";
     }
     if (cells.length === 0) return "";
     const file = path.join(work, "refresh.json");
     fs.writeFileSync(file, JSON.stringify(cells));
     const done = await cli(["sheet", "apply", p, "--cells", file, "--best-effort"], work, ctx);
     if (done.env?.status === "ok") return ` Recalculated ${cells.length} formula cell${cells.length === 1 ? "" : "s"}.`;
-    return " The formulas that depend on your change could not be recalculated here; Excel does it when the file is opened.";
+    return " The formulas that depend on your change could not be recalculated here; a spreadsheet app does it when the file is opened.";
   } catch (err) {
     if (err instanceof Problem) throw err;
     return "";
@@ -581,9 +594,9 @@ async function checkTool(args: Record<string, any>, ctx: OfficeContext): Promise
 async function layOut(file: FileInput, kind: Kind, ctx: OfficeContext): Promise<Buffer> {
   const app = APP_OF[kind];
   if (!editorBuilt(app)) {
-    const name = { docs: "Word", slides: "PowerPoint", sheets: "Excel" }[app];
+    const name = { docs: "Autora Pages", slides: "Autora Slides", sheets: "Autora Sheets" }[app];
     throw new Problem(
-      `The ${name} editor is not built on this server, so pages cannot be drawn (node scripts/build-office.mjs).` +
+      `${name} is not built on this server, so pages cannot be drawn (node scripts/build-office.mjs).` +
         (kind === "pptx" ? " office_check finds overflowing or overlapping text and off-slide elements, which stands in for looking." : kind === "xlsx" ? " office_check finds broken formulas and columns too narrow for their numbers, and office_read shows the cells." : ""),
     );
   }
@@ -591,7 +604,7 @@ async function layOut(file: FileInput, kind: Kind, ctx: OfficeContext): Promise<
 }
 
 /** What each kind of document is called as a window. */
-const WINDOW = { docx: "Word", pptx: "PowerPoint", xlsx: "Excel" } as const;
+const WINDOW = { docx: "Autora Pages", pptx: "Autora Slides", xlsx: "Autora Sheets" } as const;
 
 /** Pictures of the pages of a document, as its editor lays them out. */
 async function lookTool(args: Record<string, any>, ctx: OfficeContext): Promise<OfficeOutcome> {
@@ -604,7 +617,7 @@ async function lookTool(args: Record<string, any>, ctx: OfficeContext): Promise<
   return { ok: done.ok, summary: `${done.summary}${meanwhile(ctx, kind)}`, preview: done.preview, images: done.images };
 }
 
-/** Bring a Word document into the window beside the conversation. */
+/** Bring a document into the window beside the conversation. */
 async function openTool(args: Record<string, any>, ctx: OfficeContext): Promise<OfficeOutcome> {
   const { file, kind } = input(args, ctx);
   if (!ctx.win) throw new Problem("There is no window to open it in here (an incognito chat keeps none).");
@@ -616,7 +629,7 @@ async function openTool(args: Record<string, any>, ctx: OfficeContext): Promise<
   };
 }
 
-/** A Word document as a PDF artifact, opened in the PDF editor. */
+/** A document as a PDF artifact, opened in the PDF editor. */
 async function pdfTool(args: Record<string, any>, ctx: OfficeContext): Promise<OfficeOutcome> {
   const { file, kind } = input(args, ctx);
   const pdf = await layOut(file, kind, ctx);
@@ -628,7 +641,7 @@ async function pdfTool(args: Record<string, any>, ctx: OfficeContext): Promise<O
   ctx.desk?.open({ name: saved.name, base: pdf, items: [], working: saved.id, source: null, outName: saved.name });
   return {
     ok: true,
-    summary: `${savedLine(saved)}${ctx.desk ? " It is open in the PDF editor." : ""}`,
+    summary: `${savedLine(saved)}${ctx.desk ? " It is open in Autora PDF." : ""}`,
     preview: saved.name,
   };
 }
@@ -638,6 +651,7 @@ async function pdfTool(args: Record<string, any>, ctx: OfficeContext): Promise<O
 async function createTool(args: Record<string, any>, ctx: OfficeContext): Promise<OfficeOutcome> {
   const kind = String(args.type ?? "").trim().toLowerCase() as Kind;
   if (!(kind in MIME)) throw new Problem("type is docx, xlsx or pptx.");
+  allowed(ctx, kind);
   if (kind === "xlsx" && !sidecarPath()) {
     // Creating works without the engine, but formulas would have no stored results.
   }
@@ -705,6 +719,7 @@ async function convertTool(args: Record<string, any>, ctx: OfficeContext): Promi
   if (String(args.to ?? "").trim().toLowerCase().replace(/^\./, "") === "pdf" && kindOf(file.name)) return await pdfTool(args, ctx);
   const from = path.extname(file.name).slice(1).toLowerCase();
   const to = String(args.to ?? "").trim().toLowerCase().replace(/^\./, "");
+  for (const k of [from, to]) if (k in MIME && (k === "docx" || k === "xlsx" || k === "pptx")) allowed(ctx, k);
   const can = CONVERSIONS[from];
   if (!can) throw new Problem(`${file.name}: converting from .${from || "?"} is not available. From .docx: ${CONVERSIONS.docx.join(", ")}; .md: ${CONVERSIONS.md.join(", ")}; .html: docx; .csv: xlsx; .xlsx: csv. (Word to PDF is office_pdf.)`);
   if (!can.includes(to)) throw new Problem(`.${from} converts to ${can.join(" or ")}, not ${to || "(nothing named)"}.`);

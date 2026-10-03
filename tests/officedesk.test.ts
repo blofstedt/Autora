@@ -11,7 +11,7 @@ import path from "node:path";
 import zlib from "node:zlib";
 
 process.env.AUTORA_STATE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "autora-officedesk-test-"));
-const { describeChange, fragment, docxParagraphs, isDocx, pptxParagraphs, xlsxCells, describeCells, isOffice } = await import("../server/officedesk");
+const { cuesFor, describeChange, fragment, docxParagraphs, isDocx, pptxParagraphs, xlsxCells, describeCells, isOffice } = await import("../server/officedesk");
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -113,6 +113,38 @@ test("a workbook is read cell by cell, shared strings, formulas and values inclu
   assert.match(said, /Data!C2/);
   const gone = new Map(b); gone.delete("Data!A1"); gone.set("Data!D9", "new");
   assert.match(describeCells(b, gone).join("; "), /filled in Data!D9.*cleared Data!A1/);
+});
+
+const docx = (...paras: string[]) => zip("word/document.xml", `<w:document><w:body>${paras.map((t) => `<w:p><w:r><w:t>${t}</w:t></w:r></w:p>`).join("")}</w:body></w:document>`);
+
+test("the cursor is sent to the paragraphs the agent changed or added, in order", () => {
+  const was = docx("Intro", "Meet on Friday.", "Thanks");
+  const now = docx("Intro", "Meet on Monday at noon.", "A new line", "Thanks");
+  assert.deepEqual(cuesFor("docx", was, now), [
+    { act: "type", text: "Meet on Monday at noon." },
+    { act: "type", text: "A new line" },
+  ]);
+});
+
+test("a document the agent made is typed in from its first lines, and a deletion is only pointed at", () => {
+  assert.equal(cuesFor("docx", null, docx("One", "Two", "Three")).length, 3);
+  assert.deepEqual(cuesFor("docx", docx("Keep", "Drop me", "End"), docx("Keep", "End")), [{ act: "point", text: "Keep" }]);
+  assert.deepEqual(cuesFor("docx", docx("Same"), docx("Same")), []);
+});
+
+test("a workbook's cues name the cell and sheet, and type a formula as the formula", () => {
+  const book = (cell: string) => zipMany([
+    ["xl/workbook.xml", `<workbook><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>`],
+    ["xl/_rels/workbook.xml.rels", `<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>`],
+    ["xl/worksheets/sheet1.xml", `<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Total</t></is></c>${cell}</row></sheetData></worksheet>`],
+  ]);
+  const cues = cuesFor("xlsx", book(""), book(`<c r="B1"><f>SUM(A2:A9)</f><v>42</v></c>`));
+  assert.deepEqual(cues, [{ act: "type", text: "=SUM(A2:A9)", sheet: "Data", cell: "B1" }]);
+});
+
+test("a deck's cue is the words, without the \"Slide 1:\" the reader puts in front", () => {
+  const deck = (t: string) => zipMany([["ppt/presentation.xml", "<p:presentation/>"], ["ppt/slides/slide1.xml", `<p:sld><a:p><a:r><a:t>${t}</a:t></a:r></a:p></p:sld>`]]);
+  assert.deepEqual(cuesFor("pptx", deck("Quarterly review"), deck("Annual review")), [{ act: "type", text: "Annual review" }]);
 });
 
 console.log(`${passed} passed`);

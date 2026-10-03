@@ -2,13 +2,16 @@ import { useSyncExternalStore } from "react";
 
 /**
  * The Office window's state on this page (server/officedesk.ts): whether a
- * Word, PowerPoint or Excel document is open beside the conversation, and
- * which version of it. A Word document is fetched by the window when `loadRev`
+ * Autora Pages, Slides or Sheets document is open beside the conversation, and
+ * which version of it. A Pages document is fetched by the window when `loadRev`
  * changes; the others are reached by the window's frame reloading.
  */
 export type WordVersion = { n: number; label: string; at: number; by: "agent" | "person"; name: string };
 
 export type OfficeKind = "docx" | "pptx" | "xlsx";
+
+/** One thing the agent did in the document, played as a cursor that goes there and types it (server/officedesk.ts). */
+export type OfficeCue = { act: "type" | "point"; text: string; cell?: string; sheet?: string; box?: [number, number, number, number] };
 
 export type WordState = {
   open: boolean;
@@ -23,6 +26,11 @@ export type WordState = {
   since?: number;
   problem?: string | null;
   versions?: WordVersion[];
+  /** Where the agent just worked, to be played over the editor, once per `cueRev`. */
+  cues?: OfficeCue[];
+  cueRev?: number;
+  /** Milliseconds since they were made: a page that opens the window much later has missed them. */
+  cueAge?: number;
 };
 
 const CLOSED: WordState = { open: false };

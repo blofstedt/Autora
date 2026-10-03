@@ -399,9 +399,24 @@ export const IconArrowLeft = ({ size = 16, className }: Props) => (
   </svg>
 );
 
+export const IconTable = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <path d="M3 10h18M3 15h18M9 4v16" />
+  </svg>
+);
+
+export const IconSlides = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <rect x="3" y="4" width="18" height="12" rx="2" />
+    <path d="M12 16v4M8 20h8M7 9h6M7 12h10" />
+  </svg>
+);
+
 export const IconStar = ({ size = 16, className }: Props) => (
   <svg {...base(size)} className={className}>
-    <path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" />
+    {/* The star's ink spans y 3 to 19.9, so its middle is a little above the box's: shifted down to sit in the middle of a button. */}
+    <path transform="translate(0 .55)" d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" />
   </svg>
 );
 

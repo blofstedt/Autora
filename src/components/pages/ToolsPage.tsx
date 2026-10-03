@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { IconCode, IconFile, IconGlobe, IconSparkle } from "../Icons";
+import { IconCode, IconFile, IconGlobe, IconSlides, IconSparkle, IconTable } from "../Icons";
 
-type WindowKey = "widgets" | "browser" | "app" | "pdf" | "office";
+type WindowKey = "widgets" | "browser" | "app" | "pdf" | "pages" | "sheets" | "slides";
 
 type ToolsState = {
   config: Record<WindowKey, { enabled: boolean }>;
@@ -32,17 +32,31 @@ const WINDOWS: { key: WindowKey; name: string; icon: ReactNode; what: string; to
   },
   {
     key: "pdf",
-    name: "PDF editor",
+    name: "Autora PDF",
     icon: <IconFile size={18} />,
     what: "Writing reports as PDFs, reading, filling, signing, marking up, changing the words in, redacting, merging, splitting and shrinking PDFs, in a window beside the chat where you can move what it placed and add your own.",
     tools: "pdf_read, pdf_look, pdf_edit, pdf_compose, pdf_pages, pdf_redact, pdf_replace_text, pdf_compress",
   },
   {
-    key: "office",
-    name: "Word, Excel and PowerPoint",
+    key: "pages",
+    name: "Autora Pages",
     icon: <IconFile size={18} />,
-    what: "Reading, writing, checking and converting Word, Excel and PowerPoint files, drawing their pages, and a window beside the chat where each opens in its own editor (on a phone, as pictures of its pages you can point at).",
-    tools: "office_*",
+    what: "Documents (.docx): the agent writes, reads, edits, checks and converts them, and they open in a window beside the chat where you can type in them too (on a phone, as pictures of the pages you can point at).",
+    tools: "office_* on .docx files",
+  },
+  {
+    key: "sheets",
+    name: "Autora Sheets",
+    icon: <IconTable size={18} />,
+    what: "Spreadsheets (.xlsx): tables, formulas and charts the agent builds and changes, open in a window beside the chat where you can edit the cells yourself.",
+    tools: "office_* on .xlsx files",
+  },
+  {
+    key: "slides",
+    name: "Autora Slides",
+    icon: <IconSlides size={18} />,
+    what: "Presentations (.pptx): decks the agent designs and edits, open in a window beside the chat where you can change any slide.",
+    tools: "office_* on .pptx files",
   },
 ];
 

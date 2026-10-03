@@ -131,7 +131,7 @@ async function main() {
     });
 
     await test("put away, it stays away until the agent works on a PDF again", async () => {
-      await page.click('.pdf-bar button[aria-label="Put the PDF window away"]');
+      await page.click('.pdf-bar button[aria-label="Put Autora PDF away"]');
       await page.waitForSelector(".pdf-window", { state: "detached", timeout: 5_000 });
       assert.equal((await app.api("GET", `/api/pdfdesk/${s}`)).body.open, false);
     });
@@ -149,8 +149,20 @@ async function main() {
       await phone.tap('.pdf-bar button[aria-label="Full screen"]');
       const full = await phone.locator(".pdf-window.is-full").boundingBox();
       assert.ok(full && full.width >= 389 && full.height >= 840, "it covers the screen");
+      // Messaging lite over the full screen: a small chat button, a one-line box, and the agent's words shown briefly.
+      assert.ok(await phone.locator(".immersive-chat").isVisible(), "the chat button is over the full screen");
+      await phone.tap(".immersive-chat");
+      await phone.fill('.immersive-sheet input', "make it bigger please");
+      app.decide = () => ({ text: "Making it bigger. One moment while I redraw." });
+      await phone.tap(".immersive-send");
+      await phone.waitForSelector(".immersive-say.is-on", { timeout: 30_000 });
+      assert.match(await phone.locator(".immersive-say").innerText(), /Making it bigger\./, "the line is whole, not half a word");
+      assert.equal(await phone.locator(".pdf-window.is-full").count(), 1, "still full screen after talking");
+      assert.ok(await phone.locator(".msg.user .msg-text", { hasText: "make it bigger please" }).count() > 0, "it reached the thread");
+      await phone.waitForSelector(".immersive-say:not(.is-on)", { state: "attached", timeout: 12_000 });
       await phone.tap('.pdf-bar button[aria-label="Back to the conversation"]');
       assert.equal(await phone.locator(".pdf-window.is-full").count(), 0);
+      assert.equal(await phone.locator(".immersive").count(), 0, "the layer goes with the full screen");
       await phone.close();
     });
   } finally {

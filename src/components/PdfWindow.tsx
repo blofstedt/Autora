@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useFullscreen } from "../lib/fullscreen";
+import { reportCursor } from "../lib/cursorPos";
 import { useAgentCursor } from "../lib/agentCursor";
 import { holdSurface, useCollab } from "../lib/collab";
 import { useDeskState } from "../lib/pdfdesk";
@@ -62,7 +64,7 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
   deskRef.current = desk;
   const [trouble, setTrouble] = useState<string | null>(null);
   /** On a phone the pinned view is a third of the screen: editing wants all of it. */
-  const [full, setFull] = useState(false);
+  const [full, setFull] = useFullscreen();
 
   const post = useCallback((msg: Record<string, unknown>, transfer?: Transferable[]) => {
     frame.current?.contentWindow?.postMessage(msg, "*", transfer ?? []);
@@ -142,6 +144,10 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
       } else if (msg.type === "autora:base" && msg.bytes instanceof ArrayBuffer) {
         ownPages.current++;
         void send("pages", { bytes: toBase64(msg.bytes), items: Array.isArray(msg.items) ? msg.items : [] });
+      } else if (msg.type === "autora:cursor" && Number.isFinite(msg.x) && Number.isFinite(msg.y)) {
+        // Where the agent's cursor is in the editor, in the frame's pixels: on screen, for the line beside it.
+        const r = frame.current.getBoundingClientRect();
+        reportCursor(r.left + msg.x, r.top + msg.y);
       } else if (msg.type === "autora:presence" && typeof msg.id === "string") {
         // What the person has hold of in the editor: the agent is asked to leave it alone.
         void fetch(`/api/pdfdesk/${encodeURIComponent(sessionId)}/presence`, {
@@ -240,6 +246,7 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
     <div className={`pdf-window${phone ? " is-phone" : ""}${phone && full ? " is-full" : ""}`}>
       <div className="pdf-bar">
         <span className="pdf-bar-ico" aria-hidden="true"><IconFile size={14} /></span>
+        <span className="pdf-bar-app">Autora PDF</span>
         <span className="pdf-bar-name" title={desk.name}>{desk.name ?? "PDF"}</span>
         <span className="pdf-bar-note">{problem ? "" : "Saved as you go"}</span>
         <div className="spacer" />
@@ -282,7 +289,7 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
         {phone && (
           <button
             className="btn icon ghost"
-            onClick={() => setFull((v) => !v)}
+            onClick={() => setFull(!full)}
             title={full ? "Back to the conversation" : "Full screen"}
             aria-label={full ? "Back to the conversation" : "Full screen"}
             aria-pressed={full}
@@ -291,7 +298,7 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
           </button>
         )}
         {!phone && (
-          <button className="btn icon ghost" onClick={close} title="Put the PDF window away" aria-label="Put the PDF window away">
+          <button className="btn icon ghost" onClick={close} title="Put Autora PDF away" aria-label="Put Autora PDF away">
             <IconX size={14} />
           </button>
         )}
@@ -331,7 +338,7 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
         ref={frame}
         className="pdf-frame"
         src="/pdf-editor/index.html"
-        title={`${desk.name ?? "PDF"}, in the PDF editor`}
+        title={`${desk.name ?? "PDF"}, in Autora PDF`}
         sandbox="allow-scripts allow-downloads allow-modals allow-popups"
       />
     </div>

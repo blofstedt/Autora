@@ -86,7 +86,7 @@ async function main() {
     await test("the full editor is a tap away, and back", async () => {
       await page.getByRole("button", { name: "Full editor" }).click();
       await until("the editor frame", async () => page.frames().some((f) => f.url().includes("/office-app/slides/")), 30_000);
-      await page.getByRole("button", { name: "Pages", exact: true }).click();
+      await page.getByRole("button", { name: "Page view", exact: true }).click();
       await until("the pictures again", async () => (await page.locator(".office-page img").count()) > 0, 20_000);
     });
   } finally {
