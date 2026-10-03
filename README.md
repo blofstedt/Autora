@@ -46,7 +46,7 @@ the part to read before installing it anywhere.
 - **Approval in chat is off.** There is no per-call gate: commands run when the agent decides to run them, and
   you watch them happen rather than being asked first. That is the whole point of
   the app, and it is also the risk.
-- **The container is deliberately privileged.** The Umbrel compose mounts the host
+- **The Umbrel container is deliberately privileged.** The Umbrel compose mounts the host
   filesystem read-write at `/host` and sets `AUTORA_WORKDIR=/host`, because
   working on the server -- including deleting things -- is what it is for. The
   comments in `blofstedt-autora/docker-compose.yml` say so next to the mount.
@@ -56,7 +56,126 @@ the part to read before installing it anywhere.
   never sent to the browser; a key saved in Settings is written to
   `.autora/settings.json`, readable only by the account Autora runs as.
 
-## Quickstart
+## Install
+
+Autora runs inside **Docker**, a free program that keeps it in its own sealed
+box, so there is nothing else to set up. You do two things: install Docker, then
+paste one command. Allow about 10 minutes, most of it downloading.
+
+**Pick your system:** [Windows](#windows) · [Linux](#linux) · [Mac](#mac) · [Umbrel](#umbrel)
+
+### Windows
+
+You need Windows 10 (version 2004 or newer) or Windows 11.
+
+1. **Install Docker Desktop** from <https://www.docker.com/products/docker-desktop/>.
+   Run the installer, leave "Use WSL 2" ticked, and restart if it asks.
+2. **Start it.** Open *Docker Desktop* from the Start menu, accept the terms
+   (you can skip signing in), and wait until the bottom-left corner says
+   *Engine running*.
+3. **Start Autora.** Open *PowerShell* (Start menu, type "PowerShell"), paste
+   these two lines, and press Enter. The first run downloads Autora, which takes
+   a few minutes.
+
+   ```powershell
+   mkdir -Force "$HOME\autora-files"
+   docker run -d --name autora --restart unless-stopped -p 127.0.0.1:8817:8817 -v autora-data:/data -v "$HOME\autora-files:/workspace" -e AUTORA_WORKDIR=/workspace ghcr.io/blofstedt/autora:latest
+   ```
+
+4. **Open <http://localhost:8817>** in your browser. Then
+   [connect a model](#first-run-connect-a-model).
+
+### Linux
+
+1. **Install Docker.** On Ubuntu, Debian, Fedora and most others, Docker's own
+   script does it:
+
+   ```bash
+   curl -fsSL https://get.docker.com | sudo sh
+   sudo usermod -aG docker $USER
+   ```
+
+   Then **log out and back in** so you can use Docker without `sudo`.
+2. **Start Autora.** Paste this into a terminal. The first run downloads
+   Autora, which takes a few minutes.
+
+   ```bash
+   mkdir -p ~/autora-files
+   docker run -d --name autora --restart unless-stopped -p 127.0.0.1:8817:8817 -v autora-data:/data -v ~/autora-files:/workspace -e AUTORA_WORKDIR=/workspace ghcr.io/blofstedt/autora:latest
+   ```
+
+3. **Open <http://localhost:8817>** in your browser. Then
+   [connect a model](#first-run-connect-a-model).
+
+### Mac
+
+Install [Docker Desktop for Mac](https://www.docker.com/products/docker-desktop/),
+open it and wait for *Engine running*, then use the command from the
+[Linux](#linux) section in Terminal.
+
+### Umbrel
+
+In umbrelOS open **App Store**, use the **⋯** menu at the top right, choose
+**Community App Stores**, add `https://github.com/blofstedt/Autora`, then open
+the store, pick **Autora** and press **Install**. Note that the Umbrel version
+can reach the whole machine, not one folder — see
+[Before you run it](#before-you-run-it).
+
+### First run: connect a model
+
+Autora opens on a card that asks for an AI model. **DeepSeek** is the cheapest
+choice:
+
+1. Make an account at <https://platform.deepseek.com> and add a few dollars of
+   balance if it asks (you pay for what you use).
+2. Open <https://platform.deepseek.com/api_keys>, create a key and copy it.
+3. In Autora choose **DeepSeek**, paste the key and press connect. Autora
+   checks it before saving.
+
+Any other provider works the same way: see [Connecting a model](#connecting-a-model).
+Then type a task and watch it work.
+
+### What it can reach
+
+Autora can read and change the files in your **`autora-files`** folder, run
+commands and browse the web from inside its box. It cannot see the rest of your
+computer. Put in that folder whatever you want it to work on.
+On Linux the files it creates belong to `root`; if you cannot edit them, run
+`sudo chown -R $USER ~/autora-files`.
+
+The commands above publish Autora to **this computer only** (`127.0.0.1`).
+Autora has no login of its own, so do not remove that, and do not forward a port
+to it. To reach it from a phone, see [Reaching it from a phone](#reaching-it-from-a-phone).
+
+### Stop, update, remove
+
+Run these in the same terminal or PowerShell:
+
+| To | Run |
+| --- | --- |
+| Stop | `docker stop autora` |
+| Start again | `docker start autora` |
+| Update | `docker pull ghcr.io/blofstedt/autora:latest`, then `docker rm -f autora`, then the same start command as above. Your key and settings are kept. |
+| Remove everything | `docker rm -f autora` then `docker volume rm autora-data` (this deletes your saved key and history; your `autora-files` folder stays) |
+
+### If something goes wrong
+
+- **"Cannot connect to the Docker daemon"** or **"error during connect"** —
+  Docker is not running. On Windows, open Docker Desktop and wait for *Engine
+  running*. On Linux, `sudo systemctl start docker`.
+- **"permission denied" on `docker.sock`** (Linux) — you have not logged out and
+  back in since `usermod`, or skipped it. Or put `sudo` in front of `docker`.
+- **"port is already allocated"** — something else uses 8817. Change the first
+  number, for example `-p 127.0.0.1:9000:8817`, and open
+  <http://localhost:9000>.
+- **"The container name /autora is already in use"** — run `docker rm -f autora`
+  and paste the start command again.
+- **"WSL 2 installation is incomplete"** or **"virtualization must be enabled"**
+  (Windows) — restart the computer. If it persists, turn on virtualization
+  (called Intel VT-x, AMD-V or SVM) in your computer's BIOS settings.
+- **The page does not load** — `docker logs autora` shows what Autora said.
+
+### Run it from source (for developers)
 
 ```bash
 git clone https://github.com/blofstedt/Autora && cd Autora
@@ -66,60 +185,29 @@ export GEMINI_API_KEY=...        # optional -- keys can also be added in Setting
 npm run dev
 ```
 
-Open <http://localhost:3000>. Type a task. Watch it work.
+Open <http://localhost:3000>. It listens on this machine only. Opening it to
+the network is a choice, and [Before you run it](#before-you-run-it) has the
+terms: `AUTORA_HOST=0.0.0.0 npm run dev` when you want it from a phone or
+another computer, on a network you trust. Requests and live connections started
+by other websites are refused either way.
 
 <p align="center">
   <img src="docs/screenshots/first-run.png" width="780" alt="A fresh install: one column, and a card that asks which model to connect">
 </p>
 
-It listens on this machine only. Opening it to the network is a choice, and
-[Before you run it](#before-you-run-it) has the terms: `AUTORA_HOST=0.0.0.0 npm
-run dev` when you want it from a phone or another computer, on a network you
-trust. Requests and live connections started by
-other websites are refused either way.
+For production, `npm run build` then `npm start`. To build the image yourself
+instead of pulling it: `docker build -t autora . && docker run -p 127.0.0.1:8817:8817 -v autora-data:/data autora`.
 
-For production, `npm run build` then `npm start`. The container is the same
-two steps: `docker build -t autora . && docker run -p 8817:8817 -v autora-data:/data autora`.
-
-#### On Windows
-
-There is no Windows build and no installer: Autora is a Linux container, and
-on Windows that means **Docker Desktop**, which runs it on WSL2. Install
-Docker Desktop with the WSL2 backend, then the same commands, from PowerShell
-or WSL:
-
-```powershell
-git clone https://github.com/blofstedt/Autora; cd Autora
-docker build -t autora .
-docker run -p 8817:8817 -v autora-data:/data autora
-```
-
-Then open <http://localhost:3000> for `npm run dev`, or <http://localhost:8817>
-for the container. Four things are worth knowing before you start:
-
-- **The container is deliberately privileged** — it watches the agent's
-  terminal, browser and desktop, so it is not sandboxed and Docker Desktop's
-  defaults will not confine it. [Before you run it](#before-you-run-it) has the
-  terms, and they are the same on Windows as anywhere else.
-- **Paths are the container's, not Windows'.** A tool call's `/host/data` is
-  inside the Docker VM. `C:\Users\you\work` is mounted with
-  `-v /c/Users/you/work:/host/work` (PowerShell: `-v C:\Users\you\work:/host/work`),
-  and that mapping is what the agent sees.
-- **`npm install` for development needs the WSL side**, not a Windows Node:
-  the code runs on Linux, and a Windows install of `tsx`, `esbuild` and
-  `node-pty` produces modules the container cannot load. Do development in
-  WSL (`wsl` from PowerShell), where the repo behaves exactly as it does on
-  Linux.
-- **Line endings and file watching.** `git config core.autocrlf false` in the
-  clone: shell scripts with CRLF fail with `bad interpreter`, and the file
-  watcher makes WSL2 spin on `/mnt/c`. Keep the repo on the Linux side
-  (`~/Autora`) rather than under `/mnt/c`, which is slow for exactly this
-  kind of work.
+On Windows, do development in WSL (`wsl` from PowerShell), not with a Windows
+Node: the code runs on Linux, and Windows builds of `tsx`, `esbuild` and
+`node-pty` make modules the container cannot load. Keep the clone on the Linux
+side (`~/Autora`) rather than under `/mnt/c`, and run
+`git config core.autocrlf false` there: shell scripts with CRLF line endings
+fail with `bad interpreter`.
 
 The **desktop relay** runs on the machine with the screen, so on Windows that
 is a Windows process talking out to the Autora container — see
-[Controlling a desktop](#controlling-a-desktop). Nothing about it needs the
-container to be on the same side of the WSL boundary.
+[Controlling a desktop](#controlling-a-desktop).
 
 ### Connecting a model
 
