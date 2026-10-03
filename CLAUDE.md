@@ -384,6 +384,37 @@ it, so these hold for every change:
   (`new URL(...).hostname`), never substrings of a URL.
 - The default bind is `127.0.0.1`; only the container sets `AUTORA_HOST=0.0.0.0`.
 
+## Core principle: remove friction, keep the person's creativity
+
+The agent exists to remove all friction from creative work and to do
+non-creative work completely. Ask of every feature: is there creativity in this?
+
+- **No creativity involved, so the agent does it.** Productivity work (Word,
+  Excel, PowerPoint, PDF, forms, files, set-up, wiring) runs in full agentic
+  mode. Nobody needs to enjoy it. This is what Autora already does.
+- **Creativity involved, so the agent guides and the person decides.** It
+  brainstorms, asks questions, suggests, explains and handles the technical
+  background, but never replaces the person's choices. The goal is to keep
+  creativity in the process, not to override it.
+- **The mode follows the work, not a setting.** The same chat is full agent on a
+  deck and a guide on a novel; switching what the person is making switches
+  how the agent behaves. It may watch what the person is doing and work out
+  what they are after (the presence and companion code), and it picks a tool
+  for them when they cannot find one. It must stay easy to correct.
+- **Creative writing:** a tutor and editor. It structures brainstorming, helps
+  define characters and places, and critiques. It does not write the story.
+  Enforce this by giving the tool family no insert or replace tool, not by a
+  prompt rule (see Writers Block in `docs/BACKLOG.md`).
+- **Building an app:** the agent handles code, databases and connections. The
+  person focuses on design and usability, editing as much as they like
+  directly, in real time beside the agent, not only by prompting.
+- **Games and 3D (planned):** coding stays in the background. The person asks
+  for actions and properties ("slippery", "jump", "run") and the agent makes
+  them, but every granular setting stays theirs to change. The story and the
+  world are theirs.
+- Everything is a canvas where the person's imagination runs the scene: no
+  learning curve, no friction. New tools are judged against this.
+
 ## Standing product decisions
 
 - Yolo is the default: no tool call waits for approval in chat, and

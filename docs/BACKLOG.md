@@ -12,6 +12,11 @@ cursor cues, and presence so the agent leaves what the person holds alone.
 After the second such window, pull that out into one shared "desk" abstraction
 instead of copying `pdfdesk.ts` again.
 
+Every creative item below follows the core principle in `CLAUDE.md`: the agent
+removes friction and guides, the person keeps the creative decisions and the
+granular controls. The 3D tool and the 2D game engine (a "Godot lite") are
+built as easy tools first, with code in the background.
+
 ## Constraints that apply to all of them
 
 - Autora runs on low-CPU Umbrel boxes, with no GPU and possibly no internet.
