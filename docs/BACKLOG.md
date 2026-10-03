@@ -30,7 +30,10 @@ instead of copying `pdfdesk.ts` again.
 2. 2D game engine at tier 0, then tier 1 (3).
 3. Animation layer (5), as the base for video and games.
 4. Video editor (4).
-5. 3D tool and its game mode (2).
+5. 3D tool and its game mode (2), then the 3D game maker (7).
+
+The music production tool (8) is independent of the rest and can start whenever
+there is appetite for it.
 
 The store (6) is independent of the rest and can start whenever there are
 enough skills and tools worth sharing; free listings first.
@@ -174,6 +177,47 @@ paid.
 First version to try: free listings with ratings only, to get the catalogue,
 the install path and the safety checks right before any money moves. Add paid
 listings and the cut once there is something worth paying for.
+
+## 7. 3D game maker
+
+Size: XL. Backlog only; this is the hard one. Item 2 already lists a game mode
+for the 3D tool; this is that mode grown into a tool of its own, so decide
+whether to fold the two together when (2) starts.
+
+- Build on (2) for the scene graph and (3) for the game runtime and
+  game-as-data format. Do not build a third engine.
+- Candidate runtime: three.js with a small physics library (Rapier WASM), run
+  in a sandboxed frame. Babylon.js is the alternative; pick one for both 3D
+  tool and games.
+- Person and agent both edit the same scene-and-rules file: place objects, set
+  behaviours (move, collect, spawn, win / lose), test-play in the window.
+- Assets: primitives and a small built-in kit first; imported glTF next.
+  Generated models need a provider and do not work on local-only installs.
+- Main risks: rendering and physics on low-CPU boxes with no GPU, and an agent
+  that can reliably make a 3D game playable without seeing it feel. Measure
+  frame rate on a real Umbrel box before committing.
+
+## 8. Music production tool
+
+Size: XL. Backlog only. Think FL Studio Lite: a pattern-based beat maker and
+piano roll with a mixer, not a full DAW.
+
+- Sandboxed editor sub-project like `pdf-editor/`, using the Web Audio API, so
+  the audio engine runs in the person's browser and the box does no real-time
+  DSP. Nothing fetched from a CDN.
+- First version: step sequencer and piano roll, a few built-in synth and drum
+  sounds, per-track volume / pan / mute / solo, a playlist to arrange patterns,
+  tempo and swing. Save the project as data (tracks, patterns, notes,
+  automation) that the agent and the person both edit.
+- Sample import (wav / mp3) and export to wav / mp3 (ffmpeg on the server, or
+  an offline render in the page). MIDI import and export.
+- Agent tools work on the project as notes and patterns: write a bassline, a
+  drum pattern, a chord progression in a key, humanise timing. LLMs do symbolic
+  music passably; they cannot hear it, so offer a render to a waveform or
+  spectrogram picture for the agent to check against.
+- Out of scope for now: VST / plugin hosting, audio recording and editing,
+  time-stretching, a large effects rack.
+- Check licences for any bundled samples or soundfont.
 
 ## Open questions
 
