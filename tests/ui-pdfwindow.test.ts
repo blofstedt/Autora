@@ -156,7 +156,7 @@ async function main() {
       app.decide = () => ({ text: "Making it bigger. One moment while I redraw." });
       await phone.tap(".immersive-send");
       await phone.waitForSelector(".immersive-say.is-on", { timeout: 30_000 });
-      assert.match(await phone.locator(".immersive-say").innerText(), /Making it bigger\./);
+      assert.match(await phone.locator(".immersive-say").innerText(), /Making it bigger\./, "the line is whole, not half a word");
       assert.equal(await phone.locator(".pdf-window.is-full").count(), 1, "still full screen after talking");
       assert.ok(await phone.locator(".msg.user .msg-text", { hasText: "make it bigger please" }).count() > 0, "it reached the thread");
       await phone.waitForSelector(".immersive-say:not(.is-on)", { state: "attached", timeout: 12_000 });

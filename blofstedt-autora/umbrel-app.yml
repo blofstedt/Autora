@@ -134,7 +134,8 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  Fix: in Autora Slides and Sheets, Autora's cursor now goes to the title or cell it changed and types
+  Fix: the line Autora says over a full-screen tool waits until the words settle, so it never flashes half a word.
+  Also: in Autora Slides and Sheets, Autora's cursor now goes to the title or cell it changed and types
   it there (before, it typed in a caption). On phones, the line Autora is saying over a full-screen
   tool now sits beside its cursor in the PDF and the office apps, and Follow keeps you full screen as
   it moves between tools.

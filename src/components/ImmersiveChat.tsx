@@ -62,12 +62,16 @@ export function ImmersiveChat({
   useEffect(() => {
     const next = glance(say);
     if (!next || next === seen.current) return;
-    seen.current = next;
-    setLine(next);
-    setBeside(recentCursor());
-    setVisible(true);
-    const timer = window.setTimeout(() => setVisible(false), SHOWN_MS);
-    return () => window.clearTimeout(timer);
+    // Wait for the words to settle: a reply being streamed would otherwise flash half a word.
+    let hide = 0;
+    const settle = window.setTimeout(() => {
+      seen.current = next;
+      setLine(next);
+      setBeside(recentCursor());
+      setVisible(true);
+      hide = window.setTimeout(() => setVisible(false), SHOWN_MS);
+    }, 450);
+    return () => { window.clearTimeout(settle); window.clearTimeout(hide); };
   }, [say]);
 
   // Keep the box above the phone's keyboard.
