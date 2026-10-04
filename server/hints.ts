@@ -100,7 +100,10 @@ export function pathHint(root: string, missing: string): string {
 export function missingPathIn(output: string): string | null {
   const m =
     /(?:cannot (?:access|open|stat|read)|can't open file|no such file or directory|not found)[:\s]*['"`‘]?([\w@%+=.,~/\\-]+(?:\/[\w@%+=.,~-]+|\.[A-Za-z0-9]{1,6}))['"`’]?/i.exec(output) ??
-    /([\w@%+=.,~/-]+(?:\/[\w@%+=.,~-]+|\.[A-Za-z0-9]{1,6})):\s*No such file or directory/i.exec(output);
+    // The name may be quoted (this container's busybox cat says
+    // "cat: can't open 'userStore.ts': No such file or directory"), so a
+    // closing quote is allowed between the name and the colon.
+    /([\w@%+=.,~/-]+(?:\/[\w@%+=.,~-]+|\.[A-Za-z0-9]{1,6}))['"`\u2019]?:\s*No such file or directory/i.exec(output);
   const found = m?.[1];
   return found && found.length > 2 && !/^(?:command|bash|sh)$/i.test(found) ? found : null;
 }

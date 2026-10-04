@@ -23,6 +23,9 @@ const SKIP_DIRS = new Set([
 const MAX_FILES = 20_000;
 const MAX_BYTES = 512 * 1024;
 const WINDOW = 30;
+/** How old a file's timestamp must be, against the read that cached it, before
+    a matching size and timestamp are taken to mean it has not changed. */
+const SETTLED_MS = 2000;
 
 export interface SearchOptions {
   /** Where to look. */
@@ -54,6 +57,9 @@ interface Chunk {
 interface Indexed {
   mtime: number;
   size: number;
+  /** When the file was read, so a write in the same clock tick as the read is
+      not mistaken for no write at all. */
+  readAt: number;
   lines: string[];
   chunks: Chunk[];
   decls?: Decl[];
@@ -148,8 +154,16 @@ function load(file: string, rel: string): Indexed | null {
     return null;
   }
   if (stat.size > MAX_BYTES || stat.size === 0) return null;
+  /* A cache hit is only trusted when the file's own timestamp is comfortably
+     older than the read that cached it. Several filesystems -- this container's
+     among them -- stamp two writes in the same clock tick with the same mtime
+     AND the same ctime, so an edit made just after a search looks exactly like
+     no edit at all: same size, same timestamp. A file last written long before
+     it was read cannot have been changed since without its timestamp moving,
+     so those are the entries worth keeping the read of. */
   const cached = indexed.get(file);
-  if (cached && cached.mtime === stat.mtimeMs && cached.size === stat.size) return cached;
+  const settled = cached ? cached.mtime < cached.readAt - SETTLED_MS : false;
+  if (settled && cached && cached.mtime === stat.mtimeMs && cached.size === stat.size) return cached;
   let data: Buffer;
   try {
     data = fs.readFileSync(file);
@@ -179,7 +193,7 @@ function load(file: string, rel: string): Indexed | null {
     }
     if (length > 0) chunks.push({ file: rel, start, lines: slice, tokens, length });
   }
-  const entry = { mtime: stat.mtimeMs, size: stat.size, lines, chunks };
+  const entry = { mtime: stat.mtimeMs, size: stat.size, readAt: Date.now(), lines, chunks };
   indexed.set(file, entry);
   return entry;
 }

@@ -134,12 +134,11 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  Fix: the line Autora says over a full-screen tool waits until the words settle, so it never flashes half a word.
-  Also: in Autora Slides and Sheets, Autora's cursor now goes to the title or cell it changed and types
-  it there (before, it typed in a caption). On phones, the line Autora is saying over a full-screen
-  tool now sits beside its cursor in the PDF and the office apps, and Follow keeps you full screen as
-  it moves between tools.
-  Earlier on phones: any tool can go full screen; a translucent chat button opens a one-line box to
-  message Autora without leaving it. Also: Autora Pages, Sheets and Slides (a switch each) and Autora
-  PDF; a human-like cursor and typing in all of them; curved lines in PDFs; a Copy button on every
-  reply; the bookmark star centred.
+  New: a toolbox in the chat. Tap it and pick Autora PDF, Pages, Sheets or Slides to open that app
+  beside the chat yourself, with a blank file, without asking for anything in a message. It is beside
+  the notebook button on a phone and in the same row on a desktop.
+  Also: the to-do list in a chat now slides open and folds away smoothly instead of appearing and
+  vanishing, and the search tool and its hints are tidier.
+  Earlier: on phones, any tool can go full screen; a translucent chat button opens a one-line box to
+  message Autora without leaving it. Autora Pages, Sheets and Slides (a switch each) and Autora PDF,
+  with a human-like cursor and typing in all of them.

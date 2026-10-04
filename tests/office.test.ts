@@ -51,6 +51,13 @@ console.log("office tools");
 await test("the Tools page can switch them off, and they are then not offered", async () => {
   const tools = await import("../server/tools");
   const on = tools.toolSettings();
+  if (!office.officeDir()) {
+    // No build, nothing to offer, whatever the switches say (see windowOff).
+    // Nothing is asserted here: windowOff reads the same directory again, so a
+    // build running beside this test would make the two disagree.
+    console.log("  (not built: the Office tools are not offered, so their switches are not checked)");
+    return;
+  }
   assert.equal(tools.windowOff("office_read", on), false);
   const none = { ...on, pages: { enabled: false }, sheets: { enabled: false }, slides: { enabled: false } };
   assert.equal(tools.windowOff("office_read", none), true);

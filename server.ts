@@ -124,6 +124,8 @@ import {
   type Device, type StaticServer,
 } from "./server/preview";
 import { deskBriefing, deskHooks, deskRoutes, deskState, dropDesk, onDeskChange, onDeskTouch, serveEditor } from "./server/pdfdesk";
+import { newFileRoutes } from "./server/newfile";
+import { windowOff } from "./server/tools";
 import { dropOfficeDesk, onOfficeChange, onOfficePush, onOfficeTouch, officeBriefing, officeData, officeRoutes, officeState, officeHooks, serveOfficeEditors } from "./server/officedesk";
 import { renderToPdf, webDir as officeWebDir } from "./server/officerender";
 import {
@@ -5411,6 +5413,20 @@ async function startServer() {
     } catch (err: any) {
       res.status(500).json({ error: String(err?.message ?? err).split("\n")[0] });
     }
+  });
+
+  /* The toolbox beside the message box: a tool the person taps there makes a
+     blank file and opens its window, without spending a turn. */
+  newFileRoutes(app, {
+    exists: (id) => sessions.has(id),
+    incognito: (id) => Boolean(sessions.get(id)?.incognito),
+    off: (kind) => {
+      const s = toolSettings();
+      if (kind === "pdf") return windowOff("pdf_open", s);
+      // windowOff("office_open") is true both when the engine is not installed
+      // and when every Office app is switched off; either way nothing opens here.
+      return windowOff("office_open", s) || !s[kind === "docx" ? "pages" : kind === "xlsx" ? "sheets" : "slides"].enabled;
+    },
   });
 
   app.delete("/api/sessions/:id", async (req: Request, res: Response) => {

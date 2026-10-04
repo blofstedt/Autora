@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { TodoItem } from "../lib/derive";
 import { IconCheck, IconChevron } from "./Icons";
 import { TodoList } from "./TodoCell";
@@ -49,13 +49,32 @@ export const TodoDock = memo(function TodoDock({ items }: { items: TodoItem[] })
 
   const pct = items.length ? (done / items.length) * 100 : 0;
 
+  /* The list is measured rather than guessed at, so it is pulled open to its
+     own height and no further: three tasks and twelve each end exactly at the
+     last one, and closing runs the same distance back. It is measured while
+     shut too -- the fold clips it, the list keeps its height -- so the first
+     tap already knows how far to go. */
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const [foldH, setFoldH] = useState(0);
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const measure = () => setFoldH(el.offsetHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [items.length]);
+
   return (
     <section className={`todo-dock${open ? " is-open" : ""}${all ? " is-all" : ""}`} aria-label="To-do list">
-      {open && (
-        <div className="todo-dock-list">
+      {/* Kept in the page while shut, with no height, so it can slide open and
+          shut rather than appear and vanish. */}
+      <div className="todo-dock-fold" style={{ height: open ? foldH : 0 }} aria-hidden={!open}>
+        <div className="todo-dock-list" ref={listRef}>
           <TodoList items={items} />
         </div>
-      )}
+      </div>
       <button
         type="button"
         className="todo-dock-bar"

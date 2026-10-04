@@ -897,7 +897,11 @@ body::before {
 .composer textarea:focus { outline: none; }
 .composer textarea::placeholder { color: var(--text-3); }
 .composer-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.composer-tools { display: flex; align-items: center; gap: 2px; min-width: 0; margin-left: -8px; }
+/* The row wraps for one thing: a note that has something to say -- a file
+   opened from the toolbox, a fault, a size limit. Given a line of its own, a
+   long note cannot squeeze into a 40px column and stand on the buttons. */
+.composer-tools { display: flex; align-items: center; gap: 2px; min-width: 0; margin-left: -8px; flex-wrap: wrap; row-gap: 4px; }
+.composer-tools > .hint.voice-note { flex: 1 1 100%; order: 10; padding: 4px 4px 0 8px; }
 .composer-tools .btn.icon { width: 34px; height: 34px; border-radius: 50%; }
 .composer-acts { display: flex; align-items: center; gap: 8px; }
 .composer-send, .composer-stop {
@@ -2704,7 +2708,8 @@ label + .jf-hint { margin-top: -5px; }
   font-size: calc(13.5px * var(--ts, 1)); line-height: 1.45; color: var(--text);
   overflow-wrap: anywhere;
 }
-.todo-box { flex: 0 0 auto; width: 20px; height: 20px; margin-top: 0; overflow: visible; }
+.todo-box { flex: 0 0 auto; width: 20px; height: 20px; margin-top: 0; overflow: visible; transform-origin: center; transform: scale(0.94); transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.todo-item.is-done .todo-box { transform: scale(1); }
 .todo-rect {
   fill: transparent; stroke: var(--text-3); stroke-width: 1.5;
   transform-box: fill-box; transform-origin: center;
@@ -2712,8 +2717,9 @@ label + .jf-hint { margin-top: -5px; }
 }
 .todo-tick {
   fill: none; stroke: #fff; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round;
-  stroke-dasharray: 1; stroke-dashoffset: 1; opacity: 0;
-  transition: stroke-dashoffset 0.32s ease 0.12s, opacity 0.05s linear 0.12s;
+  stroke-dasharray: 1; stroke-dashoffset: 1; opacity: 0; filter: drop-shadow(0 0 0 rgba(52, 211, 153, 0));
+  transition: stroke-dashoffset 0.32s cubic-bezier(0.3, 0.9, 0.4, 1) 0.14s, opacity 0.06s linear 0.14s,
+    filter 0.5s ease 0.3s;
 }
 .todo-item.is-doing { background: rgba(var(--glow-rgb), 0.08); }
 .todo-item.is-doing .todo-rect {
@@ -2721,19 +2727,23 @@ label + .jf-hint { margin-top: -5px; }
   animation: todoMarch 0.9s linear infinite;
 }
 .todo-item.is-done .todo-rect { fill: #34d399; stroke: #34d399; transform: scale(1); }
-.todo-item.is-done .todo-tick { stroke-dashoffset: 0; opacity: 1; }
+/* The tick draws itself in once the box has filled, and lands with a soft green
+   glow that fades behind it. Both are transitions on the class change, so an
+   item that arrives already done simply appears ticked. */
+.todo-item.is-done .todo-tick { stroke-dashoffset: 0; opacity: 1; filter: drop-shadow(0 0 3px rgba(52, 211, 153, 0.85)); }
 /* The browser's own line-through, so it sits where a strike belongs on every
-   font and every wrapped line; it fades in rather than wiping across. */
+   font and every wrapped line; it fades in rather than wiping across, a beat
+   after the tick, with the words settling grey as it lands. */
 .todo-words {
-  text-decoration: line-through 1.5px transparent;
-  transition: text-decoration-color 0.35s ease 0.15s, color 0.3s ease 0.15s;
+  text-decoration: line-through 2px transparent;
+  transition: text-decoration-color 0.32s ease 0.22s, color 0.3s ease 0.22s;
 }
 .todo-item.is-done { color: var(--text-3); }
 .todo-item.is-done .todo-words { text-decoration-color: currentColor; }
 @keyframes todoMarch { to { stroke-dashoffset: -7.2; } }
 @media (prefers-reduced-motion: reduce) {
   .todo-item.is-doing .todo-rect { animation: none; }
-  .todo-rect, .todo-tick, .todo-words, .todo-bar > i { transition: none; }
+  .todo-rect, .todo-tick, .todo-words, .todo-bar > i, .todo-box { transition: none; }
 }
 
 
@@ -2746,6 +2756,19 @@ label + .jf-hint { margin-top: -5px; }
   background: var(--s2); border: 1px solid rgba(255, 255, 255, 0.09); border-bottom: 0;
   border-radius: 14px 14px 0 0; overflow: hidden;
   animation: rise 0.22s var(--ease) both;
+}
+/* The list folds open and shut to its own measured height (TodoDock), so
+   tapping the bar slides it out rather than snapping it into place. Hidden at
+   rest as well as clipped, so its buttons cannot be tabbed to while shut. */
+.todo-dock-fold {
+  height: 0; overflow: hidden; opacity: 0; visibility: hidden;
+  transition: height 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s var(--ease),
+    visibility 0s linear 0.3s;
+}
+.todo-dock.is-open .todo-dock-fold {
+  opacity: 1; visibility: visible;
+  transition: height 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.24s var(--ease) 0.05s,
+    visibility 0s;
 }
 .todo-dock-list {
   max-height: min(42vh, 320px); overflow-y: auto; overscroll-behavior: contain;
@@ -2798,6 +2821,7 @@ label + .jf-hint { margin-top: -5px; }
 @media (prefers-reduced-motion: reduce) {
   .todo-dock, .todo-dock-line.is-entering, .todo-dock-line.is-leaving, .todo-dock-dot.is-doing { animation: none; }
   .todo-dock-line.is-leaving { display: none; }
+  .todo-dock-fold, .todo-dock.is-open .todo-dock-fold { transition: none; }
 }
 
 /* ============================================================================
@@ -6662,3 +6686,49 @@ body.is-resizing iframe { pointer-events: none; }
 .app-errs.has { color: #f87171; }
 .app-errs:not(.has) { color: var(--text-2); background: var(--s3); }
 .app-errs:not(.has):hover, .app-errs:not(.has).on { border-color: var(--border-strong); color: var(--text); }
+
+/* ---------------------------------------------------------------- toolbox --
+   The wrench in the composer, and the sheet it opens: the apps the person can
+   open themselves, each one making a new blank file. A phone gets the sheet
+   from the bottom of the screen and a finger-sized row; a desk gets a small
+   centred panel over the button that opened it. */
+.composer-tools .attach-btn.is-on { color: var(--accent); }
+.tools-modal { max-width: 420px; }
+.tools-body { padding: 10px 10px 12px; }
+.tools-body > .jf-hint { margin: 2px 6px 10px; line-height: 1.5; }
+.tool-tiles { display: flex; flex-direction: column; gap: 2px; }
+.tool-tile {
+  display: flex; align-items: center; gap: 11px; width: 100%;
+  padding: 9px 10px; border-radius: var(--r-md); text-align: left;
+  background: transparent; border: 1px solid transparent; color: var(--text);
+  font: inherit; cursor: pointer;
+}
+.tool-tile:hover:not(:disabled) { background: var(--s2); border-color: var(--border); }
+.tool-tile:focus-visible { outline: none; border-color: var(--accent-line); background: var(--s3); }
+.tool-tile:disabled { cursor: default; }
+.tool-tile.is-off { opacity: 0.5; }
+.tool-tile-icon {
+  display: grid; place-items: center; width: 34px; height: 34px; flex: 0 0 auto;
+  border-radius: 9px; background: var(--s2); color: var(--text-2);
+}
+.tool-tile-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.tool-tile-main b { font-size: calc(13px * var(--ts, 1)); font-weight: 550; }
+.tool-tile-main em {
+  font-style: normal; font-size: calc(11.5px * var(--ts, 1)); color: var(--text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tool-tile .attach-spin { margin-left: auto; }
+.tools-more { display: flex; gap: 7px; align-items: flex-start; margin: 12px 6px 2px; line-height: 1.5; }
+.tools-more svg { flex: 0 0 auto; margin-top: 3px; color: var(--text-3); }
+@keyframes sheet-up { from { transform: translateY(18px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (max-width: 680px) {
+  .tools-scrim { place-items: end stretch; padding: 0; }
+  .tools-modal {
+    max-width: none; max-height: min(78vh, 620px);
+    border-radius: var(--r-lg) var(--r-lg) 0 0; border-bottom: 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    animation: sheet-up 0.22s var(--ease) both;
+  }
+  .tool-tile { padding: 12px 12px; }
+  .tool-tile-icon { width: 38px; height: 38px; }
+}

@@ -168,6 +168,38 @@ async function withWork<T>(fn: (dir: string) => Promise<T>): Promise<T> {
   }
 }
 
+/**
+ * A brand new, empty document: one blank page, a workbook with one empty
+ * sheet, or a deck with one blank slide.
+ *
+ * The agent starts a document by asking for one; this is how the person starts
+ * one themselves, from the toolbox beside the message box, without a turn. The
+ * file is made by the same engine the tools use, so it opens in Autora Pages,
+ * Sheets or Slides exactly as one the agent made would. A blank of each kind is
+ * kept once it has been made, so the second tap is instant.
+ */
+const BLANKS = new Map<Kind, Buffer>();
+
+export async function blankOffice(kind: Kind, ctx: Runner = { cancelled: () => false, onCancel: () => undefined }): Promise<Buffer> {
+  const held = BLANKS.get(kind);
+  if (held) return Buffer.from(held);
+  if (!officeDir()) throw new Error(`The Office tools are not installed on this server, so a new ${APP_NAME[kind]} file cannot be made (they are built into dist/office by \`node scripts/build-office.mjs\`).`);
+  return await withWork(async (work) => {
+    // An empty source of each kind: the engine is what decides what "blank" is.
+    const src = path.join(work, kind === "docx" ? "content.md" : kind === "xlsx" ? "rows.json" : "ops.json");
+    fs.writeFileSync(src, kind === "docx" ? "" : "[]");
+    const out = path.join(work, `blank.${kind}`);
+    const args = kind === "docx" ? ["create", "--type", "docx", "--from", src]
+      : kind === "xlsx" ? ["create", "--type", "xlsx", "--from", src]
+      : ["create", "--type", "pptx", "--ops", src];
+    const run = await cli([...args, "--out", out], work, ctx);
+    if (run.env?.status !== "ok" || !fs.existsSync(out)) throw new Error(failure(run, `Making a new blank ${APP_NAME[kind]} file`));
+    const bytes = fs.readFileSync(out);
+    BLANKS.set(kind, bytes);
+    return Buffer.from(bytes);
+  });
+}
+
 function parseEnvelope(text: string): Envelope | null {
   const t = text.trim();
   if (!t) return null;
@@ -182,8 +214,14 @@ function parseEnvelope(text: string): Envelope | null {
   return null;
 }
 
+/** What running the command line needs of whoever asked for it. */
+export interface Runner {
+  cancelled: () => boolean;
+  onCancel: (stop: () => void) => void;
+}
+
 /** Run the command line with these arguments. */
-async function cli(args: string[], work: string, ctx: OfficeContext, json = true): Promise<Run> {
+async function cli(args: string[], work: string, ctx: Runner, json = true): Promise<Run> {
   const dir = officeDir()!;
   const sidecar = sidecarPath(dir);
   const env: NodeJS.ProcessEnv = {

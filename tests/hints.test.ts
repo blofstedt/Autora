@@ -44,6 +44,8 @@ test("the missing path is read out of the shell's own words", () => {
   assert.equal(missingPathIn("cat: src/userStore.ts: No such file or directory"), "src/userStore.ts");
   assert.equal(missingPathIn("ls: cannot access 'docs/readme.md': No such file or directory"), "docs/readme.md");
   assert.equal(missingPathIn("python: can't open file 'run.py': [Errno 2]"), "run.py");
+  assert.equal(missingPathIn("cat: can't open 'userStore.ts': No such file or directory"), "userStore.ts");
+  assert.equal(missingPathIn("cat: can't open 'hint-lib/userStore.ts': No such file or directory"), "hint-lib/userStore.ts");
   assert.equal(missingPathIn("everything is fine"), null);
 });
 

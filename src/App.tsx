@@ -27,6 +27,7 @@ import { NotebooksPage } from "./components/pages/NotebooksPage";
 import { TodoDock } from "./components/TodoDock";
 import { ToolsPage } from "./components/pages/ToolsPage";
 import { LibraryPicker, type LibraryTab } from "./components/LibraryPicker";
+import { ToolsSheet } from "./components/ToolsSheet";
 import { OPEN_NOTEBOOK, type NotebookRef } from "./lib/notebooks";
 import { MindPage } from "./components/pages/MindPage";
 import type { Bucket } from "./lib/memory";
@@ -64,6 +65,7 @@ import {
 } from "./lib/voice";
 import {
   IconArrow, IconArrowUp, IconChevron, IconFile, IconMask, IconMenu, IconNotebook, IconStop,
+  IconWrench,
   IconX,
 } from "./components/Icons";
 import {
@@ -120,6 +122,8 @@ export function App() {
   /** Notebooks going with the next message, and whether the picker is open. */
   const [attachedBooks, setAttachedBooks] = useState<NotebookRef[]>([]);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  /** The toolbox: the apps the person opens themselves, with a new blank file. */
+  const [toolsOpen, setToolsOpen] = useState(false);
   /** The notebook open on the Notebooks page. */
   const [notebookOpen, setNotebookOpen] = useState<string | null>(
     () => new URLSearchParams(location.search).get("notebook"),
@@ -2024,6 +2028,28 @@ export function App() {
                       >
                         <IconNotebook size={18} />
                       </button>
+                      {/* The toolbox, between the notebook and Send: the apps the
+                          person can open themselves, each with a new blank file,
+                          without spending a turn on it. */}
+                      <button
+                        type="button"
+                        className={`btn ghost icon attach-btn${toolsOpen ? " is-on" : ""}`}
+                        onClick={() => setToolsOpen((v) => !v)}
+                        disabled={readOnly}
+                        title="Tools: open an app with a new blank file"
+                        aria-label="Tools"
+                        aria-expanded={toolsOpen}
+                      >
+                        <IconWrench size={18} />
+                      </button>
+                      {toolsOpen && sessionId && (
+                        <ToolsSheet
+                          session={sessionId}
+                          onClose={() => setToolsOpen(false)}
+                          onTrouble={setNotice}
+                          onOpened={(name, app) => setNotice(`${name} is open in ${app}`)}
+                        />
+                      )}
                       {libraryOpen && (
                         <LibraryPicker
                           tabs={LIBRARY_TABS}
