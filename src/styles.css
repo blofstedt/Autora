@@ -6158,6 +6158,20 @@ button.dock-card:hover { border-color: var(--border-strong); }
   border-left: 1px solid var(--border-strong); background: var(--bg);
   animation: appPaneIn 0.28s var(--ease, ease) both;
 }
+
+/* The column beside the chat: the strip of open windows, then the window itself. */
+.side-stack { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.pane-pick {
+  display: flex; align-items: center; gap: 4px; padding: 6px 8px; overflow-x: auto;
+  border-left: 1px solid var(--border-strong); border-bottom: 1px solid var(--border); background: var(--s1);
+}
+.pane-pick-tab {
+  max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--bg); color: inherit; opacity: 0.75;
+}
+.pane-pick-tab:hover { opacity: 1; }
+.pane-pick-tab.is-on { opacity: 1; font-weight: 600; border-color: var(--border-strong); }
 @keyframes appPaneIn { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
 
 .app-window { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; outline: none; background: var(--bg); }

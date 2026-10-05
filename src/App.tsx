@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { SessionStream, mergeEvents, type StreamStatus } from "./lib/stream";
-import { derive, isRunning, type Derived } from "./lib/derive";
+import { derive, isRunning, type Cell, type Derived } from "./lib/derive";
 import { share } from "./lib/share";
 import { chime, paintChrome, type Chrome } from "./lib/chrome";
 import { Kind, type AutoraEvent, type BrowserState } from "./lib/types";
-import { setLiveFields, setLiveFrame, setLiveTabs } from "./lib/liveFrame";
+import { setLiveFields, setLiveFrame, setLivePaneOwns, setLiveTabs } from "./lib/liveFrame";
 import { resetPreview, setPreviewFrame, setPreviewState, usePreviewState, type PreviewState } from "./lib/preview";
 import { AppPreview } from "./components/AppPreview";
+import { ScreencastCell } from "./components/ScreencastCell";
 import { OfficeWindow } from "./components/OfficeWindow";
 import { PdfWindow } from "./components/PdfWindow";
 import { ResizeHandle } from "./components/ResizeHandle";
@@ -84,6 +85,9 @@ const SPEAK_FRESH_S = 30;
 const EVENT_BATCH_MS = 66;
 /** What the composer's library offers. */
 const LIBRARY_TABS: LibraryTab[] = ["notebooks", "files"];
+
+/** The windows that can sit beside the chat on a wide screen, one at a time. */
+type SideWindow = "app" | "pdf" | "word" | "browser";
 
 export function App() {
   /* Back, on a phone, is the system gesture, and in an installed app with
@@ -1257,18 +1261,50 @@ export function App() {
   const word = useWordState();
   const pointedAt = useOfficePick();
   const panes = usePanes();
-  /* One window beside the chat at a time: the app, the PDF or the Office document,
-     whichever was opened last; putting it away shows the one before. */
-  const sidePane: "app" | "pdf" | "word" | null = phoneLayout || !live ? null : (() => {
+  /* One window beside the chat at a time: the browser the agent is driving, or the
+     app, the PDF or the Office document, whichever was opened last; putting it away
+     shows the one before. It is not dropped when the session is not live -- that
+     left the side of the screen blank while the agent worked -- and the person can
+     pick a window from the strip above it, which sticks until that window is put
+     away. */
+  const [pickedWindow, setPickedWindow] = useState<SideWindow | null>(null);
+  const sidePane: SideWindow | null = phoneLayout ? null : (() => {
     const open = [
       ...(preview.open ? [{ pane: "app" as const, since: preview.since ?? 0 }] : []),
       ...(desk.open ? [{ pane: "pdf" as const, since: desk.since ?? 0 }] : []),
       ...(word.open ? [{ pane: "word" as const, since: word.since ?? 0 }] : []),
+      // The browser is live work in front of the person, so it takes the window
+      // while it is open; the document is back the moment it is put away.
+      ...(browser?.open ? [{ pane: "browser" as const, since: Number.MAX_SAFE_INTEGER }] : []),
     ];
+    if (pickedWindow && open.some((w) => w.pane === pickedWindow)) return pickedWindow;
     // Ties go to the later kind in this list: the more specific window.
     return open.length ? open.reduce((best, w) => (w.since >= best.since ? w : best)).pane : null;
   })();
+  /* What is open beside the chat, for the strip: a window the agent opened is never
+     more than one click away. */
+  const sideWindows: Array<{ pane: SideWindow; label: string }> = [
+    ...(browser?.open ? [{ pane: "browser" as const, label: browser.title?.trim() || "Browser" }] : []),
+    ...(word.open ? [{ pane: "word" as const, label: word.name?.trim() || "Document" }] : []),
+    ...(desk.open ? [{ pane: "pdf" as const, label: "PDF" }] : []),
+    ...(preview.open ? [{ pane: "app" as const, label: "The app" }] : []),
+  ];
+  /* The newest browser card: the one looking at the page that still exists, which is
+     the page the pane shows. */
+  const screenCell = useMemo(() => {
+    let best: Extract<Cell, { kind: "screen" }> | null = null;
+    for (const bucket of view.buckets) {
+      for (const cell of bucket.cells) {
+        if (cell.kind !== "screen" || cell.source !== "browser") continue;
+        if (!best || cell.seq > best.seq) best = cell;
+      }
+    }
+    return best;
+  }, [view.buckets]);
   const appPane = sidePane !== null;
+  /* The browser window is the live view while it is open, so the thread's card
+     stops following the feed: one live page, not the same one in two places. */
+  useEffect(() => setLivePaneOwns(sidePane === "browser"), [sidePane]);
 
   const sessionCost = sessions.find((s) => s.id === sessionId)?.cost ?? 0;
 
@@ -2131,24 +2167,67 @@ export function App() {
             onReset={() => setChatWidth(null)}
           />
         )}
-        {/* The app being built, beside the conversation on a wide screen. On a
-            phone it is a tab in the pinned view instead (see Stage). */}
-        {sidePane === "app" && sessionId && (
-          <aside className="app-pane" aria-label="The app being built">
-            <AppPreview sessionId={sessionId} phone={false} />
-          </aside>
-        )}
-        {/* The PDF the agent is working on, open for the person to work on too. */}
-        {sidePane === "pdf" && sessionId && (
-          <aside className="app-pane" aria-label="The PDF being worked on">
-            <PdfWindow sessionId={sessionId} phone={false} />
-          </aside>
-        )}
-        {/* And a Word, PowerPoint or Excel document, the same way. */}
-        {sidePane === "word" && sessionId && (
-          <aside className="app-pane" aria-label="The document being worked on">
-            <OfficeWindow sessionId={sessionId} phone={false} />
-          </aside>
+        {sidePane !== null && (
+          <div className="side-stack">
+            {/* One tab per window open beside the chat. Only when there is a choice
+                to make: a strip of one is furniture. */}
+            {sideWindows.length > 1 && (
+              <div className="pane-pick" role="tablist" aria-label="Windows open beside the chat">
+                {sideWindows.map((w) => (
+                  <button
+                    key={w.pane}
+                    type="button"
+                    role="tab"
+                    aria-selected={sidePane === w.pane}
+                    className={`pane-pick-tab${sidePane === w.pane ? " is-on" : ""}`}
+                    title={w.label}
+                    onClick={() => setPickedWindow(w.pane)}
+                  >
+                    {w.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            {/* The browser the agent is driving, beside the conversation rather than
+                over it: the same card the thread keeps, in its own window. */}
+            {sidePane === "browser" && sessionId && (
+              <aside className="app-pane" aria-label="The browser the agent is driving">
+                <ScreencastCell
+                  sessionId={sessionId}
+                  source="browser"
+                  url={screenCell?.url ?? browser?.url ?? null}
+                  shots={screenCell?.shots ?? []}
+                  actions={screenCell?.actions ?? []}
+                  live={screenCell?.live ?? false}
+                  followsFeed
+                  ownsFeed
+                  current={live}
+                  driving={driving}
+                  waitingOnYou={browserHandedOver}
+                  onStop={stopFromThread}
+                />
+              </aside>
+            )}
+            {/* The app being built, beside the conversation on a wide screen. On a
+                phone it is a tab in the pinned view instead (see Stage). */}
+            {sidePane === "app" && sessionId && (
+              <aside className="app-pane" aria-label="The app being built">
+                <AppPreview sessionId={sessionId} phone={false} />
+              </aside>
+            )}
+            {/* The PDF the agent is working on, open for the person to work on too. */}
+            {sidePane === "pdf" && sessionId && (
+              <aside className="app-pane" aria-label="The PDF being worked on">
+                <PdfWindow sessionId={sessionId} phone={false} />
+              </aside>
+            )}
+            {/* And a Word, PowerPoint or Excel document, the same way. */}
+            {sidePane === "word" && sessionId && (
+              <aside className="app-pane" aria-label="The document being worked on">
+                <OfficeWindow sessionId={sessionId} phone={false} />
+              </aside>
+            )}
+          </div>
         )}
         </div>
 

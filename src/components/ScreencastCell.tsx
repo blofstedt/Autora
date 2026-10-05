@@ -34,7 +34,7 @@ const VIEWPORT = { w: 1280, h: 800 };
  * card, and the strip under it moves through them.
  */
 export function ScreencastCell({
-  sessionId, source, url, shots, actions, live, followsFeed = false, current = false,
+  sessionId, source, url, shots, actions, live, followsFeed = false, ownsFeed = false, current = false,
   driving: agentDriving = false, waitingOnYou = false, pinned = false, onStop, children,
 }: {
   sessionId: string;
@@ -45,6 +45,9 @@ export function ScreencastCell({
   live: boolean;
   /** This is the card whose page is still open, so the video is its to show. */
   followsFeed?: boolean;
+  /** The live page is shown in its own window beside the chat, and this is it:
+      it takes the feed even though the thread's card has stood down. */
+  ownsFeed?: boolean;
   /** The newest browser card: the only one looking at a page that exists. */
   current?: boolean;
   /** The agent is at the wheel, so the page is not yours to touch. */
@@ -58,7 +61,7 @@ export function ScreencastCell({
       the page stays put rather than being pushed up by each sentence. */
   children?: ReactNode;
 }) {
-  const feed = useLiveFrame(followsFeed);
+  const feed = useLiveFrame(followsFeed, ownsFeed);
   const tabs = useLiveTabs(source === "browser" && current);
   const [panel, setPanel] = useState<BrowserPanelKind | "devtools" | null>(null);
   const [menu, setMenu] = useState(false);

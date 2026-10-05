@@ -134,11 +134,15 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  Fix: the wrench in the message box sits at the end of the tools row, beside Send, instead of
-  dropping to a second line under the agent's icon. On a phone the mode pill keeps only its glyph,
-  so every tool and the wrench stay on that one row.
-  Also: a tool opened from the wrench opens the way the agent opens it -- full screen on a phone,
-  with its minimise button always on screen (the tool's own bar no longer runs off the right edge of
-  a 390px or 320px phone), and in the pane on the right on a desktop.
-  Earlier: a toolbox in the chat opens Autora PDF, Pages, Sheets or Slides yourself with a blank
-  file; the to-do list in a chat slides open and folds away; on phones any tool can go full screen.
+  Fix: on a phone a tool window no longer takes the whole screen the moment you open the session.
+  The PDF (or document) a session already had stays a tab in the pinned view, and only a tool that
+  opens while you are watching goes full screen; the way in and back out is the button in its own
+  bar. Fix: the window beside the chat no longer goes blank while the agent is working. It used to be
+  dropped whenever the session was not live, which left an empty grey side on a desktop; it now
+  stays up, and when more than one window is open a small strip above it switches between them.
+  Also: the browser the agent is driving opens in its own window on the right, in the same place as
+  Autora PDF and Pages, instead of covering the chat -- one window at a time, the others a click
+  away in the strip.
+  Earlier: the wrench in the message box sits at the end of the tools row beside Send; a toolbox in
+  the chat opens Autora PDF, Pages, Sheets or Slides yourself with a blank file; on phones any tool
+  can go full screen.

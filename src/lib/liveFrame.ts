@@ -13,6 +13,17 @@ import type { LiveFrame } from "./types";
 let current: LiveFrame | null = null;
 const listeners = new Set<() => void>();
 
+/* The live browser is showing in its own window beside the chat. The thread's
+   newest browser card then keeps the record and leaves the feed to that window,
+   so the page is live in one place rather than two. */
+let paneOwnsTheFeed = false;
+
+export function setLivePaneOwns(on: boolean) {
+  if (paneOwnsTheFeed === on) return;
+  paneOwnsTheFeed = on;
+  for (const listener of listeners) listener();
+}
+
 export function setLiveFrame(frame: LiveFrame | null) {
   if (frame === current) return;
   current = frame;
@@ -25,9 +36,11 @@ function subscribe(listener: () => void) {
 }
 
 /** The live frame, or null for a card the feed does not belong to. A card
-    that is not following never re-renders when a frame lands. */
-export function useLiveFrame(following: boolean): LiveFrame | null {
-  return useSyncExternalStore(subscribe, () => (following ? current : null));
+    that is not following never re-renders when a frame lands. When the browser
+    has its own window, only that window takes the feed (owns = true): the
+    thread's card would otherwise play the same page a second time. */
+export function useLiveFrame(following: boolean, owns = false): LiveFrame | null {
+  return useSyncExternalStore(subscribe, () => (following && (!paneOwnsTheFeed || owns) ? current : null));
 }
 
 /** The browser's tabs, kept the same way: they change with the page. */

@@ -195,13 +195,23 @@ export function Thread({
      conversation). Only an opening does it: a reload, or a window already up
      when the screen arrives, leaves the conversation where the person put it. */
   const windowsUp = `${pdfSince ?? ""}|${wordSince ?? ""}|${appOpen ? 1 : 0}`;
-  const windowsSeen = useRef(windowsUp);
+  /* What was open when this screen arrived, and the first thing that happens to it.
+     The desk, the document and the app a session already had are sent with the
+     session, so on a reload or a phone opening the session the window lands a moment
+     after the thread: the first change a page sees once it is live is that landing,
+     not the agent opening a window, and it leaves the conversation where it is. */
+  const windowsSeen = useRef<string | null>(null);
+  const settled = useRef(false);
   useEffect(() => {
-    const opened = windowsSeen.current !== windowsUp;
+    const seen = windowsSeen.current;
     windowsSeen.current = windowsUp;
-    if (!opened) return;
-    if (phone && live && (pdfSince !== null || wordSince !== null || appOpen)) setFullscreen(true);
+    if (!phone || !live) return;
+    if (seen === null) return;
+    if (!settled.current) { settled.current = true; return; }
+    if (seen === windowsUp) return;
+    if (pdfSince !== null || wordSince !== null || appOpen) setFullscreen(true);
   }, [windowsUp, pdfSince, wordSince, appOpen, phone, live]);
+  useEffect(() => { windowsSeen.current = null; settled.current = false; }, [sessionId]);
   useEffect(() => () => setFullscreen(false), [sessionId]);
   const lastSaid = tail?.replies.length ? tail.replies[tail.replies.length - 1].text : "";
   const tailLength =
