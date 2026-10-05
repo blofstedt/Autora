@@ -4,34 +4,41 @@ import { clearCursor, reportCursor } from "../lib/cursorPos";
 import type { OfficeCue } from "../lib/officedesk";
 
 /**
- * The agent working in a document, played over its editor: a labelled cursor
- * goes to the place the same way the browser's pointer does -- an arc, easing
- * in and out, a tremor that fades, sometimes an overshoot -- rests, and types
- * the words with the uneven rhythm of a person, then lets the real text show
- * through. Autora Pages, Sheets and Slides all use it.
+ * The agent working in a document, over its editor: a labelled cursor goes to the place the same way the browser's
+ * pointer does -- an arc, easing in and out, a tremor that fades, sometimes an overshoot -- rests, clicks, and types
+ * the words. Autora Pages, Sheets and Slides all use it.
  *
- * Only a presentation of a change that has already been made: the document is
- * the real one, the words typed here are drawn over the same words in it, and
- * nothing here takes a pointer event. The editor lives in a frame that cannot
- * be reached from here, so where things are is asked of it (office/shim/cursor.js)
- * and, when it cannot say, the cursor goes to a plausible spot with the words in
- * a small caption beside it instead.
+ * It uses the interface rather than drawing over it: the click is a real click in the editor (the cell is selected,
+ * the caret goes into the word), and the words go into the editor's own field a few at a time, as keystrokes, then
+ * the edit is left so the document keeps exactly what the agent's change made of it (office/shim/cursor.js).
+ *
+ * Where the editor cannot say where something is, or has no field to type in, this puts nothing on screen: a place
+ * the editor did not confirm is never pointed at (the person asked for this). The words are drawn only where the
+ * editor could not take them, over the place it did confirm.
  */
 
-export type Spot = { x: number; y: number; w: number; h: number; size?: number; family?: string; color?: string; bg?: string; weight?: string };
+export type Spot = { x: number; y: number; w: number; h: number; size?: number; family?: string; color?: string; bg?: string; weight?: string; /** What the editor itself said is there (an address), when it could say. */ at?: string };
 export type Located = { rects: (Spot | null)[]; view: { w: number; h: number } };
+/** What the editor itself did about a click or a piece of typing; ok false when it could not take it. */
+export type Acted = { ok: boolean; at?: string | null; field?: string; text?: string };
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-type Ghost = { spot: Spot; text: string; caret: boolean; fading: boolean; caption: boolean };
+type Ghost = { spot: Spot; text: string; caret: boolean; fading: boolean };
 
 export function OfficeCursor({
-  cues, seq, locate, onDone,
+  cues, seq, locate, click, type, end, onDone,
 }: {
   cues: OfficeCue[];
   seq: number;
-  /** Ask the editor where these are, in the frame's own pixels. */
+  /** Ask the editor where these are, in the frame's own pixels. A null rect means it could not say. */
   locate: (cues: OfficeCue[]) => Promise<Located | null>;
+  /** Click in the editor, for real: it selects the cell or puts the caret there. */
+  click: (at: { x: number; y: number }) => Promise<Acted | null>;
+  /** Type into the editor's own field, for real. `ok` is false when the editor has no field to take it. */
+  type: (text: string) => Promise<Acted | null>;
+  /** Leave the edit, so nothing typed here is committed. */
+  end: () => Promise<Acted | null>;
   onDone: () => void;
 }) {
   const [cursor, setCursor] = useState<Point | null>(null);
@@ -43,6 +50,12 @@ export function OfficeCursor({
   const layer = useRef<HTMLDivElement>(null);
   const ask = useRef(locate);
   ask.current = locate;
+  const hit = useRef(click);
+  hit.current = click;
+  const say = useRef(type);
+  say.current = type;
+  const leave = useRef(end);
+  leave.current = end;
 
   useEffect(() => {
     let dead = false;
@@ -59,41 +72,80 @@ export function OfficeCursor({
       requestAnimationFrame(frame);
     });
 
+    /** The words, in the editor's own field where it has one: a few characters to a keystroke, at a person's pace.
+     *  Returns whether the editor took them; when it did not, they are drawn over the confirmed spot instead. */
+    const write = async (text: string) => {
+      const chars = Array.from(text);
+      const gaps = typingDelays(text, 2600);
+      let took = false;
+      for (let at = 0; at < chars.length && alive(); ) {
+        const chunk = chars.slice(at, at + Math.max(1, Math.min(4, Math.round(chars.length / 6)))).join("");
+        const said = (await say.current(chunk).catch(() => null)) as Acted | null;
+        if (!said?.ok) return false;
+        took = true;
+        at += chunk.length;
+        // A pause per chunk, as long as the keystrokes in it would have taken.
+        const gap = gaps.slice(at - chunk.length, at).reduce((a, b) => a + b, 0) || 90;
+        await sleep(gap);
+      }
+      return took;
+    };
+
     void (async () => {
       setGone(false);
       const found = await ask.current(cues).catch(() => null);
       if (!alive()) return;
       const view = found?.view ?? { w: 800, h: 600 };
-      let at: Point = { x: view.w * 0.85, y: view.h * 0.12 };
+      const spots = cues.map((_, i) => found?.rects[i] ?? null);
+      const first = spots.find(Boolean) as Spot | undefined;
+      if (!first) {
+        // The editor could not say where any of it is: no cursor at all, rather than a wrong one.
+        setGone(true);
+        done.current();
+        return;
+      }
+      // It comes in next to the work, not at some invented part of the page.
+      let at: Point = { x: Math.min(view.w - 8, Math.max(8, first.x + 70)), y: Math.max(6, first.y - 46) };
       setCursor(at);
       for (let i = 0; i < cues.length && alive(); i++) {
         const cue = cues[i];
-        const real = found?.rects[i] ?? null;
-        // Not found: a spot down the middle of the page, the words in a caption.
-        const spot: Spot = real ?? { x: view.w * 0.18, y: view.h * (0.22 + 0.07 * i), w: view.w * 0.5, h: 26 };
+        const spot = spots[i];
+        if (!spot) continue;
         const target: Point = { x: spot.x + Math.min(spot.w * 0.5, 28 + Math.min(cue.text.length, 30) * 3), y: spot.y + Math.min(spot.h / 2, 18) };
         const route = humanRoute(at, target);
         await tween(routeMs(Math.hypot(target.x - at.x, target.y - at.y)), (p) => setCursor(along(route, p)));
         if (!alive()) return;
         at = target;
         await sleep(restMs());
-        if (cue.act === "point") {
-          setRing(target);
-          await sleep(420);
-          setRing(null);
-          continue;
+        // The click is the agent's, in the editor: the cell is selected, the caret sits in the word.
+        setRing(target);
+        await hit.current(target).catch(() => null);
+        await sleep(420);
+        setRing(null);
+        if (cue.act === "point") continue;
+        // Only a cell has a field of its own to type into (its editor or the formula bar). A document's words are not
+        // typed: the editor would edit the file a second time, on top of the change the agent's tool already made.
+        const took = cue.cell ? await write(cue.text) : false;
+        if (!alive()) return;
+        if (!took) {
+          // No field in the editor to type in (a canvas grid, a slide): the words are drawn here, over the place
+          // the editor confirmed, and nowhere else.
+          const chars = Array.from(cue.text);
+          const gaps = typingDelays(cue.text, 2600);
+          for (let n = 0; n <= chars.length && alive(); n++) {
+            setGhost({ spot, text: chars.slice(0, n).join(""), caret: true, fading: false });
+            if (n < chars.length) await sleep(gaps[n] ?? 40);
+          }
+          await sleep(380);
+          setGhost((g) => (g ? { ...g, caret: false, fading: true } : g));
+          await sleep(320);
+          setGhost(null);
+        } else {
+          // The editor is showing them itself: give the person a moment to read what the agent typed.
+          await sleep(Math.min(1800, 320 + cue.text.length * 30));
         }
-        const chars = Array.from(cue.text);
-        const gaps = typingDelays(cue.text, 2600);
-        for (let n = 0; n <= chars.length && alive(); n++) {
-          setGhost({ spot, text: chars.slice(0, n).join(""), caret: true, fading: false, caption: !real });
-          if (n < chars.length) await sleep(gaps[n] ?? 40);
-        }
-        await sleep(380);
-        setGhost((g) => (g ? { ...g, caret: false, fading: true } : g));
-        await sleep(320);
-        setGhost(null);
-        await sleep(160);
+        await leave.current().catch(() => null);
+        await sleep(180);
       }
       if (!alive()) return;
       await sleep(700);
@@ -126,18 +178,17 @@ export function OfficeCursor({
   );
 }
 
-/** The words as they are being typed: over the same words in the document, drawn the way the editor draws them. */
+/** The words, while they are being typed, drawn the way the editor draws them where it could not take them. */
 function GhostText({ ghost }: { ghost: Ghost }) {
-  const { spot, text, caret, fading, caption } = ghost;
-  const style = caption
-    ? { left: spot.x, top: spot.y, maxWidth: spot.w }
-    : {
-      left: spot.x - 2, top: spot.y - 1, width: spot.w + 4, minHeight: spot.h + 2,
-      fontSize: spot.size, fontFamily: spot.family, color: spot.color, background: spot.bg, fontWeight: spot.weight as any,
-    };
+  const { spot, text, caret, fading } = ghost;
   return (
-    <div className={`office-ghost${caption ? " is-caption" : ""}${fading ? " is-fading" : ""}`} style={style}>
-      {caption && <b>Autora is typing </b>}
+    <div
+      className={`office-ghost${fading ? " is-fading" : ""}`}
+      style={{
+        left: spot.x - 2, top: spot.y - 1, width: spot.w + 4, minHeight: spot.h + 2,
+        fontSize: spot.size, fontFamily: spot.family, color: spot.color, background: spot.bg, fontWeight: spot.weight as any,
+      }}
+    >
       {text}
       {caret && <span className="office-caret" />}
     </div>

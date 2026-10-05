@@ -22,8 +22,9 @@ type Info = { words: Words; areas: Area[] };
 
 const ZOOMS = [1, 1.6, 2.4];
 
-export function OfficePages({ sessionId, name, rev, onEdit }: { sessionId: string; name: string; rev: number; onEdit: () => void }) {
-  const base = `/api/officedesk/${encodeURIComponent(sessionId)}`;
+export function OfficePages({ sessionId, kind, name, rev, onEdit }: { sessionId: string; kind: OfficeKind; name: string; rev: number; onEdit: () => void }) {
+  /** Each app's document has its own window and its own drawn pages, so every call says which one. */
+  const api = useCallback((path: string) => `/api/officedesk/${encodeURIComponent(sessionId)}${path}?kind=${kind}`, [sessionId, kind]);
   const [reply, setReply] = useState<Reply | null>(null);
   const [zoom, setZoom] = useState(0);
   const words = useRef(new Map<string, Promise<Info>>());
@@ -36,7 +37,7 @@ export function OfficePages({ sessionId, name, rev, onEdit }: { sessionId: strin
     const ask = async () => {
       let next: Reply | null = null;
       try {
-        const res = await fetch(`${base}/pages`, { method: "POST" });
+        const res = await fetch(api("/pages"), { method: "POST" });
         if (res.ok) next = (await res.json()) as Reply;
       } catch { /* the next try */ }
       if (!live) return;
@@ -47,7 +48,7 @@ export function OfficePages({ sessionId, name, rev, onEdit }: { sessionId: strin
     return () => { live = false; if (timer) clearTimeout(timer); };
     // `reply` is deliberately left out: it only decides how soon the first ask is made.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [base, rev]);
+  }, [api, rev]);
 
   const shown = reply?.status === "ready" ? { hash: reply.hash!, pages: reply.pages!, total: reply.total ?? reply.pages!.length } : reply?.stale ?? null;
   const updating = reply !== null && reply.status === "working";
@@ -57,14 +58,14 @@ export function OfficePages({ sessionId, name, rev, onEdit }: { sessionId: strin
     let got = words.current.get(key);
     if (!got) {
       // Older pictures kept a plain list of words; newer ones also say which cell or element is where.
-      got = fetch(`${base}/pages/${hash}/${n}.json`)
+      got = fetch(api(`/pages/${hash}/${n}.json`))
         .then((r) => (r.ok ? r.json() : []))
         .then((v: unknown): Info => (Array.isArray(v) ? { words: v as Words, areas: [] } : { words: (v as Info).words ?? [], areas: (v as Info).areas ?? [] }))
         .catch((): Info => ({ words: [], areas: [] }));
       words.current.set(key, got);
     }
     return got;
-  }, [base]);
+  }, [api]);
 
   const tap = useCallback(async (e: React.MouseEvent<HTMLDivElement>, hash: string, n: number, meta: Meta) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -125,7 +126,7 @@ export function OfficePages({ sessionId, name, rev, onEdit }: { sessionId: strin
                   style={{ aspectRatio: `${meta.w} / ${meta.h}` }}
                   onClick={(e) => void tap(e, shown.hash, n, meta)}
                 >
-                  <img src={`${base}/pages/${shown.hash}/${n}.jpg`} alt={`${name}, page ${n}`} loading="lazy" draggable={false} />
+                  <img src={api(`/pages/${shown.hash}/${n}.jpg`)} alt={`${name}, page ${n}`} loading="lazy" draggable={false} />
                   {sel?.box && (
                     <span
                       className="office-pick"

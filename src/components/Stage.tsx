@@ -7,6 +7,7 @@
  * the stage away costs nothing to bring back.
  */
 import type { ReactNode } from "react";
+import { APP_NAME, useWordState } from "../lib/officedesk";
 import type { Surface, SurfaceKind } from "../lib/stage";
 import { IconChevron, IconFile, IconGlobe, IconList, IconMark, IconMonitor } from "./Icons";
 
@@ -43,6 +44,9 @@ export function Stage({
   onToggle: () => void;
   render: (surface: Surface) => ReactNode;
 }) {
+  // An office document's tab says which app it is (Pages, Sheets, Slides), not "Document".
+  const word = useWordState();
+  const nameOf = (kind: SurfaceKind) => (kind === "word" ? APP_NAME[word.kind] : NAME[kind]);
   return (
     <section
       className={`stage${collapsed ? " is-collapsed" : ""}${surfaces.length > 2 ? " is-tight" : ""}`}
@@ -61,7 +65,7 @@ export function Stage({
               onClick={() => onPick(surface.kind)}
             >
               {ICON[surface.kind]}
-              <span className="stage-tab-name">{NAME[surface.kind]}</span>
+              <span className="stage-tab-name">{nameOf(surface.kind)}</span>
               {working(surface) && <span className="stage-live" aria-hidden="true" />}
             </button>
           );

@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useFullscreen } from "../lib/fullscreen";
 import { useAgentCursor } from "../lib/agentCursor";
 import { holdSurface, useCollab } from "../lib/collab";
-import { onOfficePush, useWordState, type OfficeCue, type OfficeKind } from "../lib/officedesk";
-import { OfficeCursor, type Located } from "./OfficeCursor";
+import { onOfficePush, useWordWindow, type OfficeCue, type OfficeKind } from "../lib/officedesk";
+import { OfficeCursor, type Acted, type Located } from "./OfficeCursor";
 import { OfficePages } from "./OfficePages";
 import { IconDownload, IconFile, IconMaximize, IconMinimize, IconX } from "./Icons";
 
@@ -25,9 +25,9 @@ const THING: Record<OfficeKind, string> = { docx: "document", pptx: "presentatio
 /** The app each kind opens in, by its name. */
 const NAME: Record<OfficeKind, string> = { docx: "Autora Pages", pptx: "Autora Slides", xlsx: "Autora Sheets" };
 
-export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: boolean }) {
-  const word = useWordState();
-  const kind: OfficeKind = word.kind ?? "docx";
+export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; kind: OfficeKind; phone: boolean }) {
+  // The window for this app: Autora Pages, Autora Sheets and Autora Slides each have their own, all open at once.
+  const word = useWordWindow(kind) ?? { open: false, kind };
   /** Slides and Sheets keep their document in an engine on the server, which the frame reaches through here. */
   const engine = kind !== "docx";
   const frame = useRef<HTMLIFrameElement>(null);
@@ -50,7 +50,13 @@ export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: b
   const played = useRef<number | undefined>(undefined);
   /** Questions to the editor about where things are, waiting for its answer. */
   const asking = useRef(new Map<number, (found: Located | null) => void>());
-  const base = `/api/officedesk/${encodeURIComponent(sessionId)}`;
+  /** What the agent did in the editor, waiting for the editor to say what it made of it. */
+  const acting = useRef(new Map<number, (said: Acted | null) => void>());
+  /** Every call says which window it is about, since each app's document is open beside the chat at the same time. */
+  const api = useCallback((path: string) => {
+    const at = `/api/officedesk/${encodeURIComponent(sessionId)}${path}`;
+    return `${at}${at.includes("?") ? "&" : "?"}kind=${kind}`;
+  }, [sessionId, kind]);
 
   const post = useCallback((msg: Record<string, unknown>, transfer?: Transferable[]) => {
     frame.current?.contentWindow?.postMessage(msg, "*", transfer ?? []);
@@ -58,10 +64,10 @@ export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: b
 
   /** The document as the server has it now. */
   const fetchDocument = useCallback(async () => {
-    const res = await fetch(`${base}/data`, { cache: "no-store" });
+    const res = await fetch(api("/data"), { cache: "no-store" });
     if (!res.ok) throw new Error(`the server answered ${res.status}`);
     return await res.arrayBuffer();
-  }, [base]);
+  }, [api]);
 
   // What the editor asks of its host.
   useEffect(() => {
@@ -88,7 +94,7 @@ export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: b
             case "open": {
               if (wordRef.current.kind && wordRef.current.kind !== "docx") {
                 // A deck or a workbook is opened by its engine, from the file it has: this page is made known to it.
-                const res = await fetch(`${base}/page?rev=${wordRef.current.loadRev ?? 0}`, { method: "POST" });
+                const res = await fetch(api(`/page?rev=${wordRef.current.loadRev ?? 0}`), { method: "POST" });
                 const body = (await res.json().catch(() => ({}))) as { path?: string; name?: string; error?: string };
                 if (!res.ok) throw new Error(body.error ?? `the server answered ${res.status}`);
                 reply(true, { path: body.path, name: body.name });
@@ -103,7 +109,7 @@ export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: b
             case "ipc":
             case "ipc-send": {
               // The editor's ipc, for the engine behind a deck or a workbook.
-              const res = await fetch(`${base}/${m.op}?rev=${wordRef.current.loadRev ?? 0}`, {
+              const res = await fetch(api(`/${m.op}?rev=${wordRef.current.loadRev ?? 0}`), {
                 method: "POST", headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ channel: payload.channel, args: payload.args }),
               });
@@ -114,10 +120,20 @@ export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: b
             }
             case "save": {
               // Saved as they type: the server keeps the artifact current and tells the agent what changed.
-              const res = await fetch(`${base}/save`, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: payload.bytes as ArrayBuffer });
+              const res = await fetch(api("/save"), { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: payload.bytes as ArrayBuffer });
               if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `the server answered ${res.status}`);
               setTrouble(null);
               reply(true, { ok: true });
+              break;
+            }
+            case "acted": {
+              // What the editor did about a click or a piece of typing the agent asked for (office/shim/cursor.js).
+              const heard = acting.current.get(Number(payload.id));
+              if (heard) {
+                acting.current.delete(Number(payload.id));
+                heard(payload as unknown as Acted);
+              }
+              reply(true, {});
               break;
             }
             case "located": {
@@ -131,7 +147,7 @@ export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: b
               break;
             }
             case "presence": {
-              void fetch(`${base}/presence`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => undefined);
+              void fetch(api("/presence"), { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => undefined);
               reply(true, {});
               break;
             }
@@ -142,7 +158,7 @@ export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: b
               break;
             }
             case "export-pdf": {
-              const res = await fetch(`${base}/pdf`, { method: "POST" });
+              const res = await fetch(api("/pdf"), { method: "POST" });
               if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `the server answered ${res.status}`);
               reply(true, {});
               break;
@@ -158,7 +174,7 @@ export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: b
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [base, fetchDocument, post]);
+  }, [api, fetchDocument, post]);
 
   // What the engine sends its editor page (webContents.send), passed on to the frame.
   useEffect(() => onOfficePush((msg) => {
@@ -199,20 +215,38 @@ export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: b
     send();
   }), [post]);
 
+  /**
+   * What the agent really does in the editor: click where it is working, type into the editor's own field, and leave
+   * the edit. The editor answers with what it did (the cell its name box shows, whether it had a field to type in),
+   * and an answer of ok: false sends the window back to drawing the words itself.
+   */
+  const act = useCallback((what: { act: "click" | "type" | "end"; x?: number; y?: number; text?: string }) => new Promise<Acted | null>((resolve) => {
+    const id = Date.now() + Math.floor(Math.random() * 1000);
+    const finish = (said: Acted | null) => { clearInterval(timer); acting.current.delete(id); resolve(said); };
+    let tries = 0;
+    const send = () => {
+      post({ type: "autora:office-act", id, ...what });
+      if (++tries > 4) finish(null);
+    };
+    acting.current.set(id, finish);
+    const timer = setInterval(send, 260);
+    send();
+  }), [post]);
+
   const restore = useCallback(async (n: number) => {
     setVersionsOpen(false);
     try {
-      const res = await fetch(`${base}/restore`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ n }) });
+      const res = await fetch(api("/restore"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ n }) });
       if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `the server answered ${res.status}`);
       setTrouble(null);
     } catch (err: any) {
       setTrouble(`That version could not be restored: ${err?.message ?? err}`);
     }
-  }, [base]);
+  }, [api]);
 
   const close = useCallback(() => {
-    void fetch(`${base}/close`, { method: "POST" });
-  }, [base]);
+    void fetch(api("/close"), { method: "POST" });
+  }, [api]);
 
   const versions = word.versions ?? [];
   const problem = trouble ?? word.problem ?? null;
@@ -291,7 +325,7 @@ export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: b
                 <b>v{v.n}</b> {v.label}
                 <small>{v.by === "agent" ? "Agent" : "You"} · {new Date(v.at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</small>
               </span>
-              <a className="pdf-pill" href={`${base}/version/${v.n}`} download>Download</a>
+              <a className="pdf-pill" href={api(`/version/${v.n}`)} download>Download</a>
               {v.n !== versions[versions.length - 1].n && <button className="pdf-pill" onClick={() => void restore(v.n)}>Restore</button>}
             </li>
           ))}
@@ -299,7 +333,7 @@ export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: b
       )}
       {problem && <div className="pdf-problem" role="status">{problem}</div>}
       {pages ? (
-        <OfficePages sessionId={sessionId} name={word.name ?? THING[kind]} rev={word.rev ?? 0} onEdit={() => { setEditing(true); setFull(true); }} />
+        <OfficePages sessionId={sessionId} kind={kind} name={word.name ?? THING[kind]} rev={word.rev ?? 0} onEdit={() => { setEditing(true); setFull(true); }} />
       ) : (
         <div className="office-stage">
           <iframe
@@ -310,7 +344,17 @@ export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: b
             title={`${word.name ?? THING[kind]}, in ${NAME[kind]}`}
             sandbox="allow-scripts allow-downloads allow-modals allow-popups"
           />
-          {cursorOn && play && <OfficeCursor cues={play.items} seq={play.seq} locate={locate} onDone={() => setPlay(null)} />}
+          {cursorOn && play && (
+            <OfficeCursor
+              cues={play.items}
+              seq={play.seq}
+              locate={locate}
+              click={(at) => act({ act: "click", x: at.x, y: at.y })}
+              type={(text) => act({ act: "type", text })}
+              end={() => act({ act: "end" })}
+              onDone={() => setPlay(null)}
+            />
+          )}
         </div>
       )}
     </div>

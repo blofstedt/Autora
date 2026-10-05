@@ -45,6 +45,25 @@ const kindOfName = (name: string): OfficeKind => (/\.pptx$/i.test(name) ? "pptx"
 /** What the person calls the document, and the surface they hold with Take control. */
 const THING: Record<OfficeKind, string> = { docx: "Autora Pages", pptx: "Autora Slides", xlsx: "Autora Sheets" };
 
+/**
+ * One window per session and app: a Pages, a Sheets and a Slides document can be open beside the conversation at
+ * once, each with its own document, versions, engine and tab (the person asked for this: switching to one window
+ * used to put the other away).
+ *
+ * Everything below takes a DeskKey -- a session and a kind together -- rather than a bare session, so a call can
+ * never quietly read or write another app's document: passing a session where a key is wanted does not compile.
+ * Only the exported boundary functions (officeState, officeData, officeHooks, officeBriefing, closeOffice, the
+ * routes) know about kinds at all. The key is also the stem of the files on disk (`abc-xlsx.json`), which reads
+ * back unambiguously: no kind has a `-` in it.
+ */
+type DeskKey = string & { readonly __deskKey: unique symbol };
+const KIND: OfficeKind[] = ["docx", "xlsx", "pptx"];
+const keyOf = (session: string, kind: OfficeKind): DeskKey => `${session}-${kind}` as DeskKey;
+const sessionOf = (key: DeskKey): string => key.slice(0, key.lastIndexOf("-"));
+const kindOfKey = (key: DeskKey): OfficeKind => key.slice(key.lastIndexOf("-") + 1) as OfficeKind;
+/** The desks of one session, whichever are open, oldest first. */
+const desksOf = (session: string): DeskKey[] => KIND.map((kind) => keyOf(session, kind));
+
 export type WordVersion = { n: number; label: string; at: number; by: "agent" | "person"; name: string };
 
 type Desk = {
@@ -148,7 +167,7 @@ export function cuesFor(kind: OfficeKind, before: Buffer | null, after: Buffer):
 }
 
 const MAX_VERSIONS = 30;
-const desks = new Map<string, Desk>();
+const desks = new Map<DeskKey, Desk>();
 const DIR = path.join(stateDir(), "worddesks");
 const extOf = (kind: OfficeKind) => kind;
 const validSession = (id: string) => /^[A-Za-z0-9_-]{1,80}$/.test(id);
@@ -161,16 +180,22 @@ const MAIN_PART: Record<OfficeKind, string> = { docx: "word/document.xml", pptx:
 export const isOffice = (data: Buffer, kind: OfficeKind) => isZip(data) && zipEntry(data, MAIN_PART[kind]) !== null;
 
 /** What the person does to the document, for whoever shares it with them (server/presence.ts). */
-let touched: (session: string, subject: string, kind: string, detail: string, opts?: { tell?: boolean }) => void = () => undefined;
-export function onOfficeTouch(fn: typeof touched) {
-  touched = fn;
+let tellTouched: (session: string, subject: string, kind: string, detail: string, opts?: { tell?: boolean }) => void = () => undefined;
+export function onOfficeTouch(fn: typeof tellTouched) {
+  tellTouched = fn;
 }
 
-let changed: (session: string) => void = () => undefined;
+let tellChanged: (session: string) => void = () => undefined;
 /** Who to tell when a window changes: server.ts sends it to the session's sockets. */
 export function onOfficeChange(fn: (session: string) => void) {
-  changed = fn;
+  tellChanged = fn;
 }
+
+/* The three below are reached with a desk key from inside this file and with the bare session outside it: the key
+   is taken apart here, so no other line has to remember that a key is not a session. */
+const touched = (key: DeskKey, subject: string, kind: string, detail: string, opts?: { tell?: boolean }) =>
+  tellTouched(sessionOf(key), subject, kind, detail, opts);
+const changed = (key: DeskKey) => tellChanged(sessionOf(key));
 
 // ------------------------------------------- reading a Word file --
 
@@ -469,15 +494,34 @@ function describeFiles(kind: OfficeKind, before: Buffer, after: Buffer): string[
 
 // ---------------------------------------------------------- on disk --
 
-function load(session: string): Desk | null {
-  if (desks.has(session)) return desks.get(session) ?? null;
-  if (!validSession(session)) return null;
+/**
+ * The stem of this desk's files on disk. A desk written before there could be several windows is named for the
+ * session alone (`abc.json`); it is read as this app's desk when the app is the one it holds, so a document that
+ * was open when this changed does not vanish. From the next write it lives under its own name.
+ */
+function stemOf(session: DeskKey): string {
+  if (fs.existsSync(path.join(DIR, `${session}.json`))) return session;
+  const before = sessionOf(session);
   try {
-    const meta = JSON.parse(fs.readFileSync(path.join(DIR, `${session}.json`), "utf8"));
+    const meta = JSON.parse(fs.readFileSync(path.join(DIR, `${before}.json`), "utf8"));
+    const kind: OfficeKind = meta.kind === "pptx" || meta.kind === "xlsx" || meta.kind === "docx" ? meta.kind : kindOfName(String(meta.name || ""));
+    if (kind === kindOfKey(session)) return before;
+  } catch {
+    // Nothing was kept under the old name.
+  }
+  return session;
+}
+
+function load(session: DeskKey): Desk | null {
+  if (desks.has(session)) return desks.get(session) ?? null;
+  if (!validSession(sessionOf(session))) return null;
+  try {
+    const stem = stemOf(session);
+    const meta = JSON.parse(fs.readFileSync(path.join(DIR, `${stem}.json`), "utf8"));
     const name = String(meta.name || "document.docx");
     const kind: OfficeKind = meta.kind === "pptx" || meta.kind === "xlsx" || meta.kind === "docx" ? meta.kind : kindOfName(name);
     const desk: Desk = {
-      open: meta.open === true, kind, name, data: fs.readFileSync(path.join(DIR, `${session}.${extOf(kind)}`)),
+      open: meta.open === true, kind, name, data: fs.readFileSync(path.join(DIR, `${stem}.${extOf(kind)}`)),
       working: typeof meta.working === "string" ? meta.working : null,
       source: typeof meta.source === "string" ? meta.source : null,
       outName: String(meta.outName || meta.name || "document.docx"),
@@ -494,7 +538,7 @@ function load(session: string): Desk | null {
 
 const writing = new Map<string, NodeJS.Timeout>();
 
-function persist(session: string) {
+function persist(session: DeskKey) {
   if (writing.has(session)) return;
   writing.set(session, setTimeout(() => {
     writing.delete(session);
@@ -511,13 +555,23 @@ function persist(session: string) {
   }, 300));
 }
 
-/** A session that is deleted takes its window with it. */
+/** A session that is deleted takes its windows with it. */
 export function dropOfficeDesk(session: string) {
-  stopEngine(session);
-  dropPages(session);
-  desks.delete(session);
+  for (const key of desksOf(session)) {
+    stopEngine(key);
+    dropPages(key);
+    desks.delete(key);
+    writing.delete(key);
+    rewriting.delete(key);
+  }
   try {
-    for (const f of fs.readdirSync(DIR)) if (f === `${session}.json` || f.startsWith(`${session}.`)) fs.rmSync(path.join(DIR, f), { recursive: true, force: true });
+    for (const f of fs.readdirSync(DIR)) {
+      // `<session>-<kind>.` names a window's own files and can belong to no other session; the rest are the names
+      // used before there could be more than one window.
+      const mine = KIND.some((kind) => f.startsWith(`${session}-${kind}.`))
+        || f === `${session}.json` || f.startsWith(`${session}.`);
+      if (mine) fs.rmSync(path.join(DIR, f), { recursive: true, force: true });
+    }
   } catch {
     // Nothing was kept.
   }
@@ -525,10 +579,10 @@ export function dropOfficeDesk(session: string) {
 
 // ------------------------------------------------------------ versions --
 
-const versionFile = (session: string, n: number, kind: OfficeKind) => path.join(DIR, `${session}.v${n}.${extOf(kind)}`);
+const versionFile = (session: DeskKey, n: number, kind: OfficeKind) => path.join(DIR, `${session}.v${n}.${extOf(kind)}`);
 
 /** Keep the document as it is now as a version the person can go back to. */
-function snapshot(session: string, desk: Desk, label: string, by: "agent" | "person") {
+function snapshot(session: DeskKey, desk: Desk, label: string, by: "agent" | "person") {
   const n = ++desk.vseq;
   try {
     fs.mkdirSync(DIR, { recursive: true, mode: 0o700 });
@@ -549,7 +603,7 @@ function snapshot(session: string, desk: Desk, label: string, by: "agent" | "per
 const rewriting = new Map<string, NodeJS.Timeout>();
 
 /** Write the artifact again, soon: typing sends a few saves in a row. */
-function rewrite(session: string) {
+function rewrite(session: DeskKey) {
   const pending = rewriting.get(session);
   if (pending) clearTimeout(pending);
   rewriting.set(session, setTimeout(() => {
@@ -558,14 +612,14 @@ function rewrite(session: string) {
   }, 600));
 }
 
-function writeArtifact(session: string) {
+function writeArtifact(session: DeskKey) {
   const desk = desks.get(session);
   if (!desk) return;
   try {
     if (desk.data.byteLength > MAX_ARTIFACT_BYTES) throw new Error("the document has grown past the 50 MB an artifact may be");
     const keep = desk.working ? getArtifact(desk.working) : null;
     const art = saveArtifact({
-      origin: "agent", name: keep?.name ?? desk.outName, data: desk.data, mime: MIME[desk.kind], session,
+      origin: "agent", name: keep?.name ?? desk.outName, data: desk.data, mime: MIME[desk.kind], session: sessionOf(session),
       note: `Edited in the ${THING[desk.kind]} window`,
     });
     desk.working = art.id;
@@ -599,16 +653,18 @@ type Engine = {
 const engines = new Map<string, Engine>();
 const ENGINE_IDLE_MS = 15 * 60_000;
 
-const workFile = (session: string, kind: OfficeKind) => path.join(DIR, `${session}.work.${extOf(kind)}`);
+const workFile = (session: DeskKey, kind: OfficeKind) => path.join(DIR, `${session}.work.${extOf(kind)}`);
 
-let pushed: (session: string, rev: number, channel: string, args: unknown) => void = () => undefined;
+let tellPushed: (session: string, rev: number, channel: string, args: unknown) => void = () => undefined;
+/** What an editor window has to be told from the engine (a deck changed under it): told to the session. */
+const pushed = (key: DeskKey, rev: number, channel: string, args: unknown) => tellPushed(sessionOf(key), rev, channel, args);
 /** Who to tell when the engine sends its editor page something (server.ts forwards it to the window). */
-export function onOfficePush(fn: typeof pushed) {
-  pushed = fn;
+export function onOfficePush(fn: (session: string, rev: number, channel: string, args: unknown) => void) {
+  tellPushed = fn;
 }
 
 /** The document the agent changed (or an earlier version came back): the engine's file becomes it. */
-function engineFileChanged(session: string, desk: Desk) {
+function engineFileChanged(session: DeskKey, desk: Desk) {
   if (desk.kind === "docx") return;
   try {
     fs.mkdirSync(DIR, { recursive: true, mode: 0o700 });
@@ -633,7 +689,7 @@ function engineFileChanged(session: string, desk: Desk) {
  * deck (the editor keeps the slide it was on); a workbook is queued again and the page nudged to open it. False when
  * there is no page to do it in, and the window loads the document again instead.
  */
-async function reloadLive(session: string): Promise<boolean> {
+async function reloadLive(session: DeskKey): Promise<boolean> {
   const engine = engines.get(session);
   if (!engine || engine.wc === null) return false;
   try {
@@ -650,7 +706,7 @@ async function reloadLive(session: string): Promise<boolean> {
 }
 
 /** The person saved in the editor: the file changed under the engine. */
-function checkEngineFile(session: string) {
+function checkEngineFile(session: DeskKey) {
   const engine = engines.get(session);
   const desk = load(session);
   if (!engine || !desk || desk.kind !== engine.kind) return;
@@ -672,7 +728,7 @@ function checkEngineFile(session: string) {
   }
 }
 
-async function ensureEngine(session: string): Promise<Engine> {
+async function ensureEngine(session: DeskKey): Promise<Engine> {
   const desk = load(session);
   if (!desk || desk.kind === "docx") throw new Error("There is no presentation or spreadsheet in the window.");
   const have = engines.get(session);
@@ -713,7 +769,7 @@ async function ensureEngine(session: string): Promise<Engine> {
   return engine;
 }
 
-function stopEngine(session: string) {
+function stopEngine(session: DeskKey) {
   const engine = engines.get(session);
   if (!engine) return;
   engines.delete(session);
@@ -722,7 +778,7 @@ function stopEngine(session: string) {
 }
 
 /** The engine's id for the page that is asking: a new page (the window loaded again) gets a new one. */
-async function pageFor(session: string, rev: number): Promise<{ engine: Engine; wc: number }> {
+async function pageFor(session: DeskKey, rev: number): Promise<{ engine: Engine; wc: number }> {
   const engine = await ensureEngine(session);
   const run = engine.lock.then(async () => {
     if (rev < engine.rev) throw new Error("That page is out of date: the window has loaded the document again.");
@@ -740,7 +796,7 @@ async function pageFor(session: string, rev: number): Promise<{ engine: Engine; 
 }
 
 /** Wait for what the person has just done in the editor to reach the file, then read it. */
-async function settleEngine(session: string) {
+async function settleEngine(session: DeskKey) {
   const engine = engines.get(session);
   if (!engine || engine.wc === null) return;
   const until = Date.now() + 8000;
@@ -760,9 +816,8 @@ async function settleEngine(session: string) {
 // --------------------------------------------------- what is shown --
 
 /** The window as the page needs it: everything but the document itself. */
-export function officeState(session: string) {
-  const desk = load(session);
-  if (!desk) return { open: false };
+/** One window's state, as the page reads it (one tab and one window on screen, per app). */
+function windowOf(desk: Desk) {
   return {
     open: desk.open, kind: desk.kind, name: desk.name, working: desk.working, rev: desk.rev, loadRev: desk.loadRev,
     since: desk.since, problem: desk.problem, versions: desk.versions,
@@ -773,43 +828,73 @@ export function officeState(session: string) {
   };
 }
 
-export function officeData(session: string): Buffer | null {
-  return load(session)?.data ?? null;
+/**
+ * Every window this session has open beside the conversation, oldest first. More than one is normal: a Pages, a
+ * Sheets and a Slides document each have their own, and the page shows a tab for each and keeps them all mounted.
+ */
+export function officeState(session: string) {
+  const windows = desksOf(session)
+    .map((key) => load(key))
+    .filter((desk): desk is Desk => Boolean(desk && desk.open))
+    .sort((a, b) => a.since - b.since)
+    .map(windowOf);
+  return { open: windows.length > 0, windows };
+}
+
+export function officeData(session: string, kind: OfficeKind): Buffer | null {
+  return load(keyOf(session, kind))?.data ?? null;
 }
 
 // ------------------------------------------------- the agent's side --
 
 export interface OfficeHooks {
+  /** The document the agent means when it names no file: the newest window open beside the conversation. */
   current(): { kind: OfficeKind; name: string; data: Buffer; working: string | null; source: string | null; outName: string } | null;
+  /** The same, for one app: the document its own window holds. Null when that app has no window (or nothing in it). */
+  at(kind: OfficeKind): { kind: OfficeKind; name: string; data: Buffer; working: string | null; source: string | null; outName: string } | null;
   /** PowerPoint and Excel: wait for what the person has just done in the editor to reach the file, so `current()` has it. */
   settle(): Promise<void>;
-  /** Show this document in the window, or carry on with it after the agent changed it. */
+  /** Show this document in the window for its own app, or carry on with it after the agent changed it. */
   open(next: { name: string; data: Buffer; working: string | null; source: string | null; outName: string; label?: string }): void;
-  /** Bring the window back if the person put it away: the agent is working on its document. */
-  show(): void;
-  /** What the person did in the window since the agent was last told, said once; "" when nothing. */
-  news(): string;
+  /** Bring a window back if the person put it away: the agent is working on its document. */
+  show(kind?: OfficeKind): void;
+  /** What the person did in a window since the agent was last told, said once; "" when nothing. */
+  news(kind?: OfficeKind): string;
 }
 
+const seen = (desk: Desk) => ({ kind: desk.kind, name: desk.name, data: desk.data, working: desk.working, source: desk.source, outName: desk.outName });
+
 export function officeHooks(session: string): OfficeHooks {
+  /** The window the person is most likely looking at: the one that changed last. */
+  const newest = (): DeskKey | null => {
+    const open = desksOf(session).map((key) => [key, load(key)] as const).filter(([, d]) => Boolean(d && d.open)) as [DeskKey, Desk][];
+    return open.length ? open.reduce((a, b) => (b[1].since >= a[1].since ? b : a))[0] : null;
+  };
   return {
     async settle() {
-      await settleEngine(session);
+      // Every engine, not just one: whichever document the agent goes on to read, what the person typed is in it.
+      await Promise.all(desksOf(session).map((key) => settleEngine(key)));
     },
     current() {
-      const desk = load(session);
-      return desk ? { kind: desk.kind, name: desk.name, data: desk.data, working: desk.working, source: desk.source, outName: desk.outName } : null;
+      const key = newest();
+      const desk = key ? load(key) : null;
+      return desk ? seen(desk) : null;
+    },
+    at(kind) {
+      const desk = load(keyOf(session, kind));
+      return desk ? seen(desk) : null;
     },
     open(next) {
-      const was = load(session);
-      const kind = kindOfName(next.name);
-      const carried = Boolean(was && was.kind === kind && ((was.working !== null && was.working === next.working) || was.name === next.name || (was.source !== null && was.source === next.source)));
+      // The window is the one for the file's own app: a workbook opens in Autora Sheets whatever else is open.
+      const key = keyOf(session, kindOfName(next.name));
+      const kind = kindOfKey(key);
+      const was = load(key);
+      const carried = Boolean(was && ((was.working !== null && was.working === next.working) || was.name === next.name || (was.source !== null && was.source === next.source)));
       if (was && !carried) {
-        for (const v of was.versions) fs.rmSync(versionFile(session, v.n, was.kind), { force: true });
-        if (was.kind !== kind) stopEngine(session);
+        for (const v of was.versions) fs.rmSync(versionFile(key, v.n, was.kind), { force: true });
       }
       // A deck or workbook the person has open is changed in place; only if that fails does the window load it again.
-      const live = Boolean(was && carried && kind !== "docx" && was.open && engines.get(session)?.wc != null);
+      const live = Boolean(was && carried && kind !== "docx" && was.open && engines.get(key)?.wc != null);
       const desk: Desk = {
         open: true, kind,
         name: next.name, data: next.data, working: next.working, source: next.source, outName: next.outName,
@@ -820,7 +905,7 @@ export function officeHooks(session: string): OfficeHooks {
       };
       if (was && carried) {
         // What the person did so far is kept as a version before the agent's change goes on top.
-        if (was.dirty || was.versions.length === 0) snapshot(session, was, was.versions.length === 0 ? "Opened" : "Your changes", was.versions.length === 0 ? "agent" : "person");
+        if (was.dirty || was.versions.length === 0) snapshot(key, was, was.versions.length === 0 ? "Opened" : "Your changes", was.versions.length === 0 ? "agent" : "person");
         desk.versions = was.versions;
         desk.vseq = was.vseq;
       }
@@ -830,50 +915,52 @@ export function officeHooks(session: string): OfficeHooks {
         // The boxes come from reading the deck, a second or two: the cursor is held until it has them.
         const rev = desk.rev;
         void withSlideBoxes(cues, next.data).then((boxed) => {
-          const now = desks.get(session);
+          const now = desks.get(key);
           if (!now || now.rev < rev || now.kind !== "pptx") return;
           now.cues = boxed;
           now.cueRev = rev;
           now.cueAt = Date.now();
-          changed(session);
+          changed(key);
         });
       } else {
         desk.cues = cues;
         desk.cueRev = desk.rev;
         desk.cueAt = Date.now();
       }
-      desks.set(session, desk);
-      snapshot(session, desk, next.label ?? (was && carried ? "Changed by the agent" : "Opened"), "agent");
-      if (kind !== "docx") engineFileChanged(session, desk);
-      persist(session);
-      changed(session);
-      if (!desk.working) rewrite(session);
+      desks.set(key, desk);
+      snapshot(key, desk, next.label ?? (was && carried ? "Changed by the agent" : "Opened"), "agent");
+      if (kind !== "docx") engineFileChanged(key, desk);
+      persist(key);
+      changed(key);
+      if (!desk.working) rewrite(key);
       if (live) {
-        void reloadLive(session).then((ok) => {
+        void reloadLive(key).then((ok) => {
           if (ok) return;
-          const now = desks.get(session);
+          const now = desks.get(key);
           if (!now) return;
           now.loadRev++;
-          persist(session);
-          changed(session);
+          persist(key);
+          changed(key);
         });
       }
     },
-    show() {
-      const desk = load(session);
-      if (!desk || desk.open) return;
+    show(kind) {
+      const key = kind ? keyOf(session, kind) : newest();
+      const desk = key ? load(key) : null;
+      if (!key || !desk || desk.open) return;
       desk.open = true;
       // Newest, so it takes the place beside the chat.
       desk.since = Date.now();
-      persist(session);
-      changed(session);
+      persist(key);
+      changed(key);
     },
-    news() {
-      const desk = load(session);
-      if (!desk || desk.news.length === 0) return "";
+    news(kind) {
+      const key = kind ? keyOf(session, kind) : newest();
+      const desk = key ? load(key) : null;
+      if (!key || !desk || desk.news.length === 0) return "";
       const told = newsLine(desk);
       desk.news = [];
-      persist(session);
+      persist(key);
       return told;
     },
   };
@@ -890,32 +977,38 @@ function newsLine(desk: Desk): string {
 }
 
 /**
- * For the start of a turn: that a document is open in the window, and what the
- * person did there since the agent last heard. Null when there is no window.
+ * For the start of a turn: that a document is open in a window beside the conversation -- one line for each, since
+ * there can be more than one -- and what the person did there since the agent last heard. Null when none is open.
  */
 export function officeBriefing(session: string): string | null {
-  const desk = load(session);
-  if (!desk || !desk.open) return null;
-  const lines = [
-    `${desk.name} is open in the ${THING[desk.kind]} window beside the conversation${desk.working ? ` (artifact ${desk.working})` : ""}. ` +
-      (desk.kind === "docx"
-        ? "The person can read it and type in it as you work, and what they type is saved as they go. office_edit on it is recorded as tracked changes " +
-          "(unless you say track:false) that they accept or reject in the editor's Review tab; office_read, office_look and office_check read it as it is now."
-        : "The person can look at it and edit it as you work, and what they change is saved as they go. office_edit on it replaces the window's copy (the window reloads, so what they were looking at moves); " +
-          "office_read, office_look and office_check read it as it is now."),
-  ];
-  if (desk.news.length) {
-    lines.push(newsLine(desk));
-    desk.news = [];
-    persist(session);
+  const lines: string[] = [];
+  for (const key of desksOf(session)) {
+    const desk = load(key);
+    if (!desk || !desk.open) continue;
+    lines.push(
+      `${desk.name} is open in the ${THING[desk.kind]} window beside the conversation${desk.working ? ` (artifact ${desk.working})` : ""}. ` +
+        (desk.kind === "docx"
+          ? "The person can read it and type in it as you work, and what they type is saved as they go. office_edit on it is recorded as tracked changes " +
+            "(unless you say track:false) that they accept or reject in the editor's Review tab; office_read, office_look and office_check read it as it is now."
+          : "The person can look at it and edit it as you work, and what they change is saved as they go. office_edit on it replaces the window's copy (the window reloads, so what they were looking at moves); " +
+            "office_read, office_look and office_check read it as it is now."),
+    );
+    if (desk.news.length) {
+      lines.push(newsLine(desk));
+      desk.news = [];
+      persist(key);
+    }
   }
-  return lines.join(" ");
+  if (lines.length > 1) {
+    lines.push("Each is in a window of its own with its own tab; office_read and office_edit work on the file you name, and one with no file named means the window that changed last.");
+  }
+  return lines.length ? lines.join(" ") : null;
 }
 
 // ------------------------------------------------ the person's side --
 
 /** The editor saved: the document is what it sent. */
-export function personSaved(session: string, data: Buffer): string | null {
+export function personSaved(session: DeskKey, data: Buffer): string | null {
   const desk = load(session);
   if (!desk) return "There is no document open in the window.";
   if (!isOffice(data, desk.kind)) return `That is not a file ${THING[desk.kind]} opens.`;
@@ -939,7 +1032,7 @@ export function personSaved(session: string, data: Buffer): string | null {
 }
 
 /** Go back to an earlier version of the document: the present one is kept too, so nothing is lost. */
-export function restoreOfficeVersion(session: string, n: number): string | null {
+export function restoreOfficeVersion(session: DeskKey, n: number): string | null {
   const desk = load(session);
   if (!desk) return "There is no document open in the window.";
   const v = desk.versions.find((x) => x.n === n);
@@ -963,7 +1056,7 @@ export function restoreOfficeVersion(session: string, n: number): string | null 
   return null;
 }
 
-export function officeVersionFile(session: string, n: number): { name: string; data: Buffer } | null {
+export function officeVersionFile(session: DeskKey, n: number): { name: string; data: Buffer } | null {
   const desk = load(session);
   const v = desk?.versions.find((x) => x.n === n);
   if (!v) return null;
@@ -974,8 +1067,8 @@ export function officeVersionFile(session: string, n: number): { name: string; d
   }
 }
 
-/** Put the window away; it comes back the next time the agent works on a document. */
-export function closeOffice(session: string) {
+/** Put one window away; it comes back the next time the agent works on a document of that app. */
+export function closeOffice(session: DeskKey) {
   const desk = load(session);
   if (!desk || !desk.open) return;
   desk.open = false;
@@ -1003,12 +1096,37 @@ export function officeRoutes(app: Express, opts: { exists: (session: string) => 
     if (id) res.json(officeState(id));
   });
 
+  /**
+   * Which window a call is about: each is its own desk, and the page says which it means with `kind` (`?kind=xlsx`).
+   * A call that does not say -- an older page, a hand-made one -- means the window that changed last.
+   */
+  const deskAt = (req: Request, res: Response, session: string): DeskKey | null => {
+    const said = String(req.query.kind ?? "");
+    const newest = (): DeskKey | null => {
+      const open = desksOf(session).filter((k) => Boolean(load(k))).sort((a, b) => (load(b)?.since ?? 0) - (load(a)?.since ?? 0));
+      return open[0] ?? null;
+    };
+    const key = KIND.includes(said as OfficeKind) ? keyOf(session, said as OfficeKind) : newest();
+    if (!key || !load(key)) {
+      res.status(404).json({ error: "There is no document open in the window." });
+      return null;
+    }
+    return key;
+  };
+
+  app.get("/api/officedesk/:session", (req, res) => {
+    const id = known(req, res);
+    if (id) res.json(officeState(id));
+  });
+
   app.get("/api/officedesk/:session/data", (req, res) => {
     const id = known(req, res);
     if (!id) return;
-    const data = officeData(id);
+    const key = deskAt(req, res, id);
+    if (!key) return;
+    const data = officeData(id, kindOfKey(key));
     if (!data) return res.status(404).json({ error: "There is no document open in the window." });
-    res.setHeader("Content-Type", MIME[load(id)?.kind ?? "docx"]);
+    res.setHeader("Content-Type", MIME[load(key)?.kind ?? kindOfKey(key)]);
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Content-Security-Policy", "sandbox");
@@ -1018,9 +1136,11 @@ export function officeRoutes(app: Express, opts: { exists: (session: string) => 
   app.post("/api/officedesk/:session/save", rawBody, (req, res) => {
     const id = known(req, res);
     if (!id) return;
-    const problem = personSaved(id, Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0));
+    const key = deskAt(req, res, id);
+    if (!key) return;
+    const problem = personSaved(key, Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0));
     if (problem) return res.status(400).json({ error: problem });
-    res.json({ ok: true, rev: officeState(id).rev });
+    res.json({ ok: true, rev: load(key)?.rev ?? 0 });
   });
 
   /* The person is in the editor right now. Nothing changes in the file; the
@@ -1029,15 +1149,19 @@ export function officeRoutes(app: Express, opts: { exists: (session: string) => 
   app.post("/api/officedesk/:session/presence", express.json({ limit: "2kb" }), (req, res) => {
     const id = known(req, res);
     if (!id) return;
-    if (!load(id)) return res.json({ ok: true });
-    touched(id, "document", "edit", "is working in the document", { tell: false });
+    // A window that has been put away has nothing to say: the editor keeps posting for a moment after it closes.
+    const said = String(req.query.kind ?? "");
+    const key = KIND.includes(said as OfficeKind) ? keyOf(id, said as OfficeKind) : null;
+    if (key && load(key)) touched(key, "document", "edit", "is working in the document", { tell: false });
     res.json({ ok: true });
   });
 
   app.post("/api/officedesk/:session/restore", express.json({ limit: "10kb" }), (req, res) => {
     const id = known(req, res);
     if (!id) return;
-    const problem = restoreOfficeVersion(id, Number(req.body?.n));
+    const key = deskAt(req, res, id);
+    if (!key) return;
+    const problem = restoreOfficeVersion(key, Number(req.body?.n));
     if (problem) return res.status(400).json({ error: problem });
     res.json({ ok: true });
   });
@@ -1045,9 +1169,11 @@ export function officeRoutes(app: Express, opts: { exists: (session: string) => 
   app.get("/api/officedesk/:session/version/:n", (req, res) => {
     const id = known(req, res);
     if (!id) return;
-    const f = officeVersionFile(id, Number(req.params.n));
+    const key = deskAt(req, res, id);
+    if (!key) return;
+    const f = officeVersionFile(key, Number(req.params.n));
     if (!f) return res.status(404).json({ error: "That version is not there any more." });
-    res.setHeader("Content-Type", MIME[load(id)?.kind ?? "docx"]);
+    res.setHeader("Content-Type", MIME[load(key)?.kind ?? "docx"]);
     res.setHeader("Content-Disposition", `attachment; filename="${f.name.replace(/[^\w. -]/g, "_")}"`);
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Content-Security-Policy", "sandbox");
@@ -1061,9 +1187,11 @@ export function officeRoutes(app: Express, opts: { exists: (session: string) => 
   app.post("/api/officedesk/:session/page", async (req, res) => {
     const id = known(req, res);
     if (!id) return;
+    const key = deskAt(req, res, id);
+    if (!key) return;
     try {
-      const { engine } = await pageFor(id, Number(req.query.rev) || 0);
-      res.json({ path: engine.file, name: load(id)?.name ?? "document" });
+      const { engine } = await pageFor(key, Number(req.query.rev) || 0);
+      res.json({ path: engine.file, name: load(key)?.name ?? "document" });
     } catch (err: any) {
       res.status(500).json({ error: String(err?.message ?? err) });
     }
@@ -1072,10 +1200,12 @@ export function officeRoutes(app: Express, opts: { exists: (session: string) => 
   app.post("/api/officedesk/:session/ipc", express.json({ limit: "80mb" }), async (req, res) => {
     const id = known(req, res);
     if (!id) return;
+    const key = deskAt(req, res, id);
+    if (!key) return;
     const { channel, args } = req.body ?? {};
     if (!channelOk(channel)) return res.status(400).json({ error: "Not a channel." });
     try {
-      const { engine, wc } = await pageFor(id, Number(req.query.rev) || 0);
+      const { engine, wc } = await pageFor(key, Number(req.query.rev) || 0);
       engine.lastIpc = Date.now();
       if (channel === "slides:open-path" || channel === "slides:consume-pending-open") {
         const fit = Number((Array.isArray(args) ? args : [])[channel === "slides:open-path" ? 1 : 0]);
@@ -1092,10 +1222,12 @@ export function officeRoutes(app: Express, opts: { exists: (session: string) => 
   app.post("/api/officedesk/:session/ipc-send", express.json({ limit: "80mb" }), async (req, res) => {
     const id = known(req, res);
     if (!id) return;
+    const key = deskAt(req, res, id);
+    if (!key) return;
     const { channel, args } = req.body ?? {};
     if (!channelOk(channel)) return res.status(400).json({ error: "Not a channel." });
     try {
-      const { engine, wc } = await pageFor(id, Number(req.query.rev) || 0);
+      const { engine, wc } = await pageFor(key, Number(req.query.rev) || 0);
       engine.lastIpc = Date.now();
       engine.host.send(wc, channel, wire.dec(Array.isArray(args) ? args : []));
       res.json({ ok: true });
@@ -1109,12 +1241,13 @@ export function officeRoutes(app: Express, opts: { exists: (session: string) => 
   app.post("/api/officedesk/:session/pages", async (req, res) => {
     const id = known(req, res);
     if (!id) return;
-    const desk = load(id);
-    if (!desk) return res.status(404).json({ error: "There is no document open in the window." });
-    await settleEngine(id);
-    const now = load(id) ?? desk;
-    const got = pagesFor(id, now.kind, now.name, now.data, () => locatorFor(now.kind, now.data));
-    const stale = got.status === "ready" ? null : latestPages(id);
+    const key = deskAt(req, res, id);
+    if (!key) return;
+    const desk = load(key)!;
+    await settleEngine(key);
+    const now = load(key) ?? desk;
+    const got = pagesFor(key, now.kind, now.name, now.data, () => locatorFor(now.kind, now.data));
+    const stale = got.status === "ready" ? null : latestPages(key);
     res.json({
       kind: now.kind, name: now.name, status: got.status,
       ...(got.status === "ready" ? { hash: got.manifest.hash, pages: got.manifest.pages, total: got.manifest.total } : {}),
@@ -1126,8 +1259,10 @@ export function officeRoutes(app: Express, opts: { exists: (session: string) => 
   app.get("/api/officedesk/:session/pages/:hash/:file", (req, res) => {
     const id = known(req, res);
     if (!id) return;
+    const key = deskAt(req, res, id);
+    if (!key) return;
     const m = /^(\d{1,3})\.(jpg|json)$/.exec(String(req.params.file));
-    const data = m ? pageFile(id, String(req.params.hash), Number(m[1]), m[2] as "jpg" | "json") : null;
+    const data = m ? pageFile(key, String(req.params.hash), Number(m[1]), m[2] as "jpg" | "json") : null;
     if (!m || !data) return res.status(404).json({ error: "That page is not there." });
     res.setHeader("Content-Type", m[2] === "jpg" ? "image/jpeg" : "application/json");
     res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
@@ -1139,7 +1274,9 @@ export function officeRoutes(app: Express, opts: { exists: (session: string) => 
   app.post("/api/officedesk/:session/close", (req, res) => {
     const id = known(req, res);
     if (!id) return;
-    closeOffice(id);
+    const key = deskAt(req, res, id);
+    if (!key) return;
+    closeOffice(key);
     res.json({ ok: true });
   });
 }

@@ -13,7 +13,7 @@ import { PdfWindow } from "./components/PdfWindow";
 import { ResizeHandle } from "./components/ResizeHandle";
 import { CHAT, RAIL, setChatWidth, setRailCollapsed, setRailWidth, usePanes, wideScreen } from "./lib/panes";
 import { clearOfficePick, getOfficePick, pickLabel, pickSentence, useOfficePick } from "./lib/officeSelection";
-import { emitOfficePush, resetWord, setWordState, useWordState } from "./lib/officedesk";
+import { emitOfficePush, resetWord, setWordState, useOfficeState, type OfficeKind } from "./lib/officedesk";
 import { resetDesk, setDeskState, useDeskState } from "./lib/pdfdesk";
 import { resetCollab, setCollabState } from "./lib/collab";
 import { cellKey, dockedPlan, usePhone } from "./lib/stage";
@@ -87,7 +87,17 @@ const EVENT_BATCH_MS = 66;
 const LIBRARY_TABS: LibraryTab[] = ["notebooks", "files"];
 
 /** The windows that can sit beside the chat on a wide screen, one at a time. */
-type SideWindow = "app" | "pdf" | "word" | "browser";
+type SideWindow = "app" | "pdf" | "pages" | "sheets" | "slides" | "browser";
+
+/**
+ * The Office windows that can be open beside the chat, one per app, in the order their tabs sit in. Each has its
+ * own document and its own tab, and they are all open at once: switching to one used to put the other away.
+ */
+const OFFICE_PANES: Array<{ pane: SideWindow; kind: OfficeKind; label: string }> = [
+  { pane: "pages", kind: "docx", label: "Pages" },
+  { pane: "sheets", kind: "xlsx", label: "Sheets" },
+  { pane: "slides", kind: "pptx", label: "Slides" },
+];
 
 export function App() {
   /* Back, on a phone, is the system gesture, and in an installed app with
@@ -1258,36 +1268,36 @@ export function App() {
   const phoneLayout = usePhone();
   const preview = usePreviewState();
   const desk = useDeskState();
-  const word = useWordState();
+  const off = useOfficeState();
+  const windowAt = (kind: OfficeKind) => off.windows.find((w) => w.kind === kind) ?? null;
   const pointedAt = useOfficePick();
   const panes = usePanes();
-  /* One window beside the chat at a time: the browser the agent is driving, or the
-     app, the PDF or the Office document, whichever was opened last; putting it away
-     shows the one before. It is not dropped when the session is not live -- that
-     left the side of the screen blank while the agent worked -- and the person can
-     pick a window from the strip above it, which sticks until that window is put
-     away. */
+  /* What is open beside the chat, each with when it changed: the window shown is the newest, unless the person
+     has picked a tab, and their pick sticks until that window is put away. The browser is live work in front of
+     the person, so it takes the window while it is open; the document is back the moment it is put away. */
   const [pickedWindow, setPickedWindow] = useState<SideWindow | null>(null);
+  const openWindows: Array<{ pane: SideWindow; since: number }> = [
+    ...(preview.open ? [{ pane: "app" as const, since: preview.since ?? 0 }] : []),
+    ...(desk.open ? [{ pane: "pdf" as const, since: desk.since ?? 0 }] : []),
+    ...OFFICE_PANES.flatMap((o) => {
+      const win = windowAt(o.kind);
+      return win ? [{ pane: o.pane, since: win.since ?? 0 }] : [];
+    }),
+    ...(browser?.open ? [{ pane: "browser" as const, since: Number.MAX_SAFE_INTEGER }] : []),
+  ];
   const sidePane: SideWindow | null = phoneLayout ? null : (() => {
-    const open = [
-      ...(preview.open ? [{ pane: "app" as const, since: preview.since ?? 0 }] : []),
-      ...(desk.open ? [{ pane: "pdf" as const, since: desk.since ?? 0 }] : []),
-      ...(word.open ? [{ pane: "word" as const, since: word.since ?? 0 }] : []),
-      // The browser is live work in front of the person, so it takes the window
-      // while it is open; the document is back the moment it is put away.
-      ...(browser?.open ? [{ pane: "browser" as const, since: Number.MAX_SAFE_INTEGER }] : []),
-    ];
-    if (pickedWindow && open.some((w) => w.pane === pickedWindow)) return pickedWindow;
+    if (pickedWindow && openWindows.some((w) => w.pane === pickedWindow)) return pickedWindow;
     // Ties go to the later kind in this list: the more specific window.
-    return open.length ? open.reduce((best, w) => (w.since >= best.since ? w : best)).pane : null;
+    return openWindows.length ? openWindows.reduce((best, w) => (w.since >= best.since ? w : best)).pane : null;
   })();
-  /* What is open beside the chat, for the strip: a window the agent opened is never
-     more than one click away. */
+  /* The tabs: one per window open beside the chat, named for the app rather than the file, in a settled order so
+     they do not move about, and shown even when there is only one -- a window never disappears from under the
+     person. Every window that is open stays mounted (see below), so a tab is never a reload. */
   const sideWindows: Array<{ pane: SideWindow; label: string }> = [
-    ...(browser?.open ? [{ pane: "browser" as const, label: browser.title?.trim() || "Browser" }] : []),
-    ...(word.open ? [{ pane: "word" as const, label: word.name?.trim() || "Document" }] : []),
     ...(desk.open ? [{ pane: "pdf" as const, label: "PDF" }] : []),
-    ...(preview.open ? [{ pane: "app" as const, label: "The app" }] : []),
+    ...OFFICE_PANES.filter((o) => openWindows.some((w) => w.pane === o.pane)).map((o) => ({ pane: o.pane, label: o.label })),
+    ...(browser?.open ? [{ pane: "browser" as const, label: "Browser" }] : []),
+    ...(preview.open ? [{ pane: "app" as const, label: "App" }] : []),
   ];
   /* The newest browser card: the one looking at the page that still exists, which is
      the page the pane shows. */
@@ -2169,9 +2179,10 @@ export function App() {
         )}
         {sidePane !== null && (
           <div className="side-stack">
-            {/* One tab per window open beside the chat. Only when there is a choice
-                to make: a strip of one is furniture. */}
-            {sideWindows.length > 1 && (
+            {/* One tab per window open beside the chat, named for the app it is (PDF, Pages, Sheets, Slides) rather
+                than the file in it. The strip is there whenever a window is open, and picking a tab shows that
+                window and puts nothing away. */}
+            {sideWindows.length > 0 && (
               <div className="pane-pick" role="tablist" aria-label="Windows open beside the chat">
                 {sideWindows.map((w) => (
                   <button
@@ -2181,6 +2192,7 @@ export function App() {
                     aria-selected={sidePane === w.pane}
                     className={`pane-pick-tab${sidePane === w.pane ? " is-on" : ""}`}
                     title={w.label}
+                    data-pane={w.pane}
                     onClick={() => setPickedWindow(w.pane)}
                   >
                     {w.label}
@@ -2188,10 +2200,10 @@ export function App() {
                 ))}
               </div>
             )}
-            {/* The browser the agent is driving, beside the conversation rather than
-                over it: the same card the thread keeps, in its own window. */}
-            {sidePane === "browser" && sessionId && (
-              <aside className="app-pane" aria-label="The browser the agent is driving">
+            {/* Every window that is open stays mounted, and only the chosen one is shown: switching tabs neither
+                reloads the page in one window nor restarts another's editor, and nothing is put away. */}
+            {browser?.open && sessionId && (
+              <aside className="app-pane" data-pane="browser" hidden={sidePane !== "browser"} aria-label="The browser the agent is driving">
                 <ScreencastCell
                   sessionId={sessionId}
                   source="browser"
@@ -2210,23 +2222,30 @@ export function App() {
             )}
             {/* The app being built, beside the conversation on a wide screen. On a
                 phone it is a tab in the pinned view instead (see Stage). */}
-            {sidePane === "app" && sessionId && (
-              <aside className="app-pane" aria-label="The app being built">
+            {preview.open && sessionId && (
+              <aside className="app-pane" data-pane="app" hidden={sidePane !== "app"} aria-label="The app being built">
                 <AppPreview sessionId={sessionId} phone={false} />
               </aside>
             )}
             {/* The PDF the agent is working on, open for the person to work on too. */}
-            {sidePane === "pdf" && sessionId && (
-              <aside className="app-pane" aria-label="The PDF being worked on">
+            {desk.open && sessionId && (
+              <aside className="app-pane" data-pane="pdf" hidden={sidePane !== "pdf"} aria-label="The PDF being worked on">
                 <PdfWindow sessionId={sessionId} phone={false} />
               </aside>
             )}
-            {/* And a Word, PowerPoint or Excel document, the same way. */}
-            {sidePane === "word" && sessionId && (
-              <aside className="app-pane" aria-label="The document being worked on">
-                <OfficeWindow sessionId={sessionId} phone={false} />
+            {/* And one window for each Office app with a document open in it: Autora Pages, Autora Sheets and
+                Autora Slides can all be open at the same time, each in its own window with its own tab. */}
+            {sessionId && OFFICE_PANES.map((o) => (windowAt(o.kind) ? (
+              <aside
+                key={o.pane}
+                className="app-pane"
+                data-pane={o.pane}
+                hidden={sidePane !== o.pane}
+                aria-label={`The ${o.label} window, open beside the chat`}
+              >
+                <OfficeWindow sessionId={sessionId} kind={o.kind} phone={false} />
               </aside>
-            )}
+            ) : null))}
           </div>
         )}
         </div>

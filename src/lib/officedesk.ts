@@ -1,21 +1,23 @@
 import { useSyncExternalStore } from "react";
 
 /**
- * The Office window's state on this page (server/officedesk.ts): whether a
- * Autora Pages, Slides or Sheets document is open beside the conversation, and
- * which version of it. A Pages document is fetched by the window when `loadRev`
- * changes; the others are reached by the window's frame reloading.
+ * The Office windows' state on this page (server/officedesk.ts): the Autora Pages, Slides and Sheets documents open
+ * beside the conversation -- one window and one tab each, all of them at once -- and which version of each. A Pages
+ * document is fetched by its window when `loadRev` changes; the others are reached by the window's frame reloading.
  */
 export type WordVersion = { n: number; label: string; at: number; by: "agent" | "person"; name: string };
 
 export type OfficeKind = "docx" | "pptx" | "xlsx";
+
+/** What each app is called, on its tab and in the editor: a window says which app it is, never the file's name. */
+export const APP_NAME: Record<OfficeKind, string> = { docx: "Pages", pptx: "Slides", xlsx: "Sheets" };
 
 /** One thing the agent did in the document, played as a cursor that goes there and types it (server/officedesk.ts). */
 export type OfficeCue = { act: "type" | "point"; text: string; cell?: string; sheet?: string; box?: [number, number, number, number] };
 
 export type WordState = {
   open: boolean;
-  kind?: OfficeKind;
+  kind: OfficeKind;
   name?: string;
   /** The artifact the document is kept in, once there is one. */
   working?: string | null;
@@ -33,12 +35,18 @@ export type WordState = {
   cueAge?: number;
 };
 
-const CLOSED: WordState = { open: false };
-let state: WordState = CLOSED;
+export type OfficeState = { open: boolean; windows: WordState[] };
+
+const CLOSED: WordState = { open: false, kind: "docx" };
+const NONE: OfficeState = { open: false, windows: [] };
+let state: OfficeState = NONE;
 const listeners = new Set<() => void>();
 
 export function setWordState(next: unknown) {
-  state = next && typeof next === "object" && (next as WordState).open !== undefined ? (next as WordState) : CLOSED;
+  const said = next as Partial<OfficeState> | null;
+  state = said && typeof said === "object" && Array.isArray(said.windows)
+    ? { open: said.windows.length > 0, windows: said.windows as WordState[] }
+    : NONE;
   for (const l of listeners) l();
 }
 
@@ -48,8 +56,25 @@ export function resetWord() {
 
 const subscribe = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l); }; };
 
+/** Every window open beside the conversation, oldest first. */
+export function useOfficeState(): OfficeState {
+  return useSyncExternalStore(subscribe, () => state, () => NONE);
+}
+
+/** The window for one app -- what a page that shows Autora Pages, Slides or Sheets reads -- or null when it is shut. */
+export function useWordWindow(kind: OfficeKind): WordState | null {
+  const all = useOfficeState();
+  return all.windows.find((w) => w.kind === kind) ?? null;
+}
+
+/**
+ * The window the conversation is about when it is about one thing: the one that changed last. What is not about one
+ * app reads this (the card in the thread, the phone's pinned stage), and the desktop's tabs read each window.
+ */
 export function useWordState(): WordState {
-  return useSyncExternalStore(subscribe, () => state, () => CLOSED);
+  const all = useOfficeState();
+  if (all.windows.length === 0) return CLOSED;
+  return all.windows.reduce((a, b) => ((b.since ?? 0) >= (a.since ?? 0) ? b : a));
 }
 
 /** What a PowerPoint or Excel engine sent its editor page (webContents.send), for the window to pass on. */

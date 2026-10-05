@@ -99,9 +99,13 @@ is a sub-project with its own dependencies (see below).
   it; the file is the base pages with every object flattened on, rewritten
   on every change; the person's changes are told to the agent once),
   `officedesk.ts` + `src/components/OfficeWindow.tsx` (the Office window -- Autora Pages (.docx), Sheets (.xlsx) and Slides (.pptx), each its own switch on the Tools page,
-  `pages`/`sheets`/`slides` in `ToolSettings`, an old `office` in a settings file turns all three; the PDF window is "Autora PDF". The agent's cursor:
-  `officedesk.ts` `cuesFor` diffs before/after into `cues` on the state, `OfficeCursor.tsx` plays them over the frame
-  asking `office/shim/cursor.js` where the text/cell is (caption fallback), with `src/lib/humanPath.ts` -- the browser pointer's
+  `pages`/`sheets`/`slides` in `ToolSettings`, an old `office` in a settings file turns all three; the PDF window is "Autora PDF". One window per app: a Pages, a Sheets and a Slides
+  document can be open beside the conversation at once, each with its own document, versions and engine (`deskAt` in
+  `officeRoutes`, keyed by a `DeskKey` -- session and kind together -- so a call cannot reach the wrong app's
+  document), each with a tab on the desktop (`App.tsx`: `OFFICE_PANES`, every open window kept mounted and only the
+  chosen one shown, the strip run to the top of the screen) named for the app rather than the file. The agent's cursor:
+  `officedesk.ts` `cuesFor` diffs before/after into `cues` on the window's state, `OfficeCursor.tsx` plays them over the frame
+  asking `office/shim/cursor.js` where the text/cell is -- whose answer is the only place the cursor goes (no caption fallback, no invented spot) -- with `src/lib/humanPath.ts` -- the browser pointer's
   motion and a human typing rhythm, shared with `pdf-editor/src/AgentCues.tsx`. Briefing text: `OFFICE_GUIDE`/`WINDOWS_GUIDE` in `tools.ts`. The
   document the agent works on, open beside the chat in
   GenOffice's own editor for it, built by `scripts/build-office.mjs` into
@@ -343,7 +347,13 @@ is a sub-project with its own dependencies (see below).
   the Office cursor and the PDF cues -- `autora:cursor` from the editor frame), else at the top; a translucent chat
   button and a one-line box that sends through `onSuggest`; and a Follow toggle. Office cues locate the place in
   the editor (`office/shim/cursor.js`): text in the DOM for Pages; a deck's element box as fractions of the slide
-  (`withSlideBoxes`, the canvas is not searchable); a workbook cell by the grid's measured default layout.
+  (`withSlideBoxes`, the canvas is not searchable); a workbook cell by clicking and reading the editor's own name
+  box, so a cell the editor cannot confirm is not pointed at (and one window per app: a Pages, a Sheets and a Slides
+  document each have their own window and their own tab, all open at once).
+  The cursor uses the interface rather than drawing over it: the click is a real click in the editor (the cell is
+  selected, the caret goes into the word) and the words go into the editor's own input, left with Escape so the
+  document keeps only what the agent's tool made of it; where the editor has no field to type in, the words are
+  drawn over the spot it did confirm. Nothing is placed at a spot the editor did not confirm.
 - `src/`: the React client. `App.tsx` holds the session and stream; on a desktop the
   menu, the conversation and the window beside it are three panes whose seams drag
   (`components/ResizeHandle.tsx`, widths and "menu folded away" kept per browser by

@@ -5396,13 +5396,16 @@ async function startServer() {
      makes), and the PDF opens in the PDF editor -- PDFs always go to our own. */
   app.post("/api/officedesk/:session/pdf", async (req: Request, res: Response) => {
     const session = sessions.get(String(req.params.session));
-    if (session) await officeHooks(session.id).settle();
-    const data = session ? officeData(session.id) : null;
-    if (!session || !data) return res.status(404).json({ error: "There is no document open in the window." });
+    if (!session) return res.status(404).json({ error: "No such session." });
+    await officeHooks(session.id).settle();
+    // The window the person pressed Export PDF in, or the one that changed last.
+    const windows = officeState(session.id).windows;
+    const win = windows.find((w) => w.kind === String(req.query.kind ?? "")) ?? windows[windows.length - 1];
+    const data = win ? officeData(session.id, win.kind) : null;
+    if (!win || !data) return res.status(404).json({ error: "There is no document open in the window." });
     try {
-      const state = officeState(session.id);
-      const name = String(state.name ?? "document.docx");
-      const pdf = await renderToPdf(state.kind === "pptx" || state.kind === "xlsx" ? state.kind : "docx", data, name);
+      const name = win.name;
+      const pdf = await renderToPdf(win.kind, data, name);
       const art = saveArtifact({
         origin: "agent", name: `${name.replace(/\.(docx|pptx|xlsx)$/i, "") || "document"}.pdf`, data: pdf, mime: "application/pdf",
         session: session.id, note: `${name} as a PDF`,

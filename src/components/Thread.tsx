@@ -732,6 +732,12 @@ const StepRun = memo(function StepRun({
   );
 });
 
+/** The Office window for the phone's pinned view: the app of the document that changed last. */
+function OfficeStage({ sessionId }: { sessionId: string }) {
+  const word = useWordState();
+  return <OfficeWindow sessionId={sessionId} kind={word.kind} phone />;
+}
+
 const CellView = memo(function CellView({
   cell,
   sessionId,
@@ -889,7 +895,7 @@ const CellView = memo(function CellView({
     case "pdf":
       return stage ? <PdfWindow sessionId={sessionId} phone /> : null;
     case "word":
-      return stage ? <OfficeWindow sessionId={sessionId} phone /> : null;
+      return stage ? <OfficeStage sessionId={sessionId} /> : null;
     case "app": {
       if (stage) return <AppPreview sessionId={sessionId} phone />;
       if (held) return <StageStub kind="app" title={NAME.app} note="preview · pinned above" />;

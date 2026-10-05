@@ -282,7 +282,7 @@ function input(args: Record<string, any>, ctx: OfficeContext, wanted?: Kind): { 
   allowed(ctx, kind);
   /* The document open in the window is the document, as the person has it now: asked for by its
      artifact, the file it came from, or its name, it is read from the window, not from an older copy. */
-  const here = ctx.win?.current();
+  const here = ctx.win?.at(kind);
   if (here && here.kind === kind && (file.artifact?.id === here.working || file.artifact?.id === here.source || file.name === here.outName || file.name === here.name)) {
     const working = here.working ? getArtifact(here.working) : null;
     file = { data: here.data, name: here.name, artifact: working ?? file.artifact };
@@ -291,16 +291,18 @@ function input(args: Record<string, any>, ctx: OfficeContext, wanted?: Kind): { 
   return { file, kind, inWindow: false };
 }
 
-/** What the person did in the window since the agent last heard, to say with a result. */
-const meanwhile = (ctx: OfficeContext, _kind?: Kind): string => {
-  const news = ctx.win?.news() ?? "";
+/** What the person did in that window since the agent last heard, to say with a result. */
+const meanwhile = (ctx: OfficeContext, kind?: Kind): string => {
+  const news = ctx.win?.news(kind) ?? "";
   return news ? ` ${news}` : "";
 };
 
 /** Show a document in the window the agent and the person share. */
 function showInWindow(ctx: OfficeContext, name: string, data: Buffer, saved: { id: string; name: string } | null, from: FileInput | null, label?: string) {
   if (!ctx.win) return;
-  const here = ctx.win.current();
+  // The window this document belongs to -- Autora Pages, Sheets or Slides -- is the one it opens in.
+  const kind = kindOf(name);
+  const here = kind ? ctx.win.at(kind) : null;
   ctx.win.open({
     name: here && saved && here.working === saved.id ? here.name : name,
     data,
@@ -465,7 +467,7 @@ export async function slideElements(data: Buffer): Promise<{ page: number; id: s
 async function readTool(args: Record<string, any>, ctx: OfficeContext): Promise<OfficeOutcome> {
   const { file, kind, inWindow } = input(args, ctx);
   sheetNeeds(kind);
-  if (inWindow) ctx.win?.show();
+  if (inWindow) ctx.win?.show(kind);
   return await withWork(async (work) => {
     const p = stage(file, kind, work);
     const a: string[] = [DOMAIN[kind], "read", p];
@@ -608,7 +610,7 @@ async function editTool(args: Record<string, any>, ctx: OfficeContext): Promise<
 async function checkTool(args: Record<string, any>, ctx: OfficeContext): Promise<OfficeOutcome> {
   const { file, kind, inWindow } = input(args, ctx);
   sheetNeeds(kind);
-  if (inWindow) ctx.win?.show();
+  if (inWindow) ctx.win?.show(kind);
   return await withWork(async (work) => {
     const p = stage(file, kind, work);
     const a = kind === "pptx" ? ["slides", "audit", p] : [DOMAIN[kind], "check", p];
@@ -649,8 +651,8 @@ async function lookTool(args: Record<string, any>, ctx: OfficeContext): Promise<
   const { file, kind, inWindow } = input(args, ctx);
   const pdf = await layOut(file, kind, ctx);
   // What the agent looks at, the person sees too -- unless another document is already in the window.
-  if (inWindow) ctx.win?.show();
-  else if (ctx.win && !ctx.win.current()) showInWindow(ctx, file.name, file.data, null, file);
+  if (inWindow) ctx.win?.show(kind);
+  else if (ctx.win && !ctx.win.at(kind)) showInWindow(ctx, file.name, file.data, null, file);
   const done = await lookAtPdf(pdf, file.name, undefined, { pages: args.pages, area: args.area && typeof args.area === "object" ? args.area : null, grid: args.grid }, ctx);
   return { ok: done.ok, summary: `${done.summary}${meanwhile(ctx, kind)}`, preview: done.preview, images: done.images };
 }

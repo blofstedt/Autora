@@ -162,6 +162,9 @@ body::before {
 }
 
 /* ---------------------------------------------------------------- header -- */
+/* How tall the header is. The window column beside the chat is pulled up by exactly this, so its tabs run to the
+   very top of the screen and the header is behind them (about two thirds of it covered by the tabs themselves). */
+:root { --top-h: 58px; }
 .top {
   position: relative;
   /* Above the page's own content, so a menu opened in the header is not
@@ -2417,7 +2420,7 @@ label + .jf-hint { margin-top: -5px; }
      session switcher and the settings button are all up there already. */
   .top .brand.in-top, .top .btn.in-top { display: none; }
   .top { height: 52px; padding: 0 22px; }
-  :root { --read: 1120px; }
+  :root { --read: 1120px; --top-h: 52px; }
   .thread-content { gap: 24px; }
   .shot-stage .frame { max-height: 480px; }
 }
@@ -6159,12 +6162,19 @@ button.dock-card:hover { border-color: var(--border-strong); }
   animation: appPaneIn 0.28s var(--ease, ease) both;
 }
 
-/* The column beside the chat: the strip of open windows, then the window itself. */
-.side-stack { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+/* The column beside the chat: the strip of open windows, then the window itself. The strip is the top of the
+   screen: this column starts above the header, so the tabs sit at the very edge and what shows of the header over
+   this column is its last third. It is above the header in the paint order (the header is z-index 40). */
+.side-stack {
+  flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column;
+  position: relative; z-index: 45; margin-top: calc(-1 * var(--top-h, 58px));
+}
 .pane-pick {
-  display: flex; align-items: center; gap: 4px; padding: 6px 8px; overflow-x: auto;
+  display: flex; align-items: center; gap: 4px; height: 34px; padding: 0 8px; overflow-x: auto;
   border-left: 1px solid var(--border-strong); border-bottom: 1px solid var(--border); background: var(--s1);
 }
+/* A window that is open but not chosen: kept mounted (so it is never a reload) and out of the way. */
+.app-pane[hidden] { display: none; }
 .pane-pick-tab {
   max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 999px; cursor: pointer;

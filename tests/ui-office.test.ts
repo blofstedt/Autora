@@ -93,16 +93,18 @@ async function main() {
 
     await test("what the person types is saved as they go, kept in the file, and told to the agent", async () => {
       const state = async () => (await app.api("GET", `/api/officedesk/${s}`)).body;
-      const before = (await state()).rev;
+      /** The Pages window's own state: each app has a window of its own now, so every read says which. */
+      const win = async () => ((await state()).windows as any[]).find((w) => w.kind === "docx");
+      const before = (await win()).rev;
       const box = frame.locator('[contenteditable="true"]').first();
       await box.click();
       await page.keyboard.press("Control+End");
       await page.keyboard.type(" Moved by the person to Monday.");
-      await until("the save", async () => (await state()).rev > before, 40_000);
+      await until("the save", async () => (await win()).rev > before, 40_000);
       // The file everyone else sees is rewritten shortly after: typing sends a few saves in a row.
       let text = "";
       await until("the file to be kept current", async () => {
-        const working = (await state()).working as string | null;
+        const working = (await win()).working as string | null;
         if (!working) return false;
         const bytes = Buffer.from(await (await fetch(`${app.base}/api/artifacts/${working}`)).arrayBuffer());
         text = (docxParagraphs(bytes) ?? []).join("\n");
