@@ -130,18 +130,53 @@ async function main() {
       await page.goto(`${app.base}/?session=${s}`);
       const pill = page.locator(".mode-sel-pill");
       await pill.waitFor();
-      assert.match(await pill.innerText(), /Build/);
+      assert.match((await pill.getAttribute("aria-label")) ?? "", /Build/);
       const box = await pill.boundingBox();
       assert.ok(box && box.height >= 32, "a thumb-sized target");
       await pill.tap();
       assert.deepEqual(await centred(".mode-sel-sheet"), { x: true, y: true }, "centred on a phone");
       await page.locator(".mode-sel-opt", { hasText: "Agent" }).tap();
-      await page.waitForFunction(() => /Agent/.test(document.querySelector(".mode-sel-pill")?.textContent ?? ""));
+      await page.waitForFunction(() => /Agent/.test(document.querySelector(".mode-sel-pill")?.getAttribute("aria-label") ?? ""));
       await sleep(400);
       assert.equal((await row()).mode, "agent");
       await page.reload();
       await page.locator(".mode-sel-pill").waitFor();
-      assert.match(await page.locator(".mode-sel-pill").innerText(), /Agent/);
+      assert.match((await page.locator(".mode-sel-pill").getAttribute("aria-label")) ?? "", /Agent/);
+    });
+    await test("the tools are one line with the wrench at the end, before Send, at every width", async () => {
+      // The wrench used to fall to a second line, under the agent's own icon,
+      // where it read as a different kind of control from the tools beside it.
+      // The pill keeps only its glyph on a phone to make the room (see above).
+      const stripAt = (p: any) => p.evaluate(() => {
+        const bs = [...document.querySelectorAll(".composer-strip button")];
+        const tops = bs.map((b) => b.getBoundingClientRect().top);
+        const last = bs[bs.length - 1];
+        const lr = last.getBoundingClientRect();
+        const send = document.querySelector(".composer-send")!.getBoundingClientRect();
+        return {
+          buttons: bs.length,
+          oneLine: Math.max(...tops) - Math.min(...tops) < 12,
+          last: last.getAttribute("aria-label"),
+          beforeSend: lr.right <= send.left + 1,
+          inside: lr.right <= innerWidth + 1,
+        };
+      });
+      const want = { oneLine: true, last: "Tools", beforeSend: true, inside: true };
+      const shape = async (p: any, where: string) => {
+        const got: any = await stripAt(p);
+        assert.ok(got.buttons >= 7, `${where}: the wrench is not alone on the row`);
+        delete got.buttons;
+        assert.deepEqual(got, want, where);
+      };
+      await shape(page, "on a 390px phone");
+      for (const [w, mob] of [[320, true], [1280, false]] as const) {
+        const ctx = await browser.newContext({ viewport: { width: w, height: 780 }, isMobile: mob, hasTouch: mob });
+        const p2 = await ctx.newPage();
+        await p2.goto(`${app.base}/?session=${s}`);
+        await p2.locator(".composer-strip").waitFor();
+        await shape(p2, `at ${w}px`);
+        await ctx.close();
+      }
     });
     await test("the permissions pill in the header: Ask shows when to ask, with ideas to tap, and it is saved", async () => {
       const pill = page.locator(".badge.mode-pill");
@@ -188,7 +223,7 @@ async function main() {
       const chips = await page.locator(".mode-chip").allInnerTexts();
       assert.ok(chips.some((c) => /Planning/.test(c)), chips.join("|"));
       assert.ok(chips.some((c) => /Building[\s\S]*the plan is set/.test(c)), chips.join("|"));
-      assert.match(await page.locator(".mode-sel-pill").innerText(), /Agent/, "the selector stays on Agent");
+      assert.match((await page.locator(".mode-sel-pill").getAttribute("aria-label")) ?? "", /Agent/, "the selector stays on Agent");
     });
 
     console.log("the to-do list");

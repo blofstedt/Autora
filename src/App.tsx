@@ -1961,6 +1961,14 @@ export function App() {
                   )}
                   <div className="composer-foot">
                     <div className="composer-tools">
+                      {/* One strip, always one line: the row is the toolstrip,
+                          and a control that falls to a second line reads as a
+                          different kind of thing. What it holds gives way
+                          instead -- the mode pill drops its word on a phone
+                          (see ModeSelect) -- so the wrench stays at the end of
+                          the row, beside Send, at every width. The note below
+                          is outside the strip and takes its own line. */}
+                      <div className="composer-strip">
                       {/* How the agent goes about the work, on the row above
                           Send: it applies to the words in the box. */}
                       <ModeSelect mode={sessionMode} onChange={setSessionMode} busy={modeSaving} compact={appPane} />
@@ -2042,6 +2050,7 @@ export function App() {
                       >
                         <IconWrench size={18} />
                       </button>
+                      </div>
                       {toolsOpen && sessionId && (
                         <ToolsSheet
                           session={sessionId}

@@ -188,6 +188,20 @@ export function Thread({
   useEffect(() => {
     if (fullscreen && (!phone || activeKind === null)) setFullscreen(false);
   }, [fullscreen, phone, activeKind]);
+  /* A tool that opens on a phone opens full screen -- the page, the PDF, the
+     document, the app -- whether the agent opened it or the person did from
+     the wrench: a strip a third of the screen deep is no way to look at one,
+     and the way out is the control in the window's own bar (Back to the
+     conversation). Only an opening does it: a reload, or a window already up
+     when the screen arrives, leaves the conversation where the person put it. */
+  const windowsUp = `${pdfSince ?? ""}|${wordSince ?? ""}|${appOpen ? 1 : 0}`;
+  const windowsSeen = useRef(windowsUp);
+  useEffect(() => {
+    const opened = windowsSeen.current !== windowsUp;
+    windowsSeen.current = windowsUp;
+    if (!opened) return;
+    if (phone && live && (pdfSince !== null || wordSince !== null || appOpen)) setFullscreen(true);
+  }, [windowsUp, pdfSince, wordSince, appOpen, phone, live]);
   useEffect(() => () => setFullscreen(false), [sessionId]);
   const lastSaid = tail?.replies.length ? tail.replies[tail.replies.length - 1].text : "";
   const tailLength =

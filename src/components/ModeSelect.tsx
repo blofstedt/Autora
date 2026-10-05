@@ -66,6 +66,11 @@ export function ModeSelect({
   }, [open]);
 
   const current = WORK_MODES.find((m) => m.id === mode) ?? WORK_MODES[2];
+  /* The narrow form of this control -- a phone, or the chat with the app pane
+     beside it -- is a glyph and a caret. Its word is what would push the
+     composer's toolstrip onto a second line, and the glyph with its colour
+     already says which mode is on; the sheet it opens spells it out. */
+  const iconOnly = phone || compact;
 
   if (!phone && !compact) {
     return (
@@ -93,14 +98,14 @@ export function ModeSelect({
     <div className="mode-sel-wrap" ref={wrap}>
       <button
         type="button"
-        className={`mode-sel-pill m-${mode}${open ? " open" : ""}`}
+        className={`mode-sel-pill m-${mode}${open ? " open" : ""}${iconOnly ? " is-icon" : ""}`}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={`How Autora works: ${current.label}`}
         onClick={() => setOpen((v) => !v)}
       >
         <Glyph mode={mode} />
-        {current.label}
+        {!iconOnly && current.label}
         <span className="mode-sel-caret" aria-hidden="true">{open ? "▴" : "▾"}</span>
       </button>
       {open && (phone ? createPortal : passThrough)(

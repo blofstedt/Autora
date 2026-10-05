@@ -268,7 +268,7 @@ export function OfficeWindow({ sessionId, phone }: { sessionId: string; phone: b
         )}
         {phone && !pages && (
           <button
-            className="btn icon ghost"
+            className="btn icon ghost pdf-full-btn"
             onClick={() => setFull(!full)}
             title={full ? "Back to the conversation" : "Full screen"}
             aria-label={full ? "Back to the conversation" : "Full screen"}

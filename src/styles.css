@@ -902,7 +902,16 @@ body::before {
    long note cannot squeeze into a 40px column and stand on the buttons. */
 .composer-tools { display: flex; align-items: center; gap: 2px; min-width: 0; margin-left: -8px; flex-wrap: wrap; row-gap: 4px; }
 .composer-tools > .hint.voice-note { flex: 1 1 100%; order: 10; padding: 4px 4px 0 8px; }
-.composer-tools .btn.icon { width: 34px; height: 34px; border-radius: 50%; }
+/* The toolstrip is one line at every width. A control that falls to a second
+   line reads as a different kind of thing -- the wrench stopped looking like
+   the one that belongs beside Send -- so what gives way is the mode pill's
+   word (a glyph on a phone and beside the app pane: see ModeSelect), then a
+   few pixels off each button (the min-width below). The strip itself never
+   wraps, and the note after it still takes the line under it. */
+.composer-strip { display: flex; align-items: center; gap: 2px; min-width: 0; flex: 0 1 auto; flex-wrap: nowrap; }
+.composer-tools .composer-strip .btn.icon { flex: 0 1 auto; min-width: 32px; }
+.composer-strip .mode-sel-wrap { flex: 0 1 auto; min-width: 0; overflow: hidden; }
+.composer-strip .mode-sel-pill { min-width: 0; }
 .composer-acts { display: flex; align-items: center; gap: 8px; }
 .composer-send, .composer-stop {
   display: grid; place-items: center; width: 36px; height: 36px; padding: 0;
@@ -4017,12 +4026,13 @@ input.shot-where[readonly] { cursor: default; }
   /* A fingertip, not a cursor: the badge grows with the button under it. */
   .composer-send-wrap .composer-stop { width: 24px; height: 24px; top: -7px; right: -7px; }
 }
-/* On a 390px phone the six tools came to 302px in a 290px row, and the last
-   one (the notebook) wrapped onto a line of its own. Two pixels off each
-   button's width and no gap between them keep them on one line; they stay
-   40px tall for a fingertip. */
+/* On a 390px phone the six tools and the mode pill came to 314px in a 290px
+   row, and the wrench wrapped onto a line of its own. The pill keeps only its
+   glyph there, and two pixels come off each button's width with no gap between
+   them; they stay 40px tall for a fingertip. */
 @media (pointer: coarse) and (max-width: 440px) {
   .composer-tools { column-gap: 0; }
+  .composer-strip { column-gap: 0; }
   .composer-tools .btn.icon { width: 38px; }
 }
 
@@ -6083,6 +6093,9 @@ button.dock-card:hover { border-color: var(--border-strong); }
   color: var(--text); font: inherit; font-size: calc(12.5px * var(--ts, 1)); font-weight: 550; cursor: pointer;
 }
 .mode-sel-pill.m-agent { color: var(--accent-light); border-color: var(--accent-line); background: var(--accent-soft); }
+/* The pill with no word in it: the glyph and its carets are the whole control,
+   which is what lets the toolstrip hold it and every tool on one line. */
+.mode-sel-pill.is-icon { gap: 4px; padding: 0 8px; }
 .mode-sel-caret { font-size: 9px; opacity: 0.7; }
 .mode-sel-sheet {
   position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 60;
@@ -6410,6 +6423,12 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
   font-size: calc(13px * var(--ts, 1)); font-weight: 600; color: var(--text);
 }
 .pdf-bar-note { flex: 0 0 auto; font-size: calc(11.5px * var(--ts, 1)); color: var(--text-3); white-space: nowrap; }
+/* Full screen, and the way back out of it, is the one control in the bar that
+   must never give way: it used to shrink to 16px at the end of a full bar, so
+   the way out of the phone's full screen was the hardest thing to hit. The
+   file's name beside it clips first, which is what the ellipsis is for. */
+.pdf-full-btn { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%; }
+@media (pointer: coarse) { .pdf-full-btn { width: 38px; height: 38px; } }
 .pdf-problem {
   padding: 7px 12px; font-size: calc(12px * var(--ts, 1)); color: var(--warn);
   background: rgba(251, 191, 36, 0.08); border-bottom: 1px solid rgba(251, 191, 36, 0.25);
@@ -6556,6 +6575,15 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 /* A phone's PDF bar has room for the name, Take control and Full screen; the
    cursor switch is in Settings there. */
 .pdf-window.is-phone .pdf-cursor-pill, .pdf-window.is-phone .pdf-bar-note { display: none; }
+/* A phone gives the bar 390px, and the controls in it come to more than that:
+   at 390 the bar was 12px too wide and the full-screen button sat off the
+   right edge (82px off at 320), so the way out of a full-screen tool was the
+   one thing you could not tap. The badge that repeats the tool's name is the
+   first thing to go -- the window is already titled -- and the bar tightens,
+   so the file's name is what gives way and every control stays reachable. */
+.pdf-window.is-phone .pdf-bar { gap: 6px; padding: 6px 8px; }
+.pdf-window.is-phone .pdf-bar-app { display: none; }
+.pdf-window.is-phone .pdf-pill { padding: 4px 8px; font-size: calc(11.5px * var(--ts, 1)); }
 /* A document as pictures of its pages, for a phone (components/OfficePages.tsx). */
 .office-pages { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--bg); }
 .office-pages-bar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--border); font-size: 12.5px; color: var(--text-2); }

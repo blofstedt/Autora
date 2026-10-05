@@ -134,11 +134,11 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  New: a toolbox in the chat. Tap it and pick Autora PDF, Pages, Sheets or Slides to open that app
-  beside the chat yourself, with a blank file, without asking for anything in a message. It is beside
-  the notebook button on a phone and in the same row on a desktop.
-  Also: the to-do list in a chat now slides open and folds away smoothly instead of appearing and
-  vanishing, and the search tool and its hints are tidier.
-  Earlier: on phones, any tool can go full screen; a translucent chat button opens a one-line box to
-  message Autora without leaving it. Autora Pages, Sheets and Slides (a switch each) and Autora PDF,
-  with a human-like cursor and typing in all of them.
+  Fix: the wrench in the message box sits at the end of the tools row, beside Send, instead of
+  dropping to a second line under the agent's icon. On a phone the mode pill keeps only its glyph,
+  so every tool and the wrench stay on that one row.
+  Also: a tool opened from the wrench opens the way the agent opens it -- full screen on a phone,
+  with its minimise button always on screen (the tool's own bar no longer runs off the right edge of
+  a 390px or 320px phone), and in the pane on the right on a desktop.
+  Earlier: a toolbox in the chat opens Autora PDF, Pages, Sheets or Slides yourself with a blank
+  file; the to-do list in a chat slides open and folds away; on phones any tool can go full screen.

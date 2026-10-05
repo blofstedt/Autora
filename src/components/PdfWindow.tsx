@@ -288,7 +288,7 @@ export function PdfWindow({ sessionId, phone }: { sessionId: string; phone: bool
         )}
         {phone && (
           <button
-            className="btn icon ghost"
+            className="btn icon ghost pdf-full-btn"
             onClick={() => setFull(!full)}
             title={full ? "Back to the conversation" : "Full screen"}
             aria-label={full ? "Back to the conversation" : "Full screen"}
