@@ -134,15 +134,11 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  Autora Pages, Sheets and the PDF window now wear the app's own look, and every window moves the
-  same way. Pages and Sheets are drawn in Autora's colours and type throughout -- ribbon and tabs,
-  panels, menus, ruler, status bar, scrollbars, focus rings and shadows -- instead of Word's blue
-  and Excel's green over Office greys; the PDF window's editor does the same in place of its slate
-  and indigo, so a PDF, a document and a spreadsheet all sit in the same dark interface with the
-  same violet accent. The browser window now carries the bar the other windows have -- what it is,
-  the page in it, and who is driving -- with the browser's own toolbar under it, and the windows,
-  panels and menus arrive at Autora's own easing and speed. The document, the grid, the slide and
-  the PDF keep their own colours, and what you export is unchanged.
-  Earlier: Autora Slides looks like Autora -- the same dark surfaces and violet accent instead of
-  the editor's greys and orange, and no Autora logo in the ribbon's assistant button.
+  The PDF window is a different editor. It is Spectra, rebuilt inside Autora and wearing Autora's
+  own look -- the same dark surfaces, violet accent, type and easing as the rest of the app, with
+  every tool, page pane and dialog in its own colours instead of the editor's slate and indigo.
+  It reads PDFs, splits, merges, rotates, extracts and reorders pages, OCRs a scan, fills forms and
+  signs, draws and annotates, compares two documents and exports. Autora's own PDF tools drive this
+  editor, so the agent's work and yours happen in the same window. The old PDF editor is gone.
+  Earlier: Pages, Sheets, Slides and the browser window in Autora's chrome.
 
