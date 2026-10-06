@@ -134,15 +134,14 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  Fix: on a phone a tool window no longer takes the whole screen the moment you open the session.
-  The PDF (or document) a session already had stays a tab in the pinned view, and only a tool that
-  opens while you are watching goes full screen; the way in and back out is the button in its own
-  bar. Fix: the window beside the chat no longer goes blank while the agent is working. It used to be
-  dropped whenever the session was not live, which left an empty grey side on a desktop; it now
-  stays up, and when more than one window is open a small strip above it switches between them.
+  Fix: a Pages, Sheets or Slides window that opened behind the one you were looking at came up grey --
+  the ribbon over an empty page, and the document never drew however long you waited. A window now
+  starts its editor once it has a real box on screen, so switching to its tab, resizing it, or pinning
+  it on a phone brings the document up. A window nobody is looking at also stops running an editor of
+  its own, which is what made three of them open at once slow.
   Also: the browser the agent is driving opens in its own window on the right, in the same place as
   Autora PDF and Pages, instead of covering the chat -- one window at a time, the others a click
   away in the strip.
-  Earlier: the wrench in the message box sits at the end of the tools row beside Send; a toolbox in
-  the chat opens Autora PDF, Pages, Sheets or Slides yourself with a blank file; on phones any tool
-  can go full screen.
+  Earlier: on a phone a tool window no longer takes the whole screen the moment you open the session,
+  and a tool the session already had stays a tab in the pinned view; the wrench in the message box
+  sits at the end of the tools row beside Send.

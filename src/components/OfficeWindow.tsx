@@ -353,7 +353,7 @@ export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; ki
       )}
       {problem && <div className="pdf-problem" role="status">{problem}</div>}
       {pages ? (
-        {room ? <OfficePages sessionId={sessionId} kind={kind} name={word.name ?? THING[kind]} rev={word.rev ?? 0} onEdit={() => { setEditing(true); setFull(true); }} /> : null}
+        room ? <OfficePages sessionId={sessionId} kind={kind} name={word.name ?? THING[kind]} rev={word.rev ?? 0} onEdit={() => { setEditing(true); setFull(true); }} /> : null
       ) : (
         <div className="office-stage">
           {room && (
