@@ -302,6 +302,37 @@ test("a balance with nothing recorded as paid in is still its own line", () => {
   near(b.lifetime.cost, 0.4);
 });
 
+/* Each line is compared with that vendor's own tokens, and nobody else's.
+   Counting every API's turns against one account makes the line say the vendor
+   owes money it was never charged: here both vendors were paid into, and each
+   one's rows are a fraction of what the whole ledger counted. */
+test("each vendor's line counts that vendor's own turns, not the whole ledger's", () => {
+  clearUsage();
+  clearVendors();
+  addVendor(20.3, 30, "deepseek");
+  addVendor(4.5, 5, "orcarouter");
+  state.provider = "orcarouter";
+  recordUsage({
+    ts: now, session: "t", provider: "orcarouter", model: "orca-auto",
+    input: 1000, output: 100, cost: 0.4, priced: true, estimated: false,
+  });
+  recordUsage({
+    ts: now, session: "t", provider: "deepseek", model: "deepseek-flash",
+    input: 1000, output: 100, cost: 0.1, priced: true, estimated: false,
+  });
+
+  const b = billingSummary();
+  const byId = Object.fromEntries(b.vendors.map((v) => [v.provider, v]));
+  /* Orca's own rows are 0.40 of the 0.50 the ledger counted, not the 0.50. */
+  near(byId.orcarouter.counted_usd, 0.4);
+  near(byId.deepseek.counted_usd, 0.1);
+  /* Each is short against its own till by what that vendor cannot account for:
+     5.00 paid in, 4.50 left is 0.50 spent, of which 0.40 was counted here. */
+  near(byId.orcarouter.unaccounted_usd, 0.1);
+  /* DeepSeek's 9.70 of spend against a 0.10 row is history before this ledger. */
+  near(byId.deepseek.unaccounted_usd, 9.6);
+});
+
 /* Where each vendor is asked. DeepSeek keeps /user/balance off the host while
    Orca Router keeps /balance under its /v1 prefix, so stripping the version
    from every base would aim one of them at nothing. */

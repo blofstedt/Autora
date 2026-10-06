@@ -69,6 +69,11 @@ export function billingSummary() {
   const monthBucket = empty();
   const byProvider = new Map<string, Bucket & { models: Map<string, Bucket> }>();
   const byDay = new Map<string, number>();
+  /* What the ledger counts for each vendor on its own. A vendor's own line has
+     to be compared with the tokens that vendor billed, not with everybody's
+     put together: counting every API's turns against one account makes the
+     line say the vendor owes money it was never charged. */
+  const countedByProvider = new Map<string, number>();
 
   for (const entry of state.usage) {
     add(all, entry);
@@ -92,6 +97,7 @@ export function billingSummary() {
       byProvider.set(entry.provider, provider);
     }
     add(provider, entry);
+    countedByProvider.set(entry.provider, (countedByProvider.get(entry.provider) ?? 0) + entry.cost);
 
     let model = provider.models.get(entry.model);
     if (!model) {
@@ -153,6 +159,10 @@ export function billingSummary() {
   const usableReal =
     onlyOneVendor && onlyThatVendor && carried.cost === 0 ? spendable[0] ?? null : null;
   const unaccounted = usableReal ? Math.max(0, (usableReal.lifetime_usd ?? 0) - counted) : 0;
+  /* What the ledger counts for one vendor alone: only that vendor's own rows.
+     Nothing aged out of the ledger carries a provider, so it belongs to no
+     line -- it is in the total and in the day it happened, and nowhere else. */
+  const countedFor = (id: string) => countedByProvider.get(id) ?? 0;
   const lifetime = {
     cost: usableReal ? usableReal.lifetime_usd : counted,
     input: all.input + carried.input,
@@ -251,8 +261,19 @@ export function billingSummary() {
       topped_up_usd: entry.topped_up_usd,
       at: entry.at,
       lifetime_usd: entry.lifetime_usd,
-      counted_usd: counted,
-      unaccounted_usd: unaccounted,
+      /* This vendor's own turns, not the whole ledger's: the comparison is
+         this account against what this account billed. */
+      counted_usd: countedFor(entry.provider),
+      /* What that vendor's own till says was spent, less what its own tokens
+         account for here. The rest is either calls it charged without
+         reporting what they used, or money spent before this ledger began --
+         which no local count can see, whichever it is. */
+      unaccounted_usd:
+        entry.lifetime_usd === null
+          ? 0
+          : usableReal !== null && usableReal.provider === entry.provider
+            ? unaccounted
+            : Math.max(0, entry.lifetime_usd - countedFor(entry.provider)),
       /* True only for the one line standing in for the headline: a single
          vendor's money, with nobody else's turns in the ledger. The rest are
          reported as what they are -- that vendor's own line. */

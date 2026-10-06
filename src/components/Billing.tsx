@@ -254,10 +254,12 @@ export function Billing({
             <>
               {money(vendor.topped_up_usd ?? 0)} paid in
               less {money(vendor.balance_usd)} left is {money(vendor.lifetime_usd ?? 0)} spent.
-              {" "}Counting tokens here accounts for {money(vendor.counted_usd)} of that
+              {" "}
               {vendor.unaccounted_usd > 0
-                ? " -- the rest is calls that were charged without reporting what they used, which no local count can see."
-                : "."}
+                ? `This ledger's rows for ${vendor.label} come to ${money(vendor.counted_usd)} of it; the other ${money(vendor.unaccounted_usd)} is money spent before those rows, or calls charged without reporting what they used.`
+                : vendor.counted_usd > (vendor.lifetime_usd ?? 0) + 0.01
+                  ? `The tokens counted here against that account come to ${money(vendor.counted_usd)}, which is more than its balance says has gone -- so more was paid into it than the ${money(vendor.topped_up_usd ?? 0)} recorded.`
+                  : `Counting tokens here accounts for ${money(vendor.counted_usd)} of that.`}
             </>
           ) : (
             <>
