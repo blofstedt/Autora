@@ -78,14 +78,13 @@ COPY scripts/build-office.mjs scripts/build-office.mjs
 RUN node scripts/build-office.mjs --no-sidecar
 
 # The PDF engine (Spectra-PDF's): Python, so nothing is compiled -- the package
-# is copied from the pinned commit and its dependencies installed into a venv
-# beside it, which is where the server looks for them. tzdata with them because
-# a musl image has no zone files, and the engine's signing and stamping read
-# dates in a zone.
+# is copied from the pinned commit, and its dependencies are installed into a
+# venv beside it by the stage that runs it. Not here: this stage is built for
+# the runner's arch whatever arch the image is for, so a venv made here would
+# be the wrong one in an arm64 image.
 COPY spectra/PIN.json spectra/PIN.json
 COPY scripts/build-spectra.mjs scripts/build-spectra.mjs
-RUN apk add --no-cache python3 py3-pip tzdata \
- && node scripts/build-spectra.mjs
+RUN node scripts/build-spectra.mjs --no-deps
 
 # The runtime needs express, ws, the Gemini SDK and the Playwright driver --
 # not vite, esbuild or typescript. Pruning here rather than reinstalling in the
@@ -130,9 +129,9 @@ RUN apk add --no-cache \
       git \
       chromium \
       # The PDF window's engine: Spectra-PDF's Python, run as a child process
-      # (server/spectra/engine.ts). Its packages are already in the venv the
-      # build stage made; python3 here is the interpreter that venv points at,
-      # and tzdata the zone files a musl image does not ship.
+      # (server/spectra/engine.ts). Its packages are in the venv this stage
+      # makes below, with tzdata because a musl image ships no zone files of
+      # its own and the engine's signing and stamping read dates in a zone.
       python3 \
       tzdata \
       # WebGL without a graphics card, for the CAPTCHAs and games that are a
@@ -170,11 +169,14 @@ COPY --from=office-engine /build/dist/office/native dist/office/native/
 # The PDF engine's venv, made here rather than in the build stage: a venv
 # records the interpreter it was made by, and the one it runs under is this
 # stage's python3. The package itself came across in dist/ (the build stage
-# copied it out of the pinned commit), so only the packages are installed.
+# copied it out of the pinned commit), so only the packages are installed --
+# chosen for the arch being built, since an arm64 image is built here under
+# emulation (see scripts/build-spectra.mjs).
+ARG TARGETARCH
 COPY spectra/PIN.json spectra/PIN.json
 COPY scripts/build-spectra.mjs scripts/build-spectra.mjs
 RUN apk add --no-cache py3-pip \
- && node scripts/build-spectra.mjs --deps-only \
+ && node scripts/build-spectra.mjs --deps-only --arch "${TARGETARCH}" \
  && apk del py3-pip
 # The server reads its own version out of this to stamp the page and answer
 # /api/origin, so it is a runtime file rather than a build artefact.
