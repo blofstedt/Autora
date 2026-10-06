@@ -244,6 +244,26 @@ export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; ki
     }
   }, [api]);
 
+  /**
+   * Whether the pane has a real box on screen yet. The window beside the chat keeps every open window mounted and
+   * shows the chosen one, so a window that opens behind the one already showing is made while it has no box at all.
+   * An editor started then sizes itself to nothing: the frame comes up with its ribbon over an empty grey page and
+   * never draws the document, however long you wait -- seen in the running app, where the same frame that had been
+   * grey drew its document the moment it was loaded at full size. So the heavy part is mounted once there is room.
+   * Nothing is lost by waiting: the document is the server's, and the editor reads it as it starts.
+   */
+  const pane = useRef<HTMLDivElement>(null);
+  const [room, setRoom] = useState(false);
+  useEffect(() => {
+    const el = pane.current;
+    if (!el) return;
+    const look = () => setRoom(el.clientWidth > 40 && el.clientHeight > 40);
+    look();
+    const watch = new ResizeObserver(look);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, []);
+
   const close = useCallback(() => {
     void fetch(api("/close"), { method: "POST" });
   }, [api]);
@@ -252,7 +272,7 @@ export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; ki
   const problem = trouble ?? word.problem ?? null;
 
   return (
-    <div className={`pdf-window office-window${phone ? " is-phone" : ""}${phone && full ? " is-full" : ""}${pages ? " is-pages" : ""}`}>
+    <div ref={pane} className={`pdf-window office-window${phone ? " is-phone" : ""}${phone && full ? " is-full" : ""}${pages ? " is-pages" : ""}`}>
       <div className="pdf-bar">
         <span className="pdf-bar-ico" aria-hidden="true"><IconFile size={14} /></span>
         <span className="pdf-bar-app">{NAME[kind]}</span>
@@ -333,9 +353,10 @@ export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; ki
       )}
       {problem && <div className="pdf-problem" role="status">{problem}</div>}
       {pages ? (
-        <OfficePages sessionId={sessionId} kind={kind} name={word.name ?? THING[kind]} rev={word.rev ?? 0} onEdit={() => { setEditing(true); setFull(true); }} />
+        {room ? <OfficePages sessionId={sessionId} kind={kind} name={word.name ?? THING[kind]} rev={word.rev ?? 0} onEdit={() => { setEditing(true); setFull(true); }} /> : null}
       ) : (
         <div className="office-stage">
+          {room && (
           <iframe
             key={engine ? `${kind}-${word.loadRev ?? 0}` : kind}
             ref={frame}
@@ -344,6 +365,7 @@ export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; ki
             title={`${word.name ?? THING[kind]}, in ${NAME[kind]}`}
             sandbox="allow-scripts allow-downloads allow-modals allow-popups"
           />
+          )}
           {cursorOn && play && (
             <OfficeCursor
               cues={play.items}
