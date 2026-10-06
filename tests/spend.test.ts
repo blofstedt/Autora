@@ -9,7 +9,7 @@
  *   npm test
  */
 import assert from "node:assert/strict";
-import { creditTotal, spendView } from "../src/lib/spend";
+import { creditTotal, spendView, vendorSpendView } from "../src/lib/spend";
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -142,6 +142,78 @@ test("nothing to read is null rather than zero", () => {
   assert.equal(creditTotal(undefined), null);
   assert.equal(creditTotal({}), null);
   assert.equal(creditTotal({ topped_up_usd: 0, balance_usd: 0, lifetime_usd: 0 }), null);
+});
+
+/* One bar per vendor. The complaint these answer: with money at two vendors,
+   one bar drew the whole ledger against one ceiling and said 101.21 of $20.
+   Each vendor's bar is now its own account's arithmetic, and nobody else's
+   turns are in it. */
+
+const vendor = (over: Partial<Parameters<typeof vendorSpendView>[0]> = {}) =>
+  vendorSpendView({
+    provider: "deepseek",
+    label: "DeepSeek",
+    spent: null,
+    paid: null,
+    balance: null,
+    ...over,
+  });
+
+test("a vendor's bar measures its own credit consumed of its own paid-in", () => {
+  const v = vendor({ spent: 26.96, paid: 30, balance: 3.04 });
+  near(v.used, 26.96 / 30);
+  assert.equal(v.paid, 30);
+  assert.equal(v.remaining, false);
+  assert.equal(v.over, false);
+  assert.equal(v.near, true);
+});
+
+test("two vendors draw two bars, neither counting the other's money", () => {
+  const deepseek = vendor({ spent: 26.96, paid: 30, balance: 3.04 });
+  const orca = vendor({ provider: "orcarouter", label: "Orca Router", spent: 9.66, paid: 20.07, balance: 10.41 });
+  near(deepseek.used, 26.96 / 30);
+  near(orca.used, 9.66 / 20.07);
+  assert.equal(deepseek.drawn, 26.96);
+  assert.equal(orca.drawn, 9.66);
+  assert.notEqual(deepseek.used, orca.used);
+});
+
+test("a vendor over its credit says over, and stops at full", () => {
+  const v = vendor({ spent: 34, paid: 30, balance: 0 });
+  near(v.used, 1);
+  assert.equal(v.over, true);
+  assert.equal(v.near, false);
+});
+
+test("a vendor that says what is left but not what was paid in draws that as remaining", () => {
+  const v = vendor({ spent: null, paid: null, balance: 12.5 });
+  assert.equal(v.remaining, true);
+  near(v.drawn, 12.5);
+  assert.equal(v.paid, null);
+  near(v.used, 1);
+  assert.equal(v.show, true);
+});
+
+test("credit bought and not yet touched is still worth a bar", () => {
+  const v = vendor({ spent: 0, paid: 30, balance: 30 });
+  near(v.used, 0);
+  assert.equal(v.show, true);
+});
+
+test("a vendor with nothing readable at all is left out, not drawn as zero", () => {
+  assert.equal(vendor().show, false);
+});
+
+test("a spend with no paid-in figure falls back to what is left with the vendor", () => {
+  const v = vendor({ spent: 26.96, paid: null, balance: 3.04 });
+  assert.equal(v.remaining, true);
+  near(v.drawn, 3.04);
+});
+
+test("rubbish in a vendor's line reads as nothing rather than as a number", () => {
+  const v = vendor({ spent: Number.NaN, paid: Number.NaN, balance: Number.NaN });
+  assert.equal(v.show, false);
+  near(v.used, 0);
 });
 
 console.log(`${passed} passed`);

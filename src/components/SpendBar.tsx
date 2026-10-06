@@ -1,6 +1,6 @@
 import { memo, useState } from "react";
 import { money } from "./Billing";
-import { creditTotal, spendView } from "../lib/spend";
+import { creditTotal, spendView, vendorSpendView, type VendorSpend } from "../lib/spend";
 import { SpendPeek } from "./SpendPeek";
 
 /** What `/api/usage` answers with, as far as this bar is concerned. */
@@ -29,12 +29,11 @@ export type Usage = {
 /**
  * The money, in the three spans it is actually thought about, over the composer.
  *
- * The fill is the money consumed of what was paid in at the vendor -- the
- * figure the account page itself shows -- and the brighter section at the
- * right-hand end is what this conversation accounts for. The words beside it
- * carry the same three numbers: consumed of credit, the month's share, and
- * this session's. Without a balance to read the bar is what it always was, the
- * month against the ceiling set in Settings, or the month alone.
+ * One bar per vendor when several exist; one bar for the month otherwise. Each
+ * vendor bar is that account's money alone: what was consumed of what was paid
+ * in there, or what is left when there is no paid-in figure. Without readable
+ * credit the bar is what it always was, the month against the ceiling set in
+ * Settings, or the month alone.
  *
  * A tap opens a card of the figures over the chat -- see SpendPeek -- with
  * Usage, ceiling and all, one button further on.
@@ -60,11 +59,64 @@ export const SpendBar = memo(function SpendBar({
   onOpen: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  /* Only one vendor's own money draws this bar, and only while the ledger is
-     that vendor's alone: the fill is credit consumed out of credit paid in,
-     which is a single account's arithmetic. Several vendors means no one
-     balance is the truth of the whole, so the bar stays on the month it
-     counted. */
+
+  /* Per-provider bars when several tills can be read; the old single bar
+     otherwise (one vendor headline, or none). */
+  const readableVendors = vendors?.filter((v) => v.spent_known || v.balance_usd > 0) ?? [];
+  const multiVendor = readableVendors.length > 1;
+
+  if (multiVendor) {
+    const bars = readableVendors.map((v): VendorSpend => ({
+      provider: v.provider,
+      label: v.label,
+      spent: v.lifetime_usd,
+      paid: v.topped_up_usd,
+      balance: v.balance_usd,
+    }));
+    const views = bars.map(vendorSpendView).filter((v) => v.show);
+    if (views.length === 0) return null;
+
+    return (
+      <>
+        <div className="spend-stack">
+          {views.map((view) => {
+            const share = (n: number) => `${Math.min(100, Math.max(0, n * 100))}%`;
+            const tone = view.over ? "is-over" : view.near ? "is-near" : "";
+            const said = view.remaining
+              ? `${view.label}: ${money(view.drawn)} left`
+              : `${view.label}: ${money(view.drawn)} of ${money(view.paid!)} credit`;
+
+            return (
+              <button
+                key={view.provider}
+                type="button"
+                className={`spend ${tone}`.trim()}
+                onClick={() => setOpen(true)}
+                aria-label={`${said}. Open what this has cost.`}
+                title={`${said}.`}
+              >
+                <span className="spend-track" aria-hidden="true">
+                  <i
+                    className={`spend-used ${view.used > 0 ? "is-any" : ""}`.trim()}
+                    style={{ width: share(view.used) }}
+                  />
+                </span>
+                <span className="spend-text">
+                  <span className="spend-long">{said}</span>
+                  <span className="spend-short">
+                    {view.remaining ? money(view.drawn) : `${money(view.drawn)}/${money(view.paid!)}`}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {open && <SpendPeek session={session} onUsage={onOpen} onClose={() => setOpen(false)} />}
+      </>
+    );
+  }
+
+  /* Single bar: one vendor headline, or none. */
   const credit = creditTotal(vendors?.find((vendor) => vendor.headline) ?? null);
   const view = spendView({ spent, session, budget, lifetime, credit });
   if (!view.show) return null;
@@ -97,7 +149,7 @@ export const SpendBar = memo(function SpendBar({
 
   return (
     <>
-    <button
+      <button
       type="button"
       className={`spend ${tone}`.trim()}
       onClick={() => setOpen(true)}

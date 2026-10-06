@@ -3570,6 +3570,21 @@ label + .jf-hint { margin-top: -5px; }
    spacing instead of the box's padding. */
 .spend-strip { padding: 0 8px 6px; }
 
+/* One bar per vendor: the strip becomes a column, each row a bar with the
+   words beside it, and the tap target is the row itself, as the single bar's
+   is. The rows are small on purpose -- two vendors is the usual case, and
+   the strip must stay out of the way of the chat it sits under. */
+.spend-stack {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 0 8px 6px;
+}
+.spend-peek-vendor { display: grid; gap: 3px; }
+.spend-peek-vendor .spend-track { height: 4px; width: 100%; }
+.spend-peek-said {
+  margin: 0; font-size: calc(10.5px * var(--ts, 1)); color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
 
 /* Four glyphs and no words. Each one keeps its name for a screen reader,
    so the row reads as a toolstrip instead of four clipped sentences, and the

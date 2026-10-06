@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Usage } from "./Billing";
 import { money } from "./Billing";
-import { creditTotal, spendView } from "../lib/spend";
+import { creditTotal, spendView, vendorSpendView } from "../lib/spend";
 import { IconX } from "./Icons";
 
 /**
@@ -60,9 +60,10 @@ export function SpendPeek({
 
   const cap = usage?.budget.monthly_usd ?? null;
   const spent = usage?.month.cost ?? 0;
-  /* Only the one vendor whose money is the whole ledger draws the credit bar,
-     and only while that holds -- see SpendBar. Several vendors means no single
-     balance is the truth of it, so the bar stays on the month. */
+  /* One bar per vendor when several tills can be read; the single month bar
+     otherwise -- see SpendBar. */
+  const readableVendors = usage?.vendors?.filter((v) => v.spent_known || v.balance_usd > 0) ?? [];
+  const multiVendor = readableVendors.length > 1;
   const paidIn = creditTotal(usage?.vendors?.find((vendor) => vendor.headline) ?? null);
   const view = spendView({
     spent,
@@ -110,6 +111,38 @@ export function SpendPeek({
           {!failed && !usage && <p className="jf-hint">Adding it up…</p>}
           {usage && (
             <>
+              {/* Several tills: one mini-bar each, that account's money alone,
+                  before the month's own sentence below. */}
+              {multiVendor && (
+                <div className="spend-stack">
+                  {readableVendors.map((v) => {
+                    const bar = vendorSpendView({
+                      provider: v.provider,
+                      label: v.label,
+                      spent: v.lifetime_usd,
+                      paid: v.topped_up_usd,
+                      balance: v.balance_usd,
+                    });
+                    if (!bar.show) return null;
+                    return (
+                      <div key={v.provider} className="spend-peek-vendor">
+                        <span className="spend-track" aria-hidden="true">
+                          <i
+                            className={`spend-used ${bar.used > 0 ? "is-any" : ""}`.trim()}
+                            style={{ width: `${Math.min(100, Math.max(0, bar.used * 100))}%` }}
+                          />
+                        </span>
+                        <p className="spend-peek-said">
+                          {bar.remaining
+                            ? `${bar.label}: ${money(bar.drawn)} left there`
+                            : `${bar.label}: ${money(bar.drawn)} of the ${money(bar.paid!)} paid in — ` +
+                              `${money(Math.max(0, bar.paid! - bar.drawn))} left.`}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
               <div className="spend-peek-bar">
                 <span className="spend-track" aria-hidden="true">
                   <i
