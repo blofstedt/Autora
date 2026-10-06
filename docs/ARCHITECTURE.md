@@ -260,15 +260,28 @@ session. Variable weights keep it to two files and 77KB.
 - **A PDF is worked on together, in an editor, not handed back as a file.**
   The PDF tools used to flatten what the agent drew into each result, so a
   signature in the wrong place meant asking for another version. Now the file
-  opens in SecurePDF's editor beside the chat (`server/pdfdesk.ts`,
-  `pdf-editor/`), what the agent places arrives as the editor's own objects,
-  and the person moves, edits or adds to them; the file is rewritten from the
-  pages and the objects on every change, and the agent is told what the
-  person did. An object keeps the `pdf_edit` item it came from, so it is drawn
-  exactly as before until someone changes it. The editor is its own build in
-  an origin-less sandboxed frame because it renders files from anywhere; the
-  cost is a second React in the image and a bridge of messages instead of
-  shared state.
+  opens in Spectra-PDF's editor beside the chat (`server/spectra.ts`,
+  `spectra-editor/`, the engine from `spectra/PIN.json`), and the person can
+  work on it with everything that editor has -- pages, comments, forms,
+  redaction, OCR, signatures. The window is Autora's: the file it opens is the
+  desk's copy (`server/pdfdesk.ts`), so what the agent does with `pdf_edit`
+  still lands in the same document, and a change the agent makes while the
+  window is open writes the file out again and reloads the editor onto it. The
+  editor is its own build in an origin-less sandboxed frame because it renders
+  files from anywhere; every command it makes is relayed through the window that
+  holds it (`src/components/SpectraWindow.tsx`), and the engine is a Python
+  child process the server starts per session (`server/spectra/engine.ts`). The
+  cost is a second React in the image, a bridge of messages instead of shared
+  state, and a Python runtime and its packages in the image.
+- **What the port cost, in the editor itself.** Spectra's renderer expects a
+  desktop: a frame without an origin has no `localStorage` and no
+  `navigator.locks`, both of which it uses on the way up, so they are replaced
+  in memory (`spectra-editor/src/autora/sandbox.ts`); the commands it used to
+  send to Rust go to Autora instead (`spectra-editor/src/autora/`), and the
+  ones Autora has no answer for are refused by name rather than faked. The
+  window brings the opened document to the front itself: a hand-over can be
+  focused before the store has taken the file, which leaves the editor on Home
+  with the document behind it.
 - **A document is written as a description, not drawn at coordinates.**
   Researching and writing a PDF in one turn went badly when the only way to put
   words on a page was `pdf_edit`'s positioned items: every new finding meant

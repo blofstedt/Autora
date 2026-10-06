@@ -46,6 +46,11 @@ RUN npm ci
 # React and Tailwind), installed the same way and for the same reason.
 COPY pdf-editor/package.json pdf-editor/package-lock.json pdf-editor/
 RUN npm --prefix pdf-editor ci
+# Spectra's editor is the same arrangement again: the PDF window's renderer is a
+# project of its own (its own React, Tailwind and pdf.js), pinned by its own
+# lockfile, built into dist/spectra-editor.
+COPY spectra-editor/package.json spectra-editor/package-lock.json spectra-editor/
+RUN npm --prefix spectra-editor ci
 
 COPY tsconfig.json tsconfig.server.json tsconfig.test.json eslint.config.js vite.config.ts index.html ./
 # Only so `npm run lint` can typecheck them; they stay in this stage.
@@ -55,6 +60,7 @@ COPY src/ src/
 COPY server.ts ./
 COPY server/ server/
 COPY pdf-editor/ pdf-editor/
+COPY spectra-editor/ spectra-editor/
 
 # Typecheck both halves before building either. A container that builds and
 # then fails at runtime on something the compiler already knew is a wasted
@@ -70,6 +76,16 @@ RUN npm run lint && npm run build
 COPY office/ office/
 COPY scripts/build-office.mjs scripts/build-office.mjs
 RUN node scripts/build-office.mjs --no-sidecar
+
+# The PDF engine (Spectra-PDF's): Python, so nothing is compiled -- the package
+# is copied from the pinned commit and its dependencies installed into a venv
+# beside it, which is where the server looks for them. tzdata with them because
+# a musl image has no zone files, and the engine's signing and stamping read
+# dates in a zone.
+COPY spectra/PIN.json spectra/PIN.json
+COPY scripts/build-spectra.mjs scripts/build-spectra.mjs
+RUN apk add --no-cache python3 py3-pip tzdata \
+ && node scripts/build-spectra.mjs
 
 # The runtime needs express, ws, the Gemini SDK and the Playwright driver --
 # not vite, esbuild or typescript. Pruning here rather than reinstalling in the
@@ -113,6 +129,12 @@ RUN apk add --no-cache \
       curl \
       git \
       chromium \
+      # The PDF window's engine: Spectra-PDF's Python, run as a child process
+      # (server/spectra/engine.ts). Its packages are already in the venv the
+      # build stage made; python3 here is the interpreter that venv points at,
+      # and tzdata the zone files a musl image does not ship.
+      python3 \
+      tzdata \
       # WebGL without a graphics card, for the CAPTCHAs and games that are a
       # canvas: ANGLE over Mesa's software Vulkan (llvmpipe). See webglArgs in
       # server/browser.ts -- the browser is only told to use it when a Vulkan
@@ -144,6 +166,16 @@ COPY --from=builder /build/node_modules node_modules/
 COPY --from=builder /build/dist dist/
 # Static, one per CPU (the server picks by process.arch): see stage 0.
 COPY --from=office-engine /build/dist/office/native dist/office/native/
+
+# The PDF engine's venv, made here rather than in the build stage: a venv
+# records the interpreter it was made by, and the one it runs under is this
+# stage's python3. The package itself came across in dist/ (the build stage
+# copied it out of the pinned commit), so only the packages are installed.
+COPY spectra/PIN.json spectra/PIN.json
+COPY scripts/build-spectra.mjs scripts/build-spectra.mjs
+RUN apk add --no-cache py3-pip \
+ && node scripts/build-spectra.mjs --deps-only \
+ && apk del py3-pip
 # The server reads its own version out of this to stamp the page and answer
 # /api/origin, so it is a runtime file rather than a build artefact.
 COPY package.json ./

@@ -21,7 +21,7 @@ import { usePreviewState } from "../lib/preview";
 import { useDeskState } from "../lib/pdfdesk";
 import { useWordState } from "../lib/officedesk";
 import { OfficeWindow } from "./OfficeWindow";
-import { PdfWindow } from "./PdfWindow";
+import { SpectraWindow } from "./SpectraWindow";
 import { PermissionCell } from "./PermissionCell";
 import { ImageCell } from "./ImageCell";
 import { WidgetCell } from "./WidgetCell";
@@ -893,7 +893,7 @@ const CellView = memo(function CellView({
         />
       );
     case "pdf":
-      return stage ? <PdfWindow sessionId={sessionId} phone /> : null;
+      return stage ? <SpectraWindow sessionId={sessionId} phone /> : null;
     case "word":
       return stage ? <OfficeStage sessionId={sessionId} /> : null;
     case "app": {

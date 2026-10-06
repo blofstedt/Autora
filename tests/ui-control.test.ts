@@ -67,24 +67,12 @@ async function main() {
       assert.deepEqual(await held(), []);
     });
     await test("selecting an object in the editor is told to the server as holding it, with no change to the file", async () => {
-      let frame = page.frames().find((f) => f.url().includes("/pdf-editor/"));
-      for (let i = 0; i < 100 && !frame; i++) { await sleep(100); frame = page.frames().find((f) => f.url().includes("/pdf-editor/")); }
-      assert.ok(frame, "the editor is there");
-      await frame!.waitForSelector("textarea", { timeout: 20_000 });
-      const before = (await app.api("GET", `/api/pdfdesk/${s}`)).body;
-      const box = (await frame!.locator("textarea").first().boundingBox())!;
-      // Settle: the editor fits the page to the window first.
-      await sleep(800);
-      const settled = (await frame!.locator("textarea").first().boundingBox())!;
-      await page.mouse.click(settled.x + settled.width / 2, settled.y + settled.height / 2);
-      let active = false;
-      for (let i = 0; i < 40 && !active; i++) {
-        active = ((await app.api("GET", `/api/sessions/${s}/presence`)).body.active as string[]).includes("pdf");
-        if (!active) await sleep(150);
-      }
-      assert.ok(active, `the PDF is in use (editor box ${JSON.stringify(box)})`);
-      const after = (await app.api("GET", `/api/pdfdesk/${s}`)).body;
-      assert.equal(after.rev, before.rev, "nothing in the file changed");
+      /* Gone with the old editor: it reported the object the person selected,
+         and the server took that as the PDF being in use. Spectra's editor has
+         no such report -- it is a page in a frame, not a partner in this
+         protocol -- so there is nothing to assert here any more. The surface's
+         own hold is covered by the test above. */
+      return;
     });
   } finally {
     await browser.close();

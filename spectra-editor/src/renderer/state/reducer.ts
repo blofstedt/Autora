@@ -1,0 +1,2284 @@
+import { AppState, AppAction, CanvasTool, FocusedTab, OpenDocument, OpenFile, PageAnnotation, PageEditAction, PageRef, PdfBuffer, UiState, isDocTab, NAV_PANE_MIN_WIDTH, NAV_PANE_MAX_WIDTH, NAV_PANE_DEFAULT_WIDTH, TOOL_DOCK_MIN_WIDTH, TOOL_DOCK_MAX_WIDTH, TOOL_DOCK_DEFAULT_WIDTH } from './types';
+import { editsSincePlan } from './page-tier';
+import { carriesManifest } from '../lib/doc-names';
+import { NO_OVERRIDES } from '../lib/toolbar-layout';
+// Safe from the reducer: commands/tools has type-only imports, so it carries no
+// runtime dependency back into the state or component layers.
+import { toolById, toolForOp, armedModeOf, type ToolDef } from '../commands/tools';
+// Pure math only (no DOM, no storage) — the count tier's sequence allocation
+// lives here because the reducer is the only place that holds a whole document.
+import { countContents, countMarksOf, groupOf, nextSequence } from '../lib/count-marks';
+import { documentPermissions, placeTabAt } from './selectors';
+import { capabilityBlock, pageExportBlock, type Capability, type CapabilityBlock } from '../lib/document-permissions';
+
+// Re-project a display-normalized annotation rect when its page's display
+// rotates by `delta` quarter-turns clockwise: annotation coords always live
+// in the page's CURRENT display space (that's what the overlay renders and
+// what the commit builder maps through the final rotation), so they must
+// turn with the page to keep covering the same content.
+// Re-project a single display-normalized point through the same quarter-turn
+// (derived from, and consistent with, the bbox corner mapping below: applying
+// this to a rect's two corners and re-deriving min/max reproduces it exactly).
+function rotatePoint(u: number, v: number, d: number): [number, number] {
+  if (d === 90) return [1 - v, u];
+  if (d === 180) return [1 - u, 1 - v];
+  if (d === 270) return [v, 1 - u];
+  return [u, v];
+}
+
+export function rotateAnnotationRect(a: PageAnnotation, delta: number): PageAnnotation {
+  const d = ((delta % 360) + 360) % 360;
+  if (d === 0) return a;
+  let points: number[] | undefined;
+  if (a.points) {
+    points = [];
+    for (let i = 0; i < a.points.length; i += 2) {
+      const [px, py] = rotatePoint(a.points[i], a.points[i + 1], d);
+      points.push(px, py);
+    }
+  }
+  // Ink strokes reproject exactly like points, per stroke.
+  let strokes: number[][] | undefined;
+  if (a.strokes) {
+    strokes = a.strokes.map((stroke) => {
+      const out: number[] = [];
+      for (let i = 0; i < stroke.length; i += 2) {
+        const [px, py] = rotatePoint(stroke[i], stroke[i + 1], d);
+        out.push(px, py);
+      }
+      return out;
+    });
+  }
+  // textmarkup quads are per-quad [x0,y0,x1,y1] rects: reproject each quad's two
+  // corners and re-derive min/max, exactly as the bbox does below.
+  let quads: number[] | undefined;
+  if (a.quads) {
+    quads = [];
+    for (let i = 0; i + 3 < a.quads.length; i += 4) {
+      const [ax, ay] = rotatePoint(a.quads[i], a.quads[i + 1], d);
+      const [bx, by] = rotatePoint(a.quads[i + 2], a.quads[i + 3], d);
+      quads.push(Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by));
+    }
+  }
+  // The callout's text sub-rect re-projects exactly like the bbox: rotate
+  // its two corners, re-derive min/max (the quad treatment, rect-shaped).
+  let calloutBox: [number, number, number, number] | undefined;
+  if (a.calloutBox) {
+    const [cx, cy, cw, ch] = a.calloutBox;
+    const [ax, ay] = rotatePoint(cx, cy, d);
+    const [bx, by] = rotatePoint(cx + cw, cy + ch, d);
+    calloutBox = [Math.min(ax, bx), Math.min(ay, by), Math.abs(bx - ax), Math.abs(by - ay)];
+  }
+  const extra = {
+    ...(points ? { points } : {}),
+    ...(strokes ? { strokes } : {}),
+    ...(quads ? { quads } : {}),
+    ...(calloutBox ? { calloutBox } : {}),
+  };
+  if (d === 90) return { ...a, x: 1 - (a.y + a.h), y: a.x, w: a.h, h: a.w, ...extra };
+  if (d === 180) return { ...a, x: 1 - (a.x + a.w), y: 1 - (a.y + a.h), ...extra };
+  return { ...a, x: a.y, y: 1 - (a.x + a.w), w: a.h, h: a.w, ...extra }; // 270
+}
+
+const NO_SELECTION: ReadonlySet<string> = new Set();
+
+export const initialUiState: UiState = {
+  focusedTab: 'home',
+  activeOp: 'split',
+  activeToolId: null,
+  tool: 'select',
+  // A document opens in the reading view because reading is the default task;
+  // the
+  // strips board is the tool you switch to when you want to REARRANGE it — which
+  // is also why the board survives untouched as an equal, one-click peer rather
+  // than being replaced.
+  docViewMode: 'document',
+  pageLayout: 'single',
+  twoUpCover: true,
+  spreadDirection: 'l2r',
+  readingMode: false,
+  propertiesBar: false,
+  splitView: 'off',
+  toolbarOverrides: NO_OVERRIDES,
+  focusedDocId: null,
+  currentPageId: null,
+  viewRotationByPath: {},
+  selectedPageIds: NO_SELECTION,
+  selectionAnchor: null,
+  recentFiles: [],
+  navPane: { open: false, panel: 'pages', width: NAV_PANE_DEFAULT_WIDTH },
+  toolDock: { open: false, width: TOOL_DOCK_DEFAULT_WIDTH },
+  // Locked by default: an armed annotation mode has always survived its own
+  // placements, and the control makes that a stated choice rather than an
+  // accident. Unlocking is the one-shot behaviour.
+  toolLock: true,
+};
+
+// Leaving doc-tab-land re-applies the board's parked-state semantics: the
+// tool disarms and the selection clears (this used to be the canvas
+// component's unmount; the commit-on-leave effect stays in App). Doc→doc
+// switches keep both — same board, different active file.
+function focusTab(state: AppState, tab: FocusedTab): AppState {
+  const prev = state.ui.focusedTab;
+  const same =
+    prev === tab || (isDocTab(prev) && isDocTab(tab) && prev.doc === tab.doc);
+  if (same) return state;
+  // A doc tab must reference an open, tab-bearing file — a stale focus
+  // request (file closed underneath a queued dispatch) is rejected rather
+  // than rendered, and byte-only import sources never get tabs.
+  if (isDocTab(tab)) {
+    const f = state.files.get(tab.doc);
+    if (!f || f.importOnly) return state;
+  }
+  const leftDocLand = isDocTab(prev) && !isDocTab(tab);
+  return {
+    ...state,
+    // Focusing a doc tab IS activating that file (focusedTab doubles
+    // as the SET_ACTIVE_FILE driver). Home/Tools leave the active file alone.
+    activeFileId: isDocTab(tab) ? tab.doc : state.activeFileId,
+    ui: leftDocLand
+      ? {
+          ...state.ui,
+          focusedTab: tab,
+          // A per-doc focus names a partition of the file being left — it can't
+          // survive the move (it would strand the reading view on a document
+          // the new tab doesn't own). Back to "that file's first document".
+          focusedDocId: null,
+          // ...and the reading position belonged to that document too.
+          currentPageId: null,
+          tool: 'select',
+          selectedPageIds: NO_SELECTION,
+          selectionAnchor: null,
+          // Reading mode is doc-tab chrome state; Home/Tools need their chrome.
+          readingMode: false,
+        }
+      : { ...state.ui, focusedTab: tab, focusedDocId: null, currentPageId: null },
+  };
+}
+
+export const initialState: AppState = {
+  files: new Map(),
+  activeFileId: null,
+  ui: initialUiState,
+  workspace: { documents: [] },
+  pageUndoStack: [],
+  pageRedoStack: [],
+  pageDirtyPaths: [],
+  pageEditRefusals: 0,
+  pageEditRefusalReason: null,
+};
+
+// Selection holds positional PageRef ids (`path#pN`) that the indexer
+// rebuilds from the new on-disk order after any buffer-identity change. A
+// stale id would silently re-bind to a DIFFERENT physical page and get
+// deleted or rotated by the batched actions. Selection is view-only (no
+// data), so clearing it whenever a file's bytes change (or a file closes)
+// is the safe answer — formerly a WorkspaceCanvasView buffer-watching
+// effect; folded into the reducer cases that change buffers now that the
+// selection lives in the ui slice.
+function clearSelection(state: AppState): AppState {
+  if (state.ui.selectedPageIds.size === 0 && state.ui.selectionAnchor === null) return state;
+  return { ...state, ui: { ...state.ui, selectedPageIds: NO_SELECTION, selectionAnchor: null } };
+}
+
+/** Drop ONLY the selection ids this action's workspace
+ * effect actually removes, keeping cross-file selection intact — an
+ * operation on one file must not nuke a selection in another. The doomed
+ * set is per-site:
+ *   - CONTAINMENT (docs whose `path` matches): the path's documents are
+ *     dropped/re-derived, taking every page INSIDE them — including
+ *     pages moved in from other files.
+ *   - `includeSourced` adds pages elsewhere whose `sourceDocId` matches.
+ *   - `removedPageIds` adds the exact cross-file pages a close removes after
+ *     distinguishing moved originals from imported copies. Without pruning a
+ *     moved page's id, it becomes a PHANTOM after its source closes — never
+ *     prunable again (generations!) and silently poisoning every batched
+ *     rotate's all-or-nothing guard (regression, reducer-level repro).
+ * Multiple paths at once serve the gate-bypass defensive branches, whose
+ * invalidation spans every dirty path. */
+function pruneSelectionForPaths(
+  state: AppState,
+  paths: readonly string[],
+  includeSourced: boolean,
+  removedPageIds: ReadonlySet<string> = new Set(),
+): AppState {
+  const { selectedPageIds, selectionAnchor } = state.ui;
+  if (selectedPageIds.size === 0 && selectionAnchor === null) return state;
+  const pathSet = new Set(paths);
+  const owned = new Set<string>();
+  for (const d of state.workspace.documents) {
+    for (const p of d.pages) {
+      if (pathSet.has(d.path) || (includeSourced && pathSet.has(p.sourceDocId)) || removedPageIds.has(p.id)) {
+        owned.add(p.id);
+      }
+    }
+  }
+  if (owned.size === 0) return state;
+  const kept = new Set([...selectedPageIds].filter((id) => !owned.has(id)));
+  const anchorOwned = !!selectionAnchor && owned.has(selectionAnchor);
+  if (kept.size === selectedPageIds.size && !anchorOwned) return state;
+  return {
+    ...state,
+    ui: {
+      ...state.ui,
+      selectedPageIds: kept.size > 0 ? kept : NO_SELECTION,
+      selectionAnchor: anchorOwned ? null : selectionAnchor,
+    },
+  };
+}
+
+// Workspace-flattened page order (doc order, then page order) — the basis
+// for shift-range selection and select-all.
+function flatPageOrder(state: AppState): string[] {
+  return state.workspace.documents.flatMap((d) => d.pages.map((p) => p.id));
+}
+
+function mapDocument(
+  documents: OpenDocument[],
+  docId: string,
+  update: (doc: OpenDocument) => OpenDocument,
+): OpenDocument[] {
+  return documents.map((d) => (d.id === docId ? update(d) : d));
+}
+
+// An edit the page tier cannot take: nothing changes, and one more notice is
+// owed.
+function refuseEdit(state: AppState, reason: CapabilityBlock | null = null): AppState {
+  return { ...state, pageEditRefusals: state.pageEditRefusals + 1, pageEditRefusalReason: reason };
+}
+
+function bumpFileEditRevisions(files: Map<string, OpenFile>, paths: readonly string[]): Map<string, OpenFile> {
+  let next: Map<string, OpenFile> | null = null;
+  for (const path of new Set(paths)) {
+    const file = (next ?? files).get(path);
+    if (!file) continue;
+    next ??= new Map(files);
+    next.set(path, { ...file, editRevision: (file.editRevision ?? 0) + 1 });
+  }
+  return next ?? files;
+}
+
+function changedDocumentPaths(before: readonly OpenDocument[], after: readonly OpenDocument[]): string[] {
+  const paths = new Set([...before, ...after].map((document) => document.path));
+  return [...paths].filter((path) => {
+    const previous = before.filter((document) => document.path === path);
+    const next = after.filter((document) => document.path === path);
+    return previous.length !== next.length || previous.some((document, index) => document !== next[index]);
+  });
+}
+
+const ANNOTATION_EDITS: ReadonlySet<AppAction['type']> = new Set<AppAction['type']>([
+  'ADD_ANNOTATION', 'REGROUP_COUNT_MARKS', 'UPDATE_ANNOTATION', 'RECOLOR_ANNOTATION', 'REMOVE_ANNOTATION',
+  'REORDER_ANNOTATIONS', 'RESTYLE_ANNOTATIONS', 'RECALIBRATE_ANNOTATION', 'RECOLOR_ANNOTATIONS',
+  'REMOVE_ANNOTATIONS', 'TRANSFORM_ANNOTATIONS',
+]);
+
+/** The one permission check of the page tier: every gesture, key and drop that
+ * edits pages or their annotations arrives here as an action. The commit
+ * rewrites every file it touches, so a source file whose pages are imported
+ * answers for itself too. */
+function pageEditBlock(state: AppState, action: AppAction, edited: readonly OpenDocument[]): CapabilityBlock | null {
+  const capability: Capability = ANNOTATION_EDITS.has(action.type) ? 'commentTier' : 'pageTier';
+  const paths = new Set(edited.map((d) => d.path));
+  if (action.type === 'IMPORT_PAGES') for (const source of action.sources) paths.add(source.path);
+  for (const path of paths) {
+    const block = capabilityBlock(documentPermissions(state, path), capability);
+    if (block) return block;
+  }
+  // The owner password or recipient lists that protect those pages cannot
+  // be carried into another file.
+  const destination = action.type === 'MOVE_PAGE' || action.type === 'MOVE_PAGES' || action.type === 'IMPORT_PAGES'
+    ? state.workspace.documents.find((d) => d.id === action.toDocId)?.path
+    : undefined;
+  if (destination !== undefined) {
+    for (const path of paths) {
+      if (path === destination) continue;
+      const exported = pageExportBlock(documentPermissions(state, path));
+      if (exported) return exported;
+    }
+  }
+  return null;
+}
+
+/** The documents a page edit writes into, null when a document or page it
+ * names is not in the workspace, or undefined for any other action.
+ *
+ * Ids are positional and generation-tagged: new bytes that were not composed
+ * by a page-tier commit take new ids, so an edit whose gesture began on the
+ * previous documents names ids that are gone. */
+function editedDocuments(state: AppState, action: AppAction): OpenDocument[] | null | undefined {
+  const documents = state.workspace.documents;
+  const byId = (id: string): OpenDocument | undefined => documents.find((d) => d.id === id);
+  let holders: Map<string, OpenDocument> | undefined;
+  const holding = (pageId: string): OpenDocument | undefined => {
+    holders ??= new Map(documents.flatMap((d) => d.pages.map((p) => [p.id, d] as const)));
+    return holders.get(pageId);
+  };
+  const within = (docId: string, pageId: string): OpenDocument | undefined => {
+    const doc = byId(docId);
+    return doc?.pages.some((p) => p.id === pageId) ? doc : undefined;
+  };
+  let named: (OpenDocument | undefined)[];
+  switch (action.type) {
+    case 'REORDER_PAGES':
+    case 'SPLIT_DOC':
+    case 'REORDER_DOCS':
+    case 'RENAME_DOC':
+    case 'REMOVE_DOC':
+      named = [byId(action.docId)];
+      break;
+    case 'IMPORT_PAGES':
+      named = [byId(action.toDocId)];
+      break;
+    case 'MOVE_PAGE':
+      named = [within(action.fromDocId, action.pageId), byId(action.toDocId)];
+      break;
+    case 'MOVE_PAGE_TO_NEW_DOC':
+      named = [within(action.fromDocId, action.pageId)];
+      break;
+    case 'MOVE_PAGES':
+      named = [byId(action.toDocId), ...action.pageIds.map(holding)];
+      break;
+    case 'MOVE_PAGES_TO_NEW_DOC':
+    case 'DELETE_PAGE_REFS':
+    case 'ROTATE_PAGE_REFS':
+      named = action.pageIds.map(holding);
+      break;
+    case 'DELETE_PAGE_REF':
+    case 'ROTATE_PAGE_REF':
+    case 'ADD_ANNOTATION':
+    case 'REGROUP_COUNT_MARKS':
+    case 'UPDATE_ANNOTATION':
+    case 'RECOLOR_ANNOTATION':
+    case 'REMOVE_ANNOTATION':
+    case 'REORDER_ANNOTATIONS':
+    case 'RESTYLE_ANNOTATIONS':
+    case 'RECALIBRATE_ANNOTATION':
+    case 'RECOLOR_ANNOTATIONS':
+    case 'REMOVE_ANNOTATIONS':
+      named = [within(action.docId, action.pageId)];
+      break;
+    case 'TRANSFORM_ANNOTATIONS':
+      named = [byId(action.docId), ...action.edits.map((e) => within(action.docId, e.pageId))];
+      break;
+    default:
+      return undefined;
+  }
+  return named.every((d): d is OpenDocument => d !== undefined) ? named : null;
+}
+
+/** Whether `documents` were read from `buffer`, the bytes `path` takes. */
+function readFrom(documents: readonly OpenDocument[], path: string, buffer: PdfBuffer): boolean {
+  return documents.every((d) => d.path === path && d.buffer === buffer && !d.provisional);
+}
+
+// Every in-memory page mutation goes through here: push the previous state
+// onto the page-edit undo tier, clear redo, and mark the touched files dirty
+// for the commit bridge. Callers return the current documents array unchanged
+// (by reference) to signal a rejected/no-op edit.
+function applyPageEdit(
+  state: AppState,
+  documents: OpenDocument[],
+  touchedPaths: string[],
+  action: PageEditAction,
+): AppState {
+  if (documents === state.workspace.documents) return state;
+  const pageDirtyPaths = [
+    ...state.pageDirtyPaths,
+    ...touchedPaths.filter((p) => !state.pageDirtyPaths.includes(p)),
+  ];
+  return {
+    ...state,
+    files: bumpFileEditRevisions(state.files, touchedPaths),
+    workspace: { documents },
+    pageUndoStack: [
+      ...state.pageUndoStack,
+      { documents: state.workspace.documents, dirtyPaths: state.pageDirtyPaths, action },
+    ],
+    pageRedoStack: [],
+    pageDirtyPaths,
+  };
+}
+
+/** `documents` with `path`'s documents replaced by `incoming`.
+ *
+ * When the incoming ids are the outgoing ids in the same order (an adopted
+ * reindex), each document keeps its own slot, so an arrangement interleaved
+ * with other files survives and a replayed positional edit (a document move,
+ * an insert at a document index) lands where it first landed. Otherwise the
+ * incoming block takes the first outgoing slot, and a new file appends. */
+function placeDocuments(
+  documents: OpenDocument[],
+  path: string,
+  incoming: OpenDocument[],
+): OpenDocument[] {
+  const outgoing = documents.filter((d) => d.path === path);
+  if (
+    outgoing.length > 0 &&
+    outgoing.length === incoming.length &&
+    outgoing.every((d, i) => d.id === incoming[i].id)
+  ) {
+    let next = 0;
+    return documents.map((d) => (d.path === path ? incoming[next++] : d));
+  }
+  const firstIndex = documents.findIndex((d) => d.path === path);
+  const kept = documents.filter((d) => d.path !== path);
+  const insertAt = firstIndex === -1
+    ? kept.length
+    : documents.slice(0, firstIndex).filter((d) => d.path !== path).length;
+  return [...kept.slice(0, insertAt), ...incoming, ...kept.slice(insertAt)];
+}
+
+/** Keep documents from files opened after a page-tier snapshot when that
+ * snapshot is restored. Opening a file is not itself a page edit. */
+function keepPathsOpenedSinceSnapshot(snapshot: OpenDocument[], live: OpenDocument[]): OpenDocument[] {
+  const snapshotPaths = new Set(snapshot.map((document) => document.path));
+  const newlyOpened = live.filter((document) => !snapshotPaths.has(document.path));
+  return newlyOpened.length > 0 ? [...snapshot, ...newlyOpened] : snapshot;
+}
+
+/** Add newly opened files to a replay base in their state before their first
+ * recorded edit. Using the live documents would replay those edits twice. */
+function addOpenedPathsAtReplayStart(
+  snapshot: OpenDocument[],
+  live: OpenDocument[],
+  historySnapshots: readonly OpenDocument[][],
+): OpenDocument[] {
+  const snapshotPaths = new Set(snapshot.map((document) => document.path));
+  const livePaths = [...new Set(live.map((document) => document.path))];
+  const additions = livePaths
+    .filter((path) => !snapshotPaths.has(path))
+    .flatMap((path) => {
+      const firstRecorded = historySnapshots.find((documents) => documents.some((document) => document.path === path));
+      const source = firstRecorded ?? live;
+      return source.filter((document) => document.path === path);
+    });
+  return additions.length > 0 ? [...snapshot, ...additions] : snapshot;
+}
+
+/** Closing an unrelated file need not erase page edits in the rest of the
+ * workspace. A retained import source keeps copied-page history resolvable;
+ * moved pages still make the closing path part of the edit. */
+function pageHistoryIndependentOfPath(state: AppState, path: string, retainSourceBytes: boolean): boolean {
+  const history = [...state.pageUndoStack, ...state.pageRedoStack];
+  if (state.pageDirtyPaths.includes(path) || history.some((entry) => entry.dirtyPaths.includes(path))) return false;
+  const compositions = [state.workspace.documents, ...history.map((entry) => entry.documents)];
+  const seenDocuments = new Set<OpenDocument>();
+  for (const docs of compositions) {
+    for (const doc of docs) {
+      if (doc.path === path || seenDocuments.has(doc)) continue;
+      seenDocuments.add(doc);
+      if (!retainSourceBytes && doc.pages.some((page) => page.sourceDocId === path)) return false;
+    }
+  }
+  return history.every((entry) => {
+    const snapshot = { ...state, workspace: { documents: entry.documents } };
+    const touched = editedDocuments(snapshot, entry.action);
+    return touched !== undefined && touched !== null && touched.every((doc) => doc.path !== path);
+  });
+}
+
+function dropPathFromHistory(history: AppState['pageUndoStack'], path: string): AppState['pageUndoStack'] {
+  return history.map((entry) => ({
+    ...entry,
+    documents: entry.documents.filter((doc) => doc.path !== path),
+    dirtyPaths: entry.dirtyPaths.filter((dirtyPath) => dirtyPath !== path),
+  }));
+}
+
+type PageTier = Pick<AppState, 'workspace' | 'pageUndoStack' | 'pageRedoStack' | 'pageDirtyPaths'>;
+
+/** Replay recorded page edits onto `base` and rebuild both stacks from them.
+ *
+ * The first `undoDepth` actions end on the undo stack and the rest on the redo
+ * stack, in their original order. The replay runs through this reducer, so an
+ * action whose ids the base no longer carries is rejected exactly as a live
+ * dispatch would be; `refused` counts those. Only the tier fields come back:
+ * a replayed placement must not disarm the live tool a second time. */
+function replayPageTier(
+  state: AppState,
+  base: OpenDocument[],
+  baseDirty: string[],
+  actions: readonly PageEditAction[],
+  undoDepth: number,
+): { tier: PageTier; refused: number } {
+  let tier: AppState = {
+    ...state,
+    workspace: { documents: base },
+    pageUndoStack: [],
+    pageRedoStack: [],
+    pageDirtyPaths: baseDirty,
+  };
+  let applied = 0;
+  let kept = 0;
+  let refused = 0;
+  actions.forEach((action, i) => {
+    const next = appReducer(tier, action);
+    if (next.pageUndoStack.length !== tier.pageUndoStack.length + 1) {
+      refused += 1;
+      return;
+    }
+    tier = {
+      ...tier,
+      workspace: next.workspace,
+      pageUndoStack: next.pageUndoStack,
+      pageRedoStack: next.pageRedoStack,
+      pageDirtyPaths: next.pageDirtyPaths,
+    };
+    applied += 1;
+    if (i < undoDepth) kept += 1;
+  });
+  for (let n = applied; n > kept; n--) tier = appReducer(tier, { type: 'UNDO_PAGE_OP' });
+  return {
+    tier: {
+      workspace: tier.workspace,
+      pageUndoStack: tier.pageUndoStack,
+      pageRedoStack: tier.pageRedoStack,
+      pageDirtyPaths: tier.pageDirtyPaths,
+    },
+    refused,
+  };
+}
+
+/** The whole recorded history as one forward sequence: undo entries bottom to
+ * top, then redo entries top to bottom. The base is the composition under the
+ * first undo entry, or the live composition when nothing is undoable. */
+function recordedHistory(state: AppState): {
+  base: OpenDocument[];
+  baseDirty: string[];
+  actions: PageEditAction[];
+  undoDepth: number;
+} {
+  const undo = state.pageUndoStack;
+  return {
+    base: undo.length > 0 ? undo[0].documents : state.workspace.documents,
+    baseDirty: undo.length > 0 ? undo[0].dirtyPaths : state.pageDirtyPaths,
+    actions: [
+      ...undo.map((e) => e.action),
+      ...state.pageRedoStack.map((e) => e.action).reverse(),
+    ],
+    undoDepth: undo.length,
+  };
+}
+
+/** SURVIVE-OR-PRUNE: focus, reading position and selection keep exactly the
+ * ids `documents` still contain after `prev` is replaced. Positional ids are
+ * generation-tagged, so a rebuild mints ids no stale holder can match; an id
+ * that comes back is an adopted one and names the same logical page or
+ * partition. A page id `prev` did not hold is left alone: it names a page
+ * still to arrive. (A focused document id always named a document when it was
+ * set.) Membership is tested against the real documents, never a string
+ * prefix (paths may contain '#'). */
+function survivingUi(ui: UiState, prev: OpenDocument[], documents: OpenDocument[]): UiState {
+  const hadPageIds = new Set(prev.flatMap((d) => d.pages.map((p) => p.id)));
+  const keptDocIds = new Set(documents.map((d) => d.id));
+  const keptPageIds = new Set(documents.flatMap((d) => d.pages.map((p) => p.id)));
+  const pageGone = (id: string): boolean => hadPageIds.has(id) && !keptPageIds.has(id);
+  const focusedId = ui.focusedDocId;
+  const dropFocus = !!focusedId && !keptDocIds.has(focusedId);
+  const currentId = ui.currentPageId;
+  const dropCurrent = !!currentId && pageGone(currentId);
+  const prunedSelection = new Set([...ui.selectedPageIds].filter((id) => !pageGone(id)));
+  const selectionChanged = prunedSelection.size !== ui.selectedPageIds.size;
+  const anchorPruned = !!ui.selectionAnchor && pageGone(ui.selectionAnchor);
+  if (!dropFocus && !dropCurrent && !selectionChanged && !anchorPruned) return ui;
+  return {
+    ...ui,
+    focusedDocId: dropFocus ? null : ui.focusedDocId,
+    currentPageId: dropCurrent ? null : ui.currentPageId,
+    selectedPageIds: selectionChanged ? prunedSelection : ui.selectedPageIds,
+    selectionAnchor: anchorPruned ? null : ui.selectionAnchor,
+  };
+}
+
+// Total pages an open file would have across all its workspace documents —
+// used to reject edits that would materialize a 0-page (invalid) PDF.
+function pagesForPath(documents: OpenDocument[], path: string): number {
+  return documents.filter((d) => d.path === path).reduce((sum, d) => sum + d.pages.length, 0);
+}
+
+// After a cross-doc move, drop documents left with no pages,
+// but never a path's last document — file-level lifecycle stays with CLOSE_FILE.
+function pruneEmptyDocs(documents: OpenDocument[]): OpenDocument[] {
+  const pruned = documents.filter(
+    (d) => d.pages.length > 0 || documents.filter((o) => o.path === d.path).length === 1,
+  );
+  return pruned.length === documents.length ? documents : pruned;
+}
+
+// Drop byte-only import sources that no workspace page references any
+// more — but only once the page tier is empty, since an undoable/redoable
+// import still needs its source bytes. After a commit bakes imported pages into
+// the target file and the indexer reindexes them back to sourceDocId=target,
+// the source is unreferenced and safe to evict.
+function evictUnreferencedImportSources(
+  files: Map<string, OpenFile>,
+  documents: OpenDocument[],
+  pageUndoStack: unknown[],
+  pageRedoStack: unknown[],
+  candidates?: ReadonlySet<string>,
+): Map<string, OpenFile> {
+  if (pageUndoStack.length > 0 || pageRedoStack.length > 0) return files;
+  const hasImportOnly = [...files.values()].some((f) => f.importOnly);
+  if (!hasImportOnly) return files;
+  const referenced = new Set<string>();
+  for (const d of documents) for (const p of d.pages) referenced.add(p.sourceDocId);
+  let changed = false;
+  const next = new Map(files);
+  for (const [path, f] of files) {
+    if (f.importOnly && (!candidates || candidates.has(path)) && !referenced.has(path)) {
+      next.delete(path);
+      changed = true;
+    }
+  }
+  return changed ? next : files;
+}
+
+// After stripping a closed file's pages out of other documents, a still-open
+// path can be left with zero total pages — an uncommittable composition.
+// Dropping its documents (and its dirty mark) lets the indexer restore that
+// file's pristine composition from its unchanged buffer.
+function resetEmptiedPaths(
+  documents: OpenDocument[],
+  dirtyPaths: string[],
+): { documents: OpenDocument[]; dirtyPaths: string[] } {
+  const emptied = new Set(
+    documents.map((d) => d.path).filter((path) => pagesForPath(documents, path) === 0),
+  );
+  if (emptied.size === 0) return { documents, dirtyPaths };
+  return {
+    documents: documents.filter((d) => !emptied.has(d.path)),
+    dirtyPaths: dirtyPaths.filter((p) => !emptied.has(p)),
+  };
+}
+
+function applyFileUpdate(
+  files: Map<string, OpenFile>,
+  update: {
+    path: string;
+    pageCount: number;
+    buffer: PdfBuffer;
+    snapshotPath: string;
+    authored?: { pages: string[]; documents: { id: string; name: string }[] };
+  },
+): Map<string, OpenFile> {
+  const existing = files.get(update.path);
+  if (!existing) return files;
+  const next = new Map(files);
+  next.set(update.path, {
+    ...existing,
+    pageCount: update.pageCount,
+    buffer: update.buffer,
+    dirty: true,
+    editRevision: (existing.editRevision ?? 0) + 1,
+    undoStack: [...existing.undoStack, update.snapshotPath],
+    redoStack: [], // new action clears redo
+    // The identity channel: an authored update (page-tier commit)
+    // records the ids the reindex should adopt, keyed to THIS buffer
+    // object; a non-authored update leaves any stale record inert (the
+    // buffer-identity check fails) — but drop it anyway for hygiene.
+    authoredIdentity: update.authored
+      ? { sourceBuffer: existing.buffer, buffer: update.buffer, ...update.authored }
+      : undefined,
+  });
+  return next;
+}
+
+/** `state` with `path` holding new bytes (`files`) and its documents replaced
+ * by `documents`, read from those bytes, in the same step: the previous
+ * documents address the previous bytes, and read against the new ones they
+ * show and take edits on other pages.
+ *
+ * The bytes' own ids are new, so selection, focus and reading position keep
+ * nothing of the path. Other files' survive. Pending page edits are committed
+ * before any byte replacement; a pending edit still here means a caller
+ * bypassed the commit gate. It addresses the previous bytes, and cross-file
+ * moves entangle every dirty path, so the whole tier resets and the other
+ * dirty paths' documents are dropped for the indexer to re-derive from their
+ * own bytes. */
+function withNewBytes(
+  state: AppState,
+  files: Map<string, OpenFile>,
+  path: string,
+  documents: OpenDocument[],
+): AppState {
+  const tierEmpty =
+    state.pageUndoStack.length === 0 &&
+    state.pageRedoStack.length === 0 &&
+    state.pageDirtyPaths.length === 0;
+  const base = pruneSelectionForPaths(
+    state,
+    tierEmpty ? [path] : [path, ...state.pageDirtyPaths],
+    false,
+  );
+  const dropped = new Set(tierEmpty ? [] : state.pageDirtyPaths.filter((p) => p !== path));
+  const placed = placeDocuments(
+    state.workspace.documents.filter((d) => !dropped.has(d.path)),
+    path,
+    documents,
+  );
+  const pageUndoStack = tierEmpty ? state.pageUndoStack : [];
+  const pageRedoStack = tierEmpty ? state.pageRedoStack : [];
+  return {
+    ...base,
+    // A byte-only import source no page references any more goes, as after
+    // any reindex.
+    files: evictUnreferencedImportSources(files, placed, pageUndoStack, pageRedoStack),
+    ui: survivingUi(base.ui, state.workspace.documents, placed),
+    workspace: { documents: placed },
+    pageUndoStack,
+    pageRedoStack,
+    pageDirtyPaths: tierEmpty ? state.pageDirtyPaths : [],
+  };
+}
+
+/**
+ * Open (or close, with null) a Tools-tab tool, and put the canvas mode where
+ * that tool says it belongs.
+ *
+ * THE ONE PLACE `activeToolId` CHANGES. Both actions that open a tool route
+ * here, because the two are not independent: `ui.tool` is live on the canvas
+ * (PageCell branches on it), nothing else clears it — `focusTab` only resets on
+ * LEAVING a doc tab, so Tools→Tools and Tools→doc never qualify — and so a mode
+ * left armed by a tool the user has since closed goes silently live the moment
+ * they click back onto a document: every form widget interactive, plain drags
+ * swallowed, with no chrome saying why. A tool whose mode is "none", and the
+ * tile grid (`toolId: null`, no tool open at all), must DISARM the last one.
+ *
+ * A fix at any one dispatcher (`tools.open.*`, `tools.panel.*` via the rail
+ * and the Tools menu, the ‹ Tools back button) leaves the others open, because
+ * the rule isn't about any dispatcher: opening a tool DETERMINES the canvas
+ * mode, so the code that changes the tool must be the code that sets the mode.
+ * Anything else is a rule that survives only as long as the next author
+ * remembers it.
+ */
+function openTool(ui: UiState, toolId: string | null): UiState {
+  const owner = toolId ? toolById(toolId) : undefined;
+  const tool = canvasModeAfterOpening(ui, owner);
+  if (toolId === ui.activeToolId && tool === ui.tool) return ui;
+  return { ...ui, activeToolId: toolId, tool };
+}
+
+/**
+ * The canvas modes a completed PLACEMENT finishes: every mode whose gesture
+ * ends by adding a PageAnnotation. `afterPlacement` is the ONE seam that
+ * decides whether such a mode stays armed, so tool locking is a single rule
+ * rather than a per-tool convention the next author has to remember — the same
+ * reasoning `openTool` records about the mode a tool arms.
+ */
+const PLACEMENT_MODES: ReadonlySet<CanvasTool> = new Set<CanvasTool>([
+  'highlight', 'freetext', 'ink', 'inkhighlight', 'stamp', 'shape', 'callout', 'note', 'count',
+  // The measure modes belong here on their own behaviour, not by analogy: a
+  // finished measurement lands as a real dimension annotation through the same
+  // ADD_ANNOTATION the modes above use, and the lock control renders for the
+  // Measure tool like every other mode group. The one gesture this seam cannot
+  // reach is measuring with leave-markup switched OFF, which places nothing —
+  // there is no placement to follow, so the mode stays armed.
+  'measuredist', 'measureperim', 'measurearea',
+]);
+
+/**
+ * What `ui` becomes once a placement lands.
+ *
+ * Locked (the default): unchanged — the mode stays armed, so marking up a long
+ * scan costs one arming gesture and N drags. Unlocked: the mode disarms to
+ * 'select' while `activeToolId` is left alone, so the tool and its pane stay
+ * open and the next click selects what was just placed.
+ *
+ * This can never outrank `openTool`. Locking decides what happens BETWEEN
+ * placements of an armed mode; `openTool` decides what is armed at all, and it
+ * recomputes `ui.tool` from the opened tool every time — so closing the tool,
+ * opening one that owns no mode, or landing on the tile grid disarms whatever
+ * the lock was holding. A locked mode cannot go silently live on the next
+ * document, which is the invariant `openTool` exists to hold.
+ */
+function afterPlacement(ui: UiState): UiState {
+  if (ui.toolLock) return ui;
+  if (!PLACEMENT_MODES.has(ui.tool)) return ui;
+  return { ...ui, tool: 'select' };
+}
+
+/** What `ui.tool` becomes when `owner` is opened (undefined owner = closed). */
+function canvasModeAfterOpening(ui: UiState, owner: ToolDef | undefined): CanvasTool {
+  // No tool open at all (the tile grid) — nothing may be armed.
+  if (!owner) return 'select';
+  // It drives the canvas: arm the first mode it owns.
+  const mode = armedModeOf(owner);
+  if (mode) return mode;
+  // It has a pane and no canvas mode, so it replaces whatever you were doing.
+  //
+  // There used to be a third answer here — a tool with NEITHER ops nor a mode
+  // kept `ui.tool` untouched, and Scan & OCR was the only tool that was ever
+  // true of. It now owns the Scan Enhancement pane, so it answers on this
+  // line, and `tools.test.ts` requires every tool to have ops or a mode: the
+  // third branch was unreachable, and a branch nothing can reach describing a
+  // tool that no longer behaves that way is worse than no branch at all.
+  return 'select';
+}
+
+export function appReducer(state: AppState, action: AppAction): AppState {
+  // A page edit lands only on documents that are still there and still
+  // describe their file's bytes. Anything else is refused out loud: a
+  // gesture that began before new bytes landed must not vanish without a word.
+  const edited = editedDocuments(state, action);
+  if (edited === null || edited?.some((d) => state.files.get(d.path)?.buffer !== d.buffer)) {
+    return refuseEdit(state);
+  }
+  const blocked = edited ? pageEditBlock(state, action, edited) : null;
+  if (blocked) return refuseEdit(state, blocked);
+  switch (action.type) {
+    case 'OPEN_FILE': {
+      // A REOPEN replaces the path's buffer — ITS selection ids die (fresh
+      // generation on reindex); other files' selection survives. A
+      // fresh open leaves the selection alone entirely.
+      const reopening = state.files.has(action.path);
+      const base = reopening
+        ? pruneSelectionForPaths(state, [action.path], false)
+        : state;
+      let files = new Map(state.files);
+      files.set(action.path, {
+        path: action.path,
+        workingPath: action.workingPath,
+        name: action.name,
+        pageCount: action.pageCount,
+        buffer: action.buffer,
+        dirty: false,
+        undoStack: [],
+        redoStack: [],
+        // Absent for every ordinary open, so nothing else has to know the
+        // field exists; a re-open of the same path without one clears it,
+        // which is correct — those bytes came from the file, not the web.
+        ...(action.webOrigin ? { webOrigin: action.webOrigin } : {}),
+        ...(action.security ? { security: action.security } : {}),
+      });
+      // A tab dropped from another window lands at the gap its caret marked.
+      // Every other open appends, and a stale index — the strip changed while
+      // the document was being opened — clamps rather than failing: an insert
+      // that cannot fail is what lets the index travel without a handshake.
+      if (action.index !== undefined) files = placeTabAt(files, action.path, action.index);
+      return {
+        ...base,
+        files,
+        activeFileId: action.path,
+        // OPEN_FILE stays pure (just registers the file + sets it active).
+        // Landing on the opened doc's tab is the CALLER's decision — openByPaths
+        // focuses it, importFilesIntoDoc does not — so a background register
+        // (e.g. a page-import source) never yanks the user onto the board.
+        // A REOPENED path's old workspace composition is stale the moment
+        // the new bytes land — serving it until the async indexer catches up
+        // briefly resurrects pre-reopen state (possibly already-edited docs). Drop
+        // this path's docs (the indexer rebuilds them from the fresh buffer)
+        // and its now-meaningless page-tier dirt; other files' compositions
+        // and dirt stay — an open invalidates only its own path. A genuinely
+        // new path keeps page-tier history; undo/redo retains its documents
+        // even in snapshots recorded before the path was opened.
+        workspace: {
+          documents: state.workspace.documents.filter((d) => d.path !== action.path),
+        },
+        pageDirtyPaths: state.pageDirtyPaths.filter((p) => p !== action.path),
+        // Reopening replaces a buffer and invalidates its old history. A new
+        // file does not: it is not part of the user's page edits, and opening
+        // it must not force-commit another file just to retain undo.
+        pageUndoStack: reopening ? [] : state.pageUndoStack,
+        pageRedoStack: reopening ? [] : state.pageRedoStack,
+      };
+    }
+    case 'REORDER_FILE': {
+      // Arrangement, not an edit. No file becomes dirty, nothing enters the
+      // page-edit tier or the snapshot history, and which document is active
+      // does not change — a user who rearranges tabs has not touched a
+      // document, and an undo here would undo their last real edit instead.
+      const files = placeTabAt(state.files, action.path, action.index);
+      if (files === state.files) return state;
+      return { ...state, files };
+    }
+    case 'REGISTER_IMPORT_SOURCE': {
+      // Byte-only source for IMPORT_PAGES: register its bytes so imported
+      // pages render and the commit builder can resolve them, but WITHOUT a
+      // strip (the indexer skips importOnly) and WITHOUT touching the active
+      // file or the page-edit tier (unlike OPEN_FILE). Idempotent — if the path
+      // is already open (as a real file or a prior import source), reuse it.
+      if (state.files.has(action.path)) return state;
+      const files = new Map(state.files);
+      files.set(action.path, {
+        path: action.path,
+        workingPath: action.workingPath,
+        name: action.name,
+        pageCount: action.pageCount,
+        buffer: action.buffer,
+        dirty: false,
+        undoStack: [],
+        redoStack: [],
+        importOnly: true,
+        ...(action.security ? { security: action.security } : {}),
+      });
+      return { ...state, files };
+    }
+    case 'CLOSE_FILE': {
+      const sourceFile = state.files.get(action.path);
+      const pageHistory = [...state.pageUndoStack, ...state.pageRedoStack];
+      const sourceCompositions = [state.workspace.documents, ...pageHistory.map((entry) => entry.documents)];
+      const priorImportSources = new Set(
+        sourceCompositions.flat().flatMap((doc) => doc.pages.map((page) => page.sourceDocId)),
+      );
+      const sourceDocs = sourceCompositions.flat().filter((doc) => doc.path === action.path);
+      const sourcePageIds = new Set(
+        sourceDocs
+          .flatMap((doc) => doc.pages)
+          .filter((page) => page.sourceDocId === action.path)
+          .map((page) => page.id),
+      );
+      const sourcePageIndexes = new Set(
+        sourceDocs
+          .flatMap((doc) => doc.pages)
+          .filter((page) => page.sourceDocId === action.path)
+          .map((page) => page.sourcePageIndex),
+      );
+      const foreignSourcePages = state.workspace.documents
+        .filter((doc) => doc.path !== action.path)
+        .flatMap((doc) => doc.pages)
+        .filter((page) => page.sourceDocId === action.path);
+      // IMPORT_PAGES makes fresh PageRef ids while MOVE_PAGE keeps the moved
+      // page's id. Preserve the former against the source bytes as a hidden
+      // import source; discard the latter when its source file is closed.
+      // The distinction matters because only the imported copy belongs to the
+      // destination independently of the source tab.
+      const importedCopies = foreignSourcePages.filter(
+        (page) => sourcePageIndexes.has(page.sourcePageIndex) && !sourcePageIds.has(page.id),
+      );
+      const retainSourceBytes =
+        !!sourceFile && !sourceFile.importOnly && sourceFile.buffer !== null && importedCopies.length > 0;
+      const removedSourcePageIds = new Set(
+        foreignSourcePages
+          .filter((page) => !retainSourceBytes || sourcePageIds.has(page.id))
+          .map((page) => page.id),
+      );
+      // Closing a file drops its own selected pages and any moved page that is
+      // actually removed. A copied page that remains in another document keeps
+      // its selection and its identity.
+      const base = pruneSelectionForPaths(state, [action.path], false, removedSourcePageIds);
+      const preservePageHistory = pageHistoryIndependentOfPath(state, action.path, retainSourceBytes);
+      const files = new Map(state.files);
+      if (retainSourceBytes && sourceFile) {
+        const { authoredIdentity: _authoredIdentity, ...source } = sourceFile;
+        files.set(action.path, {
+          ...source,
+          dirty: false,
+          undoStack: [],
+          redoStack: [],
+          importOnly: true,
+        });
+      } else {
+        files.delete(action.path);
+      }
+      // Fall back to the next file the user can actually SEE — never a
+      // byte-only import source. Ghosts have no tab and are never shown, so
+      // making one "the active file" hands every panel an invisible target:
+      // the Tools tab's document picker (which lists only real files) then
+      // can't match it and, being a native <select>, confidently highlights a
+      // DIFFERENT file while the panels operate on the ghost.
+      //
+      // The tab fallback below already skipped ghosts; only the tab. Fixing the
+      // active id at the source makes that guard defense in depth rather than
+      // the only mechanism enforcing the visible-document invariant.
+      // All ghosts left = nothing to be active; null is the honest answer.
+      const nextActive =
+        [...files.values()].find((f) => !f.importOnly)?.path ?? null;
+      const activeFileId = state.activeFileId === action.path
+        ? nextActive
+        : state.activeFileId;
+      // Drop the file's documents and strip moved pages whose source is no
+      // longer represented there. Copied import pages keep the source bytes in
+      // the import-only entry until a commit bakes them into the destination.
+      // Paths stripped all the way to zero pages reset to their on-disk
+      // composition instead of keeping an uncommittable empty strip.
+      const stripped = pruneEmptyDocs(
+        state.workspace.documents
+          .filter((d) => d.path !== action.path)
+          .map((d) => {
+            if (!d.pages.some((p) => removedSourcePageIds.has(p.id))) return d;
+            const pages = d.pages.filter((p) => !removedSourcePageIds.has(p.id));
+            return { ...d, pages, pageCount: pages.length };
+          }),
+      );
+      const { documents, dirtyPaths } = resetEmptiedPaths(
+        stripped,
+        state.pageDirtyPaths.filter((p) => p !== action.path),
+      );
+      // Closing the focused tab falls back to the next open doc's tab (the
+      // activeFileId fallback computed above), else Home. Closing an
+      // unfocused file leaves the strip alone.
+      const focusedClosed =
+        isDocTab(base.ui.focusedTab) && base.ui.focusedTab.doc === action.path;
+      // The activeFileId fallback can land on a byte-only import source
+      // (first remaining Map key) — such files never get tabs, so fall back
+      // to Home instead of focusing a ghost.
+      const fallbackTab: FocusedTab =
+        activeFileId && !files.get(activeFileId)?.importOnly ? { doc: activeFileId } : 'home';
+      let ui = focusedClosed ? { ...base.ui, focusedTab: fallbackTab } : base.ui;
+      // Rotate View is per-open-tab display state — a reopen starts upright.
+      if (ui.viewRotationByPath[action.path] !== undefined) {
+        const { [action.path]: _dropped, ...viewRotationByPath } = ui.viewRotationByPath;
+        ui = { ...ui, viewRotationByPath };
+      }
+      const pageUndoStack = preservePageHistory ? dropPathFromHistory(state.pageUndoStack, action.path) : [];
+      const pageRedoStack = preservePageHistory ? dropPathFromHistory(state.pageRedoStack, action.path) : [];
+      const retainedFiles = evictUnreferencedImportSources(
+        files, documents, pageUndoStack, pageRedoStack, priorImportSources,
+      );
+      return {
+        ...base,
+        files: retainedFiles,
+        activeFileId,
+        ui,
+        workspace: { documents },
+        pageUndoStack,
+        pageRedoStack,
+        pageDirtyPaths: dirtyPaths,
+      };
+    }
+    case 'SET_ACTIVE_FILE': {
+      // A byte-only import source can never be the ACTIVE file. It has no tab
+      // and is never rendered, so making it active hands every panel an
+      // invisible target — and the damage isn't cosmetic: `isActiveFileDirty`
+      // would light up File ▸ Save, whose handler writes the working copy back
+      // to `activeFile.path`, which for an import source is the ORIGINAL file
+      // the user picked. That is a silent overwrite of a real file on disk,
+      // with no dialog and no dirty indicator anywhere (no tab to show one).
+      //
+      // Reject rather than coerce: the caller asked for something incoherent,
+      // and a reducer that quietly substitutes a different file is its own bug.
+      // This is what makes "the active file is never a ghost" TRUE — the other
+      // writers were already safe (OPEN_FILE upgrades the entry in the same
+      // dispatch; REGISTER_IMPORT_SOURCE deliberately doesn't touch the active
+      // file; CLOSE_FILE's fallback skips ghosts), and this was the hole.
+      if (state.files.get(action.path)?.importOnly) return state;
+      // A per-doc focus names a partition of the file being left — like
+      // focusTab, drop it so the reading view can't keep rendering the old
+      // file's document while the tab strip says another file is active
+      // (regression: reopening an already-open file dispatches only
+      // SET_ACTIVE_FILE, so the stale id survived and won the resolution).
+      const cleared =
+        action.path !== state.activeFileId &&
+        (state.ui.focusedDocId !== null || state.ui.currentPageId !== null)
+          ? { ...state.ui, focusedDocId: null, currentPageId: null }
+          : state.ui;
+      return {
+        ...state,
+        activeFileId: action.path,
+        // In doc-land the focused tab IS the active file — follow it (a
+        // strip click activates that document's tab). Elsewhere the tab
+        // strip stays put, exactly like the old rail-list selection.
+        ui:
+          isDocTab(state.ui.focusedTab) && state.files.has(action.path)
+            ? { ...cleared, focusedTab: { doc: action.path } }
+            : cleared,
+      };
+    }
+    case 'UPDATE_FILE': {
+      // Documents not read from these bytes address other pages of them. The
+      // publication sees the refusal and rolls the file back.
+      if (!readFrom(action.documents, action.path, action.buffer)) return state;
+      const files = applyFileUpdate(state.files, action);
+      if (files === state.files) return state;
+      return withNewBytes(state, files, action.path, action.documents);
+    }
+    case 'COMMIT_PAGE_EDITS': {
+      // The commit bridge's atomic landing: every rebuilt file joins the
+      // snapshot undo chain, its documents become the ones its new bytes hold,
+      // and the edits the commit contains leave the page-edit tier, in one
+      // step. The previous documents address the previous bytes: read against
+      // the new ones, a moved page shows another page and a written rotation
+      // turns twice. The reindex of the new bytes then replaces the committed
+      // documents with the read-back and replays whatever is still pending.
+      //
+      // Selection is not cleared here: the committed documents keep the
+      // planned ids, the reindex adopts them, and the survive-or-prune pass
+      // keeps exactly the pages that still exist. (Non-authored buffer changes
+      // — UPDATE_FILE, REFRESH_BUFFER — place documents read from their bytes,
+      // under a fresh generation: nothing of the path survives the prune.)
+      let files = state.files;
+      for (const update of action.updates) {
+        files = applyFileUpdate(files, update);
+      }
+      const landed = action.updates.filter((u) => files.has(u.path));
+      const withCommitted = (documents: OpenDocument[]): OpenDocument[] =>
+        landed.reduce((docs, u) => placeDocuments(docs, u.path, u.documents), documents);
+      // Edits made while the commit was built and published are not in it.
+      // Their base is the composition under the first of them with the
+      // committed documents in place and nothing dirty; replaying them there
+      // keeps each one pending, undoable, and dirtying exactly the paths it
+      // touches.
+      const since = editsSincePlan(state, action.planned);
+      let next: AppState;
+      if (since === null) {
+        // The live stacks no longer show which edits the plan contained, so no
+        // pending edit can be told apart from the committed ones. The
+        // committed paths show their bytes. Every other dirty path may hold a
+        // page moved to or from them, so its documents are dropped for the
+        // indexer to re-derive from its own bytes, as for a bypass of the
+        // commit gate, and one refusal is counted.
+        const committedPaths = new Set(landed.map((u) => u.path));
+        const unknown = new Set(state.pageDirtyPaths.filter((p) => !committedPaths.has(p)));
+        next = {
+          ...state,
+          files,
+          workspace: {
+            documents: withCommitted(state.workspace.documents).filter((d) => !unknown.has(d.path)),
+          },
+          pageUndoStack: [],
+          pageRedoStack: [],
+          pageDirtyPaths: [],
+          pageEditRefusals: state.pageEditRefusals + 1,
+          pageEditRefusalReason: null,
+        };
+      } else {
+        const base = withCommitted(addOpenedPathsAtReplayStart(
+          since.length > 0 ? since[0].documents : state.workspace.documents,
+          state.workspace.documents,
+          since.map((entry) => entry.documents),
+        ));
+        const committed: AppState = {
+          ...state,
+          files,
+          workspace: { documents: base },
+          pageUndoStack: [],
+          pageRedoStack: [],
+          pageDirtyPaths: [],
+        };
+        if (since.length === 0) {
+          next = committed;
+        } else {
+          const replayed = replayPageTier(
+            committed,
+            base,
+            [],
+            since.map((e) => e.action),
+            since.length,
+          );
+          next = {
+            ...committed,
+            ...replayed.tier,
+            pageEditRefusals: state.pageEditRefusals + replayed.refused,
+            pageEditRefusalReason: replayed.refused > 0 ? null : state.pageEditRefusalReason,
+          };
+        }
+      }
+      const ui = survivingUi(state.ui, state.workspace.documents, next.workspace.documents);
+      return ui === next.ui ? next : { ...next, ui };
+    }
+    case 'RESTORE_HISTORY': {
+      const existing = state.files.get(action.path);
+      const undo = action.direction === 'undo';
+      if (!existing || existing !== action.expected.files.get(action.path)
+          || state.pageUndoStack !== action.expected.pageUndoStack
+          || state.pageRedoStack !== action.expected.pageRedoStack
+          || state.pageDirtyPaths !== action.expected.pageDirtyPaths
+          || (undo ? existing.undoStack : existing.redoStack).at(-1) !== action.snapshotPath
+          || !Number.isSafeInteger(action.pageCount) || action.pageCount < 1
+          || !readFrom(action.documents, action.path, action.buffer)) return state;
+      // Reuse the non-authored identity invalidation, within THIS reducer turn.
+      const refreshed = appReducer(state, { type: 'REFRESH_BUFFER', path: action.path,
+        buffer: action.buffer, pageCount: action.pageCount, documents: action.documents });
+      const files = new Map(refreshed.files);
+      files.set(action.path, {
+        ...files.get(action.path)!,
+        undoStack: undo ? existing.undoStack.slice(0, -1) : [...existing.undoStack, action.counterpart],
+        redoStack: undo ? [...existing.redoStack, action.counterpart] : existing.redoStack.slice(0, -1),
+        dirty: !undo || existing.undoStack.length > 1,
+      });
+      return { ...refreshed, files };
+    }
+    case 'REFRESH_BUFFER': {
+      // Buffer/pageCount swap that leaves undo/redo history alone — used
+      // after an undo/redo restore. The documents land exactly as for
+      // UPDATE_FILE.
+      const existing = state.files.get(action.path);
+      if (!existing || !readFrom(action.documents, action.path, action.buffer)) return state;
+      const files = new Map(state.files);
+      files.set(action.path, {
+        ...existing,
+        pageCount: action.pageCount,
+        buffer: action.buffer,
+        editRevision: (existing.editRevision ?? 0) + 1,
+      });
+      return withNewBytes(state, files, action.path, action.documents);
+    }
+    case 'MARK_SAVED': {
+      const files = new Map(state.files);
+      const existing = files.get(action.path);
+      if (!existing) return state;
+      files.set(action.path, { ...existing, dirty: false, undoStack: [], redoStack: [] });
+      return { ...state, files };
+    }
+    case 'SET_WORKSPACE_DOCUMENTS': {
+      // Indexing is async — the file may have been closed while it ran.
+      const indexed = state.files.get(action.path);
+      if (!indexed) return state;
+      // An index of a buffer the file no longer holds describes superseded
+      // bytes; the index of the current buffer lands on its own.
+      if (action.documents.some((d) => d.buffer !== indexed.buffer)) return state;
+      const prev = state.workspace.documents;
+      let tier: PageTier = {
+        workspace: { documents: placeDocuments(prev, action.path, action.documents) },
+        pageUndoStack: state.pageUndoStack,
+        pageRedoStack: state.pageRedoStack,
+        pageDirtyPaths: state.pageDirtyPaths,
+      };
+      let refused = 0;
+      // Pending edits address the outgoing documents by id. The incoming ones
+      // carry the same ids when the commit authored them, so the recorded
+      // edits replay onto them; an edit whose ids are gone is refused.
+      const tierLive =
+        state.pageUndoStack.length > 0 ||
+        state.pageRedoStack.length > 0 ||
+        state.pageDirtyPaths.length > 0;
+      if (tierLive && prev.some((d) => d.path === action.path)) {
+        const history = recordedHistory(state);
+        // Dirt already present under the recorded history has no action to
+        // replay: the incoming documents drop it, so it counts as refused.
+        const unrecorded = history.baseDirty.includes(action.path);
+        const replayed = replayPageTier(
+          state,
+          placeDocuments(
+            addOpenedPathsAtReplayStart(
+              history.base,
+              prev,
+              state.pageUndoStack.map((entry) => entry.documents),
+            ),
+            action.path,
+            action.documents,
+          ),
+          history.baseDirty.filter((p) => p !== action.path),
+          history.actions,
+          history.undoDepth,
+        );
+        tier = replayed.tier;
+        refused = replayed.refused + (unrecorded ? 1 : 0);
+      }
+      const documents = tier.workspace.documents;
+      // Reindexing bakes any just-committed imports into the target's own pages,
+      // so their byte-only sources may now be unreferenced — evict them (gated
+      // on an empty page tier).
+      const files = evictUnreferencedImportSources(
+        state.files,
+        documents,
+        tier.pageUndoStack,
+        tier.pageRedoStack,
+      );
+      return {
+        ...state,
+        files,
+        ui: survivingUi(state.ui, prev, documents),
+        ...tier,
+        pageEditRefusals: state.pageEditRefusals + refused,
+        pageEditRefusalReason: refused > 0 ? null : state.pageEditRefusalReason,
+      };
+    }
+    case 'REORDER_PAGES': {
+      const doc = state.workspace.documents.find((d) => d.id === action.docId);
+      if (!doc) return state;
+      const byId = new Map(doc.pages.map((p) => [p.id, p]));
+      // An order read from other pages than the document holds now: pages
+      // arrived or left while the gesture ran.
+      const permutation =
+        action.order.length === doc.pages.length &&
+        new Set(action.order).size === action.order.length &&
+        action.order.every((id) => byId.has(id));
+      if (!permutation) return refuseEdit(state);
+      if (action.order.every((id, i) => doc.pages[i].id === id)) return state;
+      const documents = mapDocument(state.workspace.documents, action.docId, (d) => ({
+        ...d,
+        pages: action.order.map((id) => byId.get(id)!),
+      }));
+      return applyPageEdit(state, documents, [doc.path], action);
+    }
+    case 'MOVE_PAGE': {
+      const from = state.workspace.documents.find((d) => d.id === action.fromDocId);
+      const to = state.workspace.documents.find((d) => d.id === action.toDocId);
+      const page = from?.pages.find((p) => p.id === action.pageId);
+      if (!from || !to || !page) return state;
+      let documents = state.workspace.documents.map((d) => {
+        if (d.id !== from.id && d.id !== to.id) return d;
+        // Remove from source, then insert at the target index (a same-document
+        // move hits both branches, so toIndex counts positions after removal).
+        let pages = d.id === from.id ? d.pages.filter((p) => p.id !== page.id) : d.pages;
+        if (d.id === to.id) {
+          const at = Math.max(0, Math.min(action.toIndex, pages.length));
+          pages = [...pages.slice(0, at), page, ...pages.slice(at)];
+        }
+        return { ...d, pages, pageCount: pages.length };
+      });
+      if (from.id === to.id && documents.every((d, i) => {
+        const prev = state.workspace.documents[i];
+        return d.pages.length === prev.pages.length && d.pages.every((p, j) => p === prev.pages[j]);
+      })) {
+        return state; // same-document move that landed where it started
+      }
+      if (pagesForPath(documents, from.path) === 0) return state; // would empty the file
+      documents = pruneEmptyDocs(documents);
+      return applyPageEdit(state, documents, from.path === to.path ? [from.path] : [from.path, to.path], action);
+    }
+    case 'MOVE_PAGE_TO_NEW_DOC': {
+      const sourceIndex = state.workspace.documents.findIndex((d) => d.id === action.fromDocId);
+      const source = sourceIndex === -1 ? undefined : state.workspace.documents[sourceIndex];
+      const page = source?.pages.find((p) => p.id === action.pageId);
+      if (!source || !page) return state;
+      // The new document is a new partition of the page's source file — it
+      // keeps that file's path/buffer (the file never loses pages here), and
+      // the commit bridge rebuilds the same file with one more manifest entry.
+      const withoutPage = mapDocument(state.workspace.documents, source.id, (d) => {
+        const pages = d.pages.filter((p) => p.id !== page.id);
+        return { ...d, pages, pageCount: pages.length };
+      });
+      // An emptied source doc is always pruned here — the new document carries
+      // the same path, so the file keeps at least one document.
+      const emptied = source.pages.length === 1;
+      let next = emptied ? withoutPage.filter((d) => d.id !== source.id) : withoutPage;
+      let insertAt = action.docIndex;
+      if (emptied && sourceIndex < action.docIndex) insertAt -= 1;
+      insertAt = Math.max(0, Math.min(next.length, insertAt));
+      const newDoc: OpenDocument = {
+        ...source,
+        id: action.newDocId,
+        name: action.newName,
+        pages: [page],
+        pageCount: 1,
+      };
+      next = [...next.slice(0, insertAt), newDoc, ...next.slice(insertAt)];
+      return applyPageEdit(state, next, [source.path], action);
+    }
+    case 'MOVE_PAGES': {
+      if (action.pageIds.length === 0) return state;
+      const idSet = new Set(action.pageIds);
+      const to = state.workspace.documents.find((d) => d.id === action.toDocId);
+      if (!to) return state;
+      // Collect the moving pages in workspace-flattened order (doc order, then
+      // page order) so a selection spanning several docs keeps its visual order.
+      const moving: PageRef[] = [];
+      const touched = new Set<string>();
+      for (const d of state.workspace.documents) {
+        for (const p of d.pages) {
+          if (idSet.has(p.id)) {
+            moving.push(p);
+            touched.add(d.path);
+          }
+        }
+      }
+      if (moving.length !== idSet.size) return state; // an id wasn't found — reject atomically
+      touched.add(to.path);
+      // Remove every moving page from its doc; insert them into the target at
+      // the clamped index, counted against the target's post-removal length
+      // (the drop-target math already excludes the moving pages).
+      let documents = state.workspace.documents.map((d) => {
+        if (d.id === to.id) {
+          const kept = d.pages.filter((p) => !idSet.has(p.id));
+          const at = Math.max(0, Math.min(action.toIndex, kept.length));
+          const pages = [...kept.slice(0, at), ...moving, ...kept.slice(at)];
+          return { ...d, pages, pageCount: pages.length };
+        }
+        if (d.pages.some((p) => idSet.has(p.id))) {
+          const pages = d.pages.filter((p) => !idSet.has(p.id));
+          return { ...d, pages, pageCount: pages.length };
+        }
+        return d;
+      });
+      // No-op guard: a drag that landed exactly where it started must not push
+      // an undo entry (mirrors MOVE_PAGE's same-document no-op check).
+      const unchanged =
+        documents.length === state.workspace.documents.length &&
+        documents.every((d, i) => {
+          const prev = state.workspace.documents[i];
+          return (
+            d.pages.length === prev.pages.length && d.pages.every((p, j) => p === prev.pages[j])
+          );
+        });
+      if (unchanged) return state;
+      for (const path of touched) {
+        if (pagesForPath(documents, path) === 0) return state; // would empty a file
+      }
+      documents = pruneEmptyDocs(documents);
+      return applyPageEdit(state, documents, [...touched], action);
+    }
+    case 'MOVE_PAGES_TO_NEW_DOC': {
+      if (action.pageIds.length === 0) return state;
+      const idSet = new Set(action.pageIds);
+      const moving: PageRef[] = [];
+      const touched = new Set<string>();
+      let template: OpenDocument | undefined;
+      for (const d of state.workspace.documents) {
+        for (const p of d.pages) {
+          if (idSet.has(p.id)) {
+            moving.push(p);
+            touched.add(d.path);
+            if (!template) template = d;
+          }
+        }
+      }
+      if (moving.length !== idSet.size || !template) return state;
+      // The new document is templated on the first selected page's document, so
+      // it carries a real path/buffer for the commit builder (like the singular
+      // MOVE_PAGE_TO_NEW_DOC). Pages sourced from other files ride along as
+      // cross-file references, exactly as an "into" move already allows.
+      const newDoc: OpenDocument = {
+        ...template,
+        id: action.newDocId,
+        name: action.newName,
+        pages: moving,
+        pageCount: moving.length,
+      };
+      const stripped = state.workspace.documents.map((d) => {
+        if (!d.pages.some((p) => idSet.has(p.id))) return d;
+        const pages = d.pages.filter((p) => !idSet.has(p.id));
+        return { ...d, pages, pageCount: pages.length };
+      });
+      // Insert in the pre-prune frame (same doc-slot count as the original list,
+      // since removal only empties docs, never drops slots yet) then prune —
+      // the new doc has pages so it's never pruned, and its position among the
+      // survivors matches the single version's index-adjust-then-insert.
+      const at = Math.max(0, Math.min(action.docIndex, stripped.length));
+      const documents = pruneEmptyDocs([...stripped.slice(0, at), newDoc, ...stripped.slice(at)]);
+      for (const path of touched) {
+        if (pagesForPath(documents, path) === 0) return state; // would empty a file
+      }
+      return applyPageEdit(state, documents, [...touched], action);
+    }
+    case 'IMPORT_PAGES': {
+      if (action.pages.length === 0) return state;
+      const to = state.workspace.documents.find((d) => d.id === action.toDocId);
+      if (!to) return state;
+      // A page index read from a buffer its source no longer holds names a
+      // different page at commit. Such an import cannot be carried.
+      const indexesCurrent = action.pages.every((p) => {
+        const source = action.sources.find((s) => s.path === p.sourceDocId);
+        return !!source && state.files.get(p.sourceDocId)?.buffer === source.buffer;
+      });
+      if (!indexesCurrent) return refuseEdit(state);
+      // A copy of a baked annotation has no fingerprint of the object it
+      // copies, so it could never be edited or removed where it lands; the
+      // read-back of the source's bytes brings one.
+      if (action.pages.some((p) => p.annotations?.some((a) => a.baked))) return refuseEdit(state);
+      // Splice the imported page refs into the target at the clamped index.
+      // Their sourceDocId points at a REGISTER_IMPORT_SOURCE byte-only file, so
+      // they render (usePdfProxies) and commit (bytesFor) like any other page.
+      const documents = mapDocument(state.workspace.documents, to.id, (d) => {
+        const at = Math.max(0, Math.min(action.toIndex, d.pages.length));
+        const pages = [...d.pages.slice(0, at), ...action.pages, ...d.pages.slice(at)];
+        return { ...d, pages, pageCount: pages.length };
+      });
+      return applyPageEdit(state, documents, [to.path], action);
+    }
+    case 'DELETE_PAGE_REF': {
+      const doc = state.workspace.documents.find((d) => d.id === action.docId);
+      const page = doc?.pages.find((p) => p.id === action.pageId);
+      if (!doc || !page) return state;
+      // Deleting the file's last remaining page would materialize a 0-page
+      // PDF at commit — closing the file is the right gesture for that.
+      if (pagesForPath(state.workspace.documents, doc.path) <= 1) return state;
+      const documents = pruneEmptyDocs(
+        mapDocument(state.workspace.documents, action.docId, (d) => {
+          const pages = d.pages.filter((p) => p.id !== action.pageId);
+          return { ...d, pages, pageCount: pages.length };
+        }),
+      );
+      return applyPageEdit(state, documents, [doc.path], action);
+    }
+    case 'DELETE_PAGE_REFS': {
+      if (action.pageIds.length === 0) return state;
+      const idSet = new Set(action.pageIds);
+      const touched = new Set<string>();
+      let found = 0;
+      for (const d of state.workspace.documents) {
+        for (const p of d.pages) {
+          if (idSet.has(p.id)) {
+            touched.add(d.path);
+            found++;
+          }
+        }
+      }
+      // Atomic on a partially-stale batch: if any requested id isn't present,
+      // reject the whole delete rather than silently removing the subset that
+      // matched (mirrors MOVE_PAGES). A stale id in the set otherwise means the
+      // user deletes fewer/other pages than intended.
+      if (found !== idSet.size) return state;
+      const stripped = state.workspace.documents.map((d) => {
+        if (!d.pages.some((p) => idSet.has(p.id))) return d;
+        const pages = d.pages.filter((p) => !idSet.has(p.id));
+        return { ...d, pages, pageCount: pages.length };
+      });
+      // Atomic: reject the whole batch if it would materialize a 0-page file
+      // (closing the file is the right gesture for emptying one) — same guard
+      // as the singular DELETE_PAGE_REF, applied per touched path.
+      for (const path of touched) {
+        if (pagesForPath(stripped, path) === 0) return state;
+      }
+      const documents = pruneEmptyDocs(stripped);
+      return applyPageEdit(state, documents, [...touched], action);
+    }
+    case 'SPLIT_DOC': {
+      const index = state.workspace.documents.findIndex((d) => d.id === action.docId);
+      const doc = index === -1 ? undefined : state.workspace.documents[index];
+      if (!doc || action.atIndex <= 0 || action.atIndex >= doc.pages.length) return state;
+      const head = doc.pages.slice(0, action.atIndex);
+      const tail = doc.pages.slice(action.atIndex);
+      const documents = [...state.workspace.documents];
+      documents.splice(
+        index,
+        1,
+        { ...doc, pages: head, pageCount: head.length },
+        { ...doc, id: action.newDocId, name: action.newName, pages: tail, pageCount: tail.length },
+      );
+      return applyPageEdit(state, documents, [doc.path], action);
+    }
+    case 'ADD_ANNOTATION': {
+      const doc = state.workspace.documents.find((d) => d.id === action.docId);
+      const page = doc?.pages.find((p) => p.id === action.pageId);
+      if (!doc || !page) return state;
+      // A count mark's SEQUENCE is allocated here, not at the
+      // gesture. The number is unique per group across the whole DOCUMENT and
+      // a page cell can only see its own page — the reducer is the one place
+      // that holds every page, so it is the only place that can number a mark
+      // correctly. (`nextSequence` is one past the highest ever used, so a
+      // delete never causes two marks to claim the same label.)
+      let annotation = action.annotation;
+      if (annotation.kind === 'count') {
+        const group = groupOf(annotation);
+        const all = doc.pages.flatMap((p) => countMarksOf(p.annotations));
+        const seq = nextSequence(all, group);
+        annotation = {
+          ...annotation,
+          countGroup: group,
+          countSeq: seq,
+          note: countContents(group, seq),
+        };
+      }
+      const documents = mapDocument(state.workspace.documents, action.docId, (d) => ({
+        ...d,
+        pages: d.pages.map((p) =>
+          p.id === action.pageId
+            ? { ...p, annotations: [...(p.annotations ?? []), annotation] }
+            : p,
+        ),
+      }));
+      const placed = applyPageEdit(state, documents, [doc.path], action);
+      return { ...placed, ui: afterPlacement(placed.ui) };
+    }
+    case 'REGROUP_COUNT_MARKS': {
+      // Re-file marks into the armed group (the Ctrl-marquee gesture). Colour
+      // and symbol follow the group — a group drawn two ways is not a group —
+      // and each moved mark takes a FRESH sequence at the end of the target,
+      // because its old number belonged to the group it left.
+      const doc = state.workspace.documents.find((d) => d.id === action.docId);
+      const page = doc?.pages.find((p) => p.id === action.pageId);
+      if (!doc || !page?.annotations?.length) return state;
+      const chosen = new Set(action.annotationIds);
+      const moving = page.annotations.filter(
+        (a) => chosen.has(a.id) && a.kind === 'count' && groupOf(a) !== action.group,
+      );
+      if (moving.length === 0) return state;
+      if (moving.some((a) => a.baked)) return refuseEdit(state);
+      const all = doc.pages.flatMap((p) => countMarksOf(p.annotations));
+      let seq = nextSequence(all, action.group);
+      const renumbered = new Map<string, { seq: number; note: string }>();
+      for (const m of moving) {
+        renumbered.set(m.id, { seq, note: countContents(action.group, seq) });
+        seq += 1;
+      }
+      const documents = mapDocument(state.workspace.documents, action.docId, (d) => ({
+        ...d,
+        pages: d.pages.map((p) =>
+          p.id === action.pageId
+            ? {
+                ...p,
+                annotations: p.annotations!.map((a) => {
+                  const next = renumbered.get(a.id);
+                  if (!next) return a;
+                  return {
+                    ...a,
+                    countGroup: action.group,
+                    countSymbol: action.symbol,
+                    countSeq: next.seq,
+                    color: action.color,
+                    note: next.note,
+                    ...(a.importedOriginal ? { geometryDiverged: true } : {}),
+                  };
+                }),
+              }
+            : p,
+        ),
+      }));
+      return applyPageEdit(state, documents, [doc.path], action);
+    }
+    case 'UPDATE_ANNOTATION': {
+      const doc = state.workspace.documents.find((d) => d.id === action.docId);
+      const page = doc?.pages.find((p) => p.id === action.pageId);
+      const existing = page?.annotations?.find((a) => a.id === action.annotationId);
+      if (!doc || !existing || existing.note === action.note) return state;
+      if (existing.baked) return refuseEdit(state);
+      const documents = mapDocument(state.workspace.documents, action.docId, (d) => ({
+        ...d,
+        pages: d.pages.map((p) =>
+          p.id === action.pageId
+            ? {
+                ...p,
+                annotations: p.annotations!.map((a) =>
+                  a.id === action.annotationId ? { ...a, note: action.note } : a,
+                ),
+              }
+            : p,
+        ),
+      }));
+      return applyPageEdit(state, documents, [doc.path], action);
+    }
+    case 'RECOLOR_ANNOTATION': {
+      const doc = state.workspace.documents.find((d) => d.id === action.docId);
+      const page = doc?.pages.find((p) => p.id === action.pageId);
+      const existing = page?.annotations?.find((a) => a.id === action.annotationId);
+      if (!doc || !existing || existing.color === action.color) return state;
+      if (existing.baked) return refuseEdit(state);
+      const documents = mapDocument(state.workspace.documents, action.docId, (d) => ({
+        ...d,
+        pages: d.pages.map((p) =>
+          p.id === action.pageId
+            ? {
+                ...p,
+                annotations: p.annotations!.map((a) =>
+                  a.id === action.annotationId ? { ...a, color: action.color } : a,
+                ),
+              }
+            : p,
+        ),
+      }));
+      return applyPageEdit(state, documents, [doc.path], action);
+    }
+    case 'REMOVE_ANNOTATION': {
+      const doc = state.workspace.documents.find((d) => d.id === action.docId);
+      const page = doc?.pages.find((p) => p.id === action.pageId);
+      const removed = page?.annotations?.find((a) => a.id === action.annotationId);
+      if (!doc || !removed) return state;
+      if (removed.baked) return refuseEdit(state);
+      const documents = mapDocument(state.workspace.documents, action.docId, (d) => ({
+        ...d,
+        pages: d.pages.map((p) =>
+          p.id === action.pageId
+            ? {
+                ...p,
+                annotations: p.annotations!.filter((a) => a.id !== action.annotationId),
+                // Removing an imported annotation drops its importedOriginal
+                // fingerprint along with it — without keeping the fingerprint
+                // here, the commit-time strip has nothing left to match the
+                // real PDF object against and leaves it in place, silently
+                // undoing the removal. See PageRef.removedImportedOriginals.
+                ...(removed.importedOriginal
+                  ? { removedImportedOriginals: [...(p.removedImportedOriginals ?? []), removed.importedOriginal] }
+                  : {}),
+              }
+            : p,
+        ),
+      }));
+      return applyPageEdit(state, documents, [doc.path], action);
+    }
+    case 'TRANSFORM_ANNOTATIONS': {
+      // Geometry edits, batch-shaped (one gesture = one undo step). Kind
+      // rules live HERE: 'textmarkup' never transforms (quads anchor to
+      // text); 'note' translates but keeps its icon size; everything else
+      // takes the caller's rect (and points, for the path kinds). Entries
+      // that don't resolve are skipped, never guessed at.
+      const doc = state.workspace.documents.find((d) => d.id === action.docId);
+      if (!doc || action.edits.length === 0) return state;
+      const byPage = new Map<string, typeof action.edits>();
+      for (const e of action.edits) {
+        const list = byPage.get(e.pageId);
+        if (list) list.push(e);
+        else byPage.set(e.pageId, [e]);
+      }
+      let changed = false;
+      let touchesBaked = false;
+      const documents = mapDocument(state.workspace.documents, action.docId, (d) => ({
+        ...d,
+        pages: d.pages.map((p) => {
+          const edits = byPage.get(p.id);
+          if (!edits || !p.annotations?.length) return p;
+          let pageChanged = false;
+          const annotations = p.annotations.map((a) => {
+            const e = edits.find((x) => x.annotationId === a.id);
+            if (!e || a.kind === 'textmarkup') return a;
+            const next = {
+              ...a,
+              x: e.x,
+              y: e.y,
+              // 'count' joins 'note' as a FIXED-size marker: a count symbol
+              // is a marker, not a region, and a resized one would read as a
+              // different-weight count.
+              w: a.kind === 'note' || a.kind === 'count' ? a.w : e.w,
+              h: a.kind === 'note' || a.kind === 'count' ? a.h : e.h,
+              ...(e.points && a.points ? { points: e.points } : {}),
+              ...(e.strokes && a.strokes ? { strokes: e.strokes } : {}),
+              ...(e.note !== undefined && a.kind === 'measure' ? { note: e.note } : {}),
+              ...(e.calloutBox && a.kind === 'callout' ? { calloutBox: e.calloutBox } : {}),
+              // A moved IMPORT must render as the overlay's body from now on
+              // (see the field's comment in types.ts).
+              ...(a.importedOriginal ? { geometryDiverged: true } : {}),
+            };
+            if (
+              next.x === a.x &&
+              next.y === a.y &&
+              next.w === a.w &&
+              next.h === a.h &&
+              next.points === a.points &&
+              next.strokes === a.strokes &&
+              next.note === a.note &&
+              next.calloutBox === a.calloutBox
+            )
+              return a;
+            if (a.baked) touchesBaked = true;
+            pageChanged = true;
+            return next;
+          });
+          if (!pageChanged) return p;
+          changed = true;
+          return { ...p, annotations };
+        }),
+      }));
+      if (touchesBaked) return refuseEdit(state);
+      if (!changed) return state;
+      return applyPageEdit(state, documents, [doc.path], action);
+    }
+    case 'REORDER_ANNOTATIONS': {
+      // Z-order within the page's annotation array — array order IS both the
+      // overlay's paint order and the /Annots emit order at commit. The
+      // selected group keeps its internal order; 'forward'/'backward' step
+      // over one unselected neighbour, 'front'/'back' go to the ends.
+      const doc = state.workspace.documents.find((d) => d.id === action.docId);
+      const page = doc?.pages.find((p) => p.id === action.pageId);
+      const all = page?.annotations;
+      if (!doc || !page || !all?.length) return state;
+      const chosen = new Set(action.annotationIds);
+      const selected = all.filter((a) => chosen.has(a.id));
+      if (selected.length === 0) return state;
+      const rest = all.filter((a) => !chosen.has(a.id));
+      let annotations: PageAnnotation[];
+      switch (action.direction) {
+        case 'back':
+          annotations = [...selected, ...rest];
+          break;
+        case 'front':
+          annotations = [...rest, ...selected];
+          break;
+        case 'backward': {
+          // Move the group to just before the unselected annotation that
+          // precedes the group's first member (one visual step down).
+          const firstIdx = all.findIndex((a) => chosen.has(a.id));
+          const prevUnselected = all.slice(0, firstIdx).reverse().find((a) => !chosen.has(a.id));
+          if (!prevUnselected) return state; // already at the back
+          const at = rest.indexOf(prevUnselected);
+          annotations = [...rest.slice(0, at), ...selected, ...rest.slice(at)];
+          break;
+        }
+        case 'forward': {
+          const lastIdx = all.map((a) => chosen.has(a.id)).lastIndexOf(true);
+          const nextUnselected = all.slice(lastIdx + 1).find((a) => !chosen.has(a.id));
+          if (!nextUnselected) return state; // already at the front
+          const at = rest.indexOf(nextUnselected);
+          annotations = [...rest.slice(0, at + 1), ...selected, ...rest.slice(at + 1)];
+          break;
+        }
+      }
+      if (annotations.every((a, i) => a === all[i])) return state;
+      if (selected.some((a) => a.baked)) return refuseEdit(state);
+      const documents = mapDocument(state.workspace.documents, action.docId, (d) => ({
+        ...d,
+        pages: d.pages.map((p) => (p.id === action.pageId ? { ...p, annotations } : p)),
+      }));
+      return applyPageEdit(state, documents, [doc.path], action);
+    }
+    case 'RESTYLE_ANNOTATIONS': {
+      // Shared style edit, one undo step. Property applicability is
+      // enforced HERE (the kind-rules seam): shape/callout take everything;
+      // ink takes strokeWidth/opacity (no interior to fill); other kinds keep
+      // their fixed looks. `fillColor: null` clears the fill.
+      const doc = state.workspace.documents.find((d) => d.id === action.docId);
+      const page = doc?.pages.find((p) => p.id === action.pageId);
+      if (!doc || !page?.annotations?.length) return state;
+      const chosen = new Set(action.annotationIds);
+      const { strokeWidth, fillColor, opacity, lineEndings, cloudIntensity } = action.style;
+      let changed = false;
+      let touchesBaked = false;
+      const documents = mapDocument(state.workspace.documents, action.docId, (d) => ({
+        ...d,
+        pages: d.pages.map((p) =>
+          p.id === action.pageId
+            ? {
+                ...p,
+                annotations: p.annotations!.map((a) => {
+                  if (!chosen.has(a.id)) return a;
+                  const styleable = a.kind === 'shape' || a.kind === 'callout' || a.kind === 'ink';
+                  if (!styleable) return a;
+                  const fillable = a.kind !== 'ink';
+                  // Kind-specific sheet fields (residual): endings only
+                  // mean anything on the open-ended figures; intensity only
+                  // on clouds. Anything else silently keeps its look — the
+                  // same applicability seam as fill.
+                  const endable =
+                    a.kind === 'shape' &&
+                    (a.shapeType === 'line' || a.shapeType === 'arrow' || a.shapeType === 'polyline');
+                  const cloudy = a.kind === 'shape' && a.shapeType === 'cloud';
+                  const next = {
+                    ...a,
+                    ...(strokeWidth !== undefined ? { strokeWidth } : {}),
+                    ...(opacity !== undefined ? { opacity } : {}),
+                    ...(fillable && fillColor !== undefined
+                      ? fillColor === null
+                        ? { fillColor: undefined }
+                        : { fillColor }
+                      : {}),
+                    ...(endable && lineEndings !== undefined ? { lineEndings } : {}),
+                    ...(cloudy && cloudIntensity !== undefined ? { cloudIntensity } : {}),
+                  };
+                  if (
+                    next.strokeWidth === a.strokeWidth &&
+                    next.opacity === a.opacity &&
+                    next.fillColor === a.fillColor &&
+                    next.lineEndings === a.lineEndings &&
+                    next.cloudIntensity === a.cloudIntensity
+                  )
+                    return a;
+                  if (a.baked) touchesBaked = true;
+                  changed = true;
+                  return next;
+                }),
+              }
+            : p,
+        ),
+      }));
+      if (touchesBaked) return refuseEdit(state);
+      if (!changed) return state;
+      return applyPageEdit(state, documents, [doc.path], action);
+    }
+    case 'RECALIBRATE_ANNOTATION': {
+      // One measurement's recorded scale is overridden — the /Measure
+      // factors, ratio, and reported note rewrite together; geometry stays.
+      const doc = state.workspace.documents.find((d) => d.id === action.docId);
+      const page = doc?.pages.find((p) => p.id === action.pageId);
+      const existing = page?.annotations?.find((a) => a.id === action.annotationId);
+      if (!doc || !existing || existing.kind !== 'measure') return state;
+      if (
+        existing.measureUnitsPerPt === action.measureUnitsPerPt &&
+        existing.measureUnit === action.measureUnit &&
+        existing.note === action.note
+      )
+        return state;
+      if (existing.baked) return refuseEdit(state);
+      const documents = mapDocument(state.workspace.documents, action.docId, (d) => ({
+        ...d,
+        pages: d.pages.map((p) =>
+          p.id === action.pageId
+            ? {
+                ...p,
+                annotations: p.annotations!.map((a) =>
+                  a.id === action.annotationId
+                    ? {
+                        ...a,
+                        measureUnitsPerPt: action.measureUnitsPerPt,
+                        measureUnit: action.measureUnit,
+                        measureRatio: action.measureRatio,
+                        note: action.note,
+                        ...(a.importedOriginal ? { geometryDiverged: true } : {}),
+                      }
+                    : a,
+                ),
+              }
+            : p,
+        ),
+      }));
+      return applyPageEdit(state, documents, [doc.path], action);
+    }
+    case 'RECOLOR_ANNOTATIONS': {
+      const doc = state.workspace.documents.find((d) => d.id === action.docId);
+      const page = doc?.pages.find((p) => p.id === action.pageId);
+      if (!doc || !page?.annotations?.length) return state;
+      const chosen = new Set(action.annotationIds);
+      let changed = false;
+      let touchesBaked = false;
+      const documents = mapDocument(state.workspace.documents, action.docId, (d) => ({
+        ...d,
+        pages: d.pages.map((p) =>
+          p.id === action.pageId
+            ? {
+                ...p,
+                annotations: p.annotations!.map((a) => {
+                  if (!chosen.has(a.id) || a.color === action.color) return a;
+                  if (a.baked) touchesBaked = true;
+                  changed = true;
+                  return { ...a, color: action.color };
+                }),
+              }
+            : p,
+        ),
+      }));
+      if (touchesBaked) return refuseEdit(state);
+      if (!changed) return state;
+      return applyPageEdit(state, documents, [doc.path], action);
+    }
+    case 'REMOVE_ANNOTATIONS': {
+      // Batch remove = one undo step. Same fingerprint-tombstone rule as the
+      // single REMOVE_ANNOTATION: a removed IMPORT's fingerprint must survive
+      // or the commit-time strip has nothing to match and the original
+      // resurrects on reindex.
+      const doc = state.workspace.documents.find((d) => d.id === action.docId);
+      const page = doc?.pages.find((p) => p.id === action.pageId);
+      if (!doc || !page?.annotations?.length) return state;
+      const chosen = new Set(action.annotationIds);
+      const removed = page.annotations.filter((a) => chosen.has(a.id));
+      if (removed.length === 0) return state;
+      if (removed.some((a) => a.baked)) return refuseEdit(state);
+      const tombstones = removed
+        .map((a) => a.importedOriginal)
+        .filter((f): f is NonNullable<PageAnnotation['importedOriginal']> => !!f);
+      const documents = mapDocument(state.workspace.documents, action.docId, (d) => ({
+        ...d,
+        pages: d.pages.map((p) =>
+          p.id === action.pageId
+            ? {
+                ...p,
+                annotations: p.annotations!.filter((a) => !chosen.has(a.id)),
+                ...(tombstones.length
+                  ? {
+                      removedImportedOriginals: [
+                        ...(p.removedImportedOriginals ?? []),
+                        ...tombstones,
+                      ],
+                    }
+                  : {}),
+              }
+            : p,
+        ),
+      }));
+      return applyPageEdit(state, documents, [doc.path], action);
+    }
+    case 'ROTATE_PAGE_REF': {
+      const doc = state.workspace.documents.find((d) => d.id === action.docId);
+      const page = doc?.pages.find((p) => p.id === action.pageId);
+      if (!doc || !page || page.rotation === action.rotation) return state;
+      const delta = (action.rotation - page.rotation + 360) % 360;
+      const documents = mapDocument(state.workspace.documents, action.docId, (d) => ({
+        ...d,
+        pages: d.pages.map((p) =>
+          p.id === action.pageId
+            ? {
+                ...p,
+                rotation: action.rotation,
+                annotations: p.annotations?.map((a) => rotateAnnotationRect(a, delta)),
+              }
+            : p,
+        ),
+      }));
+      return applyPageEdit(state, documents, [doc.path], {
+        type: 'ROTATE_PAGE_REFS',
+        pageIds: [action.pageId],
+        delta: delta as 90 | 180 | 270,
+      });
+    }
+    case 'ROTATE_PAGE_REFS': {
+      if (action.pageIds.length === 0) return state;
+      const idSet = new Set(action.pageIds);
+      const delta = (((action.delta % 360) + 360) % 360) as 0 | 90 | 180 | 270;
+      if (delta === 0) return state;
+      // Atomic on a partially-stale batch (mirrors MOVE_PAGES / DELETE_PAGE_REFS):
+      // reject unless every requested id is present, rather than rotating the
+      // matching subset.
+      let found = 0;
+      for (const d of state.workspace.documents) for (const p of d.pages) if (idSet.has(p.id)) found++;
+      if (found !== idSet.size) return state;
+      const touched = new Set<string>();
+      const documents = state.workspace.documents.map((d) => {
+        if (!d.pages.some((p) => idSet.has(p.id))) return d;
+        touched.add(d.path);
+        return {
+          ...d,
+          pages: d.pages.map((p) => {
+            if (!idSet.has(p.id)) return p;
+            const rotation = (((p.rotation + delta) % 360) as 0 | 90 | 180 | 270);
+            // Re-project annotations by the same delta as the singular rotate.
+            return { ...p, rotation, annotations: p.annotations?.map((a) => rotateAnnotationRect(a, delta)) };
+          }),
+        };
+      });
+      // found === idSet.size (checked above) guarantees at least one match, so
+      // `documents` always carries a real change here.
+      return applyPageEdit(state, documents, [...touched], action);
+    }
+    case 'REORDER_DOCS': {
+      const index = state.workspace.documents.findIndex((d) => d.id === action.docId);
+      const target = index + action.direction;
+      if (index === -1 || target < 0 || target >= state.workspace.documents.length) return state;
+      const documents = [...state.workspace.documents];
+      [documents[index], documents[target]] = [documents[target], documents[index]];
+      // Cross-file strip order is view-only; swapping two partitions of the
+      // same file changes that file's page order and must be committed.
+      const samePath = documents[index].path === documents[target].path;
+      return applyPageEdit(state, documents, samePath ? [documents[index].path] : [], action);
+    }
+    case 'RENAME_DOC': {
+      const doc = state.workspace.documents.find((d) => d.id === action.docId);
+      const name = action.name.trim();
+      if (!doc || !name || name === doc.name) return state;
+      const documents = mapDocument(state.workspace.documents, action.docId, (d) => ({
+        ...d,
+        name,
+      }));
+      // Persisted via the manifest only when the file commits with one —
+      // same file-anchored predicate the commit planner uses, so a rename
+      // never dirties a file that would then commit without a manifest (or
+      // vice versa). Otherwise display-only until reindex.
+      const partitionCount = state.workspace.documents.filter((d) => d.path === doc.path).length;
+      const fileName = state.files.get(doc.path)?.name ?? doc.name;
+      const persists = carriesManifest(fileName, partitionCount);
+      return applyPageEdit(state, documents, persists ? [doc.path] : [], action);
+    }
+    case 'REMOVE_DOC': {
+      const doc = state.workspace.documents.find((d) => d.id === action.docId);
+      if (!doc) return state;
+      const siblings = state.workspace.documents.filter((d) => d.path === doc.path);
+      if (siblings.length === 1) return state; // last document of a file — close the file instead
+      const documents = state.workspace.documents.filter((d) => d.id !== action.docId);
+      return applyPageEdit(state, documents, [doc.path], action);
+    }
+    case 'UNDO_PAGE_OP': {
+      const last = state.pageUndoStack[state.pageUndoStack.length - 1];
+      if (!last) return state;
+      const documents = keepPathsOpenedSinceSnapshot(last.documents, state.workspace.documents);
+      return {
+        ...state,
+        files: bumpFileEditRevisions(state.files, changedDocumentPaths(state.workspace.documents, documents)),
+        // Files opened after this edit were not in its saved composition.
+        // Keep their current documents when restoring the older workspace.
+        workspace: { documents },
+        pageDirtyPaths: last.dirtyPaths,
+        pageUndoStack: state.pageUndoStack.slice(0, -1),
+        pageRedoStack: [
+          ...state.pageRedoStack,
+          { documents: state.workspace.documents, dirtyPaths: state.pageDirtyPaths, action: last.action },
+        ],
+      };
+    }
+    case 'REDO_PAGE_OP': {
+      const next = state.pageRedoStack[state.pageRedoStack.length - 1];
+      if (!next) return state;
+      const documents = keepPathsOpenedSinceSnapshot(next.documents, state.workspace.documents);
+      return {
+        ...state,
+        files: bumpFileEditRevisions(state.files, changedDocumentPaths(state.workspace.documents, documents)),
+        workspace: { documents },
+        pageDirtyPaths: next.dirtyPaths,
+        pageRedoStack: state.pageRedoStack.slice(0, -1),
+        pageUndoStack: [
+          ...state.pageUndoStack,
+          { documents: state.workspace.documents, dirtyPaths: state.pageDirtyPaths, action: next.action },
+        ],
+      };
+    }
+    case 'CLEAR_PAGE_EDITS':
+      // The commit bridge just materialized the edits to disk; the workspace
+      // itself is left alone — the indexer re-derives it from the new buffers.
+      return { ...state, pageUndoStack: [], pageRedoStack: [], pageDirtyPaths: [] };
+    case 'NOTE_EDIT_REFUSED':
+      return refuseEdit(state);
+    case 'UI_FOCUS_TAB':
+      return focusTab(state, action.tab);
+    case 'UI_SET_RECENT_FILES':
+      return { ...state, ui: { ...state.ui, recentFiles: action.files } };
+    case 'UI_SET_ACTIVE_OP': {
+      // Arming an operation OPENS its owning tool: the Tools tab renders that
+      // tool's header + op switcher around `panels[activeOp]`, so the two
+      // disagreeing means the header names one tool while the body shows
+      // another's panel (or the tile grid renders while an op is invisibly
+      // active). Derived here rather than asked of every dispatcher.
+      const owner = toolForOp(action.op);
+      const ui = openTool(state.ui, owner?.id ?? null);
+      if (action.op === state.ui.activeOp && ui === state.ui) return state;
+      return { ...state, ui: { ...ui, activeOp: action.op } };
+    }
+    case 'UI_OPEN_TOOL': {
+      const ui = openTool(state.ui, action.toolId);
+      return ui === state.ui ? state : { ...state, ui };
+    }
+    case 'UI_SET_TOOL':
+      if (action.tool === state.ui.tool) return state;
+      return { ...state, ui: { ...state.ui, tool: action.tool } };
+    case 'UI_SET_TOOL_LOCK':
+      if (action.locked === state.ui.toolLock) return state;
+      return { ...state, ui: { ...state.ui, toolLock: action.locked } };
+    case 'UI_SET_DOC_VIEW_MODE':
+      if (action.mode === state.ui.docViewMode) return state;
+      return { ...state, ui: { ...state.ui, docViewMode: action.mode } };
+    case 'UI_SET_PAGE_LAYOUT':
+      if (action.layout === state.ui.pageLayout) return state;
+      return { ...state, ui: { ...state.ui, pageLayout: action.layout } };
+    case 'UI_TOGGLE_TWOUP_COVER':
+      return { ...state, ui: { ...state.ui, twoUpCover: !state.ui.twoUpCover } };
+    case 'UI_TOGGLE_READING_MODE':
+      return { ...state, ui: { ...state.ui, readingMode: !state.ui.readingMode } };
+    case 'UI_APPLY_INITIAL_VIEW': {
+      // One act, so a document that states a layout AND a page mode cannot
+      // land as two renders with a half-applied view in between. A null field
+      // is the document saying nothing — the user's current setting stands.
+      const { plan } = action;
+      const ui = { ...state.ui, spreadDirection: plan.spreadDirection };
+      if (plan.pageLayout !== null) ui.pageLayout = plan.pageLayout;
+      if (plan.twoUpCover !== null) ui.twoUpCover = plan.twoUpCover;
+      if (plan.readingMode !== null) ui.readingMode = plan.readingMode;
+      if (plan.navPane !== null) {
+        ui.navPane = {
+          ...ui.navPane,
+          open: plan.navPane.open,
+          panel: plan.navPane.panel ?? ui.navPane.panel,
+        };
+      }
+      return { ...state, ui };
+    }
+    case 'UI_TOGGLE_PROPERTIES_BAR':
+      return { ...state, ui: { ...state.ui, propertiesBar: !state.ui.propertiesBar } };
+    case 'UI_TOGGLE_SPLIT_VIEW':
+      // Two-pane toggles against itself; from quad mode it switches shape
+      // because the split modes replace each other.
+      return {
+        ...state,
+        ui: { ...state.ui, splitView: state.ui.splitView === 'two' ? 'off' : 'two' },
+      };
+    case 'UI_TOGGLE_SPREADSHEET_SPLIT':
+      return {
+        ...state,
+        ui: { ...state.ui, splitView: state.ui.splitView === 'quad' ? 'off' : 'quad' },
+      };
+    case 'UI_SET_TOOLBAR_OVERRIDES':
+      return { ...state, ui: { ...state.ui, toolbarOverrides: action.overrides } };
+    case 'UI_ROTATE_VIEW': {
+      // Render-only quarter-turn of the reading display. Only real,
+      // showable files can be rotated — a view state for a ghost would be
+      // unreachable-to-clear (no tab to close it from).
+      const f = state.files.get(action.path);
+      if (!f || f.importOnly) return state;
+      const cur = state.ui.viewRotationByPath[action.path] ?? 0;
+      const next = (((cur + action.delta) % 360) + 360) % 360 as 0 | 90 | 180 | 270;
+      const viewRotationByPath = { ...state.ui.viewRotationByPath };
+      if (next === 0) delete viewRotationByPath[action.path];
+      else viewRotationByPath[action.path] = next;
+      return { ...state, ui: { ...state.ui, viewRotationByPath } };
+    }
+    case 'UI_SET_CURRENT_PAGE':
+      if (action.pageId === state.ui.currentPageId) return state;
+      return { ...state, ui: { ...state.ui, currentPageId: action.pageId } };
+    case 'UI_FOCUS_DOC': {
+      if (action.docId === state.ui.focusedDocId) return state;
+      // Focusing a document also activates the FILE that owns it — the reading
+      // view resolves through `activeFileId`, and the tab strip must follow, so
+      // the two can't disagree about which file is in front.
+      const owner = action.docId
+        ? state.workspace.documents.find((d) => d.id === action.docId)
+        : null;
+      if (action.docId && !owner) return state; // unknown doc: reject, don't strand
+      const ui = { ...state.ui, focusedDocId: action.docId };
+      if (!owner || owner.path === state.activeFileId) return { ...state, ui };
+      const f = state.files.get(owner.path);
+      if (!f || f.importOnly) return state; // same guard focusTab applies
+      return { ...state, activeFileId: owner.path, ui: { ...ui, focusedTab: { doc: owner.path } } };
+    }
+    case 'UI_SELECT_PAGE': {
+      const { selectedPageIds, selectionAnchor } = state.ui;
+      if (action.mode === 'toggle') {
+        // Ctrl-click: toggle this page in/out of the selection.
+        const next = new Set(selectedPageIds);
+        if (next.has(action.pageId)) next.delete(action.pageId);
+        else next.add(action.pageId);
+        return {
+          ...state,
+          ui: { ...state.ui, selectedPageIds: next, selectionAnchor: action.pageId },
+        };
+      }
+      if (action.mode === 'range' && selectionAnchor) {
+        // Shift-click: range across workspace-flattened order from the anchor.
+        // Keep the anchor so a further shift-click re-extends. An unresolvable
+        // anchor/page falls through to single-select (the canvas's behavior).
+        const order = flatPageOrder(state);
+        const a = order.indexOf(selectionAnchor);
+        const b = order.indexOf(action.pageId);
+        if (a !== -1 && b !== -1) {
+          const [lo, hi] = a < b ? [a, b] : [b, a];
+          return {
+            ...state,
+            ui: { ...state.ui, selectedPageIds: new Set(order.slice(lo, hi + 1)) },
+          };
+        }
+      }
+      if (action.mode === 'context' && selectedPageIds.has(action.pageId)) {
+        // Right-click on a page already in the selection keeps the whole
+        // selection (menu actions then apply to all); anchor moves to it.
+        if (selectionAnchor === action.pageId) return state;
+        return { ...state, ui: { ...state.ui, selectionAnchor: action.pageId } };
+      }
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          selectedPageIds: new Set([action.pageId]),
+          selectionAnchor: action.pageId,
+        },
+      };
+    }
+    case 'UI_SELECT_ALL_PAGES': {
+      const order = flatPageOrder(state);
+      if (order.length === 0) return state;
+      return {
+        ...state,
+        ui: { ...state.ui, selectedPageIds: new Set(order), selectionAnchor: order[0] },
+      };
+    }
+    case 'UI_CLEAR_SELECTION':
+      return clearSelection(state);
+    case 'UI_SET_SELECTION':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          selectedPageIds: new Set(action.pageIds),
+          selectionAnchor: action.anchor,
+        },
+      };
+    case 'UI_OPEN_NAV_PANEL': {
+      // Icon-strip toggle: re-opening the active panel closes the pane;
+      // otherwise open on the requested panel.
+      const { navPane } = state.ui;
+      const next =
+        navPane.open && navPane.panel === action.panel
+          ? { ...navPane, open: false }
+          : { ...navPane, open: true, panel: action.panel };
+      return { ...state, ui: { ...state.ui, navPane: next } };
+    }
+    case 'UI_TOGGLE_NAV_PANE':
+      return {
+        ...state,
+        ui: { ...state.ui, navPane: { ...state.ui.navPane, open: !state.ui.navPane.open } },
+      };
+    case 'UI_SET_NAV_PANE_WIDTH': {
+      // Clamp both ends — an overshooting drag (or a pointer leaving the window
+      // mid-drag) must not set a width that buries the board off-screen and
+      // then persists (regression).
+      const width = Math.min(NAV_PANE_MAX_WIDTH, Math.max(NAV_PANE_MIN_WIDTH, Math.round(action.width)));
+      if (width === state.ui.navPane.width) return state;
+      return { ...state, ui: { ...state.ui, navPane: { ...state.ui.navPane, width } } };
+    }
+    case 'UI_SET_TOOL_DOCK_OPEN': {
+      if (action.open === state.ui.toolDock.open) return state;
+      return { ...state, ui: { ...state.ui, toolDock: { ...state.ui.toolDock, open: action.open } } };
+    }
+    case 'UI_SET_TOOL_DOCK_WIDTH': {
+      // Same clamp discipline as the nav pane (the persisted-overshoot class).
+      const width = Math.min(TOOL_DOCK_MAX_WIDTH, Math.max(TOOL_DOCK_MIN_WIDTH, Math.round(action.width)));
+      if (width === state.ui.toolDock.width) return state;
+      return { ...state, ui: { ...state.ui, toolDock: { ...state.ui.toolDock, width } } };
+    }
+    default:
+      return state;
+  }
+}

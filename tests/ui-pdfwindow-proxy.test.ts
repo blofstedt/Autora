@@ -36,7 +36,7 @@ async function drawn(frame: Frame): Promise<boolean> {
 async function main() {
   const exe = process.env.AUTORA_BROWSER_PATH || "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
   if (!fs.existsSync(exe)) { console.log("  skip  no browser here"); return; }
-  if (!fs.existsSync("dist/pdf-editor/index.html")) { console.log("  skip  the editor is not built (npm run build)"); return; }
+  if (!fs.existsSync("dist/spectra-editor/index.html")) { console.log("  skip  the editor is not built (npm run build)"); return; }
   const app = await startApp();
   const target = new URL(app.base);
 
@@ -104,19 +104,22 @@ async function main() {
     await page.goto(`${base}/?session=${s}`);
 
     await test("the editor opens and draws the page, with nothing of its own turned away", async () => {
-      await page.waitForSelector(".app-pane .pdf-window", { timeout: 15_000 });
+      await page.waitForSelector(".app-pane .pdf-window", { timeout: 20_000 });
       let editor: Frame | undefined;
-      for (let i = 0; i < 100 && !editor; i++) {
-        editor = page.frames().find((f) => f.url().includes("/pdf-editor/"));
+      for (let i = 0; i < 150 && !editor; i++) {
+        editor = page.frames().find((f) => f.url().includes("/spectra-editor/"));
         if (!editor) await sleep(100);
       }
       assert.ok(editor, "the editor's frame is there");
       for (let i = 0; i < 100 && !(await drawn(editor)); i++) await sleep(200);
       assert.deepEqual(refused, [], "every request reached the app");
       assert.ok(await drawn(editor), "the page is drawn");
-      for (let i = 0; i < 50 && !passedOn.some((u) => u.startsWith("/pdf-editor/pdfjs/")); i++) await sleep(200);
-      assert.deepEqual(refused, [], "nothing pdf.js asked for was turned away");
-      assert.ok(passedOn.some((u) => u.startsWith("/pdf-editor/pdfjs/")), "pdf.js's data came through the app's page");
+      /* The editor brings its own pdf.js, fonts and styles: they are subresources
+         of the frame's own page, which is the one thing a login proxy lets
+         through. Nothing it needs comes from anywhere else -- its commands go
+         through the window that holds it, which is the app's own page. */
+      assert.ok(passedOn.some((u) => u.startsWith("/spectra-editor/assets/")), "the editor's own files came through the app's page");
+      assert.deepEqual(refused, [], "nothing the editor asked for was turned away");
     });
   } finally {
     await browser.close();

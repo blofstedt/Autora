@@ -1,0 +1,5 @@
+{
+  "repo": "https://github.com/jasonulbright/Spectra-PDF",
+  "sha": "7edff4863d041f0a26605c98d2bd3d0f66756fd9",
+  "note": "Spectra-PDF's Python engine and ICC profiles, built into dist/spectra-engine by scripts/build-spectra.mjs and run by server/spectra/engine.ts. Bump the sha to take a newer one."
+}

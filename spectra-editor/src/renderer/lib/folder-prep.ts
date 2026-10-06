@@ -1,0 +1,304 @@
+// Folder-scope form preparation — the driver.
+//
+// Pure orchestration: every side effect (the engine, the filesystem) arrives
+// injected through `FolderPrepIo`, so vitest exercises the whole state machine
+// with no Tauri.
+//
+// Sources are read BY PATH and are never workspace members, so no ghost entry
+// can exist for one; the engine is reached through `callRaw` at the IO seam
+// (the commit gate exists to make the engine read bytes matching a document on
+// screen, and there is none here).
+//
+// The candidate shape, its naming and the grouping that turns options into one
+// field are NOT this module's: detection is the shipped door and the engine
+// builds the specs, so a folder run and a headless run create the same fields
+// from the same rows.
+
+import {
+  engineMessageOf,
+  fileIsEligible,
+  ineligibleReason,
+  joinDest,
+  sweepReason,
+  type DiskEntry,
+  type SignedNote,
+} from './folder-sweep';
+import type { DetectedCandidate, DetectionResult } from './form-candidates';
+import { signedEditDecision, type SignaturePolicy } from './signatures';
+
+/** How the scan arm is chosen for a page with nothing readable on it. */
+export type ScanMode = 'auto' | 'never' | 'always';
+
+export interface PrepDetection {
+  abs: string;
+  rel: string;
+  candidates: DetectedCandidate[];
+  /** Reported by the detector: found and deliberately not offered. */
+  unoffered: { page: number; reason: string; count: number }[];
+  /** Fields the file already carries — why an already-prepared form offers
+   * nothing, said out loud rather than left as an empty list. */
+  existingFields: number;
+  truncated: boolean;
+  /** Why this file cannot be written, in the engine's own English. */
+  skipReason: string | null;
+  signed: SignedNote | null;
+}
+
+export interface PrepDetectReport {
+  cancelled: boolean;
+  files: PrepDetection[];
+  skippedDirs: string[];
+}
+
+export type PrepFileStatus = 'prepared' | 'copied' | 'unchanged' | 'skipped';
+
+export interface PrepFileResult {
+  rel: string;
+  status: PrepFileStatus;
+  /** Fields written (prepared only) — a radio group is one field however many
+   * options it carries, which is why this is not the candidate count. */
+  fields?: number;
+  /** Candidates accepted for this file. */
+  candidates?: number;
+  /** English, like the batch report's: the log is read by whoever audits the
+   * run, whatever language the UI was in. */
+  reason?: string;
+}
+
+export interface PrepReport {
+  cancelled: boolean;
+  results: PrepFileResult[];
+  skippedDirs: string[];
+}
+
+export type PrepPhase = 'detecting' | 'preparing' | 'copying' | 'skipping';
+
+export interface PrepProgress {
+  fileIndex: number;
+  fileCount: number;
+  rel: string;
+  phase: PrepPhase;
+}
+
+export interface DetectRequest {
+  scan: ScanMode;
+  /** Tesseract language string (`eng`, `eng+fra`) for the scan arm. */
+  lang: string;
+}
+
+export interface FolderPrepIo {
+  /** `detect_form_fields` over one source path. Rejects on an unreadable or
+   * password-protected file — the driver turns that into one file's result. */
+  detect(abs: string, request: DetectRequest): Promise<DetectionResult>;
+  /** The cheap structural read the edit tier consults before every edit. */
+  signaturePolicy(abs: string): Promise<SignaturePolicy>;
+  /** `create_detected_fields`, source → output, with the rows the review
+   * kept. Returns how many FIELDS were created. */
+  create(
+    abs: string,
+    output: string,
+    candidates: DetectedCandidate[],
+    includeSigned: boolean,
+  ): Promise<number>;
+  copyFile(src: string, dest: string): Promise<void>;
+  ensureParentDirs(path: string): Promise<void>;
+}
+
+export interface PrepRunOptions {
+  onProgress?: (p: PrepProgress) => void;
+  /** Polled between files; a true return stops after the in-flight one. */
+  isCancelled?: () => boolean;
+}
+
+export interface PrepApplyOptions extends PrepRunOptions {
+  /** Empty writes each file where it stands (the consented in-place mode);
+   * otherwise every enumerated file lands under this root. */
+  destRoot: string;
+  /** The user accepted that signed documents lose their signatures. A file
+   * whose decision REFUSED is unaffected — no consent reaches it. */
+  includeSigned: boolean;
+}
+
+/** A candidate's key within a run: the file it was found in, its page and its
+ * position in that file's own list. The index is the detector's, so a key
+ * survives a re-render and cannot collide across files. */
+export function candidateKey(abs: string, candidate: DetectedCandidate): string {
+  return `${abs}\u0000${candidate.page}\u0000${candidate.index}`;
+}
+
+// ── The detect sweep ──────────────────────────────────────────────────────
+
+export async function runPrepDetect(
+  entries: DiskEntry[],
+  skippedDirs: string[],
+  request: DetectRequest,
+  io: FolderPrepIo,
+  options: PrepRunOptions = {},
+): Promise<PrepDetectReport> {
+  const onProgress = options.onProgress ?? (() => {});
+  const isCancelled = options.isCancelled ?? (() => false);
+  const files: PrepDetection[] = [];
+  let cancelled = false;
+
+  for (let i = 0; i < entries.length; i++) {
+    if (isCancelled()) {
+      cancelled = true;
+      break;
+    }
+    const entry = entries[i];
+    onProgress({ fileIndex: i, fileCount: entries.length, rel: entry.rel, phase: 'detecting' });
+    const base: PrepDetection = {
+      abs: entry.abs,
+      rel: entry.rel,
+      candidates: [],
+      unoffered: [],
+      existingFields: 0,
+      truncated: false,
+      skipReason: null,
+      signed: null,
+    };
+    try {
+      const detection = await io.detect(entry.abs, request);
+      const result: PrepDetection = {
+        ...base,
+        candidates: detection.candidates ?? [],
+        unoffered: detection.unoffered ?? [],
+        existingFields: detection.existing_fields ?? 0,
+        truncated: !!detection.truncated,
+      };
+      // The signature read costs an engine call, so it is spent only on files
+      // that have something to write. Adding a field is a structural edit: it
+      // is outside the incremental-append tier, so no revision preserves the
+      // existing signatures.
+      if (result.candidates.length > 0) {
+        try {
+          const policy = await io.signaturePolicy(entry.abs);
+          const decision = signedEditDecision(policy, 'structural');
+          if (decision.kind !== 'proceed') {
+            result.signed = {
+              reason: sweepReason(decision.reason),
+              count: policy.count,
+              refused: decision.kind === 'refuse',
+            };
+          }
+        } catch (err) {
+          // A policy that cannot be read is not a policy that permits.
+          result.skipReason = engineMessageOf(err);
+        }
+      }
+      files.push(result);
+    } catch (err) {
+      files.push({ ...base, skipReason: engineMessageOf(err) });
+    }
+  }
+
+  return { cancelled, files, skippedDirs };
+}
+
+/** Every candidate key the run may act on, so a "check everything" control
+ * cannot offer a file the run would refuse. */
+export function selectableKeys(
+  files: PrepDetection[],
+  includeSigned: boolean,
+): string[] {
+  const keys: string[] = [];
+  for (const file of files) {
+    if (!fileIsEligible(file, includeSigned)) continue;
+    for (const candidate of file.candidates) keys.push(candidateKey(file.abs, candidate));
+  }
+  return keys;
+}
+
+/** What a file's group header counts, per kind, in the detector's own
+ * vocabulary. */
+export function kindCounts(candidates: readonly DetectedCandidate[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const candidate of candidates) {
+    out[candidate.kind] = (out[candidate.kind] ?? 0) + 1;
+  }
+  return out;
+}
+
+// ── The apply sweep ───────────────────────────────────────────────────────
+
+export async function runPrepApply(
+  files: PrepDetection[],
+  selected: ReadonlySet<string>,
+  io: FolderPrepIo,
+  options: PrepApplyOptions,
+): Promise<PrepReport> {
+  const onProgress = options.onProgress ?? (() => {});
+  const isCancelled = options.isCancelled ?? (() => false);
+  const { destRoot, includeSigned } = options;
+  const inPlace = destRoot === '';
+  const results: PrepFileResult[] = [];
+  let cancelled = false;
+
+  for (let i = 0; i < files.length; i++) {
+    if (isCancelled()) {
+      cancelled = true;
+      break;
+    }
+    const file = files[i];
+    const base = { fileIndex: i, fileCount: files.length, rel: file.rel };
+    const dest = inPlace ? file.abs : joinDest(destRoot, file.rel);
+    const reason = ineligibleReason(file, includeSigned);
+    if (reason !== null) {
+      // A file the run may not write is not mirrored either: an unreadable or
+      // refused source has no output, and the report says which it was. It
+      // still reports progress — a sweep whose first hundred files are all
+      // refused would otherwise show no movement at all.
+      onProgress({ ...base, phase: 'skipping' });
+      results.push({ rel: file.rel, status: 'skipped', reason });
+      continue;
+    }
+
+    const accepted = file.candidates.filter((candidate) =>
+      selected.has(candidateKey(file.abs, candidate)),
+    );
+
+    try {
+      if (accepted.length === 0) {
+        if (inPlace) {
+          onProgress({ ...base, phase: 'skipping' });
+          results.push({ rel: file.rel, status: 'unchanged' });
+          continue;
+        }
+        onProgress({ ...base, phase: 'copying' });
+        await io.copyFile(file.abs, dest);
+        results.push({ rel: file.rel, status: 'copied' });
+        continue;
+      }
+      onProgress({ ...base, phase: 'preparing' });
+      await io.ensureParentDirs(dest);
+      const fields = await io.create(file.abs, dest, accepted, includeSigned);
+      results.push({
+        rel: file.rel,
+        status: 'prepared',
+        fields,
+        candidates: accepted.length,
+      });
+    } catch (err) {
+      results.push({ rel: file.rel, status: 'skipped', reason: engineMessageOf(err) });
+    }
+  }
+
+  return { cancelled, results, skippedDirs: [] };
+}
+
+export interface PrepSummary {
+  prepared: number;
+  copied: number;
+  unchanged: number;
+  skipped: number;
+  fields: number;
+}
+
+export function summarize(report: PrepReport): PrepSummary {
+  const out: PrepSummary = { prepared: 0, copied: 0, unchanged: 0, skipped: 0, fields: 0 };
+  for (const r of report.results) {
+    out[r.status] += 1;
+    out.fields += r.fields ?? 0;
+  }
+  return out;
+}

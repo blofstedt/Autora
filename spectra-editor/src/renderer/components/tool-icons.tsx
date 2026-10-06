@@ -1,0 +1,441 @@
+import React from 'react';
+import type { Operation } from '../commands/operations';
+
+/**
+ * Tool-rail glyphs — one per operation, in the app's established icon
+ * idiom (see canvas/icons.tsx): 24-grid, stroke-only, `currentColor`,
+ * round caps. Inheriting currentColor means every state the rail already
+ * has (active/hover, light/dark theme, Windows accent) colors the glyph
+ * with zero extra CSS. The Record type is total over Operation, so adding
+ * a tool without a glyph fails to compile.
+ */
+
+const base = {
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 2,
+  strokeLinecap: 'round' as const,
+  strokeLinejoin: 'round' as const,
+};
+
+// Path data per operation; single-glyph additions like dashes are carried
+// per-path so the shared svg wrapper stays uniform.
+// Total over Operation, so adding an op without a glyph fails tsc. The runtime
+// list of operations lives in commands/operations (the canonical source); this
+// map must merely COVER it, which the Record type already guarantees. The
+// union widens for the rare TOOL with no op whose glyph nothing else fits
+// ('measure' — a ruler is not any operation's icon): a superset still covers
+// Operation, and ToolIcon's own prop type follows this key union.
+// 'edittext', 'snapshot' and 'exportdoc' join 'measure' as TOOL glyphs with no
+// operation of their own. Without them each tile borrowed a neighbour's glyph
+// and the icon column stopped distinguishing the tools: a pixel diff of the
+// all-tools column returned Edit ≡ Watermark (both the droplet) and
+// Crop & Page Boxes ≡ Snapshot (both the crop frame), byte-identical, with
+// Scan & OCR ≡ Export a third pair on the same footing. A tile borrows its
+// first op's glyph only where that glyph is not already somebody's own.
+export type GlyphId = Operation | 'measure' | 'edittext' | 'snapshot' | 'exportdoc';
+const GLYPHS: Record<GlyphId, React.JSX.Element> = {
+  // A diagonal ruler with tick marks.
+  measure: (
+    <>
+      <rect x="2.2" y="13.6" width="19.6" height="6.2" rx="1.2" transform="rotate(-28 12 16.7)" />
+      <path d="M7.2 14.6l1.5 2.8M11 12.6l1.5 2.8M14.8 10.6l1.5 2.8M18.6 8.6l1.5 2.8" transform="rotate(0)" />
+    </>
+  ),
+  // A page cut by a dashed line down the middle.
+  split: (
+    <>
+      <rect x="4" y="4" width="16" height="16" rx="2" />
+      <path d="M12 4v16" strokeDasharray="2.5 3" />
+    </>
+  ),
+  // Clockwise rotate arrow.
+  rotate: (
+    <>
+      <path d="M21 4v6h-6" />
+      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L21 10" />
+    </>
+  ),
+  // Trash can.
+  delete: (
+    <>
+      <path d="M3 6h18" />
+      <path d="M8 6V4h8v2" />
+      <path d="M6 6l1 14h10l1-14" />
+      <path d="M10 11v6M14 11v6" />
+    </>
+  ),
+  // Arrows pulling inward.
+  compress: (
+    <>
+      <path d="M4 14h6v6" />
+      <path d="M20 10h-6V4" />
+      <path d="M14 10 21 3" />
+      <path d="M3 21l7-7" />
+    </>
+  ),
+  // Circle, right half filled.
+  grayscale: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none" />
+    </>
+  ),
+  // Lightning bolt.
+  optimize: <path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z" />,
+  // Archive box.
+  pdfa: (
+    <>
+      <rect x="3" y="4" width="18" height="4" rx="1" />
+      <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8" />
+      <path d="M10 12h4" />
+    </>
+  ),
+  // Stacked layers (versions).
+  pdf_version: (
+    <>
+      <path d="m12 3 9 5-9 5-9-5z" />
+      <path d="m3 13 9 5 9-5" />
+    </>
+  ),
+  // Closed padlock.
+  encrypt: (
+    <>
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </>
+  ),
+  // Open padlock.
+  decrypt: (
+    <>
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 7.9-.9" />
+    </>
+  ),
+  // Page with text lines.
+  extract_text: (
+    <>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <path d="M14 2v6h6" />
+      <path d="M16 13H8M16 17H8M10 9H8" />
+    </>
+  ),
+  // Bookmark ribbon.
+  // Water droplet.
+  watermark: <path d="M12 2.7s6.5 7.2 6.5 11a6.5 6.5 0 0 1-13 0c0-3.8 6.5-11 6.5-11z" />,
+  // Checked box with lines beside it.
+  forms: (
+    <>
+      <rect x="3" y="4" width="8" height="8" rx="1" />
+      <path d="m5.5 8 1.5 1.5L9.5 6" />
+      <path d="M14 7h7M14 12h7M3 17h18" />
+    </>
+  ),
+  // Two facing half-frames around a dashed axis.
+  compare: (
+    <>
+      <path d="M9 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h3" />
+      <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3" />
+      <path d="M12 2v20" strokeDasharray="2.5 3" />
+    </>
+  ),
+  // Fountain-pen nib stroke.
+  signatures: (
+    <>
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
+    </>
+  ),
+  // Angle brackets — document JavaScript.
+  document_js: (
+    <>
+      <path d="M9 8l-4 4 4 4" />
+      <path d="M15 8l4 4-4 4" />
+    </>
+  ),
+  // Three overlapping process circles — the printer's own mark for separating
+  // one image into inks. It was a droplet, which is what `watermark` is: two
+  // tools four rows apart in the tools list drew the same glyph, so the icon
+  // column stopped distinguishing them at all.
+  convert_cmyk: (
+    <>
+      <circle cx="9.5" cy="9.5" r="5" />
+      <circle cx="14.5" cy="9.5" r="5" />
+      <circle cx="12" cy="14.5" r="5" />
+    </>
+  ),
+  // A page with a header rule and a footer rule.
+  headerfooter: (
+    <>
+      <rect x="4" y="3" width="16" height="18" rx="2" />
+      <path d="M4 8h16M4 16h16" />
+    </>
+  ),
+  // Crop marks — two overlapping corner brackets.
+  pagebox: (
+    <>
+      <path d="M6 2v4H2" />
+      <path d="M6 6h12v12" />
+      <path d="M18 22v-4h4" />
+      <path d="M18 18H6V6" />
+    </>
+  ),
+  // A page with a numbered tag in the corner.
+  pagelabels: (
+    <>
+      <rect x="4" y="3" width="16" height="18" rx="2" />
+      <path d="M9 17v-6l-2 1.5" />
+      <path d="M13 17h3M13 11h3M13 14h3" strokeDasharray="1 1.5" />
+    </>
+  ),
+  // A paperclip.
+  attachments: (
+    <path d="M21 8.5l-9.2 9.2a4 4 0 0 1-5.66-5.66l8.5-8.5a2.5 2.5 0 0 1 3.54 3.54l-8.5 8.5a1 1 0 0 1-1.42-1.42l7.8-7.8" />
+  ),
+  // A step list with a play arrow (a saved sequence you run).
+  actions: (
+    <>
+      <path d="M4 6h9M4 12h9M4 18h6" />
+      <path d="M15 14l6 4-6 4v-8z" transform="translate(0 -4)" />
+    </>
+  ),
+  // A briefcase (a portfolio carries files).
+  portfolio: (
+    <>
+      <rect x="3" y="7" width="18" height="13" rx="2" />
+      <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <path d="M3 13h18" />
+    </>
+  ),
+  // Stacked sheets (layers).
+  layers: (
+    <>
+      <path d="M12 2l9 5-9 5-9-5 9-5z" />
+      <path d="M3 12l9 5 9-5" />
+      <path d="M3 17l9 5 9-5" />
+    </>
+  ),
+  // Universal accessibility figure.
+  accessibility: (
+    <>
+      <circle cx="12" cy="4.5" r="1.6" />
+      <path d="M5 8.5h14" />
+      <path d="M12 8.5v6M12 14.5l-3.5 6M12 14.5l3.5 6" />
+    </>
+  ),
+  // A speech bubble (comments).
+  comments: (
+    <>
+      <path d="M21 11.5a8.5 8.5 0 0 1-12.5 7.5L3 21l2-5.5A8.5 8.5 0 1 1 21 11.5z" />
+      <path d="M8 10.5h8M8 13.5h5" />
+    </>
+  ),
+  // A magnifier over a checklist (preflight).
+  preflight: (
+    <>
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="M21 21l-5.6-5.6" />
+      <path d="M7.5 10.5l2 2 3.5-3.5" />
+    </>
+  ),
+  // Three overlapping process-ink circles — the separation the preview shows.
+  outputpreview: (
+    <>
+      <circle cx="9.5" cy="9.5" r="5.5" />
+      <circle cx="14.5" cy="9.5" r="5.5" />
+      <circle cx="12" cy="14.5" r="5.5" />
+    </>
+  ),
+  // Stacked ink swatches over a slider — the inks and what is done to them.
+  inkmanager: (
+    <>
+      <rect x="3" y="4" width="18" height="4" rx="1" />
+      <rect x="3" y="11" width="18" height="4" rx="1" />
+      <path d="M3 19h18" />
+      <circle cx="9" cy="19" r="2" />
+    </>
+  ),
+  // A sheet's corner crop marks around a trim rectangle.
+  printermarks: (
+    <>
+      <rect x="7" y="7" width="10" height="10" rx="0.5" />
+      <path d="M7 2v3M2 7h3M17 2v3M19 7h3M7 19v3M2 17h3M17 19v3M19 17h3" />
+    </>
+  ),
+  // Three rules of increasing weight — the thinnest is the one that vanishes.
+  hairlines: (
+    <>
+      <path d="M3 6h18" strokeWidth="0.5" />
+      <path d="M3 12h18" strokeWidth="1.5" />
+      <path d="M3 18h18" strokeWidth="3" />
+    </>
+  ),
+  // Two overlapping panes, the overlap hatched — the region a flatten
+  // rasterizes is exactly where two things composite.
+  flattener: (
+    <>
+      <rect x="3" y="5" width="11" height="11" rx="1" />
+      <rect x="10" y="8" width="11" height="11" rx="1" />
+      <path d="M10 12h4M10 15h4" strokeWidth="1" />
+    </>
+  ),
+  // Two colour areas meeting, with the overlap drawn as its own thin band —
+  // a trap is the sliver where two inks are made to share an edge.
+  trappresets: (
+    <>
+      <path d="M3 6h9v12H3z" />
+      <path d="M12 6h9v12h-9z" />
+      <path d="M10.5 6v12M13.5 6v12" strokeWidth="1" />
+    </>
+  ),
+  // A luggage tag (structure tags).
+  tags: (
+    <>
+      <path d="M12.6 3h6.9a1.5 1.5 0 0 1 1.5 1.5v6.9a1.5 1.5 0 0 1-.44 1.06l-8.1 8.1a1.5 1.5 0 0 1-2.12 0l-6.9-6.9a1.5 1.5 0 0 1 0-2.12l8.1-8.1A1.5 1.5 0 0 1 12.6 3z" />
+      <circle cx="16.5" cy="7.5" r="1.3" />
+    </>
+  ),
+  // List rows with a downward flow arrow (reading order).
+  readingorder: (
+    <>
+      <path d="M9.5 5h11M9.5 12h11M9.5 19h11" />
+      <path d="M4.5 3.5v13" />
+      <path d="M2 14l2.5 2.5L7 14" />
+    </>
+  ),
+  // Three count marks and a tally stroke — the takeoff gesture itself.
+  takeoff: (
+    <>
+      <circle cx="6" cy="7" r="2.5" />
+      <circle cx="6" cy="17" r="2.5" />
+      <circle cx="13" cy="12" r="2.5" />
+      <path d="M18 5v14M21 5v14" />
+    </>
+  ),
+  // A form line with a dashed box hovering over it — a suggested field.
+  prepareform: (
+    <>
+      <path d="M4 8h16M4 16h16" />
+      <rect x="7" y="4.5" width="10" height="6" rx="1" strokeDasharray="2 2" />
+    </>
+  ),
+  // A document with a brush sweeping across it — what is carried away is what
+  // was never on the page.
+  // A grid with one column boundary drawn heavier — the line the review moves.
+  tablereview: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="1" />
+      <path d="M3 9h18" strokeWidth="1" />
+      <path d="M3 14.5h18" strokeWidth="1" />
+      <path d="M9 4v16" strokeWidth="1" />
+      <path d="M15 4v16" />
+    </>
+  ),
+  // A sheet standing off square inside its own frame, with the specks the
+  // pass takes out — the two defects the enhancement is named for.
+  scanenhance: (
+    <>
+      <rect x="3" y="3" width="18" height="18" rx="1" />
+      <path d="M7.2 17.4L9.4 6.6l7.4 1.5-2.2 10.8z" strokeWidth="1" />
+      <path d="M6 6.5h.01M18.5 15h.01M17 5.5h.01" strokeWidth="1.5" />
+    </>
+  ),
+  // A tick over the wavy underline a misspelling carries — the mark the
+  // feature draws, and the verdict it gives.
+  spelling: (
+    <>
+      <path d="M4 15l3.5-9 3.5 9" />
+      <path d="M5.4 12h4.2" />
+      <path d="M14 15l2.5 3 4.5-6" />
+      <path d="M3 20q1.5-1.5 3 0t3 0t3 0" strokeWidth="1.2" />
+    </>
+  ),
+  sanitize: (
+    <>
+      <path d="M7 3h7l4 4v6" />
+      <path d="M14 3v4h4" />
+      <path d="M4 21l3-3" />
+      <path d="M9.5 15.5l-4 4-2.5-2.5 4-4z" />
+      <path d="M11 14l3-3 2.5 2.5-3 3z" />
+    </>
+  ),
+  // A magnifier over a blacked-out line — search, then redact.
+  search_redact: (
+    <>
+      <circle cx="10" cy="9.5" r="5.5" />
+      <path d="M20.5 20l-6.6-6.6" />
+      <path d="M3.5 19.5h8" strokeWidth={4} />
+    </>
+  ),
+  // Chain link.
+  links: (
+    <>
+      <path d="M9 13a4 4 0 0 0 5.66 0l3-3a4 4 0 1 0-5.66-5.66l-1.5 1.5" />
+      <path d="M15 11a4 4 0 0 0-5.66 0l-3 3a4 4 0 1 0 5.66 5.66l1.5-1.5" />
+    </>
+  ),
+  // Wrench.
+  repair: (
+    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+  ),
+  // Circular rebuild arrows.
+  rebuild: (
+    <>
+      <path d="M21 3v5h-5" />
+      <path d="M3 21v-5h5" />
+      <path d="M21 8a9 9 0 0 0-15-5.3L3 5.5" />
+      <path d="M3 16a9 9 0 0 0 15 5.3l3-2.8" />
+    </>
+  ),
+  // An I-beam caret across a text baseline — editing text in place, which is
+  // what the tool does and what no other glyph in the set shows.
+  edittext: (
+    <>
+      <path d="M6 4h12" />
+      <path d="M12 4v13" />
+      <path d="M9 20h6" />
+      <path d="M12 17v3" />
+      <path d="M3 9v6M21 9v6" strokeWidth="1.2" />
+    </>
+  ),
+  // A dashed marquee with a solid capture corner — a region grabbed off the
+  // page, as against `pagebox`, which is a permanent crop of the sheet.
+  snapshot: (
+    <>
+      <path d="M3 6.5V4a1 1 0 0 1 1-1h2.5M17.5 3H20a1 1 0 0 1 1 1v2.5M21 17.5V20a1 1 0 0 1-1 1h-2.5M6.5 21H4a1 1 0 0 1-1-1v-2.5" />
+      <path d="M10 3h4M3 10v4M21 10v4M10 21h4" strokeDasharray="2 2.5" />
+      <rect x="8" y="8" width="8" height="8" rx="1" strokeWidth="1.4" />
+    </>
+  ),
+  // A page with content leaving it — extraction OUT of the document, as
+  // against `extract_text`, which is the page whose text is being read.
+  exportdoc: (
+    <>
+      <path d="M13 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h7" />
+      <path d="M17 8l4 4-4 4" />
+      <path d="M21 12h-9" />
+    </>
+  ),
+  // Counter-clockwise restore arrow.
+  recover: (
+    <>
+      <path d="M3 2v6h6" />
+      <path d="M3 13a9 9 0 1 0 3-7.7L3 8" />
+    </>
+  ),
+};
+
+interface ToolIconProps {
+  op: GlyphId;
+  size?: number;
+  className?: string;
+}
+
+
+export function ToolIcon({ op, size = 15, className }: ToolIconProps): React.JSX.Element {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" className={className} {...base} aria-hidden="true">
+      {GLYPHS[op]}
+    </svg>
+  );
+}

@@ -1,0 +1,113 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { tChrome } from '../i18n';
+import {
+  formatOutcome,
+  formatQueueLabel,
+  type QueueLabel,
+  type QueueOutcome,
+} from '../hooks/useOperationQueue';
+
+export interface QueueItem {
+  id: string;
+  /** What the line SAYS, as data — rendered at the current language on every
+   * paint. The operation log renders the same descriptor in English. */
+  label: QueueLabel;
+  status: 'running' | 'done' | 'error';
+  /** Failure text from the engine (passed through as the
+   * engine wrote it). Empty for running and completed operations, whose
+   * wording is the queue's own. */
+  message: string;
+  /** What a finished operation's result says it did, as data rendered at
+   * the current language; null when it says nothing beyond completing. */
+  outcome: QueueOutcome | null;
+  startTime: number;
+  /** When the operation finished; absent while it runs. The elapsed time is
+   * end minus start, never read off the clock at paint. */
+  endTime?: number;
+}
+
+interface OperationQueueProps {
+  items: QueueItem[];
+  onClear: () => void;
+}
+
+function formatTime(ts: number): string {
+  const d = new Date(ts);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+export function OperationQueue({ items, onClear }: OperationQueueProps): React.ReactElement | null {
+  // Re-render on language change; strings resolve via tChrome.
+  useTranslation();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [collapsed, setCollapsed] = useState(false);
+
+  // Auto-scroll to bottom when new items arrive or status changes
+  useEffect(() => {
+    if (scrollRef.current && !collapsed) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [items, collapsed]);
+
+  if (items.length === 0) return null;
+
+  return (
+    <div className="border-t border-neutral-800 bg-neutral-850 shrink-0">
+      <div
+        className="flex items-center justify-between px-4 py-1.5 cursor-pointer select-none"
+        onClick={() => setCollapsed((prev) => !prev)}
+      >
+        <span className="text-[10px] uppercase tracking-widest text-neutral-500 font-semibold">
+          {tChrome(
+            collapsed ? 'dialog.opqueue.headingCollapsed' : 'dialog.opqueue.heading',
+            { count: items.length },
+          )}
+        </span>
+        <button
+          onClick={(e) => { e.stopPropagation(); onClear(); }}
+          className="text-[10px] text-neutral-500 hover:text-neutral-400"
+        >
+          {tChrome('dialog.opqueue.clear')}
+        </button>
+      </div>
+      {!collapsed && (
+        <div
+          ref={scrollRef}
+          className="overflow-y-auto px-4 pb-2 flex flex-col gap-1"
+          style={{ maxHeight: 88 }}
+          tabIndex={0}
+          role="region"
+          aria-label={tChrome('dialog.opqueue.aria')}
+        >
+          {items.map((item) => (
+            <div key={item.id} className="flex items-start gap-3 text-xs">
+              <span className={`status-dot w-1.5 h-1.5 mt-1.5 rounded-full shrink-0 ${
+                item.status === 'running' ? 'bg-blue-500 animate-pulse' :
+                item.status === 'done' ? 'bg-emerald-500' : 'bg-red-500'
+              }`} />
+              <span className="min-w-0 text-neutral-300 [overflow-wrap:anywhere]">
+                {formatTime(item.startTime)} {formatQueueLabel(item.label)}
+              </span>
+              {/* Wraps rather than truncating: a failure's text is the only
+                  account of what went wrong, and an ellipsis hid its end. */}
+              <span className="min-w-0 flex-1 text-neutral-500 [overflow-wrap:anywhere]">
+                {/* Completion is the queue's OWN wording, keyed off the state
+                    discriminant rather than off any text the hook wrote —
+                    a failure's text belongs to the engine and passes through. */}
+                {item.status === 'done' ? formatOutcome(item.outcome) : item.message}
+              </span>
+              <span className="text-neutral-500 shrink-0">
+                {item.status === 'done' && item.endTime !== undefined
+                  ? tChrome('dialog.opqueue.elapsed', {
+                      seconds: ((item.endTime - item.startTime) / 1000).toFixed(1),
+                    })
+                  : ''}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

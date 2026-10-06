@@ -1,0 +1,5659 @@
+@import "tailwindcss";
+@config "../../tailwind.config.js";
+
+/* ── Scrollbars ───────────────────────────────────────────────────────────
+   WebView2 inherits Chromium's default bright scrollbars.
+   Override globally so they match the active theme.
+   ──────────────────────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1a1a1a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #404040;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #525252;
+}
+
+::-webkit-scrollbar-corner {
+  background: #1a1a1a;
+}
+
+/* ── Direction ───────────────────────────────────────────────────────────
+   A file path, a URL and a key chord are NOTATION, not prose: their parts
+   have a fixed order that bidi reordering scrambles inside a right-to-left
+   line, and a Windows path is the canonical case. `isolate` keeps the
+   surrounding line's own direction intact. Prose never carries this class —
+   prose mirrors.
+   ──────────────────────────────────────────────────────────────────────── */
+
+.ltr-notation {
+  direction: ltr;
+  unicode-bidi: isolate;
+  text-align: start;
+}
+
+/* ── Brand colors ────────────────────────────────────────────────────────
+   Override Tailwind defaults with exact brand colors.
+   ──────────────────────────────────────────────────────────────────────── */
+
+/* Accent blue: #0078D4 */
+.bg-blue-600 { background-color: #0078D4; }
+.hover\:bg-blue-500:hover { background-color: #1a8ae6; }
+.bg-blue-500 { background-color: #0078D4; }
+
+/* Danger red: #D93939 (WCAG AA 4.57:1 with white text) */
+.bg-red-600 { background-color: #D93939; }
+.hover\:bg-red-500:hover { background-color: #fc5f5f; }
+.bg-red-500 { background-color: #D93939; }
+
+/* ── Light theme overrides ────────────────────────────────────────────────
+   Remaps the dark utility palette to light equivalents. This block IS the
+   panels' light theme, permanently — NOT a legacy shim awaiting deletion.
+   The workbench CHROME themes via semantic vars (--bar-bg etc.); panel
+   BODIES deliberately kept their utility classes when they were ported, so
+   this remap is their theming mechanism and deleting it would delete the
+   light theme. Each class has its remap; a NEW dark utility class used on a
+   panel must add its light remap here in the same change.
+   Selector specificity ([data-theme] .class) beats a bare Tailwind class.
+   ──────────────────────────────────────────────────────────────────────── */
+
+/* ── Shared dim-text token (WCAG sweep) ──────────────────────────────
+   ONE variable, three theme values, each AA on the surfaces it appears on
+   (dark shell #171717/#191919, light #ffffff/#f9fafb, HC #000000). The
+   custom components converted onto it used six near-identical greys, four
+   of which measured 2.7:1–4.4:1 on the dark shell.
+   The value is AA against the LIGHTEST ground the token reaches, not against
+   the shell: dim text also lands on `--surface-2` (dark #303034, light
+   #f3f4f6), where the previous #909098 measured 4.15:1 and #6b7280 4.39:1.
+   `tests/form-controls.test.ts` computes both ratios from these hexes, so a
+   later "quieter" value cannot silently fall back under 4.5:1. */
+:root { --text-dim: #a0a0a8; --surface-2: #303034; --text: #e5e5e5; --border: #45454c; }
+[data-theme="light"] { --text-dim: #616a76; --surface-2: #ffffff; --text: #111827; --border: #d1d5db; }
+[data-theme="high-contrast"] { --text-dim: #d0d0d0; --surface-2: #0d0d0d; --text: #ffffff; --border: #2e2e2e; }
+/* --surface-2/--text/--border were consumed with fallbacks but never
+   DEFINED — every consumer (the measure scale controls among them) was
+   theme-frozen at its dark fallback. Same disease as --text-dim above. */
+
+/* Floating chrome over the document: popovers (snap options, the stamp
+   palette) and the document view's rulers. Same disease as the row above.
+   These surfaces carry their own opaque background while their text colour
+   follows the theme, so a fill frozen at a dark literal puts light-theme ink
+   on a near-black panel — black on black. */
+:root { --panel-bg: #1f1f1f; --panel-border: rgba(255, 255, 255, 0.16); --surface-1: #232327; }
+[data-theme="light"] { --panel-bg: #f9fafb; --panel-border: #d1d5db; --surface-1: #ffffff; }
+[data-theme="high-contrast"] { --panel-bg: #0d0d0d; --panel-border: #2e2e2e; --surface-1: #0d0d0d; }
+
+/* Tailwind's neutral-500 (#737373) is 3.8:1 on the dark shell and 2.7:1 on
+   bg-neutral-800 cards — sub-AA for exactly the hint text it is used on.
+   #a0a0a8 clears 4.5:1 on both. The :root prefix lifts specificity over the
+   bare utility (the same trick as the [data-theme] tables below) while still
+   losing to those tables, which come later at equal specificity. */
+:root .text-neutral-500 { color: #a0a0a8; }
+/* neutral-600 (#525252) is the same defect one step darker — 2.0:1 on a panel.
+   It reads as the "even quieter than quiet" step and is used that way (object
+   counts, truncation notes), so it takes a value one step below the -500 hint
+   text that still clears AA on the darkest ground it can land on
+   (`--surface-2` #303034, 4.7:1). Below that step there is no room left: the
+   hierarchy has to be carried by size and position, not by going sub-AA. */
+:root .text-neutral-600 { color: #9a9aa4; }
+
+/* bg-neutral-850 is OUR shade, not Tailwind's — the light/HC tables below
+   remap it, but no base utility ever existed, so in dark the "surface" was
+   silently transparent (and axe, unable to composite through the shell's
+   oklch, judged its text against a white fallback). */
+:root .bg-neutral-850 { background-color: #1f1f1f; }
+
+/* ── Muted dark-theme status tints ──────────────────────────────────────
+   Tailwind's green-400/amber-400 pastels are saturated enough to BE the
+   focus on a dark shell; the palette's job is to draw the eye to elements,
+   not to itself. Desaturated equivalents, all ≥7:1 on #171717 so the AA
+   gate keeps holding with margin. Light/HC keep their own tables (later at
+   equal specificity, so they still win). */
+:root .text-green-400 { color: #79c087; }
+:root .text-green-300 { color: #8fcf9c; }
+:root .text-green-300\/90 { color: #8fcf9ce6; }
+:root .text-green-300\/70 { color: #8fcf9cb3; }
+:root .text-green-200 { color: #a9dbb2; }
+:root .text-amber-500\/80 { color: #d0a85ccc; }
+:root .text-amber-400 { color: #d0a85c; }
+:root .text-amber-300 { color: #ddb970; }
+:root .text-amber-300\/90 { color: #ddb970e6; }
+:root .text-amber-200 { color: #e6c98f; }
+:root .text-amber-200\/90 { color: #e6c98fe6; }
+
+/* Backgrounds */
+[data-theme="light"] .bg-neutral-900  { background-color: #ffffff; }
+[data-theme="light"] .bg-neutral-850  { background-color: #f9fafb; }
+[data-theme="light"] .bg-neutral-800  { background-color: #f3f4f6; }
+[data-theme="light"] .bg-neutral-700  { background-color: #e5e7eb; }
+[data-theme="light"] .bg-neutral-600  { background-color: #d1d5db; }
+
+/* Text */
+[data-theme="light"] .text-neutral-100 { color: #111827; }
+[data-theme="light"] .text-neutral-200 { color: #1f2937; }
+[data-theme="light"] .text-neutral-300 { color: #374151; }
+[data-theme="light"] .text-neutral-400 { color: #4b5563; }
+/* #6b7280 was AA on white but 4.39:1 on the #f3f4f6 card surfaces the
+   opacity-variant table maps to — one shade darker holds on both. */
+[data-theme="light"] .text-neutral-500 { color: #616a76; }
+[data-theme="light"] .text-neutral-600 { color: #616a76; }
+[data-theme="light"] .text-white       { color: #111827; }
+
+/* Opacity variants — these slipped past the solid table above: a 60% dark
+   wash composites to #7d7d7d over white, which put card text at 3.6:1 and
+   card hint text at 1.2:1 (axe sweep, the checker/preflight rows). */
+[data-theme="light"] .bg-neutral-800\/60 { background-color: #f3f4f6; }
+[data-theme="light"] .bg-neutral-800\/50 { background-color: #f3f4f6; }
+[data-theme="light"] .bg-neutral-800\/40 { background-color: rgba(243, 244, 246, 0.7); }
+[data-theme="light"] .bg-neutral-800\/95 { background-color: #f3f4f6; }
+[data-theme="light"] .bg-neutral-900\/95 { background-color: #ffffff; }
+[data-theme="light"] .bg-neutral-900\/70 { background-color: rgba(249, 250, 251, 0.9); }
+[data-theme="light"] .bg-neutral-900\/60 { background-color: rgba(249, 250, 251, 0.9); }
+[data-theme="light"] .bg-neutral-900\/50 { background-color: rgba(249, 250, 251, 0.8); }
+[data-theme="light"] .bg-neutral-950\/40 { background-color: rgba(229, 231, 235, 0.6); }
+[data-theme="light"] .bg-neutral-700\/70 { background-color: rgba(229, 231, 235, 0.85); }
+
+/* Borders */
+[data-theme="light"] .border-neutral-800 { border-color: #e5e7eb; }
+[data-theme="light"] .border-neutral-700 { border-color: #d1d5db; }
+
+/* Hover state overrides */
+[data-theme="light"] .hover\:bg-neutral-800:hover  { background-color: #e5e7eb; }
+[data-theme="light"] .hover\:bg-neutral-750:hover  { background-color: #e5e7eb; }
+[data-theme="light"] .hover\:bg-neutral-700:hover  { background-color: #d1d5db; }
+[data-theme="light"] .hover\:bg-neutral-600:hover  { background-color: #9ca3af; }
+[data-theme="light"] .hover\:text-neutral-300:hover { color: #374151; }
+[data-theme="light"] .hover\:text-neutral-200:hover { color: #1f2937; }
+[data-theme="light"] .hover\:text-neutral-400:hover { color: #4b5563; }
+[data-theme="light"] .hover\:border-neutral-600:hover { border-color: #9ca3af; }
+[data-theme="light"] .group:hover .group-hover\:text-white { color: #111827; }
+
+/* Dialogs & overlays */
+[data-theme="light"] .bg-black\/60 { background-color: rgba(0, 0, 0, 0.3); }
+
+/* Accent buttons — seafoam/teal in light mode (WCAG AA 4.51:1 with white) */
+[data-theme="light"] .bg-blue-600 { background-color: var(--accent, #0078d4); }
+[data-theme="light"] .hover\:bg-blue-500:hover { background-color: var(--accent-hover, #005ea6); }
+[data-theme="light"] .bg-blue-600 { color: #ffffff; }
+[data-theme="light"] .bg-blue-500 { background-color: var(--accent, #0078d4); }
+
+/* Accent selection/highlight tints */
+[data-theme="light"] .bg-blue-600\/30 { background-color: rgba(13, 148, 136, 0.3); }
+[data-theme="light"] .bg-blue-600\/20 { background-color: rgba(13, 148, 136, 0.2); }
+[data-theme="light"] .ring-blue-500 { --tw-ring-color: var(--accent, #0078d4); }
+[data-theme="light"] .border-blue-500 { border-color: var(--accent, #0078d4); }
+[data-theme="light"] .border-dashed.border-blue-500 { border-color: var(--accent, #0078d4); }
+[data-theme="light"] .text-blue-300 { color: #0067b8; }
+
+/* Danger elements — light mode red #D2424E with white text (WCAG AA 4.54:1) */
+[data-theme="light"] .bg-red-600 { background-color: #D2424E; color: #ffffff; }
+[data-theme="light"] .hover\:bg-red-500:hover { background-color: #e85963; }
+[data-theme="light"] .bg-red-500 { background-color: #D2424E; color: #ffffff; }
+
+/* Status/badge text tints (light-theme sweep) — the dark-theme pastel
+   tints (red-400, green-300, amber-200…) sit at or under 3:1 on white,
+   sub-AA for exactly the text that must be readable: errors, warnings,
+   verification results. Remapped to their dark full-strength counterparts;
+   opacity variants inherit via the same class token. */
+[data-theme="light"] .text-red-400   { color: #b91c1c; }
+[data-theme="light"] .text-red-300   { color: #b91c1c; }
+[data-theme="light"] .text-red-200   { color: #991b1b; }
+[data-theme="light"] .text-green-400 { color: #15803d; }
+[data-theme="light"] .text-green-300 { color: #15803d; }
+[data-theme="light"] .text-green-300\/90 { color: #15803d; }
+[data-theme="light"] .text-green-300\/70 { color: #15803db3; }
+[data-theme="light"] .text-green-200 { color: #166534; }
+[data-theme="light"] .text-amber-500\/80 { color: #b45309; }
+[data-theme="light"] .text-amber-400 { color: #b45309; }
+[data-theme="light"] .text-amber-300 { color: #92400e; }
+[data-theme="light"] .text-amber-300\/90 { color: #92400e; }
+[data-theme="light"] .text-amber-200 { color: #92400e; }
+[data-theme="light"] .text-amber-200\/90 { color: #92400e; }
+[data-theme="light"] .text-blue-400  { color: #0067b8; }
+[data-theme="light"] .text-blue-200  { color: #0067b8; }
+/* Hover states — red-100/amber-100 are used ONLY as hover: variants (dark
+   theme brightens on hover; light darkens from the -300 base above), and a
+   bare .text-red-100 rule would never match the hover\: token. blue-200 is
+   used BOTH bare (spans above) and as a hover: variant on blue-400 links —
+   the hover must land on a different value than the base or it's a no-op. */
+[data-theme="light"] .hover\:text-red-100:hover   { color: #7f1d1d; }
+[data-theme="light"] .hover\:text-amber-100:hover { color: #78350f; }
+[data-theme="light"] .hover\:text-blue-200:hover  { color: #005ea6; }
+[data-theme="light"] .hover\:text-red-400:hover   { color: #b91c1c; }
+[data-theme="light"] .hover\:bg-red-900\/40:hover { background-color: rgba(210, 66, 78, 0.15); }
+/* Success buttons/badges: emerald-600 under white text is 3.06:1 on its own
+   — darkened for AA in light mode. color pinned like .bg-red-600/.bg-blue-600
+   above: the unscoped light .text-white remap (near-black) would otherwise
+   win on the same element and land ~3.2:1 on this green. */
+[data-theme="light"] .bg-emerald-600 { background-color: #047857; color: #ffffff; }
+[data-theme="light"] .bg-emerald-500 { background-color: #047857; color: #ffffff; }
+[data-theme="light"] .hover\:bg-emerald-500:hover { background-color: #065f46; }
+[data-theme="light"] .focus\:border-emerald-500:focus { border-color: #047857; }
+
+/* Focus ring */
+[data-theme="light"] .focus\:border-blue-500:focus { border-color: var(--accent-text, #0078d4); }
+
+/* Thumbnail borders — shadow-sm is invisible on white backgrounds */
+[data-theme="light"] .bg-white.shadow-sm { border: 1px solid #d1d5db; }
+
+/* Scrollbar styling for light mode */
+[data-theme="light"] ::-webkit-scrollbar-thumb { background-color: #d1d5db; }
+[data-theme="light"] ::-webkit-scrollbar-track  { background-color: #f3f4f6; }
+
+/* Custom components the light tables never covered — measured 1.2:1–3.4:1
+   on white in the sweep (the dock title was near-invisible). The dock
+   itself keeps its dark literal background otherwise, which is wrong in
+   BOTH light presentations (mica frosts it white, solid keeps it black
+   behind light-remapped text). */
+[data-theme="light"] .tool-dock { background: #f9fafb; border-inline-start-color: #e5e7eb; }
+[data-theme="light"] .tool-dock-header { border-bottom-color: #e5e7eb; }
+[data-theme="light"] .tool-dock-title { color: #111827; }
+[data-theme="light"] .tool-dock-btn { color: #4b5563; }
+[data-theme="light"] .tool-dock-btn:hover { background: #e5e7eb; color: #111827; }
+[data-theme="light"] .home-recent-name { color: #111827; }
+[data-theme="light"] .home-action { color: #1f2937; background: #ffffff; border-color: #d1d5db; }
+[data-theme="light"] .home-action:hover { background: #f3f4f6; border-color: #9ca3af; }
+[data-theme="light"] .home-recent-icon { background: #f3f4f6; color: #4b5563; }
+[data-theme="light"] .home-recent:hover .home-recent-icon { color: #111827; }
+[data-theme="light"] .home-recent-remove:hover { color: #111827; background: #e5e7eb; }
+[data-theme="light"] .bookmark-add-btn { color: #4b5563; }
+[data-theme="light"] .bookmark-add-btn:hover { color: #111827; }
+[data-theme="light"] .signatures-nav-recheck-btn { color: #4b5563; }
+[data-theme="light"] .signatures-nav-recheck-btn:hover:not(:disabled) { color: #111827; }
+
+/* The docked status bar and properties bar require explicit theme rows.
+   White-on-black passes the contrast gate, so an accessibility sweep
+   could not see this class of bug: it is a theme-consistency defect, not a
+   ratio one. */
+[data-theme="light"] .canvas-status-bar { background: #f3f4f6; border-top-color: #e5e7eb; }
+[data-theme="light"] .canvas-status-quiet { color: #374151; background: #ffffff; border-color: #d1d5db; }
+[data-theme="light"] .canvas-status-quiet:hover { background: #e5e7eb; color: #111827; }
+[data-theme="light"] .canvas-status-pages { color: #374151; }
+[data-theme="light"] .canvas-status-pageinput { background: #ffffff; border-color: #d1d5db; color: #111827; }
+[data-theme="light"] .properties-bar { background: #f9fafb; border-bottom-color: #e5e7eb; }
+[data-theme="light"] .properties-bar-note { color: #374151; }
+[data-theme="light"] .properties-bar-action { color: #374151; background: #ffffff; border-color: #d1d5db; }
+[data-theme="light"] .properties-bar-action:hover { background: #e5e7eb; color: #111827; }
+
+/* ── System accent color overrides ───────────────────────────────────────
+   When --accent is set (System theme), replace hardcoded blue with the
+   user's Windows accent color. Falls back to Tailwind blue when unset.
+   ──────────────────────────────────────────────────────────────────────── */
+
+:root:has(style[*|accent]) .bg-blue-600,
+:root[style*="--accent"] .bg-blue-600 { background-color: var(--accent); }
+:root[style*="--accent"] .hover\:bg-blue-500:hover { background-color: var(--accent-hover); }
+:root[style*="--accent"] .bg-blue-600\/30 { background-color: var(--accent-muted); }
+:root[style*="--accent"] .bg-blue-600\/20 { background-color: var(--accent-subtle); }
+:root[style*="--accent"] .ring-blue-500 { --tw-ring-color: var(--accent); }
+:root[style*="--accent"] .border-blue-500 { border-color: var(--accent); }
+:root[style*="--accent"] .border-dashed.border-blue-500 { border-color: var(--accent); }
+:root[style*="--accent"] .focus\:border-blue-500:focus { border-color: var(--accent-text, var(--accent)); }
+/* Accent AS TEXT gets its own lifted variable: hover now shifts DARKER for
+   dark accents (away from white button text), so reusing it as link text on
+   the dark shell would sit under 3:1. --accent-text is the accent lifted to
+   AA on #171717 (accent.ts). */
+:root[style*="--accent"] .text-blue-300 { color: var(--accent-text, var(--accent-hover)); }
+/* The rest of the blue family follows the system accent. Every blue-* utility
+   follows the accent, including the accent-color of range/checkbox inputs
+   and the info-banner wash. */
+:root[style*="--accent"] .text-blue-400 { color: var(--accent-text, var(--accent-hover)); }
+:root[style*="--accent"] .text-blue-200 { color: var(--accent-text, var(--accent-hover)); }
+:root[style*="--accent"] .text-blue-100 { color: var(--accent-text, var(--accent-hover)); }
+:root[style*="--accent"] .hover\:text-blue-200:hover { color: var(--accent-text, var(--accent-hover)); }
+:root[style*="--accent"] .accent-blue-600 { accent-color: var(--accent); }
+:root[style*="--accent"] .border-blue-800 { border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+:root[style*="--accent"] .border-blue-500\/60 { border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+:root[style*="--accent"] .bg-blue-900\/60 { background-color: color-mix(in srgb, var(--accent) 28%, transparent); }
+:root[style*="--accent"] .bg-blue-500 { background-color: var(--accent); }
+
+/* Text on solid accent surfaces: white fails contrast on light accents
+   (yellow, spring green — Windows itself flips to dark text there), so the
+   fg is luminance-chosen alongside the accent itself. Muted/subtle washes
+   keep normal text. */
+:root[style*="--accent"] .bg-blue-600,
+:root[style*="--accent"] .bg-blue-500 { color: var(--accent-fg, #ffffff); }
+:root[style*="--accent"] .hover\:bg-blue-500:hover { color: var(--accent-fg, #ffffff); }
+
+
+/* Disabled buttons drop their semantic or accent color entirely. The tokens keep
+   this right in every theme; placed after the accent rules so it wins the
+   equal-specificity tie against them. */
+:root .bg-blue-600:disabled, :root .bg-blue-500:disabled,
+:root .bg-emerald-600:disabled, :root .bg-emerald-500:disabled,
+:root .bg-red-600:disabled, :root .bg-red-500:disabled {
+  background-color: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text-dim);
+}
+
+/* ── Native form controls ─────────────────────────────────────────────────
+   ONE element-level layer themes every checkbox, radio and select in the
+   product. The rules are ELEMENT selectors, not a class, because a control
+   added later must be themed by construction: a per-panel opt-in is what
+   produced #FFFFFF boxes on a #1a1a1a surface across ten surfaces, where an
+   unstyled native control is the highest-contrast object on the panel and
+   pulls the eye to the least important thing on screen.
+
+   `color-scheme` alone does not do it: it darkens the box but leaves the
+   checked fill at Chromium's #0075FF, a colour that is in no theme's palette.
+   So the box is drawn from scratch (`appearance: none`) and its checked fill
+   is the accent — the same token the armed-tool pill and every other selected
+   surface uses. A checkbox is a selection, and it says so in the selection
+   colour.
+
+   No backdrop variant: every surface these controls sit on is opaque under
+   Mica (`.app-content` repaints #171717 / #ffffff), so the control tokens
+   composite against a known ground in both looks.
+   ──────────────────────────────────────────────────────────────────────── */
+
+/* `--strip-btn-border` is the quiet resting edge of a button that is present
+   but not armed — the tool strip's mode buttons, and any future row of peers
+   where only one is chosen. It is deliberately below `--control-border`: a
+   toolbar of nine equally-boxed buttons has to read as a toolbar without
+   nine borders competing with the one armed pill.
+   `--danger` is the product's ONE destructive idiom (see the `.danger-action`
+   rule): before it, Delete and Remove were bare text beside bordered buttons
+   on four surfaces while a single panel had a real red button. */
+:root {
+  --control-bg: #262629;
+  --control-border: #55555e;
+  --control-border-hover: #7f7f8a;
+  --strip-btn-border: #3a3a40;
+  /* #d9395f — the red the product already used — measures 4.47:1 against its
+     own white label. The darker step clears AA without changing the hue. */
+  --danger: #c62d52;
+  --danger-hover: #d9395f;
+  --danger-fg: #ffffff;
+  --danger-text: #f08ba3;
+}
+[data-theme="light"] {
+  --control-bg: #ffffff;
+  --control-border: #9ca3af;
+  --control-border-hover: #6b7280;
+  --strip-btn-border: #d1d5db;
+  --danger: #b3243c;
+  --danger-hover: #97182f;
+  --danger-fg: #ffffff;
+  --danger-text: #a4172f;
+}
+[data-theme="high-contrast"] {
+  --control-bg: #000000;
+  --control-border: #ffffff;
+  --control-border-hover: #ffffff;
+  --strip-btn-border: #ffffff;
+  --danger: #000000;
+  --danger-hover: #1a1a1a;
+  --danger-fg: #ffffff;
+  --danger-text: #ffffff;
+}
+
+/* A fieldset's user-agent `min-inline-size: min-content` makes it as wide as
+   the widest unbreakable content inside it (a text input's intrinsic size,
+   a nowrap row), so it overflows a narrow pane or dialog instead of letting
+   its flex rows shrink. */
+fieldset {
+  min-inline-size: 0;
+}
+
+/* Range inputs draw their own track and thumb from the theme tokens. The
+   native track picks its unfilled shade by contrast against the accent, so a
+   light accent draws a near-black track on the light theme whatever
+   `color-scheme` says. A drawn track has no native filled part:
+   `--range-fill` is the filled share, set by components/RangeInput.tsx. */
+input[type="range"] {
+  appearance: none;
+  -webkit-appearance: none;
+  block-size: 16px;
+  background: transparent;
+  --range-accent: var(--accent, #0078d4);
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  block-size: 4px;
+  border-radius: 2px;
+  background:
+    linear-gradient(var(--range-accent), var(--range-accent)) 0 0 / var(--range-fill, 0%) 100% no-repeat,
+    var(--control-border);
+}
+/* The element runs from the inline start, so the fill does too. */
+input[type="range"]:dir(rtl)::-webkit-slider-runnable-track {
+  background-position: 100% 0, 0 0;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  inline-size: 14px;
+  block-size: 14px;
+  margin-block-start: -5px;
+  border-radius: 50%;
+  border: none;
+  background: var(--range-accent);
+}
+input[type="range"]:focus-visible {
+  outline: none;
+}
+input[type="range"]:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--range-accent);
+  outline-offset: 2px;
+}
+input[type="range"]:disabled {
+  opacity: 0.5;
+}
+/* Forced colors drop a gradient background, which would leave the track
+   invisible; system colors keep the track, the fill and the thumb apart. */
+@media (forced-colors: active) {
+  input[type="range"]::-webkit-slider-runnable-track {
+    forced-color-adjust: none;
+    background:
+      linear-gradient(Highlight, Highlight) 0 0 / var(--range-fill, 0%) 100% no-repeat,
+      GrayText;
+  }
+  input[type="range"]:dir(rtl)::-webkit-slider-runnable-track {
+    background-position: 100% 0, 0 0;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    forced-color-adjust: none;
+    background: Highlight;
+    border: 1px solid CanvasText;
+  }
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
+  display: inline-grid;
+  place-content: center;
+  inline-size: 14px;
+  block-size: 14px;
+  margin: 0;
+  vertical-align: -2px;
+  background: var(--control-bg);
+  border: 1px solid var(--control-border);
+  border-radius: 3px;
+  cursor: default;
+}
+
+input[type="radio"] {
+  border-radius: 50%;
+}
+
+input[type="checkbox"]:hover:not(:disabled),
+input[type="radio"]:hover:not(:disabled) {
+  border-color: var(--control-border-hover);
+}
+
+/* The glyph is a scaled-to-zero child rather than a toggled one, so the box
+   never reflows between states. */
+input[type="checkbox"]::before,
+input[type="radio"]::before {
+  content: "";
+  transform: scale(0);
+  background: var(--accent-fg, #ffffff);
+}
+
+input[type="checkbox"]::before {
+  inline-size: 10px;
+  block-size: 10px;
+  clip-path: polygon(14% 47%, 0 61%, 39% 100%, 100% 22%, 85% 10%, 37% 72%);
+}
+
+input[type="radio"]::before {
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 50%;
+}
+
+input[type="checkbox"]:checked::before,
+input[type="radio"]:checked::before {
+  transform: scale(1);
+}
+
+/* An indeterminate box is a THIRD state, not a dimmer checked one: the dash
+   replaces the tick rather than fading it, or a partly-checked group reads as
+   a checked group with a rendering fault. */
+input[type="checkbox"]:indeterminate::before {
+  transform: scale(1);
+  clip-path: none;
+  inline-size: 8px;
+  block-size: 2px;
+  border-radius: 1px;
+}
+
+input[type="checkbox"]:checked,
+input[type="radio"]:checked,
+input[type="checkbox"]:indeterminate {
+  background: var(--accent, #0078d4);
+  border-color: var(--accent, #0078d4);
+}
+
+[data-theme="high-contrast"] input[type="checkbox"]:checked,
+[data-theme="high-contrast"] input[type="radio"]:checked,
+[data-theme="high-contrast"] input[type="checkbox"]:indeterminate {
+  background: #ffffff;
+}
+[data-theme="high-contrast"] input[type="checkbox"]::before,
+[data-theme="high-contrast"] input[type="radio"]::before {
+  background: #000000;
+}
+
+input[type="checkbox"]:disabled,
+input[type="radio"]:disabled {
+  background: var(--surface-2);
+  border-color: var(--border);
+  opacity: 0.55;
+}
+
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--accent-text, #0078d4);
+  outline-offset: 1px;
+}
+
+/* The chevron is drawn as a background image (the element has no room for a
+   pseudo-element beside its option list).
+
+   `background-position` HAS NO LOGICAL KEYWORDS. `center end 7px` parses as
+   nothing, the whole declaration is dropped, and the chevron falls back to the
+   initial `0% 0%` — top-left, clipped by the control's own top border, on every
+   select in the product. It is therefore written physically, and the RTL case
+   is a second physical rule rather than a keyword the property does not have.
+
+   A value wider than the box gets an ellipsis, not a slice through a glyph:
+   `<select>` with `appearance: none` is an ordinary inline box for this
+   purpose, and "Over conten" reads as a stored value while "Over conten…"
+   reads as a value that continues. The chevron owns its own column
+   (`padding-inline-end`), so the ellipsis lands before it rather than under
+   it. */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: var(--control-bg);
+  color: var(--text);
+  border: 1px solid var(--control-border);
+  border-radius: 4px;
+  padding-block: 3px;
+  padding-inline: 8px 22px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23909098' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-size: 9px;
+  background-position: right 7px center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+[dir="rtl"] select {
+  background-position: left 7px center;
+}
+
+select:hover:not(:disabled) {
+  border-color: var(--control-border-hover);
+}
+
+select:disabled {
+  color: var(--text-dim);
+  opacity: 0.6;
+}
+
+/* The option list is drawn by the OS, so its colours are set on the option
+   itself rather than inherited from the panel. */
+select option {
+  background: var(--control-bg);
+  color: var(--text);
+}
+
+/* Document-drawn controls are page CONTENT, not chrome: a form widget on the
+   canvas reproduces the file's own appearance stream, so it keeps the native
+   rendering the stream describes and takes neither the chrome chevron nor the
+   chrome's padding. */
+:root .page-form-select {
+  appearance: auto;
+  -webkit-appearance: auto;
+  background-image: none;
+  padding: revert;
+  /* The UA draws its own chevron INSIDE the box; a clipping box can cut it. */
+  overflow: revert;
+  text-overflow: revert;
+}
+
+/* Panel selects carry Tailwind padding utilities (`px-2`), and a class always
+   outranks a bare element rule — the label would run under the chevron on
+   every one of them. Only the GUTTER is lifted over a single class, so the
+   chevron always owns its own column while a panel keeps control of the rest
+   of the select's surface. */
+:root select {
+  padding-inline-end: 22px;
+}
+
+/* ── Text inputs: placeholder vs value, and honest overflow ───────────────
+   Element level, for the same reason the control layer is: a box added later
+   has to inherit both of these or it re-earns the bugs.
+
+   A placeholder must not be readable as a value. Chromium's default is close
+   enough to the value colour that a "—" placeholder in an empty box was
+   indistinguishable from a "—" somebody typed, which is the difference between
+   "no header here" and "a header reading em-dash".
+
+   And a value too long for its box gets an ellipsis rather than being sliced
+   through a glyph. "Northwind Instru" and "Page {page} of {p" read as the
+   stored value; "Northwind Instru…" reads as a value that continues. The
+   property applies only while the box is not focused — a caret needs the whole
+   string to scroll — which is exactly when the reader is judging it. */
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-dim);
+  opacity: 1;
+}
+input[type="text"],
+input[type="search"],
+input:not([type]) {
+  text-overflow: ellipsis;
+}
+
+/* ── Action idioms ────────────────────────────────────────────────────────
+   Three classes, applied where the meaning applies, so that "what happens if
+   I press this" is answered by shape rather than by the panel it lives in.
+   The alternative is Delete and Remove as bare text beside bordered buttons,
+   and one class of action spelled three ways (a pill, a bordered button, an
+   underlined link).
+   ──────────────────────────────────────────────────────────────────────── */
+
+/* DESTRUCTIVE: removes something the user cannot get back by pressing again.
+   It is a filled button in `--danger`, never bare text — a destructive action
+   with no button box is quieter on screen than the reversible actions beside
+   it, which is exactly backwards. */
+.danger-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border: 1px solid var(--danger);
+  border-radius: 4px;
+  background: var(--danger);
+  color: var(--danger-fg);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.danger-action:hover:not(:disabled) {
+  background: var(--danger-hover);
+  border-color: var(--danger-hover);
+}
+/* The quiet register of the same idiom: a per-row Delete inside a list, where
+   a wall of filled red buttons would be its own legibility problem. Still a
+   button box, still `--danger` — the hue and the box are what carry the
+   meaning; only the emphasis differs. */
+.danger-action.is-quiet {
+  background: transparent;
+  color: var(--danger-text);
+  border-color: color-mix(in srgb, var(--danger) 55%, transparent);
+}
+.danger-action.is-quiet:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+  border-color: var(--danger);
+  color: var(--danger-text);
+}
+
+/* QUIET: a real action on what is already on screen, at low emphasis — re-run
+   the audit, check every row, expand the detail. It is a button box because
+   pressing it does something; it is quiet because it is not what the panel is
+   for. This is the class that used to be spelt as an underlined link, which is
+   how five surfaces ended up with three affordances for one kind of action. */
+.quiet-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border: 1px solid var(--strip-btn-border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.quiet-action:hover:not(:disabled) {
+  border-color: var(--control-border-hover);
+  color: var(--text);
+}
+
+/* A LINK navigates or opens something ELSE — another panel, a folder tool, a
+   target outside this view. It is the only thing that gets an underline. An
+   action that changes what is already here is a button, whatever its emphasis:
+   "Check all", "Audit again" and "Details" were links sitting in button rows,
+   so the underline had stopped predicting anything. */
+.link-action {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+  color: var(--accent-text, var(--accent, #4cc2ff));
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ONE disabled treatment, product-wide. It has to be legible: a control dimmed
+   to 2:1 reads as absent rather than unavailable, and a reader cannot tell a
+   disabled row from a rendering fault. The `:disabled` element rule sets the
+   floor for controls that declare nothing; the Tailwind `disabled:opacity-60`
+   utility carries the same value where a component declares it, so the two
+   agree instead of racing on specificity. */
+:where(button, select, input, textarea):disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Whole-word: the label is boxed, which is what makes `ab` mean "this exact
+   word" rather than "the letters a and b". The button's own border is the
+   button; this underline is the mark. */
+.find-mode-word > span,
+.find-mode-word {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ── Colour-swatch pickers ────────────────────────────────────────────────
+   ONE picker component's styling, so a swatch row means the same thing in
+   every panel. The selection ring is on the ELEMENT state, not on each
+   panel's own markup: three pickers previously carried two selection
+   behaviours, and the one with none sat beside a page already highlighted in
+   a colour the row could not point at.
+   The ring is drawn OUTSIDE the swatch (outline + offset) because a swatch's
+   whole surface is its value — an inset ring reports a colour the picker
+   would then apply. */
+/* ── The swatch visibility floor ──────────────────────────────────────────
+   THE RULE: a swatch's boundary is a UI component boundary (WCAG 1.4.11), so
+   it clears 3:1 against the panel ground in EVERY theme, and it does so with
+   ONE token — never with an alpha over the panel colour, which is what makes
+   the floor a function of whatever surface the swatch happens to land on.
+
+   It is the boundary that carries the floor, never the fill: the fill IS the
+   value. A near-black swatch on the dark shell measured 1.10:1 with a 1.88:1
+   ring, and the Black ink chip 1.01:1 with a 2.09:1 border — both read as an
+   EMPTY swatch, which in an ink list is a different claim from "black".
+   `--swatch-edge` is chosen to clear 3:1 against both the dark shell and the
+   light card surfaces, so one value answers every ground the swatch reaches.
+   Every colour chip in the product takes it: the pickers below, the ink and
+   plate chips, and the comment cards' accent bar. */
+:root { --swatch-edge: #8a8a94; }
+[data-theme="light"] { --swatch-edge: #6b7280; }
+[data-theme="high-contrast"] { --swatch-edge: #ffffff; }
+
+/* The shared chip: any element whose BACKGROUND is a document or annotation
+   colour. It is a class rather than a repeated utility string so a chip added
+   later inherits the floor instead of re-earning the bug. */
+.color-chip {
+  box-shadow: inset 0 0 0 1px var(--swatch-edge);
+}
+
+.color-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  /* A swatch at or near the panel's own colour would otherwise read as a hole
+     in the row rather than as a choice. */
+  box-shadow: inset 0 0 0 1px var(--swatch-edge);
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  cursor: pointer;
+  padding: 0;
+  border: none;
+}
+
+/* The comment card's accent bar: the annotation's own colour, drawn as a chip
+   along the card's inline-start edge rather than as a border, so the floor
+   above reaches it. As a border it was invisible at #16161A — the row simply
+   had no accent while its neighbours did. Inline-start rather than a physical
+   side: the bar follows the reading direction the card's text does. */
+.comment-accent {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 3px;
+  border-start-start-radius: inherit;
+  border-end-start-radius: inherit;
+  pointer-events: none;
+}
+.color-swatch.is-selected,
+.color-swatch[aria-pressed="true"] {
+  outline-color: var(--accent-text, var(--accent, #0078d4));
+}
+
+/* ── Workbench chrome ─────────────────────────────────────────────────────
+   The menu bar, main toolbar, and tab strip all carry `.app-shell-bar`, so
+   the Mica frame rules below (keyed on that class) tint them automatically —
+   the re-key done by class reuse rather than new
+   selectors. They have no background of their own; in the solid look they
+   show `.app-shell` (bg-neutral-900 / light remap) through, exactly as the
+   old single header did, keeping the no-attribute fallback canonical.
+   The doc-tab lane scrolls horizontally with a thin, theme-following bar. */
+/* Both axes, deliberately. `overflow-x: auto` makes the OTHER axis compute to
+   `auto` as well (a `visible` sibling is not representable), so the lane grew a
+   VERTICAL scrollbar the moment its 32px tabs exceeded its 32px box by a
+   border. Zeroing only `height` left that bar's `width` at the platform
+   default, and it painted a ~6x25px light rounded thumb hard against the
+   trailing edge of the last tab — the unlabelled pill in the hero shot, a
+   scroll affordance in a strip with nothing to scroll vertically. The lane
+   also declares `overflow-y: hidden` at its element, so the layout never
+   reserves that gutter in the first place; this rule is the belt for the
+   platforms that draw an overlay bar regardless. */
+.app-tab-lane::-webkit-scrollbar { height: 0; width: 0; }
+
+/* ── Window backdrop (Mica) ──────────────────────────────────────────────
+   Set up only when the backend actually applied a backdrop — index.tsx
+   stamps <html data-backdrop="mica"> before the first render. The frame
+   (menu bar + toolbar + tab strip + tools rail) goes translucent so the Mica
+   material shows through; content surfaces get the exact background the shell
+   used to paint, so everything inside them renders as before. Without the
+   attribute this whole section is inert and the app is pixel-identical to
+   the solid look.
+   ──────────────────────────────────────────────────────────────────────── */
+
+/* The root's pre-paint ground (index.html: #171717, the solid look's own
+   `.app-shell` colour) follows the theme once one is stamped, and is cleared
+   entirely under a backdrop -- an opaque root would composite over the Mica
+   material and there would be nothing left to see through. Both attributes are
+   stamped before the first render, so no frame ever shows the wrong one. */
+:root[data-theme="light"] {
+  background: #ffffff;
+}
+
+:root[data-theme="high-contrast"] {
+  background: #000000;
+}
+
+:root[data-backdrop="mica"] {
+  background: transparent;
+}
+
+:root[data-backdrop="mica"] .app-shell {
+  background: transparent;
+}
+
+:root[data-backdrop="mica"] .app-shell-bar,
+:root[data-backdrop="mica"] .app-rail {
+  background: rgba(23, 23, 23, 0.55);
+}
+
+:root[data-backdrop="mica"] .app-content {
+  background: #171717;
+}
+
+/* Opaque in the light theme. The window material follows the OS theme, not
+   the app's, so under a dark OS a translucent white composited to a mid-gray
+   band carrying dark text. */
+:root[data-backdrop="mica"][data-theme="light"] .app-shell-bar,
+:root[data-backdrop="mica"][data-theme="light"] .app-rail {
+  background: #f3f3f3;
+}
+
+:root[data-backdrop="mica"][data-theme="light"] .app-content {
+  background: #ffffff;
+}
+
+/* Scrollbar tracks paint opaque boxes over translucent surfaces; over
+   opaque content they just show the content background instead. */
+:root[data-backdrop="mica"] ::-webkit-scrollbar-track,
+:root[data-backdrop="mica"] ::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Chrome banners (update bar, commit-error bar) sit between the header and
+   the content row — outside .app-content — with translucent tints that
+   used to composite over the shell's opaque background. Over a transparent
+   shell they'd composite against the desktop, so the old base returns as
+   background-color and the exact Tailwind tint moves one layer up as a
+   background-image (painted over the color). */
+:root[data-backdrop="mica"] .app-banner.bg-blue-900\/60 {
+  background-color: #171717;
+  background-image: linear-gradient(
+    color-mix(in oklab, var(--color-blue-900) 60%, transparent),
+    color-mix(in oklab, var(--color-blue-900) 60%, transparent)
+  );
+}
+
+:root[data-backdrop="mica"] .app-banner.bg-red-600\/20 {
+  background-color: #171717;
+  background-image: linear-gradient(
+    color-mix(in oklab, var(--color-red-600) 20%, transparent),
+    color-mix(in oklab, var(--color-red-600) 20%, transparent)
+  );
+}
+
+:root[data-backdrop="mica"][data-theme="light"] .app-banner.bg-blue-900\/60,
+:root[data-backdrop="mica"][data-theme="light"] .app-banner.bg-red-600\/20 {
+  background-color: #ffffff;
+}
+
+/* ── Left navigation pane ─────────────────────────────────────────────────
+   The icon strip carries `.app-rail` (Mica frame tint under a backdrop; the
+   panel body carries `.app-content`, opaque). Dark defaults + a light remap,
+   dark-defaults-plus-light-remap being the house pattern.
+   ──────────────────────────────────────────────────────────────────────── */
+.nav-icon-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border-inline-end: 1px solid #262626;
+}
+.nav-icon-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: #a3a3a3;
+  cursor: default;
+}
+.nav-icon-btn:hover { background: #262626; color: #e5e5e5; }
+.nav-icon-btn.active { background: #404040; color: #ffffff; }
+
+.nav-panel-body {
+  position: relative;
+  border-inline-end: 1px solid #262626;
+  min-width: 180px;
+}
+.nav-panel-header {
+  padding: 6px 10px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  color: #a3a3a3;
+  border-bottom: 1px solid #262626;
+  flex-shrink: 0;
+}
+.nav-resize-handle {
+  position: absolute;
+  top: 0;
+  inset-inline-end: -3px;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 5;
+}
+.nav-resize-handle:hover { background: rgba(0, 120, 212, 0.35); }
+
+.navpanel-scroll { height: 100%; overflow-y: auto; overflow-x: hidden; }
+.navpanel-empty { padding: 16px; font-size: 13px; color: var(--text-dim); }
+/* Nav-pane host for tool-dock panel components (left-dock candidates):
+   the dock body's breathing room at nav width. */
+.navpanel-tool-host { padding: 12px; }
+
+.thumb-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  cursor: pointer;
+  padding: 4px 0;
+}
+.thumb-row:hover { background: #1f1f1f; }
+.thumb-row.selected { background: color-mix(in srgb, var(--accent, #0078d4) 22%, transparent); }
+/* The page being READ. Deliberately NOT the selection's fill: "you are here" and
+   "this is a delete/rotate target" are different claims, and the two can be true
+   of different pages at once (or the same one — hence a marker that composes
+   with .selected rather than replacing it). A left rule reads as a position
+   indicator without competing with the selection fill. */
+.thumb-row.current { box-shadow: inset 3px 0 0 var(--accent, #0078d4); }
+.thumb-row.current .thumb-label { color: #e5e5e5; font-weight: 600; }
+.thumb-frame {
+  position: relative;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+.thumb-frame canvas { transition: opacity 0.15s ease; }
+.thumb-label { font-size: 11px; color: #a3a3a3; }
+.thumb-row.selected .thumb-label { color: #ffffff; }
+/* The insertion rule. Vertical by default — the panel lays pages out in a
+   grid, so a gap is between two columns; top/height/offset come from the grid
+   math inline. `.is-row` is the one-column case, where the panel is a list and
+   the gap is a boundary between rows. */
+.thumb-drop-indicator {
+  position: absolute;
+  width: 2px;
+  margin-inline-start: -1px;
+  background: var(--accent, #0078d4);
+  border-radius: 1px;
+  z-index: 6;
+  pointer-events: none;
+}
+.thumb-drop-indicator.is-row {
+  inset-inline: 8px;
+  width: auto;
+  height: 2px;
+  margin-inline-start: 0;
+}
+
+/* Bookmarks nav panel — one surface: reorder handle + inline edit. */
+.bookmarks-list { padding: 4px 6px; }
+.bookmark-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 0;
+}
+.bookmark-row.dragging { opacity: 0.4; }
+.bookmark-indent { flex: 0 10 auto; min-width: 0; }
+.bookmark-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  color: #6b7280;
+  cursor: grab;
+  flex-shrink: 0;
+  touch-action: none;
+}
+.bookmark-handle:active { cursor: grabbing; }
+.bookmark-title-input {
+  flex: 1 1 40px;
+  min-width: 0;
+  padding: 2px 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.bookmark-title-input:hover { background: #262626; }
+.bookmark-title-input:focus { background: #262626; border-color: #404040; }
+.bookmark-jump {
+  text-align: end;
+  font-size: 11px;
+  color: #6b7280;
+  padding: 0 2px;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.bookmark-jump:hover:not(:disabled) { color: var(--accent-text, #4cc2ff); text-decoration: underline; }
+[data-theme="light"] .bookmark-jump:hover:not(:disabled) { color: #0067b8; }
+/* Width is set inline from the document's page count (lib/page-field-width).
+   `ch` sizing is only exact while the digits are tabular. */
+.bookmark-page-input {
+  padding: 2px 4px;
+  text-align: end;
+  background: #262626;
+  border: 1px solid #404040;
+  border-radius: 3px;
+  color: inherit;
+  font-size: 11px;
+  outline: none;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+/* The native spinner is painted INSIDE the field and would cover the last
+   digit at hover/focus. Arrow keys still step the value. */
+.bookmark-page-input::-webkit-outer-spin-button,
+.bookmark-page-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+.bookmark-btn {
+  width: 18px;
+  color: #6b7280;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.bookmark-btn:hover { color: #e5e5e5; }
+.bookmark-btn-danger:hover { color: #f87171; }
+.bookmarks-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-top: 1px solid #262626;
+  flex-shrink: 0;
+}
+.bookmark-add-btn {
+  font-size: 12px;
+  white-space: nowrap;
+  color: #a3a3a3;
+  padding: 3px 8px;
+  border: 1px solid #404040;
+  border-radius: 4px;
+}
+.bookmark-add-btn:hover { color: #e5e5e5; background: #262626; }
+.bookmark-status { min-width: 0; font-size: 11px; color: var(--text-dim); overflow-wrap: anywhere; }
+
+/* Search nav panel — query box + per-file hit list with snippets. */
+.search-panel-input-row {
+  padding: 8px;
+  border-bottom: 1px solid #262626;
+  flex-shrink: 0;
+}
+.search-panel-input {
+  width: 100%;
+  padding: 5px 8px;
+  background: #262626;
+  border: 1px solid #404040;
+  border-radius: 4px;
+  color: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.search-panel-input:focus { border-color: var(--accent-text, #0078d4); }
+.search-results { padding: 4px 0; }
+.search-summary {
+  padding: 4px 10px 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.search-file-group { margin-bottom: 4px; }
+.search-file-name {
+  padding: 4px 10px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #a3a3a3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.search-hit {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  padding-block: 4px;
+  padding-inline: 16px 10px;
+  text-align: start;
+  cursor: pointer;
+}
+.search-hit:hover { background: #1f1f1f; }
+.search-hit-page { font-size: 12px; color: #d4d4d4; }
+.search-hit-snippet {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+[data-theme="light"] .search-panel-input-row { border-bottom-color: #e5e7eb; }
+[data-theme="light"] .search-panel-input { background: #f3f4f6; border-color: #d1d5db; }
+[data-theme="light"] .search-panel-input:focus { border-color: var(--accent-text, #0078d4); }
+[data-theme="light"] .search-file-name { color: #6b7280; }
+[data-theme="light"] .search-hit:hover { background: #f3f4f6; }
+[data-theme="light"] .search-hit-page { color: #1f2937; }
+[data-theme="light"] .search-hit-snippet { color: #6b7280; }
+/* A matched term drawn in the body colour hides the searched word in a wall
+   of context. The mark
+   is the SAME wash the canvas paints a find hit with, so "this is your match"
+   looks the same in the list and on the page. `<mark>`'s UA colours are
+   overridden outright — its default is a light-theme yellow. */
+.search-hit-mark {
+  background: color-mix(in srgb, var(--accent, #0078d4) 35%, transparent);
+  color: var(--text);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* Signatures nav panel — compact status read-view of verify_signatures. */
+.signatures-nav-count {
+  padding: 6px 10px 4px;
+  font-size: 11px;
+  color: #6b7280;
+}
+.signature-nav-card {
+  margin: 0 8px 6px;
+  padding: 7px 9px;
+  border: 1px solid #262626;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.signature-nav-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.signature-nav-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.signature-nav-dot-valid { background: #22c55e; }
+.signature-nav-dot-modified { background: #f59e0b; }
+.signature-nav-dot-invalid { background: #ef4444; }
+.signature-nav-signer {
+  font-size: 12px;
+  color: #e5e5e5;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.signature-nav-status { font-size: 11px; color: #a3a3a3; }
+/* The product's ONE muted-text token. #6b7280 measured 3.53:1 here — an
+   outlier below AA on a line of real information (integrity, field name,
+   claimed time), while the same class of text everywhere else runs 6.94:1. */
+.signature-nav-detail { font-size: 10px; color: var(--text-dim); }
+.signature-nav-error { font-size: 10px; color: #f87171; }
+.signatures-nav-caveat {
+  margin: 4px 8px 8px;
+  padding: 6px 8px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: rgba(253, 230, 138, 0.85);
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 5px;
+}
+.signatures-nav-footer {
+  display: flex;
+  padding: 6px 8px;
+  border-top: 1px solid #262626;
+  flex-shrink: 0;
+}
+.signatures-nav-recheck-btn {
+  font-size: 12px;
+  color: #a3a3a3;
+  padding: 3px 8px;
+  border: 1px solid #404040;
+  border-radius: 4px;
+}
+.signatures-nav-recheck-btn:hover:not(:disabled) { color: #e5e5e5; background: #262626; }
+.signatures-nav-recheck-btn:disabled { opacity: 0.6; }
+/* Panel-level verify failure — flagged red, distinct from the gray "no
+   signatures" empty state (which is plain .navpanel-empty). */
+.signatures-nav-error { color: #f87171; }
+
+/* Document-level certification readout, shared by both signature surfaces. */
+.certification-banner {
+  margin: 4px 8px 6px;
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.certification-banner-head { font-weight: 600; }
+.certification-banner-level { font-size: 10px; opacity: 0.85; }
+.certification-banner-violated { font-size: 10px; font-weight: 600; }
+.certification-banner-ok {
+  color: rgba(191, 219, 254, 0.95);
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(59, 130, 246, 0.35);
+}
+.certification-banner-violation {
+  color: rgba(254, 202, 202, 0.95);
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.4);
+}
+.certification-banner-caveat {
+  color: rgba(253, 230, 138, 0.9);
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.3);
+}
+.signature-nav-kind { font-size: 10px; font-weight: 600; color: #93c5fd; }
+.signature-nav-policy { font-size: 10px; color: #fca5a5; }
+.signature-nav-policy-unjudged { color: rgba(253, 230, 138, 0.85); }
+
+[data-theme="light"] .certification-banner-ok { color: #1d4ed8; background: rgba(59, 130, 246, 0.08); }
+[data-theme="light"] .certification-banner-violation { color: #b91c1c; background: rgba(239, 68, 68, 0.08); }
+[data-theme="light"] .certification-banner-caveat { color: #92620e; }
+[data-theme="light"] .signature-nav-kind { color: #1d4ed8; }
+[data-theme="light"] .signature-nav-policy { color: #b91c1c; }
+[data-theme="light"] .signature-nav-policy-unjudged { color: #92620e; }
+
+[data-theme="light"] .signature-nav-card { border-color: #e5e7eb; background: rgba(0, 0, 0, 0.015); }
+[data-theme="light"] .signature-nav-signer { color: #1f2937; }
+[data-theme="light"] .signatures-nav-footer { border-top-color: #e5e7eb; }
+[data-theme="light"] .signatures-nav-recheck-btn { border-color: #d1d5db; }
+[data-theme="light"] .signatures-nav-recheck-btn:hover:not(:disabled) { background: #e5e7eb; }
+[data-theme="light"] .signatures-nav-caveat { color: #92620e; }
+
+[data-theme="light"] .bookmark-title-input:hover,
+[data-theme="light"] .bookmark-title-input:focus { background: #f3f4f6; border-color: #d1d5db; }
+[data-theme="light"] .bookmark-page-input { background: #f3f4f6; border-color: #d1d5db; }
+[data-theme="light"] .bookmarks-footer { border-top-color: #e5e7eb; }
+[data-theme="light"] .bookmark-add-btn { border-color: #d1d5db; }
+[data-theme="light"] .bookmark-add-btn:hover { background: #e5e7eb; }
+
+[data-theme="light"] .nav-icon-strip,
+[data-theme="light"] .nav-panel-body { border-inline-end-color: #e5e7eb; }
+[data-theme="light"] .nav-icon-btn { color: #6b7280; }
+[data-theme="light"] .nav-icon-btn:hover { background: #e5e7eb; color: #1f2937; }
+[data-theme="light"] .nav-icon-btn.active { background: #d1d5db; color: #111827; }
+[data-theme="light"] .nav-panel-header { color: #6b7280; border-bottom-color: #e5e7eb; }
+[data-theme="light"] .thumb-row:hover { background: #f3f4f6; }
+[data-theme="light"] .thumb-label { color: #6b7280; }
+[data-theme="light"] .thumb-row.selected .thumb-label { color: #111827; }
+[data-theme="light"] .thumb-row.current .thumb-label { color: #111827; }
+
+/* ── Canvas workspace view ────────────────────────────────────────────────
+   Scoped under .canvas-view: the board declares its own theme variables,
+   mapped onto Spectra PDF's palette here (dark default, light via
+   [data-theme="light"]), so the canvas components read one set of names
+   whichever theme is active.
+   ──────────────────────────────────────────────────────────────────────── */
+
+.canvas-view {
+  --surface: #ffffff;
+  --ink: rgba(255, 255, 245, 0.92);
+  --ink-soft: rgba(255, 255, 245, 0.6);
+  --ink-faint: rgba(255, 255, 245, 0.4);
+  /* ── The canonical selection idiom ─────────────────────────────────────
+     ONE token carries "selected" everywhere, in one of two forms, and the
+     form is the meaning:
+       FILL (`--accent` / `--select` as a background)  — the single thing in
+         use right now: the armed tool, the chosen mode of a segmented
+         control, the row being read.
+       OUTLINE / RING in the same colour — a MEMBER of a multi-selection: a
+         picked page, a picked annotation. Many can be true at once, so the
+         treatment has to compose rather than dominate.
+     A "you are here" marker is a THIRD thing and never borrows either: it is
+     an edge rule (`.thumb-row.current`), because position and selection can
+     be true of different items at the same time.
+     A surface that picks its own literal adds an idiom (a cyan fill, a
+     teal border, a blue top band, a grey fill, bold text). A new surface
+     takes this token in one of these two forms; a literal here is how
+     another idiom is born. */
+  --select: var(--accent, #0078d4);
+  --hover: rgba(255, 255, 255, 0.08);
+  --group-bg: rgba(255, 255, 255, 0.05);
+  --page-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.36);
+  user-select: none;
+}
+
+[data-theme="light"] .canvas-view {
+  --ink: #16161a;
+  --ink-soft: #55555c;
+  --ink-faint: #8e8e94;
+  --select: var(--accent, #0078d4);
+  --hover: rgba(22, 22, 26, 0.06);
+  --group-bg: rgba(20, 20, 24, 0.045);
+  --page-shadow: 0 1px 2px rgba(20, 20, 24, 0.07), 0 6px 20px rgba(20, 20, 24, 0.06);
+}
+
+.canvas-viewport {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  cursor: grab;
+}
+
+/* Document view — the continuous reading column (plain scroller, not the
+   d3 board). Pages are absolutely positioned inside a full-height spacer by the
+   virtualizer; each row shows the page shadow + a white backing so a page reads
+   as a page even before its raster lands. */
+.docview-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* auto, NOT hidden: rows are centred, so a page wider than the pane would be
+     clipped on BOTH edges with no way to reach them — which is routine at Actual
+     Size for landscape/large-format pages, i.e. exactly where actual size
+     matters. The spacer takes the widest page's width (DocumentView). */
+  overflow-x: auto;
+  background: #262626;
+}
+/* min-width keeps the centring honest when the document is NARROWER than the
+   pane: without it the spacer would shrink to the page and `left: 50%` would
+   centre within that, hugging the left edge instead of the viewport. */
+.docview-spacer { min-width: 100%; }
+
+/* pdf.js text layer — selectable text over the raster.
+   These rules are pdf.js's OWN contract, hand-copied from its
+   `web/pdf_viewer.css`: it positions each span with `left`/`top` plus a
+   `--font-height`/`--scale-x`/`--rotate` custom-property triple and expects the
+   stylesheet to turn those into `font-size`/`transform`. Importing its viewer
+   CSS wholesale is not an option (6k lines of a viewer chrome we don't use), so
+   the geometry rules are reproduced here and the decorative ones (find
+   highlight, editor) omitted. `--scale-factor` is set per-page in
+   PageTextLayer. Do not "tidy" these — they are an external contract; if pdf.js
+   changes them, text lands in the wrong place. */
+.textLayer {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  opacity: 1;
+  line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  /* z-index 0, NOT a positive value: the annotation/redaction/signature
+     controls in PageCell are z-index:auto siblings that come LATER in the DOM,
+     so an explicitly-stacked layer here would paint (and hit-test) OVER them and
+     swallow their clicks — and they only render under the Select tool, which is
+     exactly when this layer is pointer-interactive (regression: the delete ×
+     and recolor swatches went dead in Read view). At 0 the tie breaks on tree
+     order: above the raster (earlier), below the overlays (later). */
+  z-index: 0;
+  --total-scale-factor: calc(var(--scale-factor) * var(--user-unit, 1));
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+  /* TextLayer's constructor sizes this container via `setLayerDimensions`, which
+     emits `round(down, var(--total-scale-factor) * Npx, var(--scale-round-x))`.
+     pdf.js defines these on its VIEWER root (`.pdfViewer`), which we don't have
+     — and an undefined var makes the whole width/height declaration invalid at
+     computed-value time, i.e. an unsized layer. They must be declared here. */
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
+}
+.textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+.textLayer > :not(.markedContent),
+.textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.textLayer .markedContent { display: contents; }
+
+/* Recognition-in-progress badge for a scanned page whose words are being
+   recognised for selection. Deliberately quiet: recognition
+   is a side effect of arming the Select tool, not an operation the user
+   started, so it reads as a page state rather than as progress. A page that
+   recognises nothing, or badly, shows nothing at all and falls back to the
+   freehand highlighter. */
+.page-ocr-busy {
+  position: absolute;
+  top: 8px;
+  inset-inline-end: 8px;
+  z-index: 2;
+  pointer-events: none;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: rgb(212 212 212);
+  background: rgb(38 38 38 / 0.82);
+  border: 1px solid rgb(82 82 82 / 0.9);
+}
+/* THE ROTATION. pdf.js does NOT bake rotation into span positions — its
+   `PageViewport.rawDims` is derived from the viewBox alone, never from
+   scale/rotation, so passing `rotation` to getViewport leaves every span's
+   left/top byte-identical. The viewport's rotation surfaces ONLY as the
+   `data-main-rotation` attribute that TextLayer's constructor stamps on the
+   container, and pdf.js's own stylesheet is what actually turns it — so
+   omitting these rules leaves the text unrotated over a rotated raster and
+   selection grabs the wrong glyphs (regression by running the real
+   TextLayer: same span coords at rotation 0 and 90, differing only in the
+   attribute). Copied verbatim from pdf_viewer.css — part of the same external
+   contract as the rules above. */
+.textLayer[data-main-rotation='90'] { transform: rotate(90deg) translateY(-100%); }
+.textLayer[data-main-rotation='180'] { transform: rotate(180deg) translate(-100%, -100%); }
+.textLayer[data-main-rotation='270'] { transform: rotate(270deg) translateX(-100%); }
+/* pdf.js emits these for images; they aren't text and must not be selectable. */
+.textLayer span[role='img'] {
+  user-select: none;
+  cursor: default;
+}
+/* The selection itself — the spans are transparent, so this is what the user
+   actually sees. Accent-tinted so it reads as ours in both themes. */
+.textLayer ::selection {
+  background: color-mix(in srgb, var(--accent, #0078d4) 45%, transparent);
+}
+.docview-row {
+  background: #ffffff;
+  box-shadow: var(--page-shadow);
+}
+[data-theme="light"] .docview-scroll { background: #eceef1; }
+
+.canvas-viewport.panning {
+  cursor: grabbing;
+}
+
+.canvas-world {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+
+.canvas-doc {
+  position: absolute;
+  transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.canvas-view.committing .canvas-doc {
+  transition: none;
+}
+
+.doc-row {
+  width: 100%;
+  padding: 52px 16px 14px;
+  background: var(--group-bg);
+  border-radius: 24px;
+}
+
+.canvas-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+.overlay-header-slot {
+  position: absolute;
+  transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.doc-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px;
+  pointer-events: auto;
+  transform: scale(calc(1 / max(var(--k, 1), 1)));
+  transform-origin: bottom left;
+  white-space: nowrap;
+}
+
+.doc-index {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+}
+
+.doc-name {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  cursor: text;
+}
+
+.doc-name:hover {
+  background: var(--hover);
+}
+
+/* The rename field reuses .doc-name so it stays visually identical. */
+.doc-name-input {
+  font-family: inherit;
+  background: var(--hover);
+  border: none;
+  outline: none;
+  min-width: 80px;
+}
+
+.doc-pages {
+  font-size: 12px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+[data-theme="light"] .doc-index,
+[data-theme="light"] .doc-pages {
+  color: var(--ink-soft);
+}
+
+.doc-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-inline-start: auto;
+  align-self: center;
+  /* Resting emphasis, not near-invisibility. At 0.35 the four glyphs
+     (chevron up, chevron down, export, close) composited to roughly #555 on
+     the strip header's ground — about 2:1, below any usable threshold and
+     invisible to an automated audit because they are SVG rather than text.
+     0.85 on `--ink-soft` keeps them quieter than the document name beside them
+     while staying readable (a glyph is a graphical object, so the applicable
+     threshold is 3:1; this composites to ~4.7:1 dark and ~4.4:1 light).
+     Hover still takes them to full. */
+  opacity: 0.85;
+  transition: opacity 0.15s ease;
+}
+
+.canvas-view .icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.canvas-view .icon-btn:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.canvas-view .icon-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.doc-header:hover .doc-actions {
+  opacity: 1;
+}
+
+.page-strip {
+  overflow: visible;
+}
+
+.page-strip-inner {
+  display: flex;
+  flex-wrap: wrap; /* rows break at the max-width DocumentRow sets — must mirror layout.ts wrapPages */
+  gap: 18px;
+  padding: 0 6px;
+  width: max-content;
+}
+
+/* Add-page ghost: a dashed "+" at the end of a document's strip. Width
+   is set inline from layout.ts ADD_GHOST_WIDTH so the layout math and the DOM
+   agree on the wrap. */
+.page-add-ghost {
+  flex-shrink: 0;
+  align-self: flex-start;
+  border: 2px dashed rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 22px;
+  font-weight: 300;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.page-add-ghost:hover {
+  border-color: var(--accent, #2f6fed);
+  color: var(--accent, #2f6fed);
+}
+
+.canvas-view .page {
+  position: relative;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-radius: 10px;
+  box-shadow: var(--page-shadow);
+  overflow: hidden;
+  cursor: pointer;
+  transition:
+    opacity 0.15s ease,
+    filter 0.15s ease;
+}
+
+.canvas-view .page.selected {
+  outline: 3px solid var(--select);
+  outline-offset: 2px;
+}
+
+.canvas-view .page.collapsing {
+  box-shadow: none;
+}
+
+.canvas-view .page.ghost {
+  background: var(--hover);
+  border: 1.5px dashed var(--ink-faint);
+  box-shadow: none;
+  cursor: default;
+  pointer-events: none;
+}
+
+.canvas-view .page.ghost.grow {
+  animation: ghost-grow 0.18s cubic-bezier(0.2, 0, 0, 1);
+}
+
+@keyframes ghost-grow {
+  from {
+    width: 0;
+    opacity: 0;
+  }
+}
+
+/* Inline-SVG dashed border with a wider dash gap than CSS `border: dashed`
+   allows; sized to its host by the DashedBorder component. */
+.dashed-border {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.dashed-border rect {
+  stroke: var(--ink-faint);
+  transition: stroke 0.15s ease;
+}
+
+.add-ghost {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-shrink: 0;
+  font-family: inherit;
+  color: var(--ink-faint);
+  background: var(--hover);
+  border: none;
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.add-label {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.add-ghost:hover {
+  color: var(--ink);
+}
+
+.add-ghost:hover .dashed-border rect {
+  stroke: var(--ink-soft);
+}
+
+/* Persistent, transparent "Add document" row after the last document: a
+   dashed outline holding one always-visible ghost page. The padding places
+   that page where a real first page sits — keep in sync with ROW_PAD_Y. */
+.add-doc-row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 52px 22px 14px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.add-doc-row:hover .dashed-border rect {
+  stroke: var(--ink-soft);
+}
+
+.add-doc-page {
+  transition: color 0.15s ease;
+}
+
+.add-doc-row:hover .add-doc-page {
+  color: var(--ink);
+}
+
+/* Suppressed mid-drag so it never collides with the between-document ghost. */
+.canvas-view.dragging .add-doc-row {
+  display: none;
+}
+
+.ghost-doc {
+  pointer-events: none;
+  animation: ghost-row-in 0.2s ease;
+  transition: top 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.doc-row.ghost {
+  padding: 42px 16px 14px;
+}
+
+.ghost-strip {
+  display: flex;
+  gap: 18px;
+  padding: 0 6px;
+  width: max-content;
+}
+
+@keyframes ghost-row-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.pageview {
+  position: absolute;
+  inset: 0;
+}
+
+.pageview-base {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.pageview-base.ready {
+  opacity: 1;
+}
+
+.pageview-detail {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+/* The separation composite stands in for the viewer's raster while Output
+   Preview is armed. It sits above the base, which keeps the viewer's own
+   pixels so leaving the mode restores the page with nothing to re-render. */
+.pageview-separation {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pageview-separation.ready {
+  opacity: 1;
+}
+
+/* ── The document is never recoloured ─────────────────────────────────────
+   An OS contrast theme puts the webview into forced-colors mode, where every
+   author colour is replaced from the system palette. Page content is not the
+   app's to recolour in any mode, so these roots opt the whole document
+   subtree out — UNCONDITIONALLY, not per app theme: the OS setting is
+   independent of which theme is picked.
+
+   `forced-color-adjust` inherits, so one declaration per root covers the
+   rasters, the pdf.js text layer, annotation artwork and the white paper
+   beneath them. It also covers the PAGE-LOCAL chrome (selection handles,
+   mode bands, the drafting grid, snap markers), and that is the intent: the
+   forced palette is defined against the system canvas, and its foreground
+   drawn over unforced white paper is routinely invisible. Those overlays are
+   designed against paper in every theme already.
+
+   Bitmaps need no rule of their own — forced colors replaces CSS colour
+   properties, not canvas or image content. What it destroys is the CSS
+   around them: white paper becoming Canvas, and SVG fill/stroke on
+   annotation artwork. */
+.page,
+.docview-row,
+.pageview,
+.thumb-frame {
+  forced-color-adjust: none;
+}
+
+.page-number {
+  position: absolute;
+  bottom: 6px;
+  right: 8px;
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(40, 40, 45, 0.55);
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 4px;
+  padding: 1px 5px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  font-variant-numeric: tabular-nums;
+}
+
+.canvas-view .page:hover .page-number {
+  opacity: 1;
+}
+
+/* Pending (uncommitted) annotation overlays — positioned by the display-
+   normalized rect on PageRef.annotations. The rect itself must not block
+   page dragging; only the remove button takes pointer events. */
+.page-annot {
+  position: absolute;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.page-annot-x {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 16px;
+  height: 16px;
+  line-height: 14px;
+  font-size: 11px;
+  text-align: center;
+  color: #fff;
+  background: rgba(20, 20, 24, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 50%;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: auto;
+}
+
+.canvas-view .page:hover .page-annot-x {
+  opacity: 1;
+}
+
+/* Per-annotation recolor row — opposite corner from the remove button. */
+.page-annot-recolor {
+  position: absolute;
+  top: -10px;
+  left: -2px;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: rgba(20, 20, 24, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: auto;
+}
+
+.canvas-view .page:hover .page-annot-recolor {
+  opacity: 1;
+}
+
+.page-annot-recolor-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  padding: 0;
+}
+
+.page-annot-band {
+  background: rgba(255, 213, 74, 0.35);
+  border-color: #ffd54a;
+}
+
+.page-annot-band.band-redact {
+  background: rgba(224, 57, 62, 0.22);
+  border-color: #e0393e;
+}
+
+/* Pending redaction marks: unmistakably not a highlight — dark fill, red
+   border, corner tag. Same pointer contract as .page-annot: the box never
+   blocks page interactions, only the × takes events. The label clips itself
+   (not the box) so the outside-the-corner × is never cut off. */
+.page-redact {
+  position: absolute;
+  background: rgba(12, 12, 16, 0.55);
+  border: 1.5px solid #e0393e;
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+/* Edit ▸ Images: clickable placement outlines. Quiet at rest, obvious
+   on hover, accent when selected — the selection is what the secondary
+   toolbar's actions operate on. */
+.page-editimg {
+  position: absolute;
+  background: transparent;
+  border: 1.5px dashed rgba(120, 170, 255, 0.55);
+  border-radius: 2px;
+  padding: 0;
+  cursor: pointer;
+}
+.page-editimg:hover {
+  border-color: rgba(120, 170, 255, 0.95);
+  background: rgba(120, 170, 255, 0.08);
+}
+.page-editimg.selected {
+  border: 2px solid var(--accent, #3b82f6);
+  background: rgba(59, 130, 246, 0.12);
+}
+
+/* Vector objects — a distinct teal tint separates them from images
+   (blue) and text. The box is the container; a transparent hit button fills
+   it; a small delete affordance shows when selected. */
+.page-editvec {
+  position: absolute;
+  border: 1.5px dashed rgba(16, 185, 160, 0.5);
+  border-radius: 2px;
+  box-sizing: border-box;
+}
+.page-editvec:hover {
+  border-color: rgba(16, 185, 160, 0.9);
+  background: rgba(16, 185, 160, 0.07);
+}
+.page-editvec.selected {
+  border: 2px solid #0ea5a0;
+  background: rgba(16, 185, 160, 0.12);
+}
+.page-editvec-hit {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.page-editvec-del {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 20px;
+  height: 20px;
+  line-height: 18px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid #0b8f8a;
+  background: #0ea5a0;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  z-index: 20; /* above the reused image transform overlay */
+}
+.page-editvec-del:hover {
+  background: #0b8f8a;
+}
+.page-editvec-toolbar {
+  position: absolute;
+  transform: translateY(6px);
+  z-index: 20;
+}
+.page-editvec-toolbar.above {
+  transform: translateY(calc(-100% - 6px));
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(20, 24, 28, 0.92);
+  border: 1px solid #0b8f8a;
+  white-space: nowrap;
+}
+.page-editvec-ctl {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #cfeeea;
+}
+.page-editvec-ctl input[type='color'] {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+.page-editvec-width {
+  width: 48px;
+  font-size: 11px;
+  padding: 1px 3px;
+}
+
+/* Image transform overlay: outline quad + handles on the selected
+   image. The root spans the page (coordinate reference); only the polygon and
+   handle dots take pointer events. */
+.page-imgtx {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.page-imgtx-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.page-imgtx-quad {
+  fill: rgba(59, 130, 246, 0.1);
+  stroke: var(--accent, #3b82f6);
+  stroke-width: 1.5;
+  pointer-events: fill;
+  cursor: move;
+}
+.page-imgtx-arm {
+  stroke: var(--accent, #3b82f6);
+  stroke-width: 1.5;
+  fill: none;
+}
+.page-imgtx-handle,
+.page-imgtx-rotate {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  background: #fff;
+  border: 1.5px solid var(--accent, #3b82f6);
+  pointer-events: auto;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.page-imgtx-handle {
+  border-radius: 2px;
+}
+.page-imgtx-rotate {
+  border-radius: 50%;
+  cursor: grab;
+}
+/* Multi-select: the group frame (dashed box over the union bounds) and
+   the per-member outlines inside it. Members take the pointer for drags,
+   modifier toggles, and collapse clicks. */
+.page-imgtx-groupframe {
+  fill: rgba(59, 130, 246, 0.06);
+  stroke: var(--accent, #3b82f6);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 3;
+  pointer-events: fill;
+  cursor: move;
+}
+.page-imgtx-member {
+  fill: rgba(59, 130, 246, 0.08);
+  stroke: var(--accent, #3b82f6);
+  stroke-width: 1;
+  pointer-events: fill;
+  cursor: move;
+}
+/* Skew handles — diamonds at the edge midpoints, visually
+   distinct from the square resize corners and the round rotate knob. */
+.page-imgtx-skew {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  background: #fff;
+  border: 1.5px solid var(--accent, #3b82f6);
+  transform: rotate(45deg);
+  pointer-events: auto;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.secondary-toolbar-hint {
+  font-size: 11px;
+  color: var(--text-dim, #a0a0a8);
+  align-self: center;
+  padding: 0 4px;
+}
+/* Multi-select: the align/distribute cluster in the Edit strip. */
+.secondary-toolbar-align {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-inline-start: 6px;
+  padding-inline-start: 6px;
+  border-inline-start: 1px solid var(--border, #3a3a40);
+}
+.secondary-toolbar-hint.error {
+  color: #f87171;
+}
+
+/* Measure: the scale-ratio controls + latest-value readout. */
+.measure-scale-input {
+  width: 52px;
+  padding: 2px 4px;
+  font-size: 11px;
+  background: var(--surface-2, #303034);
+  color: var(--text, #e5e5e5);
+  border: 1px solid var(--border, #45454c);
+  border-radius: 4px;
+  align-self: center;
+}
+.measure-scale-select {
+  padding: 2px 2px;
+  font-size: 11px;
+  background: var(--surface-2, #303034);
+  color: var(--text, #e5e5e5);
+  border: 1px solid var(--border, #45454c);
+  border-radius: 4px;
+  align-self: center;
+}
+.measure-leave-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.measure-result {
+  color: #fbbf24;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The symbol palette (the stamp picker's third species and the
+   Takeoff panel's marker picker: ONE component, so one block of style). */
+.symbol-palette {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+/* The stamp picker's palette hangs BELOW the strip as a popover (the
+   snap-popover precedent). It must not be a wrapped row of the strip: that
+   overflowed the toolbar's box and was painted under the document view — a
+   palette you could see and could not press. */
+.symbol-palette-popover {
+  position: absolute;
+  top: calc(100% - 2px);
+  inset-inline-start: 10px;
+  z-index: 40;
+  width: 320px;
+  max-width: calc(100% - 20px);
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.symbol-palette-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.symbol-palette-search {
+  flex: 1 1 auto;
+  min-width: 80px;
+  padding: 3px 6px;
+  font-size: 12px;
+  color: var(--text, #e6e6ea);
+  background: var(--surface-1);
+  border: 1px solid var(--border, #45454c);
+  border-radius: 4px;
+}
+.symbol-palette-action {
+  padding: 2px 6px;
+  font-size: 11px;
+  /* A button label, not hint text: --text-dim is authored against the shell
+     and misses AA on the lighter --surface-2 these sit on. */
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.symbol-palette-action:hover {
+  border-color: var(--text);
+}
+.symbol-palette-sets {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  max-height: 320px;
+}
+.symbol-palette-sets.compact {
+  max-height: 168px;
+}
+.symbol-palette-set-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-dim, #a0a0a8);
+}
+.symbol-palette-set-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.symbol-palette-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+  gap: 2px;
+}
+.symbol-palette-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 3px 2px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  /* The press starts a DRAG (window-level pointer listeners), so the browser's
+     own text/image drag must not compete for it. */
+  touch-action: none;
+  user-select: none;
+}
+.symbol-palette-item:hover {
+  background: var(--surface-2, #303034);
+}
+.symbol-palette-item.active {
+  border-color: var(--accent, #2f6fed);
+  background: var(--surface-2, #303034);
+}
+/* Two lines, not one: symbol names are phrases whose distinguishing word is
+   often the last, and a single line in the 56px cell cut every one of them
+   to its first word. The button's title carries the full name. */
+.symbol-palette-item-name {
+  font-size: 9px;
+  line-height: 1.1;
+  color: var(--text-dim, #a0a0a8);
+  max-width: 100%;
+  overflow: hidden;
+  text-align: center;
+  overflow-wrap: break-word;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+.symbol-palette-empty,
+.symbol-palette-status {
+  font-size: 11px;
+  color: var(--text-dim, #a0a0a8);
+  margin: 0;
+}
+.symbol-palette-status.error {
+  color: #f87171;
+}
+/* The drag ghost follows the pointer at the window level and is never a hit
+   target — the drop hit-tests what is UNDER it. */
+.symbol-drag-ghost {
+  position: fixed;
+  z-index: 2000;
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+/* Divides one species of pill from the next inside a strip. */
+.secondary-toolbar-sep {
+  align-self: stretch;
+  width: 1px;
+  margin-inline: 4px;
+  background: var(--border, #45454c);
+}
+
+/* A saved personal signature's pill: the mark itself at pill height, drawn by
+   the same thumbnail the capture dialog lists. */
+.signature-preset {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  height: 26px;
+  padding-inline: 6px;
+  color: var(--text, #e6e6ea);
+}
+.signature-preset > * {
+  max-height: 20px;
+  max-width: 84px;
+}
+/* A typed signature is text in a script face whose ascenders and descenders
+   reach well past the em box; at the thumbnail's inline 22px size inside a
+   20px clip the ink was cut top and bottom. The chip draws it smaller, and the
+   block padding lies inside the clip so the strokes outside the line box
+   stay visible. */
+.signature-preset > span {
+  max-height: none;
+  font-size: 15px !important;
+  line-height: 20px;
+  padding-block: 3px;
+  /* A script face runs wider than the drawn and imported thumbnails' cap:
+     at that cap a typed name loses its last letters with no ellipsis. */
+  max-inline-size: 160px;
+  text-overflow: ellipsis;
+}
+
+/* Custom stamp library. */
+.stamp-custom-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.stamp-custom-thumb {
+  height: 18px;
+  max-width: 64px;
+  object-fit: contain;
+  display: block;
+}
+.stamp-custom-del {
+  position: absolute;
+  top: -6px;
+  inset-inline-end: -6px;
+  width: 14px;
+  height: 14px;
+  line-height: 12px;
+  font-size: 11px;
+  border-radius: 50%;
+  background: var(--surface-2, #303034);
+  border: 1px solid var(--border, #45454c);
+  color: var(--text-dim, #a0a0a8);
+  opacity: 0;
+  transition: opacity 80ms;
+}
+.stamp-custom-wrap:hover .stamp-custom-del,
+.stamp-custom-del:focus-visible {
+  opacity: 1;
+}
+.stamp-custom-del:hover {
+  color: #f87171;
+  border-color: #f87171;
+}
+.stamp-new-label {
+  width: 210px;
+  padding: 2px 6px;
+  font-size: 11px;
+  background: var(--surface-2, #303034);
+  color: var(--text, #e5e5e5);
+  border: 1px solid var(--border, #45454c);
+  border-radius: 4px;
+  align-self: center;
+}
+
+/* Edit ▸ Text: run outlines — quieter than image boxes at rest (text
+   pages are dense); locked runs show a subdued outline whose title carries
+   the refusal reason. */
+.page-edittext {
+  position: absolute;
+  background: transparent;
+  border: 1px dotted rgba(160, 220, 160, 0.4);
+  border-radius: 1px;
+  padding: 0;
+  cursor: text;
+}
+.page-edittext:hover {
+  border-color: rgba(160, 220, 160, 0.95);
+  background: rgba(160, 220, 160, 0.08);
+}
+.page-edittext.selected {
+  border: 1.5px solid var(--accent, #3b82f6);
+  background: rgba(59, 130, 246, 0.1);
+}
+.page-edittext.locked {
+  cursor: not-allowed;
+  border-color: rgba(200, 160, 120, 0.45);
+}
+
+/* Paragraph boxes — the primary edit-mode text surface. A calmer
+   dash than run boxes so a page of paragraphs reads as regions, not
+   clutter; selection matches the shared accent. */
+.page-editpara {
+  position: absolute;
+  background: transparent;
+  border: 1px dashed rgba(140, 190, 235, 0.45);
+  border-radius: 2px;
+  padding: 0;
+  cursor: text;
+}
+.page-editpara:hover {
+  border-color: rgba(140, 190, 235, 0.95);
+  background: rgba(140, 190, 235, 0.07);
+}
+.page-editpara.selected {
+  border: 1.5px solid var(--accent, #3b82f6);
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.page-edittext-editor {
+  position: absolute;
+  z-index: 5;
+}
+/* The textarea + its colour backdrop share ONE box so the coloured
+   text lines up under the caret. The wrapper is sized by the textarea (in
+   flow); the backdrop absolutely fills it. */
+.page-editpara-inputwrap {
+  position: relative;
+  display: block;
+}
+.page-editpara-editor textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 120px;
+  padding: 1px 3px;
+  border: 1.5px solid var(--accent, #3b82f6);
+  border-radius: 2px;
+  background: #fff;
+  color: #111;
+  font-family: Helvetica, Arial, sans-serif;
+  resize: both;
+  position: relative;
+  z-index: 1;
+}
+.page-editpara-editor textarea.invalid {
+  border-color: #dc2626;
+}
+/* The paragraph editor's RICH SURFACE — one contentEditable
+   where the styled text IS the input, so the caret/selection/wrapping are
+   computed from the glyphs the user sees. (It replaced a styled backdrop +
+   transparent textarea, whose separate uniform metrics drifted from any
+   bold/size/family run.) Same box as the textarea above so the editor's
+   footprint on the page is unchanged. */
+.page-editpara-rich {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 120px;
+  padding: 1px 3px;
+  border: 1.5px solid var(--accent, #3b82f6);
+  border-radius: 2px;
+  background: #fff;
+  color: #111;
+  font-family: Helvetica, Arial, sans-serif;
+  position: relative;
+  z-index: 1;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  overflow-y: auto;
+  resize: both;
+  caret-color: #111;
+  /* A per-span size can exceed the base line box; keep ascenders and
+     descenders from clipping against the box edge. */
+  line-height: 1.25;
+}
+.page-editpara-rich:focus {
+  outline: none;
+}
+.page-editpara-rich.invalid {
+  border-color: #dc2626;
+}
+/* Both edit surfaces carry `resize: both`, and the corner grip is the ONE
+   native control chrome left in the product after the control layer replaced
+   the checkboxes, radios and selects: Chromium paints its own grey hatch,
+   which on the white page reads as an artefact rather than as part of the box
+   it resizes. Drawn instead as a corner in the box's own border colour, so
+   the grip belongs to the edit box and follows it into the invalid state. The
+   colours are literals for `.page-editpara`'s reason — this is drawn ON the
+   page, where the theme has no say. */
+.page-editpara-editor textarea::-webkit-resizer,
+.page-editpara-rich::-webkit-resizer {
+  background: linear-gradient(
+    135deg,
+    transparent 0 55%,
+    var(--accent, #3b82f6) 55% 100%
+  );
+}
+.page-editpara-editor textarea.invalid::-webkit-resizer,
+.page-editpara-rich.invalid::-webkit-resizer {
+  background: linear-gradient(135deg, transparent 0 55%, #dc2626 55% 100%);
+}
+/* A misspelled word inside the rich surface. The editor draws this itself
+   rather than letting the webview mark the box, because the webview's checker
+   cannot see the chosen dictionary or the words the user has added.
+   `text-decoration-line: spelling-error` renders the platform's own squiggle
+   where it is supported; the wavy-red declaration before it is what a browser
+   without it keeps. Under forced colors both collapse to the system's
+   underline, which is the correct behaviour there. */
+.page-editpara-misspelled {
+  text-decoration: underline wavy #dc2626;
+  text-decoration-skip-ink: none;
+  text-underline-offset: 2px;
+  text-decoration-line: spelling-error;
+}
+/* Restyle toolbar: a compact size + colour row above the paragraph editor.
+   It is CHROME, not page content — it names the app's own commands, it has no
+   presence in the file, and it disappears when the edit is committed. The
+   earlier reading ("drawn on the page, which is white in every theme") put it
+   on the content side of the control layer's exception and produced the one
+   surface that most visibly contradicts "themed controls everywhere": a light
+   #EEF2F7 panel holding a native OS select, a native colour well and square
+   white default inputs, floating inside a dark app.
+
+   Only `.page-form-select` stays on the content side, and for the reason the
+   exception was written: a form widget on the canvas reproduces the FILE's own
+   appearance stream.
+
+   The row stays OPAQUE — it sits over the paragraph's own glyphs, and a
+   translucent ground lets document text read through the controls. */
+.page-editpara-toolbar {
+  display: flex;
+  align-items: center;
+  /* WRAPS: the row is wider than a narrow paragraph, and the page clips its
+     overflow — an unwrapped row loses its trailing controls to the page edge
+     rather than merely running past it. */
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-bottom: 3px;
+  padding: 4px 7px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  font-size: 11px;
+  color: var(--text);
+}
+.page-editpara-ctl {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.page-editpara-ctl input[type='number'] {
+  width: 46px;
+  padding: 1px 3px;
+  border: 1px solid var(--control-border);
+  border-radius: 3px;
+  background: var(--control-bg);
+  color: var(--text);
+}
+/* The colour WELL. The picker itself is the OS's — that is the platform
+   affordance and correct — but the well is a swatch, so it takes the swatch
+   boundary floor rather than an alpha hairline that vanishes on a dark ground
+   when the chosen colour is dark. */
+.page-editpara-ctl input[type='color'] {
+  width: 26px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px var(--swatch-edge);
+  background: none;
+  cursor: pointer;
+}
+.page-editpara-ctl input[type='color']::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+.page-editpara-ctl input[type='color']::-webkit-color-swatch {
+  border: none;
+  border-radius: 1px;
+}
+/* Family swap: the substitute-face dropdown beside size/colour. It takes the
+   element-level select layer (chevron, dark ground, ellipsis) — only the
+   compact metrics are local. */
+.page-editpara-ctl select {
+  padding-block: 1px;
+  padding-inline: 5px 20px;
+  font-size: 11px;
+  max-width: 140px;
+}
+/* Image adjustments: the crop band + the armed crop quad + the opacity
+   slider row. */
+.page-imgtx-quad.crop {
+  cursor: crosshair;
+}
+.page-imgtx-cropband {
+  fill: rgba(59, 130, 246, 0.18);
+  stroke: var(--accent, #3b82f6);
+  stroke-width: 1.5px;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
+}
+/* The LISTED tool crop (persistent outline) + its edge handles. */
+.page-imgtx-croprect {
+  fill: none;
+  stroke: var(--accent, #3b82f6);
+  stroke-width: 1.5px;
+  stroke-dasharray: 5 4;
+  pointer-events: none;
+}
+/* Gradient-mask direct manipulation — the from/to dots and the
+   axis line between them. */
+.page-imgtx-maskaxis {
+  stroke: var(--accent, #3b82f6);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  fill: none;
+}
+.page-imgtx-maskdot {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  margin: -5.5px 0 0 -5.5px;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent, #3b82f6);
+  background: #fff;
+  pointer-events: auto;
+  cursor: grab;
+  box-sizing: border-box;
+}
+.page-imgtx-maskdot.to {
+  background: var(--accent, #3b82f6);
+}
+.page-imgtx-crophandle {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  margin: -5px 0 0 -5px;
+  border: 1.5px solid var(--accent, #3b82f6);
+  border-radius: 2px;
+  background: #fff;
+  cursor: move;
+  z-index: 3;
+}
+.secondary-toolbar-opacity {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: inherit;
+}
+.secondary-toolbar-opacity input[type='range'] {
+  width: 90px;
+}
+.secondary-toolbar-opacity span {
+  min-width: 34px;
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+/* The blend-mode select beside the opacity slider. */
+.secondary-toolbar-blend {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-inline-start: 8px;
+  font-size: 11px;
+  color: inherit;
+}
+
+/* Style toggles: B / I substitution buttons. */
+.page-editpara-style {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  border: 1px solid var(--strip-btn-border);
+  border-radius: 3px;
+  background: var(--control-bg);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  line-height: 1;
+}
+.page-editpara-style-i {
+  font-weight: 400;
+  font-style: italic;
+}
+.page-editpara-style:hover:not(:disabled) {
+  border-color: var(--control-border-hover);
+}
+.page-editpara-style.pressed {
+  background: var(--accent, #3b82f6);
+  border-color: var(--accent, #3b82f6);
+  color: var(--accent-fg, #ffffff);
+}
+.page-edittext-editor input {
+  width: 100%;
+  min-width: 60px;
+  padding: 0 2px;
+  border: 1.5px solid var(--accent, #3b82f6);
+  border-radius: 2px;
+  background: #fff;
+  color: #111;
+  font-family: Helvetica, Arial, sans-serif;
+}
+.page-edittext-editor input.invalid {
+  border-color: #dc2626;
+}
+.page-edittext-error {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 2px;
+  padding: 2px 6px;
+  font-size: 11px;
+  white-space: nowrap;
+  color: #fff;
+  background: #b91c1c;
+  border-radius: 3px;
+  /* NOT pointer-events:none — the element sits outside the wrapper's box,
+     so a pass-through click would land on the PAGE beneath and blur the
+     input anyway. The wrapper's onPointerDown preventDefault is the fix:
+     events on this element bubble through the wrapper (DOM child), focus
+     stays in the input, the edit survives reading the error. */
+}
+.page-edittext-convert {
+  margin-left: 8px;
+  padding: 1px 6px;
+  font-size: 11px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 3px;
+  cursor: pointer;
+}
+.page-edittext-convert:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Pinned to the mark's top-inline-start corner, not laid out in its flow.
+   In flow it was an inline-block sitting on a line box, so on a mark the
+   height of one text line the inherited line-height pushed it past the mark's
+   own bottom edge: the tag rendered half outside the bottom-left corner, over
+   the line of text underneath, at ~6px — illegible, and read as a rendering
+   fault rather than as a label. Absolute placement takes it out of that line
+   box entirely; the mark itself keeps `overflow: visible` so the remove badge
+   deliberately hanging off its corner is still whole.
+   It also gets its own ground. Red-on-translucent-dark inside a mark that may
+   sit over any page content is not a contrast anyone can predict. */
+.page-redact-label {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0 3px;
+  border-end-end-radius: 2px;
+  /* Darker than the mark's own border so the white label clears 4.5:1 (6.5:1
+     measured); it is a literal because this is drawn ON the page, where the
+     theme has no say. */
+  background: #b3243c;
+  font-size: 9px;
+  line-height: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  color: #ffffff;
+}
+
+.page-annot-band.band-signature {
+  background: rgba(139, 92, 246, 0.18);
+  border-color: #8b5cf6;
+}
+
+/* Pending visible-signature placement: violet frame, clearly not a redaction
+   or a highlight. Same pointer contract as .page-redact. */
+.page-signature {
+  position: absolute;
+  background: rgba(139, 92, 246, 0.12);
+  border: 1.5px dashed #8b5cf6;
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.page-signature-label {
+  display: inline-block;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  padding: 1px 3px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  color: rgba(196, 181, 253, 0.95);
+}
+
+/* Find: matching pages get a ring; OCR'd pages get per-word boxes. */
+/* A ring, taking the selection token's OUTLINE form: a find match is one
+   member of a set, which is exactly what the ring means everywhere else. The
+   literal `rgba(59,130,246,.9)` it used to carry was a blue in no theme's
+   palette and the last page-card idiom still standing outside the token. */
+.page.find-match {
+  outline: 2px solid color-mix(in srgb, var(--select) 90%, transparent);
+  outline-offset: 2px;
+}
+
+.page-find-word {
+  position: absolute;
+  background: rgba(250, 204, 21, 0.35);
+  border: 1px solid rgba(250, 204, 21, 0.8);
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+/* Read Out Loud, three tiers over the page: the block being read, the
+   sentence being spoken, and the word in the air. Deliberately a different
+   hue from the find highlight — a reader can be listening and searching at
+   once, and two overlays that look alike would say nothing. Literal colours
+   like the find box's for the same reason: these paint INTO the document
+   subtree, which is exempt from the shell theme and from forced colours, so a
+   theme token here would be a colour that never resolves. */
+.page-read-block {
+  position: absolute;
+  background: rgba(56, 189, 248, 0.1);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.page-read-sentence {
+  position: absolute;
+  background: rgba(56, 189, 248, 0.26);
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+.page-read-word {
+  position: absolute;
+  background: rgba(14, 165, 233, 0.42);
+  border: 1px solid rgba(2, 132, 199, 0.85);
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+/* On-canvas form widgets. Interactive only in the Forms tool; a
+   widget with a pending value stays visible (inert, emerald) in every other
+   tool. Inputs are opaque so the baked — now stale — widget pixels
+   underneath can't show through a pending edit. */
+.page-form-widget {
+  position: absolute;
+  box-sizing: border-box;
+}
+
+.page-form-pending {
+  border: 1.5px solid #10b981;
+  background: rgba(16, 185, 129, 0.16);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.page-form-input {
+  border: 1px solid rgba(16, 185, 129, 0.9);
+  background: #fff;
+  color: #111;
+  padding: 0 2px;
+  border-radius: 1px;
+  resize: none;
+}
+
+.page-form-input.pending {
+  box-shadow: 0 0 0 1.5px rgba(16, 185, 129, 0.55);
+}
+
+.page-form-input:focus {
+  outline: 2px solid #10b981;
+  outline-offset: 0;
+}
+
+.page-form-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(16, 185, 129, 0.9);
+  border-radius: 1px;
+  cursor: pointer;
+}
+
+.page-form-check.pending {
+  box-shadow: 0 0 0 1.5px rgba(16, 185, 129, 0.55);
+}
+
+.page-form-check input {
+  width: 70%;
+  height: 70%;
+  margin: 0;
+  cursor: pointer;
+}
+
+.page-form-radio {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(16, 185, 129, 0.9);
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
+}
+
+.page-form-radio.pending {
+  box-shadow: 0 0 0 1.5px rgba(16, 185, 129, 0.55);
+}
+
+.page-form-radio-dot {
+  width: 55%;
+  height: 55%;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.page-form-radio.on .page-form-radio-dot {
+  background: #10b981;
+}
+
+.page-form-select {
+  border: 1px solid rgba(16, 185, 129, 0.9);
+  background: #fff;
+  color: #111;
+  border-radius: 1px;
+}
+
+.page-form-select.pending {
+  box-shadow: 0 0 0 1.5px rgba(16, 185, 129, 0.55);
+}
+
+.page-form-locked {
+  border: 1px dashed rgba(148, 163, 184, 0.8);
+  background: rgba(148, 163, 184, 0.12);
+  border-radius: 1px;
+  cursor: not-allowed;
+}
+
+.page-form-sig {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px dashed #8b5cf6;
+  background: rgba(139, 92, 246, 0.1);
+  border-radius: 2px;
+}
+
+.page-form-sig span {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: rgba(196, 181, 253, 0.95);
+}
+
+.page-form-sig.signed {
+  border-style: solid;
+  opacity: 0.75;
+}
+
+.page-form-sig.signable {
+  cursor: pointer;
+  background: rgba(139, 92, 246, 0.16);
+}
+
+.page-form-sig.signable:hover {
+  background: rgba(139, 92, 246, 0.28);
+  border-color: #a78bfa;
+}
+
+/* The run editor's style row — size + colour for one run. */
+.page-edittext-stylerow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.page-edittext-stylerow input[type='number'] {
+  width: 58px;
+  padding: 1px 4px;
+  font-size: 11px;
+  background: #262626;
+  border: 1px solid #404040;
+  border-radius: 2px;
+  color: #e5e5e5;
+}
+
+.page-edittext-stylerow input.invalid {
+  border-color: #f87171;
+}
+
+.page-edittext-colorchip {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid #525252;
+  padding: 0;
+  cursor: pointer;
+}
+
+.page-edittext-colorchip.selected {
+  outline: 2px solid #60a5fa;
+  outline-offset: 1px;
+}
+
+/* pushbuttons: the page raster draws the button's own face, so the
+ * overlay is a bare click surface — native button chrome stripped, a faint
+ * hover tint as the only affordance. */
+.page-form-button {
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.page-form-button:hover {
+  background: rgba(16, 185, 129, 0.14);
+  outline: 1px solid rgba(16, 185, 129, 0.7);
+  outline-offset: -1px;
+  border-radius: 1px;
+}
+
+.page-annot-band.band-formfield {
+  background: rgba(16, 185, 129, 0.16);
+  border-color: #10b981;
+}
+
+/* Add-Text band: sky, to read as authoring rather than a form field. */
+.page-annot-band.band-addtext {
+  background: rgba(56, 189, 248, 0.16);
+  border-color: #38bdf8;
+}
+
+/* Add-Image band: violet, distinct from Add-Text's sky. */
+.page-annot-band.band-addimage {
+  background: rgba(167, 139, 250, 0.18);
+  border-color: #a78bfa;
+}
+
+/* Crop band + the placement it leaves behind: amber, and UNFILLED —
+   the rectangle marks what is KEPT, so shading its interior would read as the
+   part being taken away. Every other band means the opposite, which is
+   exactly why this one states it in a label. */
+.page-annot-band.band-cropdraw {
+  background: transparent;
+  border-color: #f59e0b;
+  border-style: dashed;
+}
+
+.page-crop-placement {
+  position: absolute;
+  background: transparent;
+  border: 1.5px dashed #f59e0b;
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.page-crop-placement .page-annot-x {
+  pointer-events: auto;
+}
+
+/* The band's handles carry the band's own hue, not the annotation accent —
+   two differently coloured resize affordances on one page would read as two
+   different objects. The label ground is the darker of the band's two ambers
+   and clears 3:1 on page white (WCAG 1.4.11), so it is what the edge uses. */
+.page-crop-placement .annot-handle {
+  border-color: #9a5b00;
+}
+
+/* Inside the rectangle it describes, on its own ground. Outside and above it,
+   the label overhung the band's edge (and the page's, on a crop near the
+   margin) as ~6px of amber text with the page showing through — small enough
+   and low-contrast enough to read as an artifact rather than as the word KEEP.
+   The band is unfilled by design, so the chip is the one filled thing in it
+   and cannot be confused with shading the region. */
+.page-crop-label {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0 3px;
+  border-end-end-radius: 2px;
+  background: #9a5b00;
+  font-size: 9px;
+  line-height: 13px;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  color: #ffffff;
+  white-space: nowrap;
+}
+
+/* Snapshot band + its card: cyan, and unfilled for the crop band's reason —
+   the rectangle marks what is TAKEN, and shading it would hide the very
+   content the reader is aiming at. */
+.page-annot-band.band-snapshot {
+  background: transparent;
+  border-color: #22d3ee;
+  border-style: dashed;
+}
+
+.page-snapshot-placement {
+  border-color: #22d3ee;
+}
+
+.page-snapshot-placement .page-crop-label {
+  color: #22d3ee;
+}
+
+.page-snapshot-placement .page-snapshot-save {
+  position: absolute;
+  top: -0.95rem;
+  right: 1.1rem;
+  padding: 0 4px;
+  font-size: 0.55rem;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  color: #22d3ee;
+  border: 1px solid #22d3ee;
+  border-radius: 2px;
+  background: var(--surface-2);
+  white-space: nowrap;
+  pointer-events: auto;
+}
+
+/* Pending new-field placement: emerald frame, same pointer contract
+   as .page-signature — only the × takes events. */
+.page-form-new {
+  position: absolute;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1.5px dashed #10b981;
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.page-form-new-label {
+  display: inline-block;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  padding: 1px 3px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  color: rgba(110, 231, 183, 0.95);
+}
+
+/* Pending Add-Text placement: sky frame, distinct from the emerald
+   new-field box; same base + pointer contract as .page-form-new. */
+.page-form-new.page-addtext-new {
+  background: rgba(56, 189, 248, 0.12);
+  border-color: #38bdf8;
+}
+
+.page-addtext-new .page-form-new-label {
+  color: rgba(125, 211, 252, 0.95);
+}
+
+/* Annotation tool active: crosshair over pages signals draw-a-box mode.
+   Forms mode is exempt — its widgets are inputs, not a draw surface. */
+.canvas-view.annotating .page {
+  cursor: crosshair;
+}
+
+.canvas-view.forms-mode .page {
+  cursor: default;
+}
+
+/* Freetext annotations: bordered text box; body scales with the page. */
+.page-annot-text {
+  background: rgba(250, 250, 245, 0.92);
+  border-width: 1px;
+  border-style: solid;
+  overflow: hidden;
+}
+
+.page-annot-text-body {
+  display: block;
+  padding: 2px 3px;
+  line-height: 1.2;
+  white-space: pre-wrap;
+  word-break: break-word;
+  text-align: left;
+}
+
+/* Ink annotations: the rect is a plain bounding box (no border/fill), the
+   stroke itself is an svg polyline stretched to fill it. */
+.page-annot-ink {
+  border: none;
+}
+
+.page-annot-ink-svg {
+  position: absolute;
+  inset: -2px; /* small bleed so strokes at the exact bbox edge aren't clipped */
+  width: calc(100% + 4px);
+  height: calc(100% + 4px);
+  overflow: visible;
+  pointer-events: none;
+}
+
+/* A placed takeoff legend's on-canvas body. It mirrors what the
+   appearance stream prints (symbol · group · tally, then the total), and
+   scales with the box so the reading view's zoom does not desync the two. */
+.page-annot-legend {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6%;
+  overflow: hidden;
+  pointer-events: none;
+  line-height: 1.25;
+}
+
+.page-annot-legend-title {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.page-annot-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.page-annot-legend-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-annot-legend-count {
+  font-variant-numeric: tabular-nums;
+}
+
+.page-annot-legend-total {
+  border-top: 1px solid rgba(0, 0, 0, 0.35);
+  margin-top: 2px;
+  padding-top: 2px;
+  font-weight: 600;
+}
+
+.page-annot-ink-live {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Measure tool: the live value chip riding the cursor. */
+.measure-live-label {
+  position: absolute;
+  transform: translateY(-100%);
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(23, 23, 23, 0.92);
+  border: 1px solid #f59e0b;
+  color: #fbbf24;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 5;
+}
+[data-theme="light"] .measure-live-label {
+  background: rgba(255, 255, 255, 0.95);
+  color: #92400e;
+}
+
+/* The COMMITTED dimension's value, riding the middle of its own line. The live
+   chip above answers "what am I drawing"; this one answers "what is this line",
+   which the top-ribbon readout could not the moment a page carried two
+   measurements. Drawn ON the page, so its colours are literals in every theme
+   — same reason `.page-redact-label`'s are. White on #171717 measures 15.9:1. */
+.measure-annot-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(23, 23, 23, 0.92);
+  border: 1px solid #f59e0b;
+  color: #ffffff;
+  font-size: 10px;
+  line-height: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 4;
+}
+
+/* Stamps: fixed-footprint bordered box with a centered bold label. */
+.page-annot-stamp {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-width: 2px;
+  border-style: solid;
+}
+
+.page-annot-stamp-label {
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  text-align: center;
+  padding: 2px 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Custom IMAGE stamps: the raster alone, no box chrome (the :has() undoes the
+   bordered-stamp class the label look shares). */
+.page-annot-stamp:has(.page-annot-stamp-image) {
+  border-width: 0;
+}
+.page-annot-stamp-image {
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* A TYPED personal signature: the name alone in its script face, no box
+   chrome — the same look the appearance stream draws. The size is driven from
+   the box because the appearance fits the name to the rect on the face's own
+   metrics, so the preview has to scale with the box rather than sit at a
+   fixed point size. */
+.page-annot-stamp:has(.page-annot-signature-typed) {
+  border-width: 0;
+  /* Scoped to this stamp species so no other stamp's layout changes. */
+  container-type: size;
+}
+.page-annot-signature-typed {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(6px, 78cqh, 400px);
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* A placed vector SYMBOL: the line art alone, like an image
+   stamp, and the same unit-square geometry the appearance stream draws. */
+.page-annot-stamp:has(.page-annot-symbol-svg) {
+  border-width: 0;
+}
+.page-annot-symbol-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+
+.outline-drop-indicator {
+  height: 2px;
+  background: #2f6fed;
+  border-radius: 1px;
+  margin: 1px 0;
+}
+
+.outline-sidebar-status {
+  padding: 6px 12px;
+  font-size: 11px;
+  color: #a3a3a3;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.page-annot-editor {
+  position: absolute;
+  inset: 0;
+  padding: 2px 3px;
+  background: rgba(255, 255, 250, 0.98);
+  border: none;
+  outline: 2px solid var(--accent, #0078d4);
+  resize: none;
+  line-height: 1.2;
+  font-family: Helvetica, Arial, sans-serif;
+  pointer-events: auto;
+}
+
+/* ── Tools Center + task panes ─────────────────────────────────────────────
+   The Tools tab's two states. With no tool open you get the tile grid — the
+   tab answers "what job are you here to do?"; with one open you get its task
+   pane, headed by the tool's name and a way back to the grid.
+
+   Dark defaults + a light remap, per the nav-pane pattern above.
+   ──────────────────────────────────────────────────────────────────────── */
+.tools-center {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 28px 32px 40px;
+}
+/* Embedded in a HOST that already provides its own inset — Home's section
+   column and the dock body. The standalone padding above is page chrome for a
+   full-width landing surface; inside the 250px dock it was eating 64px of the
+   241px available (measured), which is what forced "Crop & Page Boxes" onto
+   two lines, and on Home it indented the grid ~32px out of alignment with its
+   own "All tools" heading. */
+.tools-center-embedded {
+  padding: 0;
+}
+.tools-center-heading {
+  font-size: 20px;
+  font-weight: 500;
+  color: #e5e5e5;
+  margin-bottom: 4px;
+}
+.tools-center-sub {
+  font-size: 12px;
+  color: #a3a3a3;
+  margin-bottom: 20px;
+}
+.tools-grid {
+  display: grid;
+  /* Tiles size themselves: the grid is a fluid number of columns, so the grid
+     reflows with the window instead of pinning a column count that only looks
+     right at one width. The track narrowed from 220px to 168px — with the
+     description gone the tile is a single icon+name row, so a wide track only
+     bought empty space (and fewer tools on screen). Still >= the dock's
+     single-column width, so both homes render from the one component. */
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 8px;
+}
+.tool-tile {
+  /* One row now: icon + name, vertically centred. Was a two-row grid
+     whose second row held the description that is now the tooltip. */
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  text-align: start;
+  border: 1px solid #2e2e2e;
+  border-radius: 6px;
+  background: #1f1f1f;
+  cursor: default;
+  transition: background-color 90ms ease, border-color 90ms ease;
+}
+.tool-tile:hover { background: #262626; border-color: #3d3d3d; }
+.tool-tile:focus-visible { outline: 2px solid var(--accent-text, #0078d4); outline-offset: 1px; }
+.tool-tile-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 34 -> 24: the chip was competing with the name for attention. */
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  background: #2e2e2e;
+  color: #cfcfcf;
+}
+.tool-tile:hover .tool-tile-icon { color: #ffffff; }
+/* 13 -> 14px: the name is the thing being scanned for, so it is now the
+   largest text in the tile rather than the smallest. Wraps rather than
+   truncates — a clipped tool name is worse than a two-line one, and the grid
+   row stretches its tiles to match. */
+.tool-tile-title {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.25;
+  color: #e5e5e5;
+}
+
+
+/* ── the universal search box in the toolbar row ─────────────────────── */
+.omnisearch {
+  position: relative;
+}
+.omnisearch-input {
+  width: 210px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid #2e2e2e;
+  border-radius: 4px;
+  background: #1b1b1b;
+  color: #e5e5e5;
+  font-size: 12px;
+  outline: none;
+}
+.omnisearch-input::placeholder { color: #6f6f76; }
+.omnisearch-input:focus {
+  border-color: var(--accent, #0078d4);
+  background: #1f1f1f;
+}
+/* The results hang BELOW the box and over the document — an overlay, so the
+   toolbar row never grows and the layout under it cannot shift. */
+.omnisearch-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  inset-inline-end: 0;
+  z-index: 50;
+  width: 340px;
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid #2e2e2e;
+  border-radius: 6px;
+  background: #1f1f1f;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+}
+.omnisearch-head {
+  padding: 6px 8px 3px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.omnisearch-empty {
+  padding: 10px 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.omnisearch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 4px;
+  text-align: start;
+  font-size: 12px;
+  color: #d4d4d8;
+  cursor: default;
+}
+.omnisearch-row:hover:not(:disabled),
+.omnisearch-row.active { background: #2e2e2e; color: #fff; }
+.omnisearch-row:disabled { opacity: 0.6; }
+.omnisearch-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  color: #b6b6be;
+}
+.omnisearch-label { font-weight: 500; }
+.omnisearch-page {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.omnisearch-snippet {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #a9a9b2;
+}
+[data-theme="light"] .omnisearch-input {
+  background: #ffffff;
+  border-color: #d1d5db;
+  color: #111827;
+}
+[data-theme="light"] .omnisearch-input::placeholder { color: #9ca3af; }
+[data-theme="light"] .omnisearch-panel {
+  background: #ffffff;
+  border-color: #e5e7eb;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.14);
+}
+[data-theme="light"] .omnisearch-head { color: #6b7280; }
+[data-theme="light"] .omnisearch-empty { color: #6b7280; }
+[data-theme="light"] .omnisearch-row { color: #374151; }
+[data-theme="light"] .omnisearch-row:hover:not(:disabled),
+[data-theme="light"] .omnisearch-row.active { background: #f3f4f6; color: #111827; }
+[data-theme="light"] .omnisearch-icon { color: #4b5563; }
+[data-theme="light"] .omnisearch-page { color: #6b7280; }
+[data-theme="light"] .omnisearch-snippet { color: #4b5563; }
+
+/* The within-tool operation switcher: a tool is the JOB, these are the ways of
+   doing it. Only rendered when a tool hosts more than one. */
+.tool-op {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #a3a3a3;
+  cursor: default;
+}
+.tool-op:hover { background: #262626; color: #e5e5e5; }
+.tool-op.active { background: var(--accent, #0078d4); color: var(--accent-fg, #ffffff); }
+.tool-op:focus-visible { outline: 2px solid var(--accent-text, #0078d4); outline-offset: 1px; }
+
+[data-theme="light"] .tools-center-heading { color: #111827; }
+[data-theme="light"] .tools-center-sub { color: #6b7280; }
+[data-theme="light"] .tool-tile {
+  background: #ffffff;
+  border-color: #e5e7eb;
+}
+[data-theme="light"] .tool-tile:hover { background: #f9fafb; border-color: #d1d5db; }
+[data-theme="light"] .tool-tile-icon { background: #f3f4f6; color: #4b5563; }
+[data-theme="light"] .tool-tile:hover .tool-tile-icon { color: #111827; }
+[data-theme="light"] .tool-tile-title { color: #111827; }
+[data-theme="light"] .tool-op { color: #4b5563; }
+[data-theme="light"] .tool-op:hover { background: #f3f4f6; color: #111827; }
+[data-theme="light"] .tool-op.active { background: var(--accent, #0078d4); color: var(--accent-fg, #ffffff); }
+
+/* The task pane's document picker — replaces the retired rail's standing
+   "Active File" column. The Tools tab isn't a doc tab, so a tool's panels need
+   their target named somewhere; one control in the pane head says it without
+   spending a column on it. Only rendered with >1 file open. */
+
+
+/* ── Secondary toolbar ────────────────────────────────────────────────────
+   The contextual strip at the top of the document pane, present only while a
+   tool mode is armed. Replaces the floating pill, which showed all eight modes
+   flat and permanently. Docked, not floating: it belongs to the pane's
+   chrome, and a floating cluster over the page was covering the thing
+   it acts on.
+   ──────────────────────────────────────────────────────────────────────── */
+.secondary-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 5px 10px;
+  /* The strip's height is a constant, not a function of which tool is armed.
+     Takeoff's count-group buttons carry a symbol glyph beside their label and
+     grew the strip from 28px to 40px, which moved the page top by 13px on
+     every entry into and exit from that tool — the document jumping is the
+     defect, not the taller button. The floor sizes the strip for the tallest
+     control it can hold, so no tool changes it. */
+  min-height: 34px;
+  box-sizing: border-box;
+  border-bottom: 1px solid #2e2e2e;
+  background: #1f1f1f;
+  flex-shrink: 0;
+  /* The symbol palette hangs off this strip. */
+  position: relative;
+}
+
+/* Home: quick actions, a quiet drop target, hierarchical recents, and tools. */
+.home-shell {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 40px 32px 56px;
+}
+.home-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+}
+.home-title {
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.home-sub {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.home-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.home-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 7px;
+  color: #d9d9de;
+  background: #232327;
+  border: 1px solid #333338;
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms;
+}
+.home-action:hover {
+  background: #2b2b30;
+  border-color: #45454c;
+}
+.home-action:disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+.home-action-primary {
+  color: var(--accent-fg, #ffffff);
+  background: var(--accent, #0078d4);
+  border-color: var(--accent, #0078d4);
+}
+.home-action-primary:hover {
+  background: var(--accent-hover, #005ea6);
+  border-color: var(--accent-hover, #005ea6);
+}
+.home-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 30px 0;
+  margin-bottom: 30px;
+  border: 1px dashed #37373d;
+  border-radius: 10px;
+  color: var(--text-dim);
+  font-size: 13px;
+  background: rgba(255, 255, 255, 0.012);
+}
+.home-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.home-tools-head {
+  margin-top: 36px;
+}
+.home-section-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 650;
+  color: var(--text-dim);
+}
+.home-section-action {
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.home-section-action:hover {
+  color: #d9d9de;
+}
+.home-empty {
+  padding: 26px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.home-recents {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #2a2a2f;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.home-recent {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid #232328;
+  transition: background 100ms;
+}
+.home-recent:last-child {
+  border-bottom: none;
+}
+.home-recent:hover {
+  background: #232327;
+}
+/* The open control carries the column layout the row itself used to own: the
+   content sits one level in so a second, independent control can stand beside
+   it without a button nested inside a button. */
+.home-recent-open {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1.2fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding-block: 9px;
+  padding-inline: 10px 14px;
+  text-align: start;
+  cursor: pointer;
+}
+.home-recent-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  margin-inline-end: 8px;
+  border-radius: 5px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.home-recent-remove:hover {
+  color: #e7e7ea;
+  background: #2e2e34;
+}
+.home-recent-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: #232328;
+  color: #8a8a92;
+}
+.home-recent:hover .home-recent-icon {
+  color: #d9d9de;
+}
+.home-recent-name {
+  font-size: 13px;
+  color: #e7e7ea;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-recent-folder {
+  font-size: 12px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-recent-when {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+/* The right tool dock — ops-tool panels beside an
+   always-visible document. Anchored right; resize handle on its left edge. */
+.tool-dock {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  border-inline-start: 1px solid #2e2e2e;
+  background: #191919;
+  min-width: 0;
+}
+.tool-dock-resize {
+  position: absolute;
+  inset-inline-start: -2px;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  cursor: col-resize;
+  z-index: 10;
+}
+.tool-dock-resize:hover {
+  background: rgba(59, 130, 246, 0.35);
+}
+.tool-dock-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid #2e2e2e;
+  flex-shrink: 0;
+}
+.tool-dock-title {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  color: #e5e5e5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tool-dock-btn {
+  width: 22px;
+  height: 22px;
+  line-height: 20px;
+  text-align: center;
+  border-radius: 3px;
+  color: #9c9ca4;
+  cursor: pointer;
+  font-size: 13px;
+}
+.tool-dock-btn:hover {
+  background: #2e2e2e;
+  color: #fff;
+}
+.tool-dock-btn.active {
+  background: var(--accent, #0078d4);
+  color: var(--accent-fg, #ffffff);
+}
+/* The back-to-all-tools control inside a tool: a labelled control, not a bare
+   glyph, so leaving a tool is as discoverable as entering one. Auto width
+   because it carries text. */
+.tool-dock-back {
+  width: auto;
+  padding: 0 7px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+/* The dock contracts to the tools list and expands back to a panel. The
+   class is dropped while a resize drag is live, so a pointer-tracked width
+   never animates behind the cursor. */
+.tool-dock-animated {
+  transition: width 140ms ease;
+}
+
+/* Paragraph-editor resize grips + split-gap scrub. Accent-tinted so
+   they theme with everything else; the grips sit ON the card edge along
+   the paragraph's inline axis (side classes cover every rotation/writing
+   mode combination the editor computes). */
+.page-editpara-grip {
+  position: absolute;
+  z-index: 3;
+  background: color-mix(in srgb, var(--accent, #0078d4) 55%, transparent);
+  border-radius: 2px;
+}
+.page-editpara-grip:hover {
+  background: var(--accent, #0078d4);
+}
+.page-editpara-grip.grip-left,
+.page-editpara-grip.grip-right {
+  top: 10%;
+  height: 80%;
+  width: 5px;
+  cursor: ew-resize;
+}
+.page-editpara-grip.grip-left { left: -3px; }
+.page-editpara-grip.grip-right { right: -3px; }
+.page-editpara-grip.grip-top,
+.page-editpara-grip.grip-bottom {
+  left: 10%;
+  width: 80%;
+  height: 5px;
+  cursor: ns-resize;
+}
+.page-editpara-grip.grip-top { top: -3px; }
+.page-editpara-grip.grip-bottom { bottom: -3px; }
+.page-editpara-resize-readout {
+  position: absolute;
+  top: -22px;
+  right: 0;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  background: var(--accent, #0078d4);
+  color: var(--accent-fg, #ffffff);
+  pointer-events: none;
+}
+.page-editpara-gapgrip {
+  display: inline-block;
+  padding: 0 3px;
+  cursor: ew-resize;
+  color: var(--text-dim);
+  user-select: none;
+}
+.page-editpara-gapgrip:hover { color: var(--accent-text, #4cc2ff); }
+@media (prefers-reduced-motion: reduce) {
+  .tool-dock-animated { transition: none; }
+}
+.tool-dock-ops {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid #2e2e2e;
+  flex-shrink: 0;
+}
+/* The dock's own scroll box. The end padding is larger than the start's on
+   purpose: a scroll container whose content ends flush with the window edge
+   slices its last row mid-glyph, and the reader cannot tell a cut row from a
+   short one. `scroll-padding-block-end` makes the same allowance for anything
+   scrolled INTO view (a focused control, a panel's `scrollIntoView`), which a
+   padding alone does not cover. */
+.tool-dock-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-inline: 12px;
+  padding-block: 12px 28px;
+  scroll-padding-block-end: 28px;
+}
+/* The grid reflows into the narrow dock: single column, tighter tiles. */
+.tool-dock-body .tools-grid {
+  grid-template-columns: 1fr;
+}
+
+/* The docked status bar — view state + pending commits,
+   anchored under the document area. Replaces the floating bottom-right
+   cluster (the "covering the thing being worked on" class, now law). */
+.canvas-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-top: 1px solid #2e2e2e;
+  background: #1f1f1f;
+  flex-shrink: 0;
+  font-size: 12px;
+  min-height: 28px;
+}
+.canvas-status-pending {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.canvas-status-action {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.canvas-status-action:disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+.canvas-status-quiet {
+  color: #c9c9cf;
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+}
+.canvas-status-quiet:hover {
+  background: #333;
+  color: #fff;
+}
+.canvas-status-quiet.active {
+  background: var(--accent, #0078d4);
+  border-color: var(--accent, #0078d4);
+  color: var(--accent-fg, #ffffff);
+}
+.canvas-status-pages {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #c9c9cf;
+  font-size: 11px;
+}
+.canvas-status-pageinput {
+  width: 38px;
+  text-align: center;
+  background: #171717;
+  border: 1px solid #3a3a3a;
+  border-radius: 3px;
+  color: #e5e5e5;
+  font-size: 11px;
+  padding: 1px 2px;
+}
+.canvas-status-zoom {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Properties bar (Ctrl+E) — the strip under the secondary toolbar. */
+.properties-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 4px 10px;
+  border-bottom: 1px solid #2e2e2e;
+  background: #1b1b1b;
+  flex-shrink: 0;
+  font-size: 12px;
+}
+.properties-bar-kind {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim, #a0a0a8);
+}
+.properties-bar-meta,
+.properties-bar-empty {
+  font-size: 11px;
+  color: var(--text-dim, #a0a0a8);
+}
+.properties-bar-note {
+  font-size: 11px;
+  color: #c9c9cf;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.properties-bar-swatches {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+/* The properties bar's swatches are `.color-swatch` like every other picker;
+   only the size differs, because this bar is 24px tall. Everything else — the
+   edge that keeps a near-background swatch from reading as a hole, and the
+   accent selection ring — comes from the shared rule. */
+.properties-bar-swatch {
+  width: 14px;
+  height: 14px;
+}
+.properties-bar-action {
+  font-size: 11px;
+  color: #c9c9cf;
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  border-radius: 3px;
+  padding: 1px 8px;
+  cursor: pointer;
+}
+.properties-bar-action:hover {
+  background: #333;
+  color: #f87171;
+}
+.properties-bar-close {
+  margin-inline-start: auto;
+  width: 18px;
+  height: 18px;
+  line-height: 16px;
+  text-align: center;
+  color: var(--text-dim, #a0a0a8);
+  cursor: pointer;
+  border-radius: 3px;
+}
+.properties-bar-close:hover {
+  background: #2e2e2e;
+  color: #fff;
+}
+
+/* Click-selected annotation (Select tool) — the properties bar's target. */
+.page-annot-selected {
+  outline: 2px solid var(--accent, #3b82f6);
+  outline-offset: 1px;
+}
+
+/* Resize handles — 8 grips on the single-selected annotation. */
+.annot-handle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: #fff;
+  border: 1px solid var(--accent, #3b82f6);
+  border-radius: 1px;
+  pointer-events: auto;
+  z-index: 3;
+}
+.annot-handle-nw { left: -5px; top: -5px; cursor: nwse-resize; }
+.annot-handle-n { left: calc(50% - 4px); top: -5px; cursor: ns-resize; }
+.annot-handle-ne { right: -5px; top: -5px; cursor: nesw-resize; }
+.annot-handle-e { right: -5px; top: calc(50% - 4px); cursor: ew-resize; }
+.annot-handle-se { right: -5px; bottom: -5px; cursor: nwse-resize; }
+.annot-handle-s { left: calc(50% - 4px); bottom: -5px; cursor: ns-resize; }
+.annot-handle-sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
+.annot-handle-w { left: -5px; top: calc(50% - 4px); cursor: ew-resize; }
+
+/* Ctrl-marquee rubber band (Select tool multi-select). */
+.annot-marquee {
+  border: 1px dashed var(--accent, #3b82f6);
+  background: rgba(59, 130, 246, 0.08);
+  pointer-events: none;
+}
+
+/* Drawing shapes + callouts — pixel-space SVG bodies. */
+.page-annot-shape-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.page-annot-callout-text {
+  position: absolute;
+  overflow: hidden;
+  padding: 2px 3px;
+  line-height: 1.2;
+  white-space: pre-wrap;
+  word-break: break-word;
+  pointer-events: none;
+}
+
+/* Properties-bar style controls. */
+.properties-bar-select {
+  background: #232323;
+  color: #d4d4d4;
+  border: 1px solid #3a3a3a;
+  border-radius: 4px;
+  font-size: 11px;
+  padding: 2px 4px;
+}
+.pbar-fill-swatch {
+  border-radius: 2px !important;
+}
+
+/* Vertex grips — circular, distinct from the square box handles. */
+.annot-vertex {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  margin: -5px 0 0 -5px;
+  background: var(--accent, #3b82f6);
+  border: 1.5px solid #fff;
+  border-radius: 50%;
+  pointer-events: auto;
+  cursor: grab;
+  z-index: 4;
+}
+.secondary-toolbar-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #a3a3a3;
+  padding-inline-end: 4px;
+  border-inline-end: 1px solid #2e2e2e;
+}
+.secondary-toolbar-modes,
+.secondary-toolbar-actions,
+.secondary-toolbar-opts {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+/* Actions sit at the far end — "Close Tool" is an exit, not a peer of the
+   modes, and putting it next to them invites a misclick mid-markup. */
+.secondary-toolbar-actions { margin-inline-start: auto; }
+/* An options group wider than the strip takes the whole line as a flex item,
+   so the actions after it wrapped onto a line of their own and the page moved
+   down by one more row. The cap keeps room for the actions on the options'
+   last line; the reserve is measured onto the strip by SecondaryToolbar. */
+.secondary-toolbar-opts {
+  max-inline-size: calc(100% - var(--strip-actions-reserve, 0px));
+}
+/* Every button in the strip carries the same box, armed or not. Only the
+   active item used to get a pill, so the other eight were bare text: the strip
+   read as a breadcrumb trail rather than a toolbar, and the gaps between
+   labels measured 14/20/22/22px because the padding arrived with the pill
+   instead of with the button. The border is on the resting state (transparent
+   on the outline token's own ground would be a second box model), so arming a
+   tool changes its FILL and never its size. */
+.secondary-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border: 1px solid var(--strip-btn-border, #3a3a40);
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 18px;
+  color: #a3a3a3;
+  background: transparent;
+  cursor: default;
+  white-space: nowrap;
+}
+.secondary-tool:hover { background: #262626; color: #e5e5e5; border-color: var(--control-border-hover); }
+.secondary-tool.active { background: var(--accent, #0078d4); border-color: var(--accent, #0078d4); color: var(--accent-fg, #ffffff); }
+.secondary-tool:focus-visible { outline: 2px solid var(--accent-text, #0078d4); outline-offset: 1px; }
+/* The lock is about the modes beside it, not one of them: the rule separates
+   it so an armed mode and the lock never read as two active modes.
+   THE RULE, product-wide: a FILL means "this is the thing you are using"; an
+   OUTLINE in the same accent means "a mode that qualifies it is on". A strip
+   therefore carries at most one filled pill, and the separator rule plus the
+   `.active` override below are what keep that true — the shared `.active`
+   fill would otherwise put two cyan pills in a strip of nine bare labels with
+   nothing to say which is the tool and which is the mode. */
+/* Now that every strip button carries a box, the lock's separator is spacing
+   rather than a borrowed border edge: a half-open box would have been a second
+   box model in a strip whose whole point is that there is one. */
+.secondary-tool-lock {
+  margin-inline-start: 10px;
+}
+/* The `.secondary-toolbar` link in the chain is specificity, not scoping: the
+   per-theme `.secondary-tool.active` fills are declared later in this file, so
+   the outline has to outrank them rather than merely follow them. */
+:root .secondary-toolbar .secondary-tool-lock.active {
+  background: transparent;
+  color: var(--accent-text, #0078d4);
+  border-color: var(--accent-text, #0078d4);
+  box-shadow: inset 0 0 0 1px var(--accent-text, #0078d4);
+}
+:root .secondary-toolbar .secondary-tool-lock.active:hover {
+  background: color-mix(in srgb, var(--accent, #0078d4) 18%, transparent);
+  color: var(--accent-text, #0078d4);
+}
+.stamp-preset {
+  padding: 1px 7px;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  color: var(--text);
+  cursor: default;
+}
+/* The tool strip's swatches are `.color-swatch` too — size and cursor only. */
+.annot-swatch {
+  width: 15px;
+  height: 15px;
+  cursor: default;
+}
+
+[data-theme="light"] .secondary-toolbar {
+  background: #f9fafb;
+  border-bottom-color: #e5e7eb;
+}
+[data-theme="light"] .secondary-toolbar-title { color: #6b7280; border-inline-end-color: #e5e7eb; }
+[data-theme="light"] .secondary-tool { color: #4b5563; }
+[data-theme="light"] .secondary-tool:hover { background: #f3f4f6; color: #111827; }
+[data-theme="light"] .secondary-tool.active { background: var(--accent, #0078d4); color: var(--accent-fg, #ffffff); }
+
+/* An ops-less tool's Tools-tab pane: it has no form here, so it says so rather
+   than borrowing another operation's (the absence fence). */
+
+/* ── Preferences ──────────────────────────────────────────────────────────
+   Category nav + one section at a time, replacing a flat scroll of every
+   setting. The nav is what gives Help ▸ Third-party Licenses somewhere to land.
+   ──────────────────────────────────────────────────────────────────────── */
+.prefs {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+.prefs-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.prefs-cat {
+  padding: 5px 9px;
+  border-radius: 4px;
+  font-size: 12px;
+  text-align: start;
+  color: #a3a3a3;
+  cursor: default;
+}
+.prefs-cat:hover { background: #262626; color: #e5e5e5; }
+.prefs-cat.active { background: var(--accent, #0078d4); color: var(--accent-fg, #ffffff); }
+.prefs-cat:focus-visible { outline: 2px solid var(--accent-text, #0078d4); outline-offset: 1px; }
+.prefs-body { min-width: 0; }
+
+[data-theme="light"] .prefs-cat { color: #4b5563; }
+[data-theme="light"] .prefs-cat:hover { background: #f3f4f6; color: #111827; }
+[data-theme="light"] .prefs-cat.active { background: var(--accent, #0078d4); color: var(--accent-fg, #ffffff); }
+
+/* Floating markup bar over a text selection (reading view, Select tool).
+   Viewport-anchored (the coordinates come from the selection's client rects),
+   centred on the selection's end and nudged clear of the caret. */
+.text-selection-menu {
+  position: fixed;
+  z-index: 40;
+  transform: translate(-50%, 8px);
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 6px;
+  border: 1px solid #404040;
+  background: #1f1f1f;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+.text-selection-menu button {
+  min-width: 26px;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1;
+  color: #e5e5e5;
+  background: transparent;
+  cursor: default;
+}
+.text-selection-menu button:hover { background: #333333; }
+.text-selection-menu button:focus-visible { outline: 2px solid var(--accent-text, #0078d4); outline-offset: 1px; }
+
+[data-theme="light"] .text-selection-menu { border-color: #d1d5db; background: #ffffff; }
+[data-theme="light"] .text-selection-menu button { color: #111827; }
+[data-theme="light"] .text-selection-menu button:hover { background: #f3f4f6; }
+.text-selection-url {
+  width: 190px;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 4px;
+  border: 1px solid #404040;
+  background: #141414;
+  color: #e5e5e5;
+  font-size: 12px;
+}
+.text-selection-error { align-self: center; padding: 0 4px; font-size: 11px; color: #f87171; }
+[data-theme="light"] .text-selection-url { border-color: #d1d5db; background: #ffffff; color: #111827; }
+
+/* The recalibrate popover (right-click a measurement). */
+.recal-popover {
+  position: fixed;
+  z-index: 60;
+  background: #1e1e1e;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  padding: 8px 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+  font-size: 12px;
+  color: #d4d4d4;
+}
+.recal-popover-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.recal-popover-row:last-child {
+  margin-bottom: 0;
+}
+.recal-popover-title {
+  font-weight: 600;
+}
+.recal-popover-current {
+  font-weight: 400;
+  color: #8a8a8a;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recal-popover input,
+.recal-popover select {
+  background: #262626;
+  color: #d4d4d4;
+  border: 1px solid #3a3a3a;
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 12px;
+}
+.recal-popover input {
+  width: 90px;
+}
+.recal-popover button {
+  background: #2b2b2b;
+  color: #d4d4d4;
+  border: 1px solid #3f3f3f;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.recal-popover button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.recal-popover button:hover:not(:disabled) {
+  background: #333;
+}
+
+/* ── HIGH-CONTRAST THEME — mirrors of the light-theme rules above with their
+   colours mapped to the high-contrast palette, then the rules only this theme
+   has. ── */
+[data-theme="high-contrast"] .bg-neutral-900 { background-color: #000000; }
+[data-theme="high-contrast"] .bg-neutral-850 { background-color: #000000; }
+[data-theme="high-contrast"] .bg-neutral-800 { background-color: #0d0d0d; }
+[data-theme="high-contrast"] .bg-neutral-700 { background-color: #1a1a1a; }
+[data-theme="high-contrast"] .bg-neutral-600 { background-color: #2e2e2e; }
+[data-theme="high-contrast"] .text-neutral-100 { color: #ffffff; }
+[data-theme="high-contrast"] .text-neutral-200 { color: #ffffff; }
+[data-theme="high-contrast"] .text-neutral-300 { color: #ffffff; }
+[data-theme="high-contrast"] .text-neutral-400 { color: #e6e6e6; }
+[data-theme="high-contrast"] .text-neutral-500 { color: #d0d0d0; }
+[data-theme="high-contrast"] .text-neutral-600 { color: #d0d0d0; }
+[data-theme="high-contrast"] .text-white { color: #ffffff; }
+[data-theme="high-contrast"] .border-neutral-800 { border-color: #1a1a1a; }
+[data-theme="high-contrast"] .border-neutral-700 { border-color: #2e2e2e; }
+[data-theme="high-contrast"] .hover\:bg-neutral-800:hover { background-color: #1a1a1a; }
+[data-theme="high-contrast"] .hover\:bg-neutral-750:hover { background-color: #1a1a1a; }
+[data-theme="high-contrast"] .hover\:bg-neutral-700:hover { background-color: #2e2e2e; }
+[data-theme="high-contrast"] .hover\:bg-neutral-600:hover { background-color: #c0c0c0; }
+[data-theme="high-contrast"] .hover\:text-neutral-300:hover { color: #ffffff; }
+[data-theme="high-contrast"] .hover\:text-neutral-200:hover { color: #ffffff; }
+[data-theme="high-contrast"] .hover\:text-neutral-400:hover { color: #e6e6e6; }
+[data-theme="high-contrast"] .hover\:border-neutral-600:hover { border-color: #c0c0c0; }
+[data-theme="high-contrast"] .group:hover .group-hover\:text-white { color: #ffffff; }
+[data-theme="high-contrast"] .bg-black\/60 { background-color: rgba(0, 0, 0, 0.3); }
+[data-theme="high-contrast"] .bg-blue-600 { background-color: var(--accent, #0078d4); }
+[data-theme="high-contrast"] .hover\:bg-blue-500:hover { background-color: var(--accent-hover, #005ea6); }
+[data-theme="high-contrast"] .bg-blue-600 { color: var(--accent-fg, #ffffff); }
+[data-theme="high-contrast"] .bg-blue-500 { background-color: var(--accent, #0078d4); }
+[data-theme="high-contrast"] .bg-blue-600\/30 { background-color: rgba(13, 148, 136, 0.3); }
+[data-theme="high-contrast"] .bg-blue-600\/20 { background-color: rgba(13, 148, 136, 0.2); }
+[data-theme="high-contrast"] .ring-blue-500 { --tw-ring-color: var(--accent, #0078d4); }
+[data-theme="high-contrast"] .border-blue-500 { border-color: var(--accent, #0078d4); }
+[data-theme="high-contrast"] .border-dashed.border-blue-500 { border-color: var(--accent, #0078d4); }
+[data-theme="high-contrast"] .text-blue-300 { color: #6cb8f6; }
+[data-theme="high-contrast"] .bg-red-600 { background-color: #D2424E; color: #000000; }
+[data-theme="high-contrast"] .hover\:bg-red-500:hover { background-color: #e85963; }
+[data-theme="high-contrast"] .bg-red-500 { background-color: #D2424E; color: #000000; }
+[data-theme="high-contrast"] .text-red-400 { color: #ff8080; }
+[data-theme="high-contrast"] .text-red-300 { color: #ff8080; }
+/* The greens, ambers and red-200 below previously carried the LIGHT
+   theme's dark-on-white values (#15803d, #92400e, #991b1b) — dark ink on a
+   black theme, 4.2:1 at best. High contrast brightens; it never darkens. */
+[data-theme="high-contrast"] .text-red-200 { color: #ffb3b3; }
+[data-theme="high-contrast"] .text-green-400 { color: #4ade80; }
+[data-theme="high-contrast"] .text-green-300 { color: #4ade80; }
+[data-theme="high-contrast"] .text-green-300\/90 { color: #4ade80e6; }
+[data-theme="high-contrast"] .text-green-300\/70 { color: #4ade80b3; }
+[data-theme="high-contrast"] .text-green-200 { color: #86efac; }
+[data-theme="high-contrast"] .text-amber-500\/80 { color: #ffe082; }
+[data-theme="high-contrast"] .text-amber-400 { color: #ffe082; }
+[data-theme="high-contrast"] .text-amber-300 { color: #ffe082; }
+[data-theme="high-contrast"] .text-amber-300\/90 { color: #ffe082e6; }
+[data-theme="high-contrast"] .text-amber-200 { color: #ffe082; }
+[data-theme="high-contrast"] .text-amber-200\/90 { color: #ffe082e6; }
+[data-theme="high-contrast"] .text-blue-400 { color: #6cb8f6; }
+[data-theme="high-contrast"] .text-blue-200 { color: #6cb8f6; }
+[data-theme="high-contrast"] .hover\:text-red-100:hover { color: #ffd6d6; }
+[data-theme="high-contrast"] .hover\:text-amber-100:hover { color: #fff3c4; }
+[data-theme="high-contrast"] .hover\:text-blue-200:hover { color: #9ccfff; }
+[data-theme="high-contrast"] .hover\:text-red-400:hover { color: #ff8080; }
+[data-theme="high-contrast"] .hover\:bg-red-900\/40:hover { background-color: rgba(210, 66, 78, 0.15); }
+[data-theme="high-contrast"] .bg-emerald-600 { background-color: #69f0ae; color: #000000; }
+[data-theme="high-contrast"] .bg-emerald-500 { background-color: #69f0ae; color: #000000; }
+/* Hover stays LIGHT: the base is a mint button with black text, and the old
+   #065f46 hover flipped it to dark green under that same black text (1.9:1). */
+[data-theme="high-contrast"] .hover\:bg-emerald-500:hover { background-color: #34d399; }
+[data-theme="high-contrast"] .focus\:border-emerald-500:focus { border-color: #69f0ae; }
+[data-theme="high-contrast"] .focus\:border-blue-500:focus { border-color: var(--accent-text, #0078d4); }
+[data-theme="high-contrast"] .bg-white.shadow-sm { border: 1px solid #2e2e2e; }
+[data-theme="high-contrast"] ::-webkit-scrollbar-thumb { background-color: #2e2e2e; }
+[data-theme="high-contrast"] ::-webkit-scrollbar-track { background-color: #0d0d0d; }
+/* Opacity variants (mirror of the light table's) and the dock's literals. */
+[data-theme="high-contrast"] .bg-neutral-800\/60 { background-color: #0d0d0d; }
+[data-theme="high-contrast"] .bg-neutral-800\/50 { background-color: #0d0d0d; }
+[data-theme="high-contrast"] .bg-neutral-800\/40 { background-color: rgba(13, 13, 13, 0.7); }
+[data-theme="high-contrast"] .bg-neutral-800\/95 { background-color: #0d0d0d; }
+[data-theme="high-contrast"] .bg-neutral-900\/95 { background-color: #000000; }
+[data-theme="high-contrast"] .bg-neutral-900\/70 { background-color: rgba(0, 0, 0, 0.9); }
+[data-theme="high-contrast"] .bg-neutral-900\/60 { background-color: rgba(0, 0, 0, 0.9); }
+[data-theme="high-contrast"] .bg-neutral-900\/50 { background-color: rgba(0, 0, 0, 0.8); }
+[data-theme="high-contrast"] .bg-neutral-950\/40 { background-color: rgba(26, 26, 26, 0.6); }
+[data-theme="high-contrast"] .bg-neutral-700\/70 { background-color: #1a1a1a; }
+[data-theme="high-contrast"] .tool-dock { background: #000000; border-inline-start-color: #1a1a1a; }
+[data-theme="high-contrast"] .tool-dock-header { border-bottom-color: #1a1a1a; }
+[data-theme="high-contrast"] .canvas-status-bar { background: #000000; border-top-color: #1a1a1a; }
+[data-theme="high-contrast"] .canvas-status-quiet { color: #ffffff; background: #1a1a1a; border-color: #2e2e2e; }
+[data-theme="high-contrast"] .canvas-status-pages { color: #ffffff; }
+[data-theme="high-contrast"] .canvas-status-pageinput { background: #000000; border-color: #2e2e2e; color: #ffffff; }
+[data-theme="high-contrast"] .properties-bar { background: #000000; border-bottom-color: #1a1a1a; }
+[data-theme="high-contrast"] .properties-bar-note { color: #ffffff; }
+[data-theme="high-contrast"] .properties-bar-action { color: #ffffff; background: #1a1a1a; border-color: #2e2e2e; }
+/* High contrast does NOT frost. The white wash here was the light
+   theme's mica treatment pasted onto a black theme — it put the shell's
+   light-on-dark text on a white bar (1.2:1 across the tab strip). The HC
+   contract is maximum contrast, and Windows' own HC mode disables
+   transparency entirely, so the bars stay solid even when Mica composes. */
+:root[data-backdrop="mica"][data-theme="high-contrast"] .app-shell-bar, :root[data-backdrop="mica"][data-theme="high-contrast"] .app-rail { background: #000000; }
+:root[data-backdrop="mica"][data-theme="high-contrast"] .app-content { background: #000000; }
+:root[data-backdrop="mica"][data-theme="high-contrast"] .app-banner.bg-blue-900\/60, :root[data-backdrop="mica"][data-theme="high-contrast"] .app-banner.bg-red-600\/20 { background-color: #000000; }
+[data-theme="high-contrast"] .search-panel-input-row { border-bottom-color: #1a1a1a; }
+[data-theme="high-contrast"] .search-panel-input { background: #0d0d0d; border-color: #2e2e2e; }
+[data-theme="high-contrast"] .search-panel-input:focus { border-color: var(--accent-text, #0078d4); }
+[data-theme="high-contrast"] .search-file-name { color: #d0d0d0; }
+[data-theme="high-contrast"] .search-hit:hover { background: #0d0d0d; }
+[data-theme="high-contrast"] .search-hit-page { color: #ffffff; }
+[data-theme="high-contrast"] .search-hit-snippet { color: #d0d0d0; }
+[data-theme="high-contrast"] .signature-nav-card { border-color: #1a1a1a; background: rgba(0, 0, 0, 0.015); }
+[data-theme="high-contrast"] .signature-nav-signer { color: #ffffff; }
+[data-theme="high-contrast"] .signatures-nav-footer { border-top-color: #1a1a1a; }
+[data-theme="high-contrast"] .signatures-nav-recheck-btn { border-color: #2e2e2e; }
+[data-theme="high-contrast"] .signatures-nav-recheck-btn:hover:not(:disabled) { background: #1a1a1a; }
+[data-theme="high-contrast"] .signatures-nav-caveat { color: #ffe082; }
+[data-theme="high-contrast"] .certification-banner-ok { color: #9cdcfe; background: #000000; border-color: #2e2e2e; }
+[data-theme="high-contrast"] .certification-banner-violation { color: #ff8080; background: #000000; border-color: #2e2e2e; }
+[data-theme="high-contrast"] .certification-banner-caveat { color: #ffe082; background: #000000; border-color: #2e2e2e; }
+[data-theme="high-contrast"] .signature-nav-kind { color: #9cdcfe; }
+[data-theme="high-contrast"] .signature-nav-policy { color: #ff8080; }
+[data-theme="high-contrast"] .signature-nav-policy-unjudged { color: #ffe082; }
+[data-theme="high-contrast"] .bookmark-title-input:hover, [data-theme="high-contrast"] .bookmark-title-input:focus { background: #0d0d0d; border-color: #2e2e2e; }
+[data-theme="high-contrast"] .bookmark-page-input { background: #0d0d0d; border-color: #2e2e2e; }
+[data-theme="high-contrast"] .bookmarks-footer { border-top-color: #1a1a1a; }
+[data-theme="high-contrast"] .bookmark-add-btn { border-color: #2e2e2e; }
+[data-theme="high-contrast"] .bookmark-add-btn:hover { background: #1a1a1a; }
+[data-theme="high-contrast"] .nav-icon-strip, [data-theme="high-contrast"] .nav-panel-body { border-inline-end-color: #1a1a1a; }
+[data-theme="high-contrast"] .nav-icon-btn { color: #d0d0d0; }
+[data-theme="high-contrast"] .nav-icon-btn:hover { background: #1a1a1a; color: #ffffff; }
+[data-theme="high-contrast"] .nav-icon-btn.active { background: #2e2e2e; color: #ffffff; }
+[data-theme="high-contrast"] .nav-panel-header { color: #d0d0d0; border-bottom-color: #1a1a1a; }
+[data-theme="high-contrast"] .thumb-row:hover { background: #0d0d0d; }
+[data-theme="high-contrast"] .thumb-label { color: #d0d0d0; }
+[data-theme="high-contrast"] .thumb-row.selected .thumb-label { color: #ffffff; }
+[data-theme="high-contrast"] .thumb-row.current .thumb-label { color: #ffffff; }
+[data-theme="high-contrast"] .canvas-view { --ink: #16161a; --ink-soft: #55555c; --ink-faint: #8e8e94; --select: #0c857a; --hover: rgba(22, 22, 26, 0.06); --group-bg: rgba(20, 20, 24, 0.045); --page-shadow: 0 1px 2px rgba(20, 20, 24, 0.07), 0 6px 20px rgba(20, 20, 24, 0.06); }
+[data-theme="high-contrast"] .docview-scroll { background: #eceef1; }
+[data-theme="high-contrast"] .doc-index, [data-theme="high-contrast"] .doc-pages { color: var(--ink-soft); }
+[data-theme="high-contrast"] .measure-live-label { background: rgba(255, 255, 255, 0.95); color: #92400e; }
+[data-theme="high-contrast"] .omnisearch-input { background: #000000; border-color: #2e2e2e; color: #ffffff; }
+[data-theme="high-contrast"] .omnisearch-input::placeholder { color: #c0c0c0; }
+[data-theme="high-contrast"] .omnisearch-panel { background: #000000; border-color: #1a1a1a; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.14); }
+[data-theme="high-contrast"] .omnisearch-head { color: #d0d0d0; }
+[data-theme="high-contrast"] .omnisearch-empty { color: #d0d0d0; }
+[data-theme="high-contrast"] .omnisearch-row { color: #ffffff; }
+[data-theme="high-contrast"] .omnisearch-row:hover:not(:disabled), [data-theme="high-contrast"] .omnisearch-row.active { background: #0d0d0d; color: #ffffff; }
+[data-theme="high-contrast"] .omnisearch-icon { color: #e6e6e6; }
+[data-theme="high-contrast"] .omnisearch-page { color: #d0d0d0; }
+[data-theme="high-contrast"] .omnisearch-snippet { color: #e6e6e6; }
+[data-theme="high-contrast"] .tools-center-heading { color: #ffffff; }
+[data-theme="high-contrast"] .tools-center-sub { color: #d0d0d0; }
+[data-theme="high-contrast"] .tool-tile { background: #000000; border-color: #1a1a1a; }
+[data-theme="high-contrast"] .tool-tile:hover { background: #000000; border-color: #2e2e2e; }
+[data-theme="high-contrast"] .tool-tile-icon { background: #0d0d0d; color: #e6e6e6; }
+[data-theme="high-contrast"] .tool-tile:hover .tool-tile-icon { color: #ffffff; }
+[data-theme="high-contrast"] .tool-tile-title { color: #ffffff; }
+[data-theme="high-contrast"] .tool-op { color: #e6e6e6; }
+[data-theme="high-contrast"] .tool-op:hover { background: #0d0d0d; color: #ffffff; }
+[data-theme="high-contrast"] .tool-op.active { background: var(--accent, #0078d4); color: var(--accent-fg, #ffffff); }
+[data-theme="high-contrast"] .secondary-toolbar { background: #000000; border-bottom-color: #1a1a1a; }
+[data-theme="high-contrast"] .secondary-toolbar-title { color: #d0d0d0; border-inline-end-color: #1a1a1a; }
+[data-theme="high-contrast"] .secondary-tool { color: #e6e6e6; }
+[data-theme="high-contrast"] .secondary-tool:hover { background: #0d0d0d; color: #ffffff; }
+[data-theme="high-contrast"] .secondary-tool.active { background: var(--accent, #0078d4); border-color: var(--accent, #0078d4); color: var(--accent-fg, #ffffff); }
+[data-theme="high-contrast"] .prefs-cat { color: #e6e6e6; }
+[data-theme="high-contrast"] .prefs-cat:hover { background: #0d0d0d; color: #ffffff; }
+[data-theme="high-contrast"] .prefs-cat.active { background: var(--accent, #0078d4); color: var(--accent-fg, #ffffff); }
+[data-theme="high-contrast"] .text-selection-menu { border-color: #2e2e2e; background: #000000; }
+[data-theme="high-contrast"] .text-selection-menu button { color: #ffffff; }
+[data-theme="high-contrast"] .text-selection-menu button:hover { background: #0d0d0d; }
+[data-theme="high-contrast"] .text-selection-url { border-color: #2e2e2e; background: #000000; color: #ffffff; }
+/* Hand extras: strong focus + selection, whited chrome borders. */
+[data-theme="high-contrast"] :focus-visible {
+  outline: 3px solid #ffd700 !important;
+  outline-offset: 1px;
+}
+[data-theme="high-contrast"] ::selection {
+  background: #ffd700;
+  color: #000000;
+}
+[data-theme="high-contrast"] .border-neutral-700,
+[data-theme="high-contrast"] .border-neutral-800 {
+  border-color: #ffffff;
+}
+/* The DOCUMENT stays the document: page rasters render file content and must
+   never be re-tinted by the shell theme. The forced-colors half of this lives
+   unconditionally on the document roots near the .pageview rules — an OS
+   contrast theme forces colours under every app theme, not only this one. */
+[data-theme="high-contrast"] .pageview-base,
+[data-theme="high-contrast"] .pageview-separation,
+[data-theme="high-contrast"] .pageview-detail {
+  filter: none;
+}
+/* ── end high-contrast ── */
+
+/* Snapping. The marker rides the snapped point in its own
+   16×16 box (the annotation overlays' 0..1 viewBox would squash the glyphs),
+   the badge names the type beside it, and the live region carries the same
+   name for a reader who cannot see either. */
+.page-snap-marker {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 6;
+  overflow: visible;
+}
+/* Below and after the point: the live measurement chip occupies the space
+   above the same point, and both follow the snapped cursor. */
+.page-snap-badge {
+  position: absolute;
+  transform: translate(10px, 10px);
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(23, 23, 23, 0.92);
+  border: 1px solid #f59e0b;
+  color: #fbbf24;
+  font-size: 10px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 6;
+}
+[data-theme="light"] .page-snap-badge {
+  background: rgba(255, 255, 255, 0.95);
+  color: #92400e;
+}
+[data-theme="high-contrast"] .page-snap-badge {
+  background: rgba(255, 255, 255, 0.95);
+  color: #92400e;
+}
+/* Announced, never drawn — the badge is the visual half. */
+.page-snap-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ── rulers, grid, guides ─────────────────────────────────────────────────
+   The ruler FRAME. With rulers off it is `display: contents`, so the scroller
+   stays a direct child of the pane's flex column and the reading view's
+   geometry is bit-for-bit what shipped — a drafting aid must not perturb the
+   layout it draws over. With them on it becomes a two-track grid. */
+/* The reading view is page GEOMETRY, not text flow. The ruler grid's first
+   column is the page origin and a spread pairs by the DOCUMENT's binding, so
+   neither follows the UI language: under `dir=rtl` the grid would place the
+   ruler corner and the recto on the wrong side and misrepresent the file.
+   Document text still sets its own direction, from the document's own
+   analysis. */
+.docview-frame { display: contents; direction: ltr; }
+.docview-frame.with-rulers {
+  display: grid;
+  position: relative;
+  grid-template-columns: var(--ruler-size, 18px) 1fr;
+  grid-template-rows: var(--ruler-size, 18px) 1fr;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.docview-ruler-corner {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  /* Chrome beside the page, not ink on it: --ink-soft is authored for the
+     white paper the canvas draws on and is near-black under the contrast
+     theme, where this sits on a near-black panel. */
+  color: var(--text-dim);
+  background: var(--panel-bg);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.docview-ruler {
+  position: relative;
+  overflow: hidden;
+  background: var(--panel-bg);
+  color: var(--text-dim);
+  font-size: 9px;
+  user-select: none;
+  touch-action: none;
+}
+.docview-ruler-h {
+  grid-column: 2;
+  grid-row: 1;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: row-resize; /* dragging DOWN off it makes a horizontal guide */
+}
+.docview-ruler-v {
+  grid-column: 1;
+  grid-row: 2;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: col-resize;
+}
+.docview-frame.with-rulers .docview-scroll { grid-column: 2; grid-row: 2; }
+/* A tick's weight is on its own border, never on the element: a major tick
+   CARRIES its label, and element opacity composites the text along with the
+   rule, dropping the numbers below AA. */
+.docview-ruler-h .ruler-tick {
+  position: absolute;
+  bottom: 0;
+  width: 0;
+  height: 4px;
+  border-left: 1px solid color-mix(in srgb, currentColor 55%, transparent);
+}
+.docview-ruler-h .ruler-tick.major {
+  height: 9px;
+  border-left-color: color-mix(in srgb, currentColor 90%, transparent);
+}
+.docview-ruler-v .ruler-tick {
+  position: absolute;
+  right: 0;
+  height: 0;
+  width: 4px;
+  border-top: 1px solid color-mix(in srgb, currentColor 55%, transparent);
+}
+.docview-ruler-v .ruler-tick.major {
+  width: 9px;
+  border-top-color: color-mix(in srgb, currentColor 90%, transparent);
+}
+.docview-ruler-h .ruler-label {
+  position: absolute;
+  left: 2px;
+  top: -10px;
+  white-space: nowrap;
+}
+/* Vertical ruler labels read bottom-to-top, the drafting convention. */
+.docview-ruler-v .ruler-label {
+  position: absolute;
+  left: -1px;
+  top: 2px;
+  transform-origin: 0 0;
+  transform: rotate(90deg);
+  white-space: nowrap;
+}
+.ruler-cursor {
+  position: absolute;
+  background: #f59e0b;
+  pointer-events: none;
+}
+.docview-ruler-h .ruler-cursor { top: 0; bottom: 0; width: 1px; }
+.docview-ruler-v .ruler-cursor { left: 0; right: 0; height: 1px; }
+/* The guide being dragged off a ruler — a frame child, so it does not scroll
+   away from the pointer that is placing it. */
+.docview-guide-draft {
+  position: absolute;
+  background: #22d3ee;
+  pointer-events: none;
+  z-index: 30;
+}
+.docview-guide-draft.axis-x { top: 0; bottom: 0; width: 1px; }
+.docview-guide-draft.axis-y { left: 0; right: 0; height: 1px; }
+
+/* The grid, drawn over the raster and under the annotation layer. The page
+   raster's forced-color rule applies here too: a high-contrast theme
+   re-tints the shell, never the document surface. */
+.page-grid {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+  stroke: rgba(37, 99, 235, 0.28);
+  stroke-width: 1;
+  forced-color-adjust: none;
+}
+[data-theme="light"] .page-grid { stroke: rgba(37, 99, 235, 0.22); }
+[data-theme="high-contrast"] .page-grid { stroke: rgba(0, 0, 0, 0.45); }
+
+/* Guides: a visible hairline plus a wider INVISIBLE grab strip, so a 1px line
+   is still catchable by a pointer. The strip is only interactive under the
+   Select tool (PageCell decides), so a drawing gesture is never swallowed. */
+.page-guides { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+.page-guide {
+  position: absolute;
+  pointer-events: auto;
+  background: transparent;
+}
+.page-guide::before {
+  content: '';
+  position: absolute;
+  background: #22d3ee;
+}
+.page-guide-x { top: 0; bottom: 0; width: 9px; margin-left: -4px; cursor: col-resize; }
+.page-guide-x::before { top: 0; bottom: 0; left: 4px; width: 1px; }
+.page-guide-y { left: 0; right: 0; height: 9px; margin-top: -4px; cursor: row-resize; }
+.page-guide-y::before { left: 0; right: 0; top: 4px; height: 1px; }
+.page-guide.dragging::before { background: #f59e0b; }
+[data-theme="high-contrast"] .page-guide::before { background: #0000ff; }
+
+/* The status bar's Snap segment: the toggle, its caret, and the options
+   popover that opens upward (the bar is docked at the bottom). */
+.canvas-status-snap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+.canvas-status-caret {
+  padding-inline-start: 4px;
+  padding-inline-end: 4px;
+  font-size: 10px;
+}
+.canvas-status-snap-popover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  inset-inline-end: 0;
+  min-width: 168px;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 40;
+}
+.canvas-status-snap-title {
+  font-size: 11px;
+  opacity: 0.7;
+  margin-bottom: 4px;
+}
+.canvas-status-snap-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.canvas-status-snap-number {
+  width: 56px;
+  margin-inline-start: auto;
+  padding: 1px 4px;
+  background: transparent;
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  color: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.canvas-status-snap-select {
+  margin-inline-start: auto;
+  padding: 1px 4px;
+  background: transparent;
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  color: inherit;
+}
+.canvas-status-snap-select:disabled { opacity: 0.6; }
+
+/* Flattener preview marks. Each category gets its own tint so the panel's
+   counts and the page agree at a glance; a region is the solid frame, because
+   it is the thing that will actually rasterize and the objects are why. */
+.page-flatten-mark {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 2px;
+}
+.page-flatten-mark.is-region {
+  border: 1.5px solid rgba(59, 130, 246, 0.9);
+  background: rgba(59, 130, 246, 0.08);
+}
+.page-flatten-mark.is-transparent {
+  border: 1px dashed rgba(217, 70, 239, 0.9);
+  background: rgba(217, 70, 239, 0.12);
+}
+.page-flatten-mark.is-affected {
+  border: 1px dashed rgba(234, 179, 8, 0.85);
+}
+.page-flatten-mark.is-rasterized {
+  border: 1px dotted rgba(248, 113, 113, 0.85);
+}
+.page-flatten-mark.is-outlined-text {
+  border: 1px dotted rgba(52, 211, 153, 0.9);
+}
+.page-flatten-mark.is-outlined-strokes {
+  border: 1px dotted rgba(45, 212, 191, 0.9);
+}
+.page-flatten-mark.is-expanded-patterns {
+  border: 1px dotted rgba(167, 139, 250, 0.9);
+}
+
+/* Detected field candidates. A dashed amber frame, deliberately unlike the
+   solid widget outline: a candidate has written nothing to the document, and a
+   user who cannot tell the two apart has no review step. */
+.page-candidate {
+  position: absolute;
+  background: rgba(217, 160, 40, 0.1);
+  border: 1.5px dashed rgba(230, 175, 60, 0.85);
+  border-radius: 2px;
+  cursor: move;
+}
+.page-candidate.is-selected {
+  border-style: solid;
+  border-color: var(--accent, #3b82f6);
+  background: rgba(59, 130, 246, 0.14);
+}
+.page-candidate-label {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 1px 3px;
+  font-size: 8px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: rgba(240, 195, 100, 0.95);
+  pointer-events: none;
+}
+.page-candidate.is-selected .page-candidate-label {
+  color: var(--accent, #3b82f6);
+}
+.page-candidate-handle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: var(--accent, #3b82f6);
+  border: 1px solid #fff;
+  border-radius: 2px;
+}
+.page-candidate-handle.is-nw {
+  left: -4px;
+  top: -4px;
+  cursor: nwse-resize;
+}
+.page-candidate-handle.is-ne {
+  right: -4px;
+  top: -4px;
+  cursor: nesw-resize;
+}
+.page-candidate-handle.is-sw {
+  left: -4px;
+  bottom: -4px;
+  cursor: nesw-resize;
+}
+.page-candidate-handle.is-se {
+  right: -4px;
+  bottom: -4px;
+  cursor: nwse-resize;
+}
+
+/* Detected tables under review. A dashed teal frame with a rule per column
+   boundary and a hairline per row: nothing here is written to the document at
+   all, so the treatment must not read as content or as a candidate field. */
+.page-table-region {
+  position: absolute;
+  background: rgba(20, 160, 150, 0.08);
+  border: 1.5px dashed rgba(45, 200, 190, 0.85);
+  border-radius: 2px;
+  cursor: move;
+}
+.page-table-region.is-accepted {
+  background: rgba(20, 160, 150, 0.16);
+  border-style: solid;
+}
+.page-table-region.is-selected {
+  border-color: var(--accent, #3b82f6);
+}
+/* The region's NAME, above the region's top edge — never inside it. Drawn in
+   the normal flow it sat on the table's own first header cell, overlapping that
+   cell's text and clipping itself against the first column's right border
+   ("Instrument schedul|e"), so the one label that says which table this is was
+   the least readable thing in the frame.
+   It also gets its own ground, for the reason `.page-redact-label` does: a
+   region can be drawn over any page content, and pale cyan on unknown content
+   is not a contrast anyone can predict. */
+.page-table-label {
+  position: absolute;
+  inset-block-end: 100%;
+  inset-inline-start: 0;
+  margin-block-end: 2px;
+  max-width: calc(100% - 16px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 1px 4px;
+  border-radius: 2px;
+  background: rgba(23, 23, 23, 0.92);
+  font-size: 9px;
+  line-height: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: #7ce1d7;
+  pointer-events: none;
+}
+.page-table-region.is-selected .page-table-label {
+  color: var(--accent-text, var(--accent, #4cc2ff));
+}
+/* Outside the region, on the label's line: inside it, the badge sat on the
+   text of the last header cell. */
+.page-table-accept {
+  position: absolute;
+  inset-block-end: 100%;
+  inset-inline-end: 0;
+  margin-block-end: 2px;
+  width: 12px;
+  height: 12px;
+  line-height: 10px;
+  font-size: 9px;
+  text-align: center;
+  color: #fff;
+  background: rgba(20, 160, 150, 0.9);
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+}
+/* A row is drawn evidence, not a control: it takes no pointer at all. */
+.page-table-row {
+  position: absolute;
+  background: rgba(45, 200, 190, 0.35);
+  pointer-events: none;
+}
+.page-table-row.is-x {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+.page-table-row.is-y {
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+.page-table-column {
+  position: absolute;
+  background: rgba(45, 200, 190, 0.95);
+}
+.page-table-column.is-x {
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  cursor: col-resize;
+}
+.page-table-column.is-y {
+  left: 0;
+  right: 0;
+  height: 2px;
+  margin-top: -1px;
+  cursor: row-resize;
+}
+.page-table-column.is-leading {
+  background: rgba(45, 200, 190, 0.45);
+  cursor: move;
+  pointer-events: none;
+}
+.page-table-handle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: var(--accent, #3b82f6);
+  border: 1px solid #fff;
+  border-radius: 2px;
+}
+.page-table-handle.is-nw {
+  left: -4px;
+  top: -4px;
+  cursor: nwse-resize;
+}
+.page-table-handle.is-ne {
+  right: -4px;
+  top: -4px;
+  cursor: nesw-resize;
+}
+.page-table-handle.is-sw {
+  left: -4px;
+  bottom: -4px;
+  cursor: nesw-resize;
+}
+.page-table-handle.is-se {
+  right: -4px;
+  bottom: -4px;
+  cursor: nwse-resize;
+}
+
+/* An accessibility finding: where the checker looked, never something the app
+   would write. Amber rather than the teal a detected table wears, and no
+   handles at all — the only gesture is the click that selects it. */
+.page-a11y-finding {
+  position: absolute;
+  padding: 0;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1.5px dashed rgba(251, 191, 36, 0.9);
+  border-radius: 2px;
+  cursor: pointer;
+  text-align: start;
+}
+.page-a11y-finding.is-selected {
+  background: rgba(251, 191, 36, 0.24);
+  border-style: solid;
+  border-color: var(--accent, #3b82f6);
+}
+.page-a11y-finding-label {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 1px 3px;
+  font-size: 8px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: rgba(253, 224, 138, 0.95);
+  pointer-events: none;
+}
+.page-a11y-finding.is-selected .page-a11y-finding-label {
+  color: var(--accent, #3b82f6);
+}
+
+/* ── OS forced colors ─────────────────────────────────────────────────────
+   A Windows contrast theme puts the webview into forced-colors mode: every
+   author colour is replaced from the system palette, ignoring specificity,
+   custom properties and !important alike. That is the correct behaviour for
+   CHROME and the block below does not fight it. What it does is restore the
+   signals the substitution removes, in the palette's own vocabulary — a
+   system colour keyword written by an author is honoured rather than
+   re-forced, which is the mechanism every rule here relies on.
+
+   The document subtree is exempt (see the .page/.pageview rules above) and is
+   excluded from anything that would paint into it.
+
+   Scope was measured, not guessed: a walk of every surface with the palette
+   off and then on flagged the elements whose background carried a meaning and
+   lost it with no border to stand in. Six kinds came out; there is one rule
+   per kind. Large regions that lose only their tint from the shell are left
+   alone — every seam around them is drawn by a neighbour that carries a real
+   border. Focus rings are left to the palette, which forces outline-color like
+   any other colour, except on the selected controls below: their opt-out from
+   forcing covers the outline too, so they restate the ring in a system colour.
+   ──────────────────────────────────────────────────────────────────────── */
+@media (forced-colors: active) {
+  /* The utility framework's preflight zeroes border-width on every element,
+     which removes the border the user agent's own control styling supplies.
+     With backgrounds flattened onto Canvas, a button or a text field became a
+     region indistinguishable from the surface behind it. Native check
+     controls do not take this: the user agent paints those itself under a
+     forced palette and an author border does not participate. */
+  button:not(.page *),
+  select:not(.page *),
+  input:not(.page *),
+  textarea:not(.page *),
+  [role="button"]:not(.page *) {
+    border: 1px solid ButtonBorder;
+  }
+
+  /* Selected and armed chrome signalled itself with an accent fill, which the
+     palette flattens along with every other background. Highlight is the
+     palette's own answer, and declaring it is also what keeps an arbitrary
+     system accent from being expected to carry the state.
+     Under forced-color-adjust: auto the engine paints a Canvas-coloured
+     readability backplate behind every text run. HighlightText on that
+     backplate is the same colour as the backplate in the dark contrast
+     palettes, so the label became a solid block inside the Highlight fill.
+     The selected control therefore opts out of the adjustment and states
+     every colour itself in system keywords; the opt-out inherits, so the
+     descendants restate the label colour, and !important keeps the theme
+     rules that are no longer overridden by the palette from painting. */
+  .tool-op.active,
+  .secondary-tool.active,
+  .prefs-cat.active,
+  .nav-icon-btn.active,
+  [aria-pressed="true"]:not(.page *):not(.annot-swatch):not(.color-swatch),
+  [aria-selected="true"]:not(.page *) {
+    forced-color-adjust: none;
+    background: Highlight !important;
+    border-color: ButtonBorder !important;
+    color: HighlightText !important;
+  }
+  :is(
+    .tool-op.active,
+    .secondary-tool.active,
+    .prefs-cat.active,
+    .nav-icon-btn.active,
+    [aria-pressed="true"]:not(.page *):not(.annot-swatch):not(.color-swatch),
+    [aria-selected="true"]:not(.page *)
+  ) :not(.page, .page *, .thumb-frame, .thumb-frame *, .annot-swatch, .color-swatch, .status-dot, mark) {
+    color: HighlightText !important;
+  }
+  /* The authored ring colour is drawn for the theme's surface and can vanish
+     against the forced Canvas around the control. */
+  :is(
+    .tool-op.active,
+    .secondary-tool.active,
+    .prefs-cat.active,
+    .nav-icon-btn.active,
+    [aria-pressed="true"]:not(.page *):not(.annot-swatch):not(.color-swatch),
+    [aria-selected="true"]:not(.page *)
+  ):focus-visible {
+    outline-color: CanvasText !important;
+  }
+  /* A search hit inside a selected row keeps its own pair: the authored
+     translucent accent no longer contrasts with HighlightText on Highlight. */
+  :is(
+    .tool-op.active,
+    .secondary-tool.active,
+    .prefs-cat.active,
+    .nav-icon-btn.active,
+    [aria-pressed="true"]:not(.page *):not(.annot-swatch):not(.color-swatch),
+    [aria-selected="true"]:not(.page *)
+  ) mark {
+    background: Mark !important;
+    color: MarkText !important;
+  }
+
+  /* A hairline divider is a background on a one-pixel box; Canvas on Canvas
+     is nothing. */
+  .chrome-divider {
+    background-color: CanvasText;
+  }
+
+  /* A panel's status box is a fill with text in it, and its ordinary and
+     error states differ only by that fill. The wording carries the state
+     (the error prefix comes from the catalog), so what is restored here is
+     the boundary that says a status is being reported at all. */
+  .panel-status-box {
+    border: 1px solid CanvasText;
+  }
+
+  /* A colour sample IS its colour — flattening it destroys the only thing it
+     shows, the same reason document pixels are not forced. The outline is
+     declared in system colours because the authored one is inline (so it
+     survives the exemption) and is drawn for a dark shell: white on a light
+     contrast theme is invisible. */
+  .annot-swatch,
+  .color-swatch,
+  .status-dot {
+    forced-color-adjust: none;
+  }
+  .annot-swatch[aria-pressed="true"],
+  .color-swatch.is-selected {
+    outline: 2px solid CanvasText !important;
+    outline-offset: 1px;
+  }
+  .annot-swatch:not([aria-pressed="true"]),
+  .color-swatch:not(.is-selected) {
+    outline: 1px solid GrayText !important;
+    outline-offset: 1px;
+  }
+
+  /* A contrast theme disables system transparency, so a translucent bar would
+     composite the desktop through the forced palette. Same contract the app's
+     own contrast theme keeps. */
+  :root[data-backdrop] .app-shell-bar,
+  :root[data-backdrop] .app-rail,
+  :root[data-backdrop] .app-content,
+  :root[data-backdrop] .app-banner {
+    background: Canvas;
+  }
+}
+
+/* Article bead band — the box an article visits. Unfilled like the crop band
+   (the rectangle marks a region of the page, not a mark drawn on it) and in
+   the accent so it cannot be mistaken for a crop, which is the other unfilled
+   band a user can have armed. */
+.page-annot-band.band-beaddraw {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: var(--accent);
+  border-style: dashed;
+}
+
+/* Link band — the region a link will cover. Unfilled for the crop band's
+   reason (the rectangle marks a region of the page rather than a mark drawn
+   on it) and solid rather than dashed, because a link's rectangle is what the
+   reader will actually be able to click. */
+.page-annot-band.band-linkdraw {
+  background: color-mix(in srgb, #38bdf8 10%, transparent);
+  border-color: #38bdf8;
+}
+
+/* The file's existing links, shown only while the Links tool is open. Faint
+   by default: these are already part of the document, and the one being
+   authored has to stay the loudest thing on the page. */
+.page-link-region {
+  position: absolute;
+  padding: 0;
+  background: color-mix(in srgb, #38bdf8 8%, transparent);
+  border: 1px solid color-mix(in srgb, #38bdf8 55%, transparent);
+  border-radius: 2px;
+  cursor: pointer;
+}
+.page-link-region:hover {
+  background: color-mix(in srgb, #38bdf8 18%, transparent);
+  border-color: #38bdf8;
+}
+.page-link-region-selected {
+  background: color-mix(in srgb, #38bdf8 22%, transparent);
+  border: 1.5px solid #38bdf8;
+}
+.page-link-region:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Bookmarks-from-structure: the preview sits between the tree and the footer,
+   so what is about to be written is read directly above the button that
+   writes it. */
+.bookmarks-derive {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-top: 1px solid #262626;
+  flex-shrink: 0;
+}
+.bookmarks-derive-state { font-size: 11px; color: var(--text-dim); }
+.bookmarks-derive-mode {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.bookmarks-derive-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Articles nav panel. */
+.navpanel-note {
+  padding: 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-dim);
+  border-bottom: 1px solid #262626;
+}
+.article-row {
+  padding: 6px 8px;
+  border-bottom: 1px solid #1f1f1f;
+}
+.article-row-active { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.article-head { display: flex; align-items: center; gap: 6px; }
+.article-title-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: 2px 4px;
+  color: inherit;
+}
+.article-title-input:focus { border-color: #404040; background: #171717; outline: none; }
+.article-beads {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-block: 4px 0;
+  padding-inline: 22px 0;
+}
+.article-bead-empty { font-size: 11px; color: var(--text-dim); }
+.article-bead-row { display: flex; align-items: center; gap: 4px; }
+.article-bead-jump {
+  flex: 1;
+  min-width: 0;
+  text-align: start;
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.article-bead-jump:hover { color: var(--text); background: #262626; }
+.articles-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-top: 1px solid #262626;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.bookmark-add-btn.is-armed { color: var(--accent-text); border-color: var(--accent); }
+
+[data-theme="light"] .navpanel-note { border-bottom-color: #e5e7eb; }
+[data-theme="light"] .article-row { border-bottom-color: #f3f4f6; }
+[data-theme="light"] .articles-footer { border-top-color: #e5e7eb; }
+[data-theme="light"] .bookmarks-derive { border-top-color: #e5e7eb; }
+[data-theme="light"] .article-title-input:focus { border-color: #d1d5db; background: #ffffff; }
+[data-theme="light"] .article-bead-jump:hover { background: #f3f4f6; }
+
+/* Document-health indicator and its ask-first panel. Sized and coloured off
+   the same tokens as the snap popover beside it: one status-bar affordance,
+   not a second visual language. */
+.canvas-status-health {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.doc-health-glyph {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.doc-health-count {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+.doc-health-facts,
+.doc-health-undetermined {
+  color: var(--warning-fg, #e0b341);
+}
+/* Collected, nothing wrong, coverage incomplete. It carries the status bar's
+   own foreground: a distinct glyph, never a warning colour. */
+.doc-health-limited {
+  color: inherit;
+}
+.canvas-status-health-popover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  inset-inline-end: 0;
+  width: 360px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 40;
+}
+.doc-health-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.doc-health-state,
+.doc-health-hint {
+  font-size: 12px;
+  opacity: 0.8;
+  margin: 6px 0 0;
+}
+.doc-health-group {
+  margin-top: 10px;
+}
+.doc-health-kind-title {
+  font-size: 11px;
+  opacity: 0.7;
+  margin: 4px 0 2px;
+}
+.doc-health-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.doc-health-fact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.doc-health-subject {
+  font-family: var(--mono-font, ui-monospace, monospace);
+  font-size: 11px;
+  opacity: 0.85;
+}
+.doc-health-pagelink {
+  font-size: 11px;
+  text-decoration: underline;
+  opacity: 0.85;
+}
+.doc-health-pagelink:hover {
+  opacity: 1;
+}
+
+/* Canvas toasts float over the page, which is white paper in every theme.
+   A translucent tint alone composited the dark-theme text colours onto that
+   paper as light text on a light fill, so the tint is laid over the theme's
+   opaque floating-chrome surface instead. */
+.canvas-toast {
+  background-color: var(--panel-bg);
+  background-image: linear-gradient(var(--canvas-toast-tint), var(--canvas-toast-tint));
+}
+.canvas-toast.is-error { --canvas-toast-tint: rgba(220, 38, 38, 0.2); }
+.canvas-toast.is-warning { --canvas-toast-tint: rgba(245, 158, 11, 0.15); }
+.canvas-toast.is-ok { --canvas-toast-tint: rgba(22, 163, 74, 0.15); }
+
+/* Overlays positioned against the canvas view, which also holds the tool
+   strip above the document and the status bar below it. The insets are
+   measured onto the view (components/canvas/useCanvasChromeInsets.ts), so an
+   overlay clears both and its height cap leaves room for both. */
+.canvas-float-bottom {
+  inset-block-end: calc(var(--canvas-inset-block-end, 0px) + 1rem);
+  max-block-size: calc(100% - var(--canvas-inset-block-start, 0px) - var(--canvas-inset-block-end, 0px) - 2rem);
+}
+.canvas-float-top {
+  inset-block-start: calc(var(--canvas-inset-block-start, 0px) + 1rem);
+}
+
+/* The signature list (panels/SignaturesPanel.tsx) keeps a usable height when
+   the panel is short of room, but never more than its own cards: a fixed
+   minimum taller than one card leaves a blank band under it. Without
+   `calc-size()` the fixed minimum applies. */
+.signature-list {
+  min-block-size: 10rem;
+  min-block-size: calc-size(max-content, min(size, 10rem));
+}
+
+/* Document tab label (components/TabStrip.tsx `TabName`). The head takes the
+   one ellipsis; the tail always shows whole. A fixed minimum on the head's
+   track makes the label's min-content width that minimum plus the tail, which
+   is the tab's own minimum width (the tab keeps `min-width: auto`), so a tab
+   squeezed by many siblings reads "su…-1.pdf" and the lane scrolls past that.
+   A short name is never cut; a long name in a shaped script, which is never
+   split, keeps a few letters before its ellipsis. */
+.tab-name {
+  display: grid;
+  min-inline-size: 0;
+  white-space: nowrap;
+}
+.tab-name-whole { grid-template-columns: auto; }
+.tab-name-split { grid-template-columns: minmax(2em, auto) auto; }
+.tab-name-clip { grid-template-columns: minmax(5em, auto); }
+.tab-name-head {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

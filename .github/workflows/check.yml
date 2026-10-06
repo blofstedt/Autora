@@ -25,6 +25,9 @@ jobs:
       # The PDF window's editor: a sub-project with its own dependencies.
       - run: npm --prefix pdf-editor ci
 
+      # And Spectra's, which is now what that window shows.
+      - run: npm --prefix spectra-editor ci
+
       - name: Lint (typecheck and ESLint)
         run: npm run lint
 
@@ -36,6 +39,12 @@ jobs:
       # pinned in office/PIN.json, so their tests run against the real engines.
       - name: Build the Office tools
         run: node scripts/build-office.mjs
+
+      # And the PDF window's engine, from the commit pinned in
+      # spectra/PIN.json: the same bundle the image carries, so a broken pin or
+      # a missing package fails here rather than in the image.
+      - name: Build the PDF engine (Spectra's)
+        run: node scripts/build-spectra.mjs
 
       - name: Test
         run: npm test

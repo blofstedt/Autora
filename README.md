@@ -372,10 +372,10 @@ unavailable.
 
 The **Tools** page in the sidebar switches the built-in windows: the widget
 window (`widget_show`), the browser window (the same switch as Web browser
-above), the construction window where websites and apps are built
+above), the Creator window where websites and apps are built
 (`app_preview`), and the PDF editor (the `pdf_*` tools). All are on by
 default. One that is off is taken out of the model's tools from its next step
-and the agent is told it is off; switching the construction window off also
+and the agent is told it is off; switching the Creator window off also
 closes any that are open.
 
 `browser_screenshot` sees the window by default. With `full_page`, `ref`,

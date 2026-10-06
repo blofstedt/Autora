@@ -22,7 +22,7 @@ const ICON: Record<SurfaceKind, ReactNode> = {
 
 /** A tab is its name and nothing else: what is in it is what is below. The dot
     says the agent is at work in it. */
-export const NAME: Record<SurfaceKind, string> = { app: "App", pdf: "PDF", word: "Document", browser: "Browser", plan: "To do", widget: "Widget" };
+export const NAME: Record<SurfaceKind, string> = { app: "Creator", pdf: "PDF", word: "Document", browser: "Browser", plan: "To do", widget: "Widget" };
 
 const working = (surface: Surface): boolean => {
   const { cell } = surface;

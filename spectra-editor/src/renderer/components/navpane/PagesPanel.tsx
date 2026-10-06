@@ -1,0 +1,525 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
+import { useAppState, useAppDispatch } from '../../state/AppStateProvider';
+import { usePdfProxies } from '../../hooks/usePdfProxies';
+import { logRenderError, scheduleReblit } from '../canvas/raster';
+import { confirmPageEditNow, getCanvasServices, pushEscapeInterceptor } from '../../commands/context';
+import { buildPageContextMenu } from '../../lib/page-context-menu';
+import { computeReorderTarget } from '../../lib/page-reorder';
+import {
+  ROW_H,
+  thumbDropIndex,
+  thumbGrid,
+  thumbSlot,
+  thumbWindow,
+} from '../../lib/thumb-grid';
+import { inlineExtent } from '../../lib/inline-direction';
+import { dropTargetGate } from '../../lib/drop-gate';
+import { useFlipReorder } from '../../hooks/useFlipReorder';
+import { ContextMenu } from '../ContextMenu';
+import type { NavPanelComponentProps } from './types';
+import type { PageRef } from '../../state/types';
+import { useTranslation } from 'react-i18next';
+import { tChrome } from '../../i18n';
+import { pointerScope } from '../../lib/pointer-scope';
+
+// Pages (thumbnails) panel. Small renders of the active
+// file's pages through the same pdf.js proxy the board uses (one per file via
+// pdfDocCache); virtualized to a window around the scroll viewport. Click →
+// select (the SHARED ui.selectedPageIds) + centerOn the board; the context
+// menu is the shared page menu.
+//
+// The layout is a GRID whose column count follows the pane's width
+// (lib/thumb-grid.ts) — widening the pane adds columns rather than one larger
+// thumbnail with empty band beside it.
+
+const THUMB_MAX_H = 136;
+const OVERSCAN = 3; // rows rendered beyond the viewport each side
+// Rotation-invariant raster budget (longest side, CSS px before dpr). Fixed so
+// a pending rotation never re-renders the raster (only the CSS transform/size
+// change) — the board's PageView convention.
+const RENDER_TARGET = 320;
+
+interface PageItem {
+  docId: string;
+  page: PageRef;
+  pageNumber: number; // 1-based within the file (workspace order across its docs)
+}
+
+function dprCap(): number {
+  return Math.min(window.devicePixelRatio || 1, 2);
+}
+
+// One thumbnail: renders the page at natural orientation to a device-pixel
+// canvas, then CSS-rotates by the pending PageRef rotation — exactly the
+// board's PageView approach, so a pending rotation shows without a re-render
+// of the file. `version` bumps to force a re-render after a buffer swap.
+function Thumbnail({
+  proxy,
+  pageNumber,
+  natW,
+  natH,
+  rotation,
+  maxW,
+  version,
+}: {
+  proxy: PDFDocumentProxy | undefined;
+  pageNumber: number;
+  natW: number;
+  natH: number;
+  rotation: 0 | 90 | 180 | 270;
+  maxW: number;
+  version: number;
+}): React.ReactElement {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const [ready, setReady] = useState(false);
+  // First paint lands immediately; a buffer-swap re-render (version bump)
+  // batches through the shared anti-ripple scheduler.
+  const hasPaintedRef = useRef(false);
+
+  // Display footprint (rotation-aware) — the raster below is NOT: it renders at
+  // a fixed budget from the natural dims, and CSS rotates + sizes it. So a
+  // pending rotation only updates the transform, never re-renders.
+  const swapped = rotation === 90 || rotation === 270;
+  const dispW = swapped ? natH : natW;
+  const dispH = swapped ? natW : natH;
+  const fit = Math.min(maxW / dispW, THUMB_MAX_H / dispH) || 0;
+  const natWpx = Math.max(1, natW * fit);
+  const natHpx = Math.max(1, natH * fit);
+
+  useEffect(() => {
+    if (!proxy) return;
+    let cancelled = false;
+    let task: RenderTask | null = null;
+    setReady(false);
+    (async () => {
+      const page = await proxy.getPage(pageNumber);
+      if (cancelled) return;
+      // Scale from the natural (rotation-correct) dims — NOT page.view, the raw
+      // MediaBox, which doesn't reflect an intrinsic /Rotate (regression:
+      // wrong density on scanned/faxed pages). Render offscreen, then blit.
+      const scale = (RENDER_TARGET * dprCap()) / Math.max(natW, natH);
+      const viewport = page.getViewport({ scale });
+      const off = document.createElement('canvas');
+      off.width = Math.max(1, Math.floor(viewport.width));
+      off.height = Math.max(1, Math.floor(viewport.height));
+      task = page.render({ canvas: off, canvasContext: off.getContext('2d')!, viewport });
+      await task.promise;
+      if (cancelled) return;
+      const paint = (): void => {
+        if (cancelled) return;
+        const canvas = ref.current;
+        if (!canvas) return;
+        canvas.width = off.width;
+        canvas.height = off.height;
+        canvas.getContext('2d')!.drawImage(off, 0, 0);
+        setReady(true);
+      };
+      if (hasPaintedRef.current) {
+        scheduleReblit(paint);
+      } else {
+        paint();
+        hasPaintedRef.current = true;
+      }
+    })().catch(logRenderError('thumbnail'));
+    return () => {
+      cancelled = true;
+      try {
+        task?.cancel();
+      } catch {
+        // already settled
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proxy, pageNumber, version]);
+
+  return (
+    <div
+      className="thumb-frame"
+      style={{ width: dispW * fit, height: dispH * fit }}
+    >
+      <canvas
+        ref={ref}
+        className={ready ? '' : 'opacity-0'}
+        style={{
+          position: 'absolute',
+          left: '50%',
+          top: '50%',
+          width: natWpx,
+          height: natHpx,
+          transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
+        }}
+      />
+    </div>
+  );
+}
+
+export function PagesPanel({ activeFile, onOpenPage, onExtractText }: NavPanelComponentProps): React.ReactElement {
+  // Re-render on language change; strings resolve via tChrome. The
+  // context menu's own labels are built when it OPENS (a right-click creates a
+  // fresh `menu`), so they always read the language current at that moment.
+  useTranslation();
+  const state = useAppState();
+  const dispatch = useAppDispatch();
+  const proxies = usePdfProxies(state.files);
+  const selected = state.ui.selectedPageIds;
+  const docs = state.workspace.documents;
+
+  // The active file's pages in workspace order (across its manifest documents).
+  const items = useMemo<PageItem[]>(() => {
+    if (!activeFile) return [];
+    const out: PageItem[] = [];
+    let n = 0;
+    for (const doc of docs) {
+      if (doc.path !== activeFile.path) continue;
+      for (const page of doc.pages) {
+        n += 1;
+        out.push({ docId: doc.id, page, pageNumber: n });
+      }
+    }
+    return out;
+  }, [docs, activeFile]);
+
+  // Virtualization window over a fixed row height.
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewport, setViewport] = useState({ h: 0, w: 0 });
+
+  // The panel stays mounted across doc-tab switches, so reset the scroll when
+  // the subject file changes — otherwise a deep scroll offset carried into a
+  // shorter file leaves the virtualization window past the end (empty panel,
+  // regression).
+  useEffect(() => {
+    setScrollTop(0);
+    if (scrollerRef.current) scrollerRef.current.scrollTop = 0;
+  }, [activeFile?.path]);
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const measure = () => setViewport({ h: el.clientHeight, w: el.clientWidth });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Buffer-swap version per source file (thumbnails re-render on commit/undo).
+  const version = useMemo(() => {
+    let v = 0;
+    if (activeFile) v = activeFile.pageCount + activeFile.undoStack.length;
+    return v;
+  }, [activeFile]);
+
+  const grid = useMemo(() => thumbGrid(viewport.w, items.length), [viewport.w, items.length]);
+  const maxThumbW = Math.max(40, grid.columnWidth - 12);
+  const { start, end } = thumbWindow(scrollTop, viewport.h, grid, items.length, OVERSCAN);
+  const windowItems = items.slice(start, end);
+
+  const [menu, setMenu] = useState<{ x: number; y: number; docId: string; pageId: string } | null>(null);
+
+  // The reorder animation: the thumbnails are absolutely positioned by index,
+  // so a move rewrites `top`/`inset-inline-start` and the page would otherwise
+  // jump between slots.
+  const gridRootRef = useRef<HTMLDivElement>(null);
+  const orderKey = useMemo(() => items.map((it) => it.page.id).join(','), [items]);
+  useFlipReorder(() => gridRootRef.current, orderKey);
+
+  // A thumbnail slot has to be big enough to aim at. The grid's own MIN_COL_W
+  // keeps every column above the gate today; the check stands so the two
+  // constants cannot drift into a panel that accepts drops nobody can place.
+  const dropGate = dropTargetGate(Math.min(grid.columnWidth, ROW_H));
+  // The window-level drag handlers are installed once per drag and must see
+  // the CURRENT verdict — the pane can be resized while a drag is in flight.
+  const dropGateRef = useRef(dropGate);
+  dropGateRef.current = dropGate;
+
+  // ── Drag-reorder ─────────────────────────────────────────────────────────
+  // A linear-list pointer drag (window-level listeners, the canvas pattern —
+  // HTML5 DnD can't complete in the webview). Below the threshold it's a click
+  // (select); above, it reorders via MOVE_PAGE/MOVE_PAGES. Refs feed the stable
+  // window handlers the latest items/selection; a per-drag `detachRef` removes
+  // that drag's listeners (also on unmount), so no handler-identity juggling.
+  const [dropGap, setDropGap] = useState<number | null>(null);
+  const dragRef = useRef<{ grabbedId: string; startX: number; startY: number; started: boolean; movingIds: string[]; filePath: string | undefined } | null>(null);
+  const detachRef = useRef<() => void>(() => {});
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+  // The file the drag started against — a mid-drag tab switch (Ctrl+Tab while
+  // the button is held) must NOT splice pages into a different open PDF.
+  const activeFilePathRef = useRef(activeFile?.path);
+  activeFilePathRef.current = activeFile?.path;
+
+  // The grid the window handlers read. A ref because those handlers are
+  // installed once per drag and must see the CURRENT column count — the pane
+  // can be resized (or the file switched) while a drag is in flight.
+  const gridRef = useRef(grid);
+  gridRef.current = grid;
+
+  const flatIndexAt = useCallback((clientX: number, clientY: number): number => {
+    const el = scrollerRef.current;
+    if (!el) return 0;
+    const box = el.getBoundingClientRect();
+    // Distance from the scroller's INLINE-START edge — the grid lays its
+    // columns out from there, so under `dir=rtl` that edge is the right one.
+    return thumbDropIndex(
+      inlineExtent(box, clientX, 'start'),
+      clientY - box.top + el.scrollTop,
+      gridRef.current,
+      itemsRef.current.length,
+    );
+  }, []);
+
+  const dragMove = useCallback(
+    (e: PointerEvent): void => {
+      const s = dragRef.current;
+      if (!s) return;
+      if (!s.started) {
+        if (Math.hypot(e.clientX - s.startX, e.clientY - s.startY) < 6) return;
+        s.started = true;
+        // Capture the moving set at drag start: the whole selection if the
+        // grabbed page is part of a multi-selection, else just that page.
+        const sel = selectedRef.current;
+        s.movingIds =
+          sel.has(s.grabbedId) && sel.size > 1
+            ? itemsRef.current.filter((it) => sel.has(it.page.id)).map((it) => it.page.id)
+            : [s.grabbedId];
+      }
+      if (!dropGateRef.current.ok) {
+        setDropGap(null); // refused: no indicator, because no slot can be aimed at
+        return;
+      }
+      setDropGap(flatIndexAt(e.clientX, e.clientY));
+    },
+    [flatIndexAt],
+  );
+
+  // Finish a drag. `drop` = pointerup (apply the move); false = cancel/unmount.
+  const finishDrag = useCallback(
+    (clientX: number, clientY: number, drop: boolean): void => {
+      const s = dragRef.current;
+      dragRef.current = null;
+      detachRef.current();
+      setDropGap(null);
+      if (!drop || !s || !s.started) return; // below threshold → a click; onClick selects
+      if (!dropGateRef.current.ok) return; // the slots are too small to have been aimed at
+      // Swallow the click that follows a completed drag so it doesn't reselect.
+      const swallow = (ev: MouseEvent): void => {
+        ev.stopPropagation();
+        ev.preventDefault();
+      };
+      window.addEventListener('click', swallow, { capture: true, once: true });
+      setTimeout(() => window.removeEventListener('click', swallow, true), 0);
+
+      // Abort if the active file changed mid-drag, or any moving page is no
+      // longer in the current file's items — else the reducer (which searches
+      // ALL workspace docs) would move them into whatever file is now shown
+      // (regression; the single-page path already self-guards via the
+      // `from` lookup below, this covers the multi path too).
+      if (s.filePath !== activeFilePathRef.current) return;
+      const currentIds = new Set(itemsRef.current.map((it) => it.page.id));
+      if (!s.movingIds.every((id) => currentIds.has(id))) return;
+
+      const target = computeReorderTarget(
+        itemsRef.current.map((it) => ({ docId: it.docId, pageId: it.page.id })),
+        s.movingIds,
+        flatIndexAt(clientX, clientY),
+      );
+      if (!target) return;
+      // A reorder rewrites the page TREE — `page-structure`. This drag never
+      // leaves the active file (the guard above aborts a cross-file one), so
+      // that one path is the whole set the gate decides for.
+      const filePath = s.filePath;
+      if (!filePath) return;
+      void (async () => {
+        if (!(await confirmPageEditNow([filePath], 'page-structure'))) return;
+        if (s.movingIds.length === 1) {
+          const from = itemsRef.current.find((it) => it.page.id === s.movingIds[0]);
+          if (!from) return;
+          dispatch({ type: 'MOVE_PAGE', fromDocId: from.docId, toDocId: target.toDocId, pageId: s.movingIds[0], toIndex: target.toIndex });
+        } else {
+          dispatch({ type: 'MOVE_PAGES', pageIds: s.movingIds, toDocId: target.toDocId, toIndex: target.toIndex });
+        }
+        dispatch({ type: 'UI_SET_SELECTION', pageIds: s.movingIds, anchor: s.movingIds[s.movingIds.length - 1] });
+      })();
+    },
+    [dispatch, flatIndexAt],
+  );
+
+  const onRowPointerDown = useCallback(
+    (item: PageItem, e: React.PointerEvent): void => {
+      if (e.button !== 0 || dragRef.current) return;
+      dragRef.current = {
+        grabbedId: item.page.id,
+        startX: e.clientX,
+        startY: e.clientY,
+        started: false,
+        movingIds: [item.page.id],
+        filePath: activeFilePathRef.current,
+      };
+      const onUp = (ev: PointerEvent) => finishDrag(ev.clientX, ev.clientY, true);
+      const cancel = () => finishDrag(0, 0, false); // pointercancel / blur / Escape
+      const pointers = pointerScope(e.pointerId);
+      pointers.add('pointermove', dragMove);
+      pointers.add('pointerup', onUp);
+      pointers.add('pointercancel', cancel);
+      // Match usePageDrag's safety nets: window blur and Escape abort the drag
+      // (regression — otherwise a focus loss strands the window listeners
+      // and a later unrelated click resolves the stale session).
+      pointers.add('blur', cancel);
+      const unEscape = pushEscapeInterceptor(() => {
+        cancel();
+        return true;
+      });
+      detachRef.current = () => {
+        pointers.remove('pointermove', dragMove);
+        pointers.remove('pointerup', onUp);
+        pointers.remove('pointercancel', cancel);
+        pointers.remove('blur', cancel);
+        unEscape();
+      };
+    },
+    [dragMove, finishDrag],
+  );
+
+  // Detach an in-flight drag's listeners if the panel unmounts.
+  useEffect(() => () => detachRef.current(), []);
+
+  const onThumbClick = useCallback(
+    (item: PageItem, e: React.MouseEvent) => {
+      const mode = e.ctrlKey || e.metaKey ? 'toggle' : e.shiftKey ? 'range' : 'single';
+      dispatch({ type: 'UI_SELECT_PAGE', pageId: item.page.id, mode });
+      // jumpToPage, not canvas().centerOn: this list shows EVERY partition of
+      // the active file, so a thumbnail can name a page the reading view isn't
+      // showing — centring would select it and then silently not move
+      // (regression).
+      getCanvasServices()?.jumpToPage(item.page.id);
+    },
+    [dispatch],
+  );
+
+  // Scroll-follow the page being read. Keyed on the page id ALONE, so it
+  // fires when the reading view moves to a different page and NOT on the user's
+  // own panel scrolling (which would fight them) — `scrollTop` is deliberately
+  // not a dependency. Only nudges when the row is actually out of view, so
+  // scrolling within the current page never yanks the panel.
+  const currentPageId = state.ui.currentPageId;
+  useEffect(() => {
+    if (!currentPageId) return;
+    const el = scrollerRef.current;
+    if (!el) return;
+    const index = itemsRef.current.findIndex((it) => it.page.id === currentPageId);
+    if (index < 0) return; // not this file's page (or a stale id) — leave the panel be
+    // The ROW the page sits in, not its index — in a multi-column grid the
+    // two stop agreeing and scrolling by index overshoots the document.
+    const top = Math.floor(index / gridRef.current.columns) * ROW_H;
+    const bottom = top + ROW_H;
+    if (top < el.scrollTop) el.scrollTo({ top, behavior: 'auto' });
+    else if (bottom > el.scrollTop + el.clientHeight)
+      el.scrollTo({ top: bottom - el.clientHeight, behavior: 'auto' });
+  }, [currentPageId]);
+
+  const onThumbContextMenu = useCallback(
+    (item: PageItem, e: React.MouseEvent) => {
+      e.preventDefault();
+      // Right-click keeps a selection that contains the page, else selects it.
+      dispatch({ type: 'UI_SELECT_PAGE', pageId: item.page.id, mode: 'context' });
+      setMenu({ x: e.clientX, y: e.clientY, docId: item.docId, pageId: item.page.id });
+    },
+    [dispatch],
+  );
+
+  const menuItems = useMemo(
+    () =>
+      menu
+        ? buildPageContextMenu({
+            docs,
+            docId: menu.docId,
+            pageId: menu.pageId,
+            selectedPageIds: selected,
+            dispatch,
+            confirmPageEdit: confirmPageEditNow,
+            onOpen: onOpenPage,
+            onExtractText,
+          })
+        : [],
+    [menu, docs, selected, dispatch, onOpenPage, onExtractText],
+  );
+
+  if (!activeFile) {
+    return (
+      <div className="navpanel-empty" data-testid="pages-panel">
+        {tChrome('nav.common.noDocument')}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={scrollerRef}
+      data-testid="pages-panel"
+      className="navpanel-scroll pages-panel"
+      tabIndex={0}
+      role="region"
+      aria-label={tChrome('nav.pages.aria')}
+      onScroll={(e) => setScrollTop((e.target as HTMLDivElement).scrollTop)}
+    >
+      <div ref={gridRootRef} style={{ height: grid.rows * ROW_H, position: 'relative' }}>
+        {windowItems.map((item, i) => {
+          const index = start + i;
+          const slot = thumbSlot(index, grid);
+          const isSelected = selected.has(item.page.id);
+          // The page being READ is a different thing from the selection — you
+          // can read page 40 with nothing selected, or select a page and scroll
+          // away from it — so it gets its own marker rather than reusing
+          // `selected` (which would falsely imply a delete/rotate target).
+          const isCurrent = item.page.id === currentPageId;
+          const proxy = proxies.get(item.page.sourceDocId);
+          return (
+            <div
+              key={item.page.id}
+              data-testid="thumb"
+              data-page-id={item.page.id}
+              data-current={isCurrent ? 'true' : undefined}
+              className={'thumb-row' + (isSelected ? ' selected' : '') + (isCurrent ? ' current' : '')}
+              style={{ position: 'absolute', top: slot.top, height: ROW_H, insetInlineStart: slot.left, width: slot.width }}
+              onPointerDown={(e) => onRowPointerDown(item, e)}
+              onClick={(e) => onThumbClick(item, e)}
+              onContextMenu={(e) => onThumbContextMenu(item, e)}
+            >
+              <Thumbnail
+                proxy={proxy}
+                pageNumber={item.page.sourcePageIndex + 1}
+                natW={item.page.width}
+                natH={item.page.height}
+                rotation={item.page.rotation}
+                maxW={maxThumbW}
+                version={version}
+              />
+              <div className="thumb-label">{item.pageNumber}</div>
+            </div>
+          );
+        })}
+        {dropGap !== null && (
+          // The indicator draws the gap `thumbDropIndex` named, on the same
+          // axis it was decided: between two columns when there are columns to
+          // be between, and across the row boundary when the panel is one
+          // column — i.e. a list.
+          <div
+            className={'thumb-drop-indicator' + (grid.columns === 1 ? ' is-row' : '')}
+            data-testid="thumb-drop-indicator"
+            style={(() => {
+              const s = thumbSlot(dropGap, grid);
+              if (grid.columns === 1) return { top: s.top };
+              // The gap AFTER the last column of a row folds onto the next
+              // row's leading edge, which is where `thumbSlot` already puts it.
+              return { top: s.top, height: ROW_H, insetInlineStart: s.left };
+            })()}
+          />
+        )}
+      </div>
+      {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />}
+    </div>
+  );
+}

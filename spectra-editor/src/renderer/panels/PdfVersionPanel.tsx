@@ -1,0 +1,79 @@
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { useActiveFile } from '../hooks/useActiveFile';
+import { useEngine } from '../hooks/useEngine';
+import { NoFileOpen } from '../components/NoFileOpen';
+import { StatusBar } from '../components/StatusBar';
+import { useTranslation } from 'react-i18next';
+import { tChrome } from '../i18n';
+import { suffixedOutputName } from '../lib/output-names';
+
+const VERSIONS = ['1.4', '1.5', '1.6', '1.7', '2.0'];
+
+export function PdfVersionPanel(): React.ReactElement {
+  // Re-render on language change; strings resolve via tChrome.
+  useTranslation();
+  const { activeFile, openNewFiles } = useActiveFile();
+  const { call, saveFile } = useEngine();
+  const [version, setVersion] = useState('1.7');
+  const [currentVersion, setCurrentVersion] = useState<string | null>(null);
+  const [status, setStatus] = useState('');
+  const [readError, setReadError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const activeFileRef = useRef(activeFile);
+  activeFileRef.current = activeFile;
+
+  // A stable working path may now contain a different declared version.
+  // Buffer identity invalidates the old fact and any in-flight read of it.
+  const workingPath = activeFile?.workingPath ?? null;
+  const buffer = activeFile?.buffer ?? null;
+  useEffect(() => {
+    setCurrentVersion(null); setReadError(''); setStatus('');
+    if (!workingPath || !buffer) return;
+    let cancelled = false;
+    call('get_pdf_version', { file: workingPath }).then((r) => {
+      if (!cancelled) {
+        setCurrentVersion(r.version);
+      }
+    }).catch((e: unknown) => { if (!cancelled) setReadError(tChrome('panel.common.error', { message: e instanceof Error ? e.message : String(e) })); });
+    return () => { cancelled = true; };
+  }, [workingPath, buffer, call]);
+
+  const handleSetVersion = useCallback(async () => {
+    if (!activeFile || busyRef.current) return;
+    const file = activeFile;
+    const sameDocument = () => activeFileRef.current?.path === file.path
+      && activeFileRef.current.workingPath === file.workingPath;
+    busyRef.current = true; setBusy(true);
+    try {
+      const output = await saveFile(suffixedOutputName(file.name, "version"));
+      if (!output) return;
+      if (activeFileRef.current !== file) throw new Error(tChrome('app.operation.unverified'));
+      setStatus(tChrome('panel.pdfVersion.setting'));
+      const r = await call('set_pdf_version', { file: file.workingPath, output, version });
+      if (sameDocument()) setStatus(tChrome('panel.pdfVersion.done', { from: r.original_version, to: r.target_version }));
+    } catch (e: unknown) { if (sameDocument()) setStatus(tChrome('panel.common.error', { message: e instanceof Error ? e.message : String(e) })); }
+    finally { busyRef.current = false; setBusy(false); }
+  }, [activeFile, version, call, saveFile]);
+
+  if (!activeFile) return <NoFileOpen onOpen={openNewFiles} message={tChrome('panel.pdfVersion.open')} />;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="text-sm text-neutral-400">{tChrome('panel.common.workingOn')} <span className="text-neutral-200">{activeFile.name}</span></div>
+      {currentVersion && (
+        <div className="text-sm text-neutral-500">{tChrome('panel.pdfVersion.currentLabel')} <span className="text-neutral-300">PDF {currentVersion}</span></div>
+      )}
+      <div>
+        <label className="block text-sm text-neutral-400 mb-1">{tChrome('panel.pdfVersion.target')}</label>
+        <select aria-label={tChrome('panel.pdfVersion.versionAria')} value={version} onChange={(e) => setVersion(e.target.value)} className="px-3 py-1.5 bg-neutral-800 border border-neutral-700 rounded text-sm">
+          {VERSIONS.map((v) => <option key={v} value={v}>PDF {v}</option>)}
+        </select>
+      </div>
+      <button onClick={handleSetVersion} disabled={busy} className="self-start px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-60 rounded text-sm font-medium">
+        {busy ? tChrome('panel.pdfVersion.settingBtn') : tChrome('panel.pdfVersion.set')}
+      </button>
+      <StatusBar message={status || readError} busy={busy} />
+    </div>
+  );
+}

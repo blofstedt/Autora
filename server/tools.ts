@@ -5195,8 +5195,9 @@ const VOICE_GUIDE =
 
 /** The app window, in the instructions: start it early, keep it running, check with look. */
 const APP_GUIDE =
-  "- The construction window (the app window): always available. Tool: app_preview. When you build a website or an app, start it " +
-  "in the app window as soon as there is anything to see, and keep it running while you build: the person " +
+  "- The Creator window (the app window): always available. Tool: app_preview. It is where you build things that " +
+  "run — websites, and apps of any kind, food apps included. Start it in that window as soon as there is anything to see, " +
+  "and keep it running while you build: the person " +
   "watches it take shape, can select elements or regions and leave comments, and what they say comes back " +
   "as one message you act on. Check your own work with look (a picture and the console's errors) before " +
   "you say it is done.";
@@ -5247,7 +5248,7 @@ const OFFICE_GUIDE = (pages: boolean, sheets: boolean, slides: boolean): string 
 
 /** Which window is for what: they are all open to you, and the right one is the one the work belongs in. */
 const WINDOWS_GUIDE =
-  "- Choosing a window: a website or app you are building belongs in the construction window (app_preview), running " +
+  "- Choosing a window: a website or app you are building belongs in the Creator window (app_preview), running " +
   "live while you build; a document, spreadsheet or deck in Autora Pages, Sheets or Slides; a PDF in Autora PDF; " +
   "a live site you must use or read in the browser window; and a small interactive explanation in a widget. " +
   "Do not build a report as a web page, a deck as HTML, or a table as a script's printed output when the " +
@@ -5278,7 +5279,7 @@ export async function capabilityBriefing(): Promise<string> {
   const offLine = (what: string) =>
     `- ${what}: turned off by the person on the Tools page; its tools are not yours this turn. ` +
     "If the task needs it, say so and that it is switched on there.";
-  lines.push(TODO_GUIDE, windows.app.enabled ? APP_GUIDE : offLine("The construction window"));
+  lines.push(TODO_GUIDE, windows.app.enabled ? APP_GUIDE : offLine("The Creator window"));
 
   const mcp = mcpTools();
   if (mcp.length > 0) {

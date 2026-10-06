@@ -9,7 +9,8 @@ import { resetPreview, setPreviewFrame, setPreviewState, usePreviewState, type P
 import { AppPreview } from "./components/AppPreview";
 import { ScreencastCell } from "./components/ScreencastCell";
 import { OfficeWindow } from "./components/OfficeWindow";
-import { PdfWindow } from "./components/PdfWindow";
+import { SpectraWindow } from "./components/SpectraWindow";
+import { emitSpectraEvent } from "./lib/spectra";
 import { ResizeHandle } from "./components/ResizeHandle";
 import { CHAT, RAIL, setChatWidth, setRailCollapsed, setRailWidth, usePanes, wideScreen } from "./lib/panes";
 import { clearOfficePick, getOfficePick, pickLabel, pickSentence, useOfficePick } from "./lib/officeSelection";
@@ -367,6 +368,7 @@ export function App() {
       },
       onPreview: (state) => setPreviewState(state as PreviewState),
       onPdfDesk: setDeskState,
+      onSpectra: emitSpectraEvent,
       onOfficeDesk: setWordState,
       onOfficePush: emitOfficePush,
       onPresence: setCollabState,
@@ -1297,7 +1299,7 @@ export function App() {
     ...(desk.open ? [{ pane: "pdf" as const, label: "PDF" }] : []),
     ...OFFICE_PANES.filter((o) => openWindows.some((w) => w.pane === o.pane)).map((o) => ({ pane: o.pane, label: o.label })),
     ...(browser?.open ? [{ pane: "browser" as const, label: "Browser" }] : []),
-    ...(preview.open ? [{ pane: "app" as const, label: "App" }] : []),
+    ...(preview.open ? [{ pane: "app" as const, label: "Creator" }] : []),
   ];
   /* The newest browser card: the one looking at the page that still exists, which is
      the page the pane shows. */
@@ -2230,7 +2232,7 @@ export function App() {
             {/* The PDF the agent is working on, open for the person to work on too. */}
             {desk.open && sessionId && (
               <aside className="app-pane" data-pane="pdf" hidden={sidePane !== "pdf"} aria-label="The PDF being worked on">
-                <PdfWindow sessionId={sessionId} phone={false} />
+                <SpectraWindow sessionId={sessionId} phone={false} />
               </aside>
             )}
             {/* And one window for each Office app with a document open in it: Autora Pages, Autora Sheets and

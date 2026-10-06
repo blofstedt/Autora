@@ -123,7 +123,8 @@ import {
   addressIn, DEVICES, isDevice, isLocalUrl, localAddress, serveFolder, waitForServer,
   type Device, type StaticServer,
 } from "./server/preview";
-import { deskBriefing, deskHooks, deskRoutes, deskState, dropDesk, onDeskChange, onDeskTouch, serveEditor } from "./server/pdfdesk";
+import { deskBase, deskBriefing, deskHooks, deskRoutes, deskState, dropDesk, onDeskChange, onDeskTouch, personBase, serveEditor } from "./server/pdfdesk";
+import { dropSpectra, serveSpectra, spectraDocumentChanged, spectraRoutes, spectraUpgrade } from "./server/spectra";
 import { newFileRoutes } from "./server/newfile";
 import { windowOff } from "./server/tools";
 import { dropOfficeDesk, onOfficeChange, onOfficePush, onOfficeTouch, officeBriefing, officeData, officeRoutes, officeState, officeHooks, serveOfficeEditors } from "./server/officedesk";
@@ -1221,6 +1222,11 @@ onDeskTouch((sessionId, subject, kind, detail, opts) => touchPresence(sessionId,
 
 onDeskChange((sessionId) => {
   sendEphemeral(sessionId, { type: "pdfdesk", session: sessionId, state: deskState(sessionId) });
+  /* And the editor showing it: the agent's own edit moved the document on, so
+     the file it has is out of date. The editor writes back when the person
+     saves, which is a desk change too -- that one is dropped, since the file
+     already holds it. */
+  spectraDocumentChanged(sessionId);
 });
 
 /* The Office window, the same way: what the person types is theirs for a moment, and the window's
@@ -5390,6 +5396,22 @@ async function startServer() {
   /** Gone for good: its log, its pictures, and its browser. */
   // The PDF window: its pages, and what the person changes in it.
   deskRoutes(app, { exists: (id) => sessions.has(id), cwd: () => terminalDir() });
+
+  /* The PDF window's editor (server/spectra.ts): Spectra-PDF's own UI and its
+     own PDF engine, with the desk above as the document both sides share. */
+  const spectraOpts = {
+    exists: (id: string) => sessions.has(id),
+    cwd: () => terminalDir(),
+    version: () => VERSION,
+    document: async (id: string) => {
+      const bytes = deskBase(id);
+      if (!bytes) return null;
+      return { name: deskState(id).name || "document.pdf", bytes };
+    },
+    saved: (id: string, file: string) => personBase(id, fs.readFileSync(file), [], terminalDir()),
+    push: (id: string, event: string, payload: unknown) => sendEphemeral(id, { type: "spectra", event, payload }),
+  };
+  spectraRoutes(app, spectraOpts);
   officeRoutes(app, { exists: (id: string) => sessions.has(id) });
 
   /* File -> Export PDF in the Office window: the server lays the document out (the same pages office_pdf
@@ -5450,6 +5472,7 @@ async function startServer() {
     await previewStop(session, false).catch(() => undefined);
     dropDesk(session.id);
     dropOfficeDesk(session.id);
+    dropSpectra(session.id);
     forgetSession(session.id);
     if (!incognito) deleteSession(session.id);
     // No title of an incognito chat is in a log line: it may be a first message.
@@ -7769,6 +7792,9 @@ async function startServer() {
     },
   });
   const upgrade = (req: http.IncomingMessage, socket: Duplex, head: Buffer) => {
+    // Spectra's editor has a socket of its own for a page opened on its own;
+    // it takes the connection here or leaves it to the app's own sockets.
+    if (spectraUpgrade(req, socket, head)) return;
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
   };
   server.on("upgrade", upgrade);
@@ -7989,6 +8015,8 @@ async function startServer() {
   // 13. Vite Integration (Development middleware / Production static serving)
   // The PDF window's editor, a separate build (pdf-editor/), in dev and production alike.
   serveEditor(app, path.join(process.cwd(), "dist"));
+  // Spectra-PDF's editor, the PDF window's other half, on the same terms.
+  serveSpectra(app, path.join(process.cwd(), "dist"));
   // The Office editors, likewise: built by scripts/build-office.mjs, absent without it.
   const officeWeb = officeWebDir();
   if (officeWeb) serveOfficeEditors(app, officeWeb);
