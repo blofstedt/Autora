@@ -28,7 +28,8 @@ async function test(name: string, fn: () => Promise<void> | void) {
 async function main() {
   const { parseCookieExport, sitesOf } = await import("../server/cookies");
   const { keyName, refusalNote } = await import("../server/tools");
-  const { refLine, sameValue, scrollLine, signInRefusal, normaliseNative, LiveBrowser, probeBrowser } =
+  const { refLine, scrollLine } = await import("../server/pagedescribe");
+  const { sameValue, signInRefusal, normaliseNative, LiveBrowser, probeBrowser } =
     await import("../server/browser");
 
   console.log("cookie exports");

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { SessionStream, mergeEvents, type StreamStatus } from "./lib/stream";
 import { derive, isRunning, type Cell, type Derived } from "./lib/derive";
 import { share } from "./lib/share";
@@ -21,17 +21,23 @@ import { cellKey, dockedPlan, usePhone } from "./lib/stage";
 import { Thread } from "./components/Thread";
 import { Dock } from "./components/Dock";
 import { Rail, pageLabel, PAGES, type PageId } from "./components/Rail";
-import { SessionsPage } from "./components/pages/SessionsPage";
-import { SystemPage, isSystemTab, type SystemTab } from "./components/pages/SystemPage";
-import { McpPage } from "./components/pages/McpPage";
-import { ArtifactsPage } from "./components/pages/ArtifactsPage";
-import { NotebooksPage } from "./components/pages/NotebooksPage";
+import { isSystemTab, type SystemTab } from "./components/pages/SystemPage";
 import { TodoDock } from "./components/TodoDock";
-import { ToolsPage } from "./components/pages/ToolsPage";
+
+/* The pages behind the rail are loaded when they are opened, not with the app.
+   Together they are a third of the bundle, and most sessions never open them:
+   the person arrives to talk, and the chat thread is what must appear at once.
+   Each is a separate chunk fetched on first visit, then kept. */
+const SessionsPage = lazyPage(() => import("./components/pages/SessionsPage"), "SessionsPage");
+const SystemPage = lazyPage(() => import("./components/pages/SystemPage"), "SystemPage");
+const McpPage = lazyPage(() => import("./components/pages/McpPage"), "McpPage");
+const ArtifactsPage = lazyPage(() => import("./components/pages/ArtifactsPage"), "ArtifactsPage");
+const NotebooksPage = lazyPage(() => import("./components/pages/NotebooksPage"), "NotebooksPage");
+const ToolsPage = lazyPage(() => import("./components/pages/ToolsPage"), "ToolsPage");
+const MindPage = lazyPage(() => import("./components/pages/MindPage"), "MindPage");
 import { LibraryPicker, type LibraryTab } from "./components/LibraryPicker";
 import { ToolsSheet } from "./components/ToolsSheet";
 import { OPEN_NOTEBOOK, type NotebookRef } from "./lib/notebooks";
-import { MindPage } from "./components/pages/MindPage";
 import type { Bucket } from "./lib/memory";
 import {
   applyAppearance, cachedAppearance, iconScale, saneAppearance, saveAppearance,
@@ -73,6 +79,22 @@ import {
 import {
   MAX_UPLOAD_BYTES, isPicture, sizeLabel, uploadAttachment, type Attachment,
 } from "./lib/attachments";
+
+/* The pages behind the rail are loaded when they are opened rather than with
+   the app: together they are a third of the bundle, and most sessions never
+   open them. Each becomes its own chunk, fetched on first visit and kept
+   after. Nothing is shown while it arrives -- the chunk is small and local,
+   and a spinner for a fifth of a second reads as a flicker rather than as
+   waiting -- so the fallback is nothing at all. */
+function lazyPage<T extends React.ComponentType<any>>(
+  load: () => Promise<{ [k: string]: any }>,
+  name: string,
+): T {
+  return lazy(async () => {
+    const mod = await load();
+    return { default: (mod as any)[name] as T };
+  }) as unknown as T;
+}
 
 /** How often to re-read the session list, so sessions started elsewhere (or
     from another tab) show up without a reload. */
@@ -433,6 +455,17 @@ export function App() {
      everything else is it thinking. */
   const reading = useMemo(() => readActivity(events), [events]);
   const doing = reading.text;
+  /* How long this turn has been going, ticking on its own so the line counts
+     up without needing a new event to arrive. Nothing to show once the turn
+     is over. */
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!reading.since) { setElapsed(0); return; }
+    const tick = () => setElapsed(Date.now() - reading.since!);
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [reading.since]);
 
   // A page that has been closed has no more frames coming, and the last one
   // to arrive would otherwise sit on the card claiming to be live forever.
@@ -1662,6 +1695,9 @@ export function App() {
 
         {page !== "chat" && (
           <div className="page-host">
+            {/* One boundary for every page: whichever is opened arrives as its
+                own chunk, and the header above stays put while it does. */}
+            <Suspense fallback={null}>
             {page === "config" && (
               <Settings
                 key={`config-${configJump.tab}`}
@@ -1702,6 +1738,7 @@ export function App() {
             {page === "mind" && (
               <MindPage jump={mindBucket} recent={view.memories} />
             )}
+            </Suspense>
           </div>
         )}
 
@@ -1718,6 +1755,8 @@ export function App() {
             // Stopped on a question is not working; the card says what it is.
             busy={view.busy && !view.asking}
             doing={doing}
+            elapsedMs={elapsed}
+            steps={reading.steps}
             phase={reading.phase}
             sessionId={sessionId ?? ""}
             liveBrowserSeq={view.liveBrowserSeq}

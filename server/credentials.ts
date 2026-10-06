@@ -24,7 +24,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { stateDir } from "./state";
+import { redactSecrets as redactStored, stateDir } from "./state";
 
 export const IDENTITY_FIELDS = [
   { key: "first_name", label: "First name" },
@@ -481,6 +481,27 @@ export function redactCredentials(text: string, opts: { identity?: boolean } = {
     out = out.split(value).join(`{{${name}}}`);
   }
   return out;
+}
+
+/**
+ * Everything a piece of text should have taken out of it before it leaves the
+ * machine: stored secrets and API keys first, then the person's saved
+ * credentials.
+ *
+ * This is the one redactor. It used to exist three times over -- once here,
+ * once in tools.ts and once in server.ts -- and they did not agree: two blanked
+ * the person's name and email address, one did not, so whether a detail reached
+ * the log depended on which code path touched the text first. The difference
+ * was deliberate and is kept, but now it is asked for by name.
+ *
+ * `identity: false` leaves the person's own name, email and address alone.
+ * That suits what they read themselves -- the log page, a push to their phone
+ * -- where blanking their own name is nonsense. Everywhere the text can reach
+ * a model, the default is right.
+ */
+export function redactAll(text: string, opts: { identity?: boolean } = {}): string {
+  if (!text || typeof text !== "string") return text;
+  return redactCredentials(redactStored(text), opts);
 }
 
 /** The personal details as environment variables for the terminal, so a

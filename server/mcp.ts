@@ -119,6 +119,7 @@ function withTimeout<T>(work: Promise<T>, ms: number, what: string): Promise<T> 
 export async function disconnect(id: string) {
   const entry = live.get(id);
   live.delete(id);
+  generation += 1;
   try { await entry?.client?.close(); } catch { /* already gone */ }
 }
 
@@ -204,6 +205,7 @@ export async function connect(cfg: McpServerConfig): Promise<void> {
     if (live.get(cfg.id) !== entry) { await entry.client.close().catch(() => undefined); return; }
     entry.tools = tools;
     entry.status = "connected";
+    generation += 1;
     entry.connectedAt = Date.now();
     entry.version = entry.client.getServerVersion()?.version;
     log("info", "mcp", `${cfg.name}: connected, ${tools.length} tool${tools.length === 1 ? "" : "s"}`);
@@ -235,6 +237,13 @@ export function statusOf(id: string) {
 }
 
 /** Every tool from every connected server, for the model's schema. */
+/* Bumped whenever a server connects, disconnects or changes its tools, so a
+   caller caching its tool list knows to rebuild. */
+let generation = 0;
+export function mcpToolsGeneration(): number {
+  return generation;
+}
+
 export function mcpTools(): McpTool[] {
   const out: McpTool[] = [];
   for (const entry of live.values()) if (entry.status === "connected") out.push(...entry.tools);

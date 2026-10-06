@@ -4,6 +4,7 @@ import https from "node:https";
 import path from "node:path";
 import type { Duplex } from "node:stream";
 import express, { type Request, type Response } from "express";
+import { captureConsole, log, setLogRedactor, type LogLevel } from "./server/logs";
 import { WebSocketServer, WebSocket } from "ws";
 import {
   AUTO_ORDER, PRICES_CHECKED, PROVIDERS, contextWindow, costParts, isPriced, modelsFor,
@@ -44,11 +45,10 @@ import {
 } from "./server/requirements";
 import { replyStyle, standingBlock, standingReminder } from "./server/prompt";
 import { WebPush, cleanSubscription } from "./server/webpush";
-import { captureConsole, log, readLogs, setLogRedactor, type LogLevel } from "./server/logs";
 import { allowSocket, refuseRequest } from "./server/crosssite";
 import { certificateSource, tlsSettings } from "./server/tls";
 import {
-  MCP_CATALOG, connect as connectMcp, disconnect as disconnectMcp, statusOf as mcpStatus,
+  connect as connectMcp, disconnect as disconnectMcp, mcpToolsGeneration,
   setSecretLookup as setMcpSecretLookup,
 } from "./server/mcp";
 import os from "node:os";
@@ -62,21 +62,19 @@ import { billingSummary, dayKey } from "./server/billing";
 import { refreshAllVendorMoney, refreshVendorMoney, vendorMoneyStale } from "./server/vendor-money";
 import { dropSession, fromDataUrl, getBlob, putBlob } from "./server/blobs";
 import { threeRuntime } from "./server/widgets";
-import {
-  MAX_ARTIFACT_BYTES, cleanName, deleteArtifact, getArtifact, listArtifacts, readArtifact, saveArtifact,
-} from "./server/artifacts";
+import { MAX_ARTIFACT_BYTES, saveArtifact } from "./server/artifacts";
 import { restore as restoreVersion, snapshot as snapshotFolder, versions as folderVersions } from "./server/snapshots";
-import { forgetThumb, previewOf, thumbOf } from "./server/thumbs";
 import {
   installFromStore, installPackage, listExtensions, removeExtension, setExtensionEnabled,
 } from "./server/extensions";
 import {
   addBookmark, bookmarks, clearHistory, downloads, history, recordDownload, recordVisit, removeBookmark,
 } from "./server/browsedata";
-import {
-  NotebookError, addEntries, createNotebook, deleteNotebook, forgetArtifact,
-  getNotebook, listNotebooks, moveEntry, notebookMarkdown, removeEntry, updateEntry, updateNotebook,
-} from "./server/notebooks";
+
+import { notebookRoutes } from "./server/routes/notebooks";
+import { mcpRoutes } from "./server/routes/mcp";
+import { artifactRoutes } from "./server/routes/artifacts";
+import { systemRoutes } from "./server/routes/system";
 import {
   attachmentNote, attachmentRefs, notebookNote, notebookRefs, picturesFor, type AttachmentRef, type NotebookRef,
 } from "./server/attach";
@@ -133,8 +131,7 @@ import { renderToPdf, webDir as officeWebDir } from "./server/officerender";
 import {
   pickExpression, reviewMessage, safeStyle, type ElementInfo, type ReviewComment, type StyleChange,
 } from "./server/pick";
-import { suggested as mcpSuggested } from "./server/mcpcatalog";
-import { existing as existingMcp, install as installMcp, planOffer } from "./server/mcpoffer";
+
 import { WAKE_MAX_AGE_MS, WAKE_MAX_PER_HOUR, wakePrompt, wakesWanted, type WakeCandidate } from "./server/proactive";
 import {
   firePrompt as triggerPrompt, label as triggerLabel, newId as newTriggerId, newToken as newTriggerToken,
@@ -143,7 +140,7 @@ import {
 import { addRule, autonomyBriefing, covered, listRules, matchText, revoke as revokeRule, revokeAll } from "./server/autonomy";
 import { inventoryBriefing } from "./server/inventory";
 import { htmlToText } from "./server/pages";
-import { deleteCustomTool, listCustomTools } from "./server/customtools";
+import { customToolsGeneration, deleteCustomTool, listCustomTools } from "./server/customtools";
 import { REFLECT_SYSTEM, parseReflection, reflectionPrompt, worthReflecting } from "./server/learning";
 import {
   MEMORY_KINDS, MemoryGraph, doubtNote, freshness, siteOf,
@@ -515,7 +512,9 @@ function housekeeping(): void {
   }
 }
 
-/** Blank out stored secrets and the person's saved credentials. */
+/** Blank out stored secrets and sign-ins, leaving the person's own name and
+    address legible: this is what they read themselves, in the log and in a
+    push to their phone. The one redactor lives in credentials.ts. */
 function redactSecrets(text: string): string {
   return redactCredentials(redactStored(text), { identity: false });
 }
@@ -3291,7 +3290,32 @@ interface TurnOptions {
 
 /** Which specialist tool sets this chat has been given (see toolload.ts). */
 const allToolsOn = () => process.env.AUTORA_ALL_TOOLS === "1";
-const loadedTools = (session: Session) => (allToolsOn() ? new Set(familyIds()) : loadedFromLog(session.events));
+/* The log only grows, so the families loaded from it are a function of its
+   length: remember the last answer and walk only the events added since. The
+   turn loop asks every round, and each round used to re-scan the whole
+   conversation to return the same set. */
+const loadedCache = new WeakMap<Session, { upTo: number; set: Set<string> }>();
+function loadedTools(session: Session): Set<string> {
+  if (allToolsOn()) return new Set(familyIds());
+  const events = session.events;
+  const cached = loadedCache.get(session);
+  if (cached && cached.upTo === events.length) return cached.set;
+  /* A log shorter than we remembered (reloaded from disk) starts over rather
+     than trusting a length that no longer matches. */
+  const base = cached && cached.upTo <= events.length ? cached.set : null;
+  const set = base ? new Set(base) : new Set<string>();
+  const from = base ? cached!.upTo : 0;
+  for (let i = from; i < events.length; i++) {
+    const e = events[i];
+    if (e.kind === "tools.enable" && typeof e.payload?.family === "string") set.add(e.payload.family);
+    else if (e.kind === "tool.call") {
+      const name = String(e.payload?.name ?? "");
+      for (const f of FAMILIES) if (f.match(name)) set.add(f.id);
+    }
+  }
+  loadedCache.set(session, { upTo: events.length, set });
+  return set;
+}
 
 /** Whether a PDF is in this chat: the window is open, or one came with a message. */
 function pdfInChat(session: Session): boolean {
@@ -3532,9 +3556,12 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
     const sieve = new DataUrlSieve();
 
     if (connected) {
-      /* Refreshed every step, not once per turn: a tool the agent writes
-         with tool_create is usable on the very next step. */
+      /* Refreshed when something it depends on changes rather than blindly
+         every step: a tool the agent writes with tool_create is still usable
+         on the very next step, because writing one bumps the generation that
+         the key below is built from. */
       let tools = await offered();
+      let lastOfferedKey: string | null = null;
       /* The tool list of the last model call: a change in it breaks the
          provider's cache, and the usage record says when that was why. */
       let lastToolKey: string | null = null;
@@ -4475,7 +4502,20 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
            step's call goes out now, on the history as it stands. */
         context.maybeCompact(pinned, summarize, compacted);
 
-        tools = await offered();
+        /* Rebuilt only when something it depends on has changed: a tool the
+           agent wrote with tool_create, a family brought in, or the hand-over
+           that adds think_longer. Every round used to rebuild and re-filter
+           the whole list to get the same answer. */
+        const offeredKey = [
+          session.events.length,
+          customToolsGeneration(),
+          mcpToolsGeneration(),
+          handedOver,
+        ].join("|");
+        if (offeredKey !== lastOfferedKey) {
+          tools = await offered();
+          lastOfferedKey = offeredKey;
+        }
         /* What the model says in this step, read before this step's work is
            put in its own words. */
         workerSaid = "";
@@ -4717,6 +4757,9 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             const family = FAMILIES.find((f) => f.match(use.name));
             if (family && !loadedTools(session).has(family.id)) {
               emitEvent(session, "tools.enable", "system", { family: family.id, why: "called" }, span);
+              /* The list is read from the log, which this event just grew:
+                 without rebuilding it here the call below would still not find
+                 the tool it was asking for. */
               tools = await offered();
             }
           }
@@ -5253,40 +5296,14 @@ async function startServer() {
     next();
   });
 
-  app.get("/api/logs", (req: Request, res: Response) => {
-    const level = ["debug", "info", "warn", "error"].includes(String(req.query.level))
-      ? (String(req.query.level) as LogLevel) : undefined;
-    res.json(readLogs({
-      level,
-      component: req.query.component ? String(req.query.component) : undefined,
-      q: req.query.q ? String(req.query.q) : undefined,
-      after: req.query.after !== undefined ? Number(req.query.after) : undefined,
-      limit: req.query.limit !== undefined ? Number(req.query.limit) : undefined,
-    }));
-  });
 
   // --- API Routes ---
 
   // 1. Origin & Runtime Info
-  app.get("/api/origin", (req: Request, res: Response) => {
-    res.json({
-      secure_port: secure.enabled ? secure.port : null,
-      secure_listening: secureListening,
-      // Whether /autora-ca.crt has an authority to hand out: only when the
-      // certificates are Autora's own rather than a real one from files.
-      certificate: Boolean(caPem),
-      version: VERSION,
-    });
-  });
-
-  /** The authority behind the https listener's certificates, to install on a
-      device so they are trusted there (Settings -> Trust this server). */
-  app.get("/autora-ca.crt", (_req: Request, res: Response) => {
-    if (!caPem) return res.status(404).type("text/plain").send("This server is not issuing its own certificates.");
-    res.setHeader("Content-Type", "application/x-x509-ca-cert");
-    res.setHeader("Content-Disposition", 'attachment; filename="autora-ca.crt"');
-    res.setHeader("Cache-Control", "no-store");
-    res.send(caPem);
+  systemRoutes(app, {
+    version: VERSION,
+    secure: { enabled: secure.enabled, port: secure.port, listening: secureListening },
+    caPem: () => caPem,
   });
 
   // 2. Sessions List & Creation
@@ -5503,132 +5520,24 @@ async function startServer() {
   });
 
   // ------------------------------------------------------------------ mcp --
-  const MASK = "••••••";
-  const isSecretRef = (v: string) => /^(Bearer )?\$\{secret:[A-Za-z_][A-Za-z0-9_]*\}$/.test(v);
-  const mcpView = () => state.mcpServers.map((cfg) => ({
-    ...cfg,
-    // Values of env vars and headers are usually secrets: shown masked, and a
-    // masked value sent back means "keep what you have".
-    // A reference to the secret store is not itself a secret: shown as written.
-    env: cfg.env ? Object.fromEntries(Object.entries(cfg.env).map(([k, v]) => [k, isSecretRef(v) ? v : MASK])) : undefined,
-    headers: cfg.headers ? Object.fromEntries(Object.entries(cfg.headers).map(([k, v]) => [k, isSecretRef(v) ? v : MASK])) : undefined,
-    ...mcpStatus(cfg.id),
-  }));
-  const keepMasked = (next: Record<string, string> | undefined, prev: Record<string, string> | undefined) => {
-    if (!next) return next;
-    const out: Record<string, string> = {};
-    for (const [k, v] of Object.entries(next)) out[k] = v === MASK ? (prev?.[k] ?? "") : v;
-    return out;
-  };
-
-  app.get("/api/mcp", (_req: Request, res: Response) => {
-    res.json({ servers: mcpView(), catalog: MCP_CATALOG });
+  mcpRoutes(app, {
+    servers: state.mcpServers,
+    save,
+    log,
+    secretFor,
+    secretNames: () => Object.keys(allSecrets()),
+    suggestionSeed: () => {
+      const titles = Array.from(sessions.values())
+        .filter((s) => !s.incognito)
+        .sort((a, b) => (b.counts.lastTs || 0) - (a.counts.lastTs || 0))
+        .slice(0, 12)
+        .map((s) => s.title)
+        .join("\n");
+      return `${state.systemPrompt}\n${titles}`;
+    },
+    sane: (raw: unknown) => saneMcp(raw as any)!,
   });
 
-  /**
-   * Servers worth suggesting to this install, from what it already shows
-   * about itself: a key in the secret store, or a word in what the person has
-   * said. See suggested() in server/mcpcatalog.ts for what it weighs and why
-   * an empty list is a fine answer.
-   *
-   * The text it reads is the standing instructions and the titles of recent
-   * chats -- the two things here that are already about what this install is
-   * for. It does not read the threads themselves: ranking a suggestion is not
-   * worth walking every log on the disk for.
-   */
-  app.get("/api/mcp/suggested", (_req: Request, res: Response) => {
-    const installed = state.mcpServers.map((s) => s.name);
-    const secrets = Object.keys(allSecrets());
-    const titles = Array.from(sessions.values())
-      .filter((s) => !s.incognito)
-      .sort((a, b) => (b.counts.lastTs || 0) - (a.counts.lastTs || 0))
-      .slice(0, 12)
-      .map((s) => s.title)
-      .join("\n");
-    const found = mcpSuggested({
-      installed,
-      secrets,
-      text: `${state.systemPrompt}\n${titles}`,
-      limit: 3,
-    });
-    res.json({
-      suggested: found.map((e) => ({
-        id: e.id,
-        name: e.name,
-        title: e.title,
-        summary: e.summary,
-        better: e.better,
-        reason: e.reason,
-        needs: (e.needs ?? []).map((n) => ({ env: n.env, label: n.label, optional: !!n.optional })),
-      })),
-    });
-  });
-
-  /**
-   * Set one of them up, from the page rather than from the agent's card.
-   *
-   * The offer and the install are the same code the agent uses (see
-   * server/mcpoffer.ts): planOffer builds it from the catalog id, install
-   * writes the config and connects. Nothing here reaches past that, which is
-   * why a suggestion cannot install something the offer path could not.
-   */
-  app.post("/api/mcp/suggested/:id/install", async (req: Request, res: Response) => {
-    // The offer path wants the agent's one line on why; pressing the button
-    // on the page is the person's own reason, so give it one. Without it every
-    // "Set it up" failed with the agent's "say why" message.
-    const plan = planOffer({ server: req.params.id, why: "Set up from the Integrations page." });
-    if (typeof plan === "string") return res.status(400).json({ error: plan });
-    if (existingMcp(plan.name)) {
-      return res.status(400).json({ error: `There is already a server called "${plan.name}".` });
-    }
-    const outcome = await installMcp(plan);
-    log("info", "mcp", `suggested server ${plan.name} installed from the MCP page: ${outcome.ok ? "connected" : "failed"}`);
-    if (!outcome.ok) return res.status(400).json({ error: outcome.error ?? "It did not connect.", missing: outcome.missing });
-    res.json({ ok: true, name: plan.name, tools: outcome.tools, missing: outcome.missing });
-  });
-
-  app.post("/api/mcp", async (req: Request, res: Response) => {
-    const cfg = saneMcp({ ...req.body, id: undefined });
-    if (!cfg) return res.status(400).json({ error: "A server needs a name." });
-    if (state.mcpServers.some((s) => s.name.toLowerCase() === cfg.name.toLowerCase())) {
-      return res.status(400).json({ error: `There is already a server called "${cfg.name}".` });
-    }
-    state.mcpServers.push(cfg);
-    save();
-    await connectMcp(cfg);
-    res.json({ servers: mcpView(), catalog: MCP_CATALOG });
-  });
-
-  app.patch("/api/mcp/:id", async (req: Request, res: Response) => {
-    const index = state.mcpServers.findIndex((s) => s.id === req.params.id);
-    if (index < 0) return res.status(404).json({ error: "No such server." });
-    const prev = state.mcpServers[index];
-    const next = saneMcp({ ...prev, ...req.body, id: prev.id });
-    if (!next) return res.status(400).json({ error: "A server needs a name." });
-    next.env = keepMasked(next.env, prev.env);
-    next.headers = keepMasked(next.headers, prev.headers);
-    state.mcpServers[index] = next;
-    save();
-    await connectMcp(next);
-    res.json({ servers: mcpView(), catalog: MCP_CATALOG });
-  });
-
-  app.post("/api/mcp/:id/reconnect", async (req: Request, res: Response) => {
-    const cfg = state.mcpServers.find((s) => s.id === req.params.id);
-    if (!cfg) return res.status(404).json({ error: "No such server." });
-    await connectMcp(cfg);
-    res.json({ servers: mcpView(), catalog: MCP_CATALOG });
-  });
-
-  app.delete("/api/mcp/:id", async (req: Request, res: Response) => {
-    const cfg = state.mcpServers.find((s) => s.id === req.params.id);
-    if (!cfg) return res.status(404).json({ error: "No such server." });
-    await disconnectMcp(cfg.id);
-    state.mcpServers = state.mcpServers.filter((s) => s.id !== cfg.id);
-    save();
-    log("info", "mcp", `${cfg.name}: removed`);
-    res.json({ servers: mcpView(), catalog: MCP_CATALOG });
-  });
 
   app.post("/api/sessions", (req: Request, res: Response) => {
     /* An incognito chat is created like any other and kept differently: the
@@ -5681,191 +5590,16 @@ async function startServer() {
 
   // 3b'. Artifacts: what the agent made and what you uploaded, kept on disk.
 
-  app.get("/api/artifacts", (_req: Request, res: Response) => {
-    res.json({ artifacts: listArtifacts(), max: MAX_ARTIFACT_BYTES });
+  artifactRoutes(app, {
+    rawBody: express.raw({ type: () => true, limit: MAX_ARTIFACT_BYTES }),
+    log,
   });
 
-  /** The body is the file itself, sent as octet-stream so the JSON parser
-      above leaves it alone; its name and type ride in headers, so there is no
-      multipart parser to add for the one form that needs one. */
-  app.post(
-    "/api/artifacts",
-    express.raw({ type: () => true, limit: MAX_ARTIFACT_BYTES }),
-    (req: Request, res: Response) => {
-      const data = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
-      if (data.byteLength === 0) return res.status(400).json({ error: "The file is empty." });
-      let name = "upload";
-      try {
-        name = decodeURIComponent(String(req.headers["x-file-name"] || "upload"));
-      } catch {
-        // A malformed name is not worth refusing the file over.
-      }
-      try {
-        const artifact = saveArtifact({
-          origin: "user", name, data, mime: String(req.headers["x-file-type"] || ""),
-        });
-        log("info", "artifacts", `uploaded ${artifact.name} (${artifact.size} bytes)`);
-        res.json({ artifact });
-      } catch (err: any) {
-        res.status(400).json({ error: err?.message ?? "Could not save the file." });
-      }
-    },
-  );
-
-  app.get("/api/artifacts/:id", (req: Request, res: Response) => {
-    const meta = getArtifact(req.params.id);
-    const data = meta ? readArtifact(meta.id) : null;
-    if (!meta || !data) return res.status(404).json({ error: "No such artifact" });
-    const download = req.query.download !== undefined;
-    // Uploaded HTML or SVG opened inline would run with this app's origin;
-    // only pictures and PDFs are shown in place, everything else downloads.
-    const inline = !download && (
-      (meta.mime.startsWith("image/") && meta.mime !== "image/svg+xml") ||
-      meta.mime === "application/pdf" || meta.mime === "text/plain" ||
-      meta.mime.startsWith("audio/") || meta.mime.startsWith("video/"));
-    res.setHeader("Content-Type", inline ? meta.mime : "application/octet-stream");
-    res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("Content-Security-Policy", "sandbox");
-    res.setHeader(
-      "Content-Disposition",
-      `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(meta.name)}`,
-    );
-    res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
-    res.setHeader("Content-Length", String(data.byteLength));
-    res.end(data);
-  });
-
-  /** The small picture of a file the page shows on its card. Drawn once and
-      kept, so it is immutable like the artifact is. */
-  app.get("/api/artifacts/:id/thumb", async (req: Request, res: Response) => {
-    const meta = getArtifact(req.params.id);
-    if (!meta) return res.status(404).json({ error: "No such artifact" });
-    let file: string | null = null;
-    try {
-      file = await thumbOf(meta);
-    } catch {
-      file = null;
-    }
-    if (!file) {
-      // Not cached: this kind may become drawable (a renderer can come back).
-      res.setHeader("Cache-Control", "no-store");
-      return res.status(404).json({ error: "There is no picture of this file." });
-    }
-    res.setHeader("Content-Type", "image/jpeg");
-    res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
-    res.setHeader("X-Content-Type-Options", "nosniff");
-    res.sendFile(file, (err?: Error) => {
-      if (err && !res.headersSent) res.status(404).end();
-    });
-  });
-
-  /** The first lines of a document that has no picture to draw, for the
-      card to show as text instead of a grey tile. */
-  app.get("/api/artifacts/:id/preview", (req: Request, res: Response) => {
-    const meta = getArtifact(req.params.id);
-    if (!meta) return res.status(404).json({ error: "No such artifact" });
-    const preview = previewOf(meta);
-    if (!preview) {
-      res.setHeader("Cache-Control", "no-store");
-      return res.status(404).json({ error: "There is nothing to read out of this file." });
-    }
-    res.setHeader("Cache-Control", "private, max-age=86400");
-    res.json(preview);
-  });
-
-  app.delete("/api/artifacts/:id", (req: Request, res: Response) => {
-    if (!deleteArtifact(req.params.id)) return res.status(404).json({ error: "No such artifact" });
-    forgetArtifact(req.params.id);
-    forgetThumb(req.params.id);
-    res.json({ ok: true });
-  });
 
   // 3b''. Notebooks: artifacts grouped by purpose, with notes between them.
 
-  const notebookFailed = (res: Response, err: unknown) => {
-    if (err instanceof NotebookError) {
-      return res.status(/^There is no/.test(err.message) ? 404 : 400).json({ error: err.message });
-    }
-    throw err;
-  };
+  notebookRoutes(app);
 
-  app.get("/api/notebooks", (_req: Request, res: Response) => {
-    res.json({ notebooks: listNotebooks() });
-  });
-
-  app.post("/api/notebooks", (req: Request, res: Response) => {
-    try {
-      res.json({ notebook: createNotebook({ title: req.body?.title, purpose: req.body?.purpose, by: "user" }) });
-    } catch (err) {
-      notebookFailed(res, err);
-    }
-  });
-
-  app.get("/api/notebooks/:id", (req: Request, res: Response) => {
-    const notebook = getNotebook(req.params.id);
-    if (!notebook) return res.status(404).json({ error: "No such notebook" });
-    res.json({ notebook });
-  });
-
-  app.get("/api/notebooks/:id/export", (req: Request, res: Response) => {
-    const notebook = getNotebook(req.params.id);
-    if (!notebook) return res.status(404).json({ error: "No such notebook" });
-    const body = Buffer.from(notebookMarkdown(notebook), "utf8");
-    res.setHeader("Content-Type", "text/markdown; charset=utf-8");
-    res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("Content-Security-Policy", "sandbox");
-    res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(`${cleanName(notebook.title, "notebook")}.md`)}`);
-    res.end(body);
-  });
-
-  app.patch("/api/notebooks/:id", (req: Request, res: Response) => {
-    try {
-      res.json({ notebook: updateNotebook(req.params.id, { title: req.body?.title, purpose: req.body?.purpose }) });
-    } catch (err) {
-      notebookFailed(res, err);
-    }
-  });
-
-  app.delete("/api/notebooks/:id", (req: Request, res: Response) => {
-    if (!deleteNotebook(req.params.id)) return res.status(404).json({ error: "No such notebook" });
-    res.json({ ok: true });
-  });
-
-  app.post("/api/notebooks/:id/entries", (req: Request, res: Response) => {
-    try {
-      const body = req.body ?? {};
-      const files: unknown[] = Array.isArray(body.artifacts) ? body.artifacts : [];
-      const inputs = files.length
-        ? files.map((artifact) => ({ artifact, text: body.text }))
-        : [{ title: body.title, text: body.text, cites: body.cites }];
-      const r = addEntries(req.params.id, inputs, "user", Number(body.position) || undefined);
-      res.json({ notebook: r.notebook, unknown: r.unknown });
-    } catch (err) {
-      notebookFailed(res, err);
-    }
-  });
-
-  app.patch("/api/notebooks/:id/entries/:entry", (req: Request, res: Response) => {
-    try {
-      const body = req.body ?? {};
-      if (body.title !== undefined || body.text !== undefined || body.cites !== undefined) {
-        updateEntry(req.params.id, req.params.entry, { title: body.title, text: body.text, cites: body.cites });
-      }
-      if (body.position !== undefined) moveEntry(req.params.id, req.params.entry, Number(body.position));
-      res.json({ notebook: getNotebook(req.params.id) });
-    } catch (err) {
-      notebookFailed(res, err);
-    }
-  });
-
-  app.delete("/api/notebooks/:id/entries/:entry", (req: Request, res: Response) => {
-    try {
-      if (!removeEntry(req.params.id, req.params.entry)) return res.status(404).json({ error: "No such entry" });
-      res.json({ notebook: getNotebook(req.params.id) });
-    } catch (err) {
-      notebookFailed(res, err);
-    }
-  });
 
   // 3c. The browser: what it is doing, and telling it to do something.
 

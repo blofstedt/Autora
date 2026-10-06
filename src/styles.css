@@ -834,6 +834,16 @@ body::before {
 }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -150% 0; } }
 
+/* How long the turn has been going, beside what it is doing. Quiet on purpose:
+   a number that changes every second must not compete with the words it sits
+   next to, and it must not shimmer, which would make it the thing you watch.
+   Tabular figures so the digits do not shift the line as they count. */
+.working-when {
+  flex: none; margin-left: auto; padding-left: 10px;
+  font-variant-numeric: tabular-nums; font-size: 0.86em;
+  color: var(--text-3); opacity: 0.75; white-space: nowrap;
+}
+
 /* Streaming words: each lands out of a slight blur, like being said. */
 .md.is-streaming .md-w { animation: wordIn 0.42s var(--ease) both; }
 @keyframes wordIn {

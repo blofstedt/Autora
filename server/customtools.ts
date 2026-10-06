@@ -46,6 +46,14 @@ const tools: CustomTool[] = (() => {
 
 const save = () => saveDoc("custom-tools", () => tools);
 
+/* Bumped whenever the set of custom tools changes, so a caller caching its
+   tool list knows to rebuild. The turn loop offers these every round and must
+   notice one the agent wrote mid-turn. */
+let generation = 0;
+export function customToolsGeneration(): number {
+  return generation;
+}
+
 export function listCustomTools(): CustomTool[] {
   return tools;
 }
@@ -136,6 +144,7 @@ export function defineCustomTool(input: {
     session: input.session ?? null, runs: 0, failures: 0,
   };
   tools.push(tool);
+  generation += 1;
   save();
   return { tool, replaced: false, warnings };
 }
@@ -144,6 +153,7 @@ export function deleteCustomTool(toolName: string): boolean {
   const tool = getCustomTool(toolName);
   if (!tool) return false;
   tools.splice(tools.indexOf(tool), 1);
+  generation += 1;
   save();
   return true;
 }

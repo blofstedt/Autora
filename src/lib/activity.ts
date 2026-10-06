@@ -14,6 +14,12 @@ export type Reading = {
   text: string | null;
   /** Which of the two ways of being busy that is. */
   phase: MarkPhase;
+  /** When this turn started, in ms since the epoch, or null if no turn is in
+      flight. Lets the line say how long it has been going. */
+  since: number | null;
+  /** How many tool calls this turn has made so far. A long turn with no count
+      looks stalled even when it is working; the count says it is moving. */
+  steps: number;
 };
 
 /**
@@ -27,26 +33,29 @@ export type Reading = {
  * so a reload mid-turn says the same thing as the page that watched it start.
  */
 export function readActivity(events: AutoraEvent[]): Reading {
+  const idle: Reading = { text: null, phase: "thinking", since: null, steps: 0 };
   // Only the turn in flight counts; everything before its request is history.
   let start = -1;
   for (let i = events.length - 1; i >= 0; i--) {
     const kind = events[i].kind;
-    if (kind === Kind.AgentDone || kind === Kind.SessionEnded) return { text: null, phase: "thinking" };
+    if (kind === Kind.AgentDone || kind === Kind.SessionEnded) return idle;
     if (kind === Kind.UserMessage) { start = i; break; }
   }
-  if (start < 0) return { text: null, phase: "thinking" };
+  if (start < 0) return idle;
 
   const request = String(events[start].payload?.text ?? "");
   const open = new Map<string, AutoraEvent>();
   let last: { name: string; args: Record<string, any>; failed: boolean } | null = null;
   let lastKind: string | null = null;
   let asking = false;
+  let steps = 0;
 
   for (let i = start + 1; i < events.length; i++) {
     const e = events[i];
     switch (e.kind) {
       case Kind.ToolCall:
         open.set(e.span ?? `seq-${e.seq}`, e);
+        steps += 1;
         lastKind = e.kind;
         break;
       case Kind.ToolResult:
@@ -75,23 +84,29 @@ export function readActivity(events: AutoraEvent[]): Reading {
     }
   }
 
-  if (asking) return { text: "Waiting for your answer", phase: "thinking" };
+  /* The turn began when its request was written; lacking a timestamp on it,
+     the first thing after it stands in. */
+  const since = start >= 0 ? (events[start].ts ?? events[start + 1]?.ts ?? null) : null;
+
+  if (asking) return { text: "Waiting for your answer", phase: "thinking", since, steps };
   const running = [...open.values()].pop();
   // A step in flight: this is the mark stacking itself together.
   if (running) {
-    return { text: doing(String(running.payload?.name ?? "tool"), running.payload?.args ?? {}), phase: "building" };
+    return { text: doing(String(running.payload?.name ?? "tool"), running.payload?.args ?? {}), phase: "building", since, steps };
   }
-  if (lastKind === Kind.AgentText) return { text: "Writing the reply", phase: "thinking" };
+  if (lastKind === Kind.AgentText) return { text: "Writing the reply", phase: "thinking", since, steps };
   if (last) {
     return {
       text: last.failed
         ? `Rethinking after ${failedWhat(last.name)} failed`
         : `Thinking over ${looked(last.name, last.args)}`,
       phase: "thinking",
+      since,
+      steps,
     };
   }
   const gist = brief(request, 6);
-  return { text: gist ? `Thinking about “${gist}”` : "Thinking", phase: "thinking" };
+  return { text: gist ? `Thinking about “${gist}”` : "Thinking", phase: "thinking", since, steps };
 }
 
 /** The same reading, for the callers that only wanted the words. */

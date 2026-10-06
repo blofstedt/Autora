@@ -58,6 +58,8 @@ export function Thread({
   buckets,
   busy,
   doing,
+  elapsedMs = 0,
+  steps = 0,
   phase = "thinking",
   sessionId,
   liveBrowserSeq,
@@ -84,6 +86,11 @@ export function Thread({
   busy: boolean;
   /** What it is on right now, in a few words (see lib/activity.ts). */
   doing?: string | null;
+  /** How long this turn has been going, in ms. Zero before it starts. */
+  elapsedMs?: number;
+  /** How many tool calls this turn has made. A long turn with no visible
+      progress looks stalled; the count says it is still moving. */
+  steps?: number;
   /** Which of the mark's two busy states that is: thinking or building. */
   phase?: MarkPhase;
   sessionId: string;
@@ -435,6 +442,15 @@ export function Thread({
             {/* Keyed on the words, so each new step fades in over the last
                 rather than snapping -- a train of thought, not a counter. */}
             <span className="working-what" key={doing || "working"}>{doing || "Working"}</span>
+            {/* How far in it is. A step count alone is noise on a short turn,
+                so it waits for two, and the clock waits for a few seconds
+                rather than counting 0s under every reply. */}
+            {(elapsedMs >= 3000 || steps > 1) && (
+              <span className="working-when">
+                {elapsedMs >= 3000 ? clock(elapsedMs) : ""}
+                {steps > 1 ? `${elapsedMs >= 3000 ? " · " : ""}${steps} steps` : ""}
+              </span>
+            )}
           </div>
         )}
         </div>
@@ -658,6 +674,15 @@ function stepsTook(steps: Cell[]): number | null {
 
 const shortMs = (value: number) =>
   value >= 1000 ? `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}s` : `${Math.round(value)}ms`;
+
+/** How long something has been going, as a clock: 4s, 1:23, 12:07. */
+function clock(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000));
+  if (total < 60) return `${total}s`;
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
 
 /**
  * One turn's commands, folded into a line.
