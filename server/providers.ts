@@ -70,6 +70,30 @@ export interface ProviderSpec {
   listable: boolean;
   /** Free-form models: the picker offers typing an id rather than choosing. */
   openEnded?: boolean;
+  /** Where this vendor publishes what is left of the money paid in, and how to
+      read the dollars out of it. Absent where the vendor has no such endpoint
+      -- and then no balance is claimed for it at all, rather than borrowing
+      another vendor's. See ./vendor-money. */
+  balance?: BalanceSpec;
+}
+
+/**
+ * How to ask a vendor what is left of the money paid in.
+ *
+ * Only three of the vendors here publish such a thing, and each answers in its
+ * own shape, so each says both how to reach it and which number is the dollars.
+ * The path is read against the provider's base URL with any /v1 suffix dropped,
+ * since that root is editable per install for local servers and proxies.
+ */
+export interface BalanceSpec {
+  /** Path to append to the vendor's base URL, e.g. "/user/balance". */
+  path: string;
+  /** Which number in the reply is the remaining USD. */
+  field: "deepseek" | "orcarouter" | "openrouter";
+  /** Where the path hangs. Most vendors keep everything under the versioned
+      prefix (/v1/balance); DeepSeek's money endpoint hangs off the host itself
+      (/user/balance), so stripping /v1 from its base would aim at nothing. */
+  root?: "base" | "host";
 }
 
 /** When the prices below were last read off the vendors' pricing pages. */
@@ -155,6 +179,9 @@ export const PROVIDERS: ProviderSpec[] = [
     baseUrl: "https://api.deepseek.com/v1",
     defaultModel: "deepseek-flash",
     listable: true,
+    // /user/balance is all DeepSeek's API will say about money: no usage
+    // endpoint exists, and per-key usage is a CSV export behind a login.
+    balance: { path: "/user/balance", field: "deepseek", root: "host" },
     // Peak-hour list prices; see deepseekOffPeak for the half-price hours.
       // CONTEXT LENGTH on that same page is a single 1M for both models, which
       // is why every id here carries it -- including the retired names, whose
@@ -186,6 +213,7 @@ export const PROVIDERS: ProviderSpec[] = [
     baseUrl: "https://openrouter.ai/api/v1",
     defaultModel: "openai/gpt-4o-mini",
     listable: true,
+    balance: { path: "/credits", field: "openrouter" },
     models: [
       { id: "openai/gpt-4o-mini", label: "OpenAI GPT-4o mini", input: 0.15, output: 0.6 },
       { id: "openai/gpt-4.1-mini", label: "OpenAI GPT-4.1 mini", input: 0.4, output: 1.6 },
@@ -208,6 +236,10 @@ export const PROVIDERS: ProviderSpec[] = [
     defaultModel: "orca-auto",
     listable: true,
     openEnded: true,
+    // GET /v1/balance answers {"object":"balance","unit":"USD",
+    // "paid_balance":19.99,"promo_credits":[...]}. Promo credits are scoped
+    // to one model and expire, so they are not money you paid in.
+    balance: { path: "/balance", field: "orcarouter" },
     models: [
       { id: "orca-auto", label: "Orca Auto Router", input: 0.15, output: 0.6, note: "Dynamically routes to the best model for cost and performance" },
       { id: "anthropic/claude-sonnet-4.5", label: "Anthropic Claude Sonnet 4.5", input: 3, output: 15 },

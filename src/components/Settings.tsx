@@ -52,6 +52,9 @@ type ProviderCard = {
   listable: boolean;
   open_ended: boolean;
   needs_key: boolean;
+  /** True where this vendor publishes a balance, so a "paid in" figure can be
+      turned into a real spend. Absent on an older server. */
+  balance_endpoints?: boolean;
   key: {
     set: boolean;
     source: "app" | "env" | null;
@@ -121,6 +124,9 @@ type SettingsState = {
       figure the real spend can be built from. Optional: an older server does
       not know the field. */
   top_up_usd?: number | null;
+  /** Which vendor that was paid to. Absent on an older server, which only ever
+      had one and read DeepSeek's. */
+  top_up_provider?: string | null;
   /** When a turn is called a loop, and how much is kept. Both sets used to be
       constants in the server's source, invisible and unchangeable. */
   loop?: LoopConfig;
@@ -214,6 +220,9 @@ export function Settings({
   const [prompt, setPrompt] = useState("");
   const [budget, setBudget] = useState("");
   const [topUp, setTopUp] = useState("");
+  /* Whose top-up is in the box. It moves with the provider selected, because
+     the figure is money paid into one vendor's account. */
+  const [topUpProvider, setTopUpProvider] = useState<string | null>(null);
   const [loop, setLoop] = useState<LoopConfig | null>(null);
   const [verify, setVerify] = useState<VerifyConfig | null>(null);
   const [keep, setKeep] = useState<RetentionPolicy | null>(null);
@@ -228,6 +237,7 @@ export function Settings({
     setPrompt(next.system_prompt ?? "");
     setBudget(next.budget_usd === null ? "" : String(next.budget_usd));
     setTopUp(next.top_up_usd == null ? "" : String(next.top_up_usd));
+    setTopUpProvider(next.top_up_provider ?? null);
     setLoop(next.loop ?? null);
     setVerify(next.verify ?? null);
     setKeep(next.retention ?? null);
@@ -292,10 +302,11 @@ export function Settings({
     system_prompt: prompt,
     budget_usd: budget.trim() === "" ? null : Number(budget),
     top_up_usd: topUp.trim() === "" ? null : Number(topUp),
+    top_up_provider: topUpProvider,
     ...(loop ? { loop } : {}),
     ...(verify ? { verify } : {}),
     ...(keep ? { retention: keep } : {}),
-  }), [provider, modelDrafts, fastDrafts, urlDrafts, prompt, budget, topUp, loop, verify, keep]);
+  }), [provider, modelDrafts, fastDrafts, urlDrafts, prompt, budget, topUp, topUpProvider, loop, verify, keep]);
 
   const save = useCallback(async (sent: typeof body) => {
     setSaving(true);
@@ -334,6 +345,7 @@ export function Settings({
         (cur.trim() === "" ? null : Number(cur)) === sent.top_up_usd
           ? (next.top_up_usd == null ? "" : String(next.top_up_usd))
           : cur));
+      setTopUpProvider((cur) => (cur === sent.top_up_provider ? next.top_up_provider ?? null : cur));
       setLoop((cur) => (same(cur, sent.loop ?? null) ? next.loop ?? null : cur));
       setVerify((cur) => (same(cur, sent.verify ?? null) ? next.verify ?? null : cur));
       setKeep((cur) => (same(cur, sent.retention ?? null) ? next.retention ?? null : cur));
@@ -392,6 +404,14 @@ export function Settings({
     JSON.stringify(loop) !== JSON.stringify(state.loop ?? null) ||
     JSON.stringify(verify) !== JSON.stringify(state.verify ?? null) ||
     JSON.stringify(keep) !== JSON.stringify(state.retention ?? null));
+  /* Whose "paid in" figure the box holds. Only a vendor that publishes a
+     balance can turn one into a spend, so for the rest the box is not offered
+     at all rather than collecting a number nothing can use. */
+  const topUpLabel = (() => {
+    if (!state || !topUpProvider) return null;
+    const card = state.catalog.find((p) => p.id === topUpProvider);
+    return card?.balance_endpoints ? card.label : null;
+  })();
   const budgetOk = budget.trim() === "" || (Number.isFinite(Number(budget)) && Number(budget) >= 0);
   const topUpOk = topUp.trim() === "" || (Number.isFinite(Number(topUp)) && Number(topUp) >= 0);
   /* Both money fields are saved by the same rules: a half-typed number is not
@@ -655,7 +675,13 @@ export function Settings({
         {shows("keys") && <SecretStore />}
 
         {shows("analytics") && (
-          <Billing budget={budget} onBudget={setBudget} topUp={topUp} onTopUp={setTopUp} />
+          <Billing
+            budget={budget}
+            onBudget={setBudget}
+            topUp={topUp}
+            onTopUp={setTopUp}
+            topUpLabel={topUpLabel}
+          />
         )}
 
         {shows("config") && (

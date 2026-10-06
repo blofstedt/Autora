@@ -7210,6 +7210,10 @@ async function startServer() {
         listable: spec.listable,
         open_ended: Boolean(spec.openEnded),
         needs_key: spec.id !== "local",
+        /* Whether this vendor publishes a balance at all. The panel uses it to
+           offer the "paid in" box only where the figure can be turned into a
+           spend, rather than collecting a number it can never use. */
+        balance_endpoints: Boolean(spec.balance),
         key: {
           set: Boolean(keyFor(spec.id)),
           source,
@@ -7237,7 +7241,10 @@ async function startServer() {
       catalog,
       prices_checked: PRICES_CHECKED,
       budget_usd: state.budgetUsd,
-      top_up_usd: state.topUpUsd,
+      /* Whose top-up this is, so the panel edits that vendor's account rather
+         than whichever one happens to be selected when the page is opened. */
+      top_up_usd: active.provider ? (state.topUps[active.provider] ?? null) : null,
+      top_up_provider: active.provider || null,
       loop: { ...state.loop },
       verify: { ...state.verify },
       retention: { ...state.retention },
@@ -7412,7 +7419,12 @@ async function startServer() {
       if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
         return res.status(400).json({ detail: "The amount topped up must be a positive amount." });
       }
-      state.topUpUsd = amount;
+      /* Per vendor, and the panel says which one: the money belongs to the
+         account it was paid into, and writing it against another provider's
+         balance is how the wrong total gets shown. */
+      const target = body.top_up_provider ?? resolveProvider().provider;
+      if (target && amount !== null) state.topUps[target] = amount;
+      else if (target) delete state.topUps[target];
     }
 
     /* Which tools the agent has, and how tightly each is gated. Turning a
@@ -8173,14 +8185,16 @@ setTimeout(() => void noticeTick(), 2_000).unref?.();
 const noticeTimer = setInterval(() => void noticeTick(), 5 * 60_000);
 noticeTimer.unref?.();
 
-/* The vendor's balance: once on the way up, then every ten minutes. It is the
-   one figure that can say what has really been spent -- counting tokens here
-   cannot see a call that was charged without reporting -- and it belongs to
-   somebody else's server, so it is read on its own schedule rather than at
-   the moment a person is waiting for something. */
-void refreshVendorMoney();
-const moneyTimer = setInterval(() => void refreshVendorMoney(), 10 * 60_000);
-moneyTimer.unref?.();
+  /* The selected vendor's balance: once on the way up, then every ten minutes.
+     It is the one figure that can say what has really been spent -- counting
+     tokens here cannot see a call that was charged without reporting -- and it
+     belongs to somebody else's server, so it is read on its own schedule rather
+     than at the moment a person is waiting for something. Whichever provider is
+     selected when the timer fires is the one asked, so switching provider moves
+     the figure with it within ten minutes. */
+  void refreshVendorMoney();
+  const moneyTimer = setInterval(() => void refreshVendorMoney(), 10 * 60_000);
+  moneyTimer.unref?.();
 
 /* One stray promise -- a tool, a watcher, a page that closed mid-call --
    used to take the whole server down with it, and the person saw nothing but

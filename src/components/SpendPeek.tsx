@@ -60,7 +60,9 @@ export function SpendPeek({
 
   const cap = usage?.budget.monthly_usd ?? null;
   const spent = usage?.month.cost ?? 0;
-  const paidIn = creditTotal(usage?.real);
+  /* The selected vendor's own money draws the credit bar, and only while the
+     ledger is that vendor's alone -- see SpendBar. */
+  const paidIn = creditTotal(usage?.real?.headline ? usage.real : null);
   const view = spendView({
     spent,
     session,
@@ -146,9 +148,9 @@ export function SpendPeek({
               )}
               {usage.real &&
                 row(
-                  "Paid in",
+                  `Paid in to ${usage.real.label}`,
                   money(usage.real.topped_up_usd),
-                  `${money(usage.real.balance_usd)} left at the vendor`,
+                  `${money(usage.real.balance_usd)} left there`,
                 )}
               {session > 0 && row("This session", money(session))}
             </>

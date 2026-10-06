@@ -53,15 +53,21 @@ export type Usage = {
     priced: boolean;
   }[];
   split?: { fresh: number; cached: number; output: number; covered: number };
-  /** What the vendor's own balance says, when it can be read: paid in, less
+  /** What one vendor's own balance says, when it can be read: paid in, less
       left. Null while there is nothing to read it from. */
   real?: {
+    /** Which vendor's money this is. */
+    provider: string;
+    label: string;
     balance_usd: number;
     topped_up_usd: number;
     at: number;
     lifetime_usd: number;
     counted_usd: number;
     unaccounted_usd: number;
+    /** False when this is one vendor's figure beside a ledger that also holds
+        other vendors' turns, rather than the total itself. */
+    headline: boolean;
   } | null;
   tool_feed?: { tool: string; calls: number; tokens: number }[];
   budget: {
@@ -131,6 +137,7 @@ export function Billing({
   onBudget,
   topUp,
   onTopUp,
+  topUpLabel,
 }: {
   budget: string;
   onBudget: (value: string) => void;
@@ -138,6 +145,9 @@ export function Billing({
       total: spend is this less the balance left. */
   topUp: string;
   onTopUp: (value: string) => void;
+  /** Which vendor that figure belongs to, for the label. Null while the server
+      has not said, or the selected provider publishes no balance at all. */
+  topUpLabel?: string | null;
 }) {
   const [usage, setUsage] = useState<Usage | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -221,12 +231,16 @@ export function Billing({
         />
       </div>
 
-      {/* Where the all-time number comes from, said plainly: the vendor's
-          balance is the only figure that cannot be wrong, so that is what the
-          total is built on, and what was counted here sits beside it. */}
-      {usage.real && (
+        {/* Where the all-time number comes from, said plainly: a vendor's own
+            balance is the only figure that cannot be wrong, so that is what the
+            total is built on -- and whose balance it is, because it is one
+            vendor's money and never everybody's. */}
+        {usage.real && (
         <p className="jf-hint bill-real">
-          All time comes from the vendor: {money(usage.real.topped_up_usd)} paid in
+          {usage.real.headline
+            ? `All time comes from ${usage.real.label}: `
+            : `${usage.real.label}'s own account says: `}
+          {money(usage.real.topped_up_usd)} paid in
           less {money(usage.real.balance_usd)} left is {money(usage.real.lifetime_usd)} spent.
           {" "}Counting tokens here accounts for {money(usage.real.counted_usd)} of that
           {usage.real.unaccounted_usd > 0
@@ -284,18 +298,25 @@ export function Billing({
         {/* Half of the real total, and the half that cannot be worked out: the
             console never saw a payment made before it existed, so it is asked
             for once. A payment made later needs no hand -- the balance jumping
-            up is how one is noticed. */}
-        <label className="jf-row">
-          <span>Topped up so far (optional)</span>
-          <input
-            value={topUp}
-            onChange={(e) => onTopUp(e.target.value)}
-            placeholder="e.g. 30"
-            inputMode="decimal"
-            spellCheck={false}
-            aria-label="Total paid in at the vendor, in dollars"
-          />
-        </label>
+              up is how one is noticed.
+
+              Shown only for a vendor that publishes a balance, since
+              without one the figure could never be turned into a spend,
+              and named for the vendor it belongs to: it is one account's
+              money. */}
+        {topUpLabel && (
+          <label className="jf-row">
+            <span>Paid in to {topUpLabel} (optional)</span>
+            <input
+              value={topUp}
+              onChange={(e) => onTopUp(e.target.value)}
+              placeholder="e.g. 30"
+              inputMode="decimal"
+              spellCheck={false}
+              aria-label={`Total paid in to ${topUpLabel}, in dollars`}
+            />
+          </label>
+        )}
         <label className="jf-row">
           <span>Monthly budget (optional)</span>
           <input
@@ -411,14 +432,17 @@ export function Billing({
 
       <p className="bill-caveat">
         Counted here from the tokens each vendor reports, priced from the list
-        prices shown when you pick a model -- except the all-time total, which
-        is the vendor's own money: paid in, less the balance left with it, so
-        not an estimate at all. What counting cannot see is a call that ended
-        before it reported its tokens -- an answer you stopped, or an attempt
-        retried after a dropped connection -- and usage from outside this app.
-        Both are still charged, and both show up in the balance. The month and
-        today are counted, and can come out under the vendor's own for exactly
-        that reason.
+        prices shown when you pick a model
+        {usage.real?.headline
+          ? ` -- except the all-time total, which is ${usage.real.label}'s own money: paid in, less the balance left with it, so not an estimate at all`
+          : usage.real
+            ? `, including the all-time total. ${usage.real.label}'s own balance is reported above for comparison, but it is that one account's money and this ledger holds other vendors' turns too, so the total stays counted`
+            : " -- including the all-time total"}
+        . What counting cannot see is a call that ended before it reported its
+        tokens -- an answer you stopped, or an attempt retried after a dropped
+        connection -- and usage from outside this app. Both are still charged,
+        and both show up in the balance. The month and today are counted, and
+        can come out under the vendor's own for exactly that reason.
         {usage.lifetime.estimated > 0 &&
           ` ${turns(usage.lifetime.estimated)} had no reported token count and ${
             usage.lifetime.estimated === 1 ? "was" : "were"

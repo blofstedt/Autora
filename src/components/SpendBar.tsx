@@ -8,11 +8,17 @@ export type Usage = {
   month: { cost: number };
   lifetime: { cost: number };
   budget: { monthly_usd: number | null };
-  /** What the vendor's own balance says, when it can be read at all. */
+  /** What one vendor's own balance says, when it can be read at all. */
   real?: {
+    /** Which vendor's money this is. */
+    provider: string;
+    label: string;
     topped_up_usd: number;
     balance_usd: number;
     lifetime_usd: number;
+    /** False when this is one vendor's figure beside a ledger holding other
+        vendors' turns -- and then the bar must not draw it as its own. */
+    headline: boolean;
   } | null;
 };
 
@@ -45,12 +51,16 @@ export const SpendBar = memo(function SpendBar({
   budget: number | null;
   /** Everything the ledger has ever counted, which is the credit consumed. */
   lifetime: number;
-  /** The vendor's own balance, when this app was able to read it. */
+  /** The selected vendor's own balance, when this app was able to read it. */
   real?: Usage["real"];
   onOpen: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const view = spendView({ spent, session, budget, lifetime, credit: creditTotal(real) });
+  /* Only the selected vendor's own money draws this bar, and only while the
+     ledger is that vendor's alone. A mix of vendors means no single balance is
+     the truth of the whole, so the bar stays on the month it counted. */
+  const credit = creditTotal(real?.headline ? real : null);
+  const view = spendView({ spent, session, budget, lifetime, credit });
   if (!view.show) return null;
 
   const share = (n: number) => `${Math.min(100, Math.max(0, n * 100))}%`;

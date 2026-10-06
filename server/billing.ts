@@ -133,9 +133,17 @@ export function billingSummary() {
      are exactly where counting comes out low. */
   const real = vendorMoney();
   const counted = all.cost + carried.cost;
-  const unaccounted = real ? Math.max(0, real.lifetime_usd - counted) : 0;
+  /* The vendor's figure is one vendor's money. It can stand in for the lifetime
+     total only while the ledger holds nobody else's turns, and only when no
+     spend has aged out of it either -- a lump that dropped off the ledger may
+     well be another vendor's. Otherwise it is reported beside the total, for
+     whoever wants to compare the two, and the total stays counted. */
+  const onlyThatVendor =
+    byProvider.size === 0 || (byProvider.size === 1 && byProvider.has(real?.provider ?? ""));
+  const usableReal = real !== null && onlyThatVendor && carried.cost === 0 ? real : null;
+  const unaccounted = usableReal ? Math.max(0, usableReal.lifetime_usd - counted) : 0;
   const lifetime = {
-    cost: real ? real.lifetime_usd : counted,
+    cost: usableReal ? usableReal.lifetime_usd : counted,
     input: all.input + carried.input,
     cached: all.cached,
     output: all.output + carried.output,
@@ -159,7 +167,7 @@ export function billingSummary() {
     oldest !== null &&
     monthKey(oldest) === month &&
     Object.keys(carriedDays()).every((day) => day.slice(0, 7) === month);
-  if (real && nothingDatedOutsideThisMonth) monthBucket.cost = real.lifetime_usd;
+  if (usableReal && nothingDatedOutsideThisMonth) monthBucket.cost = usableReal.lifetime_usd;
 
   // A dense run of days, including the quiet ones: a chart that silently skips
   // the days you spent nothing makes a calm week look like a busy one.
@@ -223,12 +231,17 @@ export function billingSummary() {
        the headline. Null when no balance can be read: nothing is guessed. */
     real: real
       ? {
+        provider: real.provider,
+        label: real.label,
         balance_usd: real.balance_usd,
         topped_up_usd: real.topped_up_usd,
         at: real.at,
         lifetime_usd: real.lifetime_usd,
         counted_usd: counted,
         unaccounted_usd: unaccounted,
+        /* False when the ledger holds other vendors' turns as well, so the page
+           can say whose figure this is rather than calling it the total. */
+        headline: usableReal !== null,
       }
       : null,
     budget: {

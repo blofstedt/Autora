@@ -134,7 +134,14 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  The PDF window is Spectra now: rebuilt inside Autora, its own look abandoned for Autora's -- the
+  The money figures follow the provider you have selected. The balance used to be read from
+  DeepSeek whatever key was chosen, so with another provider selected the spend bar showed
+  somebody else's credit against your usage. Each provider now publishes where its balance
+  lives and the app asks that one: Orca Router's own account is read for Orca spend, DeepSeek's
+  for DeepSeek. A vendor's figure also stops standing in for the all-time total as soon as the
+  ledger holds turns from more than one provider -- it is reported beside the counted total,
+  named, rather than replacing it. The "paid in" box in Settings says whose account it edits.
+  Earlier: the PDF window is Spectra now: rebuilt inside Autora, its own look abandoned for Autora's -- the
   same dark surfaces, violet accent, type and easing as every other window. It reads and writes
   PDFs -- splitting, merging, rotating, extracting and reordering pages, OCR over a scan, forms
   and signatures, annotations, comparing two documents, exporting a page as a picture -- and

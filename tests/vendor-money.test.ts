@@ -21,9 +21,10 @@ import path from "node:path";
 
 process.env.AUTORA_STATE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "autora-vendor-money-"));
 
-const { realSpend, vendorMoney } = await import("../server/vendor-money");
+const { realSpend, vendorMoneyFor, readBalance } = await import("../server/vendor-money");
 const { recordUsage, clearUsage, state } = await import("../server/state");
 const { billingSummary } = await import("../server/billing");
+const { providerSpec } = await import("../server/providers");
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -43,11 +44,13 @@ const near = (got: number, want: number) =>
 const DAY = 86400;
 const now = Math.floor(Date.now() / 1000);
 
-/** What the vendor is holding, and what has been paid in, as settings hold it. */
-function vendor(balance: number | null, toppedUp: number | null) {
-  state.balanceUsd = balance;
-  state.topUpUsd = toppedUp;
-  state.balanceAt = now;
+/** What one vendor is holding, and what has been paid in, as state holds it. */
+function vendor(balance: number | null, toppedUp: number | null, id = "deepseek") {
+  if (balance === null) delete state.balances[id];
+  else state.balances[id] = balance;
+  if (toppedUp === null) delete state.topUps[id];
+  else state.topUps[id] = toppedUp;
+  state.balanceAts[id] = now;
 }
 
 function call(ts: number, cost: number) {
@@ -75,21 +78,55 @@ test("an unreadable pair is not a guess", () => {
 
 test("vendorMoney says nothing until both figures are known", () => {
   vendor(null, null);
-  assert.equal(vendorMoney(), null);
+  assert.equal(vendorMoneyFor("deepseek"), null);
   vendor(20.3, null);
-  assert.equal(vendorMoney(), null);
+  assert.equal(vendorMoneyFor("deepseek"), null);
 
   vendor(20.3, 30);
-  const money = vendorMoney();
+  const money = vendorMoneyFor("deepseek");
   assert.ok(money);
   near(money.lifetime_usd, 9.7);
   near(money.balance_usd, 20.3);
   near(money.topped_up_usd, 30);
+  assert.equal(money.label, "DeepSeek");
+});
+
+/* The bug this whole file grew around: the balance was read from DeepSeek's
+   endpoint and then reported as whichever provider's money was on screen. A
+   balance belongs to one account, so each vendor keeps its own and nobody's is
+   borrowed. */
+test("one vendor's money is never another vendor's", () => {
+  vendor(20.3, 30, "deepseek");
+  vendor(4.5, 5, "orcarouter");
+
+  const deep = vendorMoneyFor("deepseek");
+  const orca = vendorMoneyFor("orcarouter");
+  assert.ok(deep && orca);
+  near(deep.lifetime_usd, 9.7);
+  near(orca.lifetime_usd, 0.5);
+  /* Orca Router's own figures, not DeepSeek's read through another name. */
+  near(orca.balance_usd, 4.5);
+  near(orca.topped_up_usd, 5);
+  assert.equal(orca.provider, "orcarouter");
+
+  /* A provider that publishes no balance at all gets no figure rather than a
+     borrowed one -- OpenAI has no balance endpoint here. */
+  assert.equal(vendorMoneyFor("openai"), null);
+});
+
+test("each vendor's reply is read in its own shape", () => {
+  near(readBalance("deepseek", { balance_infos: [{ currency: "USD", total_balance: "9.24" }] }) ?? -1, 9.24);
+  /* Promotional credit is scoped to a model and expires, so it is not money
+     that was paid in and must not be counted as such. */
+  near(readBalance("orcarouter", { unit: "USD", paid_balance: 19.99, promo_credits: [{ balance: 20 }] }) ?? -1, 19.99);
+  near(readBalance("openrouter", { data: { total_credits: 10, total_usage: 3.5 } }) ?? -1, 10);
+  assert.equal(readBalance("orcarouter", {}), null);
 });
 
 test("the all-time total is the vendor's, not the count", () => {
   clearUsage();
   vendor(20.3, 30);
+  state.provider = "deepseek";
   call(now, 0.1);
 
   const b = billingSummary();
@@ -109,6 +146,7 @@ test("a ledger reaching into another month keeps the month counted", () => {
      longer the same money and the difference must not be pushed into it. */
   const longAgo = now - 60 * DAY;
   vendor(20.3, 30);
+  state.provider = "deepseek";
   call(longAgo, 0.1);
 
   const b = billingSummary();
@@ -119,12 +157,53 @@ test("a ledger reaching into another month keeps the month counted", () => {
 test("with no balance to read, the total goes back to counting", () => {
   clearUsage();
   vendor(null, null);
+  state.provider = "deepseek";
   call(now, 0.25);
 
   const b = billingSummary();
   assert.equal(b.real, null);
   near(b.lifetime.cost, 0.25);
   near(b.month.cost, 0.25);
+});
+
+/* A ledger holding two vendors' turns cannot have one vendor's balance stand in
+   for the total: the balance is one account's money and the total is everybody's.
+   It is still reported, named, for whoever wants to compare the two. */
+test("a mixed ledger reports the vendor's figure beside the counted total", () => {
+  clearUsage();
+  vendor(20.3, 30, "deepseek");
+  state.provider = "deepseek";
+  call(now, 0.1);
+  recordUsage({
+    ts: now, session: "t", provider: "orcarouter", model: "orca-auto",
+    input: 1000, output: 100, cost: 0.4, priced: true, estimated: false,
+  });
+
+  const b = billingSummary();
+  assert.ok(b.real);
+  assert.equal(b.real.headline, false);
+  assert.equal(b.real.provider, "deepseek");
+  near(b.real.lifetime_usd, 9.7);
+  /* Counted, because the total is not DeepSeek's alone. */
+  near(b.lifetime.cost, 0.5);
+  near(b.month.cost, 0.5);
+});
+
+/* Where each vendor is asked. DeepSeek keeps /user/balance off the host while
+   Orca Router keeps /balance under its /v1 prefix, so stripping the version
+   from every base would aim one of them at nothing. */
+test("each balance endpoint is built from that vendor's own base", () => {
+  const spec = (id: string) => providerSpec(id)!;
+  const build = (id: string) => {
+    const base = spec(id).baseUrl.replace(/\/+$/, "");
+    const root = spec(id).balance!.root === "host" ? base.replace(/\/v1$/, "") : base;
+    return `${root}${spec(id).balance!.path}`;
+  };
+  assert.equal(build("deepseek"), "https://api.deepseek.com/user/balance");
+  assert.equal(build("orcarouter"), "https://api.orcarouter.ai/v1/balance");
+  assert.equal(build("openrouter"), "https://openrouter.ai/api/v1/credits");
+  /* A vendor with no balance endpoint is not asked anywhere. */
+  assert.equal(spec("openai").balance, undefined);
 });
 
 console.log(`\n${passed} passed`);
