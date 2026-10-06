@@ -53,22 +53,30 @@ export type Usage = {
     priced: boolean;
   }[];
   split?: { fresh: number; cached: number; output: number; covered: number };
-  /** What one vendor's own balance says, when it can be read: paid in, less
-      left. Null while there is nothing to read it from. */
-  real?: {
+  /** What each vendor's own balance says, when it can be read: paid in, less
+      left. One entry per vendor -- each is its own account's money, never a
+      figure borrowed from one and spent against another. Empty while there is
+      nothing to read it from. */
+  vendors?: {
     /** Which vendor's money this is. */
     provider: string;
     label: string;
     balance_usd: number;
-    topped_up_usd: number;
+    /** Null while nobody has said what was paid in: the balance is still a fact,
+        there is just no spend to take it away from. */
+    topped_up_usd: number | null;
     at: number;
-    lifetime_usd: number;
+    lifetime_usd: number | null;
     counted_usd: number;
     unaccounted_usd: number;
-    /** False when this is one vendor's figure beside a ledger that also holds
-        other vendors' turns, rather than the total itself. */
+    /** True only for the line standing in for the all-time total: one vendor's
+        money, with nobody else's turns in the ledger. The rest are reported as
+        what they are -- that vendor's own line. */
     headline: boolean;
-  } | null;
+    /** False when there is no paid-in figure, so the line is a balance rather
+        than a spend. */
+    spent_known: boolean;
+  }[];
   tool_feed?: { tool: string; calls: number; tokens: number }[];
   budget: {
     monthly_usd: number | null;
@@ -231,24 +239,36 @@ export function Billing({
         />
       </div>
 
-        {/* Where the all-time number comes from, said plainly: a vendor's own
-            balance is the only figure that cannot be wrong, so that is what the
-            total is built on -- and whose balance it is, because it is one
-            vendor's money and never everybody's. */}
-        {usage.real && (
-        <p className="jf-hint bill-real">
-          {usage.real.headline
-            ? `All time comes from ${usage.real.label}: `
-            : `${usage.real.label}'s own account says: `}
-          {money(usage.real.topped_up_usd)} paid in
-          less {money(usage.real.balance_usd)} left is {money(usage.real.lifetime_usd)} spent.
-          {" "}Counting tokens here accounts for {money(usage.real.counted_usd)} of that
-          {usage.real.unaccounted_usd > 0
-            ? " -- the rest is calls that were charged without reporting what they used, which no local count can see."
-            : "."}
-          {" "}Last balance read {when(usage.real.at)}.
+        {/* Where the all-time number comes from, said plainly, one line per
+            vendor: a balance is the only figure that cannot be wrong, so it is
+            what the total is built on -- and whose money each line is, because
+            one vendor's balance is never anybody else's. */}
+        {usage.vendors?.map((vendor) => (
+        <p className="jf-hint bill-real" key={vendor.provider}>
+          {vendor.spent_known
+            ? vendor.headline
+              ? `All time comes from ${vendor.label}: `
+              : `${vendor.label}'s own account says: `
+            : `${vendor.label}'s own account has `}
+          {vendor.spent_known ? (
+            <>
+              {money(vendor.topped_up_usd ?? 0)} paid in
+              less {money(vendor.balance_usd)} left is {money(vendor.lifetime_usd ?? 0)} spent.
+              {" "}Counting tokens here accounts for {money(vendor.counted_usd)} of that
+              {vendor.unaccounted_usd > 0
+                ? " -- the rest is calls that were charged without reporting what they used, which no local count can see."
+                : "."}
+            </>
+          ) : (
+            <>
+              {money(vendor.balance_usd)} left in it. Nothing is recorded as paid
+              in, so there is no spend to take that away from -- set it under
+              Settings and this line becomes one.
+            </>
+          )}
+          {" "}Last balance read {when(vendor.at)}.
         </p>
-      )}
+      ))}
 
       {/* The prompt cache is where an agent's cost is won or lost: every
           round resends the whole conversation, and the part the provider
@@ -433,10 +453,10 @@ export function Billing({
       <p className="bill-caveat">
         Counted here from the tokens each vendor reports, priced from the list
         prices shown when you pick a model
-        {usage.real?.headline
-          ? ` -- except the all-time total, which is ${usage.real.label}'s own money: paid in, less the balance left with it, so not an estimate at all`
-          : usage.real
-            ? `, including the all-time total. ${usage.real.label}'s own balance is reported above for comparison, but it is that one account's money and this ledger holds other vendors' turns too, so the total stays counted`
+        {usage.vendors?.some((vendor) => vendor.headline)
+          ? ` -- except the all-time total, which is ${usage.vendors.find((vendor) => vendor.headline)!.label}'s own money: paid in, less the balance left with it, so not an estimate at all`
+          : usage.vendors && usage.vendors.length > 0
+            ? `, including the all-time total. Each vendor's own balance is reported above, but every one of them is a single account's money and this ledger holds turns from more than one, so no one balance can be the total and it stays counted`
             : " -- including the all-time total"}
         . What counting cannot see is a call that ended before it reported its
         tokens -- an answer you stopped, or an attempt retried after a dropped

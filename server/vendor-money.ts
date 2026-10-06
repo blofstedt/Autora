@@ -30,7 +30,7 @@
  */
 
 import { keyFor, resolveProvider, save, state } from "./state";
-import { providerSpec } from "./providers";
+import { PROVIDERS, providerSpec } from "./providers";
 
 /** The real spend, as the vendor's own balance works it out. */
 export type VendorMoney = {
@@ -41,12 +41,14 @@ export type VendorMoney = {
   label: string;
   /** What is left with the vendor, in USD. */
   balance_usd: number;
-  /** Paid in so far, in USD. */
-  topped_up_usd: number;
+  /** Paid in so far, in USD. Null while nobody has said what went in, which is
+      not the same as nothing having gone in: the balance is still a fact. */
+  topped_up_usd: number | null;
   /** When the balance was last read, in seconds. */
   at: number;
-  /** Paid in, less what is left. */
-  lifetime_usd: number;
+  /** Paid in, less what is left. Null while there is no paid-in figure to take
+      it from -- a balance on its own says what is left, not what was spent. */
+  lifetime_usd: number | null;
 };
 
 /** How old a reading may be before another is worth making. The page asks for
@@ -135,14 +137,30 @@ export function balanceFor(id: string): { usd: number | null; at: number } {
   };
 }
 
-/** The real spend for one vendor, or null when it cannot be known. */
+/**
+ * One vendor's own line: what is left with it, and what has been paid in.
+ *
+ * A balance on its own is still worth reporting -- it is that account's money,
+ * and it is what the page can say for certain -- so a vendor nobody has typed a
+ * paid-in figure for gets a line saying what is left rather than no line at
+ * all. What it does not get is a spent figure: paid in less left needs both,
+ * and half of that pair is not arithmetic anybody should trust.
+ *
+ * Null only when nothing at all could be read from that vendor.
+ */
 export function vendorMoneyFor(id: string): VendorMoney | null {
   const label = providerSpec(id)?.label ?? id;
   const { usd, at } = balanceFor(id);
+  if (usd === null) return null;
   const toppedUp = topUpFor(id);
-  const spent = realSpend(usd, toppedUp);
-  if (spent === null || usd === null || toppedUp === null) return null;
-  return { provider: id, label, balance_usd: usd, topped_up_usd: toppedUp, at, lifetime_usd: spent };
+  return {
+    provider: id,
+    label,
+    balance_usd: usd,
+    topped_up_usd: toppedUp,
+    at,
+    lifetime_usd: realSpend(usd, toppedUp),
+  };
 }
 
 /** The real spend for the provider the next turn will actually call.
@@ -155,11 +173,41 @@ export function vendorMoney(id = resolveProvider().provider): VendorMoney | null
   return vendorMoneyFor(id);
 }
 
-/** True when the last reading is old enough that another is worth making. */
+/** Every vendor whose own money can be read, one entry each.
+
+    Each line is that one vendor's own account -- what is left with it, and what
+    has been spent where that can be worked out -- so several can sit side by
+    side without any of them being spent against another's usage. A vendor with
+    no balance endpoint, no key, or no balance read yet is left out rather than
+    shown as zero: nothing here is guessed, and an absent line means "not
+    known", never "nothing". */
+export function vendorMoneyAll(): VendorMoney[] {
+  return PROVIDERS.filter(
+    (spec) => spec.balance && keyFor(spec.id) && vendorMoneyFor(spec.id) !== null,
+  ).map((spec) => vendorMoneyFor(spec.id) as VendorMoney);
+}
+
+/** True when any vendor's last reading is old enough that another is worth making. */
 export function vendorMoneyStale(now = Date.now()): boolean {
-  const { at } = balanceFor(resolveProvider().provider);
-  if (!at) return true;
-  return now - at * 1000 > STALE_MS;
+  const due = PROVIDERS.filter((spec) => spec.balance && keyFor(spec.id)).map(
+    (spec) => balanceFor(spec.id).at,
+  );
+  if (due.length === 0) return false;
+  return due.some((at) => !at || now - at * 1000 > STALE_MS);
+}
+
+/**
+ * Read every vendor's balance, one after another.
+ *
+ * Each is its own account, so each is asked on its own; one that cannot be
+ * reached leaves its last reading in place and does not stop the others. The
+ * answer is every vendor's money, in the order they are listed.
+ */
+export async function refreshAllVendorMoney(): Promise<VendorMoney[]> {
+  for (const spec of PROVIDERS) {
+    if (spec.balance && keyFor(spec.id)) await refreshVendorMoney(spec.id);
+  }
+  return vendorMoneyAll();
 }
 
 /**

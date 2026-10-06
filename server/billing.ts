@@ -17,7 +17,7 @@
 
 import { PROVIDERS, providerSpec } from "./providers";
 import { carriedDays, carriedTotals, state, type UsageEntry } from "./state";
-import { vendorMoney } from "./vendor-money";
+import { vendorMoneyAll } from "./vendor-money";
 
 const DAYS_SHOWN = 30;
 const RECENT_TURNS = 25;
@@ -131,17 +131,28 @@ export function billingSummary() {
      were charged without reporting what they used -- an answer stopped
      mid-sentence, an attempt retried after a dropped connection -- and those
      are exactly where counting comes out low. */
-  const real = vendorMoney();
   const counted = all.cost + carried.cost;
-  /* The vendor's figure is one vendor's money. It can stand in for the lifetime
-     total only while the ledger holds nobody else's turns, and only when no
-     spend has aged out of it either -- a lump that dropped off the ledger may
-     well be another vendor's. Otherwise it is reported beside the total, for
-     whoever wants to compare the two, and the total stays counted. */
+  /* Each vendor's own answer, one line each: what has been paid in to that
+     vendor, less what is left with it. None of them is anybody else's money,
+     so all are reported, side by side, whoever is selected.
+
+     One vendor's figure stands in for the lifetime total only when it is the
+     only one there is and the ledger holds nobody else's turns -- and only
+     when no spend has aged out of it either, since a lump that dropped off
+     the ledger may well be another vendor's. Otherwise the total stays
+     counted and every line is reported beside it, for whoever wants to
+     compare the two. */
+  const vendors = vendorMoneyAll();
+  /* Only a line that knows what was paid in can speak for the total: a balance
+     alone says what is left, not what has gone. */
+  const spendable = vendors.filter((entry) => entry.lifetime_usd !== null);
+  const onlyOneVendor = spendable.length === 1;
   const onlyThatVendor =
-    byProvider.size === 0 || (byProvider.size === 1 && byProvider.has(real?.provider ?? ""));
-  const usableReal = real !== null && onlyThatVendor && carried.cost === 0 ? real : null;
-  const unaccounted = usableReal ? Math.max(0, usableReal.lifetime_usd - counted) : 0;
+    byProvider.size === 0 ||
+    (byProvider.size === 1 && byProvider.has(spendable[0]?.provider ?? ""));
+  const usableReal =
+    onlyOneVendor && onlyThatVendor && carried.cost === 0 ? spendable[0] ?? null : null;
+  const unaccounted = usableReal ? Math.max(0, (usableReal.lifetime_usd ?? 0) - counted) : 0;
   const lifetime = {
     cost: usableReal ? usableReal.lifetime_usd : counted,
     input: all.input + carried.input,
@@ -167,7 +178,9 @@ export function billingSummary() {
     oldest !== null &&
     monthKey(oldest) === month &&
     Object.keys(carriedDays()).every((day) => day.slice(0, 7) === month);
-  if (usableReal && nothingDatedOutsideThisMonth) monthBucket.cost = usableReal.lifetime_usd;
+  if (usableReal && nothingDatedOutsideThisMonth) {
+    monthBucket.cost = usableReal.lifetime_usd ?? monthBucket.cost;
+  }
 
   // A dense run of days, including the quiet ones: a chart that silently skips
   // the days you spent nothing makes a calm week look like a busy one.
@@ -226,24 +239,28 @@ export function billingSummary() {
         cost: entry.cost,
         priced: entry.priced,
       })),
-    /* What the vendor says, beside what was counted here, so the two can be
+    /* What each vendor says, beside what was counted here, so the two can be
        compared by anyone who wants to check the arithmetic rather than trust
-       the headline. Null when no balance can be read: nothing is guessed. */
-    real: real
-      ? {
-        provider: real.provider,
-        label: real.label,
-        balance_usd: real.balance_usd,
-        topped_up_usd: real.topped_up_usd,
-        at: real.at,
-        lifetime_usd: real.lifetime_usd,
-        counted_usd: counted,
-        unaccounted_usd: unaccounted,
-        /* False when the ledger holds other vendors' turns as well, so the page
-           can say whose figure this is rather than calling it the total. */
-        headline: usableReal !== null,
-      }
-      : null,
+       the headline. One line per vendor that publishes a balance and has had
+       money paid into it; empty when there is none, because nothing here is
+       guessed and an absent line means "not known", never "nothing". */
+    vendors: vendors.map((entry) => ({
+      provider: entry.provider,
+      label: entry.label,
+      balance_usd: entry.balance_usd,
+      topped_up_usd: entry.topped_up_usd,
+      at: entry.at,
+      lifetime_usd: entry.lifetime_usd,
+      counted_usd: counted,
+      unaccounted_usd: unaccounted,
+      /* True only for the one line standing in for the headline: a single
+         vendor's money, with nobody else's turns in the ledger. The rest are
+         reported as what they are -- that vendor's own line. */
+      headline: usableReal !== null && usableReal.provider === entry.provider,
+      /* False when nobody has said what was paid into this one, so the page can
+         report the balance as a balance rather than as spend. */
+      spent_known: entry.lifetime_usd !== null,
+    })),
     budget: {
       monthly_usd: budget,
       spent: monthBucket.cost,

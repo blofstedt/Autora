@@ -4889,10 +4889,24 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 }
 .art-card.is-picked .art-pick { background: var(--accent); border-color: var(--accent); }
 .art-thumb {
+  position: relative;
   display: flex; align-items: center; justify-content: center; aspect-ratio: 4 / 3;
   background: var(--sink); color: var(--text-3); text-decoration: none; overflow: hidden;
 }
 .art-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* A scan, a photo, a page of a PDF: a hairline so a white one is a picture of
+   paper rather than a hole in the card. */
+.art-shot { box-shadow: inset 0 0 0 1px var(--border); }
+/* What the file is, over its own first page — the only thing that tells two
+   white PDFs apart at a glance. */
+.art-badge {
+  position: absolute; top: 7px; right: 7px; z-index: 1;
+  padding: 2px 5px; border-radius: var(--r-xs);
+  font-family: var(--mono); font-size: calc(9.5px * var(--ts, 1)); font-weight: 650;
+  letter-spacing: 0.08em; color: var(--text-2);
+  background: color-mix(in srgb, var(--sink) 74%, transparent);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
 .art-kind { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .art-kind b { font-size: calc(11px * var(--ts, 1)); font-weight: 650; letter-spacing: 0.08em; color: var(--text-2); }
 .art-meta { display: flex; flex-direction: column; gap: 2px; padding: 9px 11px 4px; min-width: 0; }
@@ -4917,6 +4931,103 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
   .art-act { width: 38px; height: 38px; padding: 0; justify-content: center; }
 }
 .art-filed { margin: 0; color: var(--live); }
+
+/* Browsing a wall of files: find it, narrow it, say how it is arranged. */
+.art-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.art-find {
+  display: flex; align-items: center; gap: 7px; flex: 1 1 200px; max-width: 340px; height: 32px;
+  padding: 0 10px; border-radius: 99px; background: var(--s1); border: 1px solid var(--border); color: var(--text-3);
+}
+.art-find:focus-within { border-color: var(--accent-line); }
+.art-find input {
+  flex: 1 1 auto; min-width: 0; border: 0; background: none; outline: none;
+  color: var(--text); font: inherit; font-size: calc(13px * var(--ts, 1));
+}
+.art-find input::placeholder { color: var(--text-3); }
+.art-find-x {
+  display: grid; place-items: center; padding: 2px; border: 0; border-radius: 50%;
+  background: none; color: var(--text-3); cursor: pointer;
+}
+.art-find-x:hover { color: var(--text); }
+.art-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.art-chip {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px;
+  border-radius: 99px; background: var(--s2); border: 1px solid var(--border);
+  color: var(--text-2); font: inherit; font-size: calc(12.5px * var(--ts, 1)); cursor: pointer;
+}
+.art-chip:hover { border-color: var(--accent-line); }
+.art-chip em { font-style: normal; font-family: var(--mono); font-size: calc(10.5px * var(--ts, 1)); color: var(--text-3); }
+.art-chip.is-on { background: var(--accent-soft); border-color: var(--accent-line); color: var(--text); }
+.art-chip.is-on em { color: var(--accent-light); }
+.art-sorts { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.art-select { display: inline-flex; align-items: center; gap: 6px; font-size: calc(12px * var(--ts, 1)); color: var(--text-3); }
+.art-select select {
+  height: 28px; padding: 0 8px; border-radius: var(--r-sm); background: var(--s2);
+  border: 1px solid var(--border); color: var(--text);
+  font: inherit; font-size: calc(12.5px * var(--ts, 1));
+}
+.art-select select:focus-visible { outline: none; border-color: var(--accent-line); }
+.art-found { font-size: calc(12px * var(--ts, 1)); color: var(--text-3); }
+.art-link {
+  padding: 0; border: 0; background: none; color: var(--accent-light);
+  font: inherit; cursor: pointer; text-decoration: underline;
+}
+
+/* A group of files: one line that says what holds them together. */
+.art-head.art-toggle { width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; text-align: left; }
+.art-head.art-toggle:hover h3 { color: var(--accent-light); }
+.art-caret {
+  display: grid; place-items: center; width: 20px; height: 20px; flex: 0 0 auto;
+  border-radius: var(--r-xs); background: var(--s2); border: 1px solid var(--border);
+  color: var(--text-3); font-size: 10px; line-height: 1;
+}
+.art-when { font-family: var(--mono); font-size: calc(11px * var(--ts, 1)); color: var(--text-3); }
+.art-more { align-self: flex-start; }
+.art-owner {
+  display: inline-grid; place-items: center; width: 16px; height: 16px; flex: 0 0 auto;
+  border-radius: var(--r-xs); background: var(--s3); border: 1px solid var(--border); color: var(--text-3);
+}
+.art-owner.is-agent { color: var(--accent-light); border-color: var(--accent-line); }
+.art-sub { display: flex; align-items: center; gap: 6px; }
+
+/* The file's own face: a page, a few lines of what it says, or a tile that
+   names its kind. One tint per kind, so the wall can be read at a glance. */
+.art-tile.is-image, .art-paper.is-image { --tint: #b79cff; --wash: rgba(150, 120, 255, 0.14); }
+.art-tile.is-pdf, .art-paper.is-pdf { --tint: #ff8b84; --wash: rgba(226, 86, 79, 0.14); }
+.art-tile.is-doc, .art-paper.is-doc { --tint: #7db4ff; --wash: rgba(76, 141, 240, 0.14); }
+.art-tile.is-sheet, .art-paper.is-sheet { --tint: #6fd39a; --wash: rgba(66, 190, 124, 0.14); }
+.art-tile.is-slide, .art-paper.is-slide { --tint: #f5b26b; --wash: rgba(235, 150, 60, 0.14); }
+.art-tile.is-text, .art-paper.is-text { --tint: #6fd6d0; --wash: rgba(70, 200, 190, 0.14); }
+.art-tile.is-zip, .art-paper.is-zip { --tint: #d59cf0; --wash: rgba(190, 120, 230, 0.14); }
+.art-tile.is-file, .art-paper.is-file { --tint: var(--text-3); --wash: var(--s3); }
+.art-shot { width: 100%; height: 100%; object-fit: cover; display: block; }
+.art-tile {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; height: 100%; box-sizing: border-box; background: var(--wash); color: var(--tint);
+}
+.art-tile b {
+  font-family: var(--mono); font-size: calc(10.5px * var(--ts, 1)); font-weight: 650;
+  letter-spacing: 0.1em; color: var(--text-2);
+}
+.art-paper {
+  position: relative; display: flex; flex-direction: column; justify-content: flex-start;
+  width: 100%; height: 100%; box-sizing: border-box; padding: 18px 12px 10px 13px;
+  background: var(--s1); border-left: 3px solid var(--tint);
+}
+.art-paper-tag {
+  position: absolute; top: 7px; right: 9px; font-family: var(--mono);
+  font-size: calc(9.5px * var(--ts, 1)); letter-spacing: 0.08em; color: var(--tint);
+}
+.art-paper-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; overflow: hidden; }
+.art-paper-text i {
+  font-style: normal; font-size: calc(10.5px * var(--ts, 1)); line-height: 1.35; opacity: 0.66;
+  color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.art-paper-text i:first-child { opacity: 1; color: var(--text); }
+@media (max-width: 680px) {
+  .art-find { max-width: none; }
+  .art-select span { display: none; }
+}
 
 /* Tools: the built-in windows, one switch each. */
 .tw-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }

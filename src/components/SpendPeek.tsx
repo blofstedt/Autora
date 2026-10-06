@@ -20,7 +20,7 @@ import { IconX } from "./Icons";
  * is a snapshot from the last turn: a modal that quotes a stale total while
  * claiming to be the detail view is worse than the bar it replaced.
  */
-type Spend = Pick<Usage, "currency" | "since" | "lifetime" | "today" | "month" | "budget" | "real">;
+type Spend = Pick<Usage, "currency" | "since" | "lifetime" | "today" | "month" | "budget" | "vendors">;
 
 export function SpendPeek({
   session,
@@ -60,9 +60,10 @@ export function SpendPeek({
 
   const cap = usage?.budget.monthly_usd ?? null;
   const spent = usage?.month.cost ?? 0;
-  /* The selected vendor's own money draws the credit bar, and only while the
-     ledger is that vendor's alone -- see SpendBar. */
-  const paidIn = creditTotal(usage?.real?.headline ? usage.real : null);
+  /* Only the one vendor whose money is the whole ledger draws the credit bar,
+     and only while that holds -- see SpendBar. Several vendors means no single
+     balance is the truth of it, so the bar stays on the month. */
+  const paidIn = creditTotal(usage?.vendors?.find((vendor) => vendor.headline) ?? null);
   const view = spendView({
     spent,
     session,
@@ -146,12 +147,22 @@ export function SpendPeek({
                 money(usage.lifetime.cost),
                 usage.since ? `since ${new Date(usage.since * 1000).toLocaleDateString()}` : undefined,
               )}
-              {usage.real &&
-                row(
-                  `Paid in to ${usage.real.label}`,
-                  money(usage.real.topped_up_usd),
-                  `${money(usage.real.balance_usd)} left there`,
-                )}
+              {/* One row per vendor: each is its own account's money, so each is
+                  named rather than folded into one another. One nobody has said
+                  a paid-in figure for still gets its row, as a balance. */}
+              {usage.vendors?.map((vendor) =>
+                vendor.spent_known
+                  ? row(
+                      `Paid in to ${vendor.label}`,
+                      money(vendor.topped_up_usd ?? 0),
+                      `${money(vendor.balance_usd)} left there`,
+                    )
+                  : row(
+                      `Left at ${vendor.label}`,
+                      money(vendor.balance_usd),
+                      "nothing recorded as paid in",
+                    ),
+              )}
               {session > 0 && row("This session", money(session))}
             </>
           )}

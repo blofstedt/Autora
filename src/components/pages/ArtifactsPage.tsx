@@ -1,23 +1,15 @@
 import {
-  useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode,
+  useCallback, useEffect, useMemo, useRef, useState,
+  type MouseEvent, type PointerEvent, type ReactNode,
 } from "react";
 import type { SessionRow } from "../Sessions";
 import { LibraryPicker } from "../LibraryPicker";
 import { addToNotebook, type Notebook } from "../../lib/notebooks";
+import { ArtThumb, canPicture, kindOf, type Artifact } from "../ArtThumb";
 import {
-  IconCheck, IconDownload, IconFile, IconMark, IconNotebook, IconTrash, IconUpload, IconUser, IconX,
+  IconCheck, IconDownload, IconMark, IconNotebook, IconSearch, IconTrash,
+  IconUpload, IconUser, IconX,
 } from "../Icons";
-
-type Artifact = {
-  id: string;
-  origin: "agent" | "user";
-  name: string;
-  mime: string;
-  size: number;
-  ts: number;
-  session?: string;
-  note?: string;
-};
 
 const size = (bytes: number) =>
   bytes < 1024 ? `${bytes} B`
@@ -27,34 +19,87 @@ const size = (bytes: number) =>
 const date = (ts: number) =>
   new Date(ts).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
-/** A short word for the file's kind, for the badge on a card with no picture. */
-function kind(a: Artifact): string {
-  const ext = a.name.includes(".") ? a.name.split(".").pop()!.toUpperCase() : "";
-  if (ext && ext.length <= 5) return ext;
-  return a.mime.split("/")[1]?.toUpperCase().slice(0, 5) || "FILE";
-}
-
-const isPicture = (a: Artifact) => a.mime.startsWith("image/") && a.mime !== "image/svg+xml";
-
 const NOTEBOOK_TAB: "notebooks"[] = ["notebooks"];
 
-/**
- * Artifacts: the files of the workspace, in two piles. What Autora made --
- * generated images, documents it wrote, files it built and handed over -- and
- * what you uploaded for it to work with. The agent can list and read both.
- *
- * Selection mode is what makes clearing out a pile of them bearable: pick any
- * number of cards, across both piles, and delete them in one go. It starts the
- * way it does in a phone's gallery -- press and hold a card -- so there is no
- * Select bar taking room when nobody is selecting. Everything else on the page
- * stays exactly as it was when it is off, which is why the per-card buttons
- * are only hidden while it is on rather than removed.
- */
+/** The sort of thing a file is, for the filter chips. */
+type Kind = "all" | "image" | "pdf" | "doc" | "sheet" | "slide" | "text" | "other";
+type Grouping = "session" | "date" | "kind" | "none";
+type Order = "new" | "old" | "big" | "name";
+type Who = "all" | "agent" | "user";
 
+const extOf = (a: Artifact) =>
+  (a.name.includes(".") ? a.name.split(".").pop()! : "").toUpperCase();
+
+function kindOfArtifact(a: Artifact): Kind {
+  const ext = extOf(a);
+  if (a.mime === "application/pdf" || ext === "PDF") return "pdf";
+  if (a.mime.startsWith("image/") && a.mime !== "image/svg+xml") return "image";
+  if (a.mime.startsWith("image/")) return "image";
+  if (["XLS", "XLSX", "XLSM", "CSV", "ODS", "NUMBERS"].includes(ext)) return "sheet";
+  if (["PPT", "PPTX", "KEY", "ODP"].includes(ext)) return "slide";
+  if (["DOC", "DOCX", "DOCM", "RTF", "ODT", "PAGES"].includes(ext)) return "doc";
+  if (a.mime.startsWith("text/") || ["MD", "MARKDOWN", "JSON", "XML", "YAML", "YML", "LOG", "TXT", "HTML", "HTM", "JS", "TS", "TSX", "PY", "SH", "CSS", "SQL"].includes(ext)) return "text";
+  return "other";
+}
+
+const CHIPS: { key: Kind; label: string }[] = [
+  { key: "all", label: "Everything" },
+  { key: "image", label: "Images" },
+  { key: "pdf", label: "PDFs" },
+  { key: "doc", label: "Documents" },
+  { key: "sheet", label: "Sheets" },
+  { key: "slide", label: "Slides" },
+  { key: "text", label: "Text" },
+  { key: "other", label: "Other" },
+];
+
+const KIND_WORD: Record<Kind, string> = {
+  all: "Files", image: "Images", pdf: "PDFs", doc: "Documents",
+  sheet: "Sheets", slide: "Slides", text: "Text", other: "Other files",
+};
+
+/** How many cards a group shows before it offers the rest. */
+const PREVIEW = 24;
 /** How long a press has to last to start selecting. */
 const HOLD_MS = 450;
 /** A press that moves further than this is a scroll, not a hold. */
 const HOLD_SLOP = 10;
+
+const order = (list: Artifact[], by: Order): Artifact[] => {
+  const out = [...list];
+  if (by === "new") out.sort((a, b) => b.ts - a.ts);
+  else if (by === "old") out.sort((a, b) => a.ts - b.ts);
+  else if (by === "big") out.sort((a, b) => b.size - a.size);
+  else out.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  return out;
+};
+
+/** A day named the way a person would: today, yesterday, then the date. */
+function dayLabel(ts: number): string {
+  const then = new Date(ts);
+  const midnight = new Date(then.getFullYear(), then.getMonth(), then.getDate()).getTime();
+  const days = Math.round((Date.now() - midnight) / 86_400_000);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return then.toLocaleDateString([], { weekday: "long" });
+  return then.toLocaleDateString([], { month: "long", year: then.getFullYear() === new Date().getFullYear() ? undefined : "numeric", day: "numeric" });
+}
+
+type Group = { key: string; title: string; sub?: string; icon?: ReactNode; list: Artifact[] };
+
+/**
+ * Artifacts: every file of the workspace on one page, arranged so that a
+ * hundred of them can be read instead of scrolled past. Files are grouped by
+ * the conversation they came out of (or by date, or by kind), searched by name,
+ * note or session, filtered by what they are and by who made them, and drawn
+ * as themselves -- a PDF's first page, a document's first lines, a tile whose
+ * colour says what kind of file it is -- rather than as a wall of grey.
+ *
+ * Selection mode is what makes clearing out a pile of them bearable: pick any
+ * number of cards and delete or file them in one go. It starts the way it does
+ * in a phone's gallery -- press and hold a card -- so there is no Select bar
+ * taking room when nobody is selecting.
+ */
 export function ArtifactsPage({
   sessions, onOpenSession,
 }: {
@@ -71,6 +116,14 @@ export function ArtifactsPage({
   const [removing, setRemoving] = useState(false);
   const [filing, setFiling] = useState(false);
   const [filed, setFiled] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [kind, setKind] = useState<Kind>("all");
+  const [who, setWho] = useState<Who>("all");
+  const [grouping, setGrouping] = useState<Grouping>("session");
+  const [sort, setSort] = useState<Order>("new");
+  /** Group keys folded shut, and group keys showing every card. */
+  const [closed, setClosed] = useState<string[]>([]);
+  const [opened, setOpened] = useState<string[]>([]);
   const picker = useRef<HTMLInputElement>(null);
   /** The press being timed, and whether the last one became a hold (so the
       click that ends it does not also open the file). */
@@ -219,17 +272,81 @@ export function ArtifactsPage({
     }
   };
 
-  const all = items ?? [];
-  const made = all.filter((a) => a.origin === "agent");
-  const uploaded = all.filter((a) => a.origin === "user");
-  const titleOf = (id?: string) => sessions.find((s) => s.id === id)?.title?.trim() || null;
-  const allPicked = all.length > 0 && picked.length === all.length;
-
-  const thumb = (a: Artifact) => (
-    isPicture(a)
-      ? <img src={`/api/artifacts/${a.id}`} alt={a.note || a.name} loading="lazy" />
-      : <span className="art-kind"><IconFile size={26} /><b>{kind(a)}</b></span>
+  const all = useMemo(() => items ?? [], [items]);
+  const titleOf = useCallback(
+    (id?: string) => sessions.find((s) => s.id === id)?.title?.trim() || null,
+    [sessions],
   );
+
+  const search = query.trim().toLowerCase();
+  const filtersOn = kind !== "all" || who !== "all" || search.length > 0;
+
+  const counts = useMemo(() => {
+    const out: Record<string, number> = { all: all.length };
+    for (const a of all) {
+      const k = kindOfArtifact(a);
+      out[k] = (out[k] ?? 0) + 1;
+    }
+    return out;
+  }, [all]);
+
+  const shown = useMemo(() => order(all.filter((a) => {
+    if (who !== "all" && a.origin !== who) return false;
+    if (kind !== "all" && kindOfArtifact(a) !== kind) return false;
+    if (search && !`${a.name} ${a.note ?? ""} ${titleOf(a.session) ?? ""}`.toLowerCase().includes(search)) return false;
+    return true;
+  }), sort), [all, who, kind, search, sort, titleOf]);
+
+  const groups = useMemo((): Group[] => {
+    if (grouping === "none") return [{ key: "all", title: "", list: shown }];
+    if (grouping === "kind") {
+      const wanted: Kind[] = ["image", "pdf", "doc", "sheet", "slide", "text", "other"];
+      return wanted
+        .map((k) => ({ key: k, title: KIND_WORD[k], list: shown.filter((a) => kindOfArtifact(a) === k) }))
+        .filter((g) => g.list.length > 0);
+    }
+    if (grouping === "date") {
+      // `shown` is already in order, so each new day starts a new group.
+      const out: Group[] = [];
+      for (const a of shown) {
+        const label = dayLabel(a.ts);
+        const last = out[out.length - 1];
+        if (last && last.key === label) last.list.push(a);
+        else out.push({ key: label, title: label, list: [a] });
+      }
+      return out;
+    }
+    // Session: the conversation a file came out of, newest first.
+    const byKey = new Map<string, Artifact[]>();
+    for (const a of shown) {
+      const key = a.session || "none";
+      const list = byKey.get(key);
+      if (list) list.push(a);
+      else byKey.set(key, [a]);
+    }
+    return [...byKey.entries()]
+      .map(([key, list]) => ({ key, list, newest: list.reduce((t, a) => Math.max(t, a.ts), 0) }))
+      .sort((a, b) => b.newest - a.newest)
+      .map(({ key, list, newest }): Group => ({
+        key,
+        // Most files came out of conversations the session list no longer
+        // holds, and every one of those used to read as the same title. With
+        // no title to use, the group is named by when it came out, which tells
+        // two of them apart instead of printing one wrong sentence twice.
+        title: key === "none" ? "Not from a conversation" : (titleOf(key) ?? date(newest)),
+        sub: key !== "none" && !titleOf(key)
+          ? `An earlier conversation · ${list.length} ${list.length === 1 ? "file" : "files"}`
+          : `${date(newest)} · ${list.length} ${list.length === 1 ? "file" : "files"}`,
+        icon: <IconMark size={14} />,
+        list,
+      }));
+  }, [shown, grouping, titleOf]);
+
+  const shownIds = shown.map((a) => a.id);
+  const allPicked = shownIds.length > 0 && shownIds.every((id) => picked.includes(id));
+  const clearFilters = () => { setQuery(""); setKind("all"); setWho("all"); };
+  const fold = (key: string, list: string[], set: (v: string[]) => void) =>
+    set(list.includes(key) ? list.filter((k) => k !== key) : [...list, key]);
 
   const grid = (list: Artifact[]) => (
     <div className="art-grid">
@@ -253,7 +370,7 @@ export function ArtifactsPage({
               <span className="art-pick" aria-hidden="true">{on && <IconCheck size={13} />}</span>
             )}
             {selecting ? (
-              <span className="art-thumb">{thumb(a)}</span>
+              <span className="art-thumb"><ArtThumb a={a} /></span>
             ) : (
               <a
                 className="art-thumb"
@@ -262,14 +379,25 @@ export function ArtifactsPage({
                 rel="noreferrer"
                 title={`Open ${a.name}`}
               >
-                {thumb(a)}
+                <ArtThumb a={a} />
+                {/* A white page of a white PDF tells you nothing; the corner
+                    label says what the file is either way. */}
+                {canPicture(a) && <span className="art-badge">{kindOf(a)}</span>}
               </a>
             )}
             <div className="art-meta">
               <b title={a.name}>{a.name}</b>
-              <em>{size(a.size)} · {date(a.ts)}</em>
+              <em className="art-sub">
+                <span
+                  className={`art-owner is-${a.origin}`}
+                  title={a.origin === "agent" ? "Made by Autora" : "Uploaded by you"}
+                >
+                  {a.origin === "agent" ? <IconMark size={11} /> : <IconUser size={11} />}
+                </span>
+                {size(a.size)} · {date(a.ts)}
+              </em>
               {a.note && <span className="art-note" title={a.note}>{a.note}</span>}
-              {!selecting && a.session && titleOf(a.session) && (
+              {!selecting && grouping !== "session" && a.session && titleOf(a.session) && (
                 <button className="art-session" onClick={() => onOpenSession(a.session!)}>
                   in “{titleOf(a.session)}”
                 </button>
@@ -301,21 +429,6 @@ export function ArtifactsPage({
     </div>
   );
 
-  const section = (
-    title: string, icon: ReactNode, list: Artifact[], empty: ReactNode, action?: ReactNode,
-  ) => (
-    <section className="art-section">
-      <div className="art-head">
-        <span className="tool-icon">{icon}</span>
-        <h3>{title}</h3>
-        <span className="art-count">{list.length}</span>
-        <div className="spacer" />
-        {action}
-      </div>
-      {items === null ? null : list.length === 0 ? <p className="jf-hint art-empty">{empty}</p> : grid(list)}
-    </section>
-  );
-
   return (
     <div
       className={`page-scroll ${dragging ? "art-dragging" : ""}`}
@@ -331,8 +444,9 @@ export function ArtifactsPage({
       <div className="page-inner">
         <p className="jf-hint art-lede">
           Everything Autora makes for you and everything you give it: generated
-          images, documents it writes, and the files and photos you upload. The
-          agent can find and read all of them. Press and hold a file to select.
+          images, documents it writes, and the files and photos you upload. Grouped
+          by the conversation they came out of, with each file drawn as itself. Press
+          and hold a file to select.
         </p>
         {error && <p className="set-warn">{error}</p>}
         {filed && <p className="jf-hint art-filed" role="status">{filed}</p>}
@@ -347,7 +461,7 @@ export function ArtifactsPage({
           />
         )}
 
-        {selecting && all.length > 0 && (
+        {selecting && all.length > 0 ? (
           /* One row, one style: leave and the count on the left, the two
              things to do with the picked files on the right. */
           <div className="art-toolbar" role="toolbar" aria-label="Selected files">
@@ -364,7 +478,7 @@ export function ArtifactsPage({
             <span className="sr-only" aria-live="polite">{picked.length} selected</span>
             <button
               className="art-selall"
-              onClick={() => setPicked(allPicked ? [] : all.map((a) => a.id))}
+              onClick={() => setPicked(allPicked ? [] : shownIds)}
               disabled={removing}
             >
               {allPicked ? "Clear" : "Select all"}
@@ -389,28 +503,127 @@ export function ArtifactsPage({
               <IconTrash size={15} /> <span className="art-act-word">Delete</span>
             </button>
           </div>
-        )}
-
-        {section(
-          "Made by Autora", <IconMark size={14} />, made,
-          "Nothing yet. Images Autora generates and files it saves for you appear here.",
-        )}
-
-        {section(
-          "Uploaded by you", <IconUser size={14} />, uploaded,
-          <>Upload documents, photos or anything else for Autora to work with — or drop files anywhere on this page.</>,
+        ) : (
           <>
-            <input
-              ref={picker}
-              type="file"
-              multiple
-              hidden
-              onChange={(e) => { if (e.target.files) void upload(e.target.files); e.target.value = ""; }}
-            />
-            <button className="btn primary" disabled={!!uploading} onClick={() => picker.current?.click()}>
-              <IconUpload size={14} /> {uploading ? `Uploading ${uploading}…` : "Upload"}
-            </button>
-          </>,
+            <div className="art-tools">
+              <span className="art-find">
+                <IconSearch size={14} />
+                <input
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search files"
+                  aria-label="Search files by name or note"
+                />
+                {query && (
+                  <button className="art-find-x" onClick={() => setQuery("")} aria-label="Clear search">
+                    <IconX size={13} />
+                  </button>
+                )}
+              </span>
+              <div className="spacer" />
+              <input
+                ref={picker}
+                type="file"
+                multiple
+                hidden
+                onChange={(e) => { if (e.target.files) void upload(e.target.files); e.target.value = ""; }}
+              />
+              <button className="btn primary" disabled={!!uploading} onClick={() => picker.current?.click()}>
+                <IconUpload size={14} /> {uploading ? `Uploading ${uploading}…` : "Upload"}
+              </button>
+            </div>
+
+            <div className="art-chips" role="group" aria-label="Filter by kind">
+              {CHIPS.filter((c) => c.key === "all" || counts[c.key]).map((c) => (
+                <button
+                  key={c.key}
+                  className={`art-chip${kind === c.key ? " is-on" : ""}`}
+                  aria-pressed={kind === c.key}
+                  onClick={() => setKind(c.key)}
+                >
+                  {c.label} <em>{counts[c.key] ?? 0}</em>
+                </button>
+              ))}
+            </div>
+
+            <div className="art-sorts">
+              <label className="art-select">
+                <span>Who</span>
+                <select value={who} onChange={(e) => setWho(e.target.value as Who)}>
+                  <option value="all">Everyone</option>
+                  <option value="agent">Made by Autora</option>
+                  <option value="user">Yours</option>
+                </select>
+              </label>
+              <label className="art-select">
+                <span>Grouped by</span>
+                <select value={grouping} onChange={(e) => setGrouping(e.target.value as Grouping)}>
+                  <option value="session">Conversation</option>
+                  <option value="date">Date</option>
+                  <option value="kind">Kind of file</option>
+                  <option value="none">Nothing</option>
+                </select>
+              </label>
+              <label className="art-select">
+                <span>Order</span>
+                <select value={sort} onChange={(e) => setSort(e.target.value as Order)}>
+                  <option value="new">Newest first</option>
+                  <option value="old">Oldest first</option>
+                  <option value="big">Largest first</option>
+                  <option value="name">By name</option>
+                </select>
+              </label>
+              {filtersOn && (
+                <button className="art-chip" onClick={clearFilters}>Clear filters</button>
+              )}
+              {items && filtersOn && (
+                <span className="art-found">{shown.length} of {all.length} files</span>
+              )}
+            </div>
+          </>
+        )}
+
+        {items === null ? null : all.length === 0 ? (
+          <p className="jf-hint art-empty">
+            Nothing yet. Images Autora generates and files it saves for you appear here — drop a
+            file anywhere on this page to add one of your own.
+          </p>
+        ) : shown.length === 0 ? (
+          <p className="jf-hint art-empty">
+            No file matches that.{" "}
+            <button className="art-link" onClick={clearFilters}>Clear the filters</button>.
+          </p>
+        ) : (
+          groups.map((g) => {
+            const shut = closed.includes(g.key);
+            const wide = opened.includes(g.key);
+            const list = wide ? g.list : g.list.slice(0, PREVIEW);
+            return (
+              <section className="art-section" key={g.key}>
+                {g.title && (
+                  <button
+                    className="art-head art-toggle"
+                    aria-expanded={!shut}
+                    onClick={() => fold(g.key, closed, setClosed)}
+                  >
+                    {g.icon && <span className="tool-icon">{g.icon}</span>}
+                    <h3>{g.title}</h3>
+                    <span className="art-count">{g.list.length}</span>
+                    <div className="spacer" />
+                    {g.sub && <span className="art-when">{g.sub}</span>}
+                    <span className="art-caret" aria-hidden="true">{shut ? "▸" : "▾"}</span>
+                  </button>
+                )}
+                {!shut && grid(list)}
+                {!shut && g.list.length > PREVIEW && (
+                  <button className="btn ghost art-more" onClick={() => fold(g.key, opened, setOpened)}>
+                    {wide ? "Show fewer" : `Show all ${g.list.length}`}
+                  </button>
+                )}
+              </section>
+            );
+          })
         )}
       </div>
     </div>

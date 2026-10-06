@@ -58,7 +58,7 @@ test("spend that falls off the ledger is still in today and this month", () => {
   assert.equal(carried.turns, 3);
 
   const b = billingSummary();
-  near(b.lifetime.cost, EACH * 5003);
+  near(b.lifetime.cost ?? -1, EACH * 5003);
   /* Before the fix this read EACH * 5000: the three that aged out were in
      the lifetime figure and nowhere else. On the 1st of a month yesterday
      is last month, and rightly not in this one: the test used to fail on

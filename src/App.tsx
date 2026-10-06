@@ -1830,7 +1830,7 @@ export function App() {
                     session={sessionCost}
                     budget={usage.budget.monthly_usd}
                     lifetime={usage.lifetime.cost}
-                    real={usage.real}
+                    vendors={usage.vendors}
                     onOpen={() => navigate("analytics")}
                   />
                 </div>
@@ -1862,7 +1862,7 @@ export function App() {
                       session={sessionCost}
                       budget={usage.budget.monthly_usd}
                       lifetime={usage.lifetime.cost}
-                      real={usage.real}
+                      vendors={usage.vendors}
                       onOpen={() => navigate("analytics")}
                     />
                   )}

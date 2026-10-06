@@ -59,13 +59,14 @@ import {
   type ChatMessage, type ChatTurn, type ToolReply,
 } from "./server/llm";
 import { billingSummary, dayKey } from "./server/billing";
-import { refreshVendorMoney, vendorMoneyStale } from "./server/vendor-money";
+import { refreshAllVendorMoney, refreshVendorMoney, vendorMoneyStale } from "./server/vendor-money";
 import { dropSession, fromDataUrl, getBlob, putBlob } from "./server/blobs";
 import { threeRuntime } from "./server/widgets";
 import {
   MAX_ARTIFACT_BYTES, cleanName, deleteArtifact, getArtifact, listArtifacts, readArtifact, saveArtifact,
 } from "./server/artifacts";
 import { restore as restoreVersion, snapshot as snapshotFolder, versions as folderVersions } from "./server/snapshots";
+import { forgetThumb, previewOf, thumbOf } from "./server/thumbs";
 import {
   installFromStore, installPackage, listExtensions, removeExtension, setExtensionEnabled,
 } from "./server/extensions";
@@ -5734,9 +5735,48 @@ async function startServer() {
     res.end(data);
   });
 
+  /** The small picture of a file the page shows on its card. Drawn once and
+      kept, so it is immutable like the artifact is. */
+  app.get("/api/artifacts/:id/thumb", async (req: Request, res: Response) => {
+    const meta = getArtifact(req.params.id);
+    if (!meta) return res.status(404).json({ error: "No such artifact" });
+    let file: string | null = null;
+    try {
+      file = await thumbOf(meta);
+    } catch {
+      file = null;
+    }
+    if (!file) {
+      // Not cached: this kind may become drawable (a renderer can come back).
+      res.setHeader("Cache-Control", "no-store");
+      return res.status(404).json({ error: "There is no picture of this file." });
+    }
+    res.setHeader("Content-Type", "image/jpeg");
+    res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.sendFile(file, (err?: Error) => {
+      if (err && !res.headersSent) res.status(404).end();
+    });
+  });
+
+  /** The first lines of a document that has no picture to draw, for the
+      card to show as text instead of a grey tile. */
+  app.get("/api/artifacts/:id/preview", (req: Request, res: Response) => {
+    const meta = getArtifact(req.params.id);
+    if (!meta) return res.status(404).json({ error: "No such artifact" });
+    const preview = previewOf(meta);
+    if (!preview) {
+      res.setHeader("Cache-Control", "no-store");
+      return res.status(404).json({ error: "There is nothing to read out of this file." });
+    }
+    res.setHeader("Cache-Control", "private, max-age=86400");
+    res.json(preview);
+  });
+
   app.delete("/api/artifacts/:id", (req: Request, res: Response) => {
     if (!deleteArtifact(req.params.id)) return res.status(404).json({ error: "No such artifact" });
     forgetArtifact(req.params.id);
+    forgetThumb(req.params.id);
     res.json({ ok: true });
   });
 
@@ -7730,12 +7770,12 @@ async function startServer() {
   /** What has been spent, and on what. Read-only: the ledger is written by
       the turns themselves, one row each, as they finish. */
   app.get("/api/usage", (req: Request, res: Response) => {
-    /* The vendor's balance is what the real total is read from, and it is
-       fetched behind the answer rather than in front of it: this route is
+    /* Every vendor's balance is what the real totals are read from, and those
+       are fetched behind the answer rather than in front of it: this route is
        asked at the end of every turn and on every window focus, and it must
        never wait on somebody else's server to answer. A stale reading starts
-       a refresh; this reply carries the one already known. */
-    if (vendorMoneyStale()) void refreshVendorMoney();
+       a refresh of all of them; this reply carries what is already known. */
+    if (vendorMoneyStale()) void refreshAllVendorMoney();
     res.json(billingSummary());
   });
 

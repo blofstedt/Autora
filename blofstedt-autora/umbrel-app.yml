@@ -134,13 +134,22 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  The money figures follow the provider you have selected. The balance used to be read from
-  DeepSeek whatever key was chosen, so with another provider selected the spend bar showed
-  somebody else's credit against your usage. Each provider now publishes where its balance
-  lives and the app asks that one: Orca Router's own account is read for Orca spend, DeepSeek's
-  for DeepSeek. A vendor's figure also stops standing in for the all-time total as soon as the
-  ledger holds turns from more than one provider -- it is reported beside the counted total,
-  named, rather than replacing it. The "paid in" box in Settings says whose account it edits.
+  Every API you pay into gets its own line on the Usage page. The balance used to be a single
+  figure that followed whichever provider you had selected, so one vendor's money stood in for
+  another's and the rest went unreported. Now each provider that publishes a balance is asked
+  for it: DeepSeek reports what is left of what you paid DeepSeek, Orca Router reports Orca
+  Router, and both appear at once -- paid in, left, and the difference -- each named. The
+  headline total takes a vendor's exact figure only when that vendor is the only money in play;
+  otherwise the counted total stands and the vendor lines sit beside it. A vendor whose balance
+  is readable but whose paid-in amount is not recorded still shows its line, saying what is
+  left. Also new: the Artifacts page draws thumbnails for images and PDFs instead of a plain
+  icon, so a folder of files reads as pictures. Earlier: the money figures followed the
+  provider you had selected. The balance used to be read from DeepSeek whatever key was chosen,
+  so with another provider selected the spend bar showed somebody else's credit against your
+  usage. Each provider now publishes where its balance lives and the app asks that one. A
+  vendor's figure also stops standing in for the all-time total as soon as the ledger holds
+  turns from more than one provider -- it is reported beside the counted total, named, rather
+  than replacing it. The "paid in" box in Settings says whose account it edits.
   Earlier: the PDF window is Spectra now: rebuilt inside Autora, its own look abandoned for Autora's -- the
   same dark surfaces, violet accent, type and easing as every other window. It reads and writes
   PDFs -- splitting, merging, rotating, extracting and reordering pages, OCR over a scan, forms
@@ -150,4 +159,3 @@ releaseNotes: >-
   are installed for the architecture the image is for, so the arm64 image works as well as the
   x86_64 one.
   Earlier: Pages, Sheets, Slides and the browser window in Autora's chrome.
-

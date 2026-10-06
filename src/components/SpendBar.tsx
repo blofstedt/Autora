@@ -8,18 +8,22 @@ export type Usage = {
   month: { cost: number };
   lifetime: { cost: number };
   budget: { monthly_usd: number | null };
-  /** What one vendor's own balance says, when it can be read at all. */
-  real?: {
+  /** What each vendor's own balance says, when it can be read at all. One entry
+      per vendor; each is that account's money alone. */
+  vendors?: {
     /** Which vendor's money this is. */
     provider: string;
     label: string;
-    topped_up_usd: number;
+    topped_up_usd: number | null;
     balance_usd: number;
-    lifetime_usd: number;
-    /** False when this is one vendor's figure beside a ledger holding other
-        vendors' turns -- and then the bar must not draw it as its own. */
+    lifetime_usd: number | null;
+    /** True only for the one line that is the whole truth of the ledger: a
+        single vendor's money with nobody else's turns in it. Only that line may
+        draw this bar. */
     headline: boolean;
-  } | null;
+    /** False when there is no paid-in figure, so there is no credit to draw. */
+    spent_known: boolean;
+  }[];
 };
 
 /**
@@ -43,7 +47,7 @@ export const SpendBar = memo(function SpendBar({
   session,
   budget,
   lifetime,
-  real,
+  vendors,
   onOpen,
 }: {
   spent: number;
@@ -51,15 +55,17 @@ export const SpendBar = memo(function SpendBar({
   budget: number | null;
   /** Everything the ledger has ever counted, which is the credit consumed. */
   lifetime: number;
-  /** The selected vendor's own balance, when this app was able to read it. */
-  real?: Usage["real"];
+  /** Every vendor's own balance this app was able to read, one each. */
+  vendors?: Usage["vendors"];
   onOpen: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  /* Only the selected vendor's own money draws this bar, and only while the
-     ledger is that vendor's alone. A mix of vendors means no single balance is
-     the truth of the whole, so the bar stays on the month it counted. */
-  const credit = creditTotal(real?.headline ? real : null);
+  /* Only one vendor's own money draws this bar, and only while the ledger is
+     that vendor's alone: the fill is credit consumed out of credit paid in,
+     which is a single account's arithmetic. Several vendors means no one
+     balance is the truth of the whole, so the bar stays on the month it
+     counted. */
+  const credit = creditTotal(vendors?.find((vendor) => vendor.headline) ?? null);
   const view = spendView({ spent, session, budget, lifetime, credit });
   if (!view.show) return null;
 
