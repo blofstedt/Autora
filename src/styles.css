@@ -6159,8 +6159,20 @@ button.dock-card:hover { border-color: var(--border-strong); }
 .app-pane {
   flex: 1; min-width: 0; min-height: 0; display: flex;
   border-left: 1px solid var(--border-strong); background: var(--bg);
-  animation: appPaneIn 0.28s var(--ease, ease) both;
+  animation: appPaneIn 240ms var(--ease, ease) both;
 }
+
+/* The browser window is a window like the PDF and Office ones, not a card in the thread:
+   its own bar at the top (what it is, the page in it, who is driving), the browser's own
+   toolbar under that, and the page filling what is left. */
+.app-pane[data-pane='browser'] .cell.shot {
+  height: 100%; min-height: 0; border: 0; border-radius: 0; background: var(--bg);
+  display: flex; flex-direction: column;
+}
+.app-pane[data-pane='browser'] .cell.shot .cell-top { border-bottom: 1px solid var(--border); }
+.app-pane[data-pane='browser'] .shot-stage.is-big { flex: 1; min-height: 0; display: flex; }
+.app-pane[data-pane='browser'] .shot-stage.is-big .frame { max-height: none; height: 100%; }
+.app-pane[data-pane='browser'] .shot-stage.is-big .frame img { height: 100%; object-fit: contain; }
 
 /* The column beside the chat: the strip of open windows, then the window itself. The strip is the top of the
    screen: this column starts above the header, so the tabs sit at the very edge and what shows of the header over
@@ -6506,7 +6518,7 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 @keyframes office-blink { 50% { opacity: 0; } }
 @keyframes office-click { from { transform: scale(0.4); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .office-caret, .office-click { animation: none; } }
-.pdf-frame { flex: 1; min-height: 0; width: 100%; border: 0; background: #0f172a; display: block; }
+.pdf-frame { flex: 1; min-height: 0; width: 100%; border: 0; background: var(--bg); display: block; }
 /* In the pinned view on a phone: the pinned view's own height, so the editor
    scrolls its pages itself instead of the pinned view scrolling the editor. */
 .pdf-window.is-phone { height: min(46dvh, 440px); }
@@ -6682,7 +6694,8 @@ body.is-resizing iframe { pointer-events: none; }
   background: none; color: var(--text); font: inherit; font-size: 13px; text-align: left; cursor: pointer;
 }
 .shot-menu button:hover { background: var(--s3); }
-.shot-panel { border-bottom: 1px solid var(--border); background: var(--sink); }
+.shot-panel { border-bottom: 1px solid var(--border); background: var(--sink); animation: rise 150ms var(--ease) both; }
+.shot-menu { animation: rise 150ms var(--ease) both; }
 .shot-find { display: flex; align-items: center; gap: 6px; padding: 6px 8px; }
 .shot-find input {
   flex: 1 1 auto; min-width: 0; height: 28px; padding: 0 10px; border: 1px solid var(--border);

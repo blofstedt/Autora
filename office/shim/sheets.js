@@ -58,6 +58,60 @@
   }
   for (const [k, v] of Object.entries(over)) api[k] = v;
 
+  // ---- the Autora look: this app's own shades -----------------------------------------
+  // The chrome tokens every editor shares are re-pointed once, in common.js; what is here is
+  // what only the workbook editor has -- the --sheets-* chrome shades and shadows its
+  // statusbar, menus, toasts and focus rings are drawn from. The tokens the grid itself is
+  // painted with (--sheets-paper, --excel-green, --sheets-chart-*, --sheets-shape-*) are left
+  // alone: they sit on the paper-like grid and are the workbook's own colours, not the
+  // interface's.
+  window.__autora.addStyle("autora-sheets", `
+:root, :root[data-theme='light'], :root[data-theme='dark'] {
+  /* Autora's accent in place of Excel's green, and Autora's steps for the greys */
+  --surface-hover: #151824 !important;
+  --ribbon-hover: #151824 !important;
+  --ribbon-active: #252a3b !important;
+  --focus: rgba(110, 91, 255, 0.35) !important;
+  --shadow-panel: 0 20px 48px -12px rgba(0, 0, 0, 0.7), 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+  --shadow-modal: 0 20px 48px -12px rgba(0, 0, 0, 0.7) !important;
+  --sheets-error: #fb7185 !important;
+  --sheets-ai-error: #fb7185 !important;
+  --sheets-ai-error-border: rgba(251, 113, 133, 0.45) !important;
+  --sheets-ai-error-bg: rgba(251, 113, 133, 0.12) !important;
+  --sheets-notice-border: rgba(110, 91, 255, 0.35) !important;
+  --sheets-statusbar-bg: #0e1016 !important;
+  --sheets-statusbar-border: #1d2130 !important;
+  --sheets-statusbar-hover: rgba(255, 255, 255, 0.05) !important;
+  --sheets-zoom-slider: #252a3b !important;
+  --sheets-focus-ring: rgba(110, 91, 255, 0.45) !important;
+  --sheets-shimmer-base: #7a8297 !important;
+  --sheets-shimmer-hi: #edeff5 !important;
+  --sheets-scroll-thumb: #252a3b !important;
+  --sheets-chip-bg: #1d2130 !important;
+  --sheets-member-bg: #1d2130 !important;
+  --sheets-member-ink: #98a1b6 !important;
+  /* the data-validation prompt is chrome, not paper: Autora's violet, not Office's olive */
+  --sheets-validation-prompt-bg: #221d3a !important;
+  --sheets-validation-prompt-border: #3b3560 !important;
+  --sheets-validation-prompt-ink: #edeff5 !important;
+  --sheets-validation-prompt-shadow: 0 20px 48px -12px rgba(0, 0, 0, 0.7) !important;
+  --sheets-toast-bg: rgba(37, 42, 59, 0.96) !important;
+  --sheets-toast-error-bg: rgba(180, 60, 85, 0.96) !important;
+  --sheets-toast-ink: #edeff5 !important;
+  --sheets-toast-ok: #34d399 !important;
+  --sheets-shadow-drop: 0 20px 48px -12px rgba(0, 0, 0, 0.7), 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+  --sheets-shadow-menu: 0 20px 48px -12px rgba(0, 0, 0, 0.7), 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+  --sheets-shadow-pane: 0 20px 48px -12px rgba(0, 0, 0, 0.7) !important;
+  --sheets-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.5) !important;
+  --sheets-shadow-chart: 0 4px 16px -4px rgba(0, 0, 0, 0.5) !important;
+  --sheets-shadow-copilot: 0 20px 48px -12px rgba(0, 0, 0, 0.7) !important;
+  --sheets-shadow-badge: 0 4px 16px -4px rgba(0, 0, 0, 0.5) !important;
+  --sheets-shadow-slicer: 0 20px 48px -12px rgba(0, 0, 0, 0.7) !important;
+  --sheets-shadow-toast: 0 20px 48px -12px rgba(0, 0, 0, 0.7) !important;
+  --sheets-shadow-composer: 0 20px 48px -12px rgba(0, 0, 0, 0.7) !important;
+}
+`);
+
   if (framed) {
     let last = 0;
     const touch = () => {

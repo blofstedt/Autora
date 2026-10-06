@@ -110,6 +110,89 @@
     },
   };
 
+  // ---- the Autora look: this app's own shades -----------------------------------------
+  // The chrome tokens every editor shares are re-pointed once, in common.js; what is here is
+  // what only the Word editor has -- the --docs-* shades its ribbon, ruler, statusbar, print
+  // view and menus are drawn from, and the Word-blue family the ribbon accents it with. The
+  // --docs-paper-* family is deliberately untouched: that is the document's own paper, ink and
+  // markup, which stays the same whatever the interface does.
+  window.__autora.addStyle("autora-docs", `
+:root, :root[data-theme='light'], :root[data-theme='dark'] {
+  /* Word's blue is Autora's violet, in the ribbon and everywhere it leads */
+  --word-blue: #6e5bff !important;
+  --word-blue-dark: #5a48e8 !important;
+  --word-heading: #a99cff !important;
+  --docs-heading-3: #a99cff !important;
+  --docs-accent-ghost: rgba(110, 91, 255, 0.18) !important;
+  --docs-brand-ghost: rgba(110, 91, 255, 0.14) !important;
+  --docs-brand-ghost-weak: rgba(110, 91, 255, 0.10) !important;
+  --docs-brand-ring: rgba(110, 91, 255, 0.45) !important;
+  --docs-input-focus: #6e5bff !important;
+  --docs-input-ring: rgba(110, 91, 255, 0.20) !important;
+  --docs-focus-ring: rgba(110, 91, 255, 0.45) !important;
+  --docs-focus-ring-blue: rgba(34, 211, 238, 0.40) !important;
+  --docs-error-ring: rgba(251, 113, 133, 0.20) !important;
+  /* Autora's semantic colours, so an error or a saved badge reads the same here as anywhere */
+  --docs-ins-ink: #34d399 !important;
+  --docs-ins-bg: rgba(52, 211, 153, 0.10) !important;
+  --docs-del-ink: #fb7185 !important;
+  --docs-del-bg: rgba(251, 113, 133, 0.10) !important;
+  --docs-ai-error: #fb7185 !important;
+  --docs-ai-error-border: rgba(251, 113, 133, 0.45) !important;
+  --docs-ai-error-bg: rgba(251, 113, 133, 0.12) !important;
+  --docs-ok-ink: #34d399 !important;
+  --docs-ok-bg: rgba(52, 211, 153, 0.12) !important;
+  --docs-ok-border: rgba(52, 211, 153, 0.30) !important;
+  --docs-ok-dot: #34d399 !important;
+  /* surfaces and lines, in Autora's steps */
+  --docs-chip-bg: #1d2130 !important;
+  --docs-copilot-bg-a: #221d3a !important;
+  --docs-copilot-bg-b: #1a1d33 !important;
+  --docs-swatch-outline: rgba(255, 255, 255, 0.25) !important;
+  --docs-swatch-outline-strong: rgba(255, 255, 255, 0.35) !important;
+  --docs-swatch-border: #252a3b !important;
+  --docs-scroll-thumb: #252a3b !important;
+  --docs-tooltip-bg: #252a3b !important;
+  --docs-tooltip-ink: #edeff5 !important;
+  --docs-shimmer-base: #7a8297 !important;
+  --docs-shimmer-hi: #edeff5 !important;
+  --docs-statusbar-bg: #0e1016 !important;
+  --docs-statusbar-border: #1d2130 !important;
+  --docs-statusbar-hover: rgba(255, 255, 255, 0.05) !important;
+  --docs-zoom-slider: #252a3b !important;
+  --docs-ruler-bg: #151824 !important;
+  --docs-ruler-tick: #7a8297 !important;
+  --docs-ruler-border: #1d2130 !important;
+  --docs-ruler-ink: #98a1b6 !important;
+  --docs-ruler-btn-bg: #1d2130 !important;
+  --docs-ruler-btn-hover: #252a3b !important;
+  --docs-ruler-btn-border: #252a3b !important;
+  --docs-ruler-btn-ink: #edeff5 !important;
+  --docs-ruler-tab-guide: #7a8297 !important;
+  --docs-ruler-zone: rgba(255, 255, 255, 0.10) !important;
+  --docs-tstyle-border: #252a3b !important;
+  --docs-tstyle-header: #98a1b6 !important;
+  --docs-tstyle-row: #1d2130 !important;
+  --docs-gap-cut: #7a8297 !important;
+  --docs-pv-canvas: #08090d !important;
+  --docs-overlay: rgba(6, 7, 10, 0.66) !important;
+  /* one shadow scale and one easing, the same as the rest of Autora */
+  --docs-page-shadow: 0 1px 3px rgba(0, 0, 0, 0.6), 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+  --docs-gap-inset: inset 0 8px 8px -8px rgba(0, 0, 0, 0.65), inset 0 -3px 3px -3px rgba(0, 0, 0, 0.4) !important;
+  --docs-shadow-menu: 0 20px 48px -12px rgba(0, 0, 0, 0.7), 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+  --docs-shadow-ctx: 0 20px 48px -12px rgba(0, 0, 0, 0.7), 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+  --docs-shadow-modal: 0 20px 48px -12px rgba(0, 0, 0, 0.7) !important;
+  --docs-shadow-modal-gs: 0 20px 48px -12px rgba(0, 0, 0, 0.7) !important;
+  --docs-shadow-chip: 0 4px 16px -4px rgba(0, 0, 0, 0.5) !important;
+  --docs-shadow-badge: 0 4px 16px -4px rgba(0, 0, 0, 0.5) !important;
+  --docs-shadow-badge-strong: 0 20px 48px -12px rgba(0, 0, 0, 0.7) !important;
+  --docs-shadow-tooltip: 0 4px 16px -4px rgba(0, 0, 0, 0.5) !important;
+  --docs-shadow-composer: 0 20px 48px -12px rgba(0, 0, 0, 0.7) !important;
+  --docs-shadow-toast: 0 20px 48px -12px rgba(0, 0, 0, 0.7) !important;
+  --shadow-modal: 0 20px 48px -12px rgba(0, 0, 0, 0.7) !important;
+}
+`);
+
   // The person is in the document: said to the host every few seconds while they type, so the agent leaves it alone.
   if (framed && !headless) {
     let last = 0;

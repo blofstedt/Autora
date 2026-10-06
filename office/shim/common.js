@@ -185,7 +185,103 @@
   };
   new MutationObserver(adopt).observe(document.documentElement, { childList: true, subtree: true });
 
-  window.__autora = { host, onPush, headless, framed, b64, unb64, ipc, enc, dec };
+  // ---- the Autora look ------------------------------------------------------------------
+  // The interface the person works in should be Autora's, not GenOffice's. Each editor keeps
+  // its whole chrome in tokens -- packages/ui/src/tokens.css (surface / text / border / …),
+  // the per-app --accent, and the app's own --docs-* / --sheets-* / --slides-* shades -- so
+  // the chrome is re-pointed here, once, for all three editors, instead of restyled selector
+  // by selector. The values are Autora's own (src/styles.css: --s1…--s4, --sink, --text /
+  // --text-2 / --text-3, --accent, --live, --warn, --danger, the shadows and --ease), and
+  // the radii need no changing: 6 / 8 / 12 / 16 are already both suites'.
+  //
+  // Nothing of the document moves: the page, the grid, the slide and any export draw from
+  // their own paper colours, and a headless render keeps the editor's plain chrome, so what is
+  // exported is unchanged. Each app's shim adds its own --<app>-* shades through addStyle().
+  const AUTORA_TOKENS = `
+:root, :root[data-theme='light'], :root[data-theme='dark'] {
+  /* surfaces: Autora --s1 --s2 --s3 --s4, --bg, --sink */
+  --surface: #0e1016 !important;
+  --surface-subtle: #151824 !important;
+  --chrome-bg: #0e1016 !important;
+  --canvas: #08090d !important;
+  --bg-content: #08090d !important;
+  --color-bg-page: #0e1016 !important;
+  --color-bg-subtle: #151824 !important;
+  /* lines */
+  --border: #1d2130 !important;
+  --border-subtle: #151824 !important;
+  --border-strong: #252a3b !important;
+  --border-hover: #252a3b !important;
+  --color-border-default: #1d2130 !important;
+  --color-border-strong: #252a3b !important;
+  /* text: --text --text-2 --text-3 */
+  --text: #edeff5 !important;
+  --text-primary: #edeff5 !important;
+  --text-secondary: #98a1b6 !important;
+  --text-tertiary: #7a8297 !important;
+  --text-muted: #7a8297 !important;
+  --text-dim: #98a1b6 !important;
+  --icon-muted: #7a8297 !important;
+  --color-text-primary: #edeff5 !important;
+  --color-text-secondary: #98a1b6 !important;
+  --color-text-tertiary: #7a8297 !important;
+  /* states */
+  --hover: #151824 !important;
+  --pressed: #1d2130 !important;
+  --active-bg: #252a3b !important;
+  --bg-hover: #151824 !important;
+  --bg-hover-subtle: #151824 !important;
+  --bg-hover-strong: #1d2130 !important;
+  --bg-hover-accent: rgba(110, 91, 255, 0.14) !important;
+  /* accent: Autora's violet, in place of Word's blue / Excel's green / PowerPoint's orange */
+  --accent: #6e5bff !important;
+  --accent-dark: #5a48e8 !important;
+  --accent-soft: rgba(110, 91, 255, 0.14) !important;
+  --color-ai-action: #6e5bff !important;
+  --color-ai-action-hover: #7d6bff !important;
+  --color-ai-action-text: #ffffff !important;
+  --color-btn-primary: #6e5bff !important;
+  --color-btn-primary-hover: #5a48e8 !important;
+  --color-btn-primary-text: #ffffff !important;
+  --color-border-brand: #6e5bff !important;
+  --color-brand-secondary: #22d3ee !important;
+  /* semantic: --danger --live --warn */
+  --danger: #fb7185 !important;
+  --danger-bg: rgba(251, 113, 133, 0.12) !important;
+  --danger-border: rgba(251, 113, 133, 0.35) !important;
+  --color-error: #fb7185 !important;
+  --color-error-hover: #f43f5e !important;
+  --success: #34d399 !important;
+  --success-bg: rgba(52, 211, 153, 0.12) !important;
+  --success-border: rgba(52, 211, 153, 0.3) !important;
+  /* shadows and motion: --shadow --shadow-lg and --ease */
+  --shadow-menu: 0 20px 48px -12px rgba(0, 0, 0, 0.7), 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+  --shadow-modal-strong: 0 20px 48px -12px rgba(0, 0, 0, 0.7) !important;
+  --shadow-btn-hover: 0 4px 16px -4px rgba(0, 0, 0, 0.5) !important;
+  --color-bg-overlay: rgba(6, 7, 10, 0.66) !important;
+  --transition-fast: 150ms cubic-bezier(0.32, 0.72, 0, 1) !important;
+  --transition-medium: 240ms cubic-bezier(0.32, 0.72, 0, 1) !important;
+  color-scheme: dark !important;
+}
+/* Autora's type, everywhere in the chrome; the document is drawn with its own fonts. */
+body, #root, .app { font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif !important; }
+::selection { background: rgba(110, 91, 255, 0.35); }
+`;
+
+  /** Add (or replace) a stylesheet in the editor's page. A headless render gets none, so an
+   *  export is drawn with the editor's plain chrome. */
+  function addStyle(id, css) {
+    if (headless) return;
+    const have = document.getElementById(id);
+    if (have) { have.textContent = css; return; }
+    const node = document.createElement("style");
+    node.id = id;
+    node.textContent = css;
+    document.head.appendChild(node);
+  }
+  addStyle("autora-tokens", AUTORA_TOKENS);
+
+  window.__autora = { host, onPush, headless, framed, b64, unb64, ipc, enc, dec, addStyle };
   // The editor's own script waits for this before it starts (see office/vite).
   window.__autoraReady = (async () => { try { await loadFonts(); } catch (e) { console.warn(String(e)); } })();
 })();

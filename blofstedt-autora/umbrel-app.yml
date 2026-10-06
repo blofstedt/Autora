@@ -134,11 +134,15 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  Autora Slides now looks like Autora. The editor's whole interface -- ribbon and tabs, panels,
-  menus, status bar, scrollbars and focus rings -- is drawn in Autora's own colours and type: the
-  same dark surfaces and the same violet accent as the rest of the app, instead of the editor's
-  greys and orange. The Autora logo no longer appears in the ribbon's assistant button.
-  Earlier: a Pages, Sheets or Slides window that opened behind the one you were looking at came up
-  grey -- the ribbon over an empty page, and the document never drew however long you waited; a
-  window now starts its editor once it has a real box on screen.
+  Autora Pages, Sheets and the PDF window now wear the app's own look, and every window moves the
+  same way. Pages and Sheets are drawn in Autora's colours and type throughout -- ribbon and tabs,
+  panels, menus, ruler, status bar, scrollbars, focus rings and shadows -- instead of Word's blue
+  and Excel's green over Office greys; the PDF window's editor does the same in place of its slate
+  and indigo, so a PDF, a document and a spreadsheet all sit in the same dark interface with the
+  same violet accent. The browser window now carries the bar the other windows have -- what it is,
+  the page in it, and who is driving -- with the browser's own toolbar under it, and the windows,
+  panels and menus arrive at Autora's own easing and speed. The document, the grid, the slide and
+  the PDF keep their own colours, and what you export is unchanged.
+  Earlier: Autora Slides looks like Autora -- the same dark surfaces and violet accent instead of
+  the editor's greys and orange, and no Autora logo in the ribbon's assistant button.
 
