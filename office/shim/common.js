@@ -163,7 +163,6 @@
   // The panel, its edge button, and the bar over a slide; the Home tab's AI group becomes the one button below.
   style.textContent = ".ai-dock, .ai-rail, .stage-ai-bar { display: none !important; } .ribbon-group:has(.ai-entry) .ai-entry:not(.autora-ask) { display: none !important; }";
   document.head.appendChild(style);
-  const MARK = '<svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 21 20H3z" fill="#8b7cf6"/></svg>';
   const adopt = () => {
     for (const group of document.querySelectorAll(".ribbon-group")) {
       const entries = group.querySelectorAll(".ai-entry");
@@ -176,9 +175,8 @@
         first.addEventListener("click", (e) => { e.stopImmediatePropagation(); e.preventDefault(); void host("ask", {}).catch(() => undefined); }, true);
       }
       // Word and PowerPoint draw the icon in .rb-big-icon and the name in a span; Excel in .tool-icon-row and <strong>.
-      const icon = first.querySelector(".rb-big-icon, .tool-icon-row");
+      // The icon the editor drew is left as it is: Autora's own mark does not belong in the ribbon.
       const label = first.querySelector("strong") || first.querySelector(":scope > span:not(.rb-big-icon):not(.tool-icon-row)");
-      if (icon && !icon.querySelector("[data-autora]")) icon.innerHTML = '<span data-autora="1">' + MARK + "</span>";
       if (label && label.textContent !== "Autora") label.textContent = "Autora";
       const name = group.querySelector(".ribbon-group-label");
       if (name && name.textContent !== "Autora") name.textContent = "Autora";

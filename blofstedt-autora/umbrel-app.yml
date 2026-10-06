@@ -134,14 +134,11 @@ support: https://github.com/blofstedt/Autora/issues
 gallery: []
 
 releaseNotes: >-
-  Fix: a Pages, Sheets or Slides window that opened behind the one you were looking at came up grey --
-  the ribbon over an empty page, and the document never drew however long you waited. A window now
-  starts its editor once it has a real box on screen, so switching to its tab, resizing it, or pinning
-  it on a phone brings the document up. A window nobody is looking at also stops running an editor of
-  its own, which is what made three of them open at once slow.
-  Also: the browser the agent is driving opens in its own window on the right, in the same place as
-  Autora PDF and Pages, instead of covering the chat -- one window at a time, the others a click
-  away in the strip.
-  Earlier: on a phone a tool window no longer takes the whole screen the moment you open the session,
-  and a tool the session already had stays a tab in the pinned view; the wrench in the message box
-  sits at the end of the tools row beside Send.
+  Autora Slides now looks like Autora. The editor's whole interface -- ribbon and tabs, panels,
+  menus, status bar, scrollbars and focus rings -- is drawn in Autora's own colours and type: the
+  same dark surfaces and the same violet accent as the rest of the app, instead of the editor's
+  greys and orange. The Autora logo no longer appears in the ribbon's assistant button.
+  Earlier: a Pages, Sheets or Slides window that opened behind the one you were looking at came up
+  grey -- the ribbon over an empty page, and the document never drew however long you waited; a
+  window now starts its editor once it has a real box on screen.
+
