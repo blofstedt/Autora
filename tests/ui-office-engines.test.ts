@@ -42,6 +42,33 @@ const bodyText = (frame: Frame) => frame.evaluate(() => document.body.innerText)
 /** Every piece of text in the page, shown or not (menus and lists that are closed). */
 const allText = (frame: Frame) => frame.evaluate(() => [...document.querySelectorAll("*")].filter((e) => e.children.length === 0 && !["SCRIPT", "STYLE"].includes(e.tagName)).map((e) => e.textContent).join("\n")).catch(() => "");
 
+/**
+ * A point on the editor's biggest canvas (the slide's stage, the grid), in the page's own pixels, so a test does not
+ * depend on how wide the menu beside it is. With `slide` (its size in points) the point is a fraction of the slide
+ * itself, which the editor draws in the middle of the stage at its zoom.
+ */
+async function onCanvas(frame: Frame, at: { fx?: number; fy?: number; dx?: number; dy?: number; slide?: [number, number] }) {
+  const owner = await (await frame.frameElement()).boundingBox();
+  const found = await frame.evaluate(() => {
+    let best: DOMRect | null = null;
+    for (const c of document.querySelectorAll("canvas")) {
+      const r = c.getBoundingClientRect();
+      if (r.left < -50 || r.top < -50 || r.width < 2) continue;
+      if (!best || r.width * r.height > best.width * best.height) best = r;
+    }
+    const zoom = [...document.querySelectorAll("span, b, i, div, button")].filter((e) => e.children.length === 0).map((e) => /^(\d{2,3})\s*%$/.exec((e.textContent ?? "").trim())).find(Boolean);
+    return best ? { x: best.left, y: best.top, w: best.width, h: best.height, zoom: zoom ? Number(zoom[1]) / 100 : null } : null;
+  });
+  assert.ok(owner && found, "the editor has a canvas on screen");
+  let { x, y, w, h } = found;
+  if (at.slide && found.zoom) {
+    const sw = (at.slide[0] * 96 / 72) * found.zoom;
+    const sh = (at.slide[1] * 96 / 72) * found.zoom;
+    x += (w - sw) / 2; y += (h - sh) / 2; w = sw; h = sh;
+  }
+  return { x: owner.x + x + (at.dx ?? (at.fx ?? 0) * w), y: owner.y + y + (at.dy ?? (at.fy ?? 0) * h) };
+}
+
 async function main() {
   const exe = process.env.AUTORA_BROWSER_PATH || "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
   if (!fs.existsSync(exe)) { console.log("  skip  no browser here"); return; }
@@ -55,6 +82,8 @@ async function main() {
   try {
     const s = await app.newSession("Quarter", "build");
     const state = async () => (await app.api("GET", `/api/officedesk/${s}`)).body;
+    /** A new document is typed into as the person watches; they take their turn when the agent has finished. */
+    const stageOver = (kind: string) => until("the agent to finish typing", async () => !(((await state()).windows as any[]).find((w) => w.kind === kind) ?? {}).stage, 90_000);
     const fileOf = async () => {
       const working = (await state()).working as string | null;
       return working ? Buffer.from(await (await fetch(`${app.base}/api/artifacts/${working}`)).arrayBuffer()) : null;
@@ -90,6 +119,7 @@ async function main() {
       const hidden = (await allText(frame)).match(/.{0,20}[\u3400-\u9fff]+.{0,20}/g);
       assert.equal(hidden, null, `Chinese in the page: ${hidden?.slice(0, 5).join(" | ")}`);
       assert.match(text, /Autora/);
+      await stageOver("pptx");
       assert.equal(await page.locator(".pdf-bar-name").innerText(), "pitch.pptx");
       if (process.env.OFFICE_SHOT) { await sleep(1500); await page.screenshot({ path: `${process.env.OFFICE_SHOT}-deck.png` }); }
       assert.equal(errors.length, 0, errors.join("\n"));
@@ -98,14 +128,16 @@ async function main() {
     await test("what the person types into a slide is saved, kept in the file, and told to the agent", async () => {
       const before = (await state()).rev;
       await sleep(1500);
-      await page.mouse.dblclick(1060, 430);
+      const title = await onCanvas(frame, { fx: 0.3, fy: 0.2, slide: [960, 540] });
+      await page.mouse.dblclick(title.x, title.y);
       await sleep(800);
       if (process.env.OFFICE_SHOT) await page.screenshot({ path: `${process.env.OFFICE_SHOT}-editing.png` });
       await page.keyboard.press("Control+End");
       await page.keyboard.type(" is moved to Monday");
       await sleep(500);
       await page.keyboard.press("Escape");
-      await page.mouse.click(1100, 600);
+      const away = await onCanvas(frame, { fx: 0.75, fy: 0.85, slide: [960, 540] });
+      await page.mouse.click(away.x, away.y);
       void before;
       let text = "";
       await until("the file to be kept current", async () => {
@@ -137,14 +169,15 @@ async function main() {
       // They were typing a moment ago, so the deck is theirs: wait out the lease.
       await frame.evaluate(() => { (window as any).__kept = "same page"; });
       await sleep(22_000);
-      const ghost = page.waitForSelector(".office-ghost", { state: "attached", timeout: 90_000 }).then((h) => h.getAttribute("class"));
+      const cursor = page.waitForSelector(".office-cursor-layer .office-cursor", { state: "attached", timeout: 90_000 });
       const ev = await app.turn(s, "rename the title to Annual review", 120_000);
       if (process.env.OFFICE_DEBUG) console.log("last events:", JSON.stringify(ev.slice(-10).map((e) => [e.kind, JSON.stringify(e.payload).slice(0, 200)])));
       const bytes = (await fileOf())!;
       const text = (pptxParagraphs(bytes) ?? []).join("\n");
       assert.match(text, /Annual review.*moved to Monday/);
       // The agent's cursor went to the title and typed it, with the browser's kind of motion.
-      assert.doesNotMatch(String(await ghost), /is-caption/, "the words are typed over the title on the slide, not in a caption");
+      await cursor;
+      assert.equal(await page.locator(".office-ghost").count(), 0, "nothing is drawn over the slide: the typing is in the document");
       // The editor took the change where it stood: the same page, not a new one.
       await sleep(3000);
       assert.equal(await frame.evaluate(() => (window as any).__kept).catch(() => null), "same page", "the window was not reloaded");
@@ -185,7 +218,9 @@ async function main() {
 
     await test("what the person types into a cell is saved, kept in the file, and told to the agent", async () => {
       await sleep(1500);
-      await page.mouse.click(945, 290);
+      // B2: the grid's row-number gutter, the column band, then one column and one row down.
+      const b2 = await onCanvas(frame, { dx: 46 + 69.3 * 1.5, dy: 20 + 20 * 1.5 });
+      await page.mouse.click(b2.x, b2.y);
       await sleep(300);
       await page.keyboard.type("7");
       await page.keyboard.press("Enter");
@@ -214,11 +249,12 @@ async function main() {
       };
       await frame.evaluate(() => { (window as any).__kept = "same page"; });
       await sleep(22_000);
-      const ghost = page.waitForSelector(".office-ghost", { state: "attached", timeout: 90_000 }).then((h) => h.getAttribute("class"));
+      const cursor = page.waitForSelector(".office-cursor-layer .office-cursor", { state: "attached", timeout: 90_000 });
       await app.turn(s, "add a Gadget row with quantity 2", 120_000);
       const cells = xlsxCells((await fileOf())!)!;
       assert.ok([...cells.entries()].some(([k, v]) => /A3$/.test(k) && v === "Gadget"), JSON.stringify([...cells]));
-      assert.doesNotMatch(String(await ghost), /is-caption/, "the words are typed in the cell, not in a caption");
+      await cursor;
+      assert.equal(await page.locator(".office-ghost").count(), 0, "nothing is drawn over the sheet: the typing is in the document");
       assert.ok([...cells.entries()].some(([k, v]) => /B2$/.test(k) && v === "7"), "their change is still there");
       await sleep(4000);
       assert.equal(await frame.evaluate(() => (window as any).__kept).catch(() => null), "same page", "the window was not reloaded");

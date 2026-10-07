@@ -13,7 +13,14 @@ export type OfficeKind = "docx" | "pptx" | "xlsx";
 export const APP_NAME: Record<OfficeKind, string> = { docx: "Pages", pptx: "Slides", xlsx: "Sheets" };
 
 /** One thing the agent did in the document, played as a cursor that goes there and types it (server/officedesk.ts). */
-export type OfficeCue = { act: "type" | "point"; text: string; cell?: string; sheet?: string; box?: [number, number, number, number] };
+export type OfficeCue = {
+  act: "type" | "point"; text: string; cell?: string; sheet?: string; box?: [number, number, number, number];
+  /** The slide's size in points, so the box can be placed on the slide as the editor draws it. */
+  slide?: [number, number];
+  /** Shown in steps: the first in-between document this cue's typing produces, how many there are, the words of the
+   *  first (to find it by) and the paragraph before it (where the cursor goes first). */
+  step?: number; steps?: number; lead?: string; near?: string;
+};
 
 type OfficeWindowState = {
   open: boolean;
@@ -33,6 +40,8 @@ type OfficeWindowState = {
   cueRev?: number;
   /** Milliseconds since they were made: a page that opens the window much later has missed them. */
   cueAge?: number;
+  /** The change is being shown in steps: ask the server for each document in turn, for this `rev`. */
+  stage?: { rev: number; count: number };
 };
 
 type OfficeState = { open: boolean; windows: OfficeWindowState[] };

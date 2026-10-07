@@ -6377,22 +6377,10 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
   content: ""; display: inline-block; width: 0; height: 10px; margin-left: 4px; vertical-align: -1px;
   border-right: 2px solid #fff; animation: office-blink 0.7s steps(1) infinite;
 }
-.office-ghost {
-  position: absolute; box-sizing: border-box; padding: 1px 3px; border-radius: 3px; overflow: hidden;
-  box-shadow: 0 0 0 2px rgba(124, 92, 255, 0.6); line-height: 1.3; white-space: pre-wrap; overflow-wrap: anywhere;
-  transition: opacity 0.3s var(--ease);
-}
-.office-ghost.is-fading { opacity: 0; }
-.office-ghost.is-caption {
-  padding: 4px 9px; background: #1d1b2e; color: #e8e6ff; border-radius: 8px; font: 500 12px/1.4 Inter, system-ui, sans-serif;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(124, 92, 255, 0.6);
-}
-.office-ghost.is-caption b { color: #a99bff; font-weight: 600; }
-.office-caret { display: inline-block; width: 0; height: 1em; margin-left: 1px; vertical-align: text-bottom; border-right: 2px solid #7c5cff; animation: office-blink 0.9s steps(1) infinite; }
 .office-click { position: absolute; width: 28px; height: 28px; border-radius: 14px; border: 2px solid #7c5cff; animation: office-click 420ms ease-out forwards; }
 @keyframes office-blink { 50% { opacity: 0; } }
 @keyframes office-click { from { transform: scale(0.4); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .office-caret, .office-click { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .office-click { animation: none; } }
 .pdf-frame { flex: 1; min-height: 0; width: 100%; border: 0; background: var(--bg); display: block; }
 /* In the pinned view on a phone: the pinned view's own height, so the editor
    scrolls its pages itself instead of the pinned view scrolling the editor. */

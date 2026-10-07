@@ -133,11 +133,12 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  On a desktop the menu on the left is slimmer, so the window on the right has
-  more room; the chat is exactly the width it was. The agent's pointer in the
-  browser is now the same arrow and "Autora" tag you see in Pages, Sheets and
-  Slides, and it follows what is really happening: it moves with every real
-  mouse move, presses and ripples at the moment the button goes down, shows
-  typing while keys are struck and scrolling while the wheel turns, and the
-  live feed runs faster while it moves so you watch it travel instead of
-  jumping. The Office cursor presses and shows typing the same way.
+  The agent's typing in Pages, Sheets and Slides is now the change itself. A
+  document it makes opens empty and fills in as its cursor types; an edit to
+  one you have open is typed into it, a run of words or a cell at a time, and
+  the last step is exactly what the agent's tool made, so nothing is drawn over
+  the document any more. The Slides cursor now lands on the slide itself rather
+  than the stage around it, and the agent's own clicks and typing no longer
+  count as you working in the document, so it can carry on editing straight
+  after. Earlier in this release: a slimmer menu on desktop, and the browser
+  pointer matches the Office cursor and follows real input.

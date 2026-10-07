@@ -202,8 +202,8 @@
       last = now;
       void host("presence", {}).catch(() => undefined);
     };
-    document.addEventListener("input", typing, true);
-    document.addEventListener("keydown", typing, true);
+    document.addEventListener("input", (e) => { if (e.isTrusted) typing(); }, true);
+    document.addEventListener("keydown", (e) => { if (e.isTrusted) typing(); }, true);
   }
 
   const answer = {

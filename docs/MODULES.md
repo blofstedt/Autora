@@ -61,7 +61,7 @@ Spectra's fetched renderer is most of what is on disk.
   `officeRoutes`, keyed by a `DeskKey` -- session and kind together -- so a call cannot reach the wrong app's
   document), each with a tab on the desktop (`App.tsx`: `OFFICE_PANES`, every open window kept mounted and only the
   chosen one shown, the strip run to the top of the screen) named for the app rather than the file. The agent's cursor:
-  `officedesk.ts` `cuesFor` diffs before/after into `cues` on the window's state, `OfficeCursor.tsx` plays them over the frame
+  `officedesk.ts` `cuesFor` diffs before/after into `cues` on the window's state, `server/officestage.ts` turns the change into in-between files (`stagePlan`, `blankOf` for a new document) that the window asks for one at a time (`POST /stage`) as `OfficeCursor.tsx` types, so the typing is the change; `desk.stage` holds them in memory and `personSaved` ignores saves while it is up. `OfficeCursor.tsx` plays them over the frame
   asking `office/shim/cursor.js` where the text/cell is -- whose answer is the only place the cursor goes (no caption fallback, no invented spot) -- with `src/lib/humanPath.ts` -- the browser pointer's
   motion and a human typing rhythm. Briefing text: `OFFICE_GUIDE`/`WINDOWS_GUIDE` in `guides.ts`. The
   document the agent works on, open beside the chat in
