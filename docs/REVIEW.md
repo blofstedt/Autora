@@ -409,6 +409,22 @@ lines, each turns a slow drift into a failing check.
 
 ---
 
+### T4. `office.test.ts` fails instead of skipping without the Office build
+`CLAUDE.md` says the Office tests skip when `dist/office` is not built. The
+first test does print "not built", then asserts anyway (`tests/office.test.ts`,
+the "each app is a switch of its own" case expects a switched-off message and
+gets "not installed"). Guard that case with the same check. **Effort.** S.
+
 ## Test run
 
-See the end of this section for the result of `npm test` on this commit.
+`npm run build` then `npm test` on 0.9.159, **without** `build-office.mjs` /
+`build-spectra.mjs` (the engines CI builds first): **136 of 140 files pass**, in
+12 minutes serial (slowest: `pdftext` 69 s, `ui-remark` 41 s, `browsing` 39 s).
+The four failures all need those engine builds:
+
+- `office.test.ts`: see T4 (should have skipped).
+- `ui-panes.test.ts`: the document pane never opens (no Office build).
+- `ui-pdfwindow.test.ts`, `ui-pdfwindow-proxy.test.ts`: Spectra's page loads,
+  its engine is not built, the page is never drawn.
+
+Lint (`npm run lint`) and build pass clean.
