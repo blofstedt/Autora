@@ -26,7 +26,7 @@
 import { type ChatImage } from "./llm";
 
 /** A frame as it arrived: bytes and type, with the moment they landed. */
-export type LiveFrame = { data: Buffer; mime: string; at: number };
+type LiveFrame = { data: Buffer; mime: string; at: number };
 
 /**
  * How long a frame counts as "now".
@@ -45,7 +45,7 @@ export const MAX_FRAME_BYTES = 2_000_000;
 
 /** What the vendors accept as a picture. The device sends JPEG; PNG is here
     because a screenshot from a canvas may arrive as one. */
-export const FRAME_MIMES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const FRAME_MIMES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 /** The newest frame per conversation. Never more than one each. */
 const frames = new Map<string, LiveFrame>();

@@ -14,33 +14,7 @@ import i18next from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import { foldSentences } from './lib/sentence-join';
 import enChrome from './locales/en/chrome.json';
-import esChrome from './locales/es/chrome.json';
-import frChrome from './locales/fr/chrome.json';
-import deChrome from './locales/de/chrome.json';
-import itChrome from './locales/it/chrome.json';
-import ptBrChrome from './locales/pt-BR/chrome.json';
-import jaChrome from './locales/ja/chrome.json';
-import zhCnChrome from './locales/zh-CN/chrome.json';
-import nlChrome from './locales/nl/chrome.json';
-import daChrome from './locales/da/chrome.json';
-import svChrome from './locales/sv/chrome.json';
-import nbChrome from './locales/nb/chrome.json';
-import fiChrome from './locales/fi/chrome.json';
-import ruChrome from './locales/ru/chrome.json';
-import ukChrome from './locales/uk/chrome.json';
-import plChrome from './locales/pl/chrome.json';
-import csChrome from './locales/cs/chrome.json';
-import skChrome from './locales/sk/chrome.json';
-import koChrome from './locales/ko/chrome.json';
-import zhTwChrome from './locales/zh-TW/chrome.json';
-import trChrome from './locales/tr/chrome.json';
-import huChrome from './locales/hu/chrome.json';
-import elChrome from './locales/el/chrome.json';
-import roChrome from './locales/ro/chrome.json';
-import slChrome from './locales/sl/chrome.json';
-import caChrome from './locales/ca/chrome.json';
-import arChrome from './locales/ar/chrome.json';
-import heChrome from './locales/he/chrome.json';
+import { LOCALE_LOADERS } from './locale-loaders';
 import { CHROME_STRINGS, type ChromeKey, type ChromePluralKey } from './i18n-chrome';
 import { PANEL_STRINGS, type PanelKey } from './i18n-panels';
 import { DIALOG_STRINGS, type DialogKey } from './i18n-dialogs';
@@ -200,40 +174,15 @@ function pseudo(catalog: Record<string, string>): Record<string, string> {
   );
 }
 
+const initialLanguage = detectLanguage();
+
 void i18next.use(initReactI18next).init({
-  lng: detectLanguage(),
+  lng: initialLanguage,
   fallbackLng: 'en',
   defaultNS: 'chrome',
   ns: ['chrome'],
   resources: {
     en: { chrome: enChrome },
-    es: { chrome: esChrome },
-    fr: { chrome: frChrome },
-    de: { chrome: deChrome },
-    it: { chrome: itChrome },
-    'pt-BR': { chrome: ptBrChrome },
-    ja: { chrome: jaChrome },
-    'zh-CN': { chrome: zhCnChrome },
-    nl: { chrome: nlChrome },
-    da: { chrome: daChrome },
-    sv: { chrome: svChrome },
-    nb: { chrome: nbChrome },
-    fi: { chrome: fiChrome },
-    ru: { chrome: ruChrome },
-    uk: { chrome: ukChrome },
-    pl: { chrome: plChrome },
-    cs: { chrome: csChrome },
-    sk: { chrome: skChrome },
-    ko: { chrome: koChrome },
-    'zh-TW': { chrome: zhTwChrome },
-    tr: { chrome: trChrome },
-    hu: { chrome: huChrome },
-    el: { chrome: elChrome },
-    ro: { chrome: roChrome },
-    sl: { chrome: slChrome },
-    ca: { chrome: caChrome },
-    ar: { chrome: arChrome },
-    he: { chrome: heChrome },
     ...(import.meta.env.DEV || import.meta.env.VITE_E2E
       ? {
           qps: { chrome: pseudo(enChrome as Record<string, string>) },
@@ -324,9 +273,28 @@ i18next.on('languageChanged', syncDocumentLanguage);
 /** Switch the live UI language (the Settings panel persists the pref and
  * calls this; react-i18next re-renders every hooked component). */
 export function setAppLanguage(pref: string): void {
-  void i18next.changeLanguage(
-    pref in PSEUDO_DIRECTIONS ? pref : resolveLanguage(pref),
-  );
+  const lng = pref in PSEUDO_DIRECTIONS ? pref : resolveLanguage(pref);
+  void loadLocale(lng).then(() => i18next.changeLanguage(lng));
+}
+
+/**
+ * Only English is in the page. The other 27 catalogs (about 15 MB of JSON)
+ * are separate files, fetched when that language is wanted: a phone opening a
+ * PDF used to download every translation of the interface. The worker build
+ * has no loaders (see vite.config.ts) and stays English.
+ */
+async function loadLocale(lng: string): Promise<void> {
+  if (lng === 'en' || i18next.hasResourceBundle(lng, 'chrome')) return;
+  const load = LOCALE_LOADERS[`./locales/${lng}/chrome.json`];
+  if (!load) return;
+  try {
+    i18next.addResourceBundle(lng, 'chrome', (await load()).default);
+  } catch {
+    // A catalog that cannot be fetched leaves the interface in English.
+  }
+}
+if (initialLanguage !== 'en' && !(initialLanguage in PSEUDO_DIRECTIONS)) {
+  void loadLocale(initialLanguage).then(() => i18next.changeLanguage(initialLanguage));
 }
 
 export default i18next;

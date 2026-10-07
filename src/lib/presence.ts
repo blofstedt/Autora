@@ -11,7 +11,7 @@
  * event itself.
  */
 
-export function motionAllowed(): boolean {
+function motionAllowed(): boolean {
   if (typeof window === "undefined" || document.hidden) return false;
   return !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 }

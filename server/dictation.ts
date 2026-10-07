@@ -53,13 +53,13 @@ const MAX_FRAME_BYTES = 128 * 1024;
 const OPEN_TIMEOUT_MS = 10_000;
 
 /** What the page asks before it opens a microphone this way. */
-export interface DictationStatus {
+interface DictationStatus {
   available: boolean;
   provider: "deepgram" | null;
   reason: string | null;
 }
 
-export function deepgramKey(): string {
+function deepgramKey(): string {
   return secretFor("DEEPGRAM_API_KEY");
 }
 

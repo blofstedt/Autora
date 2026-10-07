@@ -20,7 +20,7 @@ built as easy tools first, with code in the background.
 ## Constraints that apply to all of them
 
 - Autora runs on low-CPU Umbrel boxes, with no GPU and possibly no internet.
-  Everything is bundled; nothing is fetched from a CDN (as `pdf-editor/` does).
+  Everything is bundled; nothing is fetched from a CDN (as `spectra-editor/` does).
 - The container image grows with every engine (ffmpeg, WASM kernels, game
   libraries) and each release publishes to GHCR. Weigh size before adding one.
 - Anything the agent produces runs in a sandboxed frame, never on the app's
@@ -47,7 +47,7 @@ enough skills and tools worth sharing; free listings first.
 
 There is no word tool in the repo yet. Size: M.
 
-- Rich-text editor in `word-editor/`, its own sub-project like `pdf-editor/`
+- Rich-text editor in `word-editor/`, its own sub-project like `spectra-editor/`
   (TipTap / ProseMirror is the likely base), with comments anchored to text.
 - `.docx` import and export.
 - Agent tools to read the document and to comment on it. Decide separately
@@ -220,7 +220,7 @@ whether to fold the two together when (2) starts.
 Size: XL. Backlog only. Think FL Studio Lite: a pattern-based beat maker and
 piano roll with a mixer, not a full DAW.
 
-- Sandboxed editor sub-project like `pdf-editor/`, using the Web Audio API, so
+- Sandboxed editor sub-project like `spectra-editor/`, using the Web Audio API, so
   the audio engine runs in the person's browser and the box does no real-time
   DSP. Nothing fetched from a CDN.
 - First version: step sequencer and piano roll, a few built-in synth and drum

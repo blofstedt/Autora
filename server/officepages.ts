@@ -19,17 +19,17 @@ import { stateDir } from "./state";
 const DIR = path.join(stateDir(), "officepages");
 const KEEP = 2;
 /** A long document is shown to this page; the editor has the rest. */
-export const MAX_PAGES = 60;
+const MAX_PAGES = 60;
 /** Wide enough to read on a phone held upright with the page zoomed to twice its width. */
 const PAGE_PX = 1100;
 const validSession = (id: string) => /^[A-Za-z0-9_-]{1,80}$/.test(id);
 
-export type PageMeta = { w: number; h: number };
-export type Manifest = { hash: string; kind: OfficeKind; pages: PageMeta[]; total: number };
+type PageMeta = { w: number; h: number };
+type Manifest = { hash: string; kind: OfficeKind; pages: PageMeta[]; total: number };
 /** A run of text and where it sits; `ref` says which cell or element it belongs to, when that is known. */
 export type PageWords = { s: string; box: [number, number, number, number]; ref?: string }[];
 /** A thing on the page that can be pointed at without words (a picture, a shape): its box and what to call it. */
-export type PageArea = { box: [number, number, number, number]; ref: string; label: string };
+type PageArea = { box: [number, number, number, number]; ref: string; label: string };
 export type PageInfo = { words: PageWords; areas: PageArea[] };
 /** Knows the document's own structure, to name what a tap landed on. */
 export type Locator = { page(n: number, words: PageWords): PageInfo };
@@ -37,7 +37,7 @@ export type Locator = { page(n: number, words: PageWords): PageInfo };
 type Job = { hash: string; promise: Promise<void>; error: string | null; done: boolean };
 const jobs = new Map<string, Job>();
 
-export const hashOf = (kind: OfficeKind, data: Buffer) => createHash("sha1").update(kind).update("\0").update(data).digest("hex").slice(0, 20);
+const hashOf = (kind: OfficeKind, data: Buffer) => createHash("sha1").update(kind).update("\0").update(data).digest("hex").slice(0, 20);
 
 const dirOf = (session: string, hash: string) => path.join(DIR, session, hash);
 

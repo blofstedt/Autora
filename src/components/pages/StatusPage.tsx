@@ -3,7 +3,9 @@ import type { SessionRow } from "../Sessions";
 import { sessionDot } from "../../lib/derive";
 import type { PageId } from "../Rail";
 import { duration } from "../Settings";
-import type { SystemTab } from "./SystemPage";
+import type { SystemTab } from "../../lib/systemTabs";
+import { every } from "../../lib/poll";
+import { sure } from "../../lib/sure";
 
 type Snapshot = {
   system: { version: string; uptime_s: number; sessions: number; busy: number; browsers: number } | null;
@@ -79,8 +81,8 @@ export function StatusPage({
       }
     };
     void load();
-    const timer = window.setInterval(load, 5000);
-    return () => { alive = false; window.clearInterval(timer); };
+    const stop = every(load, 5000);
+    return () => { alive = false; stop(); };
   }, []);
 
   const groups = snap.settings?.tools.groups ?? [];
@@ -180,8 +182,8 @@ export function StatusPage({
               <button
                 type="button"
                 className="btn tiny ghost"
-                onClick={() => {
-                  if (!window.confirm(`Delete my_${t.name}?`)) return;
+                onClick={async () => {
+                  if (!(await sure(`Delete my_${t.name}?`))) return;
                   void fetch(`/api/custom-tools/${encodeURIComponent(t.name)}`, { method: "DELETE" })
                     .then(() => setSnap((s) => ({ ...s, custom: s.custom.filter((c) => c.name !== t.name) })));
                 }}
@@ -231,10 +233,10 @@ export function StatusPage({
               type="button"
               className="btn tiny"
               disabled={pruning}
-              onClick={() => {
-                if (!window.confirm(
+              onClick={async () => {
+                if (!(await sure(
                   "Delete every session and artifact past the limits above? Pinned sessions are kept.",
-                )) return;
+                ))) return;
                 setPruning(true);
                 void fetch("/api/storage/prune", { method: "POST" })
                   .then((r) => r.json())

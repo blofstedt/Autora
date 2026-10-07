@@ -44,7 +44,7 @@ function sync() {
     .catch(() => undefined);
 }
 
-export function setAgentCursor(next: boolean) {
+function setAgentCursor(next: boolean) {
   set(next);
   void fetch("/api/agent-cursor", {
     method: "PATCH",
@@ -52,8 +52,6 @@ export function setAgentCursor(next: boolean) {
     body: JSON.stringify({ on: next }),
   }).catch(() => undefined);
 }
-
-export const agentCursorOn = () => on;
 
 const subscribe = (l: () => void) => {
   sync();

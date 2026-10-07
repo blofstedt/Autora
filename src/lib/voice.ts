@@ -85,7 +85,7 @@ export function speechEngine(): (new () => Recognition) | undefined {
 }
 
 export const dictationSupported = recognitionAvailable && secureOrigin;
-export const speechSupported =
+const speechSupported =
   typeof window !== "undefined" && "speechSynthesis" in window;
 
 /** Safari ends the session after each phrase; restarting is how you get
@@ -132,7 +132,7 @@ const bare = (word: string): string => word.toLowerCase().replace(EDGES, "");
  * is a this is a test". Comparing against the last thing handed over, whatever
  * index it came from, catches that and the restart replays alike.
  */
-export type Ledger = { last: string[]; at: number };
+type Ledger = { last: string[]; at: number };
 
 export const newLedger = (): Ledger => ({ last: [], at: 0 });
 
@@ -158,7 +158,7 @@ const REVISE_MS = 1500;
  *   away, is a revision: only what follows the agreement goes out.
  * - Anything else is a new phrase and goes out whole.
  */
-export function unsaid(ledger: Ledger, text: string, now: number): string {
+function unsaid(ledger: Ledger, text: string, now: number): string {
   const said = words(text);
   const heard = said.map(bare);
   const last = ledger.last;
@@ -215,7 +215,7 @@ export function turnPause(text: string, settled: boolean): number {
   return HANGING.has(last) ? base + 1500 : base;
 }
 
-export type Dictation = {
+type Dictation = {
   supported: boolean;
   listening: boolean;
   /** The phrase in flight, before the engine settles on it. */
@@ -877,7 +877,7 @@ export function withoutName(text: string): string | null {
   return (rest ?? said).trim() || null;
 }
 
-export type SpeechSource = "server" | "browser";
+type SpeechSource = "server" | "browser";
 
 /** What the console says about its own voice, from GET /api/speech. */
 export type SpeechStatus = {
@@ -1017,7 +1017,7 @@ const IDLE_FLUSH_MS = 12_000;
     away a queue of requests nobody will hear. */
 const LOOKAHEAD = 2;
 
-export type Speech = {
+type Speech = {
   supported: boolean;
   speaking: boolean;
   /** Where the last words out actually came from, for the panel to say. */
@@ -1069,7 +1069,7 @@ export type Speech = {
  * It is a function rather than a ref inside the hook so the rule can be tested
  * without a browser.
  */
-export type SpeechLine = {
+type SpeechLine = {
   /** Add a rendering. `run` is called when everything before it has finished;
       the returned promise settles with it, so a failure reaches its caller --
       without wedging the line, which the next rendering still gets its turn

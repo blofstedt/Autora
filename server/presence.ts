@@ -49,7 +49,7 @@ export interface Touch {
   told: boolean;
 }
 
-export interface PresenceView {
+interface PresenceView {
   /** Surfaces the person has taken. */
   held: Surface[];
   /** Surfaces they are using this moment. */

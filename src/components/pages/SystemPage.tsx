@@ -4,17 +4,7 @@ import type { PageId } from "../Rail";
 import { Settings } from "../Settings";
 import { StatusPage } from "./StatusPage";
 import { LogsPage } from "./LogsPage";
-
-export type SystemTab = "status" | "logs" | "host";
-
-export const SYSTEM_TABS: { id: SystemTab; label: string }[] = [
-  { id: "status", label: "Status" },
-  { id: "logs", label: "Logs" },
-  { id: "host", label: "Host" },
-];
-
-export const isSystemTab = (v: unknown): v is SystemTab =>
-  SYSTEM_TABS.some((t) => t.id === v);
+import { SYSTEM_TABS, type SystemTab } from "../../lib/systemTabs";
 
 /**
  * System: the installation itself, in one place. Status is the overview,

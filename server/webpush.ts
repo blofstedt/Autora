@@ -24,7 +24,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 /** A browser's subscription, as its push manager hands it over. */
-export interface WebSubscription {
+interface WebSubscription {
   endpoint: string;
   keys: { p256dh: string; auth: string };
   /** What to call the device in a list. */
@@ -32,14 +32,14 @@ export interface WebSubscription {
   added?: number;
 }
 
-export interface WebMessage {
+interface WebMessage {
   title: string;
   body: string;
   url?: string | null;
   urgent?: boolean;
 }
 
-export interface WebDelivery {
+interface WebDelivery {
   ok: boolean;
   /** Devices reached, and devices that could not be. */
   sent: number;

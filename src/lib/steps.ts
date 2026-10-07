@@ -17,7 +17,7 @@ export const STEP_KINDS = new Set(["terminal", "tool"]);
     thing Thread.tsx calls a cell's key. */
 const itemKey = (cell: Cell) => `${cell.kind}-${cell.seq}`;
 
-export type TurnItem =
+type TurnItem =
   | { kind: "cell"; key: string; cell: Cell }
   | { kind: "steps"; key: string; cells: Cell[] };
 

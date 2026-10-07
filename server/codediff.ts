@@ -13,6 +13,7 @@
  */
 
 import fs from "node:fs";
+import fsp from "node:fs/promises";
 import path from "node:path";
 
 const SKIP_DIRS = new Set([
@@ -167,45 +168,59 @@ export class Workspace {
   /** `skip`: folders that are never looked in (Autora's own data, say). */
   constructor(readonly root: string, private readonly skip: string[] = []) {}
 
-  private walk(): Map<string, { full: string; mtime: number; size: number }> | null {
+  /** Every file worth following, by relative path. Asynchronous, and a
+      directory's files are looked at together: a folder of thousands of files
+      is walked without holding up every other chat's stream while it is. */
+  private async walk(): Promise<Map<string, { full: string; mtime: number; size: number }> | null> {
     const found = new Map<string, { full: string; mtime: number; size: number }>();
     let over = false;
-    const visit = (dir: string) => {
+    const visit = async (dir: string): Promise<void> => {
       if (over) return;
       let entries: fs.Dirent[];
       try {
-        entries = fs.readdirSync(dir, { withFileTypes: true });
+        entries = await fsp.readdir(dir, { withFileTypes: true });
       } catch {
         return;
       }
+      const files: { full: string; name: string }[] = [];
+      const dirs: string[] = [];
       for (const e of entries) {
-        if (over) return;
         const full = path.join(dir, e.name);
         if (e.isDirectory()) {
           if (this.skip.some((s) => path.resolve(s) === path.resolve(full))) continue;
-          if (!SKIP_DIRS.has(e.name) && !(e.name.startsWith(".") && e.name !== ".github")) visit(full);
+          if (!SKIP_DIRS.has(e.name) && !(e.name.startsWith(".") && e.name !== ".github")) dirs.push(full);
         } else if (e.isFile() && !SECRET.test(e.name)) {
-          if (found.size >= MAX_TRACKED) {
-            over = true;
-            return;
-          }
-          try {
-            const st = fs.statSync(full);
-            found.set(path.relative(this.root, full).split(path.sep).join("/"), { full, mtime: st.mtimeMs, size: st.size });
-          } catch {
-            // gone between listing and looking
-          }
+          files.push({ full, name: e.name });
         }
       }
+      if (found.size + files.length > MAX_TRACKED) {
+        over = true;
+        return;
+      }
+      const stats = await Promise.all(files.map(async (f) => {
+        try {
+          return await fsp.stat(f.full);
+        } catch {
+          return null; // gone between listing and looking
+        }
+      }));
+      files.forEach((f, i) => {
+        const st = stats[i];
+        if (st) found.set(path.relative(this.root, f.full).split(path.sep).join("/"), { full: f.full, mtime: st.mtimeMs, size: st.size });
+      });
+      for (const d of dirs) {
+        if (over) return;
+        await visit(d);
+      }
     };
-    visit(this.root);
+    await visit(this.root);
     return over ? null : found;
   }
 
-  private read(full: string, size: number): string | null {
+  private async read(full: string, size: number): Promise<string | null> {
     if (size > MAX_READ_BYTES) return null;
     try {
-      const data = fs.readFileSync(full);
+      const data = await fsp.readFile(full);
       if (data.subarray(0, 4096).includes(0)) return null;
       return data.toString("utf8");
     } catch {
@@ -230,15 +245,15 @@ export class Workspace {
   }
 
   /** Take the folder as it is now as the one later scans compare against. */
-  prime(): void {
-    this.scan();
+  async prime(): Promise<void> {
+    await this.scan();
     this.primed = true;
   }
 
   /** What changed since the last scan (or prime). The first scan is a baseline
       and says nothing. */
-  scan(): FileChange[] {
-    const now = this.walk();
+  async scan(): Promise<FileChange[]> {
+    const now = await this.walk();
     if (now === null) {
       this.tooMany = true;
       this.files.clear();
@@ -253,7 +268,7 @@ export class Workspace {
     for (const [rel, info] of now) {
       const was = this.files.get(rel);
       if (was && was.mtime === info.mtime && was.size === info.size) continue;
-      const text = this.read(info.full, info.size);
+      const text = await this.read(info.full, info.size);
       const quiet = QUIET.test(rel) ? "generated or lock file" : text === null ? (info.size > MAX_READ_BYTES ? "large file" : "not text") : undefined;
       if (was?.text) this.kept -= was.size;
       this.files.set(rel, { mtime: info.mtime, size: info.size, text: quiet ? null : this.keep(text, info.size) });

@@ -33,7 +33,7 @@ import { keyFor, resolveProvider, save, state } from "./state";
 import { PROVIDERS, providerSpec } from "./providers";
 
 /** The real spend, as the vendor's own balance works it out. */
-export type VendorMoney = {
+type VendorMoney = {
   /** Which vendor this is the money of. Named because it is only ever one
       vendor's, and the page has to be able to say whose. */
   provider: string;
@@ -53,7 +53,7 @@ export type VendorMoney = {
 
 /** How old a reading may be before another is worth making. The page asks for
     usage often; the vendor's server should not be asked on every render. */
-export const STALE_MS = 5 * 60 * 1000;
+const STALE_MS = 5 * 60 * 1000;
 /** A rise smaller than this is a wobble in the arithmetic, not a payment. */
 const PAYMENT_MIN = 0.01;
 
@@ -123,13 +123,13 @@ export function readBalance(field: "deepseek" | "orcarouter" | "openrouter", bod
 }
 
 /** Money paid in to one vendor, as last recorded. */
-export function topUpFor(id: string): number | null {
+function topUpFor(id: string): number | null {
   const value = state.topUps[id];
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 /** What one vendor's balance was last read as, and when. */
-export function balanceFor(id: string): { usd: number | null; at: number } {
+function balanceFor(id: string): { usd: number | null; at: number } {
   const usd = state.balances[id];
   return {
     usd: typeof usd === "number" && Number.isFinite(usd) ? usd : null,
@@ -186,7 +186,7 @@ export function vendorMoneyFor(id: string): VendorMoney | null {
     One vendor at a time: the balance is one account's money, and showing the
     vendor's figure against a different vendor's usage is how a wrong number
     gets believed. Null for a provider that publishes no balance at all. */
-export function vendorMoney(id = resolveProvider().provider): VendorMoney | null {
+function vendorMoney(id = resolveProvider().provider): VendorMoney | null {
   if (!id || !providerSpec(id)?.balance) return null;
   return vendorMoneyFor(id);
 }

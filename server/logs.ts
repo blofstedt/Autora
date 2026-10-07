@@ -13,7 +13,7 @@
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
-export interface LogLine {
+interface LogLine {
   id: number;
   ts: number;
   level: LogLevel;
@@ -64,7 +64,7 @@ export function log(level: LogLevel, component: string, message: string, session
   if (lines.length > MAX_LINES) lines.splice(0, lines.length - MAX_LINES);
 }
 
-export interface LogQuery {
+interface LogQuery {
   level?: LogLevel;
   component?: string;
   q?: string;

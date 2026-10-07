@@ -40,7 +40,7 @@ const ACTION_TIMEOUT_MS = 10_000;
     capture over a home connection is the constraint, not the agent. */
 const RELAY_FPS = 2;
 
-export interface RelayStatus {
+interface RelayStatus {
   connected: boolean;
   platform: string | null;
   screen: { w: number | null; h: number | null };
@@ -52,7 +52,7 @@ export interface RelayStatus {
   detail: string | null;
 }
 
-export interface RelayResult {
+interface RelayResult {
   ok: boolean;
   data?: Record<string, any>;
   error?: string;

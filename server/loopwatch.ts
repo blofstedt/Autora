@@ -36,7 +36,7 @@ export const LOOP_DEFAULTS: LoopWatchConfig = {
   stallAfter: 8,
 };
 
-export interface LoopVerdict {
+interface LoopVerdict {
   /** Appended to what the model reads back from this call. */
   note: string | null;
   /** Said in the thread, once per problem, so the person sees it too. */

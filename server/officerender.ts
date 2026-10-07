@@ -30,7 +30,7 @@ import { officeDir } from "./office";
 import { OfficeHost, hostBuilt, wire, type HostApp, type HostWindows } from "./officehost";
 import { PdfRenderError, withBrowserContext, type Stopper } from "./pdfrender";
 
-export type OfficeApp = "docs" | "slides" | "sheets";
+type OfficeApp = "docs" | "slides" | "sheets";
 
 const ORIGIN = "https://office.autora.invalid";
 /** Opening the document, laying it out and printing it, at most. */
@@ -95,8 +95,6 @@ export function renderToPdf(kind: OfficeKind, data: Buffer, name: string, stoppe
 }
 const PDF_CACHE = 6;
 const pdfCache = new Map<string, Promise<Buffer>>();
-
-export const renderDocxToPdf = (data: Buffer, name: string, stopper: Stopper = {}) => renderToPdf("docx", data, name, stopper);
 
 const EDITOR_NAME = { docs: "Word", slides: "PowerPoint", sheets: "Excel" } as const;
 

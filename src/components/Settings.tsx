@@ -20,6 +20,7 @@ import { useServerVersion, versions } from "./UpdateNotice";
 import { ThemePicker } from "./Rail";
 import type { Appearance } from "../lib/theme";
 import { announceMoneyChange } from "../lib/spend";
+import { every } from "../lib/poll";
 
 type Credential = {
   name: string;
@@ -1354,8 +1355,8 @@ function HostCard() {
     let alive = true;
     const load = () => fetch("/api/system").then((r) => r.json()).then((d) => alive && setHost(d)).catch(() => undefined);
     void load();
-    const timer = window.setInterval(load, 5000);
-    return () => { alive = false; window.clearInterval(timer); };
+    const stop = every(load, 5000);
+    return () => { alive = false; stop(); };
   }, []);
   if (!host) return null;
   const used = host.memory.total - host.memory.free;

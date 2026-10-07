@@ -14,14 +14,14 @@ import { emitSpectraEvent } from "./lib/spectra";
 import { ResizeHandle } from "./components/ResizeHandle";
 import { CHAT, RAIL, setChatWidth, setRailCollapsed, setRailWidth, usePanes, wideScreen } from "./lib/panes";
 import { clearOfficePick, getOfficePick, pickLabel, pickSentence, useOfficePick } from "./lib/officeSelection";
-import { emitOfficePush, resetWord, setWordState, useOfficeState, type OfficeKind } from "./lib/officedesk";
+import { emitOfficePush, resetOffice, setOfficeState, useOfficeState, type OfficeKind } from "./lib/officedesk";
 import { resetDesk, setDeskState, useDeskState } from "./lib/pdfdesk";
 import { resetCollab, setCollabState } from "./lib/collab";
 import { cellKey, dockedPlan, usePhone } from "./lib/stage";
 import { Thread } from "./components/Thread";
 import { Dock } from "./components/Dock";
 import { Rail, pageLabel, PAGES, type PageId } from "./components/Rail";
-import { isSystemTab, type SystemTab } from "./components/pages/SystemPage";
+import { isSystemTab, type SystemTab } from "./lib/systemTabs";
 import { TodoDock } from "./components/TodoDock";
 
 /* The pages behind the rail are loaded when they are opened, not with the app.
@@ -35,6 +35,11 @@ const ArtifactsPage = lazyPage(() => import("./components/pages/ArtifactsPage"),
 const NotebooksPage = lazyPage(() => import("./components/pages/NotebooksPage"), "NotebooksPage");
 const ToolsPage = lazyPage(() => import("./components/pages/ToolsPage"), "ToolsPage");
 const MindPage = lazyPage(() => import("./components/pages/MindPage"), "MindPage");
+const Settings = lazyPage(() => import("./components/Settings"), "Settings");
+const Schedule = lazyPage(() => import("./components/Schedule"), "Schedule");
+const Triggers = lazyPage(() => import("./components/Triggers"), "Triggers");
+// Talk mode (and the 1,900-line speech code behind it) loads when it is turned on.
+const LiveChat = lazyPage(() => import("./components/LiveChat"), "LiveChat");
 import { LibraryPicker, type LibraryTab } from "./components/LibraryPicker";
 import { ToolsSheet } from "./components/ToolsSheet";
 import { OPEN_NOTEBOOK, type NotebookRef } from "./lib/notebooks";
@@ -46,15 +51,12 @@ import {
 } from "./lib/theme";
 import { Sessions, type SessionRow } from "./components/Sessions";
 import { Approvals } from "./components/Approvals";
-import { Schedule } from "./components/Schedule";
-import { Triggers } from "./components/Triggers";
-import { Settings, type ConfigTab } from "./components/Settings";
+import type { ConfigTab } from "./components/Settings";
 import { DictateButton } from "./components/DictateButton";
 import { AttachButton, CameraButton } from "./components/AttachButton";
 import { SpendBar, type Usage } from "./components/SpendBar";
 import { SlashMenu } from "./components/SlashMenu";
 import { resolve as resolveCommand, suggest as suggestCommands, type Command } from "./lib/commands";
-import { LiveChat } from "./components/LiveChat";
 import { useRelay } from "./components/RelaySetup";
 import { UpdateNotice } from "./components/UpdateNotice";
 import { SetupCard, Welcome } from "./components/SetupCard";
@@ -80,6 +82,7 @@ import {
 import {
   MAX_UPLOAD_BYTES, isPicture, sizeLabel, uploadAttachment, type Attachment,
 } from "./lib/attachments";
+import { SureHost } from "./components/SureHost";
 
 /* The pages behind the rail are loaded when they are opened rather than with
    the app: together they are a third of the bundle, and most sessions never
@@ -368,7 +371,7 @@ export function App() {
     };
     resetPreview();
     resetDesk();
-    resetWord();
+    resetOffice();
     resetCollab();
     const stream = new SessionStream(sessionId, {
       onEvents: (fresh) => {
@@ -392,7 +395,7 @@ export function App() {
       onPreview: (state) => setPreviewState(state as PreviewState),
       onPdfDesk: setDeskState,
       onSpectra: emitSpectraEvent,
-      onOfficeDesk: setWordState,
+      onOfficeDesk: setOfficeState,
       onOfficePush: emitOfficePush,
       onPresence: setCollabState,
       onBrowser: (state) => {
@@ -1460,6 +1463,20 @@ export function App() {
     navigate("chat");
   }, [navigate, pickSession]);
 
+  /* The corner widgets, made once per change of what they hold rather than on
+     every render: Thread's props must be stable. */
+  const dockEl = useMemo(() => (
+    <Dock
+      dock={appearance.dock}
+      targets={{
+        go: navigate,
+        openSession,
+        openMemory: (id, kind) => { setMindBucket({ kind, id }); navigate("mind"); },
+        settingsTab: (tab) => { setConfigJump({ tab }); navigate("config"); },
+      }}
+    />
+  ), [appearance.dock, navigate, openSession]);
+
   // ------------------------------------------------------ undoable delete --
   /** A session deleted a moment ago, still recoverable. Nothing is removed on
       the server until the Undo window passes -- a two-tap confirm guarded the
@@ -1606,6 +1623,7 @@ export function App() {
             two releases old is not a detail to mention further down. */}
         <UpdateNotice />
         <Notices onOpenSession={openSession} />
+        <SureHost />
         <InstallApp />
 
         <header className="top">
@@ -1785,17 +1803,7 @@ export function App() {
             dockedPlanKey={dockPlan ? cellKey(dockPlan) : ""}
             // Anything pinned to the corners of the conversation. Empty
             // unless it is asked for in Settings -> Appearance.
-            dock={(
-              <Dock
-                dock={appearance.dock}
-                targets={{
-                  go: navigate,
-                  openSession,
-                  openMemory: (id, kind) => { setMindBucket({ kind, id }); navigate("mind"); },
-                  settingsTab: (tab) => { setConfigJump({ tab }); navigate("config"); },
-                }}
-              />
-            )}
+            dock={dockEl}
           />
 
           <Approvals
@@ -1884,6 +1892,7 @@ export function App() {
                   />
                 </div>
               )}
+              <Suspense fallback={null}>
               <LiveChat
                 onUtterance={sendSpoken}
                 onInterrupt={hush}
@@ -1894,6 +1903,7 @@ export function App() {
                 disabled={!live}
                 onClose={toggleLive}
               />
+              </Suspense>
               </>
             ) : (
               <>

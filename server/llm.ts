@@ -974,10 +974,3 @@ export async function listModels(
     };
   });
 }
-
-/** Does this key work? Asked in the cheapest way each vendor allows -- by
-    listing models, which costs nothing and still fails loudly on a bad key. */
-export async function testKey(providerId: string, key: string, baseUrl: string) {
-  const models = await listModels(providerId, key, baseUrl);
-  return { ok: true, models: models.length };
-}

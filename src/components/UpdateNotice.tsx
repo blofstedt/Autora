@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { IconArrow, IconX } from "./Icons";
+import { every } from "../lib/poll";
 
 /** How often to ask the server what it is running. Cheap, and the answer only
     matters around a deploy. */
@@ -23,8 +24,8 @@ export function useServerVersion(): string | null {
         })
         .catch(() => undefined);
     void read();
-    const timer = window.setInterval(read, POLL_MS);
-    return () => { alive = false; window.clearInterval(timer); };
+    const stop = every(read, POLL_MS);
+    return () => { alive = false; stop(); };
   }, []);
 
   return version;

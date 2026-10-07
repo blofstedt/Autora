@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useFullscreen } from "../lib/fullscreen";
 import { useAgentCursor } from "../lib/agentCursor";
 import { holdSurface, useCollab } from "../lib/collab";
-import { onOfficePush, useWordWindow, type OfficeCue, type OfficeKind } from "../lib/officedesk";
+import { onOfficePush, useOfficeWindow, type OfficeCue, type OfficeKind } from "../lib/officedesk";
 import { OfficeCursor, type Acted, type Located } from "./OfficeCursor";
 import { OfficePages } from "./OfficePages";
 import { IconDownload, IconFile, IconMaximize, IconMinimize, IconX } from "./Icons";
@@ -27,7 +27,7 @@ const NAME: Record<OfficeKind, string> = { docx: "Autora Pages", pptx: "Autora S
 
 export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; kind: OfficeKind; phone: boolean }) {
   // The window for this app: Autora Pages, Autora Sheets and Autora Slides each have their own, all open at once.
-  const word = useWordWindow(kind) ?? { open: false, kind };
+  const word = useOfficeWindow(kind) ?? { open: false, kind };
   /** Slides and Sheets keep their document in an engine on the server, which the frame reaches through here. */
   const engine = kind !== "docx";
   const frame = useRef<HTMLIFrameElement>(null);

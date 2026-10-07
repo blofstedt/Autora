@@ -42,7 +42,7 @@ import { applyChanges, compose, ComposeError, outlineLines, type ComposeSource, 
 // ------------------------------------------------------------- context --
 
 /** What a PDF tool needs from the turn it runs in. */
-export interface PdfContext {
+interface PdfContext {
   session: string;
   /** Where a relative path starts: the terminal's working directory. */
   cwd: string;
@@ -61,7 +61,7 @@ export interface PdfContext {
   held?: (objectId: string) => string | null;
 }
 
-export interface PdfOutcome {
+interface PdfOutcome {
   ok: boolean;
   summary: string;
   preview?: string;
@@ -175,7 +175,7 @@ async function openDoc(data: Buffer, pass?: string): Promise<Opened> {
  * the page a redaction replaced, text and all -- would otherwise still be in
  * the bytes. Walks from the trailer and drops what it never reaches.
  */
-export function collectGarbage(doc: PDFDocument): number {
+function collectGarbage(doc: PDFDocument): number {
   const ctx = doc.context;
   const seen = new Set<string>();
   const stack: unknown[] = [ctx.trailerInfo.Root, ctx.trailerInfo.Info, ctx.trailerInfo.Encrypt];
@@ -578,7 +578,7 @@ const PRESETS: Record<string, RegExp> = {
   date: /\b(?:\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}|\d{4}-\d{2}-\d{2})\b/g,
 };
 
-export type Pattern = { label: string; re: RegExp };
+type Pattern = { label: string; re: RegExp };
 
 /** Plain text (any case, any spacing), a /regular expression/, or a preset. */
 export function patternsFor(find: unknown): Pattern[] {
@@ -600,7 +600,7 @@ export function patternsFor(find: unknown): Pattern[] {
   });
 }
 
-export type Hit = { page: number; text: string; label: string; boxes: Rect[] };
+type Hit = { page: number; text: string; label: string; boxes: Rect[] };
 
 /**
  * Where on the page each pattern matches, as boxes around the characters.

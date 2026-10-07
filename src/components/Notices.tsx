@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconX } from "./Icons";
+import { every } from "../lib/poll";
 
 type Notice = {
   id: number;
@@ -58,8 +59,8 @@ export function Notices({ onOpenSession }: { onOpenSession: (id: string) => void
         })
         .catch(() => undefined);
     void poll();
-    const timer = window.setInterval(poll, POLL_MS);
-    return () => { alive = false; window.clearInterval(timer); };
+    const stop = every(poll, POLL_MS);
+    return () => { alive = false; stop(); };
   }, [dismiss]);
 
   if (shown.length === 0) return null;

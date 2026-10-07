@@ -24,8 +24,6 @@ export const DEVICES: Record<Device, { width: number; height: number; label: str
   desktop: { width: 1280, height: 800, label: "Desktop" },
 };
 
-export const DEVICE_LIST: Device[] = ["phone", "tablet", "desktop"];
-
 export function isDevice(value: unknown): value is Device {
   return value === "phone" || value === "tablet" || value === "desktop";
 }

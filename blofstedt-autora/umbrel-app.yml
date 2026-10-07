@@ -133,45 +133,18 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The money bar above the chat field was drawing one figure for everybody:
-  every API's spend this month added together, printed beside the credit of the
-  account actually in use, so a console spending one vendor's balance showed
-  another vendor's words in its month. Each vendor's line now carries its own
-  month — that account's own turns, against that account's own credit — and the
-  account the next turn will call is marked as the selected one, so the bar
-  draws the account in use rather than the ledger's mixed month.
-  Earlier: Autora was billing cached input as though it were fresh. A provider serves
-  most of a long conversation back from its prompt cache and charges far less
-  for those tokens — Orca Router publishes $0.042 per million for
-  tencent/hy4-preview against $0.834 for tokens it has not seen — and the price
-  catalogue was being read without the cache-read figure at all. Every cached
-  token was therefore charged at the fresh rate: one month of ordinary use read
-  as "$101.45 of $20", when the two vendors had between them charged about $28.
-  The cache-read price is now read from the vendor's own catalogue, and the
-  spend already written down is corrected once, on the first start after this
-  update — only the cached part of a matching row is rewritten, only downwards,
-  never above what the vendor actually charged, and the correction is stamped so
-  it can never be applied to the same ledger twice.
-  Earlier: the money bars above the chat field now follow what is actually switched on.
-  Clearing a provider's key -- in Settings, or by emptying its box -- makes
-  Autora drop that vendor's remembered balance and tells the open page to read
-  the figures again, so the bar for a connection you have just turned off goes
-  when you save it, instead of sitting there until the next reload. A reading
-  that cannot be refreshed without a key is not reported any more, while what
-  you paid in stays on the books: clearing the Orca Router key leaves DeepSeek's
-  bar alone and Orca Router's gone.
-  Earlier: the spend bar stopped mixing two APIs into one number. It used to
-  read "101.21 of $20" because it took the whole ledger -- every provider added
-  together -- and compared it against the single global ceiling, so a month that
-  was mostly one vendor's spend was measured against another vendor's budget and
-  neither figure was true of anything. Now the bar draws one line per API you
-  pay into, each with its own money: what you topped that vendor up with, what
-  is left in that vendor's till, and the share of this month's spend that vendor
-  actually billed. A provider with credit but no recorded spend still gets a
-  bar, showing what is left of what was paid in; a provider with neither is left
-  out rather than drawn as zero. The Usage page and the hover peek show the same
-  per-vendor lines. Before that: Autora is quicker to answer and quicker to
-  start, having stopped rebuilding the tool list, the tool families and the
-  event log every round, and the three files that had grown into the app's whole
-  shape were taken apart into server/routes/ and server/specs/ with nothing
-  behaving differently for any of it.
+  The PDF window opens several times faster, and the whole app is lighter.
+  Autora PDF used to download every language it could be shown in -- about 35
+  MB of script, 15 MB of it translations -- before it drew a page; it now loads
+  English and fetches another language only when that one is chosen, and every
+  page, script and style of the app is sent compressed and kept by the browser
+  rather than fetched again each time. The old PDF editor, no longer shown
+  since Autora PDF replaced it, is gone from the image. On the server, a chat
+  that nobody has open gives back its memory after fifteen minutes, deleting a
+  chat frees the copy of your project folder it was holding, and looking for
+  code changes no longer stops every other chat's stream while it reads a big
+  folder. In the app, pages that refresh themselves stop while the tab is in
+  the background, the secret store looks like the other settings cards, "are
+  you sure?" is the app's own dialog rather than the browser's, and a phone
+  shows a tab for each of Pages, Sheets and Slides when more than one is open
+  instead of only the last one touched. Unused styles and code were removed.

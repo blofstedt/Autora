@@ -120,7 +120,7 @@ export function pictureNames(raw: string): string[] {
 }
 
 /** Which squares the question is asking about, and the names that decided it. */
-export interface NamedTiles {
+interface NamedTiles {
   indexes: number[];
   names: string[];
 }

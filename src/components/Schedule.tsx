@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { ago, until } from "../lib/ago";
 import { FREQS, SHORT_DAYS, clock, cronOf, parseRecur, type Recur } from "../lib/recur";
 import {
   IconCheck, IconClock, IconPlay, IconPlus, IconRepeat, IconShield, IconTrash, IconX,
 } from "./Icons";
+import { every } from "../lib/poll";
 
 export type Job = {
   id: string;
@@ -112,28 +114,6 @@ function ordinal(n: number): string {
   return `${n}${["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
 }
 
-/** "in 4h", "in 3 days" -- a countdown answers "is this on?" faster than a date. */
-export function until(ts: number): string {
-  const seconds = Math.round(ts - Date.now() / 1000);
-  if (seconds <= 0) return "due now";
-  if (seconds < 90) return `in ${seconds}s`;
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 90) return `in ${minutes}m`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 36) return `in ${hours}h`;
-  return `in ${Math.round(hours / 24)} days`;
-}
-
-export function ago(ts: number): string {
-  const seconds = Math.round(Date.now() / 1000 - ts);
-  if (seconds < 90) return "just now";
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 90) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 36) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
-}
-
 /**
  * Scheduled tasks and watchers: a prompt and a cron expression.
  *
@@ -175,8 +155,7 @@ export function Schedule({
   // fires while someone is looking at the list should show up in it.
   useEffect(() => {
     void load();
-    const timer = window.setInterval(() => void load(), 15_000);
-    return () => window.clearInterval(timer);
+    return every(load, 15_000);
   }, [load]);
 
   const save = useCallback(async (draft: Partial<Job>, id?: string) => {

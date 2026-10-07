@@ -5,7 +5,7 @@ import { useSyncExternalStore } from "react";
  * piece of text on a page, or just the page. It goes with their next message to the
  * agent ("Pointing at ... on slide 2 of pitch.pptx"), which is how a phone edits.
  */
-export type OfficePick = {
+type OfficePick = {
   session: string;
   file: string;
   kind: "docx" | "pptx" | "xlsx";

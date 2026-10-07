@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { IconCopy, IconPlug, IconPlus, IconRotateCcw, IconTrash, IconX } from "./Icons";
-import { ago } from "./Schedule";
+import { ago } from "../lib/ago";
+import { every } from "../lib/poll";
 
 /**
  * A trigger: a URL and a secret, with a prompt attached. Anything that can
@@ -61,8 +62,7 @@ export function Triggers({
   // should show up in it.
   useEffect(() => {
     void load();
-    const timer = window.setInterval(() => void load(), 15_000);
-    return () => window.clearInterval(timer);
+    return every(load, 15_000);
   }, [load]);
 
   const saveTrigger = useCallback(

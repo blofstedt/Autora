@@ -1,6 +1,6 @@
 /**
  * The PDF window: the file the agent is working on, open beside the
- * conversation in SecurePDF's editor (pdf-editor/), for the person to watch
+ * conversation in Spectra-PDF's editor (spectra-editor/, served by server/spectra.ts), for the person to watch
  * and to work on too.
  *
  * One per session. It holds the pages without anything placed on them (the
@@ -15,9 +15,7 @@
  * next PDF tool result, or at the start of its next turn (briefing()).
  *
  * The editor runs in a sandboxed frame with no origin of its own and talks to
- * the page by messages only; it never calls this server. Its files are served
- * here under /pdf-editor/ (see serveEditor), with a sandboxing policy, since
- * it renders PDFs that came from anywhere.
+ * the page by messages only (see server/spectra.ts for how it is served).
  */
 
 import crypto from "node:crypto";
@@ -57,7 +55,7 @@ type Desk = DeskSnapshot & {
 };
 
 /** One change by the agent, up for review in the window. */
-export type Mark = {
+type Mark = {
   id: string;
   kind: "add" | "edit" | "remove" | "page";
   /** The object it is about (not for "page"). */
@@ -70,7 +68,7 @@ export type Mark = {
   beforeBaseRev?: number;
 };
 
-export type Version = {
+type Version = {
   n: number;
   label: string;
   at: number;
@@ -717,22 +715,4 @@ export function deskRoutes(app: Express, opts: { exists: (session: string) => bo
     closeDesk(id);
     res.json({ ok: true });
   });
-}
-
-/**
- * The editor's own files. It runs in a frame sandboxed without an origin of
- * its own (it renders PDFs from anywhere, and pdf.js has had holes), so this
- * policy repeats the frame's sandbox for anyone who opens the page directly,
- * and the files say any origin may read them: from inside the sandbox, they
- * count as another site's. The editor is built as one page and asks the app
- * for pdf.js's data, though, because such requests carry no cookies and a
- * login proxy in front (Umbrel's) turns them away (pdf-editor/vite.config.ts).
- */
-export function serveEditor(app: Express, dist: string) {
-  app.use("/pdf-editor", (_req, res, next) => {
-    res.setHeader("Content-Security-Policy", "sandbox allow-scripts allow-downloads allow-modals allow-popups");
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("X-Content-Type-Options", "nosniff");
-    next();
-  }, express.static(path.join(dist, "pdf-editor"), { fallthrough: false }));
 }

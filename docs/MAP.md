@@ -8,8 +8,7 @@ number. Sizes are lines, as of 0.9.159.
 
 | Path | Lines | What it is |
 |---|---|---|
-| `spectra-editor/` | ~344k | Spectra-PDF's renderer, vendored whole (one commit). 16 MB of it is `src/renderer/locales/` (29 languages). Only `spectra-editor/src/autora/` (the Tauri shim) and `vite.config.ts` are Autora's own. |
-| `pdf-editor/` | ~11k | SecurePDF's editor. **No longer shown**: `SpectraWindow` replaced `PdfWindow` (see docs/REVIEW.md, D1). Still built and served. |
+| `spectra-editor/` | ~344k | Spectra-PDF's renderer, vendored whole (one commit). 16 MB of it is `src/renderer/locales/` (29 languages, fetched on demand since 0.9.160). Autora's own: `spectra-editor/src/autora/` (the Tauri shim), `vite.config.ts`, and the small edits in `src/renderer/i18n.ts` + `locale-loaders.ts`. |
 | `package-lock.json`, `*/package-lock.json` | | Lockfiles. |
 | `dist/`, `.cache/`, `node_modules/` | | Build output, the GenOffice/Spectra checkouts, deps. |
 | `docs/screenshots/`, `public/icons/` | | Images. |
@@ -34,7 +33,7 @@ its output on the vendored editor.
    (`EVENT_BATCH_MS` in `App.tsx`), folds the whole log with `derive()` (`src/lib/derive.ts`),
    keeps unchanged cards' identity with `share()` (`src/lib/share.ts`), renders `Thread`.
 
-## `server.ts` (8k lines), by region
+## `server.ts` (7.3k lines), by region
 
 | Region (search for) | What |
 |---|---|
@@ -63,14 +62,14 @@ its output on the vendored editor.
 - Automation: `/api/jobs*`, `/api/triggers*`, `/api/automation`, `/api/autonomy*`, `/api/policy/:requestId`, `/api/proactive*`
 - Settings: `/api/settings`, `/api/secrets*`, `/api/credentials*`, `/api/providers/:id/*`, `/api/usage*`, `/api/speech*`
 - System: `/api/system`, `/api/host`, `/api/storage*`, `/api/notices`, `/api/tools/health`, `/api/custom-tools*`, `/api/relay`, `/relay.py`, `/api/push/*`
-- Elsewhere: `server/routes/{system,artifacts,mcp,notebooks}.ts`; `officeRoutes` (`server/officedesk.ts`); `deskRoutes` (`server/pdfdesk.ts`); `spectraRoutes` (`server/spectra.ts`); `server/newfile.ts`
+- Elsewhere: `server/routes/{system,artifacts,mcp,notebooks,memory,keys,settings,health}.ts` (memory graph and the small Mind switches; secrets, credentials, provider models, billing and usage; the Settings API and speech; tool health, host, storage, custom tools); `officeRoutes` (`server/officedesk.ts`); `deskRoutes` (`server/pdfdesk.ts`); `spectraRoutes` (`server/spectra.ts`); `server/newfile.ts`
 
 ## `server/`, by job
 
 | Job | Files |
 |---|---|
 | Model calls | `llm.ts` (one call, any vendor), `providers.ts` (vendors, prices), `billing.ts`, `vendor-money.ts` |
-| The prompt | `prompt.ts`, `tools.ts` `capabilityBriefing` + `*_GUIDE` constants, `server.ts` `systemInstructionFor`, `COLLABORATION` |
+| The prompt | `prompt.ts`, `guides.ts` (the `*_GUIDE` texts), `tools.ts` `capabilityBriefing`, `server.ts` `systemInstructionFor`, `COLLABORATION` |
 | Tool schemas | `specs/{browser,computer,files,memory,person,schedule,terminal,voice}.ts` (`pdf_*` and `office_*` live in `specs/files.ts`) |
 | Tool execution | `tools.ts` `runTool` (the big switch), `argcheck.ts`, `guard.ts`, `modes.ts`, `toolload.ts` (which families are shown) |
 | Context | `context.ts` (compaction, vault), `pages.ts` (page re-reads), `readfile.ts`, `hints.ts` |
@@ -83,6 +82,7 @@ its output on the vendored editor.
 | Code | `codediff.ts` (`Workspace`), `codesearch.ts`, `editfile.ts`, `merge3.ts`, `background.ts` (long jobs) |
 | PDF | `pdf.ts` (3k: every `pdf_*` tool), `pdftext.ts`, `pdfrender.ts`, `compose.ts`, `pdfdesk.ts` (window state), `spectra.ts` + `spectra/{engine,commands}.ts` (the window's editor and its Python engine) |
 | Office | `office.ts` (CLI tools), `officedesk.ts` (window), `officehost.ts` (Electron stand-in engine), `officerender.ts` (headless PDF), `officepages.ts` (phone pictures) |
+| Static files | `staticfiles.ts` (compressed, cached `express.static`) |
 | Persistence | `store.ts` (sessions, events, vault), `state.ts` (settings, secrets, usage, redactor), `blobs.ts`, `artifacts.ts`, `notebooks.ts`, `retention.ts`, `credentials.ts` |
 | Scheduling | `scheduler.ts`, `triggers.ts`, `automation.ts`, `autonomy.ts`, `proactive.ts`, `quiet.ts`, `noticer.ts`, `suggest.ts` |
 | Collaboration | `presence.ts`, `companion.ts` |
@@ -104,7 +104,8 @@ its output on the vendored editor.
 | Pages (menu) | `components/Rail.tsx`; lazy: `components/pages/*` ; eager: `Settings.tsx`, `Sessions.tsx`, `Schedule.tsx`, `Triggers.tsx` |
 | Settings cards | `Settings.tsx` (1.5k), `SecretStore`, `Credentials`, `VoiceCard`, `NotifyCard`, `QuietCard`, `CaptchaCard`, `AutomationCard`, `CollabSettings`, `TimeZoneCard`, `ModelPicker`, `SetupCard` |
 | Composer | `DictateButton`, `AttachButton`, `SlashMenu` + `lib/commands.ts`, `ModeSelect`, `PermissionsPill`, `SpendBar`/`SpendPeek` + `lib/spend.ts`, `LiveChat` + `lib/voice.ts` (1.9k), `lib/liveview.ts` |
-| Look | `styles.css` (6.9k, one file), `fonts.css`, `lib/theme.ts`, `lib/mark.ts` + `AutoraMark.tsx`, `Icons.tsx` |
+| Shared hooks | `lib/poll.ts` (`every`, `usePoll`: polling that pauses while the tab is hidden), `lib/sure.ts` + `components/SureHost.tsx` (the "are you sure?" dialog; never `confirm()`), `lib/ago.ts`, `lib/systemTabs.ts` |
+| Look | `styles.css` (6.6k, one file), `fonts.css`, `lib/theme.ts`, `lib/mark.ts` + `AutoraMark.tsx`, `Icons.tsx` |
 
 `styles.css` is ordered roughly by feature; search for the component's root
 class (`.pdf-window`, `.app-window`, `.composer`, `.rail`, `.turn`, `.cell`...).
@@ -116,7 +117,7 @@ class (`.pdf-window`, `.app-window`, `.composer`, `.rail`, `.turn`, `.cell`...).
 | `office/` | GenOffice build glue: `PIN.json`, `shim/` (page side), `host/` (Electron stand-in), `vite/` |
 | `spectra/PIN.json`, `scripts/build-spectra.mjs` | Spectra's Python engine, fetched and built |
 | `scripts/` | `build-office.mjs`, `build-spectra.mjs`, `replay.ts`, `spectra-look.ts` |
-| `tests/` | one `*.test.ts` per area, run serially by `tests/run.ts`; `ui-*` and `e2e-*` drive Chromium |
+| `tests/` | one `*.test.ts` per area; `npm test -- <name>` filters, `-- -j 4` runs four at once (`tests/run.ts`); `ui-*` and `e2e-*` drive Chromium |
 | `.github/` | `workflows/check.yml` (lint/build/test), image + release workflows, `scripts/check_release.py`, `scripts/offer_release.py` |
 | `blofstedt-autora/` | Umbrel app manifest, compose file, store icon |
 | `docs/` | `ARCHITECTURE.md` (why), `HARNESS_AUDIT.md`, `BACKLOG.md`, `GEMINI.md`, `REVIEW.md` (the October 2026 review), this file |
@@ -124,7 +125,9 @@ class (`.pdf-window`, `.app-window`, `.composer`, `.rail`, `.turn`, `.cell`...).
 ## Recipes
 
 - **New tool**: schema in `server/specs/<group>.ts`, case in `runTool` (`server/tools.ts`), if specialist add to a family in `server/toolload.ts`, a test in `tests/`.
-- **New route**: inside `startServer` (`server.ts`) or a `server/routes/*.ts` module; side effects never on `GET`.
+- **New route**: in a `server/routes/*.ts` module (what it needs from server.ts goes in a typed `deps` object, as `settingsRoutes` does), or inside `startServer` for the browser/preview/session routes that are still there; side effects never on `GET`.
+- **Something that polls**: `every()` / `usePoll()` from `lib/poll.ts`, never a bare `setInterval`.
+- **Asking before a delete**: `await sure("...")`, never `confirm()`.
 - **New event kind**: emit via `emitEvent`; fold it in `derive()`; render in `CellView` (`Thread.tsx`).
 - **New per-session state on the server**: a map in `server.ts` *and* a line in `forgetSession`.
 - **New setting**: `server/state.ts` (type, default, `PATCH /api/settings`), UI in `Settings.tsx`.

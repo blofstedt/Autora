@@ -104,7 +104,7 @@ export const CONTEXT_CONFIG: ContextConfig = {
 export type WindowSource = "model" | "vendor" | "setting" | "default";
 
 /** Asks a model to write the new anchored memory; resolves to its text. */
-export type Summarizer = (prompt: string) => Promise<string>;
+type Summarizer = (prompt: string) => Promise<string>;
 
 /** What happened, for the thread and the server log. */
 export interface CompactionReport {
@@ -196,7 +196,7 @@ export function stripAnsi(text: string): string {
  * keeps only its last frame. A line repeated many times in a row -- a retry
  * loop, a spinner, a flood of identical warnings -- is kept once and counted.
  */
-export function sanitizeToolOutput(raw: string): string {
+function sanitizeToolOutput(raw: string): string {
   const lines = raw
     .replace(ANSI, "")
     .replace(/\r\n/g, "\n")
@@ -907,7 +907,7 @@ function renderForSummary(message: ChatMessage): string {
   return parts.join("\n\n");
 }
 
-export function compactionPrompt(memory: string | null, slice: ChatMessage[]): string {
+function compactionPrompt(memory: string | null, slice: ChatMessage[]): string {
   let transcript = slice.map(renderForSummary).filter(Boolean).join("\n\n---\n\n");
   if (transcript.length > SLICE_TOTAL_CHARS) {
     // Keep the newest part: anything older was either already summarised

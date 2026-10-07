@@ -16,7 +16,7 @@
 
 /** The wire protocol a vendor speaks. Three shapes cover every provider here:
     most of the field has settled on OpenAI's chat-completions schema. */
-export type ProviderKind = "gemini" | "openai" | "anthropic";
+type ProviderKind = "gemini" | "openai" | "anthropic";
 
 export interface ModelSpec {
   id: string;
@@ -46,7 +46,7 @@ export interface ModelSpec {
   priced?: boolean;
 }
 
-export interface ProviderSpec {
+interface ProviderSpec {
   id: string;
   label: string;
   /** The window every model this vendor serves shares, when there is one. Some
@@ -85,7 +85,7 @@ export interface ProviderSpec {
  * The path is read against the provider's base URL with any /v1 suffix dropped,
  * since that root is editable per install for local servers and proxies.
  */
-export interface BalanceSpec {
+interface BalanceSpec {
   /** Path to append to the vendor's base URL, e.g. "/user/balance". */
   path: string;
   /** Which number in the reply is the remaining USD. */
@@ -296,7 +296,7 @@ export function rememberModels(providerId: string, models: ModelSpec[]) {
   }
 }
 
-export function discoveredModels(providerId: string): ModelSpec[] {
+function discoveredModels(providerId: string): ModelSpec[] {
   const prefix = `${providerId}:`;
   return [...discovered.entries()]
     .filter(([key]) => key.startsWith(prefix))
@@ -336,7 +336,7 @@ const WINDOWS: Array<[string, number]> = [
 
 /** Where a window came from: the model's own entry, or the vendor's figure for
     everything it serves. */
-export type WindowSource = "model" | "vendor";
+type WindowSource = "model" | "vendor";
 
 /**
  * How much room a model actually has, or null when nobody has said.
@@ -368,7 +368,7 @@ export function contextWindow(
   return vendor ? { tokens: vendor, source: "vendor" } : null;
 }
 
-export function modelSpec(providerId: string, modelId: string): ModelSpec | undefined {
+function modelSpec(providerId: string, modelId: string): ModelSpec | undefined {
   return (
     discovered.get(`${providerId}:${modelId}`) ??
     providerSpec(providerId)?.models.find((m) => m.id === modelId)
@@ -380,7 +380,7 @@ export function modelSpec(providerId: string, modelId: string): ModelSpec | unde
  * 06:00-10:00 UTC, Monday to Friday. (Chinese public holidays are off-peak
  * too; we don't track those, so a holiday turn is overstated, never under.)
  */
-export function deepseekOffPeak(at: Date): boolean {
+function deepseekOffPeak(at: Date): boolean {
   const day = at.getUTCDay();
   if (day === 0 || day === 6) return true;
   const hour = at.getUTCHours();

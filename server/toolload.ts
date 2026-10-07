@@ -14,7 +14,7 @@
  * store of its own. Pure: a log and a message in, a set of names out.
  */
 
-export interface Family {
+interface Family {
   id: string;
   /** What it is, for the one-line index. */
   about: string;
@@ -63,7 +63,7 @@ export const FAMILIES: Family[] = [
   },
 ];
 
-export interface LoadEvent {
+interface LoadEvent {
   kind: string;
   payload: Record<string, any>;
 }
@@ -81,7 +81,7 @@ export function loadedFromLog(events: readonly LoadEvent[]): Set<string> {
   return out;
 }
 
-export interface LoadContext {
+interface LoadContext {
   events: readonly LoadEvent[];
   /** What the person just said (this turn's message). */
   said?: string;

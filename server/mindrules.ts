@@ -21,11 +21,11 @@
 import { siteOf } from "./site";
 import type { MemoryRecord } from "./memory";
 
-export type Facet = "interface" | "api" | "docs" | "workflow" | "quirk";
-export const FACETS: Facet[] = ["interface", "api", "docs", "workflow", "quirk"];
+type Facet = "interface" | "api" | "docs" | "workflow" | "quirk";
+const FACETS: Facet[] = ["interface", "api", "docs", "workflow", "quirk"];
 
 /** Characters a record may hold, by kind: a fact is one sentence or two. */
-export const MAX_BODY: Record<string, number> = {
+const MAX_BODY: Record<string, number> = {
   preference: 400,
   fact: 600,
   procedure: 1200,
@@ -60,7 +60,7 @@ export function subjectKey(subject: string): string {
   return squash(subject, 60).toLowerCase().replace(/[^\p{L}\p{N}.+# -]/gu, "").replace(/\s+/g, " ").trim();
 }
 
-export interface SourceCheck {
+interface SourceCheck {
   ok: boolean;
   /** The address as kept (no fragment, no tracking). */
   url: string;
@@ -99,7 +99,7 @@ export function checkSource(raw: unknown, subject: string): SourceCheck {
   return { ok: true, url: u.toString(), host, site, official };
 }
 
-export interface EntryInput {
+interface EntryInput {
   title: unknown;
   body: unknown;
   kind?: unknown;
@@ -110,7 +110,7 @@ export interface EntryInput {
   version?: unknown;
 }
 
-export interface Entry {
+interface Entry {
   title: string;
   body: string;
   kind: "fact" | "preference" | "procedure" | "skill" | "reference";
@@ -138,7 +138,7 @@ export function checkText(kind: string, title: string, body: string): string | n
   return null;
 }
 
-export type EntryVerdict = { ok: true; entry: Entry; notes: string[] } | { ok: false; error: string };
+type EntryVerdict = { ok: true; entry: Entry; notes: string[] } | { ok: false; error: string };
 
 const KINDS = new Set(["fact", "preference", "procedure", "skill", "reference"]);
 
@@ -220,7 +220,7 @@ export function checkEntry(input: EntryInput): EntryVerdict {
 
 const BOOKKEEPING = new Set(["skill", "agent-authored", "learned", "unconfirmed", "proven", "reference", "dead-end"]);
 
-export interface TidyReport {
+interface TidyReport {
   /** Records changed, with what was done. */
   fixed: { id: string; title: string; did: string[] }[];
   /** Records the rules would not accept as written, and why -- for a person (or the agent) to rewrite. */

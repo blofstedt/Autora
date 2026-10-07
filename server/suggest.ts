@@ -67,7 +67,7 @@ export interface Signals {
   tools: { terminal: boolean; browser: boolean; customTools: boolean };
 }
 
-export interface Suggestion {
+interface Suggestion {
   key: string;
   /** What the card says: short, and in the person's voice. */
   title: string;
@@ -86,7 +86,7 @@ const HANDS_OFF = "Report only; change nothing, and send nothing.";
 const MONEY = /\b(stocks?|shares?|portfolio|watchlist|tickers?|etfs?|dividends?|invest\w*|brokers?|holdings?|crypto|bitcoin|nasdaq|s&p)\b/i;
 
 /** Whether what is remembered says the person follows investments. */
-export function followsMarkets(memories: KnownThing[]): boolean {
+function followsMarkets(memories: KnownThing[]): boolean {
   return memories.some((m) => m.tags.some((t) => MONEY.test(t)) || MONEY.test(m.title) || MONEY.test(m.body));
 }
 
@@ -266,7 +266,7 @@ export function starters(s: Signals, limit = 4): Suggestion[] {
 
 // ----------------------------------------------------------------- offers --
 
-export interface Offer {
+interface Offer {
   key: string;
   /** The question, as asked. */
   text: string;
@@ -275,7 +275,7 @@ export interface Offer {
 }
 
 /** Quiet hours, as far as an offer's time is concerned. */
-export interface QuietWindow {
+interface QuietWindow {
   quiet: boolean;
   from: number;
   to: number;
@@ -403,7 +403,7 @@ export interface NextStep {
   prompt: string;
 }
 
-export interface TurnSummary {
+interface TurnSummary {
   request: string;
   /** The tool calls of the turn, in order. */
   calls: { name: string; args: Record<string, any>; ok: boolean }[];

@@ -46,7 +46,7 @@ export function umbrelHome(href: string): string | null {
 }
 
 /** What is open over the chat, if anything: closing it is the first back. */
-export function topLayer(): HTMLElement | null {
+function topLayer(): HTMLElement | null {
   const scrim = document.querySelector<HTMLElement>(".scrim, .drawer-scrim");
   if (!scrim) return null;
   // Both scrims are position: fixed, and a fixed element has no offsetParent

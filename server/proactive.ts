@@ -81,7 +81,7 @@ export const DEFAULT_WAKE_POLICY: Omit<WakePolicy, "spentToday" | "recentWakes" 
   maxAgeMs: WAKE_MAX_AGE_MS,
 };
 
-export type WakeDecision = { wake: true } | { wake: false; why: string };
+type WakeDecision = { wake: true } | { wake: false; why: string };
 
 /**
  * May the console start a turn by itself, for this job, now?

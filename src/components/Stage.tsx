@@ -7,14 +7,16 @@
  * the stage away costs nothing to bring back.
  */
 import type { ReactNode } from "react";
-import { APP_NAME, useWordState } from "../lib/officedesk";
+import { APP_NAME } from "../lib/officedesk";
 import type { Surface, SurfaceKind } from "../lib/stage";
 import { IconChevron, IconFile, IconGlobe, IconList, IconMark, IconMonitor } from "./Icons";
 
 const ICON: Record<SurfaceKind, ReactNode> = {
   app: <IconMonitor size={14} />,
   pdf: <IconFile size={14} />,
-  word: <IconFile size={14} />,
+  docx: <IconFile size={14} />,
+  pptx: <IconFile size={14} />,
+  xlsx: <IconFile size={14} />,
   browser: <IconGlobe size={14} />,
   plan: <IconList size={14} />,
   widget: <IconMark size={14} />,
@@ -22,7 +24,7 @@ const ICON: Record<SurfaceKind, ReactNode> = {
 
 /** A tab is its name and nothing else: what is in it is what is below. The dot
     says the agent is at work in it. */
-export const NAME: Record<SurfaceKind, string> = { app: "Creator", pdf: "PDF", word: "Document", browser: "Browser", plan: "To do", widget: "Widget" };
+export const NAME: Record<SurfaceKind, string> = { app: "Creator", pdf: "PDF", docx: APP_NAME.docx, pptx: APP_NAME.pptx, xlsx: APP_NAME.xlsx, browser: "Browser", plan: "To do", widget: "Widget" };
 
 const working = (surface: Surface): boolean => {
   const { cell } = surface;
@@ -44,9 +46,7 @@ export function Stage({
   onToggle: () => void;
   render: (surface: Surface) => ReactNode;
 }) {
-  // An office document's tab says which app it is (Pages, Sheets, Slides), not "Document".
-  const word = useWordState();
-  const nameOf = (kind: SurfaceKind) => (kind === "word" ? APP_NAME[word.kind] : NAME[kind]);
+  const nameOf = (kind: SurfaceKind) => NAME[kind];
   return (
     <section
       className={`stage${collapsed ? " is-collapsed" : ""}${surfaces.length > 2 ? " is-tight" : ""}`}

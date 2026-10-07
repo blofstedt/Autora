@@ -13,7 +13,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { stateFilePath } from "./state";
 
-export interface SignIn {
+interface SignIn {
   /** "linkedin.com", not the page's full address. */
   site: string;
   /** Milliseconds since the epoch, of the latest sign-in. */

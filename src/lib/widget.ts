@@ -25,7 +25,7 @@ export const WIDGET_DEFAULT_HEIGHT = 440;
 
 /** The version of Three.js a standalone copy loads from the CDN. Kept in
     step with the one bundled into the app by package.json. */
-export const THREE_VERSION = "0.186.1";
+const THREE_VERSION = "0.186.1";
 export const THREE_CDN = `https://cdn.jsdelivr.net/npm/three@${THREE_VERSION}`;
 
 /** Colours and type, so a widget looks like it belongs in the thread. */

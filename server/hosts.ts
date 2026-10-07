@@ -34,7 +34,7 @@ interface LocalStatus {
 }
 
 /** The names a machine is reached by, and the address behind them. */
-export interface NamedSelf {
+interface NamedSelf {
   names: string[];
   ip: string;
 }
@@ -73,7 +73,7 @@ function localStatus(socket: string): Promise<LocalStatus | null> {
 }
 
 /** The names this host answers to on its tailnet, and the address for them. */
-export async function tailnetNames(): Promise<NamedSelf | null> {
+async function tailnetNames(): Promise<NamedSelf | null> {
   for (const socket of SOCKETS) {
     if (!fs.existsSync(socket)) continue;
     const status = await localStatus(socket);

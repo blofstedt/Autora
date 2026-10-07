@@ -26,7 +26,7 @@ import { spawn } from "node:child_process";
 import { readDoc, saveDoc } from "./store";
 import { stateDir } from "./state";
 
-export interface BgJob {
+interface BgJob {
   /** Short and stable, so a note can say "job-4" and a later turn know it. */
   id: string;
   command: string;
@@ -43,9 +43,9 @@ export interface BgJob {
   error?: string | null;
 }
 
-export type BgState = "running" | "finished" | "gone" | "failed";
+type BgState = "running" | "finished" | "gone" | "failed";
 
-export interface BgView extends BgJob {
+interface BgView extends BgJob {
   state: BgState;
   exit: number | null;
   /** When it finished, from the file the shell wrote, or null. */
@@ -131,7 +131,7 @@ function lastLine(job: BgJob): string {
   return line.slice(-300);
 }
 
-export function view(job: BgJob): BgView {
+function view(job: BgJob): BgView {
   const code = exitCodeOf(job);
   const state: BgState =
     job.error ? "failed"
@@ -178,7 +178,7 @@ export function readTail(job: BgJob, bytes = 20_000): string {
   }
 }
 
-export interface StartResult {
+interface StartResult {
   job?: BgJob;
   error?: string;
 }
@@ -281,7 +281,7 @@ export function stopJob(id: string): { ok: boolean; message: string } {
 }
 
 /** Forget the old ones, and everything they wrote. */
-export function prune(now = Date.now()): number {
+function prune(now = Date.now()): number {
   const before = all().length;
   const kept = all().filter((j) => now - j.started < KEEP_MS);
   for (const job of all()) {

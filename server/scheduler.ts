@@ -59,7 +59,7 @@ const MAX_RUNS = 20;
 // ------------------------------------------------------------------ cron --
 
 type Field = { values: Set<number>; star: boolean };
-export type Cron = { minute: Field; hour: Field; dom: Field; month: Field; dow: Field };
+type Cron = { minute: Field; hour: Field; dom: Field; month: Field; dow: Field };
 
 const ALIASES: Record<string, string> = {
   "@hourly": "0 * * * *",
@@ -184,11 +184,11 @@ export function describeChange(before: string, after: string, maxLines = 40): st
   return out.length ? out.join("\n") : "The content changed, but only in whitespace or order.";
 }
 
-export const hashOf = (text: string) => crypto.createHash("sha256").update(text).digest("hex");
+const hashOf = (text: string) => crypto.createHash("sha256").update(text).digest("hex");
 
 // ------------------------------------------------------------- the clock --
 
-export interface SchedulerHooks {
+interface SchedulerHooks {
   /** Run the prompt in a fresh session. */
   /** Asked before a job is allowed to spend anything. A string back is the
       reason it must not start -- the day\u0027s automation budget is spent,

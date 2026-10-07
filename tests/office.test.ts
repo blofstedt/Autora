@@ -71,6 +71,8 @@ await test("each app is a switch of its own: a file of a kind that is off is ref
   assert.deepEqual([into.pages.enabled, into.sheets.enabled, into.slides.enabled], [false, false, false], "an older settings file's one switch turns all three");
   const back = state.mergeTools(into, { sheets: { enabled: true } });
   assert.deepEqual([back.pages.enabled, back.sheets.enabled, back.slides.enabled], [false, true, false]);
+  // The refusal is the Office tools', which are only there once built.
+  if (!office.officeDir()) { console.log("  (not built: the refusal is not checked)"); return; }
   const refused = await office.runOfficeTool("office_create", { type: "pptx", name: "x" }, { ...ctx, off: ["pptx"] });
   assert.equal(refused.ok, false);
   assert.match(refused.summary, /Autora Slides.*switched off/);

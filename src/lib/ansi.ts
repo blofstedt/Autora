@@ -15,9 +15,9 @@
  * successive states rather than as one repainting window.
  */
 
-export type AnsiSpan = { text: string; color?: string; bold?: boolean; dim?: boolean;
+type AnsiSpan = { text: string; color?: string; bold?: boolean; dim?: boolean;
                          underline?: boolean; bg?: string };
-export type AnsiLine = AnsiSpan[];
+type AnsiLine = AnsiSpan[];
 
 /** The same palette the docked terminal used, so recordings look unchanged. */
 const BASE = [

@@ -70,7 +70,7 @@ export interface MemoryLink {
   rel: string;
 }
 
-export interface Recalled {
+interface Recalled {
   record: MemoryRecord;
   score: number;
   /** Why it was picked, in words for the chip's tooltip. */
@@ -78,10 +78,10 @@ export interface Recalled {
 }
 
 /** A provisional memory that has worked this many times is confirmed. */
-export const CONFIRM_AFTER = 2;
+const CONFIRM_AFTER = 2;
 /** A confirmed procedure that has worked this many times is marked proven,
     which ranks it higher whenever it matches. It is not pinned: see reinforce. */
-export const PROMOTE_AFTER = 3;
+const PROMOTE_AFTER = 3;
 /** Unconfirmed, unused memories older than this are dropped by consolidate. */
 const STALE_PROVISIONAL_S = 30 * 24 * 3600;
 /** A memory nobody has confirmed in this long speaks up about it. */
@@ -191,7 +191,7 @@ const REFERS = /\b(it|that|this|those|these|them|they|same|again|other|another|e
  * about: "yes, do that", "try again", "and the other one?", or a single
  * word. "What's the weather in Paris" is short, and not one.
  */
-export function isFollowUp(request: string): boolean {
+function isFollowUp(request: string): boolean {
   const words = new Set(tokens(request)).size;
   return words <= 1 || (words <= FOLLOW_UP_WORDS && REFERS.test(request));
 }

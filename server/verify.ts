@@ -80,7 +80,7 @@ export function focusOutput(output: string): string {
 }
 
 /** The failure lines of an output, as a set, so one run can be compared with the next. */
-export function failureKey(output: string): string {
+function failureKey(output: string): string {
   return output.split("\n").filter((l) => FAILURE_LINE.test(l))
     .map((l) => l.replace(/\d+/g, "#").replace(/\s+/g, " ").trim()).sort().join("\n");
 }
@@ -133,7 +133,7 @@ export function checkLine(r: CheckResult, run: number, tries: number): string {
 }
 
 /** An entry of the app window's console, as the browser keeps it. */
-export interface ConsoleEntry {
+interface ConsoleEntry {
   kind: "error" | "warn";
   text: string;
   ts: number;

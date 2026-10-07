@@ -26,7 +26,7 @@ const NOTEBOOK_INDEX_CHARS = 4000;
 
 /** What the vendors accept as a picture. SVG is deliberately not here: it is
     a document that can carry script, not a photograph. */
-export const PICTURE_MIMES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+const PICTURE_MIMES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
 /** Above this a picture is named but not sent: providers refuse the request
     outright past their own limits (Anthropic at 5 MB), and a turn that dies

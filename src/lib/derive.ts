@@ -243,7 +243,7 @@ export type Cell =
       the log: the window is live state (lib/pdfdesk.ts), added by the thread. */
   | { kind: "pdf"; seq: number }
   /** And the Word window (lib/officedesk.ts), likewise. */
-  | { kind: "word"; seq: number }
+  | { kind: "docx" | "pptx" | "xlsx"; seq: number }
   | {
       kind: "todo"; seq: number; items: TodoItem[];
       /** The last event that changed the list; `seq` is where it began. */

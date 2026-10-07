@@ -18,12 +18,12 @@ import { CATALOG, catalogEntry, fillParams, matchCatalog, secretRefs, type Catal
 import { writeScriptServer, checkTools, type ScriptTool } from "./mcpscript";
 import { save, saneMcp, secretFor, state } from "./state";
 
-export interface OfferNeed extends CatalogNeed {
+interface OfferNeed extends CatalogNeed {
   /** Already in the secret store. */
   set: boolean;
 }
 
-export interface OfferPlan {
+interface OfferPlan {
   name: string;
   title: string;
   summary: string;

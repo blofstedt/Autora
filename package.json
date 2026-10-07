@@ -1,14 +1,15 @@
 {
   "name": "autora",
   "private": true,
-  "version": "0.9.159",
+  "version": "0.9.160",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && esbuild src/widget/three.ts --bundle --format=esm --minify --outfile=dist/widget/three.js && npm --prefix pdf-editor run build && npm --prefix spectra-editor run build",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && esbuild src/widget/three.ts --bundle --format=esm --minify --outfile=dist/widget/three.js && npm --prefix spectra-editor run build",
     "start": "node dist/server.cjs",
     "lint": "npm run typecheck && eslint .",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.test.json && npm --prefix pdf-editor run typecheck",
+    "unused": "knip --no-progress",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.test.json && npm --prefix spectra-editor run typecheck",
     "test": "tsx tests/run.ts",
     "build:office": "node scripts/build-office.mjs",
     "replay": "tsx scripts/replay.ts"
@@ -37,6 +38,7 @@
     "eslint": "^9.39.5",
     "eslint-plugin-react-hooks": "^5.2.0",
     "globals": "^17.12.0",
+    "knip": "^5.88.1",
     "three": "^0.186.1",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",

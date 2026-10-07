@@ -309,7 +309,7 @@ const CANVAS_SCRIPT = `
 
 // --------------------------------------------------------------- report --
 
-export type WidgetCheck = {
+type WidgetCheck = {
   /** False when there was no browser to check it in. */
   checked: boolean;
   /** Fit to show: it ran without errors and drew something. */

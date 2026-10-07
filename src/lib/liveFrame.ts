@@ -44,7 +44,7 @@ export function useLiveFrame(following: boolean, owns = false): LiveFrame | null
 }
 
 /** The browser's tabs, kept the same way: they change with the page. */
-export type LiveTab = { id: number; url: string; title: string; active: boolean };
+type LiveTab = { id: number; url: string; title: string; active: boolean };
 let tabs: LiveTab[] = [];
 const tabListeners = new Set<() => void>();
 

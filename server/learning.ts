@@ -17,7 +17,7 @@
 import type { MemoryRecord } from "./memory";
 import { checkText, subjectKey } from "./mindrules";
 
-export interface Lesson {
+interface Lesson {
   kind: "fact" | "preference" | "procedure";
   title: string;
   body: string;
@@ -28,7 +28,7 @@ export interface Lesson {
   revises: string | null;
 }
 
-export interface Reflection {
+interface Reflection {
   learned: Lesson[];
   helped: string[];
   misled: string[];

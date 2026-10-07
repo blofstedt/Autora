@@ -10,13 +10,15 @@ import {
   type Appearance,
 } from "../lib/theme";
 import { DockPicker } from "./DockPicker";
-import { ago, until, type Job } from "./Schedule";
+import { ago, until } from "../lib/ago";
+import type { Job } from "./Schedule";
 import type { ContextGauge } from "../lib/derive";
 import type { Noticed } from "../lib/proactive";
 import {
   BUCKETS, announceChange, confirmRecord, deleteRecord, fetchKnowledge, onKnowledgeChange,
   type Bucket, type MemoryRecord,
 } from "../lib/memory";
+import { every, usePoll } from "../lib/poll";
 
 export type PageId =
   | "chat" | "config" | "sessions" | "artifacts" | "notebooks" | "analytics"
@@ -249,37 +251,6 @@ function ContextCard({ gauge }: { gauge: ContextGauge | null }) {
   );
 }
 
-/**
- * Poll `url` every `ms` while the tab is visible, and once more when it comes
- * back. The rail in the margin stays mounted, hidden, on a phone; a tab in the
- * background has no one to show it to either.
- */
-function usePoll<T>(url: string, ms: number): T | null {
-  const [data, setData] = useState<T | null>(null);
-  useEffect(() => {
-    let alive = true;
-    const load = async () => {
-      if (document.hidden) return;
-      try {
-        const res = await fetch(url);
-        if (res.ok && alive) setData(await res.json() as T);
-      } catch {
-        /* the next poll will pick it up */
-      }
-    };
-    void load();
-    const timer = window.setInterval(() => void load(), ms);
-    const onVisible = () => { if (!document.hidden) void load(); };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      alive = false;
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, [url, ms]);
-  return data;
-}
-
 /** How long one memory stays up before another takes its place. */
 const MEMORY_ROTATE_MS = 45_000;
 
@@ -312,8 +283,8 @@ function MemoryCard({ onOpen }: { onOpen: (id: string, kind: Bucket) => void }) 
     };
     load();
     const off = onKnowledgeChange(load);
-    const timer = window.setInterval(load, 60_000);
-    return () => { alive = false; off(); window.clearInterval(timer); };
+    const stop = every(load, 60_000);
+    return () => { alive = false; off(); stop(); };
   }, []);
 
   const unconfirmed = records.filter((r) => r.status === "provisional");

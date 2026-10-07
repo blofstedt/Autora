@@ -24,7 +24,7 @@ export interface HostWindows {
   rpc(op: string, payload: any): Promise<unknown>;
 }
 
-export type Push = (wc: number, channel: string, args: unknown[]) => void;
+type Push = (wc: number, channel: string, args: unknown[]) => void;
 
 const READY_MS = 60_000;
 const CALL_MS = 10 * 60_000;

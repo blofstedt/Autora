@@ -46,8 +46,8 @@ export interface Notebook {
   entries: NotebookEntry[];
 }
 
-export const MAX_NOTEBOOKS = 300;
-export const MAX_ENTRIES = 1000;
+const MAX_NOTEBOOKS = 300;
+const MAX_ENTRIES = 1000;
 const MAX_TITLE = 200;
 const MAX_PURPOSE = 2000;
 const MAX_TEXT = 40_000;
@@ -138,7 +138,7 @@ function must(id: string): Notebook {
 }
 
 /** An artifact by id, or by its exact file name (any case). */
-export function artifactFor(ref: unknown): Artifact | null {
+function artifactFor(ref: unknown): Artifact | null {
   const want = String(ref ?? "").trim();
   if (!want) return null;
   return getArtifact(want) ??
@@ -156,7 +156,7 @@ function readCites(raw: unknown): { ids: string[]; unknown: string[] } {
   return { ids, unknown: missing };
 }
 
-export interface EntryInput {
+interface EntryInput {
   artifact?: unknown;
   title?: unknown;
   text?: unknown;

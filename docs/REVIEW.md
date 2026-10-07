@@ -1,4 +1,4 @@
-# Repo review, October 2026 (0.9.159)
+# Repo review, October 2026 (0.9.159, acted on in 0.9.160)
 
 A full pass over the repo for inefficiency, weak code, UI inconsistency and how
 cheaply an AI can find its way around. Each finding says **what**, the
@@ -20,6 +20,46 @@ from the right two or three files.
   sandboxed frames, hostname comparison). Most findings below are about
   **scale** -- files and bundles that grew past the point where they are cheap
   to load, for a browser or for an AI -- not about sloppiness.
+
+## Status (0.9.160)
+
+What was done after the review, what was measured and found smaller than
+first written, and what is left. Findings keep their ids.
+
+| Id | Now |
+|---|---|
+| A1 | **Done.** `CLAUDE.md` is 7 KB (was 32 KB); the module detail moved to `docs/MODULES.md`, read only for the area being changed. |
+| A2 | Not done: vendoring `spectra-editor/` from a pin like `office/` is still the real fix. `CLAUDE.md` now says to search with `--glob '!spectra-editor/**'`. |
+| A3 | **Done** for `CLAUDE.md`, `eslint.config.js`, `Dockerfile`, CI, `check_release.py`. Open: `docs/HARNESS_AUDIT.md` line numbers, the "The the" headers in `server/specs/`, old Python entries in `.gitignore`. |
+| A4 | **Done**: `docs/MAP.md`. |
+| B1 | **Done.** Spectra's page 16.6 -> 3.9 MB, its metadata worker 14 -> 1.3 MB. The 27 other languages are separate files fetched when chosen (`locale-loaders.ts`; the worker is English). |
+| B2 | **Done.** `server/staticfiles.ts`: brotli/gzip kept after the first time, hashed `assets/` cached for a year, everything else revalidated by ETag. Used for the app, the Spectra editor and the Office editors. |
+| B3 | **Done**: main chunk 620 -> 504 KB. `isSystemTab` moved out of the lazy page; `Settings`, `Schedule`, `Triggers` and talk mode (`LiveChat`) are lazy. Still over 500 KB: `AppPreview`, `OfficeWindow`, `KnowledgeWeb` and `lib/voice.ts` (used by `App`) are the next candidates. |
+| B4 | Partly: `pdf-editor/` no longer ships. `server.cjs.map` (3.3 MB) still does. |
+| C1 | **Started.** Four route groups left `server.ts` (7,999 -> 7,308 lines): `routes/memory.ts`, `routes/keys.ts`, `routes/settings.ts`, `routes/health.ts`. The browser and app-window routes (~620 lines) and the jobs/triggers routes (~290) need `Session`, `PreviewRun` and about 20-50 server.ts internals; the way in is to move those types to a `server/session-types.ts` first. `runTurn` is untouched. |
+| C2 | Partly: the prompt guides moved to `server/guides.ts` (`tools.ts` 3,190 -> 3,027). `App.tsx` and `browser.ts` are as they were. |
+| C3 | **Smaller than written.** `hostOf`, `slug` and `siteOf` are different functions that share a name, not copies. Done: the two local redactors are now `redactForPerson` / `redactForModel`, and the two `usePoll`s are one (`lib/poll.ts`). `withTimeout` x2 differ in their message; left. |
+| C4 | **Done.** 323 unused exports/types un-exported, 20 unused declarations deleted, `knip` added (`npm run unused`, a CI step). |
+| C5 | Not done. |
+| D1 | **Done**: `pdf-editor/`, `PdfWindow.tsx`, `serveEditor` and their CI/Docker/lint lines are gone. **Open:** the PDF agent cursor (the server still computes `cues`; nothing plays them in Spectra). |
+| D2 | **Done**: ~340 lines of unused CSS and four orphan keyframes removed. |
+| P1 | **Done** (`forgetSession` now clears `workspaces`/`codeTouched`). Sharing one `Workspace` per folder is not done. |
+| P2 | **Done**: a chat idle 15 minutes with no viewer and no turn lets go of its parsed log (`unloadIdleLogs`). |
+| P3 | **Done**: `Workspace.scan`/`prime` are asynchronous, a directory's files are `stat`ed together. |
+| P4 | **Wrong as written.** Measured: 15 microseconds per string. Not worth caching. |
+| P5 | `GET /events` now binary-searches. The ledger sum measured at tens of microseconds; left. |
+| M1 | Measurement is now a test (`tests/toolbudget.test.ts`). Trimming descriptions is not done: it changes what the model is told, and wants an eval, not an edit. |
+| U1 | **Done**: `lib/poll.ts`; every poller pauses while the tab is hidden. |
+| U2 | **Done**: the `Dock` element is memoised. `Thread` itself is still not `memo`. |
+| U3 | **Overstated.** `derive()` costs 0.3 ms at 460 events, 1.3 ms at 2,300 and 3.6 ms at 6,900 (synthetic log), and the page loads at most 5,000 events at a time. Fine; a checkpointed fold matters only for 50k-event threads. |
+| U4 | **Done**: one phone tab per open Office app; `word` surface renamed `docx`/`pptx`/`xlsx`, `*Word*` helpers renamed `*Office*`. |
+| U5 | Partly: raw-px font sizes now scale, `--r-md` and `--r-pill` exist, the accent fallback is gone. Not done: z-index layers (24 values) and the 20 breakpoints, which need a visual pass to be tokenised safely. |
+| U6 | **Done**: `SecretStore` has no inline styles; the seven `confirm()` calls are `sure()` (`lib/sure.ts`, drawn by `SureHost`). |
+| U7 | Not done (visual review needed). |
+| T1 | **Done**: `npm test -- <name>`, `-- -j 4`. |
+| T2 | **Done**: `spectra-editor` is in `npm run typecheck`. |
+| T3 | Partly: `knip` is in CI, the tool budget is a test. A bundle-size budget is not. |
+| T4 | **Done**. |
 
 ## Top ten, by payoff
 

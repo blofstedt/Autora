@@ -24,7 +24,7 @@ export type Command = {
   aliases?: string[];
 };
 
-export const COMMANDS: Command[] = [
+const COMMANDS: Command[] = [
   { id: "stop", name: "stop", hint: "Stop the agent now", whileRunning: true },
   { id: "continue", name: "continue", hint: "Carry on from where it stopped" },
   { id: "retry", name: "retry", hint: "Send your last message again" },
@@ -41,7 +41,7 @@ export const COMMANDS: Command[] = [
 ];
 
 /** A draft read as a command: the name so far, and anything after it. */
-export function parseCommand(draft: string): { name: string; arg: string; typingName: boolean } | null {
+function parseCommand(draft: string): { name: string; arg: string; typingName: boolean } | null {
   const match = /^\/([a-z-]*)(?:(\s+)([\s\S]*))?$/i.exec(draft);
   if (!match) return null;
   return { name: match[1].toLowerCase(), arg: (match[3] ?? "").trim(), typingName: !match[2] };

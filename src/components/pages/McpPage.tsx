@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { IconChevron, IconPlug, IconPlus, IconRotateCcw, IconTrash } from "../Icons";
+import { every } from "../../lib/poll";
 
 type Server = {
   id: string; name: string; transport: "stdio" | "http";
@@ -107,8 +108,7 @@ export function McpPage({ topSlot }: {
   };
   useEffect(() => {
     load();
-    const t = window.setInterval(load, 5000);
-    return () => window.clearInterval(t);
+    return every(load, 5000);
   }, [load]);
 
   const call = async (key: string, url: string, method: string, body?: unknown) => {

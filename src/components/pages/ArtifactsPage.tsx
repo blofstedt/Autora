@@ -10,6 +10,8 @@ import {
   IconCheck, IconDownload, IconMark, IconNotebook, IconSearch, IconTrash,
   IconUpload, IconUser, IconX,
 } from "../Icons";
+import { every } from "../../lib/poll";
+import { sure } from "../../lib/sure";
 
 const size = (bytes: number) =>
   bytes < 1024 ? `${bytes} B`
@@ -139,8 +141,7 @@ export function ArtifactsPage({
   // The agent can save one mid-turn; a slow poll keeps the page honest.
   useEffect(() => {
     load();
-    const t = window.setInterval(load, 8000);
-    return () => window.clearInterval(t);
+    return every(load, 8000);
   }, [load]);
 
   // One the agent deleted, or a page left open while another tab cleared the
@@ -196,7 +197,7 @@ export function ArtifactsPage({
   const remove = async (list: Artifact[]) => {
     if (!list.length || removing) return;
     const what = list.length === 1 ? list[0].name : `${list.length} files`;
-    if (!window.confirm(`Delete ${what}? This cannot be undone.`)) return;
+    if (!(await sure(`Delete ${what}? This cannot be undone.`))) return;
     setRemoving(true);
     setError(null);
     const gone: string[] = [];

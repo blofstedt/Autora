@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconX } from "./Icons";
+import { every } from "../lib/poll";
 
 type Entry = {
   n: number; tab: number; ts: number; kind: "console" | "request"; level: string; text: string;
@@ -33,8 +34,7 @@ export function DevtoolsPanel({
 
   useEffect(() => {
     load();
-    const timer = window.setInterval(load, 1500);
-    return () => window.clearInterval(timer);
+    return every(load, 1500);
   }, [load]);
 
   useEffect(() => {

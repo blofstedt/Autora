@@ -30,7 +30,7 @@ export const FREQS: { kind: Recur["kind"]; label: string }[] = [
 export const SHORT_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 /** A weekday list as cron writes it: 1-5 rather than 1,2,3,4,5. */
-export const WEEKDAYS = "1-5";
+const WEEKDAYS = "1-5";
 
 export const clock = (hour: number, minute: number) =>
   `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;

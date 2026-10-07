@@ -15,8 +15,9 @@ import {
   IconRepeat,
   IconMark,
 } from "./Icons";
+import { sure } from "../lib/sure";
 
-export interface SecretItem {
+interface SecretItem {
   name: string;
   source: "app" | "env";
   masked: string;
@@ -27,7 +28,7 @@ export interface SecretItem {
   };
 }
 
-export interface PresetDef {
+interface PresetDef {
   label: string;
   description: string;
   placeholder: string;
@@ -137,7 +138,7 @@ export function SecretStore() {
 
   // Handle deleting a secret
   const handleDelete = async (name: string) => {
-    if (!confirm(`Are you sure you want to remove ${name} from the secret store?`)) return;
+    if (!(await sure(`Remove ${name} from the secret store?`, "Remove"))) return;
     setBusy(true);
     setError(null);
     try {
@@ -252,52 +253,21 @@ export function SecretStore() {
 
   return (
     <section className="set-card" id="secret-store-panel">
-      {/* Header section */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "10px", marginBottom: "12px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <div
-            style={{
-              width: "32px",
-              height: "32px",
-              borderRadius: "8px",
-              background: "rgba(var(--accent-rgb), 0.15)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "var(--accent)",
-            }}
-          >
-            <IconShield size={18} />
-          </div>
+      <div className="ss-head">
+        <div className="ss-title">
+          <div className="ss-ico"><IconShield size={18} /></div>
           <div>
-            <h3 style={{ margin: 0, fontSize: "calc(14px * var(--ts, 1))", fontWeight: 650, letterSpacing: "0.02em", color: "var(--text)" }}>
-              Secret Store &amp; Environment Variables
-            </h3>
-            <span style={{ fontSize: "calc(12px * var(--ts, 1))", color: "var(--text-3)" }}>
-              Zero-leak credentials store for terminal subprocesses &amp; API tools
-            </span>
+            <h3>Secret Store &amp; Environment Variables</h3>
+            <span className="ss-sub">Zero-leak credentials store for terminal subprocesses &amp; API tools</span>
           </div>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <span
-            className="set-badge"
-            style={{
-              background: appSecretsCount > 0 ? "rgba(52, 211, 153, 0.15)" : "var(--s3)",
-              color: appSecretsCount > 0 ? "var(--live, #34d399)" : "var(--text-3)",
-            }}
-          >
-            {appSecretsCount} stored
-          </span>
-          {envSecretsCount > 0 && (
-            <span className="set-badge" style={{ background: "rgba(34, 211, 238, 0.15)", color: "var(--accent-2, #22d3ee)" }}>
-              {envSecretsCount} from system
-            </span>
-          )}
+        <div className="ss-counts">
+          <span className={`set-badge ${appSecretsCount > 0 ? "is-good" : "is-unset"}`}>{appSecretsCount} stored</span>
+          {envSecretsCount > 0 && <span className="set-badge is-info">{envSecretsCount} from system</span>}
           <button
             type="button"
-            className="btn ghost"
-            style={{ padding: "4px 8px", fontSize: "calc(12px * var(--ts, 1))" }}
+            className="btn ghost ss-small"
             onClick={() => load(true)}
             title="Refresh secret store"
             disabled={refreshing}
@@ -307,59 +277,29 @@ export function SecretStore() {
         </div>
       </div>
 
-      {/* Security explanation banner */}
-      <div
-        style={{
-          background: "rgba(var(--accent-rgb), 0.08)",
-          border: "1px solid rgba(var(--accent-rgb), 0.2)",
-          borderRadius: "var(--r-sm, 8px)",
-          padding: "10px 14px",
-          marginBottom: "16px",
-          display: "flex",
-          gap: "10px",
-          alignItems: "flex-start",
-        }}
-      >
-        <div style={{ color: "var(--accent)", marginTop: "2px", flexShrink: 0 }}>
-          <IconLock size={16} />
-        </div>
-        <div style={{ fontSize: "calc(12px * var(--ts, 1))", lineHeight: "1.5", color: "var(--text-2)" }}>
-          <strong style={{ color: "var(--text)" }}>Zero Conversation Logging:</strong> Sensitive variables defined here
+      <div className="ss-note">
+        <span className="ss-note-ico"><IconLock size={16} /></span>
+        <div>
+          <strong>Zero Conversation Logging:</strong> Sensitive variables defined here
           are strictly redacted from conversation history, transcript messages, and WebSocket broadcasts. When commands run
           or APIs execute, matching secret values are automatically masked as <code>[REDACTED_SECRET]</code>.
         </div>
       </div>
 
-      {/* Preset Suggestions */}
-      <div style={{ marginBottom: "16px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "8px" }}>
-          <span style={{ color: "var(--accent)" }}>
-            <IconMark size={13} />
-          </span>
-          <span style={{ fontSize: "calc(11.5px * var(--ts, 1))", fontWeight: 600, color: "var(--text-2)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-            Quick Presets
-          </span>
+      <div className="ss-presets">
+        <div className="ss-label-row">
+          <span className="ss-accent"><IconMark size={13} /></span>
+          <span className="ss-caps">Quick Presets</span>
         </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+        <div className="ss-chips">
           {Object.entries(presets).map(([k, p]) => {
             const isSet = secrets.some((s) => s.name === k);
             return (
               <button
                 key={k}
                 type="button"
-                className="btn ghost"
+                className={`btn ghost ss-chip${isSet ? " is-set" : ""}`}
                 onClick={() => handleSelectPreset(k)}
-                style={{
-                  fontSize: "calc(11px * var(--ts, 1))",
-                  padding: "4px 9px",
-                  borderRadius: "99px",
-                  background: isSet ? "rgba(52, 211, 153, 0.08)" : "var(--s2)",
-                  border: isSet ? "1px solid rgba(52, 211, 153, 0.3)" : "1px solid var(--border)",
-                  color: isSet ? "var(--live, #34d399)" : "var(--text-2)",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "5px",
-                }}
                 title={p.description}
               >
                 {isSet && <IconCheck size={11} />}
@@ -370,172 +310,72 @@ export function SecretStore() {
         </div>
       </div>
 
-      {/* Feedback notices */}
       {error && (
-        <div
-          style={{
-            background: "rgba(239, 68, 68, 0.12)",
-            border: "1px solid rgba(239, 68, 68, 0.3)",
-            borderRadius: "6px",
-            padding: "8px 12px",
-            marginBottom: "12px",
-            fontSize: "calc(12px * var(--ts, 1))",
-            color: "#f87171",
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-          }}
-        >
+        <div className="ss-flash is-bad" role="alert">
           <IconAlert size={15} />
           <span>{error}</span>
         </div>
       )}
 
       {successMsg && (
-        <div
-          style={{
-            background: "rgba(52, 211, 153, 0.12)",
-            border: "1px solid rgba(52, 211, 153, 0.3)",
-            borderRadius: "6px",
-            padding: "8px 12px",
-            marginBottom: "12px",
-            fontSize: "calc(12px * var(--ts, 1))",
-            color: "var(--live, #34d399)",
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-          }}
-        >
+        <div className="ss-flash is-good" role="status">
           <IconCheck size={15} />
           <span>{successMsg}</span>
         </div>
       )}
 
-      {/* Existing Secrets List */}
-      <div style={{ marginBottom: "20px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-          <span style={{ fontSize: "calc(12px * var(--ts, 1))", fontWeight: 600, color: "var(--text-2)" }}>
-            Configured Variables ({filteredSecrets.length})
-          </span>
+      <div className="ss-list-wrap">
+        <div className="ss-list-head">
+          <span className="ss-list-title">Configured Variables ({filteredSecrets.length})</span>
           {secrets.length > 3 && (
-            <div style={{ position: "relative", width: "160px" }}>
-              <div style={{ position: "absolute", left: "8px", top: "50%", transform: "translateY(-50%)", color: "var(--text-3)", pointerEvents: "none" }}>
-                <IconSearch size={12} />
-              </div>
+            <div className="ss-search">
+              <span className="ss-search-ico"><IconSearch size={12} /></span>
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Filter secrets..."
-                style={{
-                  width: "100%",
-                  padding: "4px 8px 4px 26px",
-                  fontSize: "calc(11.5px * var(--ts, 1))",
-                  borderRadius: "var(--r-xs, 6px)",
-                  background: "var(--s2)",
-                  border: "1px solid var(--border)",
-                  color: "var(--text)",
-                }}
               />
             </div>
           )}
         </div>
 
         {loading ? (
-          <div style={{ padding: "20px", textAlign: "center", color: "var(--text-3)", fontSize: "calc(13px * var(--ts, 1))" }}>
-            Loading secret store...
-          </div>
+          <div className="ss-empty is-plain">Loading secret store...</div>
         ) : filteredSecrets.length === 0 ? (
-          <div
-            style={{
-              padding: "24px 16px",
-              textAlign: "center",
-              background: "var(--s2)",
-              borderRadius: "var(--r-sm, 8px)",
-              border: "1px dashed var(--border-strong)",
-              color: "var(--text-3)",
-              fontSize: "calc(12.5px * var(--ts, 1))",
-            }}
-          >
-            <div style={{ opacity: 0.4, margin: "0 auto 8px", display: "inline-block" }}>
-              <IconKey size={24} />
-            </div>
+          <div className="ss-empty">
+            <div className="ss-empty-ico"><IconKey size={24} /></div>
             <div>{searchQuery ? "No secrets match your filter." : "No secrets configured yet. Add your first API token below."}</div>
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div className="ss-list">
             {filteredSecrets.map((s) => {
               const isRevealed = Boolean(revealed[s.name]);
               const displayVal = isRevealed ? revealed[s.name] : s.masked;
               const isCopied = copiedKey === s.name;
 
               return (
-                <div
-                  key={s.name}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    padding: "10px 14px",
-                    background: "var(--s2)",
-                    borderRadius: "var(--r-sm, 8px)",
-                    border: "1px solid var(--border)",
-                    flexWrap: "wrap",
-                    gap: "10px",
-                  }}
-                >
-                  {/* Left info */}
-                  <div style={{ display: "flex", flexDirection: "column", gap: "3px", minWidth: "220px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <code style={{ fontWeight: 650, fontSize: "calc(13px * var(--ts, 1))", color: "var(--accent)" }}>
-                        {s.name}
-                      </code>
-                      <span
-                        className="set-badge"
-                        style={{
-                          fontSize: "calc(10px * var(--ts, 1))",
-                          padding: "1px 6px",
-                          background: s.source === "app" ? "rgba(52, 211, 153, 0.12)" : "rgba(34, 211, 238, 0.12)",
-                          color: s.source === "app" ? "var(--live, #34d399)" : "var(--accent-2, #22d3ee)",
-                        }}
-                      >
+                <div key={s.name} className="ss-row">
+                  <div className="ss-info">
+                    <div className="ss-name-row">
+                      <code className="ss-name">{s.name}</code>
+                      <span className={`set-badge ss-source ${s.source === "app" ? "is-good" : "is-info"}`}>
                         {s.source === "app" ? "App Secret" : "Container Env"}
                       </span>
                     </div>
 
-                    {s.preset?.description && (
-                      <span style={{ fontSize: "calc(11px * var(--ts, 1))", color: "var(--text-3)" }}>
-                        {s.preset.description}
-                      </span>
-                    )}
+                    {s.preset?.description && <span className="ss-desc">{s.preset.description}</span>}
 
-                    <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "2px" }}>
-                      <code
-                        style={{
-                          fontSize: "calc(11.5px * var(--ts, 1))",
-                          color: isRevealed ? "var(--live, #34d399)" : "var(--text-2)",
-                          background: "rgba(0,0,0,0.25)",
-                          padding: "2px 6px",
-                          borderRadius: "4px",
-                          fontFamily: "var(--mono)",
-                        }}
-                      >
-                        {displayVal}
-                      </code>
-                      {isRevealed && (
-                        <span style={{ fontSize: "calc(10px * var(--ts, 1))", color: "var(--warn, #fbbf24)" }}>
-                          (Auto-hides in 15s)
-                        </span>
-                      )}
+                    <div className="ss-value-row">
+                      <code className={`ss-value${isRevealed ? " is-revealed" : ""}`}>{displayVal}</code>
+                      {isRevealed && <span className="ss-autohide">(Auto-hides in 15s)</span>}
                     </div>
                   </div>
 
-                  {/* Right actions */}
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <div className="ss-actions">
                     <button
                       type="button"
-                      className="btn ghost"
-                      style={{ padding: "5px 8px", fontSize: "calc(11.5px * var(--ts, 1))", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                      className="btn ghost ss-act"
                       onClick={() => handleToggleReveal(s.name)}
                       disabled={revealingName === s.name}
                       title={isRevealed ? "Hide secret value" : "Reveal secret value"}
@@ -546,20 +386,18 @@ export function SecretStore() {
 
                     <button
                       type="button"
-                      className="btn ghost"
-                      style={{ padding: "5px 8px", fontSize: "calc(11.5px * var(--ts, 1))", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                      className={`btn ghost ss-act${isCopied ? " is-done" : ""}`}
                       onClick={() => void handleCopy(s.name)}
                       title="Copy secret value to clipboard"
                     >
-                      {isCopied ? <span style={{ color: "var(--live, #34d399)", display: "inline-flex" }}><IconCheck size={13} /></span> : <IconCopy size={13} />}
+                      {isCopied ? <IconCheck size={13} /> : <IconCopy size={13} />}
                       <span>{isCopied ? "Copied" : "Copy"}</span>
                     </button>
 
                     {s.source === "app" && (
                       <button
                         type="button"
-                        className="btn ghost"
-                        style={{ color: "var(--danger, #fb7185)", padding: "5px 8px", fontSize: "calc(11.5px * var(--ts, 1))", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                        className="btn ghost ss-act is-danger"
                         onClick={() => handleDelete(s.name)}
                         disabled={busy}
                         title="Remove secret from store"
@@ -576,89 +414,53 @@ export function SecretStore() {
         )}
       </div>
 
-      {/* Add new secret form */}
-      <form
-        onSubmit={handleSubmit}
-        style={{
-          background: "var(--s2)",
-          padding: "16px",
-          borderRadius: "var(--r-sm, 8px)",
-          border: "1px solid var(--border)",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-          <span style={{ color: "var(--accent)" }}>
-            <IconKey size={15} />
-          </span>
-          <span style={{ fontSize: "calc(13px * var(--ts, 1))", fontWeight: 650, color: "var(--text)" }}>
-            Add / Update Secret
-          </span>
+      <form onSubmit={handleSubmit} className="ss-form">
+        <div className="ss-label-row ss-form-head">
+          <span className="ss-accent"><IconKey size={15} /></span>
+          <span className="ss-form-title">Add / Update Secret</span>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "12px", marginBottom: "14px" }}>
-          {/* Variable Name */}
-          <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-            <span style={{ fontSize: "calc(11.5px * var(--ts, 1))", fontWeight: 600, color: "var(--text-2)" }}>
-              Variable Name
-            </span>
+        <div className="ss-fields">
+          <label className="ss-field">
+            <span className="ss-field-label">Variable Name</span>
             <input
               type="text"
-              className="jf-cron"
+              className="jf-cron ss-mono ss-upper"
               placeholder="e.g. GITHUB_TOKEN or TAVILY_API_KEY"
               value={newName}
               onChange={(e) => setNewName(e.target.value.toUpperCase())}
               disabled={busy}
-              style={{ fontFamily: "var(--mono)", textTransform: "uppercase" }}
             />
             {presets[newName] && (
-              <span style={{ fontSize: "calc(11px * var(--ts, 1))", color: "var(--accent)" }}>
-                {presets[newName].label}: {presets[newName].description}
-              </span>
+              <span className="ss-hint">{presets[newName].label}: {presets[newName].description}</span>
             )}
           </label>
 
-          {/* Variable Value */}
-          <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: "calc(11.5px * var(--ts, 1))", fontWeight: 600, color: "var(--text-2)" }}>
-                Secret Value / Token
-              </span>
-              <button
-                type="button"
-                className="btn ghost"
-                style={{ padding: "1px 6px", fontSize: "calc(11px * var(--ts, 1))" }}
-                onClick={() => setShowNewValue(!showNewValue)}
-              >
+          <label className="ss-field">
+            <div className="ss-field-head">
+              <span className="ss-field-label">Secret Value / Token</span>
+              <button type="button" className="btn ghost ss-tiny" onClick={() => setShowNewValue(!showNewValue)}>
                 {showNewValue ? "Hide" : "Show"}
               </button>
             </div>
-            <div style={{ position: "relative" }}>
-              <input
-                type={showNewValue ? "text" : "password"}
-                className="jf-cron"
-                placeholder={presets[newName]?.placeholder || "Paste secret token..."}
-                value={newValue}
-                onChange={(e) => setNewValue(e.target.value)}
-                disabled={busy}
-                style={{ fontFamily: "var(--mono)", width: "100%" }}
-              />
-            </div>
+            <input
+              type={showNewValue ? "text" : "password"}
+              className="jf-cron ss-mono ss-wide"
+              placeholder={presets[newName]?.placeholder || "Paste secret token..."}
+              value={newValue}
+              onChange={(e) => setNewValue(e.target.value)}
+              disabled={busy}
+            />
           </label>
         </div>
 
-        {/* Action button */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "calc(11.5px * var(--ts, 1))", color: "var(--text-3)" }}>
+        <div className="ss-submit-row">
+          <div className="ss-injects">
             <IconTerminal size={13} />
             <span>Injected as environment variable into subcommands and tools</span>
           </div>
 
-          <button
-            type="submit"
-            className="btn"
-            disabled={busy || !newName.trim() || !newValue}
-            style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "8px 16px" }}
-          >
+          <button type="submit" className="btn ss-submit" disabled={busy || !newName.trim() || !newValue}>
             <IconPlus size={14} />
             <span>{secrets.some((s) => s.name === newName.trim().toUpperCase()) ? "Update Secret" : "Save Secret"}</span>
           </button>

@@ -9,7 +9,7 @@ import { Kind, type AutoraEvent } from "./types";
  */
 export type MarkPhase = "thinking" | "building";
 
-export type Reading = {
+type Reading = {
   /** What it is doing, in a few words. */
   text: string | null;
   /** Which of the two ways of being busy that is. */

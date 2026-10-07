@@ -15,7 +15,7 @@
  * holds no state of its own. Pure: a log in, a list or a briefing out.
  */
 
-export type RequirementStatus = "open" | "done" | "dropped";
+type RequirementStatus = "open" | "done" | "dropped";
 
 export interface Requirement {
   /** R1, R2... never reused, so "R3" means the same ask all chat long. */
@@ -33,7 +33,7 @@ export interface RequirementList {
   items: Requirement[];
 }
 
-export interface RequirementEvent {
+interface RequirementEvent {
   kind: string;
   payload: Record<string, any>;
 }

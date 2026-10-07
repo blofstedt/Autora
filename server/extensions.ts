@@ -16,7 +16,7 @@ import path from "node:path";
 import { unzipSync } from "fflate";
 import { stateFilePath } from "./state";
 
-export interface ExtensionInfo {
+interface ExtensionInfo {
   /** The id Chrome gives it: for an unpacked folder, from the folder's path. */
   id: string;
   name: string;
@@ -35,7 +35,7 @@ const root = () => path.join(path.dirname(stateFilePath()), "extensions");
 
 /** Chrome's id for an extension loaded from a folder with no key: the first
     half of the SHA-256 of its path, in the letters a to p. */
-export function idForPath(dir: string): string {
+function idForPath(dir: string): string {
   const hex = crypto.createHash("sha256").update(path.resolve(dir)).digest("hex").slice(0, 32);
   return [...hex].map((c) => String.fromCharCode("a".charCodeAt(0) + parseInt(c, 16))).join("");
 }
@@ -108,12 +108,8 @@ export function launchArgs(): string[] {
   return [`--disable-extensions-except=${list}`, `--load-extension=${list}`, "--headless=new"];
 }
 
-export function hasExtensions(): boolean {
-  return enabledDirs().length > 0;
-}
-
 /** A CRX is a zip behind a header; a plain zip is taken as it is. */
-export function zipOf(bytes: Buffer): Buffer {
+function zipOf(bytes: Buffer): Buffer {
   if (bytes.subarray(0, 4).toString("latin1") !== "Cr24") return bytes;
   const version = bytes.readUInt32LE(4);
   if (version === 3) return bytes.subarray(12 + bytes.readUInt32LE(8));

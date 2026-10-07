@@ -27,6 +27,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { SpectraEngine, spectraAvailable } from "./spectra/engine";
 import { runCommand, type SpectraContext } from "./spectra/commands";
 import { closeDesk } from "./pdfdesk";
+import { staticDir } from "./staticfiles";
 
 /** A document can be large and its bytes cross as base64, so the body limit is
  *  generous; the app-wide JSON parser's 5 MB would refuse an ordinary scan. */
@@ -47,7 +48,7 @@ interface Session {
 
 const sessions = new Map<string, Session>();
 
-export interface SpectraOptions {
+interface SpectraOptions {
   /** Whether Autora knows that session. */
   exists(session: string): boolean;
   /** The folder the session works in (Autora's terminal directory). */
@@ -340,7 +341,7 @@ export function serveSpectra(app: Express, dist: string): void {
     );
     res.setHeader("X-Content-Type-Options", "nosniff");
     next();
-  }, express.static(path.join(dist, "spectra-editor"), { fallthrough: false }));
+  }, ...staticDir(path.join(dist, "spectra-editor"), { fallthrough: false }));
 }
 
 /** The desk's copy of the document moved on under the editor -- the agent
@@ -366,10 +367,4 @@ export function dropSpectra(session: string): void {
     }
   }
   sessions.delete(session);
-}
-
-/** What the editor can do here, for the agent's own report. */
-export function spectraReport(): { available: boolean; reason?: string; sessions: string[] } {
-  const health = spectraAvailable();
-  return { available: health.ok, reason: health.reason, sessions: [...sessions.keys()] };
 }

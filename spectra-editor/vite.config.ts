@@ -1,6 +1,6 @@
 import path from "node:path";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 
 /**
  * Spectra's renderer, built as Autora's PDF window page.
@@ -12,6 +12,20 @@ import { defineConfig } from "vite";
  * The renderer is otherwise Spectra's, untouched.
  */
 const shim = (name: string) => path.resolve(import.meta.dirname, "src/autora", name);
+
+/** The metadata worker is an iife, which cannot code-split, so it is built
+    without the lazily fetched translations (src/renderer/locale-loaders.ts)
+    and stays English. */
+const noLocalesInWorker = (): Plugin => ({
+  name: "autora-no-locales-in-worker",
+  enforce: "pre",
+  resolveId(source) {
+    return /locale-loaders$/.test(source) ? "\0empty-locale-loaders" : null;
+  },
+  load(id) {
+    return id === "\0empty-locale-loaders" ? "export const LOCALE_LOADERS = {};" : null;
+  },
+});
 
 export default defineConfig({
   root: "src/renderer",
@@ -37,5 +51,5 @@ export default defineConfig({
     // start a module worker, so it stays an iife like Autora's editor.
     chunkSizeWarningLimit: 8000,
   },
-  worker: { format: "iife" },
+  worker: { format: "iife", plugins: () => [noLocalesInWorker()] },
 });

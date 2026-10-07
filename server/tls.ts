@@ -135,12 +135,12 @@ function ipBytes(address: string): Buffer | null {
 }
 
 /** A name a certificate can carry as a DNS name. */
-export function validHostname(host: string): boolean {
+function validHostname(host: string): boolean {
   return host.length > 0 && host.length <= 253 &&
     /^(?=.{1,253}$)([a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?)(\.[a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?)*\.?$/i.test(host);
 }
 
-export interface IssueOptions {
+interface IssueOptions {
   /** What the certificate is called, and (for a leaf) its first name. */
   commonName: string;
   /** DNS names and IP addresses it is good for. Leaves only. */
@@ -208,7 +208,7 @@ export function pem(derBytes: Buffer, label = "CERTIFICATE"): string {
 
 // ------------------------------------------------------------ the listener --
 
-export interface TlsSettings {
+interface TlsSettings {
   enabled: boolean;
   port: number;
   cert: string;
@@ -244,7 +244,7 @@ function localNames(extra: string[]): string[] {
   return [...names];
 }
 
-export interface CertificateSource {
+interface CertificateSource {
   /** Options for https.createServer. */
   options: tls.SecureContextOptions & { SNICallback?: tls.TlsOptions["SNICallback"] };
   /** The authority to offer for download, when the certificates are ours. */

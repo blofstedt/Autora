@@ -14,7 +14,7 @@ export interface TraceEvent {
   payload: Record<string, any>;
 }
 
-export interface ToolTrace {
+interface ToolTrace {
   name: string;
   calls: number;
   failures: number;
@@ -24,7 +24,7 @@ export interface ToolTrace {
   slowestMs: number;
 }
 
-export interface TurnTrace {
+interface TurnTrace {
   /** Model calls in the turn. */
   rounds: number;
   tools: number;
@@ -36,7 +36,7 @@ export interface TurnTrace {
   request: string;
 }
 
-export interface Trace {
+interface Trace {
   turns: number;
   rounds: number;
   input: number;

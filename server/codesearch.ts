@@ -27,7 +27,7 @@ const WINDOW = 30;
     a matching size and timestamp are taken to mean it has not changed. */
 const SETTLED_MS = 2000;
 
-export interface SearchOptions {
+interface SearchOptions {
   /** Where to look. */
   root: string;
   query: string;
@@ -39,7 +39,7 @@ export interface SearchOptions {
   max?: number;
 }
 
-export interface SearchResult {
+interface SearchResult {
   ok: boolean;
   text: string;
   /** Files looked through. */

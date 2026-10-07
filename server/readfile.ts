@@ -18,7 +18,7 @@ const DEFAULT_LINES = 200;
 const MAX_LINES = 600;
 const MAX_LINE_CHARS = 400;
 
-export interface ReadArgs {
+interface ReadArgs {
   path: string;
   /** First line, 1-based. */
   start?: number;
@@ -30,7 +30,7 @@ export interface ReadArgs {
   symbol?: string;
 }
 
-export interface ReadResult {
+interface ReadResult {
   ok: boolean;
   text: string;
   /** The file as it was read, so a later edit has a base. */

@@ -17,8 +17,6 @@ export function setFullscreen(next: boolean) {
   for (const l of listeners) l();
 }
 
-export const isFullscreen = () => on;
-
 const subscribe = (l: () => void) => {
   listeners.add(l);
   return () => { listeners.delete(l); };

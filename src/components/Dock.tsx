@@ -18,42 +18,19 @@ import {
   IconList, IconPalette, IconPlug, IconServer, IconSliders,
 } from "./Icons";
 import { DOCK_SLOTS, DOCK_WIDGETS, type DockConfig, type DockWidgetId } from "../lib/theme";
-import { ago, until, type Job } from "./Schedule";
+import { ago, until } from "../lib/ago";
+import type { Job } from "./Schedule";
 import { fetchKnowledge, type Bucket, type MemoryRecord } from "../lib/memory";
 import type { PageId } from "./Rail";
+import { every, usePoll } from "../lib/poll";
 
 /** What a widget may do: open a page, a conversation, a memory, a settings tab. */
-export type DockTargets = {
+type DockTargets = {
   go: (page: PageId) => void;
   openSession: (id: string) => void;
   openMemory: (id: string, kind: Bucket) => void;
   settingsTab: (tab: "general" | "keys" | "appearance") => void;
 };
-
-/** Poll something, quietly: a failure leaves the card as it was. */
-function usePoll<T>(url: string, ms: number): T | null {
-  const [value, setValue] = useState<T | null>(null);
-  useEffect(() => {
-    let alive = true;
-    const load = () => {
-      if (document.hidden) return;
-      fetch(url)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((d) => { if (alive && d) setValue(d as T); })
-        .catch(() => undefined);
-    };
-    load();
-    const timer = window.setInterval(load, ms);
-    const onShow = () => { if (!document.hidden) load(); };
-    document.addEventListener("visibilitychange", onShow);
-    return () => {
-      alive = false;
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", onShow);
-    };
-  }, [url, ms]);
-  return value;
-}
 
 function Head({ icon, title, onOpen }: { icon: ReactNode; title: string; onOpen: () => void }) {
   return (
@@ -174,10 +151,8 @@ function MindWidget({ t }: { t: DockTargets }) {
         .catch(() => undefined);
     };
     load();
-    const timer = window.setInterval(load, 60_000);
-    const onShow = () => { if (!document.hidden) load(); };
-    document.addEventListener("visibilitychange", onShow);
-    return () => { alive = false; window.clearInterval(timer); document.removeEventListener("visibilitychange", onShow); };
+    const stop = every(load, 60_000);
+    return () => { alive = false; stop(); };
   }, []);
   return (
     <section className="dock-card">

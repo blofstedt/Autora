@@ -23,12 +23,12 @@ import { deleteSession, sessionFolders } from "./store";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export interface Sized {
+interface Sized {
   count: number;
   bytes: number;
 }
 
-export interface StorageReport {
+interface StorageReport {
   sessions: Sized;
   artifacts: Sized;
   /** The settings file and the memory graph: everything else under the same roof. */
@@ -84,7 +84,7 @@ export function storageReport(): StorageReport {
   return { sessions, artifacts, settings, total: sessions.bytes + artifacts.bytes + settings.bytes };
 }
 
-export interface PruneResult {
+interface PruneResult {
   sessions: Sized & { ids: string[] };
   artifacts: Sized & { ids: string[] };
   policy: RetentionPolicy;

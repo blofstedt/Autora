@@ -1,13 +1,12 @@
 /**
  * Moving a cursor and typing the way a person does, for the windows that show
- * the agent working (the PDF editor's cues, the Office windows' cursor).
+ * the agent working (the Office windows' cursor).
  *
  * It is the same motion the browser window's pointer has (server/human.ts):
  * an arc rather than a straight line, accelerating then slowing as it arrives,
  * a tremor that fades, now and then an overshoot that is corrected, a rest
  * before the click; and typing with uneven gaps, longer after a space or a
- * full stop, an occasional hesitation. Pure, so it is shared as it is by the
- * page and by the PDF editor (which imports this file) and can be tested.
+ * full stop, an occasional hesitation. Pure, so it can be tested.
  */
 
 export type Point = { x: number; y: number };

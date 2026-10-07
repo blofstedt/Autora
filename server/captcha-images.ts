@@ -151,7 +151,7 @@ function luma(b: Bitmap, x: number, y: number): number {
   return 0.299 * b.rgba[i] + 0.587 * b.rgba[i + 1] + 0.114 * b.rgba[i + 2];
 }
 
-export interface GapMatch {
+interface GapMatch {
   /** Where the piece belongs, in pixels along the background. */
   x: number;
   /** 0-1: how much better the winner is than the next plausible place. */
@@ -266,7 +266,7 @@ export function findEdge(shot: Bitmap, pieceW: number): GapMatch | null {
 /* ------------------------------------------------------------- colours -- */
 
 /** A rectangle in the picture's own pixels. */
-export interface Patch {
+interface Patch {
   x: number;
   y: number;
   w: number;

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { IconDownload, IconEdit, IconTrash } from "../Icons";
 import { sessionDot } from "../../lib/derive";
+import { every } from "../../lib/poll";
 
 type Row = {
   id: string; title: string; live: boolean; busy: boolean;
@@ -45,8 +46,7 @@ export function SessionsPage({
   }, []);
   useEffect(() => {
     load();
-    const t = window.setInterval(load, 8000);
-    return () => window.clearInterval(t);
+    return every(load, 8000);
   }, [load]);
 
   const shown = useMemo(() => {
