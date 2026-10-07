@@ -15,7 +15,7 @@ import { mergeProactivity } from "../quiet";
 import { forgetSpeech, speakStream, speechStatus, speak as synthesise } from "../speech";
 import { FONTS, THEMES, applyTimezone, baseUrlFor, fastModelFor, keyFor, keySource, machineTimezone, maskKey, mergeAppearance, mergeLoop, mergeRetention, mergeSpeech, modelFor, resolveProvider, save, setKey, state, stateFilePath, validTimezone } from "../state";
 import { groupStates, toolSettings, updateToolSettings } from "../tools";
-import { forgetVendorMoney } from "../vendor-money";
+import { forgetVendorMoney, setTopUp } from "../vendor-money";
 import { mergeVerify } from "../verify";
 import type { WebPush } from "../webpush";
 
@@ -285,8 +285,7 @@ export function settingsRoutes(app: Express, deps: {
          account it was paid into, and writing it against another provider's
          balance is how the wrong total gets shown. */
       const target = body.top_up_provider ?? resolveProvider().provider;
-      if (target && amount !== null) state.topUps[target] = amount;
-      else if (target) delete state.topUps[target];
+      if (target) setTopUp(target, amount);
     }
 
     /* Which tools the agent has, and how tightly each is gated. Turning a

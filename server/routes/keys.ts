@@ -13,7 +13,7 @@ import { PROVIDERS, modelsFor, rememberModels } from "../providers";
 import {
   SECRET_PRESETS, baseUrlFor, clearUsage, deleteSecret, getSecret, keyFor, listSecrets, save, setSecret,
 } from "../state";
-import { refreshAllVendorMoney, vendorMoneyStale } from "../vendor-money";
+import { refreshAllVendorMoney, undoAutoTopUp, vendorMoneyStale } from "../vendor-money";
 
 export function keyRoutes(app: Express) {
   // 10a. Secrets Store Management
@@ -167,6 +167,18 @@ export function keyRoutes(app: Express) {
        never wait on somebody else's server to answer. A stale reading starts
        a refresh of all of them; this reply carries what is already known. */
     if (vendorMoneyStale()) void refreshAllVendorMoney();
+    res.json(billingSummary());
+  });
+
+  /** Take back a payment the console worked out for itself from a rising
+      balance, when it was wrong. A write, so a POST. */
+  app.post("/api/usage/undo-top-up", (req: Request, res: Response) => {
+    const provider = typeof req.body?.provider === "string" ? req.body.provider : "";
+    const at = Number(req.body?.at);
+    if (!provider || !Number.isFinite(at)) {
+      return res.status(400).json({ detail: "Say which vendor and which payment." });
+    }
+    undoAutoTopUp(provider, at);
     res.json(billingSummary());
   });
 

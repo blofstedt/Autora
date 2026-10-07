@@ -148,6 +148,14 @@ test("one vendor's money is never another vendor's", () => {
 
 test("each vendor's reply is read in its own shape", () => {
   near(readBalance("deepseek", { balance_infos: [{ currency: "USD", total_balance: "9.24" }] }) ?? -1, 9.24);
+  /* Granted (free) credit is in total_balance, and a grant arriving would read
+     as a payment: only the topped-up part is money that was paid in. */
+  near(
+    readBalance("deepseek", {
+      balance_infos: [{ currency: "USD", total_balance: "12.20", granted_balance: "10.00", topped_up_balance: "2.20" }],
+    }) ?? -1,
+    2.2,
+  );
   /* Promotional credit is scoped to a model and expires, so it is not money
      that was paid in and must not be counted as such. */
   near(readBalance("orcarouter", { unit: "USD", paid_balance: 19.99, promo_credits: [{ balance: 20 }] }) ?? -1, 19.99);

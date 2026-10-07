@@ -196,7 +196,12 @@ export function billingSummary() {
     oldest !== null &&
     monthKey(oldest) === month &&
     Object.keys(carriedDays()).every((day) => day.slice(0, 7) === month);
-  if (usableReal && nothingDatedOutsideThisMonth) {
+  if (usableReal && usableReal.month_real_usd !== null) {
+    /* The vendor's own month, from its balance at the month's start. Counting
+       can only be low, and a month's start read part-way through is low too,
+       so the larger of the two is the one that has not left money out. */
+    monthBucket.cost = Math.max(monthBucket.cost, usableReal.month_real_usd);
+  } else if (usableReal && nothingDatedOutsideThisMonth) {
     monthBucket.cost = usableReal.lifetime_usd ?? monthBucket.cost;
   }
 
@@ -269,6 +274,11 @@ export function billingSummary() {
       topped_up_usd: entry.topped_up_usd,
       at: entry.at,
       lifetime_usd: entry.lifetime_usd,
+      /* This vendor's own month, from its own balance, and the payments the
+         console worked out for itself so a wrong one can be taken back. */
+      month_real_usd: entry.month_real_usd,
+      month_since: entry.month_since,
+      auto_top_ups: entry.auto_top_ups,
       /* This vendor's own turns, not the whole ledger's: the comparison is
          this account against what this account billed. */
       counted_usd: countedFor(entry.provider),

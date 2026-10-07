@@ -67,6 +67,11 @@ export type Usage = {
     topped_up_usd: number | null;
     at: number;
     lifetime_usd: number | null;
+    /** This month by the vendor's own balance, and when its start was read. */
+    month_real_usd?: number | null;
+    month_since?: number | null;
+    /** Payments the console worked out from a rising balance. */
+    auto_top_ups?: { at: number; usd: number }[];
     counted_usd: number;
     unaccounted_usd: number;
     /** True only for the line standing in for the all-time total: one vendor's
@@ -181,6 +186,17 @@ export function Billing({
 
   useEffect(load, [load]);
 
+  const undoTopUp = useCallback((provider: string, at: number) => {
+    void fetch("/api/usage/undo-top-up", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider, at }),
+    })
+      .then((r) => r.json())
+      .then(setUsage)
+      .catch(() => setError("Could not take that payment back."));
+  }, []);
+
   const reset = useCallback(() => {
     void fetch("/api/usage/reset", { method: "POST" })
       .then((r) => r.json())
@@ -268,7 +284,25 @@ export function Billing({
               Settings and this line becomes one.
             </>
           )}
+          {vendor.spent_known && typeof vendor.month_real_usd === "number" && (
+            <>
+              {" "}This month it says {money(vendor.month_real_usd)}
+              {vendor.month_since ? `, counting from ${when(vendor.month_since)}` : ""}.
+            </>
+          )}
           {" "}Last balance read {when(vendor.at)}.
+          {vendor.auto_top_ups?.slice(-3).map((payment) => (
+            <span key={payment.at}>
+              {" "}Added {money(payment.usd)} paid in on {when(payment.at)}, because the balance rose.{" "}
+              <button
+                className="btn ghost"
+                onClick={() => undoTopUp(vendor.provider, payment.at)}
+                aria-label={`Take back the ${money(payment.usd)} added on ${when(payment.at)}`}
+              >
+                Not a payment
+              </button>
+            </span>
+          ))}
         </p>
       ))}
 
