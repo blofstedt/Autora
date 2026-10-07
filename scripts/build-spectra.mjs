@@ -211,7 +211,16 @@ if (!installDeps) {
        there an import that fails can be the emulator rather than the wheel;
        the ELF check is then the one that decides, loudly. */
     const running = runOut(python, ["-c", "import platform; print(platform.machine())"]);
-    const core = path.join(site, "pikepdf", "_core.abi3.so");
+    /* pikepdf's C extension, by whatever name this release gives it: the
+       abi3 wheel calls it `_core.abi3.so`, a release built for one
+       interpreter is named after CPython instead
+       (`_core.cpython-312-x86_64-linux-gnu.so`). The file itself is what the
+       arch check below reads, so find it rather than assume its name. */
+    const pikepdf = path.join(site, "pikepdf");
+    const extensions = fs.existsSync(pikepdf)
+      ? fs.readdirSync(pikepdf).filter((f) => /^_core(\..+)?\.so$/.test(f))
+      : [];
+    const core = path.join(pikepdf, extensions.find((f) => f.endsWith(".abi3.so")) ?? extensions[0] ?? "_core.abi3.so");
     const emulated = Boolean(process.env.QEMU_LD_PREFIX || process.env.QEMU_CPU);
     const imports = spawnSync(python, ["-c", "import pikepdf, pyhanko, fontTools, pdfminer, lxml, PIL, numpy; print('[spectra] engine imports ok')"], { stdio: "inherit" });
     if (imports.status === 0) {

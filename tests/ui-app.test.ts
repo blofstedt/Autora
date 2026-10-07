@@ -235,7 +235,7 @@ async function main() {
     await sleep(800);
     await test("the app is a tab in the pinned view, inside the screen, with thumb-sized tools", async () => {
       assert.equal(await p.locator(".app-pane").count(), 0, "no side pane on a phone");
-      assert.match(await p.locator(".stage-tab.is-on").innerText(), /App/);
+      assert.match(await p.locator(".stage-tab.is-on").innerText(), /Creator/);
       const box = await p.locator(".app-canvas").boundingBox();
       assert.ok(box!.x >= 0 && box!.x + box!.width <= 390, "within the width");
       for (const t of ["Use", "Select", "Region"]) assert.ok((await p.locator(".app-tools button", { hasText: t }).boundingBox())!.height >= 34, t);
