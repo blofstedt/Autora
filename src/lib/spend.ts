@@ -136,7 +136,7 @@ export type VendorSpend = {
   balance: number | null;
 };
 
-type VendorView = {
+export type VendorView = {
   provider: string;
   label: string;
   /** The money the fill measures: credit consumed, or the balance left. */
@@ -245,5 +245,42 @@ export function spendView({ spent, session, budget, lifetime, credit }: SpendInp
     drawn,
     meter,
     onCredit,
+  };
+}
+
+/** Every vendor's bar added into one: what the combined bar draws. */
+type CombinedView = {
+  /** Credit consumed across every vendor that has a paid-in figure. */
+  drawn: number;
+  /** Credit paid in across the same vendors. */
+  paid: number;
+  /** The fill as a share of the bar, 0..1. */
+  used: number;
+  over: boolean;
+  near: boolean;
+  /** How many vendors the figures are made of. */
+  count: number;
+  /** Whether any vendor had a paid-in figure to add. */
+  show: boolean;
+};
+
+/**
+ * The combined bar: the spend of every vendor that can say what was paid in,
+ * against the money paid in across them. A vendor that only publishes a balance
+ * has no spend to add, so it stays out of the sum rather than distorting it;
+ * its own bar, in the expanded list, still says what is left there.
+ */
+export function combineVendorViews(views: readonly VendorView[]): CombinedView {
+  const credited = views.filter((view) => !view.remaining && view.paid !== null);
+  const paid = credited.reduce((sum, view) => sum + (view.paid ?? 0), 0);
+  const drawn = credited.reduce((sum, view) => sum + view.drawn, 0);
+  return {
+    drawn,
+    paid,
+    used: paid > 0 ? Math.min(1, drawn / paid) : 0,
+    over: paid > 0 && drawn > paid,
+    near: paid > 0 && drawn <= paid && drawn > paid * 0.8,
+    count: credited.length,
+    show: credited.length > 0,
   };
 }
