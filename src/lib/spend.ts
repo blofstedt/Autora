@@ -83,6 +83,42 @@ export function creditTotal(
   return null;
 }
 
+/** One line of `/api/usage`'s vendors[], as much as choosing one needs. */
+export type VendorLine = {
+  provider: string;
+  label?: string;
+  topped_up_usd?: number | null;
+  balance_usd?: number | null;
+  lifetime_usd?: number | null;
+  /** True for the one line that is the whole ledger's truth. */
+  headline?: boolean;
+  /** True for the account the next turn will call. */
+  selected?: boolean;
+  /** What this vendor's own turns cost this month, nobody else's in it. */
+  month_usd?: number;
+};
+
+/**
+ * Which vendor's line the single composer bar should draw.
+ *
+ * The bar speaks for the account this console is spending, so the vendor in use
+ * wins whenever its till can be read: with several vendors' turns in the ledger
+ * the mixed month is nobody's money in particular, and a bar drawn from it
+ * beside DeepSeek's credit says DeepSeek spent Orca Router's dollars. Failing
+ * that the headline line wins -- the only one that stands for the whole ledger
+ * -- and failing that the single readable line there is, which the caller
+ * labels. Null when nothing about any till can be read: the bar then stays the
+ * month against the ceiling, as it always was.
+ */
+export function barVendor(vendors: readonly VendorLine[] | null | undefined): VendorLine | null {
+  const lines = (vendors ?? []).filter((vendor) => creditTotal(vendor) !== null);
+  return (
+    lines.find((vendor) => vendor.selected) ??
+    lines.find((vendor) => vendor.headline) ??
+    (lines.length === 1 ? lines[0] : null)
+  );
+}
+
 /** One vendor's own till, as the per-vendor bars need it. */
 export type VendorSpend = {
   /** The vendor, as the ledger names it. */

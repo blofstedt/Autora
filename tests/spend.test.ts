@@ -9,7 +9,7 @@
  *   npm test
  */
 import assert from "node:assert/strict";
-import { creditTotal, spendView, vendorSpendView } from "../src/lib/spend";
+import { barVendor, creditTotal, spendView, vendorSpendView } from "../src/lib/spend";
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -214,6 +214,81 @@ test("rubbish in a vendor's line reads as nothing rather than as a number", () =
   const v = vendor({ spent: Number.NaN, paid: Number.NaN, balance: Number.NaN });
   assert.equal(v.show, false);
   near(v.used, 0);
+});
+
+/** The line of /api/usage the bar has to choose between, in the shape it
+    actually arrives: the account in use, and another vendor whose turns are in
+    the same ledger. */
+function line(extra: Partial<{
+  provider: string;
+  label: string;
+  topped_up_usd: number | null;
+  balance_usd: number;
+  lifetime_usd: number | null;
+  headline: boolean;
+  selected: boolean;
+  month_usd: number;
+}>) {
+  return {
+    provider: "deepseek",
+    label: "DeepSeek",
+    topped_up_usd: 30,
+    balance_usd: 2.64,
+    lifetime_usd: 27.36,
+    headline: false,
+    selected: true,
+    month_usd: 3.2,
+    ...extra,
+  };
+}
+
+const other = line({
+  provider: "orcarouter",
+  label: "Orca Router",
+  topped_up_usd: null,
+  balance_usd: 0,
+  lifetime_usd: null,
+  selected: false,
+  month_usd: 91.2,
+});
+
+test("the bar draws the account in use, not the ledger's mixed month", () => {
+  const chosen = barVendor([line({}), other]);
+  assert.equal(chosen?.provider, "deepseek");
+  near(creditTotal(chosen ?? null) ?? -1, 30);
+
+  /* What the bar does with it: the credit is the meter, the money consumed is
+     the vendor's, and the vendor's own month is what sits beside it. */
+  const v = spendView({
+    spent: chosen?.month_usd ?? 0,
+    session: 0.03,
+    budget: 20,
+    lifetime: chosen?.lifetime_usd ?? 0,
+    credit: creditTotal(chosen ?? null) ?? undefined,
+  });
+  assert.equal(v.onCredit, true);
+  near(v.drawn, 27.36);
+  near(v.meter, 30);
+  /* The $20 ceiling belongs to the ledger's month, not to another API's
+     dollars: DeepSeek's own month is well under it and the bar is not "over". */
+  assert.equal(v.over, false);
+});
+
+test("with no account marked, the headline line still draws the bar", () => {
+  const headline = line({ provider: "openai", label: "OpenAI", selected: false, headline: true });
+  assert.equal(barVendor([headline, other])?.provider, "openai");
+});
+
+test("one readable line is drawn even when it is not the headline", () => {
+  const only = line({ provider: "openai", label: "OpenAI", selected: false, headline: false });
+  assert.equal(barVendor([only, other])?.provider, "openai");
+});
+
+test("nothing readable is no bar at all, and the month keeps the slot", () => {
+  const blind = line({ topped_up_usd: null, lifetime_usd: null, balance_usd: 0, selected: true });
+  assert.equal(barVendor([blind]), null);
+  assert.equal(barVendor(null), null);
+  assert.equal(barVendor([]), null);
 });
 
 console.log(`${passed} passed`);

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Usage } from "./Billing";
 import { money } from "./Billing";
-import { creditTotal, spendView, vendorSpendView } from "../lib/spend";
+import { barVendor, creditTotal, spendView, vendorSpendView } from "../lib/spend";
 import { IconX } from "./Icons";
 
 /**
@@ -64,7 +64,10 @@ export function SpendPeek({
      otherwise -- see SpendBar. */
   const readableVendors = usage?.vendors?.filter((v) => v.spent_known || v.balance_usd > 0) ?? [];
   const multiVendor = readableVendors.length > 1;
-  const paidIn = creditTotal(usage?.vendors?.find((vendor) => vendor.headline) ?? null);
+  /* The same choice the bar over the composer makes: the account this console is
+     spending, when its till can be read -- see barVendor. */
+  const chosen = barVendor(usage?.vendors ?? null);
+  const paidIn = creditTotal(chosen ?? null);
   const view = spendView({
     spent,
     session,
@@ -163,7 +166,8 @@ export function SpendPeek({
                       month is measured against -- which is a different
                       question and still worth its sentence. */}
                   {view.onCredit &&
-                    `${money(view.drawn)} of the ${money(view.meter)} paid in — ` +
+                    `${chosen && !chosen.headline ? `${chosen.label}: ` : ""}` +
+                      `${money(view.drawn)} of the ${money(view.meter)} paid in — ` +
                       `${money(Math.max(0, view.meter - view.drawn))} left. `}
                   {cap === null
                     ? `${money(spent)} this month, with no ceiling set.`
@@ -174,6 +178,12 @@ export function SpendPeek({
               </div>
 
               {row("This month", money(usage.month.cost), `${usage.month.turns} turns`)}
+              {/* The ledger's month, so not this account's month: say that one
+                  too, or the credit above and this figure read as one bill. */}
+              {chosen &&
+                !chosen.headline &&
+                typeof chosen.month_usd === "number" &&
+                row(`This month at ${chosen.label}`, money(chosen.month_usd))}
               {row("Today", money(usage.today.cost), `${usage.today.turns} turns`)}
               {row(
                 "All time",

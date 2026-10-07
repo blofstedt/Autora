@@ -16,7 +16,7 @@
  */
 
 import { PROVIDERS, providerSpec } from "./providers";
-import { carriedDays, carriedTotals, state, type UsageEntry } from "./state";
+import { carriedDays, carriedTotals, resolveProvider, state, type UsageEntry } from "./state";
 import { vendorMoneyAll } from "./vendor-money";
 
 const DAYS_SHOWN = 30;
@@ -74,6 +74,10 @@ export function billingSummary() {
      put together: counting every API's turns against one account makes the
      line say the vendor owes money it was never charged. */
   const countedByProvider = new Map<string, number>();
+  /* This month's money per vendor. The composer's bar speaks for the account
+     this console is actually spending, and the month it must not print beside
+     that account's credit is everybody's month. */
+  const monthByProvider = new Map<string, number>();
 
   for (const entry of state.usage) {
     add(all, entry);
@@ -81,6 +85,7 @@ export function billingSummary() {
     if (day === today) add(todayBucket, entry);
     if (day.slice(0, 7) === month) {
       add(monthBucket, entry);
+      monthByProvider.set(entry.provider, (monthByProvider.get(entry.provider) ?? 0) + entry.cost);
       if (entry.parts) {
         split.fresh += entry.parts.fresh;
         split.cached += entry.parts.cached;
@@ -149,6 +154,9 @@ export function billingSummary() {
      counted and every line is reported beside it, for whoever wants to
      compare the two. */
   const vendors = vendorMoneyAll();
+  /* The account the next turn will call, if any: a bar that shows one vendor's
+     till has to know which vendor's till that is. */
+  const active = resolveProvider().provider;
   /* Only a line that knows what was paid in can speak for the total: a balance
      alone says what is left, not what has gone. */
   const spendable = vendors.filter((entry) => entry.lifetime_usd !== null);
@@ -264,6 +272,11 @@ export function billingSummary() {
       /* This vendor's own turns, not the whole ledger's: the comparison is
          this account against what this account billed. */
       counted_usd: countedFor(entry.provider),
+      /* What this vendor's own turns cost this month, with nobody else's words
+         in it: the month that belongs beside this account's credit. */
+      month_usd: monthByProvider.get(entry.provider) ?? 0,
+      /* Whether this is the account the console is spending right now. */
+      selected: entry.provider === active,
       /* What that vendor's own till says was spent, less what its own tokens
          account for here. The rest is either calls it charged without
          reporting what they used, or money spent before this ledger began --

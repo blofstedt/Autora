@@ -133,7 +133,14 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Autora was billing cached input as though it were fresh. A provider serves
+  The money bar above the chat field was drawing one figure for everybody:
+  every API's spend this month added together, printed beside the credit of the
+  account actually in use, so a console spending one vendor's balance showed
+  another vendor's words in its month. Each vendor's line now carries its own
+  month — that account's own turns, against that account's own credit — and the
+  account the next turn will call is marked as the selected one, so the bar
+  draws the account in use rather than the ledger's mixed month.
+  Earlier: Autora was billing cached input as though it were fresh. A provider serves
   most of a long conversation back from its prompt cache and charges far less
   for those tokens — Orca Router publishes $0.042 per million for
   tencent/hy4-preview against $0.834 for tokens it has not seen — and the price

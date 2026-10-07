@@ -1,6 +1,6 @@
 import { memo, useState } from "react";
 import { money } from "./Billing";
-import { creditTotal, spendView, vendorSpendView, type VendorSpend } from "../lib/spend";
+import { barVendor, creditTotal, spendView, vendorSpendView, type VendorSpend } from "../lib/spend";
 import { SpendPeek } from "./SpendPeek";
 
 /** What `/api/usage` answers with, as far as this bar is concerned. */
@@ -23,6 +23,10 @@ export type Usage = {
     headline: boolean;
     /** False when there is no paid-in figure, so there is no credit to draw. */
     spent_known: boolean;
+    /** What this vendor's own turns cost this month, with nobody else's in it. */
+    month_usd?: number;
+    /** True for the account the console is spending right now. */
+    selected?: boolean;
   }[];
 };
 
@@ -116,9 +120,16 @@ export const SpendBar = memo(function SpendBar({
     );
   }
 
-  /* Single bar: one vendor headline, or none. */
-  const credit = creditTotal(vendors?.find((vendor) => vendor.headline) ?? null);
-  const view = spendView({ spent, session, budget, lifetime, credit });
+  /* Single bar: the till of the account this console is spending, when it can
+     be read at all; the month against the ceiling otherwise. */
+  const chosen = barVendor(vendors);
+  const credit = creditTotal(chosen ?? null);
+  /* The money this bar shows is one vendor's money, so the month beside its
+     credit is that vendor's own: the ledger's whole month may be mostly another
+     API's turns, and printing it here reads as this account's spend. */
+  const ownMonth =
+    credit !== null && chosen && typeof chosen.month_usd === "number" ? chosen.month_usd : spent;
+  const view = spendView({ spent: ownMonth, session, budget, lifetime, credit });
   if (!view.show) return null;
 
   const share = (n: number) => `${Math.min(100, Math.max(0, n * 100))}%`;
@@ -130,13 +141,17 @@ export const SpendBar = memo(function SpendBar({
   /* Consumed of what was paid in, the month, then this conversation. The month
      is not named twice: when the whole of the lifetime fell inside it the two
      figures are the same money, and printing it twice reads as two facts. */
-  const monthIsAll = Math.abs(view.drawn - spent) < 0.005;
+  /* Whose till it is, when the bar is not the whole ledger's money. Somebody
+     reading "$27.36 of $30.00 credit" over a console that also pays another
+     vendor has to be told which account that is. */
+  const whose = chosen && !chosen.headline ? `${chosen.label}: ` : "";
+  const monthIsAll = Math.abs(view.drawn - ownMonth) < 0.005;
   const consumed = view.onCredit
-    ? `${money(view.drawn)} of ${money(view.meter)} credit` +
-      (monthIsAll ? " this month" : ` · ${money(spent)} this month`)
+    ? `${whose}${money(view.drawn)} of ${money(view.meter)} credit` +
+      (monthIsAll ? " this month" : ` · ${money(ownMonth)} this month`)
     : view.cap !== null
-      ? `${money(spent)} of ${money(view.cap)} this month`
-      : `${money(spent)} this month`;
+      ? `${money(ownMonth)} of ${money(view.cap)} this month`
+      : `${money(ownMonth)} this month`;
   const mine = session > 0 ? ` · ${money(session)} this session` : "";
   const said = `${consumed}${mine}`;
 
@@ -144,8 +159,8 @@ export const SpendBar = memo(function SpendBar({
      sentence. Written out for that width instead: the two figures the fill
      stands for, as a division, with the session after it. */
   const short = view.onCredit || view.cap !== null
-    ? `${money(view.onCredit ? view.drawn : spent)}/${money(view.meter)}`
-    : money(spent);
+    ? `${money(view.onCredit ? view.drawn : ownMonth)}/${money(view.meter)}`
+    : money(ownMonth);
 
   return (
     <>
@@ -153,8 +168,8 @@ export const SpendBar = memo(function SpendBar({
       type="button"
       className={`spend ${tone}`.trim()}
       onClick={() => setOpen(true)}
-      aria-label={`${said}${mine}. Open what this has cost.`}
-      title={`${said}${mine}${view.over ? " — over the ceiling you set" : view.near ? " — close to the ceiling you set" : ""}. Open what this has cost.`}
+      aria-label={`${said}. Open what this has cost.`}
+      title={`${said}${view.over ? " — over the ceiling you set" : view.near ? " — close to the ceiling you set" : ""}. Open what this has cost.`}
     >
       <span className="spend-track" aria-hidden="true">
         <i

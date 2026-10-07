@@ -384,4 +384,34 @@ test("each balance endpoint is built from that vendor's own base", () => {
   assert.equal(spec("openai").balance, undefined);
 });
 
+test("each vendor's line carries its own month, and the account in use is marked", () => {
+  clearVendors();
+  clearUsage();
+  addVendor(19.24, 30, "deepseek");
+  addVendor(2, 20, "orcarouter");
+  state.provider = "deepseek";
+  const day = Math.floor(Date.now() / 1000);
+  call(day, 2.5);
+  recordUsage({
+    ts: day, session: "t", provider: "orcarouter", model: "tencent/hy4-preview",
+    input: 1000, output: 100, cost: 91.2, priced: true, estimated: false,
+  });
+
+  const b = billingSummary();
+  const mine = b.vendors.find((entry) => entry.provider === "deepseek");
+  const theirs = b.vendors.find((entry) => entry.provider === "orcarouter");
+  assert.ok(mine && theirs);
+  /* The bar speaks for the account the next turn will call, so it has to know
+     which account that is. */
+  assert.equal(mine.selected, true);
+  assert.equal(theirs.selected, false);
+  /* And the month beside a vendor's credit is that vendor's own: 91.2 of the
+     ledger's month is somebody else's API and must not be printed as this
+     account's spend. */
+  near(mine.month_usd, 2.5);
+  near(theirs.month_usd, 91.2);
+  /* The ledger's whole month is unchanged by either figure. */
+  near(b.month.cost, 93.7);
+});
+
 console.log(`\n${passed} passed`);
