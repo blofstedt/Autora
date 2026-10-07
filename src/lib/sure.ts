@@ -10,7 +10,7 @@
  */
 import { useSyncExternalStore } from "react";
 
-export type Question = { message: string; yes: string; settle: (answer: boolean) => void };
+type Question = { message: string; yes: string; settle: (answer: boolean) => void };
 
 let current: Question | null = null;
 let mounted = 0;

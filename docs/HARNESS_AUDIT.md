@@ -5,6 +5,10 @@ Scope: the harness only (turn loop, context, state, tools, guardrails). Read:
 `server/context.ts`, `server/tools.ts` (`runTool`), `server/todos.ts`,
 `server/guard.ts`, `server/toolhealth.ts`, `server/modes.ts`.
 
+> Line numbers in this file are from when it was written and have drifted;
+> search for the function or file named instead (`runTurn` in `server.ts`,
+> `server/loopwatch.ts`).
+
 ## Status after remediation
 
 The sections below are the audit as first written. What has been done since,

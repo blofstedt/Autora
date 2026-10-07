@@ -1,18 +1,15 @@
-# Python
+# Build output
+dist/
+build/
+
+# Python (the .github scripts, ui/scripts, the Spectra engine's venv)
 __pycache__/
 *.py[cod]
 .venv/
 venv/
-*.egg-info/
-dist/
-build/
-.pytest_cache/
-.ruff_cache/
-.mypy_cache/
 
 # Node
 node_modules/
-ui/dist/
 *.tsbuildinfo
 
 # Autora runtime state

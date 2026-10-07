@@ -1,5 +1,5 @@
 /**
- * The the workspace memory graph tools.
+ * The workspace memory graph tools.
  *
  * These were entries in one 81-entry array in server/tools.ts. Nothing about
  * them changed in the move -- each is the same spec, in the same order, and the

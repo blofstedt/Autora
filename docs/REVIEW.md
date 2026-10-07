@@ -30,7 +30,7 @@ first written, and what is left. Findings keep their ids.
 |---|---|
 | A1 | **Done.** `CLAUDE.md` is 7 KB (was 32 KB); the module detail moved to `docs/MODULES.md`, read only for the area being changed. |
 | A2 | Not done: vendoring `spectra-editor/` from a pin like `office/` is still the real fix. `CLAUDE.md` now says to search with `--glob '!spectra-editor/**'`. |
-| A3 | **Done** for `CLAUDE.md`, `eslint.config.js`, `Dockerfile`, CI, `check_release.py`. Open: `docs/HARNESS_AUDIT.md` line numbers, the "The the" headers in `server/specs/`, old Python entries in `.gitignore`. |
+| A3 | **Done**: `CLAUDE.md`, `eslint.config.js`, `Dockerfile`, CI, `check_release.py`, the "The the" headers, `.gitignore`, and a note on `docs/HARNESS_AUDIT.md` that its line numbers have drifted. |
 | A4 | **Done**: `docs/MAP.md`. |
 | B1 | **Done.** Spectra's page 16.6 -> 3.9 MB, its metadata worker 14 -> 1.3 MB. The 27 other languages are separate files fetched when chosen (`locale-loaders.ts`; the worker is English). |
 | B2 | **Done.** `server/staticfiles.ts`: brotli/gzip kept after the first time, hashed `assets/` cached for a year, everything else revalidated by ETag. Used for the app, the Spectra editor and the Office editors. |

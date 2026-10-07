@@ -8,9 +8,11 @@
  *
  *   npm test                  every file, one after another
  *   npm test -- pdf office    only files whose name contains one of these
- *   npm test -- -j 4          four files at once (each test makes its own
- *                             state directory and port; the browser tests
- *                             are heavy, so more than 4 rarely helps)
+ *   npm test -- -j 4          up to four files at once. Each test has its own
+ *                             state directory and port, but the ones that
+ *                             start Chromium fight over it and over the CPU
+ *                             (a download test lost its page), so those run
+ *                             one at a time, beside the others.
  */
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -68,11 +70,20 @@ function run(file: string): Promise<Result> {
   });
 }
 
+/** A test that starts a browser. */
+const usesBrowser = (file: string) =>
+  /chromium|playwright|LiveBrowser|launchBrowser|startApp\(/.test(fs.readFileSync(path.join(here, file), "utf8"));
+
 const results: Result[] = [];
-const queue = [...files];
-await Promise.all(Array.from({ length: Math.min(jobs, files.length) }, async () => {
-  for (let file = queue.shift(); file; file = queue.shift()) results.push(await run(file));
-}));
+const browserQueue = jobs > 1 ? files.filter(usesBrowser) : [];
+const queue = files.filter((f) => !browserQueue.includes(f));
+const lane = async (q: string[]) => {
+  for (let file = q.shift(); file; file = q.shift()) results.push(await run(file));
+};
+await Promise.all([
+  ...Array.from({ length: Math.min(Math.max(jobs - (browserQueue.length ? 1 : 0), 1), queue.length || 1) }, () => lane(queue)),
+  lane(browserQueue),
+]);
 results.sort((a, b) => (a.file < b.file ? -1 : 1));
 
 const failed = results.filter((r) => !r.ok);
