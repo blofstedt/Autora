@@ -7,35 +7,28 @@ import express, { type Request, type Response } from "express";
 import { captureConsole, log, setLogRedactor, type LogLevel } from "./server/logs";
 import { WebSocketServer, WebSocket } from "ws";
 import {
-  AUTO_ORDER, PRICES_CHECKED, PROVIDERS, contextWindow, costParts, isPriced, modelsFor,
-  rememberModels,
-} from "./server/providers";
+  PROVIDERS, contextWindow, costParts, isPriced, } from "./server/providers";
 import {
-  baseUrlFor, clearUsage, flushState, keyFor, keySource, maskKey, modelFor, fastModelFor, recordUsage,
-  resolveProvider, save, setKey, state, stateDir, stateFilePath, type Resolved,
-  allSecrets, listSecrets, setSecret, deleteSecret, getSecret, secretFor, SECRET_PRESETS, redactSecrets as redactStored,
-  mergeAppearance, mergeLoop, mergeRetention, saneMcp, THEMES, FONTS,
-  mergeSpeech,
-  recordToolFeed, type CostParts,
-  DEFAULT_PROMPT, standingRules, applyTimezone, machineTimezone, validTimezone,
-} from "./server/state";
-import { deleteLogin, describeCredentials, redactCredentials, saveLogin, setIdentity } from "./server/credentials";
+  flushState, recordUsage,
+  resolveProvider, save, state, stateDir, stateFilePath, type Resolved,
+  allSecrets, secretFor, redactSecrets as redactStored,
+  saneMcp, recordToolFeed, type CostParts,
+  DEFAULT_PROMPT, standingRules, } from "./server/state";
+import { redactCredentials } from "./server/credentials";
 import { declined, guardWorthy, irreversible, judgeAction, matchesAskRule, shouldHold } from "./server/guard";
-import { prune, storageReport } from "./server/retention";
-import { diskUsage, hostVitals } from "./server/host";
+import { prune } from "./server/retention";
+import { diskUsage } from "./server/host";
 import {
-  DISCOVER, nextSteps, offers as offersFor, starters as startersFor,
-  type Container, type JobBrief, type NextStep, type Signals,
+  nextSteps, type Container, type JobBrief, type NextStep, type Signals,
 } from "./server/suggest";
 import { Noticer, dockerContainers, findings, type NoticerMemory } from "./server/noticer";
 import {
-  HeldMessages, deliver, mergePush, readyChannels,
+  HeldMessages, deliver, readyChannels,
   type PushKind, type PushMessage,
 } from "./server/push";
 import { signIns } from "./server/signins";
 import { ensureHostNames } from "./server/hosts";
-import { forgetSpeech, speak as synthesise, speakStream, speechStatus } from "./server/speech";
-import { attachDictation, dictationStatus } from "./server/dictation";
+import { attachDictation } from "./server/dictation";
 import { missingPathIn, pathHint } from "./server/hints";
 import { FAMILIES, familyIds, loadedFamilies, loadedFromLog, unloadedIndex, withoutUnloaded } from "./server/toolload";
 import { applyLedger, latestLedger, ledgerBriefing, renderLedger, touched as touchedThings } from "./server/ledger";
@@ -44,7 +37,7 @@ import {
   addRequirements, amendmentNote, applyRequirements, autoAsks, finishAudit, latestRequirements, requirementsBriefing,
 } from "./server/requirements";
 import { replyStyle, standingBlock, standingReminder } from "./server/prompt";
-import { WebPush, cleanSubscription } from "./server/webpush";
+import { WebPush } from "./server/webpush";
 import { allowSocket, refuseRequest } from "./server/crosssite";
 import { certificateSource, tlsSettings } from "./server/tls";
 import {
@@ -55,21 +48,19 @@ import os from "node:os";
 
 captureConsole();
 import {
-  ProviderError, listModels, streamChat,
+  ProviderError, streamChat,
   type ChatMessage, type ChatTurn, type ToolReply,
 } from "./server/llm";
-import { billingSummary, dayKey } from "./server/billing";
-import { forgetVendorMoney, refreshAllVendorMoney, refreshVendorMoney, vendorMoneyStale } from "./server/vendor-money";
+import { dayKey } from "./server/billing";
+import { refreshVendorMoney } from "./server/vendor-money";
 import { dropSession, fromDataUrl, getBlob, putBlob } from "./server/blobs";
 import { threeRuntime } from "./server/widgets";
 import { MAX_ARTIFACT_BYTES, saveArtifact } from "./server/artifacts";
-import { restore as restoreVersion, snapshot as snapshotFolder, versions as folderVersions } from "./server/snapshots";
+import { snapshot as snapshotFolder } from "./server/snapshots";
 import {
-  installFromStore, installPackage, listExtensions, removeExtension, setExtensionEnabled,
-} from "./server/extensions";
+  } from "./server/extensions";
 import {
-  addBookmark, bookmarks, clearHistory, downloads, history, recordDownload, recordVisit, removeBookmark,
-} from "./server/browsedata";
+  recordDownload, recordVisit, } from "./server/browsedata";
 
 import { notebookRoutes } from "./server/routes/notebooks";
 import { mcpRoutes } from "./server/routes/mcp";
@@ -88,65 +79,71 @@ import {
 import {
   appendEvent, countsFor, countsOf, deleteSession, ephemeralId, flushStore,
   loadSessionEvents,
-  loadSessionIndex, readDoc, saveDoc, saveMeta, saveSession, type SessionCounts,
-} from "./server/store";
+  loadSessionIndex, readDoc, saveDoc, saveMeta, saveSession, } from "./server/store";
 import { LiveBrowser, VIEWPORT, addressFor, probeBrowser, type PageRead } from "./server/browser";
-import { mergeCaptcha } from "./server/captcha";
-import { inQuiet, mergeProactivity, quietBriefing } from "./server/quiet";
+import { } from "./server/captcha";
+import { inQuiet, quietBriefing } from "./server/quiet";
 import {
   askAbout, askReason, cleanAskWhen, isPermissions, isWorkMode, legacyPermissions, modeBriefing,
   looksOnly, permissionBriefing, permissionsOf, phaseFor, planRefusal, readOnlyCommand, PERMISSION_INFO, WORK_MODES, workMode,
-  type Permissions, type Phase, type WorkMode,
+  type Permissions, type WorkMode,
 } from "./server/modes";
 import { LoopWatch, describe as describeCall } from "./server/loopwatch";
 import { ErrorBudget } from "./server/errorbudget";
 import { forgetPresence, presenceFor, type Surface } from "./server/presence";
 import { cleanRemark, REMARK_SYSTEM, remarkPrompt, RemarkGate, SETTLE_MS as REMARK_SETTLE_MS, WINDOW_MS as REMARK_WINDOW_MS, worthRemarking } from "./server/companion";
 import { editFile, type EditArgs } from "./server/editfile";
-import { diffDom, type ChangeCue, type DomItem } from "./server/domdiff";
+import { diffDom } from "./server/domdiff";
+import type { AutoraEvent, Notice, PreviewRun, Session } from "./server/session-types";
 import { Workspace, type DiffLine, type FileChange as CodeChange } from "./server/codediff";
 import { runSubagent } from "./server/subagent";
-import { checkLine, failedNote, itemCheckNote, mergeVerify, previewNote, previewProblems, type CheckResult } from "./server/verify";
+import { checkLine, failedNote, itemCheckNote, previewNote, previewProblems, type CheckResult } from "./server/verify";
 import { buildTrace, traceText } from "./server/trace";
 import { keepBudget, loadBudget } from "./server/budgetstore";
 import { interruptedWork, resumeNote, type InterruptedWork, type ResumeEvent } from "./server/resume";
 import { checkArgs } from "./server/argcheck";
-import { healthBriefing, recordOutcome, targetOf, toolHealth } from "./server/toolhealth";
+import { healthBriefing, recordOutcome, targetOf } from "./server/toolhealth";
 import { Scheduler, type Job, type JobWatch } from "./server/scheduler";
 import {
-  addSpend, budgetLine, mergeAutomation, overDay, overRun, rollLedger, skipReason,
+  addSpend, overDay, overRun, rollLedger, skipReason,
   stopReason, type AutomationLedger,
 } from "./server/automation";
 import { backgroundBriefing, findJob, listJobs, readTail, startJob, stopJob } from "./server/background";
 import {
-  addressIn, DEVICES, isDevice, isLocalUrl, localAddress, serveFolder, waitForServer,
-  type Device, type StaticServer,
-} from "./server/preview";
-import { deskBase, deskBriefing, deskHooks, deskRoutes, deskState, dropDesk, onDeskChange, onDeskTouch, personBase, serveEditor } from "./server/pdfdesk";
+  addressIn, DEVICES, isLocalUrl, localAddress, serveFolder, waitForServer,
+  type Device, } from "./server/preview";
+import { deskBase, deskBriefing, deskHooks, deskRoutes, deskState, dropDesk, onDeskChange, onDeskTouch, personBase } from "./server/pdfdesk";
+import { staticDir } from "./server/staticfiles";
+import { memoryRoutes } from "./server/routes/memory";
+import { healthRoutes } from "./server/routes/health";
+import { browserRoutes } from "./server/routes/browser";
+import { previewRoutes } from "./server/routes/preview";
+import { settingsRoutes } from "./server/routes/settings";
+import { proactiveRoutes } from "./server/routes/proactive";
+import { triggerRoutes } from "./server/routes/triggers";
+import { jobRoutes } from "./server/routes/jobs";
+import { keyRoutes } from "./server/routes/keys";
 import { dropSpectra, serveSpectra, spectraDocumentChanged, spectraRoutes, spectraUpgrade } from "./server/spectra";
 import { newFileRoutes } from "./server/newfile";
 import { windowOff } from "./server/tools";
 import { dropOfficeDesk, onOfficeChange, onOfficePush, onOfficeTouch, officeBriefing, officeData, officeRoutes, officeState, officeHooks, serveOfficeEditors } from "./server/officedesk";
 import { renderToPdf, webDir as officeWebDir } from "./server/officerender";
 import {
-  pickExpression, reviewMessage, safeStyle, type ElementInfo, type ReviewComment, type StyleChange,
+  type ReviewComment,
 } from "./server/pick";
 
 import { WAKE_MAX_AGE_MS, WAKE_MAX_PER_HOUR, wakePrompt, wakesWanted, type WakeCandidate } from "./server/proactive";
-import {
-  firePrompt as triggerPrompt, label as triggerLabel, newId as newTriggerId, newToken as newTriggerToken,
-  refusal as triggerRefusal, tokenMatches, view as triggerView, type Trigger,
-} from "./server/triggers";
+import type { Trigger } from "./server/triggers";
 import { addRule, autonomyBriefing, covered, listRules, matchText, revoke as revokeRule, revokeAll } from "./server/autonomy";
 import { inventoryBriefing } from "./server/inventory";
 import { htmlToText } from "./server/pages";
-import { customToolsGeneration, deleteCustomTool, listCustomTools } from "./server/customtools";
+import { customToolsGeneration } from "./server/customtools";
 import { REFLECT_SYSTEM, parseReflection, reflectionPrompt, worthReflecting } from "./server/learning";
 import {
-  MEMORY_KINDS, MemoryGraph, doubtNote, freshness, siteOf,
+  MemoryGraph, doubtNote, freshness, siteOf,
   type MemoryLink, type MemoryRecord,
 } from "./server/memory";
-import { actsOnSite, checkSource, checkText, groundingRefusal, tidyRecords } from "./server/mindrules";
+import { actsOnSite, checkSource, checkText, groundingRefusal } from "./server/mindrules";
 import {
   attachRelay, cleanHost, relayClientSource, relayStatus, watchDesktop,
 } from "./server/desktop";
@@ -199,42 +196,6 @@ const VERSION = (() => {
 })();
 
 // --- Types ---
-interface AutoraEvent {
-  seq: number;
-  ts: number;
-  kind: string;
-  actor: string;
-  span: string | null;
-  payload: Record<string, any>;
-  blob: string | null;
-}
-
-interface Session {
-  id: string;
-  title: string;
-  createdAt: number;
-  busy: boolean;
-  /** Kept at the top of the session lists. */
-  pinned?: boolean;
-  /** A chat that is never written down and never listed: incognito. It is in
-      this process's memory alone, and closing it closes it for good. */
-  incognito?: boolean;
-  /** How the agent goes about work in this chat: build, plan or agent (see
-      server/modes.ts). Absent reads as agent. */
-  mode?: WorkMode;
-  /** What may run without a yes, and -- for ask -- when to ask, in the
-      person's own words. */
-  permissions?: Permissions;
-  askWhen?: string;
-  /** What Agent mode is doing right now. Not kept: every turn starts in plan. */
-  phase?: Phase;
-  events: AutoraEvent[];
-  seqCounter: number;
-  /** What the log holds, kept current as events are emitted, so neither the
-      session list nor the storage sweep has to read the log to say. */
-  counts: SessionCounts;
-}
-
 // --- State ---
 // Seeds below are only what a fresh install starts with; once anything is on
 // disk (./server/store) it replaces them.
@@ -392,6 +353,7 @@ for (const stored of loadSessionIndex()) {
     get: () => (loaded ??= loadSessionEvents<AutoraEvent>(session.id)),
     set: (value: AutoraEvent[]) => { loaded = value; },
   });
+  session.unloadEvents = () => { loaded = null; };
   sessions.set(session.id, session);
 }
 if (sessions.size === 0) {
@@ -464,6 +426,8 @@ function forgetSession(id: string) {
   lastAnswer.delete(id);
   for (const key of heldCalls.keys()) if (key.startsWith(`${id}\u0000`)) heldCalls.delete(key);
   turnsInFlight.delete(id);
+  workspaces.delete(id);
+  codeTouched.delete(id);
 }
 
 /**
@@ -493,6 +457,23 @@ function scheduleEphemeralDrop(id: string) {
   arm();
 }
 
+/**
+ * A thread's log is read from disk when somebody first opens it and then kept,
+ * which for a long one is tens of thousands of parsed events. A chat nobody has
+ * open, no turn is running in and nothing has touched for a while gives it
+ * back; the next use reads it again.
+ */
+const LOG_IDLE_MS = 15 * 60 * 1000;
+function unloadIdleLogs(): void {
+  const now = Date.now();
+  for (const s of sessions.values()) {
+    if (!s.unloadEvents || s.incognito || s.busy) continue;
+    if ((sessionSockets.get(s.id)?.size ?? 0) > 0 || turnsInFlight.has(s.id) || running.has(s.id)) continue;
+    if (now - (s.counts.lastTs || s.createdAt) * 1000 < LOG_IDLE_MS) continue;
+    s.unloadEvents();
+  }
+}
+
 /** How often housekeeping looks at the disk without being asked. */
 const SWEEP_EVERY_MS = 12 * 60 * 60 * 1000;
 
@@ -515,11 +496,11 @@ function housekeeping(): void {
 /** Blank out stored secrets and sign-ins, leaving the person's own name and
     address legible: this is what they read themselves, in the log and in a
     push to their phone. The one redactor lives in credentials.ts. */
-function redactSecrets(text: string): string {
+function redactForPerson(text: string): string {
   return redactCredentials(redactStored(text), { identity: false });
 }
 // The Logs page gets the same treatment as the thread.
-setLogRedactor(redactSecrets);
+setLogRedactor(redactForPerson);
 
 /**
  * Every string in a payload, however deep, with secrets blanked.
@@ -529,7 +510,7 @@ setLogRedactor(redactSecrets);
  * any array went into the log on disk and to every watcher as it was.
  */
 function redactDeep(value: unknown, depth = 0): unknown {
-  if (typeof value === "string") return redactSecrets(value);
+  if (typeof value === "string") return redactForPerson(value);
   if (value === null || typeof value !== "object" || depth >= 8) return value;
   if (Array.isArray(value)) return value.map((item) => redactDeep(item, depth + 1));
   // Plain objects only: a Date or a Buffer rebuilt key by key would stop
@@ -929,34 +910,6 @@ function browserFor(session: Session): LiveBrowser {
  * person leaves are kept here, with a picture of what each is about, until
  * they are sent as one message. See server/pick.ts for what a selection is.
  */
-interface PreviewRun {
-  live: LiveBrowser;
-  opened: boolean;
-  openedAt: number;
-  url: string | null;
-  title: string | null;
-  device: Device;
-  /** How it was started, for saying so and for stopping it. */
-  how: "url" | "folder" | "command" | null;
-  serve: StaticServer | null;
-  /** Watching a served folder, so an edit shows without being asked for. */
-  watch: fs.FSWatcher | null;
-  job: string | null;
-  comments: ReviewComment[];
-  /** The dev server it started has exited: what it last said, for the window. */
-  serverDown: { exit: number | null; last: string } | null;
-  /** Pending work to cancel when it closes. */
-  timers: { reload: NodeJS.Timeout | null; console: NodeJS.Timeout | null; job: NodeJS.Timeout | null; follow: NodeJS.Timeout | null };
-  /** What was on the page at the last look, and at which address, to find
-      what a change touched (server/domdiff.ts). */
-  dom: DomItem[] | null;
-  domUrl: string | null;
-  /** A look at what changed is under way, and another was asked for meanwhile. */
-  following: boolean;
-  again: boolean;
-  /** Where the cursor last went, and a number that goes up each time. */
-  cues: { seq: number; items: ChangeCue[] };
-}
 const previews = new Map<string, PreviewRun>();
 
 /** What a restart of the window keeps: the size it was shown at, and the
@@ -2588,14 +2541,6 @@ function newSession(title: string, incognito = false): Session {
 
 /** Things worth telling the person about wherever they are in the app: a
     job finishing while they were looking at something else. */
-interface Notice {
-  id: number;
-  ts: number;
-  tone: "ok" | "error" | "info";
-  title: string;
-  detail: string;
-  session: string | null;
-}
 const notices: Notice[] = [];
 let noticeSeq = 0;
 
@@ -2647,7 +2592,7 @@ function sendPush(msg: PushMessage) {
 function pushOut(kind: PushKind, msg: PushMessage) {
   if (!state.push.on[kind]) return;
   if (readyChannels(webPush).length === 0) return;
-  const safe = { ...msg, title: redactSecrets(msg.title), body: redactSecrets(msg.body) };
+  const safe = { ...msg, title: redactForPerson(msg.title), body: redactForPerson(msg.body) };
   if (inQuiet(Date.now(), state.proactivity)) {
     heldPushes.hold(safe);
     return;
@@ -4435,9 +4380,9 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
          their own, and told to the agent so it works around them. Not when a
          background command is running, which writes files too: whose they are
          cannot be told. */
-      const personEdits = (span: string | null) => {
+      const personEdits = async (span: string | null): Promise<void> => {
         if (!canSeeCode) return;
-        const files = workspace.scan();
+        const files = await workspace.scan();
         if (files.length === 0 || listJobs().some((j) => j.session === session.id && j.state === "running")) return;
         for (const f of files.slice(0, MAX_CHANGE_CARDS)) {
           emitEvent(session, "file.edit", "user", {
@@ -4454,12 +4399,12 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
       };
       if (canSeeCode) {
         // A folder watched before: whatever changed since the last turn is somebody else's work.
-        if (workspace.hasBaseline) personEdits(null);
-        else workspace.prime();
+        if (workspace.hasBaseline) await personEdits(null);
+        else await workspace.prime();
       }
       /** After a command that changes things: the code it wrote, as cards. */
-      const announceCode = (span: string) => {
-        const files: CodeChange[] = workspace.scan();
+      const announceCode = async (span: string): Promise<void> => {
+        const files: CodeChange[] = await workspace.scan();
         if (workspace.tooMany && !workspaceWarned) {
           workspaceWarned = true;
           emitEvent(session, "system.log", "system", {
@@ -4998,7 +4943,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           ranSomething = true;
           const willWrite = (spec.name === "terminal" && !readOnlyCommand(String(use.args?.command ?? ""))) || spec.name === "edit_file";
           // What the person changed before this runs is theirs, not this command's.
-          if (willWrite) personEdits(null);
+          if (willWrite) await personEdits(null);
           const outcome = await runTool(spec, use.args, contextFor(span));
           /* A command that failed because a path was not there: say what is near
              it, so the next call is right instead of another guess. */
@@ -5055,7 +5000,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           }
 
           // The code the command wrote, as cards after the command's own result.
-          if (wrote) announceCode(span);
+          if (wrote) await announceCode(span);
 
           /* Ingestion filter: control codes and repeated lines out, and
              anything still too long kept whole in the vault with its head
@@ -5110,7 +5055,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
         const added = takeAmendments(session.id);
         if (added.length > 0 && last) last.result += `\n\n${amendmentNote(added)}`;
         // What the person did while this round ran, said as it is read.
-        personEdits(null);
+        await personEdits(null);
         const heard = presenceFor(session.id).note();
         if (heard && last) {
           last.result += `\n\n${heard}`;
@@ -5561,8 +5506,14 @@ async function startServer() {
     // nothing and returned an empty thread.
     const fromSeq = parseInt((req.query.from_seq as string) || "0", 10) || 0;
     const limit = parseInt((req.query.limit as string) || "5000", 10) || 5000;
-    const slice = session.events.filter((e) => e.seq >= fromSeq).slice(0, limit);
-    res.json(slice);
+    // Events are in seq order: find where to start rather than test every one.
+    const log = session.events;
+    let lo = 0, hi = log.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (log[mid].seq < fromSeq) lo = mid + 1; else hi = mid;
+    }
+    res.json(log.slice(lo, lo + limit));
   });
 
   /**
@@ -5807,10 +5758,6 @@ async function startServer() {
     res.json({ interrupted: wasBusy });
   });
 
-  // 6b. Live Browser Direct Interaction & Handoff
-  const DRIVING =
-    "The agent is using the browser. Take control to use it yourself -- it will carry on with other work -- or stop it.";
-
   /** An answer to a question the agent asked. */
   app.post("/api/sessions/:id/ask/:askId", (req: Request, res: Response) => {
     const pending = awaitingAsk.get(req.params.askId);
@@ -5830,600 +5777,11 @@ async function startServer() {
     res.json({ ok: true });
   });
 
-  // ---- the app window -------------------------------------------------------
-  const withPreview = (req: Request, res: Response): { session: Session; run: PreviewRun } | null => {
-    const session = sessions.get(req.params.id);
-    if (!session) { res.status(404).json({ error: "Session not found" }); return null; }
-    const run = previews.get(session.id);
-    if (!run?.opened) { res.status(400).json({ error: "No app preview is open." }); return null; }
-    return { session, run };
-  };
-  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : Number.NaN);
-  const asInfo = (v: any): ElementInfo | null => (v && typeof v === "object" && typeof v.selector === "string" ? v as ElementInfo : null);
+  previewRoutes(app, { sessions, previews, emitEvent, broadcastPreview, previewState, previewStart, previewStop, startTurn });
 
-  app.get("/api/sessions/:id/preview", (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    res.json(previewState(session));
-  });
-
-  app.post("/api/sessions/:id/preview/open", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    const url = typeof req.body?.url === "string" ? req.body.url.trim() : "";
-    if (!url) return res.status(400).json({ error: "Give an address on this machine, like http://localhost:5173." });
-    if (!toolSettings().app.enabled) return res.status(409).json({ error: "The app window is switched off on the Tools page." });
-    const r = await previewStart(session, { url }, null);
-    res.status(r.ok ? 200 : 400).json(r.ok ? { ok: true } : { error: r.summary });
-  });
-
-  app.post("/api/sessions/:id/preview/close", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    await previewStop(session);
-    res.json({ ok: true });
-  });
-
-  app.post("/api/sessions/:id/preview/device", async (req: Request, res: Response) => {
-    const ctx = withPreview(req, res);
-    if (!ctx) return;
-    if (!isDevice(req.body?.device)) return res.status(400).json({ error: "A device is phone, tablet or desktop." });
-    const device: Device = req.body.device;
-    ctx.run.device = device;
-    await ctx.run.live.resize(DEVICES[device].width, DEVICES[device].height);
-    broadcastPreview(ctx.session);
-    void ctx.run.live.nudge();
-    res.json({ ok: true, viewport: ctx.run.live.viewport() });
-  });
-
-  app.post("/api/sessions/:id/preview/reload", async (req: Request, res: Response) => {
-    const ctx = withPreview(req, res);
-    if (!ctx) return;
-    // Cleared first: the reload is what says again what is still wrong.
-    ctx.run.live.clearConsole();
-    await ctx.run.live.reload().catch(() => undefined);
-    broadcastPreview(ctx.session);
-    res.json({ ok: true });
-  });
-
-  /* What is at a point, or what is beside / inside / around a selected
-     element. `light` is the hover's version: a box and a name, nothing else. */
-  app.post("/api/sessions/:id/preview/inspect", async (req: Request, res: Response) => {
-    const ctx = withPreview(req, res);
-    if (!ctx) return;
-    const light = req.body?.light === true;
-    let request: Record<string, unknown>;
-    if (typeof req.body?.selector === "string") {
-      const nav = ["parent", "child", "next", "prev"].includes(req.body?.nav) ? req.body.nav : undefined;
-      request = { op: "sel", selector: req.body.selector.slice(0, 600), nav, light };
-    } else {
-      const x = num(req.body?.x), y = num(req.body?.y);
-      if (Number.isNaN(x) || Number.isNaN(y)) return res.status(400).json({ error: "Give x and y, or a selector." });
-      request = { op: "at", x: Math.round(x), y: Math.round(y), light };
-    }
-    const info = await ctx.run.live.pickOp(pickExpression(request)).catch(() => null);
-    res.json({ info: info && info.ok !== false ? info : null });
-  });
-
-  /* Where the things already picked are now: the page scrolls and re-lays
-     itself out, and a pin stays on its element. */
-  app.post("/api/sessions/:id/preview/rects", async (req: Request, res: Response) => {
-    const ctx = withPreview(req, res);
-    if (!ctx) return;
-    const selectors = Array.isArray(req.body?.selectors)
-      ? req.body.selectors.filter((x: unknown) => typeof x === "string").slice(0, 60).map((x: string) => x.slice(0, 600))
-      : [];
-    const out = await ctx.run.live.pickOp(pickExpression({ op: "rects", selectors })).catch(() => null);
-    res.json(Array.isArray(out?.rects) ? out : { scroll: { x: 0, y: 0 }, rects: selectors.map(() => null) });
-  });
-
-  /* Trying a change on the page to show what is meant. Only the properties in
-     EDITABLE_STYLES, only plain values: the page is not a place to run the
-     person's (or anyone's) script. */
-  app.post("/api/sessions/:id/preview/style", async (req: Request, res: Response) => {
-    const ctx = withPreview(req, res);
-    if (!ctx) return;
-    const selector = typeof req.body?.selector === "string" ? req.body.selector.slice(0, 600) : "";
-    const asked = req.body?.css && typeof req.body.css === "object" ? req.body.css as Record<string, unknown> : {};
-    const css: Record<string, string> = {};
-    for (const [k, v] of Object.entries(asked)) {
-      const value = safeStyle(k, v);
-      if (value === null) return res.status(400).json({ error: `${k} cannot be changed here.` });
-      css[k] = value;
-    }
-    if (!selector || Object.keys(css).length === 0) return res.status(400).json({ error: "Give a selector and a style." });
-    const out = await ctx.run.live.pickOp(pickExpression({ op: "style", selector, css })).catch(() => null);
-    if (!out?.ok) return res.status(400).json({ error: out?.error ?? "That could not be applied." });
-    res.json(out);
-  });
-
-  app.post("/api/sessions/:id/preview/text", async (req: Request, res: Response) => {
-    const ctx = withPreview(req, res);
-    if (!ctx) return;
-    const selector = typeof req.body?.selector === "string" ? req.body.selector.slice(0, 600) : "";
-    const text = typeof req.body?.text === "string" ? req.body.text.slice(0, 2000) : null;
-    if (!selector || text === null) return res.status(400).json({ error: "Give a selector and the new text." });
-    const out = await ctx.run.live.pickOp(pickExpression({ op: "text", selector, text })).catch(() => null);
-    if (!out?.ok) return res.status(400).json({ error: out?.error ?? "That could not be applied." });
-    res.json(out);
-  });
-
-  app.post("/api/sessions/:id/preview/reset", async (req: Request, res: Response) => {
-    const ctx = withPreview(req, res);
-    if (!ctx) return;
-    const selector = typeof req.body?.selector === "string" ? req.body.selector.slice(0, 600) : "";
-    if (!selector) return res.status(400).json({ error: "Give a selector." });
-    const out = await ctx.run.live.pickOp(pickExpression({ op: "reset", selector })).catch(() => null);
-    res.json(out ?? { ok: false });
-  });
-
-  /* A comment joins the review. What it is about is read off the page now,
-     and its picture taken now -- the page will have moved on by the time the
-     review is sent. */
-  app.post("/api/sessions/:id/preview/comments", async (req: Request, res: Response) => {
-    const ctx = withPreview(req, res);
-    if (!ctx) return;
-    const { session, run } = ctx;
-    if (run.comments.length >= 30) return res.status(400).json({ error: "That is a lot of comments for one review. Send these first." });
-    const body = req.body ?? {};
-    const kind = body.kind === "region" ? "region" : "element";
-    const text = typeof body.text === "string" ? body.text.trim().slice(0, 2000) : "";
-    if (!text && !body.textEdit && !(Array.isArray(body.styleChanges) && body.styleChanges.length)) {
-      return res.status(400).json({ error: "Say what to change." });
-    }
-    const size = run.live.viewport();
-    const scroll = await run.live.pickOp(pickExpression({ op: "scroll" })).catch(() => null);
-    const elements: ElementInfo[] = [];
-    let region: ReviewComment["region"];
-    if (kind === "element") {
-      const selectors: string[] = Array.isArray(body.selectors) ? body.selectors.filter((x: unknown) => typeof x === "string").slice(0, 12) : [];
-      if (selectors.length === 0) return res.status(400).json({ error: "Select an element first." });
-      for (const selector of selectors) {
-        const info = asInfo(await run.live.pickOp(pickExpression({ op: "sel", selector: selector.slice(0, 600) })).catch(() => null));
-        if (info) elements.push(info);
-      }
-      if (elements.length === 0) return res.status(400).json({ error: "That element is no longer on the page." });
-    } else {
-      const r = body.region ?? {};
-      const x = num(r.x), y = num(r.y), w = num(r.w), h = num(r.h);
-      if ([x, y, w, h].some(Number.isNaN) || w < 4 || h < 4) return res.status(400).json({ error: "Drag a rectangle first." });
-      region = { x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) };
-      /* What is in the rectangle, so the agent has more than pixels: the
-         element at its centre, which is usually what was meant. */
-      const centre = asInfo(await run.live.pickOp(pickExpression({ op: "at", x: Math.round(x + w / 2), y: Math.round(y + h / 2) })).catch(() => null));
-      if (centre) elements.push(centre);
-    }
-
-    /* The picture: the region as drawn, or the elements together with a
-       margin of the page around them, so what they sit among is in it. */
-    let box: { x: number; y: number; w: number; h: number } | { selector: string };
-    if (region) {
-      box = region;
-    } else {
-      const pad = 16;
-      const x0 = Math.max(0, Math.min(...elements.map((e) => e.rect.x)) - pad);
-      const y0 = Math.max(0, Math.min(...elements.map((e) => e.rect.y)) - pad);
-      const x1 = Math.min(size.width, Math.max(...elements.map((e) => e.rect.x + e.rect.w)) + pad);
-      const y1 = Math.min(size.height, Math.max(...elements.map((e) => e.rect.y + e.rect.h)) + pad);
-      // Scrolled out of the window since it was picked: a picture of the element itself.
-      box = x1 - x0 >= 8 && y1 - y0 >= 8 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : { selector: elements[0].selector };
-    }
-    const png = await run.live.cropShot(box);
-    const blob = png ? putBlob(session.id, png, "image/png") : null;
-
-    const styleChanges: StyleChange[] = Array.isArray(body.styleChanges)
-      ? body.styleChanges.slice(0, 20).map((c: any) => ({
-        property: String(c?.property ?? "").slice(0, 40), from: String(c?.from ?? "").slice(0, 80), to: String(c?.to ?? "").slice(0, 80),
-      })).filter((c: StyleChange) => c.property && c.to)
-      : [];
-    const textEdit = body.textEdit && typeof body.textEdit === "object"
-      ? { from: String(body.textEdit.from ?? "").slice(0, 2000), to: String(body.textEdit.to ?? "").slice(0, 2000) }
-      : undefined;
-    const comment: ReviewComment = {
-      id: `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`,
-      kind, text, elements, ...(region ? { region } : {}),
-      ...(textEdit && textEdit.from !== textEdit.to ? { textEdit } : {}),
-      styleChanges, blob,
-      scroll: { x: scroll?.x ?? 0, y: scroll?.y ?? 0 },
-      viewport: size, ts: Date.now(),
-    };
-    run.comments.push(comment);
-    broadcastPreview(session);
-    res.json({ ok: true, comment });
-  });
-
-  app.post("/api/sessions/:id/preview/comments/:cid", (req: Request, res: Response) => {
-    const ctx = withPreview(req, res);
-    if (!ctx) return;
-    const comment = ctx.run.comments.find((c) => c.id === req.params.cid);
-    if (!comment) return res.status(404).json({ error: "No such comment." });
-    if (typeof req.body?.text === "string") comment.text = req.body.text.trim().slice(0, 2000);
-    broadcastPreview(ctx.session);
-    res.json({ ok: true, comment });
-  });
-
-  app.delete("/api/sessions/:id/preview/comments/:cid", (req: Request, res: Response) => {
-    const ctx = withPreview(req, res);
-    if (!ctx) return;
-    const before = ctx.run.comments.length;
-    ctx.run.comments = ctx.run.comments.filter((c) => c.id !== req.params.cid);
-    if (ctx.run.comments.length === before) return res.status(404).json({ error: "No such comment." });
-    broadcastPreview(ctx.session);
-    res.json({ ok: true });
-  });
-
-  /* The review, sent: every comment as one message, each with its picture
-     attached, so one turn answers all of them. */
-  app.post("/api/sessions/:id/preview/send", (req: Request, res: Response) => {
-    const ctx = withPreview(req, res);
-    if (!ctx) return;
-    const { session, run } = ctx;
-    const comments = run.comments;
-    const note = typeof req.body?.text === "string" ? req.body.text.trim().slice(0, 2000) : "";
-    if (comments.length === 0 && !note) return res.status(400).json({ error: "There is nothing to send yet." });
-    const refs: AttachmentRef[] = [];
-    comments.forEach((c, i) => {
-      const blob = c.blob ? getBlob(c.blob) : null;
-      if (!blob) return;
-      try {
-        const saved = saveArtifact({
-          origin: "user", name: `review-${i + 1}.png`, data: blob.data, mime: "image/png", session: session.id,
-          note: `A picture from the app review, comment ${i + 1}`,
-        });
-        refs.push({ id: saved.id, name: saved.name, mime: saved.mime, size: saved.size });
-      } catch {
-        // A picture that cannot be kept is not worth losing the comment for.
-      }
-    });
-    const errors = run.live.consoleTail(8).filter((e) => e.kind === "error").map((e) => e.text);
-    const body = reviewMessage({
-      url: run.url ?? "", viewport: run.live.viewport(), device: DEVICES[run.device].label, comments, consoleErrors: errors,
-    });
-    const text = note ? `${note}\n\n${body}` : body;
-    const count = comments.length;
-    run.comments = [];
-    emitEvent(session, "preview.review", "user", { count });
-    broadcastPreview(session);
-    res.json({ ok: true, queued: false });
-    void startTurn(session, text, refs, {
-      shown: count > 0 ? `Reviewed the app: ${count} comment${count === 1 ? "" : "s"}${note ? ` -- ${note}` : ""}` : note,
-    });
-  });
-
-  app.post("/api/sessions/:id/browser/scroll", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = targetBrowser(session, req);
-    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
-
-    const dx = Number(req.body?.dx ?? 0);
-    const dy = Number(req.body?.dy ?? 0);
-    try {
-      touchPresence(session.id, isPreview(req) ? "app" : "browser", "*", "scroll", "scrolled the page", { tell: false });
-      await live.mouseWheel(dx, dy);
-      res.json({ ok: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message ?? "Scroll failed" });
-    }
-  });
-
-  app.post("/api/sessions/:id/browser/reload", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = targetBrowser(session, req);
-    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
-
-    try {
-      const page = await live.reload();
-      res.json({ ok: true, url: page.url, title: page.title });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message ?? "Reload failed" });
-    }
-  });
-
-  app.post("/api/sessions/:id/browser/back", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = targetBrowser(session, req);
-    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
-
-    try {
-      const page = await live.goBack();
-      res.json({ ok: true, url: page?.url, title: page?.title });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message ?? "Back navigation failed" });
-    }
-  });
-
-  app.post("/api/sessions/:id/browser/click", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = targetBrowser(session, req);
-    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
-
-    const x = Number(req.body?.x);
-    const y = Number(req.body?.y);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) {
-      return res.status(400).json({ error: "Invalid click coordinates." });
-    }
-
-    try {
-      const button = req.body?.button === "right" ? "right" : req.body?.button === "middle" ? "middle" : "left";
-      // What the person is about to click, said to the agent as they do it.
-      const under = await describeOnPage(live, { x, y });
-      touchPresence(session.id, isPreview(req) ? "app" : "browser", "*", "click", `${req.body?.double ? "double-clicked" : "clicked"} ${under.what}`);
-      const { editable, select } = await live.userClick(x, y, button, !!req.body?.double);
-      // A dropdown answers with its choices: the app shows them itself.
-      res.json({ ok: true, editable, select: select ?? null });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message ?? "Click failed" });
-    }
-  });
-
-  // A drag from the person's own hand, in three parts, so what they are
-  // dragging follows the pointer instead of jumping when they let go.
-  app.post("/api/sessions/:id/browser/drag", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = targetBrowser(session, req);
-    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
-
-    const phase = req.body?.phase === "start" ? "start" : req.body?.phase === "end" ? "end" : "move";
-    const x = Number(req.body?.x);
-    const y = Number(req.body?.y);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) {
-      return res.status(400).json({ error: "Invalid drag coordinates." });
-    }
-
-    try {
-      touchPresence(session.id, isPreview(req) ? "app" : "browser", "*", "drag", "dragged on the page", { tell: false });
-      const out = await live.userDrag(phase, x, y);
-      res.json({ ...out, ok: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message ?? "Drag failed" });
-    }
-  });
-
-  // The choice made from a dropdown's list in the app, set on the page.
-  app.post("/api/sessions/:id/browser/choose", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = targetBrowser(session, req);
-    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
-
-    const x = Number(req.body?.x);
-    const y = Number(req.body?.y);
-    const index = Number(req.body?.index);
-    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(index)) {
-      return res.status(400).json({ error: "Invalid choice." });
-    }
-
-    try {
-      touchPresence(session.id, isPreview(req) ? "app" : "browser", "*", "choose", "picked an option from a menu", { tell: true });
-      const out = await live.chooseOption(x, y, index);
-      res.json({ ...out, ok: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message ?? "Choosing failed" });
-    }
-  });
-
-  app.post("/api/sessions/:id/browser/type", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = targetBrowser(session, req);
-    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
-
-    const text = String(req.body?.text ?? "");
-    try {
-      const into = await describeOnPage(live, null);
-      touchPresence(
-        session.id, isPreview(req) ? "app" : "browser", "*", "type",
-        into.secret ? "typed into a password field" : `typed ${JSON.stringify(text.length > 40 ? `${text.slice(0, 37)}...` : text)} into ${into.what}`,
-      );
-      await live.keyboardType(text);
-      res.json({ ok: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message ?? "Type failed" });
-    }
-  });
-
-  app.post("/api/sessions/:id/browser/key", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = targetBrowser(session, req);
-    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
-
-    const key = String(req.body?.key ?? "");
-    if (!key) return res.status(400).json({ error: "No key specified." });
-
-    try {
-      touchPresence(session.id, isPreview(req) ? "app" : "browser", "*", "key", `pressed ${key}`, { tell: /^(Enter|Escape|Tab|Delete|Backspace)$/i.test(key) });
-      await live.keyboardPress(key);
-      res.json({ ok: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message ?? "Key press failed" });
-    }
-  });
-
-  app.post("/api/sessions/:id/browser/navigate", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = targetBrowser(session, req);
-    if (!live) return res.status(400).json({ error: "No browser active." });
-
-    const url = String(req.body?.url ?? "").trim();
-    if (!url) return res.status(400).json({ error: "No URL specified." });
-    // The app window shows what is being built here, and nothing else.
-    if (isPreview(req) && !isLocalUrl(addressFor(url))) {
-      return res.status(400).json({ error: "The app window only opens addresses on this machine." });
-    }
-
-    try {
-      touchPresence(session.id, isPreview(req) ? "app" : "browser", "*", "navigate", `went to ${url.length > 80 ? `${url.slice(0, 77)}...` : url}`);
-      const page = await live.goto(isPreview(req) ? localAddress(addressFor(url)) : url);
-      res.json({ ok: true, url: page.url, title: page.title });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message ?? "Navigation failed" });
-    }
-  });
-
-  /** Pages visited, bookmarks and downloads: the browser's own lists. */
-  app.get("/api/browser/data", (req: Request, res: Response) => {
-    res.json({
-      history: history(String(req.query.q ?? "")).slice(0, 200),
-      bookmarks: bookmarks(),
-      downloads: downloads(),
-    });
-  });
-
-  app.post("/api/browser/bookmarks", (req: Request, res: Response) => {
-    const url = String(req.body?.url ?? "");
-    if (req.body?.remove) { removeBookmark(url); return res.json({ ok: true }); }
-    const mark = addBookmark(url, String(req.body?.title ?? ""));
-    if (!mark) return res.status(400).json({ error: "Only web pages can be bookmarked." });
-    res.json({ ok: true, bookmark: mark });
-  });
-
-  /** Chrome extensions. They see every page, so each is installed by name. */
-  app.get("/api/extensions", (_req: Request, res: Response) => {
-    res.json({ extensions: listExtensions() });
-  });
-
-  app.post("/api/extensions/install", async (req: Request, res: Response) => {
-    try {
-      res.json({ ok: true, extension: await installFromStore(String(req.body?.source ?? "")) });
-    } catch (err: any) {
-      res.status(400).json({ error: err?.message ?? "Could not install that." });
-    }
-  });
-
-  app.post("/api/extensions/upload", express.raw({ type: "*/*", limit: "60mb" }), (req: Request, res: Response) => {
-    try {
-      if (!Buffer.isBuffer(req.body) || req.body.length === 0) throw new Error("Send the extension's .zip or .crx file.");
-      const name = String(req.query.name ?? "extension").replace(/\.(zip|crx)$/i, "");
-      res.json({ ok: true, extension: installPackage(req.body, "file", name) });
-    } catch (err: any) {
-      res.status(400).json({ error: err?.message ?? "Could not install that." });
-    }
-  });
-
-  app.post("/api/extensions/item/:id", (req: Request, res: Response) => {
-    const id = String(req.params.id);
-    const done = req.body?.remove ? removeExtension(id) : setExtensionEnabled(id, !!req.body?.enabled);
-    res.status(done ? 200 : 404).json(done ? { ok: true } : { error: "No such extension." });
-  });
-
-  /** Extensions load when the browser starts: close every chat's browser so
-      the next page opens with the current set. */
-  app.post("/api/extensions/restart", async (_req: Request, res: Response) => {
-    for (const [id, live] of [...browsers]) {
-      await live.close().catch(() => undefined);
-      browsers.delete(id);
-      const session = sessions.get(id);
-      if (session) broadcastBrowserState(session);
-    }
-    res.json({ ok: true });
-  });
-
-  app.post("/api/browser/history/clear", (_req: Request, res: Response) => {
-    clearHistory();
-    res.json({ ok: true });
-  });
-
-  app.post("/api/sessions/:id/browser/find", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    const live = targetBrowser(session, req);
-    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
-    const found = await live.find(String(req.body?.text ?? "").slice(0, 200), !!req.body?.backwards);
-    res.json({ ok: true, found });
-  });
-
-  /** DevTools' console and network for the open tab (polled by the panel). */
-  app.get("/api/sessions/:id/browser/devtools", (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    const live = isPreview(req) ? previews.get(session.id)?.live : browsers.get(session.id);
-    if (!live) return res.json({ entries: [] });
-    res.json({
-      entries: live.devtools({
-        kind: req.query.kind === "request" ? "request" : req.query.kind === "console" ? "console" : undefined,
-        since: Number(req.query.since) || 0,
-      }),
-    });
-  });
-
-  app.post("/api/sessions/:id/browser/devtools/clear", (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    targetBrowser(session, req)?.clearDevtools();
-    res.json({ ok: true });
-  });
-
-  /** The folder the agent builds in: its saved versions, and going back to one. */
-  app.get("/api/versions", async (_req: Request, res: Response) => {
-    res.json({ folder: terminalDir(), versions: await folderVersions(terminalDir()) });
-  });
-
-  app.post("/api/versions/restore", async (req: Request, res: Response) => {
-    const session = req.body?.session ? sessions.get(String(req.body.session)) : undefined;
-    if (session && agentDriving(session)) return res.status(409).json({ error: "The agent is working; wait for it to finish or stop it first." });
-    try {
-      const saved = await restoreVersion(terminalDir(), String(req.body?.id ?? ""));
-      if (session) {
-        emitEvent(session, "version.restored", "user", { id: String(req.body?.id), label: saved?.label ?? "" });
-        const run = previews.get(session.id);
-        if (run?.opened) void run.live.reload().catch(() => undefined);
-      }
-      res.json({ ok: true, versions: await folderVersions(terminalDir()) });
-    } catch (err: any) {
-      res.status(400).json({ error: err?.message ?? "Could not restore that." });
-    }
-  });
-
-  app.post("/api/sessions/:id/browser/forward", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = targetBrowser(session, req);
-    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
-    try {
-      const page = await live.goForward();
-      res.json({ ok: true, url: page?.url, title: page?.title });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message ?? "Forward navigation failed" });
-    }
-  });
-
-  /** The tab strip: open, switch to and close tabs. */
-  app.post("/api/sessions/:id/browser/tabs", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    if (isPreview(req)) return res.status(400).json({ error: "The app window has one page." });
-    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = targetBrowser(session, req) ?? browserFor(session);
-    const action = String(req.body?.action ?? "");
-    const id = Number(req.body?.id);
-    try {
-      touchPresence(session.id, "browser", "*", "tabs", `${action === "new" ? "opened" : action === "close" ? "closed" : "switched"} a tab`);
-      if (action === "new") await live.newTab(typeof req.body?.url === "string" ? req.body.url : undefined);
-      else if (action === "switch" && Number.isInteger(id)) await live.switchTab(id);
-      else if (action === "close" && Number.isInteger(id)) await live.closeTab(id);
-      else return res.status(400).json({ error: "Say action new, switch or close, and the tab's id." });
-      broadcastBrowserState(session);
-      res.json({ ok: true, tabs: live.tabList() });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message ?? "That did not work." });
-    }
+  browserRoutes(app, {
+    sessions, browsers, previews, browserFor, targetBrowser, isPreview, agentDriving, describeOnPage,
+    touchPresence, broadcastBrowserState, emitEvent,
   });
 
   // 7. Policy Approvals
@@ -6494,1036 +5852,51 @@ async function startServer() {
     res.json({ ok: true, approved, who });
   });
 
-  // 8. Memory / Knowledge Web
-  app.get("/api/memory", (req: Request, res: Response) => {
-    const q = ((req.query.q as string) || "").toLowerCase().trim();
+  memoryRoutes(app, { mind });
 
-    let records = memoryRecords;
-    if (q) {
-      records = records.filter(
-        (r) =>
-          r.title.toLowerCase().includes(q) ||
-          r.body.toLowerCase().includes(q) ||
-          r.tags.some((t) => t.toLowerCase().includes(q)),
-      );
-    }
-
-    res.json({
-      records,
-      links: memoryLinks,
-      enabled: true,
-      learning: state.learning,
-      groundFirst: state.groundFirst,
-    });
-  });
-
-  /** Whether the agent says a word about what the person does in the windows they share. */
-  app.get("/api/collaboration", (_req: Request, res: Response) => {
-    res.json({ remarks: state.collabRemarks });
-  });
-  app.patch("/api/collaboration", (req: Request, res: Response) => {
-    if (typeof req.body?.remarks === "boolean") {
-      state.collabRemarks = req.body.remarks;
-      save();
-    }
-    res.json({ remarks: state.collabRemarks });
-  });
-
-  /** Whether the agent's work is shown as it is done (the cursor, the typed code). */
-  app.get("/api/agent-cursor", (_req: Request, res: Response) => {
-    res.json({ on: state.agentCursor });
-  });
-  app.patch("/api/agent-cursor", (req: Request, res: Response) => {
-    if (typeof req.body?.on === "boolean") {
-      state.agentCursor = req.body.on;
-      save();
-    }
-    res.json({ on: state.agentCursor });
-  });
-
-  /** Whether the agent writes down what it learns after a turn. */
-  app.patch("/api/memory-settings", (req: Request, res: Response) => {
-    if (typeof req.body?.learning === "boolean") {
-      state.learning = req.body.learning;
-      save();
-    }
-    if (typeof req.body?.groundFirst === "boolean") {
-      state.groundFirst = req.body.groundFirst;
-      save();
-    }
-    res.json({ learning: state.learning, groundFirst: state.groundFirst });
-  });
-
-  /**
-   * Bring the existing memories up to the mind's rules (server/mindrules.ts): filed under a
-   * subject, tidy titles. What needs judgment is listed, not rewritten. `dry` only reports.
-   * A POST because it changes records.
-   */
-  app.post("/api/memory/tidy", (req: Request, res: Response) => {
-    if (req.body?.dry === true) {
-      const copy = structuredClone(mind.records) as MemoryRecord[];
-      return res.json({ dry: true, ...tidyRecords(copy) });
-    }
-    const report = tidyRecords(mind.records);
-    if (report.fixed.length > 0) mind.save();
-    res.json({ dry: false, ...report });
-  });
-
-  app.post("/api/memory", (req: Request, res: Response) => {
-    const title = (req.body?.title || "").trim();
-    if (!title) return res.status(400).json({ error: "Title is required" });
-    const { record } = mind.write({
-      title,
-      body: req.body?.body || "",
-      kind: MEMORY_KINDS.includes(req.body?.kind) ? req.body.kind : "skill",
-      tags: Array.isArray(req.body?.tags) ? req.body.tags : [],
-      status: "confirmed",
-      source_session: req.body?.source_session || null,
-      ...(typeof req.body?.subject === "string" && req.body.subject.trim() ? { subject: req.body.subject.trim().toLowerCase().slice(0, 60) } : {}),
-    });
-    if (typeof req.body?.pinned === "boolean") mind.update(record.id, { pinned: req.body.pinned });
-    res.json(record);
-  });
-
-  app.get("/api/memory/:id", (req: Request, res: Response) => {
-    const record = mind.get(req.params.id);
-    if (!record) return res.status(404).json({ error: "Record not found" });
-    res.json(record);
-  });
-
-  app.patch("/api/memory/:id", (req: Request, res: Response) => {
-    const record = mind.get(req.params.id);
-    if (!record) return res.status(404).json({ error: "Record not found" });
-    mind.update(record.id, {
-      title: req.body.title,
-      body: req.body.body,
-      kind: req.body.kind,
-      tags: Array.isArray(req.body.tags) ? req.body.tags : undefined,
-      pinned: req.body.pinned !== undefined ? Boolean(req.body.pinned) : undefined,
-      subject: typeof req.body.subject === "string" ? req.body.subject : undefined,
-    });
-    // Confirming is more than a field: a confirmed rewrite retires what it
-    // rewrote.
-    if (req.body.status === "confirmed") mind.confirm(record.id);
-    else if (req.body.status === "provisional") record.status = "provisional";
-    res.json(record);
-  });
-
-  /** Keep something the agent learned: it is known from now on. */
-  app.post("/api/memory/:id/confirm", (req: Request, res: Response) => {
-    const record = mind.confirm(req.params.id);
-    if (!record) return res.status(404).json({ error: "Record not found" });
-    res.json(record);
-  });
-
-  app.delete("/api/memory/:id", (req: Request, res: Response) => {
-    if (!mind.forget(req.params.id)) return res.status(404).json({ error: "Record not found" });
-    res.json({ ok: true });
-  });
-
-  // 9. Scheduled jobs and watchers (see server/scheduler.ts)
-  /* What automated runs have spent today, what the guard did about it, and
-     what is left. The Schedule page and the Settings card both read this. */
-  app.get("/api/automation", (_req: Request, res: Response) => {
+  const todaysLedger = () => {
     automationLedger = rollLedger(automationLedger, dayKey(Math.floor(Date.now() / 1000)));
-    res.json({
-      budget: { ...state.automation },
-      ledger: { ...automationLedger },
-      line: budgetLine(state.automation, automationLedger),
-      running: automationSessions.size,
-    });
-  });
-
-  app.get("/api/jobs", (_req: Request, res: Response) => {
-    res.json(jobs.map(jobView));
-  });
-
-  app.post("/api/jobs", (req: Request, res: Response) => {
-    const prompt = (req.body?.prompt || "").trim();
-    if (!prompt) return res.status(400).json({ error: "A task needs a prompt" });
-    const newJob = createJob({
-      name: String(req.body?.name ?? ""),
-      cron: String(req.body?.cron ?? ""),
-      prompt,
-      enabled: req.body?.enabled,
-      watch: req.body?.watch,
-    });
-    res.json({ id: newJob.id, cron_error: newJob.cron_error });
-  });
-
-  app.patch("/api/jobs/:id", (req: Request, res: Response) => {
-    const job = jobs.find((j) => j.id === req.params.id);
-    if (!job) return res.status(404).json({ error: "Job not found" });
-
-    if (typeof req.body.name === "string") job.name = req.body.name;
-    if (typeof req.body.prompt === "string") job.prompt = req.body.prompt;
-    if (req.body.enabled !== undefined) job.enabled = Boolean(req.body.enabled);
-    if (typeof req.body.cron === "string") job.cron = req.body.cron.trim();
-    let rewatch = false;
-    if (req.body.watch !== undefined) {
-      const watch = saneWatch(req.body.watch);
-      rewatch = JSON.stringify(watch) !== JSON.stringify(job.watch ?? null);
-      job.watch = watch;
-      if (rewatch) job.last_seen = null;
-    }
-    scheduler.plan(job);
-    saveJobs();
-    if (rewatch && job.watch) void scheduler.check(job);
-    res.json({ ok: true, cron_error: job.cron_error });
-  });
-
-  app.delete("/api/jobs/:id", (req: Request, res: Response) => {
-    const idx = jobs.findIndex((j) => j.id === req.params.id);
-    if (idx === -1) return res.status(404).json({ error: "Job not found" });
-    jobs.splice(idx, 1);
-    saveJobs();
-    res.json({ ok: true });
-  });
-
-  /** Run it now: a schedule runs its prompt, a watcher looks and runs with
-      what it saw, changed or not. */
-  app.post("/api/jobs/:id/run", async (req: Request, res: Response) => {
-    const job = jobs.find((j) => j.id === req.params.id);
-    if (!job) return res.status(404).json({ error: "Job not found" });
-    if (scheduler.running(job.id)) return res.status(409).json({ error: "It is already running." });
-    if (job.watch) {
-      const outcome = await scheduler.check(job, true);
-      if (outcome === "error") return res.status(400).json({ error: job.last_error });
-      return res.json({ session: job.last_session });
-    }
-    const session = await scheduler.fire(job, job.prompt, "manual");
-    if (!session) return res.status(400).json({ error: job.last_error ?? "It could not start." });
-    res.json({ session });
-  });
-
-  /* ---- triggers: work that starts because something outside said so -------
-     See server/triggers.ts for what a trigger is and the rules it keeps. A
-     firing is a turn in a session of its own, billed against the same day's
-     automation budget as a scheduled run -- it is the same kind of spending,
-     and a URL that could spend without limit would be the wrong shape of
-     feature. */
-
-  /** Start a trigger's turn. Resolves with the session's id, or null. */
-  async function fireTrigger(t: Trigger, why: string, body: string): Promise<string | null> {
-    const day = dayKey(Math.floor(Date.now() / 1000));
-    automationLedger = rollLedger(automationLedger, day);
-    if (overDay(state.automation, automationLedger)) {
-      const held = skipReason(triggerLabel(t), state.automation);
-      t.last_error = held;
-      t.last_fired = Math.floor(Date.now() / 1000);
-      saveTriggers();
-      notify({ tone: "info", title: "Automation budget spent for today", detail: held, session: null }, "jobs");
-      return null;
-    }
-    const session = newSession(triggerLabel(t));
-    automationSessions.add(session.id);
-    t.fires += 1;
-    t.last_fired = Math.floor(Date.now() / 1000);
-    t.last_session = session.id;
-    t.last_error = null;
-    t.last_body = body.trim().slice(0, 600) || null;
-    saveTriggers();
-    emitEvent(session, "system.log", "system", {
-      event: "trigger.fired",
-      trigger: t.id,
-      name: triggerLabel(t),
-      message: why,
-    });
-    log("info", "triggers", `${t.id} fired -> ${session.id}`);
-    const done = startTurn(session, triggerPrompt(t, body), [], { automated: true }).then((r) => {
-      t.last_error = r.error ?? null;
-      saveTriggers();
-      automationLedger = rollLedger(automationLedger, dayKey(Math.floor(Date.now() / 1000)));
-      addSpend(automationLedger, sessionCost(session.id));
-      saveDoc("automation", () => automationLedger);
-      notify({
-        tone: r.ok ? "ok" : "error",
-        title: r.ok ? `${triggerLabel(t)} was triggered` : `${triggerLabel(t)} failed`,
-        detail: r.ok ? (r.reply || "").trim().slice(0, 200) || "Done." : r.error || "It did not finish.",
-        session: session.id,
-      }, "jobs");
-      return r;
-    });
-    void done.catch(() => undefined);
-    return session.id;
-  }
-
-  app.get("/api/triggers", (req: Request, res: Response) => {
-    const origin = `${req.protocol}://${req.get("host") ?? "localhost"}`;
-    res.json(triggers.map((t) => triggerView(t, origin)));
-  });
-
-  app.post("/api/triggers", (req: Request, res: Response) => {
-    const name = String(req.body?.name ?? "").trim().slice(0, 80);
-    const prompt = String(req.body?.prompt ?? "").trim().slice(0, 2000);
-    if (!name) return res.status(400).json({ error: "A trigger needs a name." });
-    if (!prompt) return res.status(400).json({ error: "Say what the turn should do when it fires." });
-    const made: Trigger = {
-      id: newTriggerId(),
-      name,
-      prompt,
-      /* Made here and shown once: whatever is going to call this needs the
-         secret, and there is nowhere better to put it than the answer. */
-      token: newTriggerToken(),
-      enabled: true,
-      created: Math.floor(Date.now() / 1000),
-      fires: 0,
-      last_fired: null,
-      last_session: null,
-      last_error: null,
-    };
-    triggers.push(made);
-    saveTriggers();
-    log("info", "triggers", `${made.id} created (${name})`);
-    const origin = `${req.protocol}://${req.get("host") ?? "localhost"}`;
-    res.json({ trigger: { ...triggerView(made, origin), token: made.token } });
-  });
-
-  app.patch("/api/triggers/:id", (req: Request, res: Response) => {
-    const t = triggers.find((x) => x.id === req.params.id);
-    if (!t) return res.status(404).json({ error: "No such trigger." });
-    if (typeof req.body?.enabled === "boolean") t.enabled = req.body.enabled;
-    if (typeof req.body?.name === "string" && req.body.name.trim()) t.name = req.body.name.trim().slice(0, 80);
-    if (typeof req.body?.prompt === "string" && req.body.prompt.trim()) t.prompt = req.body.prompt.trim().slice(0, 2000);
-    /* Rotated on request, and the only time the secret is shown again: a
-       secret that has been pasted somewhere it should not have been is worth
-       being able to replace without losing the trigger's history. */
-    let token: string | undefined;
-    if (req.body?.rotate === true) {
-      t.token = newTriggerToken();
-      token = t.token;
-    }
-    saveTriggers();
-    const origin = `${req.protocol}://${req.get("host") ?? "localhost"}`;
-    res.json({ trigger: { ...triggerView(t, origin), ...(token ? { token } : {}) } });
-  });
-
-  app.delete("/api/triggers/:id", (req: Request, res: Response) => {
-    const at = triggers.findIndex((x) => x.id === req.params.id);
-    if (at < 0) return res.status(404).json({ error: "No such trigger." });
-    const [gone] = triggers.splice(at, 1);
-    saveTriggers();
-    log("info", "triggers", `${gone.id} deleted`);
-    res.json({ ok: true });
-  });
-
-  /** The URL the rest of the world calls. A plain text body is accepted as
-      well as JSON, because that is what a shell script sends. */
-  app.post(
-    "/api/triggers/:id/fire",
-    express.text({ type: ["text/*", "application/x-www-form-urlencoded"], limit: "1mb" }),
-    async (req: Request, res: Response) => {
-      const t = triggers.find((x) => x.id === req.params.id);
-      const refused = triggerRefusal(t);
-      if (refused || !t) return res.status(404).json({ error: refused ?? "No such trigger." });
-      const header = String(req.get("x-autora-token") ?? "");
-      const bearer = String(req.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
-      const given = header || bearer || String(req.query.token ?? "");
-      if (!tokenMatches(t, given)) {
-        log("info", "triggers", `${t.id} refused: the secret did not match`);
-        return res.status(401).json({ error: "That token is not this trigger's." });
-      }
-      const raw = typeof req.body === "string" ? req.body : req.body ? JSON.stringify(req.body) : "";
-      const session = await fireTrigger(
-        t,
-        `Triggered from outside the console by a request to ${t.id}.`,
-        raw,
-      );
-      if (!session) return res.status(429).json({ error: t.last_error ?? "It could not start." });
-      res.json({ ok: true, session });
-    },
-  );
-
-  /**
-   * What this install could do for the person, and what it has noticed:
-   * one-tap tasks for a new chat, the one schedule worth offering, and the
-   * conditions still true. Read from the install each time; no model is
-   * asked. See server/suggest.ts and server/noticer.ts.
-   */
-  app.get("/api/proactive", async (_req: Request, res: Response) => {
-    const signals = await gatherSignals();
-    res.json({
-      starters: startersFor(signals),
-      discover: DISCOVER,
-      offer: offersFor(signals, answeredOffers, state.proactivity)[0] ?? null,
-      notices: noticer.list(),
-    });
-  });
-
-  /** Only what has been noticed, for the sidebar's poll: no Docker, no disk,
-      nothing worked out -- the list the last look left. */
-  app.get("/api/proactive/notices", (_req: Request, res: Response) => {
-    res.json({ notices: noticer.list() });
-  });
-
-  /** Yes or no to an offer. Yes sets the schedule up; either way it is not
-      asked again. The offer is worked out afresh here rather than taken from
-      the request, so this route can only ever create a job it offered. */
-  app.post("/api/proactive/offers/:key", async (req: Request, res: Response) => {
-    const answer = req.body?.answer === "yes" ? "yes" : req.body?.answer === "no" ? "no" : null;
-    if (!answer) return res.status(400).json({ error: "Answer yes or no." });
-    const offer = offersFor(await gatherSignals(), answeredOffers, state.proactivity)
-      .find((o) => o.key === req.params.key);
-    if (!offer) return res.status(404).json({ error: "That offer is no longer open." });
-    answeredOffers[offer.key] = answer;
-    saveProactive();
-    if (answer === "no") return res.json({ ok: true });
-    const job = createJob(offer.job);
-    log("info", "schedule", `offer accepted: "${job.name}" (${job.cron})`);
-    res.json({ ok: true, job: job.id, name: job.name, next_run: job.next_run });
-  });
-
-  /** "Not now" on something noticed: quiet until it clears. */
-  app.post("/api/proactive/notices/:key/dismiss", (req: Request, res: Response) => {
-    if (!noticer.dismiss(req.params.key)) return res.status(404).json({ error: "That is no longer true." });
-    res.json({ ok: true });
-  });
-
-  /** A message to every device that has asked, to see it arrive. */
-  app.post("/api/push/test", async (_req: Request, res: Response) => {
-    if (readyChannels(webPush).length === 0) {
-      return res.status(400).json({ error: "No device is set up to be notified yet: turn on notifications on this device first." });
-    }
-    const results = await deliver({
-      title: "Autora can reach you here",
-      body: "This is where it will tell you when a schedule runs, when it notices something, and when it needs you.",
-      url: appLink(),
-    }, webPush);
-    for (const d of results) log(d.ok ? "info" : "warn", "push", `test to ${d.channel}: ${d.ok ? "sent" : d.error}`);
-    res.json({ results });
-  });
-
-  /** This device asks to be told things. The subscription is the browser's
-      own; only a well-formed one, to a real https push service, is kept. */
-  app.post("/api/push/web/subscribe", (req: Request, res: Response) => {
-    const sub = cleanSubscription(req.body?.subscription, req.body?.label);
-    if (!sub) return res.status(400).json({ error: "That is not a subscription this can send to." });
-    webPush.add(sub);
-    res.json({ ok: true, devices: webPush.list() });
-  });
-
-  app.post("/api/push/web/unsubscribe", (req: Request, res: Response) => {
-    const endpoint = String(req.body?.endpoint ?? "");
-    res.json({ ok: true, removed: webPush.remove(endpoint), devices: webPush.list() });
-  });
-
-  app.get("/api/notices", (req: Request, res: Response) => {
-    const after = Number(req.query.after) || 0;
-    res.json({ notices: notices.filter((n) => n.id > after), latest: noticeSeq });
-  });
-
-  // 9b. How the tools have been going, and the ones the agent wrote.
-  app.get("/api/tools/health", (_req: Request, res: Response) => {
-    res.json({ health: toolHealth() });
-  });
-
-  /* What the workspace is using, and the one button that gives some back.
-     Nothing said how much was stored until this: sessions, logs and the
-     Artifacts page grew for the life of the install, and the only way to get
-     disk back was deleting threads one at a time. */
-  /** CPU, memory and disk of the machine, for the sidebar's bars. */
-  app.get("/api/host", (_req: Request, res: Response) => {
-    res.json(hostVitals());
-  });
-
-  app.get("/api/storage", (_req: Request, res: Response) => {
-    res.json({ storage: { ...storageReport(), policy: { ...state.retention } } });
-  });
-
-  app.post("/api/storage/prune", (req: Request, res: Response) => {
-    const policy = { ...state.retention };
-    if (req.body && typeof req.body === "object") mergeRetention(policy, req.body);
-    const result = sweep(policy);
-    res.json({ ok: true, ...result, storage: { ...storageReport(), policy: { ...state.retention } } });
-  });
-
-  app.get("/api/custom-tools", (_req: Request, res: Response) => {
-    res.json({ tools: listCustomTools() });
-  });
-
-  app.delete("/api/custom-tools/:name", (req: Request, res: Response) => {
-    if (!deleteCustomTool(req.params.name)) return res.status(404).json({ error: "No such tool" });
-    res.json({ ok: true });
-  });
-
-  // 10. Settings API
-
-  /** One payload for both reads and writes -- two hand-kept copies drifted,
-      and the PATCH one had already lost the Anthropic row. */
-  const settingsPayload = () => {
-    const active = resolveProvider();
-    const activeSpec = PROVIDERS.find((p) => p.id === active.provider);
-
-    /** What the running model charges, per million tokens. */
-    const activePrice = () => {
-      const models = modelsFor(active.provider);
-      const spec = models.find((m) => m.id === active.model);
-      if (!spec || spec.priced === false) {
-        return `No published price for ${active.model} — its turns are counted but not billed.`;
-      }
-      return `$${spec.input} in / $${spec.output} out per 1M tokens`;
-    };
-
-    /* Every vendor Autora can talk to, with its key state and its models, so
-       the panel can be built from one fetch. The key itself never leaves the
-       server: what travels is whether one is set, where it came from, and
-       four characters of it -- enough to recognise the key you meant to use,
-       useless to anyone who intercepts it. */
-    const catalog = PROVIDERS.map((spec) => {
-      const source = keySource(spec.id);
-      return {
-        id: spec.id,
-        label: spec.label,
-        note: spec.note,
-        kind: spec.kind,
-        key_hint: spec.keyHint,
-        keys_url: spec.keysUrl,
-        base_url: baseUrlFor(spec.id),
-        default_base_url: spec.baseUrl,
-        default_model: spec.defaultModel,
-        listable: spec.listable,
-        open_ended: Boolean(spec.openEnded),
-        needs_key: spec.id !== "local",
-        /* Whether this vendor publishes a balance at all. The panel uses it to
-           offer the "paid in" box only where the figure can be turned into a
-           spend, rather than collecting a number it can never use. */
-        balance_endpoints: Boolean(spec.balance),
-        key: {
-          set: Boolean(keyFor(spec.id)),
-          source,
-          masked: maskKey(keyFor(spec.id)),
-          env_names: spec.envKeys,
-        },
-        model: modelFor(spec.id),
-        fast_model: fastModelFor(spec.id),
-        models: modelsFor(spec.id),
-      };
-    });
-
-    return {
-      provider: state.provider,
-      // The legacy single-model field still answers "what will run", which is
-      // what older clients did with it.
-      model: active.model,
-      base_url: active.provider ? baseUrlFor(active.provider) : "",
-      providers: ["auto", ...PROVIDERS.map((p) => p.id)],
-      auto_order: AUTO_ORDER,
-      system_prompt: state.systemPrompt,
-      system_prompt_limit: 8000,
-      timezone: state.timezone,
-      machine_timezone: machineTimezone(),
-      catalog,
-      prices_checked: PRICES_CHECKED,
-      budget_usd: state.budgetUsd,
-      /* Whose top-up this is, so the panel edits that vendor's account rather
-         than whichever one happens to be selected when the page is opened. */
-      top_up_usd: active.provider ? (state.topUps[active.provider] ?? null) : null,
-      top_up_provider: active.provider || null,
-      loop: { ...state.loop },
-      verify: { ...state.verify },
-      retention: { ...state.retention },
-      automation: { ...state.automation },
-      state_file: stateFilePath(),
-      credentials: PROVIDERS.filter((spec) => spec.id !== "local").map((spec) => {
-        const source = keySource(spec.id);
-        return {
-          name: spec.id,
-          label: spec.label,
-          note: spec.note,
-          role: "model" as const,
-          set: source !== null,
-          hint:
-            source === "app"
-              ? `Saved in app (${maskKey(keyFor(spec.id))})`
-              : source === "env"
-                ? "From the server environment"
-                : spec.keyHint,
-        };
-      }),
-      active: {
-        // What the next turn will actually call, rather than a name written
-        // down once and left behind by every model change since.
-        model: active.model || null,
-        endpoint: active.provider ? baseUrlFor(active.provider) : null,
-        provider: activeSpec?.label ?? null,
-        // Not the name again -- that is already on the line above. What is
-        // worth saying here is what this choice costs, which is the fact the
-        // billing card is about to be counting with.
-        hint: active.problem ?? activePrice(),
-        // Whether a turn sent now would reach a model. The chat shows its
-        // setup card until this is true.
-        connected: Boolean(active.provider) && !active.problem,
-      },
-    };
+    return automationLedger;
   };
+  jobRoutes(app, {
+    jobs, scheduler, saveJobs, jobView, saneWatch, createJob, todaysLedger,
+    automationRunning: () => automationSessions.size,
+  });
 
-  /* The tool section is assembled separately because availability is asked of
-     the world -- is Chromium installed, is a relay dialled in -- which is
-     async, and the rest of the payload is not. */
-  const settingsWithTools = async () => ({
-    ...settingsPayload(),
-    appearance: { ...state.appearance, themes: THEMES, fonts: FONTS },
-    /* Whether there is a voice at all, so the panel can say where it comes
-       from and offer the voices it has. A voice chosen in the panel wins over
-       the environment, the way every other setting here does. */
-    speech: await speechStatus(false, state.speech.voice || undefined),
-    /* What would answer a picture challenge, so the panel can say so before
-       anyone meets one: the backends, the model that reads pictures, and
-       whether the person's own solver is configured at all. Never the key. */
-    captcha: {
-      ...state.captcha,
-      backends: [...state.captcha.backends],
-      remoteKeySet: Boolean(state.captcha.remoteKey),
-      remoteKey: undefined,
-      vision: captchaVisionLabel(),
-    },
-    /* Two times of day on their clock, so the panel can show when the agent
-       keeps its own initiative to itself. */
-    proactivity: { ...state.proactivity },
-    /* Where news reaches the phone. The two tokens as whether they are set
-       and where from, never the tokens themselves. */
-    push: {
-      on: { ...state.push.on },
-      ready: readyChannels(webPush),
-      /* The installed app's own notifications: the key a browser subscribes
-         with, and which devices have. Endpoints are never sent back. */
-      web: { publicKey: webPush.publicKey(), devices: webPush.list() },
-    },
-    tools: {
-      config: toolSettings(),
-      groups: await groupStates(),
+  triggerRoutes(app, {
+    triggers, saveTriggers, automationSessions, newSession, emitEvent, startTurn, notify,
+    todaysLedger,
+    chargeSession: (sessionId) => {
+      automationLedger = rollLedger(automationLedger, dayKey(Math.floor(Date.now() / 1000)));
+      addSpend(automationLedger, sessionCost(sessionId));
+      saveDoc("automation", () => automationLedger);
     },
   });
 
-  app.get("/api/settings", async (req: Request, res: Response) => {
-    res.json(await settingsWithTools());
+  proactiveRoutes(app, {
+    gatherSignals, answeredOffers, saveProactive, noticer, createJob, webPush, appLink, notices,
+    latestNotice: () => noticeSeq,
   });
 
-  app.patch("/api/settings", async (req: Request, res: Response) => {
-    const body = req.body ?? {};
-    const known = new Set(["auto", ...PROVIDERS.map((p) => p.id)]);
+  healthRoutes(app, { sweep });
 
-    if (body.provider !== undefined) {
-      if (!known.has(body.provider)) {
-        return res.status(400).json({ detail: `Unknown provider "${body.provider}".` });
+  settingsRoutes(app, {
+    captchaVisionLabel,
+    webPush,
+    flushHeldPushes,
+    replanJobs: () => {
+      for (const job of jobs) scheduler.plan(job);
+      saveJobs();
+    },
+    stopPreviews: async () => {
+      for (const id of [...previews.keys()]) {
+        const open = sessions.get(id);
+        if (open) await previewStop(open).catch(() => undefined);
       }
-      state.provider = body.provider;
-    }
-
-    // Per-provider choices. The flat `model` / `base_url` fields still work and
-    // apply to whichever provider is selected, so an older client that knows
-    // nothing about the catalogue can still change the model it is using.
-    const target = state.provider === "auto" ? resolveProvider().provider : state.provider;
-
-    if (body.models && typeof body.models === "object") {
-      for (const [id, model] of Object.entries(body.models)) {
-        if (!known.has(id) || typeof model !== "string") continue;
-        state.models[id] = model.trim();
-      }
-    } else if (typeof body.model === "string" && target) {
-      state.models[target] = body.model.trim();
-    }
-
-    /* Talk mode's own model. An empty string is a real choice here -- it says
-       answer spoken turns with the main model -- so it is stored, not ignored. */
-    if (body.fast_models && typeof body.fast_models === "object") {
-      for (const [id, model] of Object.entries(body.fast_models)) {
-        if (!known.has(id) || typeof model !== "string") continue;
-        state.fastModels[id] = model.trim();
-      }
-    }
-
-    if (body.base_urls && typeof body.base_urls === "object") {
-      for (const [id, url] of Object.entries(body.base_urls)) {
-        if (!known.has(id) || typeof url !== "string") continue;
-        state.baseUrls[id] = url.trim();
-      }
-    } else if (typeof body.base_url === "string" && target) {
-      state.baseUrls[target] = body.base_url.trim();
-    }
-
-    if (typeof body.system_prompt === "string") {
-      state.systemPrompt = body.system_prompt.slice(0, 8000);
-    }
-
-    /* The clock schedules and quiet hours are read on. A name the runtime does
-       not know is refused rather than taken as UTC, and empty goes back to the
-       machine's. Every job is planned again: its next run is a moment in the
-       new zone, not the old one. */
-    if (typeof body.timezone === "string") {
-      const tz = body.timezone.trim();
-      if (tz && !validTimezone(tz)) {
-        return res.status(400).json({ detail: `"${tz}" is not a time zone (try Europe/Stockholm).` });
-      }
-      if (tz !== state.timezone) {
-        state.timezone = tz;
-        applyTimezone(tz);
-        for (const job of jobs) scheduler.plan(job);
-        saveJobs();
-        flushHeldPushes();
-      }
-    }
-
-    // A key arrives only when someone typed one: an untouched field sends
-    // nothing, and an empty string means "remove it", not "save a blank".
-    if (body.credentials && typeof body.credentials === "object") {
-      for (const [name, value] of Object.entries(body.credentials)) {
-        if (typeof value !== "string") continue;
-        setKey(name, value);
-        // A key taken out takes that vendor's last balance reading with it, so
-        // no bar can go on showing money for an account that is no longer set
-        // up here. A name that is not a keyed vendor falls through.
-        if (!value.trim()) forgetVendorMoney(name);
-      }
-    }
-
-    if (body.budget_usd !== undefined) {
-      const raw = body.budget_usd;
-      const amount = raw === null || raw === "" ? null : Number(raw);
-      if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
-        return res.status(400).json({ detail: "The monthly budget must be a positive amount." });
-      }
-      state.budgetUsd = amount;
-    }
-
-    /* What has been paid in at the vendor. This is half of the real total --
-        spend is this less the balance left -- and it is typed in rather than
-        worked out because everything before the first balance the console ever
-        read is history it never saw. Later payments need no hand: a balance
-        that jumps up is one, and is folded in as it is observed. */
-    if (body.top_up_usd !== undefined) {
-      const raw = body.top_up_usd;
-      const amount = raw === null || raw === "" ? null : Number(raw);
-      if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
-        return res.status(400).json({ detail: "The amount topped up must be a positive amount." });
-      }
-      /* Per vendor, and the panel says which one: the money belongs to the
-         account it was paid into, and writing it against another provider's
-         balance is how the wrong total gets shown. */
-      const target = body.top_up_provider ?? resolveProvider().provider;
-      if (target && amount !== null) state.topUps[target] = amount;
-      else if (target) delete state.topUps[target];
-    }
-
-    /* Which tools the agent has, and how tightly each is gated. Turning a
-       group off here removes its tools from the model's schema on the very
-       next turn and changes what the agent is told it can do -- both come from
-       the one registry, so the panel cannot promise something the schema does
-       not deliver. */
-    if (body.tools && typeof body.tools === "object") {
-      updateToolSettings(body.tools);
-      if (!toolSettings().app.enabled) {
-        for (const id of [...previews.keys()]) {
-          const open = sessions.get(id);
-          if (open) await previewStop(open).catch(() => undefined);
-        }
-      }
-    }
-    if (body.appearance && typeof body.appearance === "object") mergeAppearance(state.appearance, body.appearance);
-    /* How a picture challenge is answered. The key for a self-hosted solver
-       comes from the panel like any other and is never sent back. */
-    if (body.captcha && typeof body.captcha === "object") mergeCaptcha(state.captcha, body.captcha);
-    if (body.proactivity && typeof body.proactivity === "object") {
-      mergeProactivity(state.proactivity, body.proactivity);
-      // Quiet hours switched off or moved: whatever they held can go now.
-      flushHeldPushes();
-    }
-    /* Phone notifications: which kinds of news are sent. Where they go is the
-       devices that asked, kept by server/webpush.ts. */
-    if (body.push && typeof body.push === "object") {
-      mergePush(state.push, body.push);
-    }
-    /* Which voice speaks. It is checked while Deepgram is reachable at all: a
-       typo saved here would otherwise only show up at the next sentence, in the
-       middle of a conversation, where it reads as the app being broken rather
-       than as a setting being wrong. With Deepgram unreachable the choice is
-       kept unverified instead, since only a network that came back can settle
-       it. */
-    if (body.speech && typeof body.speech === "object") {
-      const wanted = typeof body.speech.voice === "string" ? body.speech.voice.trim() : "";
-      if (wanted && wanted !== state.speech.voice) {
-        const listing = await speechStatus(true, wanted);
-        if (listing.available && listing.voices.length > 0 && !listing.voices.some((v) => v.id === wanted)) {
-          return res.status(400).json({ detail: "Deepgram has no voice called " + wanted + "." });
-        }
-      }
-      mergeSpeech(state.speech, body.speech);
-      forgetSpeech();
-    }
-    /* When a turn is called a loop, and how much is kept. Both used to be
-       constants in the source: a turn could be stopped by a rule nobody could
-       see, and nothing ever deleted anything. */
-    if (body.loop && typeof body.loop === "object") mergeLoop(state.loop, body.loop);
-    if (body.verify && typeof body.verify === "object") mergeVerify(state.verify, body.verify);
-    if (body.retention && typeof body.retention === "object") mergeRetention(state.retention, body.retention);
-    /* What automated runs may cost. Enforced in the scheduler and again in
-       the agent loop -- see server/automation.ts. */
-    if (body.automation && typeof body.automation === "object") mergeAutomation(state.automation, body.automation);
-
-    save();
-    res.json(await settingsWithTools());
+    },
   });
 
-
-  /* The console's own voice. A GET says whether there is a voice service and
-     which voices it offers; a POST turns one fragment of speech into an audio
-     file the page can play.
-
-     The page asks this server rather than Deepgram directly because it has no
-     key and should not be given one: a key in the page is a key in every
-     browser that opens the app. Going through here also means the audio arrives
-     from the origin the page already trusts. */
-  app.get("/api/speech", async (_req: Request, res: Response) => {
-    /* The saved voice is put to the service as a preference, and what comes
-       back is the voice that will actually be heard: a voice Deepgram has
-       never heard of -- one saved while a local voice server was speaking,
-       say -- is not passed through, and the panel should show the voice it
-       would really use rather than a name that would be refused at the next
-       sentence. */
-    const status = await speechStatus(false, state.speech.voice || undefined);
-    res.json({
-      available: status.available,
-      provider: status.provider,
-      voice: status.voice,
-      voices: status.voices,
-      reason: status.reason,
-      url: status.url,
-      liveThinking: state.speech.liveThinking,
-      liveView: state.speech.liveView,
-      /* Whether the microphone can be opened once for the whole of talk mode
-         instead of the browser's recogniser, which re-arms -- and beeps -- on
-         every phrase. The page asks this and chooses; nothing here is required
-         for an install with no key. */
-      dictation: dictationStatus(),
-    });
-  });
-
-  app.post("/api/speech", async (req: Request, res: Response) => {
-    const text = String(req.body?.text ?? "");
-    if (!text.trim()) return res.status(400).json({ error: "Nothing to say." });
-    try {
-      const utterance = await synthesise(text, {
-        voice: typeof req.body?.voice === "string" ? req.body.voice : state.speech.voice,
-        speed: req.body?.speed,
-      });
-      // Never cached: the same sentence in another voice, or after a voice
-      // change, must not come back as the old recording.
-      res.setHeader("Cache-Control", "no-store");
-      res.setHeader("Content-Type", utterance.contentType);
-      res.setHeader("X-Autora-Voice", utterance.voice);
-      res.send(Buffer.from(utterance.audio));
-    } catch (err: any) {
-      /* 503, not 500: "there is no voice service right now" is a state the
-         page already knows how to live with -- it says the sentence with the
-         browser's own voice instead. */
-      res.status(503).json({ error: String(err?.message ?? err) });
-    }
-  });
-
-  /* The same fragment, but as a stream: raw PCM as it is rendered, so a whole
-     reply can be one rendering and still start in half a second. This is what
-     the page uses for the replies it narrates -- a request per sentence is a
-     request per draw of the voice, and the voice changed with every one. */
-  app.post("/api/speech/stream", async (req: Request, res: Response) => {
-    const text = String(req.body?.text ?? "");
-    if (!text.trim()) return res.status(400).json({ error: "Nothing to say." });
-    let utterance;
-    try {
-      /* Nothing has been written when this throws, so a refusal still arrives
-         as a status the page can read and fall back on. */
-      utterance = await speakStream(text, {
-        voice: typeof req.body?.voice === "string" ? req.body.voice : state.speech.voice,
-        speed: req.body?.speed,
-      });
-    } catch (err: any) {
-      return res.status(503).json({ error: String(err?.message ?? err) });
-    }
-    res.setHeader("Cache-Control", "no-store");
-    res.setHeader("Content-Type", utterance.contentType);
-    res.setHeader("X-Autora-Voice", utterance.voice);
-    const reader = utterance.stream.getReader();
-    /* A barge-in, a closed tab or a page that navigated away: stop paying for
-       the rest of a rendering nobody will hear. */
-    const abandon = () => { void reader.cancel().catch(() => undefined); };
-    res.on("close", abandon);
-    try {
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (!res.write(Buffer.from(value))) {
-          await new Promise<void>((resolve) => res.once("drain", resolve));
-        }
-        if (res.writableEnded || res.destroyed) break;
-      }
-      res.end();
-    } catch (err: any) {
-      res.destroy();
-    } finally {
-      res.off("close", abandon);
-    }
-  });
-
-  // 10a. Secrets Store Management
-  app.get("/api/secrets", (req: Request, res: Response) => {
-    res.json(listSecrets());
-  });
-
-  app.get("/api/secrets/presets", (req: Request, res: Response) => {
-    res.json(SECRET_PRESETS);
-  });
-
-  app.post("/api/secrets/reveal", (req: Request, res: Response) => {
-    const name = String(req.body?.name ?? "").trim();
-    if (!name) return res.status(400).json({ error: "Secret name is required" });
-    const value = getSecret(name);
-    if (value === null) return res.status(404).json({ error: "Secret not found" });
-    res.json({ ok: true, name, value });
-  });
-
-  app.post("/api/secrets", (req: Request, res: Response) => {
-    const name = String(req.body?.name ?? "").trim().toUpperCase();
-    const value = String(req.body?.value ?? "");
-    if (!name) return res.status(400).json({ error: "Secret variable name is required" });
-    if (!/^[A-Z_][A-Z0-9_]*$/i.test(name)) {
-      return res.status(400).json({ error: "Name must be a valid environment variable identifier (letters, digits, and underscores, starting with a letter or underscore)" });
-    }
-    if (!value && value !== "") {
-      return res.status(400).json({ error: "Secret value is required" });
-    }
-    setSecret(name, value);
-    save();
-    res.json({ ok: true, secrets: listSecrets() });
-  });
-
-  app.delete("/api/secrets/:name", (req: Request, res: Response) => {
-    const name = req.params.name;
-    deleteSecret(name);
-    save();
-    res.json({ ok: true, secrets: listSecrets() });
-  });
-
-  /* 10a'. Credentials: the person's details and sign-ins, typed in by the
-     agent through placeholders. Values go in; only masked forms come out.
-     See server/credentials.ts. */
-  app.get("/api/credentials", (_req: Request, res: Response) => {
-    res.json(describeCredentials());
-  });
-
-  app.put("/api/credentials/identity", (req: Request, res: Response) => {
-    setIdentity(req.body && typeof req.body === "object" ? req.body : {});
-    res.json(describeCredentials());
-  });
-
-  app.post("/api/credentials/logins", (req: Request, res: Response) => {
-    const body = req.body ?? {};
-    const text = (v: unknown) => (typeof v === "string" ? v : undefined);
-    try {
-      saveLogin({
-        site: String(body.site ?? ""),
-        previous: text(body.previous),
-        username: text(body.username),
-        password: text(body.password),
-        authenticator: text(body.authenticator),
-      });
-    } catch (err: any) {
-      return res.status(400).json({ error: err?.message ?? String(err) });
-    }
-    res.json(describeCredentials());
-  });
-
-  app.delete("/api/credentials/logins/:site", (req: Request, res: Response) => {
-    deleteLogin(req.params.site);
-    res.json(describeCredentials());
-  });
-
-  // 10b. Provider models and key checks
-
-  /**
-   * The models a vendor says it has.
-   *
-   * Refreshing asks the vendor directly, which is the only way to keep up with
-   * a catalogue that changes weekly -- and for OpenRouter, the only practical
-   * way to offer it at all. Whatever comes back is remembered for pricing, so
-   * a model discovered here is billed from the vendor's own numbers rather
-   * than from nothing.
-   */
-  app.get("/api/providers/:id/models", async (req: Request, res: Response) => {
-    const id = req.params.id;
-    const spec = PROVIDERS.find((p) => p.id === id);
-    if (!spec) return res.status(404).json({ detail: `Unknown provider "${id}".` });
-
-    if (req.query.refresh !== "1") {
-      return res.json({ provider: id, models: modelsFor(id), refreshed: false });
-    }
-    if (!spec.listable) {
-      return res.status(400).json({ detail: `${spec.label} does not publish a model list.` });
-    }
-
-    // No key requirement here: OpenRouter publishes its catalogue (and its
-    // prices) to anyone, which is exactly when browsing the list is most
-    // useful -- before signing up. Vendors that do want a key say so
-    // themselves, and their refusal is more accurate than our guess at it.
-    const key = keyFor(id);
-
-    try {
-      const models = await listModels(id, key, baseUrlFor(id));
-      rememberModels(id, models);
-      res.json({ provider: id, models: modelsFor(id), refreshed: true, found: models.length });
-    } catch (err: any) {
-      res.status(502).json({ detail: `Could not reach ${spec.label}: ${err?.message ?? err}` });
-    }
-  });
-
-  /** Does this key work? Checked before it is trusted with a conversation, so
-      a typo is found here rather than as a failed turn ten minutes later. */
-  app.post("/api/providers/:id/test", async (req: Request, res: Response) => {
-    const id = req.params.id;
-    const spec = PROVIDERS.find((p) => p.id === id);
-    if (!spec) return res.status(404).json({ detail: `Unknown provider "${id}".` });
-
-    // A key typed but not yet saved can be tested as it stands, so nobody has
-    // to save a guess to find out whether it was right.
-    const candidate =
-      typeof req.body?.key === "string" && req.body.key.trim()
-        ? req.body.key.trim()
-        : keyFor(id);
-    if (!candidate && id !== "local") {
-      return res.status(400).json({ detail: `No ${spec.label} key to check.` });
-    }
-
-    try {
-      // The catalogue is public information whichever key asked for it, so a
-      // successful check doubles as a model refresh -- which is what someone
-      // pasting a key is about to want anyway.
-      const models = await listModels(id, candidate, baseUrlFor(id));
-      rememberModels(id, models);
-      res.json({ ok: true, models: models.length });
-    } catch (err: any) {
-      res.status(400).json({ ok: false, detail: err?.message ?? String(err) });
-    }
-  });
-
-  // 10c. Billing
-
-  /** What has been spent, and on what. Read-only: the ledger is written by
-      the turns themselves, one row each, as they finish. */
-  app.get("/api/usage", (req: Request, res: Response) => {
-    /* Every vendor's balance is what the real totals are read from, and those
-       are fetched behind the answer rather than in front of it: this route is
-       asked at the end of every turn and on every window focus, and it must
-       never wait on somebody else's server to answer. A stale reading starts
-       a refresh of all of them; this reply carries what is already known. */
-    if (vendorMoneyStale()) void refreshAllVendorMoney();
-    res.json(billingSummary());
-  });
-
-  /** Start the count again -- after settling a bill, or after a spell of
-      testing that should not colour the month. Deliberately a separate call
-      rather than a settings field, because it throws away history. */
-  app.post("/api/usage/reset", (req: Request, res: Response) => {
-    clearUsage();
-    res.json(billingSummary());
-  });
+  keyRoutes(app);
 
   // 11. Relay API
   /** Where this server can be reached from the machine being relayed, worked
@@ -7803,8 +6176,6 @@ async function startServer() {
   });
 
   // 13. Vite Integration (Development middleware / Production static serving)
-  // The PDF window's editor, a separate build (pdf-editor/), in dev and production alike.
-  serveEditor(app, path.join(process.cwd(), "dist"));
   // Spectra-PDF's editor, the PDF window's other half, on the same terms.
   serveSpectra(app, path.join(process.cwd(), "dist"));
   // The Office editors, likewise: built by scripts/build-office.mjs, absent without it.
@@ -7854,7 +6225,7 @@ async function startServer() {
     };
 
     app.get("/", serveIndex);
-    app.use(express.static(distPath));
+    app.use(...staticDir(distPath));
     app.get("*", serveIndex);
   }
 
@@ -7954,6 +6325,7 @@ async function startServer() {
    exactly the one that would have hit that. */
 housekeeping();
 const housekeepingTimer = setInterval(housekeeping, SWEEP_EVERY_MS);
+setInterval(unloadIdleLogs, 5 * 60 * 1000).unref();
 housekeepingTimer.unref?.();
 
 /* What it notices: a first look just after start -- cheap, and nothing said

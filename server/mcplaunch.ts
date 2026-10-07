@@ -124,7 +124,7 @@ async function releaseTag(dir: string): Promise<string> {
 
 /** The musl build of the webclaw CLI, fetching it if this machine has not
     got it. Throws with a reason if it cannot be had. */
-export async function ensureWebclawBinary(): Promise<string> {
+async function ensureWebclawBinary(): Promise<string> {
   const triple = targetTriple();
   if (!triple) throw new Error(`no musl build is published for ${process.arch}`);
   const dir = path.join(binRoot(), "webclaw");

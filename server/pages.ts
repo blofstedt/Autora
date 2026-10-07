@@ -19,7 +19,7 @@ const FULL = /(^|\n)Page: [^\n]*\nURL: [^\n]*\n(?:Snapshot: (#\d+)\n)?\nInteract
 /** A difference: "Page: ...\nURL: ...\nChanges since page snapshot #n above". */
 const DIFF = /(^|\n)Page: [^\n]*\nURL: [^\n]*\nChanges since page snapshot (#\d+) above/;
 
-export interface Snapshot {
+interface Snapshot {
   title: string;
   url: string;
   /** The numbered element lines, and any CAPTCHA lines under them. */
@@ -29,7 +29,7 @@ export interface Snapshot {
   text: string[];
 }
 
-export type Found =
+type Found =
   | { kind: "full"; at: number; id: string | null }
   | { kind: "diff"; at: number; base: string };
 
@@ -173,7 +173,7 @@ export function compactJson(text: string): string {
 }
 
 /** Characters of page text the model is given at a time: about 1,500 tokens. */
-export const TEXT_PART_CHARS = 6000;
+const TEXT_PART_CHARS = 6000;
 
 /**
  * Page text cut into parts the model can ask for one at a time, each ending

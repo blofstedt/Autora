@@ -41,7 +41,7 @@ export interface SubagentDeps {
   cancelled(): boolean;
 }
 
-export interface SubagentOptions {
+interface SubagentOptions {
   /** Most rounds of tool calls before it must report. */
   maxSteps?: number;
   /** Most characters of one tool's output the worker reads. */
@@ -50,7 +50,7 @@ export interface SubagentOptions {
   maxReport?: number;
 }
 
-export interface SubagentResult {
+interface SubagentResult {
   report: string;
   steps: number;
   calls: number;

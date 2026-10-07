@@ -6,7 +6,7 @@ import type { Device, ElementInfo, LightInfo, Rect, ReviewComment, StyleChange }
  * ordinary ways -- the page moved, the element is gone, the preview closed --
  * so each returns null (or an error message) rather than throwing.
  */
-export type Reply<T> = { ok: true; data: T } | { ok: false; error: string };
+type Reply<T> = { ok: true; data: T } | { ok: false; error: string };
 
 export function previewApi(sessionId: string) {
   const base = `/api/sessions/${sessionId}/preview`;

@@ -22,14 +22,15 @@ jobs:
 
       - run: npm ci
 
-      # The PDF window's editor: a sub-project with its own dependencies.
-      - run: npm --prefix pdf-editor ci
-
       # And Spectra's, which is now what that window shows.
       - run: npm --prefix spectra-editor ci
 
       - name: Lint (typecheck and ESLint)
         run: npm run lint
+
+      # Exports, types and files nothing uses (knip.json).
+      - name: Unused code
+        run: npm run unused
 
       # Built before the tests: the PDF window's test drives the built editor.
       - name: Build

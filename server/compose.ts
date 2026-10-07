@@ -71,7 +71,7 @@ export type OutlineEntry = {
   endPage: number;
 };
 
-export type Composed = {
+type Composed = {
   doc: PDFDocument;
   source: ComposeSource;
   pages: number;
@@ -82,7 +82,7 @@ export type Composed = {
 
 export type ImageLoader = (ref: string) => Promise<{ data: Buffer; kind: "png" | "jpg" }>;
 
-export const BLOCK_TYPES = ["heading", "paragraph", "bullets", "table", "quote", "code", "image", "rule", "page_break"];
+const BLOCK_TYPES = ["heading", "paragraph", "bullets", "table", "quote", "code", "image", "rule", "page_break"];
 const MAX_BLOCKS = 600;
 const MAX_PAGES = 200;
 
@@ -866,13 +866,4 @@ export function outlineLines(outline: OutlineEntry[], limit = 40): string[] {
   }
   if (out.length > limit) return [...out.slice(0, limit), `... and ${out.length - limit} more headings`];
   return out;
-}
-
-/** Which blocks sit on which pages, for the briefing: "p2 s3, s4". */
-export function pagesOfBlocks(outline: OutlineEntry[]): string {
-  const byPage = new Map<number, string[]>();
-  for (const o of outline) {
-    for (let p = o.page; p <= o.endPage; p++) byPage.set(p, [...(byPage.get(p) ?? []), o.id]);
-  }
-  return [...byPage.entries()].map(([p, ids]) => `p${p}: ${ids.join(" ")}`).join("; ");
 }

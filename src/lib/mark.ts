@@ -43,13 +43,10 @@ const P = (n: number) => +n.toFixed(3);
  */
 export const MARK = { box: 32, cx: 16, cy: 16, R: 9.375, fillet: 1.5 };
 
-/** The art the mark was drawn at: a 512px master, r=24 fillets. */
-export const ART = { box: 512, R: 150, fillet: 24 };
-
 /** Points sampled per corner. 8 is where the fillet stops looking faceted. */
 const STEPS = 8;
 
-export type ShapeOptions = {
+type ShapeOptions = {
   /** Where the shape's centre goes. */
   cx?: number;
   cy?: number;
@@ -79,7 +76,7 @@ export type ShapeOptions = {
  * scaled mark stays in the middle of its box instead of sliding onto its edge.
  * The settle bloom is the one thing that uses them.
  */
-export function outlinePoints({
+function outlinePoints({
   cx = MARK.cx,
   cy,
   R = MARK.R,
@@ -149,7 +146,7 @@ export function outlinePoints({
 /** Points as an SVG path: nothing but M, L and Z, so any two outlines with the
     same number of points interpolate -- which is the whole reason the corners
     are sampled rather than written as arc commands. */
-export function pathOf(points: number[][]): string {
+function pathOf(points: number[][]): string {
   return `M${points.map(([x, y]) => `${P(x)} ${P(y)}`).join("L")}Z`;
 }
 
@@ -218,7 +215,7 @@ export const DRAWN_BOX = (() => {
  * 60 degrees however large the fillet is, so every frame of the morph is the
  * same 24 points and the interpolator has no work to do but between them.
  */
-export const CIRCLE_FILLET = MARK.R / 2;
+const CIRCLE_FILLET = MARK.R / 2;
 
 /**
  * The morph, as frames: the mark opening out into a circle and closing again,
@@ -418,7 +415,7 @@ export const BLOOM_SPLINES = "0.2 0.9 0.2 1; 0.4 0 0.2 1; 0.4 0 0.2 1; 0.4 0 0.2
     caught all but on the triangle, and the bloom on its own says it better than
     a step of a few hundredths of a unit would -- which also keeps every close's
     keyTimes far enough apart not to round onto one another. */
-export const CLOSE_LEAST_MS = 90;
+const CLOSE_LEAST_MS = 90;
 
 /** An ending that was caught mid-morph: the phase the mark was at, and how long
     coming home from there takes -- as long as it has to travel. */
@@ -461,49 +458,6 @@ export function settleHome({ at, ms: closeMs }: Closing) {
     keySplines: [...close.slice(1).map(() => "0 0 1 1"), ...BLOOM_SPLINES.split("; ")].join("; "),
     dur: `${closeMs + SETTLE_MS}ms`,
   };
-}
-
-/**
- * The small copies that stack up into the mark, for the building animation.
- *
- * `rows` rows of the triangle's lattice. The mark's side is cut into `rows`
- * segments, which makes rows^2 copies exactly its own size and shape: 2 rows is
- * 4 copies, 3 rows is 9 -- as fine as the pieces can get and still be read as
- * pieces at the sizes the app draws the mark (a 16px mark gets 2 rows, a 24px
- * one 3).
- *
- * Ordered the way they arrive: the base row first, left to right, then the row
- * above it, so the mark builds itself up from the ground rather than fading in.
- */
-export function stackingUnits(rows: number): { d: string; x: number; y: number }[] {
-  const unit = MARK.R / rows;                          // one copy's circumradius
-  const side = unit * Math.sqrt(3);                    // its side, and the lattice pitch
-  const height = unit * 1.5;                           // its height, and the row pitch
-  const left = MARK.cx - (MARK.R * Math.sqrt(3)) / 2;  // the mark's bottom-left corner
-  const centreY = MARK.cy - MARK.fillet / 2;           // the drawn mark's own centre
-  const base = centreY + MARK.R * 0.75;                // the mark's base line
-  const up = trianglePath({ cx: 0, cy: 0, R: unit, fillet: MARK.fillet / rows });
-  const down = trianglePath({ cx: 0, cy: 0, R: unit, fillet: MARK.fillet / rows, turn: Math.PI / 2 });
-
-  const pieces: { d: string; x: number; y: number; row: number; at: number }[] = [];
-  for (let row = 0; row < rows; row += 1) {
-    const line = base - row * height;                  // the bottom edge of this row
-    const start = left + (row * side) / 2;             // the row narrows by half a side a row
-    for (let j = 0; j < rows - row; j += 1) {
-      // Both orientations have their bounding box on the same band -- the
-      // upright one from its base up, the inverted one hanging from the top
-      // edge of the row -- so both go at the middle of that band. (A unit's
-      // centroid is not the middle of its box; a triangle's is a quarter of
-      // its height below it.)
-      pieces.push({ d: up, x: start + (j + 0.5) * side, y: line - 0.75 * unit, row, at: j * 2 });
-      if (j < rows - row - 1) {
-        pieces.push({ d: down, x: start + (j + 1) * side, y: line - 0.75 * unit, row, at: j * 2 + 1 });
-      }
-    }
-  }
-  return pieces
-    .sort((a, b) => a.row - b.row || a.at - b.at)
-    .map(({ d, x, y }) => ({ d, x, y }));
 }
 
 /**
@@ -671,7 +625,7 @@ function micPose(to: "mic" | "triangle", t: number): string {
 
 /** The way into the microphone, or the way back out of it, as the frames an
     animation interpolates. */
-export function micMorph(to: "mic" | "triangle", steps = MIC_STEPS): string[] {
+function micMorph(to: "mic" | "triangle", steps = MIC_STEPS): string[] {
   const frames: string[] = [];
   for (let i = 0; i <= steps; i += 1) frames.push(micPose(to, i / steps));
   return frames;

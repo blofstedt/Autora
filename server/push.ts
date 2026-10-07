@@ -25,7 +25,7 @@ export interface PushSettings {
 
 export type PushKind = keyof PushSettings["on"];
 
-export const DEFAULT_PUSH: PushSettings = {
+const DEFAULT_PUSH: PushSettings = {
   on: { jobs: true, notices: true, turns: true, asks: true },
 };
 
@@ -59,19 +59,19 @@ export interface PushMessage {
 /** The installed app's own notifications (server/webpush.ts): there is no
     switch for them beyond a device having asked, so this is only asked how
     many have, and to send. */
-export interface WebSender {
+interface WebSender {
   count(): number;
   send(msg: { title: string; body: string; url?: string | null; urgent?: boolean }): Promise<{ ok: boolean; sent: number; failed: number; error?: string }>;
 }
 
-export type PushChannel = "web";
+type PushChannel = "web";
 
 /** Which channels can send right now: this app, on any device that asked. */
 export function readyChannels(web: Pick<WebSender, "count">): PushChannel[] {
   return web.count() > 0 ? ["web"] : [];
 }
 
-export interface Delivery {
+interface Delivery {
   channel: PushChannel;
   ok: boolean;
   error?: string;

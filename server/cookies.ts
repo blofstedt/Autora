@@ -29,7 +29,7 @@ export interface BrowserCookie {
   sameSite: "Strict" | "Lax" | "None";
 }
 
-export interface ParsedCookies {
+interface ParsedCookies {
   cookies: BrowserCookie[];
   /** Entries that could not be used, and why, for the one-line report. */
   skipped: number;

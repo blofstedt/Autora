@@ -27,7 +27,7 @@ export interface CatalogNeed {
   optional?: boolean;
 }
 
-export interface CatalogEntry {
+interface CatalogEntry {
   id: string;
   /** Server name, which becomes the tool prefix: mcp__<name>__<tool>. */
   name: string;

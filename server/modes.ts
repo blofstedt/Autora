@@ -36,7 +36,7 @@ export type Phase = "plan" | "build";
 export const DEFAULT_WORK_MODE: WorkMode = "agent";
 export const DEFAULT_PERMISSIONS: Permissions = "yolo";
 
-export interface ModeInfo<T extends string> {
+interface ModeInfo<T extends string> {
   id: T;
   /** What the selector says. */
   short: string;

@@ -24,9 +24,9 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { redactSecrets as redactStored, stateDir } from "./state";
+import { stateDir } from "./state";
 
-export const IDENTITY_FIELDS = [
+const IDENTITY_FIELDS = [
   { key: "first_name", label: "First name" },
   { key: "last_name", label: "Last name" },
   { key: "email", label: "Email" },
@@ -40,9 +40,9 @@ export const IDENTITY_FIELDS = [
   { key: "country", label: "Country" },
 ] as const;
 
-export type IdentityKey = (typeof IDENTITY_FIELDS)[number]["key"];
+type IdentityKey = (typeof IDENTITY_FIELDS)[number]["key"];
 
-export interface Login {
+interface Login {
   /** The site it belongs to, e.g. "github.com". Also its name in placeholders. */
   site: string;
   username: string;
@@ -137,7 +137,7 @@ function saneLogin(l: any): Login {
 }
 
 /** "https://www.GitHub.com/login" -> "github.com". */
-export function normaliseSite(raw: string): string {
+function normaliseSite(raw: string): string {
   let text = raw.trim().toLowerCase();
   if (!text) return "";
   try {
@@ -346,7 +346,7 @@ function registrable(host: string): string {
 }
 
 /** The account a site belongs to, if it is one that spans several sites. */
-export function accountFamily(site: string) {
+function accountFamily(site: string) {
   const domain = registrable(normaliseSite(site));
   const dot = domain.indexOf(".");
   if (dot < 0) return null;
@@ -481,27 +481,6 @@ export function redactCredentials(text: string, opts: { identity?: boolean } = {
     out = out.split(value).join(`{{${name}}}`);
   }
   return out;
-}
-
-/**
- * Everything a piece of text should have taken out of it before it leaves the
- * machine: stored secrets and API keys first, then the person's saved
- * credentials.
- *
- * This is the one redactor. It used to exist three times over -- once here,
- * once in tools.ts and once in server.ts -- and they did not agree: two blanked
- * the person's name and email address, one did not, so whether a detail reached
- * the log depended on which code path touched the text first. The difference
- * was deliberate and is kept, but now it is asked for by name.
- *
- * `identity: false` leaves the person's own name, email and address alone.
- * That suits what they read themselves -- the log page, a push to their phone
- * -- where blanking their own name is nonsense. Everywhere the text can reach
- * a model, the default is right.
- */
-export function redactAll(text: string, opts: { identity?: boolean } = {}): string {
-  if (!text || typeof text !== "string") return text;
-  return redactCredentials(redactStored(text), opts);
 }
 
 /** The personal details as environment variables for the terminal, so a

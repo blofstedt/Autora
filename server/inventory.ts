@@ -21,7 +21,7 @@ import path from "node:path";
 import { readDoc, saveDoc } from "./store";
 import { stateDir } from "./state";
 
-export interface Inventory {
+interface Inventory {
   /** Milliseconds since the epoch, when this was worked out. */
   at: number;
   /** The machine, one fact per line, phrased to be read by the model. */
@@ -106,7 +106,7 @@ function workdir(): string {
   return process.cwd();
 }
 
-export function look(): Inventory {
+function look(): Inventory {
   const lines: string[] = [];
   const shell = ["/bin/bash", "/usr/bin/bash", "/bin/sh"].find((s) => fs.existsSync(s)) ?? "sh";
   const user = (() => {
@@ -210,9 +210,4 @@ export function inventoryBriefing(sessionId: string, refresh = false): string {
     `What this machine has, looked at ${age(seen.at)} (call inventory for a fresh look):`,
     ...seen.lines,
   ].join("\n");
-}
-
-/** Forget what has been said in this process, for a test or a restart. */
-export function forgetTold() {
-  told.clear();
 }

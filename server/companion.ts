@@ -61,7 +61,7 @@ export const REMARK_SYSTEM = [
   "Do not narrate the obvious (\"you clicked a button\"). If there is genuinely nothing worth saying, answer with exactly: SKIP",
 ].join("\n");
 
-export interface RemarkContext {
+interface RemarkContext {
   /** What the person last asked the agent to do. */
   request: string;
   /** What the agent last said it was doing. */

@@ -188,7 +188,7 @@ export function SetupCard({
 }
 
 /** Tasks to start from, when there is no history yet to start from. */
-export const STARTERS = [
+const STARTERS = [
   "Summarize the top story on Hacker News",
   "Check example.com every morning and tell me if it is down",
   "Find the largest files in my home folder",

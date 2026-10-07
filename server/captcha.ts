@@ -355,7 +355,7 @@ export async function findChallenge(page: any): Promise<Challenge | null> {
 }
 
 /** The rect that covers all of these, or a zero rect when there are none. */
-export function union(rects: Rect[]): Rect {
+function union(rects: Rect[]): Rect {
   if (!rects.length) return { x: 0, y: 0, w: 0, h: 0 };
   const left = Math.min(...rects.map((r) => r.x));
   const top = Math.min(...rects.map((r) => r.y));
@@ -373,7 +373,7 @@ export function union(rects: Rect[]): Rect {
  * square of each other, which is loose enough for a grid that is a pixel or
  * two out and tight enough not to merge two rows.
  */
-export function orderTiles(rects: Rect[], labels?: (string | undefined)[]): Tile[] {
+function orderTiles(rects: Rect[], labels?: (string | undefined)[]): Tile[] {
   const items = rects.map((box, i) => ({ box, label: labels?.[i] }));
   const rows: { box: Rect; label?: string }[][] = [];
   for (const tile of [...items].sort((a, b) => a.box.y - b.box.y || a.box.x - b.box.x)) {
@@ -409,7 +409,7 @@ export function orderTiles(rects: Rect[], labels?: (string | undefined)[]): Tile
  * not a puzzle, and this must not drag one.
  */
 /** A checkbox a page draws itself, with no widget anywhere near it. */
-export interface PageCheckbox { x: number; y: number; w: number; h: number; checked: boolean }
+interface PageCheckbox { x: number; y: number; w: number; h: number; checked: boolean }
 
 /**
  * The checkbox a page draws in its own document.
@@ -670,7 +670,7 @@ async function pageChallenge(page: any): Promise<Challenge | null> {
 }
 
 /** What a backend answered, in one shape. */
-export interface Answer {
+interface Answer {
   /** Which squares to click, by the numbers the model was given. */
   tiles: number[];
   /** Straight points on the picture, 0-1 of its width and height. */
@@ -761,7 +761,7 @@ export function parseAnswer(text: string): Answer {
 }
 
 /** The question put to the model, with every square named where it is. */
-export function visionPrompt(challenge: Challenge, w: number, h: number, pictures = 1): string {
+function visionPrompt(challenge: Challenge, w: number, h: number, pictures = 1): string {
   const head =
     `This is a CAPTCHA picture, ${w} by ${h} pixels, cropped exactly around the challenge. ` +
     `Answer with JSON only, no prose.\nThe widget says: "${challenge.prompt}".\n`;

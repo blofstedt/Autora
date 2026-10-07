@@ -11,7 +11,7 @@
  * after the window closes.
  */
 
-export interface SpectraEvent {
+interface SpectraEvent {
   /** The name the renderer subscribed to, as its Rust side spelled it. */
   event: string;
   payload: unknown;

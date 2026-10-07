@@ -11,9 +11,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { stateFilePath } from "./state";
 
-export interface HistoryItem { url: string; title: string; ts: number }
-export interface Bookmark { url: string; title: string; ts: number }
-export interface DownloadItem { artifact: string; name: string; url: string; size: number; ts: number }
+interface HistoryItem { url: string; title: string; ts: number }
+interface Bookmark { url: string; title: string; ts: number }
+interface DownloadItem { artifact: string; name: string; url: string; size: number; ts: number }
 
 interface Data { history: HistoryItem[]; bookmarks: Bookmark[]; downloads: DownloadItem[] }
 

@@ -36,9 +36,9 @@ import { EngineProblem, type SpectraEngine } from "./engine";
 
 /** Command names seen so far that are answered as "accepted, does nothing".
  *  Kept so a report can say how many there were and which. */
-export const DROPPED = new Set<string>();
+const DROPPED = new Set<string>();
 /** Commands with no implementation here, answered with a refusal. */
-export const REFUSED = new Set<string>();
+const REFUSED = new Set<string>();
 
 function str(args: Record<string, any>, ...names: string[]): string {
   for (const name of names) {
@@ -61,7 +61,7 @@ function list(args: Record<string, any>, ...names: string[]): string[] {
  *  scratch space. Everything else is refused -- this server holds Autora's
  *  secrets and the person's other documents, and the engine only ever needs
  *  the file in front of them. */
-export function allowedRoots(root: string): string[] {
+function allowedRoots(root: string): string[] {
   return [root, path.join(root, ".."), os.tmpdir()].map((p) => path.resolve(p));
 }
 
@@ -76,7 +76,7 @@ let toolPaths: Record<string, string | null> | null = null;
 
 /** Where this machine keeps the tools the engine can call out to. The engine
  *  is told the same paths (server/spectra/engine.ts). */
-export function toolPath(name: "gs" | "soffice" | "tesseract"): string | null {
+function toolPath(name: "gs" | "soffice" | "tesseract"): string | null {
   if (!toolPaths) {
     const env: Record<string, string | undefined> = {
       gs: process.env.AUTORA_SPECTRA_GS,

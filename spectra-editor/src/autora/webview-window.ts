@@ -6,9 +6,15 @@
  */
 import { getCurrentWindow } from "./window";
 
+/** What Tauri says about a file dragged over the window; here nothing ever does. */
+export type DragDropPayload =
+  | { type: "enter" | "over"; position: { x: number; y: number }; paths?: string[] }
+  | { type: "drop"; position: { x: number; y: number }; paths: string[] }
+  | { type: "leave" };
+
 export function getCurrentWebviewWindow() {
   return Object.assign(getCurrentWindow(), {
-    async onDragDropEvent(_handler: (event: { payload: unknown }) => void): Promise<() => void> {
+    async onDragDropEvent(_handler: (event: { payload: DragDropPayload }) => void): Promise<() => void> {
       return () => {};
     },
     async setZoom(_scale: number): Promise<void> {},

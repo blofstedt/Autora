@@ -19,7 +19,7 @@ export const MONEY_CHANGED = "autora-money";
 
 export const announceMoneyChange = () => window.dispatchEvent(new Event(MONEY_CHANGED));
 
-export type SpendInputs = {
+type SpendInputs = {
   /** This calendar month, from the ledger. */
   spent: number;
   /** What this session's turns have cost. */
@@ -32,7 +32,7 @@ export type SpendInputs = {
   credit?: number | null;
 };
 
-export type SpendView = {
+type SpendView = {
   /** The month's money as a share of the bar, 0..1. */
   used: number;
   /** This session's money as a share of the same bar, never past `used`. */
@@ -84,7 +84,7 @@ export function creditTotal(
 }
 
 /** One line of `/api/usage`'s vendors[], as much as choosing one needs. */
-export type VendorLine = {
+type VendorLine = {
   provider: string;
   label?: string;
   topped_up_usd?: number | null;
@@ -136,7 +136,7 @@ export type VendorSpend = {
   balance: number | null;
 };
 
-export type VendorView = {
+type VendorView = {
   provider: string;
   label: string;
   /** The money the fill measures: credit consumed, or the balance left. */

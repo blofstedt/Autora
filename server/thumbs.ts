@@ -168,10 +168,10 @@ async function drawPdf(data: Buffer): Promise<Buffer> {
 
 /* ---------------------------------------------------------------- text ---- */
 
-export type Preview = { kind: string; lines: string[] };
+type Preview = { kind: string; lines: string[] };
 
 /** A word for what a file is, for the badge on a card with no picture. */
-export function kindOf(a: Artifact): string {
+function kindOf(a: Artifact): string {
   const ext = a.name.includes(".") ? a.name.split(".").pop()!.toUpperCase() : "";
   if (ext && ext.length <= 5) return ext;
   return a.mime.split("/")[1]?.toUpperCase().slice(0, 5) || "FILE";

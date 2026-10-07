@@ -68,7 +68,7 @@ export type PreviewState = {
   fields?: Array<[number, number, number, number]>;
 };
 
-export type PreviewFrame = { data: string; mime: string; w: number; h: number; ts: number };
+type PreviewFrame = { data: string; mime: string; w: number; h: number; ts: number };
 
 const CLOSED: PreviewState = { open: false, comments: [] };
 let state: PreviewState = CLOSED;

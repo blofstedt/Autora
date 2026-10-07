@@ -1,18 +1,15 @@
-# Python
+# Build output
+dist/
+build/
+
+# Python (the .github scripts, ui/scripts, the Spectra engine's venv)
 __pycache__/
 *.py[cod]
 .venv/
 venv/
-*.egg-info/
-dist/
-build/
-.pytest_cache/
-.ruff_cache/
-.mypy_cache/
 
 # Node
 node_modules/
-ui/dist/
 *.tsbuildinfo
 
 # Autora runtime state
@@ -29,3 +26,7 @@ recordings/
 
 # Office tools: the pinned GenOffice checkout and what is built from it
 .cache/
+
+# Spectra's renderer, fetched from the pin and patched by scripts/prepare-spectra-editor.mjs
+spectra-editor/src/renderer/
+spectra-editor/.prepared

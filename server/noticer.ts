@@ -23,7 +23,7 @@ import fs from "node:fs";
 import type { Container, JobBrief } from "./suggest";
 import { troubled } from "./suggest";
 
-export interface Noticed {
+interface Noticed {
   key: string;
   tone: "warn" | "bad";
   title: string;
@@ -34,17 +34,17 @@ export interface Noticed {
   since: number;
 }
 
-export type Finding = Omit<Noticed, "since">;
+type Finding = Omit<Noticed, "since">;
 
-export interface Readings {
+interface Readings {
   disk: { used: number; total: number } | null;
   containers: Container[] | null;
   jobs: JobBrief[];
 }
 
 /** How full a disk has to be to say so, and to say so louder. */
-export const DISK_WARN = 0.9;
-export const DISK_CRITICAL = 0.97;
+const DISK_WARN = 0.9;
+const DISK_CRITICAL = 0.97;
 
 function size(bytes: number): string {
   const units = ["B", "KB", "MB", "GB", "TB"];

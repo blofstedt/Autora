@@ -4,8 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "build": "vite build",
-    "typecheck": "tsc --noEmit"
+    "prepare-src": "node ../scripts/prepare-spectra-editor.mjs",
+    "build": "npm run prepare-src && vite build",
+    "typecheck": "npm run prepare-src && tsc --noEmit"
   },
   "dependencies": {
     "@pdf-lib/fontkit": "1.1.1",

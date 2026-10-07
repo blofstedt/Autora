@@ -20,15 +20,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 /** The longer edge of a frame that goes to the console. Big enough that what
     is being held up can be read, small enough to send once a second without
     thinking about it. */
-export const FRAME_MAX_EDGE = 640;
+const FRAME_MAX_EDGE = 640;
 
 /** About a frame a second -- asked for by the person, and enough: the agent
     looks at a thing, it does not watch a video. */
-export const FRAMES_PER_SECOND = 1;
+const FRAMES_PER_SECOND = 1;
 
 const FRAME_QUALITY = 0.6;
 
-export type LiveViewState = {
+type LiveViewState = {
   /** The camera is open and frames are going. */
   on: boolean;
   /** Why it is not, when it is not. */

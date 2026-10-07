@@ -15,7 +15,7 @@ export const NAMED_KEYS = new Set([
   "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown",
 ]);
 
-export type FieldBox = readonly [number, number, number, number];
+type FieldBox = readonly [number, number, number, number];
 
 /** Whether a point on a page lands in one of its fields, with a little slack
     for a fingertip. */

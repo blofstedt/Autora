@@ -22,9 +22,9 @@ import { deskHooks } from "./pdfdesk";
 import { officeHooks } from "./officedesk";
 
 /** What the toolbox can open a window on, by itself. */
-export type NewKind = "pdf" | "docx" | "xlsx" | "pptx";
+type NewKind = "pdf" | "docx" | "xlsx" | "pptx";
 
-export const NEW_KINDS: NewKind[] = ["pdf", "docx", "xlsx", "pptx"];
+const NEW_KINDS: NewKind[] = ["pdf", "docx", "xlsx", "pptx"];
 export const isNewKind = (v: unknown): v is NewKind => typeof v === "string" && (NEW_KINDS as string[]).includes(v);
 
 /** What each kind of file is called, as an app -- the names the tools use. */
@@ -55,7 +55,7 @@ export async function blankPdf(): Promise<Buffer> {
 }
 
 /** A blank file of this kind, from the engine that knows what blank means. */
-export async function blankBytes(kind: NewKind): Promise<Buffer> {
+async function blankBytes(kind: NewKind): Promise<Buffer> {
   return kind === "pdf" ? await blankPdf() : await blankOffice(kind);
 }
 
@@ -69,7 +69,7 @@ export function freeName(kind: NewKind, names: readonly string[] = listArtifacts
   return `Untitled ${Date.now()}.${EXT[kind]}`;
 }
 
-export type Opened = { name: string; id: string; kind: NewKind; window: "pdf" | "word" };
+type Opened = { name: string; id: string; kind: NewKind; window: "pdf" | "word" };
 
 /**
  * Make the blank file, save it, and put it in the window beside the chat.
@@ -79,7 +79,7 @@ export type Opened = { name: string; id: string; kind: NewKind; window: "pdf" | 
  * showing -- the person's typing in it is already in its file, the window saves
  * as they go, and its artifact keeps it.
  */
-export async function openNewFile(session: string, kind: NewKind): Promise<Opened> {
+async function openNewFile(session: string, kind: NewKind): Promise<Opened> {
   const win = kind === "pdf" ? null : officeHooks(session);
   // Whatever was just typed in an open document has reached its file before another opens over it.
   if (win) await win.settle();

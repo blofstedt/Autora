@@ -54,9 +54,13 @@ function shapeArgs(command: string, args: Record<string, unknown>): Record<strin
 
 export async function invoke<T = unknown>(
   command: string,
-  args?: Record<string, unknown>,
+  // Tauri also lets a command take raw bytes, with headers as a third argument;
+  // the renderer does that for two clipboard commands, and shapeArgs decides
+  // what becomes of them here.
+  args?: Record<string, unknown> | Uint8Array,
+  _options?: { headers?: Record<string, string> },
 ): Promise<T> {
-  const result = await call<unknown>(command, shapeArgs(command, args ?? {}));
+  const result = await call<unknown>(command, shapeArgs(command, (args ?? {}) as Record<string, unknown>));
   if (BYTE_RESULTS.has(command) && result && typeof result === "object") {
     const base64 = (result as { base64?: unknown }).base64;
     if (typeof base64 === "string") return fromBase64(base64) as T;

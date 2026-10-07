@@ -37,14 +37,14 @@ const VOICES_TTL_MS = 10 * 60_000;
     occupy the service for minutes. */
 const MAX_CHARS = 2_000;
 
-export interface VoiceOption {
+interface VoiceOption {
   id: string;
   /** What to show in a picker: the name a person reads, and where that voice
       is from ("Thalia — American"). */
   label: string;
 }
 
-export interface SpeechStatus {
+interface SpeechStatus {
   /** False when there is no key to speak with: the page then uses the browser's
       own voice. */
   available: boolean;
@@ -196,7 +196,7 @@ export function forgetSpeech(): void {
   deepgramVoices = null;
 }
 
-export interface Utterance {
+interface Utterance {
   audio: Uint8Array;
   contentType: string;
   /** What was rendered, for the log and the tests. */
@@ -225,7 +225,7 @@ export async function speak(
 }
 
 /** A rendering that is still being made, handed over as it arrives. */
-export interface SpeechStream {
+interface SpeechStream {
   /** Raw mono little-endian 16-bit PCM, exactly as Deepgram sends it. */
   stream: ReadableStream<Uint8Array>;
   contentType: string;
@@ -234,7 +234,7 @@ export interface SpeechStream {
 
 /** The rate the raw stream is rendered at, said in the content type so the
     page can play it without guessing. */
-export const STREAM_RATE = 24000;
+const STREAM_RATE = 24000;
 
 /**
  * A whole reply as one rendering, streamed back as it is made.

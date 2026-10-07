@@ -15,13 +15,13 @@
 
 import { readDoc, saveDoc } from "./store";
 
-export interface CustomParam {
+interface CustomParam {
   name: string;
   description: string;
   required: boolean;
 }
 
-export interface CustomTool {
+interface CustomTool {
   name: string;
   description: string;
   params: CustomParam[];

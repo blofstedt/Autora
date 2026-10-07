@@ -22,7 +22,7 @@ interface Hunk {
   lines: string[];
 }
 
-export interface Conflict {
+interface Conflict {
   /** Where, in the base, the conflicting region begins (1-based). */
   line: number;
   base: string[];
@@ -30,7 +30,7 @@ export interface Conflict {
   theirs: string[];
 }
 
-export interface Merged {
+interface Merged {
   text: string;
   conflicts: Conflict[];
   /** Whether the person's changes are in the result (they changed something and it was kept). */

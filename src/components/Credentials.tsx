@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { sure } from "../lib/sure";
 
 /**
  * The person's details and sign-ins, for the agent to type without reading.
@@ -117,7 +118,7 @@ export function Credentials() {
   };
 
   const clearIdentity = async (key: string, label: string) => {
-    if (!confirm(`Remove your saved ${label.toLowerCase()}?`)) return;
+    if (!(await sure(`Remove your saved ${label.toLowerCase()}?`, "Remove"))) return;
     await send("/api/credentials/identity", "PUT", { [key]: "" });
   };
 
@@ -138,7 +139,7 @@ export function Credentials() {
   };
 
   const removeLogin = async (site: string) => {
-    if (!confirm(`Remove the saved sign-in for ${site}?`)) return;
+    if (!(await sure(`Remove the saved sign-in for ${site}?`, "Remove"))) return;
     await send(`/api/credentials/logins/${encodeURIComponent(site)}`, "DELETE");
   };
 

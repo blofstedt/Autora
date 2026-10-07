@@ -14,7 +14,7 @@
  * that saw only the deltas would never see a whole one.
  */
 
-export type Piece =
+type Piece =
   | { kind: "text"; text: string }
   | { kind: "image"; url: string; alt: string };
 
@@ -80,10 +80,4 @@ export function splitImages(text: string): Piece[] {
   // A sentence that was only ever an image link leaves an empty shell behind;
   // drop those so the prose does not gain blank lines it never had.
   return pieces.filter((p) => p.kind !== "text" || p.text.trim() !== "" || p.text.includes("\n\n"));
-}
-
-/** Does this reply contain anything to draw? Cheap enough to ask before
-    committing to the split. */
-export function hasImages(text: string): boolean {
-  return splitImages(text).some((p) => p.kind === "image");
 }

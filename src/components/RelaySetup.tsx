@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { IconCheck, IconMonitor } from "./Icons";
+import { every } from "../lib/poll";
 
-export type RelayStatus = {
+type RelayStatus = {
   connected: boolean;
   platform: string | null;
   screen: { w: number | null; h: number | null };
@@ -24,8 +25,8 @@ export function useRelay(pollMs = 8000): RelayStatus | null {
         .then((body) => { if (alive) setStatus(body); })
         .catch(() => undefined);
     void read();
-    const timer = window.setInterval(read, pollMs);
-    return () => { alive = false; window.clearInterval(timer); };
+    const stop = every(read, pollMs);
+    return () => { alive = false; stop(); };
   }, [pollMs]);
 
   return status;

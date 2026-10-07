@@ -25,7 +25,7 @@ export function kindOf(a: Artifact): string {
 }
 
 /** What sort of thing it is, for the colour of its tile. */
-export function toneOf(a: Artifact): string {
+function toneOf(a: Artifact): string {
   if (a.mime === "application/pdf") return "pdf";
   if (a.mime.startsWith("image/")) return "image";
   if (a.mime === DOCX || a.mime === "application/msword" || a.mime.startsWith("text/")) return "doc";

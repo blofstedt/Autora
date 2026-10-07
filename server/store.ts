@@ -83,7 +83,7 @@ function flushDocs() {
 
 // ---------------------------------------------------------------- sessions --
 
-export interface StoredMeta {
+interface StoredMeta {
   id: string;
   title: string;
   createdAt: number;
@@ -116,7 +116,7 @@ export interface SessionCounts {
   errors: number;
 }
 
-export interface StoredSession<E> extends StoredMeta {
+interface StoredSession<E> extends StoredMeta {
   events: E[];
 }
 

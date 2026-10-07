@@ -63,7 +63,7 @@ function resolveRecord(values: Record<string, string> | undefined, missing: Set<
   return Object.fromEntries(Object.entries(values).map(([k, v]) => [k, resolveSecrets(v, missing)]));
 }
 
-export interface McpTool {
+interface McpTool {
   /** The name the agent sees. */
   name: string;
   /** The name the server knows it by. */
@@ -73,7 +73,7 @@ export interface McpTool {
   parameters: { type: "object"; properties: Record<string, any>; required?: string[] };
 }
 
-export type McpStatus = "off" | "connecting" | "connected" | "error";
+type McpStatus = "off" | "connecting" | "connected" | "error";
 
 interface Live {
   status: McpStatus;
@@ -250,7 +250,7 @@ export function mcpTools(): McpTool[] {
   return out;
 }
 
-export function findMcpTool(name: string): McpTool | undefined {
+function findMcpTool(name: string): McpTool | undefined {
   return mcpTools().find((t) => t.name === name);
 }
 
@@ -280,7 +280,7 @@ export async function callMcpTool(
 /** Servers worth offering one click away on the Integrations page. Each only
     pre-fills the form; the same list is what the agent offers in a
     conversation (see mcpcatalog.ts). */
-export interface McpCatalogEntry {
+interface McpCatalogEntry {
   name: string;
   transport: "stdio";
   command: string;

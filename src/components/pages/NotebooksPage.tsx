@@ -11,6 +11,8 @@ import {
   isPictureMime, removeEntry, sizeLabel, updateEntry, updateNotebook,
   type ArtifactInfo, type Notebook, type NotebookEntry, type NotebookRef,
 } from "../../lib/notebooks";
+import { every } from "../../lib/poll";
+import { sure } from "../../lib/sure";
 
 const date = (ts: number) =>
   new Date(ts).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -49,8 +51,7 @@ export function NotebooksPage({
   // The agent fills notebooks mid-turn; a slow poll keeps the page honest.
   useEffect(() => {
     load();
-    const t = window.setInterval(load, 8000);
-    return () => window.clearInterval(t);
+    return every(load, 8000);
   }, [load]);
 
   const adopt = useCallback((book: Notebook) => {
@@ -274,7 +275,7 @@ function NotebookView({
   };
 
   const remove = async () => {
-    if (!window.confirm(`Delete the notebook “${book.title}”? The files in it stay on the Artifacts page.`)) return;
+    if (!(await sure(`Delete the notebook “${book.title}”? The files in it stay on the Artifacts page.`))) return;
     try {
       await deleteNotebook(book.id);
       onDeleted();

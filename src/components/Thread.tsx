@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Suspense, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Bucket, Cell, MemoryTouch } from "../lib/derive";
 import { turnItems } from "../lib/steps";
 import { isPicture, sizeLabel, type Attachment } from "../lib/attachments";
@@ -16,12 +16,10 @@ import { FileCell } from "./FileCell";
 import { RemarkCell } from "./RemarkCell";
 import { ToolCell, describeArgs } from "./ToolCell";
 import { TodoCell } from "./TodoCell";
-import { AppPreview } from "./AppPreview";
 import { usePreviewState } from "../lib/preview";
 import { useDeskState } from "../lib/pdfdesk";
-import { useWordState } from "../lib/officedesk";
-import { OfficeWindow } from "./OfficeWindow";
-import { SpectraWindow } from "./SpectraWindow";
+import { useOfficeState, type OfficeKind } from "../lib/officedesk";
+import { AppPreview, OfficeWindow, SpectraWindow } from "./lazyWindows";
 import { PermissionCell } from "./PermissionCell";
 import { ImageCell } from "./ImageCell";
 import { WidgetCell } from "./WidgetCell";
@@ -30,7 +28,7 @@ import { Markdown } from "./Markdown";
 import { MemoryCell } from "./MemoryCell";
 import { LearnedCell } from "./LearnedCell";
 import { NAME, Stage, StageStub } from "./Stage";
-import { busiestSurface, cellKey, newestSurface, pickSurfaces, usePhone, type SurfaceKind } from "../lib/stage";
+import { busiestSurface, cellKey, newestSurface, pickSurfaces, usePhone, type Surface, type SurfaceKind } from "../lib/stage";
 
 /** Within this many pixels of the bottom counts as "watching the live edge". */
 const STICK_ZONE = 80;
@@ -130,8 +128,9 @@ export function Thread({
   const appOpen = usePreviewState().open;
   const desk = useDeskState();
   const pdfSince = desk.open ? desk.since ?? 0 : null;
-  const word = useWordState();
-  const wordSince = word.open ? word.since ?? 0 : null;
+  const office = useOfficeState();
+  // One entry per open Office window: "docx:12|xlsx:30". A string, so it is a stable memo key.
+  const officeSince = office.windows.map((w) => `${w.kind}:${w.since ?? 0}`).join("|");
   const surfaces = useMemo(
     // Held only while the session is live: a recorded one is read, not watched.
     // The plan is not one of them: it is docked above the message box (see
@@ -142,16 +141,19 @@ export function Thread({
       const held = pickSurfaces(buckets, browserOpen ? liveBrowserSeq : null, appOpen).filter((s) => s.kind !== "plan");
       // The PDF window is live state, not a card in the log: it is added here,
       // after the app (the order the tabs sit in).
-      // The Word window is the same kind of thing and sits beside it.
-      const windows = [
+      // The Office windows are the same kind of thing and sit beside it, one tab for each app that is open.
+      const windows: Surface[] = [
         ...(pdfSince === null ? [] : [{ kind: "pdf" as const, cell: { kind: "pdf" as const, seq: pdfSince }, key: `pdf-${pdfSince}` }]),
-        ...(wordSince === null ? [] : [{ kind: "word" as const, cell: { kind: "word" as const, seq: wordSince }, key: `word-${wordSince}` }]),
+        ...(officeSince === "" ? [] : officeSince.split("|").map((w) => {
+          const [kind, since] = w.split(":") as [OfficeKind, string];
+          return { kind, cell: { kind, seq: Number(since) }, key: `${kind}-${since}` };
+        })),
       ];
       if (windows.length === 0) return held;
       const at = held.findIndex((s) => s.kind !== "app");
       return at < 0 ? [...held, ...windows] : [...held.slice(0, at), ...windows, ...held.slice(at)];
     },
-    [phone, live, buckets, browserOpen, liveBrowserSeq, appOpen, pdfSince, wordSince],
+    [phone, live, buckets, browserOpen, liveBrowserSeq, appOpen, pdfSince, officeSince],
   );
   const held = surfaces.map((s) => s.key).join("|");
   /* What the thread shows as a stub rather than the card: whatever the stage
@@ -201,7 +203,7 @@ export function Thread({
      and the way out is the control in the window's own bar (Back to the
      conversation). Only an opening does it: a reload, or a window already up
      when the screen arrives, leaves the conversation where the person put it. */
-  const windowsUp = `${pdfSince ?? ""}|${wordSince ?? ""}|${appOpen ? 1 : 0}`;
+  const windowsUp = `${pdfSince ?? ""}|${officeSince}|${appOpen ? 1 : 0}`;
   /* What was open when this screen arrived, and the first thing that happens to it.
      The desk, the document and the app a session already had are sent with the
      session, so on a reload or a phone opening the session the window lands a moment
@@ -216,8 +218,8 @@ export function Thread({
     if (seen === null) return;
     if (!settled.current) { settled.current = true; return; }
     if (seen === windowsUp) return;
-    if (pdfSince !== null || wordSince !== null || appOpen) setFullscreen(true);
-  }, [windowsUp, pdfSince, wordSince, appOpen, phone, live]);
+    if (pdfSince !== null || officeSince !== "" || appOpen) setFullscreen(true);
+  }, [windowsUp, pdfSince, officeSince, appOpen, phone, live]);
   useEffect(() => { windowsSeen.current = null; settled.current = false; }, [sessionId]);
   useEffect(() => () => setFullscreen(false), [sessionId]);
   const lastSaid = tail?.replies.length ? tail.replies[tail.replies.length - 1].text : "";
@@ -757,10 +759,9 @@ const StepRun = memo(function StepRun({
   );
 });
 
-/** The Office window for the phone's pinned view: the app of the document that changed last. */
-function OfficeStage({ sessionId }: { sessionId: string }) {
-  const word = useWordState();
-  return <OfficeWindow sessionId={sessionId} kind={word.kind} phone />;
+/** The Office window for the phone's pinned view: the one for the app this tab is. */
+function OfficeStage({ sessionId, kind }: { sessionId: string; kind: OfficeKind }) {
+  return <Suspense fallback={null}><OfficeWindow sessionId={sessionId} kind={kind} phone /></Suspense>;
 }
 
 const CellView = memo(function CellView({
@@ -918,11 +919,13 @@ const CellView = memo(function CellView({
         />
       );
     case "pdf":
-      return stage ? <SpectraWindow sessionId={sessionId} phone /> : null;
-    case "word":
-      return stage ? <OfficeStage sessionId={sessionId} /> : null;
+      return stage ? <Suspense fallback={null}><SpectraWindow sessionId={sessionId} phone /></Suspense> : null;
+    case "docx":
+    case "pptx":
+    case "xlsx":
+      return stage ? <OfficeStage sessionId={sessionId} kind={cell.kind} /> : null;
     case "app": {
-      if (stage) return <AppPreview sessionId={sessionId} phone />;
+      if (stage) return <Suspense fallback={null}><AppPreview sessionId={sessionId} phone /></Suspense>;
       if (held) return <StageStub kind="app" title={NAME.app} note="preview · pinned above" />;
       return (
         <div className="app-note-cell">

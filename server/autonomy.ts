@@ -22,7 +22,7 @@
 import { irreversible } from "./guard";
 import { readDoc, saveDoc } from "./store";
 
-export interface Rule {
+interface Rule {
   id: string;
   /** The tool it covers: terminal, run_background, http_request. */
   tool: string;
@@ -78,7 +78,7 @@ export function listRules(): Rule[] {
   return [...all()].sort((a, b) => b.added - a.added);
 }
 
-export interface AddOutcome {
+interface AddOutcome {
   rule?: Rule;
   error?: string;
 }

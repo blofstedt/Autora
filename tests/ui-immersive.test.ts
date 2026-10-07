@@ -28,7 +28,7 @@ async function lease(): Promise<Buffer> {
 async function main() {
   const exe = process.env.AUTORA_BROWSER_PATH || "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
   if (!fs.existsSync(exe)) { console.log("  skip  no browser here"); return; }
-  if (!fs.existsSync("dist/pdf-editor/index.html") || !fs.existsSync("dist/office/web/docs/index.html")) { console.log("  skip  the editors are not built"); return; }
+  if (!fs.existsSync("dist/office/web/docs/index.html")) { console.log("  skip  the editors are not built"); return; }
   const app = await startApp();
   const browser = await chromium.launch({ executablePath: exe });
   try {

@@ -17,7 +17,7 @@
 
 import crypto from "node:crypto";
 
-export interface Blob {
+interface Blob {
   id: string;
   session: string;
   mime: string;

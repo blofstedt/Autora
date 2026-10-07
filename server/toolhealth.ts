@@ -17,7 +17,7 @@
 
 import { readDoc, saveDoc } from "./store";
 
-export interface Outcome {
+interface Outcome {
   ts: number;
   ok: boolean;
   /** First line of what went wrong. */
@@ -100,7 +100,7 @@ function firstLine(text: string): string {
   return useful.slice(0, 160);
 }
 
-export interface ToolHealth {
+interface ToolHealth {
   tool: string;
   /** The site or command it was aimed at, "" when it is the same everywhere. */
   target: string;
@@ -140,7 +140,7 @@ export function toolHealth(at = Math.floor(Date.now() / 1000)): ToolHealth[] {
  * entry is held to a higher bar, because a command exiting non-zero is
  * usually the command working as intended.
  */
-export function troubled(at = Math.floor(Date.now() / 1000)): ToolHealth[] {
+function troubled(at = Math.floor(Date.now() / 1000)): ToolHealth[] {
   return toolHealth(at).filter((h) => {
     if (h.calls < MIN_CALLS) return false;
     if (h.failures / h.calls < FAIL_SHARE) return false;

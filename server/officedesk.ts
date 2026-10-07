@@ -27,6 +27,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
+import { squeezed } from "./staticfiles";
 import express, { type Express, type Request, type Response } from "express";
 import { MAX_ARTIFACT_BYTES, getArtifact, saveArtifact } from "./artifacts";
 import { OfficeHost, hostBuilt, wire } from "./officehost";
@@ -34,7 +35,7 @@ import { slideElements } from "./office";
 import { dropPages, latestPages, pageFile, pagesFor, type Locator } from "./officepages";
 import { stateDir } from "./state";
 
-export const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 export type OfficeKind = "docx" | "pptx" | "xlsx";
 const MIME: Record<OfficeKind, string> = {
   docx: DOCX_MIME,
@@ -64,7 +65,7 @@ const kindOfKey = (key: DeskKey): OfficeKind => key.slice(key.lastIndexOf("-") +
 /** The desks of one session, whichever are open, oldest first. */
 const desksOf = (session: string): DeskKey[] => KIND.map((kind) => keyOf(session, kind));
 
-export type WordVersion = { n: number; label: string; at: number; by: "agent" | "person"; name: string };
+type WordVersion = { n: number; label: string; at: number; by: "agent" | "person"; name: string };
 
 type Desk = {
   open: boolean;
@@ -104,14 +105,14 @@ type Desk = {
  * `text` is what ends up there (what is typed, and what the editor is searched for); `cell`/`sheet` name a
  * workbook's cell. The window finds the place in the editor and falls back to a spot in the middle.
  */
-export type OfficeCue = {
+type OfficeCue = {
   act: "type" | "point"; text: string; cell?: string; sheet?: string;
   /** A deck's cue: the element it is in, as fractions (x, y, width, height) of the slide, for an editor that draws on a canvas. */
   box?: [number, number, number, number];
 };
 
 /** Where on its slide each cue's words sit, from the deck itself: the editor draws slides on a canvas, so the page cannot be searched for them. */
-export async function withSlideBoxes(cues: OfficeCue[], deck: Buffer): Promise<OfficeCue[]> {
+async function withSlideBoxes(cues: OfficeCue[], deck: Buffer): Promise<OfficeCue[]> {
   const size = /<p:sldSz\b[^>]*\bcx="(\d+)"[^>]*\bcy="(\d+)"/.exec(zipEntry(deck, "ppt/presentation.xml")?.toString("utf8") ?? "");
   const w = size ? Number(size[1]) / 12700 : 960, h = size ? Number(size[2]) / 12700 : 540;
   const elements = await slideElements(deck).catch(() => []);
@@ -1008,7 +1009,7 @@ export function officeBriefing(session: string): string | null {
 // ------------------------------------------------ the person's side --
 
 /** The editor saved: the document is what it sent. */
-export function personSaved(session: DeskKey, data: Buffer): string | null {
+function personSaved(session: DeskKey, data: Buffer): string | null {
   const desk = load(session);
   if (!desk) return "There is no document open in the window.";
   if (!isOffice(data, desk.kind)) return `That is not a file ${THING[desk.kind]} opens.`;
@@ -1032,7 +1033,7 @@ export function personSaved(session: DeskKey, data: Buffer): string | null {
 }
 
 /** Go back to an earlier version of the document: the present one is kept too, so nothing is lost. */
-export function restoreOfficeVersion(session: DeskKey, n: number): string | null {
+function restoreOfficeVersion(session: DeskKey, n: number): string | null {
   const desk = load(session);
   if (!desk) return "There is no document open in the window.";
   const v = desk.versions.find((x) => x.n === n);
@@ -1056,7 +1057,7 @@ export function restoreOfficeVersion(session: DeskKey, n: number): string | null
   return null;
 }
 
-export function officeVersionFile(session: DeskKey, n: number): { name: string; data: Buffer } | null {
+function officeVersionFile(session: DeskKey, n: number): { name: string; data: Buffer } | null {
   const desk = load(session);
   const v = desk?.versions.find((x) => x.n === n);
   if (!v) return null;
@@ -1068,7 +1069,7 @@ export function officeVersionFile(session: DeskKey, n: number): { name: string; 
 }
 
 /** Put one window away; it comes back the next time the agent works on a document of that app. */
-export function closeOffice(session: DeskKey) {
+function closeOffice(session: DeskKey) {
   const desk = load(session);
   if (!desk || !desk.open) return;
   desk.open = false;
@@ -1290,49 +1291,11 @@ export function officeRoutes(app: Express, opts: { exists: (session: string) => 
  * fonts, because requests from the frame carry no cookies and a login proxy in
  * front (Umbrel's) turns them away (office/vite/editor.mjs).
  */
-/** A page or font, compressed once and kept: the Excel editor is 14 MB as it is and under 3 MB sent compressed. */
-const squeezed = new Map<string, { stamp: string; br: Buffer; gz: Buffer }>();
-const SQUEEZE = /\.(html|js|css|ttf|otf|json|svg)$/i;
-
 export function serveOfficeEditors(app: Express, webDir: string) {
   app.use("/office-app", (_req, res, next) => {
     res.setHeader("Content-Security-Policy", "sandbox allow-scripts allow-downloads allow-modals allow-popups");
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("X-Content-Type-Options", "nosniff");
     next();
-  }, (req, res, next) => {
-    if (req.method !== "GET" || !SQUEEZE.test(req.path)) return next();
-    const accepts = String(req.headers["accept-encoding"] ?? "");
-    const want = /\bbr\b/.test(accepts) ? "br" : /\bgzip\b/.test(accepts) ? "gz" : null;
-    if (!want) return next();
-    try {
-      const file = path.resolve(webDir, "." + path.posix.normalize("/" + decodeURIComponent(req.path)));
-      if (!file.startsWith(path.resolve(webDir) + path.sep)) return next();
-      const st = fs.statSync(file);
-      if (!st.isFile()) return next();
-      const stamp = `${st.mtimeMs}-${st.size}`;
-      let kept = squeezed.get(file);
-      if (!kept || kept.stamp !== stamp) {
-        const raw = fs.readFileSync(file);
-        kept = {
-          stamp,
-          // Quality 5: most of the size for a fraction of the time, and it is done once.
-          br: zlib.brotliCompressSync(raw, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5, [zlib.constants.BROTLI_PARAM_SIZE_HINT]: raw.length } }),
-          gz: zlib.gzipSync(raw, { level: 6 }),
-        };
-        squeezed.set(file, kept);
-      }
-      const etag = `"${stamp}-${want}"`;
-      res.setHeader("Vary", "Accept-Encoding");
-      res.setHeader("ETag", etag);
-      res.setHeader("Cache-Control", "private, no-cache");
-      if (req.headers["if-none-match"] === etag) return void res.status(304).end();
-      const type = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml" }[path.extname(file).toLowerCase()] ?? "application/octet-stream";
-      res.setHeader("Content-Type", type);
-      res.setHeader("Content-Encoding", want === "br" ? "br" : "gzip");
-      res.send(want === "br" ? kept.br : kept.gz);
-    } catch {
-      next();
-    }
-  }, express.static(webDir, { fallthrough: false }));
+  }, squeezed(webDir, { revalidate: "private, no-cache" }), express.static(webDir, { fallthrough: false }));
 }

@@ -14,12 +14,14 @@
 import { useSyncExternalStore } from "react";
 import type { Bucket, Cell } from "./derive";
 
-export type SurfaceKind = "app" | "pdf" | "word" | "browser" | "plan" | "widget";
+/** An Office window is a surface of its own for each app (docx = Pages, pptx = Slides, xlsx = Sheets):
+    a deck and a sheet open together are two tabs, not one that shows whichever changed last. */
+export type SurfaceKind = "app" | "pdf" | "docx" | "pptx" | "xlsx" | "browser" | "plan" | "widget";
 
 export type Surface = { kind: SurfaceKind; cell: Cell; key: string };
 
 /** The order the tabs sit in, however they arrived. */
-const ORDER: SurfaceKind[] = ["app", "pdf", "word", "browser", "plan", "widget"];
+const ORDER: SurfaceKind[] = ["app", "pdf", "docx", "xlsx", "pptx", "browser", "plan", "widget"];
 
 /** Who a cell is, for React and for the stage: the event that started it. */
 export function cellKey(cell: Cell): string {
@@ -84,7 +86,7 @@ export function dockedPlan(buckets: readonly Bucket[]): Extract<Cell, { kind: "t
 }
 
 /** The last the agent did on a surface: a page it clicked, an item it ticked. */
-export function activityOf(cell: Cell): number {
+function activityOf(cell: Cell): number {
   if (cell.kind === "screen") return cell.touched ?? cell.seq;
   if (cell.kind === "todo") return cell.updated ?? cell.seq;
   return cell.seq;

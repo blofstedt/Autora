@@ -17,14 +17,14 @@ import { ErrorBudget } from "./errorbudget";
 import { LOOP_DEFAULTS, LoopWatch, describe, type LoopWatchConfig } from "./loopwatch";
 import { buildTrace, type TraceEvent } from "./trace";
 
-export interface ReplayStop {
+interface ReplayStop {
   /** Index of the tool call in the replay, from 1. */
   call: number;
   by: "loop watch" | "error budget";
   reason: string;
 }
 
-export interface ReplayReport {
+interface ReplayReport {
   calls: number;
   /** Calls the loop watch or budget would have added a note to. */
   notes: number;

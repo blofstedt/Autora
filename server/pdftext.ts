@@ -38,7 +38,7 @@ type Tok =
   | { k: "arr"; items: Tok[] }
   | { k: "x" };
 
-export interface Op {
+interface Op {
   name: string;
   args: Tok[];
   /** Where the operator and its operands sit in the source. */
@@ -253,7 +253,7 @@ function baseTable(encoding: string | null): (code: number) => string {
   return (code: number) => (code >= 32 && code < 127 ? String.fromCharCode(code) : "�");
 }
 
-export class FontInfo {
+class FontInfo {
   base = "";
   /** Bytes per code: 1 for simple fonts, 2 for Identity-H composites. */
   len = 1;
@@ -328,7 +328,7 @@ function num(v: unknown): number | null {
   return v instanceof PDFNumber ? v.asNumber() : null;
 }
 
-export function readFont(doc: PDFDocument, dict: PDFDict): FontInfo {
+function readFont(doc: PDFDocument, dict: PDFDict): FontInfo {
   const f = new FontInfo();
   const ctx = doc.context;
   const name = (key: string) => dict.lookupMaybe(PDFName.of(key), PDFName)?.decodeText() ?? "";
@@ -616,7 +616,7 @@ export interface TextEdit {
   ignoreCase?: boolean;
 }
 
-export interface Draw {
+interface Draw {
   x: number;
   y: number;
   size: number;
@@ -627,7 +627,7 @@ export interface Draw {
   italic: boolean;
 }
 
-export interface EditReport {
+interface EditReport {
   find: string;
   with: string;
   /** Matches changed on this page. */
@@ -635,7 +635,7 @@ export interface EditReport {
   how: "in place" | "redrawn";
 }
 
-export interface PageResult {
+interface PageResult {
   changed: EditReport[];
   draws: Draw[];
   /** Said to the agent: what could not be done and why. */

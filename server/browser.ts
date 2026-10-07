@@ -51,7 +51,7 @@ type BrowserContext = any;
 type CDPSession = any;
 
 /** A dropdown's choices, as the page offers them. */
-export interface SelectChoice {
+interface SelectChoice {
   index: number;
   label: string;
   selected: boolean;
@@ -59,14 +59,14 @@ export interface SelectChoice {
 }
 
 /** A dropdown a person tapped: what it is called and what it offers. */
-export interface SelectInfo {
+interface SelectInfo {
   name: string;
   multiple: boolean;
   options: SelectChoice[];
 }
 
 /** One line of the page's console or one request it made: what DevTools shows. */
-export interface DevEntry {
+interface DevEntry {
   n: number;
   tab: number;
   ts: number;
@@ -82,14 +82,14 @@ export interface DevEntry {
   failed?: string;
 }
 
-export interface BrowserTab {
+interface BrowserTab {
   id: number;
   url: string;
   title: string;
   active: boolean;
 }
 
-export interface BrowserStatus {
+interface BrowserStatus {
   /** The tabs this session has open, in order. */
   tabs?: BrowserTab[];
   /** Playwright and a browser binary are both present. */
@@ -277,7 +277,7 @@ export const SAME_PICTURE_NOTE = (
 );
 
 /** One click the script made for the agent: where, and what it hit. */
-export interface ScriptHit {
+interface ScriptHit {
   x?: number;
   y?: number;
   label?: string;
@@ -374,7 +374,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
  * things the outline cannot see -- and so its clicks are announced the way the
  * other mouse actions are, with the pointer drawn where they land.
  */
-export const AUTORA_HELPER_SCRIPT = `(() => {
+const AUTORA_HELPER_SCRIPT = `(() => {
   /* What the page says an element is: its visible words, or failing those the
      attribute it is named by. The outline names things the same way, so what
      the agent reads and what it can click agree. */
@@ -423,7 +423,7 @@ export const AUTORA_HELPER_SCRIPT = `(() => {
 
 /** Where to scroll: by screens (or pixels), to the top or bottom, inside a
     numbered element, or to some text. */
-export interface ScrollRequest {
+interface ScrollRequest {
   screens?: number;
   dy?: number;
   to?: "top" | "bottom";
@@ -443,7 +443,7 @@ interface CaptchaHit {
   challenge: boolean;
 }
 
-export interface CaptchaResult {
+interface CaptchaResult {
   outcome: "none" | "solved" | "challenge" | "pending";
   kind: CaptchaKind | null;
   page: PageRead;
@@ -455,7 +455,7 @@ export interface CaptchaResult {
   backend?: string;
 }
 
-export interface BrowserHooks {
+interface BrowserHooks {
   /** A live frame: base64 JPEG, ephemeral, never stored. */
   onFrame: (jpegBase64: string) => void;
   /** A frame worth keeping in the transcript. */
@@ -626,7 +626,7 @@ function profileDir(): string {
  */
 let cachedVersion: string | null | undefined;
 
-export function browserVersion(): string | null {
+function browserVersion(): string | null {
   if (cachedVersion !== undefined) return cachedVersion;
   cachedVersion = null;
   const exe = systemBrowser();
@@ -644,7 +644,7 @@ export function browserVersion(): string | null {
 }
 
 /** The user agent to present: the real version, and never "Headless". */
-export function browserUserAgent(): string | undefined {
+function browserUserAgent(): string | undefined {
   const full = browserVersion();
   if (!full) return undefined;
   const platform =

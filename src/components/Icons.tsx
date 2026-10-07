@@ -117,12 +117,6 @@ export const IconPlay = ({ size = 16, className }: Props) => (
   </svg>
 );
 
-export const IconFlag = ({ size = 16, className }: Props) => (
-  <svg {...base(size)} className={className}>
-    <path d="M6 20.5V4M6 4.8h10.5l-1.8 3.6 1.8 3.6H6" />
-  </svg>
-);
-
 /** Nothing pinned, drawn rather than spelled: the fourth corner widget. */
 export const IconMinus = ({ size = 16, className }: Props) => (
   <svg {...base(size)} className={className}>
@@ -176,12 +170,6 @@ export const IconMonitor = ({ size = 16, className }: Props) => (
   <svg {...base(size)} className={className}>
     <rect x="2.5" y="3.5" width="19" height="13" rx="1.5" />
     <path d="M8.5 20.5h7M12 16.5v4" />
-  </svg>
-);
-
-export const IconPause = ({ size = 16, className }: Props) => (
-  <svg {...base(size)} className={className}>
-    <path d="M9.5 5.5v13M14.5 5.5v13" />
   </svg>
 );
 
@@ -259,21 +247,6 @@ export const IconMic = ({ size = 16, className }: Props) => (
   </svg>
 );
 
-export const IconMicOff = ({ size = 16, className }: Props) => (
-  <svg {...base(size)} className={className}>
-    <path d="M9 5.6A3 3 0 0 1 15 6v3.4M15 13.1a3 3 0 0 1-4.6.4" />
-    <path d="M5.5 11a6.5 6.5 0 0 0 9.9 5.5M18.5 11v.6" />
-    <path d="M12 17.5v3.75M3.5 3.5l17 17" />
-  </svg>
-);
-
-/** Live voice: a waveform, since this is a conversation rather than a recording. */
-export const IconWave = ({ size = 16, className }: Props) => (
-  <svg {...base(size)} className={className}>
-    <path d="M3 11v2M7.5 7.5v9M12 4.5v15M16.5 7.5v9M21 11v2" />
-  </svg>
-);
-
 export const IconSpeaker = ({ size = 16, className }: Props) => (
   <svg {...base(size)} className={className} aria-hidden="true">
     <path d="M11 5 6 9H2v6h4l5 4V5Z" />
@@ -289,17 +262,6 @@ export const IconSpeakerOff = ({ size = 16, className }: Props) => (
     <path d="M11 5 6 9H2v6h4l5 4V5Z" />
     <path d="m16 9 6 6" />
     <path d="m22 9-6 6" />
-  </svg>
-);
-
-export const IconGrip = ({ size = 14, className }: Props) => (
-  <svg {...base(size)} className={className}>
-    <circle cx="8" cy="7" r="1.2" fill="currentColor" />
-    <circle cx="8" cy="12" r="1.2" fill="currentColor" />
-    <circle cx="8" cy="17" r="1.2" fill="currentColor" />
-    <circle cx="16" cy="7" r="1.2" fill="currentColor" />
-    <circle cx="16" cy="12" r="1.2" fill="currentColor" />
-    <circle cx="16" cy="17" r="1.2" fill="currentColor" />
   </svg>
 );
 
@@ -381,17 +343,6 @@ export const IconMousePointer = ({ size = 16, className }: Props) => (
   </svg>
 );
 
-export const IconKeyboard = ({ size = 16, className }: Props) => (
-  <svg {...base(size)} className={className}>
-    <rect width="20" height="14" x="2" y="5" rx="2" />
-    <line x1="6" y1="9" x2="6.01" y2="9" strokeWidth={2} />
-    <line x1="10" y1="9" x2="10.01" y2="9" strokeWidth={2} />
-    <line x1="14" y1="9" x2="14.01" y2="9" strokeWidth={2} />
-    <line x1="18" y1="9" x2="18.01" y2="9" strokeWidth={2} />
-    <line x1="8" y1="13" x2="16" y2="13" />
-  </svg>
-);
-
 export const IconArrowLeft = ({ size = 16, className }: Props) => (
   <svg {...base(size)} className={className}>
     <path d="m12 19-7-7 7-7" />
@@ -450,12 +401,6 @@ export const IconMinimize = ({ size = 16, className }: Props) => (
 export const IconArrowUp = ({ size = 16, className }: Props) => (
   <svg {...base(size)} className={className}>
     <path d="M12 19V5M6 11l6-6 6 6" />
-  </svg>
-);
-
-export const IconActivity = ({ size = 16, className }: Props) => (
-  <svg {...base(size)} className={className}>
-    <path d="M3.5 12h3.5l2.5-6 5 12 2.5-6h3.5" />
   </svg>
 );
 

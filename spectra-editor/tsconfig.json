@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "types": [],
+    "paths": {
+      "@tauri-apps/api/core": ["./src/autora/core.ts"],
+      "@tauri-apps/api/event": ["./src/autora/event.ts"],
+      "@tauri-apps/api/window": ["./src/autora/window.ts"],
+      "@tauri-apps/api/webviewWindow": ["./src/autora/webview-window.ts"],
+      "@tauri-apps/plugin-fs": ["./src/autora/fs.ts"],
+      "@tauri-apps/plugin-updater": ["./src/autora/updater.ts"],
+      "@tauri-apps/plugin-dialog": ["./src/autora/dialog.ts"],
+      "@tauri-apps/plugin-shell": ["./src/autora/shell.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["node_modules"]
+}

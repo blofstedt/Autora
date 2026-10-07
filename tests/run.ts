@@ -6,20 +6,36 @@
  * broke two things looked like a change that broke one. Every file is run
  * here whatever the others did, and the summary says which ones failed.
  *
- *   npm test
+ *   npm test                  every file, one after another
+ *   npm test -- pdf office    only files whose name contains one of these
+ *   npm test -- -j 4          up to four files at once. Each test has its own
+ *                             state directory and port, but the ones that
+ *                             start Chromium fight over it and over the CPU
+ *                             (a download test lost its page), so those run
+ *                             one at a time, beside the others.
  */
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
 const here = import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname);
+
+const args = process.argv.slice(2);
+let jobs = 1;
+const filters: string[] = [];
+for (let i = 0; i < args.length; i += 1) {
+  if (args[i] === "-j" || args[i] === "--jobs") jobs = Math.max(1, Number(args[++i]) || 1);
+  else filters.push(args[i]);
+}
+
 const files = fs
   .readdirSync(here)
   .filter((name) => name.endsWith(".test.ts"))
+  .filter((name) => filters.length === 0 || filters.some((f) => name.includes(f)))
   .sort();
 
 if (files.length === 0) {
-  console.error("No tests found in tests/*.test.ts");
+  console.error(filters.length ? `No tests match ${filters.join(", ")}` : "No tests found in tests/*.test.ts");
   process.exit(1);
 }
 
@@ -28,22 +44,47 @@ if (files.length === 0) {
 const tsx = path.join(here, "..", "node_modules", ".bin", "tsx");
 const runner = fs.existsSync(tsx) ? tsx : "npx";
 
-const results: { file: string; ok: boolean; ms: number; code: number | null }[] = [];
-for (const file of files) {
+type Result = { file: string; ok: boolean; ms: number; code: number | null };
+
+function run(file: string): Promise<Result> {
   const started = Date.now();
-  console.log(`\n== ${file} ==`);
-  const run = spawnSync(
-    runner,
-    runner === tsx ? [path.join(here, file)] : ["tsx", path.join(here, file)],
-    { stdio: "inherit", env: { ...process.env, NODE_ENV: "development" } },
-  );
-  results.push({
-    file,
-    ok: run.status === 0,
-    code: run.status,
-    ms: Date.now() - started,
+  const serial = jobs === 1;
+  if (serial) console.log(`\n== ${file} ==`);
+  return new Promise((resolve) => {
+    const child = spawn(
+      runner,
+      runner === tsx ? [path.join(here, file)] : ["tsx", path.join(here, file)],
+      // Serial runs print as they go; parallel ones keep each file's output
+      // together and print it when the file ends.
+      { stdio: serial ? "inherit" : ["ignore", "pipe", "pipe"], env: { ...process.env, NODE_ENV: "development" } },
+    );
+    let out = "";
+    if (!serial) {
+      child.stdout?.on("data", (d) => { out += d; });
+      child.stderr?.on("data", (d) => { out += d; });
+    }
+    child.on("close", (code) => {
+      if (!serial) process.stdout.write(`\n== ${file} ==\n${out}`);
+      resolve({ file, ok: code === 0, code, ms: Date.now() - started });
+    });
   });
 }
+
+/** A test that starts a browser. */
+const usesBrowser = (file: string) =>
+  /chromium|playwright|LiveBrowser|launchBrowser|startApp\(/.test(fs.readFileSync(path.join(here, file), "utf8"));
+
+const results: Result[] = [];
+const browserQueue = jobs > 1 ? files.filter(usesBrowser) : [];
+const queue = files.filter((f) => !browserQueue.includes(f));
+const lane = async (q: string[]) => {
+  for (let file = q.shift(); file; file = q.shift()) results.push(await run(file));
+};
+await Promise.all([
+  ...Array.from({ length: Math.min(Math.max(jobs - (browserQueue.length ? 1 : 0), 1), queue.length || 1) }, () => lane(queue)),
+  lane(browserQueue),
+]);
+results.sort((a, b) => (a.file < b.file ? -1 : 1));
 
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${"-".repeat(52)}`);

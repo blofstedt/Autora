@@ -55,7 +55,7 @@ export function sidecarPath(dir = officeDir()): string | null {
 
 // ------------------------------------------------------------- context --
 
-export interface OfficeContext {
+interface OfficeContext {
   session: string;
   /** Where a relative path starts: the terminal's working directory. */
   cwd: string;
@@ -76,7 +76,7 @@ export interface OfficeContext {
   onCancel: (stop: () => void) => void;
 }
 
-export interface OfficeOutcome {
+interface OfficeOutcome {
   ok: boolean;
   summary: string;
   preview?: string;
@@ -86,7 +86,7 @@ export interface OfficeOutcome {
 /** A failure the agent is told in so many words. */
 class Problem extends Error {}
 
-export type Kind = "docx" | "xlsx" | "pptx";
+type Kind = "docx" | "xlsx" | "pptx";
 const KINDS: Record<string, Kind> = { ".docx": "docx", ".xlsx": "xlsx", ".pptx": "pptx" };
 const MIME: Record<Kind, string> = {
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -95,10 +95,10 @@ const MIME: Record<Kind, string> = {
 };
 const DOMAIN: Record<Kind, "docs" | "sheet" | "slides"> = { docx: "docs", xlsx: "sheet", pptx: "slides" };
 
-export const kindOf = (name: string): Kind | null => KINDS[path.extname(name).toLowerCase()] ?? null;
+const kindOf = (name: string): Kind | null => KINDS[path.extname(name).toLowerCase()] ?? null;
 
 /** What each kind of document is called, as an app. */
-export const APP_NAME: Record<Kind, string> = { docx: "Autora Pages", xlsx: "Autora Sheets", pptx: "Autora Slides" };
+const APP_NAME: Record<Kind, string> = { docx: "Autora Pages", xlsx: "Autora Sheets", pptx: "Autora Slides" };
 
 /** Refuse work on a kind of document the person switched off, saying where it is switched on. */
 function allowed(ctx: OfficeContext, kind: Kind) {
@@ -215,7 +215,7 @@ function parseEnvelope(text: string): Envelope | null {
 }
 
 /** What running the command line needs of whoever asked for it. */
-export interface Runner {
+interface Runner {
   cancelled: () => boolean;
   onCancel: (stop: () => void) => void;
 }

@@ -9,14 +9,14 @@
  */
 
 /** The key the console signs with, as the bytes a push manager wants. */
-export function keyToBytes(base64url: string): Uint8Array {
+function keyToBytes(base64url: string): Uint8Array {
   const pad = "=".repeat((4 - (base64url.length % 4)) % 4);
   const raw = atob((base64url + pad).replace(/-/g, "+").replace(/_/g, "/"));
   return Uint8Array.from(raw, (c) => c.charCodeAt(0));
 }
 
 /** What to call this device in the list. */
-export function deviceName(ua: string): string {
+function deviceName(ua: string): string {
   if (/iPhone/i.test(ua)) return "iPhone";
   if (/iPad/i.test(ua)) return "iPad";
   if (/Android/i.test(ua)) return /Mobile/i.test(ua) ? "Android phone" : "Android tablet";
@@ -26,7 +26,7 @@ export function deviceName(ua: string): string {
   return "This device";
 }
 
-export type PushSupport = { ok: true } | { ok: false; reason: string };
+type PushSupport = { ok: true } | { ok: false; reason: string };
 
 export function pushSupport(): PushSupport {
   if (typeof window === "undefined") return { ok: false, reason: "Not available here." };

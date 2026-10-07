@@ -32,7 +32,7 @@ const STEP_MS = 90_000;
 
 /** Where a text item sits: x, y, width, height in points from the page's
     top-left corner, as the page is shown. */
-export type Box = [number, number, number, number];
+type Box = [number, number, number, number];
 /**
  * `dir`: which way the run reads on the page as shown -- right, down, left or
  * up -- or null when it is slanted. `o`, when asked for: where each character
@@ -41,7 +41,7 @@ export type Box = [number, number, number, number];
 export type TextItem = { s: string; eol: boolean; box: Box | null; dir: "r" | "d" | "l" | "u" | null; o?: number[] };
 export type PageText = { page: number; width: number; height: number; items: TextItem[] };
 export type Rect = { x: number; y: number; w: number; h: number };
-export type Picture = { data: Buffer; mime: string; width: number; height: number };
+type Picture = { data: Buffer; mime: string; width: number; height: number };
 
 export class PdfRenderError extends Error {
   constructor(message: string, readonly code: "password-needed" | "password-wrong" | "no-browser" | "broken" | "cancelled" = "broken") {

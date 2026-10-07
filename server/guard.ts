@@ -13,7 +13,7 @@
 
 /** Which tool calls are worth asking about. Cheap and deliberately broad: this
     only decides whether to ask the model, never whether to block. */
-export const RISKY_COMMAND = new RegExp(
+const RISKY_COMMAND = new RegExp(
   [
     String.raw`\b(rm|rmdir|shred|dd|mkfs\S*|wipefs|fdisk|parted|truncate|kill|pkill|killall|shutdown|reboot|halt|poweroff|userdel|crontab\s+-r)\b`,
     String.raw`\bsystemctl\s+(stop|disable|mask)\b`,
@@ -53,7 +53,7 @@ export function guardWorthy(name: string, args: Record<string, any>): boolean {
    the call and asks the person, on the same card an approval uses; anything
    else runs straight away, exactly as before. */
 
-export interface Danger {
+interface Danger {
   /** What the command would do, in the sentence the card shows. */
   what: string;
   /** The part of the command that matched, so the card can point at it. */
@@ -186,13 +186,13 @@ export function irreversible(name: string, args: Record<string, any>): Danger | 
    one people learn to click through. */
 
 /** Asked of the model; it answers with JSON only. */
-export interface Judgement {
+interface Judgement {
   destructive: boolean;
   requested: boolean;
 }
 
 /** How long the model has to answer before the call is let through. */
-export const JUDGE_TIMEOUT_MS = 20_000;
+const JUDGE_TIMEOUT_MS = 20_000;
 
 export const JUDGE_SYSTEM =
   "You check one action an AI agent is about to run on a person's own machine. " +
@@ -260,14 +260,14 @@ export async function judgeAction(
 }
 
 /** Whether an action falls under what the person said to ask about. */
-export const ASK_RULE_SYSTEM =
+const ASK_RULE_SYSTEM =
   "A person told an AI agent when it must stop and ask them before acting. You are shown their " +
   "wording and one action the agent is about to run. Answer with JSON only, no prose: " +
   "{\"ask\": true|false}. ask is true if the action falls under any part of what they said " +
   "to ask about -- read their wording for what they mean, not only the literal words. It is " +
   "false for an action that is unrelated to it. When unsure, answer true.";
 
-export function askRulePrompt(input: { rules: string; tool: string; rendered: string }): string {
+function askRulePrompt(input: { rules: string; tool: string; rendered: string }): string {
   return `Ask the person before:\n${input.rules.slice(0, 800)}\n\nThe action about to run (${input.tool}):\n${input.rendered.slice(0, 1500)}`;
 }
 
@@ -289,12 +289,12 @@ export async function matchesAskRule(
 }
 
 /** Whether the person, asked about a held call, said yes. */
-export const ANSWER_SYSTEM =
+const ANSWER_SYSTEM =
   "A person was asked whether an AI agent may run an action. Read their answer. " +
   "Reply with JSON only, no prose: {\"approved\": true|false}. approved is false only " +
   "if they clearly said no or declined; a yes, a go-ahead, or anything ambiguous is true.";
 
-export function answerPrompt(rendered: string, said: string): string {
+function answerPrompt(rendered: string, said: string): string {
   return `The action:\n${rendered.slice(0, 1000)}\n\nThe person's answer:\n${said.slice(0, 1000)}`;
 }
 

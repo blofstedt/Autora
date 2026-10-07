@@ -10,7 +10,7 @@
 import fs from "node:fs";
 import os from "node:os";
 
-export interface HostVitals {
+interface HostVitals {
   /** Busy share of all cores since the previous reading, 0..1. */
   cpu: number;
   cores: number;

@@ -19,7 +19,7 @@ import { stateDir } from "./state";
 
 const run = promisify(execFile);
 
-export interface Snapshot { id: string; label: string; ts: number; files: number }
+interface Snapshot { id: string; label: string; ts: number; files: number }
 
 /** What is never saved: dependencies and build output, which are rebuilt, and
     the person's own repository data. */

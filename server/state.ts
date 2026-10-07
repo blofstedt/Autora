@@ -33,16 +33,16 @@ export const THEMES = ["violet", "teal", "nous-blue", "midnight", "ember", "mono
 export const FONTS = ["inter", "system", "rounded", "mono"] as const;
 /** How big the words and the icons are. Named, not numbered: the step is
     picked in the UI and its multiplier is the client's business. */
-export const TEXT_SIZES = ["small", "default", "large", "largest"] as const;
-export const ICON_SIZES = TEXT_SIZES;
-export const COLUMNS = ["comfort", "wide", "fill"] as const;
+const TEXT_SIZES = ["small", "default", "large", "largest"] as const;
+const ICON_SIZES = TEXT_SIZES;
+const COLUMNS = ["comfort", "wide", "fill"] as const;
 /** Which of the app's pages a pinned corner widget shows. */
-export const DOCK_WIDGETS = [
+const DOCK_WIDGETS = [
   "none", "system", "usage", "schedules", "mind",
   "artifacts", "sessions", "integrations", "settings",
 ] as const;
-export const DOCK_SLOTS = ["tl", "tr", "bl", "br"] as const;
-export interface Appearance {
+const DOCK_SLOTS = ["tl", "tr", "bl", "br"] as const;
+interface Appearance {
   theme: (typeof THEMES)[number];
   font: (typeof FONTS)[number];
   text: (typeof TEXT_SIZES)[number];
@@ -63,7 +63,7 @@ export interface Appearance {
  * running on the same box; both are gone, and the two fields with them. An old
  * settings file still carrying them loads fine -- they are simply ignored.
  */
-export interface SpeechSettings {
+interface SpeechSettings {
   voice: string;
   /** Whether a turn that was spoken to the console may think before it
       answers. Off by default: on a reasoning model the thinking is most of
@@ -82,7 +82,7 @@ export interface SpeechSettings {
      carrying it loads fine, like the two before it: it is simply ignored. */
 }
 
-export const DEFAULT_SPEECH: SpeechSettings = {
+const DEFAULT_SPEECH: SpeechSettings = {
   voice: "",
   liveThinking: false,
   liveView: false,
@@ -97,7 +97,7 @@ export function mergeSpeech(into: SpeechSettings, patch: any): SpeechSettings {
   return into;
 }
 
-export type ApprovalMode = "always" | "risky" | "never";
+type ApprovalMode = "always" | "risky" | "never";
 
 /**
  * What the workspace keeps, and what it lets go (see ./retention, which does
@@ -154,7 +154,7 @@ export function mergeLoop(into: LoopWatchConfig, patch: any): LoopWatchConfig {
   return into;
 }
 
-export interface ToolSettings {
+interface ToolSettings {
   terminal: {
     enabled: boolean;
     /** Where commands run. Empty means the server's own working directory. */
@@ -217,12 +217,12 @@ export interface CostParts {
 }
 
 /** How much tool output went to the model this month, by tool. */
-export interface ToolFeed {
+interface ToolFeed {
   month: string;
   tools: Record<string, { calls: number; tokens: number }>;
 }
 
-export interface PersistedState {
+interface PersistedState {
   provider: string;
   /** Chosen model per provider, so switching vendors and back does not lose
       the choice you made the first time. */
@@ -722,7 +722,7 @@ export function flushState() {
   saveNow();
 }
 
-export function saveNow() {
+function saveNow() {
   try {
     fs.mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 });
     const body = JSON.stringify({ ...state, carried }, null, 2);
@@ -1193,9 +1193,4 @@ export function clearUsage() {
   state.usage = [];
   carried = { cost: 0, input: 0, output: 0, turns: 0, days: {} };
   saveNow();
-}
-
-/** Every provider, for the settings panel to lay out. */
-export function knownProviders() {
-  return PROVIDERS;
 }
