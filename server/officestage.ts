@@ -12,7 +12,7 @@
  */
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 
-export type StageKind = "docx" | "pptx" | "xlsx";
+type StageKind = "docx" | "pptx" | "xlsx";
 
 /** One thing typed. `step` is the first in-between file it produces, `steps` how many (one per run of words). */
 export type StageCue = {

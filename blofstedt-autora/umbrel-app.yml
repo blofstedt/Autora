@@ -133,12 +133,11 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The agent's typing in Pages, Sheets and Slides is now the change itself. A
-  document it makes opens empty and fills in as its cursor types; an edit to
-  one you have open is typed into it, a run of words or a cell at a time, and
-  the last step is exactly what the agent's tool made, so nothing is drawn over
-  the document any more. The Slides cursor now lands on the slide itself rather
-  than the stage around it, and the agent's own clicks and typing no longer
-  count as you working in the document, so it can carry on editing straight
-  after. Earlier in this release: a slimmer menu on desktop, and the browser
-  pointer matches the Office cursor and follows real input.
+  On a desktop, everything the agent looks at and does now happens in the work
+  area on the right, in a new Activity tab: commands, pages, pictures, files it
+  made, code changes and tool calls. The conversation keeps only the talking;
+  a phone still shows it all in one column. The message box is more compact,
+  and the menu on the left is slimmer, with its widgets stacked and set in the
+  same size as the menu's own options. The agent's typing in Pages, Sheets and
+  Slides is the change itself, a document it makes fills in as its cursor types,
+  and the browser pointer matches the Office cursor.

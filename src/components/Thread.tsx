@@ -53,6 +53,7 @@ function phaseGlyph(phase: MarkPhase) {
  * carried on at step 300.
  */
 export function Thread({
+  chatOnly = false,
   buckets,
   busy,
   doing,
@@ -70,6 +71,9 @@ export function Thread({
   dockedPlanKey = "",
   ...work
 }: {
+  /** A desktop has a work area beside the conversation (see WorkFeed), so what the agent looks at and does is shown
+      there and the conversation keeps only the talking. A phone has one column and shows both. */
+  chatOnly?: boolean;
   buckets: Bucket[];
   /** Sends a follow-up chip's words, as though typed. */
   onSuggest?: (text: string, title?: string) => void;
@@ -410,6 +414,7 @@ export function Thread({
             liveBrowserSeq={liveBrowserSeq}
             live={live}
             docked={docked}
+            chatOnly={chatOnly}
             onPermissionDecide={onPermissionDecide}
             {...work}
             phase={phase}
@@ -443,14 +448,14 @@ export function Thread({
             <span className="working-mark" aria-hidden="true">{phaseGlyph(phase)}</span>
             {/* Keyed on the words, so each new step fades in over the last
                 rather than snapping -- a train of thought, not a counter. */}
-            <span className="working-what" key={doing || "working"}>{doing || "Working"}</span>
+            <span className="working-what" key={chatOnly ? "working" : doing || "working"}>{chatOnly ? "Working" : doing || "Working"}</span>
             {/* How far in it is. A step count alone is noise on a short turn,
                 so it waits for two, and the clock waits for a few seconds
                 rather than counting 0s under every reply. */}
-            {(elapsedMs >= 3000 || steps > 1) && (
+            {(elapsedMs >= 3000 || (steps > 1 && !chatOnly)) && (
               <span className="working-when">
                 {elapsedMs >= 3000 ? clock(elapsedMs) : ""}
-                {steps > 1 ? `${elapsedMs >= 3000 ? " · " : ""}${steps} steps` : ""}
+                {steps > 1 && !chatOnly ? `${elapsedMs >= 3000 ? " · " : ""}${steps} steps` : ""}
               </span>
             )}
           </div>
@@ -580,8 +585,25 @@ const FilesCell = memo(function FilesCell({ files }: { files: Attachment[] }) {
   );
 });
 
+/**
+ * The agent looking at something or doing something: a command, a page, a picture, a file it made, a change to code,
+ * a widget, any other tool. On a desktop these are shown in the work area beside the conversation (WorkFeed).
+ */
+const isWorkCell = (cell: Cell) =>
+  cell.kind === "terminal" || cell.kind === "screen" || cell.kind === "images" || cell.kind === "files"
+  || cell.kind === "widget" || cell.kind === "file" || cell.kind === "tool" || cell.kind === "app";
+
+/** What stays in the conversation: the talking. What the agent said while it worked a page stays too. */
+function chatCells(cells: Cell[]): Cell[] {
+  return cells.flatMap((cell) => (cell.kind === "screen" ? cell.log.filter((c) => !isWorkCell(c)) : isWorkCell(cell) ? [] : [cell]));
+}
+
+/** Whether a session has anything for the work area to show. */
+export const hasWork = (buckets: Bucket[]) => buckets.some((b) => b.cells.some(isWorkCell));
+
 const TurnBucket = memo(function TurnBucket({
   bucket,
+  chatOnly = false,
   sessionId,
   liveBrowserSeq,
   live,
@@ -591,6 +613,7 @@ const TurnBucket = memo(function TurnBucket({
   ...work
 }: {
   bucket: Bucket;
+  chatOnly?: boolean;
   sessionId: string;
   liveBrowserSeq: number | null;
   live: boolean;
@@ -604,7 +627,8 @@ const TurnBucket = memo(function TurnBucket({
   // landing after the reply does not mean the agent has stopped, and anchoring
   // to the last cell made the mark settle the moment one appeared -- a finish
   // in the middle of the work.
-  const speaking = bucket.cells.map((c) => c.kind).lastIndexOf("reply");
+  const cells = useMemo(() => (chatOnly ? chatCells(bucket.cells) : bucket.cells), [chatOnly, bucket.cells]);
+  const speaking = cells.map((c) => c.kind).lastIndexOf("reply");
 
   return (
     <article className="turn">
@@ -621,8 +645,8 @@ const TurnBucket = memo(function TurnBucket({
 
       <div className="work">
         <StepRun
-          cells={bucket.cells}
-          activeKey={bucket.open && speaking >= 0 ? cellKey(bucket.cells[speaking]) : null}
+          cells={cells}
+          activeKey={bucket.open && speaking >= 0 ? cellKey(cells[speaking]) : null}
           sessionId={sessionId}
           liveBrowserSeq={liveBrowserSeq}
           live={live}
@@ -694,8 +718,8 @@ function clock(ms: number): string {
  * than in the way. While one of them is running the line carries it, so a
  * folded turn is still a turn you can watch.
  */
-const StepGroup = memo(function StepGroup({ steps, ...cell }: { steps: Cell[] } & CellContext) {
-  const [open, setOpen] = useState(false);
+const StepGroup = memo(function StepGroup({ steps, unfolded = false, ...cell }: { steps: Cell[]; unfolded?: boolean } & CellContext) {
+  const [open, setOpen] = useState(unfolded);
   const running = cell.open && steps.some((s) => stepStatus(s) === "running");
   // Marked running in a turn that is over: it never reported back. Saying
   // "running" forever would be a lie.
@@ -740,13 +764,13 @@ const StepGroup = memo(function StepGroup({ steps, ...cell }: { steps: Cell[] } 
 
 /** A run of cells: commands folded together, everything else as it was. */
 const StepRun = memo(function StepRun({
-  cells, activeKey, ...cell
-}: { cells: Cell[]; activeKey: string | null } & CellContext) {
+  cells, activeKey, unfolded = false, ...cell
+}: { cells: Cell[]; activeKey: string | null; /** Commands start open: the work area is for looking at them. */ unfolded?: boolean } & CellContext) {
   return (
     <>
       {turnItems(cells).map((item) =>
         item.kind === "steps" ? (
-          <StepGroup key={item.key} steps={item.cells} {...cell} />
+          <StepGroup key={item.key} steps={item.cells} unfolded={unfolded} {...cell} />
         ) : (
           <CellView
             key={item.key}
@@ -763,6 +787,74 @@ const StepRun = memo(function StepRun({
 function OfficeStage({ sessionId, kind }: { sessionId: string; kind: OfficeKind }) {
   return <Suspense fallback={null}><OfficeWindow sessionId={sessionId} kind={kind} phone /></Suspense>;
 }
+
+/**
+ * The work area's feed, on a desktop: what the agent looked at and did, as it happens -- commands, pages, pictures,
+ * the files it made, changes to code, widgets and every other tool -- in the window beside the conversation, newest
+ * at the bottom and followed while it is. The conversation beside it keeps only the talking (`chatOnly`).
+ */
+export const WorkFeed = memo(function WorkFeed({
+  buckets, busy, doing, sessionId, liveBrowserSeq, browserOpen, live, phase, onPermissionDecide, ...work
+}: {
+  buckets: Bucket[];
+  busy: boolean;
+  doing?: string | null;
+  sessionId: string;
+  liveBrowserSeq: number | null;
+  /** The page is shown in its own window beside this one, so its card is not repeated here. */
+  browserOpen: boolean;
+  live: boolean;
+  phase: MarkPhase;
+  onPermissionDecide?: (requestId: string, approved: boolean, response?: string) => void;
+} & WorkState) {
+  const scroller = useRef<HTMLDivElement>(null);
+  const follow = useRef(true);
+  const rows = useMemo(
+    () => buckets
+      .map((b) => ({ b, cells: b.cells.filter((c) => isWorkCell(c) && !(browserOpen && c.kind === "screen" && c.source === "browser")) }))
+      .filter((r) => r.cells.length > 0),
+    [buckets, browserOpen],
+  );
+  const latest = rows.length > 0 ? rows[rows.length - 1].cells.length : 0;
+  // Followed while the person is at the bottom; scrolling up lets go.
+  useEffect(() => {
+    const el = scroller.current;
+    if (el && follow.current) el.scrollTop = el.scrollHeight;
+  }, [rows.length, latest, buckets]);
+  const onScroll = () => {
+    const el = scroller.current;
+    if (el) follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+  };
+  return (
+    <div className="work-feed" ref={scroller} onScroll={onScroll}>
+      {busy && doing && (
+        <div className="work-feed-doing" aria-live="polite">
+          <span className="working-mark" aria-hidden="true">{phaseGlyph(phase)}</span>
+          <span>{doing}</span>
+        </div>
+      )}
+      {rows.length === 0 && <p className="work-feed-empty">What the agent looks at and does shows up here as it happens.</p>}
+      {rows.map(({ b, cells }) => (
+        <section className="work-feed-turn" key={b.seq}>
+          {b.prompt && <h4 className="work-feed-prompt" title={b.prompt}>{b.prompt}</h4>}
+          <StepRun
+            cells={cells}
+            activeKey={null}
+            unfolded
+            sessionId={sessionId}
+            liveBrowserSeq={liveBrowserSeq}
+            live={live}
+            docked=""
+            open={b.open}
+            phase={phase}
+            onPermissionDecide={onPermissionDecide}
+            {...work}
+          />
+        </section>
+      ))}
+    </div>
+  );
+});
 
 const CellView = memo(function CellView({
   cell,

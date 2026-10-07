@@ -16,7 +16,7 @@ import { emitOfficePush, resetOffice, setOfficeState, useOfficeState, type Offic
 import { resetDesk, setDeskState, useDeskState } from "./lib/pdfdesk";
 import { resetCollab, setCollabState } from "./lib/collab";
 import { cellKey, dockedPlan, usePhone } from "./lib/stage";
-import { Thread } from "./components/Thread";
+import { Thread, WorkFeed, hasWork } from "./components/Thread";
 import { Dock } from "./components/Dock";
 import { Rail, pageLabel, PAGES, type PageId } from "./components/Rail";
 import { isSystemTab, type SystemTab } from "./lib/systemTabs";
@@ -112,7 +112,7 @@ const EVENT_BATCH_MS = 66;
 const LIBRARY_TABS: LibraryTab[] = ["notebooks", "files"];
 
 /** The windows that can sit beside the chat on a wide screen, one at a time. */
-type SideWindow = "app" | "pdf" | "pages" | "sheets" | "slides" | "browser";
+type SideWindow = "app" | "pdf" | "pages" | "sheets" | "slides" | "browser" | "work";
 
 /**
  * The Office windows that can be open beside the chat, one per app, in the order their tabs sit in. Each has its
@@ -1313,7 +1313,11 @@ export function App() {
      has picked a tab, and their pick sticks until that window is put away. The browser is live work in front of
      the person, so it takes the window while it is open; the document is back the moment it is put away. */
   const [pickedWindow, setPickedWindow] = useState<SideWindow | null>(null);
+  /* On a desktop what the agent looks at and does is shown in the work area, not in the conversation (a phone has one
+     column and keeps it all in the thread): the Activity tab is there as soon as there is anything to show. */
+  const workOn = useMemo(() => !phoneLayout && hasWork(view.buckets), [phoneLayout, view.buckets]);
   const openWindows: Array<{ pane: SideWindow; since: number }> = [
+    ...(workOn ? [{ pane: "work" as const, since: 0 }] : []),
     ...(preview.open ? [{ pane: "app" as const, since: preview.since ?? 0 }] : []),
     ...(desk.open ? [{ pane: "pdf" as const, since: desk.since ?? 0 }] : []),
     ...OFFICE_PANES.flatMap((o) => {
@@ -1331,6 +1335,7 @@ export function App() {
      they do not move about, and shown even when there is only one -- a window never disappears from under the
      person. Every window that is open stays mounted (see below), so a tab is never a reload. */
   const sideWindows: Array<{ pane: SideWindow; label: string }> = [
+    ...(workOn ? [{ pane: "work" as const, label: "Activity" }] : []),
     ...(desk.open ? [{ pane: "pdf" as const, label: "PDF" }] : []),
     ...OFFICE_PANES.filter((o) => openWindows.some((w) => w.pane === o.pane)).map((o) => ({ pane: o.pane, label: o.label })),
     ...(browser?.open ? [{ pane: "browser" as const, label: "Browser" }] : []),
@@ -1777,6 +1782,7 @@ export function App() {
               while it waits on you. Barely there, and still when away. */}
           <div className={`mood-light is-${mood}`} aria-hidden="true" />
           <Thread
+            chatOnly={!phoneLayout}
             buckets={view.buckets}
             // Stopped on a question is not working; the card says what it is.
             busy={view.busy && !view.asking}
@@ -2261,6 +2267,26 @@ export function App() {
             )}
             {/* Every window that is open stays mounted, and only the chosen one is shown: switching tabs neither
                 reloads the page in one window nor restarts another's editor, and nothing is put away. */}
+            {workOn && sessionId && (
+              <aside className="app-pane" data-pane="work" hidden={sidePane !== "work"} aria-label="What the agent is looking at and doing">
+                <WorkFeed
+                  buckets={view.buckets}
+                  busy={view.busy && !view.asking}
+                  doing={doing}
+                  sessionId={sessionId}
+                  liveBrowserSeq={view.liveBrowserSeq}
+                  browserOpen={browser?.open === true}
+                  live={live}
+                  phase={reading.phase}
+                  onPermissionDecide={handlePermissionDecide}
+                  driving={driving}
+                  browserHandedOver={browserHandedOver}
+                  onStop={stopFromThread}
+                  onOpenMind={openKnowledge}
+                  onOpenSettings={openModelSettings}
+                />
+              </aside>
+            )}
             {browser?.open && sessionId && (
               <aside className="app-pane" data-pane="browser" hidden={sidePane !== "browser"} aria-label="The browser the agent is driving">
                 <ScreencastCell

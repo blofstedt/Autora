@@ -2267,7 +2267,7 @@ label + .jf-hint { margin-top: -5px; }
 @media (min-width: 1180px) {
   .app { flex-direction: row; }
   .rail-slot {
-    display: flex; flex: 0 0 232px; min-height: 0;
+    display: flex; flex: 0 0 196px; min-height: 0;
     border-right: 1px solid var(--border);
   }
   /* The header's job is done by the rail on this width: the wordmark, the
@@ -3382,7 +3382,7 @@ label + .jf-hint { margin-top: -5px; }
   .session-name { max-width: 520px; }
 
   /* Slim: the work window on the right gets the room. */
-  .rail-slot { flex-basis: clamp(228px, 16vw, 252px); }
+  .rail-slot { flex-basis: clamp(184px, 12.5vw, 204px); }
   .rail-act { font-size: calc(13px * var(--ts, 1)); }
 }
 
@@ -6752,3 +6752,54 @@ body.is-resizing iframe { pointer-events: none; }
 .ss-submit-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
 .ss-injects { display: flex; align-items: center; gap: 6px; font-size: calc(11.5px * var(--ts, 1)); color: var(--text-3); }
 .ss-submit { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; }
+
+/* ============================================================================
+   Desktop: a compact message box, and the work area's feed
+   ============================================================================ */
+@media (pointer: fine) {
+  .composer { padding: 2px 14px 6px; }
+  .composer-box { gap: 2px; padding: 8px 8px 5px 14px; border-radius: 16px; }
+  .composer textarea { min-height: 22px; font-size: calc(14px * var(--ts, 1)); line-height: 1.45; padding-top: 0; }
+  .composer-send { width: 30px; height: 30px; }
+  .composer-tools .btn.icon { width: 28px; height: 28px; }
+  .composer-tools .composer-strip .btn.icon { min-width: 28px; }
+  .composer-hint { display: none; }
+}
+
+/* What the agent looks at and does, beside the conversation (WorkFeed). */
+.work-feed { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; padding: 14px 18px 28px; display: flex; flex-direction: column; gap: 14px; background: var(--bg); }
+.work-feed-turn { display: flex; flex-direction: column; gap: 10px; }
+.work-feed-prompt {
+  margin: 0; font-size: calc(11.5px * var(--ts, 1)); font-weight: 600; letter-spacing: 0.02em; color: var(--text-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.work-feed-doing { position: sticky; top: -14px; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: var(--r-pill); background: var(--s2); border: 1px solid var(--border); font-size: calc(12.5px * var(--ts, 1)); color: var(--text-2); align-self: flex-start; max-width: 100%; }
+.work-feed-empty { margin: 40px auto; max-width: 280px; text-align: center; font-size: calc(13px * var(--ts, 1)); color: var(--text-3); }
+
+/* Desktop menu, slimmest: the widgets stack, and say their words at the size the menu's own options do. */
+.rail:not(.is-drawer) { --rail-fs: calc(13.5px * var(--ts, 1)); }
+.rail:not(.is-drawer) .rail-nav-item { padding: 8px 10px; gap: 10px; font-size: var(--rail-fs); }
+.rail:not(.is-drawer) .rail-act-row { padding: 6px 10px; font-size: var(--rail-fs); }
+.rail:not(.is-drawer) .rail-foot { gap: 6px; padding-top: 10px; }
+.rail:not(.is-drawer) .rail-ctx,
+.rail:not(.is-drawer) .rail-mem,
+.rail:not(.is-drawer) .rail-vitals { padding: 8px 10px; }
+.rail:not(.is-drawer) .rail-ctx { gap: 10px; }
+.rail:not(.is-drawer) .rail-ctx-ring { width: 38px; height: 38px; }
+.rail:not(.is-drawer) .rail-ctx-head,
+.rail:not(.is-drawer) .rail-ctx-line,
+.rail:not(.is-drawer) .rail-ctx-sub,
+.rail:not(.is-drawer) .rail-mem-head,
+.rail:not(.is-drawer) .rail-mem-title,
+.rail:not(.is-drawer) .rail-mem-ask,
+.rail:not(.is-drawer) .rail-mem-ask .btn,
+.rail:not(.is-drawer) .rail-vital-label,
+.rail:not(.is-drawer) .rail-vital-value,
+.rail:not(.is-drawer) .rail-vital-detail { font-size: var(--rail-fs); }
+.rail:not(.is-drawer) .rail-ctx-head { letter-spacing: 0.02em; text-transform: none; }
+.rail:not(.is-drawer) .rail-mem-ask .btn { height: 26px; }
+/* The machine's three bars, one under the other: label and figure on a line, the bar under it. */
+.rail:not(.is-drawer) .rail-vitals { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.rail:not(.is-drawer) .rail-vital { gap: 3px; }
+.rail:not(.is-drawer) .rail-vital-bar { height: 4px; }
+.rail:not(.is-drawer) .rail-vital-detail { display: none; }
