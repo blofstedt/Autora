@@ -97,13 +97,14 @@ export function pointIn(box: { x: number; y: number; w: number; h: number }): Po
 }
 
 /** Travel the pointer along a humanlike path, at a varying pace. */
-export async function humanMove(page: Page, from: Point, to: Point): Promise<Point> {
+export async function humanMove(page: Page, from: Point, to: Point, tick?: () => void): Promise<Point> {
   const path = humanPath(from, to);
   // Overall speed varies per move: some people are brisk, some are not.
   const pace = rand(0.7, 1.4);
   for (let i = 0; i < path.length; i++) {
     const p = path[i];
     await page.mouse.move(p.x, p.y);
+    tick?.();
     // Slower at the start and the end of a stroke, faster through the middle.
     const t = i / path.length;
     const edge = 1 + 1.6 * Math.abs(t - 0.5);
@@ -117,9 +118,9 @@ export async function humanClick(
   page: Page,
   from: Point,
   to: Point,
-  opts: { button?: "left" | "right" | "middle"; before?: () => Promise<void> } = {},
+  opts: { button?: "left" | "right" | "middle"; before?: () => Promise<void>; tick?: () => void } = {},
 ): Promise<Point> {
-  await humanMove(page, from, to);
+  await humanMove(page, from, to, opts.tick);
   await sleep(rand(70, 240));
   await opts.before?.();
   await page.mouse.down({ button: opts.button ?? "left" });
@@ -145,13 +146,15 @@ export async function wander(page: Page, from: Point, bounds: { width: number; h
 
 /** Type with uneven gaps between keys. Long text goes faster, because nobody
     wants to watch a paragraph typed at forty words a minute. */
-export async function humanType(page: Page, text: string) {
+export async function humanType(page: Page, text: string, tick?: () => void) {
   if (text.length > 120) {
+    tick?.();
     await page.keyboard.type(text, { delay: 8 });
     return;
   }
   for (const ch of text) {
     await page.keyboard.type(ch);
+    tick?.();
     const pause = /[\s.,@]/.test(ch) ? rand(60, 180) : rand(35, 120);
     await sleep(Math.random() < 0.05 ? pause + rand(150, 400) : pause);
   }

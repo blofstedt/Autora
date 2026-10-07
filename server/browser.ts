@@ -732,16 +732,20 @@ async function browserGeo(): Promise<BrowserGeo> {
  * The pointer, drawn into the page.
  *
  * A headless browser has no cursor, so a recording of one clicking is a
- * recording of a page changing for no visible reason. This paints one: a dot
- * that moves where the mouse moves and a ring that expands where it clicks,
- * inside a shadow root so the page cannot restyle it and `pointer-events:
- * none` so it cannot intercept the click it is illustrating.
+ * recording of a page changing for no visible reason. This paints one: the same
+ * arrow and "Autora" tag the Office windows use (src/components/OfficeCursor.tsx),
+ * so the agent looks the same in every tool. It is driven by the real input, not
+ * by a guess at it: the arrow follows each genuine mouse move, presses when the
+ * button goes down and ripples at that moment, shows "typing" while keys are
+ * really being struck and "scrolling" while the wheel really turns. It sits in a
+ * shadow root so the page cannot restyle it and `pointer-events: none` so it
+ * cannot intercept the click it is illustrating.
  *
  * Marked `data-autora` and skipped by the element scan below, so it never
  * appears in what the model reads -- a cursor that the agent could click on
  * would be a very funny bug to debug.
  */
-const CURSOR_SCRIPT = `
+export const CURSOR_SCRIPT = `
 (() => {
   // Init scripts run in every frame; one pointer, drawn over the whole page,
   // is the one that belongs to the top frame.
@@ -756,13 +760,20 @@ const CURSOR_SCRIPT = `
     const root = host.attachShadow({ mode: "closed" });
     root.innerHTML =
       '<style>' +
-      '.dot{position:fixed;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;' +
-      'background:rgba(139,124,246,.9);box-shadow:0 0 0 2px rgba(255,255,255,.9),0 2px 10px rgba(0,0,0,.45);' +
-      'transition:left .06s linear,top .06s linear;opacity:0}' +
-      '.ring{position:fixed;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;' +
-      'border:2px solid rgba(139,124,246,.95);opacity:0}' +
-      '@keyframes tap{from{transform:scale(.4);opacity:.95}to{transform:scale(4.2);opacity:0}}' +
-      '.ring.go{animation:tap .45s ease-out forwards}' +
+      '.cur{position:fixed;left:0;top:0;opacity:0;will-change:transform;transition:transform .07s linear,opacity .25s}' +
+      '.cur svg{display:block;transform-origin:1px 1px;transition:transform .09s ease-out;' +
+      'filter:drop-shadow(0 1px 2px rgba(0,0,0,.35))}' +
+      '.cur.down svg{transform:scale(.82)}' +
+      '.tag{position:absolute;left:14px;top:14px;padding:1px 6px;border-radius:8px;background:#7c5cff;color:#fff;' +
+      'font:600 10px/14px Inter,system-ui,sans-serif;white-space:nowrap;transition:background .15s}' +
+      '.cur.typing .tag{background:#5b3fe0}' +
+      '.cur.typing .tag::after{content:"";display:inline-block;width:0;height:10px;margin-left:4px;vertical-align:-1px;' +
+      'border-right:2px solid #fff;animation:blink .7s steps(1) infinite}' +
+      '@keyframes blink{50%{opacity:0}}' +
+      '.ring{position:fixed;width:28px;height:28px;margin:-14px 0 0 -14px;border-radius:50%;' +
+      'border:2px solid #7c5cff;opacity:0}' +
+      '@keyframes tap{from{transform:scale(.4);opacity:1}to{transform:scale(1.8);opacity:0}}' +
+      '.ring.go{animation:tap .42s ease-out forwards}' +
       '.mark{position:fixed;box-sizing:border-box;border:2px solid rgba(139,124,246,.95);border-radius:4px;' +
       'background:rgba(139,124,246,.14);box-shadow:0 0 0 4px rgba(139,124,246,.28);' +
       'animation:markin .22s ease-out,markout .4s ease-in 1.2s forwards}' +
@@ -771,21 +782,37 @@ const CURSOR_SCRIPT = `
       '.mark.low span{top:auto;bottom:-22px}' +
       '@keyframes markin{from{opacity:0;transform:scale(1.04)}to{opacity:1;transform:scale(1)}}' +
       '@keyframes markout{to{opacity:0}}' +
-      '</style><div class="dot"></div><div class="ring"></div>';
-    const dot = root.querySelector(".dot");
+      '</style>' +
+      '<div class="ring"></div>' +
+      '<div class="cur"><svg width="16" height="20" viewBox="0 0 16 20">' +
+      '<path d="M1 1 L1 15 L5 11.5 L8 18 L10.5 17 L7.5 10.5 L13 10.5 Z" fill="#7c5cff" stroke="#fff" ' +
+      'stroke-width="1.2" stroke-linejoin="round"/></svg><span class="tag">Autora</span></div>';
+    const cur = root.querySelector(".cur");
+    const tag = root.querySelector(".tag");
     const ring = root.querySelector(".ring");
     document.body.appendChild(host);
+    let ringAt = 0;
+    let doing = null;
+    const say = (cls, text, ms) => {
+      tag.textContent = text;
+      cur.classList.toggle("typing", cls === "typing");
+      clearTimeout(doing);
+      doing = setTimeout(() => { tag.textContent = "Autora"; cur.classList.remove("typing"); }, ms);
+    };
+    const ripple = (x, y) => {
+      // A press and the tap that announces it are one click: once.
+      if (Date.now() - ringAt < 220) return;
+      ringAt = Date.now();
+      ring.style.left = x + "px";
+      ring.style.top = y + "px";
+      ring.classList.remove("go");
+      void ring.offsetWidth;
+      ring.classList.add("go");
+    };
     window.__autoraCursor = (x, y, tap) => {
-      dot.style.left = x + "px";
-      dot.style.top = y + "px";
-      dot.style.opacity = "1";
-      if (tap) {
-        ring.style.left = x + "px";
-        ring.style.top = y + "px";
-        ring.classList.remove("go");
-        void ring.offsetWidth;
-        ring.classList.add("go");
-      }
+      cur.style.transform = "translate(" + x + "px," + y + "px)";
+      cur.style.opacity = "1";
+      if (tap) ripple(x, y);
     };
     // An outline round something that just changed, named, gone after a moment.
     window.__autoraMark = (x, y, w, h, label) => {
@@ -801,12 +828,28 @@ const CURSOR_SCRIPT = `
       root.appendChild(box);
       setTimeout(() => box.remove(), 1700);
     };
-    /* Follow the real pointer. The agent moves the mouse with genuine input
-       events along a curved path, so the dot tracks every step of it rather
-       than jumping to where the click will land. */
+    /* Follow the real input. The agent moves the mouse, presses, types and
+       scrolls with genuine input events, so the cursor shows each of them as
+       it happens rather than a summary of them afterwards. */
+    const opt = { capture: true, passive: true };
     window.addEventListener("mousemove", (e) => {
       if (e.isTrusted) window.__autoraCursor(e.clientX, e.clientY, false);
-    }, { capture: true, passive: true });
+    }, opt);
+    window.addEventListener("mousedown", (e) => {
+      if (!e.isTrusted) return;
+      window.__autoraCursor(e.clientX, e.clientY, false);
+      cur.classList.add("down");
+      ripple(e.clientX, e.clientY);
+    }, opt);
+    window.addEventListener("mouseup", (e) => {
+      if (e.isTrusted) cur.classList.remove("down");
+    }, opt);
+    window.addEventListener("keydown", (e) => {
+      if (e.isTrusted && !e.metaKey && !e.ctrlKey) say("typing", "Autora", 900);
+    }, opt);
+    window.addEventListener("wheel", (e) => {
+      if (e.isTrusted) say("scroll", "Autora · scrolling", 700);
+    }, opt);
   };
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", mount);
@@ -2995,7 +3038,7 @@ export class LiveBrowser {
         await page.evaluate(SELECT_FIELD_SCRIPT(ref)).catch(() => undefined);
         // A person's typing rhythm for whoever is watching; nobody watching,
         // it is typed straight in.
-        if (this.hooks.watchers() > 0) await humanType(page, text);
+        if (this.hooks.watchers() > 0) await humanType(page, text, () => this.touched());
         else await page.keyboard.type(text);
         let held = await this.valueOf(ref);
         /* A field that swallowed the typing (a script that rebuilds it on
@@ -3681,9 +3724,8 @@ export class LiveBrowser {
         return;
       }
       await this.showCursor(this.pointer.x, this.pointer.y, false);
-      this.pointer = await humanClick(page, this.pointer, to, {
-        before: () => this.showCursor(to.x, to.y, true),
-      });
+      // The ripple is played by the page when the button really goes down, not announced ahead of it.
+      this.pointer = await humanClick(page, this.pointer, to, { tick: () => this.touched() });
     } catch (err) {
       /* A button that closes its own window -- "Approve" in a sign-in popup
          -- can take the page down before the mouse-up is acknowledged, and
@@ -3948,15 +3990,15 @@ export class LiveBrowser {
           type: "png",
         }),
       click: async (at: Point) => {
-        this.pointer = await humanMove(page, this.pointer, at);
+        this.pointer = await humanMove(page, this.pointer, at, () => this.touched());
         await this.humanClickAt(at, true);
       },
       // A text CAPTCHA is answered by typing into its box: click into it the
       // way a hand would, then type the characters at a human speed.
       type: async (text: string, at: Point) => {
-        this.pointer = await humanMove(page, this.pointer, at);
+        this.pointer = await humanMove(page, this.pointer, at, () => this.touched());
         await this.humanClickAt(at, true);
-        await humanType(page, text);
+        await humanType(page, text, () => this.touched());
       },
       drag: (from: Point, to: Point) => this.dragAt(from, to),
       passed: async () => {
@@ -3987,7 +4029,7 @@ export class LiveBrowser {
     const page = this.page;
     if (!page) return;
     await this.showCursor(this.pointer.x, this.pointer.y, false);
-    this.pointer = await humanMove(page, this.pointer, from);
+    this.pointer = await humanMove(page, this.pointer, from, () => this.touched());
     await this.showCursor(from.x, from.y, true);
     await page.mouse.move(from.x, from.y);
     await page.mouse.down();
@@ -3995,7 +4037,7 @@ export class LiveBrowser {
       await page.mouse.move(at.x, at.y);
       await page.waitForTimeout(8 + Math.random() * 14);
     }
-    this.pointer = await humanMove(page, this.pointer, to);
+    this.pointer = await humanMove(page, this.pointer, to, () => this.touched());
     await page.mouse.up();
     await this.settle(140);
   }
@@ -4128,6 +4170,8 @@ export class LiveBrowser {
   }
 
   private async showCursor(x: number, y: number, tap: boolean) {
+    // The pointer is on screen: frames come at the faster rate so it is seen travelling, not arriving.
+    this.touched();
     await this.page
       ?.evaluate(
         `(() => { if (window.__autoraCursorMount) window.__autoraCursorMount();

@@ -2267,7 +2267,7 @@ label + .jf-hint { margin-top: -5px; }
 @media (min-width: 1180px) {
   .app { flex-direction: row; }
   .rail-slot {
-    display: flex; flex: 0 0 300px; min-height: 0;
+    display: flex; flex: 0 0 232px; min-height: 0;
     border-right: 1px solid var(--border);
   }
   /* The header's job is done by the rail on this width: the wordmark, the
@@ -3381,8 +3381,8 @@ label + .jf-hint { margin-top: -5px; }
   .top .session-btn:hover { background: var(--s2); border-color: var(--border); }
   .session-name { max-width: 520px; }
 
-  /* Wide enough for the memory graph docked square at its foot. */
-  .rail-slot { flex-basis: clamp(300px, 22vw, 340px); }
+  /* Slim: the work window on the right gets the room. */
+  .rail-slot { flex-basis: clamp(228px, 16vw, 252px); }
   .rail-act { font-size: calc(13px * var(--ts, 1)); }
 }
 
@@ -4117,9 +4117,10 @@ html[data-font="mono"] body { font-size: calc(13.5px * var(--ts, 1)); }
   .rail:not(.is-drawer) .rail-foot { gap: 10px; padding-top: 18px; }
   .rail:not(.is-drawer) .rail-ctx,
   .rail:not(.is-drawer) .rail-mem,
-  .rail:not(.is-drawer) .rail-vitals { padding: 14px 16px; }
-  .rail:not(.is-drawer) .rail-ctx { gap: 14px; }
-  .rail:not(.is-drawer) .rail-ctx-ring { width: 62px; height: 62px; }
+  .rail:not(.is-drawer) .rail-vitals { padding: 12px 12px; }
+  .rail:not(.is-drawer) .rail-vitals { gap: 8px; }
+  .rail:not(.is-drawer) .rail-ctx { gap: 12px; }
+  .rail:not(.is-drawer) .rail-ctx-ring { width: 54px; height: 54px; }
   .rail:not(.is-drawer) .rail-ctx-head,
   .rail:not(.is-drawer) .rail-mem-head,
   .rail:not(.is-drawer) .rail-vital-label { font-size: calc(12px * var(--ts, 1)); }
@@ -4129,9 +4130,9 @@ html[data-font="mono"] body { font-size: calc(13.5px * var(--ts, 1)); }
   .rail:not(.is-drawer) .rail-mem-title { font-size: calc(14.5px * var(--ts, 1)); -webkit-line-clamp: 3; }
   .rail:not(.is-drawer) .rail-mem-ask { font-size: calc(12.5px * var(--ts, 1)); }
   .rail:not(.is-drawer) .rail-mem-ask .btn { height: 28px; font-size: calc(12.5px * var(--ts, 1)); }
-  .rail:not(.is-drawer) .rail-vitals { gap: 14px; }
+  .rail:not(.is-drawer) .rail-vitals { gap: 9px; }
   .rail:not(.is-drawer) .rail-vital { gap: 6px; }
-  .rail:not(.is-drawer) .rail-vital-value { font-size: calc(14px * var(--ts, 1)); }
+  .rail:not(.is-drawer) .rail-vital-value { font-size: calc(13px * var(--ts, 1)); }
   .rail:not(.is-drawer) .rail-vital-bar { height: 6px; }
   .rail:not(.is-drawer) .rail-vital-detail { font-size: calc(11.5px * var(--ts, 1)); }
   .rail:not(.is-drawer) .rail-act-row { padding: 8px 10px; font-size: calc(13px * var(--ts, 1)); }
@@ -4145,8 +4146,8 @@ html[data-font="mono"] body { font-size: calc(13.5px * var(--ts, 1)); }
   .rail:not(.is-drawer) .rail-foot { gap: 12px; }
   .rail:not(.is-drawer) .rail-ctx,
   .rail:not(.is-drawer) .rail-mem,
-  .rail:not(.is-drawer) .rail-vitals { padding: 16px 18px; }
-  .rail:not(.is-drawer) .rail-ctx-ring { width: 70px; height: 70px; }
+  .rail:not(.is-drawer) .rail-vitals { padding: 13px 13px; }
+  .rail:not(.is-drawer) .rail-ctx-ring { width: 58px; height: 58px; }
   .rail:not(.is-drawer) .rail-ctx-line { font-size: calc(16px * var(--ts, 1)); }
   .rail:not(.is-drawer) .rail-ctx-sub,
   .rail:not(.is-drawer) .rail-mem-ask { font-size: calc(13px * var(--ts, 1)); }
@@ -6033,7 +6034,8 @@ button.dock-card:hover { border-color: var(--border-strong); }
    a readable column on the left. */
 .chat-view.has-app { flex-direction: row; }
 .chat-view.has-app > .page {
-  flex: 0 0 var(--chat-w, clamp(380px, 36%, 540px)); width: auto; margin: 0; min-width: 0;
+  /* 36% of the room beside the menu as it used to be (300-340px wide), so slimming the menu leaves the chat as it was. */
+  flex: 0 0 var(--chat-w, clamp(380px, calc((100vw - clamp(300px, 22vw, 340px)) * 0.36), 540px)); width: auto; margin: 0; min-width: 0;
   /* Whatever the person drags it to, the window beside it keeps room to be used. */
   max-width: calc(100% - 320px);
   border-left: 0;
@@ -6368,6 +6370,13 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
   position: absolute; left: 14px; top: 14px; padding: 1px 6px; border-radius: 8px; background: #7c5cff; color: #fff;
   font: 600 10px/14px Inter, system-ui, sans-serif; white-space: nowrap;
 }
+.office-cursor-arrow { transform-origin: 1px 1px; transition: transform 0.09s ease-out; }
+.office-cursor.is-press .office-cursor-arrow { transform: scale(0.82); }
+.office-cursor.is-type .office-cursor-name { background: #5b3fe0; }
+.office-cursor.is-type .office-cursor-name::after {
+  content: ""; display: inline-block; width: 0; height: 10px; margin-left: 4px; vertical-align: -1px;
+  border-right: 2px solid #fff; animation: office-blink 0.7s steps(1) infinite;
+}
 .office-ghost {
   position: absolute; box-sizing: border-box; padding: 1px 3px; border-radius: 3px; overflow: hidden;
   box-shadow: 0 0 0 2px rgba(124, 92, 255, 0.6); line-height: 1.3; white-space: pre-wrap; overflow-wrap: anywhere;
@@ -6540,7 +6549,7 @@ body.is-resizing iframe { pointer-events: none; }
 @media (min-width: 1180px) {
   .pane-handle.is-rail { display: block; }
   .pane-handle.is-chat { display: block; }
-  .rail-slot { flex-basis: var(--rail-w, clamp(300px, 22vw, 340px)); }
+  .rail-slot { flex-basis: var(--rail-w, clamp(228px, 16vw, 252px)); }
   /* Folded away: the menu button and the mark are back in the header, at the far left. */
   .app.rail-collapsed .rail-slot, .app.rail-collapsed .pane-handle.is-rail { display: none; }
 }

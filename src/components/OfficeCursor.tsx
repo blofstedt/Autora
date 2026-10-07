@@ -45,6 +45,8 @@ export function OfficeCursor({
   const [ghost, setGhost] = useState<Ghost | null>(null);
   const [ring, setRing] = useState<Point | null>(null);
   const [gone, setGone] = useState(false);
+  /** What the cursor is doing right now, shown the way the browser's pointer shows it. */
+  const [doing, setDoing] = useState<"" | "press" | "type">("");
   const done = useRef(onDone);
   done.current = onDone;
   const layer = useRef<HTMLDivElement>(null);
@@ -119,12 +121,16 @@ export function OfficeCursor({
         await sleep(restMs());
         // The click is the agent's, in the editor: the cell is selected, the caret sits in the word.
         setRing(target);
+        setDoing("press");
         await hit.current(target).catch(() => null);
-        await sleep(420);
+        await sleep(160);
+        setDoing("");
+        await sleep(260);
         setRing(null);
         if (cue.act === "point") continue;
         // Only a cell has a field of its own to type into (its editor or the formula bar). A document's words are not
         // typed: the editor would edit the file a second time, on top of the change the agent's tool already made.
+        setDoing("type");
         const took = cue.cell ? await write(cue.text) : false;
         if (!alive()) return;
         if (!took) {
@@ -144,6 +150,7 @@ export function OfficeCursor({
           // The editor is showing them itself: give the person a moment to read what the agent typed.
           await sleep(Math.min(1800, 320 + cue.text.length * 30));
         }
+        setDoing("");
         await leave.current().catch(() => null);
         await sleep(180);
       }
@@ -153,7 +160,7 @@ export function OfficeCursor({
       done.current();
     })();
 
-    return () => { dead = true; setGhost(null); setRing(null); setCursor(null); };
+    return () => { dead = true; setGhost(null); setRing(null); setCursor(null); setDoing(""); };
   }, [cues, seq]);
 
   // Where it is on screen, for the line the agent says beside it.
@@ -168,8 +175,8 @@ export function OfficeCursor({
     <div ref={layer} className="office-cursor-layer" aria-hidden="true" data-office-cursor={gone ? "gone" : "on"}>
       {ghost && <GhostText ghost={ghost} />}
       {ring && <span className="office-click" style={{ left: ring.x - 14, top: ring.y - 14 }} />}
-      <div className="office-cursor" style={{ transform: `translate(${cursor.x}px, ${cursor.y}px)`, opacity: gone ? 0 : 1 }}>
-        <svg width="16" height="20" viewBox="0 0 16 20" style={{ display: "block", filter: "drop-shadow(0 1px 2px rgba(0,0,0,.35))" }}>
+      <div className={`office-cursor${doing ? ` is-${doing}` : ""}`} style={{ transform: `translate(${cursor.x}px, ${cursor.y}px)`, opacity: gone ? 0 : 1 }}>
+        <svg width="16" height="20" viewBox="0 0 16 20" className="office-cursor-arrow" style={{ display: "block", filter: "drop-shadow(0 1px 2px rgba(0,0,0,.35))" }}>
           <path d="M1 1 L1 15 L5 11.5 L8 18 L10.5 17 L7.5 10.5 L13 10.5 Z" fill="#7c5cff" stroke="#fff" strokeWidth="1.2" strokeLinejoin="round" />
         </svg>
         <span className="office-cursor-name">Autora</span>

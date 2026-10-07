@@ -245,6 +245,9 @@ Spectra's fetched renderer is most of what is on disk.
     `app_preview` click/hover/type/press/scroll use the page as a person would,
     in the window the person is watching, and are refused while planning.
     All of it follows the one agent-cursor switch (`state.agentCursor`).
+  - The browser's pointer (`CURSOR_SCRIPT` in `browser.ts`) wears the Office cursor's arrow and name and is driven by the
+    real input events (move, press, keys, wheel), not by announcements; the stream runs at its faster rate while the
+    agent moves it (`touched()`). `tests/browser-cursor.test.ts`.
   - `companion.ts`: when no turn is running and nobody is mid-task, the agent
     says one short line about what the person just did in a shared window
     (`agent.remark`, shown in the thread and kept in its history as its own words).
