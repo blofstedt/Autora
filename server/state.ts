@@ -259,6 +259,9 @@ export interface PersistedState {
   /** Which tools' output the model has been reading, this month. */
   toolFeed: ToolFeed;
   usage: UsageEntry[];
+  /** One-off corrections already applied to `usage`, by name, stamped with the
+      second they were applied. See PRICE_REPAIRS. */
+  repairs: Record<string, number>;
   /** Which of the agent's groups of tools are on, and how tightly each is
       gated. See ./tools for what each group actually is. */
   tools: ToolSettings;
@@ -514,6 +517,7 @@ function blank(): PersistedState {
     topUps: {},
     toolFeed: { month: "", tools: {} },
     usage: [],
+    repairs: {},
     tools: defaultTools(),
     mcpServers: [],
     appearance: {
@@ -534,6 +538,56 @@ function blank(): PersistedState {
     automation: { ...AUTOMATION_DEFAULTS },
     push: defaultPush(),
   };
+}
+
+/* Corrections to spend already on the books. Each is applied once, as the file
+   is read, and stamped in `repairs` so it can never be applied twice. None of
+   them can raise a figure, only lower one that was wrong.
+
+   cache-price-2026-10: a turn's cached input was priced from the vendor's own
+   catalogue before the catalogue's cache-read price was read at all (the
+   reader was fixed in 0.9.158), so every token the provider served from its
+   prompt cache was charged as a fresh one. Orca Router publishes
+   tencent/hy4-preview's cache reads at $0.042/M against $0.834/M fresh -- its
+   /v1/models, read 2026-10-06 -- so the 87.4M cached Orca tokens recorded on
+   2026-10-05/06 stood at $91.17 while Orca itself charged about $22 (paid in
+   $20.07, balance -$0.31), and the month read $101.45 against a $20 ceiling.
+   Only the cached part of a row is rewritten: the fresh and output parts came
+   from the published price and were right. Rows already folded into the
+   `carried` totals keep no token split to correct, and none of these are
+   among them. */
+export const PRICE_REPAIRS = [
+  { name: "cache-price-2026-10", provider: "orcarouter", model: "tencent/hy4-preview", cachedPerMillion: 0.042 },
+];
+
+export function applyRepairs(next: PersistedState): PersistedState {
+  for (const repair of PRICE_REPAIRS) {
+    if (next.repairs[repair.name]) continue;
+    next.repairs[repair.name] = Math.floor(Date.now() / 1000);
+    let rows = 0;
+    let before = 0;
+    let after = 0;
+    for (const row of next.usage) {
+      if (row.provider !== repair.provider || row.model !== repair.model) continue;
+      if (!row.parts || !row.cached) continue;
+      const corrected = (row.cached * repair.cachedPerMillion) / 1_000_000;
+      /* Only ever downwards: a row that was already right -- priced after the
+         reader was fixed, or from a table that carried the cache rate -- is
+         left exactly as it stands. */
+      if (!(corrected < row.parts.cached)) continue;
+      before += row.parts.cached;
+      row.parts.cached = corrected;
+      row.cost = row.parts.fresh + corrected + row.parts.output;
+      after += corrected;
+      rows += 1;
+    }
+    if (rows) {
+      console.log(
+        `[state] repriced ${rows} ${repair.provider}/${repair.model} turns: cached input $${before.toFixed(2)} -> $${after.toFixed(2)}`,
+      );
+    }
+  }
+  return next;
 }
 
 function read(): PersistedState {
@@ -570,6 +624,7 @@ function read(): PersistedState {
       state.toolFeed = { month: raw.toolFeed.month, tools: { ...raw.toolFeed.tools } };
     }
     if (Array.isArray(raw.usage)) state.usage = raw.usage.filter(sane);
+    if (raw.repairs && typeof raw.repairs === "object") state.repairs = { ...raw.repairs };
     /* Field by field, so a settings file written by an older build -- which
        has no `tools` key at all -- comes up with the defaults rather than with
        an undefined the tool layer would then dereference. Same reason each
@@ -611,7 +666,7 @@ function read(): PersistedState {
         }
       }
     }
-    return state;
+    return applyRepairs(state);
   } catch (err: any) {
     // No file yet, or one edited into nonsense by hand. Either way the app
     // should come up: defaults now, and the first save writes a clean file.

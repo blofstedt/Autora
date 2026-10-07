@@ -949,6 +949,15 @@ export async function listModels(
     const prompt = Number(m.pricing?.prompt);
     const completion = Number(m.pricing?.completion);
     const quoted = Number.isFinite(prompt) && Number.isFinite(completion);
+    /* What a token served from the prompt cache costs, which the same vendors
+       also quote ("input_cache_read", a decimal string per token). Leaving it
+       out is not neutral: readPrice then falls back to the fresh price, so a
+       cache-heavy turn is billed as though every cached token were new. Orca
+       Router's tencent/hy4-preview reads at $0.042/M against $0.834/M fresh --
+       five times its real cost, which is how $22 of Orca spend read as $91 on
+       2026-10-06. */
+    const cacheRead = Number(m.pricing?.input_cache_read);
+    const cacheQuoted = quoted && Number.isFinite(cacheRead) && cacheRead > 0;
     // OpenRouter quotes how much each of its models holds; Orca Router is
     // OpenAI-shaped and quotes it when it does. OpenAI's own /models says
     // neither, and those models get their window from the table instead.
@@ -958,6 +967,7 @@ export async function listModels(
       label: m.name || String(m.id),
       input: quoted ? prompt * 1_000_000 : 0,
       output: quoted ? completion * 1_000_000 : 0,
+      cachedInput: cacheQuoted ? cacheRead * 1_000_000 : undefined,
       priced: quoted,
       window,
       note: window ? `${windowLabel(window)} context` : undefined,

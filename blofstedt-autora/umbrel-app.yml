@@ -133,7 +133,19 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The money bars above the chat field now follow what is actually switched on.
+  Autora was billing cached input as though it were fresh. A provider serves
+  most of a long conversation back from its prompt cache and charges far less
+  for those tokens — Orca Router publishes $0.042 per million for
+  tencent/hy4-preview against $0.834 for tokens it has not seen — and the price
+  catalogue was being read without the cache-read figure at all. Every cached
+  token was therefore charged at the fresh rate: one month of ordinary use read
+  as "$101.45 of $20", when the two vendors had between them charged about $28.
+  The cache-read price is now read from the vendor's own catalogue, and the
+  spend already written down is corrected once, on the first start after this
+  update — only the cached part of a matching row is rewritten, only downwards,
+  never above what the vendor actually charged, and the correction is stamped so
+  it can never be applied to the same ledger twice.
+  Earlier: the money bars above the chat field now follow what is actually switched on.
   Clearing a provider's key -- in Settings, or by emptying its box -- makes
   Autora drop that vendor's remembered balance and tells the open page to read
   the figures again, so the bar for a connection you have just turned off goes
