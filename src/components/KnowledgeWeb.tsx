@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   KIND_COLOR, deleteRecord, edgesFor, fetchKnowledge, patchRecord,
   type Knowledge, type MemoryRecord,
@@ -331,7 +331,6 @@ function Graph({
   const hostRef = useRef<HTMLDivElement>(null);
   const [, tick] = useState(0);
   const [size, setSize] = useState({ w: 900, h: 700 });
-  const fittedRef = useRef("");
   /* True once the reader has moved the map by hand: from then on the frame is
      theirs, and the layout does not touch it. */
   const touchedRef = useRef(false);
@@ -396,28 +395,6 @@ function Graph({
     return () => observer.disconnect();
   }, []);
 
-  // Rebuild only when the set of ids changes, so a re-render does not reset
-  // positions the reader has already made sense of.
-  const ids = data.records.map((r) => r.id).join(",");
-  useEffect(() => {
-    const previous = new Map(nodesRef.current.map((n) => [n.id, n]));
-    nodesRef.current = data.records.map((record, i) => {
-      const old = previous.get(record.id);
-      // Seeded on a spiral rather than at random: the same store lays out the
-      // same way every time, which matters when you come back to it.
-      const angle = i * 2.399;
-      const radius = 24 * Math.sqrt(i + 1);
-      return {
-        id: record.id,
-        record,
-        x: old?.x ?? Math.cos(angle) * radius,
-        y: old?.y ?? Math.sin(angle) * radius,
-        vx: 0, vy: 0,
-        r: (record.pinned ? 11 : 8) + Math.min(record.uses, 6) * 0.9,
-      };
-    });
-  }, [ids, data.records]);
-
   const fit = useCallback(() => {
     const nodes = nodesRef.current;
     if (!nodes.length) return;
@@ -451,15 +428,36 @@ function Graph({
   const fitRef = useRef(fit);
   fitRef.current = fit;
 
-  useEffect(() => {
-    let raf = 0;
-    let alpha = 1;
-    let frames = 0;
-    const byId = () => new Map(nodesRef.current.map((n) => [n.id, n]));
+  /* The layout is worked out before the first paint, not played in front of
+     the reader: the map opens settled and framed, never as a spiral of dots
+     flung outwards while the camera chases them. Rebuilt only when the set of
+     ids changes, so a re-render does not reset positions the reader has already
+     made sense of; nodes already placed start where they were and are relaxed
+     gently, new ones start on a spiral so the same store lays out the same way
+     every time. */
+  const ids = data.records.map((r) => r.id).join(",");
+  useLayoutEffect(() => {
+    const previous = new Map(nodesRef.current.map((n) => [n.id, n]));
+    const nodes: Node[] = data.records.map((record, i) => {
+      const old = previous.get(record.id);
+      const angle = i * 2.399;
+      const radius = 24 * Math.sqrt(i + 1);
+      return {
+        id: record.id,
+        record,
+        x: old?.x ?? Math.cos(angle) * radius,
+        y: old?.y ?? Math.sin(angle) * radius,
+        vx: 0, vy: 0,
+        r: (record.pinned ? 11 : 8) + Math.min(record.uses, 6) * 0.9,
+      };
+    });
+    nodesRef.current = nodes;
+    const index = new Map(nodes.map((n) => [n.id, n]));
 
-    const step = () => {
-      const nodes = nodesRef.current;
-      const index = byId();
+    let alpha = previous.size > 0 ? 0.35 : 1;
+    // Fewer rounds for a very large store: the repulsion is O(n²) per round.
+    const rounds = nodes.length > 600 ? 220 : 650;
+    for (let round = 0; round < rounds && alpha > 0.02; round++) {
       // Repulsion. O(n²), which is the right call for a few hundred nodes and
       // far less code than a quadtree that would never be the bottleneck.
       for (let i = 0; i < nodes.length; i++) {
@@ -467,7 +465,7 @@ function Graph({
           const a = nodes[i], b = nodes[j];
           let dx = b.x - a.x, dy = b.y - a.y;
           let d2 = dx * dx + dy * dy;
-          if (d2 < 1) { dx = (Math.random() - 0.5) * 2; dy = (Math.random() - 0.5) * 2; d2 = 4; }
+          if (d2 < 1) { dx = (i % 7 - 3) / 3 + 0.1; dy = (j % 5 - 2) / 2 + 0.1; d2 = 4; }
           const force = REPULSION / d2;
           const d = Math.sqrt(d2);
           const fx = (dx / d) * force, fy = (dy / d) * force;
@@ -488,31 +486,18 @@ function Graph({
         node.vx -= node.x * 0.0022;     // gentle pull to centre
         node.vy -= node.y * 0.0022;
         node.vx *= 0.82; node.vy *= 0.82;
-        if (dragRef.current?.id === node.id) continue;
         node.x += node.vx * alpha;
         node.y += node.vy * alpha;
       }
       alpha *= 0.994;
-      frames += 1;
-      // Framed while it moves, not half a minute later. The graph sprawls as
-      // it settles, so a fit taken at the start is wrong by the second frame;
-      // it is re-taken as the layout grows, until the reader says otherwise.
-      if (!touchedRef.current && frames % 6 === 0) fitRef.current();
-      // Twice as often as every frame was reconciling a few hundred nodes
-      // twice per frame for no visible gain.
-      if (frames % 2 === 1) tick((t) => t + 1);
-      if (alpha > 0.02) {
-        raf = requestAnimationFrame(step);
-      } else if (fittedRef.current !== ids) {
-        // Settled: frame the whole graph once, so opening the view shows all of
-        // it rather than whatever happens to be near the origin.
-        fittedRef.current = ids;
-        fitRef.current();
-      }
-    };
-    raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
-  }, [ids, edges]);
+    }
+    // Settled: frame the whole graph, centred, before anything is drawn.
+    fitRef.current();
+  }, [ids, edges]); // eslint-disable-line react-hooks/exhaustive-deps -- data.records is what `ids` stands for
+
+  /* A resize (the first measurement of the box included) re-centres the map,
+     until the reader has moved it themselves. */
+  useEffect(() => { if (!touchedRef.current) fit(); }, [fit]);
 
   /** A finger off the map: the pinch is re-anchored, or ends. */
   const release = (pointerId: number) => {

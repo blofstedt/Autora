@@ -9,7 +9,7 @@
  *   npm test
  */
 import assert from "node:assert/strict";
-import { barVendor, creditTotal, spendView, vendorSpendView } from "../src/lib/spend";
+import { barVendor, combineVendorViews, creditTotal, spendView, vendorSpendView } from "../src/lib/spend";
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -289,6 +289,20 @@ test("nothing readable is no bar at all, and the month keeps the slot", () => {
   assert.equal(barVendor([blind]), null);
   assert.equal(barVendor(null), null);
   assert.equal(barVendor([]), null);
+});
+
+test("the combined bar adds each credited vendor and skips balance-only ones", () => {
+  const a = vendorSpendView({ provider: "deepseek", label: "DeepSeek", spent: 6, paid: 10, balance: 4 });
+  const b = vendorSpendView({ provider: "openai", label: "OpenAI", spent: 9, paid: 10, balance: 1 });
+  const c = vendorSpendView({ provider: "gemini", label: "Gemini", spent: null, paid: null, balance: 7 });
+  const total = combineVendorViews([a, b, c]);
+  assert.equal(total.count, 2);
+  assert.equal(total.drawn, 15);
+  assert.equal(total.paid, 20);
+  assert.equal(total.used, 0.75);
+  assert.equal(total.near, false);
+  assert.equal(total.show, true);
+  assert.equal(combineVendorViews([c]).show, false);
 });
 
 console.log(`${passed} passed`);

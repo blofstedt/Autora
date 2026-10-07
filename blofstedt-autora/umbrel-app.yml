@@ -133,15 +133,9 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Smaller to load and quicker to start. The app's main script is a fifth
-  smaller, and the three big windows -- the app preview, the PDF window and the
-  Office documents -- are fetched when you first open one rather than with the
-  page. The PDF window's editor no longer carries a copy of Spectra's source
-  inside Autora: it is fetched from the pinned Spectra release when the image
-  is built, with Autora's few changes applied on top, so the image is the same
-  but the project is not carrying 340,000 lines of someone else's code. The
-  server's source map is no longer shipped, which saves 3 MB. Underneath, more
-  of the server was split into files of its own (the app window, the browser,
-  scheduled jobs, triggers, suggestions and notifications), the close buttons
-  in the app window match the others, and every layer that sits over another
-  has a name.
+  The Memory map opens settled and centred: its layout is worked out before
+  it is drawn, so the stored pieces no longer fly in from the edges. The cost
+  bar over the message box is now one combined bar for every API you pay for,
+  with each API's white logo on it. Tap it and it opens into one bar per API,
+  showing how much of the money in that account has been used, what is left,
+  and what it cost this month.
