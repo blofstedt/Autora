@@ -38,6 +38,7 @@ const MindPage = lazyPage(() => import("./components/pages/MindPage"), "MindPage
 import { LibraryPicker, type LibraryTab } from "./components/LibraryPicker";
 import { ToolsSheet } from "./components/ToolsSheet";
 import { OPEN_NOTEBOOK, type NotebookRef } from "./lib/notebooks";
+import { MONEY_CHANGED } from "./lib/spend";
 import type { Bucket } from "./lib/memory";
 import {
   applyAppearance, cachedAppearance, iconScale, saneAppearance, saveAppearance,
@@ -1433,14 +1434,23 @@ export function App() {
     fetch("/api/usage").then((r) => r.json()).then(setUsage).catch(() => undefined);
   }, []);
 
-  /* The ledger only moves when a turn finishes, so three reads cover it: one
-     at the start, one when a turn ends, and one when the window comes back --
-     the same reason the voice service is re-checked rather than decided once
-     and kept. Each is a single read of a number the server already holds. */
+  /* The ledger only moves when a turn finishes, so the reads that matter are
+     one at the start, one when a turn ends, one when the window comes back, and
+     one when a setting that decides the bars is saved -- the same reason the
+     voice service is re-checked rather than decided once and kept. Each is a
+     single read of a number the server already holds.
+
+     The fourth is the one that was missing: a key taken out of Settings decides
+     which vendors have a line at all, and without it the bar went on showing an
+     account that had just been disconnected until some later turn ended. */
   useEffect(() => {
     readUsage();
     window.addEventListener("focus", readUsage);
-    return () => window.removeEventListener("focus", readUsage);
+    window.addEventListener(MONEY_CHANGED, readUsage);
+    return () => {
+      window.removeEventListener("focus", readUsage);
+      window.removeEventListener(MONEY_CHANGED, readUsage);
+    };
   }, [readUsage]);
 
   useEffect(() => { if (!running) readUsage(); }, [running, readUsage]);

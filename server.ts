@@ -59,7 +59,7 @@ import {
   type ChatMessage, type ChatTurn, type ToolReply,
 } from "./server/llm";
 import { billingSummary, dayKey } from "./server/billing";
-import { refreshAllVendorMoney, refreshVendorMoney, vendorMoneyStale } from "./server/vendor-money";
+import { forgetVendorMoney, refreshAllVendorMoney, refreshVendorMoney, vendorMoneyStale } from "./server/vendor-money";
 import { dropSession, fromDataUrl, getBlob, putBlob } from "./server/blobs";
 import { threeRuntime } from "./server/widgets";
 import { MAX_ARTIFACT_BYTES, saveArtifact } from "./server/artifacts";
@@ -7170,6 +7170,10 @@ async function startServer() {
       for (const [name, value] of Object.entries(body.credentials)) {
         if (typeof value !== "string") continue;
         setKey(name, value);
+        // A key taken out takes that vendor's last balance reading with it, so
+        // no bar can go on showing money for an account that is no longer set
+        // up here. A name that is not a keyed vendor falls through.
+        if (!value.trim()) forgetVendorMoney(name);
       }
     }
 

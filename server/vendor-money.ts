@@ -138,6 +138,24 @@ export function balanceFor(id: string): { usd: number | null; at: number } {
 }
 
 /**
+ * A vendor whose key has just been taken away.
+ *
+ * The last reading was that account's money, and with no key there is no way to
+ * refresh it -- so it stops being reported at all. Kept, it would draw a line
+ * for a connection nobody has any more the moment one existed again: the line
+ * would come back from a balance read hours earlier, with nothing in the app to
+ * say where it came from. What has been paid in stays, since that is a fact of
+ * the account rather than a reading of it, and the arithmetic picks up where it
+ * left off if a key is put back.
+ */
+export function forgetVendorMoney(id: string): void {
+  if (!providerSpec(id)?.balance) return;
+  delete state.balances[id];
+  delete state.balanceAts[id];
+  save();
+}
+
+/**
  * One vendor's own line: what is left with it, and what has been paid in.
  *
  * A balance on its own is still worth reporting -- it is that account's money,

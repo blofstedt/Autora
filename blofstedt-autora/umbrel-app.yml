@@ -132,33 +132,27 @@ submission: https://github.com/blofstedt/Autora
 repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
-
 releaseNotes: >-
-  The spend bar above the chat field stops mixing two APIs into one number. It
-  used to read "101.21 of $20" because it took the whole ledger -- every provider
-  added together -- and compared it against the single global ceiling, so a month
-  that was mostly one vendor's spend was measured against another vendor's budget
-  and neither figure was true of anything. Now the bar draws one line per API you
-  pay into, each with its own money: what you topped that vendor up with, what is
-  left in that vendor's till, and the share of this month's spend that vendor
-  actually billed. Orca Router's bar talks about Orca Router, DeepSeek's about
-  DeepSeek, and the two no longer borrow each other's totals. A provider with
-  credit but no recorded spend still gets a bar, showing what is left of what was
-  paid in; a provider with neither is left out rather than drawn as zero. The
-  Usage page and the hover peek show the same per-vendor lines, and a vendor that
-  publishes a balance but not its paid-in figure falls back to what is left with
-  that vendor. Earlier: Autora is quicker to answer and quicker to start. The turn
-  loop was doing work it had already done: the list of tools was rebuilt from
-  scratch every round even when nothing had changed, the families loaded from a
-  chat were rescanned from the whole conversation each time, the event log was
-  read four times per turn and terminal output scrubbed three. Each is now
-  remembered until something it depends on actually changes, so a tool the agent
-  writes mid-turn is still offered on the very next step while the ordinary round
-  does far less. The working line also says how long a turn has been going and how
-  many steps it has taken, so a long one reads as moving instead of looking
-  stalled. Behind that, the three files that had grown into the app's whole shape
-  were taken apart: server.ts lost its four route groups to server/routes/, the
-  81-entry tool registry became one file per group under server/specs/, the three
-  copies of the secret redactor became one, and the six pages behind the rail now
-  load when you open them rather than with the app, so the conversation paints
-  first. Nothing behaves differently for any of it.
+  The money bars above the chat field now follow what is actually switched on.
+  Clearing a provider's key -- in Settings, or by emptying its box -- makes
+  Autora drop that vendor's remembered balance and tells the open page to read
+  the figures again, so the bar for a connection you have just turned off goes
+  when you save it, instead of sitting there until the next reload. A reading
+  that cannot be refreshed without a key is not reported any more, while what
+  you paid in stays on the books: clearing the Orca Router key leaves DeepSeek's
+  bar alone and Orca Router's gone.
+  Earlier: the spend bar stopped mixing two APIs into one number. It used to
+  read "101.21 of $20" because it took the whole ledger -- every provider added
+  together -- and compared it against the single global ceiling, so a month that
+  was mostly one vendor's spend was measured against another vendor's budget and
+  neither figure was true of anything. Now the bar draws one line per API you
+  pay into, each with its own money: what you topped that vendor up with, what
+  is left in that vendor's till, and the share of this month's spend that vendor
+  actually billed. A provider with credit but no recorded spend still gets a
+  bar, showing what is left of what was paid in; a provider with neither is left
+  out rather than drawn as zero. The Usage page and the hover peek show the same
+  per-vendor lines. Before that: Autora is quicker to answer and quicker to
+  start, having stopped rebuilding the tool list, the tool families and the
+  event log every round, and the three files that had grown into the app's whole
+  shape were taken apart into server/routes/ and server/specs/ with nothing
+  behaving differently for any of it.

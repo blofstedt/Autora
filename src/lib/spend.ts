@@ -10,6 +10,15 @@
  * ceiling at all -- is arithmetic, not drawing.
  */
 
+/** Said when something that decides what the bar shows has changed: a key saved
+    or taken away, the monthly budget, a paid-in figure, the provider in use.
+    Which vendors have a line at all follows their keys, so without this the bar
+    over the composer can go on showing an account that has just been taken out
+    of Settings until the next turn happens to end. */
+export const MONEY_CHANGED = "autora-money";
+
+export const announceMoneyChange = () => window.dispatchEvent(new Event(MONEY_CHANGED));
+
 export type SpendInputs = {
   /** This calendar month, from the ledger. */
   spent: number;

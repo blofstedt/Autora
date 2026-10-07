@@ -21,7 +21,8 @@ import path from "node:path";
 
 process.env.AUTORA_STATE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "autora-vendor-money-"));
 
-const { realSpend, vendorMoneyFor, vendorMoneyAll, readBalance } = await import("../server/vendor-money");
+const { realSpend, vendorMoneyFor, vendorMoneyAll, readBalance, forgetVendorMoney } =
+  await import("../server/vendor-money");
 const { recordUsage, clearUsage, state } = await import("../server/state");
 const { billingSummary } = await import("../server/billing");
 const { providerSpec } = await import("../server/providers");
@@ -331,6 +332,39 @@ test("each vendor's line counts that vendor's own turns, not the whole ledger's"
   near(byId.orcarouter.unaccounted_usd, 0.1);
   /* DeepSeek's 9.70 of spend against a 0.10 row is history before this ledger. */
   near(byId.deepseek.unaccounted_usd, 9.6);
+});
+
+/* A key taken out of Settings is the end of that connection: the last reading was
+   that account's money, and with nothing to ask there is no way to refresh it, so
+   it stops being reported rather than being drawn from a figure read hours ago. */
+test("a key taken away takes its balance reading with it", () => {
+  clearUsage();
+  clearVendors();
+  addVendor(4.5, 5, "orcarouter");
+  state.provider = "orcarouter";
+  assert.equal(billingSummary().vendors.length, 1);
+
+  /* What the settings route does when an empty string arrives for a key. */
+  delete state.keys.orcarouter;
+  forgetVendorMoney("orcarouter");
+
+  assert.equal(state.balances.orcarouter, undefined);
+  assert.equal(state.balanceAts.orcarouter, undefined);
+  assert.deepEqual(billingSummary().vendors, []);
+  /* What has been paid in stays: it is a fact of the account, not a reading, so
+     putting a key back picks the arithmetic up where it left off. */
+  near(state.topUps.orcarouter ?? -1, 5);
+});
+
+/* The route calls this for every credential name it is given, and most of them
+   are not balance vendors at all. */
+test("a name with no balance endpoint is left alone", () => {
+  clearVendors();
+  addVendor(4.5, 5, "orcarouter");
+  forgetVendorMoney("openai");
+  forgetVendorMoney("some-login");
+  near(state.balances.orcarouter ?? -1, 4.5);
+  near(state.balanceAts.orcarouter ?? -1, now);
 });
 
 /* Where each vendor is asked. DeepSeek keeps /user/balance off the host while

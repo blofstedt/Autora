@@ -19,6 +19,7 @@ import { Credentials } from "./Credentials";
 import { useServerVersion, versions } from "./UpdateNotice";
 import { ThemePicker } from "./Rail";
 import type { Appearance } from "../lib/theme";
+import { announceMoneyChange } from "../lib/spend";
 
 type Credential = {
   name: string;
@@ -350,6 +351,10 @@ export function Settings({
       setVerify((cur) => (same(cur, sent.verify ?? null) ? next.verify ?? null : cur));
       setKeep((cur) => (same(cur, sent.retention ?? null) ? next.retention ?? null : cur));
       setSaved(true);
+      // The budget and the provider in use are drawn over the composer, so a
+      // saved setting tells the app to read the money again rather than waiting
+      // for the next turn to end.
+      announceMoneyChange();
     } catch {
       setError("Could not reach the server.");
     } finally {
@@ -374,6 +379,9 @@ export function Settings({
       setState(next);
       setKeyDrafts(({ [name]: _drop, ...rest }) => rest);
       setSaved(true);
+      // A key put in or taken away is what decides whether a vendor has a line
+      // over the composer at all, so the app is told to read the money again.
+      announceMoneyChange();
     } catch {
       setError("Could not reach the server.");
     }
