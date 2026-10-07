@@ -127,7 +127,7 @@ export function AppReview({
                     </button>
                   )}
                 </div>
-                <button type="button" className="app-x" onClick={() => void remove(c.id)} aria-label={`Remove comment ${i + 1}`}>
+                <button type="button" className="btn icon ghost app-x" onClick={() => void remove(c.id)} aria-label={`Remove comment ${i + 1}`}>
                   <IconTrash size={14} />
                 </button>
               </li>

@@ -52,8 +52,9 @@ Start from `docs/MAP.md`: the repo by job, the request path, `server.ts` by
 region, recipes for common changes. `docs/MODULES.md` has the detail and the
 traps for each area (read the part you are changing). `docs/REVIEW.md` lists
 known inefficiencies by id. `docs/ARCHITECTURE.md` is why it is built this way.
-Search with `--glob '!spectra-editor/**'`: the vendored PDF editor is most of
-the tree.
+Search with `--glob '!spectra-editor/**'`: once built, Spectra's fetched
+renderer (gitignored, never edit it; Autora's changes are
+`spectra-editor/overlay/`) is most of what is on disk.
 
 Rules that hold wherever you are:
 

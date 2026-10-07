@@ -19,8 +19,7 @@ import { declined, guardWorthy, irreversible, judgeAction, matchesAskRule, shoul
 import { prune } from "./server/retention";
 import { diskUsage } from "./server/host";
 import {
-  DISCOVER, nextSteps, offers as offersFor, starters as startersFor,
-  type Container, type JobBrief, type NextStep, type Signals,
+  nextSteps, type Container, type JobBrief, type NextStep, type Signals,
 } from "./server/suggest";
 import { Noticer, dockerContainers, findings, type NoticerMemory } from "./server/noticer";
 import {
@@ -38,7 +37,7 @@ import {
   addRequirements, amendmentNote, applyRequirements, autoAsks, finishAudit, latestRequirements, requirementsBriefing,
 } from "./server/requirements";
 import { replyStyle, standingBlock, standingReminder } from "./server/prompt";
-import { WebPush, cleanSubscription } from "./server/webpush";
+import { WebPush } from "./server/webpush";
 import { allowSocket, refuseRequest } from "./server/crosssite";
 import { certificateSource, tlsSettings } from "./server/tls";
 import {
@@ -57,13 +56,11 @@ import { refreshVendorMoney } from "./server/vendor-money";
 import { dropSession, fromDataUrl, getBlob, putBlob } from "./server/blobs";
 import { threeRuntime } from "./server/widgets";
 import { MAX_ARTIFACT_BYTES, saveArtifact } from "./server/artifacts";
-import { restore as restoreVersion, snapshot as snapshotFolder, versions as folderVersions } from "./server/snapshots";
+import { snapshot as snapshotFolder } from "./server/snapshots";
 import {
-  installFromStore, installPackage, listExtensions, removeExtension, setExtensionEnabled,
-} from "./server/extensions";
+  } from "./server/extensions";
 import {
-  addBookmark, bookmarks, clearHistory, downloads, history, recordDownload, recordVisit, removeBookmark,
-} from "./server/browsedata";
+  recordDownload, recordVisit, } from "./server/browsedata";
 
 import { notebookRoutes } from "./server/routes/notebooks";
 import { mcpRoutes } from "./server/routes/mcp";
@@ -82,22 +79,22 @@ import {
 import {
   appendEvent, countsFor, countsOf, deleteSession, ephemeralId, flushStore,
   loadSessionEvents,
-  loadSessionIndex, readDoc, saveDoc, saveMeta, saveSession, type SessionCounts,
-} from "./server/store";
+  loadSessionIndex, readDoc, saveDoc, saveMeta, saveSession, } from "./server/store";
 import { LiveBrowser, VIEWPORT, addressFor, probeBrowser, type PageRead } from "./server/browser";
 import { } from "./server/captcha";
 import { inQuiet, quietBriefing } from "./server/quiet";
 import {
   askAbout, askReason, cleanAskWhen, isPermissions, isWorkMode, legacyPermissions, modeBriefing,
   looksOnly, permissionBriefing, permissionsOf, phaseFor, planRefusal, readOnlyCommand, PERMISSION_INFO, WORK_MODES, workMode,
-  type Permissions, type Phase, type WorkMode,
+  type Permissions, type WorkMode,
 } from "./server/modes";
 import { LoopWatch, describe as describeCall } from "./server/loopwatch";
 import { ErrorBudget } from "./server/errorbudget";
 import { forgetPresence, presenceFor, type Surface } from "./server/presence";
 import { cleanRemark, REMARK_SYSTEM, remarkPrompt, RemarkGate, SETTLE_MS as REMARK_SETTLE_MS, WINDOW_MS as REMARK_WINDOW_MS, worthRemarking } from "./server/companion";
 import { editFile, type EditArgs } from "./server/editfile";
-import { diffDom, type ChangeCue, type DomItem } from "./server/domdiff";
+import { diffDom } from "./server/domdiff";
+import type { AutoraEvent, Notice, PreviewRun, Session } from "./server/session-types";
 import { Workspace, type DiffLine, type FileChange as CodeChange } from "./server/codediff";
 import { runSubagent } from "./server/subagent";
 import { checkLine, failedNote, itemCheckNote, previewNote, previewProblems, type CheckResult } from "./server/verify";
@@ -108,19 +105,23 @@ import { checkArgs } from "./server/argcheck";
 import { healthBriefing, recordOutcome, targetOf } from "./server/toolhealth";
 import { Scheduler, type Job, type JobWatch } from "./server/scheduler";
 import {
-  addSpend, budgetLine, overDay, overRun, rollLedger, skipReason,
+  addSpend, overDay, overRun, rollLedger, skipReason,
   stopReason, type AutomationLedger,
 } from "./server/automation";
 import { backgroundBriefing, findJob, listJobs, readTail, startJob, stopJob } from "./server/background";
 import {
-  addressIn, DEVICES, isDevice, isLocalUrl, localAddress, serveFolder, waitForServer,
-  type Device, type StaticServer,
-} from "./server/preview";
+  addressIn, DEVICES, isLocalUrl, localAddress, serveFolder, waitForServer,
+  type Device, } from "./server/preview";
 import { deskBase, deskBriefing, deskHooks, deskRoutes, deskState, dropDesk, onDeskChange, onDeskTouch, personBase } from "./server/pdfdesk";
 import { staticDir } from "./server/staticfiles";
 import { memoryRoutes } from "./server/routes/memory";
 import { healthRoutes } from "./server/routes/health";
+import { browserRoutes } from "./server/routes/browser";
+import { previewRoutes } from "./server/routes/preview";
 import { settingsRoutes } from "./server/routes/settings";
+import { proactiveRoutes } from "./server/routes/proactive";
+import { triggerRoutes } from "./server/routes/triggers";
+import { jobRoutes } from "./server/routes/jobs";
 import { keyRoutes } from "./server/routes/keys";
 import { dropSpectra, serveSpectra, spectraDocumentChanged, spectraRoutes, spectraUpgrade } from "./server/spectra";
 import { newFileRoutes } from "./server/newfile";
@@ -128,14 +129,11 @@ import { windowOff } from "./server/tools";
 import { dropOfficeDesk, onOfficeChange, onOfficePush, onOfficeTouch, officeBriefing, officeData, officeRoutes, officeState, officeHooks, serveOfficeEditors } from "./server/officedesk";
 import { renderToPdf, webDir as officeWebDir } from "./server/officerender";
 import {
-  pickExpression, reviewMessage, safeStyle, type ElementInfo, type ReviewComment, type StyleChange,
+  type ReviewComment,
 } from "./server/pick";
 
 import { WAKE_MAX_AGE_MS, WAKE_MAX_PER_HOUR, wakePrompt, wakesWanted, type WakeCandidate } from "./server/proactive";
-import {
-  firePrompt as triggerPrompt, label as triggerLabel, newId as newTriggerId, newToken as newTriggerToken,
-  refusal as triggerRefusal, tokenMatches, view as triggerView, type Trigger,
-} from "./server/triggers";
+import type { Trigger } from "./server/triggers";
 import { addRule, autonomyBriefing, covered, listRules, matchText, revoke as revokeRule, revokeAll } from "./server/autonomy";
 import { inventoryBriefing } from "./server/inventory";
 import { htmlToText } from "./server/pages";
@@ -198,45 +196,6 @@ const VERSION = (() => {
 })();
 
 // --- Types ---
-interface AutoraEvent {
-  seq: number;
-  ts: number;
-  kind: string;
-  actor: string;
-  span: string | null;
-  payload: Record<string, any>;
-  blob: string | null;
-}
-
-interface Session {
-  id: string;
-  title: string;
-  createdAt: number;
-  busy: boolean;
-  /** Kept at the top of the session lists. */
-  pinned?: boolean;
-  /** A chat that is never written down and never listed: incognito. It is in
-      this process's memory alone, and closing it closes it for good. */
-  incognito?: boolean;
-  /** How the agent goes about work in this chat: build, plan or agent (see
-      server/modes.ts). Absent reads as agent. */
-  mode?: WorkMode;
-  /** What may run without a yes, and -- for ask -- when to ask, in the
-      person's own words. */
-  permissions?: Permissions;
-  askWhen?: string;
-  /** What Agent mode is doing right now. Not kept: every turn starts in plan. */
-  phase?: Phase;
-  events: AutoraEvent[];
-  seqCounter: number;
-  /** What the log holds, kept current as events are emitted, so neither the
-      session list nor the storage sweep has to read the log to say. */
-  counts: SessionCounts;
-  /** Let go of the parsed log (it is read again from disk on the next use).
-      Only a session that came from disk has one. */
-  unloadEvents?: () => void;
-}
-
 // --- State ---
 // Seeds below are only what a fresh install starts with; once anything is on
 // disk (./server/store) it replaces them.
@@ -951,34 +910,6 @@ function browserFor(session: Session): LiveBrowser {
  * person leaves are kept here, with a picture of what each is about, until
  * they are sent as one message. See server/pick.ts for what a selection is.
  */
-interface PreviewRun {
-  live: LiveBrowser;
-  opened: boolean;
-  openedAt: number;
-  url: string | null;
-  title: string | null;
-  device: Device;
-  /** How it was started, for saying so and for stopping it. */
-  how: "url" | "folder" | "command" | null;
-  serve: StaticServer | null;
-  /** Watching a served folder, so an edit shows without being asked for. */
-  watch: fs.FSWatcher | null;
-  job: string | null;
-  comments: ReviewComment[];
-  /** The dev server it started has exited: what it last said, for the window. */
-  serverDown: { exit: number | null; last: string } | null;
-  /** Pending work to cancel when it closes. */
-  timers: { reload: NodeJS.Timeout | null; console: NodeJS.Timeout | null; job: NodeJS.Timeout | null; follow: NodeJS.Timeout | null };
-  /** What was on the page at the last look, and at which address, to find
-      what a change touched (server/domdiff.ts). */
-  dom: DomItem[] | null;
-  domUrl: string | null;
-  /** A look at what changed is under way, and another was asked for meanwhile. */
-  following: boolean;
-  again: boolean;
-  /** Where the cursor last went, and a number that goes up each time. */
-  cues: { seq: number; items: ChangeCue[] };
-}
 const previews = new Map<string, PreviewRun>();
 
 /** What a restart of the window keeps: the size it was shown at, and the
@@ -2610,14 +2541,6 @@ function newSession(title: string, incognito = false): Session {
 
 /** Things worth telling the person about wherever they are in the app: a
     job finishing while they were looking at something else. */
-interface Notice {
-  id: number;
-  ts: number;
-  tone: "ok" | "error" | "info";
-  title: string;
-  detail: string;
-  session: string | null;
-}
 const notices: Notice[] = [];
 let noticeSeq = 0;
 
@@ -5835,10 +5758,6 @@ async function startServer() {
     res.json({ interrupted: wasBusy });
   });
 
-  // 6b. Live Browser Direct Interaction & Handoff
-  const DRIVING =
-    "The agent is using the browser. Take control to use it yourself -- it will carry on with other work -- or stop it.";
-
   /** An answer to a question the agent asked. */
   app.post("/api/sessions/:id/ask/:askId", (req: Request, res: Response) => {
     const pending = awaitingAsk.get(req.params.askId);
@@ -5858,600 +5777,11 @@ async function startServer() {
     res.json({ ok: true });
   });
 
-  // ---- the app window -------------------------------------------------------
-  const withPreview = (req: Request, res: Response): { session: Session; run: PreviewRun } | null => {
-    const session = sessions.get(req.params.id);
-    if (!session) { res.status(404).json({ error: "Session not found" }); return null; }
-    const run = previews.get(session.id);
-    if (!run?.opened) { res.status(400).json({ error: "No app preview is open." }); return null; }
-    return { session, run };
-  };
-  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : Number.NaN);
-  const asInfo = (v: any): ElementInfo | null => (v && typeof v === "object" && typeof v.selector === "string" ? v as ElementInfo : null);
+  previewRoutes(app, { sessions, previews, emitEvent, broadcastPreview, previewState, previewStart, previewStop, startTurn });
 
-  app.get("/api/sessions/:id/preview", (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    res.json(previewState(session));
-  });
-
-  app.post("/api/sessions/:id/preview/open", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    const url = typeof req.body?.url === "string" ? req.body.url.trim() : "";
-    if (!url) return res.status(400).json({ error: "Give an address on this machine, like http://localhost:5173." });
-    if (!toolSettings().app.enabled) return res.status(409).json({ error: "The app window is switched off on the Tools page." });
-    const r = await previewStart(session, { url }, null);
-    res.status(r.ok ? 200 : 400).json(r.ok ? { ok: true } : { error: r.summary });
-  });
-
-  app.post("/api/sessions/:id/preview/close", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    await previewStop(session);
-    res.json({ ok: true });
-  });
-
-  app.post("/api/sessions/:id/preview/device", async (req: Request, res: Response) => {
-    const ctx = withPreview(req, res);
-    if (!ctx) return;
-    if (!isDevice(req.body?.device)) return res.status(400).json({ error: "A device is phone, tablet or desktop." });
-    const device: Device = req.body.device;
-    ctx.run.device = device;
-    await ctx.run.live.resize(DEVICES[device].width, DEVICES[device].height);
-    broadcastPreview(ctx.session);
-    void ctx.run.live.nudge();
-    res.json({ ok: true, viewport: ctx.run.live.viewport() });
-  });
-
-  app.post("/api/sessions/:id/preview/reload", async (req: Request, res: Response) => {
-    const ctx = withPreview(req, res);
-    if (!ctx) return;
-    // Cleared first: the reload is what says again what is still wrong.
-    ctx.run.live.clearConsole();
-    await ctx.run.live.reload().catch(() => undefined);
-    broadcastPreview(ctx.session);
-    res.json({ ok: true });
-  });
-
-  /* What is at a point, or what is beside / inside / around a selected
-     element. `light` is the hover's version: a box and a name, nothing else. */
-  app.post("/api/sessions/:id/preview/inspect", async (req: Request, res: Response) => {
-    const ctx = withPreview(req, res);
-    if (!ctx) return;
-    const light = req.body?.light === true;
-    let request: Record<string, unknown>;
-    if (typeof req.body?.selector === "string") {
-      const nav = ["parent", "child", "next", "prev"].includes(req.body?.nav) ? req.body.nav : undefined;
-      request = { op: "sel", selector: req.body.selector.slice(0, 600), nav, light };
-    } else {
-      const x = num(req.body?.x), y = num(req.body?.y);
-      if (Number.isNaN(x) || Number.isNaN(y)) return res.status(400).json({ error: "Give x and y, or a selector." });
-      request = { op: "at", x: Math.round(x), y: Math.round(y), light };
-    }
-    const info = await ctx.run.live.pickOp(pickExpression(request)).catch(() => null);
-    res.json({ info: info && info.ok !== false ? info : null });
-  });
-
-  /* Where the things already picked are now: the page scrolls and re-lays
-     itself out, and a pin stays on its element. */
-  app.post("/api/sessions/:id/preview/rects", async (req: Request, res: Response) => {
-    const ctx = withPreview(req, res);
-    if (!ctx) return;
-    const selectors = Array.isArray(req.body?.selectors)
-      ? req.body.selectors.filter((x: unknown) => typeof x === "string").slice(0, 60).map((x: string) => x.slice(0, 600))
-      : [];
-    const out = await ctx.run.live.pickOp(pickExpression({ op: "rects", selectors })).catch(() => null);
-    res.json(Array.isArray(out?.rects) ? out : { scroll: { x: 0, y: 0 }, rects: selectors.map(() => null) });
-  });
-
-  /* Trying a change on the page to show what is meant. Only the properties in
-     EDITABLE_STYLES, only plain values: the page is not a place to run the
-     person's (or anyone's) script. */
-  app.post("/api/sessions/:id/preview/style", async (req: Request, res: Response) => {
-    const ctx = withPreview(req, res);
-    if (!ctx) return;
-    const selector = typeof req.body?.selector === "string" ? req.body.selector.slice(0, 600) : "";
-    const asked = req.body?.css && typeof req.body.css === "object" ? req.body.css as Record<string, unknown> : {};
-    const css: Record<string, string> = {};
-    for (const [k, v] of Object.entries(asked)) {
-      const value = safeStyle(k, v);
-      if (value === null) return res.status(400).json({ error: `${k} cannot be changed here.` });
-      css[k] = value;
-    }
-    if (!selector || Object.keys(css).length === 0) return res.status(400).json({ error: "Give a selector and a style." });
-    const out = await ctx.run.live.pickOp(pickExpression({ op: "style", selector, css })).catch(() => null);
-    if (!out?.ok) return res.status(400).json({ error: out?.error ?? "That could not be applied." });
-    res.json(out);
-  });
-
-  app.post("/api/sessions/:id/preview/text", async (req: Request, res: Response) => {
-    const ctx = withPreview(req, res);
-    if (!ctx) return;
-    const selector = typeof req.body?.selector === "string" ? req.body.selector.slice(0, 600) : "";
-    const text = typeof req.body?.text === "string" ? req.body.text.slice(0, 2000) : null;
-    if (!selector || text === null) return res.status(400).json({ error: "Give a selector and the new text." });
-    const out = await ctx.run.live.pickOp(pickExpression({ op: "text", selector, text })).catch(() => null);
-    if (!out?.ok) return res.status(400).json({ error: out?.error ?? "That could not be applied." });
-    res.json(out);
-  });
-
-  app.post("/api/sessions/:id/preview/reset", async (req: Request, res: Response) => {
-    const ctx = withPreview(req, res);
-    if (!ctx) return;
-    const selector = typeof req.body?.selector === "string" ? req.body.selector.slice(0, 600) : "";
-    if (!selector) return res.status(400).json({ error: "Give a selector." });
-    const out = await ctx.run.live.pickOp(pickExpression({ op: "reset", selector })).catch(() => null);
-    res.json(out ?? { ok: false });
-  });
-
-  /* A comment joins the review. What it is about is read off the page now,
-     and its picture taken now -- the page will have moved on by the time the
-     review is sent. */
-  app.post("/api/sessions/:id/preview/comments", async (req: Request, res: Response) => {
-    const ctx = withPreview(req, res);
-    if (!ctx) return;
-    const { session, run } = ctx;
-    if (run.comments.length >= 30) return res.status(400).json({ error: "That is a lot of comments for one review. Send these first." });
-    const body = req.body ?? {};
-    const kind = body.kind === "region" ? "region" : "element";
-    const text = typeof body.text === "string" ? body.text.trim().slice(0, 2000) : "";
-    if (!text && !body.textEdit && !(Array.isArray(body.styleChanges) && body.styleChanges.length)) {
-      return res.status(400).json({ error: "Say what to change." });
-    }
-    const size = run.live.viewport();
-    const scroll = await run.live.pickOp(pickExpression({ op: "scroll" })).catch(() => null);
-    const elements: ElementInfo[] = [];
-    let region: ReviewComment["region"];
-    if (kind === "element") {
-      const selectors: string[] = Array.isArray(body.selectors) ? body.selectors.filter((x: unknown) => typeof x === "string").slice(0, 12) : [];
-      if (selectors.length === 0) return res.status(400).json({ error: "Select an element first." });
-      for (const selector of selectors) {
-        const info = asInfo(await run.live.pickOp(pickExpression({ op: "sel", selector: selector.slice(0, 600) })).catch(() => null));
-        if (info) elements.push(info);
-      }
-      if (elements.length === 0) return res.status(400).json({ error: "That element is no longer on the page." });
-    } else {
-      const r = body.region ?? {};
-      const x = num(r.x), y = num(r.y), w = num(r.w), h = num(r.h);
-      if ([x, y, w, h].some(Number.isNaN) || w < 4 || h < 4) return res.status(400).json({ error: "Drag a rectangle first." });
-      region = { x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) };
-      /* What is in the rectangle, so the agent has more than pixels: the
-         element at its centre, which is usually what was meant. */
-      const centre = asInfo(await run.live.pickOp(pickExpression({ op: "at", x: Math.round(x + w / 2), y: Math.round(y + h / 2) })).catch(() => null));
-      if (centre) elements.push(centre);
-    }
-
-    /* The picture: the region as drawn, or the elements together with a
-       margin of the page around them, so what they sit among is in it. */
-    let box: { x: number; y: number; w: number; h: number } | { selector: string };
-    if (region) {
-      box = region;
-    } else {
-      const pad = 16;
-      const x0 = Math.max(0, Math.min(...elements.map((e) => e.rect.x)) - pad);
-      const y0 = Math.max(0, Math.min(...elements.map((e) => e.rect.y)) - pad);
-      const x1 = Math.min(size.width, Math.max(...elements.map((e) => e.rect.x + e.rect.w)) + pad);
-      const y1 = Math.min(size.height, Math.max(...elements.map((e) => e.rect.y + e.rect.h)) + pad);
-      // Scrolled out of the window since it was picked: a picture of the element itself.
-      box = x1 - x0 >= 8 && y1 - y0 >= 8 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : { selector: elements[0].selector };
-    }
-    const png = await run.live.cropShot(box);
-    const blob = png ? putBlob(session.id, png, "image/png") : null;
-
-    const styleChanges: StyleChange[] = Array.isArray(body.styleChanges)
-      ? body.styleChanges.slice(0, 20).map((c: any) => ({
-        property: String(c?.property ?? "").slice(0, 40), from: String(c?.from ?? "").slice(0, 80), to: String(c?.to ?? "").slice(0, 80),
-      })).filter((c: StyleChange) => c.property && c.to)
-      : [];
-    const textEdit = body.textEdit && typeof body.textEdit === "object"
-      ? { from: String(body.textEdit.from ?? "").slice(0, 2000), to: String(body.textEdit.to ?? "").slice(0, 2000) }
-      : undefined;
-    const comment: ReviewComment = {
-      id: `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`,
-      kind, text, elements, ...(region ? { region } : {}),
-      ...(textEdit && textEdit.from !== textEdit.to ? { textEdit } : {}),
-      styleChanges, blob,
-      scroll: { x: scroll?.x ?? 0, y: scroll?.y ?? 0 },
-      viewport: size, ts: Date.now(),
-    };
-    run.comments.push(comment);
-    broadcastPreview(session);
-    res.json({ ok: true, comment });
-  });
-
-  app.post("/api/sessions/:id/preview/comments/:cid", (req: Request, res: Response) => {
-    const ctx = withPreview(req, res);
-    if (!ctx) return;
-    const comment = ctx.run.comments.find((c) => c.id === req.params.cid);
-    if (!comment) return res.status(404).json({ error: "No such comment." });
-    if (typeof req.body?.text === "string") comment.text = req.body.text.trim().slice(0, 2000);
-    broadcastPreview(ctx.session);
-    res.json({ ok: true, comment });
-  });
-
-  app.delete("/api/sessions/:id/preview/comments/:cid", (req: Request, res: Response) => {
-    const ctx = withPreview(req, res);
-    if (!ctx) return;
-    const before = ctx.run.comments.length;
-    ctx.run.comments = ctx.run.comments.filter((c) => c.id !== req.params.cid);
-    if (ctx.run.comments.length === before) return res.status(404).json({ error: "No such comment." });
-    broadcastPreview(ctx.session);
-    res.json({ ok: true });
-  });
-
-  /* The review, sent: every comment as one message, each with its picture
-     attached, so one turn answers all of them. */
-  app.post("/api/sessions/:id/preview/send", (req: Request, res: Response) => {
-    const ctx = withPreview(req, res);
-    if (!ctx) return;
-    const { session, run } = ctx;
-    const comments = run.comments;
-    const note = typeof req.body?.text === "string" ? req.body.text.trim().slice(0, 2000) : "";
-    if (comments.length === 0 && !note) return res.status(400).json({ error: "There is nothing to send yet." });
-    const refs: AttachmentRef[] = [];
-    comments.forEach((c, i) => {
-      const blob = c.blob ? getBlob(c.blob) : null;
-      if (!blob) return;
-      try {
-        const saved = saveArtifact({
-          origin: "user", name: `review-${i + 1}.png`, data: blob.data, mime: "image/png", session: session.id,
-          note: `A picture from the app review, comment ${i + 1}`,
-        });
-        refs.push({ id: saved.id, name: saved.name, mime: saved.mime, size: saved.size });
-      } catch {
-        // A picture that cannot be kept is not worth losing the comment for.
-      }
-    });
-    const errors = run.live.consoleTail(8).filter((e) => e.kind === "error").map((e) => e.text);
-    const body = reviewMessage({
-      url: run.url ?? "", viewport: run.live.viewport(), device: DEVICES[run.device].label, comments, consoleErrors: errors,
-    });
-    const text = note ? `${note}\n\n${body}` : body;
-    const count = comments.length;
-    run.comments = [];
-    emitEvent(session, "preview.review", "user", { count });
-    broadcastPreview(session);
-    res.json({ ok: true, queued: false });
-    void startTurn(session, text, refs, {
-      shown: count > 0 ? `Reviewed the app: ${count} comment${count === 1 ? "" : "s"}${note ? ` -- ${note}` : ""}` : note,
-    });
-  });
-
-  app.post("/api/sessions/:id/browser/scroll", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = targetBrowser(session, req);
-    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
-
-    const dx = Number(req.body?.dx ?? 0);
-    const dy = Number(req.body?.dy ?? 0);
-    try {
-      touchPresence(session.id, isPreview(req) ? "app" : "browser", "*", "scroll", "scrolled the page", { tell: false });
-      await live.mouseWheel(dx, dy);
-      res.json({ ok: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message ?? "Scroll failed" });
-    }
-  });
-
-  app.post("/api/sessions/:id/browser/reload", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = targetBrowser(session, req);
-    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
-
-    try {
-      const page = await live.reload();
-      res.json({ ok: true, url: page.url, title: page.title });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message ?? "Reload failed" });
-    }
-  });
-
-  app.post("/api/sessions/:id/browser/back", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = targetBrowser(session, req);
-    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
-
-    try {
-      const page = await live.goBack();
-      res.json({ ok: true, url: page?.url, title: page?.title });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message ?? "Back navigation failed" });
-    }
-  });
-
-  app.post("/api/sessions/:id/browser/click", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = targetBrowser(session, req);
-    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
-
-    const x = Number(req.body?.x);
-    const y = Number(req.body?.y);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) {
-      return res.status(400).json({ error: "Invalid click coordinates." });
-    }
-
-    try {
-      const button = req.body?.button === "right" ? "right" : req.body?.button === "middle" ? "middle" : "left";
-      // What the person is about to click, said to the agent as they do it.
-      const under = await describeOnPage(live, { x, y });
-      touchPresence(session.id, isPreview(req) ? "app" : "browser", "*", "click", `${req.body?.double ? "double-clicked" : "clicked"} ${under.what}`);
-      const { editable, select } = await live.userClick(x, y, button, !!req.body?.double);
-      // A dropdown answers with its choices: the app shows them itself.
-      res.json({ ok: true, editable, select: select ?? null });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message ?? "Click failed" });
-    }
-  });
-
-  // A drag from the person's own hand, in three parts, so what they are
-  // dragging follows the pointer instead of jumping when they let go.
-  app.post("/api/sessions/:id/browser/drag", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = targetBrowser(session, req);
-    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
-
-    const phase = req.body?.phase === "start" ? "start" : req.body?.phase === "end" ? "end" : "move";
-    const x = Number(req.body?.x);
-    const y = Number(req.body?.y);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) {
-      return res.status(400).json({ error: "Invalid drag coordinates." });
-    }
-
-    try {
-      touchPresence(session.id, isPreview(req) ? "app" : "browser", "*", "drag", "dragged on the page", { tell: false });
-      const out = await live.userDrag(phase, x, y);
-      res.json({ ...out, ok: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message ?? "Drag failed" });
-    }
-  });
-
-  // The choice made from a dropdown's list in the app, set on the page.
-  app.post("/api/sessions/:id/browser/choose", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = targetBrowser(session, req);
-    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
-
-    const x = Number(req.body?.x);
-    const y = Number(req.body?.y);
-    const index = Number(req.body?.index);
-    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(index)) {
-      return res.status(400).json({ error: "Invalid choice." });
-    }
-
-    try {
-      touchPresence(session.id, isPreview(req) ? "app" : "browser", "*", "choose", "picked an option from a menu", { tell: true });
-      const out = await live.chooseOption(x, y, index);
-      res.json({ ...out, ok: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message ?? "Choosing failed" });
-    }
-  });
-
-  app.post("/api/sessions/:id/browser/type", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = targetBrowser(session, req);
-    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
-
-    const text = String(req.body?.text ?? "");
-    try {
-      const into = await describeOnPage(live, null);
-      touchPresence(
-        session.id, isPreview(req) ? "app" : "browser", "*", "type",
-        into.secret ? "typed into a password field" : `typed ${JSON.stringify(text.length > 40 ? `${text.slice(0, 37)}...` : text)} into ${into.what}`,
-      );
-      await live.keyboardType(text);
-      res.json({ ok: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message ?? "Type failed" });
-    }
-  });
-
-  app.post("/api/sessions/:id/browser/key", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = targetBrowser(session, req);
-    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
-
-    const key = String(req.body?.key ?? "");
-    if (!key) return res.status(400).json({ error: "No key specified." });
-
-    try {
-      touchPresence(session.id, isPreview(req) ? "app" : "browser", "*", "key", `pressed ${key}`, { tell: /^(Enter|Escape|Tab|Delete|Backspace)$/i.test(key) });
-      await live.keyboardPress(key);
-      res.json({ ok: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message ?? "Key press failed" });
-    }
-  });
-
-  app.post("/api/sessions/:id/browser/navigate", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = targetBrowser(session, req);
-    if (!live) return res.status(400).json({ error: "No browser active." });
-
-    const url = String(req.body?.url ?? "").trim();
-    if (!url) return res.status(400).json({ error: "No URL specified." });
-    // The app window shows what is being built here, and nothing else.
-    if (isPreview(req) && !isLocalUrl(addressFor(url))) {
-      return res.status(400).json({ error: "The app window only opens addresses on this machine." });
-    }
-
-    try {
-      touchPresence(session.id, isPreview(req) ? "app" : "browser", "*", "navigate", `went to ${url.length > 80 ? `${url.slice(0, 77)}...` : url}`);
-      const page = await live.goto(isPreview(req) ? localAddress(addressFor(url)) : url);
-      res.json({ ok: true, url: page.url, title: page.title });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message ?? "Navigation failed" });
-    }
-  });
-
-  /** Pages visited, bookmarks and downloads: the browser's own lists. */
-  app.get("/api/browser/data", (req: Request, res: Response) => {
-    res.json({
-      history: history(String(req.query.q ?? "")).slice(0, 200),
-      bookmarks: bookmarks(),
-      downloads: downloads(),
-    });
-  });
-
-  app.post("/api/browser/bookmarks", (req: Request, res: Response) => {
-    const url = String(req.body?.url ?? "");
-    if (req.body?.remove) { removeBookmark(url); return res.json({ ok: true }); }
-    const mark = addBookmark(url, String(req.body?.title ?? ""));
-    if (!mark) return res.status(400).json({ error: "Only web pages can be bookmarked." });
-    res.json({ ok: true, bookmark: mark });
-  });
-
-  /** Chrome extensions. They see every page, so each is installed by name. */
-  app.get("/api/extensions", (_req: Request, res: Response) => {
-    res.json({ extensions: listExtensions() });
-  });
-
-  app.post("/api/extensions/install", async (req: Request, res: Response) => {
-    try {
-      res.json({ ok: true, extension: await installFromStore(String(req.body?.source ?? "")) });
-    } catch (err: any) {
-      res.status(400).json({ error: err?.message ?? "Could not install that." });
-    }
-  });
-
-  app.post("/api/extensions/upload", express.raw({ type: "*/*", limit: "60mb" }), (req: Request, res: Response) => {
-    try {
-      if (!Buffer.isBuffer(req.body) || req.body.length === 0) throw new Error("Send the extension's .zip or .crx file.");
-      const name = String(req.query.name ?? "extension").replace(/\.(zip|crx)$/i, "");
-      res.json({ ok: true, extension: installPackage(req.body, "file", name) });
-    } catch (err: any) {
-      res.status(400).json({ error: err?.message ?? "Could not install that." });
-    }
-  });
-
-  app.post("/api/extensions/item/:id", (req: Request, res: Response) => {
-    const id = String(req.params.id);
-    const done = req.body?.remove ? removeExtension(id) : setExtensionEnabled(id, !!req.body?.enabled);
-    res.status(done ? 200 : 404).json(done ? { ok: true } : { error: "No such extension." });
-  });
-
-  /** Extensions load when the browser starts: close every chat's browser so
-      the next page opens with the current set. */
-  app.post("/api/extensions/restart", async (_req: Request, res: Response) => {
-    for (const [id, live] of [...browsers]) {
-      await live.close().catch(() => undefined);
-      browsers.delete(id);
-      const session = sessions.get(id);
-      if (session) broadcastBrowserState(session);
-    }
-    res.json({ ok: true });
-  });
-
-  app.post("/api/browser/history/clear", (_req: Request, res: Response) => {
-    clearHistory();
-    res.json({ ok: true });
-  });
-
-  app.post("/api/sessions/:id/browser/find", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    const live = targetBrowser(session, req);
-    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
-    const found = await live.find(String(req.body?.text ?? "").slice(0, 200), !!req.body?.backwards);
-    res.json({ ok: true, found });
-  });
-
-  /** DevTools' console and network for the open tab (polled by the panel). */
-  app.get("/api/sessions/:id/browser/devtools", (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    const live = isPreview(req) ? previews.get(session.id)?.live : browsers.get(session.id);
-    if (!live) return res.json({ entries: [] });
-    res.json({
-      entries: live.devtools({
-        kind: req.query.kind === "request" ? "request" : req.query.kind === "console" ? "console" : undefined,
-        since: Number(req.query.since) || 0,
-      }),
-    });
-  });
-
-  app.post("/api/sessions/:id/browser/devtools/clear", (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    targetBrowser(session, req)?.clearDevtools();
-    res.json({ ok: true });
-  });
-
-  /** The folder the agent builds in: its saved versions, and going back to one. */
-  app.get("/api/versions", async (_req: Request, res: Response) => {
-    res.json({ folder: terminalDir(), versions: await folderVersions(terminalDir()) });
-  });
-
-  app.post("/api/versions/restore", async (req: Request, res: Response) => {
-    const session = req.body?.session ? sessions.get(String(req.body.session)) : undefined;
-    if (session && agentDriving(session)) return res.status(409).json({ error: "The agent is working; wait for it to finish or stop it first." });
-    try {
-      const saved = await restoreVersion(terminalDir(), String(req.body?.id ?? ""));
-      if (session) {
-        emitEvent(session, "version.restored", "user", { id: String(req.body?.id), label: saved?.label ?? "" });
-        const run = previews.get(session.id);
-        if (run?.opened) void run.live.reload().catch(() => undefined);
-      }
-      res.json({ ok: true, versions: await folderVersions(terminalDir()) });
-    } catch (err: any) {
-      res.status(400).json({ error: err?.message ?? "Could not restore that." });
-    }
-  });
-
-  app.post("/api/sessions/:id/browser/forward", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    if (!isPreview(req) && agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = targetBrowser(session, req);
-    if (!live?.status().open) return res.status(400).json({ error: "No page is open." });
-    try {
-      const page = await live.goForward();
-      res.json({ ok: true, url: page?.url, title: page?.title });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message ?? "Forward navigation failed" });
-    }
-  });
-
-  /** The tab strip: open, switch to and close tabs. */
-  app.post("/api/sessions/:id/browser/tabs", async (req: Request, res: Response) => {
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-    if (isPreview(req)) return res.status(400).json({ error: "The app window has one page." });
-    if (agentDriving(session)) return res.status(409).json({ error: DRIVING });
-    const live = targetBrowser(session, req) ?? browserFor(session);
-    const action = String(req.body?.action ?? "");
-    const id = Number(req.body?.id);
-    try {
-      touchPresence(session.id, "browser", "*", "tabs", `${action === "new" ? "opened" : action === "close" ? "closed" : "switched"} a tab`);
-      if (action === "new") await live.newTab(typeof req.body?.url === "string" ? req.body.url : undefined);
-      else if (action === "switch" && Number.isInteger(id)) await live.switchTab(id);
-      else if (action === "close" && Number.isInteger(id)) await live.closeTab(id);
-      else return res.status(400).json({ error: "Say action new, switch or close, and the tab's id." });
-      broadcastBrowserState(session);
-      res.json({ ok: true, tabs: live.tabList() });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message ?? "That did not work." });
-    }
+  browserRoutes(app, {
+    sessions, browsers, previews, browserFor, targetBrowser, isPreview, agentDriving, describeOnPage,
+    touchPresence, broadcastBrowserState, emitEvent,
   });
 
   // 7. Policy Approvals
@@ -6524,295 +5854,28 @@ async function startServer() {
 
   memoryRoutes(app, { mind });
 
-  // 9. Scheduled jobs and watchers (see server/scheduler.ts)
-  /* What automated runs have spent today, what the guard did about it, and
-     what is left. The Schedule page and the Settings card both read this. */
-  app.get("/api/automation", (_req: Request, res: Response) => {
+  const todaysLedger = () => {
     automationLedger = rollLedger(automationLedger, dayKey(Math.floor(Date.now() / 1000)));
-    res.json({
-      budget: { ...state.automation },
-      ledger: { ...automationLedger },
-      line: budgetLine(state.automation, automationLedger),
-      running: automationSessions.size,
-    });
+    return automationLedger;
+  };
+  jobRoutes(app, {
+    jobs, scheduler, saveJobs, jobView, saneWatch, createJob, todaysLedger,
+    automationRunning: () => automationSessions.size,
   });
 
-  app.get("/api/jobs", (_req: Request, res: Response) => {
-    res.json(jobs.map(jobView));
-  });
-
-  app.post("/api/jobs", (req: Request, res: Response) => {
-    const prompt = (req.body?.prompt || "").trim();
-    if (!prompt) return res.status(400).json({ error: "A task needs a prompt" });
-    const newJob = createJob({
-      name: String(req.body?.name ?? ""),
-      cron: String(req.body?.cron ?? ""),
-      prompt,
-      enabled: req.body?.enabled,
-      watch: req.body?.watch,
-    });
-    res.json({ id: newJob.id, cron_error: newJob.cron_error });
-  });
-
-  app.patch("/api/jobs/:id", (req: Request, res: Response) => {
-    const job = jobs.find((j) => j.id === req.params.id);
-    if (!job) return res.status(404).json({ error: "Job not found" });
-
-    if (typeof req.body.name === "string") job.name = req.body.name;
-    if (typeof req.body.prompt === "string") job.prompt = req.body.prompt;
-    if (req.body.enabled !== undefined) job.enabled = Boolean(req.body.enabled);
-    if (typeof req.body.cron === "string") job.cron = req.body.cron.trim();
-    let rewatch = false;
-    if (req.body.watch !== undefined) {
-      const watch = saneWatch(req.body.watch);
-      rewatch = JSON.stringify(watch) !== JSON.stringify(job.watch ?? null);
-      job.watch = watch;
-      if (rewatch) job.last_seen = null;
-    }
-    scheduler.plan(job);
-    saveJobs();
-    if (rewatch && job.watch) void scheduler.check(job);
-    res.json({ ok: true, cron_error: job.cron_error });
-  });
-
-  app.delete("/api/jobs/:id", (req: Request, res: Response) => {
-    const idx = jobs.findIndex((j) => j.id === req.params.id);
-    if (idx === -1) return res.status(404).json({ error: "Job not found" });
-    jobs.splice(idx, 1);
-    saveJobs();
-    res.json({ ok: true });
-  });
-
-  /** Run it now: a schedule runs its prompt, a watcher looks and runs with
-      what it saw, changed or not. */
-  app.post("/api/jobs/:id/run", async (req: Request, res: Response) => {
-    const job = jobs.find((j) => j.id === req.params.id);
-    if (!job) return res.status(404).json({ error: "Job not found" });
-    if (scheduler.running(job.id)) return res.status(409).json({ error: "It is already running." });
-    if (job.watch) {
-      const outcome = await scheduler.check(job, true);
-      if (outcome === "error") return res.status(400).json({ error: job.last_error });
-      return res.json({ session: job.last_session });
-    }
-    const session = await scheduler.fire(job, job.prompt, "manual");
-    if (!session) return res.status(400).json({ error: job.last_error ?? "It could not start." });
-    res.json({ session });
-  });
-
-  /* ---- triggers: work that starts because something outside said so -------
-     See server/triggers.ts for what a trigger is and the rules it keeps. A
-     firing is a turn in a session of its own, billed against the same day's
-     automation budget as a scheduled run -- it is the same kind of spending,
-     and a URL that could spend without limit would be the wrong shape of
-     feature. */
-
-  /** Start a trigger's turn. Resolves with the session's id, or null. */
-  async function fireTrigger(t: Trigger, why: string, body: string): Promise<string | null> {
-    const day = dayKey(Math.floor(Date.now() / 1000));
-    automationLedger = rollLedger(automationLedger, day);
-    if (overDay(state.automation, automationLedger)) {
-      const held = skipReason(triggerLabel(t), state.automation);
-      t.last_error = held;
-      t.last_fired = Math.floor(Date.now() / 1000);
-      saveTriggers();
-      notify({ tone: "info", title: "Automation budget spent for today", detail: held, session: null }, "jobs");
-      return null;
-    }
-    const session = newSession(triggerLabel(t));
-    automationSessions.add(session.id);
-    t.fires += 1;
-    t.last_fired = Math.floor(Date.now() / 1000);
-    t.last_session = session.id;
-    t.last_error = null;
-    t.last_body = body.trim().slice(0, 600) || null;
-    saveTriggers();
-    emitEvent(session, "system.log", "system", {
-      event: "trigger.fired",
-      trigger: t.id,
-      name: triggerLabel(t),
-      message: why,
-    });
-    log("info", "triggers", `${t.id} fired -> ${session.id}`);
-    const done = startTurn(session, triggerPrompt(t, body), [], { automated: true }).then((r) => {
-      t.last_error = r.error ?? null;
-      saveTriggers();
+  triggerRoutes(app, {
+    triggers, saveTriggers, automationSessions, newSession, emitEvent, startTurn, notify,
+    todaysLedger,
+    chargeSession: (sessionId) => {
       automationLedger = rollLedger(automationLedger, dayKey(Math.floor(Date.now() / 1000)));
-      addSpend(automationLedger, sessionCost(session.id));
+      addSpend(automationLedger, sessionCost(sessionId));
       saveDoc("automation", () => automationLedger);
-      notify({
-        tone: r.ok ? "ok" : "error",
-        title: r.ok ? `${triggerLabel(t)} was triggered` : `${triggerLabel(t)} failed`,
-        detail: r.ok ? (r.reply || "").trim().slice(0, 200) || "Done." : r.error || "It did not finish.",
-        session: session.id,
-      }, "jobs");
-      return r;
-    });
-    void done.catch(() => undefined);
-    return session.id;
-  }
-
-  app.get("/api/triggers", (req: Request, res: Response) => {
-    const origin = `${req.protocol}://${req.get("host") ?? "localhost"}`;
-    res.json(triggers.map((t) => triggerView(t, origin)));
-  });
-
-  app.post("/api/triggers", (req: Request, res: Response) => {
-    const name = String(req.body?.name ?? "").trim().slice(0, 80);
-    const prompt = String(req.body?.prompt ?? "").trim().slice(0, 2000);
-    if (!name) return res.status(400).json({ error: "A trigger needs a name." });
-    if (!prompt) return res.status(400).json({ error: "Say what the turn should do when it fires." });
-    const made: Trigger = {
-      id: newTriggerId(),
-      name,
-      prompt,
-      /* Made here and shown once: whatever is going to call this needs the
-         secret, and there is nowhere better to put it than the answer. */
-      token: newTriggerToken(),
-      enabled: true,
-      created: Math.floor(Date.now() / 1000),
-      fires: 0,
-      last_fired: null,
-      last_session: null,
-      last_error: null,
-    };
-    triggers.push(made);
-    saveTriggers();
-    log("info", "triggers", `${made.id} created (${name})`);
-    const origin = `${req.protocol}://${req.get("host") ?? "localhost"}`;
-    res.json({ trigger: { ...triggerView(made, origin), token: made.token } });
-  });
-
-  app.patch("/api/triggers/:id", (req: Request, res: Response) => {
-    const t = triggers.find((x) => x.id === req.params.id);
-    if (!t) return res.status(404).json({ error: "No such trigger." });
-    if (typeof req.body?.enabled === "boolean") t.enabled = req.body.enabled;
-    if (typeof req.body?.name === "string" && req.body.name.trim()) t.name = req.body.name.trim().slice(0, 80);
-    if (typeof req.body?.prompt === "string" && req.body.prompt.trim()) t.prompt = req.body.prompt.trim().slice(0, 2000);
-    /* Rotated on request, and the only time the secret is shown again: a
-       secret that has been pasted somewhere it should not have been is worth
-       being able to replace without losing the trigger's history. */
-    let token: string | undefined;
-    if (req.body?.rotate === true) {
-      t.token = newTriggerToken();
-      token = t.token;
-    }
-    saveTriggers();
-    const origin = `${req.protocol}://${req.get("host") ?? "localhost"}`;
-    res.json({ trigger: { ...triggerView(t, origin), ...(token ? { token } : {}) } });
-  });
-
-  app.delete("/api/triggers/:id", (req: Request, res: Response) => {
-    const at = triggers.findIndex((x) => x.id === req.params.id);
-    if (at < 0) return res.status(404).json({ error: "No such trigger." });
-    const [gone] = triggers.splice(at, 1);
-    saveTriggers();
-    log("info", "triggers", `${gone.id} deleted`);
-    res.json({ ok: true });
-  });
-
-  /** The URL the rest of the world calls. A plain text body is accepted as
-      well as JSON, because that is what a shell script sends. */
-  app.post(
-    "/api/triggers/:id/fire",
-    express.text({ type: ["text/*", "application/x-www-form-urlencoded"], limit: "1mb" }),
-    async (req: Request, res: Response) => {
-      const t = triggers.find((x) => x.id === req.params.id);
-      const refused = triggerRefusal(t);
-      if (refused || !t) return res.status(404).json({ error: refused ?? "No such trigger." });
-      const header = String(req.get("x-autora-token") ?? "");
-      const bearer = String(req.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
-      const given = header || bearer || String(req.query.token ?? "");
-      if (!tokenMatches(t, given)) {
-        log("info", "triggers", `${t.id} refused: the secret did not match`);
-        return res.status(401).json({ error: "That token is not this trigger's." });
-      }
-      const raw = typeof req.body === "string" ? req.body : req.body ? JSON.stringify(req.body) : "";
-      const session = await fireTrigger(
-        t,
-        `Triggered from outside the console by a request to ${t.id}.`,
-        raw,
-      );
-      if (!session) return res.status(429).json({ error: t.last_error ?? "It could not start." });
-      res.json({ ok: true, session });
     },
-  );
-
-  /**
-   * What this install could do for the person, and what it has noticed:
-   * one-tap tasks for a new chat, the one schedule worth offering, and the
-   * conditions still true. Read from the install each time; no model is
-   * asked. See server/suggest.ts and server/noticer.ts.
-   */
-  app.get("/api/proactive", async (_req: Request, res: Response) => {
-    const signals = await gatherSignals();
-    res.json({
-      starters: startersFor(signals),
-      discover: DISCOVER,
-      offer: offersFor(signals, answeredOffers, state.proactivity)[0] ?? null,
-      notices: noticer.list(),
-    });
   });
 
-  /** Only what has been noticed, for the sidebar's poll: no Docker, no disk,
-      nothing worked out -- the list the last look left. */
-  app.get("/api/proactive/notices", (_req: Request, res: Response) => {
-    res.json({ notices: noticer.list() });
-  });
-
-  /** Yes or no to an offer. Yes sets the schedule up; either way it is not
-      asked again. The offer is worked out afresh here rather than taken from
-      the request, so this route can only ever create a job it offered. */
-  app.post("/api/proactive/offers/:key", async (req: Request, res: Response) => {
-    const answer = req.body?.answer === "yes" ? "yes" : req.body?.answer === "no" ? "no" : null;
-    if (!answer) return res.status(400).json({ error: "Answer yes or no." });
-    const offer = offersFor(await gatherSignals(), answeredOffers, state.proactivity)
-      .find((o) => o.key === req.params.key);
-    if (!offer) return res.status(404).json({ error: "That offer is no longer open." });
-    answeredOffers[offer.key] = answer;
-    saveProactive();
-    if (answer === "no") return res.json({ ok: true });
-    const job = createJob(offer.job);
-    log("info", "schedule", `offer accepted: "${job.name}" (${job.cron})`);
-    res.json({ ok: true, job: job.id, name: job.name, next_run: job.next_run });
-  });
-
-  /** "Not now" on something noticed: quiet until it clears. */
-  app.post("/api/proactive/notices/:key/dismiss", (req: Request, res: Response) => {
-    if (!noticer.dismiss(req.params.key)) return res.status(404).json({ error: "That is no longer true." });
-    res.json({ ok: true });
-  });
-
-  /** A message to every device that has asked, to see it arrive. */
-  app.post("/api/push/test", async (_req: Request, res: Response) => {
-    if (readyChannels(webPush).length === 0) {
-      return res.status(400).json({ error: "No device is set up to be notified yet: turn on notifications on this device first." });
-    }
-    const results = await deliver({
-      title: "Autora can reach you here",
-      body: "This is where it will tell you when a schedule runs, when it notices something, and when it needs you.",
-      url: appLink(),
-    }, webPush);
-    for (const d of results) log(d.ok ? "info" : "warn", "push", `test to ${d.channel}: ${d.ok ? "sent" : d.error}`);
-    res.json({ results });
-  });
-
-  /** This device asks to be told things. The subscription is the browser's
-      own; only a well-formed one, to a real https push service, is kept. */
-  app.post("/api/push/web/subscribe", (req: Request, res: Response) => {
-    const sub = cleanSubscription(req.body?.subscription, req.body?.label);
-    if (!sub) return res.status(400).json({ error: "That is not a subscription this can send to." });
-    webPush.add(sub);
-    res.json({ ok: true, devices: webPush.list() });
-  });
-
-  app.post("/api/push/web/unsubscribe", (req: Request, res: Response) => {
-    const endpoint = String(req.body?.endpoint ?? "");
-    res.json({ ok: true, removed: webPush.remove(endpoint), devices: webPush.list() });
-  });
-
-  app.get("/api/notices", (req: Request, res: Response) => {
-    const after = Number(req.query.after) || 0;
-    res.json({ notices: notices.filter((n) => n.id > after), latest: noticeSeq });
+  proactiveRoutes(app, {
+    gatherSignals, answeredOffers, saveProactive, noticer, createJob, webPush, appLink, notices,
+    latestNotice: () => noticeSeq,
   });
 
   healthRoutes(app, { sweep });

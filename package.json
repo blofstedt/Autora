@@ -1,11 +1,11 @@
 {
   "name": "autora",
   "private": true,
-  "version": "0.9.160",
+  "version": "0.9.161",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && esbuild src/widget/three.ts --bundle --format=esm --minify --outfile=dist/widget/three.js && npm --prefix spectra-editor run build",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist/server.cjs && esbuild src/widget/three.ts --bundle --format=esm --minify --outfile=dist/widget/three.js && npm --prefix spectra-editor run build",
     "start": "node dist/server.cjs",
     "lint": "npm run typecheck && eslint .",
     "unused": "knip --no-progress",

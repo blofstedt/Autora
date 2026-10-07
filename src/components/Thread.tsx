@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Suspense, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Bucket, Cell, MemoryTouch } from "../lib/derive";
 import { turnItems } from "../lib/steps";
 import { isPicture, sizeLabel, type Attachment } from "../lib/attachments";
@@ -16,12 +16,10 @@ import { FileCell } from "./FileCell";
 import { RemarkCell } from "./RemarkCell";
 import { ToolCell, describeArgs } from "./ToolCell";
 import { TodoCell } from "./TodoCell";
-import { AppPreview } from "./AppPreview";
 import { usePreviewState } from "../lib/preview";
 import { useDeskState } from "../lib/pdfdesk";
 import { useOfficeState, type OfficeKind } from "../lib/officedesk";
-import { OfficeWindow } from "./OfficeWindow";
-import { SpectraWindow } from "./SpectraWindow";
+import { AppPreview, OfficeWindow, SpectraWindow } from "./lazyWindows";
 import { PermissionCell } from "./PermissionCell";
 import { ImageCell } from "./ImageCell";
 import { WidgetCell } from "./WidgetCell";
@@ -763,7 +761,7 @@ const StepRun = memo(function StepRun({
 
 /** The Office window for the phone's pinned view: the one for the app this tab is. */
 function OfficeStage({ sessionId, kind }: { sessionId: string; kind: OfficeKind }) {
-  return <OfficeWindow sessionId={sessionId} kind={kind} phone />;
+  return <Suspense fallback={null}><OfficeWindow sessionId={sessionId} kind={kind} phone /></Suspense>;
 }
 
 const CellView = memo(function CellView({
@@ -921,13 +919,13 @@ const CellView = memo(function CellView({
         />
       );
     case "pdf":
-      return stage ? <SpectraWindow sessionId={sessionId} phone /> : null;
+      return stage ? <Suspense fallback={null}><SpectraWindow sessionId={sessionId} phone /></Suspense> : null;
     case "docx":
     case "pptx":
     case "xlsx":
       return stage ? <OfficeStage sessionId={sessionId} kind={cell.kind} /> : null;
     case "app": {
-      if (stage) return <AppPreview sessionId={sessionId} phone />;
+      if (stage) return <Suspense fallback={null}><AppPreview sessionId={sessionId} phone /></Suspense>;
       if (held) return <StageStub kind="app" title={NAME.app} note="preview · pinned above" />;
       return (
         <div className="app-note-cell">

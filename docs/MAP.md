@@ -8,13 +8,15 @@ number. Sizes are lines, as of 0.9.159.
 
 | Path | Lines | What it is |
 |---|---|---|
-| `spectra-editor/` | ~344k | Spectra-PDF's renderer, vendored whole (one commit). 16 MB of it is `src/renderer/locales/` (29 languages, fetched on demand since 0.9.160). Autora's own: `spectra-editor/src/autora/` (the Tauri shim), `vite.config.ts`, and the small edits in `src/renderer/i18n.ts` + `locale-loaders.ts`. |
+| `spectra-editor/src/renderer/` | ~340k | **Not in the repo.** Spectra-PDF's renderer, fetched from the commit in `spectra/PIN.json` and patched by `scripts/prepare-spectra-editor.mjs` (run by `npm run build` and `npm run lint`). It is gitignored; if it is on disk, do not edit it. |
+| `spectra-editor/` (the rest) | small | Autora's own: `src/autora/` (the Tauri shim), `overlay/renderer.patch` (edits to Spectra's `App.tsx`, `i18n.ts`, `index.tsx`), `overlay/renderer/` (`autora.css`, `locale-loaders.ts`), `vite.config.ts`, `tsconfig.json`. |
 | `package-lock.json`, `*/package-lock.json` | | Lockfiles. |
 | `dist/`, `.cache/`, `node_modules/` | | Build output, the GenOffice/Spectra checkouts, deps. |
 | `docs/screenshots/`, `public/icons/` | | Images. |
 
-A grep from the repo root without `--glob '!spectra-editor/**'` spends most of
-its output on the vendored editor.
+After a build, `spectra-editor/src/renderer/` exists on disk (gitignored) and
+dwarfs everything else: search with `--glob '!spectra-editor/**'` unless the
+task is about the PDF editor's shim or overlay.
 
 ## The request path, end to end
 
@@ -33,7 +35,7 @@ its output on the vendored editor.
    (`EVENT_BATCH_MS` in `App.tsx`), folds the whole log with `derive()` (`src/lib/derive.ts`),
    keeps unchanged cards' identity with `share()` (`src/lib/share.ts`), renders `Thread`.
 
-## `server.ts` (7.3k lines), by region
+## `server.ts` (6.4k lines), by region
 
 | Region (search for) | What |
 |---|---|
@@ -62,7 +64,7 @@ its output on the vendored editor.
 - Automation: `/api/jobs*`, `/api/triggers*`, `/api/automation`, `/api/autonomy*`, `/api/policy/:requestId`, `/api/proactive*`
 - Settings: `/api/settings`, `/api/secrets*`, `/api/credentials*`, `/api/providers/:id/*`, `/api/usage*`, `/api/speech*`
 - System: `/api/system`, `/api/host`, `/api/storage*`, `/api/notices`, `/api/tools/health`, `/api/custom-tools*`, `/api/relay`, `/relay.py`, `/api/push/*`
-- Elsewhere: `server/routes/{system,artifacts,mcp,notebooks,memory,keys,settings,health}.ts` (memory graph and the small Mind switches; secrets, credentials, provider models, billing and usage; the Settings API and speech; tool health, host, storage, custom tools); `officeRoutes` (`server/officedesk.ts`); `deskRoutes` (`server/pdfdesk.ts`); `spectraRoutes` (`server/spectra.ts`); `server/newfile.ts`
+- Elsewhere: `server/routes/{system,artifacts,mcp,notebooks,memory,keys,settings,health,preview,browser,jobs,triggers,proactive}.ts` (memory graph and the small Mind switches; secrets, credentials, provider models, billing and usage; the Settings API and speech; tool health, host, storage, custom tools; the app window; the live browser's clicks, tabs, devtools, extensions and the app's versions; scheduled jobs; triggers; suggestions, notices and push). What each needs from `server.ts` arrives in a typed `deps` object; the shapes `Session`, `PreviewRun`, `Notice` and `AutoraEvent` are in `server/session-types.ts`. Still in `startServer`: sessions, the event/blob/trace reads, `/browser` state, `message`, `interrupt`, `ask`, policy approvals, autonomy, relay and the widget routes; `officeRoutes` (`server/officedesk.ts`); `deskRoutes` (`server/pdfdesk.ts`); `spectraRoutes` (`server/spectra.ts`); `server/newfile.ts`
 
 ## `server/`, by job
 

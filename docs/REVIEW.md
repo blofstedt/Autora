@@ -1,4 +1,4 @@
-# Repo review, October 2026 (0.9.159, acted on in 0.9.160)
+# Repo review, October 2026 (0.9.159, acted on in 0.9.160 and 0.9.161)
 
 A full pass over the repo for inefficiency, weak code, UI inconsistency and how
 cheaply an AI can find its way around. Each finding says **what**, the
@@ -21,7 +21,7 @@ from the right two or three files.
   **scale** -- files and bundles that grew past the point where they are cheap
   to load, for a browser or for an AI -- not about sloppiness.
 
-## Status (0.9.160)
+## Status (0.9.161)
 
 What was done after the review, what was measured and found smaller than
 first written, and what is left. Findings keep their ids.
@@ -29,35 +29,35 @@ first written, and what is left. Findings keep their ids.
 | Id | Now |
 |---|---|
 | A1 | **Done.** `CLAUDE.md` is 7 KB (was 32 KB); the module detail moved to `docs/MODULES.md`, read only for the area being changed. |
-| A2 | Not done: vendoring `spectra-editor/` from a pin like `office/` is still the real fix. `CLAUDE.md` now says to search with `--glob '!spectra-editor/**'`. |
+| A2 | **Done (0.9.161).** `spectra-editor/src/renderer` (340k lines) is no longer in the repository: `scripts/prepare-spectra-editor.mjs` fetches it from the commit in `spectra/PIN.json` and applies `spectra-editor/overlay/` (a patch to three files and two added files; the old vendored copy differed from upstream in exactly those). Identical output, checked byte for byte. Needs git and the network at build and lint time, as the engine build already did. |
 | A3 | **Done**: `CLAUDE.md`, `eslint.config.js`, `Dockerfile`, CI, `check_release.py`, the "The the" headers, `.gitignore`, and a note on `docs/HARNESS_AUDIT.md` that its line numbers have drifted. |
 | A4 | **Done**: `docs/MAP.md`. |
 | B1 | **Done.** Spectra's page 16.6 -> 3.9 MB, its metadata worker 14 -> 1.3 MB. The 27 other languages are separate files fetched when chosen (`locale-loaders.ts`; the worker is English). |
 | B2 | **Done.** `server/staticfiles.ts`: brotli/gzip kept after the first time, hashed `assets/` cached for a year, everything else revalidated by ETag. Used for the app, the Spectra editor and the Office editors. |
-| B3 | **Done**: main chunk 620 -> 504 KB. `isSystemTab` moved out of the lazy page; `Settings`, `Schedule`, `Triggers` and talk mode (`LiveChat`) are lazy. Still over 500 KB: `AppPreview`, `OfficeWindow`, `KnowledgeWeb` and `lib/voice.ts` (used by `App`) are the next candidates. |
-| B4 | Partly: `pdf-editor/` no longer ships. `server.cjs.map` (3.3 MB) still does. |
-| C1 | **Started.** Four route groups left `server.ts` (7,999 -> 7,308 lines): `routes/memory.ts`, `routes/keys.ts`, `routes/settings.ts`, `routes/health.ts`. The browser and app-window routes (~620 lines) and the jobs/triggers routes (~290) need `Session`, `PreviewRun` and about 20-50 server.ts internals; the way in is to move those types to a `server/session-types.ts` first. `runTurn` is untouched. |
+| B3 | **Done**: main chunk 620 -> 448 KB (gzip 144 KB), the size warning gone. `AppPreview`, `OfficeWindow` and `SpectraWindow` load when first opened (`components/lazyWindows.ts`) on top of the earlier `Settings`/`Schedule`/`Triggers`/`LiveChat`. |
+| B4 | **Done**: `pdf-editor/` is gone and the server bundle is built without a source map (it was never read: the container does not start node with `--enable-source-maps`). |
+| C1 | **Substantially done.** `server.ts` 7,999 -> 6,371 lines. Nine route groups left it (`routes/{memory,keys,settings,health,preview,browser,jobs,triggers,proactive}.ts`) and the shapes they share (`Session`, `PreviewRun`, `Notice`, `AutoraEvent`) are in `server/session-types.ts`. What is left in `startServer` is the sessions/message/interrupt/policy core. **`runTurn` (1,750 lines) is not split:** it is a web of closures over a dozen `let`s (`handedOver`, `ranSomething`, `loopReason`, `streamed`, ...), and pulling it apart means giving that state an owner (a `TurnRun` class) first -- a change to make on its own, with the loop tests as the net, not folded into a tidy-up. |
 | C2 | Partly: the prompt guides moved to `server/guides.ts` (`tools.ts` 3,190 -> 3,027). `App.tsx` and `browser.ts` are as they were. |
 | C3 | **Smaller than written.** `hostOf`, `slug` and `siteOf` are different functions that share a name, not copies. Done: the two local redactors are now `redactForPerson` / `redactForModel`, and the two `usePoll`s are one (`lib/poll.ts`). `withTimeout` x2 differ in their message; left. |
 | C4 | **Done.** 323 unused exports/types un-exported, 20 unused declarations deleted, `knip` added (`npm run unused`, a CI step). |
-| C5 | Not done. |
-| D1 | **Done**: `pdf-editor/`, `PdfWindow.tsx`, `serveEditor` and their CI/Docker/lint lines are gone. **Open:** the PDF agent cursor (the server still computes `cues`; nothing plays them in Spectra). |
+| C5 | Not done. A typed `EventPayloads` map shared by `emitEvent` and `derive()` is its own change: ~250 `any`s, and it touches every emit site. |
+| D1 | **Done**: `pdf-editor/`, `PdfWindow.tsx`, `serveEditor` and their CI/Docker/lint lines are gone. **Open:** the PDF agent cursor. The server still computes `cues` (`pdf_replace_text`, `cueForItem`); nothing plays them in Spectra. Porting it means drawing over Spectra's canvas pages (zoom, scroll and page offsets live in its reducer), and the Chromium in the sandbox here predates a JS API pdf.js 6 needs (`Map.getOrInsertComputed`), so no page draws and the overlay could not be seen working. It should be done where a page can be looked at. |
 | D2 | **Done**: ~340 lines of unused CSS and four orphan keyframes removed. |
-| P1 | **Done** (`forgetSession` now clears `workspaces`/`codeTouched`). Sharing one `Workspace` per folder is not done. |
+| P1 | **Done** (`forgetSession` clears `workspaces`/`codeTouched`). One shared `Workspace` per folder is not done: each chat's baseline is "what changed since *this* chat last looked", so sharing the file text without sharing the baseline is a rewrite of `codediff.ts` for at most 16 MB per chat that has run code. |
 | P2 | **Done**: a chat idle 15 minutes with no viewer and no turn lets go of its parsed log (`unloadIdleLogs`). |
 | P3 | **Done**: `Workspace.scan`/`prime` are asynchronous, a directory's files are `stat`ed together. |
 | P4 | **Wrong as written.** Measured: 15 microseconds per string. Not worth caching. |
 | P5 | `GET /events` now binary-searches. The ledger sum measured at tens of microseconds; left. |
-| M1 | Measurement is now a test (`tests/toolbudget.test.ts`). Trimming descriptions is not done: it changes what the model is told, and wants an eval, not an edit. |
+| M1 | **Left as it is, on purpose.** Measured again: the default set is 51 tools, 45 KB; the biggest single schema is `app_preview` at 2.3 KB and the rest are 1-2 KB each, so there is no one thing to cut -- trimming is ~3% for a change to what the model is told, which wants an eval (same tasks, before and after), not an edit. `tests/toolbudget.test.ts` stops it growing unnoticed. |
 | U1 | **Done**: `lib/poll.ts`; every poller pauses while the tab is hidden. |
 | U2 | **Done**: the `Dock` element is memoised. `Thread` itself is still not `memo`. |
 | U3 | **Overstated.** `derive()` costs 0.3 ms at 460 events, 1.3 ms at 2,300 and 3.6 ms at 6,900 (synthetic log), and the page loads at most 5,000 events at a time. Fine; a checkpointed fold matters only for 50k-event threads. |
 | U4 | **Done**: one phone tab per open Office app; `word` surface renamed `docx`/`pptx`/`xlsx`, `*Word*` helpers renamed `*Office*`. |
-| U5 | Partly: raw-px font sizes now scale, `--r-md` and `--r-pill` exist, the accent fallback is gone. Not done: z-index layers (24 values) and the 20 breakpoints, which need a visual pass to be tokenised safely. |
+| U5 | Partly: raw-px font sizes scale; `--r-md`, `--r-pill` exist; the accent fallback is gone; the 14 stacking layers above 10 are named tokens (`--z-pop` .. `--z-expanded`, same numbers, no visual change). **Breakpoints are not unified**: CSS cannot use a variable in `@media`, and 560/520/440/760/860/980 are each a different layout's own tipping point, so merging them changes layouts and needs a visual pass. |
 | U6 | **Done**: `SecretStore` has no inline styles; the seven `confirm()` calls are `sure()` (`lib/sure.ts`, drawn by `SureHost`). |
-| U7 | Not done (visual review needed). |
+| U7 | Partly: `app-x` is now `btn icon ghost` with a size; the other close buttons (`kweb-close`, `immersive-close`) are on a dark overlay or inside the knowledge web and look different on purpose. |
 | T1 | **Done**: `npm test -- <name>`, `-- -j 4`. |
-| T2 | **Done**: `spectra-editor` is in `npm run typecheck`. |
+| T2 | **Corrected:** the first version of this was wrong. `spectra-editor` had no `tsconfig.json`, so `tsc --noEmit` there checked nothing and passed. It has one now (`paths` map the Tauri imports to the shim), the shim types were fixed (9 real errors), and `npm run typecheck` checks the fetched renderer and the shim together. |
 | T3 | Partly: `knip` is in CI, the tool budget is a test. A bundle-size budget is not. |
 | T4 | **Done**. |
 

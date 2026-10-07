@@ -244,7 +244,7 @@ export function AppInspector({
         ) : primary ? (
           <b title={primary.selector}>{name(primary)} <span>{Math.round(primary.rect.w)}×{Math.round(primary.rect.h)}</span></b>
         ) : null}
-        <button type="button" className="app-x" onClick={onClose} aria-label="Cancel"><IconX size={14} /></button>
+        <button type="button" className="btn icon ghost app-x" onClick={onClose} aria-label="Cancel"><IconX size={14} /></button>
       </div>
 
       {!region && (

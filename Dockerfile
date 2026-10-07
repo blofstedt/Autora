@@ -43,8 +43,11 @@ RUN apk add --no-cache git
 COPY package.json package-lock.json ./
 RUN npm ci
 # Spectra's editor, the PDF window's renderer, is a sub-project with its own
-# dependencies, installed the same way and for the same reason: a project of its own (its own React, Tailwind and pdf.js), pinned by its own
-# lockfile, built into dist/spectra-editor.
+# dependencies, installed the same way and for the same reason: a project of
+# its own (its own React, Tailwind and pdf.js), pinned by its own lockfile,
+# built into dist/spectra-editor. Its source is Spectra's, fetched from the
+# commit in spectra/PIN.json and patched by spectra-editor/overlay -- which
+# `npm run lint` and `npm run build` do first (scripts/prepare-spectra-editor.mjs).
 COPY spectra-editor/package.json spectra-editor/package-lock.json spectra-editor/
 RUN npm --prefix spectra-editor ci
 
@@ -56,6 +59,8 @@ COPY src/ src/
 COPY server.ts ./
 COPY server/ server/
 COPY spectra-editor/ spectra-editor/
+COPY spectra/PIN.json spectra/PIN.json
+COPY scripts/spectra-checkout.mjs scripts/prepare-spectra-editor.mjs scripts/
 
 # Typecheck both halves before building either. A container that builds and
 # then fails at runtime on something the compiler already knew is a wasted
@@ -169,7 +174,7 @@ COPY --from=office-engine /build/dist/office/native dist/office/native/
 # emulation (see scripts/build-spectra.mjs).
 ARG TARGETARCH
 COPY spectra/PIN.json spectra/PIN.json
-COPY scripts/build-spectra.mjs scripts/build-spectra.mjs
+COPY scripts/build-spectra.mjs scripts/spectra-checkout.mjs scripts/
 RUN apk add --no-cache py3-pip \
  && node scripts/build-spectra.mjs --deps-only --arch "${TARGETARCH}" \
  && apk del py3-pip

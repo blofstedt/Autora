@@ -27,13 +27,9 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { checkout as checkoutPin, pin, root, src } from "./spectra-checkout.mjs";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const pin = JSON.parse(fs.readFileSync(path.join(root, "spectra/PIN.json"), "utf8"));
 const out = path.join(root, "dist/spectra-engine");
-const cache = path.join(root, ".cache/spectra");
-const src = path.join(cache, "spectra-pdf");
 
 const noDeps = process.argv.includes("--no-deps");
 
@@ -102,22 +98,6 @@ function runOut(cmd, args) {
   return r.stdout.trim();
 }
 
-/** The pinned checkout, cloned once and reused; the sha is what is asked for,
- *  so a cached tree from another pin is refetched rather than reused. */
-function checkout() {
-  const head = spawnSync("git", ["-C", src, "rev-parse", "HEAD"], { encoding: "utf8" });
-  if (head.status === 0 && head.stdout.trim() === pin.sha) {
-    log(`checkout already at ${pin.sha.slice(0, 12)}`);
-    return;
-  }
-  fs.rmSync(src, { recursive: true, force: true });
-  fs.mkdirSync(cache, { recursive: true });
-  log(`cloning ${pin.repo} at ${pin.sha.slice(0, 12)}`);
-  run("git", ["clone", "--filter=blob:none", "--no-checkout", pin.repo, src]);
-  run("git", ["-C", src, "fetch", "--depth", "1", "origin", pin.sha]);
-  run("git", ["-C", src, "checkout", "--detach", pin.sha]);
-}
-
 /** A copy of a directory inside the checkout, with its bytecode left behind. */
 function copy(from, to) {
   fs.rmSync(to, { recursive: true, force: true });
@@ -140,7 +120,7 @@ function python() {
 const installDeps = !noDeps;
 
 if (!depsOnly) {
-  checkout();
+  checkoutPin(log);
 
   fs.mkdirSync(out, { recursive: true });
   const engine = path.join(src, "src", "engine");

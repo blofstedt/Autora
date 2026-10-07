@@ -7,8 +7,8 @@ in full every session.)
 
 Start from `docs/MAP.md` (the repo by job, the request path, `server.ts` by
 region, recipes for common changes); `docs/REVIEW.md` lists known
-inefficiencies by id. Search with `--glob '!spectra-editor/**'`: the vendored
-PDF editor is most of the tree.
+inefficiencies by id. Search with `--glob '!spectra-editor/**'`: once built,
+Spectra's fetched renderer is most of what is on disk.
 
 - `server.ts`: the Express app, every `/api/*` route, the `/ws/:session`
   event stream and the agent turn loop.
@@ -291,14 +291,21 @@ PDF editor is most of the tree.
   turn is told what was cut off, so it carries on rather than treating the new
   message as the whole job (and an Agent-mode build stays a build).
 - `spectra-editor/`: Spectra-PDF's renderer (github.com/jasonulbright/Spectra-PDF), the PDF window's
-  editor, vendored whole and built by `spectra-editor/vite.config.ts` into `dist/spectra-editor/`. It is a
-  Tauri app, so its six `@tauri-apps/*` imports are aliased to `spectra-editor/src/autora/` (Autora's own
-  shim, answered over `server/spectra.ts` and `server/spectra/commands.ts`); the rest is Spectra's, untouched.
-  Its Python engine is `spectra/PIN.json` -> `scripts/build-spectra.mjs` -> `server/spectra/engine.ts`.
-  It runs in a frame sandboxed without an origin (`components/SpectraWindow.tsx`) and talks to the page by
-  `postMessage`. Only English is in the page; the other locales are files fetched on demand
-  (`locale-loaders.ts`), and the metadata worker is built without them.
-  Most of the repo's lines are here: search with `--glob '!spectra-editor/**'`.
+  editor, built by `spectra-editor/vite.config.ts` into `dist/spectra-editor/`. **Its source is not in
+  this repository**: `scripts/prepare-spectra-editor.mjs` (run by `npm run build` and `npm run lint`)
+  copies `src/renderer` from the commit in `spectra/PIN.json` -- the same pin as the engine -- into
+  `spectra-editor/src/renderer/` (gitignored) and applies Autora's changes: `overlay/renderer.patch`
+  (three of Spectra's files: `App.tsx` brings the opened document to the front, `i18n.ts` loads other
+  languages on demand, `index.tsx` installs the shim and `autora.css`) and the files in
+  `overlay/renderer/`. Edit the overlay, never the fetched copy; a newer Spectra is a new sha in the
+  pin and a patch that still applies. It is a Tauri app, so its six `@tauri-apps/*` imports are aliased
+  (vite and `tsconfig.json`) to `spectra-editor/src/autora/` (Autora's own shim, answered over
+  `server/spectra.ts` and `server/spectra/commands.ts`). Its Python engine is `spectra/PIN.json` ->
+  `scripts/build-spectra.mjs` -> `server/spectra/engine.ts`. It runs in a frame sandboxed without an
+  origin (`components/SpectraWindow.tsx`) and talks to the page by `postMessage`. Only English is in the
+  page; the other locales are files fetched on demand (`locale-loaders.ts`), and the metadata worker is
+  built without them. `npm run typecheck` checks the renderer and the shim together.
+  Search with `--glob '!spectra-editor/**'` unless the task is about it.
 - Full screen on a phone (`lib/fullscreen.ts`): one shared flag for every pinned tool (browser, app window, PDF,
   Pages/Sheets/Slides, widget), so Follow (`busiestSurface` in `Thread`) moves the stage to the next tool with the
   screen still full. While it is up, `components/ImmersiveChat.tsx` is laid over it: the agent's last reply as a

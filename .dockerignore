@@ -1,5 +1,9 @@
-# The PDF editor's dependencies are installed in the image (Dockerfile), not copied in.
 
-# Nor Spectra's: the PDF window's editor is a project of its own, installed in
-# the build stage from its own lockfile.
+# Spectra's editor is a project of its own, installed in the build stage from
+# its own lockfile.
 spectra-editor/node_modules
+
+# Spectra's renderer is fetched and patched in the build (scripts/prepare-spectra-editor.mjs), and so is its cache.
+spectra-editor/src/renderer
+spectra-editor/.prepared
+.cache

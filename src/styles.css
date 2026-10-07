@@ -75,6 +75,22 @@
   --r-xl: 22px;
   --r-md: 10px;
   --r-pill: 999px;
+  /* Stacking layers, low to high. Small z-indexes (0-10) inside a component stay local;
+     anything that must sit over other components takes one of these. */
+  --z-pop: 20;
+  --z-pop-note: 25;
+  --z-menu: 30;
+  --z-top-bar: 40;
+  --z-side: 45;
+  --z-panel: 50;
+  --z-modal: 60;
+  --z-cover: 80;
+  --z-over: 90;
+  --z-max: 115;
+  --z-lightbox: 120;
+  --z-float: 200;
+  --z-float-dim: 210;
+  --z-expanded: 1000;
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow: 0 4px 16px -4px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.3);
@@ -172,7 +188,7 @@ body::before {
   /* Above the page's own content, so a menu opened in the header is not
      painted over by the thread: the sticky header blurs (a stacking context)
      at phone widths, which used to trap the mode menu inside it. */
-  z-index: 40;
+  z-index: var(--z-top-bar);
   display: flex;
   align-items: center;
   gap: 14px;
@@ -228,7 +244,7 @@ body::before {
 
 /* ---------------------------------------------------------------- modals -- */
 .scrim {
-  position: fixed; inset: 0; z-index: 60;
+  position: fixed; inset: 0; z-index: var(--z-modal);
   display: grid; place-items: center; padding: 16px;
   background: rgba(var(--bg-rgb),  0.66); backdrop-filter: blur(3px);
   animation: fade 0.15s var(--ease) both;
@@ -275,7 +291,7 @@ body::before {
   /* `translate`, not `transform`: the rise animation sets transform, and a
      keyframe's value replaces the whole property -- which left the toast
      sitting half a width to the right of centre. */
-  translate: -50% 0; z-index: 90;
+  translate: -50% 0; z-index: var(--z-over);
   display: flex; align-items: center; gap: 14px;
   max-width: calc(100vw - 32px); padding: 9px 10px 9px 16px;
   border-radius: var(--r-pill); background: var(--s3); border: 1px solid var(--border-strong);
@@ -1509,7 +1525,7 @@ button.hint.voice-note:hover { text-decoration: underline; }
 
 /* --------------------------------------------------------- knowledge web -- */
 .kweb {
-  position: fixed; inset: 0; z-index: 50;
+  position: fixed; inset: 0; z-index: var(--z-panel);
   display: flex; flex-direction: column;
   background: var(--bg);
   animation: fade 0.18s var(--ease) both;
@@ -1639,7 +1655,7 @@ button.hint.voice-note:hover { text-decoration: underline; }
 
 /* ------------------------------------------------------ scheduled tasks -- */
 .sched {
-  position: fixed; inset: 0; z-index: 50;
+  position: fixed; inset: 0; z-index: var(--z-panel);
   display: flex; flex-direction: column;
   background: var(--bg);
   animation: fade 0.18s var(--ease) both;
@@ -2657,7 +2673,7 @@ label + .jf-hint { margin-top: -5px; }
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 50;
+  z-index: var(--z-panel);
   padding: 16px;
 }
 .new-skill-dialog {
@@ -3136,7 +3152,7 @@ label + .jf-hint { margin-top: -5px; }
 /* Full size. Over everything, dismissed by clicking anywhere or by escape --
    there is nothing to decide here, so every way out is the same way out. */
 .pic-full {
-  position: fixed; inset: 0; z-index: 120;
+  position: fixed; inset: 0; z-index: var(--z-lightbox);
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 12px; padding: 24px;
   background: rgba(var(--bg-rgb),  0.92); backdrop-filter: blur(6px);
@@ -3508,7 +3524,7 @@ input.shot-where[readonly] { cursor: default; }
 
 /* Full screen: the page and nothing else. */
 .cell.shot.is-max {
-  position: fixed; inset: 0; z-index: 115; border-radius: 0; border: 0;
+  position: fixed; inset: 0; z-index: var(--z-max); border-radius: 0; border: 0;
   display: flex; flex-direction: column; background: var(--sink);
   padding-top: env(safe-area-inset-top, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -4167,7 +4183,7 @@ html[data-font="mono"] body { font-size: calc(13.5px * var(--ts, 1)); }
 
 /* The phone's drawer: the same rail, slid in over a dimmed app. */
 .drawer-scrim {
-  position: fixed; inset: 0; z-index: 90; background: rgba(0, 0, 0, 0.55);
+  position: fixed; inset: 0; z-index: var(--z-over); background: rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(2px); animation: fade 0.16s var(--ease) both;
 }
 .rail.is-drawer {
@@ -5033,7 +5049,7 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
    from the composer itself (App.tsx measures it into --composer-h, -l and -w)
    rather than from a size guessed here. */
 .notices {
-  position: fixed; z-index: 60;
+  position: fixed; z-index: var(--z-modal);
   left: calc(var(--composer-l, 0px) + var(--composer-w, 100vw) / 2);
   transform: translateX(-50%);
   bottom: var(--composer-h, 104px);
@@ -5097,7 +5113,7 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 .widget-errors span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .widget-fix { flex: 0 0 auto; padding: 2px 10px; font-size: calc(12px * var(--ts, 1)); }
 .cell.widget.is-expanded {
-  animation: none; position: fixed; inset: 12px; z-index: 1000;
+  animation: none; position: fixed; inset: 12px; z-index: var(--z-expanded);
   display: flex; flex-direction: column; box-shadow: var(--shadow-lg);
 }
 .cell.widget.is-expanded .widget-body { flex: 1; min-height: 0; }
@@ -5107,7 +5123,7 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 .cell-top:last-child { border-bottom: 0; }
 
 .slash-menu {
-  position: absolute; left: 0; right: 0; bottom: calc(100% + 8px); z-index: 30;
+  position: absolute; left: 0; right: 0; bottom: calc(100% + 8px); z-index: var(--z-menu);
   display: flex; flex-direction: column; padding: 5px;
   max-height: min(320px, 50vh); overflow-y: auto;
   background: var(--s2); border: 1px solid var(--border-strong); border-radius: 16px;
@@ -5178,7 +5194,7 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 
 /* A spark in flight (lib/presence.ts positions and flies it). */
 .fly-spark {
-  position: fixed; left: 0; top: 0; z-index: 200; pointer-events: none;
+  position: fixed; left: 0; top: 0; z-index: var(--z-float); pointer-events: none;
   width: 10px; height: 10px; border-radius: 50%;
   background: radial-gradient(circle, #fff 0 22%, rgba(var(--accent-rgb), 0.9) 45%, rgba(var(--accent-rgb), 0) 72%);
   box-shadow: 0 0 14px 4px rgba(var(--accent-rgb), 0.55);
@@ -5389,7 +5405,7 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 
 /* ── the camera, over everything while it is open ── */
 .cam-sheet {
-  position: fixed; inset: 0; z-index: 60;
+  position: fixed; inset: 0; z-index: var(--z-modal);
   display: grid; place-items: center; padding: 16px;
   background: rgba(0, 0, 0, 0.72); backdrop-filter: blur(3px);
 }
@@ -5609,7 +5625,7 @@ button.dock-card:hover { border-color: var(--border-strong); }
    menu inside it: the pill can be hard against the right edge, and a menu
    anchored to its left edge hung off the side of the screen. */
 .mode-menu {
-  position: absolute; top: 0; left: 0; z-index: 60;
+  position: absolute; top: 0; left: 0; z-index: var(--z-modal);
   width: min(340px, calc(100vw - 20px));
   padding: 12px; border-radius: var(--r, 14px);
   border: 1px solid var(--border-strong); background: var(--s2);
@@ -5937,7 +5953,7 @@ button.dock-card:hover { border-color: var(--border-strong); }
 .mode-sel-pill.is-icon { gap: 4px; padding: 0 8px; }
 .mode-sel-caret { font-size: calc(9px * var(--ts, 1)); opacity: 0.7; }
 .mode-sel-sheet {
-  position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 60;
+  position: absolute; left: 0; bottom: calc(100% + 8px); z-index: var(--z-modal);
   width: min(300px, calc(100vw - 32px)); padding: 6px;
   background: var(--s2); border: 1px solid var(--border-strong); border-radius: 14px;
   box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.7);
@@ -5974,7 +5990,7 @@ button.dock-card:hover { border-color: var(--border-strong); }
     transform: translate(-50%, -50%);
     width: min(360px, calc(100vw - 32px)) !important;
     max-height: calc(100dvh - 32px) !important; overflow-y: auto;
-    z-index: 200;
+    z-index: var(--z-float);
     box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.55), 0 16px 48px -8px rgba(0, 0, 0, 0.8);
   }
 }
@@ -6015,7 +6031,7 @@ button.dock-card:hover { border-color: var(--border-strong); }
    this column is its last third. It is above the header in the paint order (the header is z-index 40). */
 .side-stack {
   flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column;
-  position: relative; z-index: 45; margin-top: calc(-1 * var(--top-h, 58px));
+  position: relative; z-index: var(--z-side); margin-top: calc(-1 * var(--top-h, 58px));
 }
 .pane-pick {
   display: flex; align-items: center; gap: 4px; height: 34px; padding: 0 8px; overflow-x: auto;
@@ -6132,7 +6148,7 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 
 /* The dev server the window was started with has exited. */
 .app-down {
-  position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 25;
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: var(--z-pop-note);
   display: flex; align-items: flex-start; gap: 8px; max-width: min(560px, calc(100% - 24px));
   padding: 8px 12px; border-radius: 12px; border: 1px solid rgba(251, 113, 133, 0.45);
   background: var(--s2); color: var(--text); font-size: calc(12.5px * var(--ts, 1)); line-height: 1.45;
@@ -6152,7 +6168,7 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 
 /* The box that opens on a selection. */
 .app-pop {
-  position: absolute; z-index: 20; width: 310px; max-height: min(520px, 100%); overflow-y: auto;
+  position: absolute; z-index: var(--z-pop); width: 310px; max-height: min(520px, 100%); overflow-y: auto;
   display: flex; flex-direction: column; gap: 8px; padding: 10px;
   background: var(--s2); color: var(--text); border: 1px solid var(--border-strong); border-radius: 14px;
   box-shadow: 0 16px 44px -10px rgba(0, 0, 0, 0.8); animation: appPop 0.14s ease both;
@@ -6161,11 +6177,9 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 .app-pop-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .app-pop-head b { flex: 1; min-width: 0; font-size: calc(13px * var(--ts, 1)); font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .app-pop-head b span { font-weight: 500; color: var(--text-3); margin-left: 6px; font-size: calc(11.5px * var(--ts, 1)); }
-.app-x {
-  width: 28px; height: 28px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 8px;
-  border: 0; background: transparent; color: var(--text-3); cursor: pointer;
-}
-.app-x:hover { color: var(--text); background: var(--s3); }
+/* A close button inside the app window's pop-ups: the ordinary ghost icon button, a little smaller. */
+.btn.app-x { width: 28px; height: 28px; flex: 0 0 auto; display: grid; place-items: center; border-radius: var(--r-sm); color: var(--text-3); }
+.btn.app-x:hover:not(:disabled) { color: var(--text); background: var(--s3); }
 .app-nav { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
 .app-nav button {
   padding: 5px 2px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text-2);
@@ -6208,14 +6222,14 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 /* On a phone (or a window with no room beside the selection) the box is a
    centred sheet over the page, with the page dimmed behind it. */
 .app-sheet-dim {
-  position: fixed; inset: 0; z-index: 210; display: grid; place-items: center; padding: 16px;
+  position: fixed; inset: 0; z-index: var(--z-float-dim); display: grid; place-items: center; padding: 16px;
   background: rgba(0, 0, 0, 0.55); animation: appFade 0.15s ease both;
 }
 @keyframes appFade { from { opacity: 0; } to { opacity: 1; } }
 .app-pop.is-modal { position: relative; width: min(380px, 100%); max-height: min(86dvh, 640px); box-shadow: 0 24px 64px -12px rgba(0, 0, 0, 0.9); }
 @media (pointer: coarse) {
   .app-nav button { padding: 10px 2px; }
-  .app-x { width: 36px; height: 36px; }
+  .btn.app-x { width: 36px; height: 36px; }
   .app-seg button, .app-tools button { padding: 8px 12px; }
   .app-icon { width: 36px; height: 36px; }
 }
@@ -6348,25 +6362,25 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 .pdf-window.is-phone.is-pages { height: min(54dvh, 520px); }
 /* Full screen on a phone: over everything, with the safe areas kept clear. */
 .pdf-window.is-full {
-  position: fixed; inset: 0; z-index: 80; height: auto;
+  position: fixed; inset: 0; z-index: var(--z-cover); height: auto;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   animation: fade 0.16s var(--ease) both;
 }
 /* The thread's column and the page around it are layers of their own, under
    the header: while the window inside is full screen, both go above it. */
-.thread-wrap:has(.pdf-window.is-full, .app-window.is-full, .cell.widget.is-expanded) { z-index: 90; }
-.page:has(.pdf-window.is-full, .app-window.is-full, .cell.widget.is-expanded) { position: relative; z-index: 90; }
+.thread-wrap:has(.pdf-window.is-full, .app-window.is-full, .cell.widget.is-expanded) { z-index: var(--z-over); }
+.page:has(.pdf-window.is-full, .app-window.is-full, .cell.widget.is-expanded) { position: relative; z-index: var(--z-over); }
 /* The app window, full screen on a phone: the same cover as the PDF's. */
 .app-window.is-full {
-  position: fixed; inset: 0; z-index: 80; height: auto;
+  position: fixed; inset: 0; z-index: var(--z-cover); height: auto;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   animation: fade 0.16s var(--ease) both;
 }
 .cell.shot.is-max { animation: fade 0.16s var(--ease) both; }
-.thread-wrap.is-immersive { z-index: 90; }
+.thread-wrap.is-immersive { z-index: var(--z-over); }
 
 /* Messaging lite over a full-screen tool (components/ImmersiveChat.tsx). */
-.immersive { position: fixed; inset: 0; pointer-events: none; z-index: 200; }
+.immersive { position: fixed; inset: 0; pointer-events: none; z-index: var(--z-float); }
 .immersive-say {
   position: absolute; left: 12px; right: 64px; top: calc(env(safe-area-inset-top, 0px) + 54px);
   display: flex; align-items: baseline; gap: 8px; width: fit-content; max-width: calc(100% - 76px);

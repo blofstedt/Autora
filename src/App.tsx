@@ -6,10 +6,8 @@ import { chime, paintChrome, type Chrome } from "./lib/chrome";
 import { Kind, type AutoraEvent, type BrowserState } from "./lib/types";
 import { setLiveFields, setLiveFrame, setLivePaneOwns, setLiveTabs } from "./lib/liveFrame";
 import { resetPreview, setPreviewFrame, setPreviewState, usePreviewState, type PreviewState } from "./lib/preview";
-import { AppPreview } from "./components/AppPreview";
 import { ScreencastCell } from "./components/ScreencastCell";
-import { OfficeWindow } from "./components/OfficeWindow";
-import { SpectraWindow } from "./components/SpectraWindow";
+import { AppPreview, OfficeWindow, SpectraWindow } from "./components/lazyWindows";
 import { emitSpectraEvent } from "./lib/spectra";
 import { ResizeHandle } from "./components/ResizeHandle";
 import { CHAT, RAIL, setChatWidth, setRailCollapsed, setRailWidth, usePanes, wideScreen } from "./lib/panes";
@@ -2285,13 +2283,13 @@ export function App() {
                 phone it is a tab in the pinned view instead (see Stage). */}
             {preview.open && sessionId && (
               <aside className="app-pane" data-pane="app" hidden={sidePane !== "app"} aria-label="The app being built">
-                <AppPreview sessionId={sessionId} phone={false} />
+                <Suspense fallback={null}><AppPreview sessionId={sessionId} phone={false} /></Suspense>
               </aside>
             )}
             {/* The PDF the agent is working on, open for the person to work on too. */}
             {desk.open && sessionId && (
               <aside className="app-pane" data-pane="pdf" hidden={sidePane !== "pdf"} aria-label="The PDF being worked on">
-                <SpectraWindow sessionId={sessionId} phone={false} />
+                <Suspense fallback={null}><SpectraWindow sessionId={sessionId} phone={false} /></Suspense>
               </aside>
             )}
             {/* And one window for each Office app with a document open in it: Autora Pages, Autora Sheets and
@@ -2304,7 +2302,7 @@ export function App() {
                 hidden={sidePane !== o.pane}
                 aria-label={`The ${o.label} window, open beside the chat`}
               >
-                <OfficeWindow sessionId={sessionId} kind={o.kind} phone={false} />
+                <Suspense fallback={null}><OfficeWindow sessionId={sessionId} kind={o.kind} phone={false} /></Suspense>
               </aside>
             ) : null))}
           </div>
