@@ -38,6 +38,12 @@ export const FAMILIES: Family[] = [
     words: /\bautora (?:pages|sheets|slides)\b|\.(?:docx|xlsx|pptx)\b|\bword (?:doc|document|file)\b|\bexcel\b|\bspreadsheet|\bworkbook\b|\bpowerpoint\b|\bslide ?deck\b|\bslides?\b|\bpresentation\b|\bpitch deck\b|\bgoogle (?:docs|sheets|slides)\b/i,
   },
   {
+    id: "cad",
+    about: "Autora 3D: model, edit, measure and export 3D shapes (STL for printing, GLB for games) in the 3D window",
+    match: (n) => n.startsWith("cad_"),
+    words: /\bautora 3d\b|\b3d[- ]?(?:model|print|design|shape|object|part|scene)|\bcad\b|\.(?:stl|glb)\b|\bstl\b|\bextrud|\bbevel|\bprintable\b/i,
+  },
+  {
     id: "widgets",
     about: "show a chart, table or small interactive widget in the thread",
     match: (n) => n === "widget_show",

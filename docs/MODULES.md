@@ -290,6 +290,20 @@ Spectra's fetched renderer is most of what is on disk.
   `turn.agent.done {stopped}`; `resume.ts` reads that from the log and the next
   turn is told what was cut off, so it carries on rather than treating the new
   message as the whole job (and an Agent-mode build stays a build).
+- `autora-3d/` and `server/caddesk.ts`: **Autora 3D**, the 3D modelling window (a sketch-and-extrude CAD modeller) and the agent's
+  `cad_*` tools. `autora-3d/` is a **copy** of github.com/blofstedt/3D-Modeling, which is also its own app: never edit it here, change
+  it there and run `node scripts/sync-autora-3d.mjs [checkout]` (it also regenerates `server/specs/cad.ts`, one `cad_*` tool for
+  each call the modeller declares, so the two cannot drift). `npm run build` builds it into `dist/autora-3d/` (the window's page) and
+  `dist/autora-3d-engine/` (`engine.mjs` + `manifold.wasm`: the headless model, loaded by the server at run time, so the server is
+  typechecked without it and a server built without it simply does not offer the tools: `cadAvailable`). One model per chat lives
+  in `caddesk.ts` (kept as `cad-<session>.json` in the state directory, removed with the chat); the agent's tools run on it
+  (`runCadTool`, called from `runTool`), and the window is a frame of this origin (`CadWindow.tsx`) that only talks to the page by
+  `postMessage`: `ready` -> the model is fetched and sent down with Autora's theme (`THEME_TOKENS`, applied by `autora-3d/src/embed.ts`,
+  colours only); `changed` -> `PUT /api/cad/:session/doc`; an agent change -> `caddesk` over the socket -> the frame is sent the new
+  model. Each change carries `by` (agent or person) so the window reloads only for the agent's: a drag in progress is never
+  answered with an echo. `cad_export` is saved as an artifact (the STL never goes through the conversation). Traps: the window opens
+  on the agent's first call; an incognito chat has none; tool names in the engine's messages are prefixed on the way out
+  (`asAgentSees`). The phone shows it as a tab in the pinned view like the other windows (`Thread.tsx`, `lib/stage.ts` kind `cad`).
 - `spectra-editor/`: Spectra-PDF's renderer (github.com/jasonulbright/Spectra-PDF), the PDF window's
   editor, built by `spectra-editor/vite.config.ts` into `dist/spectra-editor/`. **Its source is not in
   this repository**: `scripts/prepare-spectra-editor.mjs` (run by `npm run build` and `npm run lint`)

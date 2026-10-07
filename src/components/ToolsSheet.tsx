@@ -12,15 +12,15 @@
  */
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { IconFile, IconScroll, IconSlides, IconStar, IconTable, IconWrench, IconX } from "./Icons";
+import { IconCube, IconFile, IconScroll, IconSlides, IconStar, IconTable, IconWrench, IconX } from "./Icons";
 
-type Kind = "pdf" | "docx" | "xlsx" | "pptx";
+type Kind = "pdf" | "docx" | "xlsx" | "pptx" | "cad";
 
 type Tool = {
   kind: Kind;
   app: string;
   /** The setting on the Tools page that decides whether this app is on. */
-  setting: "pdf" | "pages" | "sheets" | "slides";
+  setting: "pdf" | "pages" | "sheets" | "slides" | "cad";
   what: string;
   icon: (size: number) => JSX.Element;
 };
@@ -30,6 +30,7 @@ const TOOLS: Tool[] = [
   { kind: "docx", app: "Autora Pages", setting: "pages", what: "A blank document", icon: (s) => <IconScroll size={s} /> },
   { kind: "xlsx", app: "Autora Sheets", setting: "sheets", what: "A blank spreadsheet", icon: (s) => <IconTable size={s} /> },
   { kind: "pptx", app: "Autora Slides", setting: "slides", what: "A blank slide", icon: (s) => <IconSlides size={s} /> },
+  { kind: "cad", app: "Autora 3D", setting: "cad", what: "A block to shape", icon: (s) => <IconCube size={s} /> },
 ];
 
 export function ToolsSheet({ session, onClose, onTrouble, onOpened }: {
@@ -66,11 +67,14 @@ export function ToolsSheet({ session, onClose, onTrouble, onOpened }: {
     setBusy(tool.kind);
     setError(null);
     try {
-      const res = await fetch(`/api/sessions/${session}/new`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ kind: tool.kind }),
-      });
+      /* Autora 3D has no file to make: the model is the chat's own (server/caddesk.ts), so opening it is its own route. */
+      const res = tool.kind === "cad"
+        ? await fetch(`/api/cad/${encodeURIComponent(session)}/open`, { method: "POST" })
+        : await fetch(`/api/sessions/${session}/new`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ kind: tool.kind }),
+          });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(String(body?.error ?? `A new file was not opened (${res.status}).`));

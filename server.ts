@@ -125,6 +125,7 @@ import { jobRoutes } from "./server/routes/jobs";
 import { keyRoutes } from "./server/routes/keys";
 import { dropSpectra, serveSpectra, spectraDocumentChanged, spectraRoutes, spectraUpgrade } from "./server/spectra";
 import { newFileRoutes } from "./server/newfile";
+import { cadRoutes, cadState, dropCad, onCadChange, serveCad } from "./server/caddesk";
 import { windowOff } from "./server/tools";
 import { dropOfficeDesk, onOfficeChange, onOfficePush, onOfficeTouch, officeBriefing, officeData, officeRoutes, officeState, officeHooks, serveOfficeEditors } from "./server/officedesk";
 import { renderToPdf, webDir as officeWebDir } from "./server/officerender";
@@ -409,6 +410,7 @@ function forgetSession(id: string) {
   const gone = sessions.get(id);
   if (gone) void previewStop(gone, false).catch(() => undefined);
   forgetPresence(id);
+  dropCad(id);
   presenceSent.delete(id);
   const remarkTimer = remarkTimers.get(id);
   if (remarkTimer) clearTimeout(remarkTimer);
@@ -1180,6 +1182,11 @@ onDeskChange((sessionId) => {
      saves, which is a desk change too -- that one is dropped, since the file
      already holds it. */
   spectraDocumentChanged(sessionId);
+});
+
+/* Autora 3D, the same way: the window opens, and the model changes (by the agent's tools or the person's hands). */
+onCadChange((sessionId) => {
+  sendEphemeral(sessionId, { type: "caddesk", session: sessionId, state: cadState(sessionId) });
 });
 
 /* The Office window, the same way: what the person types is theirs for a moment, and the window's
@@ -5376,6 +5383,12 @@ async function startServer() {
   };
   spectraRoutes(app, spectraOpts);
   officeRoutes(app, { exists: (id: string) => sessions.has(id) });
+  // Autora 3D: the 3D window's model, and opening and putting it away.
+  cadRoutes(app, {
+    exists: (id: string) => sessions.has(id),
+    incognito: (id: string) => Boolean(sessions.get(id)?.incognito),
+    off: () => windowOff("cad_scene_get"),
+  });
 
   /* File -> Export PDF in the Office window: the server lays the document out (the same pages office_pdf
      makes), and the PDF opens in the PDF editor -- PDFs always go to our own. */
@@ -6081,6 +6094,7 @@ async function startServer() {
       // The PDF window, likewise.
       ws.send(JSON.stringify({ type: "pdfdesk", session: sessionId, state: deskState(sessionId) }));
       ws.send(JSON.stringify({ type: "officedesk", session: sessionId, state: officeState(sessionId) }));
+      ws.send(JSON.stringify({ type: "caddesk", session: sessionId, state: cadState(sessionId) }));
       ws.send(JSON.stringify({ type: "presence", session: sessionId, state: presenceFor(sessionId).view() }));
       if (openPreview?.opened) void openPreview.live.nudge();
 
@@ -6178,6 +6192,8 @@ async function startServer() {
   // 13. Vite Integration (Development middleware / Production static serving)
   // Spectra-PDF's editor, the PDF window's other half, on the same terms.
   serveSpectra(app, path.join(process.cwd(), "dist"));
+  // Autora 3D's window page, built from autora-3d/.
+  serveCad(app, path.join(process.cwd(), "dist"));
   // The Office editors, likewise: built by scripts/build-office.mjs, absent without it.
   const officeWeb = officeWebDir();
   if (officeWeb) serveOfficeEditors(app, officeWeb);

@@ -57,6 +57,13 @@ description: >-
   engines.
 
 
+  • Autora 3D — a 3D modelling window for things to design or print. The agent
+  builds shapes by sketching an outline and pulling it up (and cutting, bevelling,
+  repeating and measuring them) and you work on the same model beside the chat:
+  push and pull faces, move, resize and bevel by finger or mouse. Exports STL for
+  printing and GLB for games. Has its own switch on the Tools page.
+
+
   • Notebooks — group files by purpose with notes between them. Autora can
   compile one for you (every source filed, every claim citing its proof), and
   you can hand a notebook or any saved file to a chat.
@@ -133,11 +140,11 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  An API's spend no longer jumps when its balance reading goes wrong. A balance
-  that suddenly rises, or drops to nothing, is held until a second reading
-  agrees, so one odd reply can't be counted as money you paid in. DeepSeek's
-  free granted credit is left out of the balance, since a grant isn't a payment.
-  When the app does add a payment by itself, Billing says so, with the amount
-  and date and a "Not a payment" button to take it back. This month is now the
-  API's own figure, worked from its balance at the start of the month, instead
-  of only the tokens counted here.
+  Autora 3D joins the tools: a 3D modelling window beside the chat, wearing
+  Autora's theme. Ask for something to design or 3D print and the agent
+  sketches, extrudes, bevels, cuts, repeats and measures it (and checks it is a
+  solid that will print) while you watch the model take shape. Push, pull and
+  move the same model yourself, by finger or mouse, and the agent sees your
+  changes on its next step. Exports go to the thread as STL (for printing) or
+  GLB (for games). Open it from the wrench next to the message box; it has its
+  own switch on the Tools page.

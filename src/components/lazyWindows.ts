@@ -9,3 +9,4 @@ import { lazy } from "react";
 export const AppPreview = lazy(() => import("./AppPreview").then((m) => ({ default: m.AppPreview })));
 export const SpectraWindow = lazy(() => import("./SpectraWindow").then((m) => ({ default: m.SpectraWindow })));
 export const OfficeWindow = lazy(() => import("./OfficeWindow").then((m) => ({ default: m.OfficeWindow })));
+export const CadWindow = lazy(() => import("./CadWindow").then((m) => ({ default: m.CadWindow })));

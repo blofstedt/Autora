@@ -19,7 +19,8 @@ import { TodoCell } from "./TodoCell";
 import { usePreviewState } from "../lib/preview";
 import { useDeskState } from "../lib/pdfdesk";
 import { useOfficeState, type OfficeKind } from "../lib/officedesk";
-import { AppPreview, OfficeWindow, SpectraWindow } from "./lazyWindows";
+import { AppPreview, CadWindow, OfficeWindow, SpectraWindow } from "./lazyWindows";
+import { useCadState } from "../lib/caddesk";
 import { PermissionCell } from "./PermissionCell";
 import { ImageCell } from "./ImageCell";
 import { WidgetCell } from "./WidgetCell";
@@ -128,6 +129,8 @@ export function Thread({
   const appOpen = usePreviewState().open;
   const desk = useDeskState();
   const pdfSince = desk.open ? desk.since ?? 0 : null;
+  const cadOpen = useCadState();
+  const cadSince = cadOpen.open ? cadOpen.since ?? 0 : null;
   const office = useOfficeState();
   // One entry per open Office window: "docx:12|xlsx:30". A string, so it is a stable memo key.
   const officeSince = office.windows.map((w) => `${w.kind}:${w.since ?? 0}`).join("|");
@@ -144,6 +147,7 @@ export function Thread({
       // The Office windows are the same kind of thing and sit beside it, one tab for each app that is open.
       const windows: Surface[] = [
         ...(pdfSince === null ? [] : [{ kind: "pdf" as const, cell: { kind: "pdf" as const, seq: pdfSince }, key: `pdf-${pdfSince}` }]),
+        ...(cadSince === null ? [] : [{ kind: "cad" as const, cell: { kind: "cad" as const, seq: cadSince }, key: `cad-${cadSince}` }]),
         ...(officeSince === "" ? [] : officeSince.split("|").map((w) => {
           const [kind, since] = w.split(":") as [OfficeKind, string];
           return { kind, cell: { kind, seq: Number(since) }, key: `${kind}-${since}` };
@@ -153,7 +157,7 @@ export function Thread({
       const at = held.findIndex((s) => s.kind !== "app");
       return at < 0 ? [...held, ...windows] : [...held.slice(0, at), ...windows, ...held.slice(at)];
     },
-    [phone, live, buckets, browserOpen, liveBrowserSeq, appOpen, pdfSince, officeSince],
+    [phone, live, buckets, browserOpen, liveBrowserSeq, appOpen, pdfSince, cadSince, officeSince],
   );
   const held = surfaces.map((s) => s.key).join("|");
   /* What the thread shows as a stub rather than the card: whatever the stage
@@ -203,7 +207,7 @@ export function Thread({
      and the way out is the control in the window's own bar (Back to the
      conversation). Only an opening does it: a reload, or a window already up
      when the screen arrives, leaves the conversation where the person put it. */
-  const windowsUp = `${pdfSince ?? ""}|${officeSince}|${appOpen ? 1 : 0}`;
+  const windowsUp = `${pdfSince ?? ""}|${cadSince ?? ""}|${officeSince}|${appOpen ? 1 : 0}`;
   /* What was open when this screen arrived, and the first thing that happens to it.
      The desk, the document and the app a session already had are sent with the
      session, so on a reload or a phone opening the session the window lands a moment
@@ -920,6 +924,8 @@ const CellView = memo(function CellView({
       );
     case "pdf":
       return stage ? <Suspense fallback={null}><SpectraWindow sessionId={sessionId} phone /></Suspense> : null;
+    case "cad":
+      return stage ? <Suspense fallback={null}><CadWindow sessionId={sessionId} phone /></Suspense> : null;
     case "docx":
     case "pptx":
     case "xlsx":

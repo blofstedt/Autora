@@ -50,6 +50,11 @@ RUN npm ci
 # `npm run lint` and `npm run build` do first (scripts/prepare-spectra-editor.mjs).
 COPY spectra-editor/package.json spectra-editor/package-lock.json spectra-editor/
 RUN npm --prefix spectra-editor ci
+# Autora 3D (the 3D modelling window and the agent's cad_* tools) is a sub-project too: its source is a copy of
+# github.com/blofstedt/3D-Modeling (scripts/sync-autora-3d.mjs), built into dist/autora-3d (the page) and
+# dist/autora-3d-engine (the headless model the server runs the tools on).
+COPY autora-3d/package.json autora-3d/package-lock.json autora-3d/
+RUN npm --prefix autora-3d ci
 
 COPY tsconfig.json tsconfig.server.json tsconfig.test.json eslint.config.js vite.config.ts index.html ./
 # Only so `npm run lint` can typecheck them; they stay in this stage.
@@ -59,6 +64,7 @@ COPY src/ src/
 COPY server.ts ./
 COPY server/ server/
 COPY spectra-editor/ spectra-editor/
+COPY autora-3d/ autora-3d/
 COPY spectra/PIN.json spectra/PIN.json
 COPY scripts/spectra-checkout.mjs scripts/prepare-spectra-editor.mjs scripts/
 

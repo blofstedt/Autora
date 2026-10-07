@@ -7,7 +7,8 @@ import { Kind, type AutoraEvent, type BrowserState } from "./lib/types";
 import { setLiveFields, setLiveFrame, setLivePaneOwns, setLiveTabs } from "./lib/liveFrame";
 import { resetPreview, setPreviewFrame, setPreviewState, usePreviewState, type PreviewState } from "./lib/preview";
 import { ScreencastCell } from "./components/ScreencastCell";
-import { AppPreview, OfficeWindow, SpectraWindow } from "./components/lazyWindows";
+import { AppPreview, CadWindow, OfficeWindow, SpectraWindow } from "./components/lazyWindows";
+import { resetCad, setCadState, useCadState } from "./lib/caddesk";
 import { emitSpectraEvent } from "./lib/spectra";
 import { ResizeHandle } from "./components/ResizeHandle";
 import { CHAT, RAIL, setChatWidth, setRailCollapsed, setRailWidth, usePanes, wideScreen } from "./lib/panes";
@@ -112,7 +113,7 @@ const EVENT_BATCH_MS = 66;
 const LIBRARY_TABS: LibraryTab[] = ["notebooks", "files"];
 
 /** The windows that can sit beside the chat on a wide screen, one at a time. */
-type SideWindow = "app" | "pdf" | "pages" | "sheets" | "slides" | "browser";
+type SideWindow = "app" | "pdf" | "cad" | "pages" | "sheets" | "slides" | "browser";
 
 /**
  * The Office windows that can be open beside the chat, one per app, in the order their tabs sit in. Each has its
@@ -369,6 +370,7 @@ export function App() {
     };
     resetPreview();
     resetDesk();
+    resetCad();
     resetOffice();
     resetCollab();
     const stream = new SessionStream(sessionId, {
@@ -392,6 +394,7 @@ export function App() {
       },
       onPreview: (state) => setPreviewState(state as PreviewState),
       onPdfDesk: setDeskState,
+      onCadDesk: setCadState,
       onSpectra: emitSpectraEvent,
       onOfficeDesk: setOfficeState,
       onOfficePush: emitOfficePush,
@@ -1305,6 +1308,7 @@ export function App() {
   const phoneLayout = usePhone();
   const preview = usePreviewState();
   const desk = useDeskState();
+  const cad = useCadState();
   const off = useOfficeState();
   const windowAt = (kind: OfficeKind) => off.windows.find((w) => w.kind === kind) ?? null;
   const pointedAt = useOfficePick();
@@ -1316,6 +1320,7 @@ export function App() {
   const openWindows: Array<{ pane: SideWindow; since: number }> = [
     ...(preview.open ? [{ pane: "app" as const, since: preview.since ?? 0 }] : []),
     ...(desk.open ? [{ pane: "pdf" as const, since: desk.since ?? 0 }] : []),
+    ...(cad.open ? [{ pane: "cad" as const, since: cad.since ?? 0 }] : []),
     ...OFFICE_PANES.flatMap((o) => {
       const win = windowAt(o.kind);
       return win ? [{ pane: o.pane, since: win.since ?? 0 }] : [];
@@ -1332,6 +1337,7 @@ export function App() {
      person. Every window that is open stays mounted (see below), so a tab is never a reload. */
   const sideWindows: Array<{ pane: SideWindow; label: string }> = [
     ...(desk.open ? [{ pane: "pdf" as const, label: "PDF" }] : []),
+    ...(cad.open ? [{ pane: "cad" as const, label: "3D" }] : []),
     ...OFFICE_PANES.filter((o) => openWindows.some((w) => w.pane === o.pane)).map((o) => ({ pane: o.pane, label: o.label })),
     ...(browser?.open ? [{ pane: "browser" as const, label: "Browser" }] : []),
     ...(preview.open ? [{ pane: "app" as const, label: "Creator" }] : []),
@@ -2290,6 +2296,12 @@ export function App() {
             {desk.open && sessionId && (
               <aside className="app-pane" data-pane="pdf" hidden={sidePane !== "pdf"} aria-label="The PDF being worked on">
                 <Suspense fallback={null}><SpectraWindow sessionId={sessionId} phone={false} /></Suspense>
+              </aside>
+            )}
+            {/* Autora 3D: the model the agent and the person are both working on. */}
+            {cad.open && sessionId && (
+              <aside className="app-pane" data-pane="cad" hidden={sidePane !== "cad"} aria-label="Autora 3D, the model being worked on">
+                <Suspense fallback={null}><CadWindow sessionId={sessionId} phone={false} /></Suspense>
               </aside>
             )}
             {/* And one window for each Office app with a document open in it: Autora Pages, Autora Sheets and

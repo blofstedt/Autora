@@ -242,6 +242,8 @@ export type Cell =
   /** The PDF window, held in the pinned view on a phone. Never derived from
       the log: the window is live state (lib/pdfdesk.ts), added by the thread. */
   | { kind: "pdf"; seq: number }
+  /** And Autora 3D's window (lib/caddesk.ts), likewise. */
+  | { kind: "cad"; seq: number }
   /** And the Word window (lib/officedesk.ts), likewise. */
   | { kind: "docx" | "pptx" | "xlsx"; seq: number }
   | {

@@ -110,6 +110,7 @@ interface ToolSettings {
   pages: { enabled: boolean };
   sheets: { enabled: boolean };
   slides: { enabled: boolean };
+  cad: { enabled: boolean };
 }
 
 export function toolSettings(): ToolSettings {
@@ -154,6 +155,8 @@ import { personSPECS } from "./specs/person";
 import { voiceSPECS } from "./specs/voice";
 import { filesSPECS } from "./specs/files";
 import { memorySPECS } from "./specs/memory";
+import { cadSPECS } from "./specs/cad";
+import { cadAvailable, cadBriefing, runCadTool } from "./caddesk";
 
 // ------------------------------------------------------------- the registry --
 
@@ -216,6 +219,7 @@ const TOOLS: ToolSpec[] = [
   ...personSPECS,
   ...voiceSPECS,
   ...filesSPECS,
+  ...cadSPECS,
   ...memorySPECS,
 ];
 
@@ -331,6 +335,8 @@ export function windowOff(name: string, settings: ToolSettings = toolSettings())
   if (name === "widget_show") return !settings.widgets.enabled;
   if (name === "app_preview") return !settings.app.enabled;
   if (name.startsWith("pdf_")) return !settings.pdf.enabled;
+  // Built by autora-3d/ (npm run build); a server without it does not offer tools that cannot work.
+  if (name.startsWith("cad_")) return !cadAvailable() || !settings.cad.enabled;
   // Built by scripts/build-office.mjs; a server without the build does not offer tools that cannot work.
   if (name.startsWith("office_")) return !officeDir() || !(settings.pages.enabled || settings.sheets.enabled || settings.slides.enabled);
   return false;
@@ -2794,6 +2800,11 @@ async function runToolUnredacted(
       }
 
       default: {
+        // Autora 3D: one tool for each call the modeller declares (server/specs/cad.ts), run on the chat's model.
+        if (spec.name.startsWith("cad_")) {
+          if (ctx.memory.incognito) return { ok: false, summary: "An incognito chat keeps nothing, so it has no 3D window. Model in a normal chat." };
+          return await runCadTool(ctx.session, spec.name, args, { showFile: ctx.showFile });
+        }
         const custom = spec.name.startsWith(CUSTOM_PREFIX) ? getCustomTool(spec.name) : undefined;
         if (custom) {
           const missing = missingArgs(custom, args);
@@ -2902,6 +2913,8 @@ export async function capabilityBriefing(): Promise<string> {
       "artifact the person opens from the thread; their original is never changed. " +
       "Look at what you changed with pdf_look before saying it is done."
     : offLine("Autora PDF"));
+  // Only a server that has the modeller built in says anything about it.
+  if (cadAvailable()) lines.push(cadBriefing(windows.cad.enabled));
   lines.push(windows.widgets.enabled
     ? "- Explainer widgets: always available. Tool: widget_show. When someone " +
       "asks how something works -- a physical process, a mechanism, an " +

@@ -15,6 +15,8 @@ type Handlers = {
   /** One event for the PDF editor: an engine reply, or the document changing
       under it. The window passes on the ones the editor asked for. */
   onSpectra?: (msg: { event: string; payload: unknown }) => void;
+  /** Autora 3D's window: whether it is open, and what changed last. */
+  onCadDesk?: (state: unknown) => void;
   onOfficeDesk?: (state: unknown) => void;
   onOfficePush?: (msg: unknown) => void;
   /** Who has hold of what: surfaces the person has taken, and ones in use. */
@@ -151,6 +153,9 @@ export class SessionStream {
           break;
         case "officedesk.push":
           this.handlers.onOfficePush?.(msg);
+          break;
+        case "caddesk":
+          this.handlers.onCadDesk?.(msg.state);
           break;
         case "officedesk":
           this.handlers.onOfficeDesk?.(msg.state);
