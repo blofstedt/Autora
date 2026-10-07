@@ -48,6 +48,11 @@ is a sub-project with its own dependencies (see below).
 
 ## Where things are
 
+Start from `docs/MAP.md` (the repo by job, the request path, `server.ts` by
+region, recipes for common changes); `docs/REVIEW.md` lists known
+inefficiencies by id. Search with `--glob '!spectra-editor/**'`: the vendored
+PDF editor is most of the tree.
+
 - `server.ts`: the Express app, every `/api/*` route, the `/ws/:session`
   event stream and the agent turn loop.
 - `server/`: the pieces it uses. `tools.ts` (the agent's tools), `llm.ts` and
