@@ -256,6 +256,16 @@ interface PersistedState {
   /** Paid in (topped up) in total per provider, in USD. What came before the
       first reading is entered by hand; a later rise is folded in by itself. */
   topUps: Record<string, number>;
+  /** A balance reading that would need explaining -- a rise that looks like a
+      payment, or a drop to nothing -- held until a later reading agrees. Per
+      provider. See ./vendor-money. */
+  pendingReadings: Record<string, { balance: number; at: number }>;
+  /** Payments the console worked out for itself from a rising balance, newest
+      last, so a wrong one can be seen and taken back. Per provider. */
+  autoTopUps: Record<string, { at: number; usd: number; balance: number }[]>;
+  /** What each vendor's own till had spent when the month began, per provider,
+      so the month is the vendor's arithmetic too. `since` is when that was read. */
+  monthBases: Record<string, { month: string; spent: number; since: number }>;
   /** Which tools' output the model has been reading, this month. */
   toolFeed: ToolFeed;
   usage: UsageEntry[];
@@ -515,6 +525,9 @@ function blank(): PersistedState {
     balances: {},
     balanceAts: {},
     topUps: {},
+    pendingReadings: {},
+    autoTopUps: {},
+    monthBases: {},
     toolFeed: { month: "", tools: {} },
     usage: [],
     repairs: {},
@@ -609,6 +622,9 @@ function read(): PersistedState {
     if (raw.balances && typeof raw.balances === "object") state.balances = { ...raw.balances };
     if (raw.balanceAts && typeof raw.balanceAts === "object") state.balanceAts = { ...raw.balanceAts };
     if (raw.topUps && typeof raw.topUps === "object") state.topUps = { ...raw.topUps };
+    if (raw.pendingReadings && typeof raw.pendingReadings === "object") state.pendingReadings = { ...raw.pendingReadings };
+    if (raw.autoTopUps && typeof raw.autoTopUps === "object") state.autoTopUps = { ...raw.autoTopUps };
+    if (raw.monthBases && typeof raw.monthBases === "object") state.monthBases = { ...raw.monthBases };
     if (typeof raw.balanceUsd === "number") state.balances.deepseek = raw.balanceUsd;
     if (typeof raw.balanceAt === "number") state.balanceAts.deepseek = raw.balanceAt;
     if (typeof raw.topUpUsd === "number") state.topUps.deepseek = raw.topUpUsd;

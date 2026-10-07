@@ -49,6 +49,14 @@ type VendorMoney = {
   /** Paid in, less what is left. Null while there is no paid-in figure to take
       it from -- a balance on its own says what is left, not what was spent. */
   lifetime_usd: number | null;
+  /** What the vendor's own till says this month has cost: spent now, less what
+      it had spent when the month began. Null until a month's start is known. */
+  month_real_usd: number | null;
+  /** When that month's start was read, in seconds. A month that began before
+      the console first saw the till is measured from here, not from the 1st. */
+  month_since: number | null;
+  /** Payments worked out from a rising balance, so a wrong one can be undone. */
+  auto_top_ups: { at: number; usd: number }[];
 };
 
 /** How old a reading may be before another is worth making. The page asks for
@@ -56,6 +64,16 @@ type VendorMoney = {
 const STALE_MS = 5 * 60 * 1000;
 /** A rise smaller than this is a wobble in the arithmetic, not a payment. */
 const PAYMENT_MIN = 0.01;
+/** How long a reading that needs explaining waits for a second one to agree. */
+const CONFIRM_SECONDS = 60;
+/** How many automatic payments are kept to look back at. */
+const AUTO_LOG_MAX = 20;
+
+/** Local-time YYYY-MM, the month the person paying would call it. */
+function monthOf(seconds: number): string {
+  const d = new Date(seconds * 1000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
 
 /**
  * Paid in, less what is left.
@@ -97,7 +115,8 @@ function endpointFor(id: string): string | null {
 /**
  * The dollars in a vendor's reply, which every one of them words differently.
  *
- * DeepSeek:  {"balance_infos":[{"currency":"USD","total_balance":"9.24"}]}
+ * DeepSeek:  {"balance_infos":[{"currency":"USD","total_balance":"9.24",
+ *              "granted_balance":"0.00","topped_up_balance":"9.24"}]}
  * Orca:      {"unit":"USD","paid_balance":19.99,"promo_credits":[...]}
  * OpenRouter: {"data":{"total_credits":10,"total_usage":3.5}}
  *
@@ -111,7 +130,10 @@ export function readBalance(field: "deepseek" | "orcarouter" | "openrouter", bod
     /* USD where it is offered; the first balance otherwise, since a vendor
        billing in one currency has only one to give. */
     const chosen = infos.find((info) => info?.currency === "USD") ?? infos[0];
-    const parsed = Number(chosen?.total_balance);
+    /* The topped-up part alone, when it is given. total_balance adds granted
+       (free) credit to it, and a grant arriving would read as money paid in. */
+    const paid = chosen?.topped_up_balance;
+    const parsed = Number(paid !== undefined && paid !== null && paid !== "" ? paid : chosen?.total_balance);
     return Number.isFinite(parsed) ? parsed : null;
   }
   if (field === "orcarouter") {
@@ -152,6 +174,7 @@ export function forgetVendorMoney(id: string): void {
   if (!providerSpec(id)?.balance) return;
   delete state.balances[id];
   delete state.balanceAts[id];
+  delete state.pendingReadings[id];
   save();
 }
 
@@ -171,14 +194,85 @@ export function vendorMoneyFor(id: string): VendorMoney | null {
   const { usd, at } = balanceFor(id);
   if (usd === null) return null;
   const toppedUp = topUpFor(id);
+  const lifetime = realSpend(usd, toppedUp);
+  const base = state.monthBases[id];
+  const thisMonth = base && base.month === monthOf(Math.floor(Date.now() / 1000));
   return {
     provider: id,
     label,
     balance_usd: usd,
     topped_up_usd: toppedUp,
     at,
-    lifetime_usd: realSpend(usd, toppedUp),
+    lifetime_usd: lifetime,
+    month_real_usd: thisMonth && lifetime !== null ? Math.max(0, lifetime - base.spent) : null,
+    month_since: thisMonth ? base.since : null,
+    auto_top_ups: (state.autoTopUps[id] ?? []).map(({ at: when, usd: amount }) => ({ at: when, usd: amount })),
   };
+}
+
+/**
+ * The paid-in total has been corrected, by hand or by undoing a payment, so
+ * the vendor's spend moved by the same amount without a dollar being spent.
+ * The month's starting point moves with it, or the correction would show up as
+ * money gained or lost this month.
+ */
+export function shiftMonthBase(id: string, change: number): void {
+  const base = state.monthBases[id];
+  if (base && Number.isFinite(change)) base.spent += change;
+}
+
+/** Set what has been paid in at one vendor by hand. */
+export function setTopUp(id: string, amount: number | null): void {
+  const before = state.topUps[id];
+  if (amount === null) {
+    delete state.topUps[id];
+    delete state.monthBases[id];
+  } else {
+    state.topUps[id] = amount;
+    if (typeof before === "number") shiftMonthBase(id, amount - before);
+  }
+  /* Whatever was waiting to be confirmed was measured against the old total. */
+  if (amount !== before) delete state.pendingReadings[id];
+  const usd = state.balances[id];
+  if (amount !== null && typeof usd === "number" && !state.monthBases[id]) {
+    noteMonth(id, null, 0, Math.floor(Date.now() / 1000));
+  }
+}
+
+/** Take back a payment the console worked out for itself. False when there was
+    no such payment, which is not an error: it may already have been undone. */
+export function undoAutoTopUp(id: string, at: number): boolean {
+  const log = state.autoTopUps[id] ?? [];
+  const index = log.findIndex((entry) => entry.at === at);
+  if (index < 0) return false;
+  const [entry] = log.splice(index, 1);
+  const before = state.topUps[id] ?? 0;
+  const after = Math.max(0, before - entry.usd);
+  state.topUps[id] = after;
+  shiftMonthBase(id, after - before);
+  save();
+  return true;
+}
+
+/**
+ * Keep the month's starting point for one vendor.
+ *
+ * The month begins at the last reading made before it did, which is the
+ * nearest thing to the till's figure at midnight on the 1st. With no earlier
+ * reading the first one seen stands in, and `since` says so. `before` is the
+ * spend at the previous reading, if there was one.
+ */
+function noteMonth(id: string, before: number | null, beforeAt: number, nowSec: number): void {
+  const month = monthOf(nowSec);
+  const base = state.monthBases[id];
+  if (base && base.month === month) return;
+  const usd = state.balances[id];
+  const spent = typeof usd === "number" ? realSpend(usd, topUpFor(id)) : null;
+  if (before !== null && beforeAt > 0 && monthOf(beforeAt) !== month) {
+    state.monthBases[id] = { month, spent: before, since: beforeAt };
+  } else if (spent !== null) {
+    state.monthBases[id] = { month, spent, since: nowSec };
+  }
 }
 
 /** The real spend for the provider the next turn will actually call.
@@ -255,16 +349,44 @@ export async function refreshVendorMoney(id = resolveProvider().provider): Promi
   }
   if (usd === null) return vendorMoney(id);
 
-  const seen = balanceFor(id).usd;
-  /* A reading above the last one is money paid in between the two, so what has
+  const { usd: seen, at: seenAt } = balanceFor(id);
+  const nowSec = Math.floor(Date.now() / 1000);
+  /* A reading that would need explaining is not believed on sight. A rise is
+     either money paid in or a reading gone wrong, and a drop to nothing is
+     either an empty account or the same; counting a wrong one as a payment
+     inflates what was paid in, and every spend figure after it. So it waits
+     for a later reading to say the same thing, and until then the last
+     reading believed stays on show. */
+  const rise = typeof seen === "number" && usd > seen + PAYMENT_MIN;
+  const emptied = typeof seen === "number" && seen > 1 && usd <= PAYMENT_MIN;
+  const waiting = state.pendingReadings[id];
+  if (rise || emptied) {
+    const agrees = rise ? usd > (seen as number) + PAYMENT_MIN : usd <= PAYMENT_MIN;
+    if (!waiting || !agrees) {
+      state.pendingReadings[id] = { balance: usd, at: nowSec };
+      save();
+      return vendorMoney(id);
+    }
+    if (nowSec - waiting.at < CONFIRM_SECONDS) return vendorMoney(id);
+  }
+  delete state.pendingReadings[id];
+
+  const spentBefore = typeof seen === "number" ? realSpend(seen, topUpFor(id)) : null;
+  /* A confirmed rise is money paid in between the two readings, so what has
      been paid in follows the till instead of having to be kept up by hand.
      Only from the second reading on: the first has nothing to compare with,
-     and the amount entered by hand is what covers everything before it. */
-  if (typeof seen === "number" && usd > seen + PAYMENT_MIN) {
-    state.topUps[id] = (state.topUps[id] ?? 0) + (usd - seen);
+     and the amount entered by hand is what covers everything before it. It is
+     written down, so a wrong one can be seen and taken back. */
+  if (rise && typeof seen === "number") {
+    const paidIn = usd - seen;
+    state.topUps[id] = (state.topUps[id] ?? 0) + paidIn;
+    const log = (state.autoTopUps[id] ??= []);
+    log.push({ at: nowSec, usd: paidIn, balance: usd });
+    if (log.length > AUTO_LOG_MAX) log.splice(0, log.length - AUTO_LOG_MAX);
   }
   state.balances[id] = usd;
-  state.balanceAts[id] = Math.floor(Date.now() / 1000);
+  state.balanceAts[id] = nowSec;
+  noteMonth(id, spentBefore, seenAt, nowSec);
   save();
   return vendorMoney(id);
 }
