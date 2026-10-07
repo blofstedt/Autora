@@ -62,7 +62,7 @@ interface CadCore {
 }
 
 /** What the page knows about the window. */
-export interface CadState {
+interface CadState {
   open: boolean;
   /** When it was opened, which orders it among the other windows. */
   since?: number;
@@ -238,7 +238,7 @@ const EXPORT_MIME: Record<string, string> = {
 /** The most a tool result may say, in characters: a whole scene can be large and the agent can ask for less. */
 const MOST = 24_000;
 
-export interface CadToolHooks {
+interface CadToolHooks {
   /** Show a saved file in the thread. */
   showFile?: (file: { id: string; name: string; mime: string; size: number }) => void;
 }
