@@ -5930,6 +5930,16 @@ button.dock-card:hover { border-color: var(--border-strong); }
   border-radius: var(--r-pill); border: 1px solid transparent;
   background: none; color: var(--text-3); cursor: pointer; touch-action: manipulation;
 }
+.stage-expand {
+  flex: 0 0 auto; margin-left: auto;
+  width: 36px; height: 30px; margin-bottom: 2px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--r-pill); border: 1px solid transparent;
+  background: none; color: var(--text-3); cursor: pointer; touch-action: manipulation;
+}
+.stage-expand[aria-pressed="true"] { color: var(--accent-light); }
+.stage-follow + .stage-expand, .stage-tab + .stage-expand { margin-left: 0; }
+.stage-expand ~ .stage-fold { margin-left: 0; }
 .stage-fold svg { transform: rotate(-90deg); transition: transform 0.2s var(--ease); }
 .stage.is-collapsed .stage-fold svg { transform: rotate(90deg); }
 
@@ -5943,6 +5953,16 @@ button.dock-card:hover { border-color: var(--border-strong); }
 .stage-pane > .cell, .stage-pane > .todo-cell {
   border: 0; border-radius: 0; box-shadow: none; animation: none;
 }
+
+/* Expanded: the tools area takes the screen's height; the conversation keeps a
+   strip under it so the last reply and the message box stay in reach. */
+.thread-wrap.has-expanded-stage > .stage.is-expanded { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+.stage.is-expanded .stage-body { flex: 1 1 0; min-height: 0; max-height: none; display: flex; flex-direction: column; overflow: auto; }
+.stage.is-expanded .stage-pane:not([hidden]) { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+.stage.is-expanded .stage-pane > * { flex: 1 1 auto; min-height: 0; }
+.stage.is-expanded .pdf-window.is-phone, .stage.is-expanded .pdf-window.is-phone.is-pages,
+.stage.is-expanded .st-window.is-phone { height: auto; }
+.thread-wrap.has-expanded-stage > .thread { flex: 0 0 auto; max-height: 76px; padding-bottom: 8px; }
 
 /* Where a held card was, in the thread. */
 .stage-stub {
@@ -7207,3 +7227,28 @@ body.is-resizing iframe { pointer-events: none; }
 }
 @keyframes agentRing { from { transform: scale(0.4); opacity: 0.95; } to { transform: scale(1.6); opacity: 0; } }
 .is-agent-pressed { box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.7) !important; transition: box-shadow 0.2s ease; }
+
+/* ==========================================================================
+   Tools on a phone: every window shares one bar, so the same few rules keep
+   them usable at 320-430px -- bars scroll sideways instead of wrapping into
+   several rows, taps are thumb-sized, and text inputs are 16px so the browser
+   does not zoom the page when one is focused.
+   ========================================================================== */
+@media (max-width: 680px) {
+  .pdf-window.is-phone .pdf-bar,
+  .app-window.is-phone .app-bar {
+    flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  .pdf-window.is-phone .pdf-bar::-webkit-scrollbar,
+  .app-window.is-phone .app-bar::-webkit-scrollbar { display: none; }
+  .pdf-window.is-phone .pdf-bar > *, .app-window.is-phone .app-bar > * { flex-shrink: 0; }
+  .pdf-window.is-phone .pdf-bar .pdf-bar-name { flex-shrink: 1; min-width: 4em; }
+  .pdf-window.is-phone .btn.icon, .app-window.is-phone .btn.icon,
+  .pdf-window.is-phone .pdf-pill, .app-window.is-phone .app-control { min-height: 36px; min-width: 36px; }
+  .pdf-window.is-phone input, .pdf-window.is-phone select, .pdf-window.is-phone textarea,
+  .app-window.is-phone input, .app-window.is-phone select, .app-window.is-phone textarea { font-size: 16px; }
+  .st-window.is-phone { max-width: 100vw; overflow-x: hidden; }
+  .stage-tab { height: 38px; }
+  .stage-fold, .stage-expand { width: 40px; height: 34px; }
+  .stage-follow { height: 32px; }
+}

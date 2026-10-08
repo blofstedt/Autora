@@ -176,8 +176,8 @@ export function Thread({
   /* What the thread shows as a stub rather than the card: whatever the stage
      holds, and the plan docked above the message box. */
   const docked = dockedPlanKey ? (held ? `${held}|${dockedPlanKey}` : dockedPlanKey) : held;
-  const [stageView, setStageView] = useState<{ held: string; pick: SurfaceKind | null; folded: boolean }>(
-    { held: "", pick: null, folded: false },
+  const [stageView, setStageView] = useState<{ held: string; pick: SurfaceKind | null; folded: boolean; expanded: boolean }>(
+    { held: "", pick: null, folded: false, expanded: false },
   );
   /* Follow: the tab tracks whatever the agent touched last. Tapping a tab is
      taking the wheel, so it lets go -- the way scrolling up lets go of the
@@ -187,6 +187,7 @@ export function Thread({
   const handedPage = work.browserHandedOver && surfaces.some((s) => s.kind === "browser");
   // A page handed to the person is what they are here to use: never folded away.
   const folded = !handedPage && stageFresh && stageView.folded;
+  const expanded = stageFresh && stageView.expanded;
   const activeKind: SurfaceKind | null = handedPage
     ? "browser"
     : follow && surfaces.length > 1
@@ -194,14 +195,18 @@ export function Thread({
       : (stageFresh && surfaces.find((s) => s.kind === stageView.pick)?.kind) || newestSurface(surfaces)?.kind || null;
   const pickTab = useCallback((kind: SurfaceKind) => {
     setFollowing(false);
-    setStageView({ held, pick: kind, folded: false });
+    setStageView((v) => ({ held, pick: kind, folded: false, expanded: v.held === held && v.expanded }));
   }, [held]);
   const toggleFollow = useCallback(() => {
     setFollowing(!follow);
-    setStageView((v) => ({ held, pick: v.held === held ? v.pick : null, folded: false }));
+    setStageView((v) => ({ held, pick: v.held === held ? v.pick : null, folded: false, expanded: v.held === held && v.expanded }));
   }, [held, follow]);
   const foldStage = useCallback(
-    () => setStageView((v) => ({ held, pick: v.held === held ? v.pick : null, folded: !(v.held === held && v.folded) })),
+    () => setStageView((v) => ({ held, pick: v.held === held ? v.pick : null, folded: !(v.held === held && v.folded), expanded: v.held === held && v.expanded })),
+    [held],
+  );
+  const expandStage = useCallback(
+    () => setStageView((v) => ({ held, pick: v.held === held ? v.pick : null, folded: false, expanded: !(v.held === held && v.expanded) })),
     [held],
   );
 
@@ -373,7 +378,7 @@ export function Thread({
   }
 
   return (
-    <div className={`thread-wrap${immersive ? " is-immersive" : ""}`}>
+    <div className={`thread-wrap${immersive ? " is-immersive" : ""}${activeKind && expanded && !folded ? " has-expanded-stage" : ""}`}>
       {dock}
       {immersive && (
         <ImmersiveChat
@@ -389,10 +394,12 @@ export function Thread({
           surfaces={surfaces}
           active={activeKind}
           collapsed={folded}
+          expanded={expanded}
           following={follow && surfaces.length > 1}
           onPick={pickTab}
           onFollow={toggleFollow}
           onToggle={foldStage}
+          onExpand={expandStage}
           render={(surface) => (
             <CellView
               cell={surface.cell}
