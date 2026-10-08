@@ -7,8 +7,9 @@ import { Kind, type AutoraEvent, type BrowserState } from "./lib/types";
 import { setLiveFields, setLiveFrame, setLivePaneOwns, setLiveTabs } from "./lib/liveFrame";
 import { resetPreview, setPreviewFrame, setPreviewState, usePreviewState, type PreviewState } from "./lib/preview";
 import { ScreencastCell } from "./components/ScreencastCell";
-import { AppPreview, CadWindow, OfficeWindow, OpenCutWindow, SpectraWindow, StudioWindow } from "./components/lazyWindows";
+import { AppPreview, CadWindow, OfficeWindow, OpenCutWindow, SpectraWindow, StudioWindow, TerminalWindow } from "./components/lazyWindows";
 import { resetCad, setCadState, useCadState } from "./lib/caddesk";
+import { resetTerm, setTermState, useTermState } from "./lib/termdesk";
 import { emitStudioCommand, resetStudio, setStudioState, useStudioState } from "./lib/studio";
 import { emitSpectraEvent } from "./lib/spectra";
 import { ResizeHandle } from "./components/ResizeHandle";
@@ -117,7 +118,7 @@ const EVENT_BATCH_MS = 66;
 const LIBRARY_TABS: LibraryTab[] = ["notebooks", "files"];
 
 /** The windows that can sit beside the chat on a wide screen, one at a time. */
-type SideWindow = "app" | "pdf" | "video" | "cad" | "studio" | "pages" | "sheets" | "slides" | "browser" | "work";
+type SideWindow = "app" | "pdf" | "video" | "cad" | "term" | "studio" | "pages" | "sheets" | "slides" | "browser" | "work";
 
 /**
  * The Office windows that can be open beside the chat, one per app, in the order their tabs sit in. Each has its
@@ -388,6 +389,7 @@ export function App() {
     resetDesk();
     resetVideo();
     resetCad();
+    resetTerm();
     resetStudio();
     resetOffice();
     resetCollab();
@@ -413,6 +415,7 @@ export function App() {
       onPreview: (state) => setPreviewState(state as PreviewState),
       onPdfDesk: setDeskState,
       onCadDesk: setCadState,
+      onTermDesk: setTermState,
       onStudioDesk: setStudioState,
       onStudioCommand: emitStudioCommand,
       onSpectra: emitSpectraEvent,
@@ -1332,6 +1335,7 @@ export function App() {
   const desk = useDeskState();
   const video = useVideoState();
   const cad = useCadState();
+  const term = useTermState();
   const studio = useStudioState();
   const off = useOfficeState();
   const windowAt = (kind: OfficeKind) => off.windows.find((w) => w.kind === kind) ?? null;
@@ -1361,6 +1365,7 @@ export function App() {
     ...(desk.open ? [{ pane: "pdf" as const, since: desk.since ?? 0 }] : []),
     ...(video.open ? [{ pane: "video" as const, since: video.since ?? 0 }] : []),
     ...(cad.open ? [{ pane: "cad" as const, since: cad.since ?? 0 }] : []),
+    ...(term.open ? [{ pane: "term" as const, since: term.since ?? 0 }] : []),
     ...(studio.open ? [{ pane: "studio" as const, since: studio.since ?? 0 }] : []),
     ...OFFICE_PANES.flatMap((o) => {
       const win = windowAt(o.kind);
@@ -1387,6 +1392,7 @@ export function App() {
     ...(desk.open ? [{ pane: "pdf" as const, label: "PDF" }] : []),
     ...(video.open ? [{ pane: "video" as const, label: "Video" }] : []),
     ...(cad.open ? [{ pane: "cad" as const, label: "3D" }] : []),
+    ...(term.open ? [{ pane: "term" as const, label: "Terminal" }] : []),
     ...(studio.open ? [{ pane: "studio" as const, label: "Music" }] : []),
     ...OFFICE_PANES.filter((o) => openWindows.some((w) => w.pane === o.pane)).map((o) => ({ pane: o.pane, label: o.label })),
     ...(browser?.open ? [{ pane: "browser" as const, label: "Browser" }] : []),
@@ -2393,6 +2399,12 @@ export function App() {
             {cad.open && sessionId && (
               <aside className="app-pane" data-pane="cad" hidden={sidePane !== "cad"} aria-label="Autora 3D, the model being worked on">
                 <Suspense fallback={null}><CadWindow sessionId={sessionId} phone={false} /></Suspense>
+              </aside>
+            )}
+            {/* The Terminal: a shell the agent and the person share. */}
+            {term.open && sessionId && (
+              <aside className="app-pane" data-pane="term" hidden={sidePane !== "term"} aria-label="The terminal, shared with the agent">
+                <Suspense fallback={null}><TerminalWindow sessionId={sessionId} phone={false} /></Suspense>
               </aside>
             )}
             {/* Autora Music: the song the agent and the person are both making. */}

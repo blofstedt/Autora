@@ -21,8 +21,9 @@ import { usePreviewState } from "../lib/preview";
 import { useDeskState } from "../lib/pdfdesk";
 import { useVideoState } from "../lib/opencut";
 import { useOfficeState, type OfficeKind } from "../lib/officedesk";
-import { AppPreview, CadWindow, OfficeWindow, OpenCutWindow, SpectraWindow, StudioWindow } from "./lazyWindows";
+import { AppPreview, CadWindow, OfficeWindow, OpenCutWindow, SpectraWindow, StudioWindow, TerminalWindow } from "./lazyWindows";
 import { useCadState } from "../lib/caddesk";
+import { useTermState } from "../lib/termdesk";
 import { useStudioState } from "../lib/studio";
 import { PermissionCell } from "./PermissionCell";
 import { ImageCell } from "./ImageCell";
@@ -140,6 +141,8 @@ export function Thread({
   const videoSince = video.open ? video.since ?? 0 : null;
   const cadOpen = useCadState();
   const cadSince = cadOpen.open ? cadOpen.since ?? 0 : null;
+  const termOpen = useTermState();
+  const termSince = termOpen.open ? termOpen.since ?? 0 : null;
   const studioOpen = useStudioState();
   const studioSince = studioOpen.open ? studioOpen.since ?? 0 : null;
   const office = useOfficeState();
@@ -160,6 +163,7 @@ export function Thread({
         ...(pdfSince === null ? [] : [{ kind: "pdf" as const, cell: { kind: "pdf" as const, seq: pdfSince }, key: `pdf-${pdfSince}` }]),
         ...(videoSince === null ? [] : [{ kind: "video" as const, cell: { kind: "video" as const, seq: videoSince }, key: `video-${videoSince}` }]),
         ...(cadSince === null ? [] : [{ kind: "cad" as const, cell: { kind: "cad" as const, seq: cadSince }, key: `cad-${cadSince}` }]),
+        ...(termSince === null ? [] : [{ kind: "term" as const, cell: { kind: "term" as const, seq: termSince }, key: `term-${termSince}` }]),
         ...(studioSince === null ? [] : [{ kind: "studio" as const, cell: { kind: "studio" as const, seq: studioSince }, key: `studio-${studioSince}` }]),
         ...(officeSince === "" ? [] : officeSince.split("|").map((w) => {
           const [kind, since] = w.split(":") as [OfficeKind, string];
@@ -170,7 +174,7 @@ export function Thread({
       const at = held.findIndex((s) => s.kind !== "app");
       return at < 0 ? [...held, ...windows] : [...held.slice(0, at), ...windows, ...held.slice(at)];
     },
-    [phone, live, buckets, browserOpen, liveBrowserSeq, appOpen, pdfSince, videoSince, cadSince, studioSince, officeSince],
+    [phone, live, buckets, browserOpen, liveBrowserSeq, appOpen, pdfSince, videoSince, cadSince, termSince, studioSince, officeSince],
   );
   const held = surfaces.map((s) => s.key).join("|");
   /* What the thread shows as a stub rather than the card: whatever the stage
@@ -225,7 +229,7 @@ export function Thread({
      and the way out is the control in the window's own bar (Back to the
      conversation). Only an opening does it: a reload, or a window already up
      when the screen arrives, leaves the conversation where the person put it. */
-  const windowsUp = `${pdfSince ?? ""}|${videoSince ?? ""}|${cadSince ?? ""}|${studioSince ?? ""}|${officeSince}|${appOpen ? 1 : 0}`;
+  const windowsUp = `${pdfSince ?? ""}|${videoSince ?? ""}|${cadSince ?? ""}|${termSince ?? ""}|${studioSince ?? ""}|${officeSince}|${appOpen ? 1 : 0}`;
   /* What was open when this screen arrived, and the first thing that happens to it.
      The desk, the document and the app a session already had are sent with the
      session, so on a reload or a phone opening the session the window lands a moment
@@ -240,8 +244,8 @@ export function Thread({
     if (seen === null) return;
     if (!settled.current) { settled.current = true; return; }
     if (seen === windowsUp) return;
-    if (pdfSince !== null || videoSince !== null || officeSince !== "" || appOpen) setFullscreen(true);
-  }, [windowsUp, pdfSince, videoSince, officeSince, appOpen, phone, live]);
+    if (pdfSince !== null || videoSince !== null || termSince !== null || officeSince !== "" || appOpen) setFullscreen(true);
+  }, [windowsUp, pdfSince, videoSince, termSince, officeSince, appOpen, phone, live]);
   useEffect(() => { windowsSeen.current = null; settled.current = false; }, [sessionId]);
   useEffect(() => () => setFullscreen(false), [sessionId]);
   const lastSaid = tail?.replies.length ? tail.replies[tail.replies.length - 1].text : "";
@@ -1034,6 +1038,8 @@ const CellView = memo(function CellView({
       return stage ? <Suspense fallback={null}><SpectraWindow sessionId={sessionId} phone /></Suspense> : null;
     case "video":
       return stage ? <Suspense fallback={null}><OpenCutWindow sessionId={sessionId} phone /></Suspense> : null;
+    case "term":
+      return stage ? <Suspense fallback={null}><TerminalWindow sessionId={sessionId} phone /></Suspense> : null;
     case "cad":
       return stage ? <Suspense fallback={null}><CadWindow sessionId={sessionId} phone /></Suspense> : null;
     case "studio":

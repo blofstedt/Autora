@@ -12,15 +12,15 @@
  */
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { IconCube, IconFile, IconMusic, IconScroll, IconSlides, IconStar, IconTable, IconVideo, IconWrench, IconX } from "./Icons";
+import { IconCube, IconFile, IconMusic, IconScroll, IconSlides, IconStar, IconTable, IconTerminal, IconVideo, IconWrench, IconX } from "./Icons";
 
-type Kind = "pdf" | "docx" | "xlsx" | "pptx" | "video" | "cad" | "studio";
+type Kind = "pdf" | "docx" | "xlsx" | "pptx" | "video" | "cad" | "studio" | "terminal";
 
 type Tool = {
   kind: Kind;
   app: string;
   /** The setting on the Tools page that decides whether this app is on. */
-  setting: "pdf" | "video" | "pages" | "sheets" | "slides" | "cad" | "studio";
+  setting: "pdf" | "video" | "pages" | "sheets" | "slides" | "cad" | "studio" | "terminal";
   what: string;
   icon: (size: number) => JSX.Element;
 };
@@ -32,6 +32,7 @@ const TOOLS: Tool[] = [
   { kind: "xlsx", app: "Autora Sheets", setting: "sheets", what: "A blank spreadsheet", icon: (s) => <IconTable size={s} /> },
   { kind: "pptx", app: "Autora Slides", setting: "slides", what: "A blank slide", icon: (s) => <IconSlides size={s} /> },
   { kind: "studio", app: "Autora Music", setting: "studio", what: "A new song", icon: (s) => <IconMusic size={s} /> },
+  { kind: "terminal", app: "Terminal", setting: "terminal", what: "A shell you and Autora share", icon: (s) => <IconTerminal size={s} /> },
   { kind: "cad", app: "Autora 3D", setting: "cad", what: "A block to shape", icon: (s) => <IconCube size={s} /> },
 ];
 
@@ -45,7 +46,7 @@ export function ToolsSheet({ session, onClose, onTrouble, onOpened }: {
   /* Which apps are on, from the same settings the Tools page writes. Held as
      null while it loads: unknown is not the same as off, and a row that said
      "switched off" for half a second would be wrong. */
-  const [on, setOn] = useState<Record<string, boolean> | null>(null);
+  const [on, setOn] = useState<Record<string, { enabled?: boolean } | undefined> | null>(null);
   const [busy, setBusy] = useState<Kind | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -78,6 +79,18 @@ export function ToolsSheet({ session, onClose, onTrouble, onOpened }: {
           return;
         }
         onOpened("a video project", tool.app);
+        onClose();
+        return;
+      }
+      if (tool.kind === "terminal") {
+        const res = await fetch(`/api/term/${encodeURIComponent(session)}/open`, { method: "POST" });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setError(String(body?.error ?? `The terminal was not opened (${res.status}).`));
+          setBusy(null);
+          return;
+        }
+        onOpened("a shell", tool.app);
         onClose();
         return;
       }
@@ -125,10 +138,10 @@ export function ToolsSheet({ session, onClose, onTrouble, onOpened }: {
           </button>
         </div>
         <div className="modal-body tools-body">
-          <p className="jf-hint">Opens the app on its own, with a new blank file in it. No message, no waiting.</p>
+          <p className="jf-hint">Opens the app on its own, with a new blank file in it (the terminal opens at your working folder). No message, no waiting.</p>
           <div className="tool-tiles">
             {TOOLS.map((tool) => {
-              const off = on !== null && !on[tool.setting];
+              const off = on !== null && on[tool.setting]?.enabled === false;
               return (
                 <button
                   key={tool.kind}

@@ -26,29 +26,47 @@ export function OfficePages({ sessionId, kind, name, rev, onEdit }: { sessionId:
   /** Each app's document has its own window and its own drawn pages, so every call says which one. */
   const api = useCallback((path: string) => `/api/officedesk/${encodeURIComponent(sessionId)}${path}?kind=${kind}`, [sessionId, kind]);
   const [reply, setReply] = useState<Reply | null>(null);
+  /** How many times in a row the drawing has failed, and whether it has been going on for a while. */
+  const [fails, setFails] = useState(0);
+  const [slow, setSlow] = useState(false);
+  const [again, setAgain] = useState(0);
   const [zoom, setZoom] = useState(0);
   const words = useRef(new Map<string, Promise<Info>>());
   const pick = useOfficePick();
 
-  // Ask until the pages are drawn; a change to the document (rev) asks again after a moment.
+  // Ask until the pages are drawn; a change to the document (rev) asks again after a moment. A failure is tried
+  // again a few times by itself (the server's browser may only have been busy), then left to the Retry button.
   useEffect(() => {
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let failed = 0;
+    let retry = again > 0;
+    setFails(0);
+    setSlow(false);
+    const slowTimer = setTimeout(() => { if (live) setSlow(true); }, 25_000);
     const ask = async () => {
       let next: Reply | null = null;
       try {
-        const res = await fetch(api("/pages"), { method: "POST" });
+        const res = await fetch(`${api("/pages")}${retry ? "&retry=1" : ""}`, { method: "POST" });
+        retry = false;
         if (res.ok) next = (await res.json()) as Reply;
       } catch { /* the next try */ }
       if (!live) return;
       if (next) setReply(next);
+      if (next?.status === "failed") {
+        failed += 1;
+        setFails(failed);
+        if (failed <= 3) { retry = true; timer = setTimeout(() => void ask(), 3000 * failed); }
+        return;
+      }
+      if (next?.status === "ready") { clearTimeout(slowTimer); setSlow(false); }
       if (!next || next.status === "working") timer = setTimeout(() => void ask(), 1500);
     };
     timer = setTimeout(() => void ask(), reply ? 1200 : 0);
-    return () => { live = false; if (timer) clearTimeout(timer); };
+    return () => { live = false; clearTimeout(slowTimer); if (timer) clearTimeout(timer); };
     // `reply` is deliberately left out: it only decides how soon the first ask is made.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api, rev]);
+  }, [api, rev, again]);
 
   const shown = reply?.status === "ready" ? { hash: reply.hash!, pages: reply.pages!, total: reply.total ?? reply.pages!.length } : reply?.stale ?? null;
   const updating = reply !== null && reply.status === "working";
@@ -110,10 +128,20 @@ export function OfficePages({ sessionId, kind, name, rev, onEdit }: { sessionId:
         </button>
       </div>
       <div className="office-pages-scroll">
-        {!shown && reply?.status !== "failed" && <p className="office-pages-note">Drawing the pages…</p>}
-        {reply?.status === "failed" && !shown && (
-          <p className="office-pages-note">The pages could not be drawn: {reply.error ?? "unknown reason"}. The full editor still opens it.</p>
+        {!shown && reply?.status !== "failed" && (
+          <p className="office-pages-note">
+            {slow ? "Still drawing the pages: a long document takes a while. " : "Drawing the pages…"}
+            {slow && <button className="linkish" onClick={onEdit}>Open the full editor instead</button>}
+          </p>
         )}
+        {reply?.status === "failed" && !shown && fails > 3 && (
+          <p className="office-pages-note">
+            The pages could not be drawn: {reply.error ?? "unknown reason"}.{" "}
+            <button className="linkish" onClick={() => setAgain((n) => n + 1)}>Try again</button>{" or "}
+            <button className="linkish" onClick={onEdit}>open the full editor</button>.
+          </p>
+        )}
+        {reply?.status === "failed" && !shown && fails <= 3 && <p className="office-pages-note">Drawing the pages…</p>}
         {shown && (
           <div className="office-pages-list" style={{ width: `${ZOOMS[zoom] * 100}%` }}>
             {shown.pages.map((meta, i) => {

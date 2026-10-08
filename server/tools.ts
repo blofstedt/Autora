@@ -44,6 +44,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { GoogleGenAI } from "@google/genai";
+import { termAgentBegin, termAgentChunk, termAgentEnd, termCwd, termNews } from "./termdesk";
 import { mergeTools, save, state, allSecrets, keyFor, secretFor, redactSecrets as redactStored } from "./state";
 import { APP_GUIDE, BROWSING_GUIDE, MEMORY_GUIDE, OFFICE_GUIDE, TODO_GUIDE, VOICE_GUIDE, WINDOWS_GUIDE } from "./guides";
 import { credentialsBriefing, fillPlaceholders, hasPlaceholder, identityEnv, redactCredentials } from "./credentials";
@@ -84,7 +85,7 @@ const MAX_SPOKEN_CHARS = 2_000;
 
 /** Blank out stored secrets and the person's saved credentials. The one
     redactor lives in credentials.ts; this is the local name for it. */
-function redactForModel(text: string): string {
+export function redactForModel(text: string): string {
   return redactCredentials(redactStored(text));
 }
 
@@ -758,12 +759,14 @@ function candidateShells(): string[] {
  * to handle minimal containers without crashing with ENOENT. All workspace secrets
  * are automatically injected into the process environment.
  */
-function runCommand(
+export function runCommand(
   command: string,
   cwd: string,
   timeoutSeconds: number,
   ctx: ToolContext,
   extraEnv: Record<string, string> = {},
+  /** Output in colour, for a person watching a terminal rather than a model reading it. */
+  color = false,
 ): Promise<ToolOutcome> {
   const candidates = candidateShells();
   const secrets = allSecrets();
@@ -823,10 +826,11 @@ function runCommand(
             ...identityEnv(),
             ...extraEnv,
             PATH: process.env.PATH || "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-            TERM: "dumb",
+            ...(color
+              ? { TERM: "xterm-256color", FORCE_COLOR: "1", CLICOLOR_FORCE: "1", COLORTERM: "truecolor" }
+              : { TERM: "dumb", NO_COLOR: "1" }),
             PAGER: "cat",
             GIT_PAGER: "cat",
-            NO_COLOR: "1",
             DEBIAN_FRONTEND: "noninteractive",
           },
           stdio: ["ignore", "pipe", "pipe"],
@@ -1479,9 +1483,18 @@ async function runToolUnredacted(
         const command = String(args.command ?? "").trim();
         if (!command) return { ok: false, summary: "No command was given." };
         const asked = String(args.cwd ?? "").trim();
-        // A relative directory is taken from the terminal's own, like `cd`.
-        const cwd = asked ? path.resolve(terminalDir(), asked) : terminalDir();
-        return await runCommand(command, cwd, settings.timeout, ctx);
+        // A relative directory is taken from the terminal's own, like `cd`; once the Terminal window is open, its own.
+        const base = termCwd(ctx.session) ?? terminalDir();
+        const cwd = asked ? path.resolve(base, asked) : base;
+        // The same command appears in the Terminal window, marked as the agent's, and the person's own are told back.
+        const shown = termAgentBegin(ctx.session, command, cwd);
+        const outcome = await runCommand(command, cwd, settings.timeout, {
+          ...ctx,
+          onOutput: (chunk: string) => { ctx.onOutput(chunk); termAgentChunk(ctx.session, shown, chunk); },
+        } as ToolContext);
+        termAgentEnd(ctx.session, shown, outcome.exitCode);
+        const news = termNews(ctx.session);
+        return news ? { ...outcome, summary: `${outcome.summary}\n\n${news}` } : outcome;
       }
 
       case "research": {

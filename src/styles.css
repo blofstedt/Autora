@@ -7252,3 +7252,161 @@ body.is-resizing iframe { pointer-events: none; }
   .stage-fold, .stage-expand { width: 40px; height: 34px; }
   .stage-follow { height: 32px; }
 }
+
+/* The suggestions' stack, everywhere a list opens: each row rises into place a
+   beat after the one before it (the same motion as .next-step), so a page
+   arrives as a deck dealt out rather than all at once. Rows past the twelfth
+   share one delay, so a long list is not slow to finish. */
+@keyframes stack-in { from { opacity: 0; transform: translateY(8px) scale(0.985); } to { opacity: 1; transform: none; } }
+.ses-item,
+.ses-entry,
+.art-card,
+.nb-card,
+.nb-entry,
+.job,
+.rule,
+.mcp-suggest-row,
+.mcp-server,
+.tw-card {
+  animation: stack-in 0.35s var(--ease) both;
+  animation-delay: 0.72s;
+}
+.ses-item:nth-child(1),.ses-entry:nth-child(1),.art-card:nth-child(1),.nb-card:nth-child(1),.nb-entry:nth-child(1),.job:nth-child(1),.rule:nth-child(1),.mcp-suggest-row:nth-child(1),.mcp-server:nth-child(1),.tw-card:nth-child(1) { animation-delay: 0ms; }
+.ses-item:nth-child(2),.ses-entry:nth-child(2),.art-card:nth-child(2),.nb-card:nth-child(2),.nb-entry:nth-child(2),.job:nth-child(2),.rule:nth-child(2),.mcp-suggest-row:nth-child(2),.mcp-server:nth-child(2),.tw-card:nth-child(2) { animation-delay: 60ms; }
+.ses-item:nth-child(3),.ses-entry:nth-child(3),.art-card:nth-child(3),.nb-card:nth-child(3),.nb-entry:nth-child(3),.job:nth-child(3),.rule:nth-child(3),.mcp-suggest-row:nth-child(3),.mcp-server:nth-child(3),.tw-card:nth-child(3) { animation-delay: 120ms; }
+.ses-item:nth-child(4),.ses-entry:nth-child(4),.art-card:nth-child(4),.nb-card:nth-child(4),.nb-entry:nth-child(4),.job:nth-child(4),.rule:nth-child(4),.mcp-suggest-row:nth-child(4),.mcp-server:nth-child(4),.tw-card:nth-child(4) { animation-delay: 180ms; }
+.ses-item:nth-child(5),.ses-entry:nth-child(5),.art-card:nth-child(5),.nb-card:nth-child(5),.nb-entry:nth-child(5),.job:nth-child(5),.rule:nth-child(5),.mcp-suggest-row:nth-child(5),.mcp-server:nth-child(5),.tw-card:nth-child(5) { animation-delay: 240ms; }
+.ses-item:nth-child(6),.ses-entry:nth-child(6),.art-card:nth-child(6),.nb-card:nth-child(6),.nb-entry:nth-child(6),.job:nth-child(6),.rule:nth-child(6),.mcp-suggest-row:nth-child(6),.mcp-server:nth-child(6),.tw-card:nth-child(6) { animation-delay: 300ms; }
+.ses-item:nth-child(7),.ses-entry:nth-child(7),.art-card:nth-child(7),.nb-card:nth-child(7),.nb-entry:nth-child(7),.job:nth-child(7),.rule:nth-child(7),.mcp-suggest-row:nth-child(7),.mcp-server:nth-child(7),.tw-card:nth-child(7) { animation-delay: 360ms; }
+.ses-item:nth-child(8),.ses-entry:nth-child(8),.art-card:nth-child(8),.nb-card:nth-child(8),.nb-entry:nth-child(8),.job:nth-child(8),.rule:nth-child(8),.mcp-suggest-row:nth-child(8),.mcp-server:nth-child(8),.tw-card:nth-child(8) { animation-delay: 420ms; }
+.ses-item:nth-child(9),.ses-entry:nth-child(9),.art-card:nth-child(9),.nb-card:nth-child(9),.nb-entry:nth-child(9),.job:nth-child(9),.rule:nth-child(9),.mcp-suggest-row:nth-child(9),.mcp-server:nth-child(9),.tw-card:nth-child(9) { animation-delay: 480ms; }
+.ses-item:nth-child(10),.ses-entry:nth-child(10),.art-card:nth-child(10),.nb-card:nth-child(10),.nb-entry:nth-child(10),.job:nth-child(10),.rule:nth-child(10),.mcp-suggest-row:nth-child(10),.mcp-server:nth-child(10),.tw-card:nth-child(10) { animation-delay: 540ms; }
+.ses-item:nth-child(11),.ses-entry:nth-child(11),.art-card:nth-child(11),.nb-card:nth-child(11),.nb-entry:nth-child(11),.job:nth-child(11),.rule:nth-child(11),.mcp-suggest-row:nth-child(11),.mcp-server:nth-child(11),.tw-card:nth-child(11) { animation-delay: 600ms; }
+.ses-item:nth-child(12),.ses-entry:nth-child(12),.art-card:nth-child(12),.nb-card:nth-child(12),.nb-entry:nth-child(12),.job:nth-child(12),.rule:nth-child(12),.mcp-suggest-row:nth-child(12),.mcp-server:nth-child(12),.tw-card:nth-child(12) { animation-delay: 660ms; }
+@media (prefers-reduced-motion: reduce) {
+  .ses-item,
+  .ses-entry,
+  .art-card,
+  .nb-card,
+  .nb-entry,
+  .job,
+  .rule,
+  .mcp-suggest-row,
+  .mcp-server,
+  .tw-card { animation: none !important; }
+}
+
+/* ==========================================================================
+   The Terminal window (components/TerminalWindow.tsx): a shell the person and
+   the agent share. A .pdf-window for its frame and bar; the rest is .tm-*.
+   ========================================================================== */
+.tm-window { position: relative; background: var(--bg); }
+.tm-window.is-phone { height: min(62dvh, 560px); }
+.tm-window.is-phone.is-full { height: auto; }
+.tm-cwd { font-family: var(--mono); font-size: calc(11.5px * var(--ts, 1)); }
+.tm-busy { display: inline-flex; align-items: center; gap: 6px; color: var(--live, #34d399); font-size: calc(11.5px * var(--ts, 1)); white-space: nowrap; }
+.tm-scroll {
+  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain;
+  padding: 10px 12px; font-family: var(--mono); font-size: calc(12.5px * var(--ts, 1)); line-height: 1.5;
+  -webkit-overflow-scrolling: touch;
+}
+.tm-empty { display: grid; gap: 8px; justify-items: start; padding: 14px 4px; color: var(--text-3); font-family: var(--sans, system-ui); }
+.tm-empty b { color: var(--text); font-size: calc(14px * var(--ts, 1)); }
+.tm-empty p { margin: 0; max-width: 46ch; font-size: calc(12.5px * var(--ts, 1)); line-height: 1.55; }
+.tm-examples { display: flex; flex-wrap: wrap; gap: 6px; }
+.tm-example {
+  height: 30px; padding: 0 12px; border-radius: var(--r-pill); cursor: pointer;
+  border: 1px solid var(--border-strong); background: var(--s1); color: var(--text-2);
+  font: inherit; font-family: var(--mono); font-size: calc(12px * var(--ts, 1));
+}
+.tm-example:hover { background: var(--accent-soft); border-color: var(--accent-line); color: var(--text); }
+.tm-entry { margin-bottom: 12px; min-width: 0; animation: rise 0.18s var(--ease) both; }
+.tm-cmd { display: flex; align-items: baseline; gap: 6px; min-width: 0; flex-wrap: wrap; }
+.tm-ps { color: var(--accent-light); white-space: nowrap; flex: 0 0 auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; }
+.tm-dollar { color: var(--text-3); flex: 0 0 auto; }
+.tm-line { flex: 1 1 8ch; min-width: 0; color: var(--text); font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tm-by {
+  flex: 0 0 auto; padding: 0 7px; border-radius: var(--r-pill); font-family: var(--sans, system-ui);
+  font-size: calc(10.5px * var(--ts, 1)); font-weight: 650; color: var(--accent-light); background: var(--accent-soft);
+}
+.tm-entry.is-agent .tm-ps { color: var(--text-3); }
+.tm-acts { display: inline-flex; gap: 2px; margin-left: auto; opacity: 0; transition: opacity 0.12s var(--ease); }
+.tm-entry:hover .tm-acts, .tm-entry:focus-within .tm-acts { opacity: 1; }
+@media (hover: none) { .tm-acts { opacity: 0.7; } }
+.tm-act {
+  width: 26px; height: 24px; display: inline-grid; place-items: center; border-radius: 7px; cursor: pointer;
+  border: 0; background: none; color: var(--text-3); touch-action: manipulation;
+}
+.tm-act:hover { background: var(--s2); color: var(--text); }
+.tm-row { min-height: 1.5em; }
+.tm-out {
+  margin: 4px 0 0; padding: 0; background: none; border: 0; color: var(--text-2);
+  font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
+}
+.tm-entry.is-bad .tm-out { color: var(--text); }
+.tm-foot { display: flex; align-items: center; gap: 8px; min-height: 18px; margin-top: 2px; font-family: var(--sans, system-ui); font-size: calc(11px * var(--ts, 1)); color: var(--text-3); }
+.tm-ok { color: var(--text-3); }
+.tm-bad { color: var(--danger); font-weight: 600; }
+.tm-stop {
+  display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 10px; border-radius: var(--r-pill); cursor: pointer;
+  border: 1px solid var(--border-strong); background: var(--s1); color: var(--text-2); font: inherit; font-size: calc(11px * var(--ts, 1));
+}
+.tm-stop:hover { border-color: var(--danger); color: var(--danger); }
+.tm-latest {
+  position: absolute; right: 14px; bottom: 74px; z-index: 2; display: inline-flex; align-items: center; gap: 5px;
+  height: 28px; padding: 0 11px; border-radius: var(--r-pill); cursor: pointer;
+  border: 1px solid var(--accent-line); background: var(--s2); color: var(--text); font: inherit; font-size: calc(12px * var(--ts, 1));
+  box-shadow: 0 6px 18px -8px rgba(0, 0, 0, 0.6); animation: rise 0.16s var(--ease) both;
+}
+
+.tm-dock { position: relative; flex: 0 0 auto; border-top: 1px solid var(--border); background: var(--s1); }
+.tm-menu {
+  position: absolute; left: 8px; right: 8px; bottom: calc(100% + 6px); z-index: 3; margin: 0; padding: 4px; list-style: none;
+  max-height: min(240px, 38dvh); overflow-y: auto; overscroll-behavior: contain;
+  border-radius: var(--r-sm); border: 1px solid var(--border-strong); background: var(--s2);
+  box-shadow: 0 14px 34px -12px rgba(0, 0, 0, 0.75); animation: rise 0.12s var(--ease) both;
+}
+.tm-item { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 9px; border-radius: 7px; cursor: pointer; font-family: var(--mono); font-size: calc(12.5px * var(--ts, 1)); color: var(--text-2); }
+.tm-item.is-on, .tm-item:hover { background: var(--accent-soft); color: var(--text); }
+.tm-item-ico { display: inline-flex; color: var(--text-3); flex: 0 0 auto; }
+.tm-item.is-dir .tm-item-ico { color: var(--accent-light); }
+.tm-item-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tm-item-hint { margin-left: auto; padding-left: 10px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: normal; font-family: var(--sans, system-ui); font-size: calc(11px * var(--ts, 1)); color: var(--text-3); }
+.tm-tip { padding: 7px 12px; font-size: calc(12px * var(--ts, 1)); color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); border-bottom: 1px solid var(--border); }
+.tm-keys { display: flex; gap: 6px; padding: 7px 8px 0; overflow-x: auto; scrollbar-width: none; }
+.tm-keys::-webkit-scrollbar { display: none; }
+.tm-key {
+  flex: 0 0 auto; min-width: 40px; height: 34px; padding: 0 12px; border-radius: 9px; cursor: pointer; touch-action: manipulation;
+  border: 1px solid var(--border-strong); background: var(--s2); color: var(--text-2); font-family: var(--mono); font-size: calc(13px * var(--ts, 1));
+}
+.tm-key:active { background: var(--accent-soft); }
+.tm-key.is-accent { color: var(--accent-light); border-color: var(--accent-line); }
+.tm-input { display: flex; align-items: flex-start; gap: 6px; padding: 9px 10px calc(9px + env(safe-area-inset-bottom, 0px)); font-family: var(--mono); font-size: calc(13px * var(--ts, 1)); }
+.tm-input .tm-ps, .tm-input .tm-dollar { line-height: 28px; }
+.tm-field { position: relative; flex: 1; min-width: 0; }
+.tm-ghost, .tm-textarea {
+  box-sizing: border-box; width: 100%; margin: 0; padding: 4px 2px; border: 0;
+  font: inherit; line-height: 20px; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; letter-spacing: 0;
+}
+.tm-ghost { position: absolute; inset: 0; color: transparent; pointer-events: none; overflow: hidden; }
+.tm-ghost::after { content: none; }
+.tm-typed { visibility: hidden; }
+.tm-ghost { color: var(--text-3); opacity: 0.7; }
+.tm-textarea { position: relative; display: block; resize: none; background: transparent; color: var(--text); outline: none; min-height: 28px; max-height: 140px; caret-color: var(--accent-light); }
+.tm-textarea::placeholder { color: var(--text-3); }
+.tm-go {
+  flex: 0 0 auto; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; cursor: pointer;
+  border: 0; background: var(--accent); color: #fff; touch-action: manipulation;
+}
+.tm-go svg { transform: rotate(-90deg); }
+.tm-go:disabled { background: var(--s3); color: var(--text-3); cursor: default; }
+.tm-go.is-stop { background: var(--danger); }
+.tm-go.is-stop svg { transform: none; }
+@media (max-width: 680px) {
+  /* 16px or the browser zooms the page when the line is tapped; the immersive chat button sits at the corner. */
+  .tm-textarea, .tm-ghost { font-size: 16px; line-height: 22px; }
+  .tm-window.is-phone.is-full .tm-input { padding-right: 62px; }
+  .tm-window.is-phone.is-full .tm-keys { padding-right: 62px; }
+  .tm-ps { max-width: 28%; }
+}
+@media (prefers-reduced-motion: reduce) { .tm-entry, .tm-menu, .tm-latest { animation: none; } }

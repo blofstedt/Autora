@@ -158,10 +158,15 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Tools work better on a phone. The pinned tools area has an Expand button
-  beside the fold chevron: it takes the screen's height for the open tool (PDF,
-  Video, 3D, Music, Pages, Sheets, Slides, Creator, Browser) and leaves a strip of
-  the conversation under it, and a second tap shrinks it back; the chevron still
-  folds the whole area away. The tool bars scroll sideways instead of wrapping
-  into several rows, buttons are bigger to tap, and text boxes no longer make the
-  page zoom when you tap into them.
+  There is a Terminal in the tools menu: a shell beside the chat that you and
+  Autora share. Commands finish as you type (commands, files and folders, git, npm
+  scripts, and what you ran before, with a grey hint you accept with Tab or the
+  right arrow), output comes in colour as it arrives, a running command has a Stop
+  button, and on a phone a row of keys stands in for Tab, the arrows and Ctrl+C.
+  The folder you move to is where Autora's next command starts, its commands show
+  up in the same place, and it is told what you ran. Lists (sessions, schedules,
+  artifacts, notebooks, triggers, tools) now arrive in the same stacked rise as the
+  suggested next steps. On a phone, a document that cannot be drawn is retried by
+  itself and offers Try again and the full editor instead of staying blank, and a
+  slow one says it is still drawing. The tools sheet greys out an app you switched
+  off, as it was meant to.
