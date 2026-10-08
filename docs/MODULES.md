@@ -395,6 +395,22 @@ Spectra's fetched renderer is most of what is on disk.
   fixes a bug at the pin: stickers registered with the wrong call and every one failed (`overlay/web/stickers/`).
   `npm run typecheck` checks only Autora's files in it (`scripts/typecheck-opencut-editor.mjs`): at the pin a few
   of OpenCut's own do not typecheck. Search with `--glob '!opencut-editor/**'` unless the task is about it.
+- Follow (`lib/follow.ts`): one switch, on by default and kept per browser, for the pill beside the phone's tabs
+  (`Stage`) and the one at the top right of the desktop strip (`pane-follow` in `App.tsx`). On, the screen goes where the
+  agent works: the stage's `busiestSurface` on a phone, and on a desktop `lib/followPane.ts` (`lastWorkedPane`: the
+  window of the newest tool call, an Office one found by the file it names). Picking a tab turns it off; the pill
+  turns it back on. The desktop strip and the phone's stage tabs are folder tabs (CSS only, `.pane-pick-tab`, `.stage-tab`).
+- The agent's pointer outside the Office windows: `lib/pointer.ts` (a layer on the body: arc, rest, press ring, typed
+  words beside it; it goes only where a real element or a frame-confirmed point is). Music points at the clips that
+  lit up (`StudioWindow`). The PDF window plays the server's cues (`cueForItem`, with the page's size so a place on a
+  page is a fraction of it): `SpectraWindow` asks the frame where a page is (`autora:spectra:locate`, answered in
+  `spectra-editor/src/autora/host.ts`, which also scrolls the place into view). Autora 3D draws its own, inside the
+  frame (`autora-3d/src/agentCursor.ts`): `caddesk.ts` says the tool (`cue`) with the model, the frame goes to the
+  tool's button, applies the model, then goes to the shapes that changed (`ViewerApi.screenOf`). The PDF editor is
+  opened on `deskDocument` (the pages with the agent's objects drawn in), not on `deskBase`.
+- A frame that does not start: `lib/bootWatch.ts` says so after 25 s (PDF and video windows), and the PDF frame forwards
+  its uncaught errors (`autora:spectra:error`). Its build puts a `Map.getOrInsert*` polyfill in front of every chunk,
+  workers included (`polyfillFirst` in `spectra-editor/vite.config.ts`): pdf.js needs it and older browsers lack it.
 - Full screen on a phone (`lib/fullscreen.ts`): one shared flag for every pinned tool (browser, app window, PDF,
   Pages/Sheets/Slides, widget), so Follow (`busiestSurface` in `Thread`) moves the stage to the next tool with the
   screen still full. While it is up, `components/ImmersiveChat.tsx` is laid over it: the agent's last reply as a
