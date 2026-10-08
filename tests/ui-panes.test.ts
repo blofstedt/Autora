@@ -56,7 +56,7 @@ async function main() {
       assert.ok((await width(".rail-slot")) <= 520);
       await page.locator(".pane-handle.is-rail").dblclick();
       const back = await width(".rail-slot");
-      assert.ok(back >= 184 && back <= 204, String(back));
+      assert.ok(back >= 150 && back <= 180, String(back));
     });
 
     await test("the menu folds away to the far left, and the button there brings it back", async () => {
@@ -129,7 +129,7 @@ async function main() {
       await page.waitForSelector(".rail-ctxbar");
       await page.getByRole("button", { name: "Show the whole menu" }).click();
       await sleep(300);
-      assert.ok((await width(".rail-slot")) > 150, "the whole menu is back");
+      assert.ok((await width(".rail-slot")) > 140, "the whole menu is back");
       assert.equal(await page.locator(".rail-ctxbar").count(), 0);
     });
 

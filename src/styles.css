@@ -2267,7 +2267,7 @@ label + .jf-hint { margin-top: -5px; }
 @media (min-width: 1180px) {
   .app { flex-direction: row; }
   .rail-slot {
-    display: flex; flex: 0 0 196px; min-height: 0;
+    display: flex; flex: 0 0 164px; min-height: 0;
     border-right: 1px solid var(--border);
   }
   /* The header's job is done by the rail on this width: the wordmark, the
@@ -3382,7 +3382,7 @@ label + .jf-hint { margin-top: -5px; }
   .session-name { max-width: 520px; }
 
   /* Slim: the work window on the right gets the room. */
-  .rail-slot { flex-basis: clamp(184px, 12.5vw, 204px); }
+  .rail-slot { flex-basis: clamp(160px, 10.5vw, 172px); }
   .rail-act { font-size: calc(13px * var(--ts, 1)); }
 }
 
@@ -6537,7 +6537,7 @@ body.is-resizing iframe { pointer-events: none; }
 @media (min-width: 1180px) {
   .pane-handle.is-rail { display: block; }
   .pane-handle.is-chat { display: block; }
-  .rail-slot { flex-basis: var(--rail-w, clamp(184px, 12.5vw, 204px)); }
+  .rail-slot { flex-basis: var(--rail-w, clamp(160px, 10.5vw, 172px)); }
   /* Folded away: the menu button and the mark are back in the header, at the far left. */
   .app.rail-collapsed .rail-slot, .app.rail-collapsed .pane-handle.is-rail { display: none; }
 }
@@ -6805,12 +6805,13 @@ body.is-resizing iframe { pointer-events: none; }
 .rail:not(.is-drawer) .rail-vital { gap: 3px; }
 .rail:not(.is-drawer) .rail-vital-bar { height: 4px; }
 .rail:not(.is-drawer) .rail-vital-detail { display: none; }
-.rail:not(.is-drawer) .rail-top { gap: 6px; padding: 0 10px; }
-.rail:not(.is-drawer) .rail-icon-btn { width: 26px; height: 26px; }
+.rail:not(.is-drawer) .rail-top { gap: 4px; padding: 0 8px; }
+.rail:not(.is-drawer) .rail-icon-btn { width: 24px; height: 24px; }
+.rail:not(.is-drawer) .rail-brand { margin: -4px -4px -4px -1px; }
 
 /* ---- Desktop: the context ring is the widget; its words are in its tooltip. */
-.rail:not(.is-drawer):not(.is-mini) .rail-ctx { flex-direction: column; align-items: center; justify-content: center; padding: 10px; }
-.rail:not(.is-drawer):not(.is-mini) .rail-ctx-ring { width: 100%; max-width: 150px; height: auto; aspect-ratio: 1; }
+.rail:not(.is-drawer):not(.is-mini) .rail-ctx { flex-direction: column; align-items: center; justify-content: center; padding: 8px; }
+.rail:not(.is-drawer):not(.is-mini) .rail-ctx-ring { width: 100%; max-width: 84px; height: auto; aspect-ratio: 1; }
 .rail:not(.is-drawer):not(.is-mini) .rail-ctx-text { display: none; }
 .rail:not(.is-drawer) .rail-ctx-pct { font-size: 11px; }
 .rail:not(.is-drawer) .rail-ctx-track, .rail:not(.is-drawer) .rail-ctx-fill, .rail:not(.is-drawer) .rail-ctx-tick { stroke-width: 4.5; }
