@@ -10,7 +10,7 @@ import { ScreencastCell } from "./components/ScreencastCell";
 import { AppPreview, OfficeWindow, SpectraWindow } from "./components/lazyWindows";
 import { emitSpectraEvent } from "./lib/spectra";
 import { ResizeHandle } from "./components/ResizeHandle";
-import { CHAT, RAIL, setChatWidth, setRailCollapsed, setRailWidth, usePanes, wideScreen } from "./lib/panes";
+import { CHAT, RAIL, setChatWidth, setRailCollapsed, setRailMini, setRailWidth, usePanes, wideScreen } from "./lib/panes";
 import { clearOfficePick, getOfficePick, pickLabel, pickSentence, useOfficePick } from "./lib/officeSelection";
 import { emitOfficePush, resetOffice, setOfficeState, useOfficeState, type OfficeKind } from "./lib/officedesk";
 import { resetDesk, setDeskState, useDeskState } from "./lib/pdfdesk";
@@ -1565,7 +1565,7 @@ export function App() {
 
   return (
     <div
-      className={`app${panes.collapsed ? " rail-collapsed" : ""}`}
+      className={`app${panes.collapsed ? " rail-collapsed" : ""}${panes.mini ? " rail-mini" : ""}`}
       style={{
         ...(panes.rail ? { "--rail-w": `${panes.rail}px` } : {}),
         ...(panes.chat ? { "--chat-w": `${panes.chat}px` } : {}),
@@ -1607,6 +1607,8 @@ export function App() {
             drawer={kind === "drawer"}
             onClose={() => setDrawerOpen(false)}
             onFold={() => setRailCollapsed(true)}
+            mini={panes.mini}
+            onMini={setRailMini}
           />
         </div>
       ))}

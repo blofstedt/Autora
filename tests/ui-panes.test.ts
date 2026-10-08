@@ -107,6 +107,24 @@ async function main() {
       assert.ok((await w(".chat-view.has-app > .page")) <= 540);
     });
 
+    await test("the menu folds to icons, with the context as one bar under the last icon, and comes back whole", async () => {
+      await page.getByRole("button", { name: "Fold the menu to icons" }).click();
+      await sleep(300);
+      assert.ok((await width(".rail-slot")) <= 80, "a strip of icons");
+      assert.equal(await page.locator(".rail-nav-item > span:visible").count(), 0, "no words beside the icons");
+      const last = (await page.locator('.rail-nav-item[data-page="system"]').boundingBox())!;
+      const bar = (await page.locator(".rail-ctxbar-track").boundingBox())!;
+      const rail = (await page.locator(".rail-slot").boundingBox())!;
+      assert.ok(bar.y > last.y + last.height - 1, "the bar starts under the last icon");
+      assert.ok(bar.y + bar.height <= rail.y + rail.height && bar.y + bar.height > rail.y + rail.height - 40, "and runs to the foot of the strip");
+      await page.reload();
+      await page.waitForSelector(".rail-ctxbar");
+      await page.getByRole("button", { name: "Show the whole menu" }).click();
+      await sleep(300);
+      assert.ok((await width(".rail-slot")) > 150, "the whole menu is back");
+      assert.equal(await page.locator(".rail-ctxbar").count(), 0);
+    });
+
     await test("on a phone nothing of this appears", async () => {
       const phone = await browser.newPage({ viewport: { width: 390, height: 800 } });
       await phone.goto(`${app.base}/?session=${s}`);

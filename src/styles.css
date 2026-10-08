@@ -6807,3 +6807,34 @@ body.is-resizing iframe { pointer-events: none; }
 .rail:not(.is-drawer) .rail-vital-detail { display: none; }
 .rail:not(.is-drawer) .rail-top { gap: 6px; padding: 0 10px; }
 .rail:not(.is-drawer) .rail-icon-btn { width: 26px; height: 26px; }
+
+/* ---- Desktop: the context ring is the widget; its words are in its tooltip. */
+.rail:not(.is-drawer):not(.is-mini) .rail-ctx { flex-direction: column; align-items: center; justify-content: center; padding: 10px; }
+.rail:not(.is-drawer):not(.is-mini) .rail-ctx-ring { width: 100%; max-width: 150px; height: auto; aspect-ratio: 1; }
+.rail:not(.is-drawer):not(.is-mini) .rail-ctx-text { display: none; }
+.rail:not(.is-drawer) .rail-ctx-pct { font-size: 11px; }
+.rail:not(.is-drawer) .rail-ctx-track, .rail:not(.is-drawer) .rail-ctx-fill, .rail:not(.is-drawer) .rail-ctx-tick { stroke-width: 4.5; }
+.rail:not(.is-drawer) .brand-word { display: none; }
+.rail-chev-left { transform: rotate(90deg); }
+.rail-chev-right { transform: rotate(-90deg); }
+@media (max-width: 1179px) { .rail-mini-btn { display: none; } }
+
+/* ---- Folded to icons (desktop): a strip of icons, with the context as one vertical bar under the last of them. */
+@media (min-width: 1180px) {
+  .app.rail-mini:not(.rail-collapsed) .rail-slot { flex-basis: 56px; }
+  .app.rail-mini .pane-handle.is-rail { display: none; }
+}
+.rail.is-mini .rail-top { flex-direction: column; height: auto; padding: 10px 0 8px; gap: 6px; align-items: center; }
+.rail.is-mini .rail-top .spacer, .rail.is-mini .rail-top .brand-word, .rail.is-mini .rail-top .rail-icon-btn[aria-label="New incognito chat"] { display: none; }
+.rail.is-mini .rail-scroll { padding: 6px 6px 12px; }
+.rail.is-mini .rail-nav-item { justify-content: center; padding: 9px 0; gap: 0; }
+.rail.is-mini .rail-nav-item > span { display: none; }
+.rail.is-mini .rail-nav-item .rail-tag { display: none; }
+.rail.is-mini .rail-nav-item:has(.rail-tag.is-alert)::after { content: ""; position: absolute; top: 6px; right: 10px; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
+.rail.is-mini .rail-divider { margin: 6px 8px; }
+.rail-ctxbar { flex: 1 1 auto; min-height: 60px; margin-top: 10px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.rail-ctxbar-pct { font-size: 10px; font-weight: 650; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.rail-ctxbar-track { position: relative; flex: 1 1 auto; width: 10px; border-radius: 999px; background: var(--border); }
+.rail-ctxbar-fill { position: absolute; left: 0; right: 0; bottom: 0; border-radius: 999px; background: var(--accent); transition: height 0.6s var(--ease); }
+.rail-ctxbar-tick { position: absolute; left: -2px; right: -2px; height: 2px; margin-bottom: -1px; border-radius: 1px; background: var(--text-3); opacity: 0.8; }
+.rail-ctxbar.is-over .rail-ctxbar-fill { background: var(--warn); }

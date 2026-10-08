@@ -3,7 +3,7 @@ import { AutoraMark, type MarkState } from "./AutoraMark";
 import {
   IconBrain, IconChart, IconClock, IconFolder, IconList, IconMask, IconMenu, IconMessage,
   IconMonitor, IconNotebook, IconPlug, IconPlus, IconServer, IconSliders, IconWrench, IconZap,
-  IconX, IconCheck,
+  IconX, IconCheck, IconChevron,
 } from "./Icons";
 import {
   COLUMNS, FONTS, ICON_SIZES, TEXT_SIZES, THEMES,
@@ -53,7 +53,7 @@ export const pageLabel = (id: PageId) => PAGES.find((p) => p.id === id)?.label ?
  */
 export function Rail({
   page, onNavigate, onOpenSession, onOpenMemory, context, relayOn, alert, onNew, onIncognito,
-  onStartTask, drawer = false, onClose, onFold,
+  onStartTask, drawer = false, onClose, onFold, mini = false, onMini,
   mood = "rest", attention = 0, pulse = 0, learned = 0, bloom = 0, mindGlow = false,
 }: {
   page: PageId;
@@ -75,6 +75,9 @@ export function Rail({
   onClose?: () => void;
   /** Fold the menu away to the far left (a desktop only). */
   onFold?: () => void;
+  /** Folded to a strip of icons (a desktop only), and the way to fold it there and back. */
+  mini?: boolean;
+  onMini?: (mini: boolean) => void;
   /** The agent's presence: what the mark at the top is doing. */
   mood?: MarkState;
   attention?: number;
@@ -97,6 +100,8 @@ export function Rail({
       className={`rail-nav-item ${page === p.id ? "on" : ""} ${p.id === "mind" && mindGlow ? "is-bloom" : ""}`}
       onClick={() => onNavigate(p.id)}
       aria-current={page === p.id ? "page" : undefined}
+      title={mini ? p.label : undefined}
+      aria-label={mini ? p.label : undefined}
     >
       {p.icon}
       <span>{p.label}</span>
@@ -112,7 +117,7 @@ export function Rail({
   );
 
   return (
-    <aside className={`rail ${drawer ? "is-drawer" : ""}`} aria-label="Navigation">
+    <aside className={`rail ${drawer ? "is-drawer" : ""}${mini && !drawer ? " is-mini" : ""}`} aria-label="Navigation">
       <div className="rail-top">
         <span className="rail-brand presence">
           <AutoraMark size={30} state={mood} idle attention={attention} pulse={pulse} />
@@ -130,6 +135,16 @@ export function Rail({
         <button className="rail-icon-btn" onClick={onNew} title="New session" aria-label="New session">
           <IconPlus size={15} />
         </button>
+        {!drawer && onMini && (
+          <button
+            className="rail-icon-btn rail-mini-btn"
+            onClick={() => onMini(!mini)}
+            title={mini ? "Show the whole menu" : "Fold the menu to icons"}
+            aria-label={mini ? "Show the whole menu" : "Fold the menu to icons"}
+          >
+            <IconChevron size={13} className={mini ? "rail-chev-right" : "rail-chev-left"} />
+          </button>
+        )}
         {!drawer && onFold && (
           <button className="rail-icon-btn" onClick={onFold} title="Fold the menu away" aria-label="Fold the menu away">
             <IconMenu size={15} />
@@ -150,12 +165,16 @@ export function Rail({
           <div className="rail-divider" role="separator" />
           {PAGES.filter((p) => p.group === "setup").map(item)}
         </nav>
-        <div className="rail-foot">
-          <ContextCard gauge={context} />
-          <MemoryCard onOpen={onOpenMemory} />
-          <Vitals onOpen={() => onNavigate("system")} />
-          <Activity onOpenSession={onOpenSession} onNavigate={onNavigate} onStartTask={onStartTask} />
-        </div>
+        {mini && !drawer ? (
+          <ContextBar gauge={context} />
+        ) : (
+          <div className="rail-foot">
+            <ContextCard gauge={context} />
+            <MemoryCard onOpen={onOpenMemory} />
+            <Vitals onOpen={() => onNavigate("system")} />
+            <Activity onOpenSession={onOpenSession} onNavigate={onNavigate} onStartTask={onStartTask} />
+          </div>
+        )}
       </div>
     </aside>
   );
@@ -206,6 +225,9 @@ function ContextCard({ gauge }: { gauge: ContextGauge | null }) {
     <section
       className={`rail-ctx ${over ? "is-over" : ""}`}
       aria-label={gauge ? `Context ${pct}% full` : "Context empty"}
+      title={gauge
+        ? `Context ${pct}% full — ${short(gauge.used)} of ${short(gauge.limit)} tokens${assumed ? " (assumed)" : ""}; ${gauge.condensed > 0 ? `condensed ${gauge.condensed}×, keeps going` : `condenses at ${Math.round(mark * 100)}%`}`
+        : "Context empty — fills as this session talks"}
     >
       <svg className="rail-ctx-ring" viewBox="0 0 48 48" width="48" height="48" aria-hidden="true">
         <circle className="rail-ctx-track" cx="24" cy="24" r={R} />
@@ -248,6 +270,28 @@ function ContextCard({ gauge }: { gauge: ContextGauge | null }) {
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * The same gauge when the menu is folded to icons: one vertical bar that runs from the foot of the strip up to just
+ * under the last icon, filling from the bottom, with the condensing mark as a short lighter stretch of it.
+ */
+function ContextBar({ gauge }: { gauge: ContextGauge | null }) {
+  const share = gauge ? Math.min(1, gauge.used / gauge.limit) : 0;
+  const mark = gauge?.compactAt ?? 0.75;
+  const pct = Math.round(share * 100);
+  const title = gauge
+    ? `Context ${pct}% full — ${short(gauge.used)} of ${short(gauge.limit)} tokens${gauge.windowFrom === "default" ? " (assumed)" : ""}; condenses at ${Math.round(mark * 100)}%`
+    : "Context empty — fills as this session talks";
+  return (
+    <div className={`rail-ctxbar ${share >= mark ? "is-over" : ""}`} role="img" aria-label={title} title={title}>
+      <span className="rail-ctxbar-pct">{pct}%</span>
+      <span className="rail-ctxbar-track">
+        <i className="rail-ctxbar-fill" style={{ height: `${Math.max(share > 0 ? 2 : 0, share * 100)}%` }} />
+        <i className="rail-ctxbar-tick" style={{ bottom: `${mark * 100}%` }} />
+      </span>
+    </div>
   );
 }
 
