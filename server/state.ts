@@ -188,6 +188,8 @@ interface ToolSettings {
   slides: { enabled: boolean };
   /** Autora 3D: the 3D modelling window and the agent's cad_* tools. */
   cad: { enabled: boolean };
+  /** Autora Games: the game window (GDevelop's editor) and the agent's game_* tools. */
+  game: { enabled: boolean };
 }
 
 export interface UsageEntry {
@@ -372,6 +374,7 @@ export function defaultTools(): ToolSettings {
     sheets: { enabled: true },
     slides: { enabled: true },
     cad: { enabled: true },
+    game: { enabled: true },
   };
 }
 
@@ -420,7 +423,7 @@ export function mergeTools(into: ToolSettings, patch: any): ToolSettings {
   if (patch.office && typeof patch.office === "object" && typeof patch.office.enabled === "boolean") {
     for (const key of ["pages", "sheets", "slides"] as const) into[key].enabled = patch.office.enabled;
   }
-  for (const key of ["widgets", "app", "pdf", "video", "studio", "pages", "sheets", "slides", "cad"] as const) {
+  for (const key of ["widgets", "app", "pdf", "video", "studio", "pages", "sheets", "slides", "cad", "game"] as const) {
     const given = patch[key];
     if (given && typeof given === "object") into[key].enabled = bool(given.enabled, into[key].enabled);
   }

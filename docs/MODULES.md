@@ -405,6 +405,50 @@ Spectra's fetched renderer is most of what is on disk.
   fixes a bug at the pin: stickers registered with the wrong call and every one failed (`overlay/web/stickers/`).
   `npm run typecheck` checks only Autora's files in it (`scripts/typecheck-opencut-editor.mjs`): at the pin a few
   of OpenCut's own do not typecheck. Search with `--glob '!opencut-editor/**'` unless the task is about it.
+- `gdevelop-editor/` + `server/gamedesk.ts`: **Autora Games**, GDevelop's editor (github.com/4ian/GDevelop, MIT; its name and
+  logo are its author's) in a window beside the chat, and the agent's `game_*` tools. Built like OpenCut's:
+  `scripts/prepare-gdevelop-editor.mjs` (run by `npm run build` and `npm run lint`) fetches `newIDE/app`, `GDJS` and `Extensions` from the
+  commit in `gdevelop/PIN.json` into `gdevelop-editor/work/` (gitignored; never edit it), then makes it Autora's in this order:
+  `overlay/` (whole files over GDevelop's, or new: the storage provider, the start page, the AI stubs, the theme, the bridge),
+  `patches.mjs` (small `find`/`replace` edits to files too big to replace; the build **fails** if a `find` is not in the file exactly
+  once, which is how a newer GDevelop that moved a line is found), and what GDevelop generates before it builds (its themes, the
+  runtime, Monaco, `libGD.js` + `libGD.wasm`: GDevelop's C++ core as WebAssembly, downloaded from `engine` in the pin, the same
+  commit's build). English only (the other 118 languages were 100 MB). `gdevelop-editor/package.json` and its lockfile are a *copy*
+  of GDevelop's (with `patches/`, its fixes to its dependencies, applied by `postinstall`); the prepare script says when the pin
+  moves and they no longer agree. `npm run typecheck` there is only the prepare step: GDevelop is Flow, which is not run.
+  **What was taken out:** the AI (`overlay/.../AiGeneration/` are stubs with the names the rest still imports; `patches.mjs` hides every
+  entry point: the title bar button, the menu item, the preferences section, the new-project box, the two "Edit with AI" buttons),
+  the account, cloud storage, the shop, courses and tutorials (the start page is Autora's own: the game's name and its scenes),
+  telemetry (`posthog.init` is skipped) and the service worker (`registerServiceWorker` returns). Autora's page also allows the editor
+  to connect to its own origin and nowhere else (`serveGame` in `server/gamedesk.ts`), so a call GDevelop still makes to its servers (the
+  asset store, examples) fails at once rather than leaving the machine: **the asset store is empty by design**; pictures come from
+  `game_import`, the person's own files (the "File(s) from your device" chooser uploads to `/api/game/:s/assets`) or a URL.
+  **The game** is one project file per chat (`game-<session>.json` in the state directory, `Saved`): GDevelop's own JSON, so
+  everything the editor can do is in it. `GET/PUT /api/game/:session/project`; every change bumps `rev` and records `by`; a `PUT`
+  carries `ifRev` and a stale one is refused with 409 (the agent's change wins over the last second of the person's: the editor takes
+  the newer game, see `Autora/bridge.js`). The editor saves by itself ~1.2 s after a change (`bridge.js` watches `hasUnsavedChanges`
+  that a patch exposes as `window.__autoraEditor`) and reloads the game the agent changed without reloading the page
+  (`openFromFileMetadataWithStorageProvider`). The window (`GameWindow.tsx`, `lib/gamedesk.ts`) is a frame of this origin: its address
+  carries the chat and Autora's colours (`?autora=&theme=`, mapped onto the Deep Blue theme in `overlay/.../DeepBlueTheme/index.js`),
+  and must never change while it is up (a new theme is the frame's own `location.replace`).
+  **The agent works on the JSON** (`game_look`, `game_edit`: set/insert/remove/merge at a path such as `layouts[Scene].objects[Player]`,
+  atomic, `game_check`, `game_template`, `game_catalog`, `game_import`, `game_open`; `server/specs/game.ts`). It cannot ask the engine,
+  which is WebAssembly in the page, so `scripts/make-game-catalog.mjs` runs the same engine in node once and writes
+  `server/game-catalog.json` (every action, condition and expression with its parameters, the objects and behaviors, and the shape
+  of a new scene, object, behavior, instance and resource as the editor saves it): `game_catalog`/`game_template` read it and
+  `game_edit` checks what was written against it (unknown instruction, wrong parameter count, instance of a missing object, a picture
+  not in the resources, duplicate names), saving anyway and returning the warnings with the paths. **Run it when the pin moves** and
+  commit the result. `game-starter.json` is an empty game as GDevelop makes it (one scene), made the same way.
+  **Previews** run in a box of their own: GDevelop's launcher writes the page, the data and the generated code to a service worker's
+  IndexedDB; here `overlay/.../BrowserSWPreviewIndexedDB.js` sends them to the server (`PUT /api/game/:s/preview/<instance>/...`, in memory,
+  192 MB, oldest first) and the popup opens `.../preview/<instance>/preview/index.html` served with `Content-Security-Policy: sandbox
+  allow-scripts ...` (no `allow-same-origin`: a game is code the agent or the person wrote, so it has no origin of Autora's and cannot
+  reach its API). The runtime it is made of is `dist/gdevelop-editor/GDJS/Runtime` (copied by `build-gdevelop-editor.mjs`, less maps and
+  other platforms) with `Access-Control-Allow-Origin: *`, because a game with no origin reads its files across origins; so are the
+  game's assets (`/api/game/:s/assets/`, also `Content-Security-Policy: sandbox`, only ever data). **Traps:** (1) the sandboxed game is
+  not the editor's origin, so the editor's debugger and hot reload do not reach it (a preview is a fresh run); (2) a patch whose `find`
+  moved breaks the build on purpose; (3) incognito chats have no game window (it keeps its game on disk); (4) the window opens on the
+  agent's first edit, not on a read; (5) the Docker build needs the network for `libGD`, the checkout and `GDJS`'s own install.
 - Follow (`lib/follow.ts`): one switch, on by default and kept per browser, for the pill beside the phone's tabs
   (`Stage`) and the one at the top right of the desktop strip (`pane-follow` in `App.tsx`). On, the screen goes where the
   agent works: the stage's `busiestSurface` on a phone, and on a desktop `lib/followPane.ts` (`lastWorkedPane`: the

@@ -82,6 +82,18 @@ description: >-
   printing and GLB for games. Has its own switch on the Tools page.
 
 
+  • Autora Games — GDevelop's open-source game editor in a window beside the chat,
+  with GDevelop's own AI, account, shop and cloud taken out: Autora is what helps.
+  Ask for a game and Autora builds it in the project file GDevelop itself saves —
+  scenes, objects, behaviors (platformer, physics, pathfinding), events, pictures
+  and sound — checking every instruction against the engine's own list, while you
+  watch it appear and change anything by hand; your edits are saved as you go. Play
+  it from the Preview button (it runs in a box of its own) or export it as a web
+  game. The idea, the story, the look and the feel stay yours: Autora does the
+  wiring and asks about the rest. Your games stay on your server. Has its own
+  switch on the Tools page.
+
+
   • Notebooks — group files by purpose with notes between them. Autora can
   compile one for you (every source filed, every claim citing its proof), and
   you can hand a notebook or any saved file to a chat.
@@ -158,7 +170,11 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  On a desktop, the tab you picked beside the chat is now remembered, so a reload
-  or coming back to Autora leaves it where you put it. The widths of the menu and
-  the chat, whether the menu is folded, and Follow were already kept; this
-  completes the set.
+  New: Autora Games, a game window. It is GDevelop's open-source editor beside the
+  chat, with GDevelop's AI, account, shop and cloud removed (Autora is what helps),
+  in Autora's colours. Ask for a game and Autora builds it in the project file
+  GDevelop saves, checking every action and condition against the engine's own list;
+  you can change anything by hand while it works, and your edits are saved as you go.
+  Preview runs the game in a box of its own, and the files you add stay on your
+  server. Switch it on or off on the Tools page. The first start loads the game
+  engine (a few megabytes), and the container image grows by about 60 MB.

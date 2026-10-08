@@ -28,6 +28,9 @@ jobs:
       # And OpenCut's, the video window's editor.
       - run: npm --prefix opencut-editor ci
 
+      # And GDevelop's, the game window's editor (its patches to its dependencies are applied by the install).
+      - run: npm --prefix gdevelop-editor ci
+
       # And Autora 3D's: `npm run lint` typechecks it, and `npm run build` builds it.
       - run: npm --prefix autora-3d ci
 

@@ -13,3 +13,8 @@ opencut-editor/node_modules
 opencut-editor/src/web
 opencut-editor/src/web-public
 opencut-editor/.prepared
+
+# GDevelop's editor, the same way: its own lockfile in the build stage, its source fetched, overlaid and patched there.
+gdevelop-editor/node_modules
+gdevelop-editor/work
+gdevelop-editor/.prepared

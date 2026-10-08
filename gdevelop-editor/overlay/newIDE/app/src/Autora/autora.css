@@ -1,0 +1,10 @@
+/* Autora's look over GDevelop's editor. Colours come from the theme (UI/Theme/DeepBlueTheme/index.js,
+   which is made from Autora's own tokens); this file is only what a theme cannot say. */
+html, body { overscroll-behavior: none; }
+body { background: var(--theme-surface-window-background-color, #08090d); }
+.autora-home { padding: 32px 40px; color: var(--theme-text-default-color); font-family: var(--gdevelop-modern-font-family); height: 100%; overflow: auto; background: var(--theme-surface-canvas-background-color); }
+.autora-home h1 { font-size: 22px; font-weight: 650; margin: 0 0 20px; letter-spacing: -0.02em; }
+.autora-home h2 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--theme-text-secondary-color); margin: 0 0 8px; }
+.autora-home ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-width: 360px; }
+.autora-home button { width: 100%; text-align: left; cursor: pointer; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--theme-dialog-separator-color); background: var(--theme-surface-alternate-canvas-background-color); color: inherit; font: inherit; }
+.autora-home button:hover { border-color: var(--theme-primary-color); }

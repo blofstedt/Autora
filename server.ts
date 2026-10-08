@@ -127,6 +127,7 @@ import { dropOpencut, onOpencutChange, opencutRoutes, opencutState, serveOpencut
 import { dropSpectra, serveSpectra, spectraDocumentChanged, spectraRoutes, spectraUpgrade } from "./server/spectra";
 import { newFileRoutes } from "./server/newfile";
 import { cadRoutes, cadState, dropCad, onCadChange, serveCad } from "./server/caddesk";
+import { dropGame, gameRoutes, gameState, onGameChange, serveGame } from "./server/gamedesk";
 import { dropTerm, onTermChange, termRoutes, termState } from "./server/termdesk";
 import { dropStudio, onStudioChange, studioRoutes, studioState, studioTurnNote } from "./server/studio";
 import { windowOff } from "./server/tools";
@@ -415,6 +416,7 @@ function forgetSession(id: string) {
   dropOpencut(id);
   forgetPresence(id);
   dropCad(id);
+  dropGame(id);
   dropTerm(id);
   dropStudio(id);
   presenceSent.delete(id);
@@ -1206,6 +1208,10 @@ onTermChange((sessionId) => {
   }, 120));
 });
 
+/* Autora Games, the same way: the window opens, and the game changes (by the agent's tools or the person's hands). */
+onGameChange((sessionId) => {
+  sendEphemeral(sessionId, { type: "gamedesk", session: sessionId, state: gameState(sessionId) });
+});
 /* Autora 3D, the same way: the window opens, and the model changes (by the agent's tools or the person's hands). */
 onCadChange((sessionId) => {
   sendEphemeral(sessionId, { type: "caddesk", session: sessionId, state: cadState(sessionId) });
@@ -5426,6 +5432,12 @@ async function startServer() {
     incognito: (id: string) => Boolean(sessions.get(id)?.incognito),
     off: () => windowOff("cad_scene_get"),
   });
+  // Autora Games: the game window's game and files, and opening and putting it away.
+  gameRoutes(app, {
+    exists: (id: string) => sessions.has(id),
+    incognito: (id: string) => Boolean(sessions.get(id)?.incognito),
+    off: () => windowOff("game_look"),
+  });
   // Autora Music: the music window's song, the commands to it, and opening and putting it away.
   studioRoutes(app, {
     exists: (id: string) => sessions.has(id),
@@ -6140,6 +6152,7 @@ async function startServer() {
       ws.send(JSON.stringify({ type: "officedesk", session: sessionId, state: officeState(sessionId) }));
       ws.send(JSON.stringify({ type: "opencutdesk", session: sessionId, state: opencutState(sessionId) }));
       ws.send(JSON.stringify({ type: "caddesk", session: sessionId, state: cadState(sessionId) }));
+      ws.send(JSON.stringify({ type: "gamedesk", session: sessionId, state: gameState(sessionId) }));
       ws.send(JSON.stringify({ type: "studiodesk", session: sessionId, state: studioState(sessionId) }));
       ws.send(JSON.stringify({ type: "termdesk", session: sessionId, state: termState(sessionId) }));
       ws.send(JSON.stringify({ type: "presence", session: sessionId, state: presenceFor(sessionId).view() }));
@@ -6243,6 +6256,8 @@ async function startServer() {
   serveOpencut(app, path.join(process.cwd(), "dist"));
   // Autora 3D's window page, built from autora-3d/.
   serveCad(app, path.join(process.cwd(), "dist"));
+  // Autora Games' window page: GDevelop's editor, built from gdevelop-editor/.
+  serveGame(app, path.join(process.cwd(), "dist"));
   // The Office editors, likewise: built by scripts/build-office.mjs, absent without it.
   const officeWeb = officeWebDir();
   if (officeWeb) serveOfficeEditors(app, officeWeb);

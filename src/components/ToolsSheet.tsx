@@ -12,15 +12,15 @@
  */
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { IconCube, IconFile, IconMusic, IconScroll, IconSlides, IconStar, IconTable, IconTerminal, IconVideo, IconWrench, IconX } from "./Icons";
+import { IconCube, IconFile, IconGame, IconMusic, IconScroll, IconSlides, IconStar, IconTable, IconTerminal, IconVideo, IconWrench, IconX } from "./Icons";
 
-type Kind = "pdf" | "docx" | "xlsx" | "pptx" | "video" | "cad" | "studio" | "terminal";
+type Kind = "pdf" | "docx" | "xlsx" | "pptx" | "video" | "cad" | "game" | "studio" | "terminal";
 
 type Tool = {
   kind: Kind;
   app: string;
   /** The setting on the Tools page that decides whether this app is on. */
-  setting: "pdf" | "video" | "pages" | "sheets" | "slides" | "cad" | "studio" | "terminal";
+  setting: "pdf" | "video" | "pages" | "sheets" | "slides" | "cad" | "game" | "studio" | "terminal";
   what: string;
   icon: (size: number) => JSX.Element;
 };
@@ -34,6 +34,7 @@ const TOOLS: Tool[] = [
   { kind: "studio", app: "Autora Music", setting: "studio", what: "A new song", icon: (s) => <IconMusic size={s} /> },
   { kind: "terminal", app: "Terminal", setting: "terminal", what: "A shell you and Autora share", icon: (s) => <IconTerminal size={s} /> },
   { kind: "cad", app: "Autora 3D", setting: "cad", what: "A block to shape", icon: (s) => <IconCube size={s} /> },
+  { kind: "game", app: "Autora Games", setting: "game", what: "A new game", icon: (s) => <IconGame size={s} /> },
 ];
 
 export function ToolsSheet({ session, onClose, onTrouble, onOpened }: {
@@ -97,6 +98,8 @@ export function ToolsSheet({ session, onClose, onTrouble, onOpened }: {
       /* Autora 3D has no file to make: the model is the chat's own (server/caddesk.ts), so opening it is its own route. */
       const res = tool.kind === "cad"
         ? await fetch(`/api/cad/${encodeURIComponent(session)}/open`, { method: "POST" })
+        : tool.kind === "game"
+        ? await fetch(`/api/game/${encodeURIComponent(session)}/open`, { method: "POST" })
         : tool.kind === "studio"
         ? await fetch(`/api/studio/${encodeURIComponent(session)}/open`, { method: "POST" })
         : await fetch(`/api/sessions/${session}/new`, {

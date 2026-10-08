@@ -116,6 +116,7 @@ interface ToolSettings {
   sheets: { enabled: boolean };
   slides: { enabled: boolean };
   cad: { enabled: boolean };
+  game: { enabled: boolean };
 }
 
 export function toolSettings(): ToolSettings {
@@ -163,6 +164,8 @@ import { memorySPECS } from "./specs/memory";
 import { videoSPECS } from "./specs/video";
 import { studioSPECS } from "./specs/studio";
 import { cadSPECS } from "./specs/cad";
+import { gameSPECS } from "./specs/game";
+import { gameAvailable, gameBriefing, runGameTool } from "./gamedesk";
 import { cadAvailable, cadBriefing, runCadTool } from "./caddesk";
 
 // ------------------------------------------------------------- the registry --
@@ -227,6 +230,7 @@ const TOOLS: ToolSpec[] = [
   ...voiceSPECS,
   ...filesSPECS,
   ...cadSPECS,
+  ...gameSPECS,
   ...memorySPECS,
   ...videoSPECS,
   ...studioSPECS,
@@ -348,6 +352,8 @@ export function windowOff(name: string, settings: ToolSettings = toolSettings())
   if (name.startsWith("studio_")) return !settings.studio.enabled;
   // Built by autora-3d/ (npm run build); a server without it does not offer tools that cannot work.
   if (name.startsWith("cad_")) return !cadAvailable() || !settings.cad.enabled;
+  // Built by gdevelop-editor/ (npm run build): the same.
+  if (name.startsWith("game_")) return !gameAvailable() || !settings.game.enabled;
   // Built by scripts/build-office.mjs; a server without the build does not offer tools that cannot work.
   if (name.startsWith("office_")) return !officeDir() || !(settings.pages.enabled || settings.sheets.enabled || settings.slides.enabled);
   return false;
@@ -2861,6 +2867,18 @@ async function runToolUnredacted(
           : { ok: false, summary: `There is no tool you wrote called ${name}.` };
       }
 
+      case "game_open":
+      case "game_look":
+      case "game_edit":
+      case "game_check":
+      case "game_catalog":
+      case "game_template":
+      case "game_import":
+        if (ctx.memory.incognito) {
+          return { ok: false, summary: "Not available in an incognito chat: the game window keeps its game on disk." };
+        }
+        return await runGameTool(ctx.session, spec.name, args, { cwd: terminalDir() });
+
       default: {
         // Autora 3D: one tool for each call the modeller declares (server/specs/cad.ts), run on the chat's model.
         if (spec.name.startsWith("cad_")) {
@@ -2972,6 +2990,7 @@ export async function capabilityBriefing(): Promise<string> {
   lines.push(studioBriefing(windows.studio.enabled));
   // Only a server that has the modeller built in says anything about it.
   if (cadAvailable()) lines.push(cadBriefing(windows.cad.enabled));
+  if (gameAvailable()) lines.push(gameBriefing(windows.game.enabled));
   lines.push(windows.widgets.enabled
     ? "- Explainer widgets: always available. Tool: widget_show. When someone " +
       "asks how something works -- a physical process, a mechanism, an " +

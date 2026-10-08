@@ -1,0 +1,6 @@
+{
+  "repo": "https://github.com/4ian/GDevelop",
+  "sha": "28934eb01ae2be8ea7b6192d410a892600a3cecf",
+  "engine": "https://s3.amazonaws.com/gdevelop-gdevelop.js/master/commit/28934eb01ae2be8ea7b6192d410a892600a3cecf",
+  "note": "GDevelop (MIT: Core, GDJS, the editor and the extensions; its name and logo are Florian Rival's). Its editor, newIDE/app, is fetched from this commit by scripts/prepare-gdevelop-editor.mjs, with GDJS and the extensions it exports games with, and built by gdevelop-editor/ into dist/gdevelop-editor. The engine (libGD.js and libGD.wasm: GDevelop's C++ core compiled to WebAssembly) is GDevelop's own build of the same commit, downloaded from `engine`. Bump both together."
+}

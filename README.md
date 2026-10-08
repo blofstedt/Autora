@@ -373,7 +373,8 @@ unavailable.
 The **Tools** page in the sidebar switches the built-in windows: the widget
 window (`widget_show`), the browser window (the same switch as Web browser
 above), the Creator window where websites and apps are built
-(`app_preview`), and the PDF editor (the `pdf_*` tools). All are on by
+(`app_preview`), the PDF editor (the `pdf_*` tools) and the game window (the
+`game_*` tools). All are on by
 default. One that is off is taken out of the model's tools from its next step
 and the agent is told it is off; switching the Creator window off also
 closes any that are open.
@@ -820,6 +821,30 @@ same binary the browser tool uses. Without one, the tools still read a file's
 properties and fields, fill it, draw on it, rearrange it and rewrite it
 compactly, but cannot read its text, show its pages, find where words are,
 type a signature, redact, or redraw pages as pictures.
+
+### Games
+
+Ask for a game and a window opens beside the chat with [GDevelop](https://github.com/4ian/GDevelop)'s
+open-source editor in it (MIT; its name and logo are its author's), working on the game of that chat.
+GDevelop's own AI, account, shop and cloud are taken out: Autora is what helps. The game is the
+project file GDevelop itself saves, so the editor and the agent are working on the same thing.
+
+| Tool | What it does |
+|---|---|
+| `game_open` | Opens the window on the chat's game (an empty one with a scene the first time) and says what is in it. |
+| `game_look` | Reads the game: the overview, a scene, one object, a scene's events as lines (each with the path that finds it), where instances are placed, the resources, or any part of the file by path. |
+| `game_edit` | Changes it: `set`, `insert`, `remove` and `merge` at a path such as `layouts[Scene].objects[Player].behaviors`, all together or not at all. The reply lists what looks wrong. |
+| `game_check` | Checks the whole game: instructions the engine does not have or with the wrong number of parameters, instances of objects that do not exist, pictures missing from the resources. |
+| `game_catalog` | Looks up the engine's own list of actions, conditions, expressions, objects and behaviors, with the exact type and the order of the parameters. |
+| `game_template` | The shape of a new scene, object, behavior, instance, resource or event, as the editor saves it. |
+| `game_import` | Adds a picture, sound, font, video or 3D model (an artifact or a file) to the game's resources. |
+
+You can change anything by hand while it works, and what you do is saved a moment later; the agent's next
+look sees it. Preview runs the game in a box of its own (it has no access to Autora), and Share exports it
+as a web game (a .zip). The idea, the story, the look and the feel stay yours: the agent does the wiring and
+asks about the rest. The editor may connect to Autora and nowhere else, so GDevelop's asset store, examples
+and online services are not reachable; bring pictures and sound from your own files or with `game_import`.
+The editor is built into the image from a pinned commit of GDevelop (`gdevelop/PIN.json`).
 
 ### Notebooks
 
