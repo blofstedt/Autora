@@ -50,12 +50,14 @@ function readManifest(session: string, hash: string): Manifest | null {
 }
 
 /** The pages of this document if they are drawn; otherwise start drawing them. */
-export function pagesFor(session: string, kind: OfficeKind, name: string, data: Buffer, locate?: () => Promise<Locator | null>): { status: "ready"; manifest: Manifest } | { status: "working"; hash: string } | { status: "failed"; hash: string; error: string } {
+export function pagesFor(session: string, kind: OfficeKind, name: string, data: Buffer, locate?: () => Promise<Locator | null>, retry = false): { status: "ready"; manifest: Manifest } | { status: "working"; hash: string } | { status: "failed"; hash: string; error: string } {
   if (!validSession(session)) return { status: "failed", hash: "", error: "No such session." };
   const hash = hashOf(kind, data);
   const have = readManifest(session, hash);
   if (have) return { status: "ready", manifest: have };
-  const job = jobs.get(`${session}/${hash}`);
+  let job = jobs.get(`${session}/${hash}`);
+  // Asked to try again (the phone's Retry, or its own backoff): a failure is not held against the next attempt.
+  if (retry && job?.error) { jobs.delete(`${session}/${hash}`); job = undefined; }
   if (job?.error) return { status: "failed", hash, error: job.error };
   if (!job) start(session, hash, kind, name, data, locate);
   return { status: "working", hash };

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { IconCode, IconCube, IconFile, IconGlobe, IconMusic, IconSlides, IconSparkle, IconTable, IconVideo } from "../Icons";
+import { IconCode, IconCube, IconFile, IconGlobe, IconMusic, IconSlides, IconSparkle, IconTable, IconTerminal, IconVideo } from "../Icons";
 
-type WindowKey = "widgets" | "browser" | "app" | "pdf" | "video" | "studio" | "pages" | "sheets" | "slides" | "cad";
+type WindowKey = "widgets" | "browser" | "app" | "pdf" | "video" | "studio" | "pages" | "sheets" | "slides" | "cad" | "terminal";
 
 type ToolsState = {
   config: Record<WindowKey, { enabled: boolean }>;
@@ -71,6 +71,13 @@ const WINDOWS: { key: WindowKey; name: string; icon: ReactNode; what: string; to
     icon: <IconSlides size={18} />,
     what: "Presentations (.pptx): decks the agent designs and edits, open in a window beside the chat where you can change any slide.",
     tools: "office_* on .pptx files",
+  },
+  {
+    key: "terminal",
+    name: "Terminal",
+    icon: <IconTerminal size={18} />,
+    what: "A shell beside the chat that you and the agent share: type commands with completion for commands, files, git and npm scripts, and watch the agent's commands appear in the same place. The folder you cd into is where the agent's next command starts, and it is told what you ran. Switching this off also takes the agent's terminal tool away.",
+    tools: "terminal, run_background",
   },
   {
     key: "cad",

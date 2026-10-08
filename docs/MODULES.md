@@ -293,6 +293,16 @@ Spectra's fetched renderer is most of what is on disk.
   `turn.agent.done {stopped}`; `resume.ts` reads that from the log and the next
   turn is told what was cut off, so it carries on rather than treating the new
   message as the whole job (and an Agent-mode build stays a build).
+- `server/termdesk.ts` + `src/components/TerminalWindow.tsx` (`lib/termdesk.ts`, `tests/termdesk.test.ts`): the **Terminal** window, a shell
+  the person and the agent share (tools sheet tile; one switch with the agent's `terminal` tool: `tools.terminal.enabled`). What the person types runs
+  through `runCommand` (`tools.ts`, `color` on), wrapped to print where it ended (`MARK`, held back and stripped by `flowThrough` -- it can be split
+  across chunks), so the working directory carries to the next command and to the agent's (`termCwd`, used by the `terminal` tool). The agent's own
+  commands are mirrored in (`termAgentBegin/Chunk/End`, marked "Autora") and the person's are told back on its next terminal result (`termNews`).
+  No PTY: a full-screen program cannot work and the window says so. State is in memory per chat (`dropTerm` in `forgetSession`), output keeps its
+  head and tail (`append`); the socket carries only `{open, cwd, rev, running}` (`termdesk`, throttled) and the window asks `GET /api/term/:s?after=rev`
+  for what changed. Completion is `completeLine` (`GET /api/term/:s/complete`): commands (PATH, used-before first), paths (folders first, dotfiles on
+  request, `cd` folders only), `git` subcommands and branches, `npm run` scripts; the window adds fish-style ghost text from history, a key bar on
+  touch screens (Tab, arrows, Ctrl+C, `/ ~ - |`) and Stop. Output is drawn with `lib/ansi.ts` (`ansiToLines`); class names are `tm-*` (`term-*` is the thread's cell).
 - `autora-3d/` and `server/caddesk.ts`: **Autora 3D**, the 3D modelling window (a sketch-and-extrude CAD modeller) and the agent's
   `cad_*` tools. `autora-3d/` is a **copy** of github.com/blofstedt/3D-Modeling, which is also its own app: never edit it here, change
   it there and run `node scripts/sync-autora-3d.mjs [checkout]` (it also regenerates `server/specs/cad.ts`, one `cad_*` tool for

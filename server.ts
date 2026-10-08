@@ -127,6 +127,7 @@ import { dropOpencut, onOpencutChange, opencutRoutes, opencutState, serveOpencut
 import { dropSpectra, serveSpectra, spectraDocumentChanged, spectraRoutes, spectraUpgrade } from "./server/spectra";
 import { newFileRoutes } from "./server/newfile";
 import { cadRoutes, cadState, dropCad, onCadChange, serveCad } from "./server/caddesk";
+import { dropTerm, onTermChange, termRoutes, termState } from "./server/termdesk";
 import { dropStudio, onStudioChange, studioRoutes, studioState, studioTurnNote } from "./server/studio";
 import { windowOff } from "./server/tools";
 import { dropOfficeDesk, onOfficeChange, onOfficePush, onOfficeTouch, officeBriefing, officeData, officeRoutes, officeState, officeHooks, serveOfficeEditors } from "./server/officedesk";
@@ -414,6 +415,7 @@ function forgetSession(id: string) {
   dropOpencut(id);
   forgetPresence(id);
   dropCad(id);
+  dropTerm(id);
   dropStudio(id);
   presenceSent.delete(id);
   const remarkTimer = remarkTimers.get(id);
@@ -1191,6 +1193,17 @@ onDeskChange((sessionId) => {
 /* The video window (server/opencut.ts): open or closed, and which project is in it, to the chat's tabs. */
 onOpencutChange((sessionId) => {
   sendEphemeral(sessionId, { type: "opencutdesk", session: sessionId, state: opencutState(sessionId) });
+});
+
+/* The Terminal window, the same way: opening, and anything moving in it (the page then asks for what it has not seen).
+   Held to a few a second, so a command that prints a great deal does not flood the socket. */
+const termTimers = new Map<string, ReturnType<typeof setTimeout>>();
+onTermChange((sessionId) => {
+  if (termTimers.has(sessionId)) return;
+  termTimers.set(sessionId, setTimeout(() => {
+    termTimers.delete(sessionId);
+    sendEphemeral(sessionId, { type: "termdesk", session: sessionId, state: termState(sessionId) });
+  }, 120));
 });
 
 /* Autora 3D, the same way: the window opens, and the model changes (by the agent's tools or the person's hands). */
@@ -5405,6 +5418,8 @@ async function startServer() {
   /* The video window's editor (server/opencut.ts): OpenCut's, keeping its projects here. */
   opencutRoutes(app, { exists: (id: string) => sessions.has(id), push: (id: string, message: Record<string, unknown>) => sendEphemeral(id, message) });
   officeRoutes(app, { exists: (id: string) => sessions.has(id) });
+  // The Terminal window: a shell the person and the agent share.
+  termRoutes(app, { exists: (id: string) => sessions.has(id) });
   // Autora 3D: the 3D window's model, and opening and putting it away.
   cadRoutes(app, {
     exists: (id: string) => sessions.has(id),
@@ -6126,6 +6141,7 @@ async function startServer() {
       ws.send(JSON.stringify({ type: "opencutdesk", session: sessionId, state: opencutState(sessionId) }));
       ws.send(JSON.stringify({ type: "caddesk", session: sessionId, state: cadState(sessionId) }));
       ws.send(JSON.stringify({ type: "studiodesk", session: sessionId, state: studioState(sessionId) }));
+      ws.send(JSON.stringify({ type: "termdesk", session: sessionId, state: termState(sessionId) }));
       ws.send(JSON.stringify({ type: "presence", session: sessionId, state: presenceFor(sessionId).view() }));
       if (openPreview?.opened) void openPreview.live.nudge();
 

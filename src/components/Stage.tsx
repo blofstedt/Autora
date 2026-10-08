@@ -9,13 +9,14 @@
 import type { ReactNode } from "react";
 import { APP_NAME } from "../lib/officedesk";
 import type { Surface, SurfaceKind } from "../lib/stage";
-import { IconChevron, IconCube, IconFile, IconGlobe, IconList, IconMark, IconMonitor, IconMusic, IconVideo } from "./Icons";
+import { IconChevron, IconCube, IconMaximize, IconMinimize, IconTerminal, IconFile, IconGlobe, IconList, IconMark, IconMonitor, IconMusic, IconVideo } from "./Icons";
 
 const ICON: Record<SurfaceKind, ReactNode> = {
   app: <IconMonitor size={14} />,
   pdf: <IconFile size={14} />,
   video: <IconVideo size={14} />,
   cad: <IconCube size={14} />,
+  term: <IconTerminal size={14} />,
   studio: <IconMusic size={14} />,
   docx: <IconFile size={14} />,
   pptx: <IconFile size={14} />,
@@ -27,7 +28,7 @@ const ICON: Record<SurfaceKind, ReactNode> = {
 
 /** A tab is its name and nothing else: what is in it is what is below. The dot
     says the agent is at work in it. */
-export const NAME: Record<SurfaceKind, string> = { app: "Creator", pdf: "PDF", video: "Video", cad: "3D", studio: "Music", docx: APP_NAME.docx, pptx: APP_NAME.pptx, xlsx: APP_NAME.xlsx, browser: "Browser", plan: "To do", widget: "Widget" };
+export const NAME: Record<SurfaceKind, string> = { app: "Creator", pdf: "PDF", video: "Video", cad: "3D", term: "Terminal", studio: "Music", docx: APP_NAME.docx, pptx: APP_NAME.pptx, xlsx: APP_NAME.xlsx, browser: "Browser", plan: "To do", widget: "Widget" };
 
 const working = (surface: Surface): boolean => {
   const { cell } = surface;
@@ -37,22 +38,25 @@ const working = (surface: Surface): boolean => {
 };
 
 export function Stage({
-  surfaces, active, collapsed, following, onPick, onFollow, onToggle, render,
+  surfaces, active, collapsed, expanded, following, onPick, onFollow, onToggle, onExpand, render,
 }: {
   surfaces: readonly Surface[];
   active: SurfaceKind;
   collapsed: boolean;
+  /** The stage fills the screen's height, the conversation shrunk to a strip. */
+  expanded: boolean;
   /** The stage is showing whatever the agent touched last, by itself. */
   following: boolean;
   onPick: (kind: SurfaceKind) => void;
   onFollow: () => void;
   onToggle: () => void;
+  onExpand: () => void;
   render: (surface: Surface) => ReactNode;
 }) {
   const nameOf = (kind: SurfaceKind) => NAME[kind];
   return (
     <section
-      className={`stage${collapsed ? " is-collapsed" : ""}${surfaces.length > 2 ? " is-tight" : ""}`}
+      className={`stage${collapsed ? " is-collapsed" : ""}${expanded && !collapsed ? " is-expanded" : ""}${surfaces.length > 2 ? " is-tight" : ""}`}
       aria-label="Pinned view"
     >
       <div className="stage-bar" role="tablist">
@@ -83,6 +87,18 @@ export function Stage({
           >
             <span className="watch-dot" aria-hidden="true" />
             Follow
+          </button>
+        )}
+        {!collapsed && (
+          <button
+            type="button"
+            className="stage-expand"
+            onClick={onExpand}
+            aria-pressed={expanded}
+            aria-label={expanded ? "Shrink the tools area" : "Expand the tools area"}
+            title={expanded ? "Shrink the tools area" : "Expand the tools area"}
+          >
+            {expanded ? <IconMinimize size={14} /> : <IconMaximize size={14} />}
           </button>
         )}
         <button

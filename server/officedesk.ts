@@ -1356,7 +1356,7 @@ export function officeRoutes(app: Express, opts: { exists: (session: string) => 
     const desk = load(key)!;
     await settleEngine(key);
     const now = load(key) ?? desk;
-    const got = pagesFor(key, now.kind, now.name, now.data, () => locatorFor(now.kind, now.data));
+    const got = pagesFor(key, now.kind, now.name, now.data, () => locatorFor(now.kind, now.data), req.query.retry === "1");
     const stale = got.status === "ready" ? null : latestPages(key);
     res.json({
       kind: now.kind, name: now.name, status: got.status,

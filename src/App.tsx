@@ -7,8 +7,9 @@ import { Kind, type AutoraEvent, type BrowserState } from "./lib/types";
 import { setLiveFields, setLiveFrame, setLivePaneOwns, setLiveTabs } from "./lib/liveFrame";
 import { resetPreview, setPreviewFrame, setPreviewState, usePreviewState, type PreviewState } from "./lib/preview";
 import { ScreencastCell } from "./components/ScreencastCell";
-import { AppPreview, CadWindow, OfficeWindow, OpenCutWindow, SpectraWindow, StudioWindow } from "./components/lazyWindows";
+import { AppPreview, CadWindow, OfficeWindow, OpenCutWindow, SpectraWindow, StudioWindow, TerminalWindow } from "./components/lazyWindows";
 import { resetCad, setCadState, useCadState } from "./lib/caddesk";
+import { resetTerm, setTermState, useTermState } from "./lib/termdesk";
 import { emitStudioCommand, resetStudio, setStudioState, useStudioState } from "./lib/studio";
 import { emitSpectraEvent } from "./lib/spectra";
 import { ResizeHandle } from "./components/ResizeHandle";
@@ -117,7 +118,7 @@ const EVENT_BATCH_MS = 66;
 const LIBRARY_TABS: LibraryTab[] = ["notebooks", "files"];
 
 /** The windows that can sit beside the chat on a wide screen, one at a time. */
-type SideWindow = "app" | "pdf" | "video" | "cad" | "studio" | "pages" | "sheets" | "slides" | "browser" | "work";
+type SideWindow = "app" | "pdf" | "video" | "cad" | "term" | "studio" | "pages" | "sheets" | "slides" | "browser" | "work";
 
 /**
  * The Office windows that can be open beside the chat, one per app, in the order their tabs sit in. Each has its
@@ -388,6 +389,7 @@ export function App() {
     resetDesk();
     resetVideo();
     resetCad();
+    resetTerm();
     resetStudio();
     resetOffice();
     resetCollab();
@@ -413,6 +415,7 @@ export function App() {
       onPreview: (state) => setPreviewState(state as PreviewState),
       onPdfDesk: setDeskState,
       onCadDesk: setCadState,
+      onTermDesk: setTermState,
       onStudioDesk: setStudioState,
       onStudioCommand: emitStudioCommand,
       onSpectra: emitSpectraEvent,
@@ -1332,6 +1335,7 @@ export function App() {
   const desk = useDeskState();
   const video = useVideoState();
   const cad = useCadState();
+  const term = useTermState();
   const studio = useStudioState();
   const off = useOfficeState();
   const windowAt = (kind: OfficeKind) => off.windows.find((w) => w.kind === kind) ?? null;
@@ -1340,18 +1344,25 @@ export function App() {
   /* What is open beside the chat, each with when it changed: the window shown is the newest, unless the person
      has picked a tab, and their pick sticks until that window is put away. The browser is live work in front of
      the person, so it takes the window while it is open; the document is back the moment it is put away. */
-  const [pickedWindow, setPickedWindow] = useState<SideWindow | null>(null);
+  const [pickedWindow, setPickedWindowState] = useState<SideWindow | null>(() => {
+    try { return (localStorage.getItem("autora.sidePane") as SideWindow | null) || null; } catch { return null; }
+  });
+  // Remembered per browser, like the pane widths: a tab the person chose is still the one shown after a reload.
+  const setPickedWindow = useCallback((pane: SideWindow | null) => {
+    setPickedWindowState(pane);
+    try { if (pane) localStorage.setItem("autora.sidePane", pane); else localStorage.removeItem("autora.sidePane"); } catch { /* not remembered */ }
+  }, []);
   /* Follow: on by default, the screen goes where the agent works. Only the person turning it off (the pill at the
      top right of the strip, or picking a tab themselves) keeps them where they are. */
   const followAgent = useFollowing();
   const setFollow = useCallback((on: boolean) => {
     setFollowing(on);
     if (on) setPickedWindow(null);
-  }, []);
+  }, [setPickedWindow]);
   const pickWindow = useCallback((pane: SideWindow) => {
     setPickedWindow(pane);
     setFollow(false);
-  }, [setFollow]);
+  }, [setFollow, setPickedWindow]);
   /* On a desktop what the agent looks at and does is shown in the work area, not in the conversation (a phone has one
      column and keeps it all in the thread): the Activity tab is there as soon as there is anything to show. */
   const workOn = useMemo(() => !phoneLayout && hasWork(view.buckets), [phoneLayout, view.buckets]);
@@ -1361,6 +1372,7 @@ export function App() {
     ...(desk.open ? [{ pane: "pdf" as const, since: desk.since ?? 0 }] : []),
     ...(video.open ? [{ pane: "video" as const, since: video.since ?? 0 }] : []),
     ...(cad.open ? [{ pane: "cad" as const, since: cad.since ?? 0 }] : []),
+    ...(term.open ? [{ pane: "term" as const, since: term.since ?? 0 }] : []),
     ...(studio.open ? [{ pane: "studio" as const, since: studio.since ?? 0 }] : []),
     ...OFFICE_PANES.flatMap((o) => {
       const win = windowAt(o.kind);
@@ -1387,6 +1399,7 @@ export function App() {
     ...(desk.open ? [{ pane: "pdf" as const, label: "PDF" }] : []),
     ...(video.open ? [{ pane: "video" as const, label: "Video" }] : []),
     ...(cad.open ? [{ pane: "cad" as const, label: "3D" }] : []),
+    ...(term.open ? [{ pane: "term" as const, label: "Terminal" }] : []),
     ...(studio.open ? [{ pane: "studio" as const, label: "Music" }] : []),
     ...OFFICE_PANES.filter((o) => openWindows.some((w) => w.pane === o.pane)).map((o) => ({ pane: o.pane, label: o.label })),
     ...(browser?.open ? [{ pane: "browser" as const, label: "Browser" }] : []),
@@ -2393,6 +2406,12 @@ export function App() {
             {cad.open && sessionId && (
               <aside className="app-pane" data-pane="cad" hidden={sidePane !== "cad"} aria-label="Autora 3D, the model being worked on">
                 <Suspense fallback={null}><CadWindow sessionId={sessionId} phone={false} /></Suspense>
+              </aside>
+            )}
+            {/* The Terminal: a shell the agent and the person share. */}
+            {term.open && sessionId && (
+              <aside className="app-pane" data-pane="term" hidden={sidePane !== "term"} aria-label="The terminal, shared with the agent">
+                <Suspense fallback={null}><TerminalWindow sessionId={sessionId} phone={false} /></Suspense>
               </aside>
             )}
             {/* Autora Music: the song the agent and the person are both making. */}
