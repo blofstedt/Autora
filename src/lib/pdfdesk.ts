@@ -11,7 +11,7 @@ type DeskObject = { id: string; type: string; pageNumber: number; [key: string]:
 type DeskMark = { id: string; kind: "add" | "edit" | "remove" | "page"; itemId?: string; page: number; label: string };
 
 /** Where the agent just worked on a page, to be played in the window. */
-export type DeskCue = {
+type DeskCue = {
   page: number; x: number; y: number; w: number; h: number; from: string; to: string;
   act?: "retype" | "type" | "place" | "drag" | "draw";
   tool?: string;

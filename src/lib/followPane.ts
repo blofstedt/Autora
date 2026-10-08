@@ -6,16 +6,16 @@
  */
 import type { Bucket } from "./derive";
 
-export type FollowPane = "app" | "pdf" | "video" | "cad" | "studio" | "pages" | "sheets" | "slides" | "browser";
+type FollowPane = "app" | "pdf" | "video" | "cad" | "studio" | "pages" | "sheets" | "slides" | "browser";
 
 /** An Office window as far as this needs it: which app, and the file it holds. */
-export type OfficeLook = { pane: "pages" | "sheets" | "slides"; working?: string | null; name?: string | null };
+type OfficeLook = { pane: "pages" | "sheets" | "slides"; working?: string | null; name?: string | null };
 
 const BROWSER = /^(browser_|web_search$|http_request$)/;
 const APP = /^(preview_|app_)/;
 
 /** The window a tool call works in, or null when it works in none (the terminal, memory, a search of files). */
-export function paneForTool(name: string, args: Record<string, unknown>, offices: readonly OfficeLook[]): FollowPane | null {
+function paneForTool(name: string, args: Record<string, unknown>, offices: readonly OfficeLook[]): FollowPane | null {
   if (name.startsWith("pdf_")) return "pdf";
   if (name.startsWith("video_")) return "video";
   if (name.startsWith("cad_")) return "cad";
