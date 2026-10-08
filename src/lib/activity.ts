@@ -182,6 +182,15 @@ function doing(name: string, args: Record<string, any>): string {
     case "pdf_redact": return "Redacting the PDF";
     case "pdf_replace_text": return "Changing text in the PDF";
     case "pdf_compress": return "Shrinking the PDF";
+    case "studio_open": return args.new ? `Starting the song${quoted(args.new)}` : "Opening the music window";
+    case "studio_look": return "Looking at the song";
+    case "studio_song": return args.bpm !== undefined ? "Setting the tempo" : args.key !== undefined ? "Setting the key" : "Changing the song";
+    case "studio_track": return args.action === "add" ? "Adding a track" : args.action === "remove" ? "Removing a track" : "Adjusting the mix";
+    case "studio_clip": return args.action === "add" ? "Adding a clip" : args.action === "split" ? "Splitting a clip" : "Arranging clips";
+    case "studio_notes": return args.action === "quantize" ? "Tidying the timing" : args.action === "transpose" ? "Transposing" : "Editing notes";
+    case "studio_make": return args.kind === "drums" ? "Laying down a beat" : args.kind === "bass" ? "Writing a bass line" : "Laying down chords";
+    case "studio_play": return args.action === "stop" ? "Stopping the music" : "Playing the song";
+    case "studio_export": return "Bouncing the song to a WAV";
     case "memory_write": return args.title ? `Remembering “${brief(args.title, 6)}”` : "Remembering something";
     case "memory_search": return `Searching its memory for${quoted(args.query)}`;
     case "memory_update":
@@ -203,6 +212,7 @@ function looked(name: string, args: Record<string, any>): string {
   if (name === "artifact_list") return "the saved files";
   if (name === "notebook") return "the notebook";
   if (name.startsWith("pdf_")) return "the PDF";
+  if (name.startsWith("studio_")) return "the song";
   if (name === "ask_user") return "your answer";
   if (name === "image_generate") return "the image";
   if (name === "speak") return "what to say next";

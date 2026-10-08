@@ -245,6 +245,8 @@ export type Cell =
   | { kind: "video"; seq: number }
   /** And Autora 3D's window (lib/caddesk.ts), likewise. */
   | { kind: "cad"; seq: number }
+  /** And Autora Studio's (lib/studio.ts). */
+  | { kind: "studio"; seq: number }
   /** And the Word window (lib/officedesk.ts), likewise. */
   | { kind: "docx" | "pptx" | "xlsx"; seq: number }
   | {

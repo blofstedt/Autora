@@ -37,8 +37,7 @@ built as easy tools first, with code in the background.
 4. Video editor (4).
 5. 3D tool and its game mode (2), then the 3D game maker (7).
 
-The music production tool (8) is independent of the rest and can start whenever
-there is appetite for it.
+The music production tool (8) has started; its remaining work is independent of the rest.
 
 The store (6) is independent of the rest and can start whenever there are
 enough skills and tools worth sharing; free listings first.
@@ -215,27 +214,23 @@ whether to fold the two together when (2) starts.
   that can reliably make a 3D game playable without seeing it feel. Measure
   frame rate on a real Umbrel box before committing.
 
-## 8. Music production tool
+## 8. Music production tool: started (Autora Studio, 0.9.170)
 
-Size: XL. Backlog only. Think FL Studio Lite: a pattern-based beat maker and
-piano roll with a mixer, not a full DAW.
+Moved out of the backlog because work started: the first version is built (see `docs/MODULES.md`, Autora Studio). It is a window of
+this app's own React code with the audio engine in the page (Web Audio, nothing fetched), not a sandboxed `postMessage` sub-project:
+there is no third-party editor to fence in. What is in: tracks of built-in instruments and drums, clips, a piano roll and a drum
+grid, a mixer, a click track, WAV export, and `studio_*` tools (chords, a bass that follows them, a drum beat, quantize,
+humanize, transpose, levels, "this clip" focus). What is left, in the order that would help most:
 
-- Sandboxed editor sub-project like `spectra-editor/`, using the Web Audio API, so
-  the audio engine runs in the person's browser and the box does no real-time
-  DSP. Nothing fetched from a CDN.
-- First version: step sequencer and piano roll, a few built-in synth and drum
-  sounds, per-track volume / pan / mute / solo, a playlist to arrange patterns,
-  tempo and swing. Save the project as data (tracks, patterns, notes,
-  automation) that the agent and the person both edit.
-- Sample import (wav / mp3) and export to wav / mp3 (ffmpeg on the server, or
-  an offline render in the page). MIDI import and export.
-- Agent tools work on the project as notes and patterns: write a bassline, a
-  drum pattern, a chord progression in a key, humanise timing. LLMs do symbolic
-  music passably; they cannot hear it, so offer a render to a waveform or
-  spectrogram picture for the agent to check against.
-- Out of scope for now: VST / plugin hosting, audio recording and editing,
-  time-stretching, a large effects rack.
-- Check licences for any bundled samples or soundfont.
+- **Sample import** (wav / mp3) as audio clips with a waveform, and mp3 export (ffmpeg on the server).
+- **MIDI**: import and export of .mid, and Web MIDI keyboard input to record notes.
+- **A loop region** (the song loops as a whole today), **swing** on the transport, **automation** lanes, **patterns** reused across
+  a playlist (clips are copied today).
+- **Hearing for the agent**: it cannot listen, so render the bounce to a waveform / spectrogram picture it can look at.
+- **A melody coach** in the pattern of Writers Block: it asks and critiques but has no insert tool. Today `studio_notes` can write
+  notes when the person asks, and the briefing says to do so only then; a tool family without it would make that structural.
+- A small effects rack (filter, delay, compressor) and presence (`held`) so the agent leaves a clip the person has taken alone.
+- Out of scope for now: VST / plugin hosting, audio recording and editing, time-stretching.
 
 ## Open questions
 

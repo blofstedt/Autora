@@ -38,6 +38,12 @@ export const FAMILIES: Family[] = [
     words: /\bvideos?\b|\bautora video\b|\bopencut\b|\bfootage\b|\bclips?\b|\bvideo edit|\b(?:mp4|mov|webm)\b|\bsubtitles?\b|\bsplice\b|\btimeline\b/i,
   },
   {
+    id: "studio",
+    about: "Autora Studio: make music in the music window -- tracks, chords, bass, drums, notes, tempo, mixing and a WAV export",
+    match: (n) => n.startsWith("studio_"),
+    words: /\bautora studio\b|\bmusic\b|\bsongs?\b|\bbeats?\b|\bdaw\b|\bchord progression|\bchords?\b|\bmelod(?:y|ies)\b|\bbassline\b|\bbass line\b|\bdrum (?:loop|pattern|track|beat|kit)|\bsynth(?:esizer)?\b|\bpiano roll\b|\bbpm\b|\btempo\b|\bmix(?:ing)? (?:the |a |my )?(?:song|track|tracks)\b|\bjingle\b|\bsoundtrack\b|\bproduce (?:a |some )?(?:track|tune|song)/i,
+  },
+  {
     id: "office",
     about: "Autora Pages, Sheets and Slides: read, edit, check, make and convert documents (.docx), spreadsheets (.xlsx) and presentations (.pptx)",
     match: (n) => n.startsWith("office_"),

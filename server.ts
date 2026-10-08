@@ -127,6 +127,7 @@ import { dropOpencut, onOpencutChange, opencutRoutes, opencutState, serveOpencut
 import { dropSpectra, serveSpectra, spectraDocumentChanged, spectraRoutes, spectraUpgrade } from "./server/spectra";
 import { newFileRoutes } from "./server/newfile";
 import { cadRoutes, cadState, dropCad, onCadChange, serveCad } from "./server/caddesk";
+import { dropStudio, onStudioChange, studioRoutes, studioState, studioTurnNote } from "./server/studio";
 import { windowOff } from "./server/tools";
 import { dropOfficeDesk, onOfficeChange, onOfficePush, onOfficeTouch, officeBriefing, officeData, officeRoutes, officeState, officeHooks, serveOfficeEditors } from "./server/officedesk";
 import { renderToPdf, webDir as officeWebDir } from "./server/officerender";
@@ -413,6 +414,7 @@ function forgetSession(id: string) {
   dropOpencut(id);
   forgetPresence(id);
   dropCad(id);
+  dropStudio(id);
   presenceSent.delete(id);
   const remarkTimer = remarkTimers.get(id);
   if (remarkTimer) clearTimeout(remarkTimer);
@@ -1194,6 +1196,11 @@ onOpencutChange((sessionId) => {
 /* Autora 3D, the same way: the window opens, and the model changes (by the agent's tools or the person's hands). */
 onCadChange((sessionId) => {
   sendEphemeral(sessionId, { type: "caddesk", session: sessionId, state: cadState(sessionId) });
+});
+
+/* Autora Studio, the same way: the window opens, and the song changes (by the agent's tools or the person's hands). */
+onStudioChange((sessionId) => {
+  sendEphemeral(sessionId, { type: "studiodesk", session: sessionId, state: studioState(sessionId) });
 });
 
 /* The Office window, the same way: what the person types is theirs for a moment, and the window's
@@ -2423,6 +2430,9 @@ async function systemInstructionFor(
   // And the video window, when a project is open in it.
   const videoDesk = videoBriefing(sessionId);
   if (videoDesk) notes.push(videoDesk);
+  // And the music window, when a song is open in it.
+  const studioDesk = studioTurnNote(sessionId);
+  if (studioDesk) notes.push(studioDesk);
 
   const open = browsers.get(sessionId)?.status();
   if (open?.open && open.url?.startsWith("chrome-error:")) {
@@ -5401,6 +5411,13 @@ async function startServer() {
     incognito: (id: string) => Boolean(sessions.get(id)?.incognito),
     off: () => windowOff("cad_scene_get"),
   });
+  // Autora Studio: the music window's song, the commands to it, and opening and putting it away.
+  studioRoutes(app, {
+    exists: (id: string) => sessions.has(id),
+    incognito: (id: string) => Boolean(sessions.get(id)?.incognito),
+    off: () => windowOff("studio_look"),
+    push: (id: string, message: Record<string, unknown>) => sendEphemeral(id, message),
+  });
 
   /* File -> Export PDF in the Office window: the server lays the document out (the same pages office_pdf
      makes), and the PDF opens in the PDF editor -- PDFs always go to our own. */
@@ -6108,6 +6125,7 @@ async function startServer() {
       ws.send(JSON.stringify({ type: "officedesk", session: sessionId, state: officeState(sessionId) }));
       ws.send(JSON.stringify({ type: "opencutdesk", session: sessionId, state: opencutState(sessionId) }));
       ws.send(JSON.stringify({ type: "caddesk", session: sessionId, state: cadState(sessionId) }));
+      ws.send(JSON.stringify({ type: "studiodesk", session: sessionId, state: studioState(sessionId) }));
       ws.send(JSON.stringify({ type: "presence", session: sessionId, state: presenceFor(sessionId).view() }));
       if (openPreview?.opened) void openPreview.live.nudge();
 
