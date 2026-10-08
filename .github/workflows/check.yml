@@ -25,6 +25,9 @@ jobs:
       # And Spectra's, which is now what that window shows.
       - run: npm --prefix spectra-editor ci
 
+      # And OpenCut's, the video window's editor.
+      - run: npm --prefix opencut-editor ci
+
       - name: Lint (typecheck and ESLint)
         run: npm run lint
 

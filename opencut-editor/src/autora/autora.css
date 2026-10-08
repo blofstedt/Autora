@@ -1,0 +1,140 @@
+/* OpenCut's stylesheet first, then Autora's answer to it. The editor's colours
+   are the same few names (--background, --card, --primary...) on every surface;
+   pointing them at Autora's own tokens is the whole of the retheme. */
+@import "../web/app/globals.css";
+
+/* The sources are fetched, so gitignored, and Tailwind skips what git ignores. */
+@source "../web";
+
+/* Autora's tokens, as the window last sent them (the defaults are Autora Violet,
+   for the moment before it does). The window reads them off its own page, so a
+   different theme there is a different theme here. */
+:root {
+  --a-bg: #08090d;
+  --a-s1: #0e1016;
+  --a-s2: #151824;
+  --a-s3: #1d2130;
+  --a-s4: #252a3b;
+  --a-sink: #06070a;
+  --a-border: rgba(255, 255, 255, 0.06);
+  --a-border-strong: rgba(255, 255, 255, 0.11);
+  --a-text: #edeff5;
+  --a-text-2: #98a1b6;
+  --a-text-3: #7a8297;
+  --a-accent: #6e5bff;
+  --a-accent-light: #7d6bff;
+  --a-accent-deep: #5a48e8;
+  --a-on-accent: #ffffff;
+  --a-accent-soft: rgba(110, 91, 255, 0.14);
+  --a-accent-line: rgba(110, 91, 255, 0.42);
+  --a-accent-2: #22d3ee;
+  --a-live: #34d399;
+  --a-warn: #fbbf24;
+  --a-danger: #fb7185;
+  --a-sans: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --a-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --a-r-sm: 8px;
+  --a-r: 12px;
+  --a-r-lg: 16px;
+}
+
+:root,
+.dark,
+.panel,
+.dark .panel {
+  --background: var(--a-bg);
+  --foreground: var(--a-text);
+  --card: var(--a-s1);
+  --card-foreground: var(--a-text);
+  --popover: var(--a-s2);
+  --popover-hover: var(--a-s3);
+  --popover-foreground: var(--a-text);
+  --primary: var(--a-accent);
+  --primary-foreground: var(--a-on-accent);
+  --secondary: var(--a-accent-soft);
+  --secondary-border: var(--a-accent-line);
+  --secondary-foreground: var(--a-accent-light);
+  --muted: var(--a-s4);
+  --muted-foreground: var(--a-text-3);
+  --accent: var(--a-s3);
+  --accent-foreground: var(--a-text);
+  --destructive: var(--a-danger);
+  --destructive-foreground: #1a0b0e;
+  --constructive: var(--a-live);
+  --constructive-foreground: #06140e;
+  --caution: var(--a-warn);
+  --caution-foreground: #1a1405;
+  --border: var(--a-border-strong);
+  --input: var(--a-s2);
+  --ring: var(--a-accent);
+  --chart-1: var(--a-accent);
+  --chart-2: var(--a-accent-2);
+  --chart-3: var(--a-warn);
+  --chart-4: var(--a-live);
+  --chart-5: var(--a-danger);
+  --sidebar-background: var(--a-s1);
+  --sidebar-foreground: var(--a-text);
+  --sidebar-primary: var(--a-accent);
+  --sidebar-primary-foreground: var(--a-on-accent);
+  --sidebar-accent: var(--a-s3);
+  --sidebar-accent-foreground: var(--a-text);
+  --sidebar-border: var(--a-border-strong);
+  --sidebar-ring: var(--a-accent);
+  --sidebar: var(--a-s1);
+  --font-inter: var(--a-sans);
+}
+
+/* The panels sit one step up from the page, as Autora's cards do. */
+.panel,
+.dark .panel {
+  --background: var(--a-s1);
+  --card: var(--a-s1);
+  --accent: var(--a-s2);
+  --input: var(--a-s2);
+  --border: var(--a-border);
+}
+
+@theme inline {
+  --font-sans: var(--a-sans);
+  --font-mono: var(--a-mono);
+  --radius-lg: var(--a-r);
+  --radius-md: var(--a-r-sm);
+  --radius-sm: 6px;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: var(--a-bg);
+  color: var(--a-text);
+  font-family: var(--a-sans);
+}
+
+/* Autora's focus ring and selection, not the browser's. */
+:focus-visible {
+  outline: 2px solid var(--a-accent-line);
+  outline-offset: 1px;
+}
+::selection {
+  background: var(--a-accent-soft);
+}
+
+/* The few places OpenCut paints with a fixed blue rather than its tokens (the Export
+   button's gradient, tooltips, the sticker region badge): Autora's accent instead. */
+:root {
+  --color-blue-100: var(--a-s3);
+  --color-blue-300: var(--a-accent-light);
+  --color-blue-600: var(--a-accent);
+  --color-blue-900: var(--a-accent-deep);
+  --color-sky-50: var(--a-s2);
+  --color-sky-100: var(--a-border-strong);
+  --color-sky-600: var(--a-accent-light);
+}
+.from-\[\#2567EC\] {
+  --tw-gradient-from: var(--a-accent-deep);
+}
+.to-\[\#37B6F7\] {
+  --tw-gradient-to: var(--a-accent-light);
+}

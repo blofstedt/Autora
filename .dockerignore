@@ -7,3 +7,9 @@ spectra-editor/node_modules
 spectra-editor/src/renderer
 spectra-editor/.prepared
 .cache
+
+# OpenCut's editor, the same way: its own lockfile in the build stage, its source fetched and overlaid there.
+opencut-editor/node_modules
+opencut-editor/src/web
+opencut-editor/src/web-public
+opencut-editor/.prepared

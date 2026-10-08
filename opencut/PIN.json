@@ -1,0 +1,5 @@
+{
+  "repo": "https://github.com/opencut-app/opencut-classic",
+  "sha": "cf5e79e919144200294fb9fed22a222592a0aeea",
+  "note": "OpenCut (MIT). Its editor, apps/web/src, is fetched from this commit by scripts/prepare-opencut-editor.mjs and built by opencut-editor/ into dist/opencut-editor. The classic repo is the working editor; opencut-app/OpenCut is mid-rewrite. Bump the sha to take a newer one."
+}

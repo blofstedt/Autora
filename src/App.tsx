@@ -7,13 +7,14 @@ import { Kind, type AutoraEvent, type BrowserState } from "./lib/types";
 import { setLiveFields, setLiveFrame, setLivePaneOwns, setLiveTabs } from "./lib/liveFrame";
 import { resetPreview, setPreviewFrame, setPreviewState, usePreviewState, type PreviewState } from "./lib/preview";
 import { ScreencastCell } from "./components/ScreencastCell";
-import { AppPreview, OfficeWindow, SpectraWindow } from "./components/lazyWindows";
+import { AppPreview, OfficeWindow, OpenCutWindow, SpectraWindow } from "./components/lazyWindows";
 import { emitSpectraEvent } from "./lib/spectra";
 import { ResizeHandle } from "./components/ResizeHandle";
 import { CHAT, RAIL, setChatWidth, setRailCollapsed, setRailMini, setRailWidth, usePanes, wideScreen } from "./lib/panes";
 import { clearOfficePick, getOfficePick, pickLabel, pickSentence, useOfficePick } from "./lib/officeSelection";
 import { emitOfficePush, resetOffice, setOfficeState, useOfficeState, type OfficeKind } from "./lib/officedesk";
 import { resetDesk, setDeskState, useDeskState } from "./lib/pdfdesk";
+import { emitVideoCommand, resetVideo, setVideoState, useVideoState } from "./lib/opencut";
 import { resetCollab, setCollabState } from "./lib/collab";
 import { cellKey, dockedPlan, usePhone } from "./lib/stage";
 import { Thread, WorkFeed, hasWork } from "./components/Thread";
@@ -112,7 +113,7 @@ const EVENT_BATCH_MS = 66;
 const LIBRARY_TABS: LibraryTab[] = ["notebooks", "files"];
 
 /** The windows that can sit beside the chat on a wide screen, one at a time. */
-type SideWindow = "app" | "pdf" | "pages" | "sheets" | "slides" | "browser" | "work";
+type SideWindow = "app" | "pdf" | "video" | "pages" | "sheets" | "slides" | "browser" | "work";
 
 /**
  * The Office windows that can be open beside the chat, one per app, in the order their tabs sit in. Each has its
@@ -369,6 +370,7 @@ export function App() {
     };
     resetPreview();
     resetDesk();
+    resetVideo();
     resetOffice();
     resetCollab();
     const stream = new SessionStream(sessionId, {
@@ -393,6 +395,8 @@ export function App() {
       onPreview: (state) => setPreviewState(state as PreviewState),
       onPdfDesk: setDeskState,
       onSpectra: emitSpectraEvent,
+      onVideoDesk: setVideoState,
+      onVideoCommand: emitVideoCommand,
       onOfficeDesk: setOfficeState,
       onOfficePush: emitOfficePush,
       onPresence: setCollabState,
@@ -1305,6 +1309,7 @@ export function App() {
   const phoneLayout = usePhone();
   const preview = usePreviewState();
   const desk = useDeskState();
+  const video = useVideoState();
   const off = useOfficeState();
   const windowAt = (kind: OfficeKind) => off.windows.find((w) => w.kind === kind) ?? null;
   const pointedAt = useOfficePick();
@@ -1320,6 +1325,7 @@ export function App() {
     ...(workOn ? [{ pane: "work" as const, since: 0 }] : []),
     ...(preview.open ? [{ pane: "app" as const, since: preview.since ?? 0 }] : []),
     ...(desk.open ? [{ pane: "pdf" as const, since: desk.since ?? 0 }] : []),
+    ...(video.open ? [{ pane: "video" as const, since: video.since ?? 0 }] : []),
     ...OFFICE_PANES.flatMap((o) => {
       const win = windowAt(o.kind);
       return win ? [{ pane: o.pane, since: win.since ?? 0 }] : [];
@@ -1337,6 +1343,7 @@ export function App() {
   const sideWindows: Array<{ pane: SideWindow; label: string }> = [
     ...(workOn ? [{ pane: "work" as const, label: "Activity" }] : []),
     ...(desk.open ? [{ pane: "pdf" as const, label: "PDF" }] : []),
+    ...(video.open ? [{ pane: "video" as const, label: "Video" }] : []),
     ...OFFICE_PANES.filter((o) => openWindows.some((w) => w.pane === o.pane)).map((o) => ({ pane: o.pane, label: o.label })),
     ...(browser?.open ? [{ pane: "browser" as const, label: "Browser" }] : []),
     ...(preview.open ? [{ pane: "app" as const, label: "Creator" }] : []),
@@ -2318,6 +2325,12 @@ export function App() {
             {desk.open && sessionId && (
               <aside className="app-pane" data-pane="pdf" hidden={sidePane !== "pdf"} aria-label="The PDF being worked on">
                 <Suspense fallback={null}><SpectraWindow sessionId={sessionId} phone={false} /></Suspense>
+              </aside>
+            )}
+            {/* The video being cut, in OpenCut's editor, for the person to work on too. */}
+            {video.open && sessionId && (
+              <aside className="app-pane" data-pane="video" hidden={sidePane !== "video"} aria-label="The video being edited">
+                <Suspense fallback={null}><OpenCutWindow sessionId={sessionId} phone={false} /></Suspense>
               </aside>
             )}
             {/* And one window for each Office app with a document open in it: Autora Pages, Autora Sheets and

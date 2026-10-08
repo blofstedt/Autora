@@ -9,6 +9,7 @@ number. Sizes are lines, as of 0.9.159.
 | Path | Lines | What it is |
 |---|---|---|
 | `spectra-editor/src/renderer/` | ~340k | **Not in the repo.** Spectra-PDF's renderer, fetched from the commit in `spectra/PIN.json` and patched by `scripts/prepare-spectra-editor.mjs` (run by `npm run build` and `npm run lint`). It is gitignored; if it is on disk, do not edit it. |
+| `opencut-editor/src/web/` | ~90k | **Not in the repo.** OpenCut's editor, fetched from the commit in `opencut/PIN.json` by `scripts/prepare-opencut-editor.mjs` (run by `npm run build` and `npm run lint`) and overlaid by `opencut-editor/overlay/web/`. Gitignored; never edit it. |
 | `spectra-editor/` (the rest) | small | Autora's own: `src/autora/` (the Tauri shim), `overlay/renderer.patch` (edits to Spectra's `App.tsx`, `i18n.ts`, `index.tsx`), `overlay/renderer/` (`autora.css`, `locale-loaders.ts`), `vite.config.ts`, `tsconfig.json`. |
 | `package-lock.json`, `*/package-lock.json` | | Lockfiles. |
 | `dist/`, `.cache/`, `node_modules/` | | Build output, the GenOffice/Spectra checkouts, deps. |
@@ -82,6 +83,7 @@ task is about the PDF editor's shim or overlay.
 | Browser | `browser.ts` (4.5k: `LiveBrowser`), `human.ts`, `captcha*.ts`, `pagedescribe.ts`, `browsedata.ts`, `extensions.ts`, `cookies.ts`, `signins.ts`, `liveview.ts` |
 | App window | `preview.ts`, `pick.ts`, `domdiff.ts`, `snapshots.ts` |
 | Code | `codediff.ts` (`Workspace`), `codesearch.ts`, `editfile.ts`, `merge3.ts`, `background.ts` (long jobs) |
+| Video | `opencut.ts` (the project store, the window's state, commands to the editor, the `video_*` tools), `specs/video.ts` |
 | PDF | `pdf.ts` (3k: every `pdf_*` tool), `pdftext.ts`, `pdfrender.ts`, `compose.ts`, `pdfdesk.ts` (window state), `spectra.ts` + `spectra/{engine,commands}.ts` (the window's editor and its Python engine) |
 | Office | `office.ts` (CLI tools), `officedesk.ts` (window), `officehost.ts` (Electron stand-in engine), `officerender.ts` (headless PDF), `officepages.ts` (phone pictures) |
 | Static files | `staticfiles.ts` (compressed, cached `express.static`) |
@@ -102,7 +104,7 @@ task is about the PDF editor's shim or overlay.
 | Event log -> UI | `lib/stream.ts`, `lib/derive.ts`, `lib/share.ts`, `lib/steps.ts`, `lib/types.ts` |
 | Thread | `components/Thread.tsx` (`TurnBucket`, `CellView`, `Reply`), cells: `ToolCell`, `TerminalCell`, `FileCell`, `ImageCell`, `AskCell`, `PermissionCell`, `TodoCell`, `MemoryCell`, `LearnedCell`, `RemarkCell`, `WidgetCell`, `ScreencastCell`, `Markdown` |
 | Phone stage | `lib/stage.ts`, `components/Stage.tsx`, `ImmersiveChat.tsx`, `lib/fullscreen.ts`, `lib/cursorPos.ts` |
-| Windows | Browser: `ScreencastCell`, `lib/liveFrame.ts`, `lib/pageInput.ts`. App: `AppPreview`, `AppInspector`, `AppReview`, `AppVersions`, `DevtoolsPanel`, `lib/preview.ts`, `lib/appApi.ts`. PDF: `SpectraWindow`, `lib/spectra.ts`, `lib/pdfdesk.ts`. Office: `OfficeWindow`, `OfficeCursor`, `OfficePages`, `lib/officedesk.ts`, `lib/officeSelection.ts`, `lib/humanPath.ts` |
+| Windows | Video: `OpenCutWindow`, `lib/opencut.ts`. Browser: `ScreencastCell`, `lib/liveFrame.ts`, `lib/pageInput.ts`. App: `AppPreview`, `AppInspector`, `AppReview`, `AppVersions`, `DevtoolsPanel`, `lib/preview.ts`, `lib/appApi.ts`. PDF: `SpectraWindow`, `lib/spectra.ts`, `lib/pdfdesk.ts`. Office: `OfficeWindow`, `OfficeCursor`, `OfficePages`, `lib/officedesk.ts`, `lib/officeSelection.ts`, `lib/humanPath.ts` |
 | Pages (menu) | `components/Rail.tsx`; lazy: `components/pages/*` ; eager: `Settings.tsx`, `Sessions.tsx`, `Schedule.tsx`, `Triggers.tsx` |
 | Settings cards | `Settings.tsx` (1.5k), `SecretStore`, `Credentials`, `VoiceCard`, `NotifyCard`, `QuietCard`, `CaptchaCard`, `AutomationCard`, `CollabSettings`, `TimeZoneCard`, `ModelPicker`, `SetupCard` |
 | Composer | `DictateButton`, `AttachButton`, `SlashMenu` + `lib/commands.ts`, `ModeSelect`, `PermissionsPill`, `SpendBar`/`SpendPeek` + `lib/spend.ts`, `LiveChat` + `lib/voice.ts` (1.9k), `lib/liveview.ts` |
@@ -117,6 +119,7 @@ class (`.pdf-window`, `.app-window`, `.composer`, `.rail`, `.turn`, `.cell`...).
 | Path | What |
 |---|---|
 | `office/` | GenOffice build glue: `PIN.json`, `shim/` (page side), `host/` (Electron stand-in), `vite/` |
+| `opencut/PIN.json`, `scripts/{opencut-checkout,prepare-opencut-editor,typecheck-opencut-editor}.mjs`, `opencut-editor/` | OpenCut's editor (the video window): pin, fetch + overlay, Autora's shims and bridge |
 | `spectra/PIN.json`, `scripts/build-spectra.mjs` | Spectra's Python engine, fetched and built |
 | `scripts/` | `build-office.mjs`, `build-spectra.mjs`, `replay.ts`, `spectra-look.ts` |
 | `tests/` | one `*.test.ts` per area; `npm test -- <name>` filters, `-- -j 4` runs four at once (`tests/run.ts`); `ui-*` and `e2e-*` drive Chromium |

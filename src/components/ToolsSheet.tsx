@@ -12,21 +12,22 @@
  */
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { IconFile, IconScroll, IconSlides, IconStar, IconTable, IconWrench, IconX } from "./Icons";
+import { IconFile, IconScroll, IconSlides, IconStar, IconTable, IconVideo, IconWrench, IconX } from "./Icons";
 
-type Kind = "pdf" | "docx" | "xlsx" | "pptx";
+type Kind = "pdf" | "docx" | "xlsx" | "pptx" | "video";
 
 type Tool = {
   kind: Kind;
   app: string;
   /** The setting on the Tools page that decides whether this app is on. */
-  setting: "pdf" | "pages" | "sheets" | "slides";
+  setting: "pdf" | "video" | "pages" | "sheets" | "slides";
   what: string;
   icon: (size: number) => JSX.Element;
 };
 
 const TOOLS: Tool[] = [
   { kind: "pdf", app: "Autora PDF", setting: "pdf", what: "A blank page", icon: (s) => <IconFile size={s} /> },
+  { kind: "video", app: "Autora Video", setting: "video", what: "A new video project", icon: (s) => <IconVideo size={s} /> },
   { kind: "docx", app: "Autora Pages", setting: "pages", what: "A blank document", icon: (s) => <IconScroll size={s} /> },
   { kind: "xlsx", app: "Autora Sheets", setting: "sheets", what: "A blank spreadsheet", icon: (s) => <IconTable size={s} /> },
   { kind: "pptx", app: "Autora Slides", setting: "slides", what: "A blank slide", icon: (s) => <IconSlides size={s} /> },
@@ -66,6 +67,18 @@ export function ToolsSheet({ session, onClose, onTrouble, onOpened }: {
     setBusy(tool.kind);
     setError(null);
     try {
+      // The video editor opens on its own project; it makes a blank one itself when there is none.
+      if (tool.kind === "video") {
+        const res = await fetch(`/api/opencut/open?session=${encodeURIComponent(session)}`, { method: "POST" });
+        if (!res.ok) {
+          setError(`Autora Video was not opened (${res.status}).`);
+          setBusy(null);
+          return;
+        }
+        onOpened("a video project", tool.app);
+        onClose();
+        return;
+      }
       const res = await fetch(`/api/sessions/${session}/new`, {
         method: "POST",
         headers: { "content-type": "application/json" },

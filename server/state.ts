@@ -177,6 +177,8 @@ interface ToolSettings {
   widgets: { enabled: boolean };
   app: { enabled: boolean };
   pdf: { enabled: boolean };
+  /** Autora Video (OpenCut's editor): the video_* tools and the window beside the chat. */
+  video: { enabled: boolean };
   /** Autora Pages (.docx), Autora Sheets (.xlsx) and Autora Slides (.pptx): each its own switch, for the
       Office tools' work on that kind of file and its window beside the chat. */
   pages: { enabled: boolean };
@@ -360,6 +362,7 @@ export function defaultTools(): ToolSettings {
     widgets: { enabled: true },
     app: { enabled: true },
     pdf: { enabled: true },
+    video: { enabled: true },
     pages: { enabled: true },
     sheets: { enabled: true },
     slides: { enabled: true },
@@ -411,7 +414,7 @@ export function mergeTools(into: ToolSettings, patch: any): ToolSettings {
   if (patch.office && typeof patch.office === "object" && typeof patch.office.enabled === "boolean") {
     for (const key of ["pages", "sheets", "slides"] as const) into[key].enabled = patch.office.enabled;
   }
-  for (const key of ["widgets", "app", "pdf", "pages", "sheets", "slides"] as const) {
+  for (const key of ["widgets", "app", "pdf", "video", "pages", "sheets", "slides"] as const) {
     const given = patch[key];
     if (given && typeof given === "object") into[key].enabled = bool(given.enabled, into[key].enabled);
   }

@@ -15,6 +15,8 @@ type Handlers = {
   /** One event for the PDF editor: an engine reply, or the document changing
       under it. The window passes on the ones the editor asked for. */
   onSpectra?: (msg: { event: string; payload: unknown }) => void;
+  onVideoDesk?: (state: unknown) => void;
+  onVideoCommand?: (cmd: { id: string; name: string; args: Record<string, unknown> }) => void;
   onOfficeDesk?: (state: unknown) => void;
   onOfficePush?: (msg: unknown) => void;
   /** Who has hold of what: surfaces the person has taken, and ones in use. */
@@ -148,6 +150,14 @@ export class SessionStream {
           break;
         case "spectra":
           if (typeof msg.event === "string") this.handlers.onSpectra?.({ event: msg.event, payload: msg.payload });
+          break;
+        case "opencutdesk":
+          this.handlers.onVideoDesk?.(msg.state);
+          break;
+        case "opencut.command":
+          if (typeof msg.id === "string" && typeof msg.name === "string") {
+            this.handlers.onVideoCommand?.({ id: msg.id, name: msg.name, args: msg.args && typeof msg.args === "object" ? msg.args : {} });
+          }
           break;
         case "officedesk.push":
           this.handlers.onOfficePush?.(msg);

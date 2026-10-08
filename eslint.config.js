@@ -7,9 +7,10 @@ import globals from "globals";
 
 export default tseslint.config(
   // spectra-editor/ is its own sub-project (the PDF window's renderer), typechecked by its own tsconfig.
+  // So is opencut-editor/ (the video window's editor).
   // .cache/ holds the pinned GenOffice checkout the Office tools are built from (scripts/build-office.mjs).
   // office/host/entry.ts is bundled with GenOffice's own tsconfig (esbuild, office/host/build.mjs), not this one.
-  { ignores: ["dist/", "node_modules/", "ui/", ".autora/", "recordings/", "spectra-editor/", ".cache/", "office/host/entry.ts"] },
+  { ignores: ["dist/", "node_modules/", "ui/", ".autora/", "recordings/", "spectra-editor/", "opencut-editor/", ".cache/", "office/host/entry.ts"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

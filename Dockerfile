@@ -50,6 +50,11 @@ RUN npm ci
 # `npm run lint` and `npm run build` do first (scripts/prepare-spectra-editor.mjs).
 COPY spectra-editor/package.json spectra-editor/package-lock.json spectra-editor/
 RUN npm --prefix spectra-editor ci
+# OpenCut's editor, the video window's, the same way: its own project and
+# lockfile, built into dist/opencut-editor from the commit in opencut/PIN.json
+# (scripts/prepare-opencut-editor.mjs), with Autora's overlay laid over it.
+COPY opencut-editor/package.json opencut-editor/package-lock.json opencut-editor/
+RUN npm --prefix opencut-editor ci
 
 COPY tsconfig.json tsconfig.server.json tsconfig.test.json eslint.config.js vite.config.ts index.html ./
 # Only so `npm run lint` can typecheck them; they stay in this stage.
@@ -61,6 +66,9 @@ COPY server/ server/
 COPY spectra-editor/ spectra-editor/
 COPY spectra/PIN.json spectra/PIN.json
 COPY scripts/spectra-checkout.mjs scripts/prepare-spectra-editor.mjs scripts/
+COPY opencut-editor/ opencut-editor/
+COPY opencut/PIN.json opencut/PIN.json
+COPY scripts/opencut-checkout.mjs scripts/prepare-opencut-editor.mjs scripts/typecheck-opencut-editor.mjs scripts/
 
 # Typecheck both halves before building either. A container that builds and
 # then fails at runtime on something the compiler already knew is a wasted

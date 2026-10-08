@@ -59,6 +59,9 @@ WATCHED = (
     "blofstedt-autora/docker-compose.yml",
     # The PDF window's editor: its own sub-project, built into the same image.
     "spectra-editor/",
+    # The video window's editor (OpenCut's): the same, with its own pin in opencut/PIN.json.
+    "opencut-editor/",
+    "opencut/",
 )
 
 COMPOSE = "blofstedt-autora/docker-compose.yml"

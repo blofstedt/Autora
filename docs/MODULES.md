@@ -309,6 +309,52 @@ Spectra's fetched renderer is most of what is on disk.
   page; the other locales are files fetched on demand (`locale-loaders.ts`), and the metadata worker is
   built without them. `npm run typecheck` checks the renderer and the shim together.
   Search with `--glob '!spectra-editor/**'` unless the task is about it.
+- `opencut-editor/` + `server/opencut.ts`: **Autora Video**, OpenCut's editor (github.com/opencut-app/opencut-classic, MIT) in
+  a window beside the chat. The linked `opencut-app/OpenCut` is mid-rewrite and has no editor yet, so the pin
+  (`opencut/PIN.json`) is the classic repo, which does. Built like Spectra's: `scripts/prepare-opencut-editor.mjs`
+  (run by `npm run build` and `npm run lint`) copies `apps/web/src` from the pin into `opencut-editor/src/web/`
+  (gitignored; less the site, blog, sign-in, API routes, its own tests and the transcription worker) and lays
+  `opencut-editor/overlay/web/` over it -- **whole files that replace OpenCut's own at the same path**, not a patch
+  (storage adapters, the header, the transcription service, a few stubs). Edit the overlay, never the fetched copy.
+  It is Next.js there, built with Vite here: `next/link|image|navigation|script|font` are aliased to
+  `opencut-editor/src/autora/shims/`, `opencut-wasm` (npm) loads through `vite-plugin-wasm`, and absolute public
+  paths (`/fonts/...`) are made relative to the page (`publicBeside` in `vite.config.ts`). `src/autora/` is Autora's
+  half: `bridge.ts` (the postMessage wire), `commands.ts` (what the agent can do, written against OpenCut's own
+  `EditorCore`, so every step goes through the editor's command history and can be undone), `storage-shim.ts`
+  (`localStorage` and the storage manager for a frame with no origin), `autora.css` (OpenCut's tokens pointed at
+  Autora's, `--a-*`), `main.tsx`.
+  The frame is sandboxed without an origin (`components/OpenCutWindow.tsx`), so it has no IndexedDB or OPFS: both
+  adapters are replaced (`overlay/web/services/storage/`) and its projects and media are kept by the server, through
+  the window, under `stateDir()/opencut/` (`server/opencut.ts`). Projects belong to the person, not to a chat.
+  **Traps:** (1) the iframe `src` must never change while it is mounted (it reloads, and loses a command in flight);
+  (2) `ready` is said once a *project* is loaded, not when the page is up; a window that mounts sets the server's
+  flag false first; (3) a command can arrive in two tabs: `/api/opencut/claim` makes one of them do it, and the
+  server sends an unclaimed one again every 1.5 s; (4) theme: the window reads Autora's tokens off its own page and
+  posts them (`--a-*`), so a different theme here is a different one there; (5) automatic captions are removed (they
+  download a model from Hugging Face); (6) saved exports are capped at the artifact limit (50 MB), the editor's own
+  Export button downloads without one.
+  **The agent can use every part of the editor, two ways.** Typed commands, against `EditorCore` (`commands.ts` for the
+  cut, `features.ts` for the rest: stickers, shapes, effect layers, subtitles, effects, masks, keyframes, speed, tracks,
+  scenes, bookmarks, project settings, the editor's own actions and panels, a picture of a frame, and the catalogs that
+  say what exists). And a screen driver (`ui.ts`) for anything those do not reach: it reads the controls on the page
+  (each with a `[ref]`), and clicks, types, presses and drags with *real* pointer, mouse, keyboard and input events, so
+  Radix menus, selects, dialogs and the timeline answer as they do to a hand. Tools (`server/specs/video.ts`):
+  `video_open`, `video_look`, `video_import`, `video_edit`, `video_style`, `video_project`, `video_ui`,
+  `video_catalog`, `video_frame`, `video_export`. A new typed command: a case in `features.ts`, its name in the right
+  action list in `server/opencut.ts` and the enum in the spec; the cursor needs nothing (see below).
+  **The cursor and typing are the other windows'** (`lib/humanPath.ts`), for every command: `whereFor` in
+  `OpenCutWindow.tsx` says what a command is about (a clip, a track, a time, a panel, a control), the frame's `locate`
+  finds it on the screen (moving its playhead or scrolling first), the cursor goes there and presses, then the command
+  runs. Words are typed a few letters at a time: a title (`add_text`, then `set_params {history: false}` for the rest),
+  a clip's content, a project name, and any field via `ui_type`. Commands that change nothing on screen (`SILENT`) go
+  without the cursor. The editor's tools are brought in by the person's words (`toolload.ts`), the surface `video` can
+  be taken (`presence.ts`), and Plan mode allows only looking (`video_look`, `video_catalog`, `video_frame`, `video_ui
+  read`). Patches to OpenCut's own files, made as they are read (`markSources` in `vite.config.ts`, which fails the
+  build if a line has moved): `data-element-id` and `data-track-id` on the timeline so a clip can be found on screen,
+  and the wasm renderer's `effect_pass_groups` (an effect layer failed every frame without it). One whole-file overlay
+  fixes a bug at the pin: stickers registered with the wrong call and every one failed (`overlay/web/stickers/`).
+  `npm run typecheck` checks only Autora's files in it (`scripts/typecheck-opencut-editor.mjs`): at the pin a few
+  of OpenCut's own do not typecheck. Search with `--glob '!opencut-editor/**'` unless the task is about it.
 - Full screen on a phone (`lib/fullscreen.ts`): one shared flag for every pinned tool (browser, app window, PDF,
   Pages/Sheets/Slides, widget), so Follow (`busiestSurface` in `Thread`) moves the stage to the next tool with the
   screen still full. While it is up, `components/ImmersiveChat.tsx` is laid over it: the agent's last reply as a

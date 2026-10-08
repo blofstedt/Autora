@@ -57,6 +57,16 @@ description: >-
   engines.
 
 
+  • Autora Video — OpenCut's open-source editor in a window beside the chat. Ask for
+  a video and Autora imports your footage, pictures and music and builds the cut on
+  the timeline (clips, trims, splits, titles, subtitles) while you watch it happen;
+  take control and edit it yourself, then export an mp4 or webm. Autora can use
+  every part of the editor (effects, masks, keyframes, speed, stickers, shapes,
+  subtitles, scenes, settings, any control on its screen) and look at a frame to check
+  its work. The story, the pacing and the look stay yours: Autora does the technical
+  work and asks about the rest. Your projects stay on your server.
+
+
   • Notebooks — group files by purpose with notes between them. Autora can
   compile one for you (every source filed, every claim citing its proof), and
   you can hand a notebook or any saved file to a chat.
@@ -133,6 +143,11 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The Mind map now floats: when you open it, every memory drifts slowly about
-  where it sits, each on its own path and pace, instead of hanging still. They
-  never fly in from the edge, and it stays still if your device asks for less motion.
+  Autora can now use every part of the video editor, not only cut clips: effects,
+  masks, keyframes and speed, stickers, shapes and effect layers, subtitles,
+  tracks, scenes, bookmarks, the project's size and frame rate, and the editor's
+  own panels and shortcuts. Anything else on its screen it reads, clicks and types
+  into as a person would, so it can reach every button and field. It can also look
+  at a frame of the video to check its own work. Every step shows the agent's cursor
+  moving to the control and the words typed out, as in the other windows. Stickers
+  now work (they failed in the editor), and effect layers draw without error.
