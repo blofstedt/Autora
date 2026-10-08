@@ -83,7 +83,10 @@ async function main() {
       frame = await editorIn(page);
       assert.ok(await laidOut(frame), "the editor never laid the document out");
       await until("the heading", async () => /Launch memo/.test(await bodyText(frame)));
-      assert.match(await bodyText(frame), /The launch is on Friday/);
+      // A new document is typed in as the person watches: the rest of it follows the heading.
+      await until("the rest of the memo", async () => /The launch is on Friday/.test(await bodyText(frame)), 60_000);
+      const stages = async () => (((await app.api("GET", `/api/officedesk/${s}`)).body.windows as any[]).find((w) => w.kind === "docx") ?? {}).stage;
+      await until("the agent to finish typing", async () => !(await stages()), 60_000);
       // Calibri is drawn in its metric twin, so the pages are the same: no warning about it.
       assert.doesNotMatch(await bodyText(frame), /Missing document fonts/);
       assert.equal(await page.locator(".pdf-bar-name").innerText(), "memo.docx");
@@ -135,7 +138,15 @@ async function main() {
       const frameBefore = frame;
       // The agent's cursor goes to the heading and types it over the editor, with the same motion as in the browser.
       const cursor = page.waitForSelector(".office-cursor-layer .office-cursor", { state: "attached", timeout: 60_000 });
-      const typed = page.waitForSelector(".office-ghost:not(.is-caption)", { state: "attached", timeout: 60_000 });
+      // The typing is the change: the heading is in the editor a run of words at a time, not drawn over a finished one.
+      const seen: string[] = [];
+      let watching = true;
+      void (async () => {
+        while (watching) {
+          seen.push(await bodyText(frame).catch(() => ""));
+          await sleep(60);
+        }
+      })();
       const ev = await app.turn(s, "rename the heading to Launch notes", 120_000);
       if (process.env.OFFICE_DEBUG) {
         console.log("last events:", JSON.stringify(ev.slice(-14).map((e) => [e.kind, JSON.stringify(e.payload).slice(0, 160)])));
@@ -145,8 +156,9 @@ async function main() {
       }
       await until("the new heading", async () => /Launch notes/.test(await bodyText(frame)), 40_000);
       await cursor;
-      // Found in the editor, so the words are drawn over the heading itself, not in a caption beside the cursor.
-      await typed;
+      watching = false;
+      // In between, the heading was part typed: neither the old words nor the finished ones, in the editor itself.
+      assert.ok(seen.some((t) => /Launch(?! memo| notes)/.test(t) && !/Launch (memo|notes)/.test(t)), "the heading was typed in steps");
       assert.equal(page.frames().filter((f) => f.url().includes("/office-app/docs/")).length, 1);
       assert.strictEqual(frameBefore, frame);
       // Their typing survived the agent's change.

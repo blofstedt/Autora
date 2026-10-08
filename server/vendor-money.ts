@@ -216,7 +216,7 @@ export function vendorMoneyFor(id: string): VendorMoney | null {
  * The month's starting point moves with it, or the correction would show up as
  * money gained or lost this month.
  */
-export function shiftMonthBase(id: string, change: number): void {
+function shiftMonthBase(id: string, change: number): void {
   const base = state.monthBases[id];
   if (base && Number.isFinite(change)) base.spent += change;
 }

@@ -101,24 +101,25 @@ try {
       throw err;
     }
     const tabs = await page.locator(".pane-pick-tab").allInnerTexts();
-    assert.deepEqual(tabs, ["Pages", "Sheets"], "the tabs say which app each window is, not the file in it");
+    // Activity is where the agent's tool calls are shown; the rest say which app each window is, not the file in it.
+    assert.deepEqual(tabs.filter((t) => t !== "Activity"), ["Pages", "Sheets"], "the tabs say which app each window is, not the file in it");
     const state = (await app.api("GET", `/api/officedesk/${s}`)).body as { windows: { kind: string; name: string }[] };
     assert.deepEqual(state.windows.map((w) => w.kind).sort(), ["docx", "xlsx"], "two documents are open, one per app");
   });
 
   await test("switching tabs shows a window and puts nothing away", async () => {
-    assert.equal(await page.locator(".side-stack .app-pane").count(), 2, "both windows stay mounted");
-    assert.equal(await page.locator(".side-stack .app-pane:not([hidden])").count(), 1, "one window is shown");
+    assert.equal(await page.locator('.side-stack .app-pane:not([data-pane="work"])').count(), 2, "both windows stay mounted");
+    assert.equal(await page.locator('.side-stack .app-pane:not([data-pane="work"]):not([hidden])').count(), 1, "one window is shown");
     await page.locator('.pane-pick-tab[data-pane="pages"]').click();
     await sleep(400);
-    assert.equal(await page.locator(".side-stack .app-pane").count(), 2, "picking a tab closes nothing");
+    assert.equal(await page.locator('.side-stack .app-pane:not([data-pane="work"])').count(), 2, "picking a tab closes nothing");
     assert.equal(await page.locator('.app-pane[data-pane="pages"]:not([hidden])').count(), 1, "the Pages window is the one shown");
-    assert.equal(await page.locator(".pane-pick-tab").count(), 2, "both tabs are still there");
+    assert.equal(await page.locator('.pane-pick-tab:not([data-pane="work"])').count(), 2, "both tabs are still there");
   });
 
   await test("the tab strip runs to the very top of the screen", async () => {
     const strip = await page.locator(".pane-pick").boundingBox();
-    const pane = await page.locator(".app-pane:not([hidden])").boundingBox();
+    const pane = await page.locator('.app-pane:not([hidden]):not([data-pane="work"])').boundingBox();
     assert.ok(strip && pane, "the strip and a window are on screen");
     assert.equal(Math.round(strip!.y), 0, "the tabs are the top of the window");
     assert.ok(strip!.height < 40, "and the strip is a strip (it covers about two thirds of the header behind it)");

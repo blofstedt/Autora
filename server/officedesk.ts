@@ -33,7 +33,8 @@ import { MAX_ARTIFACT_BYTES, getArtifact, saveArtifact } from "./artifacts";
 import { OfficeHost, hostBuilt, wire } from "./officehost";
 import { slideElements } from "./office";
 import { dropPages, latestPages, pageFile, pagesFor, type Locator } from "./officepages";
-import { stateDir } from "./state";
+import { state, stateDir } from "./state";
+import { blankOf, stagePlan, type StagePlan } from "./officestage";
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 export type OfficeKind = "docx" | "pptx" | "xlsx";
@@ -97,6 +98,14 @@ type Desk = {
   cueRev?: number;
   /** When they were made, so a page that loads later does not play them again. */
   cueAt?: number;
+  /**
+   * The agent's change, being shown in steps (server/officestage.ts): `data` is already the finished document, but the
+   * window is still showing it as it was and is handed one in-between file after another as the cursor types.
+   * Only in memory; a step is never kept or counted as the person's own change.
+   */
+  stage?: { rev: number; plan: StagePlan; shown: Buffer | null; timer?: NodeJS.Timeout };
+  /** Until when a save from the editor is ignored: it may be a step the editor was showing when the stage ended. */
+  quietUntil?: number;
 };
 
 /**
@@ -109,6 +118,13 @@ type OfficeCue = {
   act: "type" | "point"; text: string; cell?: string; sheet?: string;
   /** A deck's cue: the element it is in, as fractions (x, y, width, height) of the slide, for an editor that draws on a canvas. */
   box?: [number, number, number, number];
+  /** The slide's own size in points: the editor's canvas is the whole stage, with the slide centred in it at the editor's zoom. */
+  slide?: [number, number];
+  /** Shown in steps: the first in-between file this cue produces, and how many, with the words of the first and the paragraph before. */
+  step?: number;
+  steps?: number;
+  lead?: string;
+  near?: string;
 };
 
 /** Where on its slide each cue's words sit, from the deck itself: the editor draws slides on a canvas, so the page cannot be searched for them. */
@@ -125,7 +141,7 @@ async function withSlideBoxes(cues: OfficeCue[], deck: Buffer): Promise<OfficeCu
       .sort((a, b) => (a.box[2] - a.box[0]) * (a.box[3] - a.box[1]) - (b.box[2] - b.box[0]) * (b.box[3] - b.box[1]))[0];
     if (!hit) return cue;
     const [x0, y0, x1, y1] = hit.box;
-    return { ...cue, box: [x0 / w, y0 / h, (x1 - x0) / w, (y1 - y0) / h] as [number, number, number, number] };
+    return { ...cue, slide: [w, h] as [number, number], box: [x0 / w, y0 / h, (x1 - x0) / w, (y1 - y0) / h] as [number, number, number, number] };
   });
 }
 
@@ -548,7 +564,7 @@ function persist(session: DeskKey) {
     try {
       fs.mkdirSync(DIR, { recursive: true, mode: 0o700 });
       fs.writeFileSync(path.join(DIR, `${session}.${extOf(desk.kind)}`), desk.data, { mode: 0o600 });
-      const { data: _data, problem: _problem, ...meta } = desk;
+      const { data: _data, problem: _problem, stage: _stage, quietUntil: _quiet, ...meta } = desk;
       fs.writeFileSync(path.join(DIR, `${session}.json`), JSON.stringify(meta), { mode: 0o600 });
     } catch (err: any) {
       console.warn(`[worddesk] ${session}: could not save the window: ${err?.message ?? err}`);
@@ -559,6 +575,8 @@ function persist(session: DeskKey) {
 /** A session that is deleted takes its windows with it. */
 export function dropOfficeDesk(session: string) {
   for (const key of desksOf(session)) {
+    const timer = desks.get(key)?.stage?.timer;
+    if (timer) clearTimeout(timer);
     stopEngine(key);
     dropPages(key);
     desks.delete(key);
@@ -665,13 +683,13 @@ export function onOfficePush(fn: (session: string, rev: number, channel: string,
 }
 
 /** The document the agent changed (or an earlier version came back): the engine's file becomes it. */
-function engineFileChanged(session: DeskKey, desk: Desk) {
+function engineFileChanged(session: DeskKey, desk: Desk, data: Buffer = desk.data) {
   if (desk.kind === "docx") return;
   try {
     fs.mkdirSync(DIR, { recursive: true, mode: 0o700 });
     const file = workFile(session, desk.kind);
     const tmp = `${file}.tmp`;
-    fs.writeFileSync(tmp, desk.data, { mode: 0o600 });
+    fs.writeFileSync(tmp, data, { mode: 0o600 });
     fs.renameSync(tmp, file);
     const engine = engines.get(session);
     if (engine) {
@@ -711,6 +729,8 @@ function checkEngineFile(session: DeskKey) {
   const engine = engines.get(session);
   const desk = load(session);
   if (!engine || !desk || desk.kind !== engine.kind) return;
+  // A step being shown is not something the person did.
+  if (desk.stage || Date.now() < (desk.quietUntil ?? 0)) return;
   try {
     const st = fs.statSync(engine.file);
     if (st.mtimeMs === engine.mtime && st.size === engine.size) return;
@@ -826,6 +846,8 @@ function windowOf(desk: Desk) {
     cueRev: desk.cues && desk.cues.length > 0 ? desk.cueRev : undefined,
     /** How long ago they were made: a page that opens the window much later has missed them. */
     cueAge: desk.cues && desk.cues.length > 0 ? Date.now() - (desk.cueAt ?? 0) : undefined,
+    /** The change is being shown in steps: how many files the window can ask for, for the `rev` it was made at. */
+    stage: desk.stage ? { rev: desk.stage.rev, count: desk.stage.plan.count } : undefined,
   };
 }
 
@@ -844,6 +866,65 @@ export function officeState(session: string) {
 
 export function officeData(session: string, kind: OfficeKind): Buffer | null {
   return load(keyOf(session, kind))?.data ?? null;
+}
+
+// ----------------------------------------- the change, in steps --
+
+/** How long the window has to start on the steps before the document is shown finished instead. */
+/** After the last step, a save from the editor is still ignored this long: it may be of a step. */
+const QUIET_AFTER_MS = 0;
+const STAGE_GRACE_MS = 9000;
+/** The same for a new document, whose editor has to start first. */
+const STAGE_NEW_MS = 30000;
+/** How long it may take between one step and the next. */
+const STAGE_STEP_MS = 12000;
+
+function armStage(key: DeskKey, ms: number) {
+  const stage = desks.get(key)?.stage;
+  if (!stage) return;
+  if (stage.timer) clearTimeout(stage.timer);
+  stage.timer = setTimeout(() => finishStage(key, true), ms);
+  stage.timer.unref?.();
+}
+
+/**
+ * The steps are over. `show`: the window may still be on an earlier step (it stopped asking, or never started), so it
+ * is given the finished document; when the last step was reached it already has it.
+ */
+function finishStage(key: DeskKey, show: boolean) {
+  const desk = desks.get(key);
+  if (!desk?.stage) return;
+  if (desk.stage.timer) clearTimeout(desk.stage.timer);
+  desk.stage = undefined;
+  desk.quietUntil = Date.now() + QUIET_AFTER_MS;
+  if (show) {
+    engineFileChanged(key, desk);
+    desk.loadRev++;
+  } else {
+    engineFileChanged(key, desk);
+  }
+  persist(key);
+  changed(key);
+}
+
+/** One step: the window is to show this file. False when those steps are over or were never for this change. */
+async function showStep(key: DeskKey, rev: number, step: number): Promise<boolean> {
+  const desk = desks.get(key);
+  const stage = desk?.stage;
+  if (!desk || !stage || stage.rev !== rev || !Number.isInteger(step) || step < 0 || step >= stage.plan.count) return false;
+  const last = step === stage.plan.count - 1;
+  const file = last ? desk.data : stage.plan.frame(step);
+  stage.shown = last ? null : file;
+  if (desk.kind !== "docx") {
+    engineFileChanged(key, desk, file);
+    if (!(await reloadLive(key))) {
+      finishStage(key, true);
+      return false;
+    }
+  }
+  if (last) finishStage(key, false);
+  else armStage(key, STAGE_STEP_MS);
+  return true;
 }
 
 // ------------------------------------------------- the agent's side --
@@ -890,16 +971,25 @@ export function officeHooks(session: string): OfficeHooks {
       const key = keyOf(session, kindOfName(next.name));
       const kind = kindOfKey(key);
       const was = load(key);
+      if (was?.stage?.timer) clearTimeout(was.stage.timer);
       const carried = Boolean(was && ((was.working !== null && was.working === next.working) || was.name === next.name || (was.source !== null && was.source === next.source)));
       if (was && !carried) {
         for (const v of was.versions) fs.rmSync(versionFile(key, v.n, was.kind), { force: true });
       }
       // A deck or workbook the person has open is changed in place; only if that fails does the window load it again.
       const live = Boolean(was && carried && kind !== "docx" && was.open && engines.get(key)?.wc != null);
+      /* The change is shown in the window as it is made, in steps, when it can be: the window keeps the document as it
+         was and is handed the in-between files as the cursor types (see officestage.ts). Otherwise it just changes. */
+      /* A change to the document the window has open is shown on top of it. A new document is shown being made: the
+         window opens it empty and the first words go in. */
+      const inPlace = Boolean(was && carried && was.open && !was.stage && (kind === "docx" || engines.get(key)?.wc != null));
+      const from = !state.agentCursor || was?.stage ? null : inPlace && was ? was.data : !(was && carried) ? blankOf(kind, next.data) : null;
+      const book = kind === "xlsx" && from ? { then: xlsxCells(from), now: xlsxCells(next.data) } : null;
+      const plan = from ? stagePlan(kind, from, next.data, book?.then && book.now ? { then: book.then, now: book.now } : undefined) : null;
       const desk: Desk = {
         open: true, kind,
         name: next.name, data: next.data, working: next.working, source: next.source, outName: next.outName,
-        rev: (was?.rev ?? 0) + 1, loadRev: (was?.loadRev ?? 0) + (live ? 0 : 1),
+        rev: (was?.rev ?? 0) + 1, loadRev: (was?.loadRev ?? 0) + (live || (plan && inPlace) ? 0 : 1),
         since: carried && was ? was.since : Date.now(),
         news: was?.news ?? [], problem: null,
         versions: carried && was ? was.versions : [], vseq: carried && was ? was.vseq : 0, dirty: false,
@@ -911,7 +1001,11 @@ export function officeHooks(session: string): OfficeHooks {
         desk.vseq = was.vseq;
       }
       // A document the agent made is typed in from its first lines; one it changed, where it changed.
-      const cues = cuesFor(kind, was && carried ? was.data : null, next.data).slice(0, was && carried ? MAX_CUES : 3);
+      const cues: OfficeCue[] = plan ? plan.cues : cuesFor(kind, was && carried ? was.data : null, next.data).slice(0, was && carried ? MAX_CUES : 3);
+      if (plan) {
+        desk.stage = { rev: desk.rev, plan, shown: plan.frame(0) };
+        armStage(key, inPlace ? STAGE_GRACE_MS : STAGE_NEW_MS);
+      }
       if (kind === "pptx" && cues.length > 0) {
         // The boxes come from reading the deck, a second or two: the cursor is held until it has them.
         const rev = desk.rev;
@@ -930,11 +1024,12 @@ export function officeHooks(session: string): OfficeHooks {
       }
       desks.set(key, desk);
       snapshot(key, desk, next.label ?? (was && carried ? "Changed by the agent" : "Opened"), "agent");
-      if (kind !== "docx") engineFileChanged(key, desk);
+      // The engine keeps the document as it was until the steps reach the end.
+      if (kind !== "docx") engineFileChanged(key, desk, plan ? plan.frame(0) : desk.data);
       persist(key);
       changed(key);
       if (!desk.working) rewrite(key);
-      if (live) {
+      if (live && !plan) {
         void reloadLive(key).then((ok) => {
           if (ok) return;
           const now = desks.get(key);
@@ -1014,6 +1109,8 @@ function personSaved(session: DeskKey, data: Buffer): string | null {
   if (!desk) return "There is no document open in the window.";
   if (!isOffice(data, desk.kind)) return `That is not a file ${THING[desk.kind]} opens.`;
   if (data.byteLength > MAX_ARTIFACT_BYTES) return "That file is over 50 MB.";
+  // The editor may be holding a step of the agent's typing: it is not the document, and must never replace it.
+  if (desk.stage || Date.now() < (desk.quietUntil ?? 0)) return null;
   if (data.equals(desk.data)) return null;
   const before = desk.data;
   desk.data = data;
@@ -1072,6 +1169,7 @@ function officeVersionFile(session: DeskKey, n: number): { name: string; data: B
 function closeOffice(session: DeskKey) {
   const desk = load(session);
   if (!desk || !desk.open) return;
+  finishStage(session, false);
   desk.open = false;
   stopEngine(session);
   persist(session);
@@ -1125,13 +1223,24 @@ export function officeRoutes(app: Express, opts: { exists: (session: string) => 
     if (!id) return;
     const key = deskAt(req, res, id);
     if (!key) return;
-    const data = officeData(id, kindOfKey(key));
+    const data = load(key)?.stage?.shown ?? officeData(id, kindOfKey(key));
     if (!data) return res.status(404).json({ error: "There is no document open in the window." });
     res.setHeader("Content-Type", MIME[load(key)?.kind ?? kindOfKey(key)]);
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Content-Security-Policy", "sandbox");
     res.send(data);
+  });
+
+  /* The window asks for the next step of the agent's change as its cursor types it: this file, now. */
+  app.post("/api/officedesk/:session/stage", async (req, res) => {
+    const id = known(req, res);
+    if (!id) return;
+    const key = deskAt(req, res, id);
+    if (!key) return;
+    const ok = await showStep(key, Number(req.query.rev), Number(req.query.step));
+    if (!ok) return res.status(409).json({ error: "Those steps are over." });
+    res.json({ ok: true });
   });
 
   app.post("/api/officedesk/:session/save", rawBody, (req, res) => {

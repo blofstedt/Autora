@@ -61,7 +61,7 @@ Spectra's fetched renderer is most of what is on disk.
   `officeRoutes`, keyed by a `DeskKey` -- session and kind together -- so a call cannot reach the wrong app's
   document), each with a tab on the desktop (`App.tsx`: `OFFICE_PANES`, every open window kept mounted and only the
   chosen one shown, the strip run to the top of the screen) named for the app rather than the file. The agent's cursor:
-  `officedesk.ts` `cuesFor` diffs before/after into `cues` on the window's state, `OfficeCursor.tsx` plays them over the frame
+  `officedesk.ts` `cuesFor` diffs before/after into `cues` on the window's state, `server/officestage.ts` turns the change into in-between files (`stagePlan`, `blankOf` for a new document) that the window asks for one at a time (`POST /stage`) as `OfficeCursor.tsx` types, so the typing is the change; `desk.stage` holds them in memory and `personSaved` ignores saves while it is up. `OfficeCursor.tsx` plays them over the frame
   asking `office/shim/cursor.js` where the text/cell is -- whose answer is the only place the cursor goes (no caption fallback, no invented spot) -- with `src/lib/humanPath.ts` -- the browser pointer's
   motion and a human typing rhythm. Briefing text: `OFFICE_GUIDE`/`WINDOWS_GUIDE` in `guides.ts`. The
   document the agent works on, open beside the chat in
@@ -245,6 +245,9 @@ Spectra's fetched renderer is most of what is on disk.
     `app_preview` click/hover/type/press/scroll use the page as a person would,
     in the window the person is watching, and are refused while planning.
     All of it follows the one agent-cursor switch (`state.agentCursor`).
+  - The browser's pointer (`CURSOR_SCRIPT` in `browser.ts`) wears the Office cursor's arrow and name and is driven by the
+    real input events (move, press, keys, wheel), not by announcements; the stream runs at its faster rate while the
+    agent moves it (`touched()`). `tests/browser-cursor.test.ts`.
   - `companion.ts`: when no turn is running and nobody is mid-task, the agent
     says one short line about what the person just did in a shared window
     (`agent.remark`, shown in the thread and kept in its history as its own words).

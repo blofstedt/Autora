@@ -48,6 +48,25 @@
     return null;
   }
 
+  /** Where the text in this element ends -- the end of its last line -- which is where a person typing it would be. */
+  function endOf(el) {
+    try {
+      const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      let last = null;
+      for (let n = walk.nextNode(); n; n = walk.nextNode()) if (n.nodeValue && n.nodeValue.trim()) last = n;
+      if (!last) return null;
+      const range = document.createRange();
+      range.setStart(last, last.nodeValue.length);
+      range.setEnd(last, last.nodeValue.length);
+      const rects = range.getClientRects();
+      const r = rects.length ? rects[rects.length - 1] : range.getBoundingClientRect();
+      if (!r || (r.width === 0 && r.height === 0 && r.left === 0 && r.top === 0)) return null;
+      return { x: r.right, y: r.top + r.height / 2 };
+    } catch {
+      return null;
+    }
+  }
+
   // What the words look like there, so the typed words can be drawn the same way over them.
   function look(el) {
     const st = getComputedStyle(el);
@@ -69,6 +88,33 @@
       if (r.width * r.height > area) { area = r.width * r.height; best = r; }
     }
     return best;
+  }
+
+  /** The editor's zoom, as its status bar shows it ("56%"), as a number like 0.56; null when it shows none. */
+  function zoom() {
+    for (const el of document.querySelectorAll("span, b, i, div, button")) {
+      if (el.children.length > 0) continue;
+      const m = /^(\d{2,3})\s*%$/.exec(String(el.textContent || "").trim());
+      if (!m) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width > 4 && visible(r)) return Number(m[1]) / 100;
+    }
+    return null;
+  }
+
+  /** Where the slide itself is. The editor's canvas is the whole stage -- the slide sits in the middle of it at the
+   *  editor's zoom -- so a box given as fractions of the slide is placed on the slide, not on the stage. Without the
+   *  slide's size or the zoom, the canvas is all there is to go by. */
+  function slideRect(stage, slide) {
+    if (!stage) return null;
+    const z = zoom();
+    if (!Array.isArray(slide) || slide.length !== 2 || !z) return stage;
+    const w = (slide[0] * 96 / 72) * z;
+    const h = (slide[1] * 96 / 72) * z;
+    if (!(w > 20 && h > 20) || w > stage.width * 1.05 || h > stage.height * 1.05) return stage;
+    const left = stage.left + (stage.width - w) / 2;
+    const top = stage.top + (stage.height - h) / 2;
+    return { left, top, width: w, height: h, right: left + w, bottom: top + h };
   }
 
   /** "B3" -> { col: 1, row: 2 }. */
@@ -178,7 +224,7 @@
       return { x: hit.x - GRID.col / 2, y: hit.y - GRID.row / 2, w: GRID.col, h: GRID.row, size: 13, family: "Calibri, Arial, sans-serif", color: "#ffffff", bg: "#1f2023", weight: "400", at: hit.at };
     }
     if (Array.isArray(t.box) && t.box.length === 4) {
-      const r = mainCanvas();
+      const r = slideRect(mainCanvas(), t.slide);
       if (!r) return null;
       const [fx, fy, fw, fh] = t.box;
       const h = fh * r.height;
@@ -187,7 +233,7 @@
     const el = byText(t.text);
     if (!el) return null;
     const r = el.getBoundingClientRect();
-    return { x: r.left, y: r.top, w: r.width, h: r.height, at: el.tagName.toLowerCase(), ...look(el) };
+    return { x: r.left, y: r.top, w: r.width, h: r.height, at: el.tagName.toLowerCase(), end: endOf(el), ...look(el) };
   }
 
   window.addEventListener("message", (event) => {

@@ -120,7 +120,7 @@ export function barVendor(vendors: readonly VendorLine[] | null | undefined): Ve
 }
 
 /** One vendor's own till, as the per-vendor bars need it. */
-export type VendorSpend = {
+type VendorSpend = {
   /** The vendor, as the ledger names it. */
   provider: string;
   /** What to call it on screen. */
@@ -136,7 +136,7 @@ export type VendorSpend = {
   balance: number | null;
 };
 
-export type VendorView = {
+type VendorView = {
   provider: string;
   label: string;
   /** The money the fill measures: credit consumed, or the balance left. */

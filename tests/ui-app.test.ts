@@ -34,7 +34,7 @@ async function main() {
     const info = async (selector: string) => (await api("POST", "/inspect", { selector })).body.info;
     const rect = async (selector: string) => (await api("POST", "/rects", { selectors: [selector] })).body.rects[0];
 
-    const ctx = await browser.newContext({ viewport: { width: 1440, height: 860 } });
+    const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
     const page: Page = await ctx.newPage();
     page.on("pageerror", (e) => errors.push(e.message));
     page.on("console", (m) => { if (m.type() === "error" && !/WebSocket|Failed to load resource|net::ERR/.test(m.text())) errors.push(m.text()); });
@@ -53,7 +53,7 @@ async function main() {
     console.log("opening");
     await test("the app opens beside the conversation and fits inside its window", async () => {
       const chat = await page.locator(".chat-view > .page").boundingBox();
-      const pane = await page.locator(".app-pane").boundingBox();
+      const pane = await page.locator('.app-pane[data-pane="app"]').boundingBox();
       assert.ok(chat && pane && pane.x >= chat.x + chat.width - 2, "to the right of the chat");
       assert.ok(pane.width > 500, "a usable width");
       const canvas = await page.locator(".app-canvas").boundingBox();
@@ -263,7 +263,7 @@ async function main() {
     await test("closing the app window closes it everywhere and stops what it started", async () => {
       await p.locator('.app-icon[aria-label="Close the app window"]').tap();
       await p.waitForSelector(".app-window", { state: "detached" });
-      await page.waitForSelector(".app-pane", { state: "detached", timeout: 8000 });
+      await page.waitForSelector(".app-pane[data-pane=\"app\"]", { state: "detached", timeout: 8000 });
       assert.equal((await api("GET", "")).body.open, false);
     });
     assert.deepEqual(errors, [], "the page threw");

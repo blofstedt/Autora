@@ -46,10 +46,12 @@ export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; ki
   const mine = collab.held.includes("office");
   const [cursorOn, setCursorOn] = useAgentCursor();
   /** The agent's last change, being played over the editor (see OfficeCursor). */
-  const [play, setPlay] = useState<{ seq: number; items: OfficeCue[] } | null>(null);
+  const [play, setPlay] = useState<{ seq: number; items: OfficeCue[]; stage: { rev: number; count: number } | null } | null>(null);
   const played = useRef<number | undefined>(undefined);
+  /** The `loadRev` the editor has opened its document at: steps of a change are only shown to an editor that has one. */
+  const [openedRev, setOpenedRev] = useState(-1);
   /** Questions to the editor about where things are, waiting for its answer. */
-  const asking = useRef(new Map<number, (found: Located | null) => void>());
+  const asking = useRef(new Map<number, { done: (found: Located | null) => void; once: boolean }>());
   /** What the agent did in the editor, waiting for the editor to say what it made of it. */
   const acting = useRef(new Map<number, (said: Acted | null) => void>());
   /** Every call says which window it is about, since each app's document is open beside the chat at the same time. */
@@ -98,16 +100,20 @@ export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; ki
                 const body = (await res.json().catch(() => ({}))) as { path?: string; name?: string; error?: string };
                 if (!res.ok) throw new Error(body.error ?? `the server answered ${res.status}`);
                 reply(true, { path: body.path, name: body.name });
+                setOpenedRev(wordRef.current.loadRev ?? 0);
                 break;
               }
               // The document the person is to see; later versions are pushed.
               shown.current = wordRef.current.loadRev ?? 0;
               const bytes = await fetchDocument();
               reply(true, { bytes, name: wordRef.current.name ?? "document.docx" }, undefined, [bytes]);
+              setOpenedRev(wordRef.current.loadRev ?? 0);
               break;
             }
             case "ipc":
             case "ipc-send": {
+              // The editor is talking to its engine: it is up (a workbook's page never asks to open, it just starts).
+              setOpenedRev((was) => (was === (wordRef.current.loadRev ?? 0) ? was : wordRef.current.loadRev ?? 0));
               // The editor's ipc, for the engine behind a deck or a workbook.
               const res = await fetch(api(`/${m.op}?rev=${wordRef.current.loadRev ?? 0}`), {
                 method: "POST", headers: { "Content-Type": "application/json" },
@@ -139,9 +145,11 @@ export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; ki
             case "located": {
               // The editor's answer to where the cursor should go (office/shim/cursor.js).
               const found = asking.current.get(Number(payload.id));
-              if (found && Array.isArray(payload.rects) && payload.rects.some(Boolean)) {
+              // Unless the asker takes the first answer, found or not, an answer with nothing in it is waited past:
+              // the document may still be opening.
+              if (found && Array.isArray(payload.rects) && (found.once || payload.rects.some(Boolean))) {
                 asking.current.delete(Number(payload.id));
-                found({ rects: payload.rects, view: payload.view ?? { w: 800, h: 600 } });
+                found.done({ rects: payload.rects, view: payload.view ?? { w: 800, h: 600 } });
               }
               reply(true, {});
               break;
@@ -192,23 +200,50 @@ export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; ki
       .catch((err: any) => setTrouble(`The document could not be loaded: ${err?.message ?? err}`));
   }, [engine, word.loadRev, fetchDocument, post]);
 
+  /**
+   * The next step of the agent's change: the server makes the document be that file, and the editor is given it. The
+   * typing the cursor does is these steps, one after another, so the words are in the document as they are typed.
+   */
+  const stage = useCallback(async (rev: number, step: number) => {
+    const res = await fetch(api(`/stage?rev=${rev}&step=${step}`), { method: "POST" }).catch(() => null);
+    if (!res?.ok) return false;
+    // A deck or a workbook is reloaded by its engine; a document is fetched and handed to the editor.
+    if (!engine) {
+      try {
+        const bytes = await fetchDocument();
+        post({ type: "autora:office-push", op: "load", payload: { bytes, name: wordRef.current.name ?? "document.docx" } }, [bytes]);
+      } catch {
+        return false;
+      }
+    }
+    return true;
+  }, [api, engine, fetchDocument, post]);
+
   // The agent changed the document: play where it worked, once, if the window is on screen now.
   useEffect(() => {
-    if (!cursorOn || pages || !word.cues || word.cues.length === 0 || word.cueRev === undefined) return;
-    if (played.current === word.cueRev || (word.cueAge ?? 0) > 6000) return;
+    if (!word.cues || word.cues.length === 0 || word.cueRev === undefined) return;
+    const staged = word.stage && word.stage.rev === word.cueRev ? word.stage : null;
+    // A change shown in steps may be waiting for a new document's editor to start: it can be played for longer.
+    if (played.current === word.cueRev || (word.cueAge ?? 0) > (staged ? 30000 : 6000)) return;
+    if (!cursorOn || pages) {
+      // Nobody is watching it type: the document is brought to what the agent made, without the show.
+      if (staged) { played.current = word.cueRev; void stage(staged.rev, staged.count - 1); }
+      return;
+    }
+    if (staged && openedRev !== (word.loadRev ?? 0)) return;
     played.current = word.cueRev;
-    setPlay({ seq: word.cueRev, items: word.cues });
-  }, [cursorOn, pages, word.cues, word.cueRev, word.cueAge]);
+    setPlay({ seq: word.cueRev, items: word.cues, stage: staged });
+  }, [cursorOn, pages, word.cues, word.cueRev, word.cueAge, word.stage, word.loadRev, openedRev, stage]);
 
-  const locate = useCallback((items: OfficeCue[]) => new Promise<Located | null>((resolve) => {
+  const locate = useCallback((items: OfficeCue[], once = false) => new Promise<Located | null>((resolve) => {
     const id = Date.now() + Math.floor(Math.random() * 1000);
-    const targets = items.map((c) => ({ text: c.text, cell: c.cell, sheet: c.sheet, box: c.box }));
+    const targets = items.map((c) => ({ text: c.text, cell: c.cell, sheet: c.sheet, box: c.box, slide: c.slide }));
     let tries = 0;
     const finish = (found: Located | null) => { clearInterval(timer); asking.current.delete(id); resolve(found); };
-    asking.current.set(id, finish);
+    asking.current.set(id, { done: finish, once });
     // The frame may still be starting (a window just opened, a document loading): ask again until it answers.
     const send = () => {
-      post({ type: "autora:office-locate", id, targets, wait: 1400 });
+      post({ type: "autora:office-locate", id, targets, wait: once ? 500 : 1400 });
       if (++tries > 6) finish(null);
     };
     const timer = setInterval(send, 1500);
@@ -374,6 +409,8 @@ export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; ki
               click={(at) => act({ act: "click", x: at.x, y: at.y })}
               type={(text) => act({ act: "type", text })}
               end={() => act({ act: "end" })}
+              stage={(step) => (play.stage ? stage(play.stage.rev, step) : Promise.resolve(false))}
+              stages={play.stage?.count ?? 0}
               onDone={() => setPlay(null)}
             />
           )}

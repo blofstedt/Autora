@@ -120,8 +120,8 @@
       last = now;
       void host("presence", {}).catch(() => undefined);
     };
-    document.addEventListener("input", touch, true);
-    document.addEventListener("keydown", touch, true);
-    document.addEventListener("pointerdown", touch, true);
+    document.addEventListener("input", (e) => { if (e.isTrusted) touch(); }, true);
+    document.addEventListener("keydown", (e) => { if (e.isTrusted) touch(); }, true);
+    document.addEventListener("pointerdown", (e) => { if (e.isTrusted) touch(); }, true);
   }
 })();

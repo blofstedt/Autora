@@ -56,7 +56,7 @@ async function main() {
       assert.ok((await width(".rail-slot")) <= 520);
       await page.locator(".pane-handle.is-rail").dblclick();
       const back = await width(".rail-slot");
-      assert.ok(back >= 300 && back <= 340, String(back));
+      assert.ok(back >= 150 && back <= 180, String(back));
     });
 
     await test("the menu folds away to the far left, and the button there brings it back", async () => {
@@ -70,7 +70,7 @@ async function main() {
       assert.equal(await page.locator(".rail-slot").evaluate((el) => getComputedStyle(el).display), "none", "folded stays folded");
       await page.getByRole("button", { name: "Open the menu" }).click();
       await sleep(200);
-      assert.ok((await width(".rail-slot")) > 200);
+      assert.ok((await width(".rail-slot")) > 150);
       assert.equal(await page.locator(".drawer-scrim").count(), 0, "it came back in the margin, not as a sheet");
     });
 
@@ -102,9 +102,35 @@ async function main() {
       await p2.mouse.down();
       await p2.mouse.move(h2.x + 1200, h2.y + 300, { steps: 6 });
       await p2.mouse.up();
-      assert.ok((await w(".app-pane")) >= 300, `the window has ${await w(".app-pane")}px`);
+      assert.ok((await w(".app-pane:not([hidden])")) >= 300, `the window has ${await w(".app-pane:not([hidden])")}px`);
       await p2.locator(".pane-handle.is-chat").dblclick();
       assert.ok((await w(".chat-view.has-app > .page")) <= 540);
+      // A smaller menu gives its room to the window, never to the conversation.
+      const chatWas = await w(".chat-view.has-app > .page");
+      const windowWas = await w(".app-pane:not([hidden])");
+      await p2.getByRole("button", { name: "Fold the menu to icons" }).click();
+      await sleep(400);
+      assert.equal(await w(".chat-view.has-app > .page"), chatWas, "the conversation keeps its width");
+      assert.ok((await w(".app-pane:not([hidden])")) > windowWas + 100, "the window is wider");
+      await p2.getByRole("button", { name: "Show the whole menu" }).click();
+    });
+
+    await test("the menu folds to icons, with the context as one bar under the last icon, and comes back whole", async () => {
+      await page.getByRole("button", { name: "Fold the menu to icons" }).click();
+      await sleep(300);
+      assert.ok((await width(".rail-slot")) <= 80, "a strip of icons");
+      assert.equal(await page.locator(".rail-nav-item > span:visible").count(), 0, "no words beside the icons");
+      const last = (await page.locator('.rail-nav-item[data-page="system"]').boundingBox())!;
+      const bar = (await page.locator(".rail-ctxbar-track").boundingBox())!;
+      const rail = (await page.locator(".rail-slot").boundingBox())!;
+      assert.ok(bar.y > last.y + last.height - 1, "the bar starts under the last icon");
+      assert.ok(bar.y + bar.height <= rail.y + rail.height && bar.y + bar.height > rail.y + rail.height - 40, "and runs to the foot of the strip");
+      await page.reload();
+      await page.waitForSelector(".rail-ctxbar");
+      await page.getByRole("button", { name: "Show the whole menu" }).click();
+      await sleep(300);
+      assert.ok((await width(".rail-slot")) > 140, "the whole menu is back");
+      assert.equal(await page.locator(".rail-ctxbar").count(), 0);
     });
 
     await test("on a phone nothing of this appears", async () => {

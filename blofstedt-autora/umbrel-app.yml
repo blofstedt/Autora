@@ -133,11 +133,13 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  An API's spend no longer jumps when its balance reading goes wrong. A balance
-  that suddenly rises, or drops to nothing, is held until a second reading
-  agrees, so one odd reply can't be counted as money you paid in. DeepSeek's
-  free granted credit is left out of the balance, since a grant isn't a payment.
-  When the app does add a payment by itself, Billing says so, with the amount
-  and date and a "Not a payment" button to take it back. This month is now the
-  API's own figure, worked from its balance at the start of the month, instead
-  of only the tokens counted here.
+  On a desktop, everything the agent looks at and does now happens in the work
+  area on the right, in a new Activity tab: commands, pages, pictures, files it
+  made, code changes and tool calls. The conversation keeps only the talking, in a narrower column;
+  a phone still shows it all in one column. The message box is more compact,
+  and the menu on the left is slimmer, with its widgets stacked and set in the
+  same size as the menu's own options, the context ring filling its card. On a
+  desktop the menu also folds to a strip of icons, where the context becomes a
+  vertical bar under the last icon, or away altogether. The agent's typing in Pages, Sheets and
+  Slides is the change itself, a document it makes fills in as its cursor types,
+  and the browser pointer matches the Office cursor.
