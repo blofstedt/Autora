@@ -688,7 +688,30 @@ async function pdfTool(args: Record<string, any>, ctx: OfficeContext): Promise<O
 
 // --------------------------------------------------------------- create --
 
+/**
+ * A "\u2014" a model wrote inside a string that is already text (not a JSON document) is the six characters, and
+ * came out in a footer as exactly that. Real characters are what was meant; this puts them in, in every string of
+ * what the document is made from. A string that is itself JSON text is left alone: parsing it does this properly.
+ */
+export function realCharacters<T>(value: T): T {
+  if (typeof value === "string") {
+    return value.replace(/(?<!\\)\\u([0-9a-fA-F]{4})/g, (_m, hex: string) => String.fromCharCode(parseInt(hex, 16))) as T;
+  }
+  if (Array.isArray(value)) return value.map(realCharacters) as T;
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, realCharacters(v)])) as T;
+  }
+  return value;
+}
+
 async function createTool(args: Record<string, any>, ctx: OfficeContext): Promise<OfficeOutcome> {
+  args = { ...args, ...(typeof args.markdown === "string" ? { markdown: realCharacters(args.markdown) } : {}),
+    ...(typeof args.html === "string" ? { html: realCharacters(args.html) } : {}),
+    ...(typeof args.csv === "string" ? { csv: realCharacters(args.csv) } : {}),
+    ...(args.rows !== undefined && typeof args.rows !== "string" ? { rows: realCharacters(args.rows) } : {}),
+    ...(args.spec !== undefined && typeof args.spec !== "string" ? { spec: realCharacters(args.spec) } : {}),
+    ...(args.pages !== undefined && typeof args.pages !== "string" ? { pages: realCharacters(args.pages) } : {}),
+    ...(args.ops !== undefined && typeof args.ops !== "string" ? { ops: realCharacters(args.ops) } : {}) };
   const kind = String(args.type ?? "").trim().toLowerCase() as Kind;
   if (!(kind in MIME)) throw new Problem("type is docx, xlsx or pptx.");
   allowed(ctx, kind);

@@ -81,6 +81,8 @@ interface Entry {
   rev: number;
   by: "agent" | "person";
   shapes: number;
+  /** What the agent is doing, for the window to show the cursor doing it: the tool, and a number that goes up per call. */
+  cue: { seq: number; tool: string } | null;
 }
 
 const entries = new Map<string, Entry>();
@@ -144,6 +146,7 @@ function entryFor(session: string): Entry {
       rev: 0,
       by: "agent",
       shapes: countShapes(saved?.doc),
+      cue: null,
     };
     entries.set(session, entry);
   }
@@ -266,7 +269,10 @@ export async function runCadTool(
     }
     const exportArgs = name === "export" ? { name: given.name } : null;
     if (exportArgs) delete given.name;
-    entryFor(session).by = "agent";
+    const mine = entryFor(session);
+    mine.by = "agent";
+    // Said before the change lands: the window is told the model moved a moment later, and asks for this with it.
+    mine.cue = { seq: (mine.cue?.seq ?? 0) + 1, tool: name };
     setOpen(session, true);
     const res = await engine.execute(name, given);
     if (!res.ok) {
@@ -345,7 +351,8 @@ export function cadRoutes(app: Express, opts: { exists: (session: string) => boo
     try {
       const engine = await engineOf(id);
       res.setHeader("Cache-Control", "no-store");
-      res.json({ doc: engine.getDoc(), rev: entryFor(id).rev });
+      const entry = entryFor(id);
+      res.json({ doc: engine.getDoc(), rev: entry.rev, ...(entry.by === "agent" && entry.cue ? { cue: entry.cue } : {}) });
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }

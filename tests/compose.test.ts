@@ -61,6 +61,14 @@ await test("bad blocks are refused in words the agent can act on", () => {
   assert.throws(() => applyChanges(null, { blocks: [] }), /The document is empty/);
 });
 
+await test("insert says where with after or before, and never guesses the end", () => {
+  const first = applyChanges(null, { blocks: [{ type: "heading", text: "One", id: "one" }, { type: "paragraph", text: "alpha", id: "a" }] });
+  const b = applyChanges(first, { insert: [{ before: "a", blocks: [{ type: "bullets", items: ["x"], id: "list" }] }] });
+  assert.deepEqual(b.blocks.map((x) => x.id), ["one", "list", "a"]);
+  assert.throws(() => applyChanges(first, { insert: [{ under: "one", blocks: [{ type: "rule" }] }] }), /does not take "under"/);
+  assert.throws(() => applyChanges(first, { insert: [{ after: "one", before: "a", blocks: [{ type: "rule" }] }] }), /not both/);
+});
+
 await test("update, insert and remove change the document by id", () => {
   const first = applyChanges(null, {
     title: "Report",

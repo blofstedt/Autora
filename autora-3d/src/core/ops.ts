@@ -363,6 +363,8 @@ export function moveShapes(doc: Doc, a: MoveArgs): OpResult<{ moved: string[] }>
   const minLift = Math.min(...bodies.filter((b) => !b.frame).map((b) => b.elevation ?? 0), Infinity);
   if (Number.isFinite(minLift) && minLift + d.z < -1e-6) return fail('That would put the shape below the ground (z < 0).', `Lowest allowed z move here is ${round2(-minLift)}.`);
   const t: BodyTransform = { dx: round2(d.x), dy: round2(d.y), dz: round2(d.z), angle: 0, cx: 0, cy: 0 };
+  // Already there (or "by" zero): the model is the same one, and says so, rather than counting as a change.
+  if (t.dx === 0 && t.dy === 0 && t.dz === 0) return { doc, result: { moved: [] } };
   return { doc: applyTransform(doc, bodies.map((b) => b.id), t), result: { moved: bodies.map((b) => b.id) } };
 }
 
@@ -373,6 +375,7 @@ export function turnShapes(doc: Doc, a: TurnArgs): OpResult<{ turned: string[] }
   const b = upright.length ? selectionBounds(upright)! : null;
   const pivot = a.about ? point(a.about, 'about') : b ? { x: b.centerX, y: b.centerY } : { x: bodies[0].frame!.x, y: bodies[0].frame!.y };
   const t: BodyTransform = { dx: 0, dy: 0, dz: 0, angle, cx: pivot.x, cy: pivot.y };
+  if (Math.abs(angle) < 1e-9) return { doc, result: { turned: [] } };
   return { doc: applyTransform(doc, bodies.map((x) => x.id), t), result: { turned: bodies.map((x) => x.id) } };
 }
 

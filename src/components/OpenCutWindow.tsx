@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAgentCursor } from "../lib/agentCursor";
+import { useBootWatch } from "../lib/bootWatch";
 import { holdSurface, useCollab } from "../lib/collab";
 import { useFullscreen } from "../lib/fullscreen";
 import { along, humanRoute, restMs, routeMs, typingDelays, type Point } from "../lib/humanPath";
@@ -108,6 +109,7 @@ export function OpenCutWindow({ sessionId, phone }: { sessionId: string; phone: 
 
   /** This window's frame has said it is up: until then a command sent to it would be lost, so it claims none. */
   const up = useRef(false);
+  useBootWatch(() => up.current, sessionId, "video editor", setTrouble);
 
   const post = useCallback((msg: Record<string, unknown>) => {
     frame.current?.contentWindow?.postMessage(msg, "*");

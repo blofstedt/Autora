@@ -256,6 +256,23 @@ export function deskBase(session: string): Buffer | null {
   return load(session)?.base ?? null;
 }
 
+/**
+ * The document as the PDF editor should open it: the pages with what the agent placed on them drawn in. The editor
+ * knows nothing of the desk's objects (they are Autora's, kept apart from the pages so the person can accept or decline
+ * each one), so handed only the pages it showed the agent's work as nothing at all: the cursor typed a name onto a
+ * blank page. What it saves comes back as the pages (see personBase), with those marks part of them.
+ */
+export async function deskDocument(session: string, cwd: string): Promise<Buffer | null> {
+  const desk = load(session);
+  if (!desk) return null;
+  if (!desk.items.length) return desk.base;
+  try {
+    return (await flattenDesk(desk.base, desk.items, cwd)).data;
+  } catch {
+    return desk.base;
+  }
+}
+
 // ------------------------------------------------- the agent's side --
 
 const markId = () => `mk_${crypto.randomBytes(4).toString("hex")}`;
@@ -300,13 +317,16 @@ export function deskHooks(session: string): DeskHooks {
       const sameFile = was && was.working !== null && was.working === next.working;
       // The same document carried on, or another one that replaces it.
       const carried = Boolean(was && (sameFile || was.name === next.name || (was.source !== null && was.source === next.source)));
-      const { review, cues, ...snap } = next;
+      const { review, cues, sizes, ...snap } = next;
       if (was && !carried) dropVersions(session);
       /* What the window shows the agent doing: the words it retyped, and each
          object it placed, in the order they were added. */
       const had = new Set((was?.items ?? []).map((i) => i.id));
       const placed = snap.items.filter((i) => !had.has(i.id)).map(cueForItem).filter((c): c is Cue => c !== null);
-      const shown = [...(cues ?? []), ...placed].slice(0, MAX_SHOWN);
+      const shown = [...(cues ?? []), ...placed].slice(0, MAX_SHOWN).map((c) => {
+        const size = sizes?.[c.page - 1];
+        return size ? { ...c, pw: size.w, ph: size.h } : c;
+      });
       const desk: Desk = {
         ...snap,
         open: true,

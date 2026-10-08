@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useFullscreen } from "../lib/fullscreen";
+import { useAgentCursor } from "../lib/agentCursor";
+import { centreOf, pointerGo, pointerRest } from "../lib/pointer";
 import { onStudioCommand } from "../lib/studio";
 import { bounce, Transport } from "../lib/studio/engine";
 import {
@@ -54,6 +56,25 @@ export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: b
   const base = `/api/studio/${encodeURIComponent(sessionId)}`;
   const bw = ZOOMS[zoom]!;
   const head = headWidth(phone);
+
+  /* The agent's pointer goes to each clip it just made or changed -- the ones lit up -- one after another, and presses
+     it, the way a person would pick them. It points only at clips that are on screen. */
+  const [cursorOn] = useAgentCursor();
+  useEffect(() => {
+    if (!cursorOn || song.flash.size === 0) return;
+    let dead = false;
+    void (async () => {
+      await new Promise((r) => setTimeout(r, 140)); // the lit clips are in the page a frame after the set is
+      const els = Array.from(root.current?.querySelectorAll(".st-clip.is-flash") ?? []).slice(0, 4);
+      for (const el of els) {
+        const at = centreOf(el);
+        if (dead || !at) continue;
+        await pointerGo(at, true, el);
+      }
+      if (!dead) pointerRest();
+    })();
+    return () => { dead = true; };
+  }, [song.flash, cursorOn]);
 
   if (!transport.current) transport.current = new Transport(() => song.live.current, { onEnd: () => setPlaying(false) });
   const tp = transport.current;

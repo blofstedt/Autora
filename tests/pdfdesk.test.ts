@@ -101,6 +101,7 @@ await test("pdf_edit opens the file in the window, with what it placed as the ed
   const data = readArtifact(working)!;
   assert.ok(await holds(data, "Jane Tenant"), "the file has what was placed drawn on it");
   assert.ok(!(await holds(desk.deskBase(SESSION)!, "Jane Tenant")), "the pages underneath do not");
+  assert.ok(await holds((await desk.deskDocument(SESSION, dir))!, "Jane Tenant"), "but the document the editor is opened on does: the agent's work is on the screen");
   assert.equal(getArtifact(upload.id)!.size, upload.size, "the person's file is untouched");
   assert.ok(told.includes(SESSION), "the page is told");
 });

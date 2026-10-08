@@ -5,6 +5,7 @@
 
 import { useEffect, useRef } from 'react';
 import { Doc, parseDoc } from './core/doc';
+import { show, type Cue } from './agentCursor';
 
 /**
  * Autora 3D inside Autora's window.
@@ -12,7 +13,8 @@ import { Doc, parseDoc } from './core/doc';
  * Autora opens this app in a frame (`?embed=autora`) beside the conversation and keeps the model on its server, so the
  * agent and the person work on one document. The frame and its parent talk by postMessage, both ways, and only to each other:
  *
- *   parent → frame   { autora3d: 'load', doc }     the agent changed the model: show this one
+ *   parent → frame   { autora3d: 'load', doc, cue? } the agent changed the model: show this one (with `cue`, the agent's
+ *                                                    cursor goes to the tool and to the shape as it changes)
  *   parent → frame   { autora3d: 'theme', vars }   Autora's current colours (see `themeStyle`)
  *   frame → parent   { autora3d: 'ready' }         booted: send the model
  *   frame → parent   { autora3d: 'changed', doc }  the person changed the model
@@ -68,27 +70,36 @@ const SEND_AFTER_MS = 250;
  * Connects the app to Autora when it is a frame. `apply` shows a model the agent changed (as one undo step);
  * the document is sent up whenever the person changes it. A model that came down is never sent back up.
  */
-export function useAutoraEmbed(doc: Doc, apply: (doc: Doc) => void): void {
+export function useAutoraEmbed(doc: Doc, apply: (doc: Doc) => void, where?: (before: Doc, after: Doc) => { x: number; y: number } | null): void {
   const on = useRef(embedded()).current;
   const known = useRef<Doc | null>(null);
   /** Nothing goes up before the first model came down: the empty one this page starts with is not the person's work. */
   const loaded = useRef(false);
   const applyRef = useRef(apply);
   applyRef.current = apply;
+  const whereRef = useRef(where);
+  whereRef.current = where;
 
   useEffect(() => {
     if (!on) return;
     const origin = window.location.origin;
     const onMessage = (e: MessageEvent) => {
       if (e.source !== window.parent || e.origin !== origin) return;
-      const m = e.data as { autora3d?: string; doc?: unknown; vars?: unknown } | null;
+      const m = e.data as { autora3d?: string; doc?: unknown; vars?: unknown; cue?: unknown } | null;
       if (!m || typeof m !== 'object') return;
       if (m.autora3d === 'load') {
         const next = parseDoc(m.doc);
         if (!next) return;
+        const before = known.current;
         known.current = next;
         loaded.current = true;
-        applyRef.current(next);
+        const cue = m.cue as Cue | undefined;
+        if (cue && typeof cue.tool === 'string' && before) {
+          // The agent's cursor shows the change being made; the model is applied in the middle of it.
+          void show({ tool: cue.tool, apply: () => applyRef.current(next), where: () => whereRef.current?.(before, next) ?? null });
+        } else {
+          applyRef.current(next);
+        }
       } else if (m.autora3d === 'theme') {
         for (const [prop, value] of Object.entries(themeStyle(m.vars))) document.documentElement.style.setProperty(prop, value);
       }

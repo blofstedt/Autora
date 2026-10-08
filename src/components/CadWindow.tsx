@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFullscreen } from "../lib/fullscreen";
 import { cadStateNow, onCadState, useCadState } from "../lib/caddesk";
+import { useAgentCursor } from "../lib/agentCursor";
 import { IconCube, IconMaximize, IconMinimize, IconX } from "./Icons";
 
 /** The colours Autora sends the frame: the custom properties its own pages are drawn from (autora-3d/src/embed.ts maps them). */
@@ -36,19 +37,23 @@ export function CadWindow({ sessionId, phone }: { sessionId: string; phone: bool
   const known = useRef(-1);
   const [trouble, setTrouble] = useState<string | null>(null);
   const [full, setFull] = useFullscreen();
+  /* The agent's cursor goes with its changes (the frame draws it: it knows where the toolbar and the shapes are). */
+  const [cursorOn] = useAgentCursor();
+  const cursorRef = useRef(cursorOn);
+  cursorRef.current = cursorOn;
 
   const post = useCallback((msg: Record<string, unknown>) => {
     frame.current?.contentWindow?.postMessage(msg, window.location.origin);
   }, []);
 
-  /** The model as the server has it, sent to the frame. */
-  const load = useCallback(async () => {
+  /** The model as the server has it, sent to the frame. `agent`: the agent just changed it, so its cursor shows how. */
+  const load = useCallback(async (agent = false) => {
     try {
       const res = await fetch(`/api/cad/${encodeURIComponent(sessionId)}/doc`);
-      const body = (await res.json().catch(() => null)) as { doc?: unknown; rev?: number; error?: string } | null;
+      const body = (await res.json().catch(() => null)) as { doc?: unknown; rev?: number; cue?: { seq: number; tool: string }; error?: string } | null;
       if (!res.ok || !body?.doc) throw new Error(body?.error ?? `Autora answered ${res.status}`);
       known.current = Number(body.rev ?? 0);
-      post({ autora3d: "load", doc: body.doc });
+      post({ autora3d: "load", doc: body.doc, ...(agent && cursorRef.current && body.cue ? { cue: body.cue } : {}) });
       setTrouble(null);
     } catch (err) {
       setTrouble(`The model could not be loaded: ${err instanceof Error ? err.message : String(err)}`);
@@ -107,7 +112,7 @@ export function CadWindow({ sessionId, phone }: { sessionId: string; phone: bool
       onCadState(() => {
         const now = cadStateNow();
         if (!now.open || now.rev === undefined || !ready.current) return;
-        if (now.by === "agent" && now.rev > known.current) void load();
+        if (now.by === "agent" && now.rev > known.current) void load(true);
         else known.current = Math.max(known.current, now.rev);
       }),
     [load],

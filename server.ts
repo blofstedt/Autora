@@ -112,7 +112,7 @@ import { backgroundBriefing, findJob, listJobs, readTail, startJob, stopJob } fr
 import {
   addressIn, DEVICES, isLocalUrl, localAddress, serveFolder, waitForServer,
   type Device, } from "./server/preview";
-import { deskBase, deskBriefing, deskHooks, deskRoutes, deskState, dropDesk, onDeskChange, onDeskTouch, personBase } from "./server/pdfdesk";
+import { deskDocument, deskBriefing, deskHooks, deskRoutes, deskState, dropDesk, onDeskChange, onDeskTouch, personBase } from "./server/pdfdesk";
 import { staticDir } from "./server/staticfiles";
 import { memoryRoutes } from "./server/routes/memory";
 import { healthRoutes } from "./server/routes/health";
@@ -5394,7 +5394,7 @@ async function startServer() {
     cwd: () => terminalDir(),
     version: () => VERSION,
     document: async (id: string) => {
-      const bytes = deskBase(id);
+      const bytes = await deskDocument(id, terminalDir());
       if (!bytes) return null;
       return { name: deskState(id).name || "document.pdf", bytes };
     },

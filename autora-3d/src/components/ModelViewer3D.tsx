@@ -88,6 +88,8 @@ export interface ViewerApi {
   view(view: CubeFace | 'fit'): void;
   /** A PNG of the current view, as a data URL. */
   screenshot(): string;
+  /** Where on the page (client pixels) these shapes are drawn now, for the agent's cursor; null when they are off screen. */
+  screenOf(ids: string[]): { x: number; y: number } | null;
 }
 
 export interface ModelViewer3DProps {
@@ -1571,6 +1573,16 @@ export default function ModelViewer3D({
         screenshot: () => {
           renderer.render(scene, camera);
           return renderer.domElement.toDataURL('image/png');
+        },
+        screenOf: (ids) => {
+          const found = live.current.bodies.filter((b) => ids.includes(b.id));
+          const box = found.length ? selectionBounds(found) : null;
+          if (!box) return null;
+          const top = Math.max(...found.map((b) => (b.elevation ?? 0) + b.extrusionHeight));
+          const v = new THREE.Vector3(box.centerX, top, -box.centerY).project(camera);
+          if (v.z > 1 || Math.abs(v.x) > 1 || Math.abs(v.y) > 1) return null;
+          const r = renderer.domElement.getBoundingClientRect();
+          return { x: r.left + (v.x * 0.5 + 0.5) * r.width, y: r.top + (-v.y * 0.5 + 0.5) * r.height };
         },
       };
     }

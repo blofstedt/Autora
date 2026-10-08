@@ -201,7 +201,9 @@ export async function command(session: string, name: string, args: Record<string
   return await new Promise<unknown>((resolve, reject) => {
     const timer = setTimeout(() => {
       pending.delete(id);
-      reject(new Error(`The video editor did not answer ${name} in ${Math.round(timeoutMs / 1000)} seconds.`));
+      // Slow is not failed: the editor may still be loading (a cold start takes a while), or may have done it and been
+      // slow to say so. Repeating a step that did land would do it twice, so the agent is told to look first.
+      reject(new Error(`The video editor did not answer ${name} in ${Math.round(timeoutMs / 1000)} seconds. That means it was slow, not that it failed: the step may still be done. Read the timeline with video_look before you repeat it.`));
     }, timeoutMs);
     const entry: Pending = { session, resolve, reject, timer, claimed: false };
     pending.set(id, entry);

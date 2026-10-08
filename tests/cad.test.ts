@@ -203,6 +203,23 @@ await test("putting it away closes the window and keeps the model", async () => 
   assert.equal(cad.cadState(S).open, true, "and the next tool call opens it again");
 });
 
+await test("a move or a turn that goes nowhere is not a change, and a repeat travels with its shape whole", async () => {
+  const T = "cadtest2";
+  const go = (name: string, args: Record<string, any> = {}) => cad.runCadTool(T, name, args, { showFile: () => undefined });
+  const added = JSON.parse((await go("cad_shape_add", { kind: "cylinder", width: 8, height: 4, name: "Pin", x: 29.5, y: 0 })).summary);
+  const id = added.result.id;
+  assert.ok((await go("cad_repeat_set", { id, kind: "around", count: 8, center: { x: 0, y: 0 } })).ok);
+  const rev = cad.cadState(T).rev;
+  assert.ok((await go("cad_shape_move", { ids: [id], by: { x: 0, y: 0, z: 0 } })).ok);
+  assert.ok((await go("cad_shape_turn", { ids: [id], degrees: 0 })).ok);
+  assert.equal(cad.cadState(T).rev, rev, "nothing moved, so the revision did not either");
+  assert.ok((await go("cad_shape_move", { ids: [id], by: { x: 10, y: 0, z: 0 } })).ok);
+  const links = JSON.parse((await go("cad_doc_get")).summary).result.repeats;
+  const link = links[0];
+  assert.equal(Math.round(Math.hypot(link.start.x - link.end.x, link.start.y - link.end.y) * 10) / 10, 29.5, "the ring keeps its radius");
+  cad.dropCad(T);
+});
+
 await test("the model is kept on disk, and goes with the chat", async () => {
   await new Promise((r) => setTimeout(r, 900));
   const file = path.join(dir, `cad-${S}.json`);

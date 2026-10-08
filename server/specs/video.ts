@@ -59,7 +59,8 @@ export const videoSPECS: ToolSpec[] = [
       "- add_clip: put imported media on the timeline. mediaId; start (default: after the last clip); " +
       "duration (default: the media's own; pictures default to 5s).\n" +
       "- add_text: a title or subtitle. text; start (default: the playhead); duration (default 3); optional " +
-      "color (#rrggbb), fontFamily, fontSize, fontWeight, textAlign.\n" +
+      "color (#rrggbb), fontFamily, fontSize, fontWeight, textAlign. fontSize is in editor units, not points or pixels: " +
+      "90 is the whole height of the picture, the default is 15 (a sixth of it) and a big title is about 20; 45 is the most.\n" +
       "- add_sticker: stickerId (provider:value; video_catalog stickers with a query finds them); start; duration.\n" +
       "- add_graphic: a shape. definitionId (video_catalog graphics); params; start; duration.\n" +
       "- add_effect_layer: an effect over everything under it for a while. effectType (video_catalog effects); start; duration.\n" +
@@ -97,7 +98,7 @@ export const videoSPECS: ToolSpec[] = [
         params: { type: "object", description: "set / add_graphic: the properties to change." },
         color: { type: "string" },
         fontFamily: { type: "string" },
-        fontSize: { type: "number" },
+        fontSize: { type: "number", description: "Editor units: 90 is the picture's whole height. Default 15; 4 to 30 is the useful range." },
         fontWeight: { type: "string" },
         textAlign: { type: "string", enum: ["left", "center", "right"] },
         name: { type: "string", description: "rename: the new project name." },
