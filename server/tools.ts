@@ -65,6 +65,7 @@ import { deskHooks } from "./pdfdesk";
 import { officeHooks } from "./officedesk";
 import { runPdfTool } from "./pdf";
 import { runVideoTool } from "./opencut";
+import { runStudioTool, studioBriefing } from "./studio";
 import {
   addEntries, createNotebook, describeNotebook, findNotebook, listNotebooks, moveEntry,
   notebookLine, notebookMarkdown, removeEntry, updateEntry, updateNotebook, type Notebook,
@@ -109,6 +110,7 @@ interface ToolSettings {
   app: { enabled: boolean };
   pdf: { enabled: boolean };
   video: { enabled: boolean };
+  studio: { enabled: boolean };
   pages: { enabled: boolean };
   sheets: { enabled: boolean };
   slides: { enabled: boolean };
@@ -158,6 +160,7 @@ import { voiceSPECS } from "./specs/voice";
 import { filesSPECS } from "./specs/files";
 import { memorySPECS } from "./specs/memory";
 import { videoSPECS } from "./specs/video";
+import { studioSPECS } from "./specs/studio";
 import { cadSPECS } from "./specs/cad";
 import { cadAvailable, cadBriefing, runCadTool } from "./caddesk";
 
@@ -225,6 +228,7 @@ const TOOLS: ToolSpec[] = [
   ...cadSPECS,
   ...memorySPECS,
   ...videoSPECS,
+  ...studioSPECS,
 ];
 
 // ------------------------------------------------------------ availability --
@@ -340,6 +344,7 @@ export function windowOff(name: string, settings: ToolSettings = toolSettings())
   if (name === "app_preview") return !settings.app.enabled;
   if (name.startsWith("pdf_")) return !settings.pdf.enabled;
   if (name.startsWith("video_")) return !settings.video.enabled;
+  if (name.startsWith("studio_")) return !settings.studio.enabled;
   // Built by autora-3d/ (npm run build); a server without it does not offer tools that cannot work.
   if (name.startsWith("cad_")) return !cadAvailable() || !settings.cad.enabled;
   // Built by scripts/build-office.mjs; a server without the build does not offer tools that cannot work.
@@ -2656,6 +2661,21 @@ async function runToolUnredacted(
           ...(ctx.held ? { held: (subject: string) => ctx.held!("video", subject) } : {}),
         });
 
+      // ---------------------------------------------------------- studio --
+      case "studio_open":
+      case "studio_look":
+      case "studio_song":
+      case "studio_track":
+      case "studio_clip":
+      case "studio_notes":
+      case "studio_make":
+      case "studio_play":
+      case "studio_export":
+        if (ctx.memory.incognito) {
+          return { ok: false, summary: "Not available in an incognito chat: the music window keeps its song on disk." };
+        }
+        return await runStudioTool(ctx.session, spec.name, args, { showFile: ctx.showFile });
+
       // ---------------------------------------------------------- Office --
       case "office_guide":
       case "office_read":
@@ -2957,6 +2977,7 @@ export async function capabilityBriefing(): Promise<string> {
       "suggest, rather than deciding for them; do the technical work -- importing, trimming to length, " +
       "aligning, exporting -- completely. Export with video_export only when they ask for a file."
     : offLine("Autora Video"));
+  lines.push(studioBriefing(windows.studio.enabled));
   // Only a server that has the modeller built in says anything about it.
   if (cadAvailable()) lines.push(cadBriefing(windows.cad.enabled));
   lines.push(windows.widgets.enabled

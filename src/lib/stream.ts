@@ -19,6 +19,10 @@ type Handlers = {
   onVideoCommand?: (cmd: { id: string; name: string; args: Record<string, unknown> }) => void;
   /** Autora 3D's window: whether it is open, and what changed last. */
   onCadDesk?: (state: unknown) => void;
+  /** Autora Studio's window: whether it is open, and what changed last. */
+  onStudioDesk?: (state: unknown) => void;
+  /** Something only a browser can do, asked of the music window: play, stop, bounce. */
+  onStudioCommand?: (cmd: { id: string; name: string; args: Record<string, unknown> }) => void;
   onOfficeDesk?: (state: unknown) => void;
   onOfficePush?: (msg: unknown) => void;
   /** Who has hold of what: surfaces the person has taken, and ones in use. */
@@ -166,6 +170,14 @@ export class SessionStream {
           break;
         case "caddesk":
           this.handlers.onCadDesk?.(msg.state);
+          break;
+        case "studiodesk":
+          this.handlers.onStudioDesk?.(msg.state);
+          break;
+        case "studio.command":
+          if (typeof msg.id === "string" && typeof msg.name === "string") {
+            this.handlers.onStudioCommand?.({ id: msg.id, name: msg.name, args: msg.args && typeof msg.args === "object" ? msg.args : {} });
+          }
           break;
         case "officedesk":
           this.handlers.onOfficeDesk?.(msg.state);

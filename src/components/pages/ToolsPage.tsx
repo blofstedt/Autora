@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { IconCode, IconCube, IconFile, IconGlobe, IconSlides, IconSparkle, IconTable, IconVideo } from "../Icons";
+import { IconCode, IconCube, IconFile, IconGlobe, IconMusic, IconSlides, IconSparkle, IconTable, IconVideo } from "../Icons";
 
-type WindowKey = "widgets" | "browser" | "app" | "pdf" | "video" | "pages" | "sheets" | "slides" | "cad";
+type WindowKey = "widgets" | "browser" | "app" | "pdf" | "video" | "studio" | "pages" | "sheets" | "slides" | "cad";
 
 type ToolsState = {
   config: Record<WindowKey, { enabled: boolean }>;
@@ -43,6 +43,13 @@ const WINDOWS: { key: WindowKey; name: string; icon: ReactNode; what: string; to
     icon: <IconVideo size={18} />,
     what: "Editing video in OpenCut's editor, in a window beside the chat: the agent imports your footage and builds the cut (clips, trims, splits, titles, subtitles) while you watch the timeline change, and you can take the editor over at any moment.",
     tools: "video_open, video_look, video_import, video_edit, video_style, video_project, video_ui, video_catalog, video_frame, video_export",
+  },
+  {
+    key: "studio",
+    name: "Autora Studio",
+    icon: <IconMusic size={18} />,
+    what: "Making music in a window beside the chat: tracks of instruments and drums, a piano roll, a mixer and a WAV export. Ask for chords, a bass line that follows them or a drum beat and watch the clips appear; write the tune yourself, or have the agent suggest, fix timing and balance the mix. The agent guides, and the music stays yours.",
+    tools: "studio_open, studio_look, studio_song, studio_track, studio_clip, studio_notes, studio_make, studio_play, studio_export",
   },
   {
     key: "pages",

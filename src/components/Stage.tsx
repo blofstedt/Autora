@@ -9,13 +9,14 @@
 import type { ReactNode } from "react";
 import { APP_NAME } from "../lib/officedesk";
 import type { Surface, SurfaceKind } from "../lib/stage";
-import { IconChevron, IconCube, IconFile, IconGlobe, IconList, IconMark, IconMonitor, IconVideo } from "./Icons";
+import { IconChevron, IconCube, IconFile, IconGlobe, IconList, IconMark, IconMonitor, IconMusic, IconVideo } from "./Icons";
 
 const ICON: Record<SurfaceKind, ReactNode> = {
   app: <IconMonitor size={14} />,
   pdf: <IconFile size={14} />,
   video: <IconVideo size={14} />,
   cad: <IconCube size={14} />,
+  studio: <IconMusic size={14} />,
   docx: <IconFile size={14} />,
   pptx: <IconFile size={14} />,
   xlsx: <IconFile size={14} />,
@@ -26,7 +27,7 @@ const ICON: Record<SurfaceKind, ReactNode> = {
 
 /** A tab is its name and nothing else: what is in it is what is below. The dot
     says the agent is at work in it. */
-export const NAME: Record<SurfaceKind, string> = { app: "Creator", pdf: "PDF", video: "Video", cad: "3D", docx: APP_NAME.docx, pptx: APP_NAME.pptx, xlsx: APP_NAME.xlsx, browser: "Browser", plan: "To do", widget: "Widget" };
+export const NAME: Record<SurfaceKind, string> = { app: "Creator", pdf: "PDF", video: "Video", cad: "3D", studio: "Music", docx: APP_NAME.docx, pptx: APP_NAME.pptx, xlsx: APP_NAME.xlsx, browser: "Browser", plan: "To do", widget: "Widget" };
 
 const working = (surface: Surface): boolean => {
   const { cell } = surface;

@@ -532,3 +532,39 @@ export const IconCube = ({ size = 16, className }: Props) => (
     <path d="M12 22V12" />
   </svg>
 );
+
+export const IconMusic = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M9 18V5l11-2v13" />
+    <circle cx="6.5" cy="18" r="2.5" />
+    <circle cx="17.5" cy="16" r="2.5" />
+  </svg>
+);
+
+export const IconMoreH = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <circle cx="5.5" cy="12" r="1.2" />
+    <circle cx="12" cy="12" r="1.2" />
+    <circle cx="18.5" cy="12" r="1.2" />
+  </svg>
+);
+
+export const IconPause = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M8 5v14M16 5v14" />
+  </svg>
+);
+
+export const IconSkipBack = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M6 5v14" />
+    <path d="M19 5.5v13L9 12z" />
+  </svg>
+);
+
+export const IconRotateCw = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+    <path d="M21 3v5h-5" />
+  </svg>
+);

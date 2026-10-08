@@ -307,6 +307,32 @@ Spectra's fetched renderer is most of what is on disk.
   answered with an echo. `cad_export` is saved as an artifact (the STL never goes through the conversation). Traps: the window opens
   on the agent's first call; an incognito chat has none; tool names in the engine's messages are prefixed on the way out
   (`asAgentSees`). The phone shows it as a tab in the pinned view like the other windows (`Thread.tsx`, `lib/stage.ts` kind `cad`).
+- `server/studio.ts`, `server/specs/studio.ts`, `src/lib/studio/`, `src/components/StudioWindow.tsx` + `src/components/studio/`:
+  **Autora Studio**, the music window, and the agent's `studio_*` tools. A song is tracks of clips of notes, in beats
+  (`src/lib/studio/model.ts`: plain JSON, no DOM/React/Node, imported by the server *and* the page, so there is one idea of a valid
+  song; `normalizeProject` repairs anything that arrives, the generators `chordNotes`/`bassNotes`/`drumNotes` and the chord reader
+  `detectChord` are pure and seeded). One song per chat lives in `studio.ts` (kept as `studio-<session>.json`, removed with the
+  chat). The **sound is made in the browser** (`lib/studio/engine.ts`, Web Audio: oscillator and noise instruments, a mixer, a
+  `Transport` that schedules ahead of the clock, `bounce()` to a 16-bit WAV with an `OfflineAudioContext`), so the server cannot
+  play or render: the three things that need a browser (`play`/`stop`/`seek`, `export`) are *commands* to the open window
+  (`command()` -> `studio.command` over the socket -> the window claims it (`/claim`, first tab wins) -> `/reply`; export puts the WAV
+  to `/deliver`, which saves the artifact). The window says it can take commands with `/ready`; a command to a window that never
+  does fails after 20 s with a message rather than hanging. Editing: the agent's tools change a copy of the song and `commit()` it
+  (`by: "agent"`, `rev++`); the person's edits are saved by `useSong.ts` (`PUT /doc` with the `rev` they last saw: **409 when the
+  agent has changed the song since**, so a save never undoes the agent's work unseen; the window then loads theirs and says so).
+  The window loads the agent's change, lights the clips it touched (`touched()`), and puts the old song on its own undo stack, so
+  Ctrl+Z takes any agent change back. While a note is being dragged (`hold`) an agent change waits for the pointer. `focus` (the clip
+  open in the editor) is posted to the server so "this clip" means something to the agent (`studio_look`, the turn note). The
+  agent cannot hear: `studio_look` adds `review()` observations (empty clips, notes outside the key, no bass, volumes far apart).
+  Per the core principle the agent writes *scaffolding* (`studio_make`: chords, a bass that follows them, drums) and fixes technique
+  (quantize, levels, transpose); a melody is written only when asked, and `studio_open new` refuses to throw away a song with notes
+  without `replace: true`. Traps: the playhead (`--ph`) and the meter (`--lvl`) are painted straight onto the window from a
+  `requestAnimationFrame` loop, so nothing re-renders for them; never animate a clip's `background` (Chromium interpolates
+  `color-mix` against a translucent token through colours off the palette: the flash is an overlay); a browser holds sound back
+  until a tap, so `studio_play` reports `blocked` rather than pretending; the phone shows it as the `studio` kind in the pinned view
+  (`stage.ts`), and `.stage-body[data-active="studio"]` is not height-limited. Tests: `tests/studio.test.ts` (theory, tools, wire),
+  `tests/e2e-studio.test.ts` (a real turn), `tests/ui-studio.test.ts` (a real browser: draws, plays, bounces a WAV and checks it has
+  sound, an agent change lights up and undoes).
 - `spectra-editor/`: Spectra-PDF's renderer (github.com/jasonulbright/Spectra-PDF), the PDF window's
   editor, built by `spectra-editor/vite.config.ts` into `dist/spectra-editor/`. **Its source is not in
   this repository**: `scripts/prepare-spectra-editor.mjs` (run by `npm run build` and `npm run lint`)

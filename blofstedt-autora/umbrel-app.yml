@@ -65,6 +65,16 @@ description: >-
   subtitles, scenes, settings, any control on its screen) and look at a frame to check
   its work. The story, the pacing and the look stay yours: Autora does the technical
   work and asks about the rest. Your projects stay on your server.
+  • Autora Studio — a music window for making songs, easy enough to start in one
+  click. Tracks of keys, synth, bass, pluck, pad, lead and drums; a piano roll and
+  a drum grid you draw on; a mixer; a click track; export to WAV. Autora works in
+  the same song: ask for chords in a key, a bass line that follows them or a drum
+  beat and the clips appear (lit up for a moment) for you to play and change; it
+  tidies timing, balances the mix and checks for mistakes. The tune, the mood and
+  the taste stay yours: Autora suggests and asks, and writes a melody only if you
+  ask it to. One Ctrl+Z takes back anything it did. Has its own switch on the
+  Tools page.
+
   • Autora 3D — a 3D modelling window for things to design or print. The agent
   builds shapes by sketching an outline and pulling it up (and cutting, bevelling,
   repeating and measuring them) and you work on the same model beside the chat:
@@ -148,13 +158,12 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Autora 3D joins the tools, and Creator is for websites and apps only: its
-  description no longer lists games, and the agent is told not to build one there
-  (games get their own window later). Autora 3D is a 3D modelling window beside
-  the chat, wearing Autora's theme. Ask for something to design or 3D print and
-  the agent sketches, extrudes, bevels, cuts, repeats and measures it (and checks
-  it is a solid that will print) while you watch the model take shape. Push, pull
-  and move the same model yourself, by finger or mouse, and the agent sees your
-  changes on its next step. Exports go to the thread as STL (for printing) or GLB.
-  Open it from the wrench next to the message box; it has its own switch on the
-  Tools page.
+  Autora Studio joins the tools: a music window beside the chat. Start a song
+  with one click (a beat, chords, a bass line or an empty melody track), draw
+  notes on the piano roll or the drum grid, set levels in the mixer, play it
+  with a click track and export a WAV. Ask Autora for chords in a key, a bass
+  line that follows them or a drum beat and the clips appear in your song, lit
+  up for a moment; one Ctrl+Z takes back anything it did. It can tidy timing,
+  balance the mix and look the song over for mistakes, while the tune and the
+  taste stay yours. Open it from the wrench next to the message box; it has its
+  own switch on the Tools page.

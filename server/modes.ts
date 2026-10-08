@@ -247,6 +247,9 @@ export function looksOnly(name: string, args: Record<string, any> = {}): boolean
   if (name === "video_look" || name === "video_catalog" || name === "video_frame") return true;
   if (name === "video_ui") return String(args.action ?? "") === "read";
   if (name === "video_open") return !String(args.new ?? "").trim();
+  // The same for the music window; playing and stopping change nothing in the song.
+  if (name === "studio_look" || name === "studio_play") return true;
+  if (name === "studio_open") return !String(args.new ?? "").trim();
   // A command that only reads (cat a file, list a folder) is looking.
   if (name === "terminal") return readOnlyCommand(String(args.command ?? ""));
   // Reading notebooks is looking; filing into one is not.
