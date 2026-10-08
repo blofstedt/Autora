@@ -105,6 +105,14 @@ async function main() {
       assert.ok((await w(".app-pane:not([hidden])")) >= 300, `the window has ${await w(".app-pane:not([hidden])")}px`);
       await p2.locator(".pane-handle.is-chat").dblclick();
       assert.ok((await w(".chat-view.has-app > .page")) <= 540);
+      // A smaller menu gives its room to the window, never to the conversation.
+      const chatWas = await w(".chat-view.has-app > .page");
+      const windowWas = await w(".app-pane:not([hidden])");
+      await p2.getByRole("button", { name: "Fold the menu to icons" }).click();
+      await sleep(400);
+      assert.equal(await w(".chat-view.has-app > .page"), chatWas, "the conversation keeps its width");
+      assert.ok((await w(".app-pane:not([hidden])")) > windowWas + 100, "the window is wider");
+      await p2.getByRole("button", { name: "Show the whole menu" }).click();
     });
 
     await test("the menu folds to icons, with the context as one bar under the last icon, and comes back whole", async () => {
