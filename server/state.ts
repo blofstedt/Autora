@@ -184,6 +184,8 @@ interface ToolSettings {
   pages: { enabled: boolean };
   sheets: { enabled: boolean };
   slides: { enabled: boolean };
+  /** Autora 3D: the 3D modelling window and the agent's cad_* tools. */
+  cad: { enabled: boolean };
 }
 
 export interface UsageEntry {
@@ -366,6 +368,7 @@ export function defaultTools(): ToolSettings {
     pages: { enabled: true },
     sheets: { enabled: true },
     slides: { enabled: true },
+    cad: { enabled: true },
   };
 }
 
@@ -414,7 +417,7 @@ export function mergeTools(into: ToolSettings, patch: any): ToolSettings {
   if (patch.office && typeof patch.office === "object" && typeof patch.office.enabled === "boolean") {
     for (const key of ["pages", "sheets", "slides"] as const) into[key].enabled = patch.office.enabled;
   }
-  for (const key of ["widgets", "app", "pdf", "video", "pages", "sheets", "slides"] as const) {
+  for (const key of ["widgets", "app", "pdf", "video", "pages", "sheets", "slides", "cad"] as const) {
     const given = patch[key];
     if (given && typeof given === "object") into[key].enabled = bool(given.enabled, into[key].enabled);
   }

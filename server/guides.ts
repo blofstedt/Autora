@@ -113,7 +113,8 @@ export const VOICE_GUIDE =
 /** The app window, in the instructions: start it early, keep it running, check with look. */
 export const APP_GUIDE =
   "- The Creator window (the app window): always available. Tool: app_preview. It is where you build things that " +
-  "run — websites, and apps of any kind, food apps included. Start it in that window as soon as there is anything to see, " +
+  "run — websites, and apps of any kind, food apps included. It is not for games: a game gets its own " +
+  "window later, so do not build one here. Start it in that window as soon as there is anything to see, " +
   "and keep it running while you build: the person " +
   "watches it take shape, can select elements or regions and leave comments, and what they say comes back " +
   "as one message you act on. Check your own work with look (a picture and the console's errors) before " +

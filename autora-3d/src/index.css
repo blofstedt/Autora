@@ -1,0 +1,124 @@
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, monospace;
+
+  /* Surfaces and text follow the Autora design system: layered near-black
+     steps, brighter as they come forward. 950 = bg, 900 = s1, 800 = s2, 700 = s3, 600 = s4. */
+  --color-slate-50: #f5f6fa;
+  --color-slate-100: #edeff5;
+  --color-slate-200: #d4d9e6;
+  --color-slate-300: #b4bccf;
+  --color-slate-400: #98a1b6;
+  --color-slate-500: #7a8297;
+  --color-slate-600: #4a5168;
+  --color-slate-700: #252a3b;
+  --color-slate-800: #151824;
+  --color-slate-900: #0e1016;
+  --color-slate-950: #08090d;
+
+  /* Autora Violet */
+  --color-accent-50: #f1efff;
+  --color-accent-100: #e3dfff;
+  --color-accent-200: #cbc3ff;
+  --color-accent-300: #a99dff;
+  --color-accent-400: #8b7cf6;
+  --color-accent-500: #6e5bff;
+  --color-accent-600: #5a48e8;
+  --color-accent-700: #4a3acb;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-slate-950);
+  color: var(--color-slate-100);
+  color-scheme: dark;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent-400);
+  outline-offset: 2px;
+}
+
+/* Quiet scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Range inputs */
+input[type="range"] {
+  accent-color: var(--color-accent-400);
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--color-accent-400) var(--fill, 0%), rgba(255, 255, 255, 0.14) var(--fill, 0%));
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #fff;
+  border: 0;
+  box-shadow: 0 0 0 4px rgba(110, 91, 255, 0.45), 0 2px 6px rgba(0, 0, 0, 0.5);
+  transition: transform 0.15s cubic-bezier(0.3, 1.6, 0.5, 1), box-shadow 0.15s;
+}
+input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.15); }
+input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.25); box-shadow: 0 0 0 7px rgba(110, 91, 255, 0.4), 0 2px 6px rgba(0, 0, 0, 0.5); }
+input[type="range"]::-moz-range-thumb {
+  width: 18px; height: 18px; border-radius: 999px; background: #fff; border: 0;
+  box-shadow: 0 0 0 4px rgba(110, 91, 255, 0.45);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -7,7 +7,8 @@ import { Kind, type AutoraEvent, type BrowserState } from "./lib/types";
 import { setLiveFields, setLiveFrame, setLivePaneOwns, setLiveTabs } from "./lib/liveFrame";
 import { resetPreview, setPreviewFrame, setPreviewState, usePreviewState, type PreviewState } from "./lib/preview";
 import { ScreencastCell } from "./components/ScreencastCell";
-import { AppPreview, OfficeWindow, OpenCutWindow, SpectraWindow } from "./components/lazyWindows";
+import { AppPreview, CadWindow, OfficeWindow, OpenCutWindow, SpectraWindow } from "./components/lazyWindows";
+import { resetCad, setCadState, useCadState } from "./lib/caddesk";
 import { emitSpectraEvent } from "./lib/spectra";
 import { ResizeHandle } from "./components/ResizeHandle";
 import { CHAT, RAIL, setChatWidth, setRailCollapsed, setRailMini, setRailWidth, usePanes, wideScreen } from "./lib/panes";
@@ -113,7 +114,7 @@ const EVENT_BATCH_MS = 66;
 const LIBRARY_TABS: LibraryTab[] = ["notebooks", "files"];
 
 /** The windows that can sit beside the chat on a wide screen, one at a time. */
-type SideWindow = "app" | "pdf" | "video" | "pages" | "sheets" | "slides" | "browser" | "work";
+type SideWindow = "app" | "pdf" | "video" | "cad" | "pages" | "sheets" | "slides" | "browser" | "work";
 
 /**
  * The Office windows that can be open beside the chat, one per app, in the order their tabs sit in. Each has its
@@ -371,6 +372,7 @@ export function App() {
     resetPreview();
     resetDesk();
     resetVideo();
+    resetCad();
     resetOffice();
     resetCollab();
     const stream = new SessionStream(sessionId, {
@@ -394,6 +396,7 @@ export function App() {
       },
       onPreview: (state) => setPreviewState(state as PreviewState),
       onPdfDesk: setDeskState,
+      onCadDesk: setCadState,
       onSpectra: emitSpectraEvent,
       onVideoDesk: setVideoState,
       onVideoCommand: emitVideoCommand,
@@ -1310,6 +1313,7 @@ export function App() {
   const preview = usePreviewState();
   const desk = useDeskState();
   const video = useVideoState();
+  const cad = useCadState();
   const off = useOfficeState();
   const windowAt = (kind: OfficeKind) => off.windows.find((w) => w.kind === kind) ?? null;
   const pointedAt = useOfficePick();
@@ -1326,6 +1330,7 @@ export function App() {
     ...(preview.open ? [{ pane: "app" as const, since: preview.since ?? 0 }] : []),
     ...(desk.open ? [{ pane: "pdf" as const, since: desk.since ?? 0 }] : []),
     ...(video.open ? [{ pane: "video" as const, since: video.since ?? 0 }] : []),
+    ...(cad.open ? [{ pane: "cad" as const, since: cad.since ?? 0 }] : []),
     ...OFFICE_PANES.flatMap((o) => {
       const win = windowAt(o.kind);
       return win ? [{ pane: o.pane, since: win.since ?? 0 }] : [];
@@ -1344,6 +1349,7 @@ export function App() {
     ...(workOn ? [{ pane: "work" as const, label: "Activity" }] : []),
     ...(desk.open ? [{ pane: "pdf" as const, label: "PDF" }] : []),
     ...(video.open ? [{ pane: "video" as const, label: "Video" }] : []),
+    ...(cad.open ? [{ pane: "cad" as const, label: "3D" }] : []),
     ...OFFICE_PANES.filter((o) => openWindows.some((w) => w.pane === o.pane)).map((o) => ({ pane: o.pane, label: o.label })),
     ...(browser?.open ? [{ pane: "browser" as const, label: "Browser" }] : []),
     ...(preview.open ? [{ pane: "app" as const, label: "Creator" }] : []),
@@ -2331,6 +2337,12 @@ export function App() {
             {video.open && sessionId && (
               <aside className="app-pane" data-pane="video" hidden={sidePane !== "video"} aria-label="The video being edited">
                 <Suspense fallback={null}><OpenCutWindow sessionId={sessionId} phone={false} /></Suspense>
+              </aside>
+            )}
+            {/* Autora 3D: the model the agent and the person are both working on. */}
+            {cad.open && sessionId && (
+              <aside className="app-pane" data-pane="cad" hidden={sidePane !== "cad"} aria-label="Autora 3D, the model being worked on">
+                <Suspense fallback={null}><CadWindow sessionId={sessionId} phone={false} /></Suspense>
               </aside>
             )}
             {/* And one window for each Office app with a document open in it: Autora Pages, Autora Sheets and

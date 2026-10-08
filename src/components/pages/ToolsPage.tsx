@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { IconCode, IconFile, IconGlobe, IconSlides, IconSparkle, IconTable, IconVideo } from "../Icons";
+import { IconCode, IconCube, IconFile, IconGlobe, IconSlides, IconSparkle, IconTable, IconVideo } from "../Icons";
 
-type WindowKey = "widgets" | "browser" | "app" | "pdf" | "video" | "pages" | "sheets" | "slides";
+type WindowKey = "widgets" | "browser" | "app" | "pdf" | "video" | "pages" | "sheets" | "slides" | "cad";
 
 type ToolsState = {
   config: Record<WindowKey, { enabled: boolean }>;
@@ -27,7 +27,7 @@ const WINDOWS: { key: WindowKey; name: string; icon: ReactNode; what: string; to
     key: "app",
     name: "Creator",
     icon: <IconCode size={18} />,
-    what: "Where the agent builds things that run: websites and apps — food apps, tools, games — live beside the chat, for you to click through, comment on and review.",
+    what: "Where the agent builds things that run: websites and apps — food apps, tools, dashboards — live beside the chat, for you to click through, comment on and review.",
     tools: "app_preview",
   },
   {
@@ -64,6 +64,13 @@ const WINDOWS: { key: WindowKey; name: string; icon: ReactNode; what: string; to
     icon: <IconSlides size={18} />,
     what: "Presentations (.pptx): decks the agent designs and edits, open in a window beside the chat where you can change any slide.",
     tools: "office_* on .pptx files",
+  },
+  {
+    key: "cad",
+    name: "Autora 3D",
+    icon: <IconCube size={18} />,
+    what: "3D models you build from simple shapes: the agent sketches, extrudes, bevels, cuts and repeats them and checks they will print, in a window beside the chat where you can push, pull and move the same model by hand. Exports STL for printing and GLB for games.",
+    tools: "cad_*",
   },
 ];
 
