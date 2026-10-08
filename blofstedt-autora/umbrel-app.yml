@@ -143,11 +143,6 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Autora can now use every part of the video editor, not only cut clips: effects,
-  masks, keyframes and speed, stickers, shapes and effect layers, subtitles,
-  tracks, scenes, bookmarks, the project's size and frame rate, and the editor's
-  own panels and shortcuts. Anything else on its screen it reads, clicks and types
-  into as a person would, so it can reach every button and field. It can also look
-  at a frame of the video to check its own work. Every step shows the agent's cursor
-  moving to the control and the words typed out, as in the other windows. Stickers
-  now work (they failed in the editor), and effect layers draw without error.
+  The Creator window is for websites and apps only, not games: its description
+  no longer lists games and the agent is told not to build one there. Games get
+  their own window later.

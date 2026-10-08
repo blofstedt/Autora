@@ -27,7 +27,7 @@ const WINDOWS: { key: WindowKey; name: string; icon: ReactNode; what: string; to
     key: "app",
     name: "Creator",
     icon: <IconCode size={18} />,
-    what: "Where the agent builds things that run: websites and apps — food apps, tools, games — live beside the chat, for you to click through, comment on and review.",
+    what: "Where the agent builds things that run: websites and apps — food apps, tools, dashboards — live beside the chat, for you to click through, comment on and review.",
     tools: "app_preview",
   },
   {
