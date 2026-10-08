@@ -126,7 +126,8 @@ async function main() {
       assert.equal(fs.existsSync(`${app.home}/ask.txt`), false, "nothing ran before the answer");
       const id = card.payload.request_id ?? card.payload.id ?? card.payload.requestId;
       await app.api("POST", `/api/policy/${id}`, { approved: false, who: "user" });
-      await app.until(s, (e) => e.some((x) => x.kind === "turn.agent.done"), "the turn to end");
+      // The first turn ("search") ended too: it is the second end that says the "no" has been answered.
+      await app.until(s, (e) => e.filter((x) => x.kind === "turn.agent.done").length >= 2, "the turn to end");
       assert.equal(fs.existsSync(`${app.home}/ask.txt`), false, "a no means it does not run");
       assert.match(toolBack(app), /said no/);
       app.decide = null;

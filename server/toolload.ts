@@ -56,6 +56,12 @@ export const FAMILIES: Family[] = [
     words: /\bautora 3d\b|\b3d[- ]?(?:model|print|design|shape|object|part|scene)|\bcad\b|\.(?:stl|glb)\b|\bstl\b|\bextrud|\bbevel|\bprintable\b/i,
   },
   {
+    id: "game",
+    about: "Autora Games: make a game in the game window (GDevelop's editor) -- scenes, objects, behaviors, events, pictures and sound",
+    match: (n) => n.startsWith("game_"),
+    words: /\bautora games?\b|\bgdevelop\b|\b(?:make|build|create|design|prototype|code) (?:me )?(?:a |an |the |my )?(?:\w+ ){0,3}(?:game|platformer|shooter|puzzle game|rpg|arcade game)\b|\bvideo ?game\b|\bgame (?:jam|engine|design|scene|level|dev)\b|\bplatformer\b|\bsprite\b|\bgame objects?\b|\bpixel[- ]art game\b/i,
+  },
+  {
     id: "widgets",
     about: "show a chart, table or small interactive widget in the thread",
     match: (n) => n === "widget_show",

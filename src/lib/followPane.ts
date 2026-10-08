@@ -6,7 +6,7 @@
  */
 import type { Bucket } from "./derive";
 
-type FollowPane = "app" | "pdf" | "video" | "cad" | "studio" | "pages" | "sheets" | "slides" | "browser";
+type FollowPane = "app" | "pdf" | "video" | "cad" | "game" | "studio" | "pages" | "sheets" | "slides" | "browser";
 
 /** An Office window as far as this needs it: which app, and the file it holds. */
 type OfficeLook = { pane: "pages" | "sheets" | "slides"; working?: string | null; name?: string | null };
@@ -19,6 +19,7 @@ function paneForTool(name: string, args: Record<string, unknown>, offices: reado
   if (name.startsWith("pdf_")) return "pdf";
   if (name.startsWith("video_")) return "video";
   if (name.startsWith("cad_")) return "cad";
+  if (name.startsWith("game_")) return "game";
   if (name.startsWith("studio_")) return "studio";
   if (BROWSER.test(name)) return "browser";
   if (APP.test(name)) return "app";

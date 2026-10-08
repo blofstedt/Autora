@@ -55,6 +55,12 @@ RUN npm --prefix spectra-editor ci
 # (scripts/prepare-opencut-editor.mjs), with Autora's overlay laid over it.
 COPY opencut-editor/package.json opencut-editor/package-lock.json opencut-editor/
 RUN npm --prefix opencut-editor ci
+# GDevelop's editor, the game window's: the same again -- its own project and lockfile (a copy of GDevelop's, with its
+# patches to its dependencies, applied after the install), built into dist/gdevelop-editor from the commit in gdevelop/PIN.json
+# (scripts/prepare-gdevelop-editor.mjs), with Autora's overlay laid over it.
+COPY gdevelop-editor/package.json gdevelop-editor/package-lock.json gdevelop-editor/
+COPY gdevelop-editor/patches gdevelop-editor/patches
+RUN npm --prefix gdevelop-editor ci
 # Autora 3D (the 3D modelling window and the agent's cad_* tools) is a sub-project too: its source is a copy of
 # github.com/blofstedt/3D-Modeling (scripts/sync-autora-3d.mjs), built into dist/autora-3d (the page) and
 # dist/autora-3d-engine (the headless model the server runs the tools on).
@@ -75,6 +81,9 @@ COPY scripts/spectra-checkout.mjs scripts/prepare-spectra-editor.mjs scripts/
 COPY opencut-editor/ opencut-editor/
 COPY opencut/PIN.json opencut/PIN.json
 COPY scripts/opencut-checkout.mjs scripts/prepare-opencut-editor.mjs scripts/typecheck-opencut-editor.mjs scripts/
+COPY gdevelop-editor/ gdevelop-editor/
+COPY gdevelop/PIN.json gdevelop/PIN.json
+COPY scripts/gdevelop-checkout.mjs scripts/prepare-gdevelop-editor.mjs scripts/build-gdevelop-editor.mjs scripts/
 
 # Typecheck both halves before building either. A container that builds and
 # then fails at runtime on something the compiler already knew is a wasted

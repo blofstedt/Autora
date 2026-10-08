@@ -19,6 +19,7 @@ type Handlers = {
   onVideoCommand?: (cmd: { id: string; name: string; args: Record<string, unknown> }) => void;
   /** Autora 3D's window: whether it is open, and what changed last. */
   onCadDesk?: (state: unknown) => void;
+  onGameDesk?: (state: unknown) => void;
   /** The Terminal window: whether it is open, where it is, and that something moved in it. */
   onTermDesk?: (state: unknown) => void;
   /** Autora Music's window: whether it is open, and what changed last. */
@@ -169,6 +170,9 @@ export class SessionStream {
           break;
         case "officedesk.push":
           this.handlers.onOfficePush?.(msg);
+          break;
+        case "gamedesk":
+          this.handlers.onGameDesk?.(msg.state);
           break;
         case "caddesk":
           this.handlers.onCadDesk?.(msg.state);

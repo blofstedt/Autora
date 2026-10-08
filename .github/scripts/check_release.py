@@ -62,6 +62,9 @@ WATCHED = (
     # The video window's editor (OpenCut's): the same, with its own pin in opencut/PIN.json.
     "opencut-editor/",
     "opencut/",
+    # The game window's editor (GDevelop's): the same, with its own pin in gdevelop/PIN.json.
+    "gdevelop-editor/",
+    "gdevelop/",
 )
 
 COMPOSE = "blofstedt-autora/docker-compose.yml"

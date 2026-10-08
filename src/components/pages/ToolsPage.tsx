@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { IconCode, IconCube, IconFile, IconGlobe, IconMusic, IconSlides, IconSparkle, IconTable, IconTerminal, IconVideo } from "../Icons";
+import { IconCode, IconCube, IconFile, IconGame, IconGlobe, IconMusic, IconSlides, IconSparkle, IconTable, IconTerminal, IconVideo } from "../Icons";
 
-type WindowKey = "widgets" | "browser" | "app" | "pdf" | "video" | "studio" | "pages" | "sheets" | "slides" | "cad" | "terminal";
+type WindowKey = "widgets" | "browser" | "app" | "pdf" | "video" | "studio" | "pages" | "sheets" | "slides" | "cad" | "game" | "terminal";
 
 type ToolsState = {
   config: Record<WindowKey, { enabled: boolean }>;
@@ -85,6 +85,13 @@ const WINDOWS: { key: WindowKey; name: string; icon: ReactNode; what: string; to
     icon: <IconCube size={18} />,
     what: "3D models you build from simple shapes: the agent sketches, extrudes, bevels, cuts and repeats them and checks they will print, in a window beside the chat where you can push, pull and move the same model by hand. Exports STL for printing and GLB for games.",
     tools: "cad_*",
+  },
+  {
+    key: "game",
+    name: "Autora Games",
+    icon: <IconGame size={18} />,
+    what: "Games, made in GDevelop's editor beside the chat: scenes, objects, behaviors, events, pictures and sound. The agent does the technical work (wiring, physics, the events that make it run) from the engine's own list of what exists; the idea, the story, the look and the feel stay yours, and you can change anything by hand while it works. GDevelop's own AI and online services are not part of it.",
+    tools: "game_*",
   },
 ];
 
