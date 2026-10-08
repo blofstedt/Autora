@@ -324,7 +324,12 @@ export default function App() {
   }, []);
 
   // Inside Autora: take the agent's changes, send the person's.
-  useAutoraEmbed(doc, (d) => hostRef.current.setDoc(d));
+  useAutoraEmbed(doc, (d) => hostRef.current.setDoc(d), (before, after) => {
+    // The shapes the agent's change touched, as they are drawn now: where its cursor goes after the tool.
+    const was = new Map(before.bodies.map((b) => [b.id, JSON.stringify(b)]));
+    const touched = after.bodies.filter((b) => !b.repeatOf && was.get(b.id) !== JSON.stringify(b)).map((b) => b.id);
+    return touched.length ? viewerApi.current?.screenOf(touched) ?? null : null;
+  });
 
   // ---- Selection ----------------------------------------------------------
   const handleSelectBody = (id: string | null, isMultiSelect?: boolean) => {
@@ -351,8 +356,11 @@ export default function App() {
       setSelectedBodyIds(next);
       setSelectedBodyId(next.length > 0 ? next[next.length - 1] : null);
     } else {
-      setSelectedBodyIds([...new Set([...selectedBodyIds, ...members])]);
+      const grown = [...new Set([...selectedBodyIds, ...members])];
+      setSelectedBodyIds(grown);
       setSelectedBodyId(id);
+      // The second shape is the moment grouping becomes possible: say how, once.
+      if (selectedBodyIds.length === 1 && grown.length > 1) notify('Two shapes selected. Press G (or Group) to make them one object.');
     }
   };
 

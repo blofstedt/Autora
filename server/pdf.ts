@@ -1257,6 +1257,8 @@ export type DeskSnapshot = {
   /** The pages without the objects. Never encrypted. */
   base: Buffer;
   items: DeskItem[];
+  /** Each page's size in points, when known: what makes a cue's place on a page a place on the screen. */
+  sizes?: { w: number; h: number }[];
   /** The artifact the flattened file is written to, once there is one. */
   working: string | null;
   /** The file it was opened from, when that was an artifact. */
@@ -1293,6 +1295,9 @@ export interface Cue {
   itemId?: string;
   /** For a stroke: where it passes, in points. */
   points?: { x: number; y: number }[];
+  /** The page's size in points, so the window can say where on the page the cue is as a fraction of it. */
+  pw?: number;
+  ph?: number;
 }
 
 /**
@@ -2185,13 +2190,25 @@ async function editTool(args: Record<string, any>, ctx: PdfContext): Promise<Pdf
   const xfa = xfaKind(doc);
 
   const values = args.fields && typeof args.fields === "object" && !Array.isArray(args.fields) ? args.fields as Record<string, unknown> : null;
-  const items: Record<string, any>[] = (Array.isArray(args.add) ? args.add : args.add ? [args.add] : [])
+  const listed: Record<string, any>[] = (Array.isArray(args.add) ? args.add : args.add ? [args.add] : [])
     .filter((i: unknown) => i && typeof i === "object");
-  const wm = typeof args.watermark === "string" ? { text: args.watermark }
-    : args.watermark && typeof args.watermark === "object" ? args.watermark : null;
-  const numbers = args.page_numbers === true ? {}
-    : typeof args.page_numbers === "string" ? { format: args.page_numbers }
-      : args.page_numbers && typeof args.page_numbers === "object" ? args.page_numbers : null;
+  /* A watermark and page numbers are parameters of their own, but they are as often written as items of the add
+     list -- and a whole call thrown away for the place a thing was put is no help to anyone. They are lifted out
+     of the list and done as what they are. */
+  const isWatermark = (i: Record<string, any>) => /^watermark$/i.test(String(i.type ?? ""));
+  const isNumbers = (i: Record<string, any>) => /^page[_ -]?numbers?$/i.test(String(i.type ?? ""));
+  const items = listed.filter((i) => !isWatermark(i) && !isNumbers(i));
+  const stray = (pick: (i: Record<string, any>) => boolean) => {
+    const { type: _type, ...rest } = listed.find(pick) ?? {};
+    return listed.some(pick) ? rest : null;
+  };
+  const wmArg = args.watermark ?? stray(isWatermark);
+  const numbersArg = args.page_numbers ?? stray(isNumbers);
+  const wm = typeof wmArg === "string" ? { text: wmArg }
+    : wmArg && typeof wmArg === "object" ? wmArg : null;
+  const numbers = numbersArg === true ? {}
+    : typeof numbersArg === "string" ? { format: numbersArg }
+      : numbersArg && typeof numbersArg === "object" ? numbersArg : null;
   const props = args.metadata && typeof args.metadata === "object" ? args.metadata as Record<string, unknown> : null;
   const strip = args.strip_metadata === true;
   const flatten = args.flatten === true;
@@ -2485,6 +2502,7 @@ async function editTool(args: Record<string, any>, ctx: PdfContext): Promise<Pdf
       source: carryOn && desk ? desk.source : given.artifact?.origin === "user" ? given.artifact.id : null,
       outName: saved.art.name,
       compose: keep?.compose ?? null, outline: keep?.outline ?? null,
+      sizes: doc.getPages().map((p) => ({ w: p.getWidth(), h: p.getHeight() })),
       review: { label: cap(done.join("; ")) || "Edited", baseNote },
     });
     const summary = [

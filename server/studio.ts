@@ -1,5 +1,5 @@
 /**
- * Autora Studio: the music window, and the agent's hands on the same song.
+ * Autora Music: the music window, and the agent's hands on the same song.
  *
  * One song per chat. It lives here (the song is plain JSON, src/lib/studio/model.ts), and:
  *
@@ -160,8 +160,8 @@ export function studioTurnNote(session: string): string | null {
 
 /** The capability line for the system prompt. As short as it can be: it is paid for on every turn, and the tools carry their own guidance. */
 export function studioBriefing(on: boolean): string {
-  if (!on) return "- Autora Studio (music window): switched off on the Tools page; if asked, say so.";
-  return "- Autora Studio (music window): studio_* tools (tools_enable studio). Music is theirs: suggest, ask; backing when asked, a melody only when asked.";
+  if (!on) return "- Autora Music (music window): switched off on the Tools page; if asked, say so.";
+  return "- Autora Music (music window): studio_* tools (tools_enable studio). Music is theirs: suggest, ask; backing when asked, a melody only when asked.";
 }
 
 // --------------------------------------------------------------- commands --
@@ -627,7 +627,7 @@ function edit(name: string, p: Project, args: Record<string, any>, focus: Focus)
  * Never throws: a bad call comes back as { ok: false, summary } saying what was wrong and what to try.
  */
 export async function runStudioTool(session: string, name: string, args: Record<string, any>, hooks: StudioHooks = {}): Promise<StudioOutcome> {
-  if (!validSession(session)) return { ok: false, summary: "Autora Studio needs a chat to work in." };
+  if (!validSession(session)) return { ok: false, summary: "Autora Music needs a chat to work in." };
   try {
     const e = entryFor(session);
     switch (name) {
@@ -693,7 +693,7 @@ export async function runStudioTool(session: string, name: string, args: Record<
         return { ok: false, summary: `Unknown studio tool: ${name}` };
     }
   } catch (err) {
-    return { ok: false, summary: err instanceof Refuse ? err.message : `Autora Studio could not do that: ${err instanceof Error ? err.message : String(err)}` };
+    return { ok: false, summary: err instanceof Refuse ? err.message : `Autora Music could not do that: ${err instanceof Error ? err.message : String(err)}` };
   }
 }
 
@@ -738,14 +738,14 @@ export function studioRoutes(app: Express, opts: {
   app.put("/api/studio/:session/doc", bigJson, (req, res) => {
     const id = known(req, res);
     if (!id) return;
-    if (opts.off()) return res.status(403).json({ error: "Autora Studio is switched off on the Tools page." });
+    if (opts.off()) return res.status(403).json({ error: "Autora Music is switched off on the Tools page." });
     const e = entryFor(id);
     const based = numberOr(req.body?.rev);
     if (based !== null && based < e.rev && e.by === "agent") {
       return res.status(409).json({ error: "Autora changed the song while you were editing.", rev: e.rev });
     }
     const next = normalizeProject(req.body?.doc);
-    if (!next) return res.status(400).json({ error: "That is not an Autora Studio song." });
+    if (!next) return res.status(400).json({ error: "That is not an Autora Music song." });
     commit(id, e, next, "person");
     res.json({ rev: e.rev });
   });
@@ -763,7 +763,7 @@ export function studioRoutes(app: Express, opts: {
   app.post("/api/studio/:session/open", (req, res) => {
     const id = known(req, res);
     if (!id) return;
-    if (opts.off()) return res.status(403).json({ error: "Autora Studio is switched off on the Tools page." });
+    if (opts.off()) return res.status(403).json({ error: "Autora Music is switched off on the Tools page." });
     if (opts.incognito(id)) return res.status(409).json({ error: "An incognito chat keeps nothing, so it has no music window." });
     setOpen(id, true);
     res.json({ ...studioState(id), name: entryFor(id).project.name });
@@ -813,7 +813,7 @@ export function studioRoutes(app: Express, opts: {
     if (!id) return;
     if (!Buffer.isBuffer(req.body) || req.body.byteLength < 44) return res.status(400).json({ error: "empty" });
     const raw = String(req.query.name ?? "song").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "-").replace(/\.wav$/i, "").slice(0, 80);
-    const art = saveArtifact({ origin: "agent", name: `${raw || "song"}.wav`, data: req.body, mime: "audio/wav", session: id, note: "Bounced from Autora Studio" });
+    const art = saveArtifact({ origin: "agent", name: `${raw || "song"}.wav`, data: req.body, mime: "audio/wav", session: id, note: "Bounced from Autora Music" });
     res.json({ artifact: art.id, name: art.name, size: art.size, mime: art.mime });
   });
 }

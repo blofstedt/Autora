@@ -19,6 +19,8 @@ import { resetDesk, setDeskState, useDeskState } from "./lib/pdfdesk";
 import { emitVideoCommand, resetVideo, setVideoState, useVideoState } from "./lib/opencut";
 import { resetCollab, setCollabState } from "./lib/collab";
 import { cellKey, dockedPlan, usePhone } from "./lib/stage";
+import { lastWorkedPane } from "./lib/followPane";
+import { setFollowing, useFollowing } from "./lib/follow";
 import { Thread, WorkFeed, hasWork } from "./components/Thread";
 import { Dock } from "./components/Dock";
 import { Rail, pageLabel, PAGES, type PageId } from "./components/Rail";
@@ -213,6 +215,18 @@ export function App() {
       : { kind: "preference", auto: true },
   );
   const [drawerOpen, setDrawerOpen] = useState(false);
+  /* The phone's menu slides out the way it slid in: it stays mounted for the length of that animation after it is
+     closed, then goes. */
+  const [drawerLeaving, setDrawerLeaving] = useState(false);
+  const drawerWas = useRef(false);
+  useEffect(() => {
+    if (drawerOpen) { drawerWas.current = true; setDrawerLeaving(false); return; }
+    if (!drawerWas.current) return;
+    drawerWas.current = false;
+    setDrawerLeaving(true);
+    const t = window.setTimeout(() => setDrawerLeaving(false), 240);
+    return () => window.clearTimeout(t);
+  }, [drawerOpen]);
   const [appearance, setAppearance] = useState<Appearance>(cachedAppearance);
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [securePort, setSecurePort] = useState<number | null>(null);
@@ -1327,6 +1341,17 @@ export function App() {
      has picked a tab, and their pick sticks until that window is put away. The browser is live work in front of
      the person, so it takes the window while it is open; the document is back the moment it is put away. */
   const [pickedWindow, setPickedWindow] = useState<SideWindow | null>(null);
+  /* Follow: on by default, the screen goes where the agent works. Only the person turning it off (the pill at the
+     top right of the strip, or picking a tab themselves) keeps them where they are. */
+  const followAgent = useFollowing();
+  const setFollow = useCallback((on: boolean) => {
+    setFollowing(on);
+    if (on) setPickedWindow(null);
+  }, []);
+  const pickWindow = useCallback((pane: SideWindow) => {
+    setPickedWindow(pane);
+    setFollow(false);
+  }, [setFollow]);
   /* On a desktop what the agent looks at and does is shown in the work area, not in the conversation (a phone has one
      column and keeps it all in the thread): the Activity tab is there as soon as there is anything to show. */
   const workOn = useMemo(() => !phoneLayout && hasWork(view.buckets), [phoneLayout, view.buckets]);
@@ -1343,8 +1368,14 @@ export function App() {
     }),
     ...(browser?.open ? [{ pane: "browser" as const, since: Number.MAX_SAFE_INTEGER }] : []),
   ];
+  const officeLooks = OFFICE_PANES.flatMap((o) => {
+    const win = windowAt(o.kind);
+    return win ? [{ pane: o.pane as "pages" | "sheets" | "slides", working: win.working, name: win.name }] : [];
+  });
+  const workedPane = followAgent && !phoneLayout ? lastWorkedPane(view.buckets, officeLooks) : null;
   const sidePane: SideWindow | null = phoneLayout ? null : (() => {
-    if (pickedWindow && openWindows.some((w) => w.pane === pickedWindow)) return pickedWindow;
+    if (workedPane && openWindows.some((w) => w.pane === workedPane)) return workedPane;
+    if (!followAgent && pickedWindow && openWindows.some((w) => w.pane === pickedWindow)) return pickedWindow;
     // Ties go to the later kind in this list: the more specific window.
     return openWindows.length ? openWindows.reduce((best, w) => (w.since >= best.since ? w : best)).pane : null;
   })();
@@ -1594,10 +1625,10 @@ export function App() {
       {/* Wide screens get the session list in the margin instead of behind a
           sheet; narrow ones never render it at all. */}
       {/* The sidebar: in the margin on a desktop, a drawer on a phone. */}
-      {(["rail", "drawer"] as const).map((kind) => kind === "drawer" && !drawerOpen ? null : (
+      {(["rail", "drawer"] as const).map((kind) => kind === "drawer" && !drawerOpen && !drawerLeaving ? null : (
         <div
           key={kind}
-          className={kind === "drawer" ? "drawer-scrim" : "rail-slot"}
+          className={kind === "drawer" ? `drawer-scrim${drawerOpen ? "" : " is-leaving"}` : "rail-slot"}
           onClick={kind === "drawer"
             ? (e) => { if (e.target === e.currentTarget) setDrawerOpen(false); }
             : undefined}
@@ -2280,11 +2311,23 @@ export function App() {
                     className={`pane-pick-tab${sidePane === w.pane ? " is-on" : ""}`}
                     title={w.label}
                     data-pane={w.pane}
-                    onClick={() => setPickedWindow(w.pane)}
+                    onClick={() => pickWindow(w.pane)}
                   >
                     {w.label}
                   </button>
                 ))}
+                {sideWindows.length > 1 && (
+                  <button
+                    type="button"
+                    className={`pane-follow${followAgent ? " is-on" : ""}`}
+                    onClick={() => setFollow(!followAgent)}
+                    aria-pressed={followAgent}
+                    title={followAgent ? "Following the agent between tools: click to stop" : "Switch to whatever the agent is working on"}
+                  >
+                    <span className="watch-dot" aria-hidden="true" />
+                    Follow
+                  </button>
+                )}
               </div>
             )}
             {/* Every window that is open stays mounted, and only the chosen one is shown: switching tabs neither
@@ -2352,9 +2395,9 @@ export function App() {
                 <Suspense fallback={null}><CadWindow sessionId={sessionId} phone={false} /></Suspense>
               </aside>
             )}
-            {/* Autora Studio: the song the agent and the person are both making. */}
+            {/* Autora Music: the song the agent and the person are both making. */}
             {studio.open && sessionId && (
-              <aside className="app-pane" data-pane="studio" hidden={sidePane !== "studio"} aria-label="Autora Studio, the song being made">
+              <aside className="app-pane" data-pane="studio" hidden={sidePane !== "studio"} aria-label="Autora Music, the song being made">
                 <Suspense fallback={null}><StudioWindow sessionId={sessionId} phone={false} /></Suspense>
               </aside>
             )}

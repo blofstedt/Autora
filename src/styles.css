@@ -646,7 +646,7 @@ body::before {
   width: var(--tile); height: var(--tile); border-radius: 9px; flex: 0 0 auto;
   display: grid; place-items: center; margin-top: 1px;
 }
-.msg.user .avatar { background: rgba(var(--accent2-rgb),  0.13); color: var(--accent-2); }
+.msg.user .avatar { background: rgba(var(--accent2-rgb),  0.18); color: var(--accent-2); box-shadow: inset 0 0 0 1px rgba(var(--accent2-rgb), 0.35); }
 
 /* The agent's side of the conversation is signed with the bare mark, the
    same glowing mark as the empty session and the app icon: no tile behind
@@ -2493,15 +2493,16 @@ label + .jf-hint { margin-top: -5px; }
    glow that fades behind it. Both are transitions on the class change, so an
    item that arrives already done simply appears ticked. */
 .todo-item.is-done .todo-tick { stroke-dashoffset: 0; opacity: 1; filter: drop-shadow(0 0 3px rgba(52, 211, 153, 0.85)); }
-/* The browser's own line-through, so it sits where a strike belongs on every
-   font and every wrapped line; it fades in rather than wiping across, a beat
-   after the tick, with the words settling grey as it lands. */
+/* The strike is drawn across the words, left to right, a beat after the tick, as if the agent were crossing the line
+   out. It is a background rather than a line-through so that it can be animated, and so a task that wraps is struck
+   on every line at once. */
 .todo-words {
-  text-decoration: line-through 2px transparent;
-  transition: text-decoration-color 0.32s ease 0.22s, color 0.3s ease 0.22s;
+  background: linear-gradient(currentColor, currentColor) no-repeat 0 58% / 0% 2px;
+  -webkit-box-decoration-break: clone; box-decoration-break: clone;
+  transition: background-size 0.5s cubic-bezier(0.4, 0, 0.2, 1) 0.3s, color 0.3s ease 0.3s;
 }
 .todo-item.is-done { color: var(--text-3); }
-.todo-item.is-done .todo-words { text-decoration-color: currentColor; }
+.todo-item.is-done .todo-words { background-size: 100% 2px; }
 @keyframes todoMarch { to { stroke-dashoffset: -7.2; } }
 @media (prefers-reduced-motion: reduce) {
   .todo-item.is-doing .todo-rect { animation: none; }
@@ -4224,6 +4225,11 @@ html[data-font="mono"] body { font-size: calc(13.5px * var(--ts, 1)); }
   animation: drawer-in 0.24s var(--ease) both;
 }
 @keyframes drawer-in { from { transform: translateX(-100%); } to { transform: none; } }
+/* Closing is the opening played backwards: the menu slides out and the dimming fades. */
+.drawer-scrim.is-leaving { pointer-events: none; animation: drawer-scrim-out 0.24s var(--ease) both; }
+.drawer-scrim.is-leaving .rail.is-drawer { animation: drawer-out 0.24s var(--ease) both; }
+@keyframes drawer-out { from { transform: none; } to { transform: translateX(-100%); } }
+@keyframes drawer-scrim-out { from { opacity: 1; } to { opacity: 0; } }
 @media (pointer: coarse) {
   .rail-nav-item { padding: 12px 12px; font-size: calc(15px * var(--ts, 1)); }
   .rail-act-row { padding: 10px 12px; font-size: calc(13.5px * var(--ts, 1)); }
@@ -5874,23 +5880,28 @@ button.dock-card:hover { border-color: var(--border-strong); }
   box-shadow: 0 8px 18px -12px rgba(0, 0, 0, 0.7);
 }
 .stage-bar {
-  display: flex; align-items: center; gap: 6px;
-  padding: 6px 8px;
+  display: flex; align-items: flex-end; gap: 3px;
+  padding: 6px 8px 0;
   overflow-x: auto; scrollbar-width: none;
 }
 .stage-bar::-webkit-scrollbar { display: none; }
 
+/* Folder tabs: each is a tab on the edge of the panel below, and the one that is up is the panel's own colour and
+   joins it, so the panel reads as that tab's page. */
 .stage-tab {
-  flex: 0 0 auto;
+  flex: 0 0 auto; position: relative;
   display: inline-flex; align-items: center; gap: 6px;
-  height: 36px; padding: 0 11px;
-  border-radius: var(--r-pill); border: 1px solid var(--border);
-  background: var(--s2); color: var(--text-2);
+  height: 34px; padding: 0 13px;
+  border-radius: 11px 11px 0 0; border: 1px solid var(--border); border-bottom: 0;
+  background: var(--s2); color: var(--text-3);
   font: inherit; font-size: calc(12px * var(--ts, 1)); font-weight: 600;
   white-space: nowrap; cursor: pointer; touch-action: manipulation;
 }
 .stage-tab svg { flex: 0 0 auto; }
-.stage-tab.is-on { color: var(--text); border-color: var(--accent-line); background: var(--s3); }
+.stage-tab.is-on {
+  color: var(--text); border-color: var(--border-strong); background: var(--s1); z-index: 1;
+  height: 36px; margin-bottom: -1px; padding-bottom: 1px; box-shadow: 0 -2px 0 -1px var(--accent-line) inset;
+}
 /* Only the tab that is up says more than its name: three long tabs would not
    share the width. */
 /* Three tabs and the follow button do not fit beside their glyphs. */
@@ -5898,7 +5909,7 @@ button.dock-card:hover { border-color: var(--border-strong); }
 .stage-follow {
   flex: 0 0 auto; margin-left: auto;
   display: inline-flex; align-items: center; gap: 6px;
-  height: 36px; padding: 0 11px; border-radius: var(--r-pill);
+  height: 28px; margin-bottom: 4px; padding: 0 11px; border-radius: var(--r-pill);
   border: 1px solid var(--border); background: none; color: var(--text-3);
   font: inherit; font-size: calc(12px * var(--ts, 1)); font-weight: 600;
   cursor: pointer; touch-action: manipulation;
@@ -5914,7 +5925,7 @@ button.dock-card:hover { border-color: var(--border-strong); }
 }
 .stage-fold {
   margin-left: auto; flex: 0 0 auto;
-  width: 36px; height: 36px;
+  width: 36px; height: 30px; margin-bottom: 2px;
   display: inline-flex; align-items: center; justify-content: center;
   border-radius: var(--r-pill); border: 1px solid transparent;
   background: none; color: var(--text-3); cursor: pointer; touch-action: manipulation;
@@ -5971,45 +5982,55 @@ button.dock-card:hover { border-color: var(--border-strong); }
 }
 
 /* ---------------------------------------- how the agent works (composer) -- */
-.mode-seg {
-  display: inline-flex; gap: 2px; padding: 2px; flex: 0 0 auto;
-  background: var(--bg); border: 1px solid var(--border); border-radius: 11px;
-}
-.mode-seg-btn {
-  display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px;
-  border: 0; border-radius: 9px; background: transparent; color: var(--text-2);
-  font: inherit; font-size: calc(12.5px * var(--ts, 1)); font-weight: 550; cursor: pointer;
-}
-.mode-seg-btn:hover:not(:disabled) { color: var(--text); }
-.mode-seg-btn.on { background: var(--s3); color: var(--text); box-shadow: 0 0 0 1px var(--border-strong); }
-.mode-seg-btn.on.m-agent { background: var(--accent-soft); color: var(--accent-light); box-shadow: 0 0 0 1px var(--accent-line); }
-.mode-seg-btn:disabled { opacity: 0.6; cursor: default; }
 .mode-sel-wrap { position: relative; flex: 0 0 auto; }
 .mode-sel-pill {
-  display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px;
+  display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 11px 0 5px;
   border-radius: var(--r-pill); border: 1px solid var(--border-strong); background: var(--s2);
-  color: var(--text); font: inherit; font-size: calc(12.5px * var(--ts, 1)); font-weight: 550; cursor: pointer;
+  color: var(--text); font: inherit; font-size: calc(12.5px * var(--ts, 1)); font-weight: 600; cursor: pointer;
 }
-.mode-sel-pill.m-agent { color: var(--accent-light); border-color: var(--accent-line); background: var(--accent-soft); }
-/* The pill with no word in it: the glyph and its carets are the whole control,
+.mode-sel-pill:hover { background: var(--s3); }
+.mode-sel-pill.open { border-color: var(--accent-line); }
+/* The mode's own icon in a round tile of its own colour: Agent glows with the accent, Build is the working green,
+   Plan is amber, so the pill says which it is before the word does. */
+.mode-sel-ico {
+  --mode: var(--text-2);
+  flex: 0 0 auto; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center;
+  color: var(--mode); background: color-mix(in srgb, var(--mode) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mode) 38%, transparent);
+}
+.m-agent .mode-sel-ico { --mode: var(--accent-light); }
+.m-build .mode-sel-ico { --mode: var(--live, #34d399); }
+.m-plan .mode-sel-ico { --mode: #f5b84b; }
+.mode-sel-ico.is-big { width: 34px; height: 34px; }
+.mode-sel-ico.is-big svg { width: 17px; height: 17px; }
+.mode-sel-pill.m-agent { border-color: var(--accent-line); background: var(--accent-soft); }
+/* The pill with no word in it: the icon and its caret are the whole control,
    which is what lets the toolstrip hold it and every tool on one line. */
-.mode-sel-pill.is-icon { gap: 4px; padding: 0 8px; }
+.mode-sel-pill.is-icon { gap: 4px; padding: 0 8px 0 4px; }
 .mode-sel-caret { font-size: calc(9px * var(--ts, 1)); opacity: 0.7; }
+/* The sheet is centred in the window with the page dimmed behind it, on every screen: the one the phone had, which
+   is the one people like. Fixed, so what it opens from no longer matters. */
 .mode-sel-sheet {
-  position: absolute; left: 0; bottom: calc(100% + 8px); z-index: var(--z-modal);
-  width: min(300px, calc(100vw - 32px)); padding: 6px;
-  background: var(--s2); border: 1px solid var(--border-strong); border-radius: 14px;
-  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.7);
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: var(--z-float);
+  width: min(360px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow-y: auto; padding: 8px;
+  background: var(--s2); border: 1px solid var(--border-strong); border-radius: 18px;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.55), 0 16px 48px -8px rgba(0, 0, 0, 0.8);
+  animation: modeSheetIn 0.16s var(--ease) both;
+}
+@keyframes modeSheetIn { from { opacity: 0; } to { opacity: 1; } }
+.mode-sel-head {
+  padding: 6px 10px 8px; font-size: calc(11px * var(--ts, 1)); font-weight: 650; letter-spacing: 0.07em;
+  text-transform: uppercase; color: var(--text-3);
 }
 .mode-sel-opt {
-  display: flex; align-items: flex-start; gap: 10px; width: 100%; text-align: left;
-  padding: 10px; border: 0; border-radius: 10px; background: transparent; color: var(--text-2);
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  padding: 10px; border: 0; border-radius: 12px; background: transparent; color: var(--text-2);
   font: inherit; cursor: pointer;
 }
-.mode-sel-opt > svg:first-child { margin-top: 2px; flex: 0 0 auto; }
-.mode-sel-opt b { display: block; font-size: calc(13px * var(--ts, 1)); color: var(--text); font-weight: 600; }
+.mode-sel-opt:hover { background: var(--s3); }
+.mode-sel-opt b { display: block; font-size: calc(13.5px * var(--ts, 1)); color: var(--text); font-weight: 600; }
 .mode-sel-opt span span { display: block; font-size: calc(12px * var(--ts, 1)); line-height: 1.4; }
-.mode-sel-opt > svg:last-child { margin-left: auto; color: var(--accent-light); flex: 0 0 auto; margin-top: 2px; }
+.mode-sel-opt > svg:last-child { margin-left: auto; color: var(--accent-light); flex: 0 0 auto; }
 .mode-sel-opt.on { background: var(--accent-soft); }
 
 /* Agent switching between planning and building, said in the thread. */
@@ -6027,7 +6048,7 @@ button.dock-card:hover { border-color: var(--border-strong); }
    anchored to a small pill near an edge they hung off to one side. Fixed
    position, so what they are anchored to no longer matters. */
 @media (max-width: 680px) {
-  .mode-menu, .mode-sel-sheet {
+  .mode-menu {
     position: fixed !important;
     left: 50% !important; top: 50% !important; bottom: auto !important;
     transform: translate(-50%, -50%);
@@ -6078,18 +6099,37 @@ button.dock-card:hover { border-color: var(--border-strong); }
   position: relative; z-index: var(--z-side); margin-top: calc(-1 * var(--top-h, 58px));
 }
 .pane-pick {
-  display: flex; align-items: center; gap: 4px; height: 34px; padding: 0 8px; overflow-x: auto;
-  border-left: 1px solid var(--border-strong); border-bottom: 1px solid var(--border); background: var(--s1);
+  display: flex; align-items: flex-end; gap: 3px; height: 38px; padding: 0 10px; overflow-x: auto; scrollbar-width: none;
+  border-left: 1px solid var(--border-strong); border-bottom: 1px solid var(--border-strong); background: var(--s1);
 }
+.pane-pick::-webkit-scrollbar { display: none; }
 /* A window that is open but not chosen: kept mounted (so it is never a reload) and out of the way. */
 .app-pane[hidden] { display: none; }
+/* Folder tabs: the chosen one is the window's own colour and runs into it; the others sit back behind it. */
 .pane-pick-tab {
+  position: relative; flex: 0 0 auto;
   max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font: inherit; font-size: calc(12px * var(--ts, 1)); padding: 4px 10px; border-radius: var(--r-pill); cursor: pointer;
-  border: 1px solid var(--border); background: var(--bg); color: inherit; opacity: 0.75;
+  font: inherit; font-size: calc(12px * var(--ts, 1)); font-weight: 550; height: 30px; padding: 0 16px;
+  border-radius: 10px 10px 0 0; cursor: pointer;
+  border: 1px solid var(--border); border-bottom: 0; background: var(--s2); color: var(--text-3);
 }
-.pane-pick-tab:hover { opacity: 1; }
-.pane-pick-tab.is-on { opacity: 1; font-weight: 600; border-color: var(--border-strong); }
+.pane-pick-tab:hover { color: var(--text); background: var(--s3); }
+.pane-pick-tab.is-on {
+  height: 34px; margin-bottom: -1px; z-index: 1; font-weight: 650;
+  color: var(--text); background: var(--bg); border-color: var(--border-strong);
+  box-shadow: 0 2px 0 -1px var(--accent-line) inset;
+}
+/* Follow, at the top right: the same pill as on a phone. On, the screen goes where the agent works. */
+.pane-follow {
+  flex: 0 0 auto; margin: 0 0 5px auto; position: sticky; right: 0;
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 26px; padding: 0 11px; border-radius: var(--r-pill);
+  border: 1px solid var(--border); background: var(--s1); color: var(--text-3);
+  font: inherit; font-size: calc(12px * var(--ts, 1)); font-weight: 600; cursor: pointer;
+}
+.pane-follow:hover { color: var(--text); }
+.pane-follow.is-on { color: var(--live); border-color: rgba(52, 211, 153, 0.45); background: rgba(52, 211, 153, 0.1); }
+.pane-follow:not(.is-on) .watch-dot { opacity: 0.35; animation: none; }
 @keyframes appPaneIn { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
 
 .app-window { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; outline: none; background: var(--bg); }
@@ -6853,7 +6893,7 @@ body.is-resizing iframe { pointer-events: none; }
 .rail-ctxbar.is-over .rail-ctxbar-fill { background: var(--warn); }
 
 /* ------------------------------------------------------------------------
-   Autora Studio: the music window (components/StudioWindow.tsx, studio/*).
+   Autora Music: the music window (components/StudioWindow.tsx, studio/*).
    It is a .pdf-window for its frame and bar; everything else is .st-*.
    `--ph` (the playhead, in beats) and `--lvl` (the master level) are set on
    the window 60 times a second by script, so nothing re-renders for them.
@@ -7145,3 +7185,25 @@ body.is-resizing iframe { pointer-events: none; }
   .st-field { font-size: 10px; }
 }
 @media (prefers-reduced-motion: reduce) { .st-clip.is-flash, .st-clip.is-flash::after { animation: none; } .st-clip.is-flash { outline: 2px solid var(--accent-light); } }
+
+/* The agent's pointer in the windows that are part of this page (lib/pointer.ts): over everything, touching nothing. */
+.agent-pointer-layer { position: fixed; inset: 0; pointer-events: none; z-index: 2147483000; overflow: hidden; }
+.agent-pointer { position: absolute; left: 0; top: 0; opacity: 0; transition: opacity 0.25s ease; will-change: transform; }
+.agent-pointer-layer.is-on .agent-pointer { opacity: 1; }
+.agent-pointer svg { display: block; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4)); }
+.agent-pointer-name {
+  position: absolute; left: 14px; top: 14px; padding: 1px 7px; border-radius: 999px; background: #7c5cff; color: #fff;
+  font: 600 10.5px/1.5 system-ui, sans-serif; white-space: nowrap;
+}
+.agent-pointer-typed {
+  position: absolute; left: 14px; top: 36px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 2px 8px; border-radius: 8px; background: rgba(20, 22, 34, 0.92); color: #fff; font: 500 12px/1.5 system-ui, sans-serif;
+  border: 1px solid rgba(124, 92, 255, 0.6);
+}
+.agent-pointer-typed:empty { display: none; }
+.agent-pointer-ring {
+  position: absolute; width: 28px; height: 28px; border-radius: 50%; border: 2px solid #7c5cff;
+  animation: agentRing 0.55s ease-out both;
+}
+@keyframes agentRing { from { transform: scale(0.4); opacity: 0.95; } to { transform: scale(1.6); opacity: 0; } }
+.is-agent-pressed { box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.7) !important; transition: box-shadow 0.2s ease; }

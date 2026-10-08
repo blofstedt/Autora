@@ -234,6 +234,20 @@ await test("pdf_edit writes text, shapes, a stamp, a watermark and page numbers"
   assert.ok(holds(readArtifact(newest().id)!, "Page 2 of 2", out), "the page number is written");
 });
 
+await test("a watermark and page numbers written as items of the add list are done as what they are", async () => {
+  const r = await run("pdf_edit", {
+    file: upload.id,
+    add: [
+      { type: "text", text: "Seen", page: 1, x: 100, y: 100, size: 11 },
+      { type: "watermark", text: "COPY" },
+      { type: "page_numbers", format: "Sheet {n} of {total}" },
+    ],
+  });
+  assert.equal(r.ok, true, r.summary);
+  const out = await load(newest().id);
+  assert.ok(holds(readArtifact(newest().id)!, "Sheet 2 of 2", out), "the page number is written");
+});
+
 await test("pdf_edit refuses what it cannot do, and saves nothing", async () => {
   const before = files.length;
   const unknown = await run("pdf_edit", { file: upload.id, fields: { nope: "x" } });

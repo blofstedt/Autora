@@ -1,5 +1,5 @@
 /**
- * Autora Studio: the music window. The song lives on the server (server/studio.ts) and in the window beside the chat;
+ * Autora Music: the music window. The song lives on the server (server/studio.ts) and in the window beside the chat;
  * these tools are the agent's hands on the same song, so the person watches the clips appear and can change anything
  * by hand. Times are in bars and beats, pitches are note names ("C4", "F#3") or MIDI numbers, drums are named
  * ("kick", "snare", "hat").
@@ -23,7 +23,7 @@ export const studioSPECS: ToolSpec[] = [
     name: "studio_open",
     group: "files",
     description:
-      "Open Autora Studio (the music window) beside the chat. With no arguments it opens on this chat's song and " +
+      "Open Autora Music (the music window) beside the chat. With no arguments it opens on this chat's song and " +
       "returns it. Pass `new` (a name) to start a fresh, empty song, with optional `bpm` and `key`; if the song " +
       "already has notes in it, the person's work would be lost, so that needs `replace: true` -- only when they " +
       "asked to start over. The other studio tools open the window themselves.",

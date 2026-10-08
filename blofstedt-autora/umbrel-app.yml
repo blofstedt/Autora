@@ -65,7 +65,7 @@ description: >-
   subtitles, scenes, settings, any control on its screen) and look at a frame to check
   its work. The story, the pacing and the look stay yours: Autora does the technical
   work and asks about the rest. Your projects stay on your server.
-  • Autora Studio — a music window for making songs, easy enough to start in one
+  • Autora Music — a music window for making songs, easy enough to start in one
   click. Tracks of keys, synth, bass, pluck, pad, lead and drums; a piano roll and
   a drum grid you draw on; a mixer; a click track; export to WAV. Autora works in
   the same song: ask for chords in a key, a bass line that follows them or a drum
@@ -158,12 +158,22 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Autora Studio joins the tools: a music window beside the chat. Start a song
-  with one click (a beat, chords, a bass line or an empty melody track), draw
-  notes on the piano roll or the drum grid, set levels in the mixer, play it
-  with a click track and export a WAV. Ask Autora for chords in a key, a bass
-  line that follows them or a drum beat and the clips appear in your song, lit
-  up for a moment; one Ctrl+Z takes back anything it did. It can tidy timing,
-  balance the mix and look the song over for mistakes, while the tune and the
-  taste stay yours. Open it from the wrench next to the message box; it has its
-  own switch on the Tools page.
+  Fixes from a round of testing every tool. The PDF window is now one
+  self-contained page, so it opens behind Umbrel's login too; it ships the
+  decoders, fonts and character maps pdf.js needs (scans, faxes and CJK pages used
+  to draw blank), draws on browsers that lack a newer JavaScript feature, always
+  follows Autora's dark look, shows what the agent places on a page (it used to
+  show the pages only), and says why when an editor does not start instead of
+  staying grey. The agent's purple cursor now works in
+  Autora 3D (it goes to the tool and then to the shape), in the PDF window (it
+  types where it types) and in Autora Music, as it does elsewhere. The tabs beside
+  the chat are folder tabs with a Follow pill at the top right, on by default: the
+  screen goes where the agent works, until you pick a tab yourself. Autora Studio
+  is now Autora Music. Your messages are signed User again. The to-do list opens
+  itself when a task is finished and strikes it out, the left menu slides closed,
+  and the mode switch (Agent, Build, Plan) is a new pill with a centred picker. In
+  3D, Shift-click adds a shape to the selection and says how to group; a move that
+  goes nowhere no longer counts as a change. Smaller fixes: a video title's size is
+  checked, an escape such as \u2014 in a slide comes out as the character, a
+  watermark or page numbers written among a PDF's added items are done, and a list
+  inserted into a composed PDF goes where it was told.

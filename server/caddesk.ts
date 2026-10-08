@@ -81,6 +81,8 @@ interface Entry {
   rev: number;
   by: "agent" | "person";
   shapes: number;
+  /** What the agent is doing, for the window to show the cursor doing it: the tool, and a number that goes up per call. */
+  cue: { seq: number; tool: string } | null;
 }
 
 const entries = new Map<string, Entry>();
@@ -144,6 +146,7 @@ function entryFor(session: string): Entry {
       rev: 0,
       by: "agent",
       shapes: countShapes(saved?.doc),
+      cue: null,
     };
     entries.set(session, entry);
   }
@@ -266,7 +269,10 @@ export async function runCadTool(
     }
     const exportArgs = name === "export" ? { name: given.name } : null;
     if (exportArgs) delete given.name;
-    entryFor(session).by = "agent";
+    const mine = entryFor(session);
+    mine.by = "agent";
+    // Said before the change lands: the window is told the model moved a moment later, and asks for this with it.
+    mine.cue = { seq: (mine.cue?.seq ?? 0) + 1, tool: name };
     setOpen(session, true);
     const res = await engine.execute(name, given);
     if (!res.ok) {
@@ -304,14 +310,12 @@ export function cadBriefing(on: boolean): string {
     return "- Autora 3D (the 3D modelling window): switched off on the Tools page. Do not try to model in 3D, and if asked, say it is off.";
   }
   return (
-    "- Autora 3D (the 3D modelling window): available. Tools: cad_scene_get (start here), cad_shape_add, cad_shape_draw, " +
-    "cad_shape_cut, cad_shape_set, cad_shape_move, cad_shape_resize, cad_face_set, cad_edge_bevel, cad_shapes_join, " +
-    "cad_shapes_subtract, cad_repeat_set, cad_group_create, cad_export (STL for printing, GLB for games) and more. " +
-    "Shapes are flat outlines pushed up to a height (sketch and extrude), in millimetres, x right, y away, z up. " +
-    "Model things the person asks to make, print or design in 3D with these rather than writing code. The window opens " +
-    "beside the chat the first time you use a tool, and the person can work in it too: call cad_scene_get again before " +
-    "relying on what you saw earlier. Check a part will print with cad_shape_measure (watertight) before exporting. " +
-    "The person's design choices (what to make, how it should look) are theirs: suggest, and ask when it matters."
+    "- Autora 3D (the 3D modelling window): available. Tools: the cad_* family -- start with cad_scene_get; cad_export gives " +
+    "STL to print or GLB for games. " +
+    "Shapes are flat outlines pushed up to a height, in millimetres, x right, y away, z up. Model what the person asks to " +
+    "make, print or design with these, not code. The window opens beside the chat on first use and the person can work " +
+    "in it too: call cad_scene_get again before relying on what you saw earlier. Check a part with cad_shape_measure " +
+    "(watertight) before exporting. Design choices are theirs: suggest, and ask when it matters."
   );
 }
 
@@ -345,7 +349,8 @@ export function cadRoutes(app: Express, opts: { exists: (session: string) => boo
     try {
       const engine = await engineOf(id);
       res.setHeader("Cache-Control", "no-store");
-      res.json({ doc: engine.getDoc(), rev: entryFor(id).rev });
+      const entry = entryFor(id);
+      res.json({ doc: engine.getDoc(), rev: entry.rev, ...(entry.by === "agent" && entry.cue ? { cue: entry.cue } : {}) });
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }

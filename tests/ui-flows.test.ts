@@ -201,14 +201,16 @@ async function main() {
       assert.match(saved.ask_when, /deleting.*sending an email/);
       assert.match(await page.locator(".badge.mode-pill").innerText(), /Ask · custom/);
     });
-    await test("on a wide screen the three modes are a switch you can see", async () => {
+    await test("on a wide screen it is the same pill and the same centred sheet", async () => {
       const wide = await browser.newContext({ viewport: { width: 1280, height: 800 } });
       const p = await wide.newPage();
       await p.goto(`${app.base}/?session=${s}`);
-      await p.locator(".mode-seg").waitFor();
-      assert.equal(await p.locator(".mode-seg-btn").count(), 3);
-      assert.match(await p.locator(".mode-seg-btn.on").innerText(), /Agent/);
-      await p.locator(".mode-seg-btn", { hasText: "Plan" }).click();
+      const pill = p.locator(".mode-sel-pill");
+      await pill.waitFor();
+      assert.match(await pill.innerText(), /Agent/);
+      await pill.click();
+      assert.equal(await p.locator(".mode-sel-opt").count(), 3);
+      await p.locator(".mode-sel-opt.m-plan").click();
       await sleep(500);
       assert.equal((await row()).mode, "plan");
       await wide.close();

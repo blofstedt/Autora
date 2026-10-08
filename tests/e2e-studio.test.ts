@@ -1,5 +1,5 @@
 /**
- * Autora Studio through a real turn: the model asks for a studio_ tool, the tool runs on the chat's song, the window is
+ * Autora Music through a real turn: the model asks for a studio_ tool, the tool runs on the chat's song, the window is
  * told, and what the person then does in the window is what the agent sees next.
  *
  *   npx tsx tests/e2e-studio.test.ts
@@ -16,7 +16,7 @@ async function test(name: string, fn: () => Promise<void>) {
 async function main() {
   const app: App = await startApp();
   try {
-    console.log("Autora Studio");
+    console.log("Autora Music");
     const s = await app.newSession("music", "build");
     const told: any[] = [];
     const ws = new WebSocket(`${app.base.replace(/^http/, "ws")}/ws/${s}`);
@@ -35,7 +35,7 @@ async function main() {
       app.script.push({ text: "Laid down the chords." });
       await app.turn(s, "start a chord progression for a song in A minor");
       assert.ok(app.seen[0].tools.includes("studio_make"), "offered from the first step");
-      assert.match(app.seen[0].system, /Autora Studio/);
+      assert.match(app.seen[0].system, /Autora Music/);
       const state = (await app.api("GET", `/api/studio/${s}`)).body;
       assert.equal(state.open, true);
       assert.equal(state.tracks, 1);
@@ -90,7 +90,7 @@ async function main() {
       app.script.push({ text: "No." });
       await app.turn(s, "make a beat for a song");
       assert.ok(!app.seen[0].tools.some((n) => n.startsWith("studio_")));
-      assert.match(app.seen[0].system, /Autora Studio.*switched off/);
+      assert.match(app.seen[0].system, /Autora Music.*switched off/);
       assert.equal((await app.api("POST", `/api/studio/${s}/open`)).status, 403);
       assert.equal((await app.api("PATCH", "/api/settings", { tools: { studio: { enabled: true } } })).status, 200);
     });

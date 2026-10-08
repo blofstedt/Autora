@@ -165,11 +165,20 @@ export function applyChanges(previous: ComposeSource | null, args: Record<string
     for (const id of drop) find(id, "remove");
     doc.blocks = doc.blocks.filter((b) => !drop.has(b.id as string));
     for (const ins of asList<unknown>(args.insert)) {
-      if (!isObject(ins)) throw new ComposeError('insert takes objects like {"after": "<block id>", "blocks": [...]}; after may also be "start" or "end".');
+      if (!isObject(ins)) throw new ComposeError('insert takes objects like {"after": "<block id>", "blocks": [...]}; after may also be "start" or "end", or give "before": "<block id>".');
       const added = asList<unknown>(ins.blocks ?? ins.block).map((b, i) => cleanBlock(b, `Inserted block ${i + 1}`));
       if (!added.length) throw new ComposeError("insert needs blocks to put in.");
-      const after = String(ins.after ?? "end");
-      const at = after === "end" ? doc.blocks.length : after === "start" ? 0 : find(after, "insert") + 1;
+      // Where it goes is never guessed: a position that is named but not understood used to fall through to the end of
+      // the document, leaving a list far from the heading it belonged under.
+      const stray = Object.keys(ins).filter((k) => !["after", "before", "blocks", "block"].includes(k));
+      if (stray.length) throw new ComposeError(`insert does not take ${stray.map((k) => JSON.stringify(k)).join(", ")}: say where with "after" (a block id, "start" or "end") or "before" (a block id).`);
+      if (ins.after !== undefined && ins.before !== undefined) throw new ComposeError('insert takes "after" or "before", not both.');
+      let at: number;
+      if (ins.before !== undefined) at = find(ins.before, "insert");
+      else {
+        const after = String(ins.after ?? "end");
+        at = after === "end" ? doc.blocks.length : after === "start" ? 0 : find(after, "insert") + 1;
+      }
       doc.blocks.splice(at, 0, ...added);
     }
   } else if (edits) {

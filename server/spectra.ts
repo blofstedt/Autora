@@ -331,7 +331,9 @@ export function serveSpectra(app: Express, dist: string): void {
         // served by Vite, whose client and React preamble are inline scripts,
         // and a frame that reaches nothing (no origin, no cookies, no network
         // but Autora's own) has nothing for an injected script to reach.
-        "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
+        // blob: because the editor's workers and pdf.js's are blobs made from the page's own code (see
+        // spectra-editor/vite.config.ts, singlePage): the page cannot fetch files of its own behind a login proxy.
+        "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob:",
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data: blob:",
         "font-src 'self' data:",

@@ -164,7 +164,9 @@ try {
     });
     await app.turn(s, "change the weight in the spreadsheet");
     await sleep(9000);
-    const cursor = await page.locator("[data-office-cursor]").count();
+    // The cursor of the window on screen, still being played: a finished one (Pages', from the turn before, kept in its
+    // own tab) is not the workbook's.
+    const cursor = await page.locator('.app-pane:not([hidden]) [data-office-cursor="on"]').count();
     if (nameBox) {
       console.log("  note  the workbook's editor shows a name box: the cell is confirmed by it, and the cursor is sent there");
     } else {

@@ -1,5 +1,5 @@
 /**
- * Autora Studio's song, and everything that can be worked out about it without a sound card.
+ * Autora Music's song, and everything that can be worked out about it without a sound card.
  *
  * A song is tracks, each holding clips, each holding notes. Times are in beats (a quarter note is 1), so changing the
  * tempo never moves anything. The model is plain JSON: the window (components/StudioWindow.tsx) edits it and plays it

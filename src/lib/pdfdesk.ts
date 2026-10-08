@@ -11,7 +11,14 @@ type DeskObject = { id: string; type: string; pageNumber: number; [key: string]:
 type DeskMark = { id: string; kind: "add" | "edit" | "remove" | "page"; itemId?: string; page: number; label: string };
 
 /** Where the agent just worked on a page, to be played in the window. */
-type DeskCue = { page: number; x: number; y: number; w: number; h: number; from: string; to: string };
+type DeskCue = {
+  page: number; x: number; y: number; w: number; h: number; from: string; to: string;
+  act?: "retype" | "type" | "place" | "drag" | "draw";
+  tool?: string;
+  points?: { x: number; y: number }[];
+  /** The page's size in points, which is what lets a place on the page be found on the screen. */
+  pw?: number; ph?: number;
+};
 
 /** An earlier state of the file. */
 type DeskVersion = { n: number; label: string; at: number; by: "agent" | "person"; name: string };

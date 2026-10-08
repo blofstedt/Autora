@@ -7,6 +7,7 @@ import { OPEN_NOTEBOOK } from "../lib/notebooks";
 import { copyText } from "../lib/clipboard";
 import { sameReply } from "../lib/voice";
 import { ImmersiveChat } from "./ImmersiveChat";
+import { setFollowing, useFollowing } from "../lib/follow";
 import { setFullscreen, useFullscreen } from "../lib/fullscreen";
 import { AutoraMark } from "./AutoraMark";
 import type { MarkPhase } from "../lib/activity";
@@ -181,7 +182,7 @@ export function Thread({
   /* Follow: the tab tracks whatever the agent touched last. Tapping a tab is
      taking the wheel, so it lets go -- the way scrolling up lets go of the
      live edge -- and the button hands it back. */
-  const [follow, setFollow] = useState(false);
+  const follow = useFollowing();
   const stageFresh = stageView.held === held;
   const handedPage = work.browserHandedOver && surfaces.some((s) => s.kind === "browser");
   // A page handed to the person is what they are here to use: never folded away.
@@ -192,13 +193,13 @@ export function Thread({
       ? busiestSurface(surfaces)?.kind ?? null
       : (stageFresh && surfaces.find((s) => s.kind === stageView.pick)?.kind) || newestSurface(surfaces)?.kind || null;
   const pickTab = useCallback((kind: SurfaceKind) => {
-    setFollow(false);
+    setFollowing(false);
     setStageView({ held, pick: kind, folded: false });
   }, [held]);
   const toggleFollow = useCallback(() => {
-    setFollow((on) => !on);
+    setFollowing(!follow);
     setStageView((v) => ({ held, pick: v.held === held ? v.pick : null, folded: false }));
-  }, [held]);
+  }, [held, follow]);
   const foldStage = useCallback(
     () => setStageView((v) => ({ held, pick: v.held === held ? v.pick : null, folded: !(v.held === held && v.folded) })),
     [held],
@@ -648,7 +649,7 @@ const TurnBucket = memo(function TurnBucket({
         <div className="msg user">
           <span className="avatar"><IconUser size={14} /></span>
           <div className="msg-body">
-            <div className="msg-who">you</div>
+            <div className="msg-who">User</div>
             {bucket.prompt && <div className="msg-text">{bucket.prompt}</div>}
             <MessageFiles files={bucket.attachments} notebooks={bucket.notebooks} />
           </div>

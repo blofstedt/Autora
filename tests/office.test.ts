@@ -48,6 +48,15 @@ const run = (name: string, args: Record<string, any>) => office.runOfficeTool(na
 
 console.log("office tools");
 
+await test("an escape written inside a string comes out as the character, in every string of a spec", () => {
+  const out = office.realCharacters({ pages: [{ footer: "Acme \\u2014 2026", notes: ["a \\u00e9", { t: "\\ud83d\\ude00" }] }], n: 3 });
+  assert.equal(out.pages[0].footer, "Acme \u2014 2026");
+  assert.equal(out.pages[0].notes[0], "a \u00e9");
+  assert.equal((out.pages[0].notes[1] as { t: string }).t, "\u{1F600}");
+  assert.equal(out.n, 3);
+  assert.equal(office.realCharacters("a literal \\\\u2014 stays"), "a literal \\\\u2014 stays");
+});
+
 await test("the Tools page can switch them off, and they are then not offered", async () => {
   const tools = await import("../server/tools");
   const on = tools.toolSettings();

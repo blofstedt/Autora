@@ -99,15 +99,17 @@ interface Tool {
 /** The tools: one Shape tool that opens the shape list, then the commands. */
 export default function BottomBar(props: BottomBarProps) {
   const { selectedCount, bodyCount } = props;
+  /* How a second shape is added to the selection depends on what is in the person's hand. */
+  const addHint = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? 'Hold a shape to add it' : 'Shift-click a shape to add it';
   const tools: Tool[] = [
     { label: 'Draw', key: 'D', icon: PenTool, onClick: props.onDraw, active: props.drawOn },
     { label: 'Move', key: 'M', icon: Move3d, onClick: props.onToggleMove, active: props.moveOn, disabled: selectedCount < 1, hint: 'Select a shape' },
-    { label: props.grouped ? 'Ungroup' : 'Group', key: 'G', icon: props.grouped ? Ungroup : Boxes, onClick: props.onGroup, disabled: !props.grouped && selectedCount < 2, hint: 'Hold a shape to add it' },
+    { label: props.grouped ? 'Ungroup' : 'Group', key: 'G', icon: props.grouped ? Ungroup : Boxes, onClick: props.onGroup, disabled: !props.grouped && selectedCount < 2, hint: addHint },
     { label: 'Repeat', key: 'R', icon: Repeat, onClick: props.onPattern, active: props.repeatOn, disabled: !props.repeatOn && selectedCount < 1, hint: 'Select a shape' },
   ];
   const organize: Tool[] = [
-    { label: 'Join', key: 'J', icon: Combine, onClick: props.onJoin, disabled: selectedCount < 2, hint: 'Hold a shape to add it' },
-    { label: 'Subtract', key: 'S', icon: SquareMinus, onClick: props.onSubtract, disabled: selectedCount < 2, hint: 'Hold a shape to add it' },
+    { label: 'Join', key: 'J', icon: Combine, onClick: props.onJoin, disabled: selectedCount < 2, hint: addHint },
+    { label: 'Subtract', key: 'S', icon: SquareMinus, onClick: props.onSubtract, disabled: selectedCount < 2, hint: addHint },
     { label: props.isolated ? 'Show everything' : 'Isolate', key: 'I', icon: Focus, onClick: props.onIsolate, active: props.isolated, disabled: !props.isolated && selectedCount < 1, hint: 'Select a shape' },
     { label: 'Hide', key: 'H', icon: EyeOff, onClick: props.onHide, disabled: selectedCount < 1, hint: 'Select a shape' },
     ...(props.repeated ? [{ label: 'Make copies separate', key: '', icon: Unlink, onClick: props.onBreakRepeat } as Tool] : []),

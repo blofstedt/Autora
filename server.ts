@@ -112,7 +112,7 @@ import { backgroundBriefing, findJob, listJobs, readTail, startJob, stopJob } fr
 import {
   addressIn, DEVICES, isLocalUrl, localAddress, serveFolder, waitForServer,
   type Device, } from "./server/preview";
-import { deskBase, deskBriefing, deskHooks, deskRoutes, deskState, dropDesk, onDeskChange, onDeskTouch, personBase } from "./server/pdfdesk";
+import { deskDocument, deskBriefing, deskHooks, deskRoutes, deskState, dropDesk, onDeskChange, onDeskTouch, personBase } from "./server/pdfdesk";
 import { staticDir } from "./server/staticfiles";
 import { memoryRoutes } from "./server/routes/memory";
 import { healthRoutes } from "./server/routes/health";
@@ -1198,7 +1198,7 @@ onCadChange((sessionId) => {
   sendEphemeral(sessionId, { type: "caddesk", session: sessionId, state: cadState(sessionId) });
 });
 
-/* Autora Studio, the same way: the window opens, and the song changes (by the agent's tools or the person's hands). */
+/* Autora Music, the same way: the window opens, and the song changes (by the agent's tools or the person's hands). */
 onStudioChange((sessionId) => {
   sendEphemeral(sessionId, { type: "studiodesk", session: sessionId, state: studioState(sessionId) });
 });
@@ -5394,7 +5394,7 @@ async function startServer() {
     cwd: () => terminalDir(),
     version: () => VERSION,
     document: async (id: string) => {
-      const bytes = deskBase(id);
+      const bytes = await deskDocument(id, terminalDir());
       if (!bytes) return null;
       return { name: deskState(id).name || "document.pdf", bytes };
     },
@@ -5411,7 +5411,7 @@ async function startServer() {
     incognito: (id: string) => Boolean(sessions.get(id)?.incognito),
     off: () => windowOff("cad_scene_get"),
   });
-  // Autora Studio: the music window's song, the commands to it, and opening and putting it away.
+  // Autora Music: the music window's song, the commands to it, and opening and putting it away.
   studioRoutes(app, {
     exists: (id: string) => sessions.has(id),
     incognito: (id: string) => Boolean(sessions.get(id)?.incognito),

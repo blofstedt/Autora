@@ -33,7 +33,7 @@ Only when a change genuinely has no user-facing effect, skip the bump and put
 
 ## Other checks before pushing
 
-Once per checkout, also `npm --prefix spectra-editor ci`: the PDF window's
+Once per checkout, also `npm --prefix opencut-editor ci` and `npm --prefix autora-3d ci` (both are typechecked and built), and `npm --prefix spectra-editor ci`: the PDF window's
 editor is a sub-project with its own dependencies (see docs/MODULES.md).
 
 - `npm run lint`: typechecks the client (`tsconfig.json`), the server

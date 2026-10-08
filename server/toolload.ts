@@ -39,7 +39,7 @@ export const FAMILIES: Family[] = [
   },
   {
     id: "studio",
-    about: "Autora Studio: make music in the music window -- tracks, chords, bass, drums, notes, tempo, mixing and a WAV export",
+    about: "Autora Music: make music in the music window -- tracks, chords, bass, drums, notes, tempo, mixing and a WAV export",
     match: (n) => n.startsWith("studio_"),
     words: /\bautora studio\b|\bmusic\b|\bsongs?\b|\bbeats?\b|\bdaw\b|\bchord progression|\bchords?\b|\bmelod(?:y|ies)\b|\bbassline\b|\bbass line\b|\bdrum (?:loop|pattern|track|beat|kit)|\bsynth(?:esizer)?\b|\bpiano roll\b|\bbpm\b|\btempo\b|\bmix(?:ing)? (?:the |a |my )?(?:song|track|tracks)\b|\bjingle\b|\bsoundtrack\b|\bproduce (?:a |some )?(?:track|tune|song)/i,
   },

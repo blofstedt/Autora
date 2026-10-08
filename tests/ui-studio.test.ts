@@ -1,5 +1,5 @@
 /**
- * Autora Studio as a person uses it, in a real browser: the window opens beside the chat, a first part is one click,
+ * Autora Music as a person uses it, in a real browser: the window opens beside the chat, a first part is one click,
  * notes are drawn on the roll, the song plays and bounces to a real WAV, and what the agent does shows up live.
  *
  *   npx tsx tests/ui-studio.test.ts

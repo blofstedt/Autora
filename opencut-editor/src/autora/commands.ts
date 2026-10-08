@@ -79,6 +79,13 @@ async function run(name: string, args: Record<string, unknown>): Promise<unknown
         const v = args[key];
         if (typeof v === "string" || typeof v === "number") params[key] = v;
       }
+      /* The editor's font size is not points or pixels: 90 is the whole height of the picture, so the default of 15
+         is a sixth of it. A "72" (as a title is often sized) fills the frame many times over, and the frame then
+         shows a few clipped letters. Said here, with what to use, rather than made. */
+      const size = params.fontSize;
+      if (size !== undefined && (typeof size !== "number" || !(size > 0) || size > 45)) {
+        throw new Error(`fontSize ${JSON.stringify(size)} is in editor units, not points or pixels: 90 is the whole height of the picture and the default 15 is a sixth of it. Use 4 to 30 (a large title is 20); it would not fit the frame.`);
+      }
       const element = buildTextElement({ raw: { name: "Text", duration: sec(duration), params }, startTime: sec(startSeconds) });
       editor.timeline.insertElement({ element, placement: { mode: "auto", trackType: "text" } });
       return state(editor);
