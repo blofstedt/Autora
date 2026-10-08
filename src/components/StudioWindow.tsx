@@ -202,7 +202,8 @@ export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: b
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); if (e.shiftKey) song.redo(); else song.undo(); }
     else if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); song.redo(); }
-    else if (e.key === " ") { e.preventDefault(); void play(); }
+    // On a focused button Space already means "press it".
+    else if (e.key === " " && !target.closest("button")) { e.preventDefault(); void play(); }
     else if (e.key === "Home") { e.preventDefault(); stop(); }
     else if ((e.key === "Delete" || e.key === "Backspace") && clip && track && !target.closest(".st-roll")) {
       e.preventDefault();

@@ -65,9 +65,11 @@ async function main() {
     await test("a restart keeps the song and the window", async () => {
       await sleep(700);
       ws.close();
+      const before = (await app.api("GET", `/api/studio/${s}`)).body.rev;
       await app.restart();
       const state = (await app.api("GET", `/api/studio/${s}`)).body;
       assert.equal(state.open, true);
+      assert.ok(state.rev > before, "a window left open across a restart finds a newer revision, not an older one");
       const { body } = await app.api("GET", `/api/studio/${s}/doc`);
       assert.equal(body.doc.tracks[0].name, "Wurli");
       assert.equal(body.doc.bpm, 84);

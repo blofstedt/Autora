@@ -85,7 +85,8 @@ function entryFor(session: string): Entry {
       project: (saved && normalizeProject(saved.project)) || newProject("My song"),
       open: Boolean(saved?.open),
       since: saved?.since ?? 0,
-      rev: 0,
+      // From the clock, not from 0: a window left open across a restart remembers a revision, and must find a newer one.
+      rev: Date.now(),
       by: "agent",
       focus: { trackId: null, clipId: null },
       ready: false,
