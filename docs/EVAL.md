@@ -14,8 +14,11 @@ npm run eval -- --runs 3 --out before.json
 npm run eval -- --runs 3 --compare before.json
 ```
 
-A real run needs `EVAL_PROVIDER` and `EVAL_MODEL` (for example `anthropic`,
-`claude-sonnet-5-5`) and the vendor's usual key variable (`ANTHROPIC_API_KEY`).
+A real run tests the model the app is set to, with the key saved in it: it reads
+the install's `settings.json` (`AUTORA_HOME`, else `./.autora`; `--home DIR` names
+another) and prints which model it is testing. `EVAL_PROVIDER` / `EVAL_MODEL`
+override the model, and a key in the vendor's usual variable stands in for a saved
+one. The key goes only to the throwaway server the run starts, through its environment.
 It starts the real server per task, on an empty data directory and folder, and
 sends the task through the chat like a person. A model that asks the person a
 question is answered "You decide.". Files the agent hands over as file cards

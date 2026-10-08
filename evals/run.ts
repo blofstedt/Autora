@@ -13,14 +13,18 @@
  * a real run costs money and varies, so it is run on purpose, before and after
  * a change to the prompt, the tools or the loop.
  *
- * Model: EVAL_PROVIDER and EVAL_MODEL (e.g. anthropic, claude-sonnet-5-5), with
- * the vendor's key in its usual variable (ANTHROPIC_API_KEY, ...).
+ * Model: the one the app is set to, with the key saved in it -- read from the
+ * install's settings (AUTORA_HOME, else ./.autora; `--home DIR` names another).
+ * EVAL_PROVIDER / EVAL_MODEL override the model, and a key in the vendor's usual
+ * variable (ANTHROPIC_API_KEY, ...) stands in for a saved one. The key goes only
+ * to the throwaway server the run starts, through its environment.
  * Several runs per task (`--runs`) tell a real change from a lucky one.
  */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { startApp, type Ev, type Scripted } from "../tests/e2e-harness";
+import { providerSpec } from "../server/providers";
 import { TASKS, type Check, type Run, type Task } from "./tasks";
 
 interface Outcome {
@@ -36,7 +40,7 @@ interface Outcome {
 const args = process.argv.slice(2);
 const flag = (n: string) => args.includes(`--${n}`);
 const value = (n: string) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : undefined; };
-const valued = new Set(["--runs", "--out", "--compare", "--timeout"]);
+const valued = new Set(["--runs", "--out", "--compare", "--timeout", "--home"]);
 const filters = args.filter((a, i) => !a.startsWith("--") && !valued.has(args[i - 1] ?? ""));
 const selftest = flag("selftest");
 const runs = Math.max(1, Number(value("runs")) || 1);
@@ -59,17 +63,42 @@ const toRun = (events: Ev[], dir: string, ms: number, timedOut: boolean): Run =>
   };
 };
 
+interface Backend { provider: string; model: string; baseUrl?: string; keyEnv: Record<string, string> }
+
+/** The model and key this run speaks to: the app's own settings unless told otherwise. */
+function backend(): Backend {
+  const home = value("home") || (process.env.AUTORA_HOME || "").trim();
+  const file = path.join(home ? path.join(home, "settings") : ".autora", "settings.json");
+  let saved: any = {};
+  try { saved = JSON.parse(fs.readFileSync(file, "utf8")); } catch { /* none saved: environment only */ }
+  const provider = process.env.EVAL_PROVIDER || saved.provider;
+  const model = process.env.EVAL_MODEL || saved.models?.[provider];
+  if (!provider || !model) {
+    throw new Error(`No model to test: none is saved in ${file}. Pick one in the app, or set EVAL_PROVIDER and EVAL_MODEL, or use --selftest.`);
+  }
+  const spec = providerSpec(provider);
+  const envName = spec?.envKeys[0];
+  const key = (saved.keys?.[provider] || "").trim();
+  const keyEnv = envName && key ? { [envName]: key } : {};
+  if (!key && !(spec?.envKeys ?? []).some((n) => process.env[n]) && provider !== "local") {
+    throw new Error(`No ${provider} key: none is saved in ${file} and ${(spec?.envKeys ?? []).join(" / ")} is not set.`);
+  }
+  return { provider, model, baseUrl: saved.base_urls?.[provider], keyEnv };
+}
+
 /** One task, once, from nothing. `script` plays a scripted model instead of the real one. */
 async function attempt(task: Task, script?: Scripted[]): Promise<Outcome> {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "autora-eval-")));
   await task.setup?.(dir);
-  const app = await startApp({ env: { AUTORA_WORKDIR: dir } });
+  const real = script ? null : backend();
+  const app = await startApp({ env: { AUTORA_WORKDIR: dir, ...real?.keyEnv } });
   try {
     if (script) app.script.push(...script);
     else {
-      const provider = process.env.EVAL_PROVIDER, model = process.env.EVAL_MODEL;
-      if (!provider || !model) throw new Error("Set EVAL_PROVIDER and EVAL_MODEL (and the vendor's API key), or use --selftest.");
-      const set = await app.api("PATCH", "/api/settings", { provider, models: { [provider]: model } });
+      const { provider, model, baseUrl } = real!;
+      const set = await app.api("PATCH", "/api/settings", {
+        provider, models: { [provider]: model }, ...(baseUrl ? { base_urls: { [provider]: baseUrl } } : {}),
+      });
       if (set.status >= 300) throw new Error(`could not select ${provider}/${model}: ${JSON.stringify(set.body)}`);
     }
     const session = await app.newSession(task.id, task.mode ?? "build");
@@ -144,6 +173,9 @@ async function selfTest(): Promise<number> {
 async function main(): Promise<number> {
   if (!chosen.length) { console.error(`No task matches ${filters.join(", ")}.`); return 1; }
   if (selftest) return selfTest();
+  let b: Backend;
+  try { b = backend(); } catch (err) { console.error((err as Error).message); return 1; }
+  console.log(`Testing ${b.provider}/${b.model} (${runs} run${runs > 1 ? "s" : ""} per task)\n`);
 
   const all: Outcome[] = [];
   for (const task of chosen) {
@@ -170,7 +202,7 @@ async function main(): Promise<number> {
 
   const out = value("out");
   if (out) {
-    fs.writeFileSync(out, JSON.stringify({ when: new Date().toISOString(), provider: process.env.EVAL_PROVIDER, model: process.env.EVAL_MODEL, runs, results: all }, null, 2));
+    fs.writeFileSync(out, JSON.stringify({ when: new Date().toISOString(), provider: b.provider, model: b.model, runs, results: all }, null, 2));
     console.log(`kept in ${out}`);
   }
   const base = value("compare");
