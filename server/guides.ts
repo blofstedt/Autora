@@ -162,13 +162,7 @@ export const OFFICE_GUIDE = (pages: boolean, sheets: boolean, slides: boolean): 
   "person watches you work in it, can type in it too, and what they change is told to you. Read office_guide for the " +
   "kind first, change files with office_edit (edit the open document rather than making a new one), run office_check, " +
   "and look at the pages with office_look before you say it is done. Someone who says Word, Excel, PowerPoint, Google " +
-  "Docs, Sheets or Slides means these: work in them, and say which Autora app you used. Save a PDF of one with office_pdf." +
-  (sheets
-    ? " Sheets, three things that trip people up: set_freeze wants both rows and columns (0 for none); add_chart takes one " +
-      "contiguous range (put the labels column beside the numbers) and needs typed numbers in it, not only formulas, so chart " +
-      "a block of values (convert_to_values on a copy) when the numbers are computed; and office_look draws only the sheet " +
-      "that is active, so read the others with office_read."
-    : "");
+  "Docs, Sheets or Slides means these: work in them, and say which Autora app you used. Save a PDF of one with office_pdf.";
 
 /** Which window is for what: they are all open to you, and the right one is the one the work belongs in. */
 export const WINDOWS_GUIDE =

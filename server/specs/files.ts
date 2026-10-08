@@ -663,7 +663,8 @@ export const filesSPECS: ToolSpec[] = [
       "a list like \"1\", \"1-3\" or \"2,4\" (a few at a time); area {x,y,width,height} in points from the page's " +
       "top-left looks closer at part of one page, and grid draws a ruler. Use it after you build or change a file, to check " +
       "it looks right; office_check still finds what looking would not (overflow, broken formulas). A deck or workbook " +
-      "takes ten seconds or so to draw.",
+      "takes ten seconds or so to draw. A workbook draws only its active sheet: read the others with office_read. " +
+      "(Sheets also: set_freeze wants rows and columns, 0 for none; add_chart wants one contiguous range with typed numbers, not only formulas.)",
     parameters: {
       type: "object",
       properties: {
