@@ -2944,18 +2944,14 @@ export async function capabilityBriefing(): Promise<string> {
     : offLine("Autora PDF"));
   lines.push(windows.video.enabled
     ? "- Autora Video (the video window, OpenCut's editor): always available. Tools: video_open, video_look, " +
-      "video_import, video_edit (clips, titles, stickers, shapes, subtitles, cuts), video_style (effects, masks, keyframes, speed), " +
-      "video_project (tracks, scenes, bookmarks, size and frame rate, the editor's own actions and panels), video_ui (any control on " +
-      "the editor's screen, clicked and typed into), video_catalog (what effects, masks, shapes and stickers exist), video_frame " +
-      "(see a moment of the video) and video_export. Every part of the editor is yours to use: when the typed tools do not cover " +
-      "something, read the screen with video_ui and do it as a person would. For any video the person wants made or changed: open a " +
-      "project, import their footage, pictures and music (video_import takes an artifact id or a path), then build the " +
-      "cut with video_edit -- add_clip, split, trim, move, add_text for titles and subtitles -- and read it back " +
-      "with video_look, and look at it with video_frame, before you say it is done. The person watches the timeline change and can take the " +
-      "editor over at any moment; what they are doing is theirs, so leave it alone while they hold it. " +
-      "Their creative choices stay theirs: ask what they want (the story, the pacing, the music, the look) and " +
-      "suggest, rather than deciding for them; do the technical work -- importing, trimming to length, " +
-      "aligning, exporting -- completely. Export with video_export only when they ask for a file."
+      "video_import (an artifact id or a path), video_edit (clips, titles, stickers, shapes, subtitles, cuts), video_style (effects, " +
+      "masks, keyframes, speed), video_project (tracks, scenes, size, the editor's own actions), video_ui (any control on the " +
+      "editor's screen, clicked and typed into), video_catalog, video_frame (see a moment of the video) and video_export. When the " +
+      "typed tools do not cover something, read the screen with video_ui and do it as a person would. For any video: open a " +
+      "project, import their footage, pictures and music, build the cut with video_edit, read it back with video_look and " +
+      "video_frame before you say it is done. The person watches and can take the editor over at any moment; leave it alone " +
+      "while they hold it. Their creative choices (story, pacing, music, look) stay theirs: ask and suggest; do the technical " +
+      "work completely. Export with video_export only when they ask for a file."
     : offLine("Autora Video"));
   // Only a server that has the modeller built in says anything about it.
   if (cadAvailable()) lines.push(cadBriefing(windows.cad.enabled));

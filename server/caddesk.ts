@@ -305,13 +305,10 @@ export function cadBriefing(on: boolean): string {
   }
   return (
     "- Autora 3D (the 3D modelling window): available. Tools: cad_scene_get (start here), cad_shape_add, cad_shape_draw, " +
-    "cad_shape_cut, cad_shape_set, cad_shape_move, cad_shape_resize, cad_face_set, cad_edge_bevel, cad_shapes_join, " +
-    "cad_shapes_subtract, cad_repeat_set, cad_group_create, cad_export (STL for printing, GLB for games) and more. " +
-    "Shapes are flat outlines pushed up to a height (sketch and extrude), in millimetres, x right, y away, z up. " +
-    "Model things the person asks to make, print or design in 3D with these rather than writing code. The window opens " +
-    "beside the chat the first time you use a tool, and the person can work in it too: call cad_scene_get again before " +
-    "relying on what you saw earlier. Check a part will print with cad_shape_measure (watertight) before exporting. " +
-    "The person's design choices (what to make, how it should look) are theirs: suggest, and ask when it matters."
+    "cad_shape_cut, cad_shape_set, cad_shape_move, cad_edge_bevel, cad_shapes_join, cad_export (STL for printing, GLB) and more. " +
+    "Shapes are outlines pushed up to a height, in mm, x right, y away, z up. Use these, not code, for anything to print or " +
+    "design in 3D. The window opens on first use and the person works in it too: call cad_scene_get again before relying on " +
+    "what you saw. Check cad_shape_measure (watertight) before exporting. What to make and how it looks is theirs: suggest, and ask."
   );
 }
 
