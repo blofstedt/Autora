@@ -6,7 +6,7 @@ import { useSyncExternalStore } from "react";
  * is room for three panes; a phone has one column.
  */
 export const RAIL = { min: 170, max: 520, fallback: 196 };
-export const CHAT = { min: 340, max: 900 };
+export const CHAT = { min: 300, max: 900 };
 
 type Panes = { rail: number | null; chat: number | null; collapsed: boolean };
 

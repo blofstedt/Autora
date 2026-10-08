@@ -135,7 +135,7 @@ gallery: []
 releaseNotes: >-
   On a desktop, everything the agent looks at and does now happens in the work
   area on the right, in a new Activity tab: commands, pages, pictures, files it
-  made, code changes and tool calls. The conversation keeps only the talking;
+  made, code changes and tool calls. The conversation keeps only the talking, in a narrower column;
   a phone still shows it all in one column. The message box is more compact,
   and the menu on the left is slimmer, with its widgets stacked and set in the
   same size as the menu's own options. The agent's typing in Pages, Sheets and

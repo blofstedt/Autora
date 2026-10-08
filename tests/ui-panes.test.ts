@@ -56,7 +56,7 @@ async function main() {
       assert.ok((await width(".rail-slot")) <= 520);
       await page.locator(".pane-handle.is-rail").dblclick();
       const back = await width(".rail-slot");
-      assert.ok(back >= 300 && back <= 340, String(back));
+      assert.ok(back >= 184 && back <= 204, String(back));
     });
 
     await test("the menu folds away to the far left, and the button there brings it back", async () => {
@@ -70,7 +70,7 @@ async function main() {
       assert.equal(await page.locator(".rail-slot").evaluate((el) => getComputedStyle(el).display), "none", "folded stays folded");
       await page.getByRole("button", { name: "Open the menu" }).click();
       await sleep(200);
-      assert.ok((await width(".rail-slot")) > 200);
+      assert.ok((await width(".rail-slot")) > 150);
       assert.equal(await page.locator(".drawer-scrim").count(), 0, "it came back in the margin, not as a sheet");
     });
 
@@ -102,7 +102,7 @@ async function main() {
       await p2.mouse.down();
       await p2.mouse.move(h2.x + 1200, h2.y + 300, { steps: 6 });
       await p2.mouse.up();
-      assert.ok((await w(".app-pane")) >= 300, `the window has ${await w(".app-pane")}px`);
+      assert.ok((await w(".app-pane:not([hidden])")) >= 300, `the window has ${await w(".app-pane:not([hidden])")}px`);
       await p2.locator(".pane-handle.is-chat").dblclick();
       assert.ok((await w(".chat-view.has-app > .page")) <= 540);
     });

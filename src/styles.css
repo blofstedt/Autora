@@ -6034,8 +6034,8 @@ button.dock-card:hover { border-color: var(--border-strong); }
    a readable column on the left. */
 .chat-view.has-app { flex-direction: row; }
 .chat-view.has-app > .page {
-  /* 36% of the room beside the menu as it used to be (300-340px wide), so slimming the menu leaves the chat as it was. */
-  flex: 0 0 var(--chat-w, clamp(380px, calc((100vw - clamp(300px, 22vw, 340px)) * 0.36), 540px)); width: auto; margin: 0; min-width: 0;
+  /* A slimmer column: the conversation is only the talking now, and the work area has the room. */
+  flex: 0 0 var(--chat-w, clamp(330px, 26vw, 430px)); width: auto; margin: 0; min-width: 0;
   /* Whatever the person drags it to, the window beside it keeps room to be used. */
   max-width: calc(100% - 320px);
   border-left: 0;
@@ -6527,7 +6527,7 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 /* ============================================================================
    Panes you can drag (desktop): the menu, the conversation, the window beside it
    ============================================================================ */
-.pane-handle { display: none; flex: 0 0 6px; width: 6px; margin: 0 -3px; position: relative; z-index: 6; cursor: col-resize; touch-action: none; outline: none; }
+.pane-handle { display: none; flex: 0 0 6px; width: 6px; margin: 0 -3px; position: relative; z-index: 50; cursor: col-resize; touch-action: none; outline: none; }
 .pane-handle::after { content: ""; position: absolute; inset: 0 2px; border-radius: 2px; background: transparent; transition: background 0.15s var(--ease); }
 .pane-handle:hover::after, .pane-handle:focus-visible::after, body.is-resizing .pane-handle::after { background: var(--accent); }
 body.is-resizing { cursor: col-resize; user-select: none; }
@@ -6537,7 +6537,7 @@ body.is-resizing iframe { pointer-events: none; }
 @media (min-width: 1180px) {
   .pane-handle.is-rail { display: block; }
   .pane-handle.is-chat { display: block; }
-  .rail-slot { flex-basis: var(--rail-w, clamp(228px, 16vw, 252px)); }
+  .rail-slot { flex-basis: var(--rail-w, clamp(184px, 12.5vw, 204px)); }
   /* Folded away: the menu button and the mark are back in the header, at the far left. */
   .app.rail-collapsed .rail-slot, .app.rail-collapsed .pane-handle.is-rail { display: none; }
 }
@@ -6797,9 +6797,13 @@ body.is-resizing iframe { pointer-events: none; }
 .rail:not(.is-drawer) .rail-vital-value,
 .rail:not(.is-drawer) .rail-vital-detail { font-size: var(--rail-fs); }
 .rail:not(.is-drawer) .rail-ctx-head { letter-spacing: 0.02em; text-transform: none; }
+.rail:not(.is-drawer) .rail-ctx-line { font-weight: 600; }
+.rail:not(.is-drawer) .rail-ctx-pct { font-size: calc(9px * var(--ts, 1)); }
 .rail:not(.is-drawer) .rail-mem-ask .btn { height: 26px; }
 /* The machine's three bars, one under the other: label and figure on a line, the bar under it. */
 .rail:not(.is-drawer) .rail-vitals { grid-template-columns: minmax(0, 1fr); gap: 6px; }
 .rail:not(.is-drawer) .rail-vital { gap: 3px; }
 .rail:not(.is-drawer) .rail-vital-bar { height: 4px; }
 .rail:not(.is-drawer) .rail-vital-detail { display: none; }
+.rail:not(.is-drawer) .rail-top { gap: 6px; padding: 0 10px; }
+.rail:not(.is-drawer) .rail-icon-btn { width: 26px; height: 26px; }
