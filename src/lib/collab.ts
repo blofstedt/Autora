@@ -6,7 +6,7 @@ import { useSyncExternalStore } from "react";
  * Said by the server when it changes; the windows show it and offer "take
  * control" and "hand back".
  */
-type Surface = "pdf" | "office" | "app" | "browser" | "code";
+type Surface = "pdf" | "office" | "app" | "browser" | "code" | "video";
 type CollabState = { held: Surface[]; active: Surface[] };
 
 const NONE: CollabState = { held: [], active: [] };

@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "allowJs": false,
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/web/*"],
+      "next/link": ["src/autora/shims/link.tsx"],
+      "next/image": ["src/autora/shims/image.tsx"],
+      "next/navigation": ["src/autora/shims/navigation.ts"],
+      "next/script": ["src/autora/shims/script.tsx"],
+      "next/font/google": ["src/autora/shims/font.ts"]
+    }
+  },
+  "include": ["src"]
+}

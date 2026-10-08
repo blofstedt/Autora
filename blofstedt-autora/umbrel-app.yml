@@ -57,6 +57,14 @@ description: >-
   engines.
 
 
+  • Autora Video — OpenCut's open-source editor in a window beside the chat. Ask for
+  a video and Autora imports your footage, pictures and music and builds the cut on
+  the timeline (clips, trims, splits, titles, subtitles) while you watch it happen;
+  take control and edit it yourself, then export an mp4 or webm. The story, the
+  pacing and the look stay yours: Autora does the technical work and asks about the
+  rest. Your projects stay on your server.
+
+
   • Notebooks — group files by purpose with notes between them. Autora can
   compile one for you (every source filed, every claim citing its proof), and
   you can hand a notebook or any saved file to a chat.
@@ -133,6 +141,11 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The Mind map now floats: when you open it, every memory drifts slowly about
-  where it sits, each on its own path and pace, instead of hanging still. They
-  never fly in from the edge, and it stays still if your device asks for less motion.
+  Autora Video: a new window with OpenCut's open-source video editor, beside the
+  chat. Ask Autora to cut a video and it imports your footage, pictures and music,
+  then builds the cut on the timeline -- clips, trims, splits, titles and subtitles --
+  with its cursor moving to each place and a title typed out a few letters at a time,
+  while you watch. Take control to edit it yourself, undo anything with Ctrl+Z, and
+  export an mp4 or webm when you are ready. It wears Autora's colours, fonts and theme,
+  keeps your projects on your server, and has its own switch on the Tools page and its
+  own tile in the toolbox.

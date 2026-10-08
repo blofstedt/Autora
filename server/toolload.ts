@@ -32,6 +32,12 @@ export const FAMILIES: Family[] = [
     words: /\bpdfs?\b|\bautora pdf\b|\.pdf\b|\bacrobat\b|\bfill (?:in |out )?(?:the |this |a )?form\b|\bredact|\bsignature\b|\bstamp\b/i,
   },
   {
+    id: "video",
+    about: "Autora Video: open a video project and import clips, cut, arrange, title and export them",
+    match: (n) => n.startsWith("video_"),
+    words: /\bvideos?\b|\bautora video\b|\bopencut\b|\bfootage\b|\bclips?\b|\bvideo edit|\b(?:mp4|mov|webm)\b|\bsubtitles?\b|\bsplice\b|\btimeline\b/i,
+  },
+  {
     id: "office",
     about: "Autora Pages, Sheets and Slides: read, edit, check, make and convert documents (.docx), spreadsheets (.xlsx) and presentations (.pptx)",
     match: (n) => n.startsWith("office_"),

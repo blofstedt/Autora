@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { IconCode, IconFile, IconGlobe, IconSlides, IconSparkle, IconTable } from "../Icons";
+import { IconCode, IconFile, IconGlobe, IconSlides, IconSparkle, IconTable, IconVideo } from "../Icons";
 
-type WindowKey = "widgets" | "browser" | "app" | "pdf" | "pages" | "sheets" | "slides";
+type WindowKey = "widgets" | "browser" | "app" | "pdf" | "video" | "pages" | "sheets" | "slides";
 
 type ToolsState = {
   config: Record<WindowKey, { enabled: boolean }>;
@@ -36,6 +36,13 @@ const WINDOWS: { key: WindowKey; name: string; icon: ReactNode; what: string; to
     icon: <IconFile size={18} />,
     what: "Writing reports as PDFs, reading, filling, signing, marking up, changing the words in, redacting, merging, splitting and shrinking PDFs, in a window beside the chat where you can move what it placed and add your own.",
     tools: "pdf_read, pdf_look, pdf_edit, pdf_compose, pdf_pages, pdf_redact, pdf_replace_text, pdf_compress",
+  },
+  {
+    key: "video",
+    name: "Autora Video",
+    icon: <IconVideo size={18} />,
+    what: "Editing video in OpenCut's editor, in a window beside the chat: the agent imports your footage and builds the cut (clips, trims, splits, titles, subtitles) while you watch the timeline change, and you can take the editor over at any moment.",
+    tools: "video_open, video_look, video_import, video_edit, video_export",
   },
   {
     key: "pages",

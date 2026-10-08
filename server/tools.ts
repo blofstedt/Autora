@@ -64,6 +64,7 @@ import { checkWidget } from "./widgets";
 import { deskHooks } from "./pdfdesk";
 import { officeHooks } from "./officedesk";
 import { runPdfTool } from "./pdf";
+import { runVideoTool } from "./opencut";
 import {
   addEntries, createNotebook, describeNotebook, findNotebook, listNotebooks, moveEntry,
   notebookLine, notebookMarkdown, removeEntry, updateEntry, updateNotebook, type Notebook,
@@ -107,6 +108,7 @@ interface ToolSettings {
   widgets: { enabled: boolean };
   app: { enabled: boolean };
   pdf: { enabled: boolean };
+  video: { enabled: boolean };
   pages: { enabled: boolean };
   sheets: { enabled: boolean };
   slides: { enabled: boolean };
@@ -154,6 +156,7 @@ import { personSPECS } from "./specs/person";
 import { voiceSPECS } from "./specs/voice";
 import { filesSPECS } from "./specs/files";
 import { memorySPECS } from "./specs/memory";
+import { videoSPECS } from "./specs/video";
 
 // ------------------------------------------------------------- the registry --
 
@@ -217,6 +220,7 @@ const TOOLS: ToolSpec[] = [
   ...voiceSPECS,
   ...filesSPECS,
   ...memorySPECS,
+  ...videoSPECS,
 ];
 
 // ------------------------------------------------------------ availability --
@@ -331,6 +335,7 @@ export function windowOff(name: string, settings: ToolSettings = toolSettings())
   if (name === "widget_show") return !settings.widgets.enabled;
   if (name === "app_preview") return !settings.app.enabled;
   if (name.startsWith("pdf_")) return !settings.pdf.enabled;
+  if (name.startsWith("video_")) return !settings.video.enabled;
   // Built by scripts/build-office.mjs; a server without the build does not offer tools that cannot work.
   if (name.startsWith("office_")) return !officeDir() || !(settings.pages.enabled || settings.sheets.enabled || settings.slides.enabled);
   return false;
@@ -551,7 +556,7 @@ export interface ToolContext {
   code?: { edit: (args: EditArgs) => EditResult };
   /** Why something the person is using may not be touched right now (see
       server/presence.ts), or null. `subject` is an object id or a file. */
-  held?: (surface: "pdf" | "office" | "app" | "browser" | "code", subject: string) => string | null;
+  held?: (surface: "pdf" | "office" | "app" | "browser" | "code" | "video", subject: string) => string | null;
   /** Hand a question to a research worker with its own context (see
       server/subagent.ts) and get its report back. Absent inside the worker. */
   research?: (question: string) => Promise<string>;
@@ -2621,6 +2626,23 @@ async function runToolUnredacted(
           ...(ctx.held ? { held: (id: string) => ctx.held!("pdf", id) } : {}),
         });
 
+      // ---------------------------------------------------------- video --
+      case "video_open":
+      case "video_look":
+      case "video_import":
+      case "video_edit":
+      case "video_export":
+        if (ctx.memory.incognito) {
+          return { ok: false, summary: "Not available in an incognito chat: the video window keeps its projects on disk." };
+        }
+        return await runVideoTool(spec.name, args, {
+          session: ctx.session,
+          cwd: terminalDir(),
+          showFile: ctx.showFile,
+          cancelled: ctx.cancelled,
+          ...(ctx.held ? { held: (subject: string) => ctx.held!("video", subject) } : {}),
+        });
+
       // ---------------------------------------------------------- Office --
       case "office_guide":
       case "office_read":
@@ -2902,6 +2924,17 @@ export async function capabilityBriefing(): Promise<string> {
       "artifact the person opens from the thread; their original is never changed. " +
       "Look at what you changed with pdf_look before saying it is done."
     : offLine("Autora PDF"));
+  lines.push(windows.video.enabled
+    ? "- Autora Video (the video window, OpenCut's editor): always available. Tools: video_open, video_look, " +
+      "video_import, video_edit, video_export. For any video the person wants made or changed: open a project, " +
+      "import their footage, pictures and music (video_import takes an artifact id or a path), then build the " +
+      "cut with video_edit -- add_clip, split, trim, move, add_text for titles and subtitles -- and read it back " +
+      "with video_look before you say it is done. The person watches the timeline change and can take the " +
+      "editor over at any moment; what they are doing is theirs, so leave it alone while they hold it. " +
+      "Their creative choices stay theirs: ask what they want (the story, the pacing, the music, the look) and " +
+      "suggest, rather than deciding for them; do the technical work -- importing, trimming to length, " +
+      "aligning, exporting -- completely. Export with video_export only when they ask for a file."
+    : offLine("Autora Video"));
   lines.push(windows.widgets.enabled
     ? "- Explainer widgets: always available. Tool: widget_show. When someone " +
       "asks how something works -- a physical process, a mechanism, an " +

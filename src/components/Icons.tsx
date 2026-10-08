@@ -117,6 +117,14 @@ export const IconPlay = ({ size = 16, className }: Props) => (
   </svg>
 );
 
+/** A film frame with a play mark: Autora Video. */
+export const IconVideo = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <rect x="3.5" y="5.5" width="17" height="13" rx="2.5" />
+    <path d="M10.5 9.5v5l4-2.5z" />
+  </svg>
+);
+
 /** Nothing pinned, drawn rather than spelled: the fourth corner widget. */
 export const IconMinus = ({ size = 16, className }: Props) => (
   <svg {...base(size)} className={className}>

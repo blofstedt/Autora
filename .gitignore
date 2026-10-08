@@ -30,3 +30,8 @@ recordings/
 # Spectra's renderer, fetched from the pin and patched by scripts/prepare-spectra-editor.mjs
 spectra-editor/src/renderer/
 spectra-editor/.prepared
+
+# OpenCut's editor, fetched from the pin and overlaid by scripts/prepare-opencut-editor.mjs
+opencut-editor/src/web/
+opencut-editor/src/web-public/
+opencut-editor/.prepared

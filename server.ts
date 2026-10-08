@@ -123,6 +123,7 @@ import { proactiveRoutes } from "./server/routes/proactive";
 import { triggerRoutes } from "./server/routes/triggers";
 import { jobRoutes } from "./server/routes/jobs";
 import { keyRoutes } from "./server/routes/keys";
+import { dropOpencut, onOpencutChange, opencutRoutes, opencutState, serveOpencut, videoBriefing } from "./server/opencut";
 import { dropSpectra, serveSpectra, spectraDocumentChanged, spectraRoutes, spectraUpgrade } from "./server/spectra";
 import { newFileRoutes } from "./server/newfile";
 import { windowOff } from "./server/tools";
@@ -408,6 +409,7 @@ function forgetSession(id: string) {
   // The app window's page, file server, watcher and dev server go with it.
   const gone = sessions.get(id);
   if (gone) void previewStop(gone, false).catch(() => undefined);
+  dropOpencut(id);
   forgetPresence(id);
   presenceSent.delete(id);
   const remarkTimer = remarkTimers.get(id);
@@ -1180,6 +1182,11 @@ onDeskChange((sessionId) => {
      saves, which is a desk change too -- that one is dropped, since the file
      already holds it. */
   spectraDocumentChanged(sessionId);
+});
+
+/* The video window (server/opencut.ts): open or closed, and which project is in it, to the chat's tabs. */
+onOpencutChange((sessionId) => {
+  sendEphemeral(sessionId, { type: "opencutdesk", session: sessionId, state: opencutState(sessionId) });
 });
 
 /* The Office window, the same way: what the person types is theirs for a moment, and the window's
@@ -2406,6 +2413,9 @@ async function systemInstructionFor(
   // And a Word, PowerPoint or Excel document, the same way.
   const officeDesk = officeBriefing(sessionId);
   if (officeDesk) notes.push(officeDesk);
+  // And the video window, when a project is open in it.
+  const videoDesk = videoBriefing(sessionId);
+  if (videoDesk) notes.push(videoDesk);
 
   const open = browsers.get(sessionId)?.status();
   if (open?.open && open.url?.startsWith("chrome-error:")) {
@@ -5375,6 +5385,8 @@ async function startServer() {
     push: (id: string, event: string, payload: unknown) => sendEphemeral(id, { type: "spectra", event, payload }),
   };
   spectraRoutes(app, spectraOpts);
+  /* The video window's editor (server/opencut.ts): OpenCut's, keeping its projects here. */
+  opencutRoutes(app, { exists: (id: string) => sessions.has(id), push: (id: string, message: Record<string, unknown>) => sendEphemeral(id, message) });
   officeRoutes(app, { exists: (id: string) => sessions.has(id) });
 
   /* File -> Export PDF in the Office window: the server lays the document out (the same pages office_pdf
@@ -5573,7 +5585,7 @@ async function startServer() {
     const session = sessions.get(req.params.id);
     if (!session) return res.status(404).json({ error: "Session not found" });
     const surface = String(req.body?.surface ?? "");
-    if (!["pdf", "office", "app", "browser", "code"].includes(surface)) return res.status(400).json({ error: "surface is pdf, office, app, browser or code." });
+    if (!["pdf", "office", "app", "browser", "code", "video"].includes(surface)) return res.status(400).json({ error: "surface is pdf, office, app, browser, code or video." });
     presenceFor(session.id).hold(surface as Surface, req.body?.hold === true);
     announcePresence(session.id);
     res.json(presenceFor(session.id).view());
@@ -6081,6 +6093,7 @@ async function startServer() {
       // The PDF window, likewise.
       ws.send(JSON.stringify({ type: "pdfdesk", session: sessionId, state: deskState(sessionId) }));
       ws.send(JSON.stringify({ type: "officedesk", session: sessionId, state: officeState(sessionId) }));
+      ws.send(JSON.stringify({ type: "opencutdesk", session: sessionId, state: opencutState(sessionId) }));
       ws.send(JSON.stringify({ type: "presence", session: sessionId, state: presenceFor(sessionId).view() }));
       if (openPreview?.opened) void openPreview.live.nudge();
 
@@ -6178,6 +6191,8 @@ async function startServer() {
   // 13. Vite Integration (Development middleware / Production static serving)
   // Spectra-PDF's editor, the PDF window's other half, on the same terms.
   serveSpectra(app, path.join(process.cwd(), "dist"));
+  // OpenCut's editor, the video window's other half, the same way.
+  serveOpencut(app, path.join(process.cwd(), "dist"));
   // The Office editors, likewise: built by scripts/build-office.mjs, absent without it.
   const officeWeb = officeWebDir();
   if (officeWeb) serveOfficeEditors(app, officeWeb);
