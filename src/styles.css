@@ -6017,7 +6017,7 @@ button.dock-card:hover { border-color: var(--border-strong); }
   box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.55), 0 16px 48px -8px rgba(0, 0, 0, 0.8);
   animation: modeSheetIn 0.16s var(--ease) both;
 }
-@keyframes modeSheetIn { from { opacity: 0; transform: translate(-50%, -48%) scale(0.98); } to { opacity: 1; transform: translate(-50%, -50%); } }
+@keyframes modeSheetIn { from { opacity: 0; } to { opacity: 1; } }
 .mode-sel-head {
   padding: 6px 10px 8px; font-size: calc(11px * var(--ts, 1)); font-weight: 650; letter-spacing: 0.07em;
   text-transform: uppercase; color: var(--text-3);

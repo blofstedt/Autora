@@ -140,6 +140,19 @@ export function SpectraWindow({ sessionId, phone }: { sessionId: string; phone: 
       if (!msg || typeof msg !== "object") return;
       if (msg.type === "autora:spectra:invoke") {
         void invoke(msg);
+      } else if (msg.type === "autora:spectra:asset" && typeof msg.id === "number" && typeof msg.path === "string") {
+        // pdf.js's data files for the frame, fetched here, where the request carries what a login proxy wants.
+        const id = msg.id;
+        const path: string = msg.path;
+        const answer = (status: number, mime: string | null, body: ArrayBuffer | null) => {
+          const target = frame.current?.contentWindow;
+          if (!target) return;
+          target.postMessage({ type: "autora:spectra:asset-result", id, status, mime, body }, "*", body ? [body] : []);
+        };
+        if (!/^\/spectra-editor\/pdfjs\/[\w./-]+$/.test(path) || path.includes("..")) { answer(403, null, null); return; }
+        void fetch(path)
+          .then(async (res) => answer(res.status, res.headers.get("content-type"), res.ok ? await res.arrayBuffer() : null))
+          .catch(() => answer(502, null, null));
       } else if (msg.type === "autora:spectra:located" && typeof msg.id === "number") {
         const done = placed.current.get(msg.id);
         placed.current.delete(msg.id);

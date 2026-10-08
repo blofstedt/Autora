@@ -9,15 +9,59 @@ import { receiveEvent, settle } from "./transport";
 
 let installed = false;
 
+/**
+ * pdf.js's data files (character maps, standard fonts, image decoders), asked for through the window that holds the
+ * frame. A frame with no origin sends no cookies, and behind a login proxy that turns every request it makes itself
+ * away; the window's own requests carry them. Only files under the editor's own `pdfjs/` folder are ever asked for.
+ */
+const wanting = new Map<number, (r: Response) => void>();
+let asset = 1;
+function relayed(url: string): Promise<Response> {
+  const id = asset++;
+  return new Promise<Response>((resolve, reject) => {
+    const timer = window.setTimeout(() => { wanting.delete(id); reject(new TypeError("the window did not answer for " + url)); }, 30_000);
+    wanting.set(id, (r) => { window.clearTimeout(timer); resolve(r); });
+    window.parent.postMessage({ type: "autora:spectra:asset", id, path: new URL(url, location.href).pathname }, "*");
+  });
+}
+function relayPdfjsFetches(): void {
+  if (window.parent === window) return;
+  const real = window.fetch.bind(window);
+  window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+    try {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const at = new URL(url, location.href);
+      if (at.origin === location.origin && /\/spectra-editor\/pdfjs\//.test(at.pathname) && (init?.method ?? "GET").toUpperCase() === "GET") return relayed(at.href);
+    } catch { /* not a URL: left to the browser */ }
+    return real(input, init);
+  };
+}
+
 /** Tell the window what this frame is waiting for. */
 export function announce(kind: "ready" | "closing", detail?: unknown): void {
   if (window.parent === window) return;
   window.parent.postMessage({ type: "autora:spectra:" + kind, ...(detail as object ?? {}) }, "*");
 }
 
+/**
+ * The editor takes its light or dark from the operating system (`prefers-color-scheme`); Autora is dark in every theme,
+ * so on a light machine the PDF window was a white island in a dark app. Said here, before the editor reads it: this
+ * frame is always dark. (A theme the person picks inside the editor still wins: that is stored, and read first.)
+ */
+function followAutoraDark(): void {
+  const real = window.matchMedia.bind(window);
+  window.matchMedia = (query: string) => {
+    if (/prefers-color-scheme:\s*light/.test(query)) return real("not all");
+    if (/prefers-color-scheme:\s*dark/.test(query)) return real("all");
+    return real(query);
+  };
+}
+
 export function installHost(): void {
   if (installed) return;
   installed = true;
+  followAutoraDark();
+  relayPdfjsFetches();
 
   window.addEventListener("message", (event: MessageEvent) => {
     // Only the window that holds this frame may drive it.
@@ -27,6 +71,13 @@ export function installHost(): void {
       | null;
     if (!msg || typeof msg !== "object" || typeof msg.type !== "string") return;
 
+    if (msg.type === "autora:spectra:asset-result" && typeof msg.id === "number") {
+      const m = msg as { id: number; status?: number; mime?: string; body?: ArrayBuffer };
+      const done = wanting.get(m.id);
+      wanting.delete(m.id);
+      done?.(new Response(m.body ?? null, { status: m.status ?? 502, headers: m.mime ? { "Content-Type": m.mime } : {} }));
+      return;
+    }
     if (msg.type === "autora:spectra:locate" && typeof msg.id === "number") {
       // Where a page is on this screen, for the agent's cursor in the window that holds the frame.
       const page = Number((msg as { page?: number }).page);

@@ -210,7 +210,7 @@ async function main() {
       assert.match(await pill.innerText(), /Agent/);
       await pill.click();
       assert.equal(await p.locator(".mode-sel-opt").count(), 3);
-      await p.locator(".mode-sel-opt", { hasText: "Plan" }).click();
+      await p.locator(".mode-sel-opt.m-plan").click();
       await sleep(500);
       assert.equal((await row()).mode, "plan");
       await wide.close();

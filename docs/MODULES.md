@@ -408,6 +408,7 @@ Spectra's fetched renderer is most of what is on disk.
   frame (`autora-3d/src/agentCursor.ts`): `caddesk.ts` says the tool (`cue`) with the model, the frame goes to the
   tool's button, applies the model, then goes to the shapes that changed (`ViewerApi.screenOf`). The PDF editor is
   opened on `deskDocument` (the pages with the agent's objects drawn in), not on `deskBase`.
+- The PDF editor is one page (`singlePage` in `spectra-editor/vite.config.ts`: script, styles and workers inline, `inlineDynamicImports`, English only), because a frame with no origin fetches without cookies and a login proxy refuses it (`tests/ui-pdfwindow-proxy.test.ts`). pdf.js's data (`dist/spectra-editor/pdfjs/`, shipped by `shipPdfjsAssets`) is asked for through the window (`autora:spectra:asset`). Its CSP allows `blob:` scripts for that. `followAutoraDark` in `autora/host.ts` keeps it dark.
 - A frame that does not start: `lib/bootWatch.ts` says so after 25 s (PDF and video windows), and the PDF frame forwards
   its uncaught errors (`autora:spectra:error`). Its build puts a `Map.getOrInsert*` polyfill in front of every chunk,
   workers included (`polyfillFirst` in `spectra-editor/vite.config.ts`): pdf.js needs it and older browsers lack it.

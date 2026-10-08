@@ -118,7 +118,9 @@ async function main() {
          of the frame's own page, which is the one thing a login proxy lets
          through. Nothing it needs comes from anywhere else -- its commands go
          through the window that holds it, which is the app's own page. */
-      assert.ok(passedOn.some((u) => u.startsWith("/spectra-editor/assets/")), "the editor's own files came through the app's page");
+      assert.ok(passedOn.some((u) => u.startsWith("/spectra-editor/index.html")), "the editor's page came through");
+      assert.ok(!passedOn.some((u) => u.startsWith("/spectra-editor/assets/")), "and it is the whole of the editor: nothing else to fetch");
+      assert.ok(passedOn.some((u) => u.startsWith("/spectra-editor/pdfjs/")), "pdf.js's own data came through the window that holds the frame");
       assert.deepEqual(refused, [], "nothing the editor asked for was turned away");
     });
   } finally {
