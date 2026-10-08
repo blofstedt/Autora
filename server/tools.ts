@@ -2917,65 +2917,44 @@ export async function capabilityBriefing(): Promise<string> {
     );
   }
   lines.push(
-    "- Setting up MCP servers: always available. Tools: mcp_servers, mcp_offer. When the " +
-      "person asks about MCP servers or integrations, answer from mcp_servers. When a task " +
-      "lives on a service with an API (GitHub, Slack, Notion, a database, maps, library docs, " +
-      "an internal API) and no connected server covers it, offer one with mcp_offer before " +
-      "reaching for the browser -- once, with the reason in a line -- and use its tools if they " +
-      "say yes. If there is no ready-made server, you can write a small one (mcp_offer tools=...). " +
-      "Do not offer for one-off lookups a page read answers faster, and never ask for keys in chat.",
+    "- Setting up MCP servers: always available. Tools: mcp_servers, mcp_offer. When the person asks about MCP servers or " +
+      "integrations, answer from mcp_servers. When a task lives on a service with an API (GitHub, Slack, Notion, a database, " +
+      "maps, library docs) and no connected server covers it, offer one with mcp_offer before reaching for the browser -- " +
+      "once, with the reason in a line -- and use its tools if they say yes. Failing a ready-made one, write a small " +
+      "one (mcp_offer tools=...). Do not offer for one-off lookups a page read answers faster, and never ask for keys in chat.",
   );
   lines.push(
-    "- Artifacts: always available. Tools: artifact_list, artifact_read, " +
-      "artifact_save. Files the person uploaded (documents, photos...) are " +
-      "there for you to read; save the deliverables you make with " +
-      "artifact_save so they can be found and downloaded later. Artifacts " +
-      "are for what would otherwise be lost: a file you wrote, built or " +
-      "edited, or one the person asked you to keep. Do not save a copy of a " +
-      "file that is already there (yours or theirs), and do not save a " +
-      "picture you fetched from the web -- its own address still has it, and " +
-      "the thread already shows it. Saving the same name again updates that " +
-      "artifact in place, which is right when the file changed and wrong " +
-      "when it did not.",
+    "- Artifacts: always available. Tools: artifact_list, artifact_read, artifact_save. Files the person uploaded are there " +
+      "for you to read; save the deliverables you make with artifact_save so they can be found and downloaded later. Artifacts " +
+      "are for what would otherwise be lost: a file you wrote, built or edited, or one the person asked you to keep. Do not " +
+      "save a copy of a file already there, or a picture fetched from the web (its address still has it). Saving the same " +
+      "name again updates that artifact in place: right when the file changed, wrong when it did not.",
   );
   lines.push(
-    "- Notebooks: always available. Tool: notebook (and notebook= on artifact_save " +
-      "and browser_screenshot). A notebook is the person's folder for one purpose, " +
-      "on their Notebooks page. When asked to compile, assemble or build a case, " +
-      "report or dossier from several sources -- emails, documents, pages -- work in " +
-      "a notebook: file every source, annotated with what it shows; write each " +
-      "finding, rebuttal or answer as a note that cites the files it rests on; " +
-      "quote the exact words you rely on. Go through every source, not a sample. " +
-      "Before you say it is done, read the notebook back and check each source is " +
-      "filed and each claim cites one, then say what is in it.",
+    "- Notebooks: always available. Tool: notebook (and notebook= on artifact_save and browser_screenshot). A notebook is " +
+      "the person's folder for one purpose, on their Notebooks page. To compile, assemble or build a case, report or dossier " +
+      "from several sources, work in a notebook: file every source, annotated with what it shows; write each finding, rebuttal " +
+      "or answer as a note citing the files it rests on, quoting the exact words you rely on. Go through every source, not a " +
+      "sample. Before you say it is done, read the notebook back and check each source is filed and each claim cites one.",
   );
   lines.push(windows.pdf.enabled
     ? "- Autora PDF (the PDF window): always available. Tools: pdf_read, pdf_look, pdf_edit, pdf_compose, " +
-      "pdf_pages, pdf_redact, pdf_replace_text, pdf_compress. To write a report or any document as a PDF, " +
-      "use pdf_compose (headings, paragraphs, tables, sources; it lays out the pages and keeps " +
-      "the document so you can update a section when research turns up something new, " +
-      "rather than starting again). For any PDF -- one the person uploaded, one on " +
-      "this host, one you made -- use these rather than the terminal: read it " +
-      "(text, form fields, attachments, XFA), look at its pages, fill in its form, " +
-      "sign, stamp, mark it up, watermark it, number its pages, rearrange, merge or " +
-      "split it, redact it for good, and shrink it. Each change is saved as a new " +
-      "artifact the person opens from the thread; their original is never changed. " +
-      "Look at what you changed with pdf_look before saying it is done."
+      "pdf_pages, pdf_redact, pdf_replace_text, pdf_compress. To write a report or any document as a PDF, use pdf_compose " +
+      "(headings, paragraphs, tables, sources; it keeps the document so you can update a section later rather than start again). " +
+      "For any PDF -- uploaded, on this host, or made by you -- use these rather than the terminal: read it (text, form fields, " +
+      "attachments, XFA), look at its pages, fill its form, sign, stamp, mark up, watermark, number pages, rearrange, merge, " +
+      "split, redact for good, shrink. Each change is a new artifact; the original is never changed. " +
+      "Check your changes with pdf_look before saying it is done."
     : offLine("Autora PDF"));
   lines.push(windows.video.enabled
-    ? "- Autora Video (the video window, OpenCut's editor): always available. Tools: video_open, video_look, " +
-      "video_import, video_edit (clips, titles, stickers, shapes, subtitles, cuts), video_style (effects, masks, keyframes, speed), " +
-      "video_project (tracks, scenes, bookmarks, size and frame rate, the editor's own actions and panels), video_ui (any control on " +
-      "the editor's screen, clicked and typed into), video_catalog (what effects, masks, shapes and stickers exist), video_frame " +
-      "(see a moment of the video) and video_export. Every part of the editor is yours to use: when the typed tools do not cover " +
-      "something, read the screen with video_ui and do it as a person would. For any video the person wants made or changed: open a " +
-      "project, import their footage, pictures and music (video_import takes an artifact id or a path), then build the " +
-      "cut with video_edit -- add_clip, split, trim, move, add_text for titles and subtitles -- and read it back " +
-      "with video_look, and look at it with video_frame, before you say it is done. The person watches the timeline change and can take the " +
-      "editor over at any moment; what they are doing is theirs, so leave it alone while they hold it. " +
-      "Their creative choices stay theirs: ask what they want (the story, the pacing, the music, the look) and " +
-      "suggest, rather than deciding for them; do the technical work -- importing, trimming to length, " +
-      "aligning, exporting -- completely. Export with video_export only when they ask for a file."
+    ? "- Autora Video (the video window, OpenCut's editor): always available. Tools: video_open, video_look, video_import " +
+      "(an artifact id or a path), video_edit, video_style, video_project, video_ui (any control on the editor's screen, " +
+      "clicked and typed into), video_catalog, video_frame (see a moment of the video) and video_export. Every part of the " +
+      "editor is yours: when the typed tools do not cover something, read the screen with video_ui and do it as a person would. For any video the person wants made or " +
+      "changed: open a project, import their footage, pictures and music, build the cut with video_edit, then read it back with " +
+      "video_look and see it with video_frame before you say it is done. The person watches the timeline change and can take " +
+      "the editor over; leave it alone while they hold it. Their creative choices (the story, the pacing, the " +
+      "music, the look) stay theirs: ask and suggest, and do the technical work completely. Export only when they ask for a file."
     : offLine("Autora Video"));
   lines.push(studioBriefing(windows.studio.enabled));
   // Only a server that has the modeller built in says anything about it.
@@ -3003,37 +2982,28 @@ export async function capabilityBriefing(): Promise<string> {
       "live voice on, your replies are already read aloud; do not repeat them with speak.",
   );
   lines.push(
-    "- Work that happens later: always available. Tools: schedule, schedules, " +
-      "unschedule. A scheduled job is a task and a cron time, run as a turn of " +
-      "its own in a new session; a watcher looks at a page, a file or a " +
-      "command and runs its task only when what it sees changed. Set one " +
-      "whenever the thing you were asked for is not due yet, or has to be " +
-      "checked again -- instead of a sleep, a poll, or saying you cannot. " +
-      "Nothing runs while the machine is off. Say in your answer that you " +
-      "set it, and what it will do.",
+    "- Work that happens later: always available. Tools: schedule, schedules, unschedule. A scheduled job is a task and a " +
+      "cron time, run as a turn of its own in a new session; a watcher looks at a page, a file or a command and runs its task " +
+      "only when what it sees changed. Set one whenever what you were asked for is not due yet or has to be checked again -- " +
+      "instead of a sleep, a poll, or saying you cannot. Nothing runs while the machine is off. Say that you set it, and what it " +
+      "will do.",
   );
   lines.push(
-    "- Work that outlives the turn: always available. Tools: run_background, " +
-      "background_jobs, background_output, background_stop. A background " +
-      "command is the same shell as the terminal, detached, so it keeps going " +
-      "after the turn ends: use it for a build, a long test run, a download, " +
-      "anything slower than the terminal's time limit. Never sleep or poll " +
-      "for one in the same turn; read it next turn, or use schedule.",
+    "- Work that outlives the turn: always available. Tools: run_background, background_jobs, background_output, " +
+      "background_stop. A background command is the terminal's shell, detached, so it keeps going after the turn ends: use it " +
+      "for a build, a long test run, a download, anything slower than the terminal's time limit. Never sleep or poll for one " +
+      "in the same turn; read it next turn, or use schedule.",
   );
   lines.push(
-    "- The machine you are on: always available. Tool: inventory. What is " +
-      "installed, what is not, the shell, the working directory and the disk, " +
-      "looked at now. The first turn of a session is given this by itself; " +
-      "look again after installing something or a restart, rather than " +
-      "guessing or trusting a memory about it that may have moved on.",
+    "- The machine you are on: always available. Tool: inventory. What is installed, what is not, the shell, the working " +
+      "directory and the disk, looked at now. The first turn of a session is given this; look again after installing " +
+      "something or a restart, rather than guessing or trusting an old memory of it.",
   );
   lines.push(
-    "- Standing agreements: always available. Tools: pre_authorise, " +
-      "pre_authorisations. The console holds a call that looks destructive and " +
-      "unasked-for; when the person lets one through, that class of work is " +
-      "remembered so it is not put to them again. pre_authorise adds one " +
-      "yourself for harmless work you keep being held on, and says why -- they " +
-      "read the list. Nothing irrecoverable can ever be covered by one.",
+    "- Standing agreements: always available. Tools: pre_authorise, pre_authorisations. The console holds a call that looks " +
+      "destructive and unasked-for; when the person lets one through, that class of work is remembered so it is not put to " +
+      "them again. pre_authorise adds one yourself for harmless work you keep being held on, and says why. Nothing " +
+      "irrecoverable can ever be covered.",
   );
   lines.push(
     "- Asking the person: always available. Tool: ask_user. When you are " +
@@ -3054,12 +3024,9 @@ export async function capabilityBriefing(): Promise<string> {
   if (groups.some((g) => g.available)) {
     lines.push(
       "",
-      "These are real. The terminal runs on a real host, the browser opens real " +
-        "pages -- streamed live into the conversation, so the person watches every " +
-        "page load, pointer move and keystroke as you make it -- and the desktop " +
-        "belongs to a real person who is watching. Take " +
-        "the actions you are asked for rather than describing what you would do, " +
-        "and read the result of each one before the next.",
+      "These are real. The terminal runs on a real host, the browser opens real pages -- streamed live, so the person watches " +
+        "every page load, pointer move and keystroke as you make it -- and the desktop belongs to a real person who is " +
+        "watching. Take the actions you are asked for rather than describing them, and read each result before the next.",
     );
   }
 
