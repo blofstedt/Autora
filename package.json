@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.test.json && npm --prefix spectra-editor run typecheck",
     "test": "tsx tests/run.ts",
     "build:office": "node scripts/build-office.mjs",
-    "replay": "tsx scripts/replay.ts"
+    "replay": "tsx scripts/replay.ts",
+    "eval": "tsx evals/run.ts"
   },
   "dependencies": {
     "@cantoo/pdf-lib": "^2.11.1",
