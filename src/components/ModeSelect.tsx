@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { IconCheck } from "./Icons";
 import { WORK_MODES, type WorkMode } from "../lib/modes";
@@ -7,8 +7,8 @@ import { usePhone } from "../lib/stage";
 /**
  * How the agent goes about the work -- Build, Plan or Agent -- in the message
  * box, on the row above Send, so the mode sits next to the words it applies
- * to. Wide: three segments, always visible. On a phone the three would crowd
- * the row, so it is one pill that opens a list above itself.
+ * to. One pill on every screen (a coloured icon, the mode's name on a wide
+ * one) that opens the same centred sheet with the page dimmed behind it.
  *
  * Agent switches between planning and building by itself, and says so in the
  * thread; this control does not move when it does.
@@ -19,13 +19,10 @@ const GLYPH: Record<WorkMode, string> = {
   agent: "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z",
 };
 
-/** On a wide screen the list opens beside its pill; only a phone lifts it to the page. */
-const passThrough = (node: ReactNode) => node;
-
 function Glyph({ mode }: { mode: WorkMode }) {
   return (
     <svg
-      width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
       strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
     >
       <path d={GLYPH[mode]} />
@@ -72,28 +69,6 @@ export function ModeSelect({
      already says which mode is on; the sheet it opens spells it out. */
   const iconOnly = phone || compact;
 
-  if (!phone && !compact) {
-    return (
-      <div className="mode-seg" role="radiogroup" aria-label="How Autora works">
-        {WORK_MODES.map((m) => (
-          <button
-            key={m.id}
-            type="button"
-            role="radio"
-            aria-checked={m.id === mode}
-            className={`mode-seg-btn m-${m.id}${m.id === mode ? " on" : ""}`}
-            disabled={busy}
-            title={m.blurb}
-            onClick={() => { if (m.id !== mode) onChange(m.id); }}
-          >
-            <Glyph mode={m.id} />
-            {m.label}
-          </button>
-        ))}
-      </div>
-    );
-  }
-
   return (
     <div className="mode-sel-wrap" ref={wrap}>
       <button
@@ -104,12 +79,13 @@ export function ModeSelect({
         aria-label={`How Autora works: ${current.label}`}
         onClick={() => setOpen((v) => !v)}
       >
-        <Glyph mode={mode} />
+        <span className="mode-sel-ico"><Glyph mode={mode} /></span>
         {!iconOnly && current.label}
         <span className="mode-sel-caret" aria-hidden="true">{open ? "▴" : "▾"}</span>
       </button>
-      {open && (phone ? createPortal : passThrough)(
+      {open && createPortal(
         <div className="mode-sel-sheet" role="menu" ref={sheet}>
+          <div className="mode-sel-head">How Autora works</div>
           {WORK_MODES.map((m) => (
             <button
               key={m.id}
@@ -123,7 +99,7 @@ export function ModeSelect({
                 if (m.id !== mode) onChange(m.id);
               }}
             >
-              <Glyph mode={m.id} />
+              <span className="mode-sel-ico is-big"><Glyph mode={m.id} /></span>
               <span>
                 <b>{m.label}</b>
                 <span>{m.blurb}</span>

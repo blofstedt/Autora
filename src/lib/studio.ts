@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 
 /**
- * Autora Studio's window on this page (server/studio.ts): whether it is open beside the conversation, what changed
+ * Autora Music's window on this page (server/studio.ts): whether it is open beside the conversation, what changed
  * last, and the commands the agent sends it (play, stop, bounce). The song itself is not here: the window fetches it
  * when `rev` moves on and the change was the agent's.
  */

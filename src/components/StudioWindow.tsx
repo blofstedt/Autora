@@ -28,7 +28,7 @@ const timeText = (project: Project, beat: number): string => {
 };
 
 /**
- * Autora Studio: the music window, beside the conversation.
+ * Autora Music: the music window, beside the conversation.
  *
  * A song is tracks of clips of notes. The arrangement lays clips out; the editor under it is a piano roll (or a drum
  * grid); the mixer sets levels. The sound is made here, in the browser, with Web Audio (lib/studio/engine.ts). The song
@@ -282,11 +282,11 @@ export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: b
       className={`pdf-window st-window${phone ? " is-phone" : ""}${phone && full ? " is-full" : ""}`}
       tabIndex={0}
       onKeyDown={onKey}
-      aria-label="Autora Studio"
+      aria-label="Autora Music"
     >
       <div className="pdf-bar">
         <span className="pdf-bar-ico" aria-hidden="true"><IconMusic size={14} /></span>
-        <span className="pdf-bar-app">Autora Studio</span>
+        <span className="pdf-bar-app">Autora Music</span>
         <input
           className="st-song-name"
           value={project.name}
@@ -303,7 +303,7 @@ export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: b
           </button>
         )}
         {!phone && (
-          <button className="btn icon ghost" onClick={close} title="Put Autora Studio away" aria-label="Put Autora Studio away"><IconX size={14} /></button>
+          <button className="btn icon ghost" onClick={close} title="Put Autora Music away" aria-label="Put Autora Music away"><IconX size={14} /></button>
         )}
       </div>
 
@@ -421,25 +421,28 @@ export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: b
         )}
       </div>
 
-      <form
-        className="st-ask"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const text = prompt.trim();
-          if (!text) return;
-          sendPrompt(text);
-          setPrompt("");
-        }}
-      >
-        <IconSparkle size={13} />
-        <input
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          placeholder={project.tracks.length ? `Ask Autora about ${clip ? "this clip" : "your song"}…` : "Tell Autora what you want to hear…"}
-          aria-label="Ask Autora about the song"
-        />
-        <button type="submit" className="st-tool" disabled={!prompt.trim()}>Ask</button>
-      </form>
+      {/* The in-app chat is a phone thing: on a desktop the conversation is right there beside the window. */}
+      {phone && (
+        <form
+          className="st-ask"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const text = prompt.trim();
+            if (!text) return;
+            sendPrompt(text);
+            setPrompt("");
+          }}
+        >
+          <IconSparkle size={13} />
+          <input
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder={project.tracks.length ? `Ask Autora about ${clip ? "this clip" : "your song"}…` : "Tell Autora what you want to hear…"}
+            aria-label="Ask Autora about the song"
+          />
+          <button type="submit" className="st-tool" disabled={!prompt.trim()}>Ask</button>
+        </form>
+      )}
       {(chips.length > 0 || asked) && (
         <div className="st-chips">
           {asked ? <span className="st-sent">Sent to Autora: “{asked.slice(0, 60)}{asked.length > 60 ? "…" : ""}”. Watch the song and the thread.</span> : chips.map((c) => (

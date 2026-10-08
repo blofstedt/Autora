@@ -31,7 +31,7 @@ const TOOLS: Tool[] = [
   { kind: "docx", app: "Autora Pages", setting: "pages", what: "A blank document", icon: (s) => <IconScroll size={s} /> },
   { kind: "xlsx", app: "Autora Sheets", setting: "sheets", what: "A blank spreadsheet", icon: (s) => <IconTable size={s} /> },
   { kind: "pptx", app: "Autora Slides", setting: "slides", what: "A blank slide", icon: (s) => <IconSlides size={s} /> },
-  { kind: "studio", app: "Autora Studio", setting: "studio", what: "A new song", icon: (s) => <IconMusic size={s} /> },
+  { kind: "studio", app: "Autora Music", setting: "studio", what: "A new song", icon: (s) => <IconMusic size={s} /> },
   { kind: "cad", app: "Autora 3D", setting: "cad", what: "A block to shape", icon: (s) => <IconCube size={s} /> },
 ];
 

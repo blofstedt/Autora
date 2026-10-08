@@ -46,7 +46,7 @@ const WINDOWS: { key: WindowKey; name: string; icon: ReactNode; what: string; to
   },
   {
     key: "studio",
-    name: "Autora Studio",
+    name: "Autora Music",
     icon: <IconMusic size={18} />,
     what: "Making music in a window beside the chat: tracks of instruments and drums, a piano roll, a mixer and a WAV export. Ask for chords, a bass line that follows them or a drum beat and watch the clips appear; write the tune yourself, or have the agent suggest, fix timing and balance the mix. The agent guides, and the music stays yours.",
     tools: "studio_open, studio_look, studio_song, studio_track, studio_clip, studio_notes, studio_make, studio_play, studio_export",

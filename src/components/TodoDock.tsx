@@ -5,6 +5,8 @@ import { TodoList } from "./TodoCell";
 
 /** How long the finished task stays on its way out before the next is alone. */
 const ROTATE_MS = 420;
+/** How long a list that opened itself for a finished task stays: the tick lands, the line is drawn, a beat to read it. */
+const STRIKE_MS = 2000;
 
 /** The task to show folded: the one being worked, else the next to start. */
 function currentOf(items: TodoItem[]): TodoItem | null {
@@ -49,6 +51,26 @@ export const TodoDock = memo(function TodoDock({ items }: { items: TodoItem[] })
 
   const pct = items.length ? (done / items.length) * 100 : 0;
 
+  /* A finished task opens the list by itself so the person sees it crossed out -- tick, then the line drawn through
+     it as if the agent were striking it off -- and the list folds away again. Only for a task finished while the
+     list is on screen (a list that arrives part done just appears), and never shut on someone who opened it. */
+  const doneBefore = useRef(done);
+  const autoOpened = useRef(false);
+  useEffect(() => {
+    const before = doneBefore.current;
+    doneBefore.current = done;
+    if (done <= before || done === 0) return;
+    if (!autoOpened.current && open) return;
+    autoOpened.current = true;
+    setOpen(true);
+    const t = window.setTimeout(() => {
+      if (autoOpened.current) { autoOpened.current = false; setOpen(false); }
+    }, STRIKE_MS);
+    return () => window.clearTimeout(t);
+    // `open` is read only to leave a list the person opened alone.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [done]);
+
   /* The list is measured rather than guessed at, so it is pulled open to its
      own height and no further: three tasks and twelve each end exactly at the
      last one, and closing runs the same distance back. It is measured while
@@ -78,7 +100,7 @@ export const TodoDock = memo(function TodoDock({ items }: { items: TodoItem[] })
       <button
         type="button"
         className="todo-dock-bar"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => { autoOpened.current = false; setOpen((v) => !v); }}
         aria-expanded={open}
         aria-label={open ? "Hide the to-do list" : `Show all ${items.length} tasks`}
       >

@@ -179,7 +179,7 @@ interface ToolSettings {
   pdf: { enabled: boolean };
   /** Autora Video (OpenCut's editor): the video_* tools and the window beside the chat. */
   video: { enabled: boolean };
-  /** Autora Studio, the music window: the studio_* tools and the window beside the chat. */
+  /** Autora Music, the music window: the studio_* tools and the window beside the chat. */
   studio: { enabled: boolean };
   /** Autora Pages (.docx), Autora Sheets (.xlsx) and Autora Slides (.pptx): each its own switch, for the
       Office tools' work on that kind of file and its window beside the chat. */

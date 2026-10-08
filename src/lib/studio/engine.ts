@@ -1,5 +1,5 @@
 /**
- * Autora Studio's sound: instruments made from oscillators and noise, a mixer, a transport that plays the song, and a
+ * Autora Music's sound: instruments made from oscillators and noise, a mixer, a transport that plays the song, and a
  * bounce to a WAV file. All Web Audio, no samples to download: a song opens and plays at once, and the same code makes
  * the sound on screen and the file (an OfflineAudioContext runs the graph faster than real time).
  *

@@ -1,5 +1,5 @@
 /**
- * Autora Studio: the song model, the agent's studio_* tools, and the routes between the server and the window.
+ * Autora Music: the song model, the agent's studio_* tools, and the routes between the server and the window.
  *
  * Sound is made by the browser (Web Audio), so what is checked here is everything that decides what is played:
  * music theory, the generators, the edits, and the wire.
@@ -153,7 +153,7 @@ await test("every spec is a studio_ tool with a description and an object schema
 await test("the tools are a family of their own, brought in by the person's words or by use", () => {
   const specs = studioSPECS.map((s) => ({ name: s.name }));
   assert.equal(withoutUnloaded(specs, loadedFamilies({ events: [], said: "what's the weather" })).length, 0);
-  for (const said of ["make a beat for me", "open Autora Studio", "I want a chord progression in A minor", "write a bassline", "set the bpm to 90", "a song about summer"]) {
+  for (const said of ["make a beat for me", "open Autora Music", "I want a chord progression in A minor", "write a bassline", "set the bpm to 90", "a song about summer"]) {
     assert.equal(withoutUnloaded(specs, loadedFamilies({ events: [], said })).length, specs.length, said);
   }
   assert.equal(withoutUnloaded(specs, loadedFamilies({ events: [{ kind: "tool.call", payload: { name: "studio_look" } }] })).length, specs.length);

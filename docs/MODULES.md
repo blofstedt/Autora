@@ -308,7 +308,7 @@ Spectra's fetched renderer is most of what is on disk.
   on the agent's first call; an incognito chat has none; tool names in the engine's messages are prefixed on the way out
   (`asAgentSees`). The phone shows it as a tab in the pinned view like the other windows (`Thread.tsx`, `lib/stage.ts` kind `cad`).
 - `server/studio.ts`, `server/specs/studio.ts`, `src/lib/studio/`, `src/components/StudioWindow.tsx` + `src/components/studio/`:
-  **Autora Studio**, the music window, and the agent's `studio_*` tools. A song is tracks of clips of notes, in beats
+  **Autora Music**, the music window, and the agent's `studio_*` tools. A song is tracks of clips of notes, in beats
   (`src/lib/studio/model.ts`: plain JSON, no DOM/React/Node, imported by the server *and* the page, so there is one idea of a valid
   song; `normalizeProject` repairs anything that arrives, the generators `chordNotes`/`bassNotes`/`drumNotes` and the chord reader
   `detectChord` are pure and seeded). One song per chat lives in `studio.ts` (kept as `studio-<session>.json`, removed with the

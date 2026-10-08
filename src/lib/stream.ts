@@ -19,7 +19,7 @@ type Handlers = {
   onVideoCommand?: (cmd: { id: string; name: string; args: Record<string, unknown> }) => void;
   /** Autora 3D's window: whether it is open, and what changed last. */
   onCadDesk?: (state: unknown) => void;
-  /** Autora Studio's window: whether it is open, and what changed last. */
+  /** Autora Music's window: whether it is open, and what changed last. */
   onStudioDesk?: (state: unknown) => void;
   /** Something only a browser can do, asked of the music window: play, stop, bounce. */
   onStudioCommand?: (cmd: { id: string; name: string; args: Record<string, unknown> }) => void;
