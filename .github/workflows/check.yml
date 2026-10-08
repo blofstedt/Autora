@@ -28,6 +28,9 @@ jobs:
       # And OpenCut's, the video window's editor.
       - run: npm --prefix opencut-editor ci
 
+      # And Autora 3D's: `npm run lint` typechecks it, and `npm run build` builds it.
+      - run: npm --prefix autora-3d ci
+
       - name: Lint (typecheck and ESLint)
         run: npm run lint
 
