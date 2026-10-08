@@ -158,15 +158,7 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  There is a Terminal in the tools menu: a shell beside the chat that you and
-  Autora share. Commands finish as you type (commands, files and folders, git, npm
-  scripts, and what you ran before, with a grey hint you accept with Tab or the
-  right arrow), output comes in colour as it arrives, a running command has a Stop
-  button, and on a phone a row of keys stands in for Tab, the arrows and Ctrl+C.
-  The folder you move to is where Autora's next command starts, its commands show
-  up in the same place, and it is told what you ran. Lists (sessions, schedules,
-  artifacts, notebooks, triggers, tools) now arrive in the same stacked rise as the
-  suggested next steps. On a phone, a document that cannot be drawn is retried by
-  itself and offers Try again and the full editor instead of staying blank, and a
-  slow one says it is still drawing. The tools sheet greys out an app you switched
-  off, as it was meant to.
+  On a desktop, the tab you picked beside the chat is now remembered, so a reload
+  or coming back to Autora leaves it where you put it. The widths of the menu and
+  the chat, whether the menu is folded, and Follow were already kept; this
+  completes the set.

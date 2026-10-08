@@ -1344,18 +1344,25 @@ export function App() {
   /* What is open beside the chat, each with when it changed: the window shown is the newest, unless the person
      has picked a tab, and their pick sticks until that window is put away. The browser is live work in front of
      the person, so it takes the window while it is open; the document is back the moment it is put away. */
-  const [pickedWindow, setPickedWindow] = useState<SideWindow | null>(null);
+  const [pickedWindow, setPickedWindowState] = useState<SideWindow | null>(() => {
+    try { return (localStorage.getItem("autora.sidePane") as SideWindow | null) || null; } catch { return null; }
+  });
+  // Remembered per browser, like the pane widths: a tab the person chose is still the one shown after a reload.
+  const setPickedWindow = useCallback((pane: SideWindow | null) => {
+    setPickedWindowState(pane);
+    try { if (pane) localStorage.setItem("autora.sidePane", pane); else localStorage.removeItem("autora.sidePane"); } catch { /* not remembered */ }
+  }, []);
   /* Follow: on by default, the screen goes where the agent works. Only the person turning it off (the pill at the
      top right of the strip, or picking a tab themselves) keeps them where they are. */
   const followAgent = useFollowing();
   const setFollow = useCallback((on: boolean) => {
     setFollowing(on);
     if (on) setPickedWindow(null);
-  }, []);
+  }, [setPickedWindow]);
   const pickWindow = useCallback((pane: SideWindow) => {
     setPickedWindow(pane);
     setFollow(false);
-  }, [setFollow]);
+  }, [setFollow, setPickedWindow]);
   /* On a desktop what the agent looks at and does is shown in the work area, not in the conversation (a phone has one
      column and keeps it all in the thread): the Activity tab is there as soon as there is anything to show. */
   const workOn = useMemo(() => !phoneLayout && hasWork(view.buckets), [phoneLayout, view.buckets]);
