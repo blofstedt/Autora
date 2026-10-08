@@ -225,7 +225,7 @@ export function App() {
     if (!drawerWas.current) return;
     drawerWas.current = false;
     setDrawerLeaving(true);
-    const t = window.setTimeout(() => setDrawerLeaving(false), 240);
+    const t = window.setTimeout(() => setDrawerLeaving(false), 280);
     return () => window.clearTimeout(t);
   }, [drawerOpen]);
   const [appearance, setAppearance] = useState<Appearance>(cachedAppearance);
@@ -1403,7 +1403,7 @@ export function App() {
     ...(studio.open ? [{ pane: "studio" as const, label: "Music" }] : []),
     ...OFFICE_PANES.filter((o) => openWindows.some((w) => w.pane === o.pane)).map((o) => ({ pane: o.pane, label: o.label })),
     ...(browser?.open ? [{ pane: "browser" as const, label: "Browser" }] : []),
-    ...(preview.open ? [{ pane: "app" as const, label: "Creator" }] : []),
+    ...(preview.open ? [{ pane: "app" as const, label: "Autora Creator" }] : []),
   ];
   /* The newest browser card: the one looking at the page that still exists, which is
      the page the pane shows. */
