@@ -133,13 +133,6 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  On a desktop, everything the agent looks at and does now happens in the work
-  area on the right, in a new Activity tab: commands, pages, pictures, files it
-  made, code changes and tool calls. The conversation keeps only the talking, in a narrower column;
-  a phone still shows it all in one column. The message box is more compact,
-  and the menu on the left is slimmer, with its widgets stacked and set in the
-  same size as the menu's own options, the context ring filling its card. On a
-  desktop the menu also folds to a strip of icons, where the context becomes a
-  vertical bar under the last icon, or away altogether. The agent's typing in Pages, Sheets and
-  Slides is the change itself, a document it makes fills in as its cursor types,
-  and the browser pointer matches the Office cursor.
+  The Mind map now floats: when you open it, every memory drifts slowly about
+  where it sits, each on its own path and pace, instead of hanging still. They
+  never fly in from the edge, and it stays still if your device asks for less motion.

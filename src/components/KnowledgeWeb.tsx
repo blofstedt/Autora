@@ -313,6 +313,20 @@ const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 3;
 const clampZoom = (k: number) => Math.min(Math.max(k, MIN_ZOOM), MAX_ZOOM);
 
+/** A node's slow drift: a few pixels each way, its own direction, pace and
+    phase (from its id), so the map floats rather than moves in step. */
+function floatStyle(id: string): React.CSSProperties {
+  let h = 0;
+  for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  const unit = (n: number) => ((h >>> n) & 255) / 255;
+  return {
+    "--fx": `${(unit(0) * 2 - 1) * 5}px`,
+    "--fy": `${(unit(8) * 2 - 1) * 5}px`,
+    animationDuration: `${7 + unit(16) * 6}s`,
+    animationDelay: `-${unit(24) * 10}s`,
+  } as React.CSSProperties;
+}
+
 /** Force-directed layout, run on rAF until it settles. */
 function Graph({
   data, selected, onSelect, recent,
@@ -643,6 +657,7 @@ function Graph({
                 }}
                 onClick={() => onSelect(selected === node.id ? null : node.id)}
               >
+                <g className="kfloat" style={floatStyle(node.id)}>
                 {(() => {
                   const t = touched.order.get(node.id);
                   if (!t) return null;
@@ -669,6 +684,7 @@ function Graph({
                 {r.kind === "skill" && <circle r={node.r * 0.4} fill="#fff" opacity={0.9} />}
                 {r.pinned && <circle className="kpin" r={node.r + 3.5} />}
                 <text y={node.r + 15}>{r.title.slice(0, 28)}</text>
+                </g>
               </g>
             );
           })}

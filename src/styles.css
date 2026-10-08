@@ -5280,6 +5280,18 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 :root.is-away .knode .kbody { animation-play-state: paused; }
 @media (prefers-reduced-motion: reduce) { .knode .kbody { animation: none; } }
 
+/* ...and drifts: each node floats a few pixels about where it sits, slowly,
+   on its own path. It never travels in from anywhere; it is already there. */
+.knode .kfloat { animation: nodeFloat 9s ease-in-out infinite alternate; }
+@keyframes nodeFloat {
+  0%   { transform: translate(calc(var(--fx) * -1), calc(var(--fy) * -1)); }
+  50%  { transform: translate(calc(var(--fy) * 0.6), calc(var(--fx) * -0.6)); }
+  100% { transform: translate(var(--fx), var(--fy)); }
+}
+.kgraph.is-moving .knode .kfloat,
+:root.is-away .knode .kfloat { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) { .knode .kfloat { animation: none; } }
+
 /* Integrations: a server the agent offered and the person accepted. */
 .mcp-origin {
   padding: 1px 7px; border-radius: var(--r-pill); font-size: calc(10.5px * var(--ts, 1)); font-weight: 600;
