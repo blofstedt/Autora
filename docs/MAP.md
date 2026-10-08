@@ -85,6 +85,7 @@ task is about the PDF editor's shim or overlay.
 | Code | `codediff.ts` (`Workspace`), `codesearch.ts`, `editfile.ts`, `merge3.ts`, `background.ts` (long jobs) |
 | Video | `opencut.ts` (the project store, the window's state, commands to the editor, the `video_*` tools), `specs/video.ts` |
 | PDF | `pdf.ts` (3k: every `pdf_*` tool), `pdftext.ts`, `pdfrender.ts`, `compose.ts`, `pdfdesk.ts` (window state), `spectra.ts` + `spectra/{engine,commands}.ts` (the window's editor and its Python engine) |
+| Autora 3D | `caddesk.ts` (the model per chat, routes, `runCadTool`), `specs/cad.ts` (GENERATED tool list), `autora-3d/` (the modeller's source: a copy, see below) |
 | Office | `office.ts` (CLI tools), `officedesk.ts` (window), `officehost.ts` (Electron stand-in engine), `officerender.ts` (headless PDF), `officepages.ts` (phone pictures) |
 | Static files | `staticfiles.ts` (compressed, cached `express.static`) |
 | Persistence | `store.ts` (sessions, events, vault), `state.ts` (settings, secrets, usage, redactor), `blobs.ts`, `artifacts.ts`, `notebooks.ts`, `retention.ts`, `credentials.ts` |
@@ -104,7 +105,7 @@ task is about the PDF editor's shim or overlay.
 | Event log -> UI | `lib/stream.ts`, `lib/derive.ts`, `lib/share.ts`, `lib/steps.ts`, `lib/types.ts` |
 | Thread | `components/Thread.tsx` (`TurnBucket`, `CellView`, `Reply`), cells: `ToolCell`, `TerminalCell`, `FileCell`, `ImageCell`, `AskCell`, `PermissionCell`, `TodoCell`, `MemoryCell`, `LearnedCell`, `RemarkCell`, `WidgetCell`, `ScreencastCell`, `Markdown` |
 | Phone stage | `lib/stage.ts`, `components/Stage.tsx`, `ImmersiveChat.tsx`, `lib/fullscreen.ts`, `lib/cursorPos.ts` |
-| Windows | Video: `OpenCutWindow`, `lib/opencut.ts`. Browser: `ScreencastCell`, `lib/liveFrame.ts`, `lib/pageInput.ts`. App: `AppPreview`, `AppInspector`, `AppReview`, `AppVersions`, `DevtoolsPanel`, `lib/preview.ts`, `lib/appApi.ts`. PDF: `SpectraWindow`, `lib/spectra.ts`, `lib/pdfdesk.ts`. Office: `OfficeWindow`, `OfficeCursor`, `OfficePages`, `lib/officedesk.ts`, `lib/officeSelection.ts`, `lib/humanPath.ts` |
+| Windows | Video: `OpenCutWindow`, `lib/opencut.ts`. 3D: `CadWindow`, `lib/caddesk.ts`. Browser: `ScreencastCell`, `lib/liveFrame.ts`, `lib/pageInput.ts`. App: `AppPreview`, `AppInspector`, `AppReview`, `AppVersions`, `DevtoolsPanel`, `lib/preview.ts`, `lib/appApi.ts`. PDF: `SpectraWindow`, `lib/spectra.ts`, `lib/pdfdesk.ts`. Office: `OfficeWindow`, `OfficeCursor`, `OfficePages`, `lib/officedesk.ts`, `lib/officeSelection.ts`, `lib/humanPath.ts` |
 | Pages (menu) | `components/Rail.tsx`; lazy: `components/pages/*` ; eager: `Settings.tsx`, `Sessions.tsx`, `Schedule.tsx`, `Triggers.tsx` |
 | Settings cards | `Settings.tsx` (1.5k), `SecretStore`, `Credentials`, `VoiceCard`, `NotifyCard`, `QuietCard`, `CaptchaCard`, `AutomationCard`, `CollabSettings`, `TimeZoneCard`, `ModelPicker`, `SetupCard` |
 | Composer | `DictateButton`, `AttachButton`, `SlashMenu` + `lib/commands.ts`, `ModeSelect`, `PermissionsPill`, `SpendBar`/`SpendPeek` + `lib/spend.ts`, `LiveChat` + `lib/voice.ts` (1.9k), `lib/liveview.ts` |

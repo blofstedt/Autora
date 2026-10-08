@@ -5,11 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist/server.cjs && esbuild src/widget/three.ts --bundle --format=esm --minify --outfile=dist/widget/three.js && npm --prefix spectra-editor run build && npm --prefix opencut-editor run build",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist/server.cjs && esbuild src/widget/three.ts --bundle --format=esm --minify --outfile=dist/widget/three.js && npm --prefix spectra-editor run build && npm --prefix opencut-editor run build && npm --prefix autora-3d run build",
     "start": "node dist/server.cjs",
     "lint": "npm run typecheck && eslint .",
     "unused": "knip --no-progress",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.test.json && npm --prefix spectra-editor run typecheck && npm --prefix opencut-editor run typecheck",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.test.json && npm --prefix spectra-editor run typecheck && npm --prefix opencut-editor run typecheck && npm --prefix autora-3d run typecheck",
     "test": "tsx tests/run.ts",
     "build:office": "node scripts/build-office.mjs",
     "replay": "tsx scripts/replay.ts",

@@ -1,0 +1,38 @@
+{
+  "name": "autora-3d",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Autora 3D — a sketch-and-extrude CAD modeler for Autora",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "npm run build:app && npm run build:engine",
+    "build:app": "vite build --outDir ../dist/autora-3d --emptyOutDir",
+    "build:engine": "esbuild src/core/index.ts --bundle --platform=node --format=esm --outfile=../dist/autora-3d-engine/engine.mjs --log-level=error --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\" && node -e \"require('fs').copyFileSync('node_modules/manifold-3d/manifold.wasm','../dist/autora-3d-engine/manifold.wasm')\""
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
+    "@tailwindcss/vite": "^4.1.14",
+    "@vitejs/plugin-react": "^5.0.4",
+    "lucide-react": "^0.546.0",
+    "manifold-3d": "^3.5.4",
+    "motion": "^12.23.24",
+    "polygon-clipping": "^0.15.7",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
+    "three": "^0.184.0",
+    "three-bvh-csg": "^0.0.18",
+    "three-mesh-bvh": "^0.9.7",
+    "vite": "^6.2.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/three": "^0.184.1",
+    "esbuild": "^0.28.2",
+    "tailwindcss": "^4.1.14",
+    "typescript": "~5.8.2"
+  }
+}

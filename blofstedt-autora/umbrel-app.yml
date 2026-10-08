@@ -65,6 +65,11 @@ description: >-
   subtitles, scenes, settings, any control on its screen) and look at a frame to check
   its work. The story, the pacing and the look stay yours: Autora does the technical
   work and asks about the rest. Your projects stay on your server.
+  • Autora 3D — a 3D modelling window for things to design or print. The agent
+  builds shapes by sketching an outline and pulling it up (and cutting, bevelling,
+  repeating and measuring them) and you work on the same model beside the chat:
+  push and pull faces, move, resize and bevel by finger or mouse. Exports STL for
+  printing and GLB for games. Has its own switch on the Tools page.
 
 
   • Notebooks — group files by purpose with notes between them. Autora can
@@ -143,6 +148,13 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The Creator window is for websites and apps only, not games: its description
-  no longer lists games and the agent is told not to build one there. Games get
-  their own window later.
+  Autora 3D joins the tools, and Creator is for websites and apps only: its
+  description no longer lists games, and the agent is told not to build one there
+  (games get their own window later). Autora 3D is a 3D modelling window beside
+  the chat, wearing Autora's theme. Ask for something to design or 3D print and
+  the agent sketches, extrudes, bevels, cuts, repeats and measures it (and checks
+  it is a solid that will print) while you watch the model take shape. Push, pull
+  and move the same model yourself, by finger or mouse, and the agent sees your
+  changes on its next step. Exports go to the thread as STL (for printing) or GLB.
+  Open it from the wrench next to the message box; it has its own switch on the
+  Tools page.
