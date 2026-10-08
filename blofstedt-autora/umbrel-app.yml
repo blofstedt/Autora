@@ -158,7 +158,6 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  On a desktop, the tab you picked beside the chat is now remembered, so a reload
-  or coming back to Autora leaves it where you put it. The widths of the menu and
-  the chat, whether the menu is folded, and Follow were already kept; this
-  completes the set.
+  The windows are now named Autora Creator, Autora Browser and Autora Widgets, on
+  the Tools page and in the tabs beside the chat. The phone's menu also slides
+  closed smoothly now, without the stutter.
