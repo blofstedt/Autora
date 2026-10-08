@@ -146,6 +146,10 @@ try {
   const ctx = { session: "s1", cwd: dir, cancelled: () => false };
   await test("the agent is told what is wrong in words it can act on", async () => {
     assert.match((await oc.runVideoTool("video_edit", { action: "juggle" }, ctx)).summary, /action is one of/);
+    assert.match((await oc.runVideoTool("video_style", { action: "effect_add" }, ctx)).summary, /Done|did not|editor/, "style actions are known");
+    assert.match((await oc.runVideoTool("video_style", { action: "add_clip" }, ctx)).summary, /action is one of: effect_add/, "an action of another tool is not accepted");
+    assert.match((await oc.runVideoTool("video_project", { action: "split" }, ctx)).summary, /action is one of: track_add/);
+    assert.match((await oc.runVideoTool("video_ui", { action: "teleport" }, ctx)).summary, /action is one of: read, click/);
     assert.match((await oc.runVideoTool("video_import", { file: "no-such-file.mp4" }, ctx)).summary, /There is no file/);
     fs.writeFileSync(path.join(dir, "notes.txt"), "hello");
     assert.match((await oc.runVideoTool("video_import", { file: path.join(dir, "notes.txt") }, ctx)).summary, /not a video, audio or image/);
@@ -169,6 +173,12 @@ try {
     assert.equal(looksOnly("video_open", { new: "x" }), false);
     assert.equal(looksOnly("video_edit", { action: "delete" }), false);
     assert.equal(looksOnly("video_export"), false);
+    assert.equal(looksOnly("video_catalog"), true);
+    assert.equal(looksOnly("video_frame"), true);
+    assert.equal(looksOnly("video_ui", { action: "read" }), true);
+    assert.equal(looksOnly("video_ui", { action: "click" }), false);
+    assert.equal(looksOnly("video_style", { action: "effect_add" }), false);
+    assert.equal(looksOnly("video_project", { action: "settings" }), false);
   });
 
   console.log(`\n${passed} passed`);

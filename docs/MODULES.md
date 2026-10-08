@@ -332,11 +332,27 @@ Spectra's fetched renderer is most of what is on disk.
   server sends an unclaimed one again every 1.5 s; (4) theme: the window reads Autora's tokens off its own page and
   posts them (`--a-*`), so a different theme here is a different one there; (5) automatic captions are removed (they
   download a model from Hugging Face); (6) saved exports are capped at the artifact limit (50 MB), the editor's own
-  Export button downloads without one. The agent's cursor and typing are the other windows' (`lib/humanPath.ts`):
-  before a visible command the window asks the frame where the playhead is (`locate`), the cursor goes there, and a
-  title is typed a few letters at a time with `set_params {history: false}`. Tools: `video_open`, `video_look`,
-  `video_import`, `video_edit`, `video_export` (`server/specs/video.ts`); the family loads on the person's words
-  (`toolload.ts`), the surface `video` can be taken (`presence.ts`), and Plan mode allows only looking.
+  Export button downloads without one.
+  **The agent can use every part of the editor, two ways.** Typed commands, against `EditorCore` (`commands.ts` for the
+  cut, `features.ts` for the rest: stickers, shapes, effect layers, subtitles, effects, masks, keyframes, speed, tracks,
+  scenes, bookmarks, project settings, the editor's own actions and panels, a picture of a frame, and the catalogs that
+  say what exists). And a screen driver (`ui.ts`) for anything those do not reach: it reads the controls on the page
+  (each with a `[ref]`), and clicks, types, presses and drags with *real* pointer, mouse, keyboard and input events, so
+  Radix menus, selects, dialogs and the timeline answer as they do to a hand. Tools (`server/specs/video.ts`):
+  `video_open`, `video_look`, `video_import`, `video_edit`, `video_style`, `video_project`, `video_ui`,
+  `video_catalog`, `video_frame`, `video_export`. A new typed command: a case in `features.ts`, its name in the right
+  action list in `server/opencut.ts` and the enum in the spec; the cursor needs nothing (see below).
+  **The cursor and typing are the other windows'** (`lib/humanPath.ts`), for every command: `whereFor` in
+  `OpenCutWindow.tsx` says what a command is about (a clip, a track, a time, a panel, a control), the frame's `locate`
+  finds it on the screen (moving its playhead or scrolling first), the cursor goes there and presses, then the command
+  runs. Words are typed a few letters at a time: a title (`add_text`, then `set_params {history: false}` for the rest),
+  a clip's content, a project name, and any field via `ui_type`. Commands that change nothing on screen (`SILENT`) go
+  without the cursor. The editor's tools are brought in by the person's words (`toolload.ts`), the surface `video` can
+  be taken (`presence.ts`), and Plan mode allows only looking (`video_look`, `video_catalog`, `video_frame`, `video_ui
+  read`). Patches to OpenCut's own files, made as they are read (`markSources` in `vite.config.ts`, which fails the
+  build if a line has moved): `data-element-id` and `data-track-id` on the timeline so a clip can be found on screen,
+  and the wasm renderer's `effect_pass_groups` (an effect layer failed every frame without it). One whole-file overlay
+  fixes a bug at the pin: stickers registered with the wrong call and every one failed (`overlay/web/stickers/`).
   `npm run typecheck` checks only Autora's files in it (`scripts/typecheck-opencut-editor.mjs`): at the pin a few
   of OpenCut's own do not typecheck. Search with `--glob '!opencut-editor/**'` unless the task is about it.
 - Full screen on a phone (`lib/fullscreen.ts`): one shared flag for every pinned tool (browser, app window, PDF,

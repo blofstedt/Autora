@@ -42,7 +42,7 @@ const WINDOWS: { key: WindowKey; name: string; icon: ReactNode; what: string; to
     name: "Autora Video",
     icon: <IconVideo size={18} />,
     what: "Editing video in OpenCut's editor, in a window beside the chat: the agent imports your footage and builds the cut (clips, trims, splits, titles, subtitles) while you watch the timeline change, and you can take the editor over at any moment.",
-    tools: "video_open, video_look, video_import, video_edit, video_export",
+    tools: "video_open, video_look, video_import, video_edit, video_style, video_project, video_ui, video_catalog, video_frame, video_export",
   },
   {
     key: "pages",

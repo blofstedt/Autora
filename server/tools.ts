@@ -2631,6 +2631,11 @@ async function runToolUnredacted(
       case "video_look":
       case "video_import":
       case "video_edit":
+      case "video_style":
+      case "video_project":
+      case "video_ui":
+      case "video_catalog":
+      case "video_frame":
       case "video_export":
         if (ctx.memory.incognito) {
           return { ok: false, summary: "Not available in an incognito chat: the video window keeps its projects on disk." };
@@ -2639,6 +2644,8 @@ async function runToolUnredacted(
           session: ctx.session,
           cwd: terminalDir(),
           showFile: ctx.showFile,
+          putBlob: ctx.putBlob,
+          showImage: ctx.showImage,
           cancelled: ctx.cancelled,
           ...(ctx.held ? { held: (subject: string) => ctx.held!("video", subject) } : {}),
         });
@@ -2926,10 +2933,14 @@ export async function capabilityBriefing(): Promise<string> {
     : offLine("Autora PDF"));
   lines.push(windows.video.enabled
     ? "- Autora Video (the video window, OpenCut's editor): always available. Tools: video_open, video_look, " +
-      "video_import, video_edit, video_export. For any video the person wants made or changed: open a project, " +
-      "import their footage, pictures and music (video_import takes an artifact id or a path), then build the " +
+      "video_import, video_edit (clips, titles, stickers, shapes, subtitles, cuts), video_style (effects, masks, keyframes, speed), " +
+      "video_project (tracks, scenes, bookmarks, size and frame rate, the editor's own actions and panels), video_ui (any control on " +
+      "the editor's screen, clicked and typed into), video_catalog (what effects, masks, shapes and stickers exist), video_frame " +
+      "(see a moment of the video) and video_export. Every part of the editor is yours to use: when the typed tools do not cover " +
+      "something, read the screen with video_ui and do it as a person would. For any video the person wants made or changed: open a " +
+      "project, import their footage, pictures and music (video_import takes an artifact id or a path), then build the " +
       "cut with video_edit -- add_clip, split, trim, move, add_text for titles and subtitles -- and read it back " +
-      "with video_look before you say it is done. The person watches the timeline change and can take the " +
+      "with video_look, and look at it with video_frame, before you say it is done. The person watches the timeline change and can take the " +
       "editor over at any moment; what they are doing is theirs, so leave it alone while they hold it. " +
       "Their creative choices stay theirs: ask what they want (the story, the pacing, the music, the look) and " +
       "suggest, rather than deciding for them; do the technical work -- importing, trimming to length, " +

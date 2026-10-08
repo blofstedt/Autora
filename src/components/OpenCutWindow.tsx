@@ -49,24 +49,40 @@ function themeVars(): Record<string, string> {
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-/** What each command is, to the cursor: where on the timeline it acts, and whether it is typed. */
-function timeOf(cmd: VideoCommand): number | null {
+/** Commands that change nothing on the screen the person is looking at: they are answered without the cursor. */
+const SILENT = new Set([
+  "state", "catalog", "frame", "scene_list", "project_list", "keyframes", "play", "pause", "undo", "redo", "copy",
+  "ui_read", "ui_press", "ui_scroll", "ui_commit", "locate", "select",
+]);
+
+const numArg = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+
+/** Where on the screen a command is about, for the cursor to go to; null for none, {} for the playhead. */
+function whereFor(cmd: VideoCommand): Record<string, unknown> | null {
   const a = cmd.args;
-  const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
-  switch (cmd.name) {
-    case "add_clip":
-    case "add_text":
-    case "move":
-      return n(a.start);
-    case "split":
-    case "seek":
-      return n(a.time);
-    default:
-      return null;
+  const n = cmd.name;
+  if (SILENT.has(n)) return null;
+  if (n === "ui_click" || n === "ui_type") {
+    const target: Record<string, unknown> = {};
+    for (const k of ["ref", "label", "elementId", "trackId", "selector"]) if (a[k] !== undefined) target[k] = a[k];
+    return { target };
   }
+  if (n === "ui_drag") return null;
+  if (typeof a.elementId === "string") return { elementId: a.elementId };
+  if (Array.isArray(a.elementIds) && typeof a.elementIds[0] === "string") return { elementId: a.elementIds[0] };
+  if (typeof a.trackId === "string") return { trackId: a.trackId };
+  if (n === "panel") return { panel: a.tab };
+  if (n === "settings") return { panel: "settings" };
+  if (n === "import_media") return { panel: "media" };
+  if (n === "export") return { target: { label: "Export" } };
+  if (n.startsWith("scene_")) return { target: { label: "scene" } };
+  const t = numArg(a.start) ?? numArg(a.time) ?? numArg(a.from);
+  return t === null ? {} : { time: t };
 }
 
-const SHOWN = new Set(["add_clip", "add_text", "split", "trim", "move", "delete", "set_params", "seek"]);
+/** How long the editor may take: an export or an import is as long as the file. */
+const LONG: Record<string, number> = { export: 31 * 60_000, import_media: 11 * 60_000 };
+
 type Located = { x: number; y: number; view: { w: number; h: number } };
 
 export function OpenCutWindow({ sessionId, phone }: { sessionId: string; phone: boolean }) {
@@ -132,7 +148,11 @@ export function OpenCutWindow({ sessionId, phone }: { sessionId: string; phone: 
   const seq = useRef(0);
   const toFrame = useCallback((name: string, args: Record<string, unknown>): Promise<unknown> => new Promise((resolve, reject) => {
     const id = ++seq.current;
-    waiting.current.set(id, { resolve, reject });
+    const timer = setTimeout(() => {
+      waiting.current.delete(id);
+      reject(new Error(`The editor did not answer ${name}`));
+    }, LONG[name] ?? 120_000);
+    waiting.current.set(id, { resolve: (v) => { clearTimeout(timer); resolve(v); }, reject: (e) => { clearTimeout(timer); reject(e); } });
     post({ type: "autora:opencut:command", id, name, args });
   }), [post]);
 
@@ -232,56 +252,107 @@ export function OpenCutWindow({ sessionId, phone }: { sessionId: string; phone: 
     setRing(null);
   }, [tween]);
 
-  /** Where the editor has this time on its timeline: it moves its playhead there and says where that is. */
-  const locate = useCallback(async (time: number | null): Promise<Located | null> => {
+  /** Where the editor says this is on its screen (it moves its playhead or scrolls to it first). */
+  const locate = useCallback(async (where: Record<string, unknown>): Promise<Located | null> => {
     try {
-      return (await toFrame("locate", time === null ? {} : { time })) as Located | null;
+      return (await toFrame("locate", where)) as Located | null;
     } catch {
       return null;
     }
   }, [toFrame]);
 
-  /** One command from the agent: shown, then done, then answered. */
+  /** Words go in a few letters at a time, at a person's pace. */
+  const typed = useCallback(async (text: string, at: (shown: string, first: boolean) => Promise<unknown>) => {
+    setDoing("type");
+    const chars = Array.from(text);
+    const gaps = typingDelays(text, 2400);
+    const chunk = Math.max(1, Math.ceil(chars.length / 14));
+    let last: unknown = null;
+    for (let n = chunk; ; n += chunk) {
+      const upto = Math.min(chars.length, n);
+      last = await at(chars.slice(0, upto).join(""), n === chunk);
+      if (upto >= chars.length) break;
+      await sleep(gaps.slice(upto - chunk, upto).reduce((a, b) => a + b, 0) || 90);
+    }
+    setDoing("");
+    return last;
+  }, []);
+
+  /** One command from the agent: pointed at, then done, then answered. */
   const play = useCallback(async (cmd: VideoCommand): Promise<unknown> => {
     let args = cmd.args;
+    const name = cmd.name;
     // A file to import comes through the app's own route, by a link the agent's tool made.
-    if (cmd.name === "import_media" && typeof args.sourceToken === "string") {
+    if (name === "import_media" && typeof args.sourceToken === "string") {
       const res = await fetch(`/api/opencut/source/${encodeURIComponent(args.sourceToken)}?${query}`);
       if (!res.ok) throw new Error("The file to import is no longer available");
       const { sourceToken: _t, ...rest } = args;
       args = { ...rest, file: await res.blob() };
+      await toFrame("panel", { tab: "media" }).catch(() => undefined);
     }
-    const name = cmd.name;
-    const shown = cursorOnRef.current && SHOWN.has(name);
-    if (shown) {
-      const spot = await locate(timeOf({ ...cmd, args }));
+    const where = cursorOnRef.current ? whereFor({ ...cmd, args }) : null;
+    let spot: Located | null = null;
+    if (where) {
+      spot = await locate(where);
+      if (spot) await goTo({ x: spot.x, y: spot.y }, spot.view);
+    }
+    const finish = async <T,>(result: T): Promise<T> => {
       if (spot) {
-        await goTo({ x: spot.x, y: spot.y }, spot.view);
-        // A title is typed: the words arrive in the project a few letters at a time, as a person would type them.
-        if (name === "add_text" && typeof args.text === "string" && args.text.length > 1) {
-          setDoing("type");
-          const chars = Array.from(args.text);
-          const gaps = typingDelays(args.text, 2400);
-          const chunk = Math.max(1, Math.ceil(chars.length / 14));
-          let made = (await toFrame("add_text", { ...args, text: chars.slice(0, chunk).join("") })) as { tracks?: Array<{ clips: Array<{ id: string; type: string; text?: string }> }> };
-          const clipId = made.tracks?.flatMap((t) => t.clips).filter((c) => c.type === "text" && c.text === chars.slice(0, chunk).join("")).pop()?.id;
-          for (let at = chunk; clipId && at < chars.length; at += chunk) {
-            await sleep(gaps.slice(at - chunk, at).reduce((a, b) => a + b, 0) || 90);
-            made = (await toFrame("set_params", { elementId: clipId, params: { content: chars.slice(0, at + chunk).join("") }, history: false })) as typeof made;
-          }
-          setDoing("");
-          setGone(true);
-          return made;
+        await sleep(450);
+        setGone(true);
+      }
+      return result;
+    };
+
+    // Typing: a title, a clip's words, a name, or a field on the screen.
+    if (name === "add_text" && typeof args.text === "string" && args.text.length > 1 && spot) {
+      const full = args.text;
+      let clipId: string | undefined;
+      const made = await typed(full, async (shown, first) => {
+        if (first) {
+          const r = (await toFrame("add_text", { ...args, text: shown })) as { tracks?: Array<{ clips: Array<{ id: string; type: string; text?: string }> }> };
+          clipId = r.tracks?.flatMap((t) => t.clips).filter((c) => c.type === "text" && c.text === shown).pop()?.id;
+          return r;
         }
+        return clipId ? toFrame("set_params", { elementId: clipId, params: { content: shown }, history: false }) : null;
+      });
+      return finish(made);
+    }
+    if ((name === "set_params" || name === "set") && spot && typeof (args.params as Record<string, unknown> | undefined)?.content === "string" && String((args.params as Record<string, unknown>).content).length > 1) {
+      const full = String((args.params as Record<string, unknown>).content);
+      const rest = { ...(args.params as Record<string, unknown>) };
+      const result = await typed(full, (shown, first) => toFrame("set_params", { ...args, params: { ...rest, content: shown }, history: first }));
+      // The last step is the one that is kept as it is, undone in one go.
+      return finish(await toFrame("set_params", { ...args, params: { ...rest, content: full }, history: true }).then(() => result).catch(() => result));
+    }
+    if (name === "rename" && typeof args.name === "string" && args.name.length > 1 && spot) {
+      const full = args.name;
+      return finish(await typed(full, (shown) => toFrame("rename", { name: shown })));
+    }
+    if (name === "ui_type" && typeof args.text === "string" && spot) {
+      const full = args.text;
+      const replace = args.replace !== false;
+      const result = await typed(full, (shown, first) => toFrame("ui_type", { ...args, text: shown, replace: first ? replace : true, enter: false, blur: false }));
+      if (args.enter === true || args.blur === true) await toFrame("ui_commit", { ...args, how: args.blur === true ? "blur" : "enter" });
+      return finish(result);
+    }
+    if (name === "ui_drag") {
+      const from = args.from as { x: number; y: number } | undefined;
+      const to = args.to as { x: number; y: number } | undefined;
+      if (cursorOnRef.current && from && to) {
+        const view = { w: 1280, h: 800 };
+        await goTo(from, view);
+        const route = humanRoute(from, to);
+        const moving = tween(560, (p) => setCursor(along(route, p)));
+        const done = toFrame("ui_drag", { ...args, steps: 28 });
+        const [result] = await Promise.all([done, moving]);
+        cursorAt.current = to;
+        setGone(true);
+        return result;
       }
     }
-    const result = await toFrame(name, args);
-    if (shown) {
-      await sleep(500);
-      setGone(true);
-    }
-    return result;
-  }, [goTo, locate, query, toFrame]);
+    return finish(await toFrame(name, args));
+  }, [goTo, locate, query, toFrame, tween, typed]);
 
   // The agent's commands for this chat. The first window to claim one does it: the same chat open in two tabs must not cut twice.
   useEffect(() => onVideoCommand((cmd) => {

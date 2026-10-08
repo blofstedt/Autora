@@ -26,6 +26,7 @@ import fs from "node:fs";
 import path from "node:path";
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import { artifactPath, getArtifact, MAX_ARTIFACT_BYTES, saveArtifact } from "./artifacts";
+import type { ChatImage } from "./llm";
 import { stateDir } from "./state";
 import { staticDir } from "./staticfiles";
 
@@ -446,12 +447,18 @@ type VideoContext = {
   /** Why the person's hold on the window stops this (server/presence.ts), or null. */
   held?: (subject: string) => string | null;
   showFile?: (file: { id: string; name: string; mime: string; size: number }) => void;
+  putBlob?: (data: Buffer, mime: string) => string;
+  showImage?: (blob: string, alt: string, caption: string | null, size?: { w: number; h: number }) => void;
   cancelled: () => boolean;
 };
 
-type VideoOutcome = { ok: boolean; summary: string; preview?: string; held?: boolean };
+type VideoOutcome = { ok: boolean; summary: string; preview?: string; held?: boolean; images?: ChatImage[] };
 
-type Clip = { id: string; type: string; name: string; start: number; duration: number; trimStart: number; trimEnd: number; mediaId?: string; text?: string };
+type Clip = {
+  id: string; type: string; name: string; start: number; duration: number; trimStart: number; trimEnd: number; mediaId?: string; text?: string;
+  effects?: Array<{ id: string; type: string; enabled: boolean }>; mask?: { id: string; type: string };
+  keyframes?: Array<{ property: string; keys: Array<{ id: string; at: number }> }>; speed?: number; hidden?: boolean;
+};
 type Snapshot = {
   project: { id: string; name: string };
   canvas: { width: number; height: number };
@@ -493,7 +500,10 @@ function describe(s: Snapshot): string {
     lines.push(`Track ${t.id} (${t.type}${t.name ? `, "${t.name}"` : ""}):`);
     for (const c of t.clips) {
       const extra = c.type === "text" ? ` text "${String(c.text ?? "").slice(0, 80)}"` : c.mediaId ? ` of ${c.mediaId}` : "";
-      lines.push(`  ${c.id}  ${c.type} "${c.name}"${extra}  ${fmt(c.start)} to ${fmt(c.start + c.duration)}${c.trimStart || c.trimEnd ? ` (source in ${fmt(c.trimStart)}, out-trim ${fmt(c.trimEnd)})` : ""}`);
+      lines.push(`  ${c.id}  ${c.type} "${c.name}"${extra}  ${fmt(c.start)} to ${fmt(c.start + c.duration)}${c.trimStart || c.trimEnd ? ` (source in ${fmt(c.trimStart)}, out-trim ${fmt(c.trimEnd)})` : ""}${c.hidden ? " [hidden]" : ""}${c.speed ? ` [speed ${c.speed}x]` : ""}`);
+      for (const e of c.effects ?? []) lines.push(`      effect ${e.id} ${e.type}${e.enabled ? "" : " (off)"}`);
+      if (c.mask) lines.push(`      mask ${c.mask.id} ${c.mask.type}`);
+      for (const k of c.keyframes ?? []) lines.push(`      keyframes ${k.property}: ${k.keys.map((x) => `${x.id} at ${fmt(x.at)}`).join(", ")}`);
     }
   }
   return lines.join("\n");
@@ -504,25 +514,51 @@ const need = (args: Record<string, any>, key: string): string => {
   if (typeof v !== "string" || !v.trim()) throw new Error(`${key} is required`);
   return v.trim();
 };
-const numArg = (args: Record<string, any>, key: string): number | undefined => {
-  const v = args[key];
-  if (v === undefined || v === null || v === "") return undefined;
-  const n = Number(v);
-  if (!Number.isFinite(n)) throw new Error(`${key} must be a number of seconds`);
-  return n;
-};
-
 /** Which project the person means by what the agent said: an id, or part of a name. */
 function findProject(ref: string): { id: string; name: string } | null {
   const all = listProjects();
   return all.find((p) => p.id === ref) ?? all.find((p) => p.name.toLowerCase() === ref.toLowerCase()) ?? all.find((p) => p.name.toLowerCase().includes(ref.toLowerCase())) ?? null;
 }
 
-const EDIT_ACTIONS = ["add_clip", "add_text", "split", "trim", "move", "delete", "set", "seek", "play", "pause", "undo", "redo", "rename"] as const;
+/** What each tool's `action` may be. A name here is also a command the editor understands (opencut-editor/src/autora/). */
+const EDIT_ACTIONS = [
+  "add_clip", "add_text", "add_sticker", "add_graphic", "add_effect_layer", "add_subtitles", "split", "trim", "move", "delete",
+  "duplicate", "set", "select", "copy", "paste", "toggle_visibility", "toggle_mute", "seek", "play", "pause", "undo", "redo", "rename",
+] as const;
+const STYLE_ACTIONS = [
+  "effect_add", "effect_set", "effect_toggle", "effect_remove", "effect_reorder", "mask_add", "mask_set", "mask_invert", "mask_remove",
+  "keyframe_set", "keyframe_remove", "keyframe_move", "keyframes", "retime", "separate_audio",
+] as const;
+const PROJECT_ACTIONS = [
+  "track_add", "track_remove", "track_mute", "track_hide", "scene_list", "scene_create", "scene_rename", "scene_switch", "scene_delete",
+  "bookmark_toggle", "bookmark_set", "bookmark_move", "bookmark_remove", "settings", "media_remove", "project_list", "project_delete",
+  "project_duplicate", "action", "panel",
+] as const;
+const UI_ACTIONS = ["read", "click", "type", "commit", "press", "drag", "scroll"] as const;
+
+/** An answer from the editor, in words: the timeline when it sent one, otherwise what it sent. */
+function said(result: unknown): string {
+  if (result && typeof result === "object" && "tracks" in result && "project" in result) {
+    // What else the editor said with the timeline (the id of the effect it just made, say) goes with it.
+    const { tracks: _t, project: _p, canvas: _c, fps: _f, duration: _d, playhead: _h, playing: _g, media: _m, ...rest } = result as Record<string, unknown>;
+    return describe(result as Snapshot) + (Object.keys(rest).length ? `\n${JSON.stringify(rest)}` : "");
+  }
+  const text = JSON.stringify(result, null, 1) ?? "";
+  return text.length > 6000 ? `${text.slice(0, 6000)}\n[cut: ${text.length - 6000} more characters]` : text;
+}
+
+function controls(result: unknown): string {
+  const r = result as { scope?: string; controls?: Array<{ ref: number; role: string; label: string; value?: string; state?: string }>; messages?: string[]; clicked?: boolean };
+  if (!r || !Array.isArray(r.controls)) return said(result);
+  const lines = [`On screen (${r.scope ?? "the editor"}), ${r.controls.length} controls. Name one by its ref or its label:`];
+  for (const c of r.controls) lines.push(`  [${c.ref}] ${c.role} "${c.label}"${c.value !== undefined ? ` = ${JSON.stringify(c.value)}` : ""}${c.state ? ` (${c.state})` : ""}`);
+  if (r.messages?.length) lines.push(`Messages on screen: ${r.messages.join(" | ")}`);
+  return lines.join("\n");
+}
 
 export async function runVideoTool(name: string, args: Record<string, any>, ctx: VideoContext): Promise<VideoOutcome> {
   try {
-    const blocked = name === "video_look" ? null : ctx.held?.("*") ?? null;
+    const blocked = name === "video_look" || name === "video_catalog" || name === "video_frame" || (name === "video_ui" && args.action === "read") ? null : ctx.held?.("*") ?? null;
     if (blocked) return { ok: false, held: true, summary: blocked };
 
     switch (name) {
@@ -581,28 +617,41 @@ export async function runVideoTool(name: string, args: Record<string, any>, ctx:
         }
       }
 
-      case "video_edit": {
+      case "video_edit":
+      case "video_style":
+      case "video_project": {
+        const list: readonly string[] = name === "video_edit" ? EDIT_ACTIONS : name === "video_style" ? STYLE_ACTIONS : PROJECT_ACTIONS;
         const action = need(args, "action");
-        if (!(EDIT_ACTIONS as readonly string[]).includes(action)) {
-          return { ok: false, summary: `action is one of: ${EDIT_ACTIONS.join(", ")}.` };
-        }
+        if (!list.includes(action)) return { ok: false, summary: `action is one of: ${list.join(", ")}.` };
         const payload: Record<string, unknown> = {};
-        const copy = (...keys: string[]) => { for (const k of keys) if (args[k] !== undefined) payload[k] = args[k]; };
-        switch (action) {
-          case "add_clip": copy("mediaId", "start", "duration"); need(payload as Record<string, any>, "mediaId"); break;
-          case "add_text": copy("text", "start", "duration", "color", "fontFamily", "fontSize", "fontWeight", "textAlign"); need(payload as Record<string, any>, "text"); break;
-          case "split": copy("elementId", "time"); numArg(payload as Record<string, any>, "time"); need(payload as Record<string, any>, "elementId"); break;
-          case "trim": copy("elementId", "from", "to"); need(payload as Record<string, any>, "elementId"); break;
-          case "move": copy("elementId", "start", "trackId"); need(payload as Record<string, any>, "elementId"); break;
-          case "delete": copy("elementIds"); if (typeof args.elementId === "string") payload.elementIds = [args.elementId]; break;
-          case "set": copy("elementId", "params"); need(payload as Record<string, any>, "elementId"); break;
-          case "seek": copy("time"); break;
-          case "rename": copy("name"); break;
-        }
-        // The window plays the agent's cursor to the place before the editor does it (see OpenCutWindow).
-        const result = (await command(ctx.session, action === "set" ? "set_params" : action, payload)) as Snapshot | { playhead?: number; playing?: boolean };
-        if ("tracks" in result) return { ok: true, summary: `Done (${action}).\n${describe(result)}`, preview: action };
-        return { ok: true, summary: `Done (${action}).`, preview: action };
+        for (const [k, v] of Object.entries(args)) if (k !== "action" && v !== undefined && v !== null) payload[k] = v;
+        if (action === "delete" && typeof args.elementId === "string") payload.elementIds = [args.elementId];
+        // `set` is a change to a clip's own properties; the editor calls it set_params.
+        const result = await command(ctx.session, action === "set" ? "set_params" : action, payload, action === "paste" ? 30_000 : 60_000);
+        return { ok: true, summary: `Done (${action}).\n${said(result)}`, preview: action };
+      }
+
+      case "video_ui": {
+        const action = need(args, "action");
+        if (!(UI_ACTIONS as readonly string[]).includes(action)) return { ok: false, summary: `action is one of: ${UI_ACTIONS.join(", ")}.` };
+        const payload: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(args)) if (k !== "action" && v !== undefined && v !== null) payload[k] = v;
+        const result = await command(ctx.session, `ui_${action}`, payload, 60_000);
+        return { ok: true, summary: action === "read" || action === "click" ? controls(result) : `Done (${action}).${result && typeof result === "object" && Object.keys(result).length ? `\n${said(result)}` : ""}`, preview: `${action}${args.label ? ` ${String(args.label).slice(0, 30)}` : args.ref !== undefined ? ` [${args.ref}]` : ""}` };
+      }
+
+      case "video_catalog": {
+        const topic = need(args, "topic");
+        const result = await command(ctx.session, "catalog", { topic, query: typeof args.query === "string" ? args.query : typeof args.elementId === "string" ? args.elementId : "" });
+        return { ok: true, summary: said(result), preview: `catalog ${topic}` };
+      }
+
+      case "video_frame": {
+        const got = (await command(ctx.session, "frame", { ...(args.time !== undefined ? { time: Number(args.time) } : {}), width: Number(args.width) || 640 }, 90_000)) as { png: string; width: number; height: number; time: number };
+        const data = Buffer.from(got.png, "base64");
+        if (data.byteLength === 0) return { ok: false, summary: "The editor could not draw that frame." };
+        if (ctx.putBlob && ctx.showImage) ctx.showImage(ctx.putBlob(data, "image/png"), `Frame at ${fmt(got.time)}`, `Frame at ${fmt(got.time)}`, { w: got.width, h: got.height });
+        return { ok: true, summary: `The frame at ${fmt(got.time)} (${got.width}x${got.height}) is in this result and shown in the conversation.`, preview: `frame at ${fmt(got.time)}`, images: [{ mime: "image/png", data: got.png }] };
       }
 
       case "video_export": {

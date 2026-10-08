@@ -30,10 +30,54 @@ const publicBeside = (): Plugin => ({
   },
 });
 
+/**
+ * Small edits to OpenCut's own files, made as they are read. The agent has to
+ * find a clip or a track on the screen to move its cursor to it, and OpenCut's
+ * timeline gives neither a handle, so two attributes are added where they are
+ * made; and one field the wasm renderer wants under another name is sent under
+ * both. The pinned commit is what these lines are read from; if a newer one
+ * moves them the build stops here, rather than the cursor quietly pointing
+ * nowhere or an effect layer quietly failing.
+ */
+const MARKS: Array<{ file: string; from: string; to: string }> = [
+  {
+    file: "/src/web/timeline/components/timeline-element.tsx",
+    from: "onClick={(event) => onElementClick({ event, element })}",
+    to: "data-element-id={element.id} onClick={(event) => onElementClick({ event, element })}",
+  },
+  {
+    file: "/src/web/timeline/components/timeline-track.tsx",
+    from: "aria-label={`Select ${track.name} track`}",
+    to: "data-track-id={track.id} aria-label={`Select ${track.name} track`}",
+  },
+  {
+    // The wasm renderer reads this one variant's field in snake_case; OpenCut sends it in camelCase, so a scene effect
+    // (an effect layer) threw "missing field `effect_pass_groups`" on every frame. Both are sent; the one it does not
+    // read is ignored.
+    file: "/src/web/services/renderer/compositor/frame-descriptor.ts",
+    from: 'type: "sceneEffect",\n\t\t\teffectPassGroups: [node.resolved.passes],',
+    to: 'type: "sceneEffect",\n\t\t\teffectPassGroups: [node.resolved.passes],\n\t\t\teffect_pass_groups: [node.resolved.passes],',
+  },
+];
+const markSources = (): Plugin => ({
+  name: "autora-patch-sources",
+  enforce: "pre",
+  transform(code, id) {
+    const marks = MARKS.filter((m) => id.endsWith(m.file));
+    if (!marks.length) return null;
+    let out = code;
+    for (const m of marks) {
+      if (!out.includes(m.from)) throw new Error(`autora-patch-sources: ${m.file} no longer has ${m.from}`);
+      out = out.replace(m.from, m.to);
+    }
+    return { code: out, map: null };
+  },
+});
+
 export default defineConfig({
   base: "./",
   publicDir: path.resolve(import.meta.dirname, "src/web-public"),
-  plugins: [publicBeside(), react(), wasm()],
+  plugins: [publicBeside(), markSources(), react(), wasm()],
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "src/web"),

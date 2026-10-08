@@ -1,9 +1,11 @@
 import { EditorCore } from "@/core";
 import { processMediaAssets } from "@/media/processing";
 import { buildElementFromMedia, buildTextElement } from "@/timeline/element-utils";
-import type { SceneTracks, TimelineElement } from "@/timeline";
-import { mediaTimeFromSeconds, mediaTimeToSeconds } from "@/wasm";
+import type { TimelineElement } from "@/timeline";
+import { allTracks, describe, findElement, need, num, sec, state, str, toSec } from "./helpers";
 import { deliver, onCommand } from "./bridge";
+import { feature } from "./features";
+import * as screen from "./ui";
 import { openProject } from "./shims/navigation";
 
 /**
@@ -14,79 +16,6 @@ import { openProject } from "./shims/navigation";
  *
  * Times are seconds on the way in and out; the editor counts ticks.
  */
-
-const sec = (s: number) => mediaTimeFromSeconds({ seconds: s });
-const toSec = (t: number) => Math.round(mediaTimeToSeconds({ time: t as never }) * 1000) / 1000;
-
-function num(args: Record<string, unknown>, key: string): number | undefined {
-  const v = args[key];
-  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
-}
-function str(args: Record<string, unknown>, key: string): string | undefined {
-  const v = args[key];
-  return typeof v === "string" && v ? v : undefined;
-}
-function need<T>(v: T | undefined, what: string): T {
-  if (v === undefined) throw new Error(`${what} is required`);
-  return v;
-}
-
-function allTracks(tracks: SceneTracks) {
-  return [...tracks.overlay, tracks.main, ...tracks.audio];
-}
-
-function findElement(editor: EditorCore, elementId: string) {
-  const tracks = editor.scenes.getActiveScene().tracks;
-  for (const track of allTracks(tracks)) {
-    const element = (track.elements as TimelineElement[]).find((e) => e.id === elementId);
-    if (element) return { track, element };
-  }
-  throw new Error(`No clip with id ${elementId}. Ask for the project state to see the ids.`);
-}
-
-function describe(element: TimelineElement) {
-  const base = {
-    id: element.id,
-    type: element.type,
-    name: element.name,
-    start: toSec(element.startTime),
-    duration: toSec(element.duration),
-    trimStart: toSec(element.trimStart),
-    trimEnd: toSec(element.trimEnd),
-  };
-  const extra: Record<string, unknown> = {};
-  if ("mediaId" in element) extra.mediaId = element.mediaId;
-  if (element.type === "text") extra.text = element.params.content;
-  return { ...base, ...extra };
-}
-
-function state(editor: EditorCore) {
-  const project = editor.project.getActive();
-  const scene = editor.scenes.getActiveScene();
-  const tracks = allTracks(scene.tracks).map((track) => ({
-    id: track.id,
-    type: track.type,
-    name: track.name,
-    clips: (track.elements as TimelineElement[]).map(describe),
-  }));
-  return {
-    project: { id: project.metadata.id, name: project.metadata.name },
-    canvas: project.settings.canvasSize,
-    fps: project.settings.fps,
-    duration: toSec(editor.timeline.getTotalDuration()),
-    playhead: toSec(editor.playback.getCurrentTime()),
-    playing: editor.playback.getIsPlaying(),
-    tracks,
-    media: editor.media.getAssets().map((a) => ({
-      id: a.id,
-      name: a.name,
-      type: a.type,
-      duration: a.duration ?? null,
-      width: a.width ?? null,
-      height: a.height ?? null,
-    })),
-  };
-}
 
 /** Seconds to leave a clip on screen when its source has no length of its own (a picture). */
 const STILL_SECONDS = 5;
@@ -212,17 +141,8 @@ async function run(name: string, args: Record<string, unknown>): Promise<unknown
       return state(editor);
     }
 
-    case "locate": {
-      // Where the playhead is on screen, after moving it to `time`: the agent's cursor goes there.
-      const time = num(args, "time");
-      if (time !== undefined) editor.playback.seek({ time: sec(Math.max(0, time)) });
-      await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
-      const head = document.querySelector('[aria-label="Timeline playhead"]');
-      if (!head) return null;
-      const r = head.getBoundingClientRect();
-      const view = { w: window.innerWidth, h: window.innerHeight };
-      return { x: Math.min(view.w - 12, Math.max(12, r.left + 1)), y: Math.min(view.h - 12, r.top + Math.min(r.height / 2, 70)), view };
-    }
+    case "locate":
+      return locate(editor, args);
 
     case "seek":
       editor.playback.seek({ time: sec(Math.max(0, need(num(args, "time"), "time"))) });
@@ -273,8 +193,98 @@ async function run(name: string, args: Record<string, unknown>): Promise<unknown
       return { file, artifact: kept.artifact, bytes: result.buffer.byteLength };
     }
 
+    default: {
+      const done = name.startsWith("ui_") ? await ui(name, args) : await feature(name, args);
+      if (done === undefined) throw new Error(`Unknown video command: ${name}`);
+      return done;
+    }
+  }
+}
+
+const toTarget = (args: Record<string, unknown>): screen.Target => ({
+  ref: num(args, "ref"),
+  label: str(args, "label"),
+  elementId: str(args, "elementId"),
+  trackId: str(args, "trackId"),
+  selector: str(args, "selector"),
+});
+const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** The screen driver (ui.ts): read, point, click, type, press, drag, scroll. */
+async function ui(name: string, args: Record<string, unknown>): Promise<unknown> {
+  switch (name) {
+    case "ui_read":
+      return { ...screen.read(), messages: screen.messages() };
+    case "ui_click": {
+      const el = screen.find(toTarget(args));
+      await screen.click(el, { double: args.double === true, right: args.right === true });
+      await wait(150);
+      return { clicked: true, messages: screen.messages(), ...screen.read() };
+    }
+    case "ui_type": {
+      const el = screen.find(toTarget(args));
+      const typed = screen.type(el, need(str(args, "text") ?? (typeof args.text === "string" ? args.text : undefined), "text"), args.replace !== false);
+      if (args.enter === true) screen.commit(el, "enter");
+      if (args.blur === true) screen.commit(el, "blur");
+      return typed;
+    }
+    case "ui_commit":
+      screen.commit(screen.find(toTarget(args)), args.how === "blur" ? "blur" : "enter");
+      return { ok: true };
+    case "ui_press": {
+      const target = args.ref !== undefined || args.label || args.selector ? screen.find(toTarget(args)) : undefined;
+      screen.press(need(str(args, "key"), "key"), { ctrl: args.ctrl === true, shift: args.shift === true, alt: args.alt === true, meta: args.meta === true }, target);
+      await wait(120);
+      return { messages: screen.messages() };
+    }
+    case "ui_drag": {
+      const from = args.from as { x: number; y: number } | undefined;
+      const to = args.to as { x: number; y: number } | undefined;
+      if (!from || !to) throw new Error("from and to ({x, y} in the frame's pixels) are required");
+      await screen.drag(from, to, { steps: num(args, "steps") });
+      await wait(150);
+      return state(EditorCore.getInstance());
+    }
+    case "ui_scroll":
+      screen.scroll(args.ref !== undefined || args.label || args.selector ? screen.find(toTarget(args)) : null, num(args, "dx") ?? 0, num(args, "dy") ?? 0);
+      return { ok: true };
     default:
-      throw new Error(`Unknown video command: ${name}`);
+      return undefined;
+  }
+}
+
+/** Where on the screen a command is about, for the agent's cursor to go to first. */
+async function locate(editor: EditorCore, args: Record<string, unknown>): Promise<unknown> {
+  const view = { w: window.innerWidth, h: window.innerHeight };
+  const frame = () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+  try {
+    if (args.target && typeof args.target === "object") {
+      return screen.spot(screen.find(args.target as screen.Target));
+    }
+    const elementId = str(args, "elementId");
+    if (elementId) {
+      const { element } = findElement(editor, elementId);
+      // Bring the clip into view the way a person would: put the playhead on it.
+      editor.playback.seek({ time: element.startTime });
+      await frame();
+      return screen.spot(screen.find({ elementId }));
+    }
+    const trackId = str(args, "trackId");
+    if (trackId) return screen.spot(screen.find({ trackId }));
+    const panel = str(args, "panel");
+    if (panel) {
+      const label = ({ media: "Media", sounds: "Sounds", text: "Text", stickers: "Stickers", effects: "Effects", transitions: "Transitions", captions: "Captions", adjustment: "Adjustment", settings: "Settings" } as Record<string, string>)[panel];
+      if (label) return screen.spot(screen.find({ label }));
+    }
+    const time = num(args, "time");
+    if (time !== undefined) editor.playback.seek({ time: sec(Math.max(0, time)) });
+    await frame();
+    const head = document.querySelector('[aria-label="Timeline playhead"]');
+    if (!head) return null;
+    const r = head.getBoundingClientRect();
+    return { x: Math.min(view.w - 12, Math.max(12, r.left + 1)), y: Math.min(view.h - 12, r.top + Math.min(r.height / 2, 70)), w: 2, h: r.height, view };
+  } catch {
+    return null;
   }
 }
 
