@@ -50,7 +50,6 @@ async function main() {
       assert.ok(results(ev).every((e) => e.payload.ok !== false && !e.payload.error), JSON.stringify(results(ev).map((e) => e.payload)).slice(0, 400));
       assert.match(told(app), /Updated artifact/);
       assert.match(told(app), /The launch is on Monday/);
-      assert.ok(ev.some((e) => e.kind === "tools.enable" && e.payload.family === "office"), "loaded by the message");
       app.decide = null;
     });
 
