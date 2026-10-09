@@ -94,6 +94,16 @@ description: >-
   switch on the Tools page.
 
 
+  • Autora Photo — PhotoCraft's open-source photo editor (Rust, running in the
+  browser) in a window beside the chat: layers, masks, adjustment layers, filters,
+  type, brushes and real PSD files. Ask for a retouch, a cut-out, a resize or a
+  colour grade and Autora does it with the editor's own commands (the same ones in
+  its menus) while you watch, and checks the result by looking at it; paint and edit
+  by hand at the same time, undo anything it did, and export PNG, JPEG, WebP, TIFF
+  or PSD. The look, the mood and what the picture is of stay yours. Has its own
+  switch on the Tools page.
+
+
   • Notebooks — group files by purpose with notes between them. Autora can
   compile one for you (every source filed, every claim citing its proof), and
   you can hand a notebook or any saved file to a chat.
@@ -170,6 +180,10 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Fixes the blank screen on load. The app failed to start because a list the lazy
-  pages register themselves in was created after the first page used it; it is now
-  created first.
+  New: Autora Photo, a photo editor beside the chat (PhotoCraft's, with layers,
+  masks, adjustment layers, filters, type, brushes and real PSD files). Ask Autora
+  to retouch, cut out, resize or colour a picture and it runs the editor's own
+  commands while you watch; edit by hand at the same time and export PNG, JPEG,
+  WebP, TIFF or PSD. It has its own switch on the Tools page. Also fixes the blank
+  screen on load: a list the lazy pages register themselves in was created after
+  the first page used it.

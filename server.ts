@@ -129,6 +129,7 @@ import { dropSpectra, serveSpectra, spectraDocumentChanged, spectraRoutes, spect
 import { newFileRoutes } from "./server/newfile";
 import { cadRoutes, cadState, dropCad, onCadChange, serveCad } from "./server/caddesk";
 import { dropGame, gameRoutes, gameState, onGameChange, serveGame } from "./server/gamedesk";
+import { dropPhoto, onPhotoChange, photoRoutes, photoState, servePhoto } from "./server/photodesk";
 import { dropTerm, onTermChange, termRoutes, termState, termUpgrade } from "./server/termdesk";
 import { dropStudio, onStudioChange, studioRoutes, studioState, studioTurnNote } from "./server/studio";
 import { windowOff } from "./server/tools";
@@ -418,6 +419,7 @@ function forgetSession(id: string) {
   forgetPresence(id);
   dropCad(id);
   dropGame(id);
+  dropPhoto(id);
   dropTerm(id);
   dropStudio(id);
   presenceSent.delete(id);
@@ -1212,6 +1214,10 @@ onTermChange((sessionId) => {
 /* Autora Games, the same way: the window opens, and the game changes (by the agent's tools or the person's hands). */
 onGameChange((sessionId) => {
   sendEphemeral(sessionId, { type: "gamedesk", session: sessionId, state: gameState(sessionId) });
+});
+/* Autora Photo, the same way: the window opens, and the picture changes (by the agent's tools or the person's hands). */
+onPhotoChange((sessionId) => {
+  sendEphemeral(sessionId, { type: "photodesk", session: sessionId, state: photoState(sessionId) });
 });
 /* Autora 3D, the same way: the window opens, and the model changes (by the agent's tools or the person's hands). */
 onCadChange((sessionId) => {
@@ -5449,6 +5455,12 @@ async function startServer() {
     incognito: (id: string) => Boolean(sessions.get(id)?.incognito),
     off: () => windowOff("cad_scene_get"),
   });
+  // Autora Photo: the photo window's picture, and opening and putting it away.
+  photoRoutes(app, {
+    exists: (id: string) => sessions.has(id),
+    incognito: (id: string) => Boolean(sessions.get(id)?.incognito),
+    off: () => windowOff("photo_look"),
+  });
   // Autora Games: the game window's game and files, and opening and putting it away.
   gameRoutes(app, {
     exists: (id: string) => sessions.has(id),
@@ -6172,6 +6184,7 @@ async function startServer() {
       ws.send(JSON.stringify({ type: "opencutdesk", session: sessionId, state: opencutState(sessionId) }));
       ws.send(JSON.stringify({ type: "caddesk", session: sessionId, state: cadState(sessionId) }));
       ws.send(JSON.stringify({ type: "gamedesk", session: sessionId, state: gameState(sessionId) }));
+      ws.send(JSON.stringify({ type: "photodesk", session: sessionId, state: photoState(sessionId) }));
       ws.send(JSON.stringify({ type: "studiodesk", session: sessionId, state: studioState(sessionId) }));
       ws.send(JSON.stringify({ type: "termdesk", session: sessionId, state: termState(sessionId) }));
       ws.send(JSON.stringify({ type: "presence", session: sessionId, state: presenceFor(sessionId).view() }));
@@ -6277,6 +6290,7 @@ async function startServer() {
   serveCad(app, path.join(process.cwd(), "dist"));
   // Autora Games' window page: GDevelop's editor, built from gdevelop-editor/.
   serveGame(app, path.join(process.cwd(), "dist"));
+  servePhoto(app, path.join(process.cwd(), "dist"));
   // The Office editors, likewise: built by scripts/build-office.mjs, absent without it.
   const officeWeb = officeWebDir();
   if (officeWeb) serveOfficeEditors(app, officeWeb);

@@ -23,6 +23,31 @@ COPY scripts/build-office.mjs scripts/build-office.mjs
 RUN mkdir -p dist/office/native \
  && node scripts/build-office.mjs --only-sidecar --targets=x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
 
+# ── stage 0b: Autora Photo (PhotoCraft's editor and command line) ───────────
+# PhotoCraft is a Rust image editor (photo/PIN.json). Two things come out of it:
+# its editor, WebAssembly (the same bytes on either CPU, built once with trunk),
+# and its headless command line, which the agent's photo_* tools run, built
+# static against musl for both CPUs the image runs on, the same way as the
+# Office engine above. Only the pin, the overlay and the script are copied in,
+# so this layer is rebuilt when they change and not when the app does. It is
+# optional: if it fails to build the image still builds, without Autora Photo.
+FROM --platform=$BUILDPLATFORM rust:1-bookworm AS photo
+WORKDIR /build
+ARG TRUNK_VERSION=0.21.14
+RUN (apt-get update \
+ && apt-get install -y --no-install-recommends python3-pip nodejs git ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
+ && pip install --break-system-packages ziglang \
+ && cargo install cargo-zigbuild --locked \
+ && cargo install trunk --locked --version "$TRUNK_VERSION") \
+ || echo "Autora Photo's toolchain could not be set up; the image will build without it"
+COPY photo/ photo/
+COPY scripts/build-photo.mjs scripts/build-photo.mjs
+# The folder is made first so the copy out of this stage has something to copy
+# even when the build failed.
+RUN mkdir -p dist/photo \
+ && node scripts/build-photo.mjs --targets=x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
+
 # ── stage 1: build ───────────────────────────────────────────────────────────
 # The app is a Vite bundle and an esbuild'd Express server. Both come out of
 # `npm run build` into dist/, so one build stage produces everything the
@@ -188,6 +213,8 @@ COPY --from=builder /build/node_modules node_modules/
 COPY --from=builder /build/dist dist/
 # Static, one per CPU (the server picks by process.arch): see stage 0.
 COPY --from=office-engine /build/dist/office/native dist/office/native/
+# Autora Photo: the editor (WebAssembly) and the command line, one per CPU (the server picks by process.arch): see stage 0b.
+COPY --from=photo /build/dist/photo dist/photo/
 
 # The PDF engine's venv, made here rather than in the build stage: a venv
 # records the interpreter it was made by, and the one it runs under is this

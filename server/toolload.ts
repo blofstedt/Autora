@@ -62,6 +62,12 @@ export const FAMILIES: Family[] = [
     words: /\bautora games?\b|\bgdevelop\b|\b(?:make|build|create|design|prototype|code) (?:me )?(?:a |an |the |my )?(?:\w+ ){0,3}(?:game|platformer|shooter|puzzle game|rpg|arcade game)\b|\bvideo ?game\b|\bgame (?:jam|engine|design|scene|level|dev)\b|\bplatformer\b|\bsprite\b|\bgame objects?\b|\bpixel[- ]art game\b/i,
   },
   {
+    id: "photo",
+    about: "Autora Photo: open, look at, edit and export photos and images (layers, masks, adjustments, filters, PSD) in the photo window",
+    match: (n) => n.startsWith("photo_"),
+    words: /\bautora photo\b|\bphotocraft\b|\bphotoshop\b|\.(?:psd|psb|pcraft)\b|\bphotos?\b|\bretouch|\bcolou?r[- ]grad|\bcrop (?:the |this |my )?(?:photo|image|picture)|\bremove (?:the )?background\b|\blayers?\b.*\b(?:image|photo|picture)|\b(?:edit|fix|touch up|enhance|sharpen|blur) (?:the |this |my |a )?(?:photo|image|picture)/i,
+  },
+  {
     id: "widgets",
     about: "show a chart, table or small interactive widget in the thread",
     match: (n) => n === "widget_show",

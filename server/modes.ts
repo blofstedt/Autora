@@ -247,6 +247,9 @@ export function looksOnly(name: string, args: Record<string, any> = {}): boolean
   if (name === "video_look" || name === "video_catalog" || name === "video_frame") return true;
   if (name === "video_ui") return String(args.action ?? "") === "read";
   if (name === "video_open") return !String(args.new ?? "").trim();
+  // Looking at the picture is looking; opening one on the window does not change it, starting a new one or loading a file does.
+  if (name === "photo_look" || name === "photo_info" || name === "photo_commands") return true;
+  if (name === "photo_open") return !args.file && !args.new;
   // The same for the music window; playing and stopping change nothing in the song.
   if (name === "studio_look" || name === "studio_play") return true;
   if (name === "studio_open") return !String(args.new ?? "").trim();

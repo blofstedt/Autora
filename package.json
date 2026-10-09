@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.test.json && npm --prefix spectra-editor run typecheck && npm --prefix opencut-editor run typecheck && npm --prefix gdevelop-editor run typecheck && npm --prefix autora-3d run typecheck",
     "test": "tsx tests/run.ts",
     "build:office": "node scripts/build-office.mjs",
+    "build:photo": "node scripts/build-photo.mjs",
     "replay": "tsx scripts/replay.ts",
     "eval": "tsx evals/run.ts"
   },
