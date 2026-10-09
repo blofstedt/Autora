@@ -48,12 +48,12 @@ await test("the tools describe each other by the names the agent knows", () => {
 
 await test("the tools are in a family of their own, brought in by the person's words or by use", () => {
   const specs = cadSPECS.map((s) => ({ name: s.name }));
-  const none = loadedFamilies({ events: [], said: "what's the weather" });
+  const none = loadedFamilies({ events: [], said: "what's the weather", lazy: true });
   assert.equal(withoutUnloaded(specs, none).length, 0);
   for (const said of ["model a phone stand for 3D printing", "open Autora 3D", "bevel the top edges", "export an STL"]) {
-    assert.equal(withoutUnloaded(specs, loadedFamilies({ events: [], said })).length, specs.length, said);
+    assert.equal(withoutUnloaded(specs, loadedFamilies({ events: [], said, lazy: true })).length, specs.length, said);
   }
-  const used = loadedFamilies({ events: [{ kind: "tool.call", payload: { name: "cad_shape_add" } }] });
+  const used = loadedFamilies({ events: [{ kind: "tool.call", payload: { name: "cad_shape_add" } }], lazy: true });
   assert.equal(withoutUnloaded(specs, used).length, specs.length);
 });
 

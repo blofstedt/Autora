@@ -152,11 +152,11 @@ await test("every spec is a studio_ tool with a description and an object schema
 
 await test("the tools are a family of their own, brought in by the person's words or by use", () => {
   const specs = studioSPECS.map((s) => ({ name: s.name }));
-  assert.equal(withoutUnloaded(specs, loadedFamilies({ events: [], said: "what's the weather" })).length, 0);
+  assert.equal(withoutUnloaded(specs, loadedFamilies({ events: [], said: "what's the weather" , lazy: true})).length, 0);
   for (const said of ["make a beat for me", "open Autora Music", "I want a chord progression in A minor", "write a bassline", "set the bpm to 90", "a song about summer"]) {
-    assert.equal(withoutUnloaded(specs, loadedFamilies({ events: [], said })).length, specs.length, said);
+    assert.equal(withoutUnloaded(specs, loadedFamilies({ events: [], said, lazy: true })).length, specs.length, said);
   }
-  assert.equal(withoutUnloaded(specs, loadedFamilies({ events: [{ kind: "tool.call", payload: { name: "studio_look" } }] })).length, specs.length);
+  assert.equal(withoutUnloaded(specs, loadedFamilies({ events: [{ kind: "tool.call", payload: { name: "studio_look" } }], lazy: true })).length, specs.length);
 });
 
 await test("the Tools page switch turns them off; reading is looking, writing is not", () => {

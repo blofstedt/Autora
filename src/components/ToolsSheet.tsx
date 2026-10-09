@@ -1,55 +1,24 @@
 /**
- * The toolbox: the apps the person can open themselves, without a turn.
+ * The toolbox in the composer: Autora Widgets.
  *
- * Tapping the wrench in the composer opens this. Every row is a window that
- * works with nothing in it -- a blank PDF, document, workbook or deck -- so a
- * tap makes a real, empty file and puts it in the window beside the chat. The
- * browser, the app window and a widget are not here: they have nothing to show
- * until the agent puts something in them.
+ * Tapping the wrench opens this. A widget needs something to explain, so tapping it does not open an empty window: it
+ * starts the message ("Make an interactive widget that shows ...") in the box for the person to finish. The other windows
+ * are opened by the agent when the work needs them (and by the tabs beside the chat); they are not listed here.
  *
- * The apps switched off on the Tools page are shown greyed rather than hidden,
- * so a missing app reads as switched off instead of missing.
+ * Switched off on the Tools page, the row is shown greyed rather than hidden, so a missing tool reads as off.
  */
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { IconCube, IconFile, IconGame, IconMusic, IconScroll, IconSlides, IconStar, IconTable, IconTerminal, IconVideo, IconWrench, IconX } from "./Icons";
+import { IconSparkle, IconWrench, IconX } from "./Icons";
 
-type Kind = "pdf" | "docx" | "xlsx" | "pptx" | "video" | "cad" | "game" | "studio" | "terminal";
-
-type Tool = {
-  kind: Kind;
-  app: string;
-  /** The setting on the Tools page that decides whether this app is on. */
-  setting: "pdf" | "video" | "pages" | "sheets" | "slides" | "cad" | "game" | "studio" | "terminal";
-  what: string;
-  icon: (size: number) => JSX.Element;
-};
-
-const TOOLS: Tool[] = [
-  { kind: "pdf", app: "Autora PDF", setting: "pdf", what: "A blank page", icon: (s) => <IconFile size={s} /> },
-  { kind: "video", app: "Autora Video", setting: "video", what: "A new video project", icon: (s) => <IconVideo size={s} /> },
-  { kind: "docx", app: "Autora Pages", setting: "pages", what: "A blank document", icon: (s) => <IconScroll size={s} /> },
-  { kind: "xlsx", app: "Autora Sheets", setting: "sheets", what: "A blank spreadsheet", icon: (s) => <IconTable size={s} /> },
-  { kind: "pptx", app: "Autora Slides", setting: "slides", what: "A blank slide", icon: (s) => <IconSlides size={s} /> },
-  { kind: "studio", app: "Autora Music", setting: "studio", what: "A new song", icon: (s) => <IconMusic size={s} /> },
-  { kind: "terminal", app: "Terminal", setting: "terminal", what: "A shell you and Autora share", icon: (s) => <IconTerminal size={s} /> },
-  { kind: "cad", app: "Autora 3D", setting: "cad", what: "A block to shape", icon: (s) => <IconCube size={s} /> },
-  { kind: "game", app: "Autora Games", setting: "game", what: "A new game", icon: (s) => <IconGame size={s} /> },
-];
-
-export function ToolsSheet({ session, onClose, onTrouble, onOpened }: {
-  session: string;
+export function ToolsSheet({ onClose, onAsk }: {
   onClose: () => void;
-  onTrouble: (message: string) => void;
-  /** What was opened, so the chat can say so and the window is already up. */
-  onOpened: (name: string, app: string) => void;
+  /** Put this at the start of the message, for the person to finish. */
+  onAsk: (text: string) => void;
 }) {
-  /* Which apps are on, from the same settings the Tools page writes. Held as
-     null while it loads: unknown is not the same as off, and a row that said
-     "switched off" for half a second would be wrong. */
+  /* Whether widgets are on, from the same settings the Tools page writes. Held as null while it loads: unknown is not
+     the same as off. */
   const [on, setOn] = useState<Record<string, { enabled?: boolean } | undefined> | null>(null);
-  const [busy, setBusy] = useState<Kind | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -66,62 +35,7 @@ export function ToolsSheet({ session, onClose, onTrouble, onOpened }: {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const open = async (tool: Tool) => {
-    if (busy) return;
-    setBusy(tool.kind);
-    setError(null);
-    try {
-      // The video editor opens on its own project; it makes a blank one itself when there is none.
-      if (tool.kind === "video") {
-        const res = await fetch(`/api/opencut/open?session=${encodeURIComponent(session)}`, { method: "POST" });
-        if (!res.ok) {
-          setError(`Autora Video was not opened (${res.status}).`);
-          setBusy(null);
-          return;
-        }
-        onOpened("a video project", tool.app);
-        onClose();
-        return;
-      }
-      if (tool.kind === "terminal") {
-        const res = await fetch(`/api/term/${encodeURIComponent(session)}/open`, { method: "POST" });
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          setError(String(body?.error ?? `The terminal was not opened (${res.status}).`));
-          setBusy(null);
-          return;
-        }
-        onOpened("a shell", tool.app);
-        onClose();
-        return;
-      }
-      /* Autora 3D has no file to make: the model is the chat's own (server/caddesk.ts), so opening it is its own route. */
-      const res = tool.kind === "cad"
-        ? await fetch(`/api/cad/${encodeURIComponent(session)}/open`, { method: "POST" })
-        : tool.kind === "game"
-        ? await fetch(`/api/game/${encodeURIComponent(session)}/open`, { method: "POST" })
-        : tool.kind === "studio"
-        ? await fetch(`/api/studio/${encodeURIComponent(session)}/open`, { method: "POST" })
-        : await fetch(`/api/sessions/${session}/new`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ kind: tool.kind }),
-          });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(String(body?.error ?? `A new file was not opened (${res.status}).`));
-        setBusy(null);
-        return;
-      }
-      onOpened(String(body?.name ?? "Untitled"), tool.app);
-      onClose();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setError(`A new file was not opened: ${message}`);
-      onTrouble(message);
-      setBusy(null);
-    }
-  };
+  const off = on !== null && on.widgets?.enabled === false;
 
   return createPortal(
     <div className="scrim tools-scrim" onClick={onClose} role="presentation">
@@ -141,34 +55,21 @@ export function ToolsSheet({ session, onClose, onTrouble, onOpened }: {
           </button>
         </div>
         <div className="modal-body tools-body">
-          <p className="jf-hint">Opens the app on its own, with a new blank file in it (the terminal opens at your working folder). No message, no waiting.</p>
           <div className="tool-tiles">
-            {TOOLS.map((tool) => {
-              const off = on !== null && on[tool.setting]?.enabled === false;
-              return (
-                <button
-                  key={tool.kind}
-                  type="button"
-                  className={`tool-tile${off ? " is-off" : ""}${busy === tool.kind ? " is-busy" : ""}`}
-                  disabled={off || busy !== null}
-                  title={off ? `${tool.app} is switched off on the Tools page` : `Open ${tool.app}`}
-                  onClick={() => void open(tool)}
-                >
-                  <span className="tool-tile-icon">{tool.icon(20)}</span>
-                  <span className="tool-tile-main">
-                    <b>{tool.app}</b>
-                    <em>{off ? "switched off on the Tools page" : tool.what}</em>
-                  </span>
-                  {busy === tool.kind && <span className="attach-spin" aria-hidden="true" />}
-                </button>
-              );
-            })}
+            <button
+              type="button"
+              className={`tool-tile${off ? " is-off" : ""}`}
+              disabled={off}
+              title={off ? "Autora Widgets is switched off on the Tools page" : "Ask for an interactive widget"}
+              onClick={() => { onAsk("Make an interactive widget that shows "); onClose(); }}
+            >
+              <span className="tool-tile-icon"><IconSparkle size={20} /></span>
+              <span className="tool-tile-main">
+                <b>Autora Widgets</b>
+                <em>{off ? "switched off on the Tools page" : "An interactive explainer, in the chat"}</em>
+              </span>
+            </button>
           </div>
-          {error && <p className="set-warn">{error}</p>}
-          <p className="jf-hint tools-more">
-            <IconStar size={12} /> Anything else -- the browser, the app window, a notebook, a PDF made from a
-            document -- is opened by asking, since it needs something to show.
-          </p>
         </div>
       </div>
     </div>,

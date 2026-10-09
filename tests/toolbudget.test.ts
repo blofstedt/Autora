@@ -21,7 +21,8 @@ const { availableTools, capabilityBriefing } = await import("../server/tools");
 const { withoutUnloaded } = await import("../server/toolload");
 
 const SCHEMA_BUDGET_CHARS = 48_000;
-const BRIEFING_BUDGET_CHARS = 17_500;
+// Raised from 17,500 for the windows overview (server/handbook.ts): the manuals themselves are not in the briefing, they arrive with a window's first call.
+const BRIEFING_BUDGET_CHARS = 18_500;
 
 console.log("tool budget");
 

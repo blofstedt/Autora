@@ -113,11 +113,14 @@ interface LoadContext {
   hasPdf?: boolean;
   /** Everything on, whatever else is true. */
   all?: boolean;
+  /** Bring families in only as they are wanted (the person's words, use, tools_enable). Off by default: every tool is a default tool. */
+  lazy?: boolean;
 }
 
 /** The families in the model's list this step. */
 export function loadedFamilies(ctx: LoadContext): Set<string> {
-  if (ctx.all) return new Set(FAMILIES.map((f) => f.id));
+  // Every tool is a default tool: the agent has all of them, and the handbook (server/handbook.ts) says how each works.
+  if (ctx.all || !ctx.lazy) return new Set(FAMILIES.map((f) => f.id));
   const out = loadedFromLog(ctx.events);
   if (ctx.hasPdf) out.add("pdf");
   const said = ctx.said ?? "";

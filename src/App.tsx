@@ -44,7 +44,7 @@ const Settings = lazyPage(() => import("./components/Settings"), "Settings");
 const Schedule = lazyPage(() => import("./components/Schedule"), "Schedule");
 const Triggers = lazyPage(() => import("./components/Triggers"), "Triggers");
 // Talk mode (and the 1,900-line speech code behind it) loads when it is turned on.
-const LiveChat = lazyPage(() => import("./components/LiveChat"), "LiveChat");
+const LiveChat = lazyPage(() => import("./components/LiveChat"), "LiveChat", false);
 import { LibraryPicker, type LibraryTab } from "./components/LibraryPicker";
 import { ToolsSheet } from "./components/ToolsSheet";
 import { OPEN_NOTEBOOK, type NotebookRef } from "./lib/notebooks";
@@ -95,10 +95,13 @@ import { SureHost } from "./components/SureHost";
    after. Nothing is shown while it arrives -- the chunk is small and local,
    and a spinner for a fifth of a second reads as a flicker rather than as
    waiting -- so the fallback is nothing at all. */
+const pageLoaders: Array<() => Promise<unknown>> = [];
 function lazyPage<T extends React.ComponentType<any>>(
   load: () => Promise<{ [k: string]: any }>,
   name: string,
+  preload = true,
 ): T {
+  if (preload) pageLoaders.push(load);
   return lazy(async () => {
     const mod = await load();
     return { default: (mod as any)[name] as T };
@@ -130,6 +133,34 @@ const OFFICE_PANES: Array<{ pane: SideWindow; kind: OfficeKind; label: string }>
   { pane: "sheets", kind: "xlsx", label: "Sheets" },
   { pane: "slides", kind: "pptx", label: "Slides" },
 ];
+
+/** Fetch every page's chunk once the app has settled, so the first visit to a
+    page is already in the browser's module cache instead of a round trip. */
+function preloadPages() {
+  const go = () => { for (const load of pageLoaders) void load().catch(() => undefined); };
+  if (typeof requestIdleCallback === "function") requestIdleCallback(go, { timeout: 4000 });
+  else setTimeout(go, 1500);
+}
+
+/** The route that puts a window away, for the × on its tab; null for a tab that cannot be closed (the Activity feed, the browser). */
+function closeUrlFor(pane: SideWindow, session: string): string | null {
+  const id = encodeURIComponent(session);
+  switch (pane) {
+    case "pdf": return `/api/spectra/close?session=${id}`;
+    case "video": return `/api/opencut/close?session=${id}`;
+    case "cad": return `/api/cad/${id}/close`;
+    case "game": return `/api/game/${id}/close`;
+    case "term": return `/api/term/${id}/close`;
+    case "studio": return `/api/studio/${id}/close`;
+    case "pages": return `/api/officedesk/${id}/close?kind=docx`;
+    case "sheets": return `/api/officedesk/${id}/close?kind=xlsx`;
+    case "slides": return `/api/officedesk/${id}/close?kind=pptx`;
+    case "app": return `/api/sessions/${id}/preview/close`;
+    default: return null;
+  }
+}
+
+const VOICE_NEEDS_HTTPS = "Voice and live mode require https";
 
 export function App() {
   /* Back, on a phone, is the system gesture, and in an installed app with
@@ -319,6 +350,8 @@ export function App() {
     setAppearance(next);
     void saveAppearance(next);
   }, []);
+
+  useEffect(() => { preloadPages(); }, []);
 
   const navigate = useCallback((next: PageId) => {
     setPage(next);
@@ -1010,6 +1043,9 @@ export function App() {
      that was never going to appear, and concluding it had not been built. A
      browser with no engine at all still gets nothing: that one has no fix. */
   const voiceBlocked = !secureOrigin && (recognitionAvailable || !!canSpeak);
+  /* On an http page the mic and the live button are greyed out and say why on hover, rather than a warning in the
+     composer. */
+  const httpsOnly = voiceBlocked;
 
   // --------------------------------------------------------- slash commands --
   /** Where the highlight is in the command menu, and whether Escape put the
@@ -1345,6 +1381,14 @@ export function App() {
   const windowAt = (kind: OfficeKind) => off.windows.find((w) => w.kind === kind) ?? null;
   const pointedAt = useOfficePick();
   const panes = usePanes();
+  /* Too narrow for words: the menu shows icons only, whether it was folded to
+     them or dragged down to them. */
+  const railNarrow = (panes.rail ?? RAIL.fallback) < RAIL.words;
+  const foldRail = useCallback((mini: boolean) => {
+    setRailMini(mini);
+    // Asking for the whole menu from a dragged-thin one widens it to where the words fit.
+    if (!mini) setRailWidth(RAIL.whole);
+  }, []);
   /* What is open beside the chat, each with when it changed: the window shown is the newest, unless the person
      has picked a tab, and their pick sticks until that window is put away. The browser is live work in front of
      the person, so it takes the window while it is open; the document is back the moment it is put away. */
@@ -1677,8 +1721,8 @@ export function App() {
             drawer={kind === "drawer"}
             onClose={() => setDrawerOpen(false)}
             onFold={() => setRailCollapsed(true)}
-            mini={panes.mini}
-            onMini={setRailMini}
+            mini={panes.mini || railNarrow}
+            onMini={foldRail}
           />
         </div>
       ))}
@@ -2173,10 +2217,11 @@ export function App() {
                           (--is, which the plain glyphs get from their own
                           stylesheet). */}
                       <button
-                        className="btn ghost icon composer-live"
-                        onClick={voiceReady ? toggleLive : () => setVoiceHelp(true)}
+                        className={`btn ghost icon composer-live${httpsOnly ? " is-blocked" : ""}`}
+                        onClick={httpsOnly ? undefined : voiceReady ? toggleLive : () => setVoiceHelp(true)}
                         disabled={!live}
-                        title={voiceReady ? "Talk with Autora out loud (v)" : "Live voice requires https"}
+                        aria-disabled={httpsOnly || undefined}
+                        title={httpsOnly ? VOICE_NEEDS_HTTPS : voiceReady ? "Talk with Autora out loud (v)" : "Live voice requires https"}
                         aria-label="Live voice chat"
                         aria-pressed={liveOn}
                       >
@@ -2191,7 +2236,6 @@ export function App() {
                       <DictateButton
                         onText={appendDictation}
                         disabled={readOnly}
-                        onBlocked={() => setVoiceHelp(true)}
                         onTrouble={setNotice}
                       />
                       {/* Beside the two voices, at every width: the two things you can
@@ -2236,10 +2280,8 @@ export function App() {
                       </div>
                       {toolsOpen && sessionId && (
                         <ToolsSheet
-                          session={sessionId}
                           onClose={() => setToolsOpen(false)}
-                          onTrouble={setNotice}
-                          onOpened={(name, app) => setNotice(`${name} is open in ${app}`)}
+                          onAsk={(text) => { setDraft(text); window.setTimeout(() => composerRef.current?.focus(), 0); }}
                         />
                       )}
                       {libraryOpen && (
@@ -2259,14 +2301,6 @@ export function App() {
                           title="Dismiss"
                         >
                           {notice}
-                        </button>
-                      ) : voiceBlocked ? (
-                        <button
-                          className="hint voice-note"
-                          onClick={() => setVoiceHelp(true)}
-                          title="Browsers only allow microphone access on a secure page."
-                        >
-                          Voice needs <code>https</code>
                         </button>
                       ) : null}
                     </div>
@@ -2321,20 +2355,35 @@ export function App() {
                 window and puts nothing away. */}
             {sideWindows.length > 0 && (
               <div className="pane-pick" role="tablist" aria-label="Windows open beside the chat">
-                {sideWindows.map((w) => (
-                  <button
-                    key={w.pane}
-                    type="button"
-                    role="tab"
-                    aria-selected={sidePane === w.pane}
-                    className={`pane-pick-tab${sidePane === w.pane ? " is-on" : ""}`}
-                    title={w.label}
-                    data-pane={w.pane}
-                    onClick={() => pickWindow(w.pane)}
-                  >
-                    {w.label}
-                  </button>
-                ))}
+                {sideWindows.map((w) => {
+                  const closeUrl = sessionId ? closeUrlFor(w.pane, sessionId) : null;
+                  return (
+                    <div key={w.pane} className={`pane-pick-item${sidePane === w.pane ? " is-on" : ""}`}>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={sidePane === w.pane}
+                        className={`pane-pick-tab${sidePane === w.pane ? " is-on" : ""}${closeUrl ? " has-close" : ""}`}
+                        title={w.label}
+                        data-pane={w.pane}
+                        onClick={() => pickWindow(w.pane)}
+                      >
+                        {w.label}
+                      </button>
+                      {closeUrl && (
+                        <button
+                          type="button"
+                          className="pane-pick-x"
+                          onClick={() => { void fetch(closeUrl, { method: "POST" }).catch(() => undefined); }}
+                          title={`Close ${w.label}`}
+                          aria-label={`Close ${w.label}`}
+                        >
+                          <IconX size={11} />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
                 {sideWindows.length > 1 && (
                   <button
                     type="button"

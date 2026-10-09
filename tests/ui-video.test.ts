@@ -158,7 +158,7 @@ async function main() {
       await app.turn(s, "look at the timeline again", 90_000);
       assert.match(said(), /image "violet.png"/, "the picture is still on the timeline");
 
-      await again.click('.app-pane[data-pane=video] button[aria-label="Put Autora Video away"]');
+      await again.click('.pane-pick-x[aria-label="Close Video"]');
       await again.waitForSelector(".app-pane[data-pane=video]", { state: "detached", timeout: 5_000 });
       await again.close();
     });

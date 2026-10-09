@@ -17,19 +17,19 @@ const all = names("terminal", "pdf_edit", "pdf_read", "widget_show", "mcp_offer"
 console.log("tool loading");
 
 test("a fresh chat is shown the core tools and not the specialist sets", () => {
-  const shown = withoutUnloaded(all, loadedFamilies({ events: [] })).map((t) => t.name);
+  const shown = withoutUnloaded(all, loadedFamilies({ events: [], lazy: true })).map((t) => t.name);
   assert.deepEqual(shown, ["terminal", "browser_open"]);
 });
 
 test("the person's words bring a set in", () => {
-  assert.ok(loadedFamilies({ events: [], said: "fill in this PDF form for me" }).has("pdf"));
-  assert.ok(loadedFamilies({ events: [], said: "run this every morning" }).has("schedule"));
-  assert.ok(loadedFamilies({ events: [], said: "make a chart of sales" }).has("widgets"));
-  assert.equal(loadedFamilies({ events: [], said: "fix the failing test" }).size, 0);
+  assert.ok(loadedFamilies({ events: [], said: "fill in this PDF form for me" , lazy: true}).has("pdf"));
+  assert.ok(loadedFamilies({ events: [], said: "run this every morning" , lazy: true}).has("schedule"));
+  assert.ok(loadedFamilies({ events: [], said: "make a chart of sales" , lazy: true}).has("widgets"));
+  assert.equal(loadedFamilies({ events: [], said: "fix the failing test" , lazy: true}).size, 0);
 });
 
 test("a PDF in the chat brings the pdf set in, whatever was said", () => {
-  assert.ok(loadedFamilies({ events: [], said: "ok", hasPdf: true }).has("pdf"));
+  assert.ok(loadedFamilies({ events: [], said: "ok", hasPdf: true, lazy: true }).has("pdf"));
 });
 
 test("a set that was asked for or used stays", () => {

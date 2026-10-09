@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFullscreen } from "../lib/fullscreen";
-import { gameStateNow, onGameState, useGameState } from "../lib/gamedesk";
-import { IconGame, IconMaximize, IconMinimize, IconX } from "./Icons";
+import { gameStateNow, onGameState, useGameState, type GameCue } from "../lib/gamedesk";
+import { useAgentCursor } from "../lib/agentCursor";
+import { GameCursor } from "./GameCursor";
+import { IconGame, IconMaximize, IconMinimize } from "./Icons";
 
 /** The colours Autora sends the editor: the custom properties its own pages are drawn from (the editor's theme maps them). */
 const THEME_TOKENS = ["--bg", "--s1", "--s2", "--s4", "--text", "--text-2", "--text-3", "--accent", "--accent-light"];
@@ -42,10 +44,16 @@ export function GameWindow({ sessionId, phone }: { sessionId: string; phone: boo
   /* The colours the frame was opened with: its address, which must not change while it is up. */
   const [src] = useState(() => `/gdevelop-editor/index.html?autora=${encodeURIComponent(sessionId)}&theme=${encodeURIComponent(themeNow())}`);
   const lastTheme = useRef(themeNow());
+  /* The agent's cursor goes to what it changed, then the editor takes the new version. */
+  const [cursorOn] = useAgentCursor();
+  const cursorRef = useRef(cursorOn);
+  cursorRef.current = cursorOn;
+  const [show, setShow] = useState<{ cues: GameCue[]; seq: number } | null>(null);
 
   const post = useCallback((msg: Record<string, unknown>) => {
     frame.current?.contentWindow?.postMessage(msg, window.location.origin);
   }, []);
+  const reloadAfter = useCallback(() => post({ autoraGameCmd: "reload" }), [post]);
 
   // What the editor says.
   useEffect(() => {
@@ -74,7 +82,8 @@ export function GameWindow({ sessionId, phone }: { sessionId: string; phone: boo
         if (!now.open || now.rev === undefined || !ready.current) return;
         if (now.by === "agent" && now.rev > known.current) {
           known.current = now.rev;
-          post({ autoraGameCmd: "reload" });
+          if (cursorRef.current && now.cues?.length) setShow({ cues: now.cues, seq: now.rev });
+          else post({ autoraGameCmd: "reload" });
         } else {
           known.current = Math.max(known.current, now.rev);
         }
@@ -94,14 +103,10 @@ export function GameWindow({ sessionId, phone }: { sessionId: string; phone: boo
     return () => watch.disconnect();
   }, [post, sessionId]);
 
-  const close = useCallback(() => {
-    void fetch(`/api/game/${encodeURIComponent(sessionId)}/close`, { method: "POST" }).catch(() => undefined);
-  }, [sessionId]);
-
   const scenes = game.scenes ?? 0;
   return (
     <div className={`pdf-window${phone ? " is-phone" : ""}${phone && full ? " is-full" : ""}`}>
-      <div className="pdf-bar">
+      {phone && <div className="pdf-bar">
         <span className="pdf-bar-ico" aria-hidden="true"><IconGame size={14} /></span>
         <span className="pdf-bar-app">Autora Games</span>
         <span className="pdf-bar-name">{game.name ?? "Your game"}{scenes ? ` · ${scenes === 1 ? "1 scene" : `${scenes} scenes`}` : ""}</span>
@@ -118,13 +123,9 @@ export function GameWindow({ sessionId, phone }: { sessionId: string; phone: boo
             {full ? <IconMinimize size={14} /> : <IconMaximize size={14} />}
           </button>
         )}
-        {!phone && (
-          <button className="btn icon ghost" onClick={close} title="Put Autora Games away" aria-label="Put Autora Games away">
-            <IconX size={14} />
-          </button>
-        )}
-      </div>
+      </div>}
       {trouble && <div className="pdf-problem" role="status">{trouble}</div>}
+      <div className="game-stage">
       <iframe
         ref={frame}
         className="pdf-frame"
@@ -136,6 +137,8 @@ export function GameWindow({ sessionId, phone }: { sessionId: string; phone: boo
            game through Autora's routes. A game the person is making does not run here: previews are served apart (see previews). */
         allow="fullscreen; autoplay; gamepad"
       />
+      {show && <GameCursor cues={show.cues} seq={show.seq} frame={frame} onDone={reloadAfter} />}
+      </div>
     </div>
   );
 }

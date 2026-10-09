@@ -275,7 +275,7 @@ Spectra's fetched renderer is most of what is on disk.
   - `toolload.ts` (`tools_enable`): specialist tool sets (pdf, widgets, mcp,
     schedule, notebooks) are out of the model's list until a message, a PDF, a
     call or a request brings them in (`tools.enable` in the log).
-    `AUTORA_ALL_TOOLS=1` shows all. A new tool in one of those families is
+    Every tool is shown by default; `AUTORA_LAZY_TOOLS=1` goes back to the short list that grows as it is wanted. A new tool in one of those families is
     covered by its `match`; a new family goes in `FAMILIES`.
   - `trace.ts`: `GET /api/sessions/:id/trace`, read from the log.
   - `suggest.ts`: what to suggest, from what is actually on the install --
@@ -293,16 +293,18 @@ Spectra's fetched renderer is most of what is on disk.
   `turn.agent.done {stopped}`; `resume.ts` reads that from the log and the next
   turn is told what was cut off, so it carries on rather than treating the new
   message as the whole job (and an Agent-mode build stays a build).
-- `server/termdesk.ts` + `src/components/TerminalWindow.tsx` (`lib/termdesk.ts`, `tests/termdesk.test.ts`): the **Terminal** window, a shell
-  the person and the agent share (tools sheet tile; one switch with the agent's `terminal` tool: `tools.terminal.enabled`). What the person types runs
-  through `runCommand` (`tools.ts`, `color` on), wrapped to print where it ended (`MARK`, held back and stripped by `flowThrough` -- it can be split
-  across chunks), so the working directory carries to the next command and to the agent's (`termCwd`, used by the `terminal` tool). The agent's own
-  commands are mirrored in (`termAgentBegin/Chunk/End`, marked "Autora") and the person's are told back on its next terminal result (`termNews`).
-  No PTY: a full-screen program cannot work and the window says so. State is in memory per chat (`dropTerm` in `forgetSession`), output keeps its
-  head and tail (`append`); the socket carries only `{open, cwd, rev, running}` (`termdesk`, throttled) and the window asks `GET /api/term/:s?after=rev`
-  for what changed. Completion is `completeLine` (`GET /api/term/:s/complete`): commands (PATH, used-before first), paths (folders first, dotfiles on
-  request, `cd` folders only), `git` subcommands and branches, `npm run` scripts; the window adds fish-style ghost text from history, a key bar on
-  touch screens (Tab, arrows, Ctrl+C, `/ ~ - |`) and Stop. Output is drawn with `lib/ansi.ts` (`ansiToLines`); class names are `tm-*` (`term-*` is the thread's cell).
+- `server/handbook.ts` (`tests/handbook.test.ts`, `tests/e2e-manuals.test.ts`): how every window and tool works. Every tool is a default tool (`allToolsOn` in `server.ts`). The briefing carries only `windowsOverview()`; each window's manual is attached to the result of the first tool call into it in a chat (`manualId`, then a `tool.manual` event in the log so it is not repeated), and `tool_manual` reads one sooner. A new window or tool gets a manual here as well as its schema.
+- `server/termdesk.ts` + `src/components/TerminalWindow.tsx` (`lib/termdesk.ts`, `tests/termdesk.test.ts`): **Autora Terminal**, a real terminal on
+  the machine Autora runs on (one switch with the agent's `terminal` tool: `tools.terminal.enabled`). One shell per chat on a pseudo-terminal, made
+  by a small Python program (`PTY_HELPER`, run with the image's `python3`: a native module such as node-pty would be built for the builder's CPU,
+  not the image's, so there is none). The page draws it with xterm.js and talks to it over `/api/term/ws?session=` (`termUpgrade`, called from the
+  upgrade handler in `server.ts` with `allowSocket`, so the cross-site rule holds): JSON frames `{t:"in",d}`, `{t:"size",cols,rows}` up and
+  `{t:"out",d}` down, with the scrollback (400 kB, in memory, never on disk) replayed to a page that connects, so a reload gets the same shell. The
+  shell is ended when the window is put away (`/close`) and with the chat (`dropTerm`). The agent shares: the shell's folder (read from `/proc`,
+  `termCwd`, used by the `terminal` tool), its commands printed in dim magenta (`termAgentBegin/Chunk/End`; the agent's tool still runs its own
+  command, it is not typed into the shell), and what the person ran, told back once on its next terminal result (`termNews`, from the lines sent with
+  Enter: best-effort). Completion, history, colours and full-screen programs are the shell's own. A touch screen gets a key row (Esc, Tab, Ctrl+C,
+  arrows, `| / ~`). The socket to the page carries only `{open, cwd, rev, running}` (`termdesk`). Class names are `tm-*` (`term-*` is the thread's cell).
 - `autora-3d/` and `server/caddesk.ts`: **Autora 3D**, the 3D modelling window (a sketch-and-extrude CAD modeller) and the agent's
   `cad_*` tools. `autora-3d/` is a **copy** of github.com/blofstedt/3D-Modeling, which is also its own app: never edit it here, change
   it there and run `node scripts/sync-autora-3d.mjs [checkout]` (it also regenerates `server/specs/cad.ts`, one `cad_*` tool for

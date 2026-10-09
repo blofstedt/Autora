@@ -44,6 +44,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { GoogleGenAI } from "@google/genai";
+import { MANUAL_IDS, manualText, windowsOverview, type ManualId } from "./handbook";
 import { termAgentBegin, termAgentChunk, termAgentEnd, termCwd, termNews } from "./termdesk";
 import { mergeTools, save, state, allSecrets, keyFor, secretFor, redactSecrets as redactStored } from "./state";
 import { APP_GUIDE, BROWSING_GUIDE, MEMORY_GUIDE, OFFICE_GUIDE, TODO_GUIDE, VOICE_GUIDE, WINDOWS_GUIDE } from "./guides";
@@ -495,6 +496,8 @@ export function renderCall(spec: ToolSpec, args: Record<string, any>): string {
       return `save artifact ${args.name}${args.notebook ? ` into notebook "${args.notebook}"` : ""}`;
     case "notebook":
       return `notebook ${args.action ?? ""}${args.notebook ? ` "${args.notebook}"` : args.title ? ` "${args.title}"` : ""}`;
+    case "tool_manual":
+      return `read the ${args.window} manual`;
     case "widget_show":
       return `show widget "${args.title}"`;
     case "speak":
@@ -2241,6 +2244,12 @@ async function runToolUnredacted(
         };
       }
 
+      case "tool_manual": {
+        const id = String(args.window ?? "").trim().toLowerCase() as ManualId;
+        if (!MANUAL_IDS.includes(id)) return { ok: false, summary: `There is no manual called "${id}". The manuals are: ${MANUAL_IDS.join(", ")}.` };
+        return { ok: true, summary: manualText(id), preview: `manual: ${id}` };
+      }
+
       case "mcp_servers": {
         return { ok: true, summary: mcpOverview(String(args.topic ?? "")), preview: "MCP servers" };
       }
@@ -3006,6 +3015,8 @@ export async function capabilityBriefing(): Promise<string> {
     lines.push(OFFICE_GUIDE(windows.pages.enabled, windows.sheets.enabled, windows.slides.enabled));
   }
   lines.push(WINDOWS_GUIDE);
+  // How the windows fit together; each window's manual arrives with its first tool call (server/handbook.ts).
+  lines.push(windowsOverview());
   lines.push(
     "- Your voice: always available. Tool: speak. It plays words aloud on the " +
       "person's page at once, in the voice chosen under Settings -> Voice. When you " +

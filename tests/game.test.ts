@@ -41,11 +41,11 @@ await test("every spec is a game_ tool with a description and an object schema",
 
 await test("the tools are in a family of their own, brought in by the person's words or by use", () => {
   const specs = gameSPECS.map((s) => ({ name: s.name }));
-  assert.equal(withoutUnloaded(specs, loadedFamilies({ events: [], said: "what's the weather" })).length, 0);
+  assert.equal(withoutUnloaded(specs, loadedFamilies({ events: [], said: "what's the weather" , lazy: true})).length, 0);
   for (const said of ["make me a platformer game", "open GDevelop", "build a game where a cat jumps", "add a sprite to my game"]) {
-    assert.equal(withoutUnloaded(specs, loadedFamilies({ events: [], said })).length, specs.length, said);
+    assert.equal(withoutUnloaded(specs, loadedFamilies({ events: [], said, lazy: true })).length, specs.length, said);
   }
-  const used = loadedFamilies({ events: [{ kind: "tool.call", payload: { name: "game_look" } }] });
+  const used = loadedFamilies({ events: [{ kind: "tool.call", payload: { name: "game_look" } }], lazy: true });
   assert.equal(withoutUnloaded(specs, used).length, specs.length);
 });
 

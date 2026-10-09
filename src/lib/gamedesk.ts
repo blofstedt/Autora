@@ -4,6 +4,9 @@ import { useSyncExternalStore } from "react";
  * Autora Games's window on this page (server/gamedesk.ts): whether it is open beside the conversation, and what changed
  * last. The game itself is not here: the window tells the editor to fetch it when `rev` moves on and the change was the agent's.
  */
+/** Where in the editor the agent worked, for its cursor to go to. */
+export type GameCue = { where: "scene" | "object" | "events" | "canvas" | "resources"; scene?: string; name?: string };
+
 type GameState = {
   open: boolean;
   /** When the window was opened, which orders it among the others. */
@@ -15,6 +18,8 @@ type GameState = {
   /** The game's name, and how many scenes it has. */
   name?: string;
   scenes?: number;
+  /** What the agent's latest change touched. */
+  cues?: GameCue[];
 };
 
 const CLOSED: GameState = { open: false };

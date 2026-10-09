@@ -11,21 +11,21 @@ type ToolsState = {
 const WINDOWS: { key: WindowKey; name: string; icon: ReactNode; what: string; tools: string }[] = [
   {
     key: "widgets",
-    name: "Widget window",
+    name: "Autora Widgets",
     icon: <IconSparkle size={18} />,
     what: "Interactive explainers the agent builds in the thread — a mechanism you can turn, a graph you can drag.",
     tools: "widget_show",
   },
   {
     key: "browser",
-    name: "Browser window",
+    name: "Autora Browser",
     icon: <IconGlobe size={18} />,
     what: "A real Chromium the agent drives and you can watch or take over: reading pages, filling forms, taking screenshots.",
     tools: "browser_*",
   },
   {
     key: "app",
-    name: "Creator",
+    name: "Autora Creator",
     icon: <IconCode size={18} />,
     what: "Where the agent builds things that run: websites and apps — food apps, tools, dashboards — live beside the chat, for you to click through, comment on and review.",
     tools: "app_preview",
@@ -74,9 +74,9 @@ const WINDOWS: { key: WindowKey; name: string; icon: ReactNode; what: string; to
   },
   {
     key: "terminal",
-    name: "Terminal",
+    name: "Autora Terminal",
     icon: <IconTerminal size={18} />,
-    what: "A shell beside the chat that you and the agent share: type commands with completion for commands, files, git and npm scripts, and watch the agent's commands appear in the same place. The folder you cd into is where the agent's next command starts, and it is told what you ran. Switching this off also takes the agent's terminal tool away.",
+    what: "A real terminal for the machine Autora runs on, beside the chat: your own shell with its completion and history, colours, and programs like vim and top. The commands the agent runs appear in it, and the folder you cd into is where the agent's next command starts. Switching this off also takes the agent's terminal tool away.",
     tools: "terminal, run_background",
   },
   {
@@ -134,10 +134,6 @@ export function ToolsPage() {
   return (
     <div className="page-scroll">
       <div className="page-inner">
-        <p className="jf-hint art-lede">
-          The windows built into Autora. All are on to start with; switch one off and the agent
-          stops using it from its next step, and is told it is off rather than left to guess.
-        </p>
         {error && <p className="set-warn">{error}</p>}
         {state === null && !error && <p className="jf-hint">Loading…</p>}
         {state && (

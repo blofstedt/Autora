@@ -1018,8 +1018,8 @@ button.hint.voice-note:hover { text-decoration: underline; }
 /* Present, visibly not armed. A control that vanishes tells you nothing; one
    that is there and greyed tells you the feature exists and something is in
    the way -- and it has somewhere to send you. */
-.mic-btn.is-blocked { --btn-fg: var(--text-3); opacity: 0.75; }
-.mic-btn.is-blocked:hover:not(:disabled) { --btn-fg: var(--warn); opacity: 1; }
+/* Greyed out on an http page; not disabled, so the hover still says why. */
+.mic-btn.is-blocked, .composer-live.is-blocked { --btn-fg: var(--text-3); opacity: 0.4; filter: grayscale(1); cursor: not-allowed; }
 .mic-halo {
   position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
   opacity: 0; transition: opacity 0.2s var(--ease);
@@ -6134,6 +6134,16 @@ button.dock-card:hover { border-color: var(--border-strong); }
   border: 1px solid var(--border); border-bottom: 0; background: var(--s2); color: var(--text-3);
 }
 .pane-pick-tab:hover { color: var(--text); background: var(--s3); }
+/* The × to close a window sits on its tab, at the right, so it is the tab that goes. */
+.pane-pick-item { position: relative; display: flex; align-items: flex-end; flex: 0 0 auto; }
+.pane-pick-tab.has-close { padding-right: 30px; }
+.pane-pick-x {
+  position: absolute; right: 6px; bottom: 0; height: 30px; width: 20px; z-index: 2;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 0; background: transparent; color: var(--text-3); cursor: pointer; border-radius: 6px; padding: 0;
+}
+.pane-pick-item.is-on .pane-pick-x { height: 34px; }
+.pane-pick-x:hover { color: var(--text); background: var(--s3); }
 .pane-pick-tab.is-on {
   height: 34px; margin-bottom: -1px; z-index: 1; font-weight: 650;
   color: var(--text); background: var(--bg); border-color: var(--border-strong);
@@ -6453,6 +6463,7 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 @keyframes office-blink { 50% { opacity: 0; } }
 @keyframes office-click { from { transform: scale(0.4); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .office-click { animation: none; } }
+.game-stage { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .pdf-frame { flex: 1; min-height: 0; width: 100%; border: 0; background: var(--bg); display: block; }
 /* In the pinned view on a phone: the pinned view's own height, so the editor
    scrolls its pages itself instead of the pinned view scrolling the editor. */
@@ -6609,7 +6620,7 @@ body.is-resizing iframe { pointer-events: none; }
 @media (min-width: 1180px) {
   .pane-handle.is-rail { display: block; }
   .pane-handle.is-chat { display: block; }
-  .rail-slot { flex-basis: var(--rail-w, clamp(160px, 10.5vw, 172px)); }
+  .rail-slot { flex-basis: var(--rail-w, 56px); }
   /* Folded away: the menu button and the mark are back in the header, at the far left. */
   .app.rail-collapsed .rail-slot, .app.rail-collapsed .pane-handle.is-rail { display: none; }
 }
@@ -7296,117 +7307,24 @@ body.is-resizing iframe { pointer-events: none; }
   .tw-card { animation: none !important; }
 }
 
-/* ==========================================================================
-   The Terminal window (components/TerminalWindow.tsx): a shell the person and
-   the agent share. A .pdf-window for its frame and bar; the rest is .tm-*.
+/* ============================================================================
+   The Terminal window (components/TerminalWindow.tsx): xterm.js in a .pdf-window's frame, with a row of the keys
+   a phone does not have under it.
    ========================================================================== */
 .tm-window { position: relative; background: var(--bg); }
 .tm-window.is-phone { height: min(62dvh, 560px); }
 .tm-window.is-phone.is-full { height: auto; }
-.tm-cwd { font-family: var(--mono); font-size: calc(11.5px * var(--ts, 1)); }
-.tm-busy { display: inline-flex; align-items: center; gap: 6px; color: var(--live, #34d399); font-size: calc(11.5px * var(--ts, 1)); white-space: nowrap; }
-.tm-scroll {
-  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain;
-  padding: 10px 12px; font-family: var(--mono); font-size: calc(12.5px * var(--ts, 1)); line-height: 1.5;
-  -webkit-overflow-scrolling: touch;
-}
-.tm-empty { display: grid; gap: 8px; justify-items: start; padding: 14px 4px; color: var(--text-3); font-family: var(--sans, system-ui); }
-.tm-empty b { color: var(--text); font-size: calc(14px * var(--ts, 1)); }
-.tm-empty p { margin: 0; max-width: 46ch; font-size: calc(12.5px * var(--ts, 1)); line-height: 1.55; }
-.tm-examples { display: flex; flex-wrap: wrap; gap: 6px; }
-.tm-example {
-  height: 30px; padding: 0 12px; border-radius: var(--r-pill); cursor: pointer;
-  border: 1px solid var(--border-strong); background: var(--s1); color: var(--text-2);
-  font: inherit; font-family: var(--mono); font-size: calc(12px * var(--ts, 1));
-}
-.tm-example:hover { background: var(--accent-soft); border-color: var(--accent-line); color: var(--text); }
-.tm-entry { margin-bottom: 12px; min-width: 0; animation: rise 0.18s var(--ease) both; }
-.tm-cmd { display: flex; align-items: baseline; gap: 6px; min-width: 0; flex-wrap: wrap; }
-.tm-ps { color: var(--accent-light); white-space: nowrap; flex: 0 0 auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; }
-.tm-dollar { color: var(--text-3); flex: 0 0 auto; }
-.tm-line { flex: 1 1 8ch; min-width: 0; color: var(--text); font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
-.tm-by {
-  flex: 0 0 auto; padding: 0 7px; border-radius: var(--r-pill); font-family: var(--sans, system-ui);
-  font-size: calc(10.5px * var(--ts, 1)); font-weight: 650; color: var(--accent-light); background: var(--accent-soft);
-}
-.tm-entry.is-agent .tm-ps { color: var(--text-3); }
-.tm-acts { display: inline-flex; gap: 2px; margin-left: auto; opacity: 0; transition: opacity 0.12s var(--ease); }
-.tm-entry:hover .tm-acts, .tm-entry:focus-within .tm-acts { opacity: 1; }
-@media (hover: none) { .tm-acts { opacity: 0.7; } }
-.tm-act {
-  width: 26px; height: 24px; display: inline-grid; place-items: center; border-radius: 7px; cursor: pointer;
-  border: 0; background: none; color: var(--text-3); touch-action: manipulation;
-}
-.tm-act:hover { background: var(--s2); color: var(--text); }
-.tm-row { min-height: 1.5em; }
-.tm-out {
-  margin: 4px 0 0; padding: 0; background: none; border: 0; color: var(--text-2);
-  font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
-}
-.tm-entry.is-bad .tm-out { color: var(--text); }
-.tm-foot { display: flex; align-items: center; gap: 8px; min-height: 18px; margin-top: 2px; font-family: var(--sans, system-ui); font-size: calc(11px * var(--ts, 1)); color: var(--text-3); }
-.tm-ok { color: var(--text-3); }
-.tm-bad { color: var(--danger); font-weight: 600; }
-.tm-stop {
-  display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 10px; border-radius: var(--r-pill); cursor: pointer;
-  border: 1px solid var(--border-strong); background: var(--s1); color: var(--text-2); font: inherit; font-size: calc(11px * var(--ts, 1));
-}
-.tm-stop:hover { border-color: var(--danger); color: var(--danger); }
-.tm-latest {
-  position: absolute; right: 14px; bottom: 74px; z-index: 2; display: inline-flex; align-items: center; gap: 5px;
-  height: 28px; padding: 0 11px; border-radius: var(--r-pill); cursor: pointer;
-  border: 1px solid var(--accent-line); background: var(--s2); color: var(--text); font: inherit; font-size: calc(12px * var(--ts, 1));
-  box-shadow: 0 6px 18px -8px rgba(0, 0, 0, 0.6); animation: rise 0.16s var(--ease) both;
-}
-
-.tm-dock { position: relative; flex: 0 0 auto; border-top: 1px solid var(--border); background: var(--s1); }
-.tm-menu {
-  position: absolute; left: 8px; right: 8px; bottom: calc(100% + 6px); z-index: 3; margin: 0; padding: 4px; list-style: none;
-  max-height: min(240px, 38dvh); overflow-y: auto; overscroll-behavior: contain;
-  border-radius: var(--r-sm); border: 1px solid var(--border-strong); background: var(--s2);
-  box-shadow: 0 14px 34px -12px rgba(0, 0, 0, 0.75); animation: rise 0.12s var(--ease) both;
-}
-.tm-item { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 9px; border-radius: 7px; cursor: pointer; font-family: var(--mono); font-size: calc(12.5px * var(--ts, 1)); color: var(--text-2); }
-.tm-item.is-on, .tm-item:hover { background: var(--accent-soft); color: var(--text); }
-.tm-item-ico { display: inline-flex; color: var(--text-3); flex: 0 0 auto; }
-.tm-item.is-dir .tm-item-ico { color: var(--accent-light); }
-.tm-item-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tm-item-hint { margin-left: auto; padding-left: 10px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: normal; font-family: var(--sans, system-ui); font-size: calc(11px * var(--ts, 1)); color: var(--text-3); }
-.tm-tip { padding: 7px 12px; font-size: calc(12px * var(--ts, 1)); color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); border-bottom: 1px solid var(--border); }
-.tm-keys { display: flex; gap: 6px; padding: 7px 8px 0; overflow-x: auto; scrollbar-width: none; }
+.tm-screen { flex: 1; min-height: 0; padding: 6px 8px 4px 10px; background: var(--bg); overflow: hidden; }
+.tm-screen .xterm { height: 100%; }
+.tm-screen .xterm-viewport { background: transparent !important; }
+.tm-keys { display: flex; gap: 6px; padding: 7px 8px calc(7px + env(safe-area-inset-bottom, 0px)); overflow-x: auto; scrollbar-width: none; border-top: 1px solid var(--border); background: var(--s1); }
 .tm-keys::-webkit-scrollbar { display: none; }
 .tm-key {
-  flex: 0 0 auto; min-width: 40px; height: 34px; padding: 0 12px; border-radius: 9px; cursor: pointer; touch-action: manipulation;
-  border: 1px solid var(--border-strong); background: var(--s2); color: var(--text-2); font-family: var(--mono); font-size: calc(13px * var(--ts, 1));
+  flex: 0 0 auto; min-width: 40px; height: 34px; padding: 0 11px; border-radius: var(--r-sm);
+  border: 1px solid var(--border); background: var(--s2); color: var(--text); font: inherit;
+  font-size: calc(12.5px * var(--ts, 1)); cursor: pointer;
 }
 .tm-key:active { background: var(--accent-soft); }
-.tm-key.is-accent { color: var(--accent-light); border-color: var(--accent-line); }
-.tm-input { display: flex; align-items: flex-start; gap: 6px; padding: 9px 10px calc(9px + env(safe-area-inset-bottom, 0px)); font-family: var(--mono); font-size: calc(13px * var(--ts, 1)); }
-.tm-input .tm-ps, .tm-input .tm-dollar { line-height: 28px; }
-.tm-field { position: relative; flex: 1; min-width: 0; }
-.tm-ghost, .tm-textarea {
-  box-sizing: border-box; width: 100%; margin: 0; padding: 4px 2px; border: 0;
-  font: inherit; line-height: 20px; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; letter-spacing: 0;
-}
-.tm-ghost { position: absolute; inset: 0; color: transparent; pointer-events: none; overflow: hidden; }
-.tm-ghost::after { content: none; }
-.tm-typed { visibility: hidden; }
-.tm-ghost { color: var(--text-3); opacity: 0.7; }
-.tm-textarea { position: relative; display: block; resize: none; background: transparent; color: var(--text); outline: none; min-height: 28px; max-height: 140px; caret-color: var(--accent-light); }
-.tm-textarea::placeholder { color: var(--text-3); }
-.tm-go {
-  flex: 0 0 auto; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; cursor: pointer;
-  border: 0; background: var(--accent); color: #fff; touch-action: manipulation;
-}
-.tm-go svg { transform: rotate(-90deg); }
-.tm-go:disabled { background: var(--s3); color: var(--text-3); cursor: default; }
-.tm-go.is-stop { background: var(--danger); }
-.tm-go.is-stop svg { transform: none; }
 @media (max-width: 680px) {
-  /* 16px or the browser zooms the page when the line is tapped; the immersive chat button sits at the corner. */
-  .tm-textarea, .tm-ghost { font-size: 16px; line-height: 22px; }
-  .tm-window.is-phone.is-full .tm-input { padding-right: 62px; }
   .tm-window.is-phone.is-full .tm-keys { padding-right: 62px; }
-  .tm-ps { max-width: 28%; }
 }
-@media (prefers-reduced-motion: reduce) { .tm-entry, .tm-menu, .tm-latest { animation: none; } }

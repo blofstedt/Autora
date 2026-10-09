@@ -6,6 +6,9 @@
 import assert from "node:assert/strict";
 import { startApp, type App } from "./e2e-harness";
 
+// The short list that grows as it is wanted is a switch now (every tool is a default tool): this file tests it.
+process.env.AUTORA_LAZY_TOOLS = "1";
+
 let passed = 0;
 async function test(name: string, fn: () => Promise<void>) {
   try { await fn(); passed += 1; console.log(`  ok  ${name}`); } catch (err) { console.error(`  FAIL ${name}`); throw err; }
@@ -16,7 +19,7 @@ async function main() {
   const app: App = await startApp();
   try {
     console.log("tool loading");
-    await test("a plain chat is not shown the PDF, widget or scheduler tools, and is told how to get them", async () => {
+    await test("with lazy tools on, a plain chat is not shown the PDF, widget or scheduler tools, and is told how to get them", async () => {
       app.seen.length = 0;
       const s = await app.newSession("plain", "build");
       app.script.push({ text: "Hi." });
