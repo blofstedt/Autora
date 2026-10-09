@@ -6609,7 +6609,7 @@ body.is-resizing iframe { pointer-events: none; }
 @media (min-width: 1180px) {
   .pane-handle.is-rail { display: block; }
   .pane-handle.is-chat { display: block; }
-  .rail-slot { flex-basis: var(--rail-w, clamp(160px, 10.5vw, 172px)); }
+  .rail-slot { flex-basis: var(--rail-w, 56px); }
   /* Folded away: the menu button and the mark are back in the header, at the far left. */
   .app.rail-collapsed .rail-slot, .app.rail-collapsed .pane-handle.is-rail { display: none; }
 }

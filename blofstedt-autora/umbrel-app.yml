@@ -170,11 +170,9 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  New: Autora Games, a game window. It is GDevelop's open-source editor beside the
-  chat, with GDevelop's AI, account, shop and cloud removed (Autora is what helps),
-  in Autora's colours. Ask for a game and Autora builds it in the project file
-  GDevelop saves, checking every action and condition against the engine's own list;
-  you can change anything by hand while it works, and your edits are saved as you go.
-  Preview runs the game in a box of its own, and the files you add stay on your
-  server. Switch it on or off on the Tools page. The first start loads the game
-  engine (a few megabytes), and the container image grows by about 60 MB.
+  Faster and slimmer menu. Pages in the sidebar now load in the background once
+  the app has settled, so switching between them no longer waits on a download.
+  On a desktop the menu starts as a narrow strip of icons, about a third of its old
+  width, and you can drag its edge to any width in between: the labels come back
+  once it is wide enough for them. The arrow in the menu's header still folds it to
+  icons and back.

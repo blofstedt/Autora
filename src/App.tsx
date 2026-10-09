@@ -44,7 +44,7 @@ const Settings = lazyPage(() => import("./components/Settings"), "Settings");
 const Schedule = lazyPage(() => import("./components/Schedule"), "Schedule");
 const Triggers = lazyPage(() => import("./components/Triggers"), "Triggers");
 // Talk mode (and the 1,900-line speech code behind it) loads when it is turned on.
-const LiveChat = lazyPage(() => import("./components/LiveChat"), "LiveChat");
+const LiveChat = lazyPage(() => import("./components/LiveChat"), "LiveChat", false);
 import { LibraryPicker, type LibraryTab } from "./components/LibraryPicker";
 import { ToolsSheet } from "./components/ToolsSheet";
 import { OPEN_NOTEBOOK, type NotebookRef } from "./lib/notebooks";
@@ -95,10 +95,13 @@ import { SureHost } from "./components/SureHost";
    after. Nothing is shown while it arrives -- the chunk is small and local,
    and a spinner for a fifth of a second reads as a flicker rather than as
    waiting -- so the fallback is nothing at all. */
+const pageLoaders: Array<() => Promise<unknown>> = [];
 function lazyPage<T extends React.ComponentType<any>>(
   load: () => Promise<{ [k: string]: any }>,
   name: string,
+  preload = true,
 ): T {
+  if (preload) pageLoaders.push(load);
   return lazy(async () => {
     const mod = await load();
     return { default: (mod as any)[name] as T };
@@ -130,6 +133,14 @@ const OFFICE_PANES: Array<{ pane: SideWindow; kind: OfficeKind; label: string }>
   { pane: "sheets", kind: "xlsx", label: "Sheets" },
   { pane: "slides", kind: "pptx", label: "Slides" },
 ];
+
+/** Fetch every page's chunk once the app has settled, so the first visit to a
+    page is already in the browser's module cache instead of a round trip. */
+function preloadPages() {
+  const go = () => { for (const load of pageLoaders) void load().catch(() => undefined); };
+  if (typeof requestIdleCallback === "function") requestIdleCallback(go, { timeout: 4000 });
+  else setTimeout(go, 1500);
+}
 
 export function App() {
   /* Back, on a phone, is the system gesture, and in an installed app with
@@ -319,6 +330,8 @@ export function App() {
     setAppearance(next);
     void saveAppearance(next);
   }, []);
+
+  useEffect(() => { preloadPages(); }, []);
 
   const navigate = useCallback((next: PageId) => {
     setPage(next);
@@ -1345,6 +1358,14 @@ export function App() {
   const windowAt = (kind: OfficeKind) => off.windows.find((w) => w.kind === kind) ?? null;
   const pointedAt = useOfficePick();
   const panes = usePanes();
+  /* Too narrow for words: the menu shows icons only, whether it was folded to
+     them or dragged down to them. */
+  const railNarrow = (panes.rail ?? RAIL.fallback) < RAIL.words;
+  const foldRail = useCallback((mini: boolean) => {
+    setRailMini(mini);
+    // Asking for the whole menu from a dragged-thin one widens it to where the words fit.
+    if (!mini) setRailWidth(RAIL.whole);
+  }, []);
   /* What is open beside the chat, each with when it changed: the window shown is the newest, unless the person
      has picked a tab, and their pick sticks until that window is put away. The browser is live work in front of
      the person, so it takes the window while it is open; the document is back the moment it is put away. */
@@ -1677,8 +1698,8 @@ export function App() {
             drawer={kind === "drawer"}
             onClose={() => setDrawerOpen(false)}
             onFold={() => setRailCollapsed(true)}
-            mini={panes.mini}
-            onMini={setRailMini}
+            mini={panes.mini || railNarrow}
+            onMini={foldRail}
           />
         </div>
       ))}
