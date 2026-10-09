@@ -170,9 +170,8 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Faster and slimmer menu. Pages in the sidebar now load in the background once
-  the app has settled, so switching between them no longer waits on a download.
-  On a desktop the menu starts as a narrow strip of icons, about a third of its old
-  width, and you can drag its edge to any width in between: the labels come back
-  once it is wide enough for them. The arrow in the menu's header still folds it to
-  icons and back.
+  You can now see the agent work in Autora Games. When it changes your game, its
+  cursor moves across the editor to what it is changing, the scene, the object in
+  the list or the events, clicks there, and types the name as it goes, and then
+  the editor takes the new version. It follows the "show the agent's cursor"
+  switch, so turning that off makes changes simply appear, as before.

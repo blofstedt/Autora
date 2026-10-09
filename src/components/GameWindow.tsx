@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFullscreen } from "../lib/fullscreen";
-import { gameStateNow, onGameState, useGameState } from "../lib/gamedesk";
+import { gameStateNow, onGameState, useGameState, type GameCue } from "../lib/gamedesk";
+import { useAgentCursor } from "../lib/agentCursor";
+import { GameCursor } from "./GameCursor";
 import { IconGame, IconMaximize, IconMinimize, IconX } from "./Icons";
 
 /** The colours Autora sends the editor: the custom properties its own pages are drawn from (the editor's theme maps them). */
@@ -42,10 +44,16 @@ export function GameWindow({ sessionId, phone }: { sessionId: string; phone: boo
   /* The colours the frame was opened with: its address, which must not change while it is up. */
   const [src] = useState(() => `/gdevelop-editor/index.html?autora=${encodeURIComponent(sessionId)}&theme=${encodeURIComponent(themeNow())}`);
   const lastTheme = useRef(themeNow());
+  /* The agent's cursor goes to what it changed, then the editor takes the new version. */
+  const [cursorOn] = useAgentCursor();
+  const cursorRef = useRef(cursorOn);
+  cursorRef.current = cursorOn;
+  const [show, setShow] = useState<{ cues: GameCue[]; seq: number } | null>(null);
 
   const post = useCallback((msg: Record<string, unknown>) => {
     frame.current?.contentWindow?.postMessage(msg, window.location.origin);
   }, []);
+  const reloadAfter = useCallback(() => post({ autoraGameCmd: "reload" }), [post]);
 
   // What the editor says.
   useEffect(() => {
@@ -74,7 +82,8 @@ export function GameWindow({ sessionId, phone }: { sessionId: string; phone: boo
         if (!now.open || now.rev === undefined || !ready.current) return;
         if (now.by === "agent" && now.rev > known.current) {
           known.current = now.rev;
-          post({ autoraGameCmd: "reload" });
+          if (cursorRef.current && now.cues?.length) setShow({ cues: now.cues, seq: now.rev });
+          else post({ autoraGameCmd: "reload" });
         } else {
           known.current = Math.max(known.current, now.rev);
         }
@@ -125,6 +134,7 @@ export function GameWindow({ sessionId, phone }: { sessionId: string; phone: boo
         )}
       </div>
       {trouble && <div className="pdf-problem" role="status">{trouble}</div>}
+      <div className="game-stage">
       <iframe
         ref={frame}
         className="pdf-frame"
@@ -136,6 +146,8 @@ export function GameWindow({ sessionId, phone }: { sessionId: string; phone: boo
            game through Autora's routes. A game the person is making does not run here: previews are served apart (see previews). */
         allow="fullscreen; autoplay; gamepad"
       />
+      {show && <GameCursor cues={show.cues} seq={show.seq} frame={frame} onDone={reloadAfter} />}
+      </div>
     </div>
   );
 }

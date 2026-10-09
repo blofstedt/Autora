@@ -6453,6 +6453,7 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 @keyframes office-blink { 50% { opacity: 0; } }
 @keyframes office-click { from { transform: scale(0.4); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .office-click { animation: none; } }
+.game-stage { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .pdf-frame { flex: 1; min-height: 0; width: 100%; border: 0; background: var(--bg); display: block; }
 /* In the pinned view on a phone: the pinned view's own height, so the editor
    scrolls its pages itself instead of the pinned view scrolling the editor. */

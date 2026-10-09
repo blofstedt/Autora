@@ -91,9 +91,42 @@ interface GameState {
   by?: "agent" | "person";
   name?: string;
   scenes?: number;
+  /** Where in the editor the agent's latest change was, for its cursor to go to (see GameCue in src/lib/gamedesk.ts). */
+  cues?: GameCue[];
+}
+
+/** One place the agent worked: a scene's tab, an object in the list, the events, the scene itself, the game's files. */
+interface GameCue {
+  where: "scene" | "object" | "events" | "canvas" | "resources";
+  scene?: string;
+  /** The object's name, or the scene's. Typed out beside the cursor. */
+  name?: string;
+}
+
+/** Where `ops` worked, in the order they did, one cue per place. */
+function cuesFor(ops: Op[]): GameCue[] {
+  const out: GameCue[] = [];
+  const add = (cue: GameCue) => {
+    if (!out.some((c) => c.where === cue.where && c.scene === cue.scene && c.name === cue.name)) out.push(cue);
+  };
+  for (const op of ops) {
+    const path = String(op?.path ?? "");
+    const scene = /^layouts\[([^\]]+)\]/.exec(path)?.[1];
+    const named = isObject(op?.value) && typeof op.value.name === "string" ? op.value.name : undefined;
+    const object = /objects\[([^\]]+)\]/.exec(path)?.[1] ?? (/objects$/.test(path) ? named : undefined);
+    if (/^layouts$/.test(path) && named) add({ where: "scene", name: named, scene: named });
+    else if (scene && !/^\d+$/.test(scene) && /\bevents\b/.test(path)) add({ where: "events", scene, name: scene });
+    else if (object && !/^\d+$/.test(object)) add({ where: "object", scene, name: object });
+    else if (scene && /instances/.test(path)) add({ where: "canvas", scene });
+    else if (/^resources/.test(path)) add({ where: "resources" });
+    else if (scene && !/^\d+$/.test(scene)) add({ where: "scene", scene, name: scene });
+  }
+  return out.slice(0, 6);
 }
 
 interface Entry {
+  /** What the latest agent change touched. */
+  cues?: GameCue[];
   project: Json | null;
   open: boolean;
   since: number;
@@ -189,6 +222,7 @@ export function gameState(session: string): GameState {
     by: entry.by,
     name: project?.properties?.name || "Your game",
     scenes: Array.isArray(project?.layouts) ? project.layouts.length : 0,
+    cues: entry.by === "agent" ? entry.cues : undefined,
   };
 }
 
@@ -905,6 +939,7 @@ export async function runGameTool(session: string, name: string, args: Record<st
       case "game_open": {
         const project = projectOf(session);
         const entry = entryFor(session);
+        entry.cues = [];
         if (typeof args.name === "string" && args.name.trim()) {
           const next = JSON.parse(JSON.stringify(project));
           next.properties.name = args.name.trim().slice(0, 120);
@@ -995,6 +1030,7 @@ export async function runGameTool(session: string, name: string, args: Record<st
         const before = JSON.stringify(base);
         if (JSON.stringify(next) === before) return { ok: true, summary: "Nothing changed: the game already was like that.", preview: "no change" };
         entryFor(session).by = "agent";
+        entryFor(session).cues = cuesFor(ops);
         setOpen(session, true);
         commit(session, next, "agent");
         return {
@@ -1037,6 +1073,7 @@ export async function runGameTool(session: string, name: string, args: Record<st
         if (list.some((r) => r?.name === resourceName)) return { ok: false, summary: `The game already has a resource called "${resourceName}". Pass resource with another name, or look at what is there with game_look resources.` };
         list.push(resourceFor(kept.kind, resourceName, kept.url));
         entryFor(session).by = "agent";
+        entryFor(session).cues = [{ where: "resources" }];
         setOpen(session, true);
         commit(session, project, "agent");
         return { ok: true, summary: `Added the ${kept.kind} "${resourceName}" to the game's resources. Use that name where an object or an instruction takes a ${kept.kind}${kept.kind === "image" ? ` (a Sprite's animations[].directions[].sprites[].image; game_template object Sprite shows where)` : ""}.`, preview: `imported ${resourceName}` };
