@@ -65,6 +65,11 @@ WATCHED = (
     # The game window's editor (GDevelop's): the same, with its own pin in gdevelop/PIN.json.
     "gdevelop-editor/",
     "gdevelop/",
+    # The Pages, Sheets and Slides editors (GenOffice's): the pin, the shim and the patches Autora
+    # makes to them, and the script that builds them into the image. Missing until a change that
+    # was only a shim edit passed as "nothing reaches the container".
+    "office/",
+    "scripts/build-office.mjs",
 )
 
 COMPOSE = "blofstedt-autora/docker-compose.yml"

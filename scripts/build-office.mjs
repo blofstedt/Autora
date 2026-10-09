@@ -64,7 +64,7 @@ const stamp = path.join(out, "BUILT");
 const recipe = createHash("sha1");
 /* The Docker stage that builds only the spreadsheet engine copies just this script and the pin, so what is
    not there is not part of what that stage builds. */
-for (const f of ["office/vite/editor.mjs", ...["shim", "host"].flatMap((d) => (fs.existsSync(path.join(root, "office", d)) ? fs.readdirSync(path.join(root, "office", d)).sort() : []).map((n) => `office/${d}/${n}`))]) {
+for (const f of ["office/vite/editor.mjs", ...["shim", "host", "patches"].flatMap((d) => (fs.existsSync(path.join(root, "office", d)) ? fs.readdirSync(path.join(root, "office", d)).sort() : []).map((n) => `office/${d}/${n}`))]) {
   if (fs.existsSync(path.join(root, f))) recipe.update(fs.readFileSync(path.join(root, f)));
 }
 const marker = `${pin.sha}:${recipe.digest("hex").slice(0, 12)}${wantSidecar ? ":sidecar" : ""}:${targets.join("+")}`;
@@ -87,6 +87,18 @@ try {
   }
 
   if (!onlySidecar) {
+    /* Autora's own edits to GenOffice's source (office/patches/*.patch, `git diff` against the pinned
+       commit). GenOffice is a fork here, not a dependency: the pin never moves to follow upstream, and what
+       Autora wants different is a patch. The tracked files go back to the pin first, so the patches apply to
+       the same tree every time (the checkout is reused between builds). */
+    const patches = path.join(root, "office/patches");
+    run("git", ["-C", src, "checkout", "-q", "-f", "HEAD", "--", "apps", "packages"]);
+    for (const name of fs.existsSync(patches) ? fs.readdirSync(patches).filter((n) => n.endsWith(".patch")).sort() : []) {
+      log(`applying ${name}`);
+      const r = spawnSync("git", ["-C", src, "apply", "--whitespace=nowarn", path.join(patches, name)], { stdio: "inherit" });
+      if (r.status !== 0) throw new Error(`office/patches/${name} does not apply to the pinned GenOffice`);
+    }
+
     log("installing its dependencies");
     run("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], {
       cwd: src,

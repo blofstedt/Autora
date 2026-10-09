@@ -6,6 +6,7 @@ import {
 } from "../../lib/memory";
 import type { MemoryMark } from "../../lib/derive";
 import { KnowledgeWeb } from "../KnowledgeWeb";
+import { MindViewButton } from "../MindViewButton";
 import { IconBrain, IconPlus, IconTrash } from "../Icons";
 
 type Draft = { title: string; body: string; tags: string; kind: Bucket };
@@ -202,19 +203,8 @@ export function MindPage({
 
   return (
     <div className="mind-page">
-      {showMap && (
-        <div className="mind-switch">
-          <div className="seg" role="tablist" aria-label="View">
-            <button role="tab" aria-selected={view === "buckets"} className={view === "buckets" ? "on" : ""}
-                    onClick={() => setView("buckets")}>Buckets</button>
-            <button role="tab" aria-selected={view === "map"} className={view === "map" ? "on" : ""}
-                    onClick={() => setView("map")}>Map</button>
-          </div>
-        </div>
-      )}
-
       {mapOn ? (
-        <KnowledgeWeb embedded recent={recent} />
+        <KnowledgeWeb embedded recent={recent} onBuckets={() => setView("buckets")} />
       ) : (
       <div className="page-scroll">
         <div className="page-inner">
@@ -229,6 +219,7 @@ export function MindPage({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
+            {showMap && <MindViewButton to="map" onClick={() => setView("map")} />}
           </div>
 
           {data && !data.enabled && <p className="set-warn">Memory is off on this server.</p>}

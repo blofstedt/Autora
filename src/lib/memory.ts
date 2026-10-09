@@ -139,15 +139,11 @@ export async function tidyMemory(dry = false): Promise<TidyReport> {
 }
 
 /**
- * Edges the graph draws.
- *
- * Explicit links carry real meaning -- one record superseded another, or they
- * were learned in the same session. Shared tags are a weaker signal, so they
- * are drawn thinner and capped: a tag applied to forty records would otherwise
- * produce 780 edges and a hairball that says nothing.
+ * Edges the graph draws: only the links the mind made, between memories about the same thing (or one
+ * that replaced another). A shared tag is not drawn: a tag on a few memories said nothing about whether
+ * they are alike, and the web became a hairball in which a connection meant nothing. A line here is what
+ * tells the agent "if you want this, you may want that", so it must not be drawn between strangers.
  */
-const MAX_TAG_GROUP = 6;
-
 export function edgesFor(k: Knowledge): { a: string; b: string; strong: boolean }[] {
   const ids = new Set(k.records.map((r) => r.id));
   const out: { a: string; b: string; strong: boolean }[] = [];
@@ -162,24 +158,5 @@ export function edgesFor(k: Knowledge): { a: string; b: string; strong: boolean 
     out.push({ a: link.src, b: link.dst, strong: true });
   }
 
-  const byTag = new Map<string, string[]>();
-  for (const record of k.records) {
-    for (const tag of record.tags) {
-      const group = byTag.get(tag) ?? [];
-      group.push(record.id);
-      byTag.set(tag, group);
-    }
-  }
-  for (const group of byTag.values()) {
-    if (group.length < 2 || group.length > MAX_TAG_GROUP) continue;
-    for (let i = 0; i < group.length; i++) {
-      for (let j = i + 1; j < group.length; j++) {
-        const id = key(group[i], group[j]);
-        if (seen.has(id)) continue;
-        seen.add(id);
-        out.push({ a: group[i], b: group[j], strong: false });
-      }
-    }
-  }
   return out;
 }

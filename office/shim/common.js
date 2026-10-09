@@ -161,9 +161,28 @@
   // cursor in Autora's chat box.
   const style = document.createElement("style");
   // The panel, its edge button, and the bar over a slide; the Home tab's AI group becomes the one button below.
-  style.textContent = ".ai-dock, .ai-rail, .stage-ai-bar { display: none !important; } .ribbon-group:has(.ai-entry) .ai-entry:not(.autora-ask) { display: none !important; }";
+  style.textContent = ".ai-dock, .ai-rail, .stage-ai-bar, .expand-copilot { display: none !important; } .ribbon-group:has(.ai-entry) .ai-entry:not(.autora-ask) { display: none !important; } [data-autora-hidden] { display: none !important; }";
   document.head.appendChild(style);
+  // The ribbon's other AI buttons (Editor, Translate, Spelling, Resolve Comments, Revision Summary, the AI
+  // panel's toggle) all send their prompt to the panel hidden above, so they would do nothing: they go too,
+  // and a group left with nothing in it goes with them (and the divider before it). Matched by the tip each
+  // one carries. The pinned GenOffice never changes (office/PIN.json), so these strings are stable.
+  const DEAD_AI = '[data-tip*="Uses AI and consumes credits"], [data-tip^="AI "], [data-tip="Show/hide the AI panel"], [data-tip*="with AI"]';
+  const dropDeadAi = () => {
+    for (const el of document.querySelectorAll(DEAD_AI)) {
+      if (el.classList.contains("autora-ask")) continue;
+      (el.closest(".rb-split-wrap") || el).setAttribute("data-autora-hidden", "");
+    }
+    for (const group of document.querySelectorAll(".ribbon-group:not([data-autora-hidden])")) {
+      const controls = group.querySelectorAll("button, select, input, [role=button]");
+      if (!controls.length || ![...controls].every((c) => c.closest("[data-autora-hidden]"))) continue;
+      group.setAttribute("data-autora-hidden", "");
+      const before = group.previousElementSibling;
+      if (before && before.classList.contains("ribbon-sep")) before.setAttribute("data-autora-hidden", "");
+    }
+  };
   const adopt = () => {
+    dropDeadAi();
     for (const group of document.querySelectorAll(".ribbon-group")) {
       const entries = group.querySelectorAll(".ai-entry");
       if (!entries.length) continue;
