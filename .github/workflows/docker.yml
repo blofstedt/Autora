@@ -37,9 +37,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Docker Hub was refusing GitHub's shared runners ("429 Too Many Requests", then timeouts from its
+      # login service), and every release failed before building anything. The helper images and the
+      # Dockerfile's base images come from Google's pull-through mirror of Docker Hub instead (same images,
+      # same tags, no login), so a Docker Hub outage cannot stop a release.
       - uses: docker/setup-qemu-action@v3
+        with:
+          image: mirror.gcr.io/tonistiigi/binfmt:latest
 
       - uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: image=mirror.gcr.io/moby/buildkit:buildx-stable-1
 
       - uses: docker/login-action@v3
         with:

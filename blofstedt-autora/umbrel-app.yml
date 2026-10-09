@@ -179,4 +179,5 @@ releaseNotes: >-
   chat lists the tools again (PDF, Video, Pages, Sheets, Slides, Music, Terminal, 3D,
   Games) beside Widgets. Also tidies the Pages, Sheets and Slides editors: the AI buttons
   that did nothing are gone, New Slide, Layout and Add Section sit on the Slides Home tab,
-  and the editors are pinned to one exact version and never follow upstream.
+  and the editors are pinned to one exact version and never follow upstream. The release
+  build no longer depends on Docker Hub, which had been refusing it.

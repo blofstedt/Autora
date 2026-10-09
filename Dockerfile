@@ -1,3 +1,7 @@
+# Base images come through Google's pull-through mirror of Docker Hub's official images
+# (mirror.gcr.io/library/<name>), the same images and tags. GitHub's shared runners were being
+# refused by Docker Hub itself ("429 Too Many Requests", then a 504 from its login service),
+# which failed every release before a line of Autora was built. The mirror needs no login.
 # ── stage 0: the Office tools' spreadsheet engine ────────────────────────────
 # The Word and PowerPoint half of the Office tools is JavaScript and is built in
 # the next stage like everything else. The spreadsheet half is a Rust program
@@ -8,7 +12,7 @@
 # script are copied in, so this layer is rebuilt when the pin changes and not
 # when the app does. It is optional: if it fails to build the image still
 # builds, and only the Excel tools are missing (the script says so).
-FROM --platform=$BUILDPLATFORM rust:1-bookworm AS office-engine
+FROM --platform=$BUILDPLATFORM mirror.gcr.io/library/rust:1-bookworm AS office-engine
 WORKDIR /build
 RUN (apt-get update \
  && apt-get install -y --no-install-recommends python3-pip nodejs git ca-certificates \
@@ -33,7 +37,7 @@ RUN mkdir -p dist/office/native \
 # so an amd64 build is the same bytes as an arm64 one, and running `npm ci`
 # and the typecheck under arm64 emulation took minutes when it worked and
 # hung the release for hours when it did not.
-FROM --platform=$BUILDPLATFORM node:22-alpine AS builder
+FROM --platform=$BUILDPLATFORM mirror.gcr.io/library/node:22-alpine AS builder
 WORKDIR /build
 # git, for the Office tools: they are built from a pinned commit of GenOffice.
 RUN apk add --no-cache git
@@ -131,7 +135,7 @@ RUN npm prune --omit=dev \
  && find node_modules/pdfjs-dist -name '*.map' -delete
 
 # ── stage 2: runtime ─────────────────────────────────────────────────────────
-FROM node:22-alpine
+FROM mirror.gcr.io/library/node:22-alpine
 WORKDIR /app
 
 # Chromium, for the browser the agent drives and you watch. Alpine's own
