@@ -11,7 +11,7 @@ type ToolsState = {
 const WINDOWS: { key: WindowKey; name: string; icon: ReactNode; what: string; tools: string }[] = [
   {
     key: "widgets",
-    name: "Widget window",
+    name: "Autora Widgets",
     icon: <IconSparkle size={18} />,
     what: "Interactive explainers the agent builds in the thread — a mechanism you can turn, a graph you can drag.",
     tools: "widget_show",
@@ -25,7 +25,7 @@ const WINDOWS: { key: WindowKey; name: string; icon: ReactNode; what: string; to
   },
   {
     key: "app",
-    name: "Autora Canvas",
+    name: "Autora Creator",
     icon: <IconCode size={18} />,
     what: "Where the agent builds things that run: websites and apps — food apps, tools, dashboards — live beside the chat, for you to click through, comment on and review.",
     tools: "app_preview",

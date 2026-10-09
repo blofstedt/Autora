@@ -20,7 +20,7 @@ async function test(name: string, fn: () => Promise<void> | void) {
 
 await test("every window has a manual that names its tools", () => {
   const expect: Record<string, string[]> = {
-    browser: ["Autora Browser", "browser_handoff"], canvas: ["Autora Canvas", "app_preview"], terminal: ["Autora Terminal", "run_background"],
+    browser: ["Autora Browser", "browser_handoff"], creator: ["Autora Creator", "app_preview"], terminal: ["Autora Terminal", "run_background"],
     pdf: ["Autora PDF", "pdf_compose"], video: ["Autora Video", "video_ui"], studio: ["Autora Music", "studio_make"],
     office: ["Pages, Sheets and Slides", "office_create"], cad: ["Autora 3D", "cad_shape_measure"], game: ["Autora Games", "game_catalog"],
     widgets: ["Widgets", "widget_show"],
@@ -32,7 +32,7 @@ await test("every window has a manual that names its tools", () => {
 await test("a tool finds its window's manual, and a tool with no window finds none", () => {
   assert.equal(manualId("browser_click"), "browser");
   assert.equal(manualId("web_search"), "browser");
-  assert.equal(manualId("app_preview"), "canvas");
+  assert.equal(manualId("app_preview"), "creator");
   assert.equal(manualId("terminal"), "terminal");
   assert.equal(manualId("pdf_edit"), "pdf");
   assert.equal(manualId("studio_clip"), "studio");
@@ -61,7 +61,7 @@ await test("tool_manual returns a manual, and refuses a window that does not exi
   assert.ok(ok.summary.includes("Autora Music"));
   const bad = await runTool(spec, { window: "nope" }, ctx);
   assert.equal(bad.ok, false);
-  assert.ok(bad.summary.includes("browser, canvas"));
+  assert.ok(bad.summary.includes("browser, creator"));
 });
 
 console.log(`\n${passed} passed`);

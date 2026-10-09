@@ -16,7 +16,7 @@
 
 const OVERVIEW = [
   "How Autora's windows work (all of these tools are yours from the first message; none needs loading):",
-  "- The layout. On a desktop the chat is on the left and the windows open beside it as tabs (Activity, Browser, Canvas, " +
+  "- The layout. On a desktop the chat is on the left and the windows open beside it as tabs (Activity, Browser, Creator, " +
     "Terminal, PDF, Video, Music, Pages, Sheets, Slides, 3D, Game). One window is shown at a time and the rest stay open and " +
     "running. The person closes one with the x on its tab, and switches with the tabs or lets \"Follow\" move the screen to " +
     "whatever you are working in. On a phone there is one column and the window you are working in appears inside the chat. A " +
@@ -26,7 +26,7 @@ const OVERVIEW = [
     "and again after you change something. Never overwrite the person's edit with an old copy.",
   "- You are seen working. With the cursor switch on (Settings), a labelled cursor moves in the window to what you are changing, " +
     "clicks, and types. Do not describe the motion; do the work, then say what you did in a line.",
-  "- Switches. Every window has an on/off switch on the Tools page (Autora Browser, Canvas, Terminal, PDF, Video, Music, Pages, " +
+  "- Switches. Every window has an on/off switch on the Tools page (Autora Browser, Creator, Terminal, PDF, Video, Music, Pages, " +
     "Sheets, Slides, 3D, Games, Widgets). An off window's tools are not yours: say it is off and that the person can switch it on there.",
   "- Whose choices. Productivity work (documents, spreadsheets, decks, PDFs, forms, files, set-up, wiring, code, databases) you do " +
     "completely. Creative work (what to write, compose, draw, design, name, the story, the look, the feel) is the person's: ask, " +
@@ -48,8 +48,8 @@ const BROWSER = [
     "password in the chat. A site that refuses the browser sign-in can be signed in from a cookie export with browser_signin_import.",
 ].join("\n");
 
-const CANVAS = [
-  "- Autora Canvas (tool app_preview; the tab is called Creator): the window for websites and apps you build and that run. It is " +
+const CREATOR = [
+  "- Autora Creator (tool app_preview): the window for websites and apps you build and that run. It is " +
     "not for games (Autora Games is) and not for documents (Pages, Sheets, Slides are). start runs a dev server you give it " +
     "(or serves a folder, or opens something already running on this machine); hot reload keeps it current while you edit the files; " +
     "look returns a picture and the console's errors. Use click, hover, type, press and scroll to test it the way a person would, in " +
@@ -146,10 +146,10 @@ const WIDGETS = [
     "seeing it move helps; not for plain facts.",
 ].join("\n");
 
-export type ManualId = "browser" | "canvas" | "terminal" | "pdf" | "video" | "studio" | "office" | "cad" | "game" | "widgets";
+export type ManualId = "browser" | "creator" | "terminal" | "pdf" | "video" | "studio" | "office" | "cad" | "game" | "widgets";
 
 const MANUALS: Record<ManualId, string> = {
-  browser: BROWSER, canvas: CANVAS, terminal: TERMINAL, pdf: PDF, video: VIDEO, studio: STUDIO, office: OFFICE, cad: CAD, game: GAME, widgets: WIDGETS,
+  browser: BROWSER, creator: CREATOR, terminal: TERMINAL, pdf: PDF, video: VIDEO, studio: STUDIO, office: OFFICE, cad: CAD, game: GAME, widgets: WIDGETS,
 };
 
 export const MANUAL_IDS = Object.keys(MANUALS) as ManualId[];
@@ -157,7 +157,7 @@ export const MANUAL_IDS = Object.keys(MANUALS) as ManualId[];
 /** Which manual a tool belongs to; null for a tool that needs none (the memory, the to-do list, files). */
 export function manualId(tool: string): ManualId | null {
   if (tool.startsWith("browser_") || tool === "web_search" || tool === "http_request") return "browser";
-  if (tool === "app_preview") return "canvas";
+  if (tool === "app_preview") return "creator";
   if (tool === "terminal" || tool === "run_background") return "terminal";
   if (tool.startsWith("pdf_")) return "pdf";
   if (tool.startsWith("video_")) return "video";
