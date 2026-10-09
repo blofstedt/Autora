@@ -489,10 +489,10 @@ export function photoBriefing(on: boolean): string {
     return "- Autora Photo (the photo editing window): switched off on the Tools page. Do not try to edit photos with it, and if asked, say it is off.";
   }
   return (
-    "- Autora Photo (the photo editing window, PhotoCraft): available. Tools: photo_open (a file, or `new` for a canvas), photo_look, photo_info, " +
-    "photo_edit (a list of commands), photo_commands (find a command id), photo_export. It has layers, masks, adjustment layers, filters, type, " +
-    "brushes and real PSD files. Look with photo_look after a change, before you say it is done. The person edits the same picture by hand: " +
-    "photo_info again before relying on what you saw. Choices of look, colour and composition are theirs: suggest, ask, and do the technical work."
+    "- Autora Photo (the photo editing window, PhotoCraft): available. Tools: photo_open, photo_look, photo_info, photo_edit, photo_commands, " +
+    "photo_export. Layers, masks, adjustments, filters, type, brushes, PSD files. Look with photo_look after a change, before you say it is " +
+    "done. The person edits the same picture by hand: photo_info again before relying on what you saw. Look, colour and composition are " +
+    "theirs: suggest and ask; the technical work is yours."
   );
 }
 
@@ -595,6 +595,23 @@ export function photoRoutes(app: Express, opts: { exists: (session: string) => b
  * may start WebAssembly but reach nothing outside this origin.
  */
 export function servePhoto(app: Express, dist: string): void {
+  /* trunk puts the loader that starts the WebAssembly inline in index.html. It is allowed by its hash, read from the
+     built page, rather than by 'unsafe-inline': nothing else may run inline. */
+  const page = path.join(dist, "photo", "web", "index.html");
+  const inline = (): string[] => {
+    try {
+      const html = fs.readFileSync(page, "utf8");
+      return [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => `'sha256-${crypto.createHash("sha256").update(m[1]).digest("base64")}'`);
+    } catch {
+      return [];
+    }
+  };
+  let allowed: { stamp: number; hashes: string[] } = { stamp: -1, hashes: [] };
+  const hashes = (): string[] => {
+    const stamp = fs.statSync(page, { throwIfNoEntry: false })?.mtimeMs ?? 0;
+    if (stamp !== allowed.stamp) allowed = { stamp, hashes: inline() };
+    return allowed.hashes;
+  };
   app.use(
     "/autora-photo",
     (_req, res, next) => {
@@ -602,7 +619,7 @@ export function servePhoto(app: Express, dist: string): void {
         "Content-Security-Policy",
         [
           "default-src 'self'",
-          "script-src 'self' 'wasm-unsafe-eval'",
+          `script-src 'self' 'wasm-unsafe-eval' ${hashes().join(" ")}`.trim(),
           "style-src 'self' 'unsafe-inline'",
           "img-src 'self' data: blob:",
           "font-src 'self' data:",

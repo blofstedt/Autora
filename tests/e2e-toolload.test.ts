@@ -74,7 +74,7 @@ async function main() {
       app.script.push({ text: "Ok." });
       await app.turn(s, "do something");
       const all = JSON.stringify(app.seen.map((r: any) => r.messages));
-      assert.match(all, /sets are: pdf, video, studio, office, cad, game, widgets, mcp, schedule, notebooks/);
+      assert.match(all, /sets are: pdf, video, studio, office, cad, game, photo, widgets, mcp, schedule, notebooks/);
     });
   } finally {
     await app.stop();
