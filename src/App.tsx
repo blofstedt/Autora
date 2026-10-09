@@ -2280,7 +2280,10 @@ export function App() {
                       </div>
                       {toolsOpen && sessionId && (
                         <ToolsSheet
+                          session={sessionId}
                           onClose={() => setToolsOpen(false)}
+                          onTrouble={setNotice}
+                          onOpened={(name, app) => setNotice(`${name} is open in ${app}`)}
                           onAsk={(text) => { setDraft(text); window.setTimeout(() => composerRef.current?.focus(), 0); }}
                         />
                       )}

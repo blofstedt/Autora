@@ -455,17 +455,66 @@ function Graph({
      gently, new ones start on a spiral so the same store lays out the same way
      every time. */
   const ids = data.records.map((r) => r.id).join(",");
+  /* The links the last layout was made for. When they change (the mind has drawn them again) the old positions
+     are no use: they were arranged around lines that are gone. */
+  const laidFor = useRef("");
   useLayoutEffect(() => {
-    const previous = new Map(nodesRef.current.map((n) => [n.id, n]));
-    const nodes: Node[] = data.records.map((record, i) => {
+    const edgeKey = edges.map((e) => `${e.a}|${e.b}`).sort().join(",");
+    const previous = laidFor.current === edgeKey
+      ? new Map(nodesRef.current.map((n) => [n.id, n]))
+      : new Map<string, Node>();
+    laidFor.current = edgeKey;
+
+    /* Memories that are linked, directly or through others, are one group; the layout keeps each group together and
+       apart from the others, so a line is only ever drawn within a group and never across to a stranger. */
+    const parent = new Map(data.records.map((r) => [r.id, r.id]));
+    const root = (id: string): string => {
+      let at = id;
+      while (parent.get(at) !== at) { parent.set(at, parent.get(parent.get(at)!)!); at = parent.get(at)!; }
+      return at;
+    };
+    for (const e of edges) if (parent.has(e.a) && parent.has(e.b)) parent.set(root(e.a), root(e.b));
+    const groups = new Map<string, string[]>();
+    for (const r of data.records) {
+      const g = root(r.id);
+      groups.set(g, [...(groups.get(g) ?? []), r.id]);
+    }
+    /* Each group is a disc big enough for its members, packed outwards from the middle, biggest first, on a spiral
+       until it clears the discs already placed. Memories with no link are small discs of their own. */
+    const discs = [...groups.entries()]
+      .sort((x, y) => y[1].length - x[1].length)
+      .map(([g, members]) => ({ g, members, r: members.length === 1 ? 34 : 46 * Math.sqrt(members.length) + 24, x: 0, y: 0 }));
+    const placed: typeof discs = [];
+    for (const disc of discs) {
+      if (placed.length > 0) {
+        for (let step = 0; ; step++) {
+          const angle = step * 0.55;
+          const dist = 30 + step * 9;
+          disc.x = Math.cos(angle) * dist;
+          disc.y = Math.sin(angle) * dist;
+          if (placed.every((o) => Math.hypot(o.x - disc.x, o.y - disc.y) >= o.r + disc.r + 30)) break;
+        }
+      }
+      placed.push(disc);
+    }
+    const home = new Map<string, { x: number; y: number }>();
+    const groupOf = new Map<string, string>();
+    for (const d of discs) d.members.forEach((id, j) => {
+      const angle = j * 2.399;
+      const radius = 22 * Math.sqrt(j);
+      home.set(id, { x: d.x + Math.cos(angle) * radius, y: d.y + Math.sin(angle) * radius });
+      groupOf.set(id, d.g);
+    });
+    const centre = new Map(discs.map((d) => [d.g, { x: d.x, y: d.y }]));
+
+    const nodes: Node[] = data.records.map((record) => {
       const old = previous.get(record.id);
-      const angle = i * 2.399;
-      const radius = 24 * Math.sqrt(i + 1);
+      const at = home.get(record.id)!;
       return {
         id: record.id,
         record,
-        x: old?.x ?? Math.cos(angle) * radius,
-        y: old?.y ?? Math.sin(angle) * radius,
+        x: old?.x ?? at.x,
+        y: old?.y ?? at.y,
         vx: 0, vy: 0,
         r: (record.pinned ? 11 : 8) + Math.min(record.uses, 6) * 0.9,
       };
@@ -479,13 +528,14 @@ function Graph({
     for (let round = 0; round < rounds && alpha > 0.02; round++) {
       // Repulsion. O(n²), which is the right call for a few hundred nodes and
       // far less code than a quadtree that would never be the bottleneck.
+      // Strangers push harder than members of one group, so groups stay apart.
       for (let i = 0; i < nodes.length; i++) {
         for (let j = i + 1; j < nodes.length; j++) {
           const a = nodes[i], b = nodes[j];
           let dx = b.x - a.x, dy = b.y - a.y;
           let d2 = dx * dx + dy * dy;
           if (d2 < 1) { dx = (i % 7 - 3) / 3 + 0.1; dy = (j % 5 - 2) / 2 + 0.1; d2 = 4; }
-          const force = REPULSION / d2;
+          const force = (groupOf.get(a.id) === groupOf.get(b.id) ? REPULSION : REPULSION * 2.5) / d2;
           const d = Math.sqrt(d2);
           const fx = (dx / d) * force, fy = (dy / d) * force;
           a.vx -= fx; a.vy -= fy; b.vx += fx; b.vy += fy;
@@ -496,14 +546,16 @@ function Graph({
         if (!a || !b) continue;
         const dx = b.x - a.x, dy = b.y - a.y;
         const d = Math.max(Math.hypot(dx, dy), 1);
-        const target = edge.strong ? 135 : 200;
-        const k = (d - target) * (edge.strong ? 0.012 : 0.005);
+        const target = edge.strong ? 100 : 160;
+        const k = (d - target) * (edge.strong ? 0.02 : 0.005);
         const fx = (dx / d) * k, fy = (dy / d) * k;
         a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
       }
       for (const node of nodes) {
-        node.vx -= node.x * 0.0022;     // gentle pull to centre
-        node.vy -= node.y * 0.0022;
+        // Each group is drawn to its own place, so it keeps its members together; the whole is held loosely at the middle.
+        const own = centre.get(groupOf.get(node.id) ?? "") ?? { x: 0, y: 0 };
+        node.vx -= (node.x - own.x) * 0.006 + node.x * 0.0004;
+        node.vy -= (node.y - own.y) * 0.006 + node.y * 0.0004;
         node.vx *= 0.82; node.vy *= 0.82;
         node.x += node.vx * alpha;
         node.y += node.vy * alpha;
