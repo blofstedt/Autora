@@ -1,0 +1,13 @@
+diff --git a/apps/slides/src/renderer/components/RibbonHomeTab.tsx b/apps/slides/src/renderer/components/RibbonHomeTab.tsx
+index a9b07a2..3176307 100644
+--- a/apps/slides/src/renderer/components/RibbonHomeTab.tsx
++++ b/apps/slides/src/renderer/components/RibbonHomeTab.tsx
+@@ -416,7 +416,7 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
+         label={t('ribbonGroupSlides')}
+         groupId="slides"
+         collapse={{
+-          collapsed: true,
++          collapsed: false,
+           open: collapseOpen === 'slides',
+           onToggle: () => {
+             closePanels(['collapse'])

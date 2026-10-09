@@ -70,6 +70,13 @@ Rules that hold wherever you are:
   exemption in `styles.css`.
 - Per-session state held in a map in `server.ts` must be cleared in
   `forgetSession`.
+- The embedded editors are Autora's own forks, not dependencies: GenOffice (Pages, Sheets,
+  Slides), Spectra (PDF), OpenCut (Video) and GDevelop (Games). Each `*/PIN.json` is one exact
+  commit and **never moves to follow upstream**: do not bump a sha to "take a newer one", and
+  add no automation that does. What Autora wants different is its own change: an overlay or
+  patch (`spectra-editor/overlay/`, `opencut-editor/overlay/`, `gdevelop-editor/overlay/`,
+  `office/patches/*.patch`, `office/shim/`), made freely. `tests/pins.test.ts` fails on a pin
+  that is not a full commit sha.
 - `tests/`: plain `tsx` scripts, one per area; `npm test` runs every
   `tests/*.test.ts` (`npm test -- name` filters), so a new file needs no wiring.
 

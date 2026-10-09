@@ -20,7 +20,8 @@
  *
  * To change what Autora does to GDevelop, edit the overlay or the patches, never
  * the fetched copy (it is replaced whenever the pin, the overlay or a patch changes).
- * To take a newer GDevelop, move both shas in gdevelop/PIN.json, then copy its
+ * GDevelop is Autora's fork: the pins do not follow upstream. Should a commit ever be
+ * changed on purpose, move both shas in gdevelop/PIN.json, then copy its
  * newIDE/app/package.json dependencies and package-lock.json into gdevelop-editor/
  * (this script says when they differ).
  *

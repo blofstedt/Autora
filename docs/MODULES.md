@@ -141,8 +141,8 @@ Spectra's fetched renderer is most of what is on disk.
     as a child process. Nothing of it is copied into this repo:
     `scripts/build-office.mjs` fetches the commit in `office/PIN.json`, bundles its
     CLI and builds its Rust spreadsheet engine into `dist/office/` in GenOffice's
-    own "packaged" layout (`cli/`, `wasm/`, `native/`; `office/NOTICE.md`). Bump the
-    sha to take a newer one. `npm run build:office` runs it; the Dockerfile builds
+    own "packaged" layout (`cli/`, `wasm/`, `native/`; `office/NOTICE.md`). The pin
+    never follows upstream (it is Autora's fork; change it with `office/patches/*.patch`). `npm run build:office` runs it; the Dockerfile builds
     the engine in its own stage with `cargo zigbuild` for musl amd64+arm64 (it has a
     C dependency, so plain `rust-lld` cross-linking does not work) and the CLI in
     the builder; CI runs it before the tests. Without the build the tools are not
@@ -352,7 +352,7 @@ Spectra's fetched renderer is most of what is on disk.
   `spectra-editor/src/renderer/` (gitignored) and applies Autora's changes: `overlay/renderer.patch`
   (three of Spectra's files: `App.tsx` brings the opened document to the front, `i18n.ts` loads other
   languages on demand, `index.tsx` installs the shim and `autora.css`) and the files in
-  `overlay/renderer/`. Edit the overlay, never the fetched copy; a newer Spectra is a new sha in the
+  `overlay/renderer/`. Edit the overlay, never the fetched copy; a different Spectra commit is a deliberate act, not an update: a new sha in the
   pin and a patch that still applies. It is a Tauri app, so its six `@tauri-apps/*` imports are aliased
   (vite and `tsconfig.json`) to `spectra-editor/src/autora/` (Autora's own shim, answered over
   `server/spectra.ts` and `server/spectra/commands.ts`). Its Python engine is `spectra/PIN.json` ->

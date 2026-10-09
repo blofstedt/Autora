@@ -15,7 +15,7 @@
  * a replaced file breaks only when the interface it implements changes, and the
  * typecheck says so. To change what Autora does to OpenCut, edit the overlay,
  * never the fetched copy (it is replaced whenever the pin or the overlay
- * changes). To take a newer OpenCut, move the sha in opencut/PIN.json.
+ * changes). OpenCut is Autora's fork: the pin does not follow upstream.
  *
  * Needs git and the network the first time; after that .cache/opencut holds it.
  */

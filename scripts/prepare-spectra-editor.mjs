@@ -12,8 +12,8 @@
  *   spectra-editor/overlay/renderer/*       files Autora adds beside them
  *
  * To change what Autora does to Spectra, edit those, never the fetched copy
- * (it is replaced whenever the pin or the overlay changes). To take a newer
- * Spectra, move the sha in spectra/PIN.json and make the patch apply.
+ * (it is replaced whenever the pin or the overlay changes). Spectra is Autora's fork:
+ * the pin does not follow upstream, and a different commit is a deliberate act (a new sha and a patch that applies).
  *
  * Needs git and the network the first time; after that .cache/spectra holds it.
  */

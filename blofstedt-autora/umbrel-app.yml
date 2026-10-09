@@ -170,6 +170,8 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Fixes the blank screen on load. The app failed to start because a list the lazy
-  pages register themselves in was created after the first page used it; it is now
-  created first.
+  Tidies the Pages, Sheets and Slides editors. The AI buttons that did nothing (Editor,
+  Translate, Spelling, Resolve Comments, Revision Summary, the AI panel toggle) are gone, so
+  the assistant is the Autora button and the chat. New Slide, Layout and Add Section now sit
+  on the Slides Home tab instead of behind a menu. The editors are now treated as Autora's
+  own forks: they are pinned to one exact version and never follow upstream.
