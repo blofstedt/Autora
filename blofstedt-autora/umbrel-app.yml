@@ -170,6 +170,16 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The Tools page now names the built-in windows the Autora way: Autora Browser,
-  Autora Canvas (where websites and apps are built) and Autora Terminal. The line
-  at the top of the page about everything being on to start with is gone.
+  Autora Terminal is now a real terminal: a live shell on the machine Autora
+  runs on, with Tab completion, history, colours and programs like vim, top and
+  ssh. Reloading the page brings back the same shell, the commands the agent runs
+  still appear in it, and the folder you move to is where the agent starts next.
+  Putting the window away ends its shell. On a phone a row of keys (Esc, Tab,
+  Ctrl+C, arrows) sits under the screen.
+  The agent now has every tool from its first message, and the first time it
+  uses a window (Browser, Canvas, Terminal, PDF, Video, Music, Pages, Sheets,
+  Slides, 3D, Games, Widgets) it is handed that window's manual, so it knows how
+  the tool works, what you see and what you can change. It can also read a manual
+  ahead of time with the new tool_manual tool. On an http page the mic and live buttons are greyed out and say on hover
+  that voice and live mode require https, in place of the warning in the
+  composer.

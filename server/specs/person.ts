@@ -79,6 +79,24 @@ export const personSPECS: ToolSpec[] = [
     parameters: { type: "object", properties: {} },
   },
 
+  // ------------------------------------------------------------ manuals --
+  {
+    name: "tool_manual",
+    group: "person",
+    description:
+      "Read how one of Autora's windows works: what it is for, what the person sees and can change, how its tools fit " +
+      "together, and where it goes wrong. A window's manual is attached to the result of the first tool you call in it, " +
+      "so this is for reading one sooner, or again. `window` is browser, canvas, terminal, pdf, video, studio, office, cad, " +
+      "game or widgets.",
+    parameters: {
+      type: "object",
+      properties: {
+        window: { type: "string", description: "browser, canvas, terminal, pdf, video, studio, office, cad, game or widgets." },
+      },
+      required: ["window"],
+    },
+  },
+
   // ---------------------------------------------------------------- mcp --
   {
     name: "mcp_servers",

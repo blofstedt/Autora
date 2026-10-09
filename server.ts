@@ -30,6 +30,7 @@ import { signIns } from "./server/signins";
 import { ensureHostNames } from "./server/hosts";
 import { attachDictation } from "./server/dictation";
 import { missingPathIn, pathHint } from "./server/hints";
+import { MANUAL_IDS, manualId, manualText, type ManualId } from "./server/handbook";
 import { FAMILIES, familyIds, loadedFamilies, loadedFromLog, unloadedIndex, withoutUnloaded } from "./server/toolload";
 import { applyLedger, latestLedger, ledgerBriefing, renderLedger, touched as touchedThings } from "./server/ledger";
 import { applyTodos, latestTodos, todoBriefing, unfinishedTodos } from "./server/todos";
@@ -128,7 +129,7 @@ import { dropSpectra, serveSpectra, spectraDocumentChanged, spectraRoutes, spect
 import { newFileRoutes } from "./server/newfile";
 import { cadRoutes, cadState, dropCad, onCadChange, serveCad } from "./server/caddesk";
 import { dropGame, gameRoutes, gameState, onGameChange, serveGame } from "./server/gamedesk";
-import { dropTerm, onTermChange, termRoutes, termState } from "./server/termdesk";
+import { dropTerm, onTermChange, termRoutes, termState, termUpgrade } from "./server/termdesk";
 import { dropStudio, onStudioChange, studioRoutes, studioState, studioTurnNote } from "./server/studio";
 import { windowOff } from "./server/tools";
 import { dropOfficeDesk, onOfficeChange, onOfficePush, onOfficeTouch, officeBriefing, officeData, officeRoutes, officeState, officeHooks, serveOfficeEditors } from "./server/officedesk";
@@ -3279,8 +3280,14 @@ interface TurnOptions {
   notebooks?: NotebookRef[];
 }
 
+/** Whether this chat has been given a window's manual already (a `tool.manual` event is in its log). */
+const manualGiven = (events: readonly { kind: string; payload?: Record<string, any> }[], id: string) =>
+  events.some((e) => e.kind === "tool.manual" && e.payload?.id === id);
+
 /** Which specialist tool sets this chat has been given (see toolload.ts). */
-const allToolsOn = () => process.env.AUTORA_ALL_TOOLS === "1";
+/* Every tool is a default tool: all of them are in the list on every call, and the handbook (server/handbook.ts) says how
+   each one works. AUTORA_LAZY_TOOLS=1 goes back to a short list that grows as it is wanted (the token-saving mode). */
+const allToolsOn = () => process.env.AUTORA_LAZY_TOOLS !== "1";
 /* The log only grows, so the families loaded from it are a function of its
    length: remember the last answer and walk only the events added since. The
    turn loop asks every round, and each round used to re-scan the whole
@@ -3321,8 +3328,9 @@ function pdfInChat(session: Session): boolean {
  * the log so the next turn has them without asking again.
  */
 function autoLoadTools(session: Session, text: string) {
+  if (allToolsOn()) return;
   const have = loadedFromLog(session.events);
-  for (const id of loadedFamilies({ events: session.events, said: text, hasPdf: pdfInChat(session) })) {
+  for (const id of loadedFamilies({ events: session.events, said: text, hasPdf: pdfInChat(session), lazy: true })) {
     if (!have.has(id)) emitEvent(session, "tools.enable", "system", { family: id, why: "wanted" });
   }
 }
@@ -5061,7 +5069,16 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
                call again. */
             const stored = context.takeStored();
             if (stored) emitEvent(session, "tool.stored", "agent", stored, span);
-            reply(outcome.ok, watched(spec.name, use.args, outcome.ok, outcome.summary, fitted), outcome.images);
+            /* The window's manual, once per chat, with the result of the first call into it (server/handbook.ts): the agent
+               reads how the window works at the moment it starts to use it, not on every turn. Reading it with
+               tool_manual counts. */
+            const manual = spec.name === "tool_manual" ? (String(use.args?.window ?? "").trim().toLowerCase() as ManualId) : manualId(spec.name);
+            let shown = fitted;
+            if (manual && MANUAL_IDS.includes(manual) && !manualGiven(session.events, manual)) {
+              emitEvent(session, "tool.manual", "system", { id: manual }, span);
+              if (spec.name !== "tool_manual") shown = `${fitted}\n\n[Autora: the manual for this window, once -- read it before the next step]\n${manualText(manual)}`;
+            }
+            reply(outcome.ok, watched(spec.name, use.args, outcome.ok, outcome.summary, shown), outcome.images);
           }
           if (loopStop) break;
         }
@@ -6027,6 +6044,8 @@ async function startServer() {
     // Spectra's editor has a socket of its own for a page opened on its own;
     // it takes the connection here or leaves it to the app's own sockets.
     if (spectraUpgrade(req, socket, head)) return;
+    // The terminal's own socket: a shell for whoever opens it, so the same cross-site check as every socket.
+    if (termUpgrade(req, socket, head, allowSocket)) return;
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
   };
   server.on("upgrade", upgrade);

@@ -367,7 +367,7 @@ release bump applies; the two snippets are verified only in isolation.
 - **Shorter tool list** (`server/toolload.ts`, `tools_enable`): PDF, widgets,
   connectors, scheduling and notebooks (about 8k of the 18k tokens of schemas)
   load on the person's words, a PDF in the chat, a call, or a request; kept via
-  `tools.enable`. `AUTORA_ALL_TOOLS=1` turns it off.
+  `tools.enable`. Since 0.9.181 it is off by default; `AUTORA_LAZY_TOOLS=1` turns it on.
 - **Cheaper unwatched calls**: `backgroundCall` uses the provider's fast model
   when Settings names one.
 - **Parallel research**: `research` takes up to three `questions`, each its own

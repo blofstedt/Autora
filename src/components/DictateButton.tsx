@@ -18,14 +18,11 @@ import { IconMic } from "./Icons";
  * redirect away.
  */
 export function DictateButton({
-  onText, disabled, onBlocked, onTrouble,
+  onText, disabled, onTrouble,
 }: {
   /** A settled phrase, to append to whatever is already typed. */
   onText: (text: string) => void;
   disabled?: boolean;
-  /** Tapped on an insecure page, where there is a microphone but no permission
-      to open it. The composer knows where the secure page is; this does not. */
-  onBlocked?: () => void;
   /** Said out loud rather than parked in a `title` nobody on a phone can
       hover. A microphone that fails silently is indistinguishable from one
       that was never built, which is how this went unnoticed. */
@@ -52,13 +49,12 @@ export function DictateButton({
   if (!recognitionAvailable) return null;
 
   if (!secureOrigin) {
-    const why = "Dictation needs an https page — tap to see why";
+    const why = "Voice and live mode require https";
     return (
       <button
         type="button"
         className="btn ghost icon mic-btn is-blocked"
-        onClick={onBlocked}
-        disabled={disabled || !onBlocked}
+        aria-disabled="true"
         title={why}
         aria-label={why}
       >

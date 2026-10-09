@@ -76,7 +76,7 @@ const WINDOWS: { key: WindowKey; name: string; icon: ReactNode; what: string; to
     key: "terminal",
     name: "Autora Terminal",
     icon: <IconTerminal size={18} />,
-    what: "A shell beside the chat that you and the agent share: type commands with completion for commands, files, git and npm scripts, and watch the agent's commands appear in the same place. The folder you cd into is where the agent's next command starts, and it is told what you ran. Switching this off also takes the agent's terminal tool away.",
+    what: "A real terminal for the machine Autora runs on, beside the chat: your own shell with its completion and history, colours, and programs like vim and top. The commands the agent runs appear in it, and the folder you cd into is where the agent's next command starts. Switching this off also takes the agent's terminal tool away.",
     tools: "terminal, run_background",
   },
   {

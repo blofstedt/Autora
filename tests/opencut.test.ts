@@ -166,8 +166,8 @@ try {
   });
 
   await test("the tools are brought in by the person's words, and looking is allowed while planning", async () => {
-    assert.ok(loadedFamilies({ events: [], said: "can you cut this footage into a short video?" }).has("video"));
-    assert.ok(!loadedFamilies({ events: [], said: "what is the capital of France?" }).has("video"));
+    assert.ok(loadedFamilies({ events: [], said: "can you cut this footage into a short video?" , lazy: true}).has("video"));
+    assert.ok(!loadedFamilies({ events: [], said: "what is the capital of France?" , lazy: true}).has("video"));
     assert.equal(looksOnly("video_look"), true);
     assert.equal(looksOnly("video_open", {}), true);
     assert.equal(looksOnly("video_open", { new: "x" }), false);

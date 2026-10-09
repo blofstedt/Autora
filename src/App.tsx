@@ -160,6 +160,8 @@ function closeUrlFor(pane: SideWindow, session: string): string | null {
   }
 }
 
+const VOICE_NEEDS_HTTPS = "Voice and live mode require https";
+
 export function App() {
   /* Back, on a phone, is the system gesture, and in an installed app with
      nothing behind it, back means leaving. One entry of our own is pushed on
@@ -1041,6 +1043,9 @@ export function App() {
      that was never going to appear, and concluding it had not been built. A
      browser with no engine at all still gets nothing: that one has no fix. */
   const voiceBlocked = !secureOrigin && (recognitionAvailable || !!canSpeak);
+  /* On an http page the mic and the live button are greyed out and say why on hover, rather than a warning in the
+     composer. */
+  const httpsOnly = voiceBlocked;
 
   // --------------------------------------------------------- slash commands --
   /** Where the highlight is in the command menu, and whether Escape put the
@@ -2212,10 +2217,11 @@ export function App() {
                           (--is, which the plain glyphs get from their own
                           stylesheet). */}
                       <button
-                        className="btn ghost icon composer-live"
-                        onClick={voiceReady ? toggleLive : () => setVoiceHelp(true)}
+                        className={`btn ghost icon composer-live${httpsOnly ? " is-blocked" : ""}`}
+                        onClick={httpsOnly ? undefined : voiceReady ? toggleLive : () => setVoiceHelp(true)}
                         disabled={!live}
-                        title={voiceReady ? "Talk with Autora out loud (v)" : "Live voice requires https"}
+                        aria-disabled={httpsOnly || undefined}
+                        title={httpsOnly ? VOICE_NEEDS_HTTPS : voiceReady ? "Talk with Autora out loud (v)" : "Live voice requires https"}
                         aria-label="Live voice chat"
                         aria-pressed={liveOn}
                       >
@@ -2230,7 +2236,6 @@ export function App() {
                       <DictateButton
                         onText={appendDictation}
                         disabled={readOnly}
-                        onBlocked={() => setVoiceHelp(true)}
                         onTrouble={setNotice}
                       />
                       {/* Beside the two voices, at every width: the two things you can
@@ -2298,14 +2303,6 @@ export function App() {
                           title="Dismiss"
                         >
                           {notice}
-                        </button>
-                      ) : voiceBlocked ? (
-                        <button
-                          className="hint voice-note"
-                          onClick={() => setVoiceHelp(true)}
-                          title="Browsers only allow microphone access on a secure page."
-                        >
-                          Voice needs <code>https</code>
                         </button>
                       ) : null}
                     </div>
