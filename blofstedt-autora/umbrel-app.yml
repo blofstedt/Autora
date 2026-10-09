@@ -170,8 +170,6 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Closing a window beside the chat is now done from its tab. The x sits on the
-  right of the tab (Game x, PDF x, Terminal x and the rest) and puts that window
-  away, and the separate close button in each window's top bar is gone. On a
-  desktop the Games and 3D windows no longer have a top bar of their own, so the
-  editor starts right under the tabs.
+  The Tools page now names the built-in windows the Autora way: Autora Browser,
+  Autora Canvas (where websites and apps are built) and Autora Terminal. The line
+  at the top of the page about everything being on to start with is gone.
