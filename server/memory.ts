@@ -163,6 +163,10 @@ function overlap(x: ReadonlySet<string>, y: ReadonlySet<string>): number {
   return shared / (x.size + y.size - shared);
 }
 
+/** How many other memories one memory is tied to, at most, and how alike two must be to be tied. */
+const LINKS_PER_MEMORY = 3;
+const MIN_SIMILARITY = 0.22;
+
 const now = () => Math.floor(Date.now() / 1000);
 const GENERIC_TAGS = new Set(["skill", "agent-authored", "learned", "unconfirmed", "proven"]);
 
@@ -269,7 +273,13 @@ export class MemoryGraph {
         unpinned += 1;
       }
     }
-    if (unpinned) this.changed();
+    /* Links drawn by the old rule (one shared tag, or a trace of shared words, was enough) tied nearly
+       everything to everything. They are dropped and drawn again by `relink`, once, under a new name. */
+    if (links.some((l) => l.rel === "related")) {
+      for (let i = links.length - 1; i >= 0; i -= 1) if (links[i].rel === "related") links.splice(i, 1);
+      this.relink();
+    } else if (unpinned) this.changed();
+    if (unpinned && links.length) this.changed();
   }
 
   /** Saved after a change made to the records from outside (the tidy pass). */
@@ -527,24 +537,83 @@ export class MemoryGraph {
     return { record, action: dup ? "proposed" : "added" };
   }
 
-  /** Tie a new memory to the few it most resembles, so the graph grows. */
-  linkRelated(record: MemoryRecord, max = 3) {
-    const topics = new Set(record.tags.filter((t) => !GENERIC_TAGS.has(t)));
-    const mine = indexOf(record);
-    const candidates = this.active()
-      .filter((r) => r.id !== record.id && r.id !== record.replaces)
-      .map((r) => {
-        const sharedTags = r.tags.filter((t) => topics.has(t)).length;
-        const sim = overlap(indexOf(r).vocab, mine.vocab);
-        return { r, weight: sim + 0.15 * sharedTags };
-      })
-      .filter((c) => c.weight >= 0.18)
-      .sort((a, b) => b.weight - a.weight)
-      .slice(0, max);
-    for (const { r } of candidates) {
-      if (this.links.some((l) => (l.src === record.id && l.dst === r.id) || (l.src === r.id && l.dst === record.id))) continue;
-      this.links.push({ src: record.id, dst: r.id, rel: "related" });
+  /**
+   * Tie a new memory to the few it is really about the same thing as.
+   *
+   * A link says "if you want one of these, you may want the other", so it is only drawn between
+   * memories about the same subject: see `neighbours`. A memory about nothing else stays alone.
+   */
+  linkRelated(record: MemoryRecord, max = LINKS_PER_MEMORY) {
+    const near = this.neighbours(this.active(), max).get(record.id) ?? [];
+    for (const id of near) this.addSimilar(record.id, id);
+  }
+
+  /** Draw every "similar" link again from what the memories say now (the old ones are dropped). */
+  relink() {
+    for (let i = this.links.length - 1; i >= 0; i -= 1) {
+      if (this.links[i].rel === "similar" || this.links[i].rel === "related") this.links.splice(i, 1);
     }
+    for (const [id, near] of this.neighbours(this.active(), LINKS_PER_MEMORY)) {
+      for (const other of near) this.addSimilar(id, other);
+    }
+    this.changed();
+  }
+
+  private addSimilar(a: string, b: string) {
+    if (this.links.some((l) => (l.src === a && l.dst === b) || (l.src === b && l.dst === a))) return;
+    this.links.push({ src: a, dst: b, rel: "similar" });
+  }
+
+  /**
+   * For each memory, the (at most `max`) others most like it.
+   *
+   * Cosine similarity of each memory's words, each weighted by how rare it is across all the memories
+   * (tf-idf), so "autora" in two hundred notes ties none of them together while "vendor balance" ties the
+   * three about it. A word in more than a third of the memories is left out altogether, and two memories must
+   * share at least two words and score at least `MIN_SIMILARITY`: one shared word, or one shared tag, is how
+   * a Kia note ended up tied to a job search. Words in the title and topical tags count double (see indexOf).
+   */
+  private neighbours(pool: MemoryRecord[], max: number): Map<string, string[]> {
+    const n = pool.length;
+    const docs = pool.map((r) => indexOf(r).tf);
+    const df = new Map<string, number>();
+    for (const tf of docs) for (const w of tf.keys()) df.set(w, (df.get(w) ?? 0) + 1);
+    const vectors = docs.map((tf) => {
+      const v = new Map<string, number>();
+      let norm = 0;
+      for (const [w, count] of tf) {
+        const d = df.get(w) ?? 1;
+        if (n >= 12 && d > n / 3) continue;
+        const x = (1 + Math.log(count)) * Math.log(1 + n / d);
+        v.set(w, x);
+        norm += x * x;
+      }
+      return { v, norm: Math.sqrt(norm) };
+    });
+    const best = new Map<string, { id: string; score: number }[]>();
+    for (let i = 0; i < n; i += 1) {
+      for (let j = i + 1; j < n; j += 1) {
+        const a = vectors[i], b = vectors[j];
+        if (!a.norm || !b.norm) continue;
+        const [small, large] = a.v.size <= b.v.size ? [a.v, b.v] : [b.v, a.v];
+        let dot = 0, shared = 0;
+        for (const [w, x] of small) {
+          const y = large.get(w);
+          if (y !== undefined) { dot += x * y; shared += 1; }
+        }
+        if (shared < 2) continue;
+        const score = dot / (a.norm * b.norm);
+        if (score < MIN_SIMILARITY) continue;
+        for (const [from, to] of [[i, j], [j, i]] as const) {
+          const list = best.get(pool[from].id) ?? [];
+          list.push({ id: pool[to].id, score });
+          best.set(pool[from].id, list);
+        }
+      }
+    }
+    const out = new Map<string, string[]>();
+    for (const [id, list] of best) out.set(id, list.sort((x, y) => y.score - x.score).slice(0, max).map((e) => e.id));
+    return out;
   }
 
   update(id: string, patch: {

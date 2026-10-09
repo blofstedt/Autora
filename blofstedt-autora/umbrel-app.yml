@@ -170,8 +170,11 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Tidies the Pages, Sheets and Slides editors. The AI buttons that did nothing (Editor,
-  Translate, Spelling, Resolve Comments, Revision Summary, the AI panel toggle) are gone, so
-  the assistant is the Autora button and the chat. New Slide, Layout and Add Section now sit
-  on the Slides Home tab instead of behind a menu. The editors are now treated as Autora's
-  own forks: they are pinned to one exact version and never follow upstream.
+  Fixes the Mind's map, which connected nearly everything to everything. A line now joins
+  only memories about the same thing (words weighted by how rare they are, so a word in
+  most notes ties none of them together), and a shared tag no longer draws one; old lines
+  are redrawn on the next start. The Buckets/Map switch is now an animated icon in the
+  map's corner instead of a row of its own. Also tidies the Pages, Sheets and Slides
+  editors: the AI buttons that did nothing are gone, New Slide, Layout and Add Section sit
+  on the Slides Home tab, and the editors are pinned to one exact version and never
+  follow upstream.

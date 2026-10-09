@@ -5,6 +5,7 @@ import {
 } from "../lib/memory";
 import type { MemoryMark } from "../lib/derive";
 import { IconBrain, IconMark, IconX } from "./Icons";
+import { MindViewButton } from "./MindViewButton";
 
 /**
  * Everything the agent knows, as a graph you can argue with.
@@ -35,8 +36,11 @@ export function KnowledgeWeb({
   initialKind,
   recent = [],
   embedded = false,
+  onBuckets,
 }: {
   onClose?: () => void;
+  /** Embedded in the Mind page: the way back to its buckets, drawn as an icon in the map's corner. */
+  onBuckets?: () => void;
   /** Shown as a page rather than a full-screen overlay. */
   embedded?: boolean;
   initialKind?: MemoryRecord["kind"] | "all";
@@ -145,6 +149,7 @@ export function KnowledgeWeb({
       </header>
 
       <div className="kweb-body">
+        {onBuckets && <MindViewButton to="buckets" onClick={onBuckets} />}
         {showNewSkill && (
           <div className="new-skill-backdrop" onClick={() => setShowNewSkill(false)}>
             <div className="new-skill-dialog" onClick={(e) => e.stopPropagation()}>

@@ -131,6 +131,41 @@ test("new memories are linked to related ones", () => {
   assert.ok(g.links.some((l) => l.src === b.id && l.dst === a.id));
 });
 
+test("a link joins memories about the same thing, not ones that share a tag or a common word", () => {
+  const { g } = graph();
+  const notes = [
+    ["Kia EV5 Canada: only the Win trim qualifies", "The Kia EV5 in Canada gets the federal EV incentive only on the Win trim.", ["autora", "canada"]],
+    ["Canada ev incentives: federal rebate", "The Canada federal EV rebate caps the price of an eligible electric vehicle.", ["autora", "canada"]],
+    ["Autora vendor balance endpoint", "Autora reads each vendor's balance from the vendor's balance endpoint.", ["autora"]],
+    ["Autora spend bar shows one vendor", "The Autora spend bar shows the vendor balance, one bar per vendor.", ["autora"]],
+    ["Job search: reliable LinkedIn", "Autora can read LinkedIn job search results reliably in Canada.", ["autora", "canada"]],
+  ] as const;
+  // Enough other memories that "autora" is a word in most of them and says nothing.
+  for (let i = 0; i < 14; i += 1) g.write({ title: `Autora note ${i}`, body: `Autora detail number ${i} about topic${i} and thing${i}.`, tags: ["autora"] });
+  const made = notes.map(([title, body, tags]) => g.write({ title, body, tags: [...tags] }).record);
+  const linked = (a: string, b: string) => g.links.some((l) => (l.src === a && l.dst === b) || (l.src === b && l.dst === a));
+  assert.ok(linked(made[0].id, made[1].id), "two Canadian EV notes are tied");
+  assert.ok(linked(made[2].id, made[3].id), "the two vendor balance notes are tied");
+  assert.ok(!linked(made[0].id, made[2].id), "a Kia note is not tied to a vendor balance note");
+  assert.ok(!linked(made[0].id, made[4].id) || !linked(made[2].id, made[4].id), "one shared word or tag does not tie everything");
+  for (const r of g.active()) assert.ok(g.links.filter((l) => l.src === r.id || l.dst === r.id).length <= 8, "no memory is tied to everything");
+});
+
+test("links drawn by the old rule are dropped and drawn again by what the memories say", () => {
+  const base = { scope: "global", status: "confirmed" as const, pinned: false, source_session: null, source_seq: null, created: 1, updated: 1, uses: 0, last_used: null, superseded_by: null, tags: [] as string[] };
+  const records: MemoryRecord[] = [
+    { ...base, id: "a", kind: "fact", title: "Jellyfin runs in docker", body: "The jellyfin container serves the media library." },
+    { ...base, id: "b", kind: "fact", title: "Jellyfin library path", body: "The media library for jellyfin is /mnt/media." },
+    { ...base, id: "c", kind: "fact", title: "Birthday of the dog", body: "The dog was born in spring." },
+  ];
+  const links = [{ src: "a", dst: "c", rel: "related" }, { src: "b", dst: "c", rel: "related" }, { src: "a", dst: "b", rel: "revises" }];
+  const g = new MemoryGraph(records, links);
+  assert.ok(!g.links.some((l) => l.rel === "related"), "the old rule's links are gone");
+  assert.ok(!g.links.some((l) => l.dst === "c" || l.src === "c"), "the dog is tied to neither");
+  assert.ok(g.links.some((l) => l.rel === "revises"), "a real revision stays, and is not drawn a second time as a similarity");
+  assert.equal(g.links.length, 1);
+});
+
 test("forgetting removes a memory and its links; replacing keeps history", () => {
   const { g } = graph();
   const a = g.write({ title: "Old router address", body: "The router is at 192.168.1.1 on the admin page", tags: ["router"] }).record;
