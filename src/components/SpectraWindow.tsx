@@ -6,7 +6,7 @@ import { useAgentCursor } from "../lib/agentCursor";
 import { useBootWatch } from "../lib/bootWatch";
 import { pointerGo, pointerRest, pointerType } from "../lib/pointer";
 import { onSpectraEvent } from "../lib/spectra";
-import { IconDownload, IconFile, IconMaximize, IconMinimize, IconX } from "./Icons";
+import { IconDownload, IconFile, IconMaximize, IconMinimize } from "./Icons";
 
 /**
  * The PDF window: the file the agent is working on, in Spectra-PDF's editor.
@@ -192,10 +192,6 @@ export function SpectraWindow({ sessionId, phone }: { sessionId: string; phone: 
     [post],
   );
 
-  const close = useCallback(() => {
-    void fetch(`/api/spectra/close?session=${encodeURIComponent(sessionId)}`, { method: "POST" }).catch(() => undefined);
-  }, [sessionId]);
-
   return (
     <div className={`pdf-window${phone ? " is-phone" : ""}${phone && full ? " is-full" : ""}`}>
       <div className="pdf-bar">
@@ -231,11 +227,6 @@ export function SpectraWindow({ sessionId, phone }: { sessionId: string; phone: 
             aria-pressed={full}
           >
             {full ? <IconMinimize size={14} /> : <IconMaximize size={14} />}
-          </button>
-        )}
-        {!phone && (
-          <button className="btn icon ghost" onClick={close} title="Put Autora PDF away" aria-label="Put Autora PDF away">
-            <IconX size={14} />
           </button>
         )}
       </div>

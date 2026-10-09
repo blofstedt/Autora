@@ -3,7 +3,7 @@ import { useFullscreen } from "../lib/fullscreen";
 import { gameStateNow, onGameState, useGameState, type GameCue } from "../lib/gamedesk";
 import { useAgentCursor } from "../lib/agentCursor";
 import { GameCursor } from "./GameCursor";
-import { IconGame, IconMaximize, IconMinimize, IconX } from "./Icons";
+import { IconGame, IconMaximize, IconMinimize } from "./Icons";
 
 /** The colours Autora sends the editor: the custom properties its own pages are drawn from (the editor's theme maps them). */
 const THEME_TOKENS = ["--bg", "--s1", "--s2", "--s4", "--text", "--text-2", "--text-3", "--accent", "--accent-light"];
@@ -103,14 +103,10 @@ export function GameWindow({ sessionId, phone }: { sessionId: string; phone: boo
     return () => watch.disconnect();
   }, [post, sessionId]);
 
-  const close = useCallback(() => {
-    void fetch(`/api/game/${encodeURIComponent(sessionId)}/close`, { method: "POST" }).catch(() => undefined);
-  }, [sessionId]);
-
   const scenes = game.scenes ?? 0;
   return (
     <div className={`pdf-window${phone ? " is-phone" : ""}${phone && full ? " is-full" : ""}`}>
-      <div className="pdf-bar">
+      {phone && <div className="pdf-bar">
         <span className="pdf-bar-ico" aria-hidden="true"><IconGame size={14} /></span>
         <span className="pdf-bar-app">Autora Games</span>
         <span className="pdf-bar-name">{game.name ?? "Your game"}{scenes ? ` · ${scenes === 1 ? "1 scene" : `${scenes} scenes`}` : ""}</span>
@@ -127,12 +123,7 @@ export function GameWindow({ sessionId, phone }: { sessionId: string; phone: boo
             {full ? <IconMinimize size={14} /> : <IconMaximize size={14} />}
           </button>
         )}
-        {!phone && (
-          <button className="btn icon ghost" onClick={close} title="Put Autora Games away" aria-label="Put Autora Games away">
-            <IconX size={14} />
-          </button>
-        )}
-      </div>
+      </div>}
       {trouble && <div className="pdf-problem" role="status">{trouble}</div>}
       <div className="game-stage">
       <iframe

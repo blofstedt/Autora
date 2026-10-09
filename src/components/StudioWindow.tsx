@@ -280,10 +280,6 @@ export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: b
     }
   };
 
-  const close = useCallback(() => {
-    void fetch(`${base}/close`, { method: "POST" }).catch(() => undefined);
-  }, [base]);
-
   const [prompt, setPrompt] = useState("");
   const chips = clip
     ? ["Fix the timing of this clip", "Make this clip groove more", "Suggest how to vary this clip", "Explain what is in this clip"]
@@ -322,9 +318,6 @@ export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: b
           <button className="btn icon ghost pdf-full-btn" onClick={() => setFull(!full)} title={full ? "Back to the conversation" : "Full screen"} aria-label={full ? "Back to the conversation" : "Full screen"} aria-pressed={full}>
             {full ? <IconMinimize size={14} /> : <IconMaximize size={14} />}
           </button>
-        )}
-        {!phone && (
-          <button className="btn icon ghost" onClick={close} title="Put Autora Music away" aria-label="Put Autora Music away"><IconX size={14} /></button>
         )}
       </div>
 

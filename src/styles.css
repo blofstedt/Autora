@@ -6134,6 +6134,16 @@ button.dock-card:hover { border-color: var(--border-strong); }
   border: 1px solid var(--border); border-bottom: 0; background: var(--s2); color: var(--text-3);
 }
 .pane-pick-tab:hover { color: var(--text); background: var(--s3); }
+/* The × to close a window sits on its tab, at the right, so it is the tab that goes. */
+.pane-pick-item { position: relative; display: flex; align-items: flex-end; flex: 0 0 auto; }
+.pane-pick-tab.has-close { padding-right: 30px; }
+.pane-pick-x {
+  position: absolute; right: 6px; bottom: 0; height: 30px; width: 20px; z-index: 2;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 0; background: transparent; color: var(--text-3); cursor: pointer; border-radius: 6px; padding: 0;
+}
+.pane-pick-item.is-on .pane-pick-x { height: 34px; }
+.pane-pick-x:hover { color: var(--text); background: var(--s3); }
 .pane-pick-tab.is-on {
   height: 34px; margin-bottom: -1px; z-index: 1; font-weight: 650;
   color: var(--text); background: var(--bg); border-color: var(--border-strong);

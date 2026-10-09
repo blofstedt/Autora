@@ -170,8 +170,8 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  You can now see the agent work in Autora Games. When it changes your game, its
-  cursor moves across the editor to what it is changing, the scene, the object in
-  the list or the events, clicks there, and types the name as it goes, and then
-  the editor takes the new version. It follows the "show the agent's cursor"
-  switch, so turning that off makes changes simply appear, as before.
+  Closing a window beside the chat is now done from its tab. The x sits on the
+  right of the tab (Game x, PDF x, Terminal x and the rest) and puts that window
+  away, and the separate close button in each window's top bar is gone. On a
+  desktop the Games and 3D windows no longer have a top bar of their own, so the
+  editor starts right under the tabs.

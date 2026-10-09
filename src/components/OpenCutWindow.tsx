@@ -6,7 +6,7 @@ import { useFullscreen } from "../lib/fullscreen";
 import { along, humanRoute, restMs, routeMs, typingDelays, type Point } from "../lib/humanPath";
 import { clearCursor, reportCursor } from "../lib/cursorPos";
 import { onVideoCommand, useVideoState, type VideoCommand } from "../lib/opencut";
-import { IconMaximize, IconMinimize, IconVideo, IconX } from "./Icons";
+import { IconMaximize, IconMinimize, IconVideo } from "./Icons";
 
 /**
  * The video window: OpenCut's editor, beside the conversation.
@@ -379,10 +379,6 @@ export function OpenCutWindow({ sessionId, phone }: { sessionId: string; phone: 
   }, [cursor]);
   useEffect(() => clearCursor, []);
 
-  const close = useCallback(() => {
-    void fetch(`/api/opencut/close?${query}`, { method: "POST" }).catch(() => undefined);
-  }, [query]);
-
   return (
     <div className={`pdf-window${phone ? " is-phone" : ""}${phone && full ? " is-full" : ""}`}>
       <div className="pdf-bar">
@@ -408,11 +404,6 @@ export function OpenCutWindow({ sessionId, phone }: { sessionId: string; phone: 
             aria-pressed={full}
           >
             {full ? <IconMinimize size={14} /> : <IconMaximize size={14} />}
-          </button>
-        )}
-        {!phone && (
-          <button className="btn icon ghost" onClick={close} title="Put Autora Video away" aria-label="Put Autora Video away">
-            <IconX size={14} />
           </button>
         )}
       </div>

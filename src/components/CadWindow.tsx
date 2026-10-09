@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useFullscreen } from "../lib/fullscreen";
 import { cadStateNow, onCadState, useCadState } from "../lib/caddesk";
 import { useAgentCursor } from "../lib/agentCursor";
-import { IconCube, IconMaximize, IconMinimize, IconX } from "./Icons";
+import { IconCube, IconMaximize, IconMinimize } from "./Icons";
 
 /** The colours Autora sends the frame: the custom properties its own pages are drawn from (autora-3d/src/embed.ts maps them). */
 const THEME_TOKENS = ["--bg", "--s1", "--s2", "--s4", "--text", "--text-2", "--text-3", "--accent", "--accent-deep", "--accent-light"];
@@ -127,14 +127,10 @@ export function CadWindow({ sessionId, phone }: { sessionId: string; phone: bool
     return () => watch.disconnect();
   }, [post]);
 
-  const close = useCallback(() => {
-    void fetch(`/api/cad/${encodeURIComponent(sessionId)}/close`, { method: "POST" }).catch(() => undefined);
-  }, [sessionId]);
-
   const shapes = cad.shapes ?? 0;
   return (
     <div className={`pdf-window${phone ? " is-phone" : ""}${phone && full ? " is-full" : ""}`}>
-      <div className="pdf-bar">
+      {phone && <div className="pdf-bar">
         <span className="pdf-bar-ico" aria-hidden="true"><IconCube size={14} /></span>
         <span className="pdf-bar-app">Autora 3D</span>
         <span className="pdf-bar-name">{shapes === 1 ? "1 shape" : `${shapes} shapes`}</span>
@@ -151,12 +147,7 @@ export function CadWindow({ sessionId, phone }: { sessionId: string; phone: bool
             {full ? <IconMinimize size={14} /> : <IconMaximize size={14} />}
           </button>
         )}
-        {!phone && (
-          <button className="btn icon ghost" onClick={close} title="Put Autora 3D away" aria-label="Put Autora 3D away">
-            <IconX size={14} />
-          </button>
-        )}
-      </div>
+      </div>}
       {trouble && <div className="pdf-problem" role="status">{trouble}</div>}
       <iframe
         ref={frame}

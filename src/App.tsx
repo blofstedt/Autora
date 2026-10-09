@@ -142,6 +142,24 @@ function preloadPages() {
   else setTimeout(go, 1500);
 }
 
+/** The route that puts a window away, for the × on its tab; null for a tab that cannot be closed (the Activity feed, the browser). */
+function closeUrlFor(pane: SideWindow, session: string): string | null {
+  const id = encodeURIComponent(session);
+  switch (pane) {
+    case "pdf": return `/api/spectra/close?session=${id}`;
+    case "video": return `/api/opencut/close?session=${id}`;
+    case "cad": return `/api/cad/${id}/close`;
+    case "game": return `/api/game/${id}/close`;
+    case "term": return `/api/term/${id}/close`;
+    case "studio": return `/api/studio/${id}/close`;
+    case "pages": return `/api/officedesk/${id}/close?kind=docx`;
+    case "sheets": return `/api/officedesk/${id}/close?kind=xlsx`;
+    case "slides": return `/api/officedesk/${id}/close?kind=pptx`;
+    case "app": return `/api/sessions/${id}/preview/close`;
+    default: return null;
+  }
+}
+
 export function App() {
   /* Back, on a phone, is the system gesture, and in an installed app with
      nothing behind it, back means leaving. One entry of our own is pushed on
@@ -2342,20 +2360,35 @@ export function App() {
                 window and puts nothing away. */}
             {sideWindows.length > 0 && (
               <div className="pane-pick" role="tablist" aria-label="Windows open beside the chat">
-                {sideWindows.map((w) => (
-                  <button
-                    key={w.pane}
-                    type="button"
-                    role="tab"
-                    aria-selected={sidePane === w.pane}
-                    className={`pane-pick-tab${sidePane === w.pane ? " is-on" : ""}`}
-                    title={w.label}
-                    data-pane={w.pane}
-                    onClick={() => pickWindow(w.pane)}
-                  >
-                    {w.label}
-                  </button>
-                ))}
+                {sideWindows.map((w) => {
+                  const closeUrl = sessionId ? closeUrlFor(w.pane, sessionId) : null;
+                  return (
+                    <div key={w.pane} className={`pane-pick-item${sidePane === w.pane ? " is-on" : ""}`}>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={sidePane === w.pane}
+                        className={`pane-pick-tab${sidePane === w.pane ? " is-on" : ""}${closeUrl ? " has-close" : ""}`}
+                        title={w.label}
+                        data-pane={w.pane}
+                        onClick={() => pickWindow(w.pane)}
+                      >
+                        {w.label}
+                      </button>
+                      {closeUrl && (
+                        <button
+                          type="button"
+                          className="pane-pick-x"
+                          onClick={() => { void fetch(closeUrl, { method: "POST" }).catch(() => undefined); }}
+                          title={`Close ${w.label}`}
+                          aria-label={`Close ${w.label}`}
+                        >
+                          <IconX size={11} />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
                 {sideWindows.length > 1 && (
                   <button
                     type="button"

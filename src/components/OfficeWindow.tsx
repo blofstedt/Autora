@@ -5,7 +5,7 @@ import { holdSurface, useCollab } from "../lib/collab";
 import { onOfficePush, useOfficeWindow, type OfficeCue, type OfficeKind } from "../lib/officedesk";
 import { OfficeCursor, type Acted, type Located } from "./OfficeCursor";
 import { OfficePages } from "./OfficePages";
-import { IconDownload, IconFile, IconMaximize, IconMinimize, IconX } from "./Icons";
+import { IconDownload, IconFile, IconMaximize, IconMinimize } from "./Icons";
 
 /**
  * The Pages, Slides or Sheets window: the document, presentation or spreadsheet the agent is
@@ -299,10 +299,6 @@ export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; ki
     return () => watch.disconnect();
   }, []);
 
-  const close = useCallback(() => {
-    void fetch(api("/close"), { method: "POST" });
-  }, [api]);
-
   const versions = word.versions ?? [];
   const problem = trouble ?? word.problem ?? null;
 
@@ -364,11 +360,6 @@ export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; ki
             aria-pressed={full}
           >
             {full ? <IconMinimize size={14} /> : <IconMaximize size={14} />}
-          </button>
-        )}
-        {!phone && (
-          <button className="btn icon ghost" onClick={close} title="Put the window away" aria-label="Put the window away">
-            <IconX size={14} />
           </button>
         )}
       </div>

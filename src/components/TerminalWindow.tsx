@@ -3,7 +3,7 @@ import { ansiToLines } from "../lib/ansi";
 import { useFullscreen } from "../lib/fullscreen";
 import { every } from "../lib/poll";
 import { useTermState } from "../lib/termdesk";
-import { IconArrowDown, IconCheck, IconChevron, IconCopy, IconFile, IconFolder, IconMaximize, IconMinimize, IconRotateCcw, IconStop, IconTerminal, IconTrash, IconX, IconZap } from "./Icons";
+import { IconArrowDown, IconCheck, IconChevron, IconCopy, IconFile, IconFolder, IconMaximize, IconMinimize, IconRotateCcw, IconStop, IconTerminal, IconTrash, IconZap } from "./Icons";
 
 /**
  * The Terminal window: a shell beside the conversation that the person and the agent share (server/termdesk.ts).
@@ -241,10 +241,6 @@ export function TerminalWindow({ sessionId, phone }: { sessionId: string; phone:
     void fetch(api("/clear"), { method: "POST" }).then(() => load()).catch(() => undefined);
   }, [api, load]);
 
-  const close = useCallback(() => {
-    void fetch(api("/close"), { method: "POST" }).catch(() => undefined);
-  }, [api]);
-
   const copy = (entry: Entry) => {
     void navigator.clipboard?.writeText(entry.output).then(() => {
       setCopied(entry.id);
@@ -361,11 +357,6 @@ export function TerminalWindow({ sessionId, phone }: { sessionId: string; phone:
             aria-pressed={full}
           >
             {full ? <IconMinimize size={14} /> : <IconMaximize size={14} />}
-          </button>
-        )}
-        {!phone && (
-          <button className="btn icon ghost" onClick={close} title="Put the terminal away" aria-label="Put the terminal away">
-            <IconX size={14} />
           </button>
         )}
       </div>
