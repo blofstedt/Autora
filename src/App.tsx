@@ -29,6 +29,25 @@ import { Rail, pageLabel, PAGES, type PageId } from "./components/Rail";
 import { isSystemTab, type SystemTab } from "./lib/systemTabs";
 import { TodoDock } from "./components/TodoDock";
 
+/* The pages behind the rail are loaded when they are opened rather than with
+   the app: together they are a third of the bundle, and most sessions never
+   open them. Each becomes its own chunk, fetched on first visit and kept
+   after. Nothing is shown while it arrives -- the chunk is small and local,
+   and a spinner for a fifth of a second reads as a flicker rather than as
+   waiting -- so the fallback is nothing at all. */
+const pageLoaders: Array<() => Promise<unknown>> = [];
+function lazyPage<T extends React.ComponentType<any>>(
+  load: () => Promise<{ [k: string]: any }>,
+  name: string,
+  preload = true,
+): T {
+  if (preload) pageLoaders.push(load);
+  return lazy(async () => {
+    const mod = await load();
+    return { default: (mod as any)[name] as T };
+  }) as unknown as T;
+}
+
 /* The pages behind the rail are loaded when they are opened, not with the app.
    Together they are a third of the bundle, and most sessions never open them:
    the person arrives to talk, and the chat thread is what must appear at once.
@@ -88,25 +107,6 @@ import {
   MAX_UPLOAD_BYTES, isPicture, sizeLabel, uploadAttachment, type Attachment,
 } from "./lib/attachments";
 import { SureHost } from "./components/SureHost";
-
-/* The pages behind the rail are loaded when they are opened rather than with
-   the app: together they are a third of the bundle, and most sessions never
-   open them. Each becomes its own chunk, fetched on first visit and kept
-   after. Nothing is shown while it arrives -- the chunk is small and local,
-   and a spinner for a fifth of a second reads as a flicker rather than as
-   waiting -- so the fallback is nothing at all. */
-const pageLoaders: Array<() => Promise<unknown>> = [];
-function lazyPage<T extends React.ComponentType<any>>(
-  load: () => Promise<{ [k: string]: any }>,
-  name: string,
-  preload = true,
-): T {
-  if (preload) pageLoaders.push(load);
-  return lazy(async () => {
-    const mod = await load();
-    return { default: (mod as any)[name] as T };
-  }) as unknown as T;
-}
 
 /** How often to re-read the session list, so sessions started elsewhere (or
     from another tab) show up without a reload. */

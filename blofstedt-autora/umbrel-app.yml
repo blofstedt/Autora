@@ -170,7 +170,6 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Names on the Tools page: Autora Widgets, Autora Browser and Autora Creator (for
-  websites and apps), next to Autora Terminal. The wrench menu in the message box
-  now lists just Autora Widgets, which starts a message asking for an interactive
-  explainer; the other windows open when the agent needs them, from their tabs.
+  Fixes the blank screen on load. The app failed to start because a list the lazy
+  pages register themselves in was created after the first page used it; it is now
+  created first.
