@@ -22,7 +22,8 @@ const { withoutUnloaded } = await import("../server/toolload");
 
 const SCHEMA_BUDGET_CHARS = 48_000;
 // Raised from 17,500 for the windows overview (server/handbook.ts): the manuals themselves are not in the briefing, they arrive with a window's first call.
-const BRIEFING_BUDGET_CHARS = 18_500;
+// Raised again to 21_500: on CI the browser, memory and voice groups are all available, and their guides are in the briefing (20,871 chars there, about 18,000 on a machine without a browser).
+const BRIEFING_BUDGET_CHARS = 21_500;
 
 console.log("tool budget");
 

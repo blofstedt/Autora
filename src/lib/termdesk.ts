@@ -5,7 +5,7 @@ import { useSyncExternalStore } from "react";
  * shell is, and a revision that goes up whenever anything moves in it. The scrollback itself is not here: the
  * window asks for what it has not seen when `rev` changes.
  */
-export type TermState = {
+type TermState = {
   open: boolean;
   /** When the window was opened, which orders it among the others. */
   since?: number;

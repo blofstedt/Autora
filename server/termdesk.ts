@@ -119,7 +119,7 @@ interface Desk {
 }
 
 /** What the window shows, and what the page is told over the socket. */
-export interface TermState {
+interface TermState {
   open: boolean;
   since?: number;
   cwd?: string;

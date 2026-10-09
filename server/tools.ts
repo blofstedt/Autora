@@ -768,7 +768,7 @@ function candidateShells(): string[] {
  * to handle minimal containers without crashing with ENOENT. All workspace secrets
  * are automatically injected into the process environment.
  */
-export function runCommand(
+function runCommand(
   command: string,
   cwd: string,
   timeoutSeconds: number,
