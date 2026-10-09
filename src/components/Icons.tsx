@@ -429,13 +429,6 @@ export const IconList = ({ size = 16, className }: Props) => (
   </svg>
 );
 
-export const IconScroll = ({ size = 16, className }: Props) => (
-  <svg {...base(size)} className={className}>
-    <rect x="4.5" y="3.5" width="15" height="17" rx="2" />
-    <path d="M8 8h8M8 12h8M8 16h5" />
-  </svg>
-);
-
 export const IconChart = ({ size = 16, className }: Props) => (
   <svg {...base(size)} className={className}>
     <path d="M4 20h16" />
