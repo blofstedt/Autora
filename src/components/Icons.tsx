@@ -572,3 +572,9 @@ export const IconRotateCw = ({ size = 16, className }: Props) => (
     <path d="M21 3v5h-5" />
   </svg>
 );
+
+export const IconHand = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M18 11V6a2 2 0 0 0-4 0M14 10V4a2 2 0 0 0-4 0v2M10 10.5V6a2 2 0 0 0-4 0v8M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-6-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" />
+  </svg>
+);

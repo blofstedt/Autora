@@ -110,7 +110,7 @@ async function main() {
     await page.goto(`${app.base}/?session=${s}`);
 
     let frame: Frame;
-    await test("the deck opens beside the chat in the real PowerPoint editor, in English, with Autora's chat in place of its AI", async () => {
+    await test("the deck opens beside the chat in the real PowerPoint editor, in English, with no AI button of its own", async () => {
       frame = await editorIn(page, "slides");
       await until("the deck to open", async () => /Slide 1 (\/|of) 1/.test(await bodyText(frame)), 90_000).catch(async (err) => { console.log((await bodyText(frame)).slice(0, 600).replace(/\n/g, " | ")); throw err; });
       const text = await bodyText(frame);
@@ -118,7 +118,7 @@ async function main() {
       assert.doesNotMatch(text, /[\u3400-\u9fff]/, "no Chinese anywhere in the editor");
       const hidden = (await allText(frame)).match(/.{0,20}[\u3400-\u9fff]+.{0,20}/g);
       assert.equal(hidden, null, `Chinese in the page: ${hidden?.slice(0, 5).join(" | ")}`);
-      assert.match(text, /Autora/);
+      assert.doesNotMatch(text, /Autora/, "the ribbon has no Autora button: the chat beside the document is where to ask");
       await stageOver("pptx");
       assert.equal(await page.locator(".pdf-bar-name").innerText(), "pitch.pptx");
       if (process.env.OFFICE_SHOT) { await sleep(1500); await page.screenshot({ path: `${process.env.OFFICE_SHOT}-deck.png` }); }
@@ -206,12 +206,12 @@ async function main() {
       await app.turn(s, "make a small budget workbook", 120_000);
       assert.equal((await state()).kind, "xlsx");
       frame = await editorIn(page, "sheets");
-      await until("the editor", async () => /Autora/.test(await bodyText(frame)) && /Formulas/.test(await bodyText(frame)), 120_000);
+      await until("the editor", async () => /Formulas/.test(await bodyText(frame)), 120_000);
       await until("the formula's value", async () => /13\.5/.test(await bodyText(frame)), 90_000).catch(() => undefined);
       const text = await bodyText(frame);
       assert.doesNotMatch(text, /Genspark/);
       assert.doesNotMatch(text, /[\u3400-\u9fff]/, "no Chinese anywhere in the editor");
-      assert.match(text, /Autora/);
+      assert.doesNotMatch(text, /Autora/, "the ribbon has no Autora button");
       assert.equal(await page.locator(".pdf-bar-name").innerText(), "budget.xlsx");
       if (process.env.OFFICE_SHOT) { await sleep(1500); await page.screenshot({ path: `${process.env.OFFICE_SHOT}-book.png` }); }
     });

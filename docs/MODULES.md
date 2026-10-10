@@ -451,6 +451,33 @@ Spectra's fetched renderer is most of what is on disk.
   not the editor's origin, so the editor's debugger and hot reload do not reach it (a preview is a fresh run); (2) a patch whose `find`
   moved breaks the build on purpose; (3) incognito chats have no game window (it keeps its game on disk); (4) the window opens on the
   agent's first edit, not on a read; (5) the Docker build needs the network for `libGD`, the checkout and `GDJS`'s own install.
+- `photo/` + `server/photodesk.ts`: **Autora Photo**, PhotoCraft (github.com/storytold/photocraft, MIT OR Apache-2.0; ArtCraft's name and
+  logo are its authors') in a window beside the chat, and the agent's `photo_*` tools. PhotoCraft is a Rust image editor (layers, masks,
+  adjustment layers, layer styles, type, brushes, real PSD files) with 500+ commands in one registry that its UI, its command line and its
+  MCP server all call. **Two programs, built from the commit in `photo/PIN.json` by `scripts/build-photo.mjs`** (not by `npm run build`,
+  which empties `dist/`; run `npm run build:photo` after it, as with the Office tools; CI and the Docker stage `photo` do): the editor,
+  `apps/photocraft-web` as WebAssembly (`trunk build`, into `dist/photo/web/`, served at `/autora-photo` by `servePhoto` under a CSP that
+  allows its own scripts and `wasm-unsafe-eval` and is framed by this app only), and the headless `photocraft-cli` (into
+  `dist/photo/native/`, one per CPU in the image, musl-static through `cargo zigbuild`). Both are optional: a build that fails leaves the
+  tools off (`photoAvailable`, `windowOff`), and tests that need them skip. **The overlay** `photo/overlay/autora.rs` is copied into the
+  web app and hooked in by three checked string patches in `build-photo.mjs` (`patch()` fails the build when a pin has moved the text);
+  it is the editor's end of a postMessage wire (`autoraPhoto`: `ready`, `load` in; `changed`, `file` out) and does nothing when the page
+  is not framed. **The picture** is one file per chat, `work.pcraft` (PhotoCraft's layered format) in `stateDir()/photo/<session>/`,
+  with `state.json` (open, size, layers). The agent's tools open it in `photocraft-cli serve` over stdio, whose only file access is that
+  folder (`serve()`), one process per call (`inLine` keeps one at a time per chat): `doc.open`, `batch` (the commands, one history step each,
+  stopping at the first failure; what ran is kept), `doc.save`, `doc.inspect`, `doc.render` (the picture the model is shown), `engine.commands`.
+  `photo_open` converts anything PhotoCraft reads (PSD, PNG, JPEG, TIFF, WebP, camera raw...) into `work.pcraft`. **The window**
+  (`PhotoWindow.tsx`, `lib/photodesk.ts`) is a frame of this origin: `ready` -> `GET /api/photo/:s/doc` -> `load` (the bytes transferred);
+  the agent's change (`rev` up, `by: "agent"`) reloads it; the person's edits come back as `changed` ~0.7 s after they stop (the overlay
+  watches the active document's revision, exports it to `.pcraft` and sends it) -> `PUT` (checked by opening it in the command line, so a
+  malformed file is refused) and marked `by: "person"`. A file saved or exported in the editor (`write` in `web.rs`) is sent as `file` and
+  offered as a download by the window, since a frame cannot start one. **Traps:** (1) the synced picture is the *active* document, and a
+  load replaces every open document, so the agent's edit closes anything else the person had open in the editor; (2) an agent edit while
+  the person is mid-stroke reloads over it, so the manual says to leave the editor alone while they hold it; (3) the editor's own
+  preferences use the frame's `localStorage`, shared by all chats; (4) incognito chats have no photo window (it keeps its picture on disk);
+  (5) a first `trunk build` of the editor is a long Rust build (~15 min cold; CI caches `target/`); (6) the CLI's `serve` would write
+  anywhere in its roots, so the roots are the chat's folder and nothing else, and `HOME` is pointed there too. Search with
+  `--glob '!.cache/**'`.
 - Follow (`lib/follow.ts`): one switch, on by default and kept per browser, for the pill beside the phone's tabs
   (`Stage`) and the one at the top right of the desktop strip (`pane-follow` in `App.tsx`). On, the screen goes where the
   agent works: the stage's `busiestSurface` on a phone, and on a desktop `lib/followPane.ts` (`lastWorkedPane`: the
@@ -468,6 +495,56 @@ Spectra's fetched renderer is most of what is on disk.
 - A frame that does not start: `lib/bootWatch.ts` says so after 25 s (PDF and video windows), and the PDF frame forwards
   its uncaught errors (`autora:spectra:error`). Its build puts a `Map.getOrInsert*` polyfill in front of every chunk,
   workers included (`polyfillFirst` in `spectra-editor/vite.config.ts`): pdf.js needs it and older browsers lack it.
+- The rest of the phone's tools: Pages/Sheets/Slides on a phone are two views. Pinned, the pictures of the pages (`OfficePages`:
+  tap text to point at it, the message to the agent carries it). The pencil in the window's bar opens the phone's editor, full
+  screen: `office/shim/phone.js` (injected into the editor page when the window adds `?phone=1`) closes the ribbon, hides the
+  status bar and the notes pane, and lays one bar over the bottom (undo, redo, bold, italic, a list or a row or a slide, the
+  size) whose buttons press the editor's own, found by the start of the name each carries (`data-tip`, `aria-label`, `title`;
+  `data-linked` marks the ones found, which `ui-office-phone` checks). "More" opens the real ribbon in place over the top of the
+  page. The ribbon is closed to a height of nothing, never removed: Sheets lays out in rows and moves every row up when one goes.
+  The ribbon's AI group ("Autora" on Home) is gone on every screen (`office/shim/common.js`). The window's bar loses the cursor
+  switch and the versions pill, and "Page view" is an icon. The browser's toolbar on a phone is back, reload, the address, hand-over, drag and
+  enlarge (CSS in `styles.css`). Autora Photo is paired down in Rust, in `photo/overlay/autora.rs` (the `phone_*` functions): with
+  `?phone=1` the editor shows the picture alone (`screen_mode = "fullScreen"`, forced each frame in `pump`) and draws one bar
+  (Undo, Redo, Tools, Brush, Layers, Fit) with a sheet over it (nine tools, brush size/strength/colour, layers with eye, name,
+  opacity, new, delete). The bar's taps are queued in `tick` (which only sees the app) and done in the next frame's `pump`, through
+  the editor's own commands (`menus::invoke`). Sizes are asked for in CSS pixels (`per_css_px`), because a headless browser at a
+  device ratio above 1 reports an editor canvas half the page's resolution and a pointer the editor mis-maps: test the phone at
+  1:1 (`tests/ui-photo.test.ts`). `build-photo.mjs` adds `serde_json` to the web app for it. The pin never moves.
+- Second pass on a phone: the pages (Sessions, Artifacts, Tools, Settings, Mind...), the drawer, the composer and the thread were already
+  one column and needed only a thumb's size on their controls (`styles.css`, "Everything else on a phone": 36-40px pills, filters and
+  selects, switches and check boxes with an invisible margin, 16px fields so the browser does not zoom). The terminal's bar names it and
+  its key row sits above the full-screen strip; widgets' headers are window bars; the app window's bar fits its close button and Music's
+  settings sit tempo and bars side by side with the key under them. Games and the browser got their own pass (next item). Method: open every surface at 390px, screenshot it, and list the controls under 38px.
+- Games and the browser on a phone. Games: `gdevelop-editor/overlay/.../Autora/session.js` puts `autora-phone` on the editor's `<html>`
+  when the window adds `?phone=1`, and `autora.css` hides what a phone does not do with a game (Home, the Events tabs, Share, history,
+  the 2D/3D switch, the project manager, the preview menu), leaving the scene, what is in it, undo, save and Play, with GDevelop's own
+  bottom tab bar; people do not build whole games on a phone, and the agent has the rest. The editor is rebuilt (`npm run build`) for it.
+  Browser (`ScreencastCell.tsx`, `usePhone`): no window bar, tabs only when there is more than one, Enlarge goes straight to full
+  screen (not the taller inline step), full screen opens magnified (the page is 1280px wide; at the width of a phone it is a
+  thumbnail) with one button that steps Fit, 2, 3 and 4 times, and `.cell.shot.is-max` is raised above the app's header like the other full-screen windows
+  (the toolbar had been underneath it). Tests: `ui-game`, `ui-browser-phone`.
+- One look across the windows on a phone (`styles.css`, "Tool windows on a phone"): `--pt-bar` 48px, `--pt-hit` 40px, `--pt-r` 12px.
+  Every window's bar (`.pdf-bar`, `.app-bar`, the browser's) is the name and 40px soft-square buttons; text pills are for
+  desktop; `TakeControl` is the hand-over switch in all of them (PDF, Video, Pages/Sheets/Slides, the app window). The editors
+  in frames use the same numbers in their own overlays (Spectra `autora.css`, OpenCut's overlay pages, 3D's `index.css` under
+  `html[data-phone]`). Full screen keeps a 64px strip at the bottom for the chat button and Follow, so they never cover an
+  editor's own bottom bar. The app window drops Back, Console (unless there are errors), Versions, Templates and the cursor
+  switch on a phone; Music drops skip-back, loop and the click track. New phone chrome takes these numbers; a new button is 40px
+  and 12px, not a pill or a circle. Test: `ui-pdfwindow` measures the bar.
+- Paired-down tools on a phone: a phone gets the same files in an editor arranged for a thumb, never a second
+  implementation, and the desktop is untouched. The window adds `&phone=1` to the editor frame's URL (`SpectraWindow`,
+  `OpenCutWindow`). PDF: `spectra-editor/src/autora/phone.tsx` sets `html.autora-phone` and mounts one bar (Mark up, Fill & sign,
+  Find, Undo, Redo) that calls Spectra's own `invokeCommand`; `overlay/renderer/autora.css` puts the menu bar, toolbar,
+  tabs, rail and the tool dock's all-tools grid away and turns the dock into a sheet. Mark up is five modes and a colour, Fill & sign two, Find one row, and the bar's own button for an open tool closes it (no Close button);
+  the rest is the desktop's, and the agent has every tool regardless of what is shown. Pinned (a frame under 520px tall) it is
+  for looking only. Video: `opencut-editor/overlay/web/app/editor/[project_id]/page.tsx` is a whole-file copy of OpenCut's
+  page with a `PhoneLayout` (preview, timeline, Media and Edit sheets over the timeline slot, Export beside them, no header row)
+  and an overlay of `timeline/components/timeline-toolbar.tsx` whose phone branch is six buttons; keep it in step with the
+  pin's page, which never moves. Pages, Sheets and Slides were already pictures of the pages with tap-to-point
+  (`OfficePages`), and Autora 3D was already built for touch (its own bottom bar). The bar at the top of every window on
+  a phone is the name and round icon buttons (`TakeControl`, download, full screen), not text pills. Games are not
+  done yet. Tests: `ui-pdfwindow`, `ui-video`.
 - Full screen on a phone (`lib/fullscreen.ts`): one shared flag for every pinned tool (browser, app window, PDF,
   Pages/Sheets/Slides, widget), so Follow (`busiestSurface` in `Thread`) moves the stage to the next tool with the
   screen still full. While it is up, `components/ImmersiveChat.tsx` is laid over it: the agent's last reply as a

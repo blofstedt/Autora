@@ -22,7 +22,7 @@ await test("every window has a manual that names its tools", () => {
   const expect: Record<string, string[]> = {
     browser: ["Autora Browser", "browser_handoff"], creator: ["Autora Creator", "app_preview"], terminal: ["Autora Terminal", "run_background"],
     pdf: ["Autora PDF", "pdf_compose"], video: ["Autora Video", "video_ui"], studio: ["Autora Music", "studio_make"],
-    office: ["Pages, Sheets and Slides", "office_create"], cad: ["Autora 3D", "cad_shape_measure"], game: ["Autora Games", "game_catalog"],
+    office: ["Pages, Sheets and Slides", "office_create"], cad: ["Autora 3D", "cad_shape_measure"], game: ["Autora Games", "game_catalog"], photo: ["Autora Photo", "photo_edit"],
     widgets: ["Widgets", "widget_show"],
   };
   assert.deepEqual([...MANUAL_IDS].sort(), Object.keys(expect).sort());
@@ -38,6 +38,7 @@ await test("a tool finds its window's manual, and a tool with no window finds no
   assert.equal(manualId("studio_clip"), "studio");
   assert.equal(manualId("office_edit"), "office");
   assert.equal(manualId("cad_batch"), "cad");
+  assert.equal(manualId("photo_edit"), "photo");
   assert.equal(manualId("game_edit"), "game");
   assert.equal(manualId("widget_show"), "widgets");
   assert.equal(manualId("todo"), null);

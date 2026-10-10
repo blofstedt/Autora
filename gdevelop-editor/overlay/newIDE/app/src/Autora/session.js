@@ -21,3 +21,11 @@ export const tellAutora = (message: { [string]: any }) => {
   if (window.parent === window) return;
   window.parent.postMessage({ autoraGame: true, ...message }, window.location.origin);
 };
+
+/**
+ * Whether Autora's window is a phone's (it adds ?phone=1). The editor then wears the `autora-phone` class (autora.css),
+ * which pares it down to what a thumb does with a game: look at the scene, move things, change what is selected, press
+ * Play. The rest of the IDE (events, extensions, sharing, the 3D view, history) is on a desktop, and the agent has all of it.
+ */
+export const isPhone = (): boolean => new URLSearchParams(window.location.search).get('phone') === '1';
+if (isPhone()) document.documentElement.classList.add('autora-phone');

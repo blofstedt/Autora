@@ -16,12 +16,12 @@ import type { Bucket, Cell } from "./derive";
 
 /** An Office window is a surface of its own for each app (docx = Pages, pptx = Slides, xlsx = Sheets):
     a deck and a sheet open together are two tabs, not one that shows whichever changed last. */
-export type SurfaceKind = "app" | "pdf" | "video" | "cad" | "game" | "term" | "studio" | "docx" | "pptx" | "xlsx" | "browser" | "plan" | "widget";
+export type SurfaceKind = "app" | "pdf" | "video" | "cad" | "game" | "photo" | "term" | "studio" | "docx" | "pptx" | "xlsx" | "browser" | "plan" | "widget";
 
 export type Surface = { kind: SurfaceKind; cell: Cell; key: string };
 
 /** The order the tabs sit in, however they arrived. */
-const ORDER: SurfaceKind[] = ["app", "pdf", "video", "cad", "game", "term", "studio", "docx", "xlsx", "pptx", "browser", "plan", "widget"];
+const ORDER: SurfaceKind[] = ["app", "pdf", "video", "cad", "game", "photo", "term", "studio", "docx", "xlsx", "pptx", "browser", "plan", "widget"];
 
 /** Who a cell is, for React and for the stage: the event that started it. */
 export function cellKey(cell: Cell): string {

@@ -94,6 +94,16 @@ description: >-
   switch on the Tools page.
 
 
+  • Autora Photo — PhotoCraft's open-source photo editor (Rust, running in the
+  browser) in a window beside the chat: layers, masks, adjustment layers, filters,
+  type, brushes and real PSD files. Ask for a retouch, a cut-out, a resize or a
+  colour grade and Autora does it with the editor's own commands (the same ones in
+  its menus) while you watch, and checks the result by looking at it; paint and edit
+  by hand at the same time, undo anything it did, and export PNG, JPEG, WebP, TIFF
+  or PSD. The look, the mood and what the picture is of stay yours. Has its own
+  switch on the Tools page.
+
+
   • Notebooks — group files by purpose with notes between them. Autora can
   compile one for you (every source filed, every claim citing its proof), and
   you can hand a notebook or any saved file to a chat.
@@ -170,14 +180,27 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Fixes the Mind's map, which connected nearly everything to everything. A line now joins
-  only memories about the same thing (words weighted by how rare they are, so a word in
-  most notes ties none of them together), a shared tag no longer draws one, and the map
-  lays related memories out as groups of their own so lines no longer cross between
-  strangers; old lines are redrawn on the next start. The Buckets/Map switch is now an
-  animated icon in the map's corner instead of a row of its own. The wrench menu in the
-  chat lists the tools again (PDF, Video, Pages, Sheets, Slides, Music, Terminal, 3D,
-  Games) beside Widgets. Also tidies the Pages, Sheets and Slides editors: the AI buttons
-  that did nothing are gone, New Slide, Layout and Add Section sit on the Slides Home tab,
-  and the editors are pinned to one exact version and never follow upstream. The release
-  build no longer depends on Docker Hub, which had been refusing it.
+  New: Autora Photo, a photo editor beside the chat (PhotoCraft's, with layers,
+  masks, adjustment layers, filters, type, brushes and real PSD files). Ask Autora
+  to retouch, cut out, resize or colour a picture and it runs the editor's own
+  commands while you watch; edit by hand at the same time and export PNG, JPEG,
+  WebP, TIFF or PSD. It has its own switch on the Tools page. Also fixes the blank
+  screen on load: a list the lazy pages register themselves in was created after
+  the first page used it.
+
+  Paired-down tools on a phone, and one look across them. The agent keeps every tool wherever
+  the work is shown; the person gets a very simple app. PDF shows the page and one bar (Undo,
+  Mark up, Fill & sign, Find): Mark up is Highlight, Text, Draw, Note and Eraser with a colour,
+  Fill & sign is Fill Fields and Sign, and Find is one row. Video shows the picture and the
+  timeline with Media and Edit as sheets, Export beside them, and a timeline bar of just undo,
+  split, duplicate, delete and zoom. Autora Photo shows the picture alone with one bar (Undo,
+  Redo, Tools, Brush, Layers, Fit) and a sheet for each. Pages, Sheets and Slides keep the page and one
+  bar (undo, bold, italic, size, and a list, a row or a slide), with the full ribbon behind More; the
+  "Autora" button in their ribbon is gone on every screen. The app window, the browser and Music lose
+  their desktop-only buttons. Every tool window now shares one set of measurements on a phone
+  (a 48px bar, 40px soft-square buttons, no text pills or round buttons mixed in), 3D and the
+  editors follow them, and full screen keeps a strip at the bottom so the chat button no longer
+  covers a tool's own buttons. Games on a phone show the scene, Play, undo and what is in it, without events, sharing or the 3D view. The browser has
+  a toolbar and the page, opens full screen magnified, and keeps its toolbar above the header. A second pass gave every control on the phone a thumb's size, named the
+  terminal in its bar, and tidied Music's settings and the app window's bar. A desktop gets the full
+  editors exactly as before.

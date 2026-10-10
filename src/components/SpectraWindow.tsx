@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFullscreen } from "../lib/fullscreen";
-import { holdSurface, useCollab } from "../lib/collab";
+import { useCollab } from "../lib/collab";
+import { TakeControl } from "./TakeControl";
 import { useDeskState } from "../lib/pdfdesk";
 import { useAgentCursor } from "../lib/agentCursor";
 import { useBootWatch } from "../lib/bootWatch";
@@ -200,14 +201,7 @@ export function SpectraWindow({ sessionId, phone }: { sessionId: string; phone: 
         <span className="pdf-bar-name" title={desk.name ?? undefined}>{desk.name ?? "PDF"}</span>
         <span className="pdf-bar-note">Saved as you go</span>
         <div className="spacer" />
-        <button
-          className={`pdf-pill${mine ? " is-accept" : ""}`}
-          onClick={() => void holdSurface(sessionId, "pdf", !mine)}
-          aria-pressed={mine}
-          title={mine ? "Let the agent work on the PDF again" : "Work on the PDF yourself; the agent carries on with other work"}
-        >
-          {mine ? "Hand back" : "Take control"}
-        </button>
+        <TakeControl sessionId={sessionId} surface="pdf" mine={mine} phone={phone} thing="PDF" />
         {desk.working && (
           <a
             className="btn icon ghost"
@@ -235,7 +229,7 @@ export function SpectraWindow({ sessionId, phone }: { sessionId: string; phone: 
         ref={frame}
         key={generation}
         className="pdf-frame"
-        src={`/spectra-editor/index.html?session=${encodeURIComponent(sessionId)}`}
+        src={`/spectra-editor/index.html?session=${encodeURIComponent(sessionId)}${phone ? "&phone=1" : ""}`}
         title={`${desk.name ?? "PDF"}, in Autora PDF`}
         sandbox="allow-scripts allow-downloads allow-modals allow-popups"
       />

@@ -134,3 +134,153 @@
   outline-offset: 2px;
   border-radius: 6px;
 }
+
+/*
+ * On a phone (the window opened with ?phone=1, src/autora/phone.tsx): the paired-down editor.
+ *
+ * Spectra is a desktop application, and on a phone it is a screen of chrome around a page. The menu bar, the toolbar,
+ * the tabs, the side rail and the status bar's desktop switches go; a bar at the bottom (autora-phonebar) keeps what a
+ * thumb does well -- mark up, fill and sign, find, undo -- and drives the editor's own commands. The tool dock becomes a
+ * sheet over the page's lower half. Nothing is removed from the editor: this is only what is shown, and the same file
+ * opens in the full editor on a desktop, with every tool, untouched.
+ */
+.autora-phone .app-menubar,
+.autora-phone .app-toolbar,
+.autora-phone .app-tabstrip,
+.autora-phone .nav-pane,
+.autora-phone .canvas-status-snap,
+.autora-phone .canvas-status-health,
+.autora-phone [data-testid="toggle-comments"],
+.autora-phone [data-testid="toggle-doc-view"],
+.autora-phone [data-testid="tool-dock-grid"],
+.autora-phone .tool-dock-resize { display: none !important; }
+
+.autora-phone .app-shell { padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px)); }
+.autora-phone .canvas-status-bar { justify-content: center; gap: 12px; }
+
+/* Targets a thumb can hit. */
+.autora-phone button,
+.autora-phone [role="button"],
+.autora-phone select,
+.autora-phone input[type="checkbox"] { min-height: 40px; }
+.autora-phone input,
+.autora-phone select { font-size: 16px; } /* below 16px a phone zooms the page when a field is focused */
+
+/* The tool dock: a sheet over the lower part of the page, not a second column. */
+.autora-phone .tool-dock {
+  position: fixed !important;
+  inset: auto 0 calc(56px + env(safe-area-inset-bottom, 0px)) 0 !important;
+  width: 100% !important;
+  max-height: 52vh;
+  z-index: 30;
+  border-radius: 14px 14px 0 0;
+  box-shadow: 0 -12px 32px rgba(0, 0, 0, 0.45);
+}
+
+/* The mark-up strip, simplified: the five things a thumb does to a page (highlight, type, draw, note, erase), the colour,
+   and Done. Freehand highlight, stamp, shape, callout and the lock are the desktop's (and the agent's: it has every tool
+   whatever is shown here). The strip is two tidy rows instead of a wrapped heap. */
+.autora-phone .secondary-toolbar {
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: center;
+  gap: 10px 8px;
+  padding: 10px 12px;
+  background: var(--autora-s1);
+  border-bottom: 1px solid var(--autora-border-strong);
+}
+.autora-phone .secondary-toolbar-title,
+.autora-phone [data-testid="tool-lock"],
+.autora-phone [data-testid="tool-inkhighlight"],
+.autora-phone [data-testid="tool-stamp"],
+.autora-phone [data-testid="tool-shape"],
+.autora-phone [data-testid="tool-callout"] { display: none !important; }
+.autora-phone .secondary-toolbar-modes {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  width: 100%;
+}
+.autora-phone .secondary-toolbar-modes .secondary-tool {
+  flex: 1 1 0;
+  min-width: 0;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 4px;
+  border-radius: 12px;
+  border-color: transparent;
+  background: var(--autora-s2);
+  color: var(--autora-text-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+.autora-phone .secondary-toolbar-modes .secondary-tool.active {
+  background: var(--autora-accent-soft);
+  border-color: var(--autora-accent-line);
+  color: var(--autora-text);
+}
+.autora-phone .secondary-toolbar-opts {
+  max-inline-size: none;
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  gap: 8px;
+}
+.autora-phone .secondary-toolbar .color-swatch,
+.autora-phone .secondary-toolbar .annot-swatch { width: 32px; height: 32px; min-height: 32px; border-radius: 50%; }
+/* No Close Tool: the bar's own button for the open tool puts it away (src/autora/phone.tsx). */
+.autora-phone .secondary-toolbar-actions { display: none !important; }
+
+/* Find: one full-width row (the field, where you are, previous, next, close). Case, whole word and regular expression are
+   the desktop's; the agent searches however it likes. */
+.autora-phone [data-testid="find-bar"] {
+  inset-inline: 8px !important;
+  max-width: none !important;
+  flex-wrap: nowrap !important;
+  gap: 6px !important;
+  padding: 8px !important;
+  border-radius: 14px !important;
+  background: var(--autora-s2) !important;
+  border-color: var(--autora-border-strong) !important;
+}
+.autora-phone [data-testid="find-bar"] input[data-testid="find-input"] { flex: 1 1 auto; width: auto !important; min-height: 40px; border-radius: 12px; padding: 0 12px; background: var(--autora-bg); }
+.autora-phone [data-testid="find-bar"] > :not(input):not([data-testid="find-count"]):not([data-testid="find-cursor"]):not([data-testid="find-prev"]):not([data-testid="find-next"]):not(:last-child) { display: none !important; }
+.autora-phone [data-testid="find-bar"] button { min-width: 40px; min-height: 40px; border-radius: 12px; font-size: 16px; }
+
+.autora-phonebar {
+  position: fixed;
+  inset: auto 0 0 0;
+  z-index: 40;
+  display: flex;
+  justify-content: space-around;
+  gap: 2px;
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+  background: var(--autora-s1);
+  border-top: 1px solid var(--autora-border-strong);
+}
+.autora-phonebar-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--autora-text-2);
+  font: 500 10px/1.1 var(--font-sans);
+  letter-spacing: 0.01em;
+}
+.autora-phonebar-btn.is-on { color: var(--autora-text); background: var(--autora-accent-soft); }
+.autora-phonebar-btn:active { background: var(--autora-accent-soft); color: var(--autora-text); }
+
+/* Pinned above the conversation the window is a third of the screen: that is for looking at the page, and the bar and
+   the sheet would leave none of it. Full screen is where it is edited (the window's own button). */
+@media (max-height: 520px) {
+  .autora-phone .autora-phonebar,
+  .autora-phone .tool-dock,
+  .autora-phone .canvas-status-bar { display: none !important; }
+  .autora-phone .app-shell { padding-bottom: 0; }
+}

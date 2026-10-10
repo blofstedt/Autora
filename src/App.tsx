@@ -7,9 +7,10 @@ import { Kind, type AutoraEvent, type BrowserState } from "./lib/types";
 import { setLiveFields, setLiveFrame, setLivePaneOwns, setLiveTabs } from "./lib/liveFrame";
 import { resetPreview, setPreviewFrame, setPreviewState, usePreviewState, type PreviewState } from "./lib/preview";
 import { ScreencastCell } from "./components/ScreencastCell";
-import { AppPreview, CadWindow, GameWindow, OfficeWindow, OpenCutWindow, SpectraWindow, StudioWindow, TerminalWindow } from "./components/lazyWindows";
+import { AppPreview, CadWindow, GameWindow, OfficeWindow, OpenCutWindow, PhotoWindow, SpectraWindow, StudioWindow, TerminalWindow } from "./components/lazyWindows";
 import { resetCad, setCadState, useCadState } from "./lib/caddesk";
 import { resetGame, setGameState, useGameState } from "./lib/gamedesk";
+import { resetPhoto, setPhotoState, usePhotoState } from "./lib/photodesk";
 import { resetTerm, setTermState, useTermState } from "./lib/termdesk";
 import { emitStudioCommand, resetStudio, setStudioState, useStudioState } from "./lib/studio";
 import { emitSpectraEvent } from "./lib/spectra";
@@ -122,7 +123,7 @@ const EVENT_BATCH_MS = 66;
 const LIBRARY_TABS: LibraryTab[] = ["notebooks", "files"];
 
 /** The windows that can sit beside the chat on a wide screen, one at a time. */
-type SideWindow = "app" | "pdf" | "video" | "cad" | "game" | "term" | "studio" | "pages" | "sheets" | "slides" | "browser" | "work";
+type SideWindow = "app" | "pdf" | "video" | "cad" | "game" | "photo" | "term" | "studio" | "pages" | "sheets" | "slides" | "browser" | "work";
 
 /**
  * The Office windows that can be open beside the chat, one per app, in the order their tabs sit in. Each has its
@@ -150,6 +151,7 @@ function closeUrlFor(pane: SideWindow, session: string): string | null {
     case "video": return `/api/opencut/close?session=${id}`;
     case "cad": return `/api/cad/${id}/close`;
     case "game": return `/api/game/${id}/close`;
+    case "photo": return `/api/photo/${id}/close`;
     case "term": return `/api/term/${id}/close`;
     case "studio": return `/api/studio/${id}/close`;
     case "pages": return `/api/officedesk/${id}/close?kind=docx`;
@@ -424,6 +426,7 @@ export function App() {
     resetVideo();
     resetCad();
     resetGame();
+    resetPhoto();
     resetTerm();
     resetStudio();
     resetOffice();
@@ -451,6 +454,7 @@ export function App() {
       onPdfDesk: setDeskState,
       onCadDesk: setCadState,
       onGameDesk: setGameState,
+      onPhotoDesk: setPhotoState,
       onTermDesk: setTermState,
       onStudioDesk: setStudioState,
       onStudioCommand: emitStudioCommand,
@@ -1375,6 +1379,7 @@ export function App() {
   const video = useVideoState();
   const cad = useCadState();
   const game = useGameState();
+  const photo = usePhotoState();
   const term = useTermState();
   const studio = useStudioState();
   const off = useOfficeState();
@@ -1421,6 +1426,7 @@ export function App() {
     ...(video.open ? [{ pane: "video" as const, since: video.since ?? 0 }] : []),
     ...(cad.open ? [{ pane: "cad" as const, since: cad.since ?? 0 }] : []),
     ...(game.open ? [{ pane: "game" as const, since: game.since ?? 0 }] : []),
+    ...(photo.open ? [{ pane: "photo" as const, since: photo.since ?? 0 }] : []),
     ...(term.open ? [{ pane: "term" as const, since: term.since ?? 0 }] : []),
     ...(studio.open ? [{ pane: "studio" as const, since: studio.since ?? 0 }] : []),
     ...OFFICE_PANES.flatMap((o) => {
@@ -1449,6 +1455,7 @@ export function App() {
     ...(video.open ? [{ pane: "video" as const, label: "Video" }] : []),
     ...(cad.open ? [{ pane: "cad" as const, label: "3D" }] : []),
     ...(game.open ? [{ pane: "game" as const, label: "Game" }] : []),
+    ...(photo.open ? [{ pane: "photo" as const, label: "Photo" }] : []),
     ...(term.open ? [{ pane: "term" as const, label: "Terminal" }] : []),
     ...(studio.open ? [{ pane: "studio" as const, label: "Music" }] : []),
     ...OFFICE_PANES.filter((o) => openWindows.some((w) => w.pane === o.pane)).map((o) => ({ pane: o.pane, label: o.label })),
@@ -2470,6 +2477,12 @@ export function App() {
             {game.open && sessionId && (
               <aside className="app-pane" data-pane="game" hidden={sidePane !== "game"} aria-label="Autora Games, the game being made">
                 <Suspense fallback={null}><GameWindow sessionId={sessionId} phone={false} /></Suspense>
+              </aside>
+            )}
+            {/* Autora Photo: the picture the agent and the person are both working on, in PhotoCraft's editor. */}
+            {photo.open && sessionId && (
+              <aside className="app-pane" data-pane="photo" hidden={sidePane !== "photo"} aria-label="Autora Photo, the picture being worked on">
+                <Suspense fallback={null}><PhotoWindow sessionId={sessionId} phone={false} /></Suspense>
               </aside>
             )}
             {/* The Terminal: a shell the agent and the person share. */}

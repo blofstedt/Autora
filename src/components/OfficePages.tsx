@@ -7,7 +7,7 @@ import type { OfficeKind } from "../lib/officedesk";
  * same pages the full editor lays out, drawn once and kept, so it opens at once
  * and costs nothing to come back to. Tap the words to point at them; the next
  * message to the agent carries what was pointed at, which is how a document is
- * changed from a phone. The full editor is one button away.
+ * changed from a phone. Editing by hand is one button in the window's bar (OfficeWindow), which opens the phone's editor.
  */
 type Meta = { w: number; h: number };
 type Reply = {
@@ -20,8 +20,6 @@ type Words = { s: string; box: Box; ref?: string }[];
 type Area = { box: Box; ref: string; label: string };
 type Info = { words: Words; areas: Area[] };
 
-const ZOOMS = [1, 1.6, 2.4];
-
 export function OfficePages({ sessionId, kind, name, rev, onEdit }: { sessionId: string; kind: OfficeKind; name: string; rev: number; onEdit: () => void }) {
   /** Each app's document has its own window and its own drawn pages, so every call says which one. */
   const api = useCallback((path: string) => `/api/officedesk/${encodeURIComponent(sessionId)}${path}?kind=${kind}`, [sessionId, kind]);
@@ -30,7 +28,6 @@ export function OfficePages({ sessionId, kind, name, rev, onEdit }: { sessionId:
   const [fails, setFails] = useState(0);
   const [slow, setSlow] = useState(false);
   const [again, setAgain] = useState(0);
-  const [zoom, setZoom] = useState(0);
   const words = useRef(new Map<string, Promise<Info>>());
   const pick = useOfficePick();
 
@@ -120,30 +117,24 @@ export function OfficePages({ sessionId, kind, name, rev, onEdit }: { sessionId:
         </span>
         <div className="spacer" />
         {updating && <span className="office-pages-updating">Updating…</span>}
-        <button className="pdf-pill" onClick={() => setZoom((z) => (z + 1) % ZOOMS.length)} aria-label="Zoom">
-          {Math.round(ZOOMS[zoom] * 100)}%
-        </button>
-        <button className="pdf-pill" onClick={onEdit} title="Open the full editor (best on a bigger screen)">
-          Full editor
-        </button>
       </div>
       <div className="office-pages-scroll">
         {!shown && reply?.status !== "failed" && (
           <p className="office-pages-note">
             {slow ? "Still drawing the pages: a long document takes a while. " : "Drawing the pages…"}
-            {slow && <button className="linkish" onClick={onEdit}>Open the full editor instead</button>}
+            {slow && <button className="linkish" onClick={onEdit}>Edit it by hand instead</button>}
           </p>
         )}
         {reply?.status === "failed" && !shown && fails > 3 && (
           <p className="office-pages-note">
             The pages could not be drawn: {reply.error ?? "unknown reason"}.{" "}
             <button className="linkish" onClick={() => setAgain((n) => n + 1)}>Try again</button>{" or "}
-            <button className="linkish" onClick={onEdit}>open the full editor</button>.
+            <button className="linkish" onClick={onEdit}>edit it by hand</button>.
           </p>
         )}
         {reply?.status === "failed" && !shown && fails <= 3 && <p className="office-pages-note">Drawing the pages…</p>}
         {shown && (
-          <div className="office-pages-list" style={{ width: `${ZOOMS[zoom] * 100}%` }}>
+          <div className="office-pages-list" >
             {shown.pages.map((meta, i) => {
               const n = i + 1;
               const sel = pick && pick.session === sessionId && pick.page === n ? pick : null;
@@ -169,7 +160,7 @@ export function OfficePages({ sessionId, kind, name, rev, onEdit }: { sessionId:
               );
             })}
             {shown.total > shown.pages.length && (
-              <p className="office-pages-note">The first {shown.pages.length} of {shown.total} pages are shown. The full editor has the rest.</p>
+              <p className="office-pages-note">The first {shown.pages.length} of {shown.total} pages are shown. Edit by hand to see the rest.</p>
             )}
           </div>
         )}

@@ -77,9 +77,8 @@ async function main() {
 
     await test("what the agent makes opens beside the chat, with the game in GDevelop's editor", async () => {
       await page.waitForSelector(".app-pane .pdf-window", { timeout: 20_000 });
-      assert.equal(await page.locator(".pdf-bar-app").innerText(), "Autora Games");
-      assert.match(await page.locator(".pdf-bar-name").innerText(), /Cat jump/);
-      await waitFor("the editor to say the game is open", async () => /Saved as you go/.test(await page.locator(".pdf-bar-note").innerText()), 60_000);
+      // (A desktop's window has no bar of its own: its tab names it, and the editor says what is open.)
+      assert.equal(await page.locator(".app-pane .pdf-window .pdf-bar").count(), 0);
       await waitFor("the objects to be listed", async () => /Hello/.test(await editorText()) && /Cat/.test(await editorText()));
     });
 
@@ -157,6 +156,25 @@ async function main() {
 
     assert.deepEqual(errors.filter((e) => !/Network Error|Failed to fetch/.test(e)), [], "no uncaught errors in the page");
     await context.close();
+
+    await test("on a phone the editor is the paired-down one: the scene, Play, undo and what is in it; no events, sharing or 3D", async () => {
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 1 });
+      const phone = await ctx.newPage();
+      await phone.goto(`${app.base}/?session=${s}`);
+      await phone.waitForSelector(".stage .pdf-window", { timeout: 20_000 });
+      await phone.locator('.pdf-bar button[aria-label="Full screen"]').click();
+      let frame: Frame | undefined;
+      await waitFor("the editor frame", async () => { frame = phone.frames().find((f) => f.url().includes("/gdevelop-editor/")); return !!frame; }, 20_000);
+      assert.match(frame!.url(), /phone=1/);
+      await frame!.waitForSelector("#toolbar-preview-button", { timeout: 90_000 });
+      const shown = (id: string) => frame!.evaluate((q) => { const el = document.querySelector(q); return !!el && el.getClientRects().length > 0; }, id);
+      assert.equal(await shown("#toolbar-preview-button"), true, "Play");
+      assert.equal(await shown("#toolbar-save-button"), true, "save");
+      for (const gone of ["#toolbar-publish-button", "#game-editor-toggle", "#tab-layout-events-Scene", "#tab-start-page", "#toolbar-history-button", "#main-toolbar-project-manager-button"]) {
+        assert.equal(await shown(gone), false, `${gone} is the desktop's`);
+      }
+      await ctx.close();
+    });
   } finally {
     await browser.close();
     await app.stop();

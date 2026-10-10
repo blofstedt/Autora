@@ -62,6 +62,8 @@ export function installHost(): void {
   installed = true;
   followAutoraDark();
   relayPdfjsFetches();
+  // The phone's paired-down editor: a class that puts the desktop chrome away and a bar of the tools a thumb can use.
+  void import("./phone").then((m) => m.installPhone());
 
   window.addEventListener("message", (event: MessageEvent) => {
     // Only the window that holds this frame may drive it.

@@ -59,7 +59,7 @@ async function main() {
     await test("taking the memo's tab and going full screen, Follow carries the screen to the tool the agent used last, still full", async () => {
       await phone.locator(".stage-tab", { hasText: /Pages|Memo|Document/i }).first().tap();
       await phone.waitForSelector(".office-window", { timeout: 20_000 });
-      await phone.getByRole("button", { name: "Full editor" }).tap();
+      await phone.getByRole("button", { name: "Edit", exact: true }).tap();
       await phone.waitForSelector(".office-window.is-full");
       assert.equal(await phone.locator(".pdf-window:not(.office-window):visible").count(), 0, "only the memo is up");
       await phone.tap(".immersive-follow");

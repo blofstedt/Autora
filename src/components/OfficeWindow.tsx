@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFullscreen } from "../lib/fullscreen";
 import { useAgentCursor } from "../lib/agentCursor";
-import { holdSurface, useCollab } from "../lib/collab";
+import { useCollab } from "../lib/collab";
+import { TakeControl } from "./TakeControl";
 import { onOfficePush, useOfficeWindow, type OfficeCue, type OfficeKind } from "../lib/officedesk";
 import { OfficeCursor, type Acted, type Located } from "./OfficeCursor";
 import { OfficePages } from "./OfficePages";
-import { IconDownload, IconFile, IconMaximize, IconMinimize } from "./Icons";
+import { IconEdit, IconDownload, IconFile, IconMaximize, IconMinimize } from "./Icons";
 
 /**
  * The Pages, Slides or Sheets window: the document, presentation or spreadsheet the agent is
@@ -310,7 +311,7 @@ export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; ki
         <span className="pdf-bar-name" title={word.name}>{word.name ?? THING[kind]}</span>
         <span className="pdf-bar-note">{problem ? "" : "Saved as you go"}</span>
         <div className="spacer" />
-        {versions.length > 0 && (
+        {versions.length > 0 && !phone && (
           <button
             className="pdf-pill"
             onClick={() => setVersionsOpen((v) => !v)}
@@ -320,14 +321,7 @@ export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; ki
             Versions · {versions.length}
           </button>
         )}
-        <button
-          className={`pdf-pill${mine ? " is-accept" : ""}`}
-          onClick={() => void holdSurface(sessionId, "office", !mine)}
-          aria-pressed={mine}
-          title={mine ? "Let the agent work on the document again" : "Work on the document yourself; the agent carries on with other work"}
-        >
-          {mine ? "Hand back" : "Take control"}
-        </button>
+        <TakeControl sessionId={sessionId} surface="office" mine={mine} phone={phone} thing="document" />
         {!pages && (
           <button
             className="pdf-pill pdf-cursor-pill"
@@ -348,8 +342,11 @@ export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; ki
             <IconDownload size={14} />
           </a>
         )}
+        {pages && (
+          <button className="btn icon ghost" onClick={() => { setEditing(true); setFull(true); }} title="Edit by hand, full screen" aria-label="Edit"><IconEdit size={15} /></button>
+        )}
         {phone && editing && (
-          <button className="pdf-pill" onClick={() => setEditing(false)} title="Back to the pictures of the pages">Page view</button>
+          <button className="btn icon ghost" onClick={() => setEditing(false)} title="Back to the pictures of the pages" aria-label="Page view"><IconFile size={15} /></button>
         )}
         {phone && !pages && (
           <button
@@ -387,7 +384,7 @@ export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; ki
             key={engine ? `${kind}-${word.loadRev ?? 0}` : kind}
             ref={frame}
             className="pdf-frame"
-            src={`/office-app/${APP[kind]}/index.html`}
+            src={`/office-app/${APP[kind]}/index.html${phone ? "?phone=1" : ""}`}
             title={`${word.name ?? THING[kind]}, in ${NAME[kind]}`}
             sandbox="allow-scripts allow-downloads allow-modals allow-popups"
           />

@@ -50,6 +50,24 @@ jobs:
       - name: Build the Office tools
         run: node scripts/build-office.mjs
 
+      # Autora Photo: PhotoCraft's editor (WebAssembly) and command line, from the
+      # commit pinned in photo/PIN.json, so its tests run against the real thing.
+      # A Rust build, so the toolchain's work is cached between runs. If it cannot
+      # be built the script says so and the tests that need it skip.
+      - name: Cache Autora Photo's Rust build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/bin/trunk
+            .cache/photo/photocraft/target
+          key: photo-${{ hashFiles('photo/PIN.json') }}
+          restore-keys: photo-
+      - name: Build Autora Photo
+        run: |
+          command -v trunk >/dev/null || cargo install trunk --locked --version "$(node -p 'require("./photo/PIN.json").trunk')"
+          node scripts/build-photo.mjs
+
       # And the PDF window's engine, from the commit pinned in
       # spectra/PIN.json: the same bundle the image carries, so a broken pin or
       # a missing package fails here rather than in the image.

@@ -177,6 +177,62 @@ async function main() {
       assert.equal(await phone.locator(".pdf-window.is-full").count(), 0);
       await phone.close();
     });
+
+    await test("on a phone the editor is the paired-down one: a bar of thumb tools, the desktop chrome put away", async () => {
+      const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+      await phone.goto(`${app.base}/?session=${s}`);
+      await phone.waitForSelector(".stage .pdf-window", { timeout: 20_000 });
+      await phone.tap('.pdf-bar button[aria-label="Full screen"]');
+      // The window's own bar: the name and round buttons, not a row of text pills.
+      assert.equal(await phone.locator(".pdf-bar .pdf-pill").count(), 0);
+      // One set of measurements for every window's bar (styles.css, "Tool windows on a phone"): 48px tall, 40px soft-square buttons.
+      const sizes = await phone.evaluate(() => ({
+        bar: Math.round(document.querySelector(".pdf-bar")!.getBoundingClientRect().height),
+        buttons: [...document.querySelectorAll(".pdf-bar button")].map((b) => { const r = b.getBoundingClientRect(); return `${Math.round(r.width)}x${Math.round(r.height)} ${getComputedStyle(b).borderRadius}`; }),
+      }));
+      assert.equal(sizes.bar, 48, JSON.stringify(sizes));
+      assert.ok(sizes.buttons.length >= 2 && sizes.buttons.every((b) => b === "40x40 12px"), `bar buttons: ${sizes.buttons.join(", ")}`);
+      assert.equal(await phone.locator('.pdf-bar button[aria-label="Take control"]').count(), 1);
+      const frame = await editorIn(phone);
+      assert.ok(await waitDrawn(frame), "the page is still drawn");
+      await frame.waitForSelector('[data-testid="phone-bar"]', { timeout: 10_000 });
+      const shown = (testid: string) => frame.evaluate((id) => {
+        const el = document.querySelector(`[data-testid="${id}"]`);
+        return !!el && getComputedStyle(el).display !== "none";
+      }, testid);
+      assert.equal(await shown("menubar"), false, "no menu bar");
+      assert.equal(await shown("main-toolbar"), false, "no desktop toolbar");
+      assert.equal(await shown("tab-strip"), false, "no tab strip");
+      assert.equal(await shown("phone-bar"), true);
+      const reach = await frame.evaluate(() => [...document.querySelectorAll('[data-testid="phone-bar"] button')].map((b) => { const r = b.getBoundingClientRect(); return [r.left >= 0 && r.right <= innerWidth, r.height >= 40]; }).flat());
+      assert.ok(reach.every(Boolean), "every button is on screen and thumb-sized");
+      // The bar drives the editor's own tools: Mark up opens Comment, whose modes are Spectra's own.
+      await frame.click('[data-phone="markup"]');
+      await frame.waitForSelector('[data-testid="secondary-toolbar"]', { timeout: 10_000 });
+      // Simplified: five marks a thumb makes, no stamp/shape/callout/lock, no Close button; the bar's own button closes it.
+      const visible = (id: string) => frame.evaluate((t) => { const el = document.querySelector(`[data-testid="${t}"]`); return !!el && el.getClientRects().length > 0; }, id);
+      for (const id of ["tool-highlight", "tool-freetext", "tool-ink", "tool-note", "tool-inkerase"]) assert.equal(await visible(id), true, id);
+      for (const id of ["tool-stamp", "tool-shape", "tool-callout", "tool-inkhighlight", "tool-lock", "secondary-action-tools.close"]) assert.equal(await visible(id), false, `${id} is the desktop's`);
+      assert.equal(await frame.getAttribute('[data-phone="markup"]', "aria-pressed"), "true");
+      await frame.click('[data-phone="markup"]');
+      await frame.waitForSelector('[data-testid="secondary-toolbar"]', { state: "detached", timeout: 10_000 });
+      // Find is one row, without the desktop's case / word / regex switches.
+      await frame.click('[data-phone="find"]');
+      await frame.waitForSelector('[data-testid="find-bar"]', { timeout: 10_000 });
+      assert.equal(await frame.evaluate(() => [...document.querySelectorAll('[data-testid="find-bar"] button')].filter((b) => b.getClientRects().length > 0).length), 1, "only the close button");
+      await phone.close();
+    });
+
+    await test("on a desktop nothing of that is there: the full editor", async () => {
+      const wide = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+      await wide.goto(`${app.base}/?session=${s}`);
+      await wide.waitForSelector(".app-pane .pdf-window", { timeout: 20_000 });
+      const frame = await editorIn(wide);
+      await frame.waitForSelector('[data-testid="menubar"]', { timeout: 10_000 });
+      assert.equal(await frame.locator('[data-testid="phone-bar"]').count(), 0);
+      assert.equal(await frame.evaluate(() => document.documentElement.classList.contains("autora-phone")), false);
+      await wide.close();
+    });
   } finally {
     await browser.close();
     await app.stop();

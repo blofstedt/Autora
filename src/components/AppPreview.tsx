@@ -2,7 +2,8 @@ import { DevtoolsPanel } from "./DevtoolsPanel";
 import { TemplatesPanel, VersionsPanel } from "./AppVersions";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { useAgentCursor } from "../lib/agentCursor";
-import { holdSurface, useCollab } from "../lib/collab";
+import { useCollab } from "../lib/collab";
+import { TakeControl } from "./TakeControl";
 import { previewApi } from "../lib/appApi";
 import { NAMED_KEYS, SENTINEL, inField } from "../lib/pageInput";
 import {
@@ -580,9 +581,9 @@ export function AppPreview({ sessionId, phone }: { sessionId: string; phone: boo
             </button>
           ))}
         </div>
-        <button type="button" className="app-icon" onClick={back} title="Back" aria-label="Back">
+        {!phone && <button type="button" className="app-icon" onClick={back} title="Back" aria-label="Back">
           <IconArrowLeft size={15} />
-        </button>
+        </button>}
         <button type="button" className="app-icon" onClick={reload} title="Reload" aria-label="Reload the page">
           <IconRotateCcw size={15} />
         </button>
@@ -610,28 +611,20 @@ export function AppPreview({ sessionId, phone }: { sessionId: string; phone: boo
             />
           </form>
         )}
-        <button
+        {(!phone || errors > 0) && <button
           type="button" className={`app-errs${errors > 0 ? " has" : ""}${consoleOpen ? " on" : ""}`} aria-expanded={consoleOpen}
           title="The page's console and network; Autora can see them too" onClick={() => setConsoleOpen((v) => !v)}
         >
           {errors > 0 ? `${errors} error${errors === 1 ? "" : "s"}` : "Console"}
-        </button>
-        <button type="button" className={`app-errs${side === "versions" ? " on" : ""}`} onClick={() => setSide(side === "versions" ? null : "versions")} title="Saved versions of what is being built, and going back to one">
+        </button>}
+        {!phone && <button type="button" className={`app-errs${side === "versions" ? " on" : ""}`} onClick={() => setSide(side === "versions" ? null : "versions")} title="Saved versions of what is being built, and going back to one">
           Versions
-        </button>
-        <button type="button" className={`app-errs${side === "templates" ? " on" : ""}`} onClick={() => setSide(side === "templates" ? null : "templates")} title="Start from a template">
+        </button>}
+        {!phone && <button type="button" className={`app-errs${side === "templates" ? " on" : ""}`} onClick={() => setSide(side === "templates" ? null : "templates")} title="Start from a template">
           Templates
-        </button>
-        <button
-          type="button"
-          className={`app-control${mine ? " on" : ""}`}
-          aria-pressed={mine}
-          onClick={() => void holdSurface(sessionId, "app", !mine)}
-          title={mine ? "Let the agent use the window again" : "Use the window yourself; the agent carries on with other work"}
-        >
-          {mine ? "Hand back" : "Take control"}
-        </button>
-        <button
+        </button>}
+        <TakeControl sessionId={sessionId} surface="app" mine={mine} phone={phone} thing="window" variant="app" />
+        {!phone && <button
           type="button"
           className={`app-cursor${cursorOn ? " on" : ""}`}
           aria-pressed={cursorOn}
@@ -639,7 +632,7 @@ export function AppPreview({ sessionId, phone }: { sessionId: string; phone: boo
           title={cursorOn ? "Stop showing where the agent works" : "Show where the agent works, and its cursor, as it builds"}
         >
           Agent cursor {cursorOn ? "on" : "off"}
-        </button>
+        </button>}
         {phone && (
           <button type="button" className="app-icon" onClick={() => setFull(!full)} title={full ? "Back to the conversation" : "Full screen"} aria-label={full ? "Back to the conversation" : "Full screen"} aria-pressed={full}>
             {full ? <IconMinimize size={15} /> : <IconMaximize size={15} />}

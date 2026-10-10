@@ -6498,8 +6498,8 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 }
 /* The thread's column and the page around it are layers of their own, under
    the header: while the window inside is full screen, both go above it. */
-.thread-wrap:has(.pdf-window.is-full, .app-window.is-full, .cell.widget.is-expanded) { z-index: var(--z-over); }
-.page:has(.pdf-window.is-full, .app-window.is-full, .cell.widget.is-expanded) { position: relative; z-index: var(--z-over); }
+.thread-wrap:has(.pdf-window.is-full, .app-window.is-full, .cell.widget.is-expanded, .cell.shot.is-max) { z-index: var(--z-over); }
+.page:has(.pdf-window.is-full, .app-window.is-full, .cell.widget.is-expanded, .cell.shot.is-max) { position: relative; z-index: var(--z-over); }
 /* The app window, full screen on a phone: the same cover as the PDF's. */
 .app-window.is-full {
   position: fixed; inset: 0; z-index: var(--z-cover); height: auto;
@@ -6583,7 +6583,6 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
    one thing you could not tap. The badge that repeats the tool's name is the
    first thing to go -- the window is already titled -- and the bar tightens,
    so the file's name is what gives way and every control stays reachable. */
-.pdf-window.is-phone .pdf-bar { gap: 6px; padding: 6px 8px; }
 .pdf-window.is-phone .pdf-bar-app { display: none; }
 .pdf-window.is-phone .pdf-pill { padding: 4px 8px; font-size: calc(11.5px * var(--ts, 1)); }
 /* A document as pictures of its pages, for a phone (components/OfficePages.tsx). */
@@ -7345,6 +7344,187 @@ body.is-resizing iframe { pointer-events: none; }
   font-size: calc(12.5px * var(--ts, 1)); cursor: pointer;
 }
 .tm-key:active { background: var(--accent-soft); }
+
+/* ==========================================================================
+   Tool windows on a phone: one set of measurements.
+
+   Every window (PDF, Video, Pages/Sheets/Slides, 3D, Music, Terminal, the app
+   window, the browser) is built by a different component, and each grew its
+   own sizes: round buttons beside square ones, 28px beside 36px beside 44px,
+   pills beside text. On a phone they now share three numbers and one shape:
+   a bar 48px tall, controls 40px (a thumb), and a soft square of 12px radius
+   for every button, whether it holds an icon or a word. Round is for the one
+   primary thing in a window (a record or play button), never a bar's buttons.
+   The editors inside the frames (Spectra's, OpenCut's, 3D's) take the same
+   numbers in their own overlays. Desktop is not touched: nothing here applies
+   above 680px.
+   ========================================================================== */
+:root { --pt-bar: 48px; --pt-hit: 40px; --pt-r: 12px; }
 @media (max-width: 680px) {
-  .tm-window.is-phone.is-full .tm-keys { padding-right: 62px; }
+  /* The bar every window carries. */
+  .is-phone .pdf-bar, .cell.shot .pdf-bar, .is-phone .app-bar {
+    box-sizing: border-box; min-height: var(--pt-bar); padding: 3px 6px 3px 14px; gap: 4px; align-items: center;
+    background: var(--s1); border-bottom: 1px solid var(--border);
+  }
+  .is-phone .app-bar { padding-left: 8px; }
+  .is-phone .pdf-bar .pdf-bar-name, .cell.shot .pdf-bar .pdf-bar-name { flex: 1 1 auto; font-size: calc(14px * var(--ts, 1)); font-weight: 600; margin-right: 4px; }
+  .is-phone .pdf-bar .pdf-bar-app, .is-phone .pdf-bar .pdf-bar-ico, .is-phone .pdf-bar .pdf-bar-note,
+  .cell.shot .pdf-bar .pdf-bar-app, .cell.shot .pdf-bar .pdf-bar-ico, .cell.shot .pdf-bar .pdf-bar-note { display: none; }
+  .is-phone .pdf-bar .spacer { display: none; }
+  /* The name of a song is a field, and reads like the other windows' names. */
+  .is-phone .pdf-bar .st-song-name { flex: 1 1 auto; min-width: 0; height: var(--pt-hit); font-size: calc(14px * var(--ts, 1)); font-weight: 600; background: transparent; border-color: transparent; padding: 0 6px; }
+
+  /* Buttons: one size, one shape. */
+  .is-phone .pdf-bar .btn.icon, .is-phone .pdf-bar .st-tool, .is-phone .pdf-bar .pdf-pill,
+  .is-phone .app-bar .app-icon, .is-phone .app-bar .app-control,
+  .cell.shot .shot-tool, .cell.shot .pdf-bar .btn.icon {
+    flex: 0 0 auto; width: var(--pt-hit); height: var(--pt-hit); min-width: var(--pt-hit); min-height: var(--pt-hit);
+    padding: 0; margin: 0; border-radius: var(--pt-r); display: inline-grid; place-items: center;
+    color: var(--text-2); background: transparent; border: 1px solid transparent;
+  }
+  .is-phone .pdf-bar .btn.icon.is-on, .is-phone .app-bar .app-icon.is-on, .is-phone .pdf-bar [aria-pressed="true"].btn.icon,
+  .is-phone .app-bar .app-icon[aria-pressed="true"], .cell.shot .shot-tool.on { background: var(--accent-soft); color: var(--accent-2); }
+  /* Controls that carry a word (Done, Page view, Export on the song) get the same height, with room for it. */
+  .is-phone .pdf-bar .pdf-pill, .is-phone .pdf-bar .st-tool, .is-phone .app-bar .app-control, .is-phone .app-bar .app-errs {
+    width: auto; padding: 0 14px; font-size: calc(13px * var(--ts, 1)); font-weight: 600; display: inline-flex; align-items: center;
+    background: var(--s2, var(--s1)); border: 1px solid var(--border);
+  }
+  .is-phone .pdf-bar .st-tool.st-export { width: var(--pt-hit); padding: 0; justify-content: center; }
+  .is-phone .app-bar .app-errs { height: var(--pt-hit); border-radius: var(--pt-r); }
+
+  /* The address of the app window and the browser: one field, the same height as the buttons. */
+  .is-phone .app-bar .app-url, .cell.shot .shot-address .shot-where { height: var(--pt-hit); border-radius: var(--pt-r); font-size: 16px; }
+  .cell.shot .shot-address .shot-where { padding: 0 12px; }
+  .cell.shot .cell-top { gap: 4px; padding: 4px 6px; min-height: var(--pt-bar); }
+
+  /* The rows of choices under a bar: one segmented control, 40px tall. */
+  .is-phone .app-seg button, .is-phone .app-tools button { min-height: 36px; padding: 0 14px; border-radius: 10px; font-size: calc(13px * var(--ts, 1)); }
+  .is-phone .app-seg, .is-phone .app-tools { padding: 3px; border-radius: var(--pt-r); }
+  .is-phone .app-tools { margin: 8px 8px 0; }
+
+  /* Music: the transport's buttons at the same size. */
+  .st-window.is-phone .st-icon { width: var(--pt-hit); height: var(--pt-hit); border-radius: var(--pt-r); }
+  .st-window.is-phone .st-play { width: 48px; height: 48px; border-radius: 14px; }
+  .st-window.is-phone .st-stepper button { width: 34px; min-height: 34px; }
+  .st-window.is-phone .st-tab { min-height: var(--pt-hit); border-radius: var(--pt-r); padding: 0 14px; }
+
+  /* Terminal's keys, and the Office page view's bar. */
+  .tm-window.is-phone .tm-key { min-height: var(--pt-hit); border-radius: var(--pt-r); }
+  .office-pages-bar { min-height: 52px; padding: 6px 10px; }
+  .office-pages-bar .pdf-pill, .office-pages-clear { min-height: var(--pt-hit); padding: 0 14px; border-radius: var(--pt-r); font-size: calc(13px * var(--ts, 1)); }
+}
+
+/* Full screen on a phone keeps a strip at the bottom for Autora's own controls (the chat button and Follow, laid over by
+   ImmersiveChat), the same one in every tool. They used to float over each editor's bottom bar: 3D's Organize and Delete,
+   the PDF's Find, the terminal's keys. The editors now end where the strip starts. */
+@media (max-width: 680px) {
+  .pdf-window.is-full, .app-window.is-full { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 64px); background: var(--bg); }
+}
+
+/* Music on a phone: play, the clock and undo on one row, the three song settings on the next. Skip-back, loop and the
+   click track are the desktop's (and the agent's): they were three more buttons on a screen with none to spare. */
+@media (max-width: 680px) {
+  .st-window.is-phone .st-group button[aria-label="Back to the start"],
+  .st-window.is-phone .st-group button[aria-label="Loop"],
+  .st-window.is-phone .st-group button[aria-label="Metronome"] { display: none; }
+  .st-window.is-phone .st-stepper button { width: 30px; min-height: 34px; }
+  .st-window.is-phone .st-stepper input { width: 2.4em; }
+  .st-window.is-phone .st-trow { flex-wrap: nowrap; gap: 8px; }
+  .st-window.is-phone .st-trow:last-child { flex-wrap: wrap; justify-content: space-between; row-gap: 6px; }
+  .st-window.is-phone .st-clock { flex: 1 1 auto; text-align: center; }
+}
+
+/* The app window's device switch on a phone is three icons: the names are in the titles. */
+@media (max-width: 680px) {
+  .app-window.is-phone .app-seg button { width: var(--pt-hit); min-height: var(--pt-hit); padding: 0; justify-content: center; }
+  .app-window.is-phone .app-seg { flex: 0 0 auto; }
+}
+
+/* The editor's bar on a phone has no room for the cursor switch (it is in Settings); the page view is an icon like the rest. */
+@media (max-width: 680px) {
+  .is-phone .pdf-bar .pdf-cursor-pill { display: none; }
+}
+
+/* The browser on a phone: back, reload, the address, hand-over, drag and enlarge. Forward, bookmark, the menu, the zoom
+   buttons and the state chip are the desktop's: the address had been squeezed to a sliver by nine buttons. */
+@media (max-width: 680px) {
+  .cell.shot .cell-top .shot-tool[aria-label="Forward"],
+  .cell.shot .cell-top .shot-tool[aria-label*="ookmark"],
+  .cell.shot .shot-menu-wrap,
+  .cell.shot .shot-state,
+  .cell.shot .shot-zoom { display: none; }
+  .cell.shot .shot-address { flex: 1 1 auto; min-width: 0; }
+  .cell.shot .shot-tool.on { background: var(--accent-soft); color: var(--accent-2); }
+}
+
+/* ==========================================================================
+   Everything else on a phone: a thumb's size.
+
+   The pages, the composer and the cards were already laid out for one column;
+   what was left was controls drawn for a pointer: 27px pills, 28px filters,
+   switches 20px tall, 13px check boxes. A finger is 40px (--pt-hit, above), so
+   each is given that much to hit, which for the switches and the check boxes is
+   an invisible margin around the same picture.
+   ========================================================================== */
+@media (max-width: 680px) {
+  .badge.mode-pill, .mode-sel-pill, .art-chip, .jump-pill { min-height: 36px; }
+  .composer textarea { min-height: 44px; }
+  .msg-tool { width: 38px; height: 38px; }
+  .page-search, .art-find, .art-select select, .art-find input { min-height: 40px; font-size: 16px; }
+  .art-find { padding-top: 0; padding-bottom: 0; }
+  .seg button, .tabs-seg button, .page-tabs button, .set-tabs button, [role="tablist"] button { min-height: 40px; }
+  .btn.tiny, .cell-act, .setup-more, .bill-row { min-height: 40px; }
+  /* A switch is drawn small and hit large. */
+  .job-switch { position: relative; }
+  .job-switch::after { content: ""; position: absolute; inset: -10px -6px; }
+  input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; }
+  /* A widget's header is a window bar like the others. */
+  .cell.widget .cell-top { min-height: var(--pt-bar); gap: 4px; }
+  .cell.widget .cell-top .btn.icon { width: var(--pt-hit); height: var(--pt-hit); border-radius: var(--pt-r); }
+  .cell.widget.is-expanded { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 64px); }
+}
+
+@media (max-width: 680px) {
+  .app-window.is-phone .app-seg button, .app-window.is-phone .app-tools button { min-height: 40px; }
+  .app-review-toggle { min-height: 40px; }
+  .st-window.is-phone .st-stepper button { width: 36px; min-height: 40px; }
+  .st-window.is-phone .st-stepper input { min-height: 40px; }
+  .st-window.is-phone .st-keypick select, .st-window.is-phone .st-field select { min-height: 40px; }
+  .st-window.is-phone .st-link, .st-window.is-phone .st-tool { min-height: 40px; display: inline-flex; align-items: center; }
+  .shot-corner, .shot-tab-x { min-width: 40px; min-height: 40px; }
+}
+
+@media (max-width: 680px) {
+  /* The app window's bar: the three device sizes as small as a thumb allows, so the address keeps a share and the close
+     button is on screen. */
+  .app-window.is-phone .app-bar { gap: 2px; }
+  .app-window.is-phone .app-seg { gap: 0; padding: 2px; }
+  .app-window.is-phone .app-seg button { width: 36px; padding: 0; }
+  .app-window.is-phone .app-bar .app-url { flex: 1 1 0; min-width: 0; padding-left: 8px; padding-right: 8px; }
+  /* Music's settings: tempo and bars side by side, the key under them across the screen. */
+  .st-window.is-phone .st-trow:last-child > .st-field:nth-child(1) { order: 1; }
+  .st-window.is-phone .st-trow:last-child > .st-field:nth-child(3) { order: 2; }
+  .st-window.is-phone .st-trow:last-child > .st-field:nth-child(2) { order: 3; flex: 1 0 100%; }
+  .st-window.is-phone .st-keypick { display: flex; gap: 8px; }
+  .st-window.is-phone .st-keypick select { flex: 1 1 0; max-width: none; }
+  .st-window.is-phone .st-stepper input { width: 3.2em; }
+  .st-window.is-phone .st-stepper button { width: 32px; }
+}
+@media (max-width: 680px) {
+  .st-window.is-phone .st-trow:last-child { justify-content: flex-start; gap: 8px; }
+}
+
+/* The browser on a phone, second pass: no bar of its own (the address names the page), tabs only when there is more than one,
+   and one button for the page's size, since a page 1280px wide is a thumbnail at 390. */
+@media (max-width: 680px) {
+  .cell.shot .shot-zoom-cycle { width: auto; min-width: var(--pt-hit); padding: 0 10px; font: 600 13px/1 var(--sans, system-ui); color: var(--text-2); }
+  .cell.shot .shot-tabs { min-height: var(--pt-bar); padding: 4px 6px; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+  .cell.shot .shot-tab { flex: 0 0 auto; max-width: 70%; min-height: var(--pt-hit); border-radius: var(--pt-r); }
+  .cell.shot .shot-tab-main { min-height: var(--pt-hit); }
+}
+
+@media (max-width: 680px) {
+  .cell.shot.is-max { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 64px); }
+  .cell.shot.is-max .shot-stage { padding: 0; overflow: auto; }
+  .cell.shot.is-max .shot-stage .frame { max-height: none; }
 }
