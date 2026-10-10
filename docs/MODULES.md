@@ -542,7 +542,7 @@ Spectra's fetched renderer is most of what is on disk.
   button that opens every tool in a centred modal (a pin on each tile on a desktop), a tray for the open tool (a one-row strip above
   the bar on a phone, a card beside it on a desktop; Highlight, Pen highlight, Text, Draw, Shapes, Note and Callout: three colours, a
   wheel and, for Draw, Shapes and Pen highlight, a thickness slider; Shapes steps through the figures with one button on a phone and
-  shows all seven on a desktop; Redact has A word / A line), and a slim bar along the top: the menu (Spectra's own menu tree,
+  shows all seven on a desktop; Redact has A word / A line), and, on a desktop only, the left side: Spectra's nav pane with its own icon strip put away, a file menu of nine tiles (Open, Save, Save as, Merge = `document.combineFiles`, Add pages, Split, Compress, Password, Export) and a row of buttons that switch its panel (Pages, Bookmarks, Search, Signatures, Attachments, Layers, Tags, Articles) put at the top of the pane by a portal (`LeftPanel` in rail.tsx), with Spectra's own Pages thumbnails below; the pane is opened once and a button in the top bar shows or hides it; and a slim bar along the top: the menu (Spectra's own menu tree,
   `commands/menus.ts`, as an accordion), Undo, Redo and Find. Every button calls Spectra's `invokeCommand`; the colour and
   thickness go through `spectra-editor/overlay/renderer/autora-style.ts` (which the canvas view and `PageCell` read, and which
   answers "no preference" until the tray sets something). `autora-tap.ts` answers a Redact tap or click from the page's text layer,

@@ -256,6 +256,7 @@
 .autora-desktop .app-menubar,
 .autora-desktop .app-toolbar,
 .autora-desktop .app-tabstrip,
+.autora-desktop .nav-icon-strip,
 .autora-rail-ui [data-testid="tool-dock-grid"],
 .autora-rail-ui .tool-dock-resize { display: none !important; }
 .autora-desktop .app-shell { padding-top: 40px; padding-right: 76px; }
@@ -518,6 +519,17 @@
   overflow: hidden;
   box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.5), 0 24px 64px rgba(0, 0, 0, 0.6);
 }
+
+/* The left side of a desktop: the file menu, the panel switcher, and (Spectra's own) the pages. Spectra's icon strip is the switcher now. */
+.autora-desktop .nav-panel-body { min-width: 248px; }
+.autora-left { flex: none; display: flex; flex-direction: column; gap: 12px; padding: 12px; border-bottom: 1px solid var(--autora-border); }
+.autora-file-tiles { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.autora-file-tiles .autora-tile { height: 58px; border-radius: 16px; gap: 4px; font-size: 11px; }
+.autora-panels { display: flex; flex-wrap: wrap; gap: 4px; }
+.autora-panel-btn { position: relative; width: 28px; height: 28px; min-height: 0 !important; border-radius: 50%; display: grid; place-items: center; color: var(--autora-text-2); background: rgba(255, 255, 255, 0.06); }
+.autora-panel-btn:hover { color: var(--autora-text); background: rgba(255, 255, 255, 0.12); }
+.autora-panel-btn[aria-pressed="true"] { color: #fff; background: var(--autora-accent); }
+.autora-desktop .autora-panel-btn[data-tip]:hover::after { right: auto; left: 50%; top: calc(100% + 6px); transform: translateX(-50%); }
 
 @media (prefers-reduced-motion: reduce) { .autora-scrim, .autora-grid, .autora-tray, .autora-menu { animation: none; } }
 

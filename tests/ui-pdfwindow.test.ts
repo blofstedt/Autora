@@ -430,6 +430,32 @@ async function main() {
       assert.ok(await frame.evaluate(() => { const c = document.querySelector('[data-testid="secondary-toolbar"]')!.getBoundingClientRect(); const b = document.querySelector('[data-testid="phone-bar"]')!.getBoundingClientRect(); return c.right < b.left; }), "Spectra's own strip is a card beside the bar");
       await frame.click('[data-testid="secondary-action-tools.close"]');
 
+      // The left side: the file basics, a switcher for Spectra's panels, and the pages (not Spectra's icon strip).
+      await frame.waitForSelector('.autora-left [data-file="merge"]', { timeout: 10_000 });
+      assert.equal(await visible("nav-icon-strip"), false, "Spectra's icon strip is the switcher now");
+      const left = await frame.evaluate(() => ({
+        tiles: [...document.querySelectorAll(".autora-left [data-file]")].map((b) => b.getAttribute("data-file")),
+        panels: [...document.querySelectorAll(".autora-left [data-panel]")].map((b) => b.getAttribute("data-panel")),
+        title: document.querySelector('[data-testid="nav-panel-title"]')?.textContent?.trim(),
+        mergeEnabled: !(document.querySelector('.autora-left [data-file="merge"]') as HTMLButtonElement).disabled,
+        above: document.querySelector(".autora-left")!.getBoundingClientRect().bottom <= document.querySelector('[data-testid="nav-panel-title"]')!.getBoundingClientRect().top + 1,
+      }));
+      assert.deepEqual(left.tiles, ["open", "save", "saveas", "merge", "insert", "split", "compress", "password", "export"]);
+      assert.equal(left.panels.length, 8);
+      assert.match(left.title ?? "", /pages/i, "the pages are what it shows");
+      assert.ok(left.mergeEnabled && left.above);
+      await frame.click('.autora-left [data-panel="bookmarks"]');
+      await frame.waitForFunction(() => /bookmarks/i.test(document.querySelector('[data-testid="nav-panel-title"]')?.textContent ?? ""), null, { timeout: 10_000 });
+      await frame.click('.autora-left [data-panel="pages"]');
+      await frame.waitForFunction(() => /pages/i.test(document.querySelector('[data-testid="nav-panel-title"]')?.textContent ?? ""), null, { timeout: 10_000 });
+      await frame.click('.autora-left [data-file="compress"]');
+      await frame.waitForSelector(".tool-dock", { timeout: 10_000 });
+      await frame.click('[data-testid="tool-dock-close"]');
+      await frame.click('[data-testid="phone-pane-button"]');
+      await frame.waitForSelector(".autora-left", { state: "detached", timeout: 10_000 });
+      await frame.click('[data-testid="phone-pane-button"]');
+      await frame.waitForSelector(".autora-left", { timeout: 10_000 });
+
       // The menu holds what the menu bar did.
       await frame.click('[data-testid="phone-menu-button"]');
       await frame.waitForSelector('[data-testid="phone-menu"]', { timeout: 10_000 });

@@ -93,7 +93,11 @@ const PDF = [
     "Watermark, Header & footer, Organize, Compress, Export, Compare, Repair, Crop, Page labels, Measure, Count, Make searchable, " +
     "Snapshot, Layers, Attachments, Portfolio, Accessibility, Print prep and Actions. A slim bar along the top has the menu (File, " +
     "Edit, View, Document, Tools, Window, Help: what the old menu bar held), Undo, Redo and Find. A tool with its own pane (Password, " +
-    "Compress, Compare...) opens it as a window in the middle. So to send someone to a tool, name the button and say \"open All " +
+    "Compress, Compare...) opens it as a window in the middle. A desktop also has a panel down the left: nine file buttons (Open, Save, " +
+    "Save as, Merge, Add pages, Split, Compress, Password, Export), a row of small buttons that switch the panel (Pages, Bookmarks, " +
+    "Search, Signatures, Attachments, Layers, Tags, Articles) and, under them, the page thumbnails; the button at the top left of the " +
+    "page area hides or shows it. A phone has no left panel (use Organize in All tools for the pages). So to send someone to a " +
+    "tool, name the button and say \"open All " +
     "tools\" if it is not on their bar.",
   "  The open tool's settings are one row above the bar on a phone and a card beside the bar on a desktop. Highlight, Pen highlight, Draw, Shapes, Text, Note and Callout show three " +
     "colours and a colour wheel (any colour); Draw, Shapes and Pen highlight add a thickness slider; Shapes has a round button at the " +

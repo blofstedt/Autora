@@ -61,8 +61,9 @@ PDF first (this), then Pages, Sheets, Slides, Video, Games. Browser and 3D alrea
   (applied with its "Redact N regions" button, not blacked out at once); Sign is Spectra's stamp mode showing saved signatures.
 - Desktop is the same bar down the right side, with room for more tools (13 at a 900px window, pinned from the grid), a card beside
   the bar for the open tool with labels and hints, every figure of Shapes as a button, click-to-redact, and the menu (Spectra's
-  menu tree) behind the button at the top left. Panes (Protect...) open as a window in the middle. Spectra's left rail of panels
-  (pages, bookmarks, layers...) stays for now; folding it into the grid is an open question.
+  menu tree) behind the button at the top left. Panes (Protect...) open as a window in the middle. The left side is the
+  file menu (nine tiles), a row of buttons that switch Spectra's own panels, and the page thumbnails (SecurePDF's "Page Thumbnails"
+  panel and header menu, in Autora's look); Spectra's icon strip is put away. A phone has no left panel.
 
 ## The agent has to know (it replaces the old window)
 

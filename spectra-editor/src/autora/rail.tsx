@@ -21,6 +21,7 @@
  * arrangement.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { getCommandContext, invokeCommand, isCommandEnabled } from "../renderer/commands/context";
 import { availableMenus, type MenuNode } from "../renderer/commands/menus";
@@ -50,11 +51,17 @@ interface Open {
   tool: string | null;
   /** Sign is up: Spectra's stamp mode with only the signatures showing (see the `autora-signing` rules in autora.css). */
   signing?: boolean;
+  /** The left panel (a desktop's): open or not, and which of Spectra's nav panels it shows. */
+  pane?: { open: boolean; panel: string };
 }
 
 function readOpen(): Open {
   const ui = getCommandContext()?.state.ui;
-  return { mode: (ui?.tool as string | undefined) ?? "select", tool: (ui?.activeToolId as string | null | undefined) ?? null };
+  return {
+    mode: (ui?.tool as string | undefined) ?? "select",
+    tool: (ui?.activeToolId as string | null | undefined) ?? null,
+    pane: ui ? { open: !!ui.navPane.open, panel: String(ui.navPane.panel) } : undefined,
+  };
 }
 
 /** The editor's state is not observable from here, but every change of it repaints the DOM: so the DOM is the clock. */
@@ -65,7 +72,7 @@ function useOpen(): Open {
     const read = () => {
       frame = 0;
       const next = readOpen();
-      setOpen((prev) => (prev.mode === next.mode && prev.tool === next.tool ? prev : next));
+      setOpen((prev) => (prev.mode === next.mode && prev.tool === next.tool && prev.pane?.open === next.pane?.open && prev.pane?.panel === next.pane?.panel ? prev : next));
     };
     const poke = () => { if (!frame) frame = requestAnimationFrame(read); };
     poke();
@@ -469,9 +476,94 @@ function Top({ onMenu }: { onMenu: () => void }) {
       <button type="button" className="autora-top-btn autora-top-menu" aria-label="Menu" aria-haspopup="menu" data-tip="Menu" data-testid="phone-menu-button" onPointerDown={(e) => e.preventDefault()} onClick={onMenu}>
         <Icon name="menu" size={19} />
       </button>
+      {!PHONE && (
+        <button type="button" className="autora-top-btn" aria-label="Pages and files" data-tip="Pages and files" data-testid="phone-pane-button" onPointerDown={(e) => e.preventDefault()} onClick={() => { invokeCommand("view.navPane"); }}>
+          <Icon name="panel" size={19} />
+        </button>
+      )}
       <span className="autora-top-gap" />
       {(["edit.undo", "edit.redo", "edit.find"] as CommandId[]).map(act)}
     </div>
+  );
+}
+
+/* ------------------------------------------------------------- left panel */
+
+/** The basics a person does to a file: what SecurePDF's header menu offered, as Spectra's own commands. */
+const FILE_TILES: { id: string; label: string; icon: string; color: string; command: CommandId }[] = [
+  { id: "open", label: "Open", icon: "folder-open", color: "#2563eb", command: "file.open" },
+  { id: "save", label: "Save", icon: "save", color: "#059669", command: "file.save" },
+  { id: "saveas", label: "Save as", icon: "file-down", color: "#059669", command: "file.saveAs" },
+  { id: "merge", label: "Merge", icon: "merge", color: "#4f46e5", command: "document.combineFiles" },
+  { id: "insert", label: "Add pages", icon: "file-plus", color: "#0891b2", command: "document.insertFromFile" },
+  { id: "split", label: "Split", icon: "split", color: "#9333ea", command: "tools.panel.split" },
+  { id: "compress", label: "Compress", icon: "compress", color: "#059669", command: "tools.open.optimize" },
+  { id: "password", label: "Password", icon: "lock", color: "#0891b2", command: "tools.open.protect" },
+  { id: "export", label: "Export", icon: "export", color: "#4f46e5", command: "tools.open.export" },
+];
+
+/** Spectra's own panels for the left side, in its order; Pages is the one a person lives in. */
+const PANELS: { id: string; label: string; icon: string }[] = [
+  { id: "pages", label: "Pages", icon: "organize" },
+  { id: "bookmarks", label: "Bookmarks", icon: "bookmark" },
+  { id: "search", label: "Search", icon: "find" },
+  { id: "signatures", label: "Signatures", icon: "sign" },
+  { id: "attachments", label: "Attachments", icon: "clip" },
+  { id: "layers", label: "Layers", icon: "layers" },
+  { id: "tags", label: "Tags", icon: "tag" },
+  { id: "articles", label: "Articles", icon: "lines" },
+];
+
+/** Spectra's left panel body, once it is on the page: our menu goes at the top of it, above its own title and pages. */
+function useLeftHost(): HTMLElement | null {
+  const [host, setHost] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    const find = () => {
+      const body = document.querySelector<HTMLElement>('[data-testid="nav-panel-body"]');
+      if (!body) { setHost(null); return; }
+      let mine = body.querySelector<HTMLElement>(":scope > .autora-left");
+      if (!mine) {
+        mine = document.createElement("div");
+        mine.className = "autora-left";
+        body.insertBefore(mine, body.firstChild);
+      }
+      const found = mine;
+      setHost((prev) => (prev === found ? prev : found));
+    };
+    find();
+    const watch = new MutationObserver(find);
+    watch.observe(document.body, { childList: true, subtree: true });
+    return () => watch.disconnect();
+  }, []);
+  return host;
+}
+
+function LeftPanel({ host, open }: { host: HTMLElement; open: Open }) {
+  const show = (id: string) => {
+    const ctx = getCommandContext();
+    const pane = ctx?.state.ui.navPane;
+    // Choosing the panel already showing would close the pane (it is a toggle), so that is left alone.
+    if (ctx && !(pane?.open && pane.panel === id)) ctx.dispatch({ type: "UI_OPEN_NAV_PANEL", panel: id } as never);
+  };
+  return createPortal(
+    <>
+      <div className="autora-tiles autora-file-tiles" role="group" aria-label="File">
+        {FILE_TILES.map((t) => (
+          <button key={t.id} type="button" className="autora-tile" style={{ ["--tc" as string]: t.color }} data-file={t.id} disabled={!isCommandEnabled(t.command)} title={t.id === "insert" ? "Select a page first; the new pages go after it" : t.label} onClick={() => { invokeCommand(t.command); }}>
+            <Icon name={t.icon} size={18} />
+            <span>{t.label}</span>
+          </button>
+        ))}
+      </div>
+      <div className="autora-panels" role="group" aria-label="Panels">
+        {PANELS.map((p) => (
+          <button key={p.id} type="button" className="autora-panel-btn" data-panel={p.id} data-tip={p.label} aria-label={p.label} aria-pressed={!!open.pane?.open && open.pane.panel === p.id} onClick={() => show(p.id)}>
+            <Icon name={p.icon} size={16} />
+          </button>
+        ))}
+      </div>
+    </>,
+    host,
   );
 }
 
@@ -529,9 +621,18 @@ function Rail() {
   }, [open.signing, raw.mode]);
 
   const ids = PHONE ? PHONE_DEFAULT : pins;
+  const left = useLeftHost();
+  // A desktop's left side is the file menu and the pages: open it once, and leave it however the person puts it after that.
+  const opened = useRef(false);
+  useEffect(() => {
+    if (PHONE || opened.current || !open.pane) return;
+    opened.current = true;
+    if (!open.pane.open) getCommandContext()?.dispatch({ type: "UI_OPEN_NAV_PANEL", panel: "pages" } as never);
+  }, [open.pane]);
   return (
     <>
       <Top onMenu={() => setMenu(true)} />
+      {!PHONE && left && <LeftPanel host={left} open={open} />}
       {tray && <Tray mode={tray} />}
       {redact && <RedactTray />}
       <Bar open={open} slots={slots} ids={ids} onGrid={() => setGrid(true)} onPick={pick} />
