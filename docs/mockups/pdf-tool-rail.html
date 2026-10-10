@@ -133,10 +133,8 @@ input[type=range] { width: 100%; accent-color: var(--tc, var(--accent)); }
 /* All tools sheet: everything the old dock held, grouped. */
 .scrim { position: absolute; inset: 0; z-index: 50; background: rgba(0,0,0,.5); opacity: 0; pointer-events: none; transition: opacity .2s var(--ease); }
 .scrim.open { opacity: 1; pointer-events: auto; }
-.sheetx { position: absolute; z-index: 51; background: var(--s2); border: 1px solid var(--line-2); box-shadow: 0 24px 64px rgba(0,0,0,.6); padding: 16px; overflow-y: auto; transition: transform .24s var(--ease), opacity .24s var(--ease); opacity: 0; pointer-events: none; }
-.sheetx.open { opacity: 1; transform: none !important; pointer-events: auto; }
-@media (max-width: 767px) { .sheetx { left: 0; right: 0; bottom: 0; max-height: 78%; border-radius: 24px 24px 0 0; transform: translateY(24px); padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); } }
-@media (min-width: 768px) { .sheetx { right: 80px; top: 24px; width: 420px; max-height: calc(100% - 48px); border-radius: 24px; transform: translateX(12px); } }
+.sheetx { left: 50%; top: 50%; width: min(460px, calc(100% - 32px)); max-height: calc(100% - 48px); border-radius: 24px; transform: translate(-50%, -48%) scale(.97); position: absolute; z-index: 51; background: var(--s2); border: 1px solid var(--line-2); box-shadow: 0 24px 64px rgba(0,0,0,.6); padding: 16px; overflow-y: auto; transition: transform .24s var(--ease), opacity .24s var(--ease); opacity: 0; pointer-events: none; }
+.sheetx.open { opacity: 1; transform: translate(-50%, -50%); pointer-events: auto; }
 .sheetx h3 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
 .sheetx h4 { margin: 16px 4px 8px; font: 500 10.5px var(--font); letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; }
