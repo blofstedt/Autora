@@ -97,12 +97,14 @@ svg.ink { position: absolute; inset: 0; width: 100%; height: 100%; pointer-event
 .rail .tool kbd { display: none; }
 
 @media (max-width: 767px) {
-  .rail { left: 0; right: 0; bottom: 0; height: calc(64px + env(safe-area-inset-bottom, 0px)); padding: 0 8px env(safe-area-inset-bottom, 0px); border-width: 1px 0 0; border-radius: 0; background: var(--s1); justify-content: space-between; overflow: hidden; }
-  .rail .tool { width: 38px; height: 38px; }
+  .rail { left: 0; right: 0; bottom: 0; height: calc(56px + env(safe-area-inset-bottom, 0px)); padding: 0 8px env(safe-area-inset-bottom, 0px); border-width: 1px 0 0; border-radius: 0; background: var(--s1); justify-content: space-between; overflow: hidden; }
+  .rail .tool { width: 34px; height: 34px; }
+  .rail .tool svg.i { width: 17px; height: 17px; }
   .rail .tool span { display: none; }
   .rail { gap: 4px; }
   .rail .div { width: 1px; height: 24px; margin: 0 2px; }
-  .tray { left: 8px; right: 8px; bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
+  .tray { left: 8px; right: 8px; bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
+
 }
 @media (min-width: 768px) {
   .rail { right: 16px; top: 50%; transform: translateY(-50%); flex-direction: column; gap: 4px; padding: 8px; border-radius: 28px; }
@@ -161,9 +163,19 @@ input[type=range] { width: 100%; accent-color: var(--tc, var(--accent)); }
 .find input { flex: 1; min-width: 0; height: 34px; border: 0; background: transparent; color: var(--text); padding: 0 12px; font: inherit; font-size: 16px; }
 .find small { font: 11px var(--mono); color: var(--text-3); white-space: nowrap; }
 .chip { position: absolute; z-index: 10; left: 12px; bottom: 12px; font: 500 11.5px var(--mono); color: var(--text-2); background: var(--s1); border: 1px solid var(--line); padding: 6px 12px; border-radius: 999px; }
-@media (max-width: 767px) { .chip { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); } }
+@media (max-width: 767px) { .chip { bottom: calc(68px + env(safe-area-inset-bottom, 0px)); } }
 .toast { position: absolute; z-index: 70; left: 50%; top: 60px; transform: translate(-50%, -8px); background: var(--s4); padding: 9px 16px; border-radius: 999px; font-size: 13px; opacity: 0; pointer-events: none; transition: .2s var(--ease); white-space: nowrap; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+/* Phone: a smaller modal and smaller tiles (after the base rules so they win). */
+@media (max-width: 767px) {
+  .sheetx { width: min(320px, calc(100% - 48px)); padding: 12px; border-radius: 20px; }
+  .sheetx h3 { font-size: 14px; }
+  .sheetx h4 { margin: 12px 4px 6px; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 6px; }
+  .grid .tile { height: 56px; border-radius: 16px; gap: 4px; font-size: 10px; }
+  .grid .tile svg.i { width: 17px; height: 17px; }
+  .sheetx .hint { font-size: 11.5px; }
+}
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 
@@ -314,7 +326,7 @@ const rail = $('#rail');
 let slots = 9; // tools that fit, not counting the grid button
 function measure() {
   const w = $('.work');
-  if (isPhone()) { const avail = w.clientWidth - 16 - 2 - 7; slots = Math.max(1, Math.floor((avail + 4) / 42) - 1); }
+  if (isPhone()) { const avail = w.clientWidth - 16 - 2 - 7; slots = Math.max(1, Math.floor((avail + 4) / 38) - 1); }
   else { const avail = w.clientHeight - 32 - 16 - 2 - 5; slots = Math.max(1, Math.floor((avail + 4) / 48) - 1); }
 }
 const barTools = () => (isPhone() ? DEFAULT_PINNED : pinned).slice(0, slots);
