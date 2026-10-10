@@ -134,8 +134,11 @@ export function OrganizationPage({ topSlot }: { topSlot?: HTMLElement | null }) 
         <p className="jf-hint art-lede">
           Your agents and where they fit. Each has its own task and a note on when it should be called; the
           lead, Autora, is told this map and starts the right one — and the ones that follow it, in order —
-          when a job calls for it. Drag an agent onto another to move it (and its team) under them, or
-          select one to edit it; "Reports to" in the editor does the same on a phone.
+          when a job calls for it.{" "}
+          <span className="org-drag-hint">
+            Drag an agent onto another to move it (and its team) under them, or select one to edit it.
+          </span>
+          <span className="org-tap-hint">Select an agent to edit it; "Reports to" there moves it under another.</span>
         </p>
         {error && <p className="set-warn">{error}</p>}
 
@@ -207,6 +210,9 @@ function AgentEditor({
     : { ...BLANK, reportsTo: agents.find((a) => a.builtin)?.id ?? "" });
   const [enabled, setEnabled] = useState(agent?.enabled ?? true);
   const [adding, setAdding] = useState("");
+  const top = useRef<HTMLFormElement>(null);
+  // Opened below the chart: bring it into view, or a tap on a card seems to do nothing on a phone.
+  useEffect(() => { top.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -255,7 +261,7 @@ function AgentEditor({
   };
 
   return (
-    <form className="org-editor nb-new" onSubmit={(e) => { e.preventDefault(); void save(); }} aria-label={agent ? `Edit ${agent.name}` : "New agent"}>
+    <form ref={top} className="org-editor nb-new" onSubmit={(e) => { e.preventDefault(); void save(); }} aria-label={agent ? `Edit ${agent.name}` : "New agent"}>
       <div className="org-editor-head">
         <b>{agent ? `Edit ${agent.name}` : "New agent"}</b>
         <div className="spacer" />
