@@ -26,7 +26,10 @@ Live copy of the first version: https://claude.ai/artifact/A5vaGaNwJ8EFLA35jv3gD
    per app (per person); the mockup uses `localStorage`.
 6. **Phone: no pinning.** The bar is the app's default tools, as many as fit; the person taps the grid
    button, then the tool they want. The default tools are the same on desktop until the person pins others.
-7. **Options tray**: only the open tool's settings (colour, size, hints), beside the rail on desktop and
+7. **Options tray, compact on a phone**: no field labels or long hints; the tool's icon and name, its
+   controls and the close button share one wrapped row (title and controls first, close pinned top right),
+   with one short hint line only where the tool needs it (Redact, Note). A tray is 46px (Highlight) to about
+   150px (Sign), never a stack of labelled rows. Only the open tool's settings (colour, size, hints), beside the rail on desktop and
    above the dock on a phone, in the tool's colour. Tools with no settings still show a one-line tray.
 8. **Top bar stays slim**: menu (what the menu bar held), pages/outline toggle, title, undo/redo, find, export.
 9. **Phone bar defaults leave out Note and Stamps** (they stay in the grid) so the icons can be bigger:
