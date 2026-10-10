@@ -5,8 +5,10 @@ import { TodoList } from "./TodoCell";
 
 /** How long the finished task stays on its way out before the next is alone. */
 const ROTATE_MS = 420;
-/** How long a list that opened itself for a finished task stays: the tick lands, the line is drawn, a beat to read it. */
-const STRIKE_MS = 2600;
+/** How long each finished task gets to itself: the box pops, the tick draws, then the line is drawn through the words. */
+const STEP_MS = 2400;
+/** How long the list stays after the last one, a beat to read it before it folds. */
+const HOLD_MS = 900;
 /** How long the list takes to fold open (.todo-dock-fold): the finished task is shown still undone until then, so the
     tick and the line are drawn in front of the person rather than behind a shut door. */
 const OPEN_MS = 340;
@@ -59,10 +61,29 @@ export const TodoDock = memo(function TodoDock({ items }: { items: TodoItem[] })
      list is on screen (a list that arrives part done just appears), and never shut on someone who opened it. */
   const doneIds = useRef(new Set(items.filter((t) => t.status === "completed").map((t) => t.id)));
   const autoOpened = useRef(false);
-  /* Tasks that have just been finished, still drawn as in progress while the list opens. */
+  /* Tasks finished but not yet shown ticked: drawn as in progress until their turn comes. */
   const [unrevealed, setUnrevealed] = useState<string[]>([]);
-  /* ...and then, until the list folds, the ones to give the burst. */
+  /* ...and the ones already given their burst, tick and line, until the list folds. */
   const [fresh, setFresh] = useState<string[]>([]);
+  /* Finished tasks wait here and are revealed one at a time, each given STEP_MS to tick and be struck through
+     completely before the next begins, however many finish together. */
+  const queue = useRef<string[]>([]);
+  const timer = useRef<number | null>(null);
+  const pump = () => {
+    const id = queue.current.shift();
+    if (id === undefined) {
+      timer.current = window.setTimeout(() => {
+        timer.current = null;
+        if (autoOpened.current) { autoOpened.current = false; setOpen(false); }
+        setFresh([]);
+      }, HOLD_MS);
+      return;
+    }
+    setUnrevealed((u) => u.filter((x) => x !== id));
+    setFresh((f) => [...f, id]);
+    timer.current = window.setTimeout(pump, STEP_MS);
+  };
+  useEffect(() => () => { if (timer.current !== null) window.clearTimeout(timer.current); }, []);
   useEffect(() => {
     const before = doneIds.current;
     const now = new Set(items.filter((t) => t.status === "completed").map((t) => t.id));
@@ -71,16 +92,13 @@ export const TodoDock = memo(function TodoDock({ items }: { items: TodoItem[] })
     if (!finished.length) return;
     if (!autoOpened.current && open) return;
     autoOpened.current = true;
-    const wasShut = !open;
-    if (wasShut) setUnrevealed(finished);
-    setFresh(finished);
-    setOpen(true);
-    const reveal = window.setTimeout(() => setUnrevealed([]), wasShut ? OPEN_MS : 0);
-    const fold = window.setTimeout(() => {
-      if (autoOpened.current) { autoOpened.current = false; setOpen(false); }
-      setFresh([]);
-    }, (wasShut ? OPEN_MS : 0) + STRIKE_MS);
-    return () => { window.clearTimeout(reveal); window.clearTimeout(fold); };
+    const running = timer.current !== null;
+    if (timer.current !== null) { window.clearTimeout(timer.current); timer.current = null; }
+    queue.current.push(...finished);
+    setUnrevealed((u) => [...u, ...finished]);
+    if (!open) setOpen(true);
+    // A tick already being drawn is left to finish its step; otherwise wait for the list to open.
+    timer.current = window.setTimeout(pump, running ? 0 : open ? 0 : OPEN_MS);
     // `open` is read only to leave a list the person opened alone.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [done]);
