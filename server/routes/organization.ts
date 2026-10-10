@@ -9,7 +9,7 @@
 
 import type { Express, Request, Response } from "express";
 import {
-  AgentError, createAgent, deleteAgent, getAgent, listAgents, orgTree, updateAgent,
+  AgentError, createAgent, deleteAgent, freshName, getAgent, listAgents, orgTree, updateAgent,
 } from "../agents";
 import { agentMind, forgetNote, notesOf } from "../agentmind";
 import {
@@ -32,7 +32,7 @@ export function organizationRoutes(app: Express, onPerson: () => void = () => un
 
   app.post("/api/agents", (req: Request, res: Response) => {
     try {
-      res.json({ agent: createAgent(req.body ?? {}) });
+      res.json({ agent: createAgent({ ...(req.body ?? {}), name: String(req.body?.name ?? "").trim() || freshName() }) });
     } catch (err) {
       failed(res, err);
     }
@@ -75,6 +75,18 @@ export function organizationRoutes(app: Express, onPerson: () => void = () => un
   app.get("/api/threads", (req: Request, res: Response) => {
     const sort = ["top", "active"].includes(String(req.query.sort)) ? (String(req.query.sort) as "top" | "active") : "new";
     res.json({ posts: listPosts(sort) });
+  });
+
+  /** How much the agents have said since `since` (ms): the count behind the unread marker on Threads. The person's own words never count. */
+  app.get("/api/threads/unread", (req: Request, res: Response) => {
+    const since = Number(req.query.since);
+    const from = Number.isFinite(since) ? since : Date.now();
+    let count = 0;
+    for (const p of listPosts("new")) {
+      if (p.by.kind === "agent" && p.created > from) count += 1;
+      count += p.comments.filter((c) => c.by.kind === "agent" && c.created > from).length;
+    }
+    res.json({ count });
   });
 
   app.post("/api/threads", (req: Request, res: Response) => {

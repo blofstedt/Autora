@@ -1017,7 +1017,7 @@ const CellView = memo(function CellView({
     case "remark":
       return <RemarkCell text={cell.text} />;
     case "chime":
-      return <ChimeCell name={cell.name} role={cell.role} look={cell.look} text={cell.text} working={live && !cell.done} />;
+      return <ChimeCell name={cell.name} role={cell.role} look={cell.look} text={cell.text} report={cell.report} ok={cell.ok} working={live && !cell.done} />;
     case "tool":
       return <ToolCell span={cell.span} />;
     case "todo": {

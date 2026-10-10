@@ -16,6 +16,7 @@
 import crypto from "node:crypto";
 import { readDoc, saveDoc } from "./store";
 import { dropMind, knowsAbout, mergeMind } from "./agentmind";
+import { BOND_START, characterLine, draftCharacter, grown, saneTraits, suggestName, type Traits } from "./agentcharacter";
 
 interface Agent {
   id: string;
@@ -37,6 +38,14 @@ interface Agent {
   /** How much it has to say, 0.6 (reserved) to 1.4 (chatty): its own temper, drawn
       at random with its look. It scales how readily it speaks up in Threads. */
   social?: number;
+  /** A line or two on who it is: how it works and talks, drawn from its expertise (server/agentcharacter.ts). */
+  personality?: string;
+  /** Its attributes, 0..100: the person can set them; teamwork grows with the work. */
+  traits?: Traits;
+  /** How well it works with each colleague, 0..100 by agent id; rises as work between them goes well. */
+  bonds?: Record<string, number>;
+  /** Tasks it has been started on, and how many of them it finished. */
+  tasks?: { done: number; failed: number };
   /** The lead cannot be deleted or detached from the top. */
   builtin?: boolean;
   created: number;
@@ -83,6 +92,7 @@ const MAX_NAME = 60;
 const MAX_ROLE = 80;
 const MAX_TEXT = 8000;
 const MAX_WHEN = 1000;
+const MAX_PERSONALITY = 600;
 const MAX_NEXT = 12;
 
 const DOC = "agents";
@@ -120,6 +130,13 @@ function load(): Agent[] {
   for (const a of roster) {
     if (a.id === LEAD_ID) { delete a.look; a.social = 1; continue; }
     if (typeof a.social !== "number") { a.social = temper(); gave = true; }
+    // Agents made before they had a character get one drawn from their expertise, and keep it.
+    if (!a.personality || !a.traits) {
+      const drawn = draftCharacter(a.role, a.instructions);
+      a.personality = a.personality || drawn.personality;
+      a.traits = { ...drawn.traits, ...(a.traits ?? {}) };
+      gave = true;
+    }
     const ok = a.look && SIDES.includes(a.look.sides) && Number.isFinite(a.look.hue);
     if (ok) continue;
     a.look = pickLook(roster.flatMap((o) => (o.look && o !== a ? [o.look] : [])));
@@ -181,7 +198,7 @@ function saneNext(id: string, raw: unknown): string[] {
 
 export function createAgent(input: {
   name: unknown; role?: unknown; instructions?: unknown; when?: unknown;
-  reportsTo?: unknown; next?: unknown; enabled?: unknown;
+  reportsTo?: unknown; next?: unknown; enabled?: unknown; personality?: unknown; traits?: unknown;
 }): Agent {
   const name = clip(input.name, MAX_NAME);
   if (!name) throw new AgentError("An agent needs a name.");
@@ -194,7 +211,12 @@ export function createAgent(input: {
     when: clip(input.when, MAX_WHEN), reportsTo: sanePlace(id, input.reportsTo),
     next: [], enabled: input.enabled !== false, created: now, updated: now,
     look: pickLook(load().flatMap((o) => (o.look ? [o.look] : []))), social: temper(),
+    bonds: {}, tasks: { done: 0, failed: 0 },
   };
+  /* A personality comes from whoever made the agent, or else from its expertise. */
+  const drawn = draftCharacter(agent.role, agent.instructions);
+  agent.personality = clip(input.personality, MAX_PERSONALITY) || drawn.personality;
+  agent.traits = { ...drawn.traits, ...saneTraits(input.traits) };
   load().push(agent);
   agent.next = saneNext(id, input.next);
   persist();
@@ -203,7 +225,7 @@ export function createAgent(input: {
 
 export function updateAgent(id: string, patch: {
   name?: unknown; role?: unknown; instructions?: unknown; when?: unknown;
-  reportsTo?: unknown; next?: unknown; enabled?: unknown;
+  reportsTo?: unknown; next?: unknown; enabled?: unknown; personality?: unknown; traits?: unknown;
 }): Agent {
   const agent = getAgent(id);
   if (!agent) throw new AgentError(`There is no agent "${id}".`);
@@ -220,6 +242,10 @@ export function updateAgent(id: string, patch: {
   if (patch.reportsTo !== undefined && !agent.builtin) agent.reportsTo = sanePlace(id, patch.reportsTo);
   if (patch.next !== undefined) agent.next = saneNext(id, patch.next);
   if (patch.enabled !== undefined && !agent.builtin) agent.enabled = Boolean(patch.enabled);
+  if (!agent.builtin) {
+    if (patch.personality !== undefined) agent.personality = clip(patch.personality, MAX_PERSONALITY) || draftCharacter(agent.role, agent.instructions).personality;
+    if (patch.traits !== undefined) agent.traits = { ...(agent.traits ?? draftCharacter(agent.role, agent.instructions).traits), ...saneTraits(patch.traits) };
+  }
   persist(agent);
   return agent;
 }
@@ -233,6 +259,7 @@ export function deleteAgent(id: string): boolean {
   for (const a of list) {
     if (a.reportsTo === id) a.reportsTo = agent.reportsTo ?? LEAD_ID;
     a.next = a.next.filter((n) => n !== id);
+    if (a.bonds) delete a.bonds[id];
   }
   list.splice(list.indexOf(agent), 1);
   dropMind(id);
@@ -264,6 +291,11 @@ export function mergeAgents(fromRef: unknown, intoRef: unknown): Agent {
     a.next = [...new Set(a.next.map((n) => (n === from.id ? into.id : n)))].filter((n) => n !== a.id);
   }
   into.next = [...new Set([...into.next, ...from.next])].filter((n) => n !== into.id && n !== from.id).slice(0, MAX_NEXT);
+  for (const a of list) {
+    if (!a.bonds || a.bonds[from.id] === undefined) continue;
+    if (a.id !== into.id) a.bonds[into.id] = Math.max(a.bonds[into.id] ?? 0, a.bonds[from.id]);
+    delete a.bonds[from.id];
+  }
   list.splice(list.indexOf(from), 1);
   mergeMind(from.id, into.id);
   persist(into);
@@ -327,8 +359,8 @@ export const HIRING =
   "You run this organization, so you may shape it with the agents tool: hire (a new agent for a kind of work that keeps " +
   "coming up and that none of the agents covers), edit, merge (two agents that overlap become one), move (change who an " +
   "agent reports to, or its place in the order) and remove (an agent that is no longer needed). Prefer editing or " +
-  "merging to hiring, give each agent one clear job and a 'call it when' that says when, and tell the person in a line " +
-  "what you changed and why. Every other agent has a mind of its own, kept apart from yours, so a specialist is not confused by " +
+  "merging to hiring, give each agent a human first name that no one has (\"Sabrina\", not \"Legal Agent\") and a job title as its role (\"Family Lawyer\"), and one clear job and a 'call it when' that says when, and tell the person in a line " +
+  "what you changed and why. Give each hire a personality that fits its expertise (personality: a line or two on how it works and talks; traits: warmth, candor, rigor, curiosity, humor, initiative from 0 to 100) -- a lawyer careful and plain-spoken, a support agent warm and patient; if you leave it out one is drawn from the role. Personalities and relationships then grow with the work, so do not reset them. Every other agent has a mind of its own, kept apart from yours, so a specialist is not confused by " +
   "what you know about everything else. As your own Mind grows, use agents domains to see where it clusters; when a body of " +
   "knowledge has become a subject of its own (a product, a site, a client, a field), hire an agent for it with knowledge (or " +
   "teach an existing one: agent, query) so that knowledge moves out of your Mind and into theirs, and from then on call that " +
@@ -356,6 +388,7 @@ export function agentBrief(agent: Agent, task: string, chain: string[]): string 
   const next = agent.next.map(getAgent).filter((a): a is Agent => !!a && a.enabled);
   return [
     `You are ${agent.name}${agent.role ? `, the ${agent.role}` : ""}, an agent in the person's organization.`,
+    characterLine(agent, (id) => getAgent(id)?.name ?? null),
     agent.instructions ? `Your instructions:\n${agent.instructions}` : "",
     chain.length ? `This was handed to you by ${chain.join(" -> ")}.` : "",
     `Your task:\n${task}`,
@@ -372,3 +405,41 @@ export function agentBrief(agent: Agent, task: string, chain: string[]): string 
 export function resetAgents() {
   roster = null;
 }
+
+/** A first name no agent has: for a hire the lead or the person left unnamed. */
+export function freshName(): string {
+  return suggestName(load().map((a) => a.name));
+}
+
+/** An agent's task ended: its record, and a little experience for the teamwork it brings. */
+export function recordWork(id: string, ok: boolean): void {
+  const a = getAgent(id);
+  if (!a || a.builtin) return;
+  a.tasks = { done: (a.tasks?.done ?? 0) + (ok ? 1 : 0), failed: (a.tasks?.failed ?? 0) + (ok ? 0 : 1) };
+  persist();
+}
+
+/**
+ * Two agents worked together -- one handed work to the other, or they talked in
+ * Threads -- and it went well or not. Each remembers the other a little better
+ * (`bonds`), and each is a slightly better collaborator for it (`traits.teamwork`).
+ * `weight` is how much the occasion counts. The lead keeps no bonds.
+ */
+export function recordCollab(aId: string, bId: string, ok: boolean, weight: number): void {
+  if (aId === bId) return;
+  let changed = false;
+  for (const [me, other] of [[aId, bId], [bId, aId]]) {
+    const a = getAgent(me);
+    if (!a || a.builtin || !getAgent(other)) continue;
+    a.bonds = { ...(a.bonds ?? {}), [other]: grown(a.bonds?.[other] ?? BOND_START, ok, weight) };
+    if (a.traits) a.traits = { ...a.traits, teamwork: grown(a.traits.teamwork, ok, weight / 4) };
+    changed = true;
+  }
+  if (changed) persist();
+}
+
+/** How much agent `id` warms to agent `other`, 0..100 (50 when they have not yet worked together). */
+export function bondOf(id: string, other: string): number {
+  return getAgent(id)?.bonds?.[other] ?? BOND_START;
+}
+

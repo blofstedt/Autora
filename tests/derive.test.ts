@@ -226,4 +226,18 @@ test("a message added while the agent works joins its turn as a note, not a new 
   assert.ok(d.buckets[0].cells.some((c) => c.kind === "note" && /You added: and make it dark/.test(c.text)));
 });
 
+test("an agent called from the chat joins it by name and, when done, says its own report there", () => {
+  const events: AutoraEvent[] = [];
+  const add = (seq: number, kind: string, payload: Record<string, any>) =>
+    events.push({ seq, ts: 1_700_000_000 + seq, kind, actor: "agent", span: null, payload, blob: null });
+  add(1, Kind.UserMessage, { text: "check the lease" });
+  add(2, Kind.AgentChime, { id: "s1", name: "Sabrina", role: "Family Lawyer", text: "Sabrina here. On it: the lease" });
+  let chime = derive(events).buckets[0].cells.find((c) => c.kind === "chime");
+  assert.ok(chime && chime.kind === "chime" && !chime.done && chime.report === "");
+  add(3, Kind.AgentBack, { id: "s1", ok: true, reply: "The lease has a **break clause**." });
+  chime = derive(events).buckets[0].cells.find((c) => c.kind === "chime");
+  assert.ok(chime && chime.kind === "chime" && chime.done && chime.ok && /break clause/.test(chime.report));
+  assert.equal(chime.name, "Sabrina");
+});
+
 console.log(`\nderive: ${passed} passed`);

@@ -9,6 +9,7 @@
 
 import crypto from "node:crypto";
 import { readDoc, saveDoc } from "./store";
+import { cleanGif, type Gif } from "./threadgif";
 
 export interface Who {
   kind: "agent" | "user";
@@ -24,6 +25,8 @@ interface ThreadComment {
   by: Who;
   text: string;
   created: number;
+  /** A GIF the author added for colour: an address on a GIF service and a caption. */
+  gif?: Gif;
   /** Ids of those who liked it. */
   likes: string[];
 }
@@ -36,6 +39,7 @@ interface ThreadPost {
   by: Who;
   created: number;
   updated: number;
+  gif?: Gif;
   likes: string[];
   comments: ThreadComment[];
 }
@@ -98,7 +102,7 @@ function must(id: string): ThreadPost {
   return post;
 }
 
-export function createPost(input: { title: unknown; body?: unknown; tags?: unknown; by: Who }): ThreadPost {
+export function createPost(input: { title: unknown; body?: unknown; tags?: unknown; by: Who; gif?: unknown }): ThreadPost {
   const title = clip(input.title, MAX_TITLE);
   if (!title) throw new ThreadError("A post needs a title.");
   if (load().length >= MAX_POSTS) {
@@ -112,6 +116,7 @@ export function createPost(input: { title: unknown; body?: unknown; tags?: unkno
   const post: ThreadPost = {
     id: postId(), title, body: clip(input.body, MAX_BODY), tags, by: sane(input.by),
     created: now, updated: now, likes: [], comments: [],
+    ...(cleanGif(input.gif) ? { gif: cleanGif(input.gif)! } : {}),
   };
   load().push(post);
   persist();
@@ -127,14 +132,14 @@ export function deletePost(id: string): boolean {
   return true;
 }
 
-export function addComment(postIdRef: string, input: { text: unknown; parent?: unknown; by: Who }): { post: ThreadPost; comment: ThreadComment } {
+export function addComment(postIdRef: string, input: { text: unknown; parent?: unknown; by: Who; gif?: unknown }): { post: ThreadPost; comment: ThreadComment } {
   const post = must(postIdRef);
   const text = clip(input.text, MAX_COMMENT);
   if (!text) throw new ThreadError("A comment needs some words.");
   if (post.comments.length >= MAX_COMMENTS) throw new ThreadError("This post already has as many comments as it can hold.");
   const parent = clip(input.parent, 40) || null;
   if (parent && !post.comments.some((c) => c.id === parent)) throw new ThreadError(`There is no comment "${parent}" on this post.`);
-  const comment: ThreadComment = { id: commentId(), parent, by: sane(input.by), text, created: Date.now(), likes: [] };
+  const comment: ThreadComment = { id: commentId(), parent, by: sane(input.by), text, created: Date.now(), likes: [], ...(cleanGif(input.gif) ? { gif: cleanGif(input.gif)! } : {}) };
   post.comments.push(comment);
   persist(post);
   return { post, comment };

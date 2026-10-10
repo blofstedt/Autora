@@ -39,6 +39,82 @@ const research = org.createAgent({ name: "Researcher", role: "Finds sources", wh
 const editor = org.createAgent({ name: "Editor", role: "Tightens prose", reportsTo: research.id, next: [] });
 const books = org.createAgent({ name: "Bookkeeper", next: "Researcher, Editor" });
 
+await test("an agent has a personality drawn from its expertise, which a hirer or the person can override", () => {
+  const lawyer = org.createAgent({ name: "Sabrina", role: "Family Lawyer" });
+  assert.match(lawyer.personality!, /Careful and precise/);
+  assert.ok(lawyer.traits!.rigor >= 80 && lawyer.traits!.humor <= 45, "a lawyer is exacting and not a joker");
+  const helper = org.createAgent({ name: "Joy", role: "Customer Support" });
+  assert.ok(helper.traits!.warmth >= 80, "support is warm");
+  const own = org.createAgent({ name: "Wren", role: "Family Lawyer", personality: "Gentle but firm.", traits: { warmth: 95, nonsense: 5, candor: 400 } });
+  assert.equal(own.personality, "Gentle but firm.");
+  assert.equal(own.traits!.warmth, 95);
+  assert.equal(own.traits!.candor, 100, "clamped");
+  assert.ok(!("nonsense" in own.traits!));
+  const edited = org.updateAgent(own.id, { traits: { humor: 80 } });
+  assert.equal(edited.traits!.humor, 80);
+  assert.equal(edited.traits!.warmth, 95, "the rest stay");
+  assert.equal(org.freshName().length > 0, true);
+  assert.ok(!org.listAgents().some((a) => a.name === org.freshName()), "a free name");
+  assert.equal(research.personality ? true : false, true, "agents made without one are given one");
+  assert.match(org.agentBrief(lawyer, "Review the lease", []), /Your personality: Careful and precise/);
+  for (const a of [lawyer, helper, own]) org.deleteAgent(a.id);
+});
+
+await test("agents get along better the more work between them goes well, and worse when it does not", () => {
+  const a = org.createAgent({ name: "Ana", role: "Researcher" });
+  const b = org.createAgent({ name: "Ben", role: "Editor" });
+  assert.equal(org.bondOf(a.id, b.id), 50);
+  const team0 = a.traits!.teamwork;
+  org.recordCollab(a.id, b.id, true, 6);
+  const one = org.bondOf(a.id, b.id);
+  assert.ok(one > 50 && org.bondOf(b.id, a.id) === one, "both remember it");
+  for (let i = 0; i < 60; i++) org.recordCollab(a.id, b.id, true, 6);
+  const many = org.bondOf(a.id, b.id);
+  assert.ok(many > one && many < 100, "it keeps rising, with diminishing returns");
+  assert.ok(a.traits!.teamwork > team0, "and they become better collaborators");
+  org.recordCollab(a.id, b.id, false, 6);
+  assert.ok(org.bondOf(a.id, b.id) < many, "a bad time costs a little");
+  org.recordCollab(org.LEAD_ID, a.id, true, 6);
+  assert.equal(org.getAgent(org.LEAD_ID)!.bonds, undefined, "the lead keeps none");
+  org.recordWork(a.id, true); org.recordWork(a.id, false);
+  assert.deepEqual(a.tasks, { done: 1, failed: 1 });
+  assert.match(org.agentBrief(a, "x", []), /You work well with Ben/);
+  org.deleteAgent(b.id);
+  assert.equal(org.getAgent(a.id)!.bonds![b.id], undefined, "a bond goes with the colleague");
+  org.deleteAgent(a.id);
+});
+
+await test("a GIF is kept only from a GIF service's own host, and is found by words, not by an address", async () => {
+  const gif = await import("../server/threadgif");
+  assert.ok(gif.cleanGifUrl("https://media.giphy.com/media/abc/giphy.gif"));
+  assert.ok(gif.cleanGifUrl("https://media3.giphy.com/x.gif"));
+  assert.ok(gif.cleanGifUrl("https://media.tenor.com/x/y.gif"));
+  assert.equal(gif.cleanGifUrl("http://media.giphy.com/x.gif"), null, "https only");
+  assert.equal(gif.cleanGifUrl("https://media.giphy.com.evil.test/x.gif"), null, "the host is compared, not a substring");
+  assert.equal(gif.cleanGifUrl("https://evil.test/media.giphy.com/x.gif"), null);
+  assert.equal(gif.cleanGifUrl("https://user:pw@media.giphy.com/x.gif"), null);
+  const post = forum.createPost({ title: "Party", by: { kind: "agent", id: "a1", name: "A" }, gif: { url: "https://media.giphy.com/m/a.gif", alt: "party" } });
+  assert.equal(post.gif?.alt, "party");
+  const bad = forum.createPost({ title: "No party", by: { kind: "agent", id: "a1", name: "A" }, gif: { url: "https://evil.test/a.gif", alt: "x" } });
+  assert.equal(bad.gif, undefined, "any other address is dropped");
+  const added = forum.addComment(post.id, { text: "ha", by: { kind: "agent", id: "a2", name: "B" }, gif: { url: "https://media.tenor.com/q.gif", alt: "" } });
+  assert.equal(added.comment.gif?.alt, "GIF");
+  const fake = async (url: string) => ({
+    ok: true,
+    json: async () => url.includes("giphy")
+      ? { data: [{ title: "facepalm", images: { downsized_medium: { url: "https://media2.giphy.com/f.gif" } } }, { images: { fixed_height: { url: "https://evil.test/z.gif" } } }] }
+      : { results: [] },
+  });
+  assert.equal((await gif.findGif("facepalm", { giphy: "k" }, fake, () => 0))?.url, "https://media2.giphy.com/f.gif");
+  assert.equal(await gif.findGif("facepalm", {}, fake), null, "no key, no GIF");
+  assert.equal(await gif.findGif("facepalm", { tenor: "k" }, fake), null, "nothing found, none posted");
+  const life = await import("../server/threadlife");
+  assert.equal(life.parseChoice('{"action":"comment","post":"th_1","text":"lol","gif":"  facepalm  "}').action === "comment" && (life.parseChoice('{"action":"comment","post":"th_1","text":"lol","gif":"  facepalm  "}') as { gif?: string }).gif, "facepalm");
+  const agent = { id: "a", name: "A", role: "", instructions: "", when: "" };
+  assert.ok(!/"gif"/.test(life.lifePrompt(agent, []).system), "agents are told of GIFs only when a key is set");
+  assert.match(life.lifePrompt(agent, [], new Map(), true).system, /"gif"/);
+});
+
 await test("an agent needs a name, a new one reports to the lead, and names are unique in any case", () => {
   assert.throws(() => org.createAgent({ name: "  " }), /needs a name/);
   assert.throws(() => org.createAgent({ name: "researcher" }), /already exists/);

@@ -132,8 +132,8 @@ export const filesSPECS: ToolSpec[] = [
       "that agent on a task in a chat of its own and wait for its report -- when it has a 'then hands to' list those " +
       "agents follow in order, each given the report before); domains (where your own Mind clusters by subject, to decide who to hire); teach (agent, query, move: hand the memories that match query to that agent's own mind, moving them out of yours unless move is false); note (text, and kind fact, lesson, tip or colleague: keep one " +
       "sentence in your own mind -- what you learned, what works, what a colleague is good at -- so it is in front of you " +
-      "next time; agent defaults to you); hire (name, role, instructions, when; optionally " +
-      "reports_to and next -- a new agent for a kind of work that keeps coming up); edit (agent, then any of name, role, " +
+      "next time; agent defaults to you); hire (name: a human first name nobody has, role: its job title, instructions, when; optionally personality, traits, " +
+      "reports_to and next -- a new agent for a kind of work that keeps coming up); edit (agent, then any of name, role, personality, traits, " +
       "instructions, when, reports_to, next, enabled); merge (agent, into: two that overlap become one); remove " +
       "(agent); move (agent, reports_to and/or position: its boss, and its place among that boss's agents). Call an " +
       "agent when its 'call it when' fits the job and it would do the part better than you; for anything you can do in " +
@@ -146,7 +146,13 @@ export const filesSPECS: ToolSpec[] = [
         agent: { type: "string", description: "run/edit/merge/remove/move: the agent's id (agent_...) or name." },
         task: { type: "string", description: "run: what it should do, complete enough to work from alone -- it has not seen this chat." },
         name: { type: "string", description: "hire/edit: its name." },
-        role: { type: "string", description: "hire/edit: its job title." },
+        role: { type: "string", description: "hire/edit: its job title, like \"Family Lawyer\". Its name is a human first name, like \"Sabrina\"." },
+        personality: { type: "string", description: "hire/edit: a line or two on how it works and talks, fitted to its expertise (a lawyer careful and plain-spoken, a support agent warm and patient). Left out on a hire, one is drawn from the role." },
+        traits: {
+          type: "object",
+          description: "hire/edit: attributes from 0 to 100, any of them: warmth, candor, rigor, curiosity, humor, initiative, teamwork. Teamwork and its bonds with colleagues grow by themselves as it works with others.",
+          properties: Object.fromEntries(["warmth", "candor", "rigor", "curiosity", "humor", "initiative", "teamwork"].map((t) => [t, { type: "number" }])),
+        },
         instructions: { type: "string", description: "hire/edit: what it is told to be and do each time it is started." },
         when: { type: "string", description: "hire/edit: in plain words, when to call it." },
         reports_to: { type: "string", description: "hire/edit/move: the agent it reports to (id or name). Default the lead." },

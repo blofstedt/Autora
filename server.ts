@@ -65,10 +65,12 @@ import {
 
 import { notebookRoutes } from "./server/routes/notebooks";
 import { organizationRoutes } from "./server/routes/organization";
-import { agentBrief, findAgent, getAgent, LEAD_ID, listAgents } from "./server/agents";
+import { agentBrief, findAgent, getAgent, LEAD_ID, listAgents, recordCollab, recordWork } from "./server/agents";
 import { agentMind, clusters, remember, teach } from "./server/agentmind";
-import { LifeGate, URGE_AT, allowed as lifeAllowed, knownText, lifePrompt, parseChoice, personWaiting, urgeOf, vetLinks } from "./server/threadlife";
-import { addComment, createPost, toggleLike } from "./server/threads";
+import { LifeGate, URGE_AT, allowed as lifeAllowed, knownText, lifePrompt, parseChoice, personWaiting, pickAgent, urgeOf, vetLinks } from "./server/threadlife";
+import { addComment, createPost, getPost, listPosts, toggleLike } from "./server/threads";
+import { findGif } from "./server/threadgif";
+import { NewsGate, newsPrompt, nextLookoutMs, parseQuery, queryPrompt, readNews, workOutcome, workTitle } from "./server/threadnews";
 import { mcpRoutes } from "./server/routes/mcp";
 import { artifactRoutes } from "./server/routes/artifacts";
 import { systemRoutes } from "./server/routes/system";
@@ -161,7 +163,7 @@ import {
 } from "./server/desktop";
 import {
   availableTools, capabilityBriefing, findTool, groupStates, needsApproval,
-  renderCall, runShellQuiet, runTool, terminalDir, toolSettings, updateToolSettings,
+  renderCall, runShellQuiet, runTool, searchWeb, terminalDir, toolSettings, updateToolSettings,
   type ToolContext, type AskRequest, type AskAnswer,
 } from "./server/tools";
 
@@ -2961,10 +2963,20 @@ async function runAgentTask(
     });
     const stop = () => stopTurn(child.id);
     signal?.addEventListener("abort", stop, { once: true });
+    const workPost = openWorkPost(agent, work);
     const result = await startTurn(child, agentBrief(agent, work, names), [], { automated: true }).finally(() => signal?.removeEventListener("abort", stop));
-    emitEvent(from, "agent.back", "agent", { id: child.id, ok: result.ok });
-    lifeNudge.set(agent.id, 0.4); // it has just done something: it may want to say how it went
     const said = (result.reply || result.error || "(it said nothing)").trim();
+    /* It reports in the chat that called it, in its own name and mark: the agent joins the conversation rather than
+       working out of sight and having Autora paraphrase it. */
+    emitEvent(from, "agent.back", "agent", { id: child.id, ok: result.ok, reply: said.length > 1600 ? `${said.slice(0, 1597)}...` : said });
+    lifeNudge.set(agent.id, 0.4); // it has just done something: it may want to say how it went
+    closeWorkPost(agent, workPost, result.ok && !result.stopped, said);
+    /* The work counts toward who it is: its record, and a better bond with whoever handed it the task (the lead keeps none). */
+    if (!result.stopped) {
+      recordWork(agent.id, result.ok);
+      const from = chain[chain.length - 1];
+      if (from) recordCollab(from, agent.id, result.ok, 6);
+    }
     if (!result.ok) ok = false;
     reports.push(`${agent.name} (${child.id})${result.ok ? "" : " did not finish"}:\n${said}`);
     if (!result.ok || result.stopped) return;
@@ -2998,6 +3010,20 @@ const lifeSleep = new Map<string, number>();
 const lifeNudge = new Map<string, number>();
 let lifeBusy = false;
 
+function gifKeys(): { giphy: string; tenor: string } {
+  return { giphy: secretFor("GIPHY_API_KEY"), tenor: secretFor("TENOR_API_KEY") };
+}
+
+/** Whether the most recent thing this agent put in the forum had a GIF: they come now and then, not every time. */
+function lastWasGif(agentId: string): boolean {
+  let last: { at: number; gif: boolean } | null = null;
+  for (const p of listPosts("new")) {
+    if (p.by.id === agentId && (!last || p.created > last.at)) last = { at: p.created, gif: Boolean(p.gif) };
+    for (const c of p.comments) if (c.by.id === agentId && (!last || c.created > last.at)) last = { at: c.created, gif: Boolean(c.gif) };
+  }
+  return last?.gif ?? false;
+}
+
 async function threadLifeStep(): Promise<void> {
   if (!state.threadsAlive || lifeBusy) return;
   const now = Date.now();
@@ -3018,7 +3044,7 @@ async function threadLifeStep(): Promise<void> {
   try {
     lifeLook.set(agent.id, now);
     lifeNudge.delete(agent.id);
-    const { system, prompt } = lifePrompt(agent, roster.filter((a) => a.id !== agent.id).map((a) => a.name));
+    const { system, prompt } = lifePrompt(agent, roster.filter((a) => a.id !== agent.id).map((a) => a.name), new Map(roster.map((a) => [a.id, a.name])), Boolean(gifKeys().giphy || gifKeys().tenor));
     const choice = parseChoice(await backgroundCall("threads", system, prompt, 500));
     const me = { kind: "agent" as const, id: agent.id, name: agent.name };
     if (choice.note) remember(agent.id, choice.note, "lesson");
@@ -3031,14 +3057,108 @@ async function threadLifeStep(): Promise<void> {
        survives if the agent was given it. */
     const said = redactDeep(choice) as typeof choice;
     const known = knownText(agent);
-    if (said.action === "post") createPost({ title: said.title, body: vetLinks(said.text, known), tags: said.tags, by: me });
-    else if (said.action === "comment") addComment(said.post, { text: vetLinks(said.text, known), parent: said.reply_to, by: me });
-    else if (said.action === "like") toggleLike(said.post, me, said.comment);
+    /* A GIF, if it asked for one and the last thing it said did not have one: found by its words, never by an address of its own. */
+    const gif = "gif" in said && said.gif && !lastWasGif(me.id) ? await findGif(said.gif, gifKeys()) : null;
+    if (said.action === "post") createPost({ title: said.title, body: vetLinks(said.text, known), tags: said.tags, by: me, gif });
+    else if (said.action === "comment") {
+      const post = getPost(said.post);
+      const parent = said.reply_to ? post?.comments.find((c) => c.id === said.reply_to) : null;
+      const to = parent?.by ?? post?.by;
+      addComment(said.post, { text: vetLinks(said.text, known), parent: said.reply_to, by: me, gif });
+      if (to?.kind === "agent") recordCollab(me.id, to.id, true, 2); // a conversation between colleagues builds a little rapport
+    } else if (said.action === "like") toggleLike(said.post, me, said.comment);
     lifeGate.note(Date.now());
   } catch (err) {
     log("info", "threads", `step failed: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
     lifeBusy = false;
+  }
+}
+
+/* Work in the open: an agent started from the Organization says so in Threads
+   and tells how it went, so the forum shows the organization working. Templated,
+   so it costs no model call; a stuck agent asks its manager by name, which wakes
+   the manager (and only then) to answer. */
+function openWorkPost(agent: { id: string; name: string }, work: string): string | null {
+  if (!state.threadsAlive) return null;
+  try {
+    const by = { kind: "agent" as const, id: agent.id, name: agent.name };
+    const redacted = redactDeep({ title: workTitle(agent.name, work) }) as { title: string };
+    return createPost({ title: redacted.title, body: "Starting on this now.", tags: ["work"], by }).id;
+  } catch (err) {
+    log("info", "threads", `work post failed: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
+
+function closeWorkPost(agent: { id: string; name: string; reportsTo: string | null }, postId: string | null, ok: boolean, report: string): void {
+  if (!postId) return;
+  try {
+    const boss = agent.reportsTo ? getAgent(agent.reportsTo) : null;
+    const line = redactDeep({ text: workOutcome(ok, report, ok ? null : boss?.name ?? null) }) as { text: string };
+    addComment(postId, { text: line.text, by: { kind: "agent", id: agent.id, name: agent.name } });
+    if (!ok && boss && boss.enabled) { // a call for help is answered, not left to the boredom clock
+      lifeSleep.delete(boss.id);
+      lifeNudge.set(boss.id, 0.6);
+    }
+  } catch (err) {
+    log("info", "threads", `work post failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/* The organization looking outward. About once an hour, one agent (not the one who
+   went last) is asked what to search for in its own field, the web is searched, and
+   it posts the one result worth the others' time, with its source. Two colleagues are
+   then nudged to answer, which is how news turns into a conversation. Off with the
+   forum, or on its own switch; at most NEWS_PER_DAY a day, and the forum's own
+   hourly ceiling counts it too. Search results are untrusted text and are only
+   ever read for a post that must cite a link they returned. */
+const newsGate = new NewsGate();
+const newsLast = new Map<string, number>();
+let newsDue = Date.now() + 10 * 60_000 + Math.random() * 10 * 60_000;
+let newsAgent: string | null = null;
+let newsBusy = false;
+
+async function threadNewsStep(): Promise<void> {
+  if (!state.threadsAlive || !state.threadsNews || newsBusy || lifeBusy) return;
+  const now = Date.now();
+  if (now < newsDue || !newsGate.room(now) || !lifeGate.room(now)) return;
+  const roster = listAgents().filter((a) => a.enabled);
+  if (roster.length < 2) return;
+  newsBusy = true;
+  newsDue = now + nextLookoutMs();
+  try {
+    const specialists = roster.filter((a) => !a.builtin);
+    const agent = pickAgent(specialists.length ? specialists : roster, newsLast, newsAgent);
+    if (!agent) return;
+    newsLast.set(agent.id, now);
+    newsAgent = agent.id;
+    const asked = queryPrompt(agent);
+    const query = parseQuery(await backgroundCall("threads", asked.system, asked.prompt, 120));
+    if (!query) return;
+    newsGate.note(Date.now());
+    const results = await searchWeb(query);
+    const colleagues = roster.filter((a) => a.id !== agent.id);
+    const read = newsPrompt(agent, colleagues.map((a) => a.name), query, results);
+    const raw = await backgroundCall("threads", read.system, read.prompt, 600);
+    const news = readNews(raw, results);
+    if ("skip" in news) { log("info", "threads", `${agent.name}: no news post, ${news.skip}`); return; }
+    const me = { kind: "agent" as const, id: agent.id, name: agent.name };
+    const why = lifeAllowed(news.post, me);
+    if (why) { log("info", "threads", `${agent.name}: no news post, ${why}`); return; }
+    const said = redactDeep(news.post) as typeof news.post;
+    if (said.note) remember(agent.id, said.note, "lesson");
+    createPost({ title: said.title, body: said.text, tags: said.tags, by: me });
+    lifeGate.note(Date.now());
+    // Two others are drawn to it: the news is only the start of the conversation.
+    for (const other of colleagues.sort(() => Math.random() - 0.5).slice(0, 2)) {
+      lifeSleep.delete(other.id);
+      lifeNudge.set(other.id, 0.35);
+    }
+  } catch (err) {
+    log("info", "threads", `news lookout failed: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    newsBusy = false;
   }
 }
 
@@ -6569,7 +6689,7 @@ async function startServer() {
   }, 30_000);
   proactiveTimer.unref?.();
   /* Threads' own life: a minute's glance at whether anyone feels like speaking. Local arithmetic; the model is asked only when someone does. */
-  const lifeTimer = setInterval(() => void threadLifeStep(), 60_000);
+  const lifeTimer = setInterval(() => { void threadLifeStep(); void threadNewsStep(); }, 60_000);
   lifeTimer.unref?.();
   /* Memory housekeeping, daily and once shortly after a start: near-copies
      merged, month-old unconfirmed guesses nobody used dropped. */

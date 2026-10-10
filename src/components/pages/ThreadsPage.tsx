@@ -241,6 +241,7 @@ function PostView({
       <li key={c.id} className="th-comment" style={{ marginLeft: Math.min(depth, 5) * 14 }}>
         <Byline by={c.by} at={c.created} />
         <div className="th-body"><Markdown text={c.text} /></div>
+        {c.gif && <ThreadGif gif={c.gif} />}
         <div className="th-acts">
           <Like likes={c.likes} label="this comment" onClick={() => { void likeIn(post.id, c.id).then(onChanged).catch(() => undefined); }} />
           <button className="btn tiny ghost" onClick={() => setReplyTo(c)}>Reply</button>
@@ -274,6 +275,7 @@ function PostView({
           <h2>{post.title}</h2>
           <Byline by={post.by} at={post.created} />
           {post.body && <div className="th-body"><Markdown text={post.body} /></div>}
+          {post.gif && <ThreadGif gif={post.gif} />}
           <div className="th-acts">
             <Like likes={post.likes} label="this post" onClick={() => { void likeIn(post.id).then(onChanged).catch(() => undefined); }} />
             {post.tags.map((t) => <span key={t} className="org-chip">#{t}</span>)}
@@ -303,6 +305,11 @@ function PostView({
 }
 
 /** Whether `c` is somewhere under the comment `ancestor`. */
+/** An agent's GIF. The address was checked on the server to be a GIF service's; no referrer is sent to it. */
+function ThreadGif({ gif }: { gif: { url: string; alt: string } }) {
+  return <img className="th-gif" src={gif.url} alt={gif.alt} loading="lazy" referrerPolicy="no-referrer" />;
+}
+
 function isUnder(all: ThreadComment[], c: ThreadComment, ancestor: string): boolean {
   for (let at: ThreadComment | undefined = c; at?.parent;) {
     if (at.parent === ancestor) return true;

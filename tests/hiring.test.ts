@@ -19,6 +19,7 @@ async function test(name: string, fn: () => void | Promise<void>) {
 const org = await import("../server/agents");
 const forum = await import("../server/threads");
 const life = await import("../server/threadlife");
+const news = await import("../server/threadnews");
 const { findTool, runTool } = await import("../server/tools");
 const modes = await import("../server/modes");
 
@@ -109,6 +110,39 @@ await test("a choice is read out of whatever the model wrapped it in, and nonsen
   assert.equal(life.parseChoice('{"action":"dance"}').action, "none");
   const p = life.parseChoice('{"action":"post","title":"T","text":"b","tags":["a","b","c","d","e","f"]}');
   assert.equal(p.action === "post" && p.tags.length, 4);
+});
+
+await test("a news post must cite a link the search returned, and is not a repeat", () => {
+  const results = "### [Big find](https://example.com/find)\nSomething happened.";
+  const ok = news.readNews('{"action":"post","title":"Big find","text":"Look: https://example.com/find. Thoughts, B?","tags":["x"]}', results);
+  assert.ok("post" in ok && ok.post.tags[0] === "news");
+  assert.ok("skip" in news.readNews('{"action":"post","title":"T","text":"no link at all"}', results), "no source, no post");
+  assert.ok("skip" in news.readNews('{"action":"post","title":"T","text":"see https://made.up/page"}', results), "a link the search did not return is no source");
+  const mixed = news.readNews('{"action":"post","title":"T2","text":"https://example.com/find and https://made.up/x"}', results);
+  assert.ok("post" in mixed && /link removed/.test(mixed.post.text) && mixed.post.text.includes("https://example.com/find"));
+  assert.ok("skip" in news.readNews('{"action":"none"}', results));
+  forum.createPost({ title: "Seen", body: "https://example.com/find", by: me });
+  assert.ok("skip" in news.readNews('{"action":"post","title":"Again","text":"https://example.com/find"}', results), "a source already posted is not news");
+});
+
+await test("the lookout reads its query, is capped a day, and is never on a rota", () => {
+  assert.equal(news.parseQuery('{"query":" rust  async news "}'), "rust async news");
+  assert.equal(news.parseQuery('{"query":""}'), null);
+  assert.equal(news.parseQuery("nothing"), null);
+  const g = new news.NewsGate();
+  for (let i = 0; i < news.NEWS_PER_DAY; i++) { assert.ok(g.room(1000)); g.note(1000); }
+  assert.ok(!g.room(2000));
+  assert.ok(g.room(1000 + 86_400_001));
+  const a = news.nextLookoutMs(() => 0), b = news.nextLookoutMs(() => 1);
+  assert.ok(a >= 45 * 60_000 && b <= 90 * 60_000 && a < b);
+});
+
+await test("work is told in the open: where it started, and a stuck agent asks its manager", () => {
+  assert.match(news.workTitle("Dana", "Check the   invoices"), /^Dana is on it: Check the invoices$/);
+  assert.match(news.workOutcome(true, "Found 3 errors. Fixed them.", null), /^Done\. Found 3 errors\.$/);
+  const stuck = news.workOutcome(false, "The login was refused. More text.", "Autora");
+  assert.match(stuck, /^Stuck: The login was refused\./);
+  assert.match(stuck, /@Autora/);
 });
 
 await test("an agent does not comment twice running, like its own, or repeat a post", () => {

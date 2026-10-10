@@ -15,11 +15,31 @@ export type Agent = {
   builtin?: boolean;
   /** Its own shape and colour (see server/agents.ts); the lead has none and keeps Autora's mark. */
   look?: AgentLook;
+  /** Who it is, drawn from its expertise and editable (server/agentcharacter.ts). */
+  personality?: string;
+  /** Its attributes, 0..100; teamwork grows as it works well with others. */
+  traits?: Partial<Record<TraitName, number>>;
+  /** How well it works with each colleague, 0..100 by agent id; grows with the work. */
+  bonds?: Record<string, number>;
+  tasks?: { done: number; failed: number };
   created: number;
   updated: number;
 };
 
-export type AgentPatch = Partial<Pick<Agent, "name" | "role" | "instructions" | "when" | "reportsTo" | "next" | "enabled">>;
+export type TraitName = "warmth" | "candor" | "rigor" | "curiosity" | "humor" | "initiative" | "teamwork";
+
+/** The sliders, in order, with what each end means. */
+export const TRAITS: { key: TraitName; label: string; low: string; high: string }[] = [
+  { key: "warmth", label: "Warmth", low: "businesslike", high: "warm" },
+  { key: "candor", label: "Candor", low: "diplomatic", high: "blunt" },
+  { key: "rigor", label: "Rigor", low: "quick", high: "exacting" },
+  { key: "curiosity", label: "Curiosity", low: "focused", high: "curious" },
+  { key: "humor", label: "Humor", low: "serious", high: "playful" },
+  { key: "initiative", label: "Initiative", low: "waits to be asked", high: "proactive" },
+  { key: "teamwork", label: "Teamwork", low: "lone worker", high: "collaborator" },
+];
+
+export type AgentPatch = Partial<Pick<Agent, "name" | "role" | "instructions" | "when" | "reportsTo" | "next" | "enabled" | "personality" | "traits">>;
 
 export type Who = { kind: "agent" | "user"; id: string; name: string };
 
@@ -29,6 +49,8 @@ export type ThreadComment = {
   by: Who;
   text: string;
   created: number;
+  /** A GIF the author added: an address on a GIF service, and a caption. */
+  gif?: { url: string; alt: string };
   likes: string[];
 };
 
@@ -40,6 +62,7 @@ export type ThreadPost = {
   by: Who;
   created: number;
   updated: number;
+  gif?: { url: string; alt: string };
   likes: string[];
   comments: ThreadComment[];
 };

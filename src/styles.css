@@ -2480,8 +2480,8 @@ label + .jf-hint { margin-top: -5px; }
 .todo-tick {
   fill: none; stroke: #fff; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round;
   stroke-dasharray: 1; stroke-dashoffset: 1; opacity: 0; filter: drop-shadow(0 0 0 rgba(52, 211, 153, 0));
-  transition: stroke-dashoffset 0.32s cubic-bezier(0.3, 0.9, 0.4, 1) 0.14s, opacity 0.06s linear 0.14s,
-    filter 0.5s ease 0.3s;
+  transition: stroke-dashoffset 0.6s cubic-bezier(0.3, 0.9, 0.4, 1) 0.3s, opacity 0.06s linear 0.3s,
+    filter 0.6s ease 0.8s;
 }
 .todo-item.is-doing { background: rgba(var(--glow-rgb), 0.08); }
 .todo-item.is-doing .todo-rect {
@@ -2499,15 +2499,15 @@ label + .jf-hint { margin-top: -5px; }
 .todo-words {
   background: linear-gradient(currentColor, currentColor) no-repeat 0 58% / 0% 2px;
   -webkit-box-decoration-break: clone; box-decoration-break: clone;
-  transition: background-size 0.5s cubic-bezier(0.4, 0, 0.2, 1) 0.3s, color 0.3s ease 0.3s;
+  transition: background-size 0.9s cubic-bezier(0.4, 0, 0.2, 1) 1s, color 0.4s ease 1s;
 }
 .todo-item.is-done { color: var(--text-3); }
 .todo-item.is-done .todo-words { background-size: 100% 2px; }
 /* The moment a task is ticked off, and only that moment (TodoList `fresh`): the box pops and a ring of its colour
    leaves it, a beat before the tick draws itself. */
 .todo-burst { fill: none; stroke: #34d399; stroke-width: 2; opacity: 0; transform-origin: 10px 10px; }
-.todo-item.is-fresh.is-done .todo-burst { animation: todoBurst 0.7s cubic-bezier(0.2, 0.7, 0.3, 1) 0.1s both; }
-.todo-item.is-fresh.is-done .todo-rect { transform-box: fill-box; transform-origin: center; animation: todoPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.todo-item.is-fresh.is-done .todo-burst { animation: todoBurst 0.9s cubic-bezier(0.2, 0.7, 0.3, 1) 0.1s both; }
+.todo-item.is-fresh.is-done .todo-rect { transform-box: fill-box; transform-origin: center; animation: todoPop 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
 @keyframes todoBurst { 0% { opacity: 0.9; transform: scale(0.8); } 100% { opacity: 0; transform: scale(2.1); } }
 @keyframes todoPop { 0% { transform: scale(0.8); } 55% { transform: scale(1.18); } 100% { transform: scale(1); } }
 @keyframes todoMarch { to { stroke-dashoffset: -7.2; } }
@@ -6965,6 +6965,7 @@ body.is-resizing iframe { pointer-events: none; }
 .rail.is-mini .rail-nav-item > span { display: none; }
 .rail.is-mini .rail-nav-item .rail-tag { display: none; }
 .rail.is-mini .rail-nav-item:has(.rail-tag.is-alert)::after { content: ""; position: absolute; top: 6px; right: 10px; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
+.rail.is-mini .rail-nav-item:has(.rail-tag.is-grew)::after { content: ""; position: absolute; top: 6px; right: 10px; width: 7px; height: 7px; border-radius: 50%; background: var(--glow-light); }
 .rail.is-mini .rail-divider { margin: 6px 8px; }
 .rail-ctxbar { flex: 1 1 auto; min-height: 60px; margin-top: 10px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .rail-ctxbar-pct { font-size: 10px; font-weight: 650; color: var(--text-3); font-variant-numeric: tabular-nums; }
@@ -7695,3 +7696,35 @@ body.is-resizing iframe { pointer-events: none; }
   .org-card { width: 100%; max-width: 340px; }
   .org-toggle { position: static; transform: none; margin: 6px 0 0 14px; }
 }
+
+/* An agent's attributes: a slider each, the words at its two ends on either side. */
+.org-traits { border: 1px solid var(--border); border-radius: var(--r); padding: 8px 12px 10px; margin: 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.org-traits legend { padding: 0 6px; font-size: calc(12px * var(--ts, 1)); color: var(--text-2); }
+.org-traits legend small { color: var(--text-3); }
+.org-trait { display: grid; grid-template-columns: 78px minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr); align-items: center; gap: 8px; font-size: calc(12px * var(--ts, 1)); color: var(--text-2); }
+.org-trait small { color: var(--text-3); font-size: calc(10.5px * var(--ts, 1)); }
+.org-trait small:last-child { text-align: right; }
+.org-trait input[type="range"] { width: 100%; min-width: 0; accent-color: var(--accent); }
+@media (max-width: 560px) { .org-trait { grid-template-columns: 70px minmax(0, 1fr); } .org-trait small { display: none; } }
+
+/* An agent's own report in the chat, under the line that announced it. */
+.chime-report { margin-top: 6px; padding: 8px 10px; border-left: 2px solid var(--accent-line); border-radius: 0 var(--r-sm, 8px) var(--r-sm, 8px) 0; background: var(--s2); font-size: calc(13px * var(--ts, 1)); color: var(--text); overflow-wrap: anywhere; }
+.chime-report.is-bad { border-left-color: var(--bad, #f87171); }
+.chime-report > :first-child { margin-top: 0; }
+.chime-report > :last-child { margin-bottom: 0; }
+
+/* The Mind, one agent at a time: the chooser, and an agent's profile. */
+.mind-whose { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+.agent-profile { display: flex; flex-direction: column; gap: 14px; }
+.agent-profile-head { display: flex; align-items: center; gap: 12px; }
+.agent-profile-head h3 { margin: 0; }
+.agent-profile-head h3 span { font-weight: 450; color: var(--text-3); }
+.agent-profile-head p { margin: 2px 0 0; }
+.agent-bonds { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.agent-bonds li { display: grid; grid-template-columns: minmax(70px, 140px) 1fr 32px; align-items: center; gap: 10px; font-size: calc(12.5px * var(--ts, 1)); }
+.agent-bond-bar { height: 5px; border-radius: 3px; background: var(--s3); overflow: hidden; }
+.agent-bond-bar i { display: block; height: 100%; background: var(--live); }
+.agent-bonds small { color: var(--text-3); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* A GIF an agent added to a post or comment. */
+.th-gif { display: block; max-width: min(280px, 100%); max-height: 240px; margin-top: 6px; border-radius: var(--r); background: var(--s3); }
