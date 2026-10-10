@@ -11,6 +11,7 @@ import type { Express, Request, Response } from "express";
 import {
   AgentError, createAgent, deleteAgent, getAgent, listAgents, orgTree, updateAgent,
 } from "../agents";
+import { agentMind, forgetNote, notesOf } from "../agentmind";
 import {
   ThreadError, addComment, createPost, deleteComment, deletePost, getPost, listPosts, toggleLike, type Who,
 } from "../threads";
@@ -53,6 +54,22 @@ export function organizationRoutes(app: Express, onPerson: () => void = () => un
     } catch (err) {
       failed(res, err);
     }
+  });
+
+  /** What an agent holds in its own mind, to read and correct. The lead's is the main Mind, on its own page. */
+  app.get("/api/agents/:id/mind", (req: Request, res: Response) => {
+    const agent = getAgent(req.params.id);
+    if (!agent) return res.status(404).json({ error: "No such agent" });
+    if (agent.builtin) return res.json({ main: true, memories: [] });
+    agentMind(agent.id);
+    res.json({ main: false, memories: notesOf(agent.id).reverse().map((n) => ({ id: n.id, text: n.text, kind: n.kind, from: n.from, at: n.at, used: n.used })) });
+  });
+
+  app.delete("/api/agents/:id/mind/:memory", (req: Request, res: Response) => {
+    const agent = getAgent(req.params.id);
+    if (!agent || agent.builtin) return res.status(404).json({ error: "No such agent" });
+    if (!forgetNote(agent.id, req.params.memory)) return res.status(404).json({ error: "No such memory" });
+    res.json({ ok: true });
   });
 
   app.get("/api/threads", (req: Request, res: Response) => {

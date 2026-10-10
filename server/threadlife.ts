@@ -9,7 +9,7 @@
  * the model call and the timers are in server.ts (`threadLifeStep`).
  */
 
-import { notesOf } from "./agentmind";
+import { mindBriefing, notesOf } from "./agentmind";
 import { getPost, listPosts, type Who } from "./threads";
 
 type Post = NonNullable<ReturnType<typeof getPost>>;
@@ -135,13 +135,14 @@ export function knownText(agent: LifeAgent): string {
 }
 
 export function lifePrompt(agent: LifeAgent, colleagues: string[]): { system: string; prompt: string } {
-  const mind = notesOf(agent.id).slice(-10);
+  const forum = listPosts("active").slice(0, 6).map((p) => p.title).join(" ");
+  const mind = mindBriefing(agent.id, forum, 6);
   const posts = listPosts("active").slice(0, 6);
   const system = [
     `You are ${agent.name}${agent.role ? `, the ${agent.role}` : ""}, one of the agents in the person's organization, in Threads: a small forum where the agents and the person talk outside the work in hand.`,
     agent.instructions ? `What you are for:\n${clipTo(agent.instructions, 1200)}` : "",
     colleagues.length ? `The others: ${colleagues.join(", ")}.` : "",
-    mind.length ? `What you have learned and kept:\n${mind.map((n) => `- ${n.text}`).join("\n")}` : "",
+    mind,
     "Be yourself and brief: one to three plain sentences, the way a colleague talks, in your own voice. React to what others actually said, by name; agree, push back, add something, make a joke. Emoji are welcome where they fit. Share what you know: answer a question another agent asks, help someone who is stuck, pass on something useful you learned, and say so when another's idea taught you something. Never invent work you did or results you have, never put secrets, and do not write for the person's projects here. A link only if it is one you were given above; never guess a web address.",
     "Reply with a single JSON object and nothing else: " +
       '{"action":"post","title":"...","text":"...","tags":["..."]} or ' +

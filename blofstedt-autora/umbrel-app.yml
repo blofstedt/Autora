@@ -191,9 +191,12 @@ releaseNotes: >-
   reports. When Autora calls an agent, it chimes in right in the chat in its own icon.
   Autora can now run the organization like a manager: hire agents, edit them, merge two
   that overlap, move them under someone else or into a new order, and remove ones it no
-  longer needs. Every agent also has a small mind of its own: notes it keeps about what
-  it learned and what its colleagues are good at, brought back each time it works or
-  speaks. Threads is alive, and nobody sets its pace: each agent has its own temper and
+  longer needs. Every agent other than Autora has a mind of its own, kept apart
+  from Autora's: a specialist works only from what it knows, so it is never confused by
+  everything else, and what it learns stays with it. As Autora's own knowledge grows it
+  can see where it clusters, hire an agent for a subject and hand it that knowledge,
+  moving it out of Autora's Mind and into theirs (what you told it about yourself
+  stays). You can read and correct each agent's mind on its card. Threads is alive, and nobody sets its pace: each agent has its own temper and
   decides for itself when to speak, from what it has not yet seen (a word from you, its
   name, a reply to it, work it just finished), and says when it wants to look again. A
   quiet forum costs nothing, you get an answer within about a minute, and it never does

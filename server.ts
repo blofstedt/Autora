@@ -66,7 +66,7 @@ import {
 import { notebookRoutes } from "./server/routes/notebooks";
 import { organizationRoutes } from "./server/routes/organization";
 import { agentBrief, findAgent, getAgent, LEAD_ID, listAgents } from "./server/agents";
-import { remember } from "./server/agentmind";
+import { agentMind, clusters, remember, teach } from "./server/agentmind";
 import { LifeGate, URGE_AT, allowed as lifeAllowed, knownText, lifePrompt, parseChoice, personWaiting, urgeOf, vetLinks } from "./server/threadlife";
 import { addComment, createPost, toggleLike } from "./server/threads";
 import { mcpRoutes } from "./server/routes/mcp";
@@ -271,6 +271,17 @@ function saveMemory() {
 
 /** The graph's rules (recall, merging, confirming) over the arrays above. */
 const mind = new MemoryGraph(memoryRecords, memoryLinks, saveMemory);
+
+/**
+ * The mind a chat works from. Autora, the base agent, is the main Mind; a chat
+ * that is another agent of the Organization at work has that agent's own (see
+ * server/agentmind.ts), so a specialist recalls, learns and writes only what is
+ * its own and is never confused by what Autora knows about everything else.
+ */
+function mindForId(sessionId: string): MemoryGraph {
+  const run = agentRuns.get(sessionId);
+  return run && run.agent !== LEAD_ID ? agentMind(run.agent) : mind;
+}
 
 /** Triggers: work that starts because something outside said so. */
 const triggers: Trigger[] = [];
@@ -2282,7 +2293,7 @@ const NAMED_SITE = /\bhttps?:\/\/([a-z0-9.-]+\.[a-z]{2,})|\b((?:[a-z0-9-]+\.)+(?
  * turn starts: the agent reads the official documentation for a site it has
  * nothing current on before it acts there (and the gate holds it to that).
  */
-function groundingNote(said: string): string | null {
+function groundingNote(said: string, mind: MemoryGraph): string | null {
   const sites = new Set<string>();
   for (const m of said.matchAll(NAMED_SITE)) {
     const site = siteOf(m[1] ?? m[2] ?? "");
@@ -2529,7 +2540,7 @@ async function systemInstructionFor(
   const asked = own ? requirementsBriefing(latestRequirements(own.events)) : null;
   if (asked) notes.push(asked);
   /* Sites the message names, and whether anything current is stored about how each works. */
-  const grounding = state.groundFirst ? groundingNote(said) : null;
+  const grounding = state.groundFirst ? groundingNote(said, mindForId(sessionId)) : null;
   if (grounding) notes.push(grounding);
   /* What it worked out, which the history (words only) cannot carry. */
   const working = own ? ledgerBriefing(latestLedger(own.events), touchedThings(own.events)) : null;
@@ -3191,6 +3202,7 @@ async function reflect(session: Session, request: string, startSeq: number, prev
      record of a conversation that was meant to leave none. */
   if (session.incognito) return [];
   if (!state.learning || !toolSettings().memory.enabled) return [];
+  const mind = mindForId(session.id);
   if (!worthReflecting({ request, ranSomething: result.ranSomething, stopped: result.stopped, ok: result.ok })) return [];
   const recalled = result.recalled.map((id) => mind.get(id)).filter((m): m is MemoryRecord => Boolean(m));
   const nearby = mind.recall(`${request}\n${result.reply.slice(0, 1000)}`, 8, false)
@@ -3615,6 +3627,8 @@ const COLLABORATION = [
 /** The agent loop for one turn. See startTurn. */
 async function runTurn(session: Session, text: string, opts: TurnOptions = {}): Promise<TurnResult> {
   const result: TurnResult = { ok: false, reply: "", ranSomething: false, stopped: false, error: null, recalled: [] };
+  /** Whose mind this turn reads and writes: Autora's, or the agent's own. */
+  const mind = mindForId(session.id);
   /** Whether turn.agent.done has been said, so a late failure says it once. */
   let closed = false;
 
@@ -4114,6 +4128,29 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           return {
             self: { id: me.id, name: me.name },
             run: (agent: string, task: string) => runAgentTask(session, agent, task, running.get(session.id)?.signal),
+            mind: {
+              domains: () => {
+                const cs = clusters(mind);
+                return cs.length
+                  ? `Where your Mind clusters by subject (${mind.active().length} memories in all):\n` +
+                    cs.map((c) => `- ${c.name}: ${c.count} (${c.samples.join("; ")})`).join("\n")
+                  : "Nothing in your Mind has grown into a subject of its own yet.";
+              },
+              teach: (agent: string, query: string, move: boolean) => {
+                const to = findAgent(agent);
+                if (!to || to.id === me.id) return { ok: false, summary: "Say which other agent (agent) to hand it to." };
+                if (!query.trim()) return { ok: false, summary: "Say what the knowledge is about (query)." };
+                if (to.id === LEAD_ID) return { ok: false, summary: "Autora's Mind is the main one; knowledge is handed to the other agents." };
+                const given = teach(mind, to.id, query, move);
+                return given.length
+                  ? {
+                    ok: true,
+                    summary: `${move ? "Moved" : "Copied"} ${given.length} memor${given.length === 1 ? "y" : "ies"} about "${query}" ${move ? "out of your Mind and " : ""}into ${to.name}'s own mind:\n` +
+                      given.map((r) => `- ${r.title}`).join("\n") + `\nCall ${to.name} for this subject from now on.`,
+                  }
+                  : { ok: true, summary: `Nothing in your Mind matches "${query}" (preferences about the person are never handed on).` };
+              },
+            },
           };
         })(),
         held: (surface, subject) => presenceFor(session.id).blocked(surface, subject),
@@ -6541,6 +6578,8 @@ async function startServer() {
     if (merged || dropped || unlinked) {
       log("info", "memory", `tidied: ${merged} merged, ${dropped} dropped, ${unlinked} dead links`);
     }
+    // Each agent's own mind is tidied the same way.
+    for (const a of listAgents()) if (a.id !== LEAD_ID) agentMind(a.id).consolidate();
   };
   setTimeout(tidy, 5 * 60_000).unref();
   setInterval(tidy, 24 * 3600_000).unref();

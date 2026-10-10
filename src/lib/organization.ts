@@ -94,6 +94,11 @@ export const createAgent = (input: AgentPatch) =>
   call<{ agent: Agent }>("/api/agents", json("POST", input)).then((d) => d.agent);
 export const updateAgent = (id: string, patch: AgentPatch) =>
   call<{ agent: Agent }>(`/api/agents/${id}`, json("PATCH", patch)).then((d) => d.agent);
+export type AgentMemory = { id: string; text: string; kind: string; from: string; at: number; used: number };
+export const fetchMind = (id: string) =>
+  call<{ main: boolean; memories: AgentMemory[] }>(`/api/agents/${id}/mind`);
+export const forgetMemory = (id: string, memory: string) =>
+  call<{ ok: true }>(`/api/agents/${id}/mind/${memory}`, { method: "DELETE" });
 export const deleteAgent = (id: string) => call<{ ok: true }>(`/api/agents/${id}`, { method: "DELETE" });
 
 export const fetchPosts = (sort: ThreadSort) =>

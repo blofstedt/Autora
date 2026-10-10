@@ -130,7 +130,7 @@ export const filesSPECS: ToolSpec[] = [
       "The organization: the agents on the Organization page, each with its own task, who it reports to and which " +
       "agents follow it. You run it. Actions: list (the whole map, with when to call each); run (agent, task: start " +
       "that agent on a task in a chat of its own and wait for its report -- when it has a 'then hands to' list those " +
-      "agents follow in order, each given the report before); note (text, and kind fact, lesson, tip or colleague: keep one " +
+      "agents follow in order, each given the report before); domains (where your own Mind clusters by subject, to decide who to hire); teach (agent, query, move: hand the memories that match query to that agent's own mind, moving them out of yours unless move is false); note (text, and kind fact, lesson, tip or colleague: keep one " +
       "sentence in your own mind -- what you learned, what works, what a colleague is good at -- so it is in front of you " +
       "next time; agent defaults to you); hire (name, role, instructions, when; optionally " +
       "reports_to and next -- a new agent for a kind of work that keeps coming up); edit (agent, then any of name, role, " +
@@ -142,7 +142,7 @@ export const filesSPECS: ToolSpec[] = [
     parameters: {
       type: "object",
       properties: {
-        action: { type: "string", enum: ["list", "run", "note", "hire", "edit", "merge", "remove", "move"] },
+        action: { type: "string", enum: ["list", "run", "domains", "teach", "note", "hire", "edit", "merge", "remove", "move"] },
         agent: { type: "string", description: "run/edit/merge/remove/move: the agent's id (agent_...) or name." },
         task: { type: "string", description: "run: what it should do, complete enough to work from alone -- it has not seen this chat." },
         name: { type: "string", description: "hire/edit: its name." },
@@ -153,6 +153,9 @@ export const filesSPECS: ToolSpec[] = [
         next: { type: "array", items: { type: "string" }, description: "hire/edit: agents that follow it, in order." },
         enabled: { type: "boolean", description: "edit: switch it off or on." },
         text: { type: "string", description: "note: the one sentence to keep." },
+        query: { type: "string", description: "teach: what the knowledge to hand over is about, in a few words." },
+        knowledge: { type: "string", description: "hire: what the new agent should be given from your Mind, in a few words (as teach's query)." },
+        move: { type: "boolean", description: "teach/hire: take it out of your Mind as well (default true)." },
         kind: { type: "string", enum: ["fact", "lesson", "tip", "colleague"], description: "note: what sort of thing it is. Default lesson." },
         into: { type: "string", description: "merge: the agent that keeps going and takes on this one's job." },
         position: { type: "number", description: "move: its place among the agents with the same boss, counting from 1." },

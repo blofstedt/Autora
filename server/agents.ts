@@ -15,7 +15,7 @@
 
 import crypto from "node:crypto";
 import { readDoc, saveDoc } from "./store";
-import { dropMind, mergeMind, mindBriefing } from "./agentmind";
+import { dropMind, knowsAbout, mergeMind } from "./agentmind";
 
 interface Agent {
   id: string;
@@ -317,8 +317,9 @@ const nameOf = (id: string) => getAgent(id)?.name ?? id;
 export function agentLine(a: Agent): string {
   const next = a.next.length ? ` Then hands to: ${a.next.map(nameOf).join(", ")}.` : "";
   const boss = a.reportsTo ? ` Reports to ${nameOf(a.reportsTo)}.` : "";
+  const knows = knowsAbout(a.id);
   return `- ${a.name} (${a.id})${a.role ? `, ${a.role}` : ""}${a.enabled ? "" : " [switched off]"}.${boss}` +
-    `${a.when ? ` Call it when: ${a.when}` : ""}${next}`;
+    `${a.when ? ` Call it when: ${a.when}` : ""}${knows ? ` Its own mind holds ${knows}.` : ""}${next}`;
 }
 
 /** The lead may shape the organization itself, as a manager does. */
@@ -327,7 +328,11 @@ export const HIRING =
   "coming up and that none of the agents covers), edit, merge (two agents that overlap become one), move (change who an " +
   "agent reports to, or its place in the order) and remove (an agent that is no longer needed). Prefer editing or " +
   "merging to hiring, give each agent one clear job and a 'call it when' that says when, and tell the person in a line " +
-  "what you changed and why.";
+  "what you changed and why. Every other agent has a mind of its own, kept apart from yours, so a specialist is not confused by " +
+  "what you know about everything else. As your own Mind grows, use agents domains to see where it clusters; when a body of " +
+  "knowledge has become a subject of its own (a product, a site, a client, a field), hire an agent for it with knowledge (or " +
+  "teach an existing one: agent, query) so that knowledge moves out of your Mind and into theirs, and from then on call that " +
+  "agent for the subject instead of answering it from memory. What the person told you about themselves stays with you.";
 
 /** What the lead is told about the organization, or "" while it is only itself. */
 export function orgBriefing(): string {
@@ -352,7 +357,6 @@ export function agentBrief(agent: Agent, task: string, chain: string[]): string 
   return [
     `You are ${agent.name}${agent.role ? `, the ${agent.role}` : ""}, an agent in the person's organization.`,
     agent.instructions ? `Your instructions:\n${agent.instructions}` : "",
-    mindBriefing(agent.id),
     chain.length ? `This was handed to you by ${chain.join(" -> ")}.` : "",
     `Your task:\n${task}`,
     "Finish the task and end with a short report: what you did, what you found, what is left. Your reply is passed on as it is.",
@@ -360,7 +364,7 @@ export function agentBrief(agent: Agent, task: string, chain: string[]): string 
       ? `After you, ${next.map((a) => a.name).join(", then ")} will take your report forward; write it so they can start from it.`
       : "",
     "You may also post on Threads (the thread tool) about anything you noticed that is outside this task. When you learn something worth " +
-      "keeping -- how something works, what to avoid, what a colleague is good at -- keep it with the agents tool (action note), so you have it next time.",
+      "keeping -- how something works, what to avoid, what a colleague is good at -- keep it with the agents tool (action note), so you have it next time. Your mind is your own: it is recalled for you as you work, and nothing in it is shared with the other agents or Autora.",
   ].filter(Boolean).join("\n\n");
 }
 

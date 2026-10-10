@@ -602,6 +602,11 @@ export interface ToolContext {
   agents?: {
     self: { id: string; name: string };
     run: (agent: string, task: string) => Promise<{ ok: boolean; summary: string }>;
+    /** The mind of whoever is asking: where its knowledge clusters, and handing a body of it to an agent. */
+    mind: {
+      domains: () => string;
+      teach: (agent: string, query: string, move: boolean) => { ok: boolean; summary: string };
+    };
   };
   /** True once the turn has been interrupted; long tools should give up. */
   cancelled: () => boolean;
@@ -1305,7 +1310,7 @@ const listOf = (raw: unknown): string[] =>
     : typeof raw === "string" && raw.trim() ? raw.split(",").map((v) => v.trim()).filter(Boolean) : [];
 
 /** The lead shaping the organization: hire, edit, merge, remove, move. */
-function shapeOrganization(action: string, args: Record<string, any>): ToolOutcome {
+function shapeOrganization(action: string, args: Record<string, any>, ctx: ToolContext): ToolOutcome {
   const agent = String(args.agent ?? "").trim();
   const next = args.next ?? args.hands_to;
   try {
@@ -1315,7 +1320,13 @@ function shapeOrganization(action: string, args: Record<string, any>): ToolOutco
         reportsTo: args.reports_to, next,
       });
       welcomeToThreads(made);
-      return { ok: true, summary: `Hired ${made.name} (${made.id}). ${agentLine(made)}`, preview: `hired ${made.name}` };
+      const knowledge = String(args.knowledge ?? "").trim();
+      const taught = knowledge && ctx.agents ? ctx.agents.mind.teach(made.id, knowledge, args.move !== false) : null;
+      return {
+        ok: true,
+        summary: `Hired ${made.name} (${made.id}). ${agentLine(made)}${taught ? `\n${taught.summary}` : ""}`,
+        preview: `hired ${made.name}`,
+      };
     }
     if (!agent) return { ok: false, summary: "Say which agent (agent: its id or name)." };
     const found = findAgent(agent);
@@ -1364,6 +1375,17 @@ async function runAgents(args: Record<string, any>, ctx: ToolContext): Promise<T
     const all = listAgents();
     return { ok: true, summary: all.map(agentLine).join("\n"), preview: `${all.length} agent${all.length === 1 ? "" : "s"}` };
   }
+  if (action === "domains") {
+    if (!ctx.agents) return { ok: false, summary: "No mind to look at from here." };
+    return { ok: true, summary: ctx.agents.mind.domains(), preview: "domains" };
+  }
+  if (action === "teach") {
+    if (!ctx.agents) return { ok: false, summary: "Agents cannot be taught from here." };
+    const to = findAgent(args.agent);
+    if (!to) return { ok: false, summary: `There is no agent "${String(args.agent ?? "")}" to teach. Use agents list.` };
+    const r = ctx.agents.mind.teach(to.id, String(args.query ?? ""), args.move !== false);
+    return { ...r, preview: r.ok ? `taught ${to.name}` : undefined };
+  }
   if (action === "note") {
     const who = findAgent(args.agent) ?? findAgent(ctx.agents?.self.id ?? LEAD_ID)!;
     const kept = remember(who.id, args.text, ["fact", "lesson", "tip", "colleague"].includes(String(args.kind)) ? (args.kind as NoteKind) : "lesson");
@@ -1371,8 +1393,8 @@ async function runAgents(args: Record<string, any>, ctx: ToolContext): Promise<T
       ? { ok: true, summary: `Kept for ${who.name}: "${kept.text}". It will be in front of ${who.name} next time.`, preview: "noted" }
       : { ok: false, summary: "Nothing to keep: say it in a sentence (text)." };
   }
-  if (["hire", "edit", "merge", "remove", "move"].includes(action)) return shapeOrganization(action, args);
-  if (action !== "run") return { ok: false, summary: `Unknown agents action "${action}". Use list, run, note, hire, edit, merge, remove or move.` };
+  if (["hire", "edit", "merge", "remove", "move"].includes(action)) return shapeOrganization(action, args, ctx);
+  if (action !== "run") return { ok: false, summary: `Unknown agents action "${action}". Use list, run, domains, teach, note, hire, edit, merge, remove or move.` };
   const ref = String(args.agent ?? "").trim();
   const task = String(args.task ?? "").trim();
   if (!ref || !task) return { ok: false, summary: "Say which agent and what its task is (agent, task)." };

@@ -192,25 +192,88 @@ await test("a link survives only if the agent was given it", () => {
   assert.equal(life.vetLinks("Emoji are fine 🎉", known), "Emoji are fine 🎉");
 });
 
-await test("an agent keeps notes in its own mind, and they come back, are not repeated, and follow a merge", async () => {
+await test("an agent's mind is a graph of its own: notes recalled by what they bear on, merged, and gone with it", async () => {
   const mind = await import("../server/agentmind");
   const x = org.createAgent({ name: "Xena" });
   const y = org.createAgent({ name: "Yuri" });
   assert.equal(mind.remember(x.id, "short"), null);
   const n = mind.remember(x.id, "Tables render best as Markdown.", "tip", "Yuri")!;
-  assert.equal(mind.remember(x.id, "tables render best as markdown", "tip")!.id, n.id, "the same thought is one note");
-  assert.match(mind.mindBriefing(x.id), /Tables render best as Markdown\. \(from Yuri\)/);
-  assert.match(org.agentBrief(x, "do it", []), /What you have learned and kept/);
+  assert.equal(mind.remember(x.id, "Tables render best as Markdown.", "tip")!.id, n.id, "the same thought is one memory");
+  mind.remember(x.id, "Invoices must carry the VAT number of the buyer.", "fact");
+  assert.match(mind.mindBriefing(x.id, "format a table"), /Tables render best as Markdown/);
+  assert.doesNotMatch(mind.mindBriefing(x.id, "format a table", 1), /VAT/, "recall is by relevance, not a dump");
   const r = await runTool(spec, { action: "note", agent: "Xena", text: "Quote sources in full.", kind: "lesson" }, ctx());
   assert.equal(r.ok, true, r.summary);
-  assert.equal(mind.notesOf(x.id).length, 2);
-  for (let i = 0; i < 50; i += 1) mind.remember(y.id, `A distinct thing number ${i} to remember`);
-  assert.equal(mind.notesOf(y.id).length, 40, "an agent holds forty at most");
+  assert.equal(mind.notesOf(x.id).length, 3);
+  assert.equal(mind.notesOf(y.id).length, 0, "one agent's mind is not another's");
+  assert.equal(mind.remember(org.LEAD_ID, "Autora keeps the main Mind, not this one."), null);
   org.mergeAgents(x.id, y.id);
   assert.equal(mind.notesOf(x.id).length, 0);
-  assert.ok(mind.notesOf(y.id).some((t) => /Quote sources/.test(t.text)));
+  assert.equal(mind.notesOf(y.id).length, 3, "a merge brings the mind along");
+  assert.match(org.agentLine(org.getAgent(y.id)!), /Its own mind holds 3 memories/);
   org.deleteAgent(y.id);
   assert.equal(mind.notesOf(y.id).length, 0, "a removed agent's mind goes with it");
+});
+
+await test("Autora splits its Mind up: clusters by subject, then hands a domain to a specialist, preferences staying", async () => {
+  const mind = await import("../server/agentmind");
+  const { MemoryGraph } = await import("../server/memory");
+  const main = new MemoryGraph([], []);
+  for (const [t, b] of [
+    ["Acme API pagination", "The Acme API paginates with a cursor, not page numbers."],
+    ["Acme API auth", "The Acme API wants a bearer token in the Authorization header."],
+    ["Acme API rate limit", "The Acme API allows 60 requests a minute per key."],
+  ]) main.write({ title: t, body: b, kind: "fact", subject: "acme api", tags: ["acme"] });
+  main.write({ title: "Prefers short answers", body: "The person prefers short answers about the Acme API.", kind: "preference", subject: "acme api" });
+  main.write({ title: "Lunch spot", body: "The person likes the noodle place on Fourth.", kind: "fact", subject: "food" });
+  const cs = mind.clusters(main);
+  assert.equal(cs[0].name, "acme api");
+  assert.equal(cs[0].count, 3, "preferences are not part of a domain");
+
+  const special = org.createAgent({ name: "Acme Expert" });
+  const given = mind.teach(main, special.id, "Acme API", true);
+  assert.equal(given.length, 3);
+  assert.equal(main.active().filter((r) => /Acme API (pagination|auth|rate)/.test(r.title)).length, 0, "moved out of the main Mind");
+  assert.ok(main.active().some((r) => r.kind === "preference"), "what the person said about themselves stays");
+  assert.ok(main.active().some((r) => r.title === "Lunch spot"), "and unrelated knowledge stays");
+  assert.match(mind.mindBriefing(special.id, "how does the Acme API paginate"), /cursor/);
+  assert.match(org.agentLine(special), /Its own mind holds 3 memories/);
+  // Copy instead of move leaves the original.
+  const again = new MemoryGraph([], []);
+  again.write({ title: "Acme webhooks", body: "Acme API webhooks are signed with HMAC.", kind: "fact", subject: "acme api" });
+  assert.equal(mind.teach(again, special.id, "Acme webhooks", false).length, 1);
+  assert.equal(again.active().length, 1);
+  assert.equal(mind.teach(main, special.id, "zzz nothing like this", true).length, 0);
+});
+
+await test("the agents tool: domains, teach, and hiring with knowledge", async () => {
+  const { MemoryGraph } = await import("../server/memory");
+  const main = new MemoryGraph([], []);
+  main.write({ title: "Zephyr deploys", body: "Zephyr deploys go through the staging cluster first.", kind: "fact", subject: "zephyr" });
+  main.write({ title: "Zephyr rollback", body: "Zephyr rollback is one command: zeph undo.", kind: "fact", subject: "zephyr" });
+  const { agentMind, clusters, teach } = await import("../server/agentmind");
+  const withMind = {
+    session: "s1", onOutput: () => undefined, cancelled: () => false,
+    agents: {
+      self: { id: org.LEAD_ID, name: "Autora" }, run: async () => ({ ok: true, summary: "" }),
+      mind: {
+        domains: () => clusters(main).map((c) => `${c.name}: ${c.count}`).join("\n"),
+        teach: (agent: string, query: string, move: boolean) => {
+          const got = teach(main, agent, query, move);
+          return { ok: true, summary: `moved ${got.length}` };
+        },
+      },
+    },
+  } as never;
+  const d = await runTool(spec, { action: "domains" }, withMind);
+  assert.match(d.summary, /zephyr: 2/);
+  const h = await runTool(spec, { action: "hire", name: "Zephyr Hand", role: "Deploys", when: "Zephyr work", knowledge: "Zephyr" }, withMind);
+  assert.equal(h.ok, true, h.summary);
+  assert.match(h.summary, /moved 2/);
+  const hand = org.findAgent("Zephyr Hand")!;
+  assert.equal(agentMind(hand.id).active().length, 2);
+  assert.equal(main.active().length, 0);
+  assert.equal((await runTool(spec, { action: "teach", agent: "Nobody", query: "x" }, withMind)).ok, false);
 });
 
 console.log(`${passed} passed`);
