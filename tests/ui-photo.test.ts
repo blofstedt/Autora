@@ -119,6 +119,49 @@ async function main() {
       assert.match(got.suggestedFilename(), /\.(psd|pcraft|png)$/i);
     });
 
+    await test("on a phone the editor is the paired-down one: the picture alone, and a bar whose sheets open over it", async () => {
+      /* One CSS pixel to the device: the editor's canvas is sized in device pixels, and a headless browser pretending to
+         be a phone at two or three to one reports a canvas the page cannot click, so this is the phone's size and not its density. */
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 });
+      const phone = await ctx.newPage();
+      await phone.goto(`${app.base}/?session=${s}`);
+      await phone.waitForSelector(".stage .pdf-window", { timeout: 20_000 });
+      assert.equal(await phone.locator(".pdf-bar .pdf-pill").count(), 0, "round buttons, not text pills");
+      await phone.locator('.pdf-bar button[aria-label="Full screen"]').click();
+      await phone.waitForSelector(".pdf-window.is-full");
+      assert.match(await phone.locator("iframe[title='Autora Photo']").getAttribute("src") ?? "", /phone=1/);
+      /* The desktop's chrome is away: the strip above the bar, where Photoshop's toolbox and options would be, is the picture's
+         own black, with no menu bar's grey. Then the bar's Tools opens a sheet there. */
+      const box = (await phone.locator("iframe[title='Autora Photo']").boundingBox())!;
+      const lit = async (y0: number, y1: number) => {
+        const png = (await phone.screenshot({ clip: { x: 8, y: box.y + y0, width: 374, height: y1 - y0 } })).toString("base64");
+        return phone.evaluate(async (data) => {
+          const img = new Image();
+          img.src = `data:image/png;base64,${data}`;
+          await img.decode();
+          const c = document.createElement("canvas");
+          c.width = img.width;
+          c.height = img.height;
+          const g = c.getContext("2d")!;
+          g.drawImage(img, 0, 0);
+          const px = g.getImageData(0, 0, c.width, c.height).data;
+          let n = 0;
+          for (let i = 0; i < px.length; i += 4) if (px[i] > 10 || px[i + 1] > 10 || px[i + 2] > 14) n += 1;
+          return n;
+        }, png);
+      };
+      await waitFor("the bar", async () => (await lit(box.height - 80, box.height - 4)) > 3000, 60_000);
+      const before = await lit(box.height - 230, box.height - 90);
+      // The bar's Tools button: the second row of three, the third of six across the frame.
+      await phone.mouse.move(box.x + 163, box.y + box.height - 34);
+      await sleep(200);
+      await phone.mouse.down();
+      await sleep(150);
+      await phone.mouse.up();
+      await waitFor("the tools sheet over the picture", async () => (await lit(box.height - 230, box.height - 90)) > before + 3000, 20_000);
+      await ctx.close();
+    });
+
     await test("nothing in the page broke", async () => {
       // The dev server's own socket closing is not the window's.
       assert.deepEqual(errors.filter((e) => !/WebSocket closed without opened|Network Error|Failed to fetch/.test(e)), []);

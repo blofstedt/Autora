@@ -343,7 +343,7 @@ export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; ki
           </a>
         )}
         {phone && editing && (
-          <button className="pdf-pill" onClick={() => setEditing(false)} title="Back to the pictures of the pages">Page view</button>
+          <button className="btn icon ghost" onClick={() => setEditing(false)} title="Back to the pictures of the pages" aria-label="Page view"><IconFile size={15} /></button>
         )}
         {phone && !pages && (
           <button
@@ -381,7 +381,7 @@ export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; ki
             key={engine ? `${kind}-${word.loadRev ?? 0}` : kind}
             ref={frame}
             className="pdf-frame"
-            src={`/office-app/${APP[kind]}/index.html`}
+            src={`/office-app/${APP[kind]}/index.html${phone ? "?phone=1" : ""}`}
             title={`${word.name ?? THING[kind]}, in ${NAME[kind]}`}
             sandbox="allow-scripts allow-downloads allow-modals allow-popups"
           />

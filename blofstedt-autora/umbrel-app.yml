@@ -193,8 +193,10 @@ releaseNotes: >-
   Mark up, Fill & sign, Find): Mark up is Highlight, Text, Draw, Note and Eraser with a colour,
   Fill & sign is Fill Fields and Sign, and Find is one row. Video shows the picture and the
   timeline with Media and Edit as sheets, Export beside them, and a timeline bar of just undo,
-  split, duplicate, delete and zoom. The app window and Music lose their desktop-only buttons.
-  Every tool window now shares one set of measurements on a phone (a 48px bar, 40px soft-square
-  buttons, no text pills or round buttons mixed in), 3D and the editors follow them, and full
-  screen keeps a strip at the bottom so the chat button no longer covers a tool's own buttons.
-  A desktop gets the full editors exactly as before.
+  split, duplicate, delete and zoom. Autora Photo shows the picture alone with one bar (Undo,
+  Redo, Tools, Brush, Layers, Fit) and a sheet for each. Pages, Sheets and Slides open their full
+  editor with the ribbon closed until you tap a tab. The app window, the browser and Music lose
+  their desktop-only buttons. Every tool window now shares one set of measurements on a phone
+  (a 48px bar, 40px soft-square buttons, no text pills or round buttons mixed in), 3D and the
+  editors follow them, and full screen keeps a strip at the bottom so the chat button no longer
+  covers a tool's own buttons. A desktop gets the full editors exactly as before.

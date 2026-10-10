@@ -69,6 +69,8 @@ function patch(file, from, to) {
 function overlay() {
   const web = path.join(src, "apps/photocraft-web");
   fs.copyFileSync(path.join(root, "photo/overlay/autora.rs"), path.join(web, "src/autora.rs"));
+  // The phone's editor (autora.rs) asks the editor's own commands, which take JSON.
+  patch(path.join(web, "Cargo.toml"), "log = { workspace = true }\n", "log = { workspace = true }\nserde_json = { workspace = true }\n");
   patch(path.join(web, "src/main.rs"), "#[cfg(target_arch = \"wasm32\")]\nmod web;", "#[cfg(target_arch = \"wasm32\")]\nmod autora;\n#[cfg(target_arch = \"wasm32\")]\nmod web;");
   const webrs = path.join(web, "src/web.rs");
   // The wire is opened once the app is made.

@@ -1,5 +1,7 @@
 import { useFullscreen } from "../lib/fullscreen";
 import { holdSurface, useCollab } from "../lib/collab";
+import { usePhone } from "../lib/stage";
+import { TakeControl } from "./TakeControl";
 import {
   Children, useCallback, useEffect, useLayoutEffect, useRef, useState,
   type CSSProperties, type ReactNode,
@@ -77,6 +79,7 @@ export function ScreencastCell({
   const [bigChoice, setBigChoice] = useState<boolean | null>(null);
   const [localMax, setLocalMax] = useState(false);
   const [sharedMax, setSharedMax] = useFullscreen();
+  const onPhone = usePhone();
   const max = pinned ? sharedMax : localMax;
   const setMax = useCallback((v: boolean | ((m: boolean) => boolean)) => {
     const next = typeof v === "function" ? v(max) : v;
@@ -556,7 +559,9 @@ export function ScreencastCell({
             <span className="shot-state-short">{state.short}</span>
           </em>
         )}
-        {source === "browser" && current && live && (agentDriving || mine) && (
+        {source === "browser" && current && live && (agentDriving || mine) && (onPhone ? (
+          <TakeControl sessionId={sessionId} surface="browser" mine={mine} phone thing="browser" variant="shot" />
+        ) : (
           <button
             className={`cell-act shot-control${mine ? " on" : ""}`}
             onClick={() => void holdSurface(sessionId, "browser", !mine)}
@@ -564,7 +569,7 @@ export function ScreencastCell({
           >
             {mine ? "Hand back" : "Take control"}
           </button>
-        )}
+        ))}
         {held && feed && (
           <button className="cell-act" onClick={() => { setHeld(false); setAt(shots.length - 1); }}>
             back to live

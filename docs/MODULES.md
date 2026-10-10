@@ -495,6 +495,17 @@ Spectra's fetched renderer is most of what is on disk.
 - A frame that does not start: `lib/bootWatch.ts` says so after 25 s (PDF and video windows), and the PDF frame forwards
   its uncaught errors (`autora:spectra:error`). Its build puts a `Map.getOrInsert*` polyfill in front of every chunk,
   workers included (`polyfillFirst` in `spectra-editor/vite.config.ts`): pdf.js needs it and older browsers lack it.
+- The rest of the phone's tools: Pages/Sheets/Slides' full editor (`office/shim/phone.js`, injected into the editor page when the
+  window adds `?phone=1`) starts with the ribbon closed (it writes the editors' own saved flag; a tap on a tab opens it), scrolls the
+  tabs sideways, makes the controls 40px and narrows Slides' thumbnail strip; the window's bar loses the cursor switch and the
+  versions pill and "Page view" is an icon. The browser's toolbar on a phone is back, reload, the address, hand-over, drag and
+  enlarge (CSS in `styles.css`). Autora Photo is paired down in Rust, in `photo/overlay/autora.rs` (the `phone_*` functions): with
+  `?phone=1` the editor shows the picture alone (`screen_mode = "fullScreen"`, forced each frame in `pump`) and draws one bar
+  (Undo, Redo, Tools, Brush, Layers, Fit) with a sheet over it (nine tools, brush size/strength/colour, layers with eye, name,
+  opacity, new, delete). The bar's taps are queued in `tick` (which only sees the app) and done in the next frame's `pump`, through
+  the editor's own commands (`menus::invoke`). Sizes are asked for in CSS pixels (`per_css_px`), because a headless browser at a
+  device ratio above 1 reports an editor canvas half the page's resolution and a pointer the editor mis-maps: test the phone at
+  1:1 (`tests/ui-photo.test.ts`). `build-photo.mjs` adds `serde_json` to the web app for it. The pin never moves.
 - One look across the windows on a phone (`styles.css`, "Tool windows on a phone"): `--pt-bar` 48px, `--pt-hit` 40px, `--pt-r` 12px.
   Every window's bar (`.pdf-bar`, `.app-bar`, the browser's) is the name and 40px soft-square buttons; text pills are for
   desktop; `TakeControl` is the hand-over switch in all of them (PDF, Video, Pages/Sheets/Slides, the app window). The editors

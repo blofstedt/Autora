@@ -140,7 +140,7 @@ export function PhotoWindow({ sessionId, phone }: { sessionId: string; phone: bo
       <iframe
         ref={frame}
         className="pdf-frame"
-        src={`/autora-photo/index.html?embed=autora&session=${encodeURIComponent(sessionId)}`}
+        src={`/autora-photo/index.html?embed=autora&session=${encodeURIComponent(sessionId)}${phone ? "&phone=1" : ""}`}
         title="Autora Photo"
         /* No sandbox attribute: this is PhotoCraft's page with Autora's overlay, served from this origin under its own
            policy (server/photodesk.ts servePhoto: scripts and WebAssembly from itself only, framed by this app only), and

@@ -8,18 +8,18 @@ import { IconHand } from "./Icons";
  */
 export function TakeControl({ sessionId, surface, mine, phone, thing, variant }: {
   sessionId: string;
-  surface: "pdf" | "video" | "office" | "app";
+  surface: "pdf" | "video" | "office" | "app" | "browser";
   mine: boolean;
   phone: boolean;
   thing: string;
   /** The App window's bar has its own button classes. */
-  variant?: "app";
+  variant?: "app" | "shot";
 }) {
   const title = mine ? `Let the agent work on the ${thing} again` : `Work on the ${thing} yourself; the agent carries on with other work`;
   const flip = () => void holdSurface(sessionId, surface, !mine);
   if (phone) {
     return (
-      <button className={`${variant === "app" ? "app-icon" : "btn icon ghost"} pdf-hold-btn${mine ? " is-on" : ""}`} onClick={flip} aria-pressed={mine} title={title} aria-label={mine ? "Hand back" : "Take control"}>
+      <button className={`${variant === "app" ? "app-icon" : variant === "shot" ? "shot-tool" : "btn icon ghost"} pdf-hold-btn${mine ? " is-on" : ""}`} onClick={flip} aria-pressed={mine} title={title} aria-label={mine ? "Hand back" : "Take control"}>
         <IconHand size={16} />
       </button>
     );

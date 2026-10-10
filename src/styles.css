@@ -7442,3 +7442,20 @@ body.is-resizing iframe { pointer-events: none; }
   .app-window.is-phone .app-seg button { width: var(--pt-hit); min-height: var(--pt-hit); padding: 0; justify-content: center; }
   .app-window.is-phone .app-seg { flex: 0 0 auto; }
 }
+
+/* The editor's bar on a phone has no room for the cursor switch (it is in Settings); the page view is an icon like the rest. */
+@media (max-width: 680px) {
+  .is-phone .pdf-bar .pdf-cursor-pill { display: none; }
+}
+
+/* The browser on a phone: back, reload, the address, hand-over, drag and enlarge. Forward, bookmark, the menu, the zoom
+   buttons and the state chip are the desktop's: the address had been squeezed to a sliver by nine buttons. */
+@media (max-width: 680px) {
+  .cell.shot .cell-top .shot-tool[aria-label="Forward"],
+  .cell.shot .cell-top .shot-tool[aria-label*="ookmark"],
+  .cell.shot .shot-menu-wrap,
+  .cell.shot .shot-state,
+  .cell.shot .shot-zoom { display: none; }
+  .cell.shot .shot-address { flex: 1 1 auto; min-width: 0; }
+  .cell.shot .shot-tool.on { background: var(--accent-soft); color: var(--accent-2); }
+}

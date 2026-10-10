@@ -2,5 +2,5 @@
   "repo": "https://github.com/storytold/photocraft",
   "sha": "74eacf986042819c154076819137ed502874c3a7",
   "trunk": "0.21.14",
-  "note": "PhotoCraft (MIT OR Apache-2.0; ArtCraft's name and logo are its authors'): an image editor in Rust. Its web build (apps/photocraft-web, wasm) is the photo window's editor, and its headless command line (apps/photocraft-cli) is what the agent's photo_* tools run. Both are built from this commit by scripts/build-photo.mjs, with photo/overlay laid over the web app, into dist/photo/. Bump the sha to take a newer one."
+  "note": "PhotoCraft (MIT OR Apache-2.0; ArtCraft's name and logo are its authors'): an image editor in Rust. Its web build (apps/photocraft-web, wasm) is the photo window's editor, and its headless command line (apps/photocraft-cli) is what the agent's photo_* tools run. Both are built from this commit by scripts/build-photo.mjs, with photo/overlay laid over the web app, into dist/photo/. The sha never moves to follow upstream: what Autora wants different is its own change, in photo/overlay."
 }
