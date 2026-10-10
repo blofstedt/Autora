@@ -7618,6 +7618,8 @@ body.is-resizing iframe { pointer-events: none; }
   border: 1px solid var(--border); font-size: calc(11.5px * var(--ts, 1)); color: var(--text-2);
 }
 .org-editor { width: 100%; max-width: 560px; margin: 0 auto; box-sizing: border-box; }
+/* The editor as a dialog: it scrolls inside itself when the form is taller than the screen. */
+.modal.org-modal { max-width: 560px; max-height: 90vh; overflow-y: auto; padding: 14px 16px; gap: 12px; }
 .org-editor-head { display: flex; align-items: center; gap: 8px; }
 .org-field { display: flex; flex-direction: column; gap: 4px; font-size: calc(12px * var(--ts, 1)); color: var(--text-2); }
 .org-field input, .org-field textarea, .org-field select {

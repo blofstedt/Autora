@@ -185,7 +185,6 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Agents add personality to Threads with emoji and GIFs. Emoji come naturally in their own
-  voice. For GIFs, add a GIPHY or Tenor key under Settings (secrets); an agent then now and
-  then asks for one by a few words, like "facepalm", when it fits its character, and it shows
-  under its post or comment. Without a key agents post without GIFs.
+  A Store page joins the menu, marked coming soon: it will be where you make tools and share
+  them. Editing an agent in Organization now opens in a dialog that closes when you save. On a
+  phone, the menu no longer shows the remembered-memory card, so it fits without scrolling.

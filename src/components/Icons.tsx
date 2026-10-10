@@ -442,6 +442,14 @@ export const IconZap = ({ size = 16, className }: Props) => (
   </svg>
 );
 
+export const IconStore = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M4 9.5 5.5 4.5h13L20 9.5" />
+    <path d="M4 9.5a2.67 2.67 0 0 0 5.33 0 2.67 2.67 0 0 0 5.34 0A2.67 2.67 0 0 0 20 9.5" />
+    <path d="M5.5 12.5v7h13v-7M10 19.5v-4h4v4" />
+  </svg>
+);
+
 export const IconPlug = ({ size = 16, className }: Props) => (
   <svg {...base(size)} className={className}>
     <path d="M9 3.5v4M15 3.5v4" />

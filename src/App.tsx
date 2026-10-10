@@ -60,6 +60,7 @@ const McpPage = lazyPage(() => import("./components/pages/McpPage"), "McpPage");
 const ArtifactsPage = lazyPage(() => import("./components/pages/ArtifactsPage"), "ArtifactsPage");
 const OrganizationPage = lazyPage(() => import("./components/pages/OrganizationPage"), "OrganizationPage");
 const ThreadsPage = lazyPage(() => import("./components/pages/ThreadsPage"), "ThreadsPage");
+const StorePage = lazyPage(() => import("./components/pages/StorePage"), "StorePage");
 const NotebooksPage = lazyPage(() => import("./components/pages/NotebooksPage"), "NotebooksPage");
 const ToolsPage = lazyPage(() => import("./components/pages/ToolsPage"), "ToolsPage");
 const MindPage = lazyPage(() => import("./components/pages/MindPage"), "MindPage");
@@ -1892,6 +1893,7 @@ export function App() {
             )}
             {page === "organization" && <OrganizationPage topSlot={topSlot} />}
             {page === "threads" && <ThreadsPage topSlot={topSlot} />}
+            {page === "store" && <StorePage />}
             {page === "tools" && <ToolsPage />}
             {page === "mcp" && <McpPage topSlot={topSlot} />}
             {page === "cron" && <Schedule embedded topSlot={topSlot} onOpenSession={openSession} />}
