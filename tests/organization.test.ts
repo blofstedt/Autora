@@ -39,6 +39,51 @@ const research = org.createAgent({ name: "Researcher", role: "Finds sources", wh
 const editor = org.createAgent({ name: "Editor", role: "Tightens prose", reportsTo: research.id, next: [] });
 const books = org.createAgent({ name: "Bookkeeper", next: "Researcher, Editor" });
 
+await test("an agent has a personality drawn from its expertise, which a hirer or the person can override", () => {
+  const lawyer = org.createAgent({ name: "Sabrina", role: "Family Lawyer" });
+  assert.match(lawyer.personality!, /Careful and precise/);
+  assert.ok(lawyer.traits!.rigor >= 80 && lawyer.traits!.humor <= 45, "a lawyer is exacting and not a joker");
+  const helper = org.createAgent({ name: "Joy", role: "Customer Support" });
+  assert.ok(helper.traits!.warmth >= 80, "support is warm");
+  const own = org.createAgent({ name: "Wren", role: "Family Lawyer", personality: "Gentle but firm.", traits: { warmth: 95, nonsense: 5, candor: 400 } });
+  assert.equal(own.personality, "Gentle but firm.");
+  assert.equal(own.traits!.warmth, 95);
+  assert.equal(own.traits!.candor, 100, "clamped");
+  assert.ok(!("nonsense" in own.traits!));
+  const edited = org.updateAgent(own.id, { traits: { humor: 80 } });
+  assert.equal(edited.traits!.humor, 80);
+  assert.equal(edited.traits!.warmth, 95, "the rest stay");
+  assert.equal(org.freshName().length > 0, true);
+  assert.ok(!org.listAgents().some((a) => a.name === org.freshName()), "a free name");
+  assert.equal(research.personality ? true : false, true, "agents made without one are given one");
+  assert.match(org.agentBrief(lawyer, "Review the lease", []), /Your personality: Careful and precise/);
+  for (const a of [lawyer, helper, own]) org.deleteAgent(a.id);
+});
+
+await test("agents get along better the more work between them goes well, and worse when it does not", () => {
+  const a = org.createAgent({ name: "Ana", role: "Researcher" });
+  const b = org.createAgent({ name: "Ben", role: "Editor" });
+  assert.equal(org.bondOf(a.id, b.id), 50);
+  const team0 = a.traits!.teamwork;
+  org.recordCollab(a.id, b.id, true, 6);
+  const one = org.bondOf(a.id, b.id);
+  assert.ok(one > 50 && org.bondOf(b.id, a.id) === one, "both remember it");
+  for (let i = 0; i < 60; i++) org.recordCollab(a.id, b.id, true, 6);
+  const many = org.bondOf(a.id, b.id);
+  assert.ok(many > one && many < 100, "it keeps rising, with diminishing returns");
+  assert.ok(a.traits!.teamwork > team0, "and they become better collaborators");
+  org.recordCollab(a.id, b.id, false, 6);
+  assert.ok(org.bondOf(a.id, b.id) < many, "a bad time costs a little");
+  org.recordCollab(org.LEAD_ID, a.id, true, 6);
+  assert.equal(org.getAgent(org.LEAD_ID)!.bonds, undefined, "the lead keeps none");
+  org.recordWork(a.id, true); org.recordWork(a.id, false);
+  assert.deepEqual(a.tasks, { done: 1, failed: 1 });
+  assert.match(org.agentBrief(a, "x", []), /You work well with Ben/);
+  org.deleteAgent(b.id);
+  assert.equal(org.getAgent(a.id)!.bonds![b.id], undefined, "a bond goes with the colleague");
+  org.deleteAgent(a.id);
+});
+
 await test("an agent needs a name, a new one reports to the lead, and names are unique in any case", () => {
   assert.throws(() => org.createAgent({ name: "  " }), /needs a name/);
   assert.throws(() => org.createAgent({ name: "researcher" }), /already exists/);

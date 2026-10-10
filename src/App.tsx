@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import { SessionStream, mergeEvents, type StreamStatus } from "./lib/stream";
 import { derive, isRunning, type Cell, type Derived } from "./lib/derive";
 import { share } from "./lib/share";
+import { useThreadsUnread } from "./lib/threadsUnread";
 import { chime, paintChrome, type Chrome } from "./lib/chrome";
 import { Kind, type AutoraEvent, type BrowserState } from "./lib/types";
 import { setLiveFields, setLiveFrame, setLivePaneOwns, setLiveTabs } from "./lib/liveFrame";
@@ -1172,6 +1173,7 @@ export function App() {
   const [attention, setAttention] = useState(0);
   const [welcome, setWelcome] = useState(0);
   const [learned, setLearned] = useState(0);
+  const threadsUnread = useThreadsUnread(page === "threads");
   const [bloom, setBloom] = useState(0);
   /* True only while the Mind is actually being lit up. The count in `bloom`
      stays where it is, so it can key the element; this flag is what the class
@@ -1721,6 +1723,7 @@ export function App() {
             attention={attention}
             pulse={welcome}
             learned={learned}
+            threadsUnread={threadsUnread}
             bloom={bloom}
             mindGlow={mindGlow}
             alert={pending > 0}

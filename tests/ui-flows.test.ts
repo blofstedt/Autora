@@ -253,7 +253,7 @@ async function main() {
       assert.equal(look[1].tick, "1px", "an unfinished item has no tick");
       assert.equal(look[1].marching, "todoMarch", "the item in progress is marching");
       assert.notEqual(look[2].fill, look[0].fill);
-      assert.match(look[0].motion, /0\.3/, "the tick is a transition, not a jump");
+      assert.match(look[0].motion, /0\.6/, "the tick is a transition, not a jump");
     });
 
     console.log("settings");

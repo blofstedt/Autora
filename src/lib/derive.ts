@@ -234,7 +234,7 @@ export type Cell =
   | { kind: "remark"; seq: number; text: string; surface: string }
   /** An agent of the Organization chiming in as it is called; `done` once it
       has reported back. */
-  | { kind: "chime"; seq: number; id: string; name: string; role: string; look: AgentLook | null; text: string; done: boolean }
+  | { kind: "chime"; seq: number; id: string; name: string; role: string; look: AgentLook | null; text: string; done: boolean; report: string; ok: boolean }
   | { kind: "tool"; seq: number; span: SpanState }
   | { kind: "note"; seq: number; tone: "bad" | "warn" | "plain"; text: string }
   /** Agent mode moving between planning and building: said in the thread,
@@ -1031,7 +1031,7 @@ export function derive(events: AutoraEvent[]): Derived {
           const id = String(e.payload.id ?? e.seq);
           const chime = push({
             kind: "chime", seq: e.seq, id, name: String(e.payload.name ?? "Agent"),
-            role: String(e.payload.role ?? ""), look: readLook(e.payload.look), text: e.payload.text, done: false,
+            role: String(e.payload.role ?? ""), look: readLook(e.payload.look), text: e.payload.text, done: false, report: "", ok: true,
           });
           chimes.set(id, chime as Extract<Cell, { kind: "chime" }>);
         }
@@ -1039,7 +1039,11 @@ export function derive(events: AutoraEvent[]): Derived {
 
       case Kind.AgentBack: {
         const chime = chimes.get(String(e.payload.id ?? ""));
-        if (chime) chime.done = true;
+        if (chime) {
+          chime.done = true;
+          chime.ok = e.payload.ok !== false;
+          if (typeof e.payload.reply === "string") chime.report = e.payload.reply;
+        }
         break;
       }
 

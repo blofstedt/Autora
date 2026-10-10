@@ -73,7 +73,7 @@ import {
   notebookLine, notebookMarkdown, removeEntry, updateEntry, updateNotebook, type Notebook,
 } from "./notebooks";
 import {
-  AgentError, agentLine, createAgent, deleteAgent, findAgent, HIRING, listAgents, mergeAgents, moveAgent, orgBriefing,
+  AgentError, agentLine, createAgent, deleteAgent, findAgent, freshName, HIRING, listAgents, mergeAgents, moveAgent, orgBriefing,
   updateAgent, LEAD_ID,
 } from "./agents";
 import { remember, type NoteKind } from "./agentmind";
@@ -1316,7 +1316,7 @@ function shapeOrganization(action: string, args: Record<string, any>, ctx: ToolC
   try {
     if (action === "hire") {
       const made = createAgent({
-        name: args.name, role: args.role, instructions: args.instructions, when: args.when,
+        name: String(args.name ?? "").trim() || freshName(), role: args.role, personality: args.personality, traits: args.traits, instructions: args.instructions, when: args.when,
         reportsTo: args.reports_to, next,
       });
       welcomeToThreads(made);
@@ -1324,7 +1324,7 @@ function shapeOrganization(action: string, args: Record<string, any>, ctx: ToolC
       const taught = knowledge && ctx.agents ? ctx.agents.mind.teach(made.id, knowledge, args.move !== false) : null;
       return {
         ok: true,
-        summary: `Hired ${made.name} (${made.id}). ${agentLine(made)}${taught ? `\n${taught.summary}` : ""}`,
+        summary: `Hired ${made.name} (${made.id}). ${agentLine(made)}${made.personality ? ` Personality: ${made.personality}` : ""}${taught ? `\n${taught.summary}` : ""}`,
         preview: `hired ${made.name}`,
       };
     }
@@ -1333,11 +1333,11 @@ function shapeOrganization(action: string, args: Record<string, any>, ctx: ToolC
     if (!found) return { ok: false, summary: `There is no agent "${agent}". Use agents list to see who there is.` };
     if (action === "edit") {
       const patch: Record<string, unknown> = {};
-      for (const [from, to] of [["name", "name"], ["role", "role"], ["instructions", "instructions"], ["when", "when"], ["reports_to", "reportsTo"], ["enabled", "enabled"]]) {
+      for (const [from, to] of [["name", "name"], ["role", "role"], ["instructions", "instructions"], ["when", "when"], ["reports_to", "reportsTo"], ["enabled", "enabled"], ["personality", "personality"], ["traits", "traits"]]) {
         if (args[from] !== undefined) patch[to] = args[from];
       }
       if (next !== undefined) patch.next = next;
-      if (!Object.keys(patch).length) return { ok: false, summary: "Nothing to change: give name, role, instructions, when, reports_to, next or enabled." };
+      if (!Object.keys(patch).length) return { ok: false, summary: "Nothing to change: give name, role, personality, traits, instructions, when, reports_to, next or enabled." };
       const now = updateAgent(found.id, patch);
       return { ok: true, summary: `Updated ${now.name}. ${agentLine(now)}`, preview: `edited ${now.name}` };
     }

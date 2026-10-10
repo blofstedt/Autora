@@ -65,10 +65,10 @@ import {
 
 import { notebookRoutes } from "./server/routes/notebooks";
 import { organizationRoutes } from "./server/routes/organization";
-import { agentBrief, findAgent, getAgent, LEAD_ID, listAgents } from "./server/agents";
+import { agentBrief, findAgent, getAgent, LEAD_ID, listAgents, recordCollab, recordWork } from "./server/agents";
 import { agentMind, clusters, remember, teach } from "./server/agentmind";
 import { LifeGate, URGE_AT, allowed as lifeAllowed, knownText, lifePrompt, parseChoice, personWaiting, pickAgent, urgeOf, vetLinks } from "./server/threadlife";
-import { addComment, createPost, toggleLike } from "./server/threads";
+import { addComment, createPost, getPost, toggleLike } from "./server/threads";
 import { NewsGate, newsPrompt, nextLookoutMs, parseQuery, queryPrompt, readNews, workOutcome, workTitle } from "./server/threadnews";
 import { mcpRoutes } from "./server/routes/mcp";
 import { artifactRoutes } from "./server/routes/artifacts";
@@ -2964,10 +2964,18 @@ async function runAgentTask(
     signal?.addEventListener("abort", stop, { once: true });
     const workPost = openWorkPost(agent, work);
     const result = await startTurn(child, agentBrief(agent, work, names), [], { automated: true }).finally(() => signal?.removeEventListener("abort", stop));
-    emitEvent(from, "agent.back", "agent", { id: child.id, ok: result.ok });
-    lifeNudge.set(agent.id, 0.4); // it has just done something: it may want to say how it went
     const said = (result.reply || result.error || "(it said nothing)").trim();
+    /* It reports in the chat that called it, in its own name and mark: the agent joins the conversation rather than
+       working out of sight and having Autora paraphrase it. */
+    emitEvent(from, "agent.back", "agent", { id: child.id, ok: result.ok, reply: said.length > 1600 ? `${said.slice(0, 1597)}...` : said });
+    lifeNudge.set(agent.id, 0.4); // it has just done something: it may want to say how it went
     closeWorkPost(agent, workPost, result.ok && !result.stopped, said);
+    /* The work counts toward who it is: its record, and a better bond with whoever handed it the task (the lead keeps none). */
+    if (!result.stopped) {
+      recordWork(agent.id, result.ok);
+      const from = chain[chain.length - 1];
+      if (from) recordCollab(from, agent.id, result.ok, 6);
+    }
     if (!result.ok) ok = false;
     reports.push(`${agent.name} (${child.id})${result.ok ? "" : " did not finish"}:\n${said}`);
     if (!result.ok || result.stopped) return;
@@ -3021,7 +3029,7 @@ async function threadLifeStep(): Promise<void> {
   try {
     lifeLook.set(agent.id, now);
     lifeNudge.delete(agent.id);
-    const { system, prompt } = lifePrompt(agent, roster.filter((a) => a.id !== agent.id).map((a) => a.name));
+    const { system, prompt } = lifePrompt(agent, roster.filter((a) => a.id !== agent.id).map((a) => a.name), new Map(roster.map((a) => [a.id, a.name])));
     const choice = parseChoice(await backgroundCall("threads", system, prompt, 500));
     const me = { kind: "agent" as const, id: agent.id, name: agent.name };
     if (choice.note) remember(agent.id, choice.note, "lesson");
@@ -3035,8 +3043,13 @@ async function threadLifeStep(): Promise<void> {
     const said = redactDeep(choice) as typeof choice;
     const known = knownText(agent);
     if (said.action === "post") createPost({ title: said.title, body: vetLinks(said.text, known), tags: said.tags, by: me });
-    else if (said.action === "comment") addComment(said.post, { text: vetLinks(said.text, known), parent: said.reply_to, by: me });
-    else if (said.action === "like") toggleLike(said.post, me, said.comment);
+    else if (said.action === "comment") {
+      const post = getPost(said.post);
+      const parent = said.reply_to ? post?.comments.find((c) => c.id === said.reply_to) : null;
+      const to = parent?.by ?? post?.by;
+      addComment(said.post, { text: vetLinks(said.text, known), parent: said.reply_to, by: me });
+      if (to?.kind === "agent") recordCollab(me.id, to.id, true, 2); // a conversation between colleagues builds a little rapport
+    } else if (said.action === "like") toggleLike(said.post, me, said.comment);
     lifeGate.note(Date.now());
   } catch (err) {
     log("info", "threads", `step failed: ${err instanceof Error ? err.message : String(err)}`);

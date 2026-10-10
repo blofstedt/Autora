@@ -8,6 +8,8 @@ import type { MemoryMark } from "../../lib/derive";
 import { KnowledgeWeb } from "../KnowledgeWeb";
 import { MindViewButton } from "../MindViewButton";
 import { IconBrain, IconPlus, IconTrash } from "../Icons";
+import { AgentProfile } from "../AgentProfile";
+import { fetchAgents, type Agent } from "../../lib/organization";
 
 type Draft = { title: string; body: string; tags: string; kind: Bucket };
 
@@ -57,6 +59,16 @@ export function MindPage({
   const [query, setQuery] = useState("");
   const [view, setView] = useState<"buckets" | "map">("buckets");
   const [busy, setBusy] = useState(false);
+  /* Whose mind is shown: null is Autora's own, otherwise an agent of the Organization. */
+  const [whose, setWhose] = useState<string | null>(null);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  useEffect(() => {
+    let live = true;
+    fetchAgents().then((l) => { if (live) setAgents(l); }).catch(() => undefined);
+    return () => { live = false; };
+  }, []);
+  const team = agents.filter((a) => !a.builtin);
+  const who = whose ? team.find((a) => a.id === whose) ?? null : null;
   const [error, setError] = useState<string | null>(null);
   const [tidied, setTidied] = useState<TidyReport | null>(null);
 
@@ -208,6 +220,20 @@ export function MindPage({
       ) : (
       <div className="page-scroll">
         <div className="page-inner">
+          {team.length > 0 && (
+            <div className="mind-whose" role="tablist" aria-label="Whose mind">
+              <button role="tab" aria-selected={!who} className={`kchip ${!who ? "on" : ""}`} onClick={() => setWhose(null)}>Autora</button>
+              {team.map((a) => (
+                <button key={a.id} role="tab" aria-selected={who?.id === a.id} className={`kchip ${who?.id === a.id ? "on" : ""}`} onClick={() => setWhose(a.id)}>
+                  {a.name}
+                </button>
+              ))}
+            </div>
+          )}
+          {who ? (
+            <AgentProfile agent={who} agents={agents} onSaved={(a) => setAgents((l) => l.map((x) => (x.id === a.id ? a : x)))} />
+          ) : (
+          <>
           <div className="page-toolbar">
             <p className="jf-hint page-lede">
               What the agent remembers between sessions. Edit, move or remove anything here.
@@ -508,6 +534,8 @@ export function MindPage({
               );
             })}
           </div>
+          </>
+          )}
         </div>
       </div>
       )}

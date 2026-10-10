@@ -56,7 +56,7 @@ export const pageLabel = (id: PageId) => PAGES.find((p) => p.id === id)?.label ?
 export function Rail({
   page, onNavigate, onOpenSession, onOpenMemory, context, relayOn, alert, onNew, onIncognito,
   onStartTask, drawer = false, onClose, onFold, mini = false, onMini,
-  mood = "rest", attention = 0, pulse = 0, learned = 0, bloom = 0, mindGlow = false,
+  mood = "rest", attention = 0, pulse = 0, learned = 0, bloom = 0, mindGlow = false, threadsUnread = 0,
 }: {
   page: PageId;
   onNavigate: (page: PageId) => void;
@@ -93,6 +93,8 @@ export function Rail({
       count, so re-mounting the rail (a drawer opening) cannot replay an
       animation that finished long ago. */
   mindGlow?: boolean;
+  /** What the agents have said in Threads since it was last open, shown as N new. */
+  threadsUnread?: number;
 }) {
   const item = (p: (typeof PAGES)[number]) => (
     <button
@@ -110,6 +112,9 @@ export function Rail({
       {/* Said in words as well as the dot: a phone has no tooltips. */}
       {p.id === "chat" && alert && <em className="rail-tag is-alert">waiting on you</em>}
       {p.id === "mind" && learned > 0 && page !== "mind" && <em className="rail-tag is-grew">+{learned}</em>}
+      {p.id === "threads" && threadsUnread > 0 && page !== "threads" && (
+        <em className="rail-tag is-grew" title="Posts and comments from the agents since you last looked">{threadsUnread > 99 ? "99+" : threadsUnread} new</em>
+      )}
       {p.id === "system" && relayOn && (
         <em className="rail-tag" title="A desktop relay is connected">
           <IconMonitor size={11} /> desktop

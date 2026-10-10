@@ -6965,6 +6965,7 @@ body.is-resizing iframe { pointer-events: none; }
 .rail.is-mini .rail-nav-item > span { display: none; }
 .rail.is-mini .rail-nav-item .rail-tag { display: none; }
 .rail.is-mini .rail-nav-item:has(.rail-tag.is-alert)::after { content: ""; position: absolute; top: 6px; right: 10px; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
+.rail.is-mini .rail-nav-item:has(.rail-tag.is-grew)::after { content: ""; position: absolute; top: 6px; right: 10px; width: 7px; height: 7px; border-radius: 50%; background: var(--glow-light); }
 .rail.is-mini .rail-divider { margin: 6px 8px; }
 .rail-ctxbar { flex: 1 1 auto; min-height: 60px; margin-top: 10px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .rail-ctxbar-pct { font-size: 10px; font-weight: 650; color: var(--text-3); font-variant-numeric: tabular-nums; }
@@ -7695,3 +7696,32 @@ body.is-resizing iframe { pointer-events: none; }
   .org-card { width: 100%; max-width: 340px; }
   .org-toggle { position: static; transform: none; margin: 6px 0 0 14px; }
 }
+
+/* An agent's attributes: a slider each, the words at its two ends on either side. */
+.org-traits { border: 1px solid var(--border); border-radius: var(--r); padding: 8px 12px 10px; margin: 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.org-traits legend { padding: 0 6px; font-size: calc(12px * var(--ts, 1)); color: var(--text-2); }
+.org-traits legend small { color: var(--text-3); }
+.org-trait { display: grid; grid-template-columns: 78px minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr); align-items: center; gap: 8px; font-size: calc(12px * var(--ts, 1)); color: var(--text-2); }
+.org-trait small { color: var(--text-3); font-size: calc(10.5px * var(--ts, 1)); }
+.org-trait small:last-child { text-align: right; }
+.org-trait input[type="range"] { width: 100%; min-width: 0; accent-color: var(--accent); }
+@media (max-width: 560px) { .org-trait { grid-template-columns: 70px minmax(0, 1fr); } .org-trait small { display: none; } }
+
+/* An agent's own report in the chat, under the line that announced it. */
+.chime-report { margin-top: 6px; padding: 8px 10px; border-left: 2px solid var(--accent-line); border-radius: 0 var(--r-sm, 8px) var(--r-sm, 8px) 0; background: var(--s2); font-size: calc(13px * var(--ts, 1)); color: var(--text); overflow-wrap: anywhere; }
+.chime-report.is-bad { border-left-color: var(--bad, #f87171); }
+.chime-report > :first-child { margin-top: 0; }
+.chime-report > :last-child { margin-bottom: 0; }
+
+/* The Mind, one agent at a time: the chooser, and an agent's profile. */
+.mind-whose { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+.agent-profile { display: flex; flex-direction: column; gap: 14px; }
+.agent-profile-head { display: flex; align-items: center; gap: 12px; }
+.agent-profile-head h3 { margin: 0; }
+.agent-profile-head h3 span { font-weight: 450; color: var(--text-3); }
+.agent-profile-head p { margin: 2px 0 0; }
+.agent-bonds { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.agent-bonds li { display: grid; grid-template-columns: minmax(70px, 140px) 1fr 32px; align-items: center; gap: 10px; font-size: calc(12.5px * var(--ts, 1)); }
+.agent-bond-bar { height: 5px; border-radius: 3px; background: var(--s3); overflow: hidden; }
+.agent-bond-bar i { display: block; height: 100%; background: var(--live); }
+.agent-bonds small { color: var(--text-3); text-align: right; font-variant-numeric: tabular-nums; }

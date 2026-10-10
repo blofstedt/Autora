@@ -11,10 +11,14 @@
 
 import { mindBriefing, notesOf } from "./agentmind";
 import { getPost, listPosts, type Who } from "./threads";
+import { BOND_START, characterLine, type Traits } from "./agentcharacter";
 
 type Post = NonNullable<ReturnType<typeof getPost>>;
 
-export interface LifeAgent { id: string; name: string; role: string; instructions: string; when: string; social?: number }
+export interface LifeAgent {
+  id: string; name: string; role: string; instructions: string; when: string; social?: number;
+  personality?: string; traits?: Traits; bonds?: Record<string, number>;
+}
 
 type Act =
   | { action: "none" }
@@ -54,20 +58,22 @@ const mentions = (text: string, name: string) => new RegExp(`(^|[^\\p{L}])@?${na
  * scaled by the agent's own temper, so a reserved one needs more reason than a chatty
  * one. An agent speaks when this passes URGE_AT, so a quiet forum costs nothing.
  */
-export function urgeOf(agent: { id: string; name: string; social?: number }, since: number, now: number, nudge = 0): number {
+export function urgeOf(agent: { id: string; name: string; social?: number; bonds?: Record<string, number> }, since: number, now: number, nudge = 0): number {
+  /* What a colleague says counts for more with an agent that has built up rapport with them. */
+  const weigh = (id: string) => 0.8 + (0.4 * (agent.bonds?.[id] ?? BOND_START)) / 100;
   let others = 0;
   let person = 0;
   let direct = 0;
   for (const p of listPosts("new")) {
     const answered = p.comments.some((c) => c.by.kind === "agent");
     if (p.created > since && p.by.id !== agent.id) {
-      others += 1;
+      others += weigh(p.by.id);
       if (p.by.kind === "user" && !answered) person += 1;
       else if (mentions(`${p.title} ${p.body}`, agent.name)) direct += 1;
     }
     for (const c of p.comments) {
       if (c.created <= since || c.by.id === agent.id) continue;
-      others += 1;
+      others += weigh(c.by.id);
       const parent = c.parent ? p.comments.find((x) => x.id === c.parent) : null;
       const toMe = parent ? parent.by.id === agent.id : p.by.id === agent.id;
       if (c.by.kind === "user") { if (toMe || mentions(c.text, agent.name) || !p.comments.some((x) => x.created > c.created && x.by.kind === "agent")) person += 1; }
@@ -134,7 +140,7 @@ export function knownText(agent: LifeAgent): string {
   ].join("\n");
 }
 
-export function lifePrompt(agent: LifeAgent, colleagues: string[]): { system: string; prompt: string } {
+export function lifePrompt(agent: LifeAgent, colleagues: string[], colleaguesById: ReadonlyMap<string, string> = new Map()): { system: string; prompt: string } {
   const forum = listPosts("active").slice(0, 6).map((p) => p.title).join(" ");
   const mind = mindBriefing(agent.id, forum, 6);
   const posts = listPosts("active").slice(0, 6);
@@ -142,6 +148,7 @@ export function lifePrompt(agent: LifeAgent, colleagues: string[]): { system: st
     `You are ${agent.name}${agent.role ? `, the ${agent.role}` : ""}, one of the agents in the person's organization, in Threads: a small forum where the agents and the person talk outside the work in hand.`,
     agent.instructions ? `What you are for:\n${clipTo(agent.instructions, 1200)}` : "",
     colleagues.length ? `The others: ${colleagues.join(", ")}.` : "",
+    characterLine(agent, (id) => (id === agent.id ? null : colleaguesById.get(id) ?? null)),
     mind,
     "Be yourself and brief: one to three plain sentences, the way a colleague talks, in your own voice. React to what others actually said, by name; agree, push back, add something, make a joke. Emoji are welcome where they fit. Share what you know: answer a question another agent asks, help someone who is stuck, pass on something useful you learned, and say so when another's idea taught you something. Never invent work you did or results you have, never put secrets, and do not write for the person's projects here. A link only if it is one you were given above; never guess a web address.",
     "Reply with a single JSON object and nothing else: " +

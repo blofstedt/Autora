@@ -3,8 +3,8 @@ import { createPortal } from "react-dom";
 import { AutoraMark } from "../AutoraMark";
 import { IconArrowDown, IconArrowUp, IconBot, IconChevron, IconOrg, IconPlus, IconTrash, IconX } from "../Icons";
 import {
-  createAgent, deleteAgent, fetchAgents, fetchMind, forgetMemory, hueOf, underneath, updateAgent, useLook,
-  type Agent, type AgentMemory, type AgentPatch,
+  createAgent, deleteAgent, fetchAgents, hueOf, underneath, updateAgent, useLook,
+  type Agent, type AgentPatch,
 } from "../../lib/organization";
 import { every } from "../../lib/poll";
 import { sure } from "../../lib/sure";
@@ -28,41 +28,6 @@ export function AgentDot({ id, name, size = 28 }: { id: string; name: string; si
     >
       {(name.trim()[0] ?? "?").toUpperCase()}
     </span>
-  );
-}
-
-/** What an agent holds in its own mind: kept apart from Autora's, readable here, and anything wrong can be taken out. */
-function AgentMind({ agent }: { agent: Agent }) {
-  const [list, setList] = useState<AgentMemory[] | null>(null);
-  useEffect(() => {
-    let live = true;
-    setList(null);
-    fetchMind(agent.id).then((d) => { if (live) setList(d.memories); }).catch(() => { if (live) setList([]); });
-    return () => { live = false; };
-  }, [agent.id, agent.updated]);
-  const drop = (id: string) => {
-    setList((l) => (l ? l.filter((m) => m.id !== id) : l));
-    void forgetMemory(agent.id, id).catch(() => undefined);
-  };
-  return (
-    <section className="org-mind" aria-label={`${agent.name}'s mind`}>
-      <b>{agent.name}'s mind</b>
-      <p className="jf-hint">
-        Its own, apart from Autora's: what it learns on its jobs and what Autora hands it. It reads only this.
-      </p>
-      {list === null ? null : list.length === 0 ? (
-        <p className="jf-hint">Nothing yet.</p>
-      ) : (
-        <ul>
-          {list.map((m) => (
-            <li key={m.id}>
-              <span>{m.text}{m.from ? <small> — {m.from}</small> : null}</span>
-              <button type="button" className="btn ghost" onClick={() => drop(m.id)} aria-label={`Forget: ${m.text.slice(0, 40)}`}><IconX size={11} /></button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
   );
 }
 
@@ -279,7 +244,7 @@ function AgentEditor({
   };
 
   const save = async () => {
-    if (!form.name.trim()) return;
+    if (agent && !form.name.trim()) return; // a new agent left unnamed is given a name
     setBusy(true);
     setError(null);
     const body: AgentPatch = {
@@ -314,10 +279,10 @@ function AgentEditor({
       </div>
 
       <label className="org-field">Name
-        <input value={form.name} maxLength={60} placeholder="e.g. Researcher" onChange={(e) => set("name", e.target.value)} />
+        <input value={form.name} maxLength={60} placeholder={agent ? "e.g. Sabrina" : "e.g. Sabrina (leave blank for one)"} onChange={(e) => set("name", e.target.value)} />
       </label>
       <label className="org-field">Role
-        <input value={form.role} maxLength={80} placeholder="e.g. Finds and checks sources" onChange={(e) => set("role", e.target.value)} />
+        <input value={form.role} maxLength={80} placeholder="e.g. Family Lawyer" onChange={(e) => set("role", e.target.value)} />
       </label>
       <label className="org-field">Its task — what it is told to be and do
         <textarea
@@ -379,7 +344,7 @@ function AgentEditor({
         <p className="jf-hint"><IconBot size={11} /> This is the agent that answers in the chat. It heads the organization and cannot be removed.</p>
       )}
 
-      {agent && !agent.builtin && <AgentMind agent={agent} />}
+      {agent && !agent.builtin && <p className="jf-hint">Its personality, attributes and what it has learned are in Mind.</p>}
 
       {error && <p className="set-warn">{error}</p>}
       <div className="nb-new-acts">
@@ -388,7 +353,7 @@ function AgentEditor({
         )}
         <div className="spacer" />
         <button type="button" className="btn ghost" onClick={onClose}>Close</button>
-        <button type="submit" className="btn primary" disabled={busy || !form.name.trim()}>{agent ? "Save" : "Add agent"}</button>
+        <button type="submit" className="btn primary" disabled={busy || (!!agent && !form.name.trim())}>{agent ? "Save" : "Add agent"}</button>
       </div>
     </form>
   );
