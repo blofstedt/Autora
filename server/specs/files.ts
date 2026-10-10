@@ -127,24 +127,44 @@ export const filesSPECS: ToolSpec[] = [
     name: "agents",
     group: "files",
     description:
-      "The organization: the agents the person has set up on the Organization page, each with its own task, " +
-      "who it reports to and which agents follow it. Actions: list (the whole map, with when to call each); " +
-      "run (agent, task: start that agent on a task in a chat of its own and wait for its report -- when it has " +
-      "a 'then hands to' list those agents follow in order, each given the report before). Call an agent when its " +
-      "'call it when' fits the job and it would do the part better than you; for anything you can do in a step or " +
-      "two, do it yourself. An agent cannot be started from inside a chain more than three deep.",
+      "The organization: the agents on the Organization page, each with its own task, who it reports to and which " +
+      "agents follow it. You run it. Actions: list (the whole map, with when to call each); run (agent, task: start " +
+      "that agent on a task in a chat of its own and wait for its report -- when it has a 'then hands to' list those " +
+      "agents follow in order, each given the report before); domains (where your own Mind clusters by subject, to decide who to hire); teach (agent, query, move: hand the memories that match query to that agent's own mind, moving them out of yours unless move is false); note (text, and kind fact, lesson, tip or colleague: keep one " +
+      "sentence in your own mind -- what you learned, what works, what a colleague is good at -- so it is in front of you " +
+      "next time; agent defaults to you); hire (name, role, instructions, when; optionally " +
+      "reports_to and next -- a new agent for a kind of work that keeps coming up); edit (agent, then any of name, role, " +
+      "instructions, when, reports_to, next, enabled); merge (agent, into: two that overlap become one); remove " +
+      "(agent); move (agent, reports_to and/or position: its boss, and its place among that boss's agents). Call an " +
+      "agent when its 'call it when' fits the job and it would do the part better than you; for anything you can do in " +
+      "a step or two, do it yourself. Prefer edit or merge to hire. An agent cannot be started from inside a chain " +
+      "more than three deep.",
     parameters: {
       type: "object",
       properties: {
-        action: { type: "string", enum: ["list", "run"] },
-        agent: { type: "string", description: "run: the agent's id (agent_...) or name." },
+        action: { type: "string", enum: ["list", "run", "domains", "teach", "note", "hire", "edit", "merge", "remove", "move"] },
+        agent: { type: "string", description: "run/edit/merge/remove/move: the agent's id (agent_...) or name." },
         task: { type: "string", description: "run: what it should do, complete enough to work from alone -- it has not seen this chat." },
+        name: { type: "string", description: "hire/edit: its name." },
+        role: { type: "string", description: "hire/edit: its job title." },
+        instructions: { type: "string", description: "hire/edit: what it is told to be and do each time it is started." },
+        when: { type: "string", description: "hire/edit: in plain words, when to call it." },
+        reports_to: { type: "string", description: "hire/edit/move: the agent it reports to (id or name). Default the lead." },
+        next: { type: "array", items: { type: "string" }, description: "hire/edit: agents that follow it, in order." },
+        enabled: { type: "boolean", description: "edit: switch it off or on." },
+        text: { type: "string", description: "note: the one sentence to keep." },
+        query: { type: "string", description: "teach: what the knowledge to hand over is about, in a few words." },
+        knowledge: { type: "string", description: "hire: what the new agent should be given from your Mind, in a few words (as teach's query)." },
+        move: { type: "boolean", description: "teach/hire: take it out of your Mind as well (default true)." },
+        kind: { type: "string", enum: ["fact", "lesson", "tip", "colleague"], description: "note: what sort of thing it is. Default lesson." },
+        into: { type: "string", description: "merge: the agent that keeps going and takes on this one's job." },
+        position: { type: "number", description: "move: its place among the agents with the same boss, counting from 1." },
       },
       required: ["action"],
     },
   },
   {
-    name: "thread",
+        name: "thread",
     group: "files",
     description:
       "Threads is the agents' own corner of the app, like a forum, for whatever is outside the work in hand: " +

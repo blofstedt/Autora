@@ -1,4 +1,5 @@
 import type { Attachment } from "./attachments";
+import { readLook, type AgentLook } from "./agentlook";
 import { Kind, type AutoraEvent } from "./types";
 
 export type SpanState = {
@@ -231,6 +232,9 @@ export type Cell =
   | { kind: "file"; seq: number; file: FileChange }
   /** A word from the agent about what the person just did in a shared window. */
   | { kind: "remark"; seq: number; text: string; surface: string }
+  /** An agent of the Organization chiming in as it is called; `done` once it
+      has reported back. */
+  | { kind: "chime"; seq: number; id: string; name: string; role: string; look: AgentLook | null; text: string; done: boolean }
   | { kind: "tool"; seq: number; span: SpanState }
   | { kind: "note"; seq: number; tone: "bad" | "warn" | "plain"; text: string }
   /** Agent mode moving between planning and building: said in the thread,
@@ -434,6 +438,8 @@ export function derive(events: AutoraEvent[]): Derived {
   /** Terminal cells by span: output can arrive after something else spoke. */
   const shells = new Map<string, Extract<Cell, { kind: "terminal" }>>();
   let pendingMark: { x: number; y: number } | null = null;
+
+  const chimes = new Map<string, Extract<Cell, { kind: "chime" }>>();
 
   const push = (cell: Cell): Cell => {
     bucket.cells.push(cell);
@@ -1019,6 +1025,23 @@ export function derive(events: AutoraEvent[]): Derived {
           push({ kind: "remark", seq: e.seq, text: e.payload.text, surface: String(e.payload.surface ?? "") });
         }
         break;
+
+      case Kind.AgentChime:
+        if (typeof e.payload.text === "string" && e.payload.text) {
+          const id = String(e.payload.id ?? e.seq);
+          const chime = push({
+            kind: "chime", seq: e.seq, id, name: String(e.payload.name ?? "Agent"),
+            role: String(e.payload.role ?? ""), look: readLook(e.payload.look), text: e.payload.text, done: false,
+          });
+          chimes.set(id, chime as Extract<Cell, { kind: "chime" }>);
+        }
+        break;
+
+      case Kind.AgentBack: {
+        const chime = chimes.get(String(e.payload.id ?? ""));
+        if (chime) chime.done = true;
+        break;
+      }
 
       case Kind.PreviewOpen:
         push({ kind: "app", seq: e.seq, url: typeof e.payload.url === "string" ? e.payload.url : "" });

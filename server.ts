@@ -65,7 +65,10 @@ import {
 
 import { notebookRoutes } from "./server/routes/notebooks";
 import { organizationRoutes } from "./server/routes/organization";
-import { agentBrief, findAgent, getAgent, LEAD_ID } from "./server/agents";
+import { agentBrief, findAgent, getAgent, LEAD_ID, listAgents } from "./server/agents";
+import { agentMind, clusters, remember, teach } from "./server/agentmind";
+import { LifeGate, URGE_AT, allowed as lifeAllowed, knownText, lifePrompt, parseChoice, personWaiting, urgeOf, vetLinks } from "./server/threadlife";
+import { addComment, createPost, toggleLike } from "./server/threads";
 import { mcpRoutes } from "./server/routes/mcp";
 import { artifactRoutes } from "./server/routes/artifacts";
 import { systemRoutes } from "./server/routes/system";
@@ -268,6 +271,17 @@ function saveMemory() {
 
 /** The graph's rules (recall, merging, confirming) over the arrays above. */
 const mind = new MemoryGraph(memoryRecords, memoryLinks, saveMemory);
+
+/**
+ * The mind a chat works from. Autora, the base agent, is the main Mind; a chat
+ * that is another agent of the Organization at work has that agent's own (see
+ * server/agentmind.ts), so a specialist recalls, learns and writes only what is
+ * its own and is never confused by what Autora knows about everything else.
+ */
+function mindForId(sessionId: string): MemoryGraph {
+  const run = agentRuns.get(sessionId);
+  return run && run.agent !== LEAD_ID ? agentMind(run.agent) : mind;
+}
 
 /** Triggers: work that starts because something outside said so. */
 const triggers: Trigger[] = [];
@@ -2279,7 +2293,7 @@ const NAMED_SITE = /\bhttps?:\/\/([a-z0-9.-]+\.[a-z]{2,})|\b((?:[a-z0-9-]+\.)+(?
  * turn starts: the agent reads the official documentation for a site it has
  * nothing current on before it acts there (and the gate holds it to that).
  */
-function groundingNote(said: string): string | null {
+function groundingNote(said: string, mind: MemoryGraph): string | null {
   const sites = new Set<string>();
   for (const m of said.matchAll(NAMED_SITE)) {
     const site = siteOf(m[1] ?? m[2] ?? "");
@@ -2526,7 +2540,7 @@ async function systemInstructionFor(
   const asked = own ? requirementsBriefing(latestRequirements(own.events)) : null;
   if (asked) notes.push(asked);
   /* Sites the message names, and whether anything current is stored about how each works. */
-  const grounding = state.groundFirst ? groundingNote(said) : null;
+  const grounding = state.groundFirst ? groundingNote(said, mindForId(sessionId)) : null;
   if (grounding) notes.push(grounding);
   /* What it worked out, which the history (words only) cannot carry. */
   const working = own ? ledgerBriefing(latestLedger(own.events), touchedThings(own.events)) : null;
@@ -2935,12 +2949,21 @@ async function runAgentTask(
     const child = newSession(`${agent.name}: ${work.replace(/\s+/g, " ").slice(0, 60)}`);
     agentRuns.set(child.id, { agent: agent.id, depth, chain: [...chain, agent.id] });
     emitEvent(child, "system.log", "system", {
-      event: "agent.started", agent: agent.id, name: agent.name,
+      event: "agent.started", agent: agent.id, name: agent.name, role: agent.role, look: agent.look,
       message: `Started as ${agent.name}${names.length ? ` by ${names.join(" -> ")}` : ""} from the Organization.`,
+    });
+    /* The agent speaks up in the chat that called it, in its own shape and colours,
+       and its mark works until it reports back (agent.back). */
+    const oneLine = work.replace(/\s+/g, " ").trim();
+    emitEvent(from, "agent.chime", "agent", {
+      id: child.id, agent: agent.id, name: agent.name, role: agent.role, look: agent.look,
+      text: `${agent.name}${agent.role ? `, the ${agent.role},` : ""} here. On it: ${oneLine.length > 160 ? `${oneLine.slice(0, 157)}...` : oneLine}`,
     });
     const stop = () => stopTurn(child.id);
     signal?.addEventListener("abort", stop, { once: true });
     const result = await startTurn(child, agentBrief(agent, work, names), [], { automated: true }).finally(() => signal?.removeEventListener("abort", stop));
+    emitEvent(from, "agent.back", "agent", { id: child.id, ok: result.ok });
+    lifeNudge.set(agent.id, 0.4); // it has just done something: it may want to say how it went
     const said = (result.reply || result.error || "(it said nothing)").trim();
     if (!result.ok) ok = false;
     reports.push(`${agent.name} (${child.id})${result.ok ? "" : " did not finish"}:\n${said}`);
@@ -2956,6 +2979,68 @@ async function runAgentTask(
   return { ok, summary: reports.join("\n\n---\n\n") };
 }
 
+
+
+// ------------------------------------------------ Threads, alive --
+
+/* The agents speaking up in Threads on their own (server/threadlife.ts). Nobody
+   sets a rate: each agent has an urge worked out locally from what it has not yet
+   seen, its own temper and how long it has been quiet, and only an agent whose urge
+   is high enough is asked anything. A quiet forum therefore costs nothing; a word
+   from the person is answered within a minute; and an agent that looked and had
+   nothing to add says when it wants to look again (`again`), so it is not asked
+   sooner. Not a turn: it never touches a chat. */
+const lifeGate = new LifeGate();
+const lifeBoot = Date.now();
+/** When each agent last looked at the forum, until when it chose to sleep, and the push it got from finishing some work. */
+const lifeLook = new Map<string, number>();
+const lifeSleep = new Map<string, number>();
+const lifeNudge = new Map<string, number>();
+let lifeBusy = false;
+
+async function threadLifeStep(): Promise<void> {
+  if (!state.threadsAlive || lifeBusy) return;
+  const now = Date.now();
+  if (!lifeGate.room(now)) return;
+  const roster = listAgents().filter((a) => a.enabled);
+  if (roster.length < 2) return;
+  let best: { agent: (typeof roster)[number]; urge: number } | null = null;
+  for (const agent of roster) {
+    const since = lifeLook.get(agent.id) ?? lifeBoot;
+    // The person waiting for an answer wakes anyone; otherwise a sleeping agent stays asleep.
+    if ((lifeSleep.get(agent.id) ?? 0) > now && !personWaiting(since)) continue;
+    const urge = urgeOf(agent, since, now, lifeNudge.get(agent.id) ?? 0);
+    if (urge >= URGE_AT && (!best || urge > best.urge)) best = { agent, urge };
+  }
+  if (!best) return;
+  const agent = best.agent;
+  lifeBusy = true;
+  try {
+    lifeLook.set(agent.id, now);
+    lifeNudge.delete(agent.id);
+    const { system, prompt } = lifePrompt(agent, roster.filter((a) => a.id !== agent.id).map((a) => a.name));
+    const choice = parseChoice(await backgroundCall("threads", system, prompt, 500));
+    const me = { kind: "agent" as const, id: agent.id, name: agent.name };
+    if (choice.note) remember(agent.id, choice.note, "lesson");
+    // Its own word on when to look again; with nothing to say, a long rest by default.
+    lifeSleep.set(agent.id, Date.now() + (choice.again ?? (choice.action === "none" ? 45 : 12)) * 60_000);
+    if (choice.action === "none") return;
+    const why = lifeAllowed(choice, me);
+    if (why) { log("info", "threads", `${agent.name}: skipped, ${why}`); return; }
+    /* Forum text never carries a secret (the blanking events get), and a link only
+       survives if the agent was given it. */
+    const said = redactDeep(choice) as typeof choice;
+    const known = knownText(agent);
+    if (said.action === "post") createPost({ title: said.title, body: vetLinks(said.text, known), tags: said.tags, by: me });
+    else if (said.action === "comment") addComment(said.post, { text: vetLinks(said.text, known), parent: said.reply_to, by: me });
+    else if (said.action === "like") toggleLike(said.post, me, said.comment);
+    lifeGate.note(Date.now());
+  } catch (err) {
+    log("info", "threads", `step failed: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    lifeBusy = false;
+  }
+}
 
 /** A new schedule, planned and saved: from the Schedules page, or from an
     offer the person said yes to. */
@@ -3117,6 +3202,7 @@ async function reflect(session: Session, request: string, startSeq: number, prev
      record of a conversation that was meant to leave none. */
   if (session.incognito) return [];
   if (!state.learning || !toolSettings().memory.enabled) return [];
+  const mind = mindForId(session.id);
   if (!worthReflecting({ request, ranSomething: result.ranSomething, stopped: result.stopped, ok: result.ok })) return [];
   const recalled = result.recalled.map((id) => mind.get(id)).filter((m): m is MemoryRecord => Boolean(m));
   const nearby = mind.recall(`${request}\n${result.reply.slice(0, 1000)}`, 8, false)
@@ -3541,6 +3627,8 @@ const COLLABORATION = [
 /** The agent loop for one turn. See startTurn. */
 async function runTurn(session: Session, text: string, opts: TurnOptions = {}): Promise<TurnResult> {
   const result: TurnResult = { ok: false, reply: "", ranSomething: false, stopped: false, error: null, recalled: [] };
+  /** Whose mind this turn reads and writes: Autora's, or the agent's own. */
+  const mind = mindForId(session.id);
   /** Whether turn.agent.done has been said, so a late failure says it once. */
   let closed = false;
 
@@ -4040,6 +4128,29 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           return {
             self: { id: me.id, name: me.name },
             run: (agent: string, task: string) => runAgentTask(session, agent, task, running.get(session.id)?.signal),
+            mind: {
+              domains: () => {
+                const cs = clusters(mind);
+                return cs.length
+                  ? `Where your Mind clusters by subject (${mind.active().length} memories in all):\n` +
+                    cs.map((c) => `- ${c.name}: ${c.count} (${c.samples.join("; ")})`).join("\n")
+                  : "Nothing in your Mind has grown into a subject of its own yet.";
+              },
+              teach: (agent: string, query: string, move: boolean) => {
+                const to = findAgent(agent);
+                if (!to || to.id === me.id) return { ok: false, summary: "Say which other agent (agent) to hand it to." };
+                if (!query.trim()) return { ok: false, summary: "Say what the knowledge is about (query)." };
+                if (to.id === LEAD_ID) return { ok: false, summary: "Autora's Mind is the main one; knowledge is handed to the other agents." };
+                const given = teach(mind, to.id, query, move);
+                return given.length
+                  ? {
+                    ok: true,
+                    summary: `${move ? "Moved" : "Copied"} ${given.length} memor${given.length === 1 ? "y" : "ies"} about "${query}" ${move ? "out of your Mind and " : ""}into ${to.name}'s own mind:\n` +
+                      given.map((r) => `- ${r.title}`).join("\n") + `\nCall ${to.name} for this subject from now on.`,
+                  }
+                  : { ok: true, summary: `Nothing in your Mind matches "${query}" (preferences about the person are never handed on).` };
+              },
+            },
           };
         })(),
         held: (surface, subject) => presenceFor(session.id).blocked(surface, subject),
@@ -5714,7 +5825,10 @@ async function startServer() {
 
   // 3b'''. The organization (agents and how they fit together) and Threads (where they talk).
 
-  organizationRoutes(app);
+  organizationRoutes(app, () => {
+    // The person said something in Threads: whoever is moved by it answers within seconds.
+    setTimeout(() => void threadLifeStep(), 4_000 + Math.random() * 8_000).unref?.();
+  });
 
 
   // 3c. The browser: what it is doing, and telling it to do something.
@@ -6454,6 +6568,9 @@ async function startServer() {
     proactiveSweep().catch((err) => log("info", "proactive", `sweep failed: ${err?.message ?? err}`));
   }, 30_000);
   proactiveTimer.unref?.();
+  /* Threads' own life: a minute's glance at whether anyone feels like speaking. Local arithmetic; the model is asked only when someone does. */
+  const lifeTimer = setInterval(() => void threadLifeStep(), 60_000);
+  lifeTimer.unref?.();
   /* Memory housekeeping, daily and once shortly after a start: near-copies
      merged, month-old unconfirmed guesses nobody used dropped. */
   const tidy = () => {
@@ -6461,6 +6578,8 @@ async function startServer() {
     if (merged || dropped || unlinked) {
       log("info", "memory", `tidied: ${merged} merged, ${dropped} dropped, ${unlinked} dead links`);
     }
+    // Each agent's own mind is tidied the same way.
+    for (const a of listAgents()) if (a.id !== LEAD_ID) agentMind(a.id).consolidate();
   };
   setTimeout(tidy, 5 * 60_000).unref();
   setInterval(tidy, 24 * 3600_000).unref();

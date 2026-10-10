@@ -86,6 +86,10 @@ export const Kind = {
   FileEdit: "file.edit",
   /** A short word from the agent about what the person just did, said between turns. */
   AgentRemark: "agent.remark",
+  /** An agent of the Organization speaking up as the chat calls it, and
+      (AgentBack) reporting that it has finished. */
+  AgentChime: "agent.chime",
+  AgentBack: "agent.back",
   TodoUpdate: "todo.update",
   ModeSwitch: "mode.switch",
   PreviewOpen: "preview.open",

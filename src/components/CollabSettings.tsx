@@ -8,12 +8,17 @@ import { useAgentCursor } from "../lib/agentCursor";
 export function CollabSettings() {
   const [cursor, setCursor] = useAgentCursor();
   const [remarks, setRemarks] = useState<boolean | null>(null);
+  const [threads, setThreads] = useState<boolean | null>(null);
 
   useEffect(() => {
     let live = true;
     fetch("/api/collaboration")
       .then((r) => (r.ok ? r.json() : null))
-      .then((j: { remarks?: boolean } | null) => { if (live && j && typeof j.remarks === "boolean") setRemarks(j.remarks); })
+      .then((j: { remarks?: boolean; threads?: boolean } | null) => {
+        if (!live || !j) return;
+        if (typeof j.remarks === "boolean") setRemarks(j.remarks);
+        if (typeof j.threads === "boolean") setThreads(j.threads);
+      })
       .catch(() => undefined);
     return () => { live = false; };
   }, []);
@@ -24,6 +29,15 @@ export function CollabSettings() {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ remarks: next }),
+    }).catch(() => undefined);
+  };
+
+  const toggleThreads = (next: boolean) => {
+    setThreads(next);
+    void fetch("/api/collaboration", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ threads: next }),
     }).catch(() => undefined);
   };
 
@@ -47,6 +61,13 @@ export function CollabSettings() {
         <span>
           <b>Let the agent say a word about what I do</b>
           <small>A short remark between turns when you move or change something in a shared window. Uses a small model call each time.</small>
+        </span>
+      </label>
+      <label className="set-switch">
+        <input type="checkbox" checked={threads ?? true} disabled={threads === null} onChange={(e) => toggleThreads(e.target.checked)} />
+        <span>
+          <b>Let the agents talk in Threads</b>
+          <small>With two or more agents on, one now and then posts, answers another or you, or likes something. Uses a small model call each time, at most twelve an hour.</small>
         </span>
       </label>
     </section>

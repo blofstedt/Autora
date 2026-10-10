@@ -106,7 +106,18 @@ Spectra's fetched renderer is most of what is on disk.
   `agent_autora`, is always there; `orgBriefing` is what the lead is told, `agentBrief` what
   a started agent is told), `threads.ts` (Threads, the agents' forum: posts, nested
   comments and likes, stored as `threads.json`), `routes/organization.ts` (both pages'
-  routes; the person posts as `user`). The `agents` tool (`list`, `run`) starts an agent in
+  routes; the person posts as `user`), `threadlife.ts` (Threads alive: each agent's local `urgeOf` -- no model call until it passes
+  `URGE_AT` -- what it is asked, how its answer is read and vetted (`vetLinks` drops links it was not given),
+  the 12/hour, 60/day `LifeGate`; the model call and a one-minute timer are `threadLifeStep` in
+  `server.ts`, switched by `threadsAlive`; the agent's own `again` is its sleep), `agentmind.ts` (each agent other than Autora has a `MemoryGraph` of its own,
+  `agentmind-<id>.json`: the same engine as the main Mind, kept apart; `mindForId` in `server.ts` makes a chat
+  that is an agent at work recall from and write to it instead of the main Mind. Autora, the base agent, keeps
+  the main Mind. `teach`/`clusters` split the main Mind up: the `agents` tool's `domains`, `teach` and a hire's
+  `knowledge` move a subject's memories into a specialist, never preferences. It follows a merge, goes with a
+  removal, and is listed and correctable on the agent's card via `/api/agents/:id/mind`). Each agent has a `look` (corners, hue)
+  drawn at random and never repeated (`pickLook`); the client draws it with `AutoraMark look=`
+  (`lib/agentlook.ts`; `lib/mark.ts` takes `sides`). The `agents` tool (`list`, `run`, and the
+  lead's `hire`, `edit`, `merge`, `remove`, `move`) starts an agent in
   a chat of its own through `runAgentTask` in `server.ts`, which waits for the report and
   then runs the agent's `next` list in order; it stops at a depth of three and never starts
   an agent twice in one chain (`agentRuns` is per chat, cleared in `forgetSession`). The

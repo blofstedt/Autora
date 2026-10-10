@@ -1,7 +1,7 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useThemeColors, type ThemeColors } from "../lib/theme";
+import { lookColors, type AgentLook } from "../lib/agentlook";
 import {
-  BLOOM,
   BUILD_MS,
   CLOSE_AT,
   CLOSE_FADE,
@@ -13,11 +13,12 @@ import {
   MIC_OPEN,
   MIC_PATH,
   MIC_SHUT,
-  MORPH,
   MORPH_MS,
-  REST,
   SETTLE_MS,
   BLOOM_SPLINES,
+  bloomOf,
+  morphOf,
+  restOf,
   type Closing,
   buildWait,
   caughtIn,
@@ -95,8 +96,6 @@ const LAY_GAP = 0.085;
 const FALL = 0.155;
 const CLOSE_BY = 0.76;
 
-
-const STACK = stackUnits();
 
 /** Brand violet, cyan and orchid, turning through each other. The green that
     used to mean "live" is deliberately absent -- state is carried by motion. */
@@ -285,6 +284,7 @@ export function AutoraMark({
   attention = 0,
   pulse = 0,
   voice = null,
+  look = null,
 }: {
   state?: MarkState;
   size?: number;
@@ -308,6 +308,9 @@ export function AutoraMark({
    * is speaking, in the corner of the eye the conversation is already in.
    */
   voice?: "you" | "agent" | null;
+  /** An agent of the Organization: its own shape and colours, the same
+      movement. Left out, the mark is Autora's triangle in the brand's. */
+  look?: AgentLook | null;
 }) {
   const still = useStillness();
   const { shown, close } = useFinish(useWholeTurn(state, still), pulse);
@@ -315,7 +318,12 @@ export function AutoraMark({
   // page is one gradient, and the second mark would quietly inherit the
   // first's animation.
   const uid = useId().replace(/:/g, "");
-  const colors = useThemeColors();
+  const theme = useThemeColors();
+  const own = look ? lookColors(look) : null;
+  const colors: ThemeColors = own ? { ...theme, ...own.colors } : theme;
+  const sides = look?.sides ?? 3;
+  const REST = restOf(sides);
+  const stack = useMemo(() => stackUnits(sides), [sides]);
 
   const busy = shown === "thinking" || shown === "building";
   const shifting = !still && (busy || shown === "live" || shown === "settle");
@@ -342,6 +350,7 @@ export function AutoraMark({
         width: size,
         height: size,
         ...(attention ? { "--attention": attention.toFixed(2) } : {}),
+        ...(own ? own.css : {}),
         /* How long this ending's way home takes: the bloom in styles.css waits
            for it, and it is as long as the mark has to travel. */
         ...(close !== null ? { "--morph-close-ms": `${close.ms}ms` } : {}),
@@ -401,7 +410,7 @@ export function AutoraMark({
                 keySplines="0 0 1 1;0.4 0 0.3 1;0.4 0 0.6 1;0 0 1 1"
                 values="0 0;0 0;0 -0.18;0 0;0 0"
               />
-              {STACK.map((p, i) => (
+              {stack.map((p, i) => (
                 <StackPiece key={i} d={p.d} x={p.x} y={p.y} at={LAY_FROM + LAY_GAP * i} fill={`url(#g${uid})`} />
               ))}
             </g>
@@ -457,7 +466,7 @@ export function AutoraMark({
               <animate
                 key={shown}
                 attributeName="d"
-                values={MORPH}
+                values={morphOf(sides)}
                 dur={`${MORPH_MS}ms`}
                 repeatCount="indefinite"
                 calcMode="linear"
@@ -470,8 +479,8 @@ export function AutoraMark({
                 /* A settle that follows a morph is the way home and then the
                    bloom in one run; one from rest is the bloom alone. */
                 {...(close === null
-                  ? { values: BLOOM.join(";"), dur: `${SETTLE_MS}ms`, keySplines: BLOOM_SPLINES }
-                  : settleHome(close))}
+                  ? { values: bloomOf(sides).join(";"), dur: `${SETTLE_MS}ms`, keySplines: BLOOM_SPLINES }
+                  : settleHome(close, sides))}
                 repeatCount="1"
                 fill="freeze"
                 calcMode="spline"

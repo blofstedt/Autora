@@ -75,6 +75,56 @@ async function main() {
       app.decide = null;
     });
 
+    await test("a specialist works from its own mind and never sees Autora's; what it learns stays its own", async () => {
+      const made = await app.api("POST", "/api/agents", { name: "Walrus Keeper", role: "Knows the walrus protocol", when: "anything about the walrus protocol" });
+      assert.equal(made.status, 200, JSON.stringify(made.body));
+      const keeper: string = made.body.agent.id;
+      // Autora's own Mind knows a handshake; the lead teaches the Keeper the protocol into the Keeper's own mind.
+      await app.api("POST", "/api/memory", { title: "Secret handshake", body: "The secret handshake is pineapple, said twice.", kind: "fact", subject: "handshake" });
+      await app.api("POST", "/api/memory", { title: "Walrus protocol", body: "The walrus protocol: always bring a flask and wave twice.", kind: "fact", subject: "walrus protocol" });
+      let wrote = false;
+      app.seen.length = 0;
+      app.decide = (req) => {
+        if (req.last.includes("Hand over the walrus knowledge")) {
+          return { tools: [{ name: "agents", args: { action: "teach", agent: "Walrus Keeper", query: "walrus protocol" } }] };
+        }
+        if (req.last.includes("Moved") && req.last.includes("walrus")) return { text: "Handed over." };
+        if (req.last.includes("Ask the keeper")) {
+          return { tools: [{ name: "agents", args: { action: "run", agent: "Walrus Keeper", task: "Explain the walrus protocol and the secret handshake." } }] };
+        }
+        if (req.last.includes("You are Walrus Keeper")) {
+          return { tools: [{ name: "set_mode", args: { to: "build", reason: "writing a memory" } }] };
+        }
+        if (!wrote && /build|mode/i.test(req.last) && req.messages.some((m) => JSON.stringify(m.content).includes("You are Walrus Keeper"))) {
+          wrote = true;
+          return { tools: [{ name: "memory_write", args: { title: "Walrus keeper: flasks come full", body: "A flask for the walrus protocol is brought full, never empty.", kind: "fact", subject: "walrus protocol" } }] };
+        }
+        return { text: "Done." };
+      };
+      const s = await app.newSession("split", "build");
+      await app.turn(s, "Hand over the walrus knowledge");
+      const mine = (await app.api("GET", "/api/memory")).body;
+      const titles = (mine.records ?? mine.memories ?? mine).map((r: any) => r.title);
+      assert.ok(!titles.includes("Walrus protocol"), "the knowledge left Autora's Mind");
+      assert.ok(titles.includes("Secret handshake"), "and the rest stayed");
+      const held = (await app.api("GET", `/api/agents/${keeper}/mind`)).body;
+      assert.ok(held.memories.some((m: any) => /flask/.test(m.text)), "it is in the Keeper's own mind");
+
+      app.seen.length = 0;
+      await app.turn(s, "Ask the keeper about it");
+      const child = app.seen.find((r) => r.last.includes("You are Walrus Keeper"))!;
+      assert.ok(child, "the Keeper was started");
+      const asked = `${child.system}\n${JSON.stringify(child.messages)}`;
+      assert.match(asked, /flask/, "it recalls from its own mind");
+      assert.doesNotMatch(asked, /pineapple/, "and never from Autora's, though the task named the handshake");
+      const after = (await app.api("GET", `/api/agents/${keeper}/mind`)).body;
+      assert.ok(after.memories.some((m: any) => /never empty/.test(m.text)), "what it learned went into its own mind");
+      const main = (await app.api("GET", "/api/memory")).body;
+      const mainText = JSON.stringify(main);
+      assert.ok(!/never empty/.test(mainText), "and not into Autora's");
+      app.decide = null;
+    });
+
     await test("a switched-off agent is skipped, and an unknown one is refused", async () => {
       await app.api("PATCH", `/api/agents/${editor}`, { enabled: false });
       app.decide = (req) => {

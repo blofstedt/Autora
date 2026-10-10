@@ -72,7 +72,11 @@ import {
   addEntries, createNotebook, describeNotebook, findNotebook, listNotebooks, moveEntry,
   notebookLine, notebookMarkdown, removeEntry, updateEntry, updateNotebook, type Notebook,
 } from "./notebooks";
-import { agentLine, findAgent, listAgents, orgBriefing, LEAD_ID } from "./agents";
+import {
+  AgentError, agentLine, createAgent, deleteAgent, findAgent, HIRING, listAgents, mergeAgents, moveAgent, orgBriefing,
+  updateAgent, LEAD_ID,
+} from "./agents";
+import { remember, type NoteKind } from "./agentmind";
 import { ThreadError, addComment, createPost, describePost, getPost, listPosts, postLine, toggleLike } from "./threads";
 import { describe as describeJob, findJob, listJobs, readTail, startJob, stopJob } from "./background";
 import { addRule, listRules, revoke as revokeRule } from "./autonomy";
@@ -598,6 +602,11 @@ export interface ToolContext {
   agents?: {
     self: { id: string; name: string };
     run: (agent: string, task: string) => Promise<{ ok: boolean; summary: string }>;
+    /** The mind of whoever is asking: where its knowledge clusters, and handing a body of it to an agent. */
+    mind: {
+      domains: () => string;
+      teach: (agent: string, query: string, move: boolean) => { ok: boolean; summary: string };
+    };
   };
   /** True once the turn has been interrupted; long tools should give up. */
   cancelled: () => boolean;
@@ -1300,13 +1309,92 @@ const listOf = (raw: unknown): string[] =>
   Array.isArray(raw) ? raw.map((v) => String(v).trim()).filter(Boolean)
     : typeof raw === "string" && raw.trim() ? raw.split(",").map((v) => v.trim()).filter(Boolean) : [];
 
+/** The lead shaping the organization: hire, edit, merge, remove, move. */
+function shapeOrganization(action: string, args: Record<string, any>, ctx: ToolContext): ToolOutcome {
+  const agent = String(args.agent ?? "").trim();
+  const next = args.next ?? args.hands_to;
+  try {
+    if (action === "hire") {
+      const made = createAgent({
+        name: args.name, role: args.role, instructions: args.instructions, when: args.when,
+        reportsTo: args.reports_to, next,
+      });
+      welcomeToThreads(made);
+      const knowledge = String(args.knowledge ?? "").trim();
+      const taught = knowledge && ctx.agents ? ctx.agents.mind.teach(made.id, knowledge, args.move !== false) : null;
+      return {
+        ok: true,
+        summary: `Hired ${made.name} (${made.id}). ${agentLine(made)}${taught ? `\n${taught.summary}` : ""}`,
+        preview: `hired ${made.name}`,
+      };
+    }
+    if (!agent) return { ok: false, summary: "Say which agent (agent: its id or name)." };
+    const found = findAgent(agent);
+    if (!found) return { ok: false, summary: `There is no agent "${agent}". Use agents list to see who there is.` };
+    if (action === "edit") {
+      const patch: Record<string, unknown> = {};
+      for (const [from, to] of [["name", "name"], ["role", "role"], ["instructions", "instructions"], ["when", "when"], ["reports_to", "reportsTo"], ["enabled", "enabled"]]) {
+        if (args[from] !== undefined) patch[to] = args[from];
+      }
+      if (next !== undefined) patch.next = next;
+      if (!Object.keys(patch).length) return { ok: false, summary: "Nothing to change: give name, role, instructions, when, reports_to, next or enabled." };
+      const now = updateAgent(found.id, patch);
+      return { ok: true, summary: `Updated ${now.name}. ${agentLine(now)}`, preview: `edited ${now.name}` };
+    }
+    if (action === "remove") {
+      deleteAgent(found.id);
+      return { ok: true, summary: `Removed ${found.name}. Whoever reported to it now reports one level up.`, preview: `removed ${found.name}` };
+    }
+    if (action === "merge") {
+      const into = mergeAgents(found.id, args.into);
+      return { ok: true, summary: `Merged ${found.name} into ${into.name}. ${agentLine(into)}`, preview: `${found.name} -> ${into.name}` };
+    }
+    const moved = moveAgent(found.id, { reportsTo: args.reports_to, position: args.position });
+    return { ok: true, summary: `Moved ${moved.name}. ${agentLine(moved)}`, preview: `moved ${moved.name}` };
+  } catch (err) {
+    if (err instanceof AgentError) return { ok: false, summary: err.message };
+    throw err;
+  }
+}
+
+/** A new agent introduces itself on Threads, so the others (and the person) meet it. */
+function welcomeToThreads(a: { id: string; name: string; role: string; when: string }) {
+  try {
+    createPost({
+      title: `${a.name} has joined${a.role ? ` as ${a.role}` : ""}`,
+      body: `Hello, I'm ${a.name}${a.role ? `, the ${a.role}` : ""}.${a.when ? ` Call me when: ${a.when}` : ""}`,
+      tags: ["introductions"],
+      by: { kind: "agent", id: a.id, name: a.name },
+    });
+  } catch { /* a full forum does not stop a hire */ }
+}
+
 async function runAgents(args: Record<string, any>, ctx: ToolContext): Promise<ToolOutcome> {
   const action = String(args.action ?? "").trim().toLowerCase();
   if (action === "list") {
     const all = listAgents();
     return { ok: true, summary: all.map(agentLine).join("\n"), preview: `${all.length} agent${all.length === 1 ? "" : "s"}` };
   }
-  if (action !== "run") return { ok: false, summary: `Unknown agents action "${action}". Use list or run.` };
+  if (action === "domains") {
+    if (!ctx.agents) return { ok: false, summary: "No mind to look at from here." };
+    return { ok: true, summary: ctx.agents.mind.domains(), preview: "domains" };
+  }
+  if (action === "teach") {
+    if (!ctx.agents) return { ok: false, summary: "Agents cannot be taught from here." };
+    const to = findAgent(args.agent);
+    if (!to) return { ok: false, summary: `There is no agent "${String(args.agent ?? "")}" to teach. Use agents list.` };
+    const r = ctx.agents.mind.teach(to.id, String(args.query ?? ""), args.move !== false);
+    return { ...r, preview: r.ok ? `taught ${to.name}` : undefined };
+  }
+  if (action === "note") {
+    const who = findAgent(args.agent) ?? findAgent(ctx.agents?.self.id ?? LEAD_ID)!;
+    const kept = remember(who.id, args.text, ["fact", "lesson", "tip", "colleague"].includes(String(args.kind)) ? (args.kind as NoteKind) : "lesson");
+    return kept
+      ? { ok: true, summary: `Kept for ${who.name}: "${kept.text}". It will be in front of ${who.name} next time.`, preview: "noted" }
+      : { ok: false, summary: "Nothing to keep: say it in a sentence (text)." };
+  }
+  if (["hire", "edit", "merge", "remove", "move"].includes(action)) return shapeOrganization(action, args, ctx);
+  if (action !== "run") return { ok: false, summary: `Unknown agents action "${action}". Use list, run, domains, teach, note, hire, edit, merge, remove or move.` };
   const ref = String(args.agent ?? "").trim();
   const task = String(args.task ?? "").trim();
   if (!ref || !task) return { ok: false, summary: "Say which agent and what its task is (agent, task)." };
@@ -3085,7 +3173,8 @@ export async function capabilityBriefing(): Promise<string> {
   lines.push(
     "- Organization and Threads: always available. Tools: agents, thread. The person can set up other agents on the " +
       "Organization page, each with its own task and a note on when it should be called; the agents tool lists them and " +
-      "starts one. Threads is a forum for agents (and the person) to post, comment and like outside the main work; use the " +
+      "starts one. " +
+      HIRING + " Threads is a forum for agents (and the person) to post, comment and like outside the main work; use the " +
       "thread tool when you have something worth saying there, not to report on work you were asked for.",
   );
   const org = orgBriefing();

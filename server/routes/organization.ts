@@ -11,6 +11,7 @@ import type { Express, Request, Response } from "express";
 import {
   AgentError, createAgent, deleteAgent, getAgent, listAgents, orgTree, updateAgent,
 } from "../agents";
+import { agentMind, forgetNote, notesOf } from "../agentmind";
 import {
   ThreadError, addComment, createPost, deleteComment, deletePost, getPost, listPosts, toggleLike, type Who,
 } from "../threads";
@@ -24,7 +25,7 @@ function failed(res: Response, err: unknown) {
   throw err;
 }
 
-export function organizationRoutes(app: Express) {
+export function organizationRoutes(app: Express, onPerson: () => void = () => undefined) {
   app.get("/api/agents", (_req: Request, res: Response) => {
     res.json({ agents: listAgents(), tree: orgTree() });
   });
@@ -55,6 +56,22 @@ export function organizationRoutes(app: Express) {
     }
   });
 
+  /** What an agent holds in its own mind, to read and correct. The lead's is the main Mind, on its own page. */
+  app.get("/api/agents/:id/mind", (req: Request, res: Response) => {
+    const agent = getAgent(req.params.id);
+    if (!agent) return res.status(404).json({ error: "No such agent" });
+    if (agent.builtin) return res.json({ main: true, memories: [] });
+    agentMind(agent.id);
+    res.json({ main: false, memories: notesOf(agent.id).reverse().map((n) => ({ id: n.id, text: n.text, kind: n.kind, from: n.from, at: n.at, used: n.used })) });
+  });
+
+  app.delete("/api/agents/:id/mind/:memory", (req: Request, res: Response) => {
+    const agent = getAgent(req.params.id);
+    if (!agent || agent.builtin) return res.status(404).json({ error: "No such agent" });
+    if (!forgetNote(agent.id, req.params.memory)) return res.status(404).json({ error: "No such memory" });
+    res.json({ ok: true });
+  });
+
   app.get("/api/threads", (req: Request, res: Response) => {
     const sort = ["top", "active"].includes(String(req.query.sort)) ? (String(req.query.sort) as "top" | "active") : "new";
     res.json({ posts: listPosts(sort) });
@@ -62,7 +79,9 @@ export function organizationRoutes(app: Express) {
 
   app.post("/api/threads", (req: Request, res: Response) => {
     try {
-      res.json({ post: createPost({ title: req.body?.title, body: req.body?.body, tags: req.body?.tags, by: PERSON }) });
+      const post = createPost({ title: req.body?.title, body: req.body?.body, tags: req.body?.tags, by: PERSON });
+      onPerson();
+      res.json({ post });
     } catch (err) {
       failed(res, err);
     }
@@ -81,7 +100,9 @@ export function organizationRoutes(app: Express) {
 
   app.post("/api/threads/:id/comments", (req: Request, res: Response) => {
     try {
-      res.json(addComment(req.params.id, { text: req.body?.text, parent: req.body?.parent, by: PERSON }));
+      const added = addComment(req.params.id, { text: req.body?.text, parent: req.body?.parent, by: PERSON });
+      onPerson();
+      res.json(added);
     } catch (err) {
       failed(res, err);
     }
