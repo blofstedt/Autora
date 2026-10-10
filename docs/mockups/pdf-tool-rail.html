@@ -1,5 +1,5 @@
 <title>Autora PDF Mockup</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500&display=swap">
 <style>
 /* Layout: slim top bar, page canvas, floating tool rail (right on desktop, bottom dock on phone), options tray beside/above it.
    Palette and motion are Autora's own (src/styles.css): one violet, a ladder of blue-black surfaces, one easing curve. */
@@ -97,13 +97,13 @@ svg.ink { position: absolute; inset: 0; width: 100%; height: 100%; pointer-event
 .rail .tool kbd { display: none; }
 
 @media (max-width: 767px) {
-  .rail { left: 0; right: 0; bottom: 0; height: calc(56px + env(safe-area-inset-bottom, 0px)); padding: 0 8px env(safe-area-inset-bottom, 0px); border-width: 1px 0 0; border-radius: 0; background: var(--s1); justify-content: space-between; overflow: hidden; }
-  .rail .tool { width: 34px; height: 34px; }
-  .rail .tool svg.i { width: 17px; height: 17px; }
+  .rail { left: 0; right: 0; bottom: 0; height: calc(60px + env(safe-area-inset-bottom, 0px)); padding: 0 8px env(safe-area-inset-bottom, 0px); border-width: 1px 0 0; border-radius: 0; background: var(--s1); justify-content: space-between; overflow: hidden; }
+  .rail .tool { width: 40px; height: 40px; }
+  .rail .tool svg.i { width: 21px; height: 21px; }
   .rail .tool span { display: none; }
-  .rail { gap: 4px; }
+  .rail { gap: 2px; }
   .rail .div { width: 1px; height: 24px; margin: 0 2px; }
-  .tray { left: 8px; right: 8px; bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
+  .tray { left: 8px; right: 8px; bottom: calc(68px + env(safe-area-inset-bottom, 0px)); }
 
 }
 @media (min-width: 768px) {
@@ -163,7 +163,7 @@ input[type=range] { width: 100%; accent-color: var(--tc, var(--accent)); }
 .find input { flex: 1; min-width: 0; height: 34px; border: 0; background: transparent; color: var(--text); padding: 0 12px; font: inherit; font-size: 16px; }
 .find small { font: 11px var(--mono); color: var(--text-3); white-space: nowrap; }
 .chip { position: absolute; z-index: 10; left: 12px; bottom: 12px; font: 500 11.5px var(--mono); color: var(--text-2); background: var(--s1); border: 1px solid var(--line); padding: 6px 12px; border-radius: 999px; }
-@media (max-width: 767px) { .chip { bottom: calc(68px + env(safe-area-inset-bottom, 0px)); } }
+@media (max-width: 767px) { .chip { bottom: calc(72px + env(safe-area-inset-bottom, 0px)); } }
 .toast { position: absolute; z-index: 70; left: 50%; top: 60px; transform: translate(-50%, -8px); background: var(--s4); padding: 9px 16px; border-radius: 999px; font-size: 13px; opacity: 0; pointer-events: none; transition: .2s var(--ease); white-space: nowrap; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 /* Phone: a smaller modal and smaller tiles (after the base rules so they win). */
@@ -176,6 +176,20 @@ input[type=range] { width: 100%; accent-color: var(--tc, var(--accent)); }
   .grid .tile svg.i { width: 17px; height: 17px; }
   .sheetx .hint { font-size: 11.5px; }
 }
+/* Redaction handles, signature pad */
+.mark.rd.sel { outline: 2px dashed var(--c-redact); outline-offset: 1px; }
+.hdl { position: absolute; width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 2px solid var(--c-redact); box-shadow: 0 2px 6px rgba(0,0,0,.4); touch-action: none; transform: translate(-50%, -50%); }
+.hdl::after { content: ''; position: absolute; inset: -9px; }
+.hdl.n { left: 50%; top: -10px; cursor: ns-resize; } .hdl.s { left: 50%; top: calc(100% + 10px); cursor: ns-resize; }
+.hdl.e { left: calc(100% + 10px); top: 50%; cursor: ew-resize; } .hdl.w { left: -10px; top: 50%; cursor: ew-resize; }
+.mark.sg { font: 500 5.4cqw/1 'Caveat', cursive; color: #1d3a8a; white-space: nowrap; }
+img.mark.sg { width: 26%; height: auto; }
+.pad { position: relative; height: 84px; background: var(--paper); border-radius: 14px; }
+.pad canvas { width: 100%; height: 100%; touch-action: none; border-radius: 14px; display: block; }
+.pad::after { content: 'Sign here'; position: absolute; left: 12px; bottom: 6px; font-size: 11px; color: #9aa0b0; pointer-events: none; }
+.pad .clr { position: absolute; top: 4px; right: 4px; width: 28px; height: 28px; color: #5b6072; }
+.sigin { height: 40px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--bg); color: var(--text); padding: 0 14px; font: inherit; font-size: 16px; width: 100%; }
+.sigprev { height: 64px; display: grid; place-items: center; background: var(--paper); border-radius: 14px; color: #1d3a8a; font: 500 34px 'Caveat', cursive; overflow: hidden; white-space: nowrap; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 
@@ -315,6 +329,8 @@ const CATALOG = [
 const BY_ID = Object.fromEntries(CATALOG.map(t => [t.id, t]));
 /* What the bar starts with, on a phone always and on a desktop until the person pins something else. */
 const DEFAULT_PINNED = ['select', 'text', 'highlight', 'draw', 'shape', 'note', 'stamp', 'redact', 'sign'];
+/* A phone's bar is the tools a thumb reaches for; Note and Stamps live in the grid so the icons can be bigger. */
+const PHONE_DEFAULT = ['select', 'text', 'highlight', 'draw', 'shape', 'redact', 'sign'];
 const phoneQuery = matchMedia('(max-width: 767px)');
 const isPhone = () => phoneQuery.matches;
 let pinned = DEFAULT_PINNED.slice();
@@ -326,10 +342,10 @@ const rail = $('#rail');
 let slots = 9; // tools that fit, not counting the grid button
 function measure() {
   const w = $('.work');
-  if (isPhone()) { const avail = w.clientWidth - 16 - 2 - 7; slots = Math.max(1, Math.floor((avail + 4) / 38) - 1); }
+  if (isPhone()) { const avail = w.clientWidth - 16 - 2 - 7; slots = Math.max(1, Math.floor((avail + 2) / 42) - 1); }
   else { const avail = w.clientHeight - 32 - 16 - 2 - 5; slots = Math.max(1, Math.floor((avail + 4) / 48) - 1); }
 }
-const barTools = () => (isPhone() ? DEFAULT_PINNED : pinned).slice(0, slots);
+const barTools = () => (isPhone() ? PHONE_DEFAULT : pinned).slice(0, slots);
 function renderRail() {
   measure();
   rail.innerHTML = barTools().map(id => { const t = BY_ID[id]; return `<button class="tool${S.tool === id ? ' on' : ''}" style="--tc: var(--c-${t.c})" data-tool="${id}" data-tip="${t.tip}" aria-label="${t.tip}" aria-pressed="${S.tool === id}">${ic(t.icon)}<span>${t.label}</span></button>`; }).join('')
@@ -362,7 +378,7 @@ $('#menuPop').innerHTML = MENU.map(([h, rows]) => `<h4>${h}</h4>` +
   rows.map(([i, l, k]) => `<button class="row" role="menuitem" data-menu="${l}">${ic(i)}<span>${l}</span>${k ? `<span class="k">${k}</span>` : ''}</button>`).join('')).join('');
 
 /* State */
-const S = { tool: 'select', color: '#ffd60a', ink: '#ff6b81', size: 4, shape: 'box', stamp: 'APPROVED', marks: [], redo: [] };
+const S = { detect: 'word', sigMode: 'sign', sigText: 'Mara Halden', sigData: null, tool: 'select', color: '#ffd60a', ink: '#ff6b81', size: 4, shape: 'box', stamp: 'APPROVED', marks: [], redo: [] };
 const COLORS = { highlight: ['#ffd60a', '#7ee787', '#ff8fc7', '#6fd3ff'], draw: ['#ff6b81', '#f4f4f8', '#6e5bff', '#34d399', '#fbbf24'], shape: ['#ff6b81', '#6e5bff', '#34d399', '#fbbf24'], text: ['#1d4ed8', '#111827', '#c2253a', '#047857'] };
 const TRAYS = {
   select: () => `<div class="hd"><b>${ic('select')}Select</b></div><p class="hint">Tap a mark to move or resize it. Everything Autora added is a movable object too.</p>`,
@@ -372,22 +388,39 @@ const TRAYS = {
   shape: () => head('shape', 'Shapes') + `<div class="seg" role="group">${['box','circle','line','arrow'].map(s => `<button aria-pressed="${S.shape===s}" data-shape="${s}">${s[0].toUpperCase()+s.slice(1)}</button>`).join('')}</div>` + sw('shape'),
   note: () => head('note', 'Note') + `<p class="hint">Tap the page to drop a note. Notes are visible to Autora and to anyone you share with.</p>`,
   stamp: () => head('stamp', 'Stamps') + `<div class="seg" style="flex-wrap:wrap;border-radius:18px">${['APPROVED','REJECTED','CONFIDENTIAL','DRAFT'].map(s => `<button style="flex:1 1 45%;font-size:11px" aria-pressed="${S.stamp===s}" data-stamp="${s}">${s}</button>`).join('')}</div>`,
-  redact: () => head('redact', 'Redact') + `<p class="hint">Drag over anything to remove it. The text is deleted from the file, not covered.</p><button class="btn ghost" data-act="Find and redact">Find and redact…</button>`,
-  sign: () => head('sign', 'Fill and sign') + `<div class="seg"><button aria-pressed="true">Draw</button><button aria-pressed="false">Type</button><button aria-pressed="false">Image</button></div><button class="btn" data-act="Signature added">Add my signature</button>`,
+  redact: () => head('redact', 'Redact') + `<p class="hint">Tap text to redact it. Drag the handles to resize, or drag over an area to redact a box. The text is deleted from the file, not covered.</p><div><div class="lab">Tap redacts</div><div class="seg" role="group"><button aria-pressed="${S.detect==='word'}" data-detect="word">A word</button><button aria-pressed="${S.detect==='line'}" data-detect="line">A line</button></div></div><button class="btn ghost" data-act="Find and redact">Find and redact…</button>`,
+  sign: () => head('sign', 'Sign') + `<div class="seg" role="group"><button aria-pressed="${S.sigMode==='sign'}" data-sigmode="sign">Sign</button><button aria-pressed="${S.sigMode==='type'}" data-sigmode="type">Type</button></div>` + (S.sigMode === 'sign' ? `<div class="pad"><canvas id="pad" width="464" height="168"></canvas><button class="ib clr" data-padclear aria-label="Clear signature">${ic('x')}</button></div>` : `<input id="sigText" class="sigin" value="${S.sigText}" aria-label="Type your name" autocomplete="off"><div class="sigprev" id="sigPrev">${S.sigText}</div>`) + `<p class="hint">Then tap the page where it goes.</p>`,
 };
 /* A tool with no settings of its own still gets a tray, so the person always sees what is open. */
 function trayFor(id) { const t = BY_ID[id]; return TRAYS[id] ? TRAYS[id]() : head(t.icon, t.label) + `<p class="hint">${t.tip}. Click the page or the file to use it.</p>`; }
 function head(i, t) { return `<div class="hd"><b>${ic(i)}${t}</b><button class="ib" data-close aria-label="Close options" style="width:30px;height:30px">${ic('x')}</button></div>`; }
 function sw(k) { const cur = k === 'highlight' ? S.color : S.ink; return `<div><div class="lab">Colour</div><div class="sw">${COLORS[k].map(c => `<button style="background:${c}" aria-label="Colour ${c}" aria-pressed="${c === cur}" data-color="${c}" data-for="${k}"></button>`).join('')}</div></div>`; }
 
+function paintTray() {
+  $('#tray').innerHTML = trayFor(S.tool);
+  $('#size')?.addEventListener('input', e => S.size = +e.target.value);
+  $('#sigText')?.addEventListener('input', e => { S.sigText = e.target.value; $('#sigPrev').textContent = S.sigText; });
+  initPad();
+}
+/* The signature pad: draw with a finger or a mouse. */
+function initPad() {
+  const c = $('#pad'); if (!c) return;
+  const g = c.getContext('2d'); g.lineWidth = 4; g.lineCap = g.lineJoin = 'round'; g.strokeStyle = '#1d3a8a';
+  if (S.sigData) { const im = new Image(); im.onload = () => g.drawImage(im, 0, 0); im.src = S.sigData; }
+  let down = false;
+  const xy = e => { const r = c.getBoundingClientRect(); return [(e.clientX - r.left) * c.width / r.width, (e.clientY - r.top) * c.height / r.height]; };
+  c.addEventListener('pointerdown', e => { down = true; c.setPointerCapture(e.pointerId); g.beginPath(); g.moveTo(...xy(e)); g.lineTo(...xy(e)); g.stroke(); });
+  c.addEventListener('pointermove', e => { if (!down) return; g.lineTo(...xy(e)); g.stroke(); });
+  const end = () => { if (down) { down = false; S.sigData = c.toDataURL(); } };
+  c.addEventListener('pointerup', end); c.addEventListener('pointercancel', end);
+}
 function setTool(id) {
   S.tool = id;
   document.querySelectorAll('.rail .tool[data-tool]').forEach(b => { const on = b.dataset.tool === id; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
   const tray = $('#tray');
   tray.style.setProperty('--tc', `var(--c-${BY_ID[id].c})`);
-  tray.innerHTML = trayFor(id); tray.hidden = id === 'select';
+  selectRd(null); tray.hidden = id === 'select'; paintTray();
   $('#layer').className = 'layer t-' + id;
-  $('#size')?.addEventListener('input', e => S.size = +e.target.value);
 }
 rail.addEventListener('click', e => {
   if (e.target.closest('[data-open-all]')) { renderSheet(); openAll(true); return; }
@@ -395,9 +428,12 @@ rail.addEventListener('click', e => {
 $('#tray').addEventListener('click', e => {
   const t = e.target.closest('button'); if (!t) return;
   if (t.dataset.close !== undefined) setTool('select');
-  if (t.dataset.color) { if (t.dataset.for === 'highlight') S.color = t.dataset.color; else S.ink = t.dataset.color; $('#tray').innerHTML = trayFor(S.tool); }
-  if (t.dataset.shape) { S.shape = t.dataset.shape; $('#tray').innerHTML = trayFor(S.tool); }
-  if (t.dataset.stamp) { S.stamp = t.dataset.stamp; $('#tray').innerHTML = trayFor(S.tool); }
+  if (t.dataset.color) { if (t.dataset.for === 'highlight') S.color = t.dataset.color; else S.ink = t.dataset.color; paintTray(); }
+  if (t.dataset.shape) { S.shape = t.dataset.shape; paintTray(); }
+  if (t.dataset.stamp) { S.stamp = t.dataset.stamp; paintTray(); }
+  if (t.dataset.detect) { S.detect = t.dataset.detect; paintTray(); }
+  if (t.dataset.sigmode) { S.sigMode = t.dataset.sigmode; paintTray(); }
+  if (t.dataset.padclear !== undefined) { S.sigData = null; paintTray(); }
   if (t.dataset.act) toast(t.dataset.act);
 });
 
@@ -442,7 +478,9 @@ function addMark(el) { S.marks.push(el); S.redo = []; sync(); }
 function sync() { $('#btnUndo').disabled = !S.marks.length; $('#btnRedo').disabled = !S.redo.length; }
 layer.addEventListener('pointerdown', e => {
   const p = pt(e), t = S.tool;
-  if (!['text', 'note', 'stamp', 'highlight', 'draw', 'shape', 'redact'].includes(t)) return;
+  if (t === 'redact') { const rd = e.target.closest('.mark.rd'); if (rd) { selectRd(rd); return; } selectRd(null); }
+  if (!['text', 'note', 'stamp', 'highlight', 'draw', 'shape', 'redact', 'sign'].includes(t)) return;
+  if (t === 'sign') { placeSignature(p); return; }
   if (['text', 'note', 'stamp'].includes(t)) {
     const el = document.createElement('div');
     el.className = 'mark ' + ({ text: 'tx', note: 'nt', stamp: 'st' })[t];
@@ -458,15 +496,78 @@ layer.addEventListener('pointerdown', e => {
   el.className = 'mark ' + ({ highlight: 'hl', redact: 'rd', shape: 'sh' })[t];
   if (t === 'highlight') el.style.background = S.color + '66';
   if (t === 'shape') { el.style.setProperty('--c', S.ink); if (S.shape === 'circle') el.style.borderRadius = '50%'; }
-  layer.append(el); drag = { t, p0: p, el };
+  layer.append(el); drag = { t, p0: p, el, cx: e.clientX, cy: e.clientY, moved: 0 };
 });
 layer.addEventListener('pointermove', e => {
   if (!drag) return; const p = pt(e);
+  if (drag.cx !== undefined) drag.moved = Math.max(drag.moved, Math.hypot(e.clientX - drag.cx, e.clientY - drag.cy));
   if (drag.t === 'draw') { drag.d += ` L${p.x} ${p.y}`; drag.el.setAttribute('d', drag.d); return; }
   const x = Math.min(p.x, drag.p0.x), y = Math.min(p.y, drag.p0.y);
   Object.assign(drag.el.style, { left: x + '%', top: y + '%', width: Math.abs(p.x - drag.p0.x) + '%', height: (drag.t === 'highlight' ? Math.min(3, Math.abs(p.y - drag.p0.y)) : Math.abs(p.y - drag.p0.y)) + '%' });
 });
-const endDrag = () => { if (drag) { addMark(drag.el); drag = null; } };
+const endDrag = () => {
+  if (!drag) return; const d = drag; drag = null;
+  if (d.t === 'redact' && d.moved < 6) { d.el.remove(); redactAt(d.cx, d.cy); return; }
+  addMark(d.el); if (d.t === 'redact') selectRd(d.el);
+};
+
+/* Tap to redact: find the text under the finger and cover it. */
+function redactAt(cx, cy) {
+  layer.style.pointerEvents = 'none';
+  let range = document.caretRangeFromPoint ? document.caretRangeFromPoint(cx, cy) : null;
+  if (!range && document.caretPositionFromPoint) { const c = document.caretPositionFromPoint(cx, cy); if (c) { range = document.createRange(); range.setStart(c.offsetNode, c.offset); } }
+  layer.style.pointerEvents = '';
+  const node = range && range.startContainer;
+  if (!node || node.nodeType !== 3 || !node.parentElement.closest('.sheet')) return toast('No text here. Drag to cover an area.');
+  const txt = node.textContent; let rects;
+  if (S.detect === 'line') {
+    const r = document.createRange(); r.selectNodeContents(node);
+    rects = [...r.getClientRects()].filter(rc => cy >= rc.top - 3 && cy <= rc.bottom + 3);
+  } else {
+    let a = Math.min(range.startOffset, txt.length), b = a;
+    if (/\s/.test(txt[a] || ' ') && a > 0) a--, b--;
+    while (a > 0 && !/\s/.test(txt[a - 1])) a--;
+    while (b < txt.length && !/\s/.test(txt[b])) b++;
+    while (b > a && /[,;:]/.test(txt[b - 1])) b--;
+    const r = document.createRange(); r.setStart(node, a); r.setEnd(node, b);
+    rects = [...r.getClientRects()];
+  }
+  const hit = rects.filter(rc => cx >= rc.left - 8 && cx <= rc.right + 8 && cy >= rc.top - 8 && cy <= rc.bottom + 8);
+  if (!hit.length) return toast('No text here. Drag to cover an area.');
+  const L = Math.min(...rects.map(r => r.left)), R = Math.max(...rects.map(r => r.right)), T = Math.min(...rects.map(r => r.top)), B = Math.max(...rects.map(r => r.bottom));
+  const lr = layer.getBoundingClientRect(), px = 3 / lr.width * 100, py = 2 / lr.height * 100;
+  const el = document.createElement('div'); el.className = 'mark rd';
+  Object.assign(el.style, { left: ((L - lr.left) / lr.width * 100 - px) + '%', top: ((T - lr.top) / lr.height * 100 - py) + '%', width: ((R - L) / lr.width * 100 + 2 * px) + '%', height: ((B - T) / lr.height * 100 + 2 * py) + '%' });
+  layer.append(el); addMark(el); selectRd(el); toast('Redacted. Drag a handle to resize.');
+}
+function selectRd(el) {
+  layer.querySelectorAll('.mark.rd.sel').forEach(x => { x.classList.remove('sel'); x.querySelectorAll('.hdl').forEach(h => h.remove()); });
+  if (!el) return; el.classList.add('sel');
+  ['n', 'e', 's', 'w'].forEach(side => { const h = document.createElement('i'); h.className = 'hdl ' + side; h.addEventListener('pointerdown', ev => startResize(ev, el, side, h)); el.append(h); });
+}
+function startResize(ev, el, side, h) {
+  ev.stopPropagation(); ev.preventDefault(); h.setPointerCapture(ev.pointerId);
+  const r0 = { l: parseFloat(el.style.left), t: parseFloat(el.style.top), w: parseFloat(el.style.width), h: parseFloat(el.style.height) };
+  const move = e => {
+    const p = pt(e); let { l, t, w, h: hh } = r0; const R = l + w, B = t + hh;
+    if (side === 'e') w = Math.max(1, p.x - l);
+    if (side === 'w') { l = Math.min(p.x, R - 1); w = R - l; }
+    if (side === 's') hh = Math.max(.8, p.y - t);
+    if (side === 'n') { t = Math.min(p.y, B - .8); hh = B - t; }
+    Object.assign(el.style, { left: l + '%', top: t + '%', width: w + '%', height: hh + '%' });
+  };
+  const up = () => { h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up); };
+  h.addEventListener('pointermove', move); h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up);
+}
+function placeSignature(p) {
+  if (S.sigMode === 'sign' && !S.sigData) return toast('Sign in the box first.');
+  if (S.sigMode === 'type' && !S.sigText.trim()) return toast('Type your name first.');
+  let el;
+  if (S.sigMode === 'sign') { el = document.createElement('img'); el.src = S.sigData; el.alt = 'Signature'; }
+  else { el = document.createElement('div'); el.textContent = S.sigText; }
+  el.className = 'mark sg'; el.style.left = p.x + '%'; el.style.top = p.y + '%';
+  layer.append(el); addMark(el);
+}
 layer.addEventListener('pointerup', endDrag); layer.addEventListener('pointercancel', endDrag);
 $('#btnUndo').addEventListener('click', () => { const m = S.marks.pop(); if (m) { m.remove(); S.redo.push(m); sync(); } });
 $('#btnRedo').addEventListener('click', () => { const m = S.redo.pop(); if (m) { (m.ownerSVGElement ? ink : layer).append(m); S.marks.push(m); sync(); } });

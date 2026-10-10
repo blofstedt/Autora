@@ -29,7 +29,14 @@ Live copy of the first version: https://claude.ai/artifact/A5vaGaNwJ8EFLA35jv3gD
 7. **Options tray**: only the open tool's settings (colour, size, hints), beside the rail on desktop and
    above the dock on a phone, in the tool's colour. Tools with no settings still show a one-line tray.
 8. **Top bar stays slim**: menu (what the menu bar held), pages/outline toggle, title, undo/redo, find, export.
-9. Keep the editor's own commands underneath (as `spectra-editor/src/autora/phone.tsx` does with
+9. **Phone bar defaults leave out Note and Stamps** (they stay in the grid) so the icons can be bigger:
+   Select, Text, Highlight, Draw, Shapes, Redact, Sign. Desktop defaults keep all nine.
+10. **Redact is tap-to-redact.** Tap text and the tool detects what is there (a word, or a line: a setting in
+    the tray) and covers it; the new redaction is selected with handles on its four sides so the person can
+    change its dimensions. Dragging over an area still draws a box, for anything that is not text. The text is
+    removed from the file, not covered. In the real editor this means hit-testing pdf.js text items at the tap.
+11. **Signatures are Sign (draw) or Type only. No image.** Then tap the page to place it.
+12. Keep the editor's own commands underneath (as `spectra-editor/src/autora/phone.tsx` does with
    `invokeCommand`): restyle and re-arrange, do not re-implement.
 
 ## Retrofit order
