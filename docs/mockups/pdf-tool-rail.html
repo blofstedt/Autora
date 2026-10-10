@@ -1,0 +1,659 @@
+<title>Autora PDF Mockup</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500&display=swap">
+<style>
+/* Layout: slim top bar, page canvas, floating tool rail (right on desktop, bottom dock on phone), options tray beside/above it.
+   Palette and motion are Autora's own (src/styles.css): one violet, a ladder of blue-black surfaces, one easing curve. */
+:root {
+  --bg: #08090d; --s1: #0e1016; --s2: #151824; --s3: #1d2130; --s4: #252a3b;
+  --line: rgba(255,255,255,.07); --line-2: rgba(255,255,255,.12);
+  --text: #edeff5; --text-2: #98a1b6; --text-3: #7a8297;
+  --accent: #6e5bff; --accent-deep: #5a48e8; --accent-soft: rgba(110,91,255,.16); --accent-line: rgba(110,91,255,.45);
+  --danger: #ff6b81; --paper: #fbfaf7; --ink: #1c1f2a; --ink-2: #5b6072;
+  --ease: cubic-bezier(.32,.72,0,1);
+  /* SecurePDF's tool colours */
+  --c-select: #2563eb; --c-text: #059669; --c-highlight: #f59e0b; --c-draw: #9333ea; --c-shape: #4f46e5;
+  --c-note: #0284c7; --c-stamp: #d97706; --c-redact: #e11d48; --c-sign: #0891b2;
+  --font: "Inter", system-ui, sans-serif; --mono: "JetBrains Mono", ui-monospace, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 var(--font); overflow: hidden; -webkit-tap-highlight-color: transparent; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+.app { height: 100%; display: flex; flex-direction: column; position: relative; }
+
+/* Top bar */
+.top { height: 48px; flex: none; display: flex; align-items: center; gap: 4px; padding: 0 8px; background: var(--s1); border-bottom: 1px solid var(--line); z-index: 20; }
+.ib { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; color: var(--text-2); transition: background .15s var(--ease), color .15s var(--ease); }
+.ib:hover { background: rgba(255,255,255,.07); color: var(--text); }
+.ib[aria-pressed="true"] { background: var(--accent-soft); color: var(--text); }
+.ib:disabled { opacity: .35; cursor: default; }
+.name { min-width: 0; flex: 1; padding: 0 8px; display: flex; flex-direction: column; line-height: 1.2; }
+.name b { font-weight: 500; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.name span { font-size: 11px; color: var(--text-3); }
+.sep { width: 1px; height: 20px; background: var(--line-2); margin: 0 4px; }
+.zoom { font: 500 12px var(--mono); color: var(--text-2); padding: 0 8px; height: 30px; border-radius: 15px; }
+.zoom:hover { background: rgba(255,255,255,.07); }
+.hide-sm { display: none; }
+@media (min-width: 768px) { .hide-sm { display: inline-grid; } .hide-sm.flex { display: flex; } }
+
+/* Menu popover (the old menu bar: File, Edit, View, Page, Tools) */
+.pop { position: absolute; z-index: 60; background: var(--s2); border: 1px solid var(--line-2); border-radius: 18px; box-shadow: 0 18px 48px rgba(0,0,0,.55); padding: 6px; min-width: 232px; opacity: 0; transform: translateY(-6px) scale(.98); pointer-events: none; transition: opacity .15s var(--ease), transform .15s var(--ease); }
+.pop.open { opacity: 1; transform: none; pointer-events: auto; }
+.pop h4 { margin: 8px 12px 4px; font: 500 10.5px var(--font); letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+.pop button.row { width: 100%; display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-radius: 12px; color: var(--text); text-align: left; }
+.pop button.row:hover { background: rgba(255,255,255,.07); }
+.pop .k { margin-left: auto; font: 11px var(--mono); color: var(--text-3); }
+.pop svg.i { color: var(--text-2); width: 18px; height: 18px; }
+#menu { top: 52px; left: 8px; }
+
+/* Workspace */
+.work { flex: 1; min-height: 0; position: relative; display: flex; }
+.pages { width: 132px; flex: none; background: var(--s1); border-right: 1px solid var(--line); overflow-y: auto; padding: 12px; display: none; flex-direction: column; gap: 12px; }
+.pages.open { display: flex; }
+.thumb { border-radius: 8px; border: 2px solid transparent; padding: 0; background: none; text-align: center; color: var(--text-3); font: 11px var(--mono); }
+.thumb i { display: block; aspect-ratio: 8.5/11; background: var(--paper); border-radius: 4px; margin-bottom: 4px; background-image: repeating-linear-gradient(transparent 0 7px, #d9d9e0 7px 8px); background-size: 70% 60%; background-position: 50% 30%; background-repeat: no-repeat; }
+.thumb.on { border-color: var(--accent); color: var(--text); }
+@media (max-width: 767px) { .pages { position: absolute; z-index: 15; inset: 0 auto 0 0; box-shadow: 12px 0 32px rgba(0,0,0,.5); } }
+
+.canvas { flex: 1; min-width: 0; overflow: auto; padding: 24px 16px 140px; display: flex; justify-content: center; background: radial-gradient(1200px 600px at 50% -10%, #11131c, var(--bg)); }
+@media (min-width: 768px) { .canvas { padding: 32px 96px 32px 32px; } }
+.sheet { position: relative; width: 100%; max-width: 640px; aspect-ratio: 8.5/11; flex: none; background: var(--paper); color: var(--ink); border-radius: 3px; box-shadow: 0 2px 4px rgba(0,0,0,.4), 0 24px 60px rgba(0,0,0,.5); padding: 7% 8%; font: 12px/1.5 var(--font); container-type: inline-size; touch-action: pan-y; }
+.sheet h1 { font: 600 5.2cqw/1.1 var(--font); margin: 0 0 1cqw; letter-spacing: -.01em; }
+.sheet table, .sheet td, .sheet th { color: inherit; }
+.sheet p, .sheet td, .sheet th { font-size: 2.2cqw; line-height: 1.5; margin: 0; }
+.sheet .meta { color: var(--ink-2); }
+.sheet .hd { display: flex; justify-content: space-between; gap: 3cqw; margin-bottom: 4cqw; }
+.sheet table { width: 100%; border-collapse: collapse; margin: 3cqw 0; }
+.sheet th { text-align: left; font-weight: 600; color: var(--ink-2); border-bottom: 1px solid #cfd1da; padding: 1cqw 0; }
+.sheet td { padding: 1.2cqw 0; border-bottom: 1px solid #e6e7ec; }
+.sheet td:last-child, .sheet th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+.sheet .sig { margin-top: 6cqw; display: flex; gap: 5cqw; }
+.sheet .sig div { flex: 1; border-top: 1px solid var(--ink); padding-top: 1cqw; color: var(--ink-2); font-size: 1.9cqw; min-height: 6cqw; }
+.layer { position: absolute; inset: 0; touch-action: none; }
+.layer.t-select { cursor: default; } .layer[class*="t-"]:not(.t-select) { cursor: crosshair; }
+.mark { position: absolute; }
+.mark.hl { background: rgba(255,214,10,.4); mix-blend-mode: multiply; }
+.mark.rd { background: #000; }
+.mark.tx { font: 500 2.4cqw var(--font); color: #1d4ed8; padding: 0 3px; border: 1px dashed rgba(29,78,216,.5); white-space: nowrap; }
+.mark.nt { width: 26px; height: 26px; border-radius: 4px 13px 13px 13px; background: #ffd60a; display: grid; place-items: center; color: #3b3200; box-shadow: 0 2px 6px rgba(0,0,0,.3); }
+.mark.nt svg { width: 14px; height: 14px; }
+.mark.sh { border: 2px solid var(--c, #ff6b81); border-radius: 4px; }
+.mark.st { font: 600 2.4cqw var(--font); letter-spacing: .08em; color: #c2253a; border: .5cqw solid #c2253a; border-radius: 4px; padding: .4cqw 1.4cqw; transform: rotate(-6deg); }
+svg.ink { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+
+/* Tool rail: SecurePDF's floating pill. Right and vertical on desktop; the bottom dock on a phone. */
+.rail { position: absolute; z-index: 30; display: flex; align-items: center; background: color-mix(in srgb, var(--s2) 94%, transparent); backdrop-filter: blur(14px); border: 1px solid var(--line-2); box-shadow: 0 16px 40px rgba(0,0,0,.5); }
+.rail .tool { position: relative; flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: var(--text-2); border-radius: 999px; transition: color .15s var(--ease), background .15s var(--ease); }
+.rail .tool span { font-size: 9.5px; line-height: 1; font-weight: 500; }
+.rail .tool { color: var(--tc); background: color-mix(in srgb, var(--tc) 16%, transparent); }
+.rail .tool:hover { color: var(--tc); background: color-mix(in srgb, var(--tc) 28%, transparent); }
+.rail .tool.on { color: #fff; background: var(--tc); box-shadow: 0 6px 18px color-mix(in srgb, var(--tc) 45%, transparent); }
+.rail .tool.all { --tc: var(--text-2); }
+.rail .div { flex: none; background: var(--line-2); }
+.rail .tool kbd { display: none; }
+
+@media (max-width: 767px) {
+  .rail { left: 0; right: 0; bottom: 0; height: calc(60px + env(safe-area-inset-bottom, 0px)); padding: 0 8px env(safe-area-inset-bottom, 0px); border-width: 1px 0 0; border-radius: 0; background: var(--s1); justify-content: space-between; overflow: hidden; }
+  .rail .tool { width: 40px; height: 40px; }
+  .rail .tool svg.i { width: 21px; height: 21px; }
+  .rail .tool span { display: none; }
+  .rail { gap: 2px; }
+  .rail .div { width: 1px; height: 24px; margin: 0 2px; }
+  .tray { left: 8px; right: 8px; bottom: calc(68px + env(safe-area-inset-bottom, 0px)); }
+
+}
+@media (min-width: 768px) {
+  .rail { right: 16px; top: 50%; transform: translateY(-50%); flex-direction: column; gap: 4px; padding: 8px; border-radius: 28px; }
+  .rail .tool { width: 44px; height: 44px; }
+  .rail .tool span { display: none; }
+  .rail .div { width: 24px; height: 1px; margin: 2px 0; }
+  .rail .tool[data-tip]:hover::after { content: attr(data-tip); position: absolute; right: calc(100% + 12px); top: 50%; transform: translateY(-50%); white-space: nowrap; background: var(--s4); color: var(--text); font-size: 12px; padding: 5px 10px; border-radius: 999px; pointer-events: none; }
+  .tray { right: 80px; top: 50%; transform: translateY(-50%); width: 264px; }
+}
+
+/* Options tray: only the open tool's settings, so nothing else stays on screen. */
+.tray { position: absolute; z-index: 29; background: color-mix(in srgb, var(--s2) 96%, transparent); backdrop-filter: blur(14px); border: 1px solid var(--line-2); border-radius: 22px; box-shadow: 0 16px 40px rgba(0,0,0,.5); padding: 14px; display: flex; flex-direction: column; gap: 14px; transition: opacity .2s var(--ease), translate .2s var(--ease); }
+.tray[hidden] { display: none !important; }
+.tray .hd { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tray .hd b { color: var(--tc, var(--text)); font-weight: 500; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+.tray .lab { font-size: 11.5px; color: var(--text-3); margin-bottom: 8px; }
+.sw { display: flex; gap: 10px; flex-wrap: wrap; }
+.sw button { width: 30px; height: 30px; border-radius: 50%; border: 2px solid transparent; box-shadow: inset 0 0 0 1px rgba(255,255,255,.32); }
+.sw button[aria-pressed="true"] { border-color: var(--text); outline: 2px solid var(--tc, var(--accent)); outline-offset: 1px; }
+.seg { display: flex; gap: 4px; background: var(--bg); padding: 3px; border-radius: 999px; }
+.seg button { flex: 1; height: 32px; border-radius: 999px; color: var(--text-2); font-size: 12.5px; display: grid; place-items: center; }
+.seg button[aria-pressed="true"] { background: color-mix(in srgb, var(--tc, var(--accent)) 28%, var(--s3)); color: var(--text); }
+input[type=range] { width: 100%; accent-color: var(--tc, var(--accent)); }
+.tray .btn, .sheetx .btn { height: 38px; border-radius: 999px; background: var(--tc, var(--accent)); color: #fff; font-weight: 500; padding: 0 16px; }
+.tray .btn.ghost { background: rgba(255,255,255,.07); color: var(--text); }
+.hint { font-size: 12px; color: var(--text-3); margin: 0; }
+
+/* All tools sheet: everything the old dock held, grouped. */
+.scrim { position: absolute; inset: 0; z-index: 50; background: rgba(0,0,0,.5); opacity: 0; pointer-events: none; transition: opacity .2s var(--ease); }
+.scrim.open { opacity: 1; pointer-events: auto; }
+.sheetx { left: 50%; top: 50%; width: min(460px, calc(100% - 32px)); max-height: calc(100% - 48px); border-radius: 24px; transform: translate(-50%, -48%) scale(.97); position: absolute; z-index: 51; background: var(--s2); border: 1px solid var(--line-2); box-shadow: 0 24px 64px rgba(0,0,0,.6); padding: 16px; overflow-y: auto; transition: transform .24s var(--ease), opacity .24s var(--ease); opacity: 0; pointer-events: none; }
+.sheetx.open { opacity: 1; transform: translate(-50%, -50%); pointer-events: auto; }
+.sheetx h3 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+.sheetx h4 { margin: 16px 4px 8px; font: 500 10.5px var(--font); letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; }
+.cell { position: relative; }
+.cell .tile { width: 100%; }
+.pin { position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; color: var(--text-3); opacity: 0; transition: opacity .15s var(--ease), background .15s var(--ease); }
+.pin svg.i { width: 14px; height: 14px; }
+.cell:hover .pin, .pin:focus-visible, .pin[aria-pressed="true"] { opacity: 1; }
+.pin:hover { background: rgba(255,255,255,.12); color: var(--text); }
+.pin[aria-pressed="true"] { color: var(--tc, var(--text)); background: rgba(255,255,255,.1); }
+.pin[aria-pressed="true"] svg { fill: currentColor; }
+@media (hover: none) { .pin { opacity: 1; } }
+.sh-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.reset { font-size: 12.5px; color: var(--text-2); padding: 6px 12px; border-radius: 999px; background: rgba(255,255,255,.07); }
+.reset:hover { color: var(--text); }
+.grid .tile { height: 76px; border-radius: 20px; background: color-mix(in srgb, var(--tc) 14%, transparent); color: var(--tc); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-size: 11.5px; transition: background .15s var(--ease), color .15s var(--ease); }
+.grid .tile:hover { background: color-mix(in srgb, var(--tc) 26%, transparent); }
+.grid .tile span { color: var(--text); }
+.grid .tile.on { background: var(--accent-soft); color: var(--text); box-shadow: inset 0 0 0 1px var(--accent-line); }
+
+/* Find bar, status chip, toast */
+.find { position: absolute; z-index: 25; top: 8px; left: 50%; transform: translate(-50%, -8px); width: min(440px, calc(100% - 16px)); display: flex; align-items: center; gap: 4px; padding: 6px; background: var(--s2); border: 1px solid var(--line-2); border-radius: 999px; box-shadow: 0 12px 32px rgba(0,0,0,.5); opacity: 0; pointer-events: none; transition: .2s var(--ease); }
+.find.open { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.find input { flex: 1; min-width: 0; height: 34px; border: 0; background: transparent; color: var(--text); padding: 0 12px; font: inherit; font-size: 16px; }
+.find small { font: 11px var(--mono); color: var(--text-3); white-space: nowrap; }
+.chip { position: absolute; z-index: 10; left: 12px; bottom: 12px; font: 500 11.5px var(--mono); color: var(--text-2); background: var(--s1); border: 1px solid var(--line); padding: 6px 12px; border-radius: 999px; }
+@media (max-width: 767px) { .chip { bottom: calc(72px + env(safe-area-inset-bottom, 0px)); } }
+.toast { position: absolute; z-index: 70; left: 50%; top: 60px; transform: translate(-50%, -8px); background: var(--s4); padding: 9px 16px; border-radius: 999px; font-size: 13px; opacity: 0; pointer-events: none; transition: .2s var(--ease); white-space: nowrap; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+/* Options trays on a phone: one wrapped row, no labels, no long hints. The header's pieces join the row. */
+.seg.wrap { flex-wrap: wrap; border-radius: 18px; } .seg.wrap button { flex: 1 1 45%; font-size: 11px; }
+.hint.sm { display: none; }
+@media (max-width: 767px) {
+  .tray { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 8px 46px 8px 10px; border-radius: 18px; min-height: 46px; }
+  .tray .hd { display: contents; }
+  .tray .hd b { font-size: 12.5px; }
+  .tray .hd .ib { position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; }
+  .tray .lab, .tray .hint.lg { display: none; }
+  .tray .hint { flex: 1 1 100%; margin: 0; font-size: 11.5px; }
+  .tray .hint.sm { display: block; }
+  .tray .sw { gap: 8px; flex-wrap: nowrap; }
+  .tray .sw button, .tray .wheel { width: 26px; height: 26px; }
+  .tray .wheel i { inset: 6px; }
+  .tray .nm { display: none; }
+  .tray .seg button { height: 28px; font-size: 12px; padding: 0 12px; white-space: nowrap; }
+  .tray .seg.wrap { flex: 1 1 100%; flex-wrap: nowrap; border-radius: 999px; }
+  .tray .seg.wrap button { flex: 1 1 0; font-size: 10.5px; padding: 0 2px; }
+  .tray > div:has(input[type=range]) { flex: 1 1 110px; min-width: 0; }
+  .tray .pad, .tray .sigprev, .tray .sigin, .tray .seg.wrap, .tray .hint { margin-right: -36px; }
+  .tray .pad { flex: 1 1 100%; height: 88px; }
+  .tray .sigprev { flex: 1 1 100%; height: 44px; font-size: 28px; }
+  .tray .sigin { flex: 1 1 100%; height: 36px; }
+  .tray .btn { height: 32px; font-size: 12.5px; padding: 0 12px; }
+}
+/* Phone: a smaller modal and smaller tiles (after the base rules so they win). */
+@media (max-width: 767px) {
+  .sheetx { width: min(320px, calc(100% - 48px)); padding: 12px; border-radius: 20px; }
+  .sheetx h3 { font-size: 14px; }
+  .sheetx h4 { margin: 12px 4px 6px; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 6px; }
+  .grid .tile { height: 56px; border-radius: 16px; gap: 4px; font-size: 10px; }
+  .grid .tile svg.i { width: 17px; height: 17px; }
+  .sheetx .hint { font-size: 11.5px; }
+}
+/* Colour wheel: one round control that opens the system colour picker */
+.wheel { position: relative; flex: none; width: 30px; height: 30px; border-radius: 50%; background: conic-gradient(#f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00); box-shadow: inset 0 0 0 1px rgba(255,255,255,.15); cursor: pointer; display: block; }
+.wheel i { position: absolute; inset: 8px; border-radius: 50%; border: 2px solid var(--s2); }
+.wheel input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; padding: 0; border: 0; }
+.wheel[aria-pressed="true"] { outline: 2px solid var(--tc, var(--accent)); outline-offset: 1px; }
+.sw { align-items: center; }
+/* The shape button: tap to step through Box, Circle, Line, Arrow (phone). */
+.cyc { display: none; }
+@media (max-width: 767px) {
+  .cyc { display: grid; place-items: center; position: relative; flex: none; width: 28px; height: 28px; border-radius: 50%; color: var(--tc); background: color-mix(in srgb, var(--tc) 18%, transparent); }
+  .cyc .rot { position: absolute; right: -4px; bottom: -4px; width: 16px; height: 16px; border-radius: 50%; background: var(--s4); color: var(--text); display: grid; place-items: center; }
+  .cyc .rot svg { width: 10px; height: 10px; stroke-width: 2.4; }
+  .tray .dseg { display: none; }
+  .tray[data-tool="shape"] .hd b { display: none; }
+  .tray > div:has(input[type=range]) { flex-basis: 90px; }
+}
+/* Redaction handles, signature pad */
+.mark.rd.sel { outline: 2px dashed var(--c-redact); outline-offset: 1px; }
+.hdl { position: absolute; width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 2px solid var(--c-redact); box-shadow: 0 2px 6px rgba(0,0,0,.4); touch-action: none; transform: translate(-50%, -50%); }
+.hdl::after { content: ''; position: absolute; inset: -9px; }
+.hdl.n { left: 50%; top: -10px; cursor: ns-resize; } .hdl.s { left: 50%; top: calc(100% + 10px); cursor: ns-resize; }
+.hdl.e { left: calc(100% + 10px); top: 50%; cursor: ew-resize; } .hdl.w { left: -10px; top: 50%; cursor: ew-resize; }
+.mark.sg { font: 500 5.4cqw/1 'Caveat', cursive; color: #1d3a8a; white-space: nowrap; }
+img.mark.sg { width: 26%; height: auto; }
+.pad { position: relative; height: 84px; background: var(--paper); border-radius: 14px; }
+.pad canvas { width: 100%; height: 100%; touch-action: none; border-radius: 14px; display: block; }
+.pad::after { content: 'Sign here'; position: absolute; left: 12px; bottom: 6px; font-size: 11px; color: #9aa0b0; pointer-events: none; }
+.pad .clr { position: absolute; top: 4px; right: 4px; width: 28px; height: 28px; color: #5b6072; }
+.sigin { height: 40px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--bg); color: var(--text); padding: 0 14px; font: inherit; font-size: 16px; width: 100%; }
+.sigprev { height: 64px; display: grid; place-items: center; background: var(--paper); border-radius: 14px; color: #1d3a8a; font: 500 34px 'Caveat', cursive; overflow: hidden; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="pages" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></symbol>
+    <symbol id="undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3"/></symbol>
+    <symbol id="redo" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5M20 9H10a6 6 0 0 0 0 12h3"/></symbol>
+    <symbol id="find" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-5-5"/></symbol>
+    <symbol id="more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></symbol>
+    <symbol id="select" viewBox="0 0 24 24"><path d="m3 3 7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/><path d="m13 13 6 6"/></symbol>
+    <symbol id="text" viewBox="0 0 24 24"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></symbol>
+    <symbol id="highlight" viewBox="0 0 24 24"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></symbol>
+    <symbol id="draw" viewBox="0 0 24 24"><path d="m12 19 7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="m2 2 7.586 7.586"/><circle cx="11" cy="11" r="2"/></symbol>
+    <symbol id="shape" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/></symbol>
+    <symbol id="note" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+    <symbol id="stamp" viewBox="0 0 24 24"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/></symbol>
+    <symbol id="redact" viewBox="0 0 24 24"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></symbol>
+    <symbol id="sign" viewBox="0 0 24 24"><path d="m21 17-2.156-1.868A.5.5 0 0 0 18 15.5v.5a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1c0-2.545-3.991-3.97-8.5-4a1 1 0 0 0 0 5c4.153 0 4.745-11.295 5.708-13.5a2.5 2.5 0 1 1 3.31 3.284"/><path d="M3 21h18"/></symbol>
+    <symbol id="grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></symbol>
+    <symbol id="pin" viewBox="0 0 24 24"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></symbol>
+    <symbol id="circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></symbol>
+    <symbol id="line" viewBox="0 0 24 24"><path d="M5 19 19 5"/></symbol>
+    <symbol id="arrow" viewBox="0 0 24 24"><path d="M5 19 19 5M9 5h10v10"/></symbol>
+    <symbol id="cycle" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5"/></symbol>
+    <symbol id="x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="up" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></symbol>
+    <symbol id="down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m21 16-5-5-9 9"/></symbol>
+    <symbol id="callout" viewBox="0 0 24 24"><path d="M4 4h16v11H11l-5 5v-5H4V4Z"/></symbol>
+    <symbol id="link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3A4 4 0 0 0 11 18.7l1-1"/></symbol>
+    <symbol id="merge" viewBox="0 0 24 24"><path d="M6 3v6a6 6 0 0 0 6 6h0a6 6 0 0 1 6 6M18 3v6a6 6 0 0 1-6 6"/></symbol>
+    <symbol id="compress" viewBox="0 0 24 24"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></symbol>
+    <symbol id="watermark" viewBox="0 0 24 24"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11Z"/></symbol>
+    <symbol id="rotate" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-3-6.2M20 4v5h-5"/></symbol>
+    <symbol id="trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
+    <symbol id="export" viewBox="0 0 24 24"><path d="M12 3v12M7 8l5-5 5 5M5 21h14"/></symbol>
+    <symbol id="eraser" viewBox="0 0 24 24"><path d="m8 20-5-5 11-11 7 7-8 9H8ZM11 7l6 6"/></symbol>
+  </defs>
+</svg>
+
+<div class="app" id="app">
+  <header class="top">
+    <button class="ib" id="btnMenu" aria-label="Menu" aria-haspopup="true"><svg class="i"><use href="#menu"/></svg></button>
+    <button class="ib" id="btnPages" aria-label="Pages" aria-pressed="false"><svg class="i"><use href="#pages"/></svg></button>
+    <div class="name"><b>Service agreement.pdf</b><span id="saved">Saved to this chat · 2 edits by Autora</span></div>
+    <button class="ib" id="btnUndo" aria-label="Undo" disabled><svg class="i"><use href="#undo"/></svg></button>
+    <button class="ib hide-sm" id="btnRedo" aria-label="Redo" disabled><svg class="i"><use href="#redo"/></svg></button>
+    <span class="sep hide-sm"></span>
+    <button class="zoom hide-sm flex" id="zoomLabel" aria-label="Zoom">100%</button>
+    <button class="ib" id="btnFind" aria-label="Find" aria-pressed="false"><svg class="i"><use href="#find"/></svg></button>
+    <button class="ib" id="btnExport" aria-label="Export"><svg class="i"><use href="#export"/></svg></button>
+  </header>
+
+  <div class="work">
+    <nav class="pages" id="pagesPane" aria-label="Pages">
+      <button class="thumb on"><i></i>1</button>
+      <button class="thumb"><i></i>2</button>
+      <button class="thumb"><i></i>3</button>
+      <button class="thumb"><i></i>4</button>
+    </nav>
+
+    <main class="canvas" id="canvas">
+      <article class="sheet" id="sheet">
+        <div class="hd">
+          <div><h1>Service agreement</h1><p class="meta">Northgate Studio and Halden &amp; Co.</p></div>
+          <p class="meta" style="text-align:right">Ref. SA-2026-0412<br>Issued 3 March 2026</p>
+        </div>
+        <p>This agreement covers design and development work for the Halden &amp; Co. customer portal. Payment is due within 14 days of each invoice. Either party may end the agreement with 30 days' written notice.</p>
+        <table>
+          <thead><tr><th>Deliverable</th><th>Due</th><th>Fee</th></tr></thead>
+          <tbody>
+            <tr><td>Discovery and research</td><td>21 Mar</td><td>$4,800.00</td></tr>
+            <tr><td>Interface design</td><td>18 Apr</td><td>$9,200.00</td></tr>
+            <tr><td>Portal build</td><td>30 May</td><td>$16,500.00</td></tr>
+            <tr><td>Launch support</td><td>13 Jun</td><td>$3,000.00</td></tr>
+          </tbody>
+        </table>
+        <p class="meta">Total fees: $33,500.00. Client contact: Mara Halden, 415-555-0142.</p>
+        <div class="sig"><div>Signed, Northgate Studio</div><div>Signed, Halden &amp; Co.</div></div>
+        <svg class="ink" id="ink" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+        <div class="layer t-select" id="layer"></div>
+      </article>
+    </main>
+
+    <div class="find" id="findbar" role="search">
+      <svg class="i" style="margin-left:8px;color:var(--text-3)"><use href="#find"/></svg>
+      <input id="findInput" placeholder="Find in document" value="Halden">
+      <small id="findCount">1 of 3</small>
+      <button class="ib" aria-label="Previous match"><svg class="i"><use href="#up"/></svg></button>
+      <button class="ib" aria-label="Next match"><svg class="i"><use href="#down"/></svg></button>
+      <button class="ib" id="findClose" aria-label="Close find"><svg class="i"><use href="#x"/></svg></button>
+    </div>
+
+    <div class="chip" id="chip">Page 1 of 4</div>
+
+    <!-- Options for the open tool -->
+    <section class="tray" id="tray" hidden aria-live="polite"></section>
+
+    <!-- The rail -->
+    <nav class="rail" id="rail" aria-label="PDF tools"></nav>
+  </div>
+
+  <div class="scrim" id="scrim"></div>
+  <div class="sheetx" id="allTools" role="dialog" aria-label="All tools"></div>
+  <div class="pop" id="menuPop" role="menu" style="top:52px;left:8px"></div>
+  <div class="toast" id="toast" role="status"></div>
+</div>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const ic = (n) => `<svg class="i"><use href="#${n}"/></svg>`;
+
+/* Every tool the PDF editor has, once. Colour is SecurePDF's; "c" names a --c-* token. */
+const CATALOG = [
+  { g: 'Basics', id: 'select', label: 'Select', icon: 'select', c: 'select', tip: 'Select and move (V)' },
+  { g: 'Mark up', id: 'text', label: 'Text', icon: 'text', c: 'text', tip: 'Add text (T)' },
+  { g: 'Mark up', id: 'highlight', label: 'Highlight', icon: 'highlight', c: 'highlight', tip: 'Highlight (H)' },
+  { g: 'Mark up', id: 'draw', label: 'Draw', icon: 'draw', c: 'draw', tip: 'Draw (P)' },
+  { g: 'Mark up', id: 'shape', label: 'Shapes', icon: 'shape', c: 'shape', tip: 'Shapes (S)' },
+  { g: 'Mark up', id: 'note', label: 'Note', icon: 'note', c: 'note', tip: 'Note (N)' },
+  { g: 'Mark up', id: 'stamp', label: 'Stamps', icon: 'stamp', c: 'stamp', tip: 'Stamps' },
+  { g: 'Mark up', id: 'callout', label: 'Callout', icon: 'callout', c: 'note', tip: 'Callout' },
+  { g: 'Mark up', id: 'eraser', label: 'Erase', icon: 'eraser', c: 'redact', tip: 'Erase a mark' },
+  { g: 'Fill and sign', id: 'sign', label: 'Sign', icon: 'sign', c: 'sign', tip: 'Fill and sign' },
+  { g: 'Fill and sign', id: 'field', label: 'Fill a field', icon: 'text', c: 'text', tip: 'Fill a form field' },
+  { g: 'Fill and sign', id: 'image', label: 'Add image', icon: 'image', c: 'sign', tip: 'Add an image' },
+  { g: 'Fill and sign', id: 'link', label: 'Link', icon: 'link', c: 'select', tip: 'Add a link' },
+  { g: 'Protect', id: 'redact', label: 'Redact', icon: 'redact', c: 'redact', tip: 'Redact (R)' },
+  { g: 'Protect', id: 'findredact', label: 'Find &amp; redact', icon: 'find', c: 'redact', tip: 'Find and redact' },
+  { g: 'Protect', id: 'lock', label: 'Password', icon: 'lock', c: 'sign', tip: 'Password protect' },
+  { g: 'Protect', id: 'watermark', label: 'Watermark', icon: 'watermark', c: 'stamp', tip: 'Watermark' },
+  { g: 'Pages', id: 'organize', label: 'Organize', icon: 'pages', c: 'select', tip: 'Organize pages' },
+  { g: 'Pages', id: 'rotate', label: 'Rotate', icon: 'rotate', c: 'select', tip: 'Rotate page' },
+  { g: 'Pages', id: 'delete', label: 'Delete page', icon: 'trash', c: 'redact', tip: 'Delete page' },
+  { g: 'Pages', id: 'merge', label: 'Merge', icon: 'merge', c: 'shape', tip: 'Merge files' },
+  { g: 'Pages', id: 'compress', label: 'Compress', icon: 'compress', c: 'text', tip: 'Compress' },
+];
+const BY_ID = Object.fromEntries(CATALOG.map(t => [t.id, t]));
+/* What the bar starts with, on a phone always and on a desktop until the person pins something else. */
+const DEFAULT_PINNED = ['select', 'text', 'highlight', 'draw', 'shape', 'note', 'stamp', 'redact', 'sign'];
+/* A phone's bar is the tools a thumb reaches for; Note and Stamps live in the grid so the icons can be bigger. */
+const PHONE_DEFAULT = ['select', 'text', 'highlight', 'draw', 'shape', 'redact', 'sign'];
+const phoneQuery = matchMedia('(max-width: 767px)');
+const isPhone = () => phoneQuery.matches;
+let pinned = DEFAULT_PINNED.slice();
+try { const saved = JSON.parse(localStorage.getItem('autora-pdf-pins') || 'null'); if (Array.isArray(saved)) pinned = saved.filter(id => BY_ID[id]); } catch (e) {}
+const savePins = () => { try { localStorage.setItem('autora-pdf-pins', JSON.stringify(pinned)); } catch (e) {} };
+
+/* The bar never scrolls: it shows as many tools as fit in the space the page has, and the grid button is always last. */
+const rail = $('#rail');
+let slots = 9; // tools that fit, not counting the grid button
+function measure() {
+  const w = $('.work');
+  if (isPhone()) { const avail = w.clientWidth - 16 - 2 - 7; slots = Math.max(1, Math.floor((avail + 2) / 42) - 1); }
+  else { const avail = w.clientHeight - 32 - 16 - 2 - 5; slots = Math.max(1, Math.floor((avail + 4) / 48) - 1); }
+}
+const barTools = () => (isPhone() ? PHONE_DEFAULT : pinned).slice(0, slots);
+function renderRail() {
+  measure();
+  rail.innerHTML = barTools().map(id => { const t = BY_ID[id]; return `<button class="tool${S.tool === id ? ' on' : ''}" style="--tc: var(--c-${t.c})" data-tool="${id}" data-tip="${t.tip}" aria-label="${t.tip}" aria-pressed="${S.tool === id}">${ic(t.icon)}<span>${t.label}</span></button>`; }).join('')
+    + `<span class="div"></span><button class="tool all" data-open-all data-tip="All tools" aria-label="All tools" aria-haspopup="dialog">${ic('grid')}<span>Tools</span></button>`;
+  if ($('#allTools').classList.contains('open')) renderSheet();
+}
+new ResizeObserver(() => { const before = slots; measure(); if (before !== slots) renderRail(); }).observe($('.work'));
+
+/* The grid. On a desktop each tool also has a pin; on a phone the bar is fixed and a tool is just opened. */
+function renderSheet() {
+  const sheet = $('#allTools'), top = sheet.scrollTop, phone = isPhone();
+  const groups = [...new Set(CATALOG.map(t => t.g))];
+  sheet.innerHTML = `<div class="sh-head"><h3>All tools</h3><span style="display:flex;align-items:center;gap:4px">${phone ? '' : '<button class="reset" data-reset>Reset bar</button>'}<button class="ib" data-closeall aria-label="Close" style="width:30px;height:30px">${ic('x')}</button></span></div>`
+    + `<p class="hint" style="margin:0 4px 4px">${phone ? 'Tap a tool to use it.' : `Pin the tools you use most to your bar. It has room for ${slots} on this screen (${Math.min(pinned.length, slots)} pinned).`}</p>`
+    + groups.map(g => `<h4>${g}</h4><div class="grid">` + CATALOG.filter(t => t.g === g).map(t => {
+      const on = pinned.includes(t.id);
+      return `<div class="cell"><button class="tile${S.tool === t.id ? ' on' : ''}" data-all="${t.id}" style="--tc: var(--c-${t.c})">${ic(t.icon)}<span>${t.label}</span></button>`
+        + (phone ? '' : `<button class="pin" data-pin="${t.id}" aria-pressed="${on}" aria-label="${on ? 'Unpin' : 'Pin'} ${t.label.replace('&amp;', 'and')} ${on ? 'from' : 'to'} the bar" title="${on ? 'Unpin from bar' : 'Pin to bar'}">${ic('pin')}</button>`) + `</div>`;
+    }).join('') + `</div>`).join('');
+  sheet.scrollTop = top;
+}
+
+/* Menu: what the menu bar was. */
+const MENU = [
+  ['File', [['export','Export PDF','⌘E'],['merge','Merge files'],['compress','Compress']]],
+  ['Edit', [['undo','Undo','⌘Z'],['redo','Redo','⇧⌘Z'],['find','Find','⌘F']]],
+  ['View', [['pages','Page thumbnails'],['rotate','Rotate view'],['grid','Fit to width']]],
+];
+$('#menuPop').innerHTML = MENU.map(([h, rows]) => `<h4>${h}</h4>` +
+  rows.map(([i, l, k]) => `<button class="row" role="menuitem" data-menu="${l}">${ic(i)}<span>${l}</span>${k ? `<span class="k">${k}</span>` : ''}</button>`).join('')).join('');
+
+/* State */
+const S = { detect: 'word', sigMode: 'sign', sigText: 'Mara Halden', sigData: null, tool: 'select', col: { highlight: '#ffd60a', draw: '#dc2626', shape: '#dc2626', text: '#111827' }, sz: { highlight: 2.4, draw: 4, shape: 3, text: 16 }, shape: 'box', stamp: 'APPROVED', marks: [], redo: [] };
+/* Three colours and a wheel. Highlighters get highlighter colours (black would hide the text; that is Redact). */
+const SHAPES = ['box', 'circle', 'line', 'arrow'];
+const SHAPE_ICON = { box: 'shape', circle: 'circle', line: 'line', arrow: 'arrow' };
+const BRK = ['#dc2626', '#2563eb', '#111827'];
+const PRESETS = { highlight: ['#ffd60a', '#7ee787', '#ff8fc7'], draw: BRK, shape: BRK, text: BRK };
+const SLIDERS = { highlight: ['Thickness', 1, 5, .1], draw: ['Thickness', 1, 12, 1], shape: ['Thickness', 1, 10, 1], text: ['Size', 10, 40, 1] };
+const TRAYS = {
+  select: () => `<div class="hd"><b>${ic('select')}Select</b></div><p class="hint lg">Tap a mark to move or resize it. Everything Autora added is a movable object too.</p>`,
+  text: () => head('text', 'Text') + colors('text') + slider('text') + `<p class="hint lg">Tap the page to place text.</p>`,
+  highlight: () => head('highlight', 'Highlight') + colors('highlight') + slider('highlight') + `<p class="hint lg">Drag across text to highlight it.</p>`,
+  draw: () => head('draw', 'Draw') + colors('draw') + slider('draw'),
+  shape: () => head('shape', 'Shapes') + `<button class="cyc" data-cycle aria-label="Shape: ${S.shape}. Tap for the next shape" title="Tap to change shape">${ic(SHAPE_ICON[S.shape])}<span class="rot">${ic('cycle')}</span></button><div class="seg dseg" role="group">${SHAPES.map(s => `<button aria-pressed="${S.shape===s}" data-shape="${s}">${s[0].toUpperCase()+s.slice(1)}</button>`).join('')}</div>` + colors('shape') + slider('shape'),
+  note: () => head('note', 'Note') + `<p class="hint lg">Tap the page to drop a note. Notes are visible to Autora and to anyone you share with.</p><p class="hint sm">Tap the page to drop a note.</p>`,
+  stamp: () => head('stamp', 'Stamps') + `<div class="seg wrap">${['APPROVED','REJECTED','CONFIDENTIAL','DRAFT'].map(s => `<button aria-pressed="${S.stamp===s}" data-stamp="${s}">${s}</button>`).join('')}</div>`,
+  redact: () => head('redact', 'Redact') + `<p class="hint lg">Tap text to redact it. Drag the handles to resize, or drag over an area to redact a box. The text is deleted from the file, not covered.</p><p class="hint sm">Tap text to redact it. Drag a handle to resize.</p><div><div class="lab">Tap redacts</div><div class="seg" role="group"><button aria-pressed="${S.detect==='word'}" data-detect="word">A word</button><button aria-pressed="${S.detect==='line'}" data-detect="line">A line</button></div></div><button class="btn ghost" data-act="Find and redact">Find and redact…</button>`,
+  sign: () => head('sign', 'Sign') + `<div class="seg" role="group"><button aria-pressed="${S.sigMode==='sign'}" data-sigmode="sign">Sign</button><button aria-pressed="${S.sigMode==='type'}" data-sigmode="type">Type</button></div>` + (S.sigMode === 'sign' ? `<div class="pad"><canvas id="pad" width="464" height="168"></canvas><button class="ib clr" data-padclear aria-label="Clear signature">${ic('x')}</button></div>` : `<input id="sigText" class="sigin" value="${S.sigText}" aria-label="Type your name" autocomplete="off"><div class="sigprev" id="sigPrev">${S.sigText}</div>`) + `<p class="hint lg">Then tap the page where it goes.</p>`,
+};
+/* A tool with no settings of its own still gets a tray, so the person always sees what is open. */
+function trayFor(id) { const t = BY_ID[id]; return TRAYS[id] ? TRAYS[id]() : head(t.icon, t.label) + `<p class="hint lg">${t.tip}. Click the page or the file to use it.</p>`; }
+function head(i, t) { return `<div class="hd"><b>${ic(i)}<span class="nm">${t}</span></b><button class="ib" data-close aria-label="Close options" style="width:30px;height:30px">${ic('x')}</button></div>`; }
+function colors(k) {
+  const cur = S.col[k], preset = PRESETS[k].includes(cur);
+  return `<div><div class="lab">Colour</div><div class="sw">${PRESETS[k].map(c => `<button style="background:${c}" aria-label="Colour ${c}" aria-pressed="${c === cur}" data-color="${c}" data-for="${k}"></button>`).join('')}<label class="wheel" aria-pressed="${!preset}" title="More colours"><input type="color" id="wheel" value="${cur}" data-for="${k}" aria-label="Pick any colour"><i style="background:${preset ? 'var(--s2)' : cur}"></i></label></div></div>`;
+}
+function slider(k) { const [l, min, max, step] = SLIDERS[k]; return `<div><div class="lab">${l}</div><input type="range" id="size" min="${min}" max="${max}" step="${step}" value="${S.sz[k]}" data-for="${k}" aria-label="${l}"></div>`; }
+
+function paintTray() {
+  $('#tray').innerHTML = trayFor(S.tool);
+  $('#tray').dataset.tool = S.tool;
+  $('#size')?.addEventListener('input', e => { S.sz[e.target.dataset.for] = +e.target.value; });
+  $('#wheel')?.addEventListener('input', e => {
+    const k = e.target.dataset.for; S.col[k] = e.target.value;
+    document.querySelectorAll('#tray .sw button').forEach(b => b.setAttribute('aria-pressed', 'false'));
+    const w = e.target.parentElement; w.setAttribute('aria-pressed', 'true'); w.querySelector('i').style.background = e.target.value;
+  });
+  $('#sigText')?.addEventListener('input', e => { S.sigText = e.target.value; $('#sigPrev').textContent = S.sigText; });
+  initPad();
+}
+/* The signature pad: draw with a finger or a mouse. */
+function initPad() {
+  const c = $('#pad'); if (!c) return;
+  const g = c.getContext('2d'); g.lineWidth = 4; g.lineCap = g.lineJoin = 'round'; g.strokeStyle = '#1d3a8a';
+  if (S.sigData) { const im = new Image(); im.onload = () => g.drawImage(im, 0, 0); im.src = S.sigData; }
+  let down = false;
+  const xy = e => { const r = c.getBoundingClientRect(); return [(e.clientX - r.left) * c.width / r.width, (e.clientY - r.top) * c.height / r.height]; };
+  c.addEventListener('pointerdown', e => { down = true; c.setPointerCapture(e.pointerId); g.beginPath(); g.moveTo(...xy(e)); g.lineTo(...xy(e)); g.stroke(); });
+  c.addEventListener('pointermove', e => { if (!down) return; g.lineTo(...xy(e)); g.stroke(); });
+  const end = () => { if (down) { down = false; S.sigData = c.toDataURL(); } };
+  c.addEventListener('pointerup', end); c.addEventListener('pointercancel', end);
+}
+function setTool(id) {
+  S.tool = id;
+  document.querySelectorAll('.rail .tool[data-tool]').forEach(b => { const on = b.dataset.tool === id; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+  const tray = $('#tray');
+  tray.style.setProperty('--tc', `var(--c-${BY_ID[id].c})`);
+  selectRd(null); tray.hidden = id === 'select'; paintTray();
+  $('#layer').className = 'layer t-' + id;
+}
+rail.addEventListener('click', e => {
+  if (e.target.closest('[data-open-all]')) { renderSheet(); openAll(true); return; }
+  const b = e.target.closest('[data-tool]'); if (!b) return; setTool(b.dataset.tool === S.tool && b.dataset.tool !== 'select' ? 'select' : b.dataset.tool); });
+$('#tray').addEventListener('click', e => {
+  const t = e.target.closest('button'); if (!t) return;
+  if (t.dataset.close !== undefined) setTool('select');
+  if (t.dataset.color) { S.col[t.dataset.for] = t.dataset.color; paintTray(); }
+  if (t.closest('[data-cycle]')) { S.shape = SHAPES[(SHAPES.indexOf(S.shape) + 1) % SHAPES.length]; paintTray(); }
+  if (t.dataset.shape) { S.shape = t.dataset.shape; paintTray(); }
+  if (t.dataset.stamp) { S.stamp = t.dataset.stamp; paintTray(); }
+  if (t.dataset.detect) { S.detect = t.dataset.detect; paintTray(); }
+  if (t.dataset.sigmode) { S.sigMode = t.dataset.sigmode; paintTray(); }
+  if (t.dataset.padclear !== undefined) { S.sigData = null; paintTray(); }
+  if (t.dataset.act) toast(t.dataset.act);
+});
+
+/* All tools sheet */
+function openAll(v) { $('#allTools').classList.toggle('open', v); $('#scrim').classList.toggle('open', v); }
+$('#scrim').addEventListener('click', () => { openAll(false); menu(false); });
+$('#allTools').addEventListener('click', e => {
+  if (e.target.closest('[data-closeall]')) { openAll(false); return; }
+  if (e.target.closest('[data-reset]')) { pinned = DEFAULT_PINNED.slice(); savePins(); renderRail(); renderSheet(); return; }
+  const pin = e.target.closest('[data-pin]');
+  if (pin) {
+    const id = pin.dataset.pin;
+    if (pinned.includes(id)) pinned = pinned.filter(x => x !== id);
+    else if (pinned.length >= slots) { toast(`The bar is full (${slots}). Unpin a tool first.`); return; }
+    else pinned = [...pinned, id];
+    savePins(); renderRail(); renderSheet(); return;
+  }
+  const b = e.target.closest('[data-all]'); if (!b) return;
+  openAll(false); setTool(b.dataset.all);
+});
+phoneQuery.addEventListener('change', () => { renderRail(); });
+
+/* Menu */
+function menu(v) { $('#menuPop').classList.toggle('open', v); $('#scrim').classList.toggle('open', v); }
+$('#btnMenu').addEventListener('click', () => menu(!$('#menuPop').classList.contains('open')));
+$('#menuPop').addEventListener('click', e => { const b = e.target.closest('[data-menu]'); if (!b) return; menu(false); if (b.dataset.menu === 'Page thumbnails') togglePages(); else if (b.dataset.menu === 'Find') toggleFind(true); else toast(b.dataset.menu); });
+
+/* Pages, find, export */
+function togglePages() { const o = $('#pagesPane').classList.toggle('open'); $('#btnPages').setAttribute('aria-pressed', o); }
+$('#btnPages').addEventListener('click', togglePages);
+function toggleFind(v) { $('#findbar').classList.toggle('open', v); $('#btnFind').setAttribute('aria-pressed', v); if (v) $('#findInput').focus(); }
+$('#btnFind').addEventListener('click', () => toggleFind(!$('#findbar').classList.contains('open')));
+$('#findClose').addEventListener('click', () => toggleFind(false));
+$('#btnExport').addEventListener('click', () => toast('Exported a copy to the chat'));
+let zi = 2; const Z = [75, 90, 100, 125, 150];
+$('#zoomLabel').addEventListener('click', () => { zi = (zi + 1) % Z.length; $('#zoomLabel').textContent = Z[zi] + '%'; $('#sheet').style.maxWidth = (640 * Z[zi] / 100) + 'px'; });
+
+/* Marks on the page */
+const layer = $('#layer'), ink = $('#ink');
+let drag = null;
+const pt = e => { const r = layer.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width * 100, y: (e.clientY - r.top) / r.height * 100 }; };
+function addMark(el) { S.marks.push(el); S.redo = []; sync(); }
+function sync() { $('#btnUndo').disabled = !S.marks.length; $('#btnRedo').disabled = !S.redo.length; }
+layer.addEventListener('pointerdown', e => {
+  const p = pt(e), t = S.tool;
+  if (t === 'redact') { const rd = e.target.closest('.mark.rd'); if (rd) { selectRd(rd); return; } selectRd(null); }
+  if (!['text', 'note', 'stamp', 'highlight', 'draw', 'shape', 'redact', 'sign'].includes(t)) return;
+  if (t === 'sign') { placeSignature(p); return; }
+  if (['text', 'note', 'stamp'].includes(t)) {
+    const el = document.createElement('div');
+    el.className = 'mark ' + ({ text: 'tx', note: 'nt', stamp: 'st' })[t];
+    el.style.left = p.x + '%'; el.style.top = p.y + '%';
+    if (t === 'text') { el.textContent = 'Net 14 days'; el.style.color = S.col.text; el.style.fontSize = (S.sz.text / 16 * 2.4) + 'cqw'; el.style.borderColor = S.col.text + '80'; }
+    if (t === 'note') el.innerHTML = ic('note');
+    if (t === 'stamp') el.textContent = S.stamp;
+    layer.append(el); addMark(el); return;
+  }
+  layer.setPointerCapture(e.pointerId);
+  if (t === 'shape' && (S.shape === 'line' || S.shape === 'arrow')) {
+    const NS = 'http://www.w3.org/2000/svg', g = document.createElementNS(NS, 'g'), ln = document.createElementNS(NS, 'line'), hd = document.createElementNS(NS, 'path');
+    [ln, hd].forEach(n => { n.setAttribute('stroke', S.col.shape); n.setAttribute('fill', 'none'); n.setAttribute('stroke-linecap', 'round'); n.setAttribute('stroke-linejoin', 'round'); n.setAttribute('vector-effect', 'non-scaling-stroke'); n.style.strokeWidth = S.sz.shape + 'px'; });
+    ln.setAttribute('x1', p.x); ln.setAttribute('y1', p.y); ln.setAttribute('x2', p.x); ln.setAttribute('y2', p.y);
+    g.append(ln, hd); ink.append(g); drag = { t, p0: p, el: g, kind: S.shape, ln, hd }; return;
+  }
+  const el = document.createElement(t === 'draw' ? 'div' : 'div');
+  if (t === 'draw') { const path = document.createElementNS('http://www.w3.org/2000/svg', 'path'); path.setAttribute('d', `M${p.x} ${p.y}`); path.setAttribute('fill', 'none'); path.setAttribute('stroke', S.col.draw); path.setAttribute('stroke-linecap', 'round'); path.setAttribute('vector-effect', 'non-scaling-stroke'); path.style.strokeWidth = S.sz.draw + 'px'; ink.append(path); drag = { t, p0: p, el: path, d: `M${p.x} ${p.y}` }; return; }
+  el.className = 'mark ' + ({ highlight: 'hl', redact: 'rd', shape: 'sh' })[t];
+  if (t === 'highlight') { el.style.background = S.col.highlight + '66'; el.dataset.h = S.sz.highlight; }
+  if (t === 'shape') { el.style.setProperty('--c', S.col.shape); el.style.borderWidth = S.sz.shape + 'px'; if (S.shape === 'circle') el.style.borderRadius = '50%'; }
+  layer.append(el); drag = { t, p0: p, el, cx: e.clientX, cy: e.clientY, moved: 0 };
+});
+layer.addEventListener('pointermove', e => {
+  if (!drag) return; const p = pt(e);
+  if (drag.cx !== undefined) drag.moved = Math.max(drag.moved, Math.hypot(e.clientX - drag.cx, e.clientY - drag.cy));
+  if (drag.kind) {
+    drag.ln.setAttribute('x2', p.x); drag.ln.setAttribute('y2', p.y);
+    if (drag.kind === 'arrow') {
+      const r = layer.getBoundingClientRect(), W = r.width / 100, H = r.height / 100, dx = (p.x - drag.p0.x) * W, dy = (p.y - drag.p0.y) * H, a = Math.atan2(dy, dx), L = 10 + 3 * S.sz.shape;
+      const pts = [a + Math.PI - .5, a + Math.PI + .5].map(t => [p.x + Math.cos(t) * L / W, p.y + Math.sin(t) * L / H]);
+      drag.hd.setAttribute('d', Math.hypot(dx, dy) < 6 ? '' : `M${pts[0][0]} ${pts[0][1]} L${p.x} ${p.y} L${pts[1][0]} ${pts[1][1]}`);
+    }
+    return;
+  }
+  if (drag.t === 'draw') { drag.d += ` L${p.x} ${p.y}`; drag.el.setAttribute('d', drag.d); return; }
+  const x = Math.min(p.x, drag.p0.x), y = Math.min(p.y, drag.p0.y);
+  Object.assign(drag.el.style, { left: x + '%', top: y + '%', width: Math.abs(p.x - drag.p0.x) + '%', height: (drag.t === 'highlight' ? +drag.el.dataset.h : Math.abs(p.y - drag.p0.y)) + '%' });
+});
+const endDrag = () => {
+  if (!drag) return; const d = drag; drag = null;
+  if (d.t === 'redact' && d.moved < 6) { d.el.remove(); redactAt(d.cx, d.cy); return; }
+  addMark(d.el); if (d.t === 'redact') selectRd(d.el);
+};
+
+/* Tap to redact: find the text under the finger and cover it. */
+function redactAt(cx, cy) {
+  layer.style.pointerEvents = 'none';
+  let range = document.caretRangeFromPoint ? document.caretRangeFromPoint(cx, cy) : null;
+  if (!range && document.caretPositionFromPoint) { const c = document.caretPositionFromPoint(cx, cy); if (c) { range = document.createRange(); range.setStart(c.offsetNode, c.offset); } }
+  layer.style.pointerEvents = '';
+  const node = range && range.startContainer;
+  if (!node || node.nodeType !== 3 || !node.parentElement.closest('.sheet')) return toast('No text here. Drag to cover an area.');
+  const txt = node.textContent; let rects;
+  if (S.detect === 'line') {
+    const r = document.createRange(); r.selectNodeContents(node);
+    rects = [...r.getClientRects()].filter(rc => cy >= rc.top - 3 && cy <= rc.bottom + 3);
+  } else {
+    let a = Math.min(range.startOffset, txt.length), b = a;
+    if (/\s/.test(txt[a] || ' ') && a > 0) a--, b--;
+    while (a > 0 && !/\s/.test(txt[a - 1])) a--;
+    while (b < txt.length && !/\s/.test(txt[b])) b++;
+    while (b > a && /[,;:]/.test(txt[b - 1])) b--;
+    const r = document.createRange(); r.setStart(node, a); r.setEnd(node, b);
+    rects = [...r.getClientRects()];
+  }
+  const hit = rects.filter(rc => cx >= rc.left - 8 && cx <= rc.right + 8 && cy >= rc.top - 8 && cy <= rc.bottom + 8);
+  if (!hit.length) return toast('No text here. Drag to cover an area.');
+  const L = Math.min(...rects.map(r => r.left)), R = Math.max(...rects.map(r => r.right)), T = Math.min(...rects.map(r => r.top)), B = Math.max(...rects.map(r => r.bottom));
+  const lr = layer.getBoundingClientRect(), px = 3 / lr.width * 100, py = 2 / lr.height * 100;
+  const el = document.createElement('div'); el.className = 'mark rd';
+  Object.assign(el.style, { left: ((L - lr.left) / lr.width * 100 - px) + '%', top: ((T - lr.top) / lr.height * 100 - py) + '%', width: ((R - L) / lr.width * 100 + 2 * px) + '%', height: ((B - T) / lr.height * 100 + 2 * py) + '%' });
+  layer.append(el); addMark(el); selectRd(el); toast('Redacted. Drag a handle to resize.');
+}
+function selectRd(el) {
+  layer.querySelectorAll('.mark.rd.sel').forEach(x => { x.classList.remove('sel'); x.querySelectorAll('.hdl').forEach(h => h.remove()); });
+  if (!el) return; el.classList.add('sel');
+  ['n', 'e', 's', 'w'].forEach(side => { const h = document.createElement('i'); h.className = 'hdl ' + side; h.addEventListener('pointerdown', ev => startResize(ev, el, side, h)); el.append(h); });
+}
+function startResize(ev, el, side, h) {
+  ev.stopPropagation(); ev.preventDefault(); h.setPointerCapture(ev.pointerId);
+  const r0 = { l: parseFloat(el.style.left), t: parseFloat(el.style.top), w: parseFloat(el.style.width), h: parseFloat(el.style.height) };
+  const move = e => {
+    const p = pt(e); let { l, t, w, h: hh } = r0; const R = l + w, B = t + hh;
+    if (side === 'e') w = Math.max(1, p.x - l);
+    if (side === 'w') { l = Math.min(p.x, R - 1); w = R - l; }
+    if (side === 's') hh = Math.max(.8, p.y - t);
+    if (side === 'n') { t = Math.min(p.y, B - .8); hh = B - t; }
+    Object.assign(el.style, { left: l + '%', top: t + '%', width: w + '%', height: hh + '%' });
+  };
+  const up = () => { h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up); };
+  h.addEventListener('pointermove', move); h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up);
+}
+function placeSignature(p) {
+  if (S.sigMode === 'sign' && !S.sigData) return toast('Sign in the box first.');
+  if (S.sigMode === 'type' && !S.sigText.trim()) return toast('Type your name first.');
+  let el;
+  if (S.sigMode === 'sign') { el = document.createElement('img'); el.src = S.sigData; el.alt = 'Signature'; }
+  else { el = document.createElement('div'); el.textContent = S.sigText; }
+  el.className = 'mark sg'; el.style.left = p.x + '%'; el.style.top = p.y + '%';
+  layer.append(el); addMark(el);
+}
+layer.addEventListener('pointerup', endDrag); layer.addEventListener('pointercancel', endDrag);
+$('#btnUndo').addEventListener('click', () => { const m = S.marks.pop(); if (m) { m.remove(); S.redo.push(m); sync(); } });
+$('#btnRedo').addEventListener('click', () => { const m = S.redo.pop(); if (m) { (m.ownerSVGElement ? ink : layer).append(m); S.marks.push(m); sync(); } });
+
+let tt; function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(tt); tt = setTimeout(() => t.classList.remove('show'), 1800); }
+
+/* Keyboard shortcuts, as in the editor */
+addEventListener('keydown', e => { if (e.target.tagName === 'INPUT' || e.metaKey || e.ctrlKey) return; const k = { v: 'select', t: 'text', h: 'highlight', p: 'draw', s: 'shape', n: 'note', r: 'redact' }[e.key.toLowerCase()]; if (k) setTool(k); if (e.key === 'Escape') { setTool('select'); openAll(false); menu(false); } });
+
+renderRail();
+setTool('highlight');
+</script>

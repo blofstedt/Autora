@@ -180,27 +180,15 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  New: Autora Photo, a photo editor beside the chat (PhotoCraft's, with layers,
-  masks, adjustment layers, filters, type, brushes and real PSD files). Ask Autora
-  to retouch, cut out, resize or colour a picture and it runs the editor's own
-  commands while you watch; edit by hand at the same time and export PNG, JPEG,
-  WebP, TIFF or PSD. It has its own switch on the Tools page. Also fixes the blank
-  screen on load: a list the lazy pages register themselves in was created after
-  the first page used it.
-
-  Paired-down tools on a phone, and one look across them. The agent keeps every tool wherever
-  the work is shown; the person gets a very simple app. PDF shows the page and one bar (Undo,
-  Mark up, Fill & sign, Find): Mark up is Highlight, Text, Draw, Note and Eraser with a colour,
-  Fill & sign is Fill Fields and Sign, and Find is one row. Video shows the picture and the
-  timeline with Media and Edit as sheets, Export beside them, and a timeline bar of just undo,
-  split, duplicate, delete and zoom. Autora Photo shows the picture alone with one bar (Undo,
-  Redo, Tools, Brush, Layers, Fit) and a sheet for each. Pages, Sheets and Slides keep the page and one
-  bar (undo, bold, italic, size, and a list, a row or a slide), with the full ribbon behind More; the
-  "Autora" button in their ribbon is gone on every screen. The app window, the browser and Music lose
-  their desktop-only buttons. Every tool window now shares one set of measurements on a phone
-  (a 48px bar, 40px soft-square buttons, no text pills or round buttons mixed in), 3D and the
-  editors follow them, and full screen keeps a strip at the bottom so the chat button no longer
-  covers a tool's own buttons. Games on a phone show the scene, Play, undo and what is in it, without events, sharing or the 3D view. The browser has
-  a toolbar and the page, opens full screen magnified, and keeps its toolbar above the header. A second pass gave every control on the phone a thumb's size, named the
-  terminal in its bar, and tidied Music's settings and the app window's bar. A desktop gets the full
-  editors exactly as before.
+  A new PDF window, replacing the old toolbar and menu bar on a phone and a desktop with
+  the look SecurePDF and Autora 3D share. One floating bar of round, coloured tools
+  (along the bottom on a phone, down the right on a desktop) shows as many tools as fit
+  and never scrolls; the last button opens every other tool in a grid in the middle of
+  the screen, where a desktop can pin the tools it wants on the bar. The open tool puts its
+  settings in a small tray: three colours and a colour wheel for Highlight, Draw, Shapes,
+  Text, Note and Callout, plus a thickness slider for Draw and Shapes, and a button (or, on
+  a desktop, seven buttons) for the shape. Redact now works by tapping or clicking a word
+  or line, with a handle on each side to change what was taken. Sign no longer offers an
+  image. The old menu bar is a menu at the top left, beside Undo, Redo and Find. On a desktop the left side is now a file menu (Open, Save, Merge, Split, Compress, Password, Export) with the page thumbnails under it, and a row of buttons for the other panels. The strip along the bottom of the page (pages, zoom, Redact and Apply) is round buttons in the same look. Everything
+  the editor can do is still reachable, and Autora's PDF manual describes this window, so the
+  agent points you at the right button.

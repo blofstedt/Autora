@@ -82,6 +82,37 @@ const PDF = [
     "pdf_compose writes a new PDF from headings, paragraphs and tables and keeps the document so you can update one section later; " +
     "pdf_pages reorders, merges and splits; pdf_redact removes content for good; pdf_replace_text changes the words in place; " +
     "pdf_compress shrinks. Every change is a new artifact and the original is never altered, so say which file is the result.",
+  "  What the person sees (this is the PDF tool; it replaces the old toolbar and menu bar entirely, on a phone and on a desktop, and " +
+    "you must describe it, not the old one). One floating bar of round, coloured tools: along the bottom on a phone, down the right " +
+    "side on a desktop. The bar shows only the tools that fit and never scrolls. A phone shows Select (blue), Text (green), Highlight " +
+    "(amber), Draw (purple), Shapes (indigo), Redact (rose) and Sign (cyan). A desktop has room for many more (those, plus Pen " +
+    "highlight, Note, Stamps, Callout, Erase, Fill fields, Edit text, Add image, Link, Organize, Measure...) and the person can pin " +
+    "any tool to it or unpin one from the grid, or press \"Reset bar\". The last button (a grid of four squares, \"All tools\") " +
+    "opens every other tool in a window in the middle of the screen, with an x at the top right: " +
+    "Pen highlight, Callout, Erase, Comments, Digital ID, Fill fields, Edit text, Add text, Add image, Link, Make a form, Password, " +
+    "Watermark, Header & footer, Organize, Compress, Export, Compare, Repair, Crop, Page labels, Measure, Count, Make searchable, " +
+    "Snapshot, Layers, Attachments, Portfolio, Accessibility, Print prep and Actions. A slim bar along the top has the menu (File, " +
+    "Edit, View, Document, Tools, Window, Help: what the old menu bar held), Undo, Redo and Find. A tool with its own pane (Password, " +
+    "Compress, Compare...) opens it as a window in the middle. A desktop also has a panel down the left: nine file buttons (Open, Save, " +
+    "Save as, Merge, Add pages, Split, Compress, Password, Export), a row of small buttons that switch the panel (Pages, Bookmarks, " +
+    "Search, Signatures, Attachments, Layers, Tags, Articles) and, under them, the page thumbnails; the button at the top left of the " +
+    "page area hides or shows it. A phone has no left panel (use Organize in All tools for the pages). So to send someone to a " +
+    "tool, name the button and say \"open All " +
+    "tools\" if it is not on their bar.",
+  "  The open tool's settings are one row above the bar on a phone and a card beside the bar on a desktop. Highlight, Pen highlight, Draw, Shapes, Text, Note and Callout show three " +
+    "colours and a colour wheel (any colour); Draw, Shapes and Pen highlight add a thickness slider; Shapes has a round button at the " +
+    "left that steps through Box, Circle, Line, Arrow, Polygon, Polyline and Cloud. Text has no size setting. Redact has \"A word\" / " +
+    "\"A line\": the person taps or clicks text and that word or line is marked, with a handle on each side to change it; dragging over an area " +
+    "marks a box (for a picture). A mark is only pending: nothing leaves the file until they press \"Redact N regions\" above the bar, " +
+    "and a pending mark is not in the file, so pdf_read will still show its text. Do not say something is redacted until it is; " +
+    "pdf_redact is your own way, and it removes the content at once. Sign is the person's own signature: Draw it or Type it (never an " +
+    "image), saved, then tap the page to place it. If the Type tab cannot load its handwriting fonts, place a typed signature yourself " +
+    "with a pdf_edit signature item. Digital ID is the certificate signature, a different thing.",
+  "  Working with them. You have every tool whatever the bar shows; the bar is only what a thumb reaches first. What the person adds " +
+    "is an object they can move or remove, and it is told to you with your next PDF tool result, so read before you rely on an old " +
+    "look. What you add is marked in the window for them to accept or decline. Colour and thickness are theirs to set: do not tell " +
+    "them to change settings you can pass to pdf_edit (color, thickness). When they ask how to do something, answer with the buttons " +
+    "above, in the order they will tap them, in a line or two; when it is the file that needs changing, change it instead.",
 ].join("\n");
 
 const VIDEO = [

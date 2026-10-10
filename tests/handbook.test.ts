@@ -29,6 +29,14 @@ await test("every window has a manual that names its tools", () => {
   for (const id of MANUAL_IDS) for (const needle of expect[id]) assert.ok(manualText(id).includes(needle), `${id} lacks ${needle}`);
 });
 
+await test("the PDF manual teaches the window as it is now: the bar, the grid, the trays, tap to redact, sign", () => {
+  const pdf = manualText("pdf");
+  for (const needle of ["All tools", "colour wheel", "Redact N regions", "pending", "never an image", "replaces the old toolbar", "Shapes has a round button", "pin any tool", "Reset bar", "down the right side on a desktop", "page thumbnails", "Merge, Add pages, Split"]) {
+    assert.ok(pdf.includes(needle), `the PDF manual lacks "${needle}"`);
+  }
+  assert.ok(!/menu bar of|Mark up, Fill & sign/.test(pdf), "and says nothing of the bar it replaced, except that it is replaced");
+});
+
 await test("a tool finds its window's manual, and a tool with no window finds none", () => {
   assert.equal(manualId("browser_click"), "browser");
   assert.equal(manualId("web_search"), "browser");

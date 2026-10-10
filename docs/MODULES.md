@@ -534,10 +534,23 @@ Spectra's fetched renderer is most of what is on disk.
   and 12px, not a pill or a circle. Test: `ui-pdfwindow` measures the bar.
 - Paired-down tools on a phone: a phone gets the same files in an editor arranged for a thumb, never a second
   implementation, and the desktop is untouched. The window adds `&phone=1` to the editor frame's URL (`SpectraWindow`,
-  `OpenCutWindow`). PDF: `spectra-editor/src/autora/phone.tsx` sets `html.autora-phone` and mounts one bar (Mark up, Fill & sign,
-  Find, Undo, Redo) that calls Spectra's own `invokeCommand`; `overlay/renderer/autora.css` puts the menu bar, toolbar,
-  tabs, rail and the tool dock's all-tools grid away and turns the dock into a sheet. Mark up is five modes and a colour, Fill & sign two, Find one row, and the bar's own button for an open tool closes it (no Close button);
-  the rest is the desktop's, and the agent has every tool regardless of what is shown. Pinned (a frame under 520px tall) it is
+  `OpenCutWindow`). PDF: `spectra-editor/src/autora/rail.tsx` is the PDF window's whole interface, on a phone and on a desktop
+  (docs/TOOL-RAIL.md is the spec; `rail-tools.ts` is every tool once, with its colour, glyph and Spectra command). It puts Spectra's
+  menu bar, toolbar and tab strip away (`html.autora-rail-ui`, plus `autora-phone` or `autora-desktop`) and mounts: a bar of round,
+  coloured tools (along the bottom on a phone, down the right on a desktop; it shows as many as fit and never scrolls; a phone shows
+  `PHONE_DEFAULT`, a desktop the person's pins, starting from `DESKTOP_DEFAULT`, kept in `localStorage` as `autora-pdf-pins`), a grid
+  button that opens every tool in a centred modal (a pin on each tile on a desktop), a tray for the open tool (a one-row strip above
+  the bar on a phone, a card beside it on a desktop; Highlight, Pen highlight, Text, Draw, Shapes, Note and Callout: three colours, a
+  wheel and, for Draw, Shapes and Pen highlight, a thickness slider; Shapes steps through the figures with one button on a phone and
+  shows all seven on a desktop; Redact has A word / A line), and, on a desktop only, the left side: Spectra's nav pane with its own icon strip put away, a file menu of nine tiles (Open, Save, Save as, Merge = `document.combineFiles`, Add pages, Split, Compress, Password, Export) and a row of buttons that switch its panel (Pages, Bookmarks, Search, Signatures, Attachments, Layers, Tags, Articles) put at the top of the pane by a portal (`LeftPanel` in rail.tsx), with Spectra's own Pages thumbnails below; the pane is opened once and a button in the top bar shows or hides it; and a slim bar along the top: the menu (Spectra's own menu tree,
+  `commands/menus.ts`, as an accordion), Undo, Redo and Find. Every button calls Spectra's `invokeCommand`; the colour and
+  thickness go through `spectra-editor/overlay/renderer/autora-style.ts` (which the canvas view and `PageCell` read, and which
+  answers "no preference" until the tray sets something). `autora-tap.ts` answers a Redact tap or click from the page's text layer,
+  and `PageCell` turns it into Spectra's own redaction mark and gives the mark a handle on each side; the edits to Spectra's files are in
+  `overlay/renderer.patch`. Sign is Spectra's stamp mode with only the saved signatures showing (`html.autora-signing`), and its dialog
+  has no image door. A tool with no tray (Stamps, Measure...) keeps Spectra's own strip (restyled: a card beside the bar on a
+  desktop); a tool with a pane (Protect, Compress...) opens it as the dock's window in the middle on a desktop and as a sheet on a
+  phone. The agent has every tool regardless of what is shown, and its manual (`server/handbook.ts`) describes this window. Pinned (a frame under 520px tall) it is
   for looking only. Video: `opencut-editor/overlay/web/app/editor/[project_id]/page.tsx` is a whole-file copy of OpenCut's
   page with a `PhoneLayout` (preview, timeline, Media and Edit sheets over the timeline slot, Export beside them, no header row)
   and an overlay of `timeline/components/timeline-toolbar.tsx` whose phone branch is six buttons; keep it in step with the

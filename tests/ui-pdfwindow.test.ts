@@ -178,7 +178,7 @@ async function main() {
       await phone.close();
     });
 
-    await test("on a phone the editor is the paired-down one: a bar of thumb tools, the desktop chrome put away", async () => {
+    await test("on a phone the editor is the paired-down one: a bar of coloured tools that fits without scrolling, the desktop chrome put away", async () => {
       const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
       await phone.goto(`${app.base}/?session=${s}`);
       await phone.waitForSelector(".stage .pdf-window", { timeout: 20_000 });
@@ -204,33 +204,266 @@ async function main() {
       assert.equal(await shown("main-toolbar"), false, "no desktop toolbar");
       assert.equal(await shown("tab-strip"), false, "no tab strip");
       assert.equal(await shown("phone-bar"), true);
-      const reach = await frame.evaluate(() => [...document.querySelectorAll('[data-testid="phone-bar"] button')].map((b) => { const r = b.getBoundingClientRect(); return [r.left >= 0 && r.right <= innerWidth, r.height >= 40]; }).flat());
-      assert.ok(reach.every(Boolean), "every button is on screen and thumb-sized");
-      // The bar drives the editor's own tools: Mark up opens Comment, whose modes are Spectra's own.
-      await frame.click('[data-phone="markup"]');
-      await frame.waitForSelector('[data-testid="secondary-toolbar"]', { timeout: 10_000 });
-      // Simplified: five marks a thumb makes, no stamp/shape/callout/lock, no Close button; the bar's own button closes it.
-      const visible = (id: string) => frame.evaluate((t) => { const el = document.querySelector(`[data-testid="${t}"]`); return !!el && el.getClientRects().length > 0; }, id);
-      for (const id of ["tool-highlight", "tool-freetext", "tool-ink", "tool-note", "tool-inkerase"]) assert.equal(await visible(id), true, id);
-      for (const id of ["tool-stamp", "tool-shape", "tool-callout", "tool-inkhighlight", "tool-lock", "secondary-action-tools.close"]) assert.equal(await visible(id), false, `${id} is the desktop's`);
-      assert.equal(await frame.getAttribute('[data-phone="markup"]', "aria-pressed"), "true");
-      await frame.click('[data-phone="markup"]');
-      await frame.waitForSelector('[data-testid="secondary-toolbar"]', { state: "detached", timeout: 10_000 });
-      // Find is one row, without the desktop's case / word / regex switches.
+
+      // The bar: the default tools that fit, then the grid button, in round buttons that all sit on screen and never scroll.
+      const bar = await frame.evaluate(() => {
+        const nav = document.querySelector('[data-testid="phone-bar"]') as HTMLElement;
+        const buttons = [...nav.querySelectorAll("button")];
+        return {
+          ids: buttons.map((b) => b.getAttribute("data-phone")),
+          scrolls: nav.scrollWidth > nav.clientWidth,
+          onScreen: buttons.every((b) => { const r = b.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.width === r.height && r.width >= 40; }),
+          round: buttons.every((b) => getComputedStyle(b).borderRadius === "50%"),
+          colours: new Set(buttons.map((b) => getComputedStyle(b).getPropertyValue("--tc").trim())).size,
+        };
+      });
+      assert.deepEqual(bar.ids, ["select", "text", "highlight", "draw", "shape", "redact", "sign", "grid"], "the defaults, and the grid last");
+      assert.equal(bar.scrolls, false, "it never scrolls");
+      assert.ok(bar.onScreen && bar.round, "round, thumb-sized, all on screen");
+      assert.ok(bar.colours >= 7, "each tool wears its own colour");
+      // A narrower phone shows fewer, not a scrolling bar.
+      await phone.setViewportSize({ width: 320, height: 700 });
+      await sleep(300);
+      const narrow = await frame.evaluate(() => { const nav = document.querySelector('[data-testid="phone-bar"]') as HTMLElement; return { n: nav.querySelectorAll("button").length, scrolls: nav.scrollWidth > nav.clientWidth, last: nav.querySelector("button:last-child")?.getAttribute("data-phone") }; });
+      assert.ok(narrow.n < 8 && !narrow.scrolls && narrow.last === "grid", JSON.stringify(narrow));
+      await phone.setViewportSize({ width: 390, height: 844 });
+      await sleep(300);
+
+      // Draw: one 46px row of three colours, a wheel and a thickness slider; the choices reach the mark.
+      await frame.click('[data-phone="draw"]');
+      await frame.waitForSelector('[data-testid="phone-tray"][data-mode="ink"]', { timeout: 10_000 });
+      assert.equal(await frame.locator('[data-testid="secondary-toolbar"]:visible').count(), 0, "Spectra's own strip steps aside");
+      const tray = await frame.evaluate(() => {
+        const t = document.querySelector('[data-testid="phone-tray"]') as HTMLElement;
+        return { h: Math.round(t.getBoundingClientRect().height), swatches: t.querySelectorAll(".autora-swatch").length, wheel: !!t.querySelector('[data-testid="phone-wheel"]'), slider: !!t.querySelector('[data-testid="phone-width"]') };
+      });
+      assert.ok(tray.h <= 52 && tray.swatches === 3 && tray.wheel && tray.slider, JSON.stringify(tray));
+      const box = (await (await frame.frameElement()).boundingBox())!;
+      const stroke = async (dy: number) => {
+        await phone.mouse.move(box.x + 80, box.y + dy); await phone.mouse.down();
+        await phone.mouse.move(box.x + 160, box.y + dy + 40, { steps: 6 }); await phone.mouse.move(box.x + 240, box.y + dy, { steps: 6 }); await phone.mouse.up();
+        await sleep(300);
+      };
+      await frame.click('.autora-tray .autora-swatch >> nth=0');
+      await frame.$eval('[data-testid="phone-width"]', (el) => { const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!; set.call(el, "9"); el.dispatchEvent(new Event("input", { bubbles: true })); });
+      await stroke(330);
+      const inks = () => frame.evaluate(() => [...document.querySelectorAll("svg polyline")].map((p) => [p.getAttribute("stroke"), Number(p.getAttribute("stroke-width") ?? 0)]).filter(([, w]) => (w as number) > 0));
+      const first = await inks();
+      assert.ok(first.some(([c, w]) => c === "#e0393e" && (w as number) > 5), `the red, thick stroke: ${JSON.stringify(first)}`);
+
+      // Shapes: the left button steps through the figures, and the wheel colours what is drawn.
+      await frame.click('[data-phone="shape"]');
+      await frame.waitForSelector('[data-testid="phone-shape"]', { timeout: 10_000 });
+      const figure = () => frame.evaluate(() => document.querySelector('[data-testid="phone-shape"]')!.getAttribute("aria-label"));
+      assert.match((await figure())!, /Box/);
+      await frame.click('[data-testid="phone-shape"]');
+      assert.match((await figure())!, /Circle/);
+      await frame.click('[data-testid="phone-shape"]');
+      await frame.click('[data-testid="phone-shape"]');
+      await frame.click('[data-testid="phone-shape"]');
+      await frame.click('[data-testid="phone-shape"]');
+      await frame.click('[data-testid="phone-shape"]');
+      await frame.click('[data-testid="phone-shape"]');
+      assert.match((await figure())!, /Box/, "seven figures, then round to the first");
+      await frame.$eval('[data-testid="phone-wheel"]', (el) => { const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!; set.call(el, "#10b981"); el.dispatchEvent(new Event("input", { bubbles: true })); });
+      await sleep(200);
+      await phone.mouse.move(box.x + 80, box.y + 460); await phone.mouse.down(); await phone.mouse.move(box.x + 220, box.y + 540, { steps: 6 }); await phone.mouse.up();
+      await sleep(500);
+      assert.ok(await frame.evaluate(() => [...document.querySelectorAll("rect,ellipse")].some((e) => e.getAttribute("stroke") === "#10b981")), "a green box was drawn");
+      await frame.click('.autora-tray-x');
+      await frame.waitForSelector('[data-testid="phone-tray"]', { state: "detached", timeout: 10_000 });
+
+      // Redact: a tap on a word marks that word, with handles to change it.
+      await frame.click('[data-phone="redact"]');
+      await frame.waitForSelector('[data-testid="phone-tray"][data-mode="redact"]', { timeout: 10_000 });
+      const word = await frame.evaluate(() => {
+        const span = [...document.querySelectorAll(".textLayer span")].find((x) => x.textContent?.includes("Lease"));
+        const node = span!.firstChild!;
+        const at = node.textContent!.indexOf("agreement");
+        const r = document.createRange(); r.setStart(node, at); r.setEnd(node, at + 9);
+        const b = r.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2, w: b.width };
+      });
+      await phone.touchscreen.tap(box.x + word.x, box.y + word.y);
+      await frame.waitForSelector(".page-redact", { timeout: 10_000 });
+      const mark = await frame.evaluate(() => { const m = document.querySelector(".page-redact")!.getBoundingClientRect(); return { w: m.width, handles: document.querySelectorAll(".autora-redact-handle").length }; });
+      assert.equal(mark.handles, 4, "a handle on each side");
+      assert.ok(mark.w > word.w * 0.8 && mark.w < word.w * 1.6, `the mark is about the word (${mark.w} vs ${word.w})`);
+      await frame.click('.autora-tray-x');
+
+      // Sign: Draw or Type, never an image.
+      await frame.click('[data-phone="sign"]');
+      await frame.waitForSelector('[data-testid="signature-door-draw"]', { timeout: 10_000 });
+      assert.equal(await frame.locator('[data-testid="signature-door-type"]:visible').count(), 1);
+      assert.equal(await frame.locator('[data-testid="signature-door-import"]:visible').count(), 0, "no image door on a phone");
+      const fits = await frame.evaluate(() => { const d = document.querySelector('[role="dialog"]')!.getBoundingClientRect(); return d.left >= 0 && d.right <= innerWidth; });
+      assert.ok(fits, "the dialog fits the screen");
+      await phone.keyboard.press("Escape");
+      await frame.waitForSelector('[role="dialog"]', { state: "detached", timeout: 10_000 });
+
+      // The grid: every tool, in the middle of the screen, with a close button.
+      await frame.click('[data-phone="grid"]');
+      await frame.waitForSelector('[data-testid="phone-grid"]', { timeout: 10_000 });
+      const grid = await frame.evaluate(() => {
+        const g = document.querySelector('[data-testid="phone-grid"]')!.getBoundingClientRect();
+        const x = document.querySelector('[data-testid="phone-grid-close"]')!.getBoundingClientRect();
+        return { centred: Math.abs(g.left + g.width / 2 - innerWidth / 2) < 2, closeAtRight: x.right > g.right - 40 && x.top < g.top + 50, tiles: document.querySelectorAll("[data-tile]").length };
+      });
+      assert.ok(grid.centred, "centred");
+      assert.ok(grid.closeAtRight, "a close button at the top right");
+      assert.ok(grid.tiles >= 40, `every tool is in it (${grid.tiles})`);
+      for (const id of ["note", "stamp", "callout", "organize", "protect", "measure"]) assert.equal(await frame.locator(`[data-tile="${id}"]`).count(), 1, id);
+      await frame.click('[data-testid="phone-grid-close"]');
+      await frame.waitForSelector('[data-testid="phone-grid"]', { state: "detached", timeout: 10_000 });
+      // A tile from the grid arms the tool: Note brings its own tray.
+      await frame.click('[data-phone="grid"]');
+      await frame.click('[data-tile="note"]');
+      await frame.waitForSelector('[data-testid="phone-tray"][data-mode="note"]', { timeout: 10_000 });
+      await frame.click('.autora-tray-x');
+
+      // Find is Spectra's own find bar, one row.
       await frame.click('[data-phone="find"]');
       await frame.waitForSelector('[data-testid="find-bar"]', { timeout: 10_000 });
       assert.equal(await frame.evaluate(() => [...document.querySelectorAll('[data-testid="find-bar"] button')].filter((b) => b.getClientRects().length > 0).length), 1, "only the close button");
       await phone.close();
     });
 
-    await test("on a desktop nothing of that is there: the full editor", async () => {
+    await test("on a desktop it is the same bar, down the right side: more tools, a grid with pins, a card for the open tool, a menu", async () => {
       const wide = await browser.newPage({ viewport: { width: 1440, height: 900 } });
       await wide.goto(`${app.base}/?session=${s}`);
       await wide.waitForSelector(".app-pane .pdf-window", { timeout: 20_000 });
       const frame = await editorIn(wide);
-      await frame.waitForSelector('[data-testid="menubar"]', { timeout: 10_000 });
-      assert.equal(await frame.locator('[data-testid="phone-bar"]').count(), 0);
+      await frame.waitForSelector('[data-testid="phone-bar"]', { timeout: 10_000 });
+      assert.equal(await frame.evaluate(() => document.documentElement.classList.contains("autora-desktop")), true);
       assert.equal(await frame.evaluate(() => document.documentElement.classList.contains("autora-phone")), false);
+      const visible = (id: string) => frame.evaluate((t) => { const el = document.querySelector(`[data-testid="${t}"]`); return !!el && getComputedStyle(el).display !== "none" && el.getClientRects().length > 0; }, id);
+      assert.equal(await visible("menubar"), false, "Spectra's menu bar is put away");
+      assert.equal(await visible("main-toolbar"), false, "and its toolbar");
+      assert.equal(await visible("tab-strip"), false, "and its tab strip");
+
+      // The bar: vertical, on the right, never scrolling, with more tools than a phone can hold.
+      const bar = await frame.evaluate(() => {
+        const nav = document.querySelector('[data-testid="phone-bar"]') as HTMLElement;
+        const r = nav.getBoundingClientRect();
+        const buttons = [...nav.querySelectorAll("button")];
+        return {
+          ids: buttons.map((b) => b.getAttribute("data-phone")),
+          onRight: r.right > innerWidth - 24 && r.width < 80,
+          vertical: r.height > r.width * 3,
+          scrolls: nav.scrollHeight > nav.clientHeight,
+          inside: r.top >= 40 && r.bottom <= innerHeight,
+        };
+      });
+      assert.ok(bar.onRight && bar.vertical && bar.inside && !bar.scrolls, JSON.stringify(bar));
+      assert.equal(bar.ids.at(-1), "grid");
+      assert.ok(bar.ids.length >= 12, `more tools than a phone's seven (${bar.ids.length - 1})`);
+      for (const id of ["select", "text", "highlight", "draw", "shape", "note", "stamp", "redact", "sign"]) assert.ok(bar.ids.includes(id), `${id} is on the bar`);
+
+      // A short window shows fewer, not a scrolling bar.
+      await wide.setViewportSize({ width: 1440, height: 560 });
+      await sleep(400);
+      const short = await frame.evaluate(() => { const nav = document.querySelector('[data-testid="phone-bar"]') as HTMLElement; return { n: nav.querySelectorAll("button").length, scrolls: nav.scrollHeight > nav.clientHeight }; });
+      assert.ok(short.n < bar.ids.length && !short.scrolls, JSON.stringify(short));
+      await wide.setViewportSize({ width: 1440, height: 900 });
+      await sleep(400);
+
+      // The open tool's settings are a card beside the bar, with labels (there is room for them).
+      await frame.click('[data-phone="draw"]');
+      await frame.waitForSelector('[data-testid="phone-tray"][data-mode="ink"]', { timeout: 10_000 });
+      await sleep(450); // it slides in
+      const card = await frame.evaluate(() => {
+        const t = document.querySelector('[data-testid="phone-tray"]') as HTMLElement; const b = (document.querySelector('[data-testid="phone-bar"]') as HTMLElement).getBoundingClientRect(); const r = t.getBoundingClientRect();
+        return { besideBar: r.right < b.left, labels: t.innerText.includes("Colour") && t.innerText.includes("Thickness"), swatches: t.querySelectorAll(".autora-swatch").length };
+      });
+      assert.ok(card.besideBar && card.labels && card.swatches === 3, JSON.stringify(card));
+      await frame.click('.autora-tray-x');
+
+      // Shapes: every figure is a button on a desktop.
+      await frame.click('[data-phone="shape"]');
+      await frame.waitForSelector(".autora-shapes", { timeout: 10_000 });
+      assert.equal(await frame.locator(".autora-shapes button").count(), 7);
+      await frame.click('.autora-shapes [data-shape="arrow"]');
+      assert.equal(await frame.getAttribute('[data-testid="shape-type-arrow"]', "aria-pressed"), "true");
+      await frame.click('.autora-tray-x');
+
+      // Redact: a click on a word marks it, as a tap does on a phone.
+      await frame.click('[data-phone="redact"]');
+      await frame.waitForSelector('[data-testid="phone-tray"][data-mode="redact"]', { timeout: 10_000 });
+      const at = await frame.evaluate(() => {
+        const span = [...document.querySelectorAll(".textLayer span")].find((x) => x.textContent?.includes("Lease"))!;
+        const node = span.firstChild!; const i = node.textContent!.indexOf("agreement");
+        const r = document.createRange(); r.setStart(node, i); r.setEnd(node, i + 9);
+        const b = r.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+      });
+      const wbox = (await (await frame.frameElement()).boundingBox())!;
+      await wide.mouse.click(wbox.x + at.x, wbox.y + at.y);
+      await frame.waitForSelector(".page-redact", { timeout: 10_000 });
+      assert.equal(await frame.locator(".autora-redact-handle").count(), 4);
+      await frame.click('.autora-tray-x');
+
+      // The grid: every tool, with a pin on each; pinning and unpinning changes the bar, and Reset puts it back.
+      await frame.click('[data-phone="grid"]');
+      await frame.waitForSelector('[data-testid="phone-grid"]', { timeout: 10_000 });
+      assert.ok((await frame.locator("[data-tile]").count()) >= 40);
+      assert.ok((await frame.locator("[data-pin]").count()) >= 40, "a pin on every tile");
+      await frame.click('[data-pin="stamp"]');
+      await frame.click('[data-pin="compare"]');
+      await frame.click('[data-testid="phone-grid-close"]');
+      const barIds = () => frame.evaluate(() => [...document.querySelectorAll('[data-testid="phone-bar"] button')].map((b) => b.getAttribute("data-phone")));
+      let ids = await barIds();
+      assert.ok(!ids.includes("stamp") && ids.includes("compare"), `unpinned Stamps, pinned Compare: ${ids.join(",")}`);
+      await frame.click('[data-phone="grid"]');
+      await frame.click('[data-testid="phone-grid-reset"]');
+      await frame.click('[data-testid="phone-grid-close"]');
+      ids = await barIds();
+      assert.ok(ids.includes("stamp") && !ids.includes("compare"), "Reset bar");
+
+      // A tool with a pane (Protect) opens it as a window in the middle; a tool with no tray keeps Spectra's own options, as a card.
+      await frame.click('[data-phone="grid"]');
+      await frame.click('[data-tile="protect"]');
+      await frame.waitForSelector(".tool-dock", { timeout: 10_000 });
+      const dock = await frame.evaluate(() => { const d = document.querySelector(".tool-dock")!.getBoundingClientRect(); return Math.abs(d.left + d.width / 2 - innerWidth / 2) < 4 && Math.abs(d.top + d.height / 2 - innerHeight / 2) < 4; });
+      assert.ok(dock, "the pane is a window in the middle");
+      await frame.click('[data-testid="tool-dock-close"]');
+      await frame.click('[data-phone="grid"]');
+      await frame.click('[data-tile="measure"]');
+      await frame.waitForSelector('[data-testid="secondary-toolbar"]', { timeout: 10_000 });
+      assert.ok(await frame.evaluate(() => { const c = document.querySelector('[data-testid="secondary-toolbar"]')!.getBoundingClientRect(); const b = document.querySelector('[data-testid="phone-bar"]')!.getBoundingClientRect(); return c.right < b.left; }), "Spectra's own strip is a card beside the bar");
+      await frame.click('[data-testid="secondary-action-tools.close"]');
+
+      // The left side: the file basics, a switcher for Spectra's panels, and the pages (not Spectra's icon strip).
+      await frame.waitForSelector('.autora-left [data-file="merge"]', { timeout: 10_000 });
+      assert.equal(await visible("nav-icon-strip"), false, "Spectra's icon strip is the switcher now");
+      const left = await frame.evaluate(() => ({
+        tiles: [...document.querySelectorAll(".autora-left [data-file]")].map((b) => b.getAttribute("data-file")),
+        panels: [...document.querySelectorAll(".autora-left [data-panel]")].map((b) => b.getAttribute("data-panel")),
+        title: document.querySelector('[data-testid="nav-panel-title"]')?.textContent?.trim(),
+        mergeEnabled: !(document.querySelector('.autora-left [data-file="merge"]') as HTMLButtonElement).disabled,
+        above: document.querySelector(".autora-left")!.getBoundingClientRect().bottom <= document.querySelector('[data-testid="nav-panel-title"]')!.getBoundingClientRect().top + 1,
+      }));
+      assert.deepEqual(left.tiles, ["open", "save", "saveas", "merge", "insert", "split", "compress", "password", "export"]);
+      assert.equal(left.panels.length, 8);
+      assert.match(left.title ?? "", /pages/i, "the pages are what it shows");
+      assert.ok(left.mergeEnabled && left.above);
+      await frame.click('.autora-left [data-panel="bookmarks"]');
+      await frame.waitForFunction(() => /bookmarks/i.test(document.querySelector('[data-testid="nav-panel-title"]')?.textContent ?? ""), null, { timeout: 10_000 });
+      await frame.click('.autora-left [data-panel="pages"]');
+      await frame.waitForFunction(() => /pages/i.test(document.querySelector('[data-testid="nav-panel-title"]')?.textContent ?? ""), null, { timeout: 10_000 });
+      await frame.click('.autora-left [data-file="compress"]');
+      await frame.waitForSelector(".tool-dock", { timeout: 10_000 });
+      await frame.click('[data-testid="tool-dock-close"]');
+      await frame.click('[data-testid="phone-pane-button"]');
+      await frame.waitForSelector(".autora-left", { state: "detached", timeout: 10_000 });
+      await frame.click('[data-testid="phone-pane-button"]');
+      await frame.waitForSelector(".autora-left", { timeout: 10_000 });
+
+      // The menu holds what the menu bar did.
+      await frame.click('[data-testid="phone-menu-button"]');
+      await frame.waitForSelector('[data-testid="phone-menu"]', { timeout: 10_000 });
+      const heads = await frame.evaluate(() => [...document.querySelectorAll(".autora-menu-head")].map((h) => h.textContent?.trim()));
+      for (const name of ["File", "Edit", "View", "Document", "Tools", "Window", "Help"]) assert.ok(heads.includes(name), `the menu has ${name}`);
+      assert.ok((await frame.locator(".autora-menu-item").count()) > 3, "File's items are shown");
+      await wide.keyboard.press("Escape");
+      await frame.waitForSelector('[data-testid="phone-menu"]', { state: "detached", timeout: 10_000 });
       await wide.close();
     });
   } finally {
