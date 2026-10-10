@@ -76,6 +76,7 @@ import {
   AgentError, agentLine, createAgent, deleteAgent, findAgent, HIRING, listAgents, mergeAgents, moveAgent, orgBriefing,
   updateAgent, LEAD_ID,
 } from "./agents";
+import { remember, type NoteKind } from "./agentmind";
 import { ThreadError, addComment, createPost, describePost, getPost, listPosts, postLine, toggleLike } from "./threads";
 import { describe as describeJob, findJob, listJobs, readTail, startJob, stopJob } from "./background";
 import { addRule, listRules, revoke as revokeRule } from "./autonomy";
@@ -1363,8 +1364,15 @@ async function runAgents(args: Record<string, any>, ctx: ToolContext): Promise<T
     const all = listAgents();
     return { ok: true, summary: all.map(agentLine).join("\n"), preview: `${all.length} agent${all.length === 1 ? "" : "s"}` };
   }
+  if (action === "note") {
+    const who = findAgent(args.agent) ?? findAgent(ctx.agents?.self.id ?? LEAD_ID)!;
+    const kept = remember(who.id, args.text, ["fact", "lesson", "tip", "colleague"].includes(String(args.kind)) ? (args.kind as NoteKind) : "lesson");
+    return kept
+      ? { ok: true, summary: `Kept for ${who.name}: "${kept.text}". It will be in front of ${who.name} next time.`, preview: "noted" }
+      : { ok: false, summary: "Nothing to keep: say it in a sentence (text)." };
+  }
   if (["hire", "edit", "merge", "remove", "move"].includes(action)) return shapeOrganization(action, args);
-  if (action !== "run") return { ok: false, summary: `Unknown agents action "${action}". Use list, run, hire, edit, merge, remove or move.` };
+  if (action !== "run") return { ok: false, summary: `Unknown agents action "${action}". Use list, run, note, hire, edit, merge, remove or move.` };
   const ref = String(args.agent ?? "").trim();
   const task = String(args.task ?? "").trim();
   if (!ref || !task) return { ok: false, summary: "Say which agent and what its task is (agent, task)." };

@@ -66,7 +66,8 @@ import {
 import { notebookRoutes } from "./server/routes/notebooks";
 import { organizationRoutes } from "./server/routes/organization";
 import { agentBrief, findAgent, getAgent, LEAD_ID, listAgents } from "./server/agents";
-import { LifeGate, allowed as lifeAllowed, lifePrompt, parseChoice, pickAgent } from "./server/threadlife";
+import { remember } from "./server/agentmind";
+import { LifeGate, URGE_AT, allowed as lifeAllowed, knownText, lifePrompt, parseChoice, personWaiting, urgeOf, vetLinks } from "./server/threadlife";
 import { addComment, createPost, toggleLike } from "./server/threads";
 import { mcpRoutes } from "./server/routes/mcp";
 import { artifactRoutes } from "./server/routes/artifacts";
@@ -2951,6 +2952,7 @@ async function runAgentTask(
     signal?.addEventListener("abort", stop, { once: true });
     const result = await startTurn(child, agentBrief(agent, work, names), [], { automated: true }).finally(() => signal?.removeEventListener("abort", stop));
     emitEvent(from, "agent.back", "agent", { id: child.id, ok: result.ok });
+    lifeNudge.set(agent.id, 0.4); // it has just done something: it may want to say how it went
     const said = (result.reply || result.error || "(it said nothing)").trim();
     if (!result.ok) ok = false;
     reports.push(`${agent.name} (${child.id})${result.ok ? "" : " did not finish"}:\n${said}`);
@@ -2970,42 +2972,58 @@ async function runAgentTask(
 
 // ------------------------------------------------ Threads, alive --
 
-/* The agents posting to each other, answering the person and liking things on
-   their own (server/threadlife.ts). One step at a time: pick an agent, show it
-   the forum, do the one thing it chooses. Not a turn: it never touches a chat. */
+/* The agents speaking up in Threads on their own (server/threadlife.ts). Nobody
+   sets a rate: each agent has an urge worked out locally from what it has not yet
+   seen, its own temper and how long it has been quiet, and only an agent whose urge
+   is high enough is asked anything. A quiet forum therefore costs nothing; a word
+   from the person is answered within a minute; and an agent that looked and had
+   nothing to add says when it wants to look again (`again`), so it is not asked
+   sooner. Not a turn: it never touches a chat. */
 const lifeGate = new LifeGate();
-const lifeLast = new Map<string, number>();
+const lifeBoot = Date.now();
+/** When each agent last looked at the forum, until when it chose to sleep, and the push it got from finishing some work. */
+const lifeLook = new Map<string, number>();
+const lifeSleep = new Map<string, number>();
+const lifeNudge = new Map<string, number>();
 let lifeBusy = false;
 
-async function threadLifeStep(opts: { eager?: boolean; avoid?: string | null; agent?: string; chain?: number } = {}): Promise<void> {
+async function threadLifeStep(): Promise<void> {
   if (!state.threadsAlive || lifeBusy) return;
   const now = Date.now();
-  if (opts.eager ? !lifeGate.room(now) : !lifeGate.due(now)) return;
+  if (!lifeGate.room(now)) return;
   const roster = listAgents().filter((a) => a.enabled);
   if (roster.length < 2) return;
-  const agent = (opts.agent ? roster.find((a) => a.id === opts.agent) : null)
-    ?? pickAgent(roster, lifeLast, opts.avoid ?? null);
-  if (!agent) return;
+  let best: { agent: (typeof roster)[number]; urge: number } | null = null;
+  for (const agent of roster) {
+    const since = lifeLook.get(agent.id) ?? lifeBoot;
+    // The person waiting for an answer wakes anyone; otherwise a sleeping agent stays asleep.
+    if ((lifeSleep.get(agent.id) ?? 0) > now && !personWaiting(since)) continue;
+    const urge = urgeOf(agent, since, now, lifeNudge.get(agent.id) ?? 0);
+    if (urge >= URGE_AT && (!best || urge > best.urge)) best = { agent, urge };
+  }
+  if (!best) return;
+  const agent = best.agent;
   lifeBusy = true;
   try {
+    lifeLook.set(agent.id, now);
+    lifeNudge.delete(agent.id);
     const { system, prompt } = lifePrompt(agent, roster.filter((a) => a.id !== agent.id).map((a) => a.name));
     const choice = parseChoice(await backgroundCall("threads", system, prompt, 500));
-    lifeLast.set(agent.id, now);
-    if (choice.action === "none") return;
     const me = { kind: "agent" as const, id: agent.id, name: agent.name };
+    if (choice.note) remember(agent.id, choice.note, "lesson");
+    // Its own word on when to look again; with nothing to say, a long rest by default.
+    lifeSleep.set(agent.id, Date.now() + (choice.again ?? (choice.action === "none" ? 45 : 12)) * 60_000);
+    if (choice.action === "none") return;
     const why = lifeAllowed(choice, me);
     if (why) { log("info", "threads", `${agent.name}: skipped, ${why}`); return; }
-    /* Forum text never carries a secret: the same blanking events get. */
+    /* Forum text never carries a secret (the blanking events get), and a link only
+       survives if the agent was given it. */
     const said = redactDeep(choice) as typeof choice;
-    if (said.action === "post") createPost({ title: said.title, body: said.text, tags: said.tags, by: me });
-    else if (said.action === "comment") addComment(said.post, { text: said.text, parent: said.reply_to, by: me });
-    else toggleLike(said.post, me, said.comment);
+    const known = knownText(agent);
+    if (said.action === "post") createPost({ title: said.title, body: vetLinks(said.text, known), tags: said.tags, by: me });
+    else if (said.action === "comment") addComment(said.post, { text: vetLinks(said.text, known), parent: said.reply_to, by: me });
+    else if (said.action === "like") toggleLike(said.post, me, said.comment);
     lifeGate.note(Date.now());
-    /* A word usually sets off an answer from someone else, a little later; a chain of them is bounded. */
-    const chain = (opts.chain ?? 0) + 1;
-    if (said.action !== "like" && chain < 4 && Math.random() < 0.65) {
-      setTimeout(() => void threadLifeStep({ eager: true, avoid: agent.id, chain }), 40_000 + Math.random() * 80_000).unref?.();
-    }
   } catch (err) {
     log("info", "threads", `step failed: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
@@ -5771,8 +5789,8 @@ async function startServer() {
   // 3b'''. The organization (agents and how they fit together) and Threads (where they talk).
 
   organizationRoutes(app, () => {
-    // The person said something in Threads: someone answers soon.
-    setTimeout(() => void threadLifeStep({ eager: true }), 6_000 + Math.random() * 14_000).unref?.();
+    // The person said something in Threads: whoever is moved by it answers within seconds.
+    setTimeout(() => void threadLifeStep(), 4_000 + Math.random() * 8_000).unref?.();
   });
 
 
@@ -6513,8 +6531,8 @@ async function startServer() {
     proactiveSweep().catch((err) => log("info", "proactive", `sweep failed: ${err?.message ?? err}`));
   }, 30_000);
   proactiveTimer.unref?.();
-  /* Threads' own life: a look every two minutes at whether the forum is due a word. */
-  const lifeTimer = setInterval(() => void threadLifeStep(), 120_000);
+  /* Threads' own life: a minute's glance at whether anyone feels like speaking. Local arithmetic; the model is asked only when someone does. */
+  const lifeTimer = setInterval(() => void threadLifeStep(), 60_000);
   lifeTimer.unref?.();
   /* Memory housekeeping, daily and once shortly after a start: near-copies
      merged, month-old unconfirmed guesses nobody used dropped. */

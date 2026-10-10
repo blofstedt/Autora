@@ -126,17 +126,15 @@ await test("an agent does not comment twice running, like its own, or repeat a p
   assert.match(life.allowed({ action: "comment", post: "th_nope", text: "x", reply_to: null }, me)!, /no post/);
 });
 
-await test("the gate allows twelve an hour and spaces the idle ones", () => {
-  const gate = new life.LifeGate(() => 0);
+await test("the ceiling is twelve an hour and sixty a day, however eager they are", () => {
+  const gate = new life.LifeGate();
   const t0 = 1_000_000;
-  assert.equal(gate.due(t0), true);
-  gate.note(t0);
-  assert.equal(gate.due(t0 + 60_000), false, "too soon for the idle timer");
-  assert.equal(gate.room(t0 + 60_000), true, "but a reply may still be made");
-  assert.equal(gate.due(t0 + 9 * 60_000), true);
-  for (let i = 0; i < 11; i += 1) gate.note(t0 + 1000 * i);
+  assert.equal(gate.room(t0), true);
+  for (let i = 0; i < 12; i += 1) gate.note(t0 + 1000 * i);
   assert.equal(gate.room(t0 + 5000), false);
   assert.equal(gate.room(t0 + 3_700_000), true, "an hour on, there is room again");
+  for (let i = 0; i < 60; i += 1) gate.note(t0 + 3_700_000 + i * 1000);
+  assert.equal(gate.room(t0 + 3_700_000 + 4_000_000), false, "sixty in a day is the most");
 });
 
 await test("the quietest agent speaks, and never the one who just did", () => {
@@ -153,6 +151,66 @@ await test("the prompt shows who the agent is, the forum, and asks for the perso
   assert.match(system, /answer them/);
   assert.match(prompt, /Lunch/);
   assert.match(prompt, /\(the person\)/);
+});
+
+await test("an agent speaks up for a reason: the person unanswered, its name, a reply to it; a quiet forum moves no one", () => {
+  const hour = 3_600_000;
+  const now = Date.now();
+  const a = { id: "agent_u1", name: "Ada", social: 1 };
+  const b = { id: "agent_u2", name: "Bo", social: 0.6 };
+  const quiet = life.urgeOf(a, now, now);
+  assert.ok(quiet < life.URGE_AT, "nothing new, nothing to say");
+  const after = Date.now() + 1000;
+  const long = life.urgeOf(a, after, after + 8 * hour);
+  assert.ok(long < life.URGE_AT, "boredom alone is not enough, however long");
+  const post = forum.createPost({ title: "Weekend plans?", body: "anyone", by: { kind: "user", id: "user", name: "You" } });
+  assert.ok(life.urgeOf(b, now - 1000, Date.now()) >= life.URGE_AT, "the person's word moves even the reserved one");
+  assert.equal(life.personWaiting(now - 1000), true);
+  forum.addComment(post.id, { text: "Hiking!", by: { kind: "agent", id: a.id, name: a.name } });
+  assert.equal(life.personWaiting(now - 1000), false, "once someone answers, the others are not called in too");
+  assert.ok(life.urgeOf(b, now - 1000, Date.now()) < life.URGE_AT, "so there is no pile-on");
+  const mine = forum.createPost({ title: "Notes on citing", body: "x", by: { kind: "agent", id: b.id, name: b.name } });
+  forum.addComment(mine.id, { text: "Ada, what do you think?", by: { kind: "agent", id: "agent_u3", name: "Cy" } });
+  const chatty = life.urgeOf({ ...a, social: 1.4 }, now - 1000, Date.now());
+  const shy = life.urgeOf({ ...a, social: 0.6 }, now - 1000, Date.now());
+  assert.ok(chatty > shy, "temper scales it");
+  assert.ok(life.urgeOf(a, now - 1000, Date.now(), 0.4) > life.urgeOf(a, now - 1000, Date.now()), "finishing work raises it");
+});
+
+await test("a choice carries its note and when to look again, within bounds", () => {
+  const c = life.parseChoice('{"action":"none","note":"Bo is good at maps","again":9999}');
+  assert.equal(c.action, "none");
+  assert.equal(c.note, "Bo is good at maps");
+  assert.equal(c.again, 720);
+  assert.equal(life.parseChoice('{"action":"none","again":1}').again, 5);
+});
+
+await test("a link survives only if the agent was given it", () => {
+  const known = "see https://example.org/guide for more";
+  assert.equal(life.vetLinks("Try https://example.org/guide.", known), "Try https://example.org/guide.");
+  assert.match(life.vetLinks("Try https://made-up.example/x", known), /link removed/);
+  assert.equal(life.vetLinks("Emoji are fine 🎉", known), "Emoji are fine 🎉");
+});
+
+await test("an agent keeps notes in its own mind, and they come back, are not repeated, and follow a merge", async () => {
+  const mind = await import("../server/agentmind");
+  const x = org.createAgent({ name: "Xena" });
+  const y = org.createAgent({ name: "Yuri" });
+  assert.equal(mind.remember(x.id, "short"), null);
+  const n = mind.remember(x.id, "Tables render best as Markdown.", "tip", "Yuri")!;
+  assert.equal(mind.remember(x.id, "tables render best as markdown", "tip")!.id, n.id, "the same thought is one note");
+  assert.match(mind.mindBriefing(x.id), /Tables render best as Markdown\. \(from Yuri\)/);
+  assert.match(org.agentBrief(x, "do it", []), /What you have learned and kept/);
+  const r = await runTool(spec, { action: "note", agent: "Xena", text: "Quote sources in full.", kind: "lesson" }, ctx());
+  assert.equal(r.ok, true, r.summary);
+  assert.equal(mind.notesOf(x.id).length, 2);
+  for (let i = 0; i < 50; i += 1) mind.remember(y.id, `A distinct thing number ${i} to remember`);
+  assert.equal(mind.notesOf(y.id).length, 40, "an agent holds forty at most");
+  org.mergeAgents(x.id, y.id);
+  assert.equal(mind.notesOf(x.id).length, 0);
+  assert.ok(mind.notesOf(y.id).some((t) => /Quote sources/.test(t.text)));
+  org.deleteAgent(y.id);
+  assert.equal(mind.notesOf(y.id).length, 0, "a removed agent's mind goes with it");
 });
 
 console.log(`${passed} passed`);

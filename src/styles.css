@@ -2503,9 +2503,16 @@ label + .jf-hint { margin-top: -5px; }
 }
 .todo-item.is-done { color: var(--text-3); }
 .todo-item.is-done .todo-words { background-size: 100% 2px; }
+/* The moment a task is ticked off, and only that moment (TodoList `fresh`): the box pops and a ring of its colour
+   leaves it, a beat before the tick draws itself. */
+.todo-burst { fill: none; stroke: #34d399; stroke-width: 2; opacity: 0; transform-origin: 10px 10px; }
+.todo-item.is-fresh.is-done .todo-burst { animation: todoBurst 0.7s cubic-bezier(0.2, 0.7, 0.3, 1) 0.1s both; }
+.todo-item.is-fresh.is-done .todo-rect { transform-box: fill-box; transform-origin: center; animation: todoPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+@keyframes todoBurst { 0% { opacity: 0.9; transform: scale(0.8); } 100% { opacity: 0; transform: scale(2.1); } }
+@keyframes todoPop { 0% { transform: scale(0.8); } 55% { transform: scale(1.18); } 100% { transform: scale(1); } }
 @keyframes todoMarch { to { stroke-dashoffset: -7.2; } }
 @media (prefers-reduced-motion: reduce) {
-  .todo-item.is-doing .todo-rect { animation: none; }
+  .todo-item.is-doing .todo-rect, .todo-item.is-fresh .todo-rect, .todo-item.is-fresh .todo-burst { animation: none; }
   .todo-rect, .todo-tick, .todo-words, .todo-bar > i, .todo-box { transition: none; }
 }
 

@@ -61,20 +61,24 @@ export const TodoDock = memo(function TodoDock({ items }: { items: TodoItem[] })
   const autoOpened = useRef(false);
   /* Tasks that have just been finished, still drawn as in progress while the list opens. */
   const [unrevealed, setUnrevealed] = useState<string[]>([]);
+  /* ...and then, until the list folds, the ones to give the burst. */
+  const [fresh, setFresh] = useState<string[]>([]);
   useEffect(() => {
     const before = doneIds.current;
     const now = new Set(items.filter((t) => t.status === "completed").map((t) => t.id));
     doneIds.current = now;
-    const fresh = [...now].filter((id) => !before.has(id));
-    if (!fresh.length) return;
+    const finished = [...now].filter((id) => !before.has(id));
+    if (!finished.length) return;
     if (!autoOpened.current && open) return;
     autoOpened.current = true;
     const wasShut = !open;
-    if (wasShut) setUnrevealed(fresh);
+    if (wasShut) setUnrevealed(finished);
+    setFresh(finished);
     setOpen(true);
     const reveal = window.setTimeout(() => setUnrevealed([]), wasShut ? OPEN_MS : 0);
     const fold = window.setTimeout(() => {
       if (autoOpened.current) { autoOpened.current = false; setOpen(false); }
+      setFresh([]);
     }, (wasShut ? OPEN_MS : 0) + STRIKE_MS);
     return () => { window.clearTimeout(reveal); window.clearTimeout(fold); };
     // `open` is read only to leave a list the person opened alone.
@@ -107,7 +111,7 @@ export const TodoDock = memo(function TodoDock({ items }: { items: TodoItem[] })
           shut rather than appear and vanish. */}
       <div className="todo-dock-fold" style={{ height: open ? foldH : 0 }} aria-hidden={!open}>
         <div className="todo-dock-list" ref={listRef}>
-          <TodoList items={shownItems} />
+          <TodoList items={shownItems} fresh={fresh} />
         </div>
       </div>
       <button

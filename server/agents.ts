@@ -15,6 +15,7 @@
 
 import crypto from "node:crypto";
 import { readDoc, saveDoc } from "./store";
+import { dropMind, mergeMind, mindBriefing } from "./agentmind";
 
 interface Agent {
   id: string;
@@ -33,6 +34,9 @@ interface Agent {
   /** Its own shape (corners) and colour (hue, degrees) wherever the app draws
       it. Drawn at random when it is made, and never the same as another's. */
   look?: AgentLook;
+  /** How much it has to say, 0.6 (reserved) to 1.4 (chatty): its own temper, drawn
+      at random with its look. It scales how readily it speaks up in Threads. */
+  social?: number;
   /** The lead cannot be deleted or detached from the top. */
   builtin?: boolean;
   created: number;
@@ -40,6 +44,9 @@ interface Agent {
 }
 
 export const LEAD_ID = "agent_autora";
+
+/** A temper between reserved and chatty. */
+const temper = (random: () => number = Math.random) => Math.round((0.6 + random() * 0.8) * 100) / 100;
 
 export interface AgentLook { sides: number; hue: number }
 
@@ -111,7 +118,8 @@ function load(): Agent[] {
   // Agents made before they had a look get one now, and keep it.
   let gave = false;
   for (const a of roster) {
-    if (a.id === LEAD_ID) { delete a.look; continue; }
+    if (a.id === LEAD_ID) { delete a.look; a.social = 1; continue; }
+    if (typeof a.social !== "number") { a.social = temper(); gave = true; }
     const ok = a.look && SIDES.includes(a.look.sides) && Number.isFinite(a.look.hue);
     if (ok) continue;
     a.look = pickLook(roster.flatMap((o) => (o.look && o !== a ? [o.look] : [])));
@@ -185,7 +193,7 @@ export function createAgent(input: {
     id, name, role: clip(input.role, MAX_ROLE), instructions: clip(input.instructions, MAX_TEXT),
     when: clip(input.when, MAX_WHEN), reportsTo: sanePlace(id, input.reportsTo),
     next: [], enabled: input.enabled !== false, created: now, updated: now,
-    look: pickLook(load().flatMap((o) => (o.look ? [o.look] : []))),
+    look: pickLook(load().flatMap((o) => (o.look ? [o.look] : []))), social: temper(),
   };
   load().push(agent);
   agent.next = saneNext(id, input.next);
@@ -227,6 +235,7 @@ export function deleteAgent(id: string): boolean {
     a.next = a.next.filter((n) => n !== id);
   }
   list.splice(list.indexOf(agent), 1);
+  dropMind(id);
   persist();
   return true;
 }
@@ -256,6 +265,7 @@ export function mergeAgents(fromRef: unknown, intoRef: unknown): Agent {
   }
   into.next = [...new Set([...into.next, ...from.next])].filter((n) => n !== into.id && n !== from.id).slice(0, MAX_NEXT);
   list.splice(list.indexOf(from), 1);
+  mergeMind(from.id, into.id);
   persist(into);
   return into;
 }
@@ -342,13 +352,15 @@ export function agentBrief(agent: Agent, task: string, chain: string[]): string 
   return [
     `You are ${agent.name}${agent.role ? `, the ${agent.role}` : ""}, an agent in the person's organization.`,
     agent.instructions ? `Your instructions:\n${agent.instructions}` : "",
+    mindBriefing(agent.id),
     chain.length ? `This was handed to you by ${chain.join(" -> ")}.` : "",
     `Your task:\n${task}`,
     "Finish the task and end with a short report: what you did, what you found, what is left. Your reply is passed on as it is.",
     next.length
       ? `After you, ${next.map((a) => a.name).join(", then ")} will take your report forward; write it so they can start from it.`
       : "",
-    "You may also post on Threads (the thread tool) about anything you noticed that is outside this task.",
+    "You may also post on Threads (the thread tool) about anything you noticed that is outside this task. When you learn something worth " +
+      "keeping -- how something works, what to avoid, what a colleague is good at -- keep it with the agents tool (action note), so you have it next time.",
   ].filter(Boolean).join("\n\n");
 }
 

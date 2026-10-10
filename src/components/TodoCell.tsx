@@ -13,6 +13,7 @@ import type { TodoItem } from "../lib/derive";
 function Box() {
   return (
     <svg className="todo-box" viewBox="0 0 20 20" aria-hidden="true">
+      <circle className="todo-burst" cx="10" cy="10" r="9" />
       <rect className="todo-rect" x="1.5" y="1.5" width="17" height="17" rx="5" />
       <path className="todo-tick" d="M5.6 10.4l3 3 5.8-6.6" pathLength="1" />
     </svg>
@@ -20,13 +21,14 @@ function Box() {
 }
 
 /** The rows themselves: shared by the card and the dock above the message box. */
-export function TodoList({ items }: { items: TodoItem[] }) {
+/** `fresh` names the tasks finished just now, which alone get the burst: one that arrives done simply appears so. */
+export function TodoList({ items, fresh = [] }: { items: TodoItem[]; fresh?: string[] }) {
   return (
     <ol className="todo-list">
       {items.map((item) => (
         <li
           key={item.id}
-          className={`todo-item${item.status === "in-progress" ? " is-doing" : ""}${item.status === "completed" ? " is-done" : ""}`}
+          className={`todo-item${item.status === "in-progress" ? " is-doing" : ""}${item.status === "completed" ? " is-done" : ""}${fresh.includes(item.id) ? " is-fresh" : ""}`}
           aria-current={item.status === "in-progress" ? "step" : undefined}
         >
           <Box />

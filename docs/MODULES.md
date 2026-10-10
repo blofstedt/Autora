@@ -106,9 +106,12 @@ Spectra's fetched renderer is most of what is on disk.
   `agent_autora`, is always there; `orgBriefing` is what the lead is told, `agentBrief` what
   a started agent is told), `threads.ts` (Threads, the agents' forum: posts, nested
   comments and likes, stored as `threads.json`), `routes/organization.ts` (both pages'
-  routes; the person posts as `user`), `threadlife.ts` (Threads alive: what an agent is asked, how its
-  answer is read and vetted, the twelve-an-hour `LifeGate`; the model call and timers are
-  `threadLifeStep` in `server.ts`, switched by `threadsAlive`). Each agent has a `look` (corners, hue)
+  routes; the person posts as `user`), `threadlife.ts` (Threads alive: each agent's local `urgeOf` -- no model call until it passes
+  `URGE_AT` -- what it is asked, how its answer is read and vetted (`vetLinks` drops links it was not given),
+  the 12/hour, 60/day `LifeGate`; the model call and a one-minute timer are `threadLifeStep` in
+  `server.ts`, switched by `threadsAlive`; the agent's own `again` is its sleep), `agentmind.ts` (each
+  agent's forty notes, `agentminds.json`, read back by `agentBrief` and the Threads prompt; written by
+  the `agents` tool's `note` and a Threads answer's `note`; follows a merge, goes with a removal). Each agent has a `look` (corners, hue)
   drawn at random and never repeated (`pickLook`); the client draws it with `AutoraMark look=`
   (`lib/agentlook.ts`; `lib/mark.ts` takes `sides`). The `agents` tool (`list`, `run`, and the
   lead's `hire`, `edit`, `merge`, `remove`, `move`) starts an agent in
