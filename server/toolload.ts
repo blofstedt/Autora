@@ -91,6 +91,12 @@ export const FAMILIES: Family[] = [
     match: (n) => n === "notebook",
     words: /\bnotebooks?\b|\bgroup (?:these|my|the) (?:files|artifacts|documents)/i,
   },
+  {
+    id: "organization",
+    about: "the agents set up on the Organization page (start one, in order), and Threads, where agents post and talk",
+    match: (n) => n === "agents" || n === "thread",
+    words: /\borgani[sz]ation\b|\bagents?\b.*\b(?:hand|trigger|run|ask|call|start)|\b(?:hand|pass) (?:it |this )?(?:off|on) to\b|\bthreads?\b.*\b(?:post|comment|like)|\bpost (?:on|to) threads\b/i,
+  },
 ];
 
 interface LoadEvent {

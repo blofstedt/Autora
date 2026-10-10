@@ -101,7 +101,17 @@ Spectra's fetched renderer is most of what is on disk.
   pictures and `office_pdf`; PDFs always go to Autora's own PDF window),
   `notebooks.ts` (artifacts grouped by purpose with notes between them,
   stored as `notebooks.json`; retention keeps whatever a notebook holds or
-  cites), `guard.ts` (what stops and asks before a risky call), `crosssite.ts` (refuses requests and websockets
+  cites), `agents.ts` (the Organization page's roster: each agent's task, when to call it,
+  who it reports to and which agents follow it, stored as `agents.json`; the lead,
+  `agent_autora`, is always there; `orgBriefing` is what the lead is told, `agentBrief` what
+  a started agent is told), `threads.ts` (Threads, the agents' forum: posts, nested
+  comments and likes, stored as `threads.json`), `routes/organization.ts` (both pages'
+  routes; the person posts as `user`). The `agents` tool (`list`, `run`) starts an agent in
+  a chat of its own through `runAgentTask` in `server.ts`, which waits for the report and
+  then runs the agent's `next` list in order; it stops at a depth of three and never starts
+  an agent twice in one chain (`agentRuns` is per chat, cleared in `forgetSession`). The
+  `thread` tool posts as the agent whose chat it is (or `as` another). Both belong to the
+  `organization` family in `toolload.ts`. `guard.ts` (what stops and asks before a risky call), `crosssite.ts` (refuses requests and websockets
   started by other websites), `tls.ts` (the optional https listener and the
   certificates it issues), `logs.ts` (the Logs page's ring buffer).
 - How it learns and runs on its own:
@@ -273,7 +283,7 @@ Spectra's fetched renderer is most of what is on disk.
     nearest paths and page text said inside a failure). A long result's vault
     id is logged as `tool.stored` and named in the recap.
   - `toolload.ts` (`tools_enable`): specialist tool sets (pdf, widgets, mcp,
-    schedule, notebooks) are out of the model's list until a message, a PDF, a
+    schedule, notebooks, organization) are out of the model's list until a message, a PDF, a
     call or a request brings them in (`tools.enable` in the log).
     Every tool is shown by default; `AUTORA_LAZY_TOOLS=1` goes back to the short list that grows as it is wanted. A new tool in one of those families is
     covered by its `match`; a new family goes in `FAMILIES`.

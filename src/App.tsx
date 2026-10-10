@@ -57,6 +57,8 @@ const SessionsPage = lazyPage(() => import("./components/pages/SessionsPage"), "
 const SystemPage = lazyPage(() => import("./components/pages/SystemPage"), "SystemPage");
 const McpPage = lazyPage(() => import("./components/pages/McpPage"), "McpPage");
 const ArtifactsPage = lazyPage(() => import("./components/pages/ArtifactsPage"), "ArtifactsPage");
+const OrganizationPage = lazyPage(() => import("./components/pages/OrganizationPage"), "OrganizationPage");
+const ThreadsPage = lazyPage(() => import("./components/pages/ThreadsPage"), "ThreadsPage");
 const NotebooksPage = lazyPage(() => import("./components/pages/NotebooksPage"), "NotebooksPage");
 const ToolsPage = lazyPage(() => import("./components/pages/ToolsPage"), "ToolsPage");
 const MindPage = lazyPage(() => import("./components/pages/MindPage"), "MindPage");
@@ -1885,6 +1887,8 @@ export function App() {
             {page === "notebooks" && (
               <NotebooksPage open={notebookOpen} onOpen={setNotebookOpen} onUseInChat={notebookToChat} topSlot={topSlot} />
             )}
+            {page === "organization" && <OrganizationPage topSlot={topSlot} />}
+            {page === "threads" && <ThreadsPage topSlot={topSlot} />}
             {page === "tools" && <ToolsPage />}
             {page === "mcp" && <McpPage topSlot={topSlot} />}
             {page === "cron" && <Schedule embedded topSlot={topSlot} onOpenSession={openSession} />}

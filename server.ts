@@ -64,6 +64,8 @@ import {
   recordDownload, recordVisit, } from "./server/browsedata";
 
 import { notebookRoutes } from "./server/routes/notebooks";
+import { organizationRoutes } from "./server/routes/organization";
+import { agentBrief, findAgent, getAgent, LEAD_ID } from "./server/agents";
 import { mcpRoutes } from "./server/routes/mcp";
 import { artifactRoutes } from "./server/routes/artifacts";
 import { systemRoutes } from "./server/routes/system";
@@ -439,6 +441,7 @@ function forgetSession(id: string) {
   lastAnswer.delete(id);
   for (const key of heldCalls.keys()) if (key.startsWith(`${id}\u0000`)) heldCalls.delete(key);
   turnsInFlight.delete(id);
+  agentRuns.delete(id);
   workspaces.delete(id);
   codeTouched.delete(id);
 }
@@ -2902,6 +2905,58 @@ function saneWatch(raw: any): JobWatch | null {
   return kind && target ? { kind, target } : null;
 }
 
+/* Chats that are an agent from the Organization page at work: which agent, how
+   deep in a chain of hand-offs, and who handed it the task. Cleared in forgetSession. */
+const agentRuns = new Map<string, { agent: string; depth: number; chain: string[] }>();
+const MAX_AGENT_DEPTH = 3;
+
+/**
+ * Starts an agent from the Organization on a task in a chat of its own, waits
+ * for its report, then runs the agents it hands to, in order, each given the
+ * report before it. The chain is cut at a depth of three, and an agent is never
+ * started twice in one chain, so two that hand to each other cannot loop.
+ */
+async function runAgentTask(
+  from: Session, ref: string, task: string, signal?: AbortSignal,
+): Promise<{ ok: boolean; summary: string }> {
+  const parent = agentRuns.get(from.id);
+  const depth = (parent?.depth ?? 0) + 1;
+  if (depth > MAX_AGENT_DEPTH) {
+    return { ok: false, summary: `Not started: agents are already ${MAX_AGENT_DEPTH} deep in a chain. Do this part yourself.` };
+  }
+  const reports: string[] = [];
+  let ok = true;
+  const go = async (id: string, work: string, chain: string[]): Promise<void> => {
+    const agent = getAgent(id);
+    if (!agent) { ok = false; reports.push(`There is no agent "${id}".`); return; }
+    if (!agent.enabled) { reports.push(`${agent.name} is switched off, so it was skipped.`); return; }
+    if (chain.includes(agent.id)) return;
+    const names = chain.map((c) => getAgent(c)?.name ?? c);
+    const child = newSession(`${agent.name}: ${work.replace(/\s+/g, " ").slice(0, 60)}`);
+    agentRuns.set(child.id, { agent: agent.id, depth, chain: [...chain, agent.id] });
+    emitEvent(child, "system.log", "system", {
+      event: "agent.started", agent: agent.id, name: agent.name,
+      message: `Started as ${agent.name}${names.length ? ` by ${names.join(" -> ")}` : ""} from the Organization.`,
+    });
+    const stop = () => stopTurn(child.id);
+    signal?.addEventListener("abort", stop, { once: true });
+    const result = await startTurn(child, agentBrief(agent, work, names), [], { automated: true }).finally(() => signal?.removeEventListener("abort", stop));
+    const said = (result.reply || result.error || "(it said nothing)").trim();
+    if (!result.ok) ok = false;
+    reports.push(`${agent.name} (${child.id})${result.ok ? "" : " did not finish"}:\n${said}`);
+    if (!result.ok || result.stopped) return;
+    for (const nextId of agent.next) {
+      await go(nextId, `Continue from ${agent.name}'s report.\n\nThe original task: ${work}\n\n${agent.name}'s report:\n${said}`, [...chain, agent.id]);
+    }
+  };
+  const start = findAgent(ref);
+  if (!start) return { ok: false, summary: `There is no agent "${ref}". Use agents list to see who there is.` };
+  if (!start.enabled) return { ok: false, summary: `${start.name} is switched off on the Organization page, so it was not started.` };
+  await go(start.id, task, parent?.chain ?? [LEAD_ID]);
+  return { ok, summary: reports.join("\n\n---\n\n") };
+}
+
+
 /** A new schedule, planned and saved: from the Schedules page, or from an
     offer the person said yes to. */
 function createJob(input: { name?: string; cron?: string; prompt: string; enabled?: boolean; watch?: unknown }): Job {
@@ -3980,6 +4035,13 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
 
       const contextFor = (span: string): ToolContext => ({
         research: researchFor,
+        agents: (() => {
+          const me = getAgent(agentRuns.get(session.id)?.agent ?? LEAD_ID) ?? getAgent(LEAD_ID)!;
+          return {
+            self: { id: me.id, name: me.name },
+            run: (agent: string, task: string) => runAgentTask(session, agent, task, running.get(session.id)?.signal),
+          };
+        })(),
         held: (surface, subject) => presenceFor(session.id).blocked(surface, subject),
         protectedPaths: [stateDir()],
         code: {
@@ -5648,6 +5710,11 @@ async function startServer() {
   // 3b''. Notebooks: artifacts grouped by purpose, with notes between them.
 
   notebookRoutes(app);
+
+
+  // 3b'''. The organization (agents and how they fit together) and Threads (where they talk).
+
+  organizationRoutes(app);
 
 
   // 3c. The browser: what it is doing, and telling it to do something.

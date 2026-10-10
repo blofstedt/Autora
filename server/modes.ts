@@ -257,6 +257,9 @@ export function looksOnly(name: string, args: Record<string, any> = {}): boolean
   if (name === "terminal") return readOnlyCommand(String(args.command ?? ""));
   // Reading notebooks is looking; filing into one is not.
   if (name === "notebook") return ["list", "read"].includes(String(args.action ?? "").trim().toLowerCase());
+  // Listing the organization and reading Threads look; starting an agent, posting, commenting and liking do not.
+  if (name === "agents") return String(args.action ?? "").trim().toLowerCase() === "list";
+  if (name === "thread") return ["list", "read"].includes(String(args.action ?? "").trim().toLowerCase());
   // A screenshot kept as a file is a new artifact.
   if (name === "browser_screenshot") return !String(args.save_as ?? "").trim() && !String(args.notebook ?? "").trim();
   return LOOKS_ONLY.has(name);
