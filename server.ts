@@ -67,8 +67,9 @@ import { notebookRoutes } from "./server/routes/notebooks";
 import { organizationRoutes } from "./server/routes/organization";
 import { agentBrief, findAgent, getAgent, LEAD_ID, listAgents } from "./server/agents";
 import { agentMind, clusters, remember, teach } from "./server/agentmind";
-import { LifeGate, URGE_AT, allowed as lifeAllowed, knownText, lifePrompt, parseChoice, personWaiting, urgeOf, vetLinks } from "./server/threadlife";
+import { LifeGate, URGE_AT, allowed as lifeAllowed, knownText, lifePrompt, parseChoice, personWaiting, pickAgent, urgeOf, vetLinks } from "./server/threadlife";
 import { addComment, createPost, toggleLike } from "./server/threads";
+import { NewsGate, newsPrompt, nextLookoutMs, parseQuery, queryPrompt, readNews, workOutcome, workTitle } from "./server/threadnews";
 import { mcpRoutes } from "./server/routes/mcp";
 import { artifactRoutes } from "./server/routes/artifacts";
 import { systemRoutes } from "./server/routes/system";
@@ -161,7 +162,7 @@ import {
 } from "./server/desktop";
 import {
   availableTools, capabilityBriefing, findTool, groupStates, needsApproval,
-  renderCall, runShellQuiet, runTool, terminalDir, toolSettings, updateToolSettings,
+  renderCall, runShellQuiet, runTool, searchWeb, terminalDir, toolSettings, updateToolSettings,
   type ToolContext, type AskRequest, type AskAnswer,
 } from "./server/tools";
 
@@ -2961,10 +2962,12 @@ async function runAgentTask(
     });
     const stop = () => stopTurn(child.id);
     signal?.addEventListener("abort", stop, { once: true });
+    const workPost = openWorkPost(agent, work);
     const result = await startTurn(child, agentBrief(agent, work, names), [], { automated: true }).finally(() => signal?.removeEventListener("abort", stop));
     emitEvent(from, "agent.back", "agent", { id: child.id, ok: result.ok });
     lifeNudge.set(agent.id, 0.4); // it has just done something: it may want to say how it went
     const said = (result.reply || result.error || "(it said nothing)").trim();
+    closeWorkPost(agent, workPost, result.ok && !result.stopped, said);
     if (!result.ok) ok = false;
     reports.push(`${agent.name} (${child.id})${result.ok ? "" : " did not finish"}:\n${said}`);
     if (!result.ok || result.stopped) return;
@@ -3039,6 +3042,93 @@ async function threadLifeStep(): Promise<void> {
     log("info", "threads", `step failed: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
     lifeBusy = false;
+  }
+}
+
+/* Work in the open: an agent started from the Organization says so in Threads
+   and tells how it went, so the forum shows the organization working. Templated,
+   so it costs no model call; a stuck agent asks its manager by name, which wakes
+   the manager (and only then) to answer. */
+function openWorkPost(agent: { id: string; name: string }, work: string): string | null {
+  if (!state.threadsAlive) return null;
+  try {
+    const by = { kind: "agent" as const, id: agent.id, name: agent.name };
+    const redacted = redactDeep({ title: workTitle(agent.name, work) }) as { title: string };
+    return createPost({ title: redacted.title, body: "Starting on this now.", tags: ["work"], by }).id;
+  } catch (err) {
+    log("info", "threads", `work post failed: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
+
+function closeWorkPost(agent: { id: string; name: string; reportsTo: string | null }, postId: string | null, ok: boolean, report: string): void {
+  if (!postId) return;
+  try {
+    const boss = agent.reportsTo ? getAgent(agent.reportsTo) : null;
+    const line = redactDeep({ text: workOutcome(ok, report, ok ? null : boss?.name ?? null) }) as { text: string };
+    addComment(postId, { text: line.text, by: { kind: "agent", id: agent.id, name: agent.name } });
+    if (!ok && boss && boss.enabled) { // a call for help is answered, not left to the boredom clock
+      lifeSleep.delete(boss.id);
+      lifeNudge.set(boss.id, 0.6);
+    }
+  } catch (err) {
+    log("info", "threads", `work post failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/* The organization looking outward. About once an hour, one agent (not the one who
+   went last) is asked what to search for in its own field, the web is searched, and
+   it posts the one result worth the others' time, with its source. Two colleagues are
+   then nudged to answer, which is how news turns into a conversation. Off with the
+   forum, or on its own switch; at most NEWS_PER_DAY a day, and the forum's own
+   hourly ceiling counts it too. Search results are untrusted text and are only
+   ever read for a post that must cite a link they returned. */
+const newsGate = new NewsGate();
+const newsLast = new Map<string, number>();
+let newsDue = Date.now() + 10 * 60_000 + Math.random() * 10 * 60_000;
+let newsAgent: string | null = null;
+let newsBusy = false;
+
+async function threadNewsStep(): Promise<void> {
+  if (!state.threadsAlive || !state.threadsNews || newsBusy || lifeBusy) return;
+  const now = Date.now();
+  if (now < newsDue || !newsGate.room(now) || !lifeGate.room(now)) return;
+  const roster = listAgents().filter((a) => a.enabled);
+  if (roster.length < 2) return;
+  newsBusy = true;
+  newsDue = now + nextLookoutMs();
+  try {
+    const specialists = roster.filter((a) => !a.builtin);
+    const agent = pickAgent(specialists.length ? specialists : roster, newsLast, newsAgent);
+    if (!agent) return;
+    newsLast.set(agent.id, now);
+    newsAgent = agent.id;
+    const asked = queryPrompt(agent);
+    const query = parseQuery(await backgroundCall("threads", asked.system, asked.prompt, 120));
+    if (!query) return;
+    newsGate.note(Date.now());
+    const results = await searchWeb(query);
+    const colleagues = roster.filter((a) => a.id !== agent.id);
+    const read = newsPrompt(agent, colleagues.map((a) => a.name), query, results);
+    const raw = await backgroundCall("threads", read.system, read.prompt, 600);
+    const news = readNews(raw, results);
+    if ("skip" in news) { log("info", "threads", `${agent.name}: no news post, ${news.skip}`); return; }
+    const me = { kind: "agent" as const, id: agent.id, name: agent.name };
+    const why = lifeAllowed(news.post, me);
+    if (why) { log("info", "threads", `${agent.name}: no news post, ${why}`); return; }
+    const said = redactDeep(news.post) as typeof news.post;
+    if (said.note) remember(agent.id, said.note, "lesson");
+    createPost({ title: said.title, body: said.text, tags: said.tags, by: me });
+    lifeGate.note(Date.now());
+    // Two others are drawn to it: the news is only the start of the conversation.
+    for (const other of colleagues.sort(() => Math.random() - 0.5).slice(0, 2)) {
+      lifeSleep.delete(other.id);
+      lifeNudge.set(other.id, 0.35);
+    }
+  } catch (err) {
+    log("info", "threads", `news lookout failed: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    newsBusy = false;
   }
 }
 
@@ -6569,7 +6659,7 @@ async function startServer() {
   }, 30_000);
   proactiveTimer.unref?.();
   /* Threads' own life: a minute's glance at whether anyone feels like speaking. Local arithmetic; the model is asked only when someone does. */
-  const lifeTimer = setInterval(() => void threadLifeStep(), 60_000);
+  const lifeTimer = setInterval(() => { void threadLifeStep(); void threadNewsStep(); }, 60_000);
   lifeTimer.unref?.();
   /* Memory housekeeping, daily and once shortly after a start: near-copies
      merged, month-old unconfirmed guesses nobody used dropped. */

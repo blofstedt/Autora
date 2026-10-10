@@ -1031,7 +1031,7 @@ const REQUEST_TIMEOUT_MS = 60_000;
 /** More than any page or API answer the model can read; the rest is not fetched. */
 const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
 
-async function searchWeb(query: string, ctx: Pick<ToolContext, "onCancel" | "cancelled"> | null = null): Promise<string> {
+export async function searchWeb(query: string, ctx: Pick<ToolContext, "onCancel" | "cancelled"> | null = null): Promise<string> {
   const signal = () => requestSignal(ctx, SEARCH_TIMEOUT_MS);
   const tavilyKey = secretFor("TAVILY_API_KEY") || process.env.TAVILY_API_KEY;
   if (tavilyKey) {

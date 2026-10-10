@@ -9,15 +9,17 @@ export function CollabSettings() {
   const [cursor, setCursor] = useAgentCursor();
   const [remarks, setRemarks] = useState<boolean | null>(null);
   const [threads, setThreads] = useState<boolean | null>(null);
+  const [news, setNews] = useState<boolean | null>(null);
 
   useEffect(() => {
     let live = true;
     fetch("/api/collaboration")
       .then((r) => (r.ok ? r.json() : null))
-      .then((j: { remarks?: boolean; threads?: boolean } | null) => {
+      .then((j: { remarks?: boolean; threads?: boolean; news?: boolean } | null) => {
         if (!live || !j) return;
         if (typeof j.remarks === "boolean") setRemarks(j.remarks);
         if (typeof j.threads === "boolean") setThreads(j.threads);
+        if (typeof j.news === "boolean") setNews(j.news);
       })
       .catch(() => undefined);
     return () => { live = false; };
@@ -38,6 +40,15 @@ export function CollabSettings() {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ threads: next }),
+    }).catch(() => undefined);
+  };
+
+  const toggleNews = (next: boolean) => {
+    setNews(next);
+    void fetch("/api/collaboration", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ news: next }),
     }).catch(() => undefined);
   };
 
@@ -67,7 +78,14 @@ export function CollabSettings() {
         <input type="checkbox" checked={threads ?? true} disabled={threads === null} onChange={(e) => toggleThreads(e.target.checked)} />
         <span>
           <b>Let the agents talk in Threads</b>
-          <small>With two or more agents on, one now and then posts, answers another or you, or likes something. Uses a small model call each time, at most twelve an hour.</small>
+          <small>With two or more agents on, one now and then posts, answers another or you, or likes something. Uses a small model call each time, at most twelve an hour. Agents also post their own work and how it went.</small>
+        </span>
+      </label>
+      <label className="set-switch">
+        <input type="checkbox" checked={(news ?? true) && (threads ?? true)} disabled={news === null || !(threads ?? true)} onChange={(e) => toggleNews(e.target.checked)} />
+        <span>
+          <b>Let the agents bring news to Threads</b>
+          <small>About once an hour one agent searches the web for its own subject and posts what matters, with the link, for the others to discuss. At most six searches a day.</small>
         </span>
       </label>
     </section>

@@ -309,6 +309,8 @@ interface PersistedState {
   collabRemarks: boolean;
   /** The agents post, answer and like in Threads on their own. */
   threadsAlive: boolean;
+  /** Once in a while an agent searches the web for its own subject and posts what matters to Threads (server/threadnews.ts). */
+  threadsNews: boolean;
   /** Whether the agent reads a site's official documentation before acting on a site it has nothing current on. */
   groundFirst: boolean;
   /** The person's time zone (an IANA name such as Europe/Stockholm), or empty
@@ -561,6 +563,7 @@ function blank(): PersistedState {
     agentCursor: true,
     collabRemarks: true,
     threadsAlive: true,
+    threadsNews: true,
     groundFirst: true,
     timezone: "",
     loop: { ...LOOP_DEFAULTS },
@@ -650,6 +653,7 @@ function read(): PersistedState {
     if (typeof raw.agentCursor === "boolean") state.agentCursor = raw.agentCursor;
     if (typeof raw.collabRemarks === "boolean") state.collabRemarks = raw.collabRemarks;
     if (typeof raw.threadsAlive === "boolean") state.threadsAlive = raw.threadsAlive;
+    if (typeof raw.threadsNews === "boolean") state.threadsNews = raw.threadsNews;
     if (typeof raw.groundFirst === "boolean") state.groundFirst = raw.groundFirst;
     if (typeof raw.timezone === "string" && validTimezone(raw.timezone)) {
       state.timezone = raw.timezone.trim();
