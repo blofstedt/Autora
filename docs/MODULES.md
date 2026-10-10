@@ -451,6 +451,33 @@ Spectra's fetched renderer is most of what is on disk.
   not the editor's origin, so the editor's debugger and hot reload do not reach it (a preview is a fresh run); (2) a patch whose `find`
   moved breaks the build on purpose; (3) incognito chats have no game window (it keeps its game on disk); (4) the window opens on the
   agent's first edit, not on a read; (5) the Docker build needs the network for `libGD`, the checkout and `GDJS`'s own install.
+- `photo/` + `server/photodesk.ts`: **Autora Photo**, PhotoCraft (github.com/storytold/photocraft, MIT OR Apache-2.0; ArtCraft's name and
+  logo are its authors') in a window beside the chat, and the agent's `photo_*` tools. PhotoCraft is a Rust image editor (layers, masks,
+  adjustment layers, layer styles, type, brushes, real PSD files) with 500+ commands in one registry that its UI, its command line and its
+  MCP server all call. **Two programs, built from the commit in `photo/PIN.json` by `scripts/build-photo.mjs`** (not by `npm run build`,
+  which empties `dist/`; run `npm run build:photo` after it, as with the Office tools; CI and the Docker stage `photo` do): the editor,
+  `apps/photocraft-web` as WebAssembly (`trunk build`, into `dist/photo/web/`, served at `/autora-photo` by `servePhoto` under a CSP that
+  allows its own scripts and `wasm-unsafe-eval` and is framed by this app only), and the headless `photocraft-cli` (into
+  `dist/photo/native/`, one per CPU in the image, musl-static through `cargo zigbuild`). Both are optional: a build that fails leaves the
+  tools off (`photoAvailable`, `windowOff`), and tests that need them skip. **The overlay** `photo/overlay/autora.rs` is copied into the
+  web app and hooked in by three checked string patches in `build-photo.mjs` (`patch()` fails the build when a pin has moved the text);
+  it is the editor's end of a postMessage wire (`autoraPhoto`: `ready`, `load` in; `changed`, `file` out) and does nothing when the page
+  is not framed. **The picture** is one file per chat, `work.pcraft` (PhotoCraft's layered format) in `stateDir()/photo/<session>/`,
+  with `state.json` (open, size, layers). The agent's tools open it in `photocraft-cli serve` over stdio, whose only file access is that
+  folder (`serve()`), one process per call (`inLine` keeps one at a time per chat): `doc.open`, `batch` (the commands, one history step each,
+  stopping at the first failure; what ran is kept), `doc.save`, `doc.inspect`, `doc.render` (the picture the model is shown), `engine.commands`.
+  `photo_open` converts anything PhotoCraft reads (PSD, PNG, JPEG, TIFF, WebP, camera raw...) into `work.pcraft`. **The window**
+  (`PhotoWindow.tsx`, `lib/photodesk.ts`) is a frame of this origin: `ready` -> `GET /api/photo/:s/doc` -> `load` (the bytes transferred);
+  the agent's change (`rev` up, `by: "agent"`) reloads it; the person's edits come back as `changed` ~0.7 s after they stop (the overlay
+  watches the active document's revision, exports it to `.pcraft` and sends it) -> `PUT` (checked by opening it in the command line, so a
+  malformed file is refused) and marked `by: "person"`. A file saved or exported in the editor (`write` in `web.rs`) is sent as `file` and
+  offered as a download by the window, since a frame cannot start one. **Traps:** (1) the synced picture is the *active* document, and a
+  load replaces every open document, so the agent's edit closes anything else the person had open in the editor; (2) an agent edit while
+  the person is mid-stroke reloads over it, so the manual says to leave the editor alone while they hold it; (3) the editor's own
+  preferences use the frame's `localStorage`, shared by all chats; (4) incognito chats have no photo window (it keeps its picture on disk);
+  (5) a first `trunk build` of the editor is a long Rust build (~15 min cold; CI caches `target/`); (6) the CLI's `serve` would write
+  anywhere in its roots, so the roots are the chat's folder and nothing else, and `HOME` is pointed there too. Search with
+  `--glob '!.cache/**'`.
 - Follow (`lib/follow.ts`): one switch, on by default and kept per browser, for the pill beside the phone's tabs
   (`Stage`) and the one at the top right of the desktop strip (`pane-follow` in `App.tsx`). On, the screen goes where the
   agent works: the stage's `busiestSurface` on a phone, and on a desktop `lib/followPane.ts` (`lastWorkedPane`: the

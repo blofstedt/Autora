@@ -118,6 +118,7 @@ interface ToolSettings {
   slides: { enabled: boolean };
   cad: { enabled: boolean };
   game: { enabled: boolean };
+  photo: { enabled: boolean };
 }
 
 export function toolSettings(): ToolSettings {
@@ -168,6 +169,8 @@ import { cadSPECS } from "./specs/cad";
 import { gameSPECS } from "./specs/game";
 import { gameAvailable, gameBriefing, runGameTool } from "./gamedesk";
 import { cadAvailable, cadBriefing, runCadTool } from "./caddesk";
+import { photoSPECS } from "./specs/photo";
+import { photoAvailable, photoBriefing, runPhotoTool } from "./photodesk";
 
 // ------------------------------------------------------------- the registry --
 
@@ -232,6 +235,7 @@ const TOOLS: ToolSpec[] = [
   ...filesSPECS,
   ...cadSPECS,
   ...gameSPECS,
+  ...photoSPECS,
   ...memorySPECS,
   ...videoSPECS,
   ...studioSPECS,
@@ -355,6 +359,8 @@ export function windowOff(name: string, settings: ToolSettings = toolSettings())
   if (name.startsWith("cad_")) return !cadAvailable() || !settings.cad.enabled;
   // Built by gdevelop-editor/ (npm run build): the same.
   if (name.startsWith("game_")) return !gameAvailable() || !settings.game.enabled;
+  // Built by scripts/build-photo.mjs (PhotoCraft's editor and command line): the same.
+  if (name.startsWith("photo_")) return !photoAvailable() || !settings.photo.enabled;
   // Built by scripts/build-office.mjs; a server without the build does not offer tools that cannot work.
   if (name.startsWith("office_")) return !officeDir() || !(settings.pages.enabled || settings.sheets.enabled || settings.slides.enabled);
   return false;
@@ -2888,6 +2894,21 @@ async function runToolUnredacted(
         }
         return await runGameTool(ctx.session, spec.name, args, { cwd: terminalDir() });
 
+      case "photo_open":
+      case "photo_look":
+      case "photo_info":
+      case "photo_commands":
+      case "photo_edit":
+      case "photo_export":
+        if (ctx.memory.incognito) {
+          return { ok: false, summary: "Not available in an incognito chat: the photo window keeps its picture on disk." };
+        }
+        return await runPhotoTool(ctx.session, spec.name, args, {
+          cwd: terminalDir(),
+          showFile: ctx.showFile,
+          showImage: (data, alt, size) => ctx.showImage(ctx.putBlob(data, "image/png"), alt, null, size),
+        });
+
       default: {
         // Autora 3D: one tool for each call the modeller declares (server/specs/cad.ts), run on the chat's model.
         if (spec.name.startsWith("cad_")) {
@@ -3000,6 +3021,7 @@ export async function capabilityBriefing(): Promise<string> {
   // Only a server that has the modeller built in says anything about it.
   if (cadAvailable()) lines.push(cadBriefing(windows.cad.enabled));
   if (gameAvailable()) lines.push(gameBriefing(windows.game.enabled));
+  if (photoAvailable()) lines.push(photoBriefing(windows.photo.enabled));
   lines.push(windows.widgets.enabled
     ? "- Explainer widgets: always available. Tool: widget_show. When someone " +
       "asks how something works -- a physical process, a mechanism, an " +

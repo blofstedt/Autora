@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { IconCode, IconCube, IconFile, IconGame, IconGlobe, IconMusic, IconSlides, IconSparkle, IconTable, IconTerminal, IconVideo } from "../Icons";
+import { IconCode, IconCube, IconFile, IconGame, IconGlobe, IconImage, IconMusic, IconSlides, IconSparkle, IconTable, IconTerminal, IconVideo } from "../Icons";
 
-type WindowKey = "widgets" | "browser" | "app" | "pdf" | "video" | "studio" | "pages" | "sheets" | "slides" | "cad" | "game" | "terminal";
+type WindowKey = "widgets" | "browser" | "app" | "pdf" | "video" | "studio" | "pages" | "sheets" | "slides" | "cad" | "game" | "photo" | "terminal";
 
 type ToolsState = {
   config: Record<WindowKey, { enabled: boolean }>;
@@ -92,6 +92,13 @@ const WINDOWS: { key: WindowKey; name: string; icon: ReactNode; what: string; to
     icon: <IconGame size={18} />,
     what: "Games, made in GDevelop's editor beside the chat: scenes, objects, behaviors, events, pictures and sound. The agent does the technical work (wiring, physics, the events that make it run) from the engine's own list of what exists; the idea, the story, the look and the feel stay yours, and you can change anything by hand while it works. GDevelop's own AI and online services are not part of it.",
     tools: "game_*",
+  },
+  {
+    key: "photo",
+    name: "Autora Photo",
+    icon: <IconImage size={18} />,
+    what: "Photo editing in PhotoCraft's editor beside the chat: layers, masks, adjustment layers, filters, type, brushes and real PSD files. The agent does the technical work (cut-outs, resizing, retouching, exports) with the editor's own commands; the look, the mood and what the picture is of stay yours, and you can paint and edit by hand while it works.",
+    tools: "photo_*",
   },
 ];
 

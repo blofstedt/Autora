@@ -247,6 +247,8 @@ export type Cell =
   | { kind: "cad"; seq: number }
   /** And Autora Games' window (lib/gamedesk.ts), likewise. */
   | { kind: "game"; seq: number }
+  /** And Autora Photo's window (lib/photodesk.ts), likewise. */
+  | { kind: "photo"; seq: number }
   /** The Terminal window (lib/termdesk.ts), likewise. */
   | { kind: "term"; seq: number }
   /** And Autora Music's (lib/studio.ts). */
