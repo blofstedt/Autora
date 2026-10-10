@@ -506,6 +506,46 @@
 
 .autora-toast { position: fixed; z-index: 80; left: 50%; top: 52px; transform: translateX(-50%); background: var(--autora-s4); color: var(--autora-text); padding: 9px 16px; border-radius: 999px; font-size: 13px; white-space: nowrap; }
 
+/* The status strip along the bottom of the page: page, zoom, and the work waiting to be applied. Round buttons on the same ladder as the bar. */
+.autora-rail-ui .canvas-status-bar {
+  gap: 6px 8px;
+  flex-wrap: wrap;
+  min-height: 44px;
+  padding: 6px 12px;
+  background: var(--autora-s1);
+  border-top: 1px solid var(--autora-border);
+  font-size: 12px;
+}
+.autora-rail-ui .canvas-status-action {
+  min-height: 0 !important;
+  height: 30px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  transition: background 0.15s var(--autora-ease), color 0.15s var(--autora-ease);
+}
+.autora-rail-ui .canvas-status-quiet { color: var(--autora-text-2); background: rgba(255, 255, 255, 0.06); border: 0; }
+.autora-rail-ui .canvas-status-quiet:hover { color: var(--autora-text); background: rgba(255, 255, 255, 0.12); }
+.autora-rail-ui .canvas-status-quiet.active { color: #fff; background: var(--autora-accent); border: 0; }
+.autora-rail-ui .canvas-status-action.bg-blue-600 { background: var(--autora-accent); color: #fff; }
+.autora-rail-ui .canvas-status-action.bg-blue-600:hover { background: var(--autora-accent-light); }
+.autora-rail-ui .canvas-status-action.danger-action { color: #fff; background: #e11d48; border: 0; }
+.autora-rail-ui .canvas-status-pending { gap: 6px; flex-wrap: nowrap; }
+.autora-rail-ui .canvas-status-action, .autora-rail-ui .canvas-status-pages { white-space: nowrap; }
+.autora-rail-ui .canvas-status-pages { gap: 6px; color: var(--autora-text-2); font-size: 12px; }
+.autora-rail-ui .canvas-status-pageinput {
+  width: 44px; height: 30px; min-height: 0 !important; padding: 0 4px; border-radius: 999px;
+  background: var(--autora-bg); border: 1px solid var(--autora-border-strong); color: var(--autora-text); font-size: 12px; font-variant-numeric: tabular-nums;
+}
+.autora-rail-ui .canvas-status-zoom { gap: 2px; padding: 3px; border-radius: 999px; background: var(--autora-bg); }
+.autora-rail-ui .canvas-status-zoom .canvas-status-action { height: 26px; padding: 0 12px; background: transparent; }
+.autora-rail-ui .canvas-status-zoom .canvas-status-action:hover { background: rgba(255, 255, 255, 0.1); }
+.autora-rail-ui .canvas-status-snap-popover,
+.autora-rail-ui .canvas-status-health-popover {
+  background: var(--autora-s2); border: 1px solid var(--autora-border-strong); border-radius: 18px; box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+}
+
 /* The tool dock (a tool's own pane: Protect, Compress...): a sheet over the lower page on a phone, a window in the middle on a desktop. */
 .autora-desktop .tool-dock {
   position: fixed !important;

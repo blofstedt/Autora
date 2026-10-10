@@ -189,6 +189,6 @@ releaseNotes: >-
   Text, Note and Callout, plus a thickness slider for Draw and Shapes, and a button (or, on
   a desktop, seven buttons) for the shape. Redact now works by tapping or clicking a word
   or line, with a handle on each side to change what was taken. Sign no longer offers an
-  image. The old menu bar is a menu at the top left, beside Undo, Redo and Find. On a desktop the left side is now a file menu (Open, Save, Merge, Split, Compress, Password, Export) with the page thumbnails under it, and a row of buttons for the other panels. Everything
+  image. The old menu bar is a menu at the top left, beside Undo, Redo and Find. On a desktop the left side is now a file menu (Open, Save, Merge, Split, Compress, Password, Export) with the page thumbnails under it, and a row of buttons for the other panels. The strip along the bottom of the page (pages, zoom, Redact and Apply) is round buttons in the same look. Everything
   the editor can do is still reachable, and Autora's PDF manual describes this window, so the
   agent points you at the right button.
