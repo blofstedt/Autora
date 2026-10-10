@@ -189,5 +189,6 @@ releaseNotes: >-
   Shapes (a button steps through the shapes). Redact now works by tapping: tap a word
   (or a line) and it is marked for redaction, and a handle on each side changes what was
   taken. Sign no longer offers an image. Undo, Redo and Find sit in a slim bar at the
-  top. Everything the editor can do is still reachable, the agent has every tool as
-  before, and the desktop editor is unchanged.
+  top. Everything the editor can do is still reachable. The agent's PDF manual now
+  describes this window, so it points you at the right button; the desktop editor is
+  unchanged for now.

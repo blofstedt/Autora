@@ -77,6 +77,10 @@ Rules that hold wherever you are:
   patch (`spectra-editor/overlay/`, `opencut-editor/overlay/`, `gdevelop-editor/overlay/`,
   `office/patches/*.patch`, `office/shim/`), made freely. `tests/pins.test.ts` fails on a pin
   that is not a full commit sha.
+- The agent must know every window's interface as it is. When a window's UI changes, change that window's manual in
+  `server/handbook.ts` in the same commit (what the person sees, where each tool is, what the agent does differently),
+  and the manual's test in `tests/handbook.test.ts`. The PDF window is being rebuilt as a floating tool bar with an
+  All-tools grid (`docs/TOOL-RAIL.md`), replacing its old toolbar entirely; every other tool window follows, one at a time.
 - `tests/`: plain `tsx` scripts, one per area; `npm test` runs every
   `tests/*.test.ts` (`npm test -- name` filters), so a new file needs no wiring.
 

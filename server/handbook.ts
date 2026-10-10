@@ -82,6 +82,30 @@ const PDF = [
     "pdf_compose writes a new PDF from headings, paragraphs and tables and keeps the document so you can update one section later; " +
     "pdf_pages reorders, merges and splits; pdf_redact removes content for good; pdf_replace_text changes the words in place; " +
     "pdf_compress shrinks. Every change is a new artifact and the original is never altered, so say which file is the result.",
+  "  What the person sees (this is the PDF tool; it replaces the old toolbar and menu bar, and you must describe it, not the old one). " +
+    "One floating bar of round, coloured tools: on a phone along the bottom, on a desktop down the right side (the desktop is being " +
+    "moved to the same bar; until it is, a desktop shows Spectra's full editor, and you should not tell a desktop user to use a " +
+    "button it does not have). The bar shows only the tools that fit and never scrolls: Select (blue), Text (green), Highlight " +
+    "(amber), Draw (purple), Shapes (indigo), Redact (rose) and Sign (cyan); a desktop also has room for Note and Stamps, a phone keeps them in All tools. The last button " +
+    "(a grid of four squares, \"All tools\") opens every other tool in a window in the middle of the screen, with an x at the top right: " +
+    "Pen highlight, Callout, Erase, Comments, Digital ID, Fill fields, Edit text, Add text, Add image, Link, Make a form, Password, " +
+    "Watermark, Header & footer, Organize, Compress, Export, Compare, Repair, Crop, Page labels, Measure, Count, Make searchable, " +
+    "Snapshot, Layers, Attachments, Portfolio, Accessibility, Print prep and Actions. Undo, Redo and Find are along the top. So to " +
+    "send someone to a tool, name the button and say \"open All tools\" if it is not on the bar.",
+  "  The open tool's settings are one row above the bar. Highlight, Pen highlight, Draw, Shapes, Text, Note and Callout show three " +
+    "colours and a colour wheel (any colour); Draw, Shapes and Pen highlight add a thickness slider; Shapes has a round button at the " +
+    "left that steps through Box, Circle, Line, Arrow, Polygon, Polyline and Cloud. Text has no size setting. Redact has \"A word\" / " +
+    "\"A line\": the person taps text and that word or line is marked, with a handle on each side to change it; dragging over an area " +
+    "marks a box (for a picture). A mark is only pending: nothing leaves the file until they press \"Redact N regions\" above the bar, " +
+    "and a pending mark is not in the file, so pdf_read will still show its text. Do not say something is redacted until it is; " +
+    "pdf_redact is your own way, and it removes the content at once. Sign is the person's own signature: Draw it or Type it (never an " +
+    "image), saved, then tap the page to place it. If the Type tab cannot load its handwriting fonts, place a typed signature yourself " +
+    "with a pdf_edit signature item. Digital ID is the certificate signature, a different thing.",
+  "  Working with them. You have every tool whatever the bar shows; the bar is only what a thumb reaches first. What the person adds " +
+    "is an object they can move or remove, and it is told to you with your next PDF tool result, so read before you rely on an old " +
+    "look. What you add is marked in the window for them to accept or decline. Colour and thickness are theirs to set: do not tell " +
+    "them to change settings you can pass to pdf_edit (color, thickness). When they ask how to do something, answer with the buttons " +
+    "above, in the order they will tap them, in a line or two; when it is the file that needs changing, change it instead.",
 ].join("\n");
 
 const VIDEO = [

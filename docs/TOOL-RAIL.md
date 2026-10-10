@@ -60,3 +60,11 @@ PDF first (this), then Pages, Sheets, Slides, Video, Games. Browser and 3D alrea
   "Pen highlight" (the freehand one) because Highlight follows the text; Redact marks are Spectra's pending redactions
   (applied with its "Redact N regions" button, not blacked out at once); Sign is Spectra's stamp mode showing saved signatures.
 - PDF, desktop: not started. Mockups and screenshots first.
+
+## The agent has to know (it replaces the old window)
+
+This interface replaces each window's old toolbar entirely; it is not a second mode. The agent reads a window's manual
+(`server/handbook.ts`, delivered with its first tool call or by `tool_manual`) to know what the person sees, so every retrofit
+changes that manual in the same commit, with an assertion in `tests/handbook.test.ts`. The PDF manual now describes the bar, the
+grid, the trays, tap-to-redact (pending until "Redact N regions"), Sign (Draw or Type, never an image), and tells the agent not to
+describe the old toolbar and to name the button and "open All tools" when pointing the person at a tool.
