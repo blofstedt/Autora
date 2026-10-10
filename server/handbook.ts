@@ -82,20 +82,23 @@ const PDF = [
     "pdf_compose writes a new PDF from headings, paragraphs and tables and keeps the document so you can update one section later; " +
     "pdf_pages reorders, merges and splits; pdf_redact removes content for good; pdf_replace_text changes the words in place; " +
     "pdf_compress shrinks. Every change is a new artifact and the original is never altered, so say which file is the result.",
-  "  What the person sees (this is the PDF tool; it replaces the old toolbar and menu bar, and you must describe it, not the old one). " +
-    "One floating bar of round, coloured tools: on a phone along the bottom, on a desktop down the right side (the desktop is being " +
-    "moved to the same bar; until it is, a desktop shows Spectra's full editor, and you should not tell a desktop user to use a " +
-    "button it does not have). The bar shows only the tools that fit and never scrolls: Select (blue), Text (green), Highlight " +
-    "(amber), Draw (purple), Shapes (indigo), Redact (rose) and Sign (cyan); a desktop also has room for Note and Stamps, a phone keeps them in All tools. The last button " +
-    "(a grid of four squares, \"All tools\") opens every other tool in a window in the middle of the screen, with an x at the top right: " +
+  "  What the person sees (this is the PDF tool; it replaces the old toolbar and menu bar entirely, on a phone and on a desktop, and " +
+    "you must describe it, not the old one). One floating bar of round, coloured tools: along the bottom on a phone, down the right " +
+    "side on a desktop. The bar shows only the tools that fit and never scrolls. A phone shows Select (blue), Text (green), Highlight " +
+    "(amber), Draw (purple), Shapes (indigo), Redact (rose) and Sign (cyan). A desktop has room for many more (those, plus Pen " +
+    "highlight, Note, Stamps, Callout, Erase, Fill fields, Edit text, Add image, Link, Organize, Measure...) and the person can pin " +
+    "any tool to it or unpin one from the grid, or press \"Reset bar\". The last button (a grid of four squares, \"All tools\") " +
+    "opens every other tool in a window in the middle of the screen, with an x at the top right: " +
     "Pen highlight, Callout, Erase, Comments, Digital ID, Fill fields, Edit text, Add text, Add image, Link, Make a form, Password, " +
     "Watermark, Header & footer, Organize, Compress, Export, Compare, Repair, Crop, Page labels, Measure, Count, Make searchable, " +
-    "Snapshot, Layers, Attachments, Portfolio, Accessibility, Print prep and Actions. Undo, Redo and Find are along the top. So to " +
-    "send someone to a tool, name the button and say \"open All tools\" if it is not on the bar.",
-  "  The open tool's settings are one row above the bar. Highlight, Pen highlight, Draw, Shapes, Text, Note and Callout show three " +
+    "Snapshot, Layers, Attachments, Portfolio, Accessibility, Print prep and Actions. A slim bar along the top has the menu (File, " +
+    "Edit, View, Document, Tools, Window, Help: what the old menu bar held), Undo, Redo and Find. A tool with its own pane (Password, " +
+    "Compress, Compare...) opens it as a window in the middle. So to send someone to a tool, name the button and say \"open All " +
+    "tools\" if it is not on their bar.",
+  "  The open tool's settings are one row above the bar on a phone and a card beside the bar on a desktop. Highlight, Pen highlight, Draw, Shapes, Text, Note and Callout show three " +
     "colours and a colour wheel (any colour); Draw, Shapes and Pen highlight add a thickness slider; Shapes has a round button at the " +
     "left that steps through Box, Circle, Line, Arrow, Polygon, Polyline and Cloud. Text has no size setting. Redact has \"A word\" / " +
-    "\"A line\": the person taps text and that word or line is marked, with a handle on each side to change it; dragging over an area " +
+    "\"A line\": the person taps or clicks text and that word or line is marked, with a handle on each side to change it; dragging over an area " +
     "marks a box (for a picture). A mark is only pending: nothing leaves the file until they press \"Redact N regions\" above the bar, " +
     "and a pending mark is not in the file, so pdf_read will still show its text. Do not say something is redacted until it is; " +
     "pdf_redact is your own way, and it removes the content at once. Sign is the person's own signature: Draw it or Type it (never an " +

@@ -327,14 +327,117 @@ async function main() {
       await phone.close();
     });
 
-    await test("on a desktop nothing of that is there: the full editor", async () => {
+    await test("on a desktop it is the same bar, down the right side: more tools, a grid with pins, a card for the open tool, a menu", async () => {
       const wide = await browser.newPage({ viewport: { width: 1440, height: 900 } });
       await wide.goto(`${app.base}/?session=${s}`);
       await wide.waitForSelector(".app-pane .pdf-window", { timeout: 20_000 });
       const frame = await editorIn(wide);
-      await frame.waitForSelector('[data-testid="menubar"]', { timeout: 10_000 });
-      assert.equal(await frame.locator('[data-testid="phone-bar"]').count(), 0);
+      await frame.waitForSelector('[data-testid="phone-bar"]', { timeout: 10_000 });
+      assert.equal(await frame.evaluate(() => document.documentElement.classList.contains("autora-desktop")), true);
       assert.equal(await frame.evaluate(() => document.documentElement.classList.contains("autora-phone")), false);
+      const visible = (id: string) => frame.evaluate((t) => { const el = document.querySelector(`[data-testid="${t}"]`); return !!el && getComputedStyle(el).display !== "none" && el.getClientRects().length > 0; }, id);
+      assert.equal(await visible("menubar"), false, "Spectra's menu bar is put away");
+      assert.equal(await visible("main-toolbar"), false, "and its toolbar");
+      assert.equal(await visible("tab-strip"), false, "and its tab strip");
+
+      // The bar: vertical, on the right, never scrolling, with more tools than a phone can hold.
+      const bar = await frame.evaluate(() => {
+        const nav = document.querySelector('[data-testid="phone-bar"]') as HTMLElement;
+        const r = nav.getBoundingClientRect();
+        const buttons = [...nav.querySelectorAll("button")];
+        return {
+          ids: buttons.map((b) => b.getAttribute("data-phone")),
+          onRight: r.right > innerWidth - 24 && r.width < 80,
+          vertical: r.height > r.width * 3,
+          scrolls: nav.scrollHeight > nav.clientHeight,
+          inside: r.top >= 40 && r.bottom <= innerHeight,
+        };
+      });
+      assert.ok(bar.onRight && bar.vertical && bar.inside && !bar.scrolls, JSON.stringify(bar));
+      assert.equal(bar.ids.at(-1), "grid");
+      assert.ok(bar.ids.length >= 12, `more tools than a phone's seven (${bar.ids.length - 1})`);
+      for (const id of ["select", "text", "highlight", "draw", "shape", "note", "stamp", "redact", "sign"]) assert.ok(bar.ids.includes(id), `${id} is on the bar`);
+
+      // A short window shows fewer, not a scrolling bar.
+      await wide.setViewportSize({ width: 1440, height: 560 });
+      await sleep(400);
+      const short = await frame.evaluate(() => { const nav = document.querySelector('[data-testid="phone-bar"]') as HTMLElement; return { n: nav.querySelectorAll("button").length, scrolls: nav.scrollHeight > nav.clientHeight }; });
+      assert.ok(short.n < bar.ids.length && !short.scrolls, JSON.stringify(short));
+      await wide.setViewportSize({ width: 1440, height: 900 });
+      await sleep(400);
+
+      // The open tool's settings are a card beside the bar, with labels (there is room for them).
+      await frame.click('[data-phone="draw"]');
+      await frame.waitForSelector('[data-testid="phone-tray"][data-mode="ink"]', { timeout: 10_000 });
+      await sleep(450); // it slides in
+      const card = await frame.evaluate(() => {
+        const t = document.querySelector('[data-testid="phone-tray"]') as HTMLElement; const b = (document.querySelector('[data-testid="phone-bar"]') as HTMLElement).getBoundingClientRect(); const r = t.getBoundingClientRect();
+        return { besideBar: r.right < b.left, labels: t.innerText.includes("Colour") && t.innerText.includes("Thickness"), swatches: t.querySelectorAll(".autora-swatch").length };
+      });
+      assert.ok(card.besideBar && card.labels && card.swatches === 3, JSON.stringify(card));
+      await frame.click('.autora-tray-x');
+
+      // Shapes: every figure is a button on a desktop.
+      await frame.click('[data-phone="shape"]');
+      await frame.waitForSelector(".autora-shapes", { timeout: 10_000 });
+      assert.equal(await frame.locator(".autora-shapes button").count(), 7);
+      await frame.click('.autora-shapes [data-shape="arrow"]');
+      assert.equal(await frame.getAttribute('[data-testid="shape-type-arrow"]', "aria-pressed"), "true");
+      await frame.click('.autora-tray-x');
+
+      // Redact: a click on a word marks it, as a tap does on a phone.
+      await frame.click('[data-phone="redact"]');
+      await frame.waitForSelector('[data-testid="phone-tray"][data-mode="redact"]', { timeout: 10_000 });
+      const at = await frame.evaluate(() => {
+        const span = [...document.querySelectorAll(".textLayer span")].find((x) => x.textContent?.includes("Lease"))!;
+        const node = span.firstChild!; const i = node.textContent!.indexOf("agreement");
+        const r = document.createRange(); r.setStart(node, i); r.setEnd(node, i + 9);
+        const b = r.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+      });
+      const wbox = (await (await frame.frameElement()).boundingBox())!;
+      await wide.mouse.click(wbox.x + at.x, wbox.y + at.y);
+      await frame.waitForSelector(".page-redact", { timeout: 10_000 });
+      assert.equal(await frame.locator(".autora-redact-handle").count(), 4);
+      await frame.click('.autora-tray-x');
+
+      // The grid: every tool, with a pin on each; pinning and unpinning changes the bar, and Reset puts it back.
+      await frame.click('[data-phone="grid"]');
+      await frame.waitForSelector('[data-testid="phone-grid"]', { timeout: 10_000 });
+      assert.ok((await frame.locator("[data-tile]").count()) >= 40);
+      assert.ok((await frame.locator("[data-pin]").count()) >= 40, "a pin on every tile");
+      await frame.click('[data-pin="stamp"]');
+      await frame.click('[data-pin="compare"]');
+      await frame.click('[data-testid="phone-grid-close"]');
+      const barIds = () => frame.evaluate(() => [...document.querySelectorAll('[data-testid="phone-bar"] button')].map((b) => b.getAttribute("data-phone")));
+      let ids = await barIds();
+      assert.ok(!ids.includes("stamp") && ids.includes("compare"), `unpinned Stamps, pinned Compare: ${ids.join(",")}`);
+      await frame.click('[data-phone="grid"]');
+      await frame.click('[data-testid="phone-grid-reset"]');
+      await frame.click('[data-testid="phone-grid-close"]');
+      ids = await barIds();
+      assert.ok(ids.includes("stamp") && !ids.includes("compare"), "Reset bar");
+
+      // A tool with a pane (Protect) opens it as a window in the middle; a tool with no tray keeps Spectra's own options, as a card.
+      await frame.click('[data-phone="grid"]');
+      await frame.click('[data-tile="protect"]');
+      await frame.waitForSelector(".tool-dock", { timeout: 10_000 });
+      const dock = await frame.evaluate(() => { const d = document.querySelector(".tool-dock")!.getBoundingClientRect(); return Math.abs(d.left + d.width / 2 - innerWidth / 2) < 4 && Math.abs(d.top + d.height / 2 - innerHeight / 2) < 4; });
+      assert.ok(dock, "the pane is a window in the middle");
+      await frame.click('[data-testid="tool-dock-close"]');
+      await frame.click('[data-phone="grid"]');
+      await frame.click('[data-tile="measure"]');
+      await frame.waitForSelector('[data-testid="secondary-toolbar"]', { timeout: 10_000 });
+      assert.ok(await frame.evaluate(() => { const c = document.querySelector('[data-testid="secondary-toolbar"]')!.getBoundingClientRect(); const b = document.querySelector('[data-testid="phone-bar"]')!.getBoundingClientRect(); return c.right < b.left; }), "Spectra's own strip is a card beside the bar");
+      await frame.click('[data-testid="secondary-action-tools.close"]');
+
+      // The menu holds what the menu bar did.
+      await frame.click('[data-testid="phone-menu-button"]');
+      await frame.waitForSelector('[data-testid="phone-menu"]', { timeout: 10_000 });
+      const heads = await frame.evaluate(() => [...document.querySelectorAll(".autora-menu-head")].map((h) => h.textContent?.trim()));
+      for (const name of ["File", "Edit", "View", "Document", "Tools", "Window", "Help"]) assert.ok(heads.includes(name), `the menu has ${name}`);
+      assert.ok((await frame.locator(".autora-menu-item").count()) > 3, "File's items are shown");
+      await wide.keyboard.press("Escape");
+      await frame.waitForSelector('[data-testid="phone-menu"]', { state: "detached", timeout: 10_000 });
       await wide.close();
     });
   } finally {

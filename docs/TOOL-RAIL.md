@@ -55,11 +55,14 @@ PDF first (this), then Pages, Sheets, Slides, Video, Games. Browser and 3D alrea
 
 ## Where it is built
 
-- PDF, phone: done (0.9.187). `spectra-editor/src/autora/phone.tsx` and `phone-tools.ts`; see docs/MODULES.md, "Paired-down tools on a phone".
+- PDF, phone and desktop: done (0.9.187). `spectra-editor/src/autora/rail.tsx` and `rail-tools.ts`; see docs/MODULES.md, "Paired-down tools on a phone".
   What differs from the mockup: Text has colours only (Spectra's text boxes have one fixed size); the slider on Highlight is on
   "Pen highlight" (the freehand one) because Highlight follows the text; Redact marks are Spectra's pending redactions
   (applied with its "Redact N regions" button, not blacked out at once); Sign is Spectra's stamp mode showing saved signatures.
-- PDF, desktop: not started. Mockups and screenshots first.
+- Desktop is the same bar down the right side, with room for more tools (13 at a 900px window, pinned from the grid), a card beside
+  the bar for the open tool with labels and hints, every figure of Shapes as a button, click-to-redact, and the menu (Spectra's
+  menu tree) behind the button at the top left. Panes (Protect...) open as a window in the middle. Spectra's left rail of panels
+  (pages, bookmarks, layers...) stays for now; folding it into the grid is an open question.
 
 ## The agent has to know (it replaces the old window)
 

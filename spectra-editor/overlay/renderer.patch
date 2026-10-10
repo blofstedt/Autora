@@ -192,12 +192,12 @@ index dfba040..64d073f 100644
  stampInitialTheme();
  // The capability report is read before the first render: menus and commands
 diff --git a/src/renderer/components/canvas/PageCell.tsx b/src/renderer/components/canvas/PageCell.tsx
-index 1c0eff7..d35c4c1 100644
+index 1c0eff7..1eb2581 100644
 --- a/src/renderer/components/canvas/PageCell.tsx
 +++ b/src/renderer/components/canvas/PageCell.tsx
 @@ -1,4 +1,6 @@
  import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-+import { getAutoraDetect, getAutoraWidth, isAutoraPhone } from '../../autora-style';
++import { getAutoraDetect, getAutoraWidth, isAutoraUi } from '../../autora-style';
 +import { textRectAt } from '../../autora-tap';
  import { showsFormWidgets } from '../../commands/tools';
  import type { PDFDocumentProxy } from 'pdfjs-dist';
@@ -240,7 +240,7 @@ index 1c0eff7..d35c4c1 100644
        endSnapGesture();
        setBand(null);
 -      if (commit && tool === 'addimage' && (latest.w <= 0.01 || latest.h <= 0.01)) {
-+      if (commit && tool === 'redact' && latest.w <= 0.01 && latest.h <= 0.01 && isAutoraPhone()) {
++      if (commit && tool === 'redact' && latest.w <= 0.01 && latest.h <= 0.01 && isAutoraUi()) {
 +        // Autora (phone): a tap on text redacts what is there, a word or the line.
 +        const hit = textRectAt(el, e.clientX, e.clientY, getAutoraDetect());
 +        if (hit) {
@@ -281,7 +281,7 @@ index 1c0eff7..d35c4c1 100644
              }}
            >
              <span className="page-redact-label">{tChrome('canvas.mark.redact')}</span>
-+            {isAutoraPhone() && (tool === 'select' || tool === 'redact') &&
++            {isAutoraUi() && (tool === 'select' || tool === 'redact') &&
 +              (['n', 'e', 's', 'w'] as const).map((side) => (
 +                <i
 +                  key={side}

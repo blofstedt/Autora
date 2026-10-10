@@ -180,15 +180,15 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  A new look for the PDF window on a phone, the one SecurePDF and Autora 3D share. Along
-  the bottom is a bar of round, coloured tools (Select, Text, Highlight, Draw, Shapes,
-  Redact, Sign) that shows as many as fit and never scrolls; the last button opens
-  every other tool in a grid in the middle of the screen, with a close button. The open
-  tool puts its settings in one row above the bar: three colours and a colour wheel for
-  Highlight, Draw, Shapes, Text, Note and Callout, plus a thickness slider for Draw and
-  Shapes (a button steps through the shapes). Redact now works by tapping: tap a word
-  (or a line) and it is marked for redaction, and a handle on each side changes what was
-  taken. Sign no longer offers an image. Undo, Redo and Find sit in a slim bar at the
-  top. Everything the editor can do is still reachable. The agent's PDF manual now
-  describes this window, so it points you at the right button; the desktop editor is
-  unchanged for now.
+  A new PDF window, replacing the old toolbar and menu bar on a phone and a desktop with
+  the look SecurePDF and Autora 3D share. One floating bar of round, coloured tools
+  (along the bottom on a phone, down the right on a desktop) shows as many tools as fit
+  and never scrolls; the last button opens every other tool in a grid in the middle of
+  the screen, where a desktop can pin the tools it wants on the bar. The open tool puts its
+  settings in a small tray: three colours and a colour wheel for Highlight, Draw, Shapes,
+  Text, Note and Callout, plus a thickness slider for Draw and Shapes, and a button (or, on
+  a desktop, seven buttons) for the shape. Redact now works by tapping or clicking a word
+  or line, with a handle on each side to change what was taken. Sign no longer offers an
+  image. The old menu bar is a menu at the top left, beside Undo, Redo and Find. Everything
+  the editor can do is still reachable, and Autora's PDF manual describes this window, so the
+  agent points you at the right button.

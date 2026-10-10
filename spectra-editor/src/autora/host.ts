@@ -62,8 +62,8 @@ export function installHost(): void {
   installed = true;
   followAutoraDark();
   relayPdfjsFetches();
-  // The phone's paired-down editor: a class that puts the desktop chrome away and a bar of the tools a thumb can use.
-  void import("./phone").then((m) => m.installPhone());
+  // The editor's interface: classes that put Spectra's own chrome away, and the floating tool bar, grid and trays (rail.tsx).
+  void import("./rail").then((m) => m.installRail());
 
   window.addEventListener("message", (event: MessageEvent) => {
     // Only the window that holds this frame may drive it.

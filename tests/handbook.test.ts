@@ -31,7 +31,7 @@ await test("every window has a manual that names its tools", () => {
 
 await test("the PDF manual teaches the window as it is now: the bar, the grid, the trays, tap to redact, sign", () => {
   const pdf = manualText("pdf");
-  for (const needle of ["All tools", "colour wheel", "Redact N regions", "pending", "never an image", "replaces the old toolbar", "Shapes has a round button"]) {
+  for (const needle of ["All tools", "colour wheel", "Redact N regions", "pending", "never an image", "replaces the old toolbar", "Shapes has a round button", "pin any tool", "Reset bar", "down the right side on a desktop"]) {
     assert.ok(pdf.includes(needle), `the PDF manual lacks "${needle}"`);
   }
   assert.ok(!/menu bar of|Mark up, Fill & sign/.test(pdf), "and says nothing of the bar it replaced, except that it is replaced");

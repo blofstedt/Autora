@@ -41,9 +41,9 @@ export function subscribeAutoraStyle(fn: () => void): () => void {
   };
 }
 
-/** Whether this window is the phone's arrangement (`html.autora-phone`, set by src/autora/phone.tsx before the first paint). */
-export function isAutoraPhone(): boolean {
-  return document.documentElement.classList.contains('autora-phone');
+/** Whether this window has Autora's interface (`html.autora-rail-ui`, set by src/autora/rail.tsx before the first paint): the phone's and the desktop's both. */
+export function isAutoraUi(): boolean {
+  return document.documentElement.classList.contains('autora-rail-ui');
 }
 
 export type Detect = 'word' | 'line';
