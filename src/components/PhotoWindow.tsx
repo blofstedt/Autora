@@ -120,7 +120,7 @@ export function PhotoWindow({ sessionId, phone }: { sessionId: string; phone: bo
   const layers = photo.layers ?? 0;
   return (
     <div className={`pdf-window${phone ? " is-phone" : ""}${phone && full ? " is-full" : ""}`}>
-      <div className="pdf-bar">
+      {phone && <div className="pdf-bar">
         <span className="pdf-bar-ico" aria-hidden="true"><IconImage size={14} /></span>
         <span className="pdf-bar-app">Autora Photo</span>
         <span className="pdf-bar-name">{size ? `${size.w} × ${size.h}, ${layers === 1 ? "1 layer" : `${layers} layers`}` : "No picture yet"}</span>
@@ -135,7 +135,7 @@ export function PhotoWindow({ sessionId, phone }: { sessionId: string; phone: bo
         >
           {full ? <IconMinimize size={14} /> : <IconMaximize size={14} />}
         </button>
-      </div>
+      </div>}
       {trouble && <div className="pdf-problem" role="status">{trouble}</div>}
       <iframe
         ref={frame}

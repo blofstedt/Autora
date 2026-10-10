@@ -106,7 +106,7 @@ export function GameWindow({ sessionId, phone }: { sessionId: string; phone: boo
   const scenes = game.scenes ?? 0;
   return (
     <div className={`pdf-window${phone ? " is-phone" : ""}${phone && full ? " is-full" : ""}`}>
-      <div className="pdf-bar">
+      {phone && <div className="pdf-bar">
         <span className="pdf-bar-ico" aria-hidden="true"><IconGame size={14} /></span>
         <span className="pdf-bar-app">Autora Games</span>
         <span className="pdf-bar-name">{game.name ?? "Your game"}{scenes ? ` · ${scenes === 1 ? "1 scene" : `${scenes} scenes`}` : ""}</span>
@@ -123,7 +123,7 @@ export function GameWindow({ sessionId, phone }: { sessionId: string; phone: boo
             {full ? <IconMinimize size={14} /> : <IconMaximize size={14} />}
           </button>
         )}
-      </div>
+      </div>}
       {trouble && <div className="pdf-problem" role="status">{trouble}</div>}
       <div className="game-stage">
       <iframe

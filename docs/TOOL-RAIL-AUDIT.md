@@ -1,8 +1,10 @@
 # Tool rail audit: the PDF window against every other Autora app
 
-> **Status (0.9.196).** Done: the shared `ToolRail` (3a), Music on it, and the top strip on 3D, Photo and Games on a desktop
-> (3d). Not done: Video, Pages, Sheets, Slides, Photo and Games on the rail, and 3D's own bar (it lives in the
-> blofstedt/3D-Modeling repo). The sections below are the audit as written, before the change.
+> **Status (0.9.196).** Done: the shared `ToolRail` (3a) and Music on it. Dropped: the audit's suggestion to add the top
+> strip to 3D, Photo and Games on a desktop. Their tab already names the window, so the strip would say it twice and cost
+> 44px of canvas (`tests/ui-game.test.ts` records that choice). Not done: Video, Pages, Sheets, Slides, Photo and Games on
+> the rail, and 3D's own bar (it lives in the blofstedt/3D-Modeling repo). The sections below are the audit as written,
+> before the change.
 
 Written 2026-10-10 against 0.9.195. This compares the PDF window (the reference, built to
 `docs/TOOL-RAIL.md`) with Pages, Sheets, Slides, Video, Music, 3D and Games, on a desktop
