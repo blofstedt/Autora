@@ -6,7 +6,7 @@ import { TakeControl } from "./TakeControl";
 import { onOfficePush, useOfficeWindow, type OfficeCue, type OfficeKind } from "../lib/officedesk";
 import { OfficeCursor, type Acted, type Located } from "./OfficeCursor";
 import { OfficePages } from "./OfficePages";
-import { IconDownload, IconFile, IconMaximize, IconMinimize } from "./Icons";
+import { IconEdit, IconDownload, IconFile, IconMaximize, IconMinimize } from "./Icons";
 
 /**
  * The Pages, Slides or Sheets window: the document, presentation or spreadsheet the agent is
@@ -341,6 +341,9 @@ export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; ki
           >
             <IconDownload size={14} />
           </a>
+        )}
+        {pages && (
+          <button className="btn icon ghost" onClick={() => { setEditing(true); setFull(true); }} title="Edit by hand, full screen" aria-label="Edit"><IconEdit size={15} /></button>
         )}
         {phone && editing && (
           <button className="btn icon ghost" onClick={() => setEditing(false)} title="Back to the pictures of the pages" aria-label="Page view"><IconFile size={15} /></button>

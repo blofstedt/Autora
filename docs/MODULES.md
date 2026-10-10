@@ -495,10 +495,15 @@ Spectra's fetched renderer is most of what is on disk.
 - A frame that does not start: `lib/bootWatch.ts` says so after 25 s (PDF and video windows), and the PDF frame forwards
   its uncaught errors (`autora:spectra:error`). Its build puts a `Map.getOrInsert*` polyfill in front of every chunk,
   workers included (`polyfillFirst` in `spectra-editor/vite.config.ts`): pdf.js needs it and older browsers lack it.
-- The rest of the phone's tools: Pages/Sheets/Slides' full editor (`office/shim/phone.js`, injected into the editor page when the
-  window adds `?phone=1`) starts with the ribbon closed (it writes the editors' own saved flag; a tap on a tab opens it), scrolls the
-  tabs sideways, makes the controls 40px and narrows Slides' thumbnail strip; the window's bar loses the cursor switch and the
-  versions pill and "Page view" is an icon. The browser's toolbar on a phone is back, reload, the address, hand-over, drag and
+- The rest of the phone's tools: Pages/Sheets/Slides on a phone are two views. Pinned, the pictures of the pages (`OfficePages`:
+  tap text to point at it, the message to the agent carries it). The pencil in the window's bar opens the phone's editor, full
+  screen: `office/shim/phone.js` (injected into the editor page when the window adds `?phone=1`) closes the ribbon, hides the
+  status bar and the notes pane, and lays one bar over the bottom (undo, redo, bold, italic, a list or a row or a slide, the
+  size) whose buttons press the editor's own, found by the start of the name each carries (`data-tip`, `aria-label`, `title`;
+  `data-linked` marks the ones found, which `ui-office-phone` checks). "More" opens the real ribbon in place over the top of the
+  page. The ribbon is closed to a height of nothing, never removed: Sheets lays out in rows and moves every row up when one goes.
+  The ribbon's AI group ("Autora" on Home) is gone on every screen (`office/shim/common.js`). The window's bar loses the cursor
+  switch and the versions pill, and "Page view" is an icon. The browser's toolbar on a phone is back, reload, the address, hand-over, drag and
   enlarge (CSS in `styles.css`). Autora Photo is paired down in Rust, in `photo/overlay/autora.rs` (the `phone_*` functions): with
   `?phone=1` the editor shows the picture alone (`screen_mode = "fullScreen"`, forced each frame in `pump`) and draws one bar
   (Undo, Redo, Tools, Brush, Layers, Fit) with a sheet over it (nine tools, brush size/strength/colour, layers with eye, name,

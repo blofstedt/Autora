@@ -156,21 +156,19 @@
     }));
   }
 
-  // Autora's agent is the assistant: the editor's own AI panel and one-click AI actions are
-  // left out, and its Genspark AI slot on the Home tab becomes one button that puts the
-  // cursor in Autora's chat box.
+  // Autora's agent is the assistant: the editor's own AI panel, its one-click AI actions and the AI
+  // group on the Home tab are left out. The chat beside the document is where to ask.
   const style = document.createElement("style");
-  // The panel, its edge button, and the bar over a slide; the Home tab's AI group becomes the one button below.
-  style.textContent = ".ai-dock, .ai-rail, .stage-ai-bar, .expand-copilot { display: none !important; } .ribbon-group:has(.ai-entry) .ai-entry:not(.autora-ask) { display: none !important; } [data-autora-hidden] { display: none !important; }";
+  // The panel, its edge button, and the bar over a slide; the Home tab's AI group goes with them.
+  style.textContent = ".ai-dock, .ai-rail, .stage-ai-bar, .expand-copilot { display: none !important; } .ai-entry { display: none !important; } [data-autora-hidden] { display: none !important; }";
   document.head.appendChild(style);
   // The ribbon's other AI buttons (Editor, Translate, Spelling, Resolve Comments, Revision Summary, the AI
   // panel's toggle) all send their prompt to the panel hidden above, so they would do nothing: they go too,
   // and a group left with nothing in it goes with them (and the divider before it). Matched by the tip each
   // one carries. The pinned GenOffice never changes (office/PIN.json), so these strings are stable.
-  const DEAD_AI = '[data-tip*="Uses AI and consumes credits"], [data-tip^="AI "], [data-tip="Show/hide the AI panel"], [data-tip*="with AI"]';
+  const DEAD_AI = '[data-tip*="Uses AI and consumes credits"], [data-tip^="AI "], [data-tip="Show/hide the AI panel"], [data-tip*="with AI"], .ai-entry';
   const dropDeadAi = () => {
     for (const el of document.querySelectorAll(DEAD_AI)) {
-      if (el.classList.contains("autora-ask")) continue;
       (el.closest(".rb-split-wrap") || el).setAttribute("data-autora-hidden", "");
     }
     for (const group of document.querySelectorAll(".ribbon-group:not([data-autora-hidden])")) {
@@ -181,27 +179,9 @@
       if (before && before.classList.contains("ribbon-sep")) before.setAttribute("data-autora-hidden", "");
     }
   };
-  const adopt = () => {
-    dropDeadAi();
-    for (const group of document.querySelectorAll(".ribbon-group")) {
-      const entries = group.querySelectorAll(".ai-entry");
-      if (!entries.length) continue;
-      const first = entries[0];
-      if (!first.classList.contains("autora-ask")) {
-        first.classList.add("autora-ask");
-        first.classList.remove("active");
-        first.setAttribute("data-tip", "Ask Autora in the chat");
-        first.addEventListener("click", (e) => { e.stopImmediatePropagation(); e.preventDefault(); void host("ask", {}).catch(() => undefined); }, true);
-      }
-      // Word and PowerPoint draw the icon in .rb-big-icon and the name in a span; Excel in .tool-icon-row and <strong>.
-      // The icon the editor drew is left as it is: Autora's own mark does not belong in the ribbon.
-      const label = first.querySelector("strong") || first.querySelector(":scope > span:not(.rb-big-icon):not(.tool-icon-row)");
-      if (label && label.textContent !== "Autora") label.textContent = "Autora";
-      const name = group.querySelector(".ribbon-group-label");
-      if (name && name.textContent !== "Autora") name.textContent = "Autora";
-      if (group.getAttribute("aria-label") && group.getAttribute("aria-label") !== "Autora") group.setAttribute("aria-label", "Autora");
-    }
-  };
+  /* The ribbon's own AI group (Word's, Excel's and PowerPoint's first group on Home) is gone altogether: Autora is the
+     chat beside the document, not a button in the ribbon, and a document tool does not begin with an assistant's name. */
+  const adopt = dropDeadAi;
   new MutationObserver(adopt).observe(document.documentElement, { childList: true, subtree: true });
 
   // ---- the Autora look ------------------------------------------------------------------
