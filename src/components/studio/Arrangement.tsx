@@ -1,10 +1,10 @@
 import { memo, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
-  copyClip, DRUMS, INSTRUMENTS, instrumentOf, isDrumTrack, MAX_CLIPS_PER_TRACK, MAX_TRACKS, newClip, newTrack, songBeats, tidy,
-  type Clip, type InstrumentId, type Project, type Track,
+  copyClip, DRUMS, instrumentOf, isDrumTrack, MAX_CLIPS_PER_TRACK, MAX_TRACKS, newClip, newTrack, songBeats, tidy,
+  type Clip, type Project, type Track,
 } from "../../lib/studio/model";
 import type { Editor } from "./useSong";
-import { IconCopy, IconMoreH, IconPlus, IconTrash } from "../Icons";
+import { IconCopy, IconMoreH, IconTrash } from "../Icons";
 
 /** Width of the track-name column, in px (narrower on a phone). */
 export const headWidth = (phone: boolean) => (phone ? 132 : 176);
@@ -168,12 +168,6 @@ export function Arrangement({
     onPick({ trackId, clipId: clip.id });
   }, [edit, onPick]);
 
-  const addTrack = (instrument: InstrumentId) => {
-    const t = newTrack(project, instrument);
-    edit((p) => { if (p.tracks.length < MAX_TRACKS) p.tracks.push(t); });
-    onPick({ trackId: t.id, clipId: null });
-  };
-
   const patch = (id: string, fn: (t: Track) => void, key?: string) => edit((p) => { const t = p.tracks.find((x) => x.id === id); if (t) fn(t); }, key);
 
   const ticks: number[] = [];
@@ -309,14 +303,6 @@ export function Arrangement({
               </div>
             );
           })}
-          <div className="st-row st-add-row">
-            <div className="st-head st-add" style={{ width: HEAD }}><IconPlus size={13} /> Add a track</div>
-            <div className="st-add-chips" style={{ width: total * bw, left: HEAD }}>
-              {INSTRUMENTS.map((i) => (
-                <button key={i.id} className="st-add-chip" disabled={full} title={i.about} onClick={() => addTrack(i.id)}>{i.name}</button>
-              ))}
-            </div>
-          </div>
           <div className="st-playhead" style={{ ["--head" as string]: `${HEAD}px`, ["--bw" as string]: `${bw}px` }} />
         </div>
       </div>

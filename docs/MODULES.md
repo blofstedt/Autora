@@ -578,7 +578,7 @@ Spectra's fetched renderer is most of what is on disk.
   pin's page, which never moves. Pages, Sheets and Slides were already pictures of the pages with tap-to-point
   (`OfficePages`), and Autora 3D was already built for touch (its own bottom bar). The bar at the top of every window on
   a phone is the name and round icon buttons (`TakeControl`, download, full screen), not text pills. Games are not
-  done yet. Tests: `ui-pdfwindow`, `ui-video`.
+  done yet. Music wears the shared rail (`src/components/ToolRail.tsx`, `src/lib/toolrail.ts`; docs/TOOL-RAIL.md): one slim transport row, the arrangement, a piano roll or mixer that opens with a clip or the Mixer tool and is one line when idle, trays for Song (tempo, key, bars), Add track and Zoom, and Ask Autora in the grid. Tests: `ui-pdfwindow`, `ui-video`, `ui-studio`.
 - Full screen on a phone (`lib/fullscreen.ts`): one shared flag for every pinned tool (browser, app window, PDF,
   Pages/Sheets/Slides, widget), so Follow (`busiestSurface` in `Thread`) moves the stage to the next tool with the
   screen still full. While it is up, `components/ImmersiveChat.tsx` is laid over it: the agent's last reply as a

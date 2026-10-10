@@ -7,16 +7,18 @@ import { bounce, Transport } from "../lib/studio/engine";
 import {
   addNotes, bassNotes, chordNotes, clamp, contentEnd, copyClip, drumNotes, fitBars, findClip, instrumentOf, isDrumTrack, MAX_BARS,
   MAX_BPM, MIN_BPM, newClip, newTrack, NOTE_NAMES, parseProgression, SCALE_NAMES, tidy,
-  type Chord, type InstrumentId, type Project, type ScaleName,
+  INSTRUMENTS, MAX_TRACKS, type Chord, type InstrumentId, type Project, type ScaleName,
 } from "../lib/studio/model";
 import { Arrangement, headWidth, type Pick } from "./studio/Arrangement";
 import { Mixer } from "./studio/Mixer";
 import { PianoRoll } from "./studio/PianoRoll";
 import { useSong } from "./studio/useSong";
 import {
-  IconDownload, IconMaximize, IconMinimize, IconMinus, IconMusic, IconPause, IconPlay, IconPlus, IconRepeat, IconRotateCcw, IconRotateCw,
-  IconSkipBack, IconSparkle, IconTrash, IconCopy, IconX,
+  IconCopy, IconDownload, IconMaximize, IconMetronome, IconMinimize, IconMinus, IconMusic, IconPause, IconPlay, IconPlus, IconRepeat, IconRotateCcw,
+  IconRotateCw, IconScissors, IconSearch, IconSkipBack, IconSliders, IconTable, IconTrash, IconX,
 } from "./Icons";
+import { RailTray, ToolRail } from "./ToolRail";
+import { VERB, type RailTool } from "../lib/toolrail";
 
 /** Pixels per beat in the arrangement, from the zoom buttons. */
 const ZOOMS = [10, 14, 20, 28, 40, 56, 80];
@@ -44,6 +46,8 @@ export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: b
   const [pick, setPick] = useState<Pick>({ trackId: null, clipId: null });
   const [zoom, setZoom] = useState(3);
   const [dock, setDock] = useState<"editor" | "mixer" | "closed">("editor");
+  /** The rail tool whose options are open: the song's tempo and key, the instruments to add, the zoom. */
+  const [trayId, setTrayId] = useState<"song" | "add" | "zoom" | null>(null);
   const [playing, setPlaying] = useState(false);
   const [metro, setMetro] = useState(false);
   const [rendering, setRendering] = useState(false);
@@ -216,6 +220,19 @@ export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: b
     setDock("editor");
   }, [song]);
 
+  const addTrack = (instrument: InstrumentId) => {
+    const t = newTrack(song.live.current, instrument);
+    song.edit((p) => { if (p.tracks.length < MAX_TRACKS) p.tracks.push(t); });
+    setPick({ trackId: t.id, clipId: null });
+    setTrayId(null);
+  };
+
+  const removeClip = () => {
+    if (!clip || !track) return;
+    song.edit((d) => { const t = d.tracks.find((x) => x.id === track.id); if (t) t.clips = t.clips.filter((c) => c.id !== clip.id); });
+    setPick({ trackId: track.id, clipId: null });
+  };
+
   const onKey = (e: ReactKeyboardEvent) => {
     const target = e.target as HTMLElement;
     const typing = target.closest("input, textarea, select") !== null && !(target instanceof HTMLInputElement && target.type === "range");
@@ -228,8 +245,7 @@ export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: b
     else if (e.key === "Home") { e.preventDefault(); stop(); }
     else if ((e.key === "Delete" || e.key === "Backspace") && clip && track && !target.closest(".st-roll")) {
       e.preventDefault();
-      song.edit((d) => { const t = d.tracks.find((x) => x.id === track.id); if (t) t.clips = t.clips.filter((c) => c.id !== clip.id); });
-      setPick({ trackId: track.id, clipId: null });
+      removeClip();
     } else if (mod && e.key.toLowerCase() === "d" && clip && track) {
       e.preventDefault();
       duplicate();
@@ -280,8 +296,7 @@ export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: b
     }
   };
 
-  const [prompt, setPrompt] = useState("");
-  const chips = clip
+  const asks = clip
     ? ["Fix the timing of this clip", "Make this clip groove more", "Suggest how to vary this clip", "Explain what is in this clip"]
     : project.tracks.length > 0
       ? ["What should I add next?", "Balance the mix", "Make the bass follow the chords", "Check the song for mistakes"]
@@ -292,11 +307,28 @@ export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: b
   const shownDock = project.tracks.length === 0 ? "closed" : dock;
   const note = song.notice ?? problem;
   const ended = Math.ceil(contentEnd(project) / project.beatsPerBar);
+  const hasClip = !!(clip && track);
+  const toggleTray = (id: "song" | "add" | "zoom") => setTrayId((cur) => (cur === id ? null : id));
+  const full_ = project.tracks.length >= MAX_TRACKS;
+
+  const tools: RailTool[] = [
+    { id: "add", label: "Add track", group: "Build", icon: <IconPlus size={20} />, color: VERB.draw, phone: true, on: trayId === "add", disabled: full_, about: "A new instrument", run: () => toggleTray("add") },
+    { id: "split", label: "Split", group: "Edit the clip", icon: <IconScissors size={20} />, color: VERB.shape, phone: true, disabled: !hasClip, about: "Cut the clip in two at the playhead (or the middle)", run: split },
+    { id: "duplicate", label: "Duplicate", group: "Edit the clip", icon: <IconCopy size={20} />, color: VERB.text, phone: true, disabled: !hasClip, about: "Copy it straight after itself (Ctrl+D)", run: duplicate },
+    { id: "delete", label: "Delete", group: "Edit the clip", icon: <IconTrash size={20} />, color: VERB.remove, phone: true, disabled: !hasClip, about: "Delete the clip (Delete)", run: removeClip },
+    { id: "song", label: "Song", group: "Song", icon: <IconMusic size={20} />, color: VERB.select, phone: true, on: trayId === "song", about: "Tempo, key and length", run: () => toggleTray("song") },
+    { id: "mixer", label: "Mixer", group: "Song", icon: <IconSliders size={20} />, color: VERB.highlight, phone: true, on: dock === "mixer", about: "Levels, pan, mute and solo", run: () => setDock(dock === "mixer" ? "editor" : "mixer") },
+    { id: "zoom", label: "Zoom", group: "View", icon: <IconSearch size={20} />, color: VERB.note, phone: true, on: trayId === "zoom", about: "How wide a beat is", run: () => toggleTray("zoom") },
+    { id: "editor", label: "Piano roll", group: "View", icon: <IconTable size={20} />, color: VERB.note, desktop: true, on: dock === "editor", about: "The notes of the open clip", run: () => setDock(dock === "editor" ? "closed" : "editor") },
+    { id: "loop", label: "Loop", group: "Playback", icon: <IconRepeat size={20} />, color: VERB.insert, desktop: true, on: project.loop, about: "Loop the song", run: () => song.edit((d) => { d.loop = !d.loop; }) },
+    { id: "metronome", label: "Metronome", group: "Playback", icon: <IconMetronome size={20} />, color: VERB.stamp, desktop: true, on: metro, about: "Click track", run: () => setMetro(!metro) },
+  ];
+  const trayTool = trayId ? tools.find((t) => t.id === trayId) ?? null : null;
 
   return (
     <div
       ref={root}
-      className={`pdf-window st-window${phone ? " is-phone" : ""}${phone && full ? " is-full" : ""}`}
+      className={`pdf-window st-window has-rail ${phone ? "is-phone" : "is-desk"}${phone && full ? " is-full" : ""}`}
       tabIndex={0}
       onKeyDown={onKey}
       aria-label="Autora Music"
@@ -323,56 +355,15 @@ export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: b
 
       <div className="st-transport">
         <div className="st-trow">
-          <div className="st-group">
-            <button className="st-play" onClick={() => void play()} aria-label={playing ? "Pause" : "Play"} title={playing ? "Pause (Space)" : "Play (Space)"}>
-              {playing ? <IconPause size={18} /> : <IconPlay size={18} />}
-            </button>
-            <button className="st-icon" onClick={stop} aria-label="Back to the start" title="Back to the start (Home)"><IconSkipBack size={15} /></button>
-            <button className={`st-icon${project.loop ? " is-on" : ""}`} onClick={() => song.edit((d) => { d.loop = !d.loop; })} aria-pressed={project.loop} aria-label="Loop" title="Loop the song"><IconRepeat size={15} /></button>
-            <button className={`st-icon st-metro${metro ? " is-on" : ""}`} onClick={() => setMetro(!metro)} aria-pressed={metro} aria-label="Metronome" title="Click track">♩</button>
-          </div>
+          <button className="st-play" onClick={() => void play()} aria-label={playing ? "Pause" : "Play"} title={playing ? "Pause (Space)" : "Play (Space)"}>
+            {playing ? <IconPause size={18} /> : <IconPlay size={18} />}
+          </button>
+          <button className="st-icon" onClick={stop} aria-label="Back to the start" title="Back to the start (Home)"><IconSkipBack size={15} /></button>
           <span className="st-clock" ref={clock} aria-label="Position">1.1.1  ·  0:00.0</span>
           <div className="spacer" />
-          <div className="st-group">
-            <button className="st-icon" onClick={song.undo} disabled={!song.canUndo} aria-label="Undo" title="Undo (Ctrl+Z)"><IconRotateCcw size={14} /></button>
-            <button className="st-icon" onClick={song.redo} disabled={!song.canRedo} aria-label="Redo" title="Redo (Ctrl+Shift+Z)"><IconRotateCw size={14} /></button>
-            <div className="st-meter-h" aria-hidden="true"><i /></div>
-          </div>
-        </div>
-        <div className="st-trow">
-          <label className="st-field"><span className="st-label">Tempo</span>
-            <span className="st-stepper">
-              <button onClick={() => song.edit((d) => { d.bpm = clamp(d.bpm - 1, MIN_BPM, MAX_BPM); }, "bpm")} aria-label="Slower"><IconMinus size={11} /></button>
-              <input type="number" min={MIN_BPM} max={MAX_BPM} value={Math.round(project.bpm)} aria-label="Tempo in beats per minute"
-                onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v > 0) song.edit((d) => { d.bpm = clamp(v, MIN_BPM, MAX_BPM); }, "bpm"); }} />
-              <button onClick={() => song.edit((d) => { d.bpm = clamp(d.bpm + 1, MIN_BPM, MAX_BPM); }, "bpm")} aria-label="Faster"><IconPlus size={11} /></button>
-            </span>
-          </label>
-          <label className="st-field"><span className="st-label">Key</span>
-            <span className="st-keypick">
-              <select value={project.key.root} aria-label="Key note" onChange={(e) => song.edit((d) => { d.key.root = Number(e.target.value); })}>
-                {NOTE_NAMES.map((n, i) => <option key={n} value={i}>{n}</option>)}
-              </select>
-              <select value={project.key.scale} aria-label="Scale" onChange={(e) => song.edit((d) => { d.key.scale = e.target.value as ScaleName; })}>
-                {SCALE_NAMES.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </span>
-          </label>
-          <label className="st-field"><span className="st-label">Bars</span>
-            <span className="st-stepper">
-              <button disabled={project.bars <= Math.max(1, ended)} onClick={() => song.edit((d) => { d.bars = Math.max(Math.max(1, ended), d.bars - 1); })} aria-label="Fewer bars"><IconMinus size={11} /></button>
-              <input type="number" min={1} max={MAX_BARS} value={project.bars} aria-label="Bars"
-                onChange={(e) => { const v = Math.round(Number(e.target.value)); if (Number.isFinite(v)) song.edit((d) => { d.bars = clamp(v, Math.max(1, Math.ceil(contentEnd(d) / d.beatsPerBar)), MAX_BARS); fitBars(d); }, "bars"); }} />
-              <button disabled={project.bars >= MAX_BARS} onClick={() => song.edit((d) => { d.bars = Math.min(MAX_BARS, d.bars + 1); })} aria-label="More bars"><IconPlus size={11} /></button>
-            </span>
-          </label>
-          <div className="spacer" />
-          <label className="st-field st-zoom"><span className="st-label">Zoom</span>
-            <span className="st-stepper">
-              <button onClick={() => setZoom(Math.max(0, zoom - 1))} disabled={zoom === 0} aria-label="Zoom out"><IconMinus size={11} /></button>
-              <button onClick={() => setZoom(Math.min(ZOOMS.length - 1, zoom + 1))} disabled={zoom === ZOOMS.length - 1} aria-label="Zoom in"><IconPlus size={11} /></button>
-            </span>
-          </label>
+          <button className="st-icon" onClick={song.undo} disabled={!song.canUndo} aria-label="Undo" title="Undo (Ctrl+Z)"><IconRotateCcw size={14} /></button>
+          <button className="st-icon" onClick={song.redo} disabled={!song.canRedo} aria-label="Redo" title="Redo (Ctrl+Shift+Z)"><IconRotateCw size={14} /></button>
+          <div className="st-meter-h" aria-hidden="true"><i /></div>
         </div>
       </div>
 
@@ -397,24 +388,15 @@ export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: b
         starter={starter}
       />
 
-      <div className={`st-dock is-${shownDock}`}>
-        <div className="st-dock-bar">
-          <button className={`st-tab${shownDock === "editor" ? " is-on" : ""}`} onClick={() => setDock(dock === "editor" ? "closed" : "editor")} aria-pressed={shownDock === "editor"}>
-            {clip && track ? `${isDrumTrack(track) ? "Drums" : "Piano roll"} · ${clip.name}` : "Editor"}
-          </button>
-          <button className={`st-tab${shownDock === "mixer" ? " is-on" : ""}`} onClick={() => setDock(dock === "mixer" ? "closed" : "mixer")} aria-pressed={shownDock === "mixer"}>Mixer</button>
-          {clip && track && shownDock === "editor" && (
-            <>
-              <input className="st-clip-name-input" value={clip.name} maxLength={40} aria-label="Clip name"
-                onChange={(e) => song.edit((d) => { const c = findClip(d, clip.id); if (c) c.clip.name = e.target.value; }, `cn-${clip.id}`)} />
-              <span className="st-hint">{(clip.length / project.beatsPerBar).toFixed(clip.length % project.beatsPerBar ? 2 : 0)} bars · {clip.notes.length} notes · {instrumentOf(track.instrument).name}</span>
-              <div className="spacer" />
-              <button className="st-tool" onClick={split} title="Cut the clip in two at the playhead (or in the middle)">Split</button>
-              <button className="st-tool" onClick={duplicate} title="Copy it straight after itself (Ctrl+D)"><IconCopy size={12} /> Duplicate</button>
-              <button className="st-tool" onClick={() => { song.edit((d) => { const t = d.tracks.find((x) => x.id === track.id); if (t) t.clips = t.clips.filter((c) => c.id !== clip.id); }); setPick({ trackId: track.id, clipId: null }); }} title="Delete the clip (Delete)"><IconTrash size={12} /> Delete</button>
-            </>
-          )}
-        </div>
+      <div className={`st-dock is-${shownDock}${shownDock === "editor" && !clip ? " is-idle" : ""}`}>
+        {clip && track && shownDock === "editor" && (
+          <div className="st-dock-bar">
+            <b className="st-dock-title">{isDrumTrack(track) ? "Drums" : "Piano roll"}</b>
+            <input className="st-clip-name-input" value={clip.name} maxLength={40} aria-label="Clip name"
+              onChange={(e) => song.edit((d) => { const c = findClip(d, clip.id); if (c) c.clip.name = e.target.value; }, `cn-${clip.id}`)} />
+            <span className="st-hint">{(clip.length / project.beatsPerBar).toFixed(clip.length % project.beatsPerBar ? 2 : 0)} bars · {clip.notes.length} notes · {instrumentOf(track.instrument).name}</span>
+          </div>
+        )}
         {shownDock === "editor" && (
           <div className="st-dock-body">
             {clip && track ? (
@@ -435,35 +417,62 @@ export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: b
         )}
       </div>
 
-      {/* The in-app chat is a phone thing: on a desktop the conversation is right there beside the window. */}
-      {phone && (
-        <form
-          className="st-ask"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const text = prompt.trim();
-            if (!text) return;
-            sendPrompt(text);
-            setPrompt("");
-          }}
-        >
-          <IconSparkle size={13} />
-          <input
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder={project.tracks.length ? `Ask Autora about ${clip ? "this clip" : "your song"}…` : "Tell Autora what you want to hear…"}
-            aria-label="Ask Autora about the song"
-          />
-          <button type="submit" className="st-tool" disabled={!prompt.trim()}>Ask</button>
-        </form>
-      )}
-      {(chips.length > 0 || asked) && (
-        <div className="st-chips">
-          {asked ? <span className="st-sent">Sent to Autora: “{asked.slice(0, 60)}{asked.length > 60 ? "…" : ""}”. Watch the song and the thread.</span> : chips.map((c) => (
-            <button key={c} className="st-chip" onClick={() => sendPrompt(c)}>{c}</button>
+      {trayTool && (
+        <RailTray tool={trayTool} onClose={() => setTrayId(null)}>
+          {trayId === "add" && INSTRUMENTS.map((i) => (
+            <button key={i.id} className="st-add-chip" disabled={full_} title={i.about} onClick={() => addTrack(i.id)}>{i.name}</button>
           ))}
-        </div>
+          {trayId === "song" && (
+            <>
+              <label className="st-field"><span className="st-label">Tempo</span>
+                <span className="st-stepper">
+                  <button onClick={() => song.edit((d) => { d.bpm = clamp(d.bpm - 1, MIN_BPM, MAX_BPM); }, "bpm")} aria-label="Slower"><IconMinus size={11} /></button>
+                  <input type="number" min={MIN_BPM} max={MAX_BPM} value={Math.round(project.bpm)} aria-label="Tempo in beats per minute"
+                    onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v > 0) song.edit((d) => { d.bpm = clamp(v, MIN_BPM, MAX_BPM); }, "bpm"); }} />
+                  <button onClick={() => song.edit((d) => { d.bpm = clamp(d.bpm + 1, MIN_BPM, MAX_BPM); }, "bpm")} aria-label="Faster"><IconPlus size={11} /></button>
+                </span>
+                <span className="st-unit">bpm</span>
+              </label>
+              <label className="st-field"><span className="st-label">Key</span>
+                <span className="st-keypick">
+                  <select value={project.key.root} aria-label="Key note" onChange={(e) => song.edit((d) => { d.key.root = Number(e.target.value); })}>
+                    {NOTE_NAMES.map((n, i) => <option key={n} value={i}>{n}</option>)}
+                  </select>
+                  <select value={project.key.scale} aria-label="Scale" onChange={(e) => song.edit((d) => { d.key.scale = e.target.value as ScaleName; })}>
+                    {SCALE_NAMES.map((sc) => <option key={sc} value={sc}>{sc}</option>)}
+                  </select>
+                </span>
+              </label>
+              <label className="st-field"><span className="st-label">Bars</span>
+                <span className="st-stepper">
+                  <button disabled={project.bars <= Math.max(1, ended)} onClick={() => song.edit((d) => { d.bars = Math.max(Math.max(1, ended), d.bars - 1); })} aria-label="Fewer bars"><IconMinus size={11} /></button>
+                  <input type="number" min={1} max={MAX_BARS} value={project.bars} aria-label="Bars"
+                    onChange={(e) => { const v = Math.round(Number(e.target.value)); if (Number.isFinite(v)) song.edit((d) => { d.bars = clamp(v, Math.max(1, Math.ceil(contentEnd(d) / d.beatsPerBar)), MAX_BARS); fitBars(d); }, "bars"); }} />
+                  <button disabled={project.bars >= MAX_BARS} onClick={() => song.edit((d) => { d.bars = Math.min(MAX_BARS, d.bars + 1); })} aria-label="More bars"><IconPlus size={11} /></button>
+                </span>
+                <span className="st-unit">bars</span>
+              </label>
+            </>
+          )}
+          {trayId === "zoom" && (
+            <span className="st-stepper">
+              <button onClick={() => setZoom(Math.max(0, zoom - 1))} disabled={zoom === 0} aria-label="Zoom out"><IconMinus size={11} /></button>
+              <button onClick={() => setZoom(Math.min(ZOOMS.length - 1, zoom + 1))} disabled={zoom === ZOOMS.length - 1} aria-label="Zoom in"><IconPlus size={11} /></button>
+            </span>
+          )}
+        </RailTray>
       )}
+      <ToolRail
+        app="music" phone={phone} tools={tools}
+        extra={(close) => asks.length > 0 || asked ? (
+          <section>
+            <h4>Ask Autora</h4>
+            {asked
+              ? <p className="rail-grid-hint">Sent to Autora: “{asked.slice(0, 60)}{asked.length > 60 ? "…" : ""}”. Watch the song and the thread.</p>
+              : <div className="rail-asks">{asks.map((a) => <button key={a} type="button" className="rail-ask" onClick={() => { close(); sendPrompt(a); }}>{a}</button>)}</div>}
+          </section>
+        ) : null}
+      />
     </div>
   );
 }

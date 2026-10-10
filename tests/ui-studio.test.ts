@@ -55,7 +55,8 @@ async function main() {
     });
 
     await test("chords come in the song's key; the piano roll shows them and a click draws a note", async () => {
-      await page.click(".st-add-chip:has-text('Keys')");
+      await page.click('.rail-bar button[aria-label="Add track"]');
+      await page.click(".rail-tray .st-add-chip:has-text('Keys')");
       await page.waitForSelector(".st-row:nth-child(3)");
       // Make a clip on the new track by dragging across its lane.
       const lane = page.locator(".st-lane").nth(1);
@@ -125,7 +126,7 @@ async function main() {
     });
 
     await test("the mixer sets levels the agent sees", async () => {
-      await page.click(".st-tab:has-text('Mixer')");
+      await page.click('.rail-bar button[aria-label="Mixer"]');
       await page.waitForSelector(".st-strip");
       const fader = page.locator(".st-strip:not(.st-master) .st-fader").first();
       await fader.focus();

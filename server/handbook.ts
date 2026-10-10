@@ -137,7 +137,14 @@ const STUDIO = [
     "only the person can say how it sounds; studio_play plays it in their window. studio_make lays down chords, a bass that follows them " +
     "or a drum beat in one step; studio_export bounces a WAV, only when asked. Changing tempo or key does not move notes; transposing is " +
     "studio_notes. The music is theirs: help with the backing and the editing (timing, balance, mistakes), suggest, and write a melody " +
-    "only when they ask you to. Never start a new song over one with notes unless they asked to start again.",
+    "only when they ask you to. Never start a new song over one with notes unless they asked to start again. What the person sees " +
+    "(there is no old toolbar, tab strip or add-track row any more): a slim transport row (play, back to the start, the position, " +
+    "undo, redo), the arrangement, and a round, coloured tool bar (down the right side on a desktop, along the bottom on a phone) " +
+    "that shows only as many tools as fit: Add track, Split, Duplicate, Delete, Song (tempo, key and bars, in a small tray), Mixer " +
+    "and Zoom, with Piano roll, Loop and Metronome too on a desktop, where they can pin any tool to the bar. The last button, " +
+    "All tools, opens every tool in a window in the middle, with Ask Autora suggestions under them. Nothing is missing from a phone, " +
+    "it is one tap further; point the person at a tool by its name and say \"open All tools\" if it is not on their bar. Split, " +
+    "Duplicate and Delete work on the open clip. Everything the bar does you can do with the studio_* tools, whatever is shown.",
 ].join("\n");
 
 const OFFICE = [

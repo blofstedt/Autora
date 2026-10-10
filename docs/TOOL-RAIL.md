@@ -51,7 +51,16 @@ Live copy of the first version: https://claude.ai/artifact/A5vaGaNwJ8EFLA35jv3gD
 
 ## Retrofit order
 
-PDF first (this), then Pages, Sheets, Slides, Video, Games. Browser and 3D already fit.
+PDF first, then Music (done, 0.9.196: the first user of the shared host-side component below), then Video, Pages, Sheets,
+Slides, Photo, Games. Autora 3D is a copy of its own repo (blofstedt/3D-Modeling), so its bar changes there; it has a bottom
+bar of text pills with sub-menus (Shape, Draw, Move, Group, Repeat, Organize, Delete), which is close but is not the rail
+(no colour per tool, no All tools grid, at the bottom and not the right on a desktop). Browser is a navigation bar, not a palette.
+
+**No repeats.** When an app takes the rail, everything the rail now does is removed from the old chrome in the same change:
+a tool that is on the bar is not also a button in a toolbar, a tab, a row of chips or a form. Music dropped its tempo/key row,
+the Editor/Mixer tabs, the Split/Duplicate/Delete buttons in the dock, the "Add a track" row, and the phone's ask box and chips
+(the chat is the chat; the suggestions are under Ask Autora in All tools). **Space.** An empty panel collapses to a line
+(Music's piano roll with no clip open) so the canvas gets the room.
 
 ## Where it is built
 
@@ -64,6 +73,15 @@ PDF first (this), then Pages, Sheets, Slides, Video, Games. Browser and 3D alrea
   menu tree) behind the button at the top left. Panes (Protect...) open as a window in the middle. The left side is the
   file menu (nine tiles), a row of buttons that switch Spectra's own panels, and the page thumbnails (SecurePDF's "Page Thumbnails"
   panel and header menu, in Autora's look); Spectra's icon strip is put away. A phone has no left panel.
+
+## One component for apps whose editor lives in the host page
+
+`src/components/ToolRail.tsx` (`ToolRail`: the bar, the All tools grid with pins, "Reset bar"; `RailTray`: the open tool's
+options) and `src/lib/toolrail.ts` (`RailTool`, `VERB` colours, `usePins`). An app hands over a list of tools, each with a
+colour (by verb, the same in every app), a grid group, `phone` (in the phone's bar) or `desktop` (pinned to start with),
+and `run`. The window is `has-rail` plus `is-desk` or `is-phone`; the rail measures its window (`ResizeObserver`) and shows
+only what fits. Pins are per app in `localStorage` (`autora-rail-pins-<app>`). Spectra's rail (inside its frame) is the same
+design and is not yet this component.
 
 ## The agent has to know (it replaces the old window)
 

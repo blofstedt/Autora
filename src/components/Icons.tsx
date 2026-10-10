@@ -450,6 +450,31 @@ export const IconStore = ({ size = 16, className }: Props) => (
   </svg>
 );
 
+export const IconScissors = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <circle cx="6" cy="6" r="3" />
+    <circle cx="6" cy="18" r="3" />
+    <path d="M20 4 8.12 15.88M14.47 14.48 20 20M8.12 8.12 12 12" />
+  </svg>
+);
+
+export const IconGrid = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <rect x="3.5" y="3.5" width="7" height="7" rx="1.5" />
+    <rect x="13.5" y="3.5" width="7" height="7" rx="1.5" />
+    <rect x="3.5" y="13.5" width="7" height="7" rx="1.5" />
+    <rect x="13.5" y="13.5" width="7" height="7" rx="1.5" />
+  </svg>
+);
+
+export const IconMetronome = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M8 21h8l-1.6-15h-4.8z" />
+    <path d="m12 16 4-9" />
+    <path d="M9.4 11.5h5.2" />
+  </svg>
+);
+
 export const IconPlug = ({ size = 16, className }: Props) => (
   <svg {...base(size)} className={className}>
     <path d="M9 3.5v4M15 3.5v4" />

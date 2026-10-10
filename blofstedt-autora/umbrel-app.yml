@@ -185,6 +185,8 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  A Store page joins the menu, marked coming soon: it will be where you make tools and share
-  them. Editing an agent in Organization now opens in a dialog that closes when you save. On a
-  phone, the menu no longer shows the remembered-memory card, so it fits without scrolling.
+  Music now has the same round, coloured tool bar as the PDF window: down the right on a
+  desktop, along the bottom on a phone, with an All tools window for the rest and tempo, key,
+  zoom and instruments in small trays. The old toolbar rows, tabs, add-track row and the
+  phone's ask box are gone, and the song gets the room. 3D, Photo and Games now show the same
+  top strip as the other windows on a desktop.

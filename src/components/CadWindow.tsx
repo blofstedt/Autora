@@ -130,7 +130,7 @@ export function CadWindow({ sessionId, phone }: { sessionId: string; phone: bool
   const shapes = cad.shapes ?? 0;
   return (
     <div className={`pdf-window${phone ? " is-phone" : ""}${phone && full ? " is-full" : ""}`}>
-      {phone && <div className="pdf-bar">
+      <div className="pdf-bar">
         <span className="pdf-bar-ico" aria-hidden="true"><IconCube size={14} /></span>
         <span className="pdf-bar-app">Autora 3D</span>
         <span className="pdf-bar-name">{shapes === 1 ? "1 shape" : `${shapes} shapes`}</span>
@@ -147,7 +147,7 @@ export function CadWindow({ sessionId, phone }: { sessionId: string; phone: bool
             {full ? <IconMinimize size={14} /> : <IconMaximize size={14} />}
           </button>
         )}
-      </div>}
+      </div>
       {trouble && <div className="pdf-problem" role="status">{trouble}</div>}
       <iframe
         ref={frame}

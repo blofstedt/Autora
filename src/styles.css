@@ -6992,7 +6992,7 @@ body.is-resizing iframe { pointer-events: none; }
 .st-save.is-error { color: var(--danger); }
 
 /* buttons */
-.st-tool, .st-icon, .st-play, .st-ms, .st-tab, .st-chip, .st-start, .st-link {
+.st-tool, .st-icon, .st-play, .st-ms, .st-start, .st-link {
   font: inherit; color: var(--text-2); cursor: pointer; transition: background 0.12s, color 0.12s, border-color 0.12s, transform 0.08s;
 }
 .st-tool {
@@ -7032,11 +7032,11 @@ body.is-resizing iframe { pointer-events: none; }
   padding: 6px 10px; border-radius: var(--r-sm); min-width: 11.5em; text-align: center; font-variant-numeric: tabular-nums;
 }
 .st-field { display: inline-flex; align-items: center; gap: 6px; font-size: calc(11px * var(--ts, 1)); color: var(--text-3); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
-.st-field select, .st-field input[type="number"], .st-clip-name-input, .st-ask input, .st-name-input {
+.st-field select, .st-field input[type="number"], .st-clip-name-input, .st-name-input {
   background: var(--s2); border: 1px solid var(--border); color: var(--text); border-radius: var(--r-xs);
   font: 550 calc(12.5px * var(--ts, 1)) var(--sans); text-transform: none; letter-spacing: 0; padding: 4px 6px;
 }
-.st-field select:focus, .st-field input:focus, .st-clip-name-input:focus, .st-ask input:focus, .st-name-input:focus { outline: none; border-color: var(--accent-line); }
+.st-field select:focus, .st-field input:focus, .st-clip-name-input:focus, .st-name-input:focus { outline: none; border-color: var(--accent-line); }
 .st-stepper { display: inline-flex; align-items: stretch; border-radius: var(--r-xs); overflow: hidden; border: 1px solid var(--border); background: var(--s2); }
 .st-stepper button { width: 24px; background: transparent; border: 0; color: var(--text-2); cursor: pointer; display: grid; place-items: center; }
 .st-stepper button:hover:not(:disabled) { background: var(--s3); color: var(--text); }
@@ -7120,9 +7120,6 @@ body.is-resizing iframe { pointer-events: none; }
 .st-mini { position: absolute; left: 0; right: 0; top: 18px; bottom: 4px; width: 100%; height: calc(100% - 22px); fill: var(--text); pointer-events: none; }
 .st-clip-size { position: absolute; right: 0; top: 0; bottom: 0; width: 9px; cursor: ew-resize; z-index: 2; }
 .st-clip-size:hover { background: rgba(255, 255, 255, 0.18); }
-.st-add-row { height: 44px; border-bottom: 0; }
-.st-add { padding: 0 12px; background: var(--s1); border-right: 1px solid var(--border-strong); color: var(--text-3); font-size: calc(12px * var(--ts, 1)); font-weight: 600; gap: 7px; }
-.st-add-chips { display: flex; align-items: center; gap: 6px; padding: 0 10px; position: sticky; }
 .st-add-chip {
   padding: 5px 11px; border-radius: var(--r-pill); cursor: pointer; white-space: nowrap;
   background: var(--s2); border: 1px dashed var(--border-strong); color: var(--text-2); font: 550 calc(12px * var(--ts, 1)) var(--sans);
@@ -7156,9 +7153,6 @@ body.is-resizing iframe { pointer-events: none; }
 .st-dock.is-editor, .st-dock.is-mixer { height: clamp(210px, 38%, 330px); }
 .st-dock-bar { display: flex; align-items: center; gap: 6px; padding: 5px 8px; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
 .st-dock.is-closed .st-dock-bar { border-bottom: 0; }
-.st-tab { padding: 5px 11px; border-radius: var(--r-pill); background: transparent; border: 1px solid transparent; font-size: calc(12px * var(--ts, 1)); font-weight: 600; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.st-tab.is-on { color: var(--text); background: var(--s3); border-color: var(--border-strong); }
-.st-tab:hover { color: var(--text); }
 .st-clip-name-input { width: 130px; }
 .st-dock-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 
@@ -7236,12 +7230,6 @@ body.is-resizing iframe { pointer-events: none; }
 .st-balance { font-size: 10.5px; white-space: normal; text-align: center; justify-content: center; }
 
 /* asking Autora */
-.st-ask { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-top: 1px solid var(--border); background: var(--s1); color: var(--accent-light); }
-.st-ask input { flex: 1; min-width: 0; padding: 7px 10px; border-radius: var(--r-pill); }
-.st-chips { display: flex; gap: 6px; padding: 0 10px 8px; flex-wrap: wrap; background: var(--s1); }
-.st-chip { padding: 4px 10px; border-radius: var(--r-pill); background: transparent; border: 1px solid var(--border-strong); font-size: calc(11.5px * var(--ts, 1)); }
-.st-chip:hover { color: var(--text); border-color: var(--accent-line); background: var(--accent-soft); }
-.st-sent { font-size: calc(11.5px * var(--ts, 1)); color: var(--live); }
 
 .st-window.is-phone .st-export-text, .st-window.is-phone .st-meter-h, .st-window.is-phone .st-zoom { display: none; }
 .st-window.is-phone .st-field { flex-direction: column; align-items: flex-start; gap: 1px; }
@@ -7438,7 +7426,6 @@ body.is-resizing iframe { pointer-events: none; }
   .st-window.is-phone .st-icon { width: var(--pt-hit); height: var(--pt-hit); border-radius: var(--pt-r); }
   .st-window.is-phone .st-play { width: 48px; height: 48px; border-radius: 14px; }
   .st-window.is-phone .st-stepper button { width: 34px; min-height: 34px; }
-  .st-window.is-phone .st-tab { min-height: var(--pt-hit); border-radius: var(--pt-r); padding: 0 14px; }
 
   /* Terminal's keys, and the Office page view's bar. */
   .tm-window.is-phone .tm-key { min-height: var(--pt-hit); border-radius: var(--pt-r); }
@@ -7457,12 +7444,9 @@ body.is-resizing iframe { pointer-events: none; }
    click track are the desktop's (and the agent's): they were three more buttons on a screen with none to spare. */
 @media (max-width: 680px) {
   .st-window.is-phone .st-group button[aria-label="Back to the start"],
-  .st-window.is-phone .st-group button[aria-label="Loop"],
-  .st-window.is-phone .st-group button[aria-label="Metronome"] { display: none; }
   .st-window.is-phone .st-stepper button { width: 30px; min-height: 34px; }
   .st-window.is-phone .st-stepper input { width: 2.4em; }
   .st-window.is-phone .st-trow { flex-wrap: nowrap; gap: 8px; }
-  .st-window.is-phone .st-trow:last-child { flex-wrap: wrap; justify-content: space-between; row-gap: 6px; }
   .st-window.is-phone .st-clock { flex: 1 1 auto; text-align: center; }
 }
 
@@ -7533,17 +7517,10 @@ body.is-resizing iframe { pointer-events: none; }
   .app-window.is-phone .app-seg { gap: 0; padding: 2px; }
   .app-window.is-phone .app-seg button { width: 36px; padding: 0; }
   .app-window.is-phone .app-bar .app-url { flex: 1 1 0; min-width: 0; padding-left: 8px; padding-right: 8px; }
-  /* Music's settings: tempo and bars side by side, the key under them across the screen. */
-  .st-window.is-phone .st-trow:last-child > .st-field:nth-child(1) { order: 1; }
-  .st-window.is-phone .st-trow:last-child > .st-field:nth-child(3) { order: 2; }
-  .st-window.is-phone .st-trow:last-child > .st-field:nth-child(2) { order: 3; flex: 1 0 100%; }
   .st-window.is-phone .st-keypick { display: flex; gap: 8px; }
   .st-window.is-phone .st-keypick select { flex: 1 1 0; max-width: none; }
   .st-window.is-phone .st-stepper input { width: 3.2em; }
   .st-window.is-phone .st-stepper button { width: 32px; }
-}
-@media (max-width: 680px) {
-  .st-window.is-phone .st-trow:last-child { justify-content: flex-start; gap: 8px; }
 }
 
 /* The browser on a phone, second pass: no bar of its own (the address names the page), tabs only when there is more than one,
@@ -7730,3 +7707,93 @@ body.is-resizing iframe { pointer-events: none; }
 
 /* A GIF an agent added to a post or comment. */
 .th-gif { display: block; max-width: min(280px, 100%); max-height: 240px; margin-top: 6px; border-radius: var(--r); background: var(--s3); }
+
+/* ---- The tool rail (src/components/ToolRail.tsx, docs/TOOL-RAIL.md): round coloured tools, a grid for the rest. ---- */
+.has-rail { position: relative; }
+.has-rail.is-desk { padding-right: 68px; }
+.rail-bar {
+  display: flex; align-items: center; gap: 4px; padding: 8px; z-index: 5; box-sizing: border-box;
+  background: color-mix(in srgb, var(--s2) 92%, transparent); backdrop-filter: blur(8px);
+  border: 1px solid var(--border-strong); box-shadow: var(--shadow-lg);
+}
+.rail-bar.is-desktop { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); flex-direction: column; border-radius: 999px; max-height: calc(100% - 24px); overflow: hidden; }
+.rail-bar.is-phone { flex: 0 0 auto; justify-content: center; gap: 2px; padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px)); border-width: 1px 0 0; border-radius: 0; box-shadow: none; background: var(--s1); }
+.rail-btn {
+  --tc: var(--text-2); flex: none; display: grid; place-items: center; border: 0; border-radius: 50%; cursor: pointer;
+  color: var(--tc); background: color-mix(in srgb, var(--tc) 16%, transparent); transition: background 0.15s var(--ease), box-shadow 0.15s var(--ease);
+}
+.rail-bar.is-desktop .rail-btn { width: 44px; height: 44px; }
+.rail-bar.is-phone .rail-btn { width: 40px; height: 40px; }
+.rail-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--tc) 28%, transparent); }
+.rail-btn.is-on { color: #fff; background: var(--tc); box-shadow: 0 6px 18px color-mix(in srgb, var(--tc) 45%, transparent); }
+.rail-btn:disabled { opacity: 0.35; cursor: default; }
+.rail-btn.is-grid { --tc: var(--text-2); background: color-mix(in srgb, var(--text-2) 12%, transparent); }
+.rail-btn:focus-visible, .rail-tile:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
+.rail-div { flex: none; background: var(--border-strong); }
+.rail-bar.is-desktop .rail-div { width: 24px; height: 1px; margin: 2px 0; }
+.rail-bar.is-phone .rail-div { width: 1px; height: 24px; margin: 0 2px; }
+
+.rail-tray {
+  --tc: var(--accent); position: relative; z-index: 4; box-sizing: border-box; display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap;
+  background: var(--s2); border: 1px solid color-mix(in srgb, var(--tc) 40%, var(--border)); color: var(--text-2);
+}
+.rail-tray-head { display: inline-flex; align-items: center; gap: 8px; color: var(--tc); }
+.rail-tray-icon { display: grid; place-items: center; }
+.rail-tray-title { font-size: calc(13px * var(--ts, 1)); font-weight: 550; }
+.rail-tray-body { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; min-width: 0; flex: 1 1 auto; }
+.rail-tray-hint { margin: 0; flex: 1 1 100%; font-size: calc(11.5px * var(--ts, 1)); color: var(--text-3); }
+.rail-x { border: 0; background: transparent; color: var(--text-3); width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; cursor: pointer; flex: none; }
+.rail-x:hover { background: var(--s3, rgba(255, 255, 255, 0.08)); color: var(--text); }
+.has-rail.is-desk .rail-tray { position: absolute; right: 74px; top: 50%; transform: translateY(-50%); width: 252px; padding: 12px 14px; border-radius: 16px; box-shadow: var(--shadow-lg); flex-direction: column; align-items: stretch; }
+.has-rail.is-desk .rail-tray-head { padding-right: 28px; }
+.has-rail.is-desk .rail-tray-x { position: absolute; top: 8px; right: 8px; }
+.has-rail.is-phone .rail-tray { flex: 0 0 auto; padding: 6px 44px 6px 10px; border-width: 1px 0 0; min-height: 46px; }
+.has-rail.is-phone .rail-tray-title { display: none; }
+.has-rail.is-phone .rail-tray-x { position: absolute; top: 8px; right: 8px; }
+.has-rail.is-phone .rail-tray-hint { display: none; }
+
+.rail-grid { width: min(560px, 100%); max-height: min(86vh, 720px); overflow-y: auto; padding: 16px; box-sizing: border-box; background: var(--s1); border: 1px solid var(--border-strong); border-radius: 20px; box-shadow: var(--shadow-lg); animation: rise 0.2s var(--ease) both; }
+.rail-grid.is-phone { width: min(340px, 100%); padding: 12px; }
+.rail-grid-head { display: flex; align-items: center; gap: 8px; }
+.rail-grid h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.rail-grid h4 { margin: 14px 4px 8px; font: 500 10.5px var(--sans); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-3); }
+.rail-grid-hint { margin: 4px 0 0; font-size: 12px; color: var(--text-3); min-height: 1.4em; }
+.rail-reset { border: 0; background: transparent; color: var(--text-2); font: inherit; font-size: 12px; padding: 4px 8px; border-radius: var(--r-pill); cursor: pointer; }
+.rail-reset:hover { background: var(--s2); color: var(--text); }
+.rail-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.rail-grid.is-phone .rail-tiles { grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 6px; }
+.rail-tile-wrap { position: relative; --tc: var(--accent); }
+.rail-tile {
+  width: 100%; height: 76px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 0 4px; box-sizing: border-box;
+  border: 0; border-radius: 16px; cursor: pointer; color: var(--tc); background: color-mix(in srgb, var(--tc) 16%, transparent); font: inherit; font-size: 11.5px;
+}
+.rail-tile span { color: var(--text); }
+.rail-tile:hover:not(:disabled) { background: color-mix(in srgb, var(--tc) 26%, transparent); }
+.rail-tile:disabled { opacity: 0.35; cursor: default; }
+.rail-tile.is-on { box-shadow: inset 0 0 0 1px var(--accent-line); background: var(--accent-soft, color-mix(in srgb, var(--tc) 30%, transparent)); }
+.rail-grid.is-phone .rail-tile { height: 56px; border-radius: 14px; gap: 4px; font-size: 10px; }
+.rail-pin { position: absolute; top: 5px; right: 5px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; border: 0; cursor: pointer; color: var(--text-3); background: transparent; opacity: 0.6; }
+.rail-pin:hover { opacity: 1; }
+.rail-pin.is-pinned { opacity: 1; color: #fff; background: var(--tc); }
+.rail-asks { display: grid; gap: 6px; }
+.rail-ask { text-align: left; border: 1px solid var(--border); background: var(--s2); color: var(--text); font: inherit; font-size: 12.5px; padding: 8px 12px; border-radius: 12px; cursor: pointer; }
+.rail-ask:hover { border-color: var(--accent-line); }
+
+.st-dock-title { font-size: calc(12px * var(--ts, 1)); font-weight: 550; color: var(--text-2); }
+.rail-tray .st-add-chip { padding: 5px 11px; }
+/* With no clip open the piano roll has nothing to show: a one-line hint, so the song gets the room. */
+.st-dock.is-idle, .st-window.is-phone .st-dock.is-idle { height: auto; }
+.st-dock.is-idle .st-dock-body { flex: none; }
+.st-dock.is-idle .st-pad { margin: 0; padding: 8px 12px; }
+/* The song's settings in a phone's one-row tray. */
+.has-rail.is-phone .rail-tray { flex-wrap: nowrap; }
+.has-rail.is-phone .rail-tray-head { flex: none; }
+.has-rail.is-phone .rail-tray-body { flex: 1 1 0; gap: 6px 10px; }
+.st-window.is-phone .rail-tray .st-field { flex-direction: row; align-items: center; gap: 4px; }
+.st-unit { display: none; }
+.st-window.is-phone .rail-tray .st-label { display: none; }
+.st-window.is-phone .rail-tray .st-unit { display: inline; font-size: 10px; color: var(--text-3); text-transform: none; letter-spacing: 0; }
+.st-window.is-phone .rail-tray .st-stepper button { width: 26px; min-height: 30px; }
+.st-window.is-phone .rail-tray .st-stepper input { width: 3em; min-height: 30px; font-size: 13px; }
+.st-window.is-phone .rail-tray .st-keypick { display: flex; gap: 4px; }
+.st-window.is-phone .rail-tray .st-keypick select, .st-window.is-phone .rail-tray .st-field select { min-height: 30px; font-size: 12px; max-width: 5.6em; }
