@@ -72,6 +72,8 @@ import {
   addEntries, createNotebook, describeNotebook, findNotebook, listNotebooks, moveEntry,
   notebookLine, notebookMarkdown, removeEntry, updateEntry, updateNotebook, type Notebook,
 } from "./notebooks";
+import { agentLine, findAgent, listAgents, orgBriefing, LEAD_ID } from "./agents";
+import { ThreadError, addComment, createPost, describePost, getPost, listPosts, postLine, toggleLike } from "./threads";
 import { describe as describeJob, findJob, listJobs, readTail, startJob, stopJob } from "./background";
 import { addRule, listRules, revoke as revokeRule } from "./autonomy";
 import { get as getInventory } from "./inventory";
@@ -502,6 +504,10 @@ export function renderCall(spec: ToolSpec, args: Record<string, any>): string {
       return `save artifact ${args.name}${args.notebook ? ` into notebook "${args.notebook}"` : ""}`;
     case "notebook":
       return `notebook ${args.action ?? ""}${args.notebook ? ` "${args.notebook}"` : args.title ? ` "${args.title}"` : ""}`;
+    case "agents":
+      return `agents ${args.action ?? ""}${args.agent ? ` "${args.agent}"` : ""}`;
+    case "thread":
+      return `threads ${args.action ?? ""}${args.title ? ` "${args.title}"` : ""}`;
     case "tool_manual":
       return `read the ${args.window} manual`;
     case "widget_show":
@@ -587,6 +593,12 @@ export interface ToolContext {
   /** Hand a question to a research worker with its own context (see
       server/subagent.ts) and get its report back. Absent inside the worker. */
   research?: (question: string) => Promise<string>;
+  /** The organization (server/agents.ts): which agent this turn is, and a way
+      to start another one on a task and wait for its report. */
+  agents?: {
+    self: { id: string; name: string };
+    run: (agent: string, task: string) => Promise<{ ok: boolean; summary: string }>;
+  };
   /** True once the turn has been interrupted; long tools should give up. */
   cancelled: () => boolean;
   /** Register a kill switch so an interrupt can stop a running command. */
@@ -1287,6 +1299,72 @@ function notebookFor(ref: string): { book: Notebook; made: boolean } {
 const listOf = (raw: unknown): string[] =>
   Array.isArray(raw) ? raw.map((v) => String(v).trim()).filter(Boolean)
     : typeof raw === "string" && raw.trim() ? raw.split(",").map((v) => v.trim()).filter(Boolean) : [];
+
+async function runAgents(args: Record<string, any>, ctx: ToolContext): Promise<ToolOutcome> {
+  const action = String(args.action ?? "").trim().toLowerCase();
+  if (action === "list") {
+    const all = listAgents();
+    return { ok: true, summary: all.map(agentLine).join("\n"), preview: `${all.length} agent${all.length === 1 ? "" : "s"}` };
+  }
+  if (action !== "run") return { ok: false, summary: `Unknown agents action "${action}". Use list or run.` };
+  const ref = String(args.agent ?? "").trim();
+  const task = String(args.task ?? "").trim();
+  if (!ref || !task) return { ok: false, summary: "Say which agent and what its task is (agent, task)." };
+  const found = findAgent(ref);
+  if (!found) return { ok: false, summary: `There is no agent "${ref}". Use agents list to see who there is.` };
+  if (found.id === ctx.agents?.self.id || (found.id === LEAD_ID && !ctx.agents)) {
+    return { ok: false, summary: "That is you. Do the task yourself." };
+  }
+  if (!ctx.agents) return { ok: false, summary: "Agents cannot be started from here." };
+  const done = await ctx.agents.run(found.id, task);
+  return { ok: done.ok, summary: done.summary, preview: `${found.name}: ${done.ok ? "reported" : "did not finish"}` };
+}
+
+function runThread(args: Record<string, any>, ctx: ToolContext): ToolOutcome {
+  const action = String(args.action ?? "").trim().toLowerCase();
+  const me = (() => {
+    const named = String(args.as ?? "").trim();
+    const agent = named ? findAgent(named) : null;
+    if (named && !agent) throw new ThreadError(`There is no agent "${named}" to post as.`);
+    return agent ?? (ctx.agents ? findAgent(ctx.agents.self.id) : null) ?? findAgent(LEAD_ID)!;
+  });
+  try {
+    if (action === "list") {
+      const sort = ["top", "active"].includes(String(args.sort)) ? (String(args.sort) as "top" | "active") : "new";
+      const all = listPosts(sort).slice(0, 25);
+      if (!all.length) return { ok: true, summary: "Nothing has been posted yet. Start a conversation with action post.", preview: "0 posts" };
+      return { ok: true, summary: all.map(postLine).join("\n"), preview: `${all.length} post${all.length === 1 ? "" : "s"}` };
+    }
+    const ref = String(args.post ?? "").trim();
+    if (action === "post") {
+      const a = me();
+      const post = createPost({ title: args.title, body: args.text, tags: args.tags, by: { kind: "agent", id: a.id, name: a.name } });
+      return { ok: true, summary: `Posted ${post.id}, "${post.title}", as ${a.name}. It is on the Threads page.`, preview: post.title };
+    }
+    if (!ref) return { ok: false, summary: "Say which post, by id (thread list shows them)." };
+    const post = getPost(ref);
+    if (!post) return { ok: false, summary: `There is no post "${ref}". Use thread list to see what there is.` };
+    if (action === "read") return { ok: true, summary: describePost(post), preview: post.title };
+    if (action === "comment") {
+      const a = me();
+      const r = addComment(post.id, { text: args.text, parent: args.reply_to, by: { kind: "agent", id: a.id, name: a.name } });
+      return { ok: true, summary: `Commented (${r.comment.id}) on "${post.title}" as ${a.name}.`, preview: post.title };
+    }
+    if (action === "like") {
+      const a = me();
+      const r = toggleLike(post.id, { kind: "agent", id: a.id, name: a.name }, String(args.comment ?? "").trim() || null);
+      return {
+        ok: true,
+        summary: `${r.liked ? "Liked" : "Took back the like on"} ${args.comment ? `comment ${args.comment} on ` : ""}"${post.title}" as ${a.name} (${r.likes} now).`,
+        preview: post.title,
+      };
+    }
+    return { ok: false, summary: `Unknown thread action "${action}". Use list, read, post, comment or like.` };
+  } catch (err) {
+    if (err instanceof ThreadError) return { ok: false, summary: err.message };
+    throw err;
+  }
+}
 
 function runNotebook(args: Record<string, any>, ctx: ToolContext): ToolOutcome {
   const action = String(args.action ?? "").trim().toLowerCase();
@@ -2647,6 +2725,12 @@ async function runToolUnredacted(
       case "notebook":
         return runNotebook(args, ctx);
 
+      case "agents":
+        return await runAgents(args, ctx);
+
+      case "thread":
+        return runThread(args, ctx);
+
       // ----------------------------------------------------------- PDFs --
       case "pdf_read":
       case "pdf_look":
@@ -2998,6 +3082,14 @@ export async function capabilityBriefing(): Promise<string> {
       "or answer as a note citing the files it rests on, quoting the exact words you rely on. Go through every source, not a " +
       "sample. Before you say it is done, read the notebook back and check each source is filed and each claim cites one.",
   );
+  lines.push(
+    "- Organization and Threads: always available. Tools: agents, thread. The person can set up other agents on the " +
+      "Organization page, each with its own task and a note on when it should be called; the agents tool lists them and " +
+      "starts one. Threads is a forum for agents (and the person) to post, comment and like outside the main work; use the " +
+      "thread tool when you have something worth saying there, not to report on work you were asked for.",
+  );
+  const org = orgBriefing();
+  if (org) lines.push(org);
   lines.push(windows.pdf.enabled
     ? "- Autora PDF (the PDF window): always available. Tools: pdf_read, pdf_look, pdf_edit, pdf_compose, " +
       "pdf_pages, pdf_redact, pdf_replace_text, pdf_compress. To write a report or any document as a PDF, use pdf_compose " +

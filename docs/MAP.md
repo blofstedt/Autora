@@ -95,6 +95,7 @@ task is about the PDF editor's shim or overlay.
 | Persistence | `store.ts` (sessions, events, vault), `state.ts` (settings, secrets, usage, redactor), `blobs.ts`, `artifacts.ts`, `notebooks.ts`, `retention.ts`, `credentials.ts` |
 | Scheduling | `scheduler.ts`, `triggers.ts`, `automation.ts`, `autonomy.ts`, `proactive.ts`, `quiet.ts`, `noticer.ts`, `suggest.ts` |
 | Collaboration | `presence.ts`, `companion.ts` |
+| Agents and Threads | `agents.ts` (the roster and the org map), `threads.ts` (the forum), `routes/organization.ts`; `runAgentTask` in `server.ts`; tools `agents` and `thread` (`specs/files.ts`) |
 | MCP | `mcp.ts`, `mcpcatalog.ts`, `mcpoffer.ts`, `mcpscript.ts`, `mcplaunch.ts`, `customtools.ts` |
 | Voice | `speech.ts` (TTS), `dictation.ts` (STT) |
 | Network/security | `crosssite.ts`, `tls.ts`, `hosts.ts`, `push.ts`, `webpush.ts` |
@@ -110,7 +111,7 @@ task is about the PDF editor's shim or overlay.
 | Thread | `components/Thread.tsx` (`TurnBucket`, `CellView`, `Reply`), cells: `ToolCell`, `TerminalCell`, `FileCell`, `ImageCell`, `AskCell`, `PermissionCell`, `TodoCell`, `MemoryCell`, `LearnedCell`, `RemarkCell`, `WidgetCell`, `ScreencastCell`, `Markdown` |
 | Phone stage | `lib/stage.ts`, `components/Stage.tsx`, `ImmersiveChat.tsx`, `lib/fullscreen.ts`, `lib/cursorPos.ts` |
 | Windows | Video: `OpenCutWindow`, `lib/opencut.ts`. Games: `GameWindow`, `lib/gamedesk.ts`. 3D: `CadWindow`, `lib/caddesk.ts`. Photo: `PhotoWindow`, `lib/photodesk.ts`. Music: `StudioWindow` + `studio/{Arrangement,PianoRoll,Mixer,useSong}`, `lib/studio.ts`, `lib/studio/{model,engine}.ts`. Browser: `ScreencastCell`, `lib/liveFrame.ts`, `lib/pageInput.ts`. App: `AppPreview`, `AppInspector`, `AppReview`, `AppVersions`, `DevtoolsPanel`, `lib/preview.ts`, `lib/appApi.ts`. PDF: `SpectraWindow`, `lib/spectra.ts`, `lib/pdfdesk.ts`. Office: `OfficeWindow`, `OfficeCursor`, `OfficePages`, `lib/officedesk.ts`, `lib/officeSelection.ts`, `lib/humanPath.ts` |
-| Pages (menu) | `components/Rail.tsx`; lazy: `components/pages/*` ; eager: `Settings.tsx`, `Sessions.tsx`, `Schedule.tsx`, `Triggers.tsx` |
+| Pages (menu) | `components/Rail.tsx`; lazy: `components/pages/*` (Organization and Threads: `OrganizationPage`, `ThreadsPage`, `lib/organization.ts`) ; eager: `Settings.tsx`, `Sessions.tsx`, `Schedule.tsx`, `Triggers.tsx` |
 | Settings cards | `Settings.tsx` (1.5k), `SecretStore`, `Credentials`, `VoiceCard`, `NotifyCard`, `QuietCard`, `CaptchaCard`, `AutomationCard`, `CollabSettings`, `TimeZoneCard`, `ModelPicker`, `SetupCard` |
 | Composer | `DictateButton`, `AttachButton`, `SlashMenu` + `lib/commands.ts`, `ModeSelect`, `PermissionsPill`, `SpendBar`/`SpendPeek` + `lib/spend.ts`, `LiveChat` + `lib/voice.ts` (1.9k), `lib/liveview.ts` |
 | Shared hooks | `lib/poll.ts` (`every`, `usePoll`: polling that pauses while the tab is hidden), `lib/sure.ts` + `components/SureHost.tsx` (the "are you sure?" dialog; never `confirm()`), `lib/ago.ts`, `lib/systemTabs.ts` |

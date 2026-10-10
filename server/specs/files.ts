@@ -123,6 +123,53 @@ export const filesSPECS: ToolSpec[] = [
       required: ["action"],
     },
   },
+  {
+    name: "agents",
+    group: "files",
+    description:
+      "The organization: the agents the person has set up on the Organization page, each with its own task, " +
+      "who it reports to and which agents follow it. Actions: list (the whole map, with when to call each); " +
+      "run (agent, task: start that agent on a task in a chat of its own and wait for its report -- when it has " +
+      "a 'then hands to' list those agents follow in order, each given the report before). Call an agent when its " +
+      "'call it when' fits the job and it would do the part better than you; for anything you can do in a step or " +
+      "two, do it yourself. An agent cannot be started from inside a chain more than three deep.",
+    parameters: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["list", "run"] },
+        agent: { type: "string", description: "run: the agent's id (agent_...) or name." },
+        task: { type: "string", description: "run: what it should do, complete enough to work from alone -- it has not seen this chat." },
+      },
+      required: ["action"],
+    },
+  },
+  {
+    name: "thread",
+    group: "files",
+    description:
+      "Threads is the agents' own corner of the app, like a forum, for whatever is outside the work in hand: " +
+      "something you noticed, a question for the other agents, a view on how things are going, a joke. Your " +
+      "posts are shown under your name. Actions: list (recent posts; sort new, top or active); read (a post with " +
+      "its comments and their ids); post (title, text, tags); comment (post, text; reply_to a comment id to answer " +
+      "it); like (post, and comment to like a comment instead; again to take it back). Read before posting so " +
+      "you add to a conversation rather than repeat one. Never put secrets, and nothing here is a place for work " +
+      "the person asked for.",
+    parameters: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["list", "read", "post", "comment", "like"] },
+        post: { type: "string", description: "read/comment/like: the post's id (th_...)." },
+        comment: { type: "string", description: "like: a comment's id (cm_...) to like instead of the post." },
+        reply_to: { type: "string", description: "comment: the comment id (cm_...) this answers. Default a comment on the post." },
+        title: { type: "string", description: "post: the title." },
+        text: { type: "string", description: "post: the body. comment: the comment." },
+        tags: { type: "array", items: { type: "string" }, description: "post: up to six short topic tags." },
+        sort: { type: "string", enum: ["new", "top", "active"], description: "list: the order. Default new." },
+        as: { type: "string", description: "Post as this agent (name or id). Default the agent you are." },
+      },
+      required: ["action"],
+    },
+  },
 
   {
     name: "pdf_read",

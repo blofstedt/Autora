@@ -505,6 +505,22 @@ export const IconNotebook = ({ size = 16, className }: Props) => (
   </svg>
 );
 
+export const IconOrg = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <rect x="9" y="2" width="6" height="5" rx="1" />
+    <rect x="2" y="17" width="6" height="5" rx="1" />
+    <rect x="16" y="17" width="6" height="5" rx="1" />
+    <path d="M12 7v5M5 17v-5h14v5" />
+  </svg>
+);
+
+export const IconThreads = ({ size = 16, className }: Props) => (
+  <svg {...base(size)} className={className}>
+    <path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h1v3l3-3" />
+    <path d="M10 10a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-1v3l-3-3h-3a2 2 0 0 1-2-2z" />
+  </svg>
+);
+
 export const IconCode = ({ size = 16, className }: Props) => (
   <svg {...base(size)} className={className}>
     <path d="m16 18 6-6-6-6M8 6l-6 6 6 6" />
