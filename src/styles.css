@@ -7536,39 +7536,47 @@ body.is-resizing iframe { pointer-events: none; }
 }
 .org-layout { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 /* A top-down chart: each level's cards in a row, joined to their manager by lines. It scrolls sideways when it is wider than the page. */
-.orgchart { --org-line: color-mix(in srgb, var(--text-3) 60%, transparent); }
-.orgchart { overflow-x: auto; padding: 4px 4px 14px; text-align: center; }
-.orgchart ul { display: flex; justify-content: center; list-style: none; margin: 0; padding: 18px 0 0; position: relative; width: max-content; min-width: 100%; }
+.orgchart { --org-line: color-mix(in srgb, var(--text-3) 60%, transparent); overflow-x: auto; padding: 8px 4px 18px; text-align: center; }
+.orgchart ul { display: flex; justify-content: center; list-style: none; margin: 0; padding: 26px 0 0; position: relative; width: max-content; min-width: 100%; }
 .orgchart > ul { padding-top: 0; }
-.orgchart ul ul::before {
-  content: ""; position: absolute; top: 0; left: 50%; height: 18px; border-left: 1px solid var(--org-line);
-}
-.orgchart li { position: relative; display: flex; flex-direction: column; align-items: center; padding: 18px 8px 0; }
+.orgchart ul ul::before { content: ""; position: absolute; top: 0; left: 50%; height: 26px; border-left: 1px solid var(--org-line); }
+.orgchart li { position: relative; display: flex; flex-direction: column; align-items: center; padding: 26px 8px 0; }
 .orgchart > ul > li { padding-top: 0; }
-.orgchart li::before, .orgchart li::after {
-  content: ""; position: absolute; top: 0; width: 50%; height: 18px; border-top: 1px solid var(--org-line);
-}
+.orgchart li::before, .orgchart li::after { content: ""; position: absolute; top: 0; width: 50%; height: 26px; border-top: 1px solid var(--org-line); }
 .orgchart li::before { right: 50%; }
 .orgchart li::after { left: 50%; border-left: 1px solid var(--org-line); }
 .orgchart > ul > li::before, .orgchart > ul > li::after { display: none; }
 .orgchart li:first-child::before, .orgchart li:last-child::after { border-top: 0; }
-.orgchart li:last-child::before { border-right: 1px solid var(--org-line); border-radius: 0 6px 0 0; }
-.orgchart li:first-child::after { border-radius: 6px 0 0 0; }
+.orgchart li:last-child::before { border-right: 1px solid var(--org-line); border-radius: 0 8px 0 0; }
+.orgchart li:first-child::after { border-radius: 8px 0 0 0; }
 .orgchart li:only-child::before { display: none; }
 .orgchart li:only-child::after { border-radius: 0; border-top: 0; }
+.org-node { position: relative; display: flex; flex-direction: column; align-items: center; padding-bottom: 12px; }
 .org-card {
-  display: flex; gap: 9px; align-items: flex-start; width: 190px; min-width: 0; padding: 10px 11px;
-  border-radius: var(--r); background: var(--s2); border: 1px solid var(--border);
+  display: flex; gap: 11px; align-items: center; width: 224px; min-width: 0; padding: 12px 14px;
+  border-radius: 10px; background: var(--s2); border: 1px solid var(--border); border-top: 3px solid var(--border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
   color: var(--text); font: inherit; text-align: left; cursor: pointer;
-  transition: border-color 0.15s var(--ease), background 0.15s var(--ease), opacity 0.15s var(--ease);
+  transition: border-color 0.15s var(--ease), background 0.15s var(--ease), opacity 0.15s var(--ease), box-shadow 0.15s var(--ease);
 }
+.org-card.is-lead { border-top-color: var(--accent); }
 .org-card[draggable="true"] { cursor: grab; }
-.org-card:hover { border-color: var(--accent-line); background: var(--s3); }
+.org-card:hover { border-color: var(--accent-line); background: var(--s3); box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3); }
 .org-card.on { border-color: var(--accent); background: var(--accent-soft); }
 .org-card.is-off { opacity: 0.6; }
 .org-card.is-dragged { opacity: 0.35; }
 .org-card.is-target { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 3px var(--accent-line); }
 .org-card:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
+/* The pill under a manager: how many people report to them, and a click folds the team away. */
+.org-toggle {
+  position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 3px;
+  padding: 1px 9px; border-radius: var(--r-pill); background: var(--s1); border: 1px solid var(--org-line);
+  color: var(--text-2); font: inherit; font-size: calc(11.5px * var(--ts, 1)); cursor: pointer; z-index: 1;
+}
+.org-toggle:hover { border-color: var(--accent); color: var(--accent); }
+.org-toggle svg { transform: rotate(-90deg); }
+.org-toggle.is-shut svg { transform: rotate(90deg); }
+.org-toggle:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
 .org-card-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .org-card-main b { font-size: calc(13.5px * var(--ts, 1)); font-weight: 600; }
 .org-role { font-size: calc(12px * var(--ts, 1)); color: var(--text-2); }

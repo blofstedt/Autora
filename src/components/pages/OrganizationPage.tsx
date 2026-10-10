@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { IconArrowDown, IconArrowUp, IconBot, IconOrg, IconPlus, IconTrash, IconX } from "../Icons";
+import { IconArrowDown, IconArrowUp, IconBot, IconChevron, IconOrg, IconPlus, IconTrash, IconX } from "../Icons";
 import {
   createAgent, deleteAgent, fetchAgents, hueOf, underneath, updateAgent,
   type Agent, type AgentPatch,
@@ -38,6 +38,9 @@ export function OrganizationPage({ topSlot }: { topSlot?: HTMLElement | null }) 
   /** The agent being dragged to a new place in the chart, and the one it hovers over. */
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
+  /** Managers whose team is folded away, as in Teams and Outlook. */
+  const [folded, setFolded] = useState<Set<string>>(() => new Set());
+  const fold = (id: string) => setFolded((f) => { const n = new Set(f); if (!n.delete(id)) n.add(id); return n; });
 
   const load = useCallback(() => {
     if (dirty.current) return;
@@ -78,34 +81,49 @@ export function OrganizationPage({ topSlot }: { topSlot?: HTMLElement | null }) 
     const kids = (agents ?? []).filter((k) => k.reportsTo === a.id && !seen.has(k.id));
     const nextSeen = new Set(seen).add(a.id);
     const target = dragging !== null && canDrop(a);
+    const shut = folded.has(a.id);
     return (
       <li key={a.id}>
-        <button
-          className={`org-card ${selected === a.id ? "on" : ""} ${a.enabled ? "" : "is-off"} ${dragging === a.id ? "is-dragged" : ""} ${over === a.id && target ? "is-target" : ""}`}
-          onClick={() => { dirty.current = false; setSelected(a.id); }}
-          aria-pressed={selected === a.id}
-          draggable={!a.builtin}
-          onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", a.id); setDragging(a.id); }}
-          onDragEnd={() => { setDragging(null); setOver(null); }}
-          onDragOver={(e) => { if (target) { e.preventDefault(); setOver(a.id); } }}
-          onDragLeave={() => setOver((o) => (o === a.id ? null : o))}
-          onDrop={(e) => { e.preventDefault(); void drop(a); }}
-        >
-          <AgentDot id={a.id} name={a.name} />
-          <span className="org-card-main">
-            <b>{a.name}</b>
-            <span className="org-role">{a.role || (a.builtin ? "Lead" : "No role yet")}{a.enabled ? "" : " · off"}</span>
-            {a.next.length > 0 && (
-              <span className="org-next" title="Hands its result to, in order">
-                then{" "}
-                {a.next.map((n, i) => (
-                  <span key={n} className="org-chip">{i > 0 ? "→ " : ""}{byId.get(n)?.name ?? "?"}</span>
-                ))}
-              </span>
-            )}
-          </span>
-        </button>
-        {kids.length > 0 && <ul>{kids.map((k) => node(k, nextSeen))}</ul>}
+        <div className="org-node">
+          <button
+            className={`org-card ${a.builtin ? "is-lead" : ""} ${selected === a.id ? "on" : ""} ${a.enabled ? "" : "is-off"} ${dragging === a.id ? "is-dragged" : ""} ${over === a.id && target ? "is-target" : ""}`}
+            onClick={() => { dirty.current = false; setSelected(a.id); }}
+            aria-pressed={selected === a.id}
+            draggable={!a.builtin}
+            onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", a.id); setDragging(a.id); }}
+            onDragEnd={() => { setDragging(null); setOver(null); }}
+            onDragOver={(e) => { if (target) { e.preventDefault(); setOver(a.id); } }}
+            onDragLeave={() => setOver((o) => (o === a.id ? null : o))}
+            onDrop={(e) => { e.preventDefault(); void drop(a); }}
+          >
+            <AgentDot id={a.id} name={a.name} size={40} />
+            <span className="org-card-main">
+              <b>{a.name}</b>
+              <span className="org-role">{a.role || (a.builtin ? "Lead" : "No role yet")}</span>
+              {!a.enabled && <span className="org-role">Switched off</span>}
+              {a.next.length > 0 && (
+                <span className="org-next" title="Hands its result to, in order">
+                  then{" "}
+                  {a.next.map((n, i) => (
+                    <span key={n} className="org-chip">{i > 0 ? "→ " : ""}{byId.get(n)?.name ?? "?"}</span>
+                  ))}
+                </span>
+              )}
+            </span>
+          </button>
+          {kids.length > 0 && (
+            <button
+              className={`org-toggle ${shut ? "is-shut" : ""}`}
+              onClick={() => fold(a.id)}
+              aria-expanded={!shut}
+              aria-label={`${shut ? "Show" : "Hide"} the ${kids.length} direct report${kids.length === 1 ? "" : "s"} of ${a.name}`}
+              title={`${kids.length} direct report${kids.length === 1 ? "" : "s"}`}
+            >
+              {kids.length} <IconChevron size={11} />
+            </button>
+          )}
+        </div>
+        {kids.length > 0 && !shut && <ul>{kids.map((k) => node(k, nextSeen))}</ul>}
       </li>
     );
   };
