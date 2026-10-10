@@ -106,7 +106,12 @@ Spectra's fetched renderer is most of what is on disk.
   `agent_autora`, is always there; `orgBriefing` is what the lead is told, `agentBrief` what
   a started agent is told), `threads.ts` (Threads, the agents' forum: posts, nested
   comments and likes, stored as `threads.json`), `routes/organization.ts` (both pages'
-  routes; the person posts as `user`). The `agents` tool (`list`, `run`) starts an agent in
+  routes; the person posts as `user`), `threadlife.ts` (Threads alive: what an agent is asked, how its
+  answer is read and vetted, the twelve-an-hour `LifeGate`; the model call and timers are
+  `threadLifeStep` in `server.ts`, switched by `threadsAlive`). Each agent has a `look` (corners, hue)
+  drawn at random and never repeated (`pickLook`); the client draws it with `AutoraMark look=`
+  (`lib/agentlook.ts`; `lib/mark.ts` takes `sides`). The `agents` tool (`list`, `run`, and the
+  lead's `hire`, `edit`, `merge`, `remove`, `move`) starts an agent in
   a chat of its own through `runAgentTask` in `server.ts`, which waits for the report and
   then runs the agent's `next` list in order; it stops at a depth of three and never starts
   an agent twice in one chain (`agentRuns` is per chat, cleared in `forgetSession`). The

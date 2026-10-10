@@ -2825,6 +2825,22 @@ label + .jf-hint { margin-top: -5px; }
   100% { transform: scale(1); }
 }
 
+/* An agent's mark beside its name (AgentDot). */
+.agent-mark { flex: 0 0 auto; display: inline-grid; place-items: center; }
+
+/* An agent of the Organization chiming in (ChimeCell): its mark, then what it took on. */
+.cell-chime {
+  display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+  animation: chimeIn 0.45s var(--ease) both;
+}
+.chime-mark { flex: 0 0 auto; display: grid; place-items: center; width: 30px; height: 30px; }
+.chime-body { min-width: 0; }
+.chime-who { font-size: calc(11.5px * var(--ts, 1)); font-weight: 650; color: var(--text); }
+.chime-who span { font-weight: 450; color: var(--text-3); }
+.chime-text { font-size: calc(13px * var(--ts, 1)); color: var(--text-2); overflow-wrap: anywhere; }
+@keyframes chimeIn { from { transform: translateY(6px) scale(0.98); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .cell-chime { animation: none; } }
+
 /* --- moods of the one presence (see AutoraMark.tsx) --- */
 
 /* Idle: a breath slower than any other motion in the app, and every so often

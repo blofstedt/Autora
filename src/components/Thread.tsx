@@ -15,6 +15,7 @@ import { TerminalCell } from "./TerminalCell";
 import { ScreencastCell } from "./ScreencastCell";
 import { FileCell } from "./FileCell";
 import { RemarkCell } from "./RemarkCell";
+import { ChimeCell } from "./ChimeCell";
 import { ToolCell, describeArgs } from "./ToolCell";
 import { TodoCell } from "./TodoCell";
 import { usePreviewState } from "../lib/preview";
@@ -1015,6 +1016,8 @@ const CellView = memo(function CellView({
       return <FileCell file={cell.file} />;
     case "remark":
       return <RemarkCell text={cell.text} />;
+    case "chime":
+      return <ChimeCell name={cell.name} role={cell.role} look={cell.look} text={cell.text} working={live && !cell.done} />;
     case "tool":
       return <ToolCell span={cell.span} />;
     case "todo": {

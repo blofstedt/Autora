@@ -6,7 +6,10 @@ import { TodoList } from "./TodoCell";
 /** How long the finished task stays on its way out before the next is alone. */
 const ROTATE_MS = 420;
 /** How long a list that opened itself for a finished task stays: the tick lands, the line is drawn, a beat to read it. */
-const STRIKE_MS = 2000;
+const STRIKE_MS = 2600;
+/** How long the list takes to fold open (.todo-dock-fold): the finished task is shown still undone until then, so the
+    tick and the line are drawn in front of the person rather than behind a shut door. */
+const OPEN_MS = 340;
 
 /** The task to show folded: the one being worked, else the next to start. */
 function currentOf(items: TodoItem[]): TodoItem | null {
@@ -54,22 +57,32 @@ export const TodoDock = memo(function TodoDock({ items }: { items: TodoItem[] })
   /* A finished task opens the list by itself so the person sees it crossed out -- tick, then the line drawn through
      it as if the agent were striking it off -- and the list folds away again. Only for a task finished while the
      list is on screen (a list that arrives part done just appears), and never shut on someone who opened it. */
-  const doneBefore = useRef(done);
+  const doneIds = useRef(new Set(items.filter((t) => t.status === "completed").map((t) => t.id)));
   const autoOpened = useRef(false);
+  /* Tasks that have just been finished, still drawn as in progress while the list opens. */
+  const [unrevealed, setUnrevealed] = useState<string[]>([]);
   useEffect(() => {
-    const before = doneBefore.current;
-    doneBefore.current = done;
-    if (done <= before || done === 0) return;
+    const before = doneIds.current;
+    const now = new Set(items.filter((t) => t.status === "completed").map((t) => t.id));
+    doneIds.current = now;
+    const fresh = [...now].filter((id) => !before.has(id));
+    if (!fresh.length) return;
     if (!autoOpened.current && open) return;
     autoOpened.current = true;
+    const wasShut = !open;
+    if (wasShut) setUnrevealed(fresh);
     setOpen(true);
-    const t = window.setTimeout(() => {
+    const reveal = window.setTimeout(() => setUnrevealed([]), wasShut ? OPEN_MS : 0);
+    const fold = window.setTimeout(() => {
       if (autoOpened.current) { autoOpened.current = false; setOpen(false); }
-    }, STRIKE_MS);
-    return () => window.clearTimeout(t);
+    }, (wasShut ? OPEN_MS : 0) + STRIKE_MS);
+    return () => { window.clearTimeout(reveal); window.clearTimeout(fold); };
     // `open` is read only to leave a list the person opened alone.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [done]);
+  const shownItems = unrevealed.length
+    ? items.map((t) => (unrevealed.includes(t.id) ? { ...t, status: "in-progress" as const } : t))
+    : items;
 
   /* The list is measured rather than guessed at, so it is pulled open to its
      own height and no further: three tasks and twelve each end exactly at the
@@ -94,7 +107,7 @@ export const TodoDock = memo(function TodoDock({ items }: { items: TodoItem[] })
           shut rather than appear and vanish. */}
       <div className="todo-dock-fold" style={{ height: open ? foldH : 0 }} aria-hidden={!open}>
         <div className="todo-dock-list" ref={listRef}>
-          <TodoList items={items} />
+          <TodoList items={shownItems} />
         </div>
       </div>
       <button

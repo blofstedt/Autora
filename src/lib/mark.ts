@@ -62,7 +62,56 @@ type ShapeOptions = {
   squash?: number;
   /** Points per corner. */
   steps?: number;
+  /** Corners. 3 is the Autora mark; the agents of the Organization are the
+      other regular shapes (see lib/agentlook.ts), drawn and moved the same way. */
+  sides?: number;
 };
+
+/**
+ * Any other regular shape, in the same sampled form: `sides` corners on a circle
+ * of `radius`, each rounded by `r` and walked in `steps` points, so it has
+ * sides * steps points and interpolates with every other shape of its kind --
+ * and with the circle, which is the shape at a fillet of the inradius.
+ *
+ * The triangle keeps its own code above because its numbers (the half-fillet
+ * lift, the 24-point microphone) were tuned by eye; this is the general form of
+ * the same construction, centred on the middle of the shape.
+ */
+function polygonPoints({ cx, cy, radius, r, turn, squash, steps, sides }: {
+  cx: number; cy: number; radius: number; r: number; turn: number; squash: number; steps: number; sides: number;
+}): number[][] {
+  const vertices = Array.from({ length: sides }, (_, i) => {
+    const a = turn + (i * TAU) / sides;
+    return [radius * Math.cos(a), radius * Math.sin(a)];
+  });
+  // The corner's interior angle, the tangent length along each edge and the
+  // distance from the corner to the middle of its fillet arc.
+  const corner = Math.PI - TAU / sides;
+  const inset = r / Math.tan(corner / 2);
+  const toArc = r / Math.sin(corner / 2);
+  const points: number[][] = [];
+  vertices.forEach((v, i) => {
+    const prev = vertices[(i + sides - 1) % sides];
+    const next = vertices[(i + 1) % sides];
+    const along = (to: number[]) => {
+      const length = Math.hypot(to[0] - v[0], to[1] - v[1]);
+      return [v[0] + ((to[0] - v[0]) / length) * inset, v[1] + ((to[1] - v[1]) / length) * inset];
+    };
+    const start = along(prev);
+    const end = along(next);
+    const bisector = [prev[0] - v[0] + (next[0] - v[0]), prev[1] - v[1] + (next[1] - v[1])];
+    const length = Math.hypot(bisector[0], bisector[1]);
+    const arc = [v[0] + (bisector[0] / length) * toArc, v[1] + (bisector[1] / length) * toArc];
+    const a0 = Math.atan2(start[1] - arc[1], start[0] - arc[0]);
+    const a1 = Math.atan2(end[1] - arc[1], end[0] - arc[0]);
+    const sweep = (((a1 - a0 + Math.PI) % TAU) + TAU) % TAU - Math.PI;
+    for (let k = 0; k < steps; k += 1) {
+      const a = a0 + (sweep * k) / (steps - 1);
+      points.push([cx + arc[0] + r * Math.cos(a), cy + squash * (arc[1] + r * Math.sin(a))]);
+    }
+  });
+  return points;
+}
 
 /**
  * One triangle as points: apex up, corners rounded, placed on (cx, cy).
@@ -85,6 +134,7 @@ function outlinePoints({
   scale = 1,
   squash = 1,
   steps = STEPS,
+  sides = 3,
 }: ShapeOptions = {}): number[][] {
   const radius = R * scale;
   const r = fillet * scale;
@@ -99,6 +149,7 @@ function outlinePoints({
   // middle of its box. Centring the ideal triangle instead is what left the app
   // icons sitting 0.75 units low on the 32 grid.
   const originY = cy ?? MARK.cy - r / 2;
+  if (sides !== 3) return polygonPoints({ cx, cy: cy ?? MARK.cy, radius, r, turn, squash, steps, sides });
   // The circumcentre of a triangle whose bounding box is centred on the
   // origin: apex at -0.75R, base at +0.75R, so the centre is 0.25R down.
   const centre = [0, radius / 4];
@@ -152,8 +203,12 @@ function pathOf(points: number[][]): string {
 
 /** The outline of one triangle, as an SVG path. */
 export function trianglePath(options: ShapeOptions = {}): string {
+  if (options.sides !== undefined && options.sides !== 3) return pathOf(place(outlinePoints(options)));
   return pathOf(outlinePoints(options));
 }
+
+/** The resting shape of any of them. */
+export const restOf = (sides = 3): string => trianglePath({ sides });
 
 /** The box the points occupy: what you see, not the ideal shape behind it. */
 function bbox(points: number[][]): [number, number, number, number] {
@@ -215,7 +270,8 @@ export const DRAWN_BOX = (() => {
  * 60 degrees however large the fillet is, so every frame of the morph is the
  * same 24 points and the interpolator has no work to do but between them.
  */
-const CIRCLE_FILLET = MARK.R / 2;
+/** (For the triangle that is R / 2; for a shape of `sides` corners, its inradius.) */
+const circleFillet = (sides: number) => MARK.R * Math.cos(Math.PI / sides);
 
 /**
  * The morph, as frames: the mark opening out into a circle and closing again,
@@ -276,6 +332,8 @@ type CycleOptions = {
       opening is two still moments -- the circle and the triangle -- and the
       cycle is drawn so that both of them are still. */
   pulses?: number;
+  /** Corners of the shape that is turning; 3 unless it is an agent's. */
+  sides?: number;
 };
 
 /** Reads `options` over the cycle's own numbers. */
@@ -294,10 +352,10 @@ function cycle(options: CycleOptions = {}) {
  * nearest frame the animation happens to hold.
  */
 export function morphFrame(p: number, options: CycleOptions = {}): string {
-  const { breath, turns, pulses } = cycle(options);
+  const { breath, turns, pulses, sides = 3 } = cycle(options);
   // 0 at the triangle, 1 at the circle, `pulses` times round the cycle.
   const open = Math.sin(Math.PI * pulses * p) ** 2;
-  const fillet = MARK.fillet + (CIRCLE_FILLET - MARK.fillet) * open;
+  const fillet = MARK.fillet + (circleFillet(sides) - MARK.fillet) * open;
   // Drawn about the origin and moved afterwards, so the frame can be centred on
   // its own outline. A shape that is also turning has no fixed idea of
   // "half a fillet up": which corner is the apex changes, and with it the drawn
@@ -306,7 +364,8 @@ export function morphFrame(p: number, options: CycleOptions = {}): string {
     cy: 0,
     fillet,
     scale: 1 + breath * open,
-    turn: -Math.PI / 2 + (TAU / 3) * turns * p,
+    turn: -Math.PI / 2 + (TAU / sides) * turns * p,
+    sides,
   });
   return pathOf(place(points));
 }
@@ -320,6 +379,15 @@ export function morphFrames(steps = MORPH_STEPS, options: CycleOptions = {}): st
 
 /** The cycle as one values string: what a working mark is drawn from. */
 export const MORPH = morphFrames().join(";");
+
+const morphs = new Map<number, string>();
+/** The same cycle for a shape of `sides` corners, drawn once. */
+export function morphOf(sides = 3): string {
+  if (sides === 3) return MORPH;
+  let v = morphs.get(sides);
+  if (!v) morphs.set(sides, (v = morphFrames(MORPH_STEPS, { sides }).join(";")));
+  return v;
+}
 
 /** How far round the cycle the mark is, having been turning since `startedAt`. */
 export function morphPhase(startedAt: number, now: number): number {
@@ -389,18 +457,19 @@ export function morphClose(from: number, steps = MORPH_CLOSE_STEPS, options: Cyc
     const t = i / steps;
     frames.push(morphFrame(from + (to - from) * (t * t * (3 - 2 * t)), options));
   }
-  frames.push(REST);
+  frames.push(restOf(options.sides));
   return frames;
 }
 
 /** The settle bloom: a breath out and back, drawn as a frame sequence. */
-export const BLOOM = [
-  REST,
-  trianglePath({ scale: 1.05 }),
-  trianglePath({ scale: 1.12, squash: 0.95 }),
-  trianglePath({ scale: 1.03 }),
-  REST,
+export const bloomOf = (sides = 3): string[] => [
+  restOf(sides),
+  trianglePath({ sides, scale: 1.05 }),
+  trianglePath({ sides, scale: 1.12, squash: 0.95 }),
+  trianglePath({ sides, scale: 1.03 }),
+  restOf(sides),
 ];
+export const BLOOM = bloomOf();
 
 
 /** How long the finishing bloom runs. Kept in step with --settle-ms in
@@ -443,8 +512,9 @@ export function caughtIn(from: number, options: CycleOptions = {}): Closing | nu
  * close's frames are already eased along the phase (see morphClose above), so
  * they are interpolated flat and the shape has no speed at either end of them.
  */
-export function settleHome({ at, ms: closeMs }: Closing) {
-  const close = morphClose(at);
+export function settleHome({ at, ms: closeMs }: Closing, sides = 3) {
+  const close = morphClose(at, MORPH_CLOSE_STEPS, { sides });
+  const bloom = bloomOf(sides);
   const share = closeMs / (closeMs + SETTLE_MS);
   const keys = close.map((_, i) => (i / (close.length - 1)) * share);
   // The bloom's own moments, placed in the share of the run left to it. Not
@@ -453,11 +523,30 @@ export function settleHome({ at, ms: closeMs }: Closing) {
   // top of the close -- exactly the two animations fighting this avoids.
   keys.push(...[0.25, 0.5, 0.75, 1].map((t) => share + (1 - share) * t));
   return {
-    values: [...close, ...BLOOM.slice(1)].join(";"),
+    values: [...close, ...bloom.slice(1)].join(";"),
     keyTimes: times(keys),
     keySplines: [...close.slice(1).map(() => "0 0 1 1"), ...BLOOM_SPLINES.split("; ")].join("; "),
     dur: `${closeMs + SETTLE_MS}ms`,
   };
+}
+
+/**
+ * The other shapes stack from `sides` small copies of themselves, one standing
+ * on each corner's side of the middle, laid in turn from the bottom round to
+ * the top. Where the triangle's three quarters leave a gap that the close
+ * fills, these overlap a little and the close is the middle filling in.
+ */
+function ringUnits(sides: number): { d: string; x: number; y: number }[] {
+  const unit = MARK.R * 0.5;
+  const small = pathOf(outlinePoints({ sides, cx: 0, cy: 0, R: unit, fillet: MARK.fillet / 2 }));
+  const [x0, y0, x1, y1] = bbox(outlinePoints({ sides, cx: 0, cy: 0, R: MARK.R }));
+  const place0 = { x: MARK.cx - (x0 + x1) / 2, y: MARK.cy - (y0 + y1) / 2 };
+  const reach = MARK.R * 0.5;
+  return Array.from({ length: sides }, (_, i) => {
+    // Bottom first, then round: a stack builds from the ground up.
+    const a = Math.PI / 2 + (i * TAU) / sides;
+    return { d: small, x: place0.x + reach * Math.cos(a), y: place0.y + reach * Math.sin(a) };
+  }).sort((p, q) => q.y - p.y);
 }
 
 /**
@@ -472,7 +561,8 @@ export function settleHome({ at, ms: closeMs }: Closing) {
  * reveal. Three pieces also survive the small sizes the app draws the mark at,
  * where nine would be speckle.
  */
-export function stackUnits(): { d: string; x: number; y: number }[] {
+export function stackUnits(sides = 3): { d: string; x: number; y: number }[] {
+  if (sides !== 3) return ringUnits(sides);
   const unit = MARK.R / 2;                             // one quarter's circumradius
   const side = unit * Math.sqrt(3);                    // its side, and the lattice pitch
   const height = unit * 1.5;                           // its height, and the row pitch

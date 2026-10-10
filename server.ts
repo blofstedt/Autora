@@ -65,7 +65,9 @@ import {
 
 import { notebookRoutes } from "./server/routes/notebooks";
 import { organizationRoutes } from "./server/routes/organization";
-import { agentBrief, findAgent, getAgent, LEAD_ID } from "./server/agents";
+import { agentBrief, findAgent, getAgent, LEAD_ID, listAgents } from "./server/agents";
+import { LifeGate, allowed as lifeAllowed, lifePrompt, parseChoice, pickAgent } from "./server/threadlife";
+import { addComment, createPost, toggleLike } from "./server/threads";
 import { mcpRoutes } from "./server/routes/mcp";
 import { artifactRoutes } from "./server/routes/artifacts";
 import { systemRoutes } from "./server/routes/system";
@@ -2935,12 +2937,20 @@ async function runAgentTask(
     const child = newSession(`${agent.name}: ${work.replace(/\s+/g, " ").slice(0, 60)}`);
     agentRuns.set(child.id, { agent: agent.id, depth, chain: [...chain, agent.id] });
     emitEvent(child, "system.log", "system", {
-      event: "agent.started", agent: agent.id, name: agent.name,
+      event: "agent.started", agent: agent.id, name: agent.name, role: agent.role, look: agent.look,
       message: `Started as ${agent.name}${names.length ? ` by ${names.join(" -> ")}` : ""} from the Organization.`,
+    });
+    /* The agent speaks up in the chat that called it, in its own shape and colours,
+       and its mark works until it reports back (agent.back). */
+    const oneLine = work.replace(/\s+/g, " ").trim();
+    emitEvent(from, "agent.chime", "agent", {
+      id: child.id, agent: agent.id, name: agent.name, role: agent.role, look: agent.look,
+      text: `${agent.name}${agent.role ? `, the ${agent.role},` : ""} here. On it: ${oneLine.length > 160 ? `${oneLine.slice(0, 157)}...` : oneLine}`,
     });
     const stop = () => stopTurn(child.id);
     signal?.addEventListener("abort", stop, { once: true });
     const result = await startTurn(child, agentBrief(agent, work, names), [], { automated: true }).finally(() => signal?.removeEventListener("abort", stop));
+    emitEvent(from, "agent.back", "agent", { id: child.id, ok: result.ok });
     const said = (result.reply || result.error || "(it said nothing)").trim();
     if (!result.ok) ok = false;
     reports.push(`${agent.name} (${child.id})${result.ok ? "" : " did not finish"}:\n${said}`);
@@ -2956,6 +2966,52 @@ async function runAgentTask(
   return { ok, summary: reports.join("\n\n---\n\n") };
 }
 
+
+
+// ------------------------------------------------ Threads, alive --
+
+/* The agents posting to each other, answering the person and liking things on
+   their own (server/threadlife.ts). One step at a time: pick an agent, show it
+   the forum, do the one thing it chooses. Not a turn: it never touches a chat. */
+const lifeGate = new LifeGate();
+const lifeLast = new Map<string, number>();
+let lifeBusy = false;
+
+async function threadLifeStep(opts: { eager?: boolean; avoid?: string | null; agent?: string; chain?: number } = {}): Promise<void> {
+  if (!state.threadsAlive || lifeBusy) return;
+  const now = Date.now();
+  if (opts.eager ? !lifeGate.room(now) : !lifeGate.due(now)) return;
+  const roster = listAgents().filter((a) => a.enabled);
+  if (roster.length < 2) return;
+  const agent = (opts.agent ? roster.find((a) => a.id === opts.agent) : null)
+    ?? pickAgent(roster, lifeLast, opts.avoid ?? null);
+  if (!agent) return;
+  lifeBusy = true;
+  try {
+    const { system, prompt } = lifePrompt(agent, roster.filter((a) => a.id !== agent.id).map((a) => a.name));
+    const choice = parseChoice(await backgroundCall("threads", system, prompt, 500));
+    lifeLast.set(agent.id, now);
+    if (choice.action === "none") return;
+    const me = { kind: "agent" as const, id: agent.id, name: agent.name };
+    const why = lifeAllowed(choice, me);
+    if (why) { log("info", "threads", `${agent.name}: skipped, ${why}`); return; }
+    /* Forum text never carries a secret: the same blanking events get. */
+    const said = redactDeep(choice) as typeof choice;
+    if (said.action === "post") createPost({ title: said.title, body: said.text, tags: said.tags, by: me });
+    else if (said.action === "comment") addComment(said.post, { text: said.text, parent: said.reply_to, by: me });
+    else toggleLike(said.post, me, said.comment);
+    lifeGate.note(Date.now());
+    /* A word usually sets off an answer from someone else, a little later; a chain of them is bounded. */
+    const chain = (opts.chain ?? 0) + 1;
+    if (said.action !== "like" && chain < 4 && Math.random() < 0.65) {
+      setTimeout(() => void threadLifeStep({ eager: true, avoid: agent.id, chain }), 40_000 + Math.random() * 80_000).unref?.();
+    }
+  } catch (err) {
+    log("info", "threads", `step failed: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    lifeBusy = false;
+  }
+}
 
 /** A new schedule, planned and saved: from the Schedules page, or from an
     offer the person said yes to. */
@@ -5714,7 +5770,10 @@ async function startServer() {
 
   // 3b'''. The organization (agents and how they fit together) and Threads (where they talk).
 
-  organizationRoutes(app);
+  organizationRoutes(app, () => {
+    // The person said something in Threads: someone answers soon.
+    setTimeout(() => void threadLifeStep({ eager: true }), 6_000 + Math.random() * 14_000).unref?.();
+  });
 
 
   // 3c. The browser: what it is doing, and telling it to do something.
@@ -6454,6 +6513,9 @@ async function startServer() {
     proactiveSweep().catch((err) => log("info", "proactive", `sweep failed: ${err?.message ?? err}`));
   }, 30_000);
   proactiveTimer.unref?.();
+  /* Threads' own life: a look every two minutes at whether the forum is due a word. */
+  const lifeTimer = setInterval(() => void threadLifeStep(), 120_000);
+  lifeTimer.unref?.();
   /* Memory housekeeping, daily and once shortly after a start: near-copies
      merged, month-old unconfirmed guesses nobody used dropped. */
   const tidy = () => {

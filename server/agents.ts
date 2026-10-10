@@ -30,6 +30,9 @@ interface Agent {
   /** Agents it hands its result to, in order. */
   next: string[];
   enabled: boolean;
+  /** Its own shape (corners) and colour (hue, degrees) wherever the app draws
+      it. Drawn at random when it is made, and never the same as another's. */
+  look?: AgentLook;
   /** The lead cannot be deleted or detached from the top. */
   builtin?: boolean;
   created: number;
@@ -37,6 +40,36 @@ interface Agent {
 }
 
 export const LEAD_ID = "agent_autora";
+
+export interface AgentLook { sides: number; hue: number }
+
+/** Shapes and hues the agents are drawn from. The triangle and the violet
+    around 270 are Autora's own. 5 shapes x 12 hues is 60 looks, one per agent
+    at the most there can be. */
+const SIDES = [4, 5, 6, 7, 8];
+const HUES = [0, 25, 50, 80, 120, 155, 185, 210, 235, 305, 330, 350];
+
+/**
+ * A look no other agent has, drawn at random: by preference a shape and a hue
+ * that neither is yet used, then a new shape or a new hue alone, then (only when
+ * all sixty are taken) anything.
+ */
+export function pickLook(taken: AgentLook[], random: () => number = Math.random): AgentLook {
+  const all = SIDES.flatMap((sides) => HUES.map((hue) => ({ sides, hue })));
+  const free = all.filter((l) => !taken.some((t) => t.sides === l.sides && t.hue === l.hue));
+  const fresh = (l: AgentLook) => ({
+    sides: !taken.some((t) => t.sides === l.sides),
+    hue: !taken.some((t) => t.hue === l.hue),
+  });
+  const tiers = [
+    free.filter((l) => fresh(l).sides && fresh(l).hue),
+    free.filter((l) => fresh(l).sides || fresh(l).hue),
+    free,
+    all,
+  ];
+  const pool = tiers.find((t) => t.length) ?? all;
+  return pool[Math.floor(random() * pool.length)];
+}
 
 const MAX_AGENTS = 60;
 const MAX_NAME = 60;
@@ -75,6 +108,16 @@ function load(): Agent[] {
     reportsTo: a.id === LEAD_ID ? null : (a.reportsTo ?? LEAD_ID),
     next: Array.isArray(a.next) ? a.next : [], enabled: a.enabled !== false,
   }));
+  // Agents made before they had a look get one now, and keep it.
+  let gave = false;
+  for (const a of roster) {
+    if (a.id === LEAD_ID) { delete a.look; continue; }
+    const ok = a.look && SIDES.includes(a.look.sides) && Number.isFinite(a.look.hue);
+    if (ok) continue;
+    a.look = pickLook(roster.flatMap((o) => (o.look && o !== a ? [o.look] : [])));
+    gave = true;
+  }
+  if (gave) saveDoc(DOC, () => roster);
   return roster;
 }
 
@@ -109,8 +152,10 @@ function below(id: string): Set<string> {
 }
 
 function sanePlace(id: string, reportsTo: unknown): string {
-  const to = clip(reportsTo, 80) || LEAD_ID;
-  if (!getAgent(to)) throw new AgentError(`There is no agent "${to}" to report to.`);
+  const ref = clip(reportsTo, 80) || LEAD_ID;
+  const boss = findAgent(ref);
+  if (!boss) throw new AgentError(`There is no agent "${ref}" to report to.`);
+  const to = boss.id;
   if (to === id || below(id).has(to)) throw new AgentError("An agent cannot report to itself or to someone beneath it.");
   return to;
 }
@@ -140,6 +185,7 @@ export function createAgent(input: {
     id, name, role: clip(input.role, MAX_ROLE), instructions: clip(input.instructions, MAX_TEXT),
     when: clip(input.when, MAX_WHEN), reportsTo: sanePlace(id, input.reportsTo),
     next: [], enabled: input.enabled !== false, created: now, updated: now,
+    look: pickLook(load().flatMap((o) => (o.look ? [o.look] : []))),
   };
   load().push(agent);
   agent.next = saneNext(id, input.next);
@@ -185,6 +231,63 @@ export function deleteAgent(id: string): boolean {
   return true;
 }
 
+/**
+ * Two agents become one: `from` is folded into `into`, which keeps its own name
+ * and place and takes on what `from` was for -- its instructions and its 'call it
+ * when' are appended, what reported to `from` now reports to `into`, and the
+ * agents that handed work to `from` now hand it to `into`. Neither may be the lead.
+ */
+export function mergeAgents(fromRef: unknown, intoRef: unknown): Agent {
+  const from = findAgent(fromRef);
+  const into = findAgent(intoRef);
+  if (!from) throw new AgentError(`There is no agent "${String(fromRef ?? "").trim()}" to merge.`);
+  if (!into) throw new AgentError(`There is no agent "${String(intoRef ?? "").trim()}" to merge into.`);
+  if (from.id === into.id) throw new AgentError("An agent cannot be merged into itself.");
+  if (from.builtin) throw new AgentError("The lead cannot be merged into another agent.");
+  const join = (a: string, b: string, max: number, sep: string) =>
+    clip(!b || a.includes(b) ? a : a ? `${a}${sep}${b}` : b, max);
+  into.instructions = join(into.instructions, from.instructions, MAX_TEXT, "\n\n");
+  into.when = join(into.when, from.when, MAX_WHEN, " Also: ");
+  if (!into.role && from.role) into.role = clip(from.role, MAX_ROLE);
+  const list = load();
+  for (const a of list) {
+    if (a.reportsTo === from.id) a.reportsTo = a.id === into.id ? (from.reportsTo ?? LEAD_ID) : into.id;
+    a.next = [...new Set(a.next.map((n) => (n === from.id ? into.id : n)))].filter((n) => n !== a.id);
+  }
+  into.next = [...new Set([...into.next, ...from.next])].filter((n) => n !== into.id && n !== from.id).slice(0, MAX_NEXT);
+  list.splice(list.indexOf(from), 1);
+  persist(into);
+  return into;
+}
+
+/**
+ * Moves an agent: under a different boss (`reportsTo`), and/or to `position`
+ * among the agents who report to the same boss (counting from 1). The order the
+ * organization is drawn and listed in follows this.
+ */
+export function moveAgent(ref: unknown, to: { reportsTo?: unknown; position?: unknown }): Agent {
+  const agent = findAgent(ref);
+  if (!agent) throw new AgentError(`There is no agent "${String(ref ?? "").trim()}".`);
+  if (agent.builtin) throw new AgentError("The lead stays at the top.");
+  if (to.reportsTo !== undefined && String(to.reportsTo).trim()) {
+    const boss = findAgent(to.reportsTo);
+    if (!boss) throw new AgentError(`There is no agent "${String(to.reportsTo).trim()}" to report to.`);
+    agent.reportsTo = sanePlace(agent.id, boss.id);
+  }
+  const place = Number(to.position);
+  if (to.position !== undefined && Number.isFinite(place)) {
+    const list = load();
+    list.splice(list.indexOf(agent), 1);
+    const siblings = list.filter((a) => a.reportsTo === agent.reportsTo);
+    const before = siblings[Math.max(0, Math.floor(place) - 1)];
+    if (before) list.splice(list.indexOf(before), 0, agent);
+    else if (siblings.length) list.splice(list.indexOf(siblings[siblings.length - 1]) + 1, 0, agent);
+    else list.push(agent);
+  }
+  persist(agent);
+  return agent;
+}
+
 interface OrgNode { agent: Agent; reports: OrgNode[] }
 
 /** The organization as a tree from the lead down. */
@@ -208,6 +311,14 @@ export function agentLine(a: Agent): string {
     `${a.when ? ` Call it when: ${a.when}` : ""}${next}`;
 }
 
+/** The lead may shape the organization itself, as a manager does. */
+export const HIRING =
+  "You run this organization, so you may shape it with the agents tool: hire (a new agent for a kind of work that keeps " +
+  "coming up and that none of the agents covers), edit, merge (two agents that overlap become one), move (change who an " +
+  "agent reports to, or its place in the order) and remove (an agent that is no longer needed). Prefer editing or " +
+  "merging to hiring, give each agent one clear job and a 'call it when' that says when, and tell the person in a line " +
+  "what you changed and why.";
+
 /** What the lead is told about the organization, or "" while it is only itself. */
 export function orgBriefing(): string {
   const others = load().filter((a) => a.id !== LEAD_ID);
@@ -217,6 +328,7 @@ export function orgBriefing(): string {
     "tool (action run, agent, task) when its 'call it when' fits the job, and let it run to the end before you rely on its",
     "answer. When it has a 'then hands to' list, those agents follow it in that order, each given the one before's result.",
     "Do not call an agent for what you can do in a step or two yourself.",
+    HIRING,
     ...others.map(agentLine),
   ].join("\n");
 }

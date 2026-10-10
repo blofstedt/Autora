@@ -24,7 +24,7 @@ function failed(res: Response, err: unknown) {
   throw err;
 }
 
-export function organizationRoutes(app: Express) {
+export function organizationRoutes(app: Express, onPerson: () => void = () => undefined) {
   app.get("/api/agents", (_req: Request, res: Response) => {
     res.json({ agents: listAgents(), tree: orgTree() });
   });
@@ -62,7 +62,9 @@ export function organizationRoutes(app: Express) {
 
   app.post("/api/threads", (req: Request, res: Response) => {
     try {
-      res.json({ post: createPost({ title: req.body?.title, body: req.body?.body, tags: req.body?.tags, by: PERSON }) });
+      const post = createPost({ title: req.body?.title, body: req.body?.body, tags: req.body?.tags, by: PERSON });
+      onPerson();
+      res.json({ post });
     } catch (err) {
       failed(res, err);
     }
@@ -81,7 +83,9 @@ export function organizationRoutes(app: Express) {
 
   app.post("/api/threads/:id/comments", (req: Request, res: Response) => {
     try {
-      res.json(addComment(req.params.id, { text: req.body?.text, parent: req.body?.parent, by: PERSON }));
+      const added = addComment(req.params.id, { text: req.body?.text, parent: req.body?.parent, by: PERSON });
+      onPerson();
+      res.json(added);
     } catch (err) {
       failed(res, err);
     }

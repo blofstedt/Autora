@@ -37,14 +37,13 @@ export function memoryRoutes(app: Express, deps: { mind: MemoryGraph }) {
 
   /** Whether the agent says a word about what the person does in the windows they share. */
   app.get("/api/collaboration", (_req: Request, res: Response) => {
-    res.json({ remarks: state.collabRemarks });
+    res.json({ remarks: state.collabRemarks, threads: state.threadsAlive });
   });
   app.patch("/api/collaboration", (req: Request, res: Response) => {
-    if (typeof req.body?.remarks === "boolean") {
-      state.collabRemarks = req.body.remarks;
-      save();
-    }
-    res.json({ remarks: state.collabRemarks });
+    if (typeof req.body?.remarks === "boolean") state.collabRemarks = req.body.remarks;
+    if (typeof req.body?.threads === "boolean") state.threadsAlive = req.body.threads;
+    if (typeof req.body?.remarks === "boolean" || typeof req.body?.threads === "boolean") save();
+    res.json({ remarks: state.collabRemarks, threads: state.threadsAlive });
   });
 
   /** Whether the agent's work is shown as it is done (the cursor, the typed code). */

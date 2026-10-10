@@ -370,7 +370,7 @@ test("the ending's animation is one an SVG will read, however far it has to come
 test("the component comes home before it blooms", () => {
   const src = fs.readFileSync(path.join(import.meta.dirname, "..", "src", "components", "AutoraMark.tsx"), "utf8");
   assert.ok(src.includes("caughtIn(morphPhase(turning.current, performance.now()))"), "the settle no longer asks where the morph was");
-  assert.ok(src.includes("settleHome(close)"), "the way home is not drawn");
+  assert.ok(src.includes("settleHome(close, sides)"), "the way home is not drawn");
   assert.ok(src.includes("close.ms + SETTLE_MS"), "the settle is not the close plus the bloom");
   assert.ok(src.includes('"settle-home"'), "the settle's animation is not keyed by the way home");
   assert.ok(src.includes("is-closing"), "the wash is not told the close is happening");
@@ -387,6 +387,29 @@ test("the component comes home before it blooms", () => {
     /\.amark\.is-settle\.is-closing[^{]*\{[^}]*animation-delay: var\(--morph-close-ms\)/.test(css),
     "the bloom is not held back for the close",
   );
+});
+
+test("an agent's shape moves the way the mark does: same points at every frame, the circle at the open moments", async () => {
+  const m = await import("../src/lib/mark");
+  const count = (d: string) => (d.match(/[ML]/g) ?? []).length;
+  for (const sides of [4, 5, 6, 7, 8]) {
+    const rest = m.restOf(sides);
+    assert.equal(count(rest), sides * 8, `${sides} sides: eight points a corner`);
+    const frames = m.morphFrames(30, { sides });
+    assert.ok(frames.every((f) => count(f) === sides * 8), `${sides} sides: every frame has the rest's points`);
+    assert.equal(frames[0], rest, `${sides} sides: the cycle starts on the shape`);
+    assert.ok(m.bloomOf(sides).every((f) => count(f) === sides * 8));
+    assert.equal(m.stackUnits(sides).length, sides);
+    // At the open moment the shape is a circle: every point the same distance from the middle.
+    const open = m.morphFrame(0.25, { sides, breath: 0 });
+    const pts = open.replace(/[MZ]/g, "").split("L").map((p) => p.trim().split(" ").map(Number));
+    const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length;
+    const cy = pts.reduce((a, p) => a + p[1], 0) / pts.length;
+    const radii = pts.map((p) => Math.hypot(p[0] - cx, p[1] - cy));
+    assert.ok(Math.max(...radii) - Math.min(...radii) < 0.05, `${sides} sides: opens out to a circle`);
+  }
+  assert.equal(m.restOf(3), m.REST, "the triangle is untouched");
+  assert.equal(m.morphOf(3), m.MORPH);
 });
 
 console.log(`\n${passed} passed`);

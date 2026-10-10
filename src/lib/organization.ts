@@ -1,3 +1,6 @@
+import { useEffect, useState } from "react";
+import type { AgentLook } from "./agentlook";
+
 /** The organization (agents) and Threads as the client sees them: see server/agents.ts and server/threads.ts. */
 
 export type Agent = {
@@ -10,6 +13,8 @@ export type Agent = {
   next: string[];
   enabled: boolean;
   builtin?: boolean;
+  /** Its own shape and colour (see server/agents.ts); the lead has none and keeps Autora's mark. */
+  look?: AgentLook;
   created: number;
   updated: number;
 };
@@ -55,7 +60,36 @@ const json = (method: string, body: unknown): RequestInit => ({
   method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
 });
 
-export const fetchAgents = () => call<{ agents: Agent[] }>("/api/agents").then((d) => d.agents ?? []);
+export const fetchAgents = () =>
+  call<{ agents: Agent[] }>("/api/agents").then((d) => {
+    remember(d.agents ?? []);
+    return d.agents ?? [];
+  });
+
+/* Every agent's look, kept from the last time the list was read, so a byline in
+   Threads can draw the agent's own mark without each one asking. */
+const looks = new Map<string, AgentLook | null>();
+const watchers = new Set<() => void>();
+let asking = false;
+function remember(list: Agent[]) {
+  for (const a of list) looks.set(a.id, a.look ?? null);
+  watchers.forEach((f) => f());
+}
+
+/** The look of agent `id`: null for the lead (Autora's own mark), undefined while not known. */
+export function useLook(id: string): AgentLook | null | undefined {
+  const [, bump] = useState(0);
+  useEffect(() => {
+    const f = () => bump((n) => n + 1);
+    watchers.add(f);
+    if (id.startsWith("agent_") && !looks.has(id) && !asking) {
+      asking = true;
+      void fetchAgents().catch(() => undefined).finally(() => { asking = false; });
+    }
+    return () => { watchers.delete(f); };
+  }, [id]);
+  return looks.get(id);
+}
 export const createAgent = (input: AgentPatch) =>
   call<{ agent: Agent }>("/api/agents", json("POST", input)).then((d) => d.agent);
 export const updateAgent = (id: string, patch: AgentPatch) =>

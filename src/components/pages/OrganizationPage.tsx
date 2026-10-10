@@ -1,15 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { AutoraMark } from "../AutoraMark";
 import { IconArrowDown, IconArrowUp, IconBot, IconChevron, IconOrg, IconPlus, IconTrash, IconX } from "../Icons";
 import {
-  createAgent, deleteAgent, fetchAgents, hueOf, underneath, updateAgent,
+  createAgent, deleteAgent, fetchAgents, hueOf, underneath, updateAgent, useLook,
   type Agent, type AgentPatch,
 } from "../../lib/organization";
 import { every } from "../../lib/poll";
 import { sure } from "../../lib/sure";
 
-/** A round mark in the agent's own colour, with its first letter. */
+/** The agent's own mark (shape and colour; Autora's triangle for the lead), or for someone who is not an agent,
+    a round dot in a colour of their own with their first letter. */
 export function AgentDot({ id, name, size = 28 }: { id: string; name: string; size?: number }) {
+  const look = useLook(id);
+  if (look !== undefined) {
+    return (
+      <span className="agent-mark" style={{ width: size, height: size }} aria-hidden="true">
+        <AutoraMark size={Math.round(size * 1.15)} look={look} state="rest" />
+      </span>
+    );
+  }
   return (
     <span
       className="agent-dot"
