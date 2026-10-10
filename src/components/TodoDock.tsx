@@ -68,6 +68,20 @@ export const TodoDock = memo(function TodoDock({ items }: { items: TodoItem[] })
   /* Finished tasks wait here and are revealed one at a time, each given STEP_MS to tick and be struck through
      completely before the next begins, however many finish together. */
   const queue = useRef<string[]>([]);
+  /* The list scrolls when it is long; the task being ticked is brought into view inside it (the list only, never the
+     page) so the person sees the tick and the line drawn rather than a different part of the list. */
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const reveal = (id: string) => {
+    window.requestAnimationFrame(() => {
+      const box = listRef.current;
+      const row = box ? [...box.querySelectorAll<HTMLElement>("[data-todo-id]")].find((el) => el.dataset.todoId === id) : undefined;
+      if (!box || !row) return;
+      const top = row.offsetTop - box.offsetTop;
+      if (top < box.scrollTop || top + row.offsetHeight > box.scrollTop + box.clientHeight) {
+        box.scrollTo({ top: top - (box.clientHeight - row.offsetHeight) / 2, behavior: "smooth" });
+      }
+    });
+  };
   const timer = useRef<number | null>(null);
   const pump = () => {
     const id = queue.current.shift();
@@ -81,6 +95,7 @@ export const TodoDock = memo(function TodoDock({ items }: { items: TodoItem[] })
     }
     setUnrevealed((u) => u.filter((x) => x !== id));
     setFresh((f) => [...f, id]);
+    reveal(id);
     timer.current = window.setTimeout(pump, STEP_MS);
   };
   useEffect(() => () => { if (timer.current !== null) window.clearTimeout(timer.current); }, []);
@@ -111,7 +126,6 @@ export const TodoDock = memo(function TodoDock({ items }: { items: TodoItem[] })
      last one, and closing runs the same distance back. It is measured while
      shut too -- the fold clips it, the list keeps its height -- so the first
      tap already knows how far to go. */
-  const listRef = useRef<HTMLDivElement | null>(null);
   const [foldH, setFoldH] = useState(0);
   useLayoutEffect(() => {
     const el = listRef.current;

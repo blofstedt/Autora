@@ -185,6 +185,5 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The to-do list now ticks tasks off one at a time. Each task pops its box, draws its
-  tick and has its line struck through completely, at a slower pace you can follow,
-  before the next one starts, even when several finish together.
+  The to-do list now scrolls to the task being ticked off, so when the list opens on a
+  long plan you always see the box fill, the tick draw and the line struck through.

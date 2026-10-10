@@ -28,6 +28,7 @@ export function TodoList({ items, fresh = [] }: { items: TodoItem[]; fresh?: str
       {items.map((item) => (
         <li
           key={item.id}
+          data-todo-id={item.id}
           className={`todo-item${item.status === "in-progress" ? " is-doing" : ""}${item.status === "completed" ? " is-done" : ""}${fresh.includes(item.id) ? " is-fresh" : ""}`}
           aria-current={item.status === "in-progress" ? "step" : undefined}
         >
