@@ -128,12 +128,12 @@ function PhoneLayout() {
 								data-phone-sheet={which}
 								aria-pressed={sheet === which}
 								onClick={() => setSheet((now) => (now === which ? null : which))}
-								className={`h-10 flex-1 rounded-full border text-sm font-medium ${sheet === which ? "bg-primary text-primary-foreground border-transparent" : "bg-accent text-foreground"}`}
+								className={`h-10 flex-1 rounded-xl border text-sm font-medium ${sheet === which ? "bg-primary text-primary-foreground border-transparent" : "bg-accent text-foreground"}`}
 							>
 								{which === "media" ? "Media" : "Edit"}
 							</button>
 						))}
-						<div className="shrink-0 [&_button]:h-10 [&_button]:rounded-full [&_button]:bg-primary [&_button]:px-5 [&_button]:py-0 [&_button]:text-primary-foreground [&_button]:items-center [&_button>div]:bg-none [&_button>div]:shadow-none [&_button>div]:px-0 [&_button>div]:py-0 [&_button>div>div]:hidden">
+						<div className="shrink-0 [&_button]:h-10 [&_button]:rounded-xl [&_button]:bg-primary [&_button]:px-5 [&_button]:py-0 [&_button]:text-primary-foreground [&_button]:items-center [&_button>div]:bg-none [&_button>div]:shadow-none [&_button>div]:px-0 [&_button>div]:py-0 [&_button>div>div]:hidden">
 							<ExportButton />
 						</div>
 					</div>

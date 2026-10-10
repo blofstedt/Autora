@@ -152,7 +152,7 @@ export function CadWindow({ sessionId, phone }: { sessionId: string; phone: bool
       <iframe
         ref={frame}
         className="pdf-frame"
-        src={`/autora-3d/index.html?embed=autora&session=${encodeURIComponent(sessionId)}`}
+        src={`/autora-3d/index.html?embed=autora&session=${encodeURIComponent(sessionId)}${phone ? "&phone=1" : ""}`}
         title="Autora 3D"
         /* No sandbox attribute: this is Autora's own page, served from this origin under its own policy (server/caddesk.ts
            serveCad: scripts from itself only, framed by this app only), and a sandbox that keeps the origin is no sandbox. It

@@ -206,7 +206,7 @@
   flex: 1 1 0;
   min-width: 0;
   justify-content: center;
-  min-height: 42px;
+  min-height: 40px;
   padding: 0 4px;
   border-radius: 12px;
   border-color: transparent;
@@ -227,7 +227,7 @@
   gap: 8px;
 }
 .autora-phone .secondary-toolbar .color-swatch,
-.autora-phone .secondary-toolbar .annot-swatch { width: 30px; height: 30px; min-height: 30px; border-radius: 50%; }
+.autora-phone .secondary-toolbar .annot-swatch { width: 32px; height: 32px; min-height: 32px; border-radius: 50%; }
 /* No Close Tool: the bar's own button for the open tool puts it away (src/autora/phone.tsx). */
 .autora-phone .secondary-toolbar-actions { display: none !important; }
 
@@ -243,9 +243,9 @@
   background: var(--autora-s2) !important;
   border-color: var(--autora-border-strong) !important;
 }
-.autora-phone [data-testid="find-bar"] input[data-testid="find-input"] { flex: 1 1 auto; width: auto !important; min-height: 42px; border-radius: 10px; padding: 0 12px; background: var(--autora-bg); }
+.autora-phone [data-testid="find-bar"] input[data-testid="find-input"] { flex: 1 1 auto; width: auto !important; min-height: 40px; border-radius: 12px; padding: 0 12px; background: var(--autora-bg); }
 .autora-phone [data-testid="find-bar"] > :not(input):not([data-testid="find-count"]):not([data-testid="find-cursor"]):not([data-testid="find-prev"]):not([data-testid="find-next"]):not(:last-child) { display: none !important; }
-.autora-phone [data-testid="find-bar"] button { min-width: 42px; min-height: 42px; border-radius: 12px; font-size: 16px; }
+.autora-phone [data-testid="find-bar"] button { min-width: 40px; min-height: 40px; border-radius: 12px; font-size: 16px; }
 
 .autora-phonebar {
   position: fixed;
@@ -254,8 +254,7 @@
   display: flex;
   justify-content: space-around;
   gap: 2px;
-  /* The right edge is left clear: Autora's chat button floats there in full screen. */
-  padding: 6px 60px calc(6px + env(safe-area-inset-bottom, 0px)) 8px;
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
   background: var(--autora-s1);
   border-top: 1px solid var(--autora-border-strong);
 }
@@ -268,7 +267,7 @@
   align-items: center;
   justify-content: center;
   gap: 2px;
-  border-radius: 10px;
+  border-radius: 12px;
   background: transparent;
   color: var(--autora-text-2);
   font: 500 10px/1.1 var(--font-sans);

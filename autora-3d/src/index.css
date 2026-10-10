@@ -122,3 +122,12 @@ input[type="range"]::-moz-range-thumb {
     transition-duration: 0.01ms !important;
   }
 }
+
+
+/* On a phone inside Autora (main.tsx): the measurements every Autora window shares there -- a 48px bar, 40px controls,
+   a soft square of 12px for every button. This app drew them as pills and circles; the swatches stay round. */
+html[data-phone] button.rounded-full:not([class*='w-7']):not([class*='w-8 ']):not([class*='w-14']) {
+  border-radius: 12px;
+  min-height: 40px;
+}
+html[data-phone] .h-11.rounded-full:not(button) { border-radius: 12px; }

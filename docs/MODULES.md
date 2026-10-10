@@ -468,6 +468,14 @@ Spectra's fetched renderer is most of what is on disk.
 - A frame that does not start: `lib/bootWatch.ts` says so after 25 s (PDF and video windows), and the PDF frame forwards
   its uncaught errors (`autora:spectra:error`). Its build puts a `Map.getOrInsert*` polyfill in front of every chunk,
   workers included (`polyfillFirst` in `spectra-editor/vite.config.ts`): pdf.js needs it and older browsers lack it.
+- One look across the windows on a phone (`styles.css`, "Tool windows on a phone"): `--pt-bar` 48px, `--pt-hit` 40px, `--pt-r` 12px.
+  Every window's bar (`.pdf-bar`, `.app-bar`, the browser's) is the name and 40px soft-square buttons; text pills are for
+  desktop; `TakeControl` is the hand-over switch in all of them (PDF, Video, Pages/Sheets/Slides, the app window). The editors
+  in frames use the same numbers in their own overlays (Spectra `autora.css`, OpenCut's overlay pages, 3D's `index.css` under
+  `html[data-phone]`). Full screen keeps a 64px strip at the bottom for the chat button and Follow, so they never cover an
+  editor's own bottom bar. The app window drops Back, Console (unless there are errors), Versions, Templates and the cursor
+  switch on a phone; Music drops skip-back, loop and the click track. New phone chrome takes these numbers; a new button is 40px
+  and 12px, not a pill or a circle. Test: `ui-pdfwindow` measures the bar.
 - Paired-down tools on a phone: a phone gets the same files in an editor arranged for a thumb, never a second
   implementation, and the desktop is untouched. The window adds `&phone=1` to the editor frame's URL (`SpectraWindow`,
   `OpenCutWindow`). PDF: `spectra-editor/src/autora/phone.tsx` sets `html.autora-phone` and mounts one bar (Mark up, Fill & sign,

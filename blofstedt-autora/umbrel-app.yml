@@ -170,12 +170,13 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Paired-down tools on a phone. The agent keeps every tool wherever the work is shown; the
-  person gets a very simple app. PDF shows the page and one bar at the bottom (Undo, Mark up,
-  Fill & sign, Find): Mark up is Highlight, Text, Draw, Note and Eraser with a colour, Fill & sign
-  is Fill Fields and Sign, and Find is one row; the menu bar, toolbar, tabs, side rail and every
-  other tool are put away. Video shows the picture and the timeline with Media and Edit as
-  sheets, Export beside them, and a timeline bar of just undo, split, duplicate, delete and
-  zoom. The bar at the top of every tool window is now the file's name and round icon buttons
-  (hand over, download, full screen) rather than a row of text pills. A desktop gets the full
-  editors exactly as before, and the same files open in both.
+  Paired-down tools on a phone, and one look across them. The agent keeps every tool wherever
+  the work is shown; the person gets a very simple app. PDF shows the page and one bar (Undo,
+  Mark up, Fill & sign, Find): Mark up is Highlight, Text, Draw, Note and Eraser with a colour,
+  Fill & sign is Fill Fields and Sign, and Find is one row. Video shows the picture and the
+  timeline with Media and Edit as sheets, Export beside them, and a timeline bar of just undo,
+  split, duplicate, delete and zoom. The app window and Music lose their desktop-only buttons.
+  Every tool window now shares one set of measurements on a phone (a 48px bar, 40px soft-square
+  buttons, no text pills or round buttons mixed in), 3D and the editors follow them, and full
+  screen keeps a strip at the bottom so the chat button no longer covers a tool's own buttons.
+  A desktop gets the full editors exactly as before.

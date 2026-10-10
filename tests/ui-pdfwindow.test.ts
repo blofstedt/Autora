@@ -185,6 +185,13 @@ async function main() {
       await phone.tap('.pdf-bar button[aria-label="Full screen"]');
       // The window's own bar: the name and round buttons, not a row of text pills.
       assert.equal(await phone.locator(".pdf-bar .pdf-pill").count(), 0);
+      // One set of measurements for every window's bar (styles.css, "Tool windows on a phone"): 48px tall, 40px soft-square buttons.
+      const sizes = await phone.evaluate(() => ({
+        bar: Math.round(document.querySelector(".pdf-bar")!.getBoundingClientRect().height),
+        buttons: [...document.querySelectorAll(".pdf-bar button")].map((b) => { const r = b.getBoundingClientRect(); return `${Math.round(r.width)}x${Math.round(r.height)} ${getComputedStyle(b).borderRadius}`; }),
+      }));
+      assert.equal(sizes.bar, 48, JSON.stringify(sizes));
+      assert.ok(sizes.buttons.length >= 2 && sizes.buttons.every((b) => b === "40x40 12px"), `bar buttons: ${sizes.buttons.join(", ")}`);
       assert.equal(await phone.locator('.pdf-bar button[aria-label="Take control"]').count(), 1);
       const frame = await editorIn(phone);
       assert.ok(await waitDrawn(frame), "the page is still drawn");

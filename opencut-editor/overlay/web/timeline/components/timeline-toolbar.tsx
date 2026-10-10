@@ -82,7 +82,7 @@ function PhoneToolbar({
 					: Math.max(minZoom, zoomLevel / TIMELINE_ZOOM_BUTTON_FACTOR),
 		});
 	const tool = (label: string, icon: typeof ScissorIcon, run: () => void) => (
-		<Button key={label} variant="text" size="icon" aria-label={label} onClick={(event) => { event.stopPropagation(); run(); }} className="size-10 rounded-full">
+		<Button key={label} variant="text" size="icon" aria-label={label} onClick={(event) => { event.stopPropagation(); run(); }} className="size-10 rounded-xl">
 			<HugeiconsIcon icon={icon} className="size-5" />
 		</Button>
 	);
