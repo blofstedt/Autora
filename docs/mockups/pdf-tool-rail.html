@@ -207,6 +207,16 @@ input[type=range] { width: 100%; accent-color: var(--tc, var(--accent)); }
 .wheel input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; padding: 0; border: 0; }
 .wheel[aria-pressed="true"] { outline: 2px solid var(--tc, var(--accent)); outline-offset: 1px; }
 .sw { align-items: center; }
+/* The shape button: tap to step through Box, Circle, Line, Arrow (phone). */
+.cyc { display: none; }
+@media (max-width: 767px) {
+  .cyc { display: grid; place-items: center; position: relative; flex: none; width: 34px; height: 34px; border-radius: 50%; color: var(--tc); background: color-mix(in srgb, var(--tc) 18%, transparent); }
+  .cyc .rot { position: absolute; right: -4px; bottom: -4px; width: 16px; height: 16px; border-radius: 50%; background: var(--s4); color: var(--text); display: grid; place-items: center; }
+  .cyc .rot svg { width: 10px; height: 10px; stroke-width: 2.4; }
+  .tray .dseg { display: none; }
+  .tray[data-tool="shape"] .hd b { display: none; }
+  .tray > div:has(input[type=range]) { flex-basis: 90px; }
+}
 /* Redaction handles, signature pad */
 .mark.rd.sel { outline: 2px dashed var(--c-redact); outline-offset: 1px; }
 .hdl { position: absolute; width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 2px solid var(--c-redact); box-shadow: 0 2px 6px rgba(0,0,0,.4); touch-action: none; transform: translate(-50%, -50%); }
@@ -243,6 +253,10 @@ img.mark.sg { width: 26%; height: auto; }
     <symbol id="sign" viewBox="0 0 24 24"><path d="m21 17-2.156-1.868A.5.5 0 0 0 18 15.5v.5a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1c0-2.545-3.991-3.97-8.5-4a1 1 0 0 0 0 5c4.153 0 4.745-11.295 5.708-13.5a2.5 2.5 0 1 1 3.31 3.284"/><path d="M3 21h18"/></symbol>
     <symbol id="grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></symbol>
     <symbol id="pin" viewBox="0 0 24 24"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></symbol>
+    <symbol id="circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></symbol>
+    <symbol id="line" viewBox="0 0 24 24"><path d="M5 19 19 5"/></symbol>
+    <symbol id="arrow" viewBox="0 0 24 24"><path d="M5 19 19 5M9 5h10v10"/></symbol>
+    <symbol id="cycle" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5"/></symbol>
     <symbol id="x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
     <symbol id="up" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></symbol>
     <symbol id="down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
@@ -411,6 +425,8 @@ $('#menuPop').innerHTML = MENU.map(([h, rows]) => `<h4>${h}</h4>` +
 /* State */
 const S = { detect: 'word', sigMode: 'sign', sigText: 'Mara Halden', sigData: null, tool: 'select', col: { highlight: '#ffd60a', draw: '#dc2626', shape: '#dc2626', text: '#111827' }, sz: { highlight: 2.4, draw: 4, shape: 3, text: 16 }, shape: 'box', stamp: 'APPROVED', marks: [], redo: [] };
 /* Three colours and a wheel. Highlighters get highlighter colours (black would hide the text; that is Redact). */
+const SHAPES = ['box', 'circle', 'line', 'arrow'];
+const SHAPE_ICON = { box: 'shape', circle: 'circle', line: 'line', arrow: 'arrow' };
 const BRK = ['#dc2626', '#2563eb', '#111827'];
 const PRESETS = { highlight: ['#ffd60a', '#7ee787', '#ff8fc7'], draw: BRK, shape: BRK, text: BRK };
 const SLIDERS = { highlight: ['Thickness', 1, 5, .1], draw: ['Thickness', 1, 12, 1], shape: ['Thickness', 1, 10, 1], text: ['Size', 10, 40, 1] };
@@ -419,7 +435,7 @@ const TRAYS = {
   text: () => head('text', 'Text') + colors('text') + slider('text') + `<p class="hint lg">Tap the page to place text.</p>`,
   highlight: () => head('highlight', 'Highlight') + colors('highlight') + slider('highlight') + `<p class="hint lg">Drag across text to highlight it.</p>`,
   draw: () => head('draw', 'Draw') + colors('draw') + slider('draw'),
-  shape: () => head('shape', 'Shapes') + `<div class="seg" role="group">${['box','circle','line','arrow'].map(s => `<button aria-pressed="${S.shape===s}" data-shape="${s}">${s[0].toUpperCase()+s.slice(1)}</button>`).join('')}</div>` + colors('shape') + slider('shape'),
+  shape: () => head('shape', 'Shapes') + `<button class="cyc" data-cycle aria-label="Shape: ${S.shape}. Tap for the next shape" title="Tap to change shape">${ic(SHAPE_ICON[S.shape])}<span class="rot">${ic('cycle')}</span></button><div class="seg dseg" role="group">${SHAPES.map(s => `<button aria-pressed="${S.shape===s}" data-shape="${s}">${s[0].toUpperCase()+s.slice(1)}</button>`).join('')}</div>` + colors('shape') + slider('shape'),
   note: () => head('note', 'Note') + `<p class="hint lg">Tap the page to drop a note. Notes are visible to Autora and to anyone you share with.</p><p class="hint sm">Tap the page to drop a note.</p>`,
   stamp: () => head('stamp', 'Stamps') + `<div class="seg wrap">${['APPROVED','REJECTED','CONFIDENTIAL','DRAFT'].map(s => `<button aria-pressed="${S.stamp===s}" data-stamp="${s}">${s}</button>`).join('')}</div>`,
   redact: () => head('redact', 'Redact') + `<p class="hint lg">Tap text to redact it. Drag the handles to resize, or drag over an area to redact a box. The text is deleted from the file, not covered.</p><p class="hint sm">Tap text to redact it. Drag a handle to resize.</p><div><div class="lab">Tap redacts</div><div class="seg" role="group"><button aria-pressed="${S.detect==='word'}" data-detect="word">A word</button><button aria-pressed="${S.detect==='line'}" data-detect="line">A line</button></div></div><button class="btn ghost" data-act="Find and redact">Find and redact…</button>`,
@@ -436,6 +452,7 @@ function slider(k) { const [l, min, max, step] = SLIDERS[k]; return `<div><div c
 
 function paintTray() {
   $('#tray').innerHTML = trayFor(S.tool);
+  $('#tray').dataset.tool = S.tool;
   $('#size')?.addEventListener('input', e => { S.sz[e.target.dataset.for] = +e.target.value; });
   $('#wheel')?.addEventListener('input', e => {
     const k = e.target.dataset.for; S.col[k] = e.target.value;
@@ -472,6 +489,7 @@ $('#tray').addEventListener('click', e => {
   const t = e.target.closest('button'); if (!t) return;
   if (t.dataset.close !== undefined) setTool('select');
   if (t.dataset.color) { S.col[t.dataset.for] = t.dataset.color; paintTray(); }
+  if (t.closest('[data-cycle]')) { S.shape = SHAPES[(SHAPES.indexOf(S.shape) + 1) % SHAPES.length]; paintTray(); }
   if (t.dataset.shape) { S.shape = t.dataset.shape; paintTray(); }
   if (t.dataset.stamp) { S.stamp = t.dataset.stamp; paintTray(); }
   if (t.dataset.detect) { S.detect = t.dataset.detect; paintTray(); }
@@ -534,6 +552,12 @@ layer.addEventListener('pointerdown', e => {
     layer.append(el); addMark(el); return;
   }
   layer.setPointerCapture(e.pointerId);
+  if (t === 'shape' && (S.shape === 'line' || S.shape === 'arrow')) {
+    const NS = 'http://www.w3.org/2000/svg', g = document.createElementNS(NS, 'g'), ln = document.createElementNS(NS, 'line'), hd = document.createElementNS(NS, 'path');
+    [ln, hd].forEach(n => { n.setAttribute('stroke', S.col.shape); n.setAttribute('fill', 'none'); n.setAttribute('stroke-linecap', 'round'); n.setAttribute('stroke-linejoin', 'round'); n.setAttribute('vector-effect', 'non-scaling-stroke'); n.style.strokeWidth = S.sz.shape + 'px'; });
+    ln.setAttribute('x1', p.x); ln.setAttribute('y1', p.y); ln.setAttribute('x2', p.x); ln.setAttribute('y2', p.y);
+    g.append(ln, hd); ink.append(g); drag = { t, p0: p, el: g, kind: S.shape, ln, hd }; return;
+  }
   const el = document.createElement(t === 'draw' ? 'div' : 'div');
   if (t === 'draw') { const path = document.createElementNS('http://www.w3.org/2000/svg', 'path'); path.setAttribute('d', `M${p.x} ${p.y}`); path.setAttribute('fill', 'none'); path.setAttribute('stroke', S.col.draw); path.setAttribute('stroke-linecap', 'round'); path.setAttribute('vector-effect', 'non-scaling-stroke'); path.style.strokeWidth = S.sz.draw + 'px'; ink.append(path); drag = { t, p0: p, el: path, d: `M${p.x} ${p.y}` }; return; }
   el.className = 'mark ' + ({ highlight: 'hl', redact: 'rd', shape: 'sh' })[t];
@@ -544,6 +568,15 @@ layer.addEventListener('pointerdown', e => {
 layer.addEventListener('pointermove', e => {
   if (!drag) return; const p = pt(e);
   if (drag.cx !== undefined) drag.moved = Math.max(drag.moved, Math.hypot(e.clientX - drag.cx, e.clientY - drag.cy));
+  if (drag.kind) {
+    drag.ln.setAttribute('x2', p.x); drag.ln.setAttribute('y2', p.y);
+    if (drag.kind === 'arrow') {
+      const r = layer.getBoundingClientRect(), W = r.width / 100, H = r.height / 100, dx = (p.x - drag.p0.x) * W, dy = (p.y - drag.p0.y) * H, a = Math.atan2(dy, dx), L = 10 + 3 * S.sz.shape;
+      const pts = [a + Math.PI - .5, a + Math.PI + .5].map(t => [p.x + Math.cos(t) * L / W, p.y + Math.sin(t) * L / H]);
+      drag.hd.setAttribute('d', Math.hypot(dx, dy) < 6 ? '' : `M${pts[0][0]} ${pts[0][1]} L${p.x} ${p.y} L${pts[1][0]} ${pts[1][1]}`);
+    }
+    return;
+  }
   if (drag.t === 'draw') { drag.d += ` L${p.x} ${p.y}`; drag.el.setAttribute('d', drag.d); return; }
   const x = Math.min(p.x, drag.p0.x), y = Math.min(p.y, drag.p0.y);
   Object.assign(drag.el.style, { left: x + '%', top: y + '%', width: Math.abs(p.x - drag.p0.x) + '%', height: (drag.t === 'highlight' ? +drag.el.dataset.h : Math.abs(p.y - drag.p0.y)) + '%' });

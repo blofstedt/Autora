@@ -35,7 +35,9 @@ Live copy of the first version: https://claude.ai/artifact/A5vaGaNwJ8EFLA35jv3gD
    colour swatches, a colour wheel (opens the system picker; shows the picked colour) and one slider (thickness,
    or size for Text). Draw, Shapes and Text use red, blue and black; Highlight uses yellow, green and pink
    (black would hide the text; that is Redact). Shapes adds the shape type (Box, Circle, Line, Arrow) before the
-   colours. On a phone the tool name is dropped and the whole tray is one 46px row (Shapes: two).
+   colours: a pill on desktop, and on a phone a round shape button at the left of the row, with a small rotate
+   badge in its corner, that steps through the shapes on each tap (Box first). On a phone the tool name is
+   dropped and every one of these trays, Shapes included, is a single ~50px row.
 9. **Top bar stays slim**: menu (what the menu bar held), pages/outline toggle, title, undo/redo, find, export.
 10. **Phone bar defaults leave out Note and Stamps** (they stay in the grid) so the icons can be bigger:
    Select, Text, Highlight, Draw, Shapes, Redact, Sign. Desktop defaults keep all nine.
