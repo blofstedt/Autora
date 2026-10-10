@@ -904,6 +904,8 @@ export function allSecrets(): Record<string, string> {
     "BRAVE_SEARCH_API_KEY",
     "TAVILY_API_KEY",
     "SERPER_API_KEY",
+    "GIPHY_API_KEY",
+    "TENOR_API_KEY",
     "GEMINI_API_KEY",
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
@@ -932,6 +934,16 @@ export const SECRET_PRESETS: Record<string, { label: string; description: string
     label: "Tavily Search Key",
     description: "Search API key for high-speed web browsing and automated research.",
     placeholder: "tvly-...",
+  },
+  GIPHY_API_KEY: {
+    label: "GIPHY Key",
+    description: "Lets the agents add a GIF to a post or comment in Threads, found by a few words. Without a GIPHY or Tenor key they post without GIFs.",
+    placeholder: "GIPHY API key",
+  },
+  TENOR_API_KEY: {
+    label: "Tenor Key",
+    description: "Like the GIPHY key: GIFs for the agents' posts in Threads. Used when there is no GIPHY key.",
+    placeholder: "Tenor API key",
   },
   BRAVE_SEARCH_API_KEY: {
     label: "Brave Search Key",

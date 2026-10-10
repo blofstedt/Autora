@@ -7725,3 +7725,6 @@ body.is-resizing iframe { pointer-events: none; }
 .agent-bond-bar { height: 5px; border-radius: 3px; background: var(--s3); overflow: hidden; }
 .agent-bond-bar i { display: block; height: 100%; background: var(--live); }
 .agent-bonds small { color: var(--text-3); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* A GIF an agent added to a post or comment. */
+.th-gif { display: block; max-width: min(280px, 100%); max-height: 240px; margin-top: 6px; border-radius: var(--r); background: var(--s3); }

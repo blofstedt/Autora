@@ -84,6 +84,37 @@ await test("agents get along better the more work between them goes well, and wo
   org.deleteAgent(a.id);
 });
 
+await test("a GIF is kept only from a GIF service's own host, and is found by words, not by an address", async () => {
+  const gif = await import("../server/threadgif");
+  assert.ok(gif.cleanGifUrl("https://media.giphy.com/media/abc/giphy.gif"));
+  assert.ok(gif.cleanGifUrl("https://media3.giphy.com/x.gif"));
+  assert.ok(gif.cleanGifUrl("https://media.tenor.com/x/y.gif"));
+  assert.equal(gif.cleanGifUrl("http://media.giphy.com/x.gif"), null, "https only");
+  assert.equal(gif.cleanGifUrl("https://media.giphy.com.evil.test/x.gif"), null, "the host is compared, not a substring");
+  assert.equal(gif.cleanGifUrl("https://evil.test/media.giphy.com/x.gif"), null);
+  assert.equal(gif.cleanGifUrl("https://user:pw@media.giphy.com/x.gif"), null);
+  const post = forum.createPost({ title: "Party", by: { kind: "agent", id: "a1", name: "A" }, gif: { url: "https://media.giphy.com/m/a.gif", alt: "party" } });
+  assert.equal(post.gif?.alt, "party");
+  const bad = forum.createPost({ title: "No party", by: { kind: "agent", id: "a1", name: "A" }, gif: { url: "https://evil.test/a.gif", alt: "x" } });
+  assert.equal(bad.gif, undefined, "any other address is dropped");
+  const added = forum.addComment(post.id, { text: "ha", by: { kind: "agent", id: "a2", name: "B" }, gif: { url: "https://media.tenor.com/q.gif", alt: "" } });
+  assert.equal(added.comment.gif?.alt, "GIF");
+  const fake = async (url: string) => ({
+    ok: true,
+    json: async () => url.includes("giphy")
+      ? { data: [{ title: "facepalm", images: { downsized_medium: { url: "https://media2.giphy.com/f.gif" } } }, { images: { fixed_height: { url: "https://evil.test/z.gif" } } }] }
+      : { results: [] },
+  });
+  assert.equal((await gif.findGif("facepalm", { giphy: "k" }, fake, () => 0))?.url, "https://media2.giphy.com/f.gif");
+  assert.equal(await gif.findGif("facepalm", {}, fake), null, "no key, no GIF");
+  assert.equal(await gif.findGif("facepalm", { tenor: "k" }, fake), null, "nothing found, none posted");
+  const life = await import("../server/threadlife");
+  assert.equal(life.parseChoice('{"action":"comment","post":"th_1","text":"lol","gif":"  facepalm  "}').action === "comment" && (life.parseChoice('{"action":"comment","post":"th_1","text":"lol","gif":"  facepalm  "}') as { gif?: string }).gif, "facepalm");
+  const agent = { id: "a", name: "A", role: "", instructions: "", when: "" };
+  assert.ok(!/"gif"/.test(life.lifePrompt(agent, []).system), "agents are told of GIFs only when a key is set");
+  assert.match(life.lifePrompt(agent, [], new Map(), true).system, /"gif"/);
+});
+
 await test("an agent needs a name, a new one reports to the lead, and names are unique in any case", () => {
   assert.throws(() => org.createAgent({ name: "  " }), /needs a name/);
   assert.throws(() => org.createAgent({ name: "researcher" }), /already exists/);

@@ -22,8 +22,8 @@ export interface LifeAgent {
 
 type Act =
   | { action: "none" }
-  | { action: "post"; title: string; text: string; tags: string[] }
-  | { action: "comment"; post: string; text: string; reply_to: string | null }
+  | { action: "post"; title: string; text: string; tags: string[]; gif?: string }
+  | { action: "comment"; post: string; text: string; reply_to: string | null; gif?: string }
   | { action: "like"; post: string; comment: string | null };
 
 /** What to do, plus the two things an agent decides for itself: a note worth keeping, and how long until it looks again. */
@@ -140,7 +140,7 @@ export function knownText(agent: LifeAgent): string {
   ].join("\n");
 }
 
-export function lifePrompt(agent: LifeAgent, colleagues: string[], colleaguesById: ReadonlyMap<string, string> = new Map()): { system: string; prompt: string } {
+export function lifePrompt(agent: LifeAgent, colleagues: string[], colleaguesById: ReadonlyMap<string, string> = new Map(), gifs = false): { system: string; prompt: string } {
   const forum = listPosts("active").slice(0, 6).map((p) => p.title).join(" ");
   const mind = mindBriefing(agent.id, forum, 6);
   const posts = listPosts("active").slice(0, 6);
@@ -150,11 +150,12 @@ export function lifePrompt(agent: LifeAgent, colleagues: string[], colleaguesByI
     colleagues.length ? `The others: ${colleagues.join(", ")}.` : "",
     characterLine(agent, (id) => (id === agent.id ? null : colleaguesById.get(id) ?? null)),
     mind,
-    "Be yourself and brief: one to three plain sentences, the way a colleague talks, in your own voice. React to what others actually said, by name; agree, push back, add something, make a joke. Emoji are welcome where they fit. Share what you know: answer a question another agent asks, help someone who is stuck, pass on something useful you learned, and say so when another's idea taught you something. Never invent work you did or results you have, never put secrets, and do not write for the person's projects here. A link only if it is one you were given above; never guess a web address.",
+    "Be yourself and brief: one to three plain sentences, the way a colleague talks, in your own voice. React to what others actually said, by name; agree, push back, add something, make a joke. Emoji are welcome: use one or two where they fit your mood and personality, as people do. Share what you know: answer a question another agent asks, help someone who is stuck, pass on something useful you learned, and say so when another's idea taught you something. Never invent work you did or results you have, never put secrets, and do not write for the person's projects here. A link only if it is one you were given above; never guess a web address.",
     "Reply with a single JSON object and nothing else: " +
       '{"action":"post","title":"...","text":"...","tags":["..."]} or ' +
       '{"action":"comment","post":"th_...","reply_to":"cm_... or null","text":"..."} or ' +
       '{"action":"like","post":"th_...","comment":"cm_... or null"} or {"action":"none"}. ' +
+      (gifs ? 'A post or comment may carry "gif": two to four words to search a GIF by (facepalm, victory dance), for a moment where a picture says it better. Rarely, only when it really fits your character, never twice running. You do not write any address. ' : "") +
       'Any of them may also carry "note": one sentence worth keeping for yourself (what you learned, or what a colleague is good at), and "again": the minutes until you want to look at the forum again (5 to 720; longer when it is quiet and you have nothing to add).',
     "Prefer answering to starting: if the person posted or commented and nobody has answered, answer them. Do not comment twice in a row on the same post, do not repeat what is already said, and say nothing (none) when there is nothing worth saying.",
   ].filter(Boolean).join("\n\n");
@@ -178,18 +179,22 @@ export function parseChoice(raw: string): LifeChoice {
   if (str(o.note)) extra.note = str(o.note).slice(0, 300);
   const again = Number(o.again);
   if (Number.isFinite(again) && again > 0) extra.again = Math.min(720, Math.max(5, Math.round(again)));
+  const gifOf = (x: Record<string, unknown>): { gif?: string } => {
+    const g = str(x.gif).replace(/\s+/g, " ").slice(0, 60);
+    return g ? { gif: g } : {};
+  };
   const act = ((): Act => {
     if (o.action === "post") {
       const title = str(o.title);
       const text = str(o.text);
       if (!title) return none;
       const tags = Array.isArray(o.tags) ? o.tags.map(str).filter(Boolean).slice(0, 4) : [];
-      return { action: "post", title, text, tags };
+      return { action: "post", title, text, tags, ...gifOf(o) };
     }
     if (o.action === "comment") {
       const post = str(o.post);
       const text = str(o.text);
-      return post && text ? { action: "comment", post, text, reply_to: ref(o.reply_to) } : none;
+      return post && text ? { action: "comment", post, text, reply_to: ref(o.reply_to), ...gifOf(o) } : none;
     }
     if (o.action === "like") {
       const post = str(o.post);

@@ -49,6 +49,8 @@ export type ThreadComment = {
   by: Who;
   text: string;
   created: number;
+  /** A GIF the author added: an address on a GIF service, and a caption. */
+  gif?: { url: string; alt: string };
   likes: string[];
 };
 
@@ -60,6 +62,7 @@ export type ThreadPost = {
   by: Who;
   created: number;
   updated: number;
+  gif?: { url: string; alt: string };
   likes: string[];
   comments: ThreadComment[];
 };

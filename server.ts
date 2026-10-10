@@ -68,7 +68,8 @@ import { organizationRoutes } from "./server/routes/organization";
 import { agentBrief, findAgent, getAgent, LEAD_ID, listAgents, recordCollab, recordWork } from "./server/agents";
 import { agentMind, clusters, remember, teach } from "./server/agentmind";
 import { LifeGate, URGE_AT, allowed as lifeAllowed, knownText, lifePrompt, parseChoice, personWaiting, pickAgent, urgeOf, vetLinks } from "./server/threadlife";
-import { addComment, createPost, getPost, toggleLike } from "./server/threads";
+import { addComment, createPost, getPost, listPosts, toggleLike } from "./server/threads";
+import { findGif } from "./server/threadgif";
 import { NewsGate, newsPrompt, nextLookoutMs, parseQuery, queryPrompt, readNews, workOutcome, workTitle } from "./server/threadnews";
 import { mcpRoutes } from "./server/routes/mcp";
 import { artifactRoutes } from "./server/routes/artifacts";
@@ -3009,6 +3010,20 @@ const lifeSleep = new Map<string, number>();
 const lifeNudge = new Map<string, number>();
 let lifeBusy = false;
 
+function gifKeys(): { giphy: string; tenor: string } {
+  return { giphy: secretFor("GIPHY_API_KEY"), tenor: secretFor("TENOR_API_KEY") };
+}
+
+/** Whether the most recent thing this agent put in the forum had a GIF: they come now and then, not every time. */
+function lastWasGif(agentId: string): boolean {
+  let last: { at: number; gif: boolean } | null = null;
+  for (const p of listPosts("new")) {
+    if (p.by.id === agentId && (!last || p.created > last.at)) last = { at: p.created, gif: Boolean(p.gif) };
+    for (const c of p.comments) if (c.by.id === agentId && (!last || c.created > last.at)) last = { at: c.created, gif: Boolean(c.gif) };
+  }
+  return last?.gif ?? false;
+}
+
 async function threadLifeStep(): Promise<void> {
   if (!state.threadsAlive || lifeBusy) return;
   const now = Date.now();
@@ -3029,7 +3044,7 @@ async function threadLifeStep(): Promise<void> {
   try {
     lifeLook.set(agent.id, now);
     lifeNudge.delete(agent.id);
-    const { system, prompt } = lifePrompt(agent, roster.filter((a) => a.id !== agent.id).map((a) => a.name), new Map(roster.map((a) => [a.id, a.name])));
+    const { system, prompt } = lifePrompt(agent, roster.filter((a) => a.id !== agent.id).map((a) => a.name), new Map(roster.map((a) => [a.id, a.name])), Boolean(gifKeys().giphy || gifKeys().tenor));
     const choice = parseChoice(await backgroundCall("threads", system, prompt, 500));
     const me = { kind: "agent" as const, id: agent.id, name: agent.name };
     if (choice.note) remember(agent.id, choice.note, "lesson");
@@ -3042,12 +3057,14 @@ async function threadLifeStep(): Promise<void> {
        survives if the agent was given it. */
     const said = redactDeep(choice) as typeof choice;
     const known = knownText(agent);
-    if (said.action === "post") createPost({ title: said.title, body: vetLinks(said.text, known), tags: said.tags, by: me });
+    /* A GIF, if it asked for one and the last thing it said did not have one: found by its words, never by an address of its own. */
+    const gif = "gif" in said && said.gif && !lastWasGif(me.id) ? await findGif(said.gif, gifKeys()) : null;
+    if (said.action === "post") createPost({ title: said.title, body: vetLinks(said.text, known), tags: said.tags, by: me, gif });
     else if (said.action === "comment") {
       const post = getPost(said.post);
       const parent = said.reply_to ? post?.comments.find((c) => c.id === said.reply_to) : null;
       const to = parent?.by ?? post?.by;
-      addComment(said.post, { text: vetLinks(said.text, known), parent: said.reply_to, by: me });
+      addComment(said.post, { text: vetLinks(said.text, known), parent: said.reply_to, by: me, gif });
       if (to?.kind === "agent") recordCollab(me.id, to.id, true, 2); // a conversation between colleagues builds a little rapport
     } else if (said.action === "like") toggleLike(said.post, me, said.comment);
     lifeGate.note(Date.now());
