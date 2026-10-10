@@ -200,4 +200,6 @@ releaseNotes: >-
   their desktop-only buttons. Every tool window now shares one set of measurements on a phone
   (a 48px bar, 40px soft-square buttons, no text pills or round buttons mixed in), 3D and the
   editors follow them, and full screen keeps a strip at the bottom so the chat button no longer
-  covers a tool's own buttons. A desktop gets the full editors exactly as before.
+  covers a tool's own buttons. A second pass gave every control on the phone a thumb's size, named the
+  terminal in its bar, and tidied Music's settings and the app window's bar. A desktop gets the full
+  editors exactly as before.

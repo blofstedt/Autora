@@ -77,9 +77,8 @@ async function main() {
 
     await test("what the agent makes opens beside the chat, with the game in GDevelop's editor", async () => {
       await page.waitForSelector(".app-pane .pdf-window", { timeout: 20_000 });
-      assert.equal(await page.locator(".pdf-bar-app").innerText(), "Autora Games");
-      assert.match(await page.locator(".pdf-bar-name").innerText(), /Cat jump/);
-      await waitFor("the editor to say the game is open", async () => /Saved as you go/.test(await page.locator(".pdf-bar-note").innerText()), 60_000);
+      // (A desktop's window has no bar of its own: its tab names it, and the editor says what is open.)
+      assert.equal(await page.locator(".app-pane .pdf-window .pdf-bar").count(), 0);
       await waitFor("the objects to be listed", async () => /Hello/.test(await editorText()) && /Cat/.test(await editorText()));
     });
 

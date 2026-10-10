@@ -511,6 +511,12 @@ Spectra's fetched renderer is most of what is on disk.
   the editor's own commands (`menus::invoke`). Sizes are asked for in CSS pixels (`per_css_px`), because a headless browser at a
   device ratio above 1 reports an editor canvas half the page's resolution and a pointer the editor mis-maps: test the phone at
   1:1 (`tests/ui-photo.test.ts`). `build-photo.mjs` adds `serde_json` to the web app for it. The pin never moves.
+- Second pass on a phone: the pages (Sessions, Artifacts, Tools, Settings, Mind...), the drawer, the composer and the thread were already
+  one column and needed only a thumb's size on their controls (`styles.css`, "Everything else on a phone": 36-40px pills, filters and
+  selects, switches and check boxes with an invisible margin, 16px fields so the browser does not zoom). The terminal's bar names it and
+  its key row sits above the full-screen strip; widgets' headers are window bars; the app window's bar fits its close button and Music's
+  settings sit tempo and bars side by side with the key under them. Games run GDevelop's own narrow layout (a bottom tab bar), which
+  is not pared down yet. Method: open every surface at 390px, screenshot it, and list the controls under 38px.
 - One look across the windows on a phone (`styles.css`, "Tool windows on a phone"): `--pt-bar` 48px, `--pt-hit` 40px, `--pt-r` 12px.
   Every window's bar (`.pdf-bar`, `.app-bar`, the browser's) is the name and 40px soft-square buttons; text pills are for
   desktop; `TakeControl` is the hand-over switch in all of them (PDF, Video, Pages/Sheets/Slides, the app window). The editors
