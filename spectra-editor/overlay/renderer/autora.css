@@ -508,7 +508,7 @@
 
 /* The status strip along the bottom of the page: page, zoom, and the work waiting to be applied. Round buttons on the same ladder as the bar. */
 .autora-rail-ui .canvas-status-bar {
-  gap: 6px 8px;
+  gap: 6px 4px;
   flex-wrap: wrap;
   min-height: 44px;
   padding: 6px 12px;
@@ -519,7 +519,7 @@
 .autora-rail-ui .canvas-status-action {
   min-height: 0 !important;
   height: 30px;
-  padding: 0 14px;
+  padding: 0 10px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 500;
@@ -531,7 +531,9 @@
 .autora-rail-ui .canvas-status-action.bg-blue-600 { background: var(--autora-accent); color: #fff; }
 .autora-rail-ui .canvas-status-action.bg-blue-600:hover { background: var(--autora-accent-light); }
 .autora-rail-ui .canvas-status-action.danger-action { color: #fff; background: #e11d48; border: 0; }
-.autora-rail-ui .canvas-status-pending { gap: 6px; flex-wrap: nowrap; }
+.autora-rail-ui .canvas-status-pending { gap: 4px; flex-wrap: nowrap; }
+/* One line on a desktop: Organize/Read is in the menu (View > Document View) and the grid. */
+.autora-desktop [data-testid="toggle-doc-view"] { display: none !important; }
 .autora-rail-ui .canvas-status-action, .autora-rail-ui .canvas-status-pages { white-space: nowrap; }
 .autora-rail-ui .canvas-status-pages { gap: 6px; color: var(--autora-text-2); font-size: 12px; }
 .autora-rail-ui .canvas-status-pageinput {
@@ -565,8 +567,8 @@
 .autora-left { flex: none; display: flex; flex-direction: column; gap: 12px; padding: 12px; border-bottom: 1px solid var(--autora-border); }
 .autora-file-tiles { grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .autora-file-tiles .autora-tile { height: 58px; border-radius: 16px; gap: 4px; font-size: 11px; }
-.autora-panels { display: flex; flex-wrap: wrap; gap: 4px; }
-.autora-panel-btn { position: relative; width: 28px; height: 28px; min-height: 0 !important; border-radius: 50%; display: grid; place-items: center; color: var(--autora-text-2); background: rgba(255, 255, 255, 0.06); }
+.autora-panels { display: flex; flex-wrap: nowrap; gap: 2px; justify-content: space-between; }
+.autora-panel-btn { position: relative; width: 26px; height: 26px; flex: none; min-height: 0 !important; border-radius: 50%; display: grid; place-items: center; color: var(--autora-text-2); background: rgba(255, 255, 255, 0.06); }
 .autora-panel-btn:hover { color: var(--autora-text); background: rgba(255, 255, 255, 0.12); }
 .autora-panel-btn[aria-pressed="true"] { color: #fff; background: var(--autora-accent); }
 .autora-desktop .autora-panel-btn[data-tip]:hover::after { right: auto; left: 50%; top: calc(100% + 6px); transform: translateX(-50%); }
