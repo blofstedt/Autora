@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAgentCursor } from "../lib/agentCursor";
 import { useBootWatch } from "../lib/bootWatch";
-import { holdSurface, useCollab } from "../lib/collab";
+import { useCollab } from "../lib/collab";
+import { TakeControl } from "./TakeControl";
 import { useFullscreen } from "../lib/fullscreen";
 import { along, humanRoute, restMs, routeMs, typingDelays, type Point } from "../lib/humanPath";
 import { clearCursor, reportCursor } from "../lib/cursorPos";
@@ -387,14 +388,7 @@ export function OpenCutWindow({ sessionId, phone }: { sessionId: string; phone: 
         <span className="pdf-bar-name" title={desk.name ?? undefined}>{desk.name ?? "Video"}</span>
         <span className="pdf-bar-note">Saved as you go</span>
         <div className="spacer" />
-        <button
-          className={`pdf-pill${mine ? " is-accept" : ""}`}
-          onClick={() => void holdSurface(sessionId, "video", !mine)}
-          aria-pressed={mine}
-          title={mine ? "Let the agent work on the video again" : "Work on the video yourself; the agent carries on with other work"}
-        >
-          {mine ? "Hand back" : "Take control"}
-        </button>
+        <TakeControl sessionId={sessionId} surface="video" mine={mine} phone={phone} thing="video" />
         {phone && (
           <button
             className="btn icon ghost pdf-full-btn"
@@ -412,7 +406,7 @@ export function OpenCutWindow({ sessionId, phone }: { sessionId: string; phone: 
         <iframe
           ref={frame}
           className="pdf-frame"
-          src={`/opencut-editor/index.html?session=${encodeURIComponent(sessionId)}${opening ? `&project=${encodeURIComponent(opening)}` : ""}`}
+          src={`/opencut-editor/index.html?session=${encodeURIComponent(sessionId)}${opening ? `&project=${encodeURIComponent(opening)}` : ""}${phone ? "&phone=1" : ""}`}
           title={`${desk.name ?? "Video"}, in Autora Video`}
           sandbox="allow-scripts allow-downloads allow-modals allow-popups"
           allow="autoplay; fullscreen"

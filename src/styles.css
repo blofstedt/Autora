@@ -6583,7 +6583,14 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
    one thing you could not tap. The badge that repeats the tool's name is the
    first thing to go -- the window is already titled -- and the bar tightens,
    so the file's name is what gives way and every control stays reachable. */
-.pdf-window.is-phone .pdf-bar { gap: 6px; padding: 6px 8px; }
+.pdf-window.is-phone .pdf-bar { gap: 2px; padding: 4px 6px 4px 14px; min-height: 48px; }
+/* The bar on a phone is a title and round icon buttons, all one size: the file, then the hand-over switch, the
+   download and full screen. (Text pills made it a row of unlike things, and the name had what was left.) */
+.pdf-window.is-phone .pdf-bar-ico { display: none; }
+.pdf-window.is-phone .pdf-bar-name { flex: 1 1 auto; font-size: calc(14px * var(--ts, 1)); margin-right: 4px; }
+.pdf-window.is-phone .pdf-bar .spacer { display: none; }
+.pdf-window.is-phone .pdf-bar .btn.icon { width: 38px; height: 38px; min-width: 38px; min-height: 38px; padding: 0; border-radius: 50%; display: grid; place-items: center; color: var(--text-2); }
+.pdf-window.is-phone .pdf-bar .btn.icon.is-on { background: var(--accent-soft); color: var(--accent-2); }
 .pdf-window.is-phone .pdf-bar-app { display: none; }
 .pdf-window.is-phone .pdf-pill { padding: 4px 8px; font-size: calc(11.5px * var(--ts, 1)); }
 /* A document as pictures of its pages, for a phone (components/OfficePages.tsx). */

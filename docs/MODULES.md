@@ -468,6 +468,17 @@ Spectra's fetched renderer is most of what is on disk.
 - A frame that does not start: `lib/bootWatch.ts` says so after 25 s (PDF and video windows), and the PDF frame forwards
   its uncaught errors (`autora:spectra:error`). Its build puts a `Map.getOrInsert*` polyfill in front of every chunk,
   workers included (`polyfillFirst` in `spectra-editor/vite.config.ts`): pdf.js needs it and older browsers lack it.
+- Paired-down tools on a phone: a phone gets the same files in an editor arranged for a thumb, never a second
+  implementation, and the desktop is untouched. The window adds `&phone=1` to the editor frame's URL (`SpectraWindow`,
+  `OpenCutWindow`). PDF: `spectra-editor/src/autora/phone.tsx` sets `html.autora-phone` and mounts one bar (Mark up, Fill & sign,
+  Find, Undo, Redo) that calls Spectra's own `invokeCommand`; `overlay/renderer/autora.css` puts the menu bar, toolbar,
+  tabs, rail and the tool dock's all-tools grid away and turns the dock into a sheet. Pinned (a frame under 520px tall) it is
+  for looking only. Video: `opencut-editor/overlay/web/app/editor/[project_id]/page.tsx` is a whole-file copy of OpenCut's
+  page with a `PhoneLayout` (preview, timeline, Media and Edit sheets over the timeline slot); keep it in step with the
+  pin's page, which never moves. Pages, Sheets and Slides were already pictures of the pages with tap-to-point
+  (`OfficePages`), and Autora 3D was already built for touch (its own bottom bar). The bar at the top of every window on
+  a phone is the name and round icon buttons (`TakeControl`, download, full screen), not text pills. Games are not
+  done yet. Tests: `ui-pdfwindow`, `ui-video`.
 - Full screen on a phone (`lib/fullscreen.ts`): one shared flag for every pinned tool (browser, app window, PDF,
   Pages/Sheets/Slides, widget), so Follow (`busiestSurface` in `Thread`) moves the stage to the next tool with the
   screen still full. While it is up, `components/ImmersiveChat.tsx` is laid over it: the agent's last reply as a

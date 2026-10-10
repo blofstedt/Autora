@@ -149,6 +149,23 @@ async function main() {
     clearInterval(watch);
     await page.close();
 
+    await test("on a phone the editor is the paired-down one: the picture, the timeline, and Media and Edit as sheets", async () => {
+      const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+      await phone.goto(`${app.base}/?session=${s}`);
+      await phone.waitForSelector(".stage .pdf-window", { timeout: 20_000 });
+      assert.equal(await phone.locator(".pdf-bar .pdf-pill").count(), 0, "round buttons, not text pills");
+      await phone.tap('.pdf-bar button[aria-label="Full screen"]');
+      const frame = await editorIn(phone);
+      await frame.waitForSelector("[data-autora-phone]", { timeout: 30_000 });
+      assert.equal(await frame.locator('[data-phone-sheet="media"]').count(), 1);
+      assert.equal(await frame.locator("[data-phone-panel]").count(), 0, "no sheet until asked for");
+      await frame.click('[data-phone-sheet="media"]');
+      await frame.waitForSelector('[data-phone-panel="media"]', { timeout: 5_000 });
+      await frame.click('[data-phone-sheet="media"]');
+      assert.equal(await frame.locator("[data-phone-panel]").count(), 0, "the same button puts it away");
+      await phone.close();
+    });
+
     await test("a reload finds the project again", async () => {
       const again = await browser.newPage({ viewport: { width: 1440, height: 900 } });
       await again.goto(`${app.base}/?session=${s}`);
