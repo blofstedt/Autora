@@ -88,6 +88,8 @@ export function ScreencastCell({
   /** How much bigger than the card the picture is drawn. A page of small
       type on a phone is unreadable at fit; this is the magnifier. */
   const [zoom, setZoom] = useState(1);
+  /* Full screen on a phone opens magnified: at the page's width a 1280px page is a thumbnail. Leaving puts it back. */
+  useEffect(() => { if (onPhone) setZoom(max ? 2 : 1); }, [max, onPhone]);
   /** Dragging the page with a finger rather than scrolling it: what a
       slider, a canvas or a map needs on a touch screen. A mouse drags
       without it -- there is nothing else for a mouse drag here to mean. */
@@ -451,7 +453,7 @@ export function ScreencastCell({
     >
       {/* The window's own bar, the one the PDF and Office windows carry: what this window is,
           the page in it, and who is driving. The browser's toolbar sits under it. */}
-      {toolbar && !max && (
+      {toolbar && !max && !onPhone && (
         <header className="pdf-bar">
           <span className="pdf-bar-ico" aria-hidden="true"><IconGlobe size={14} /></span>
           <span className="pdf-bar-app">Autora Browser</span>
@@ -588,7 +590,18 @@ export function ScreencastCell({
             <IconMousePointer size={15} />
           </button>
         )}
-        {stageSrc && max && (
+        {stageSrc && max && (onPhone ? (
+          /* A page is 1280 wide and a phone's screen 390: the whole page is a thumbnail. One button steps through the
+             sizes a thumb reads (the page's width, then 2, 3 and 4 times), and the picture scrolls under a finger. */
+          <button
+            className="shot-tool shot-zoom-cycle"
+            onClick={() => setZoom((z) => (z >= 4 ? 1 : z < 2 ? 2 : z + 1))}
+            aria-label={`${zoom === 1 ? "Whole page" : `${zoom} times`} — tap to change the size`}
+            title="Change the size of the page"
+          >
+            {zoom === 1 ? "Fit" : `${zoom}×`}
+          </button>
+        ) : (
           <span className="shot-zoom">
             <button
               className="shot-tool"
@@ -615,12 +628,12 @@ export function ScreencastCell({
               +
             </button>
           </span>
-        )}
+        ))}
         {stageSrc && (
           <button
             className="shot-corner"
             onClick={() => {
-              if (!max && !big) { setBigChoice(true); return; }
+              if (!max && !big && !onPhone) { setBigChoice(true); return; }
               setMax((m) => !m);
             }}
             aria-label={max ? "Leave full screen" : "Enlarge"}
@@ -643,7 +656,7 @@ export function ScreencastCell({
           onNewTab={(u) => void send("tabs", { action: "new", url: u })}
         />
       )}
-      {toolbar && tabs.length > 0 && (
+      {toolbar && tabs.length > (onPhone ? 1 : 0) && (
         <div className="shot-tabs" role="tablist" aria-label="Tabs">
           {tabs.map((tab) => (
             <div key={tab.id} className={`shot-tab${tab.active ? " on" : ""}`} role="presentation">

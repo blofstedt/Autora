@@ -42,7 +42,7 @@ export function GameWindow({ sessionId, phone }: { sessionId: string; phone: boo
   const [trouble, setTrouble] = useState<string | null>(null);
   const [full, setFull] = useFullscreen();
   /* The colours the frame was opened with: its address, which must not change while it is up. */
-  const [src] = useState(() => `/gdevelop-editor/index.html?autora=${encodeURIComponent(sessionId)}&theme=${encodeURIComponent(themeNow())}`);
+  const [src] = useState(() => `/gdevelop-editor/index.html?autora=${encodeURIComponent(sessionId)}&theme=${encodeURIComponent(themeNow())}${phone ? "&phone=1" : ""}`);
   const lastTheme = useRef(themeNow());
   /* The agent's cursor goes to what it changed, then the editor takes the new version. */
   const [cursorOn] = useAgentCursor();
@@ -97,11 +97,11 @@ export function GameWindow({ sessionId, phone }: { sessionId: string; phone: boo
       const next = themeNow();
       if (!ready.current || next === lastTheme.current) return;
       lastTheme.current = next;
-      post({ autoraGameCmd: "theme", query: `autora=${encodeURIComponent(sessionId)}&theme=${encodeURIComponent(next)}` });
+      post({ autoraGameCmd: "theme", query: `autora=${encodeURIComponent(sessionId)}&theme=${encodeURIComponent(next)}${phone ? "&phone=1" : ""}` });
     });
     watch.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-font", "style"] });
     return () => watch.disconnect();
-  }, [post, sessionId]);
+  }, [post, sessionId, phone]);
 
   const scenes = game.scenes ?? 0;
   return (

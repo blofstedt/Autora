@@ -8,3 +8,18 @@ body { background: var(--theme-surface-window-background-color, #08090d); }
 .autora-home ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-width: 360px; }
 .autora-home button { width: 100%; text-align: left; cursor: pointer; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--theme-dialog-separator-color); background: var(--theme-surface-alternate-canvas-background-color); color: inherit; font: inherit; }
 .autora-home button:hover { border-color: var(--theme-primary-color); }
+
+/* On a phone (session.js: ?phone=1): the game as a thumb has it. The scene, what is in it, what is selected, undo, save and
+   Play. Events, extensions, sharing, the 3D view, version history, the project manager and Home are the desktop's, and the
+   agent has every one of them: people do not build whole games on a phone, but the tool works there. */
+html.autora-phone #tab-start-page,
+html.autora-phone [id^="tab-layout-events-"],
+html.autora-phone [id^="tab-events-functions"],
+html.autora-phone [id^="tab-external-events"],
+html.autora-phone #toolbar-history-button,
+html.autora-phone #toolbar-publish-button,
+html.autora-phone #game-editor-toggle,
+html.autora-phone #toolbar-preview-split-menu-button,
+html.autora-phone #main-toolbar-project-manager-button { display: none !important; }
+html.autora-phone .MuiIconButton-root, html.autora-phone .MuiButton-root { min-width: 40px; min-height: 40px; }
+html.autora-phone #toolbar-preview-button { min-width: 56px; border-radius: 12px; }

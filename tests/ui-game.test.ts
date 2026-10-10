@@ -156,6 +156,25 @@ async function main() {
 
     assert.deepEqual(errors.filter((e) => !/Network Error|Failed to fetch/.test(e)), [], "no uncaught errors in the page");
     await context.close();
+
+    await test("on a phone the editor is the paired-down one: the scene, Play, undo and what is in it; no events, sharing or 3D", async () => {
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 1 });
+      const phone = await ctx.newPage();
+      await phone.goto(`${app.base}/?session=${s}`);
+      await phone.waitForSelector(".stage .pdf-window", { timeout: 20_000 });
+      await phone.locator('.pdf-bar button[aria-label="Full screen"]').click();
+      let frame: Frame | undefined;
+      await waitFor("the editor frame", async () => { frame = phone.frames().find((f) => f.url().includes("/gdevelop-editor/")); return !!frame; }, 20_000);
+      assert.match(frame!.url(), /phone=1/);
+      await frame!.waitForSelector("#toolbar-preview-button", { timeout: 90_000 });
+      const shown = (id: string) => frame!.evaluate((q) => { const el = document.querySelector(q); return !!el && el.getClientRects().length > 0; }, id);
+      assert.equal(await shown("#toolbar-preview-button"), true, "Play");
+      assert.equal(await shown("#toolbar-save-button"), true, "save");
+      for (const gone of ["#toolbar-publish-button", "#game-editor-toggle", "#tab-layout-events-Scene", "#tab-start-page", "#toolbar-history-button", "#main-toolbar-project-manager-button"]) {
+        assert.equal(await shown(gone), false, `${gone} is the desktop's`);
+      }
+      await ctx.close();
+    });
   } finally {
     await browser.close();
     await app.stop();

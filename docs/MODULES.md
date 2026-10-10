@@ -515,8 +515,15 @@ Spectra's fetched renderer is most of what is on disk.
   one column and needed only a thumb's size on their controls (`styles.css`, "Everything else on a phone": 36-40px pills, filters and
   selects, switches and check boxes with an invisible margin, 16px fields so the browser does not zoom). The terminal's bar names it and
   its key row sits above the full-screen strip; widgets' headers are window bars; the app window's bar fits its close button and Music's
-  settings sit tempo and bars side by side with the key under them. Games run GDevelop's own narrow layout (a bottom tab bar), which
-  is not pared down yet. Method: open every surface at 390px, screenshot it, and list the controls under 38px.
+  settings sit tempo and bars side by side with the key under them. Games and the browser got their own pass (next item). Method: open every surface at 390px, screenshot it, and list the controls under 38px.
+- Games and the browser on a phone. Games: `gdevelop-editor/overlay/.../Autora/session.js` puts `autora-phone` on the editor's `<html>`
+  when the window adds `?phone=1`, and `autora.css` hides what a phone does not do with a game (Home, the Events tabs, Share, history,
+  the 2D/3D switch, the project manager, the preview menu), leaving the scene, what is in it, undo, save and Play, with GDevelop's own
+  bottom tab bar; people do not build whole games on a phone, and the agent has the rest. The editor is rebuilt (`npm run build`) for it.
+  Browser (`ScreencastCell.tsx`, `usePhone`): no window bar, tabs only when there is more than one, Enlarge goes straight to full
+  screen (not the taller inline step), full screen opens magnified (the page is 1280px wide; at the width of a phone it is a
+  thumbnail) with one button that steps Fit, 2, 3 and 4 times, and `.cell.shot.is-max` is raised above the app's header like the other full-screen windows
+  (the toolbar had been underneath it). Tests: `ui-game`, `ui-browser-phone`.
 - One look across the windows on a phone (`styles.css`, "Tool windows on a phone"): `--pt-bar` 48px, `--pt-hit` 40px, `--pt-r` 12px.
   Every window's bar (`.pdf-bar`, `.app-bar`, the browser's) is the name and 40px soft-square buttons; text pills are for
   desktop; `TakeControl` is the hand-over switch in all of them (PDF, Video, Pages/Sheets/Slides, the app window). The editors

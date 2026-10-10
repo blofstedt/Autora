@@ -6498,8 +6498,8 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 }
 /* The thread's column and the page around it are layers of their own, under
    the header: while the window inside is full screen, both go above it. */
-.thread-wrap:has(.pdf-window.is-full, .app-window.is-full, .cell.widget.is-expanded) { z-index: var(--z-over); }
-.page:has(.pdf-window.is-full, .app-window.is-full, .cell.widget.is-expanded) { position: relative; z-index: var(--z-over); }
+.thread-wrap:has(.pdf-window.is-full, .app-window.is-full, .cell.widget.is-expanded, .cell.shot.is-max) { z-index: var(--z-over); }
+.page:has(.pdf-window.is-full, .app-window.is-full, .cell.widget.is-expanded, .cell.shot.is-max) { position: relative; z-index: var(--z-over); }
 /* The app window, full screen on a phone: the same cover as the PDF's. */
 .app-window.is-full {
   position: fixed; inset: 0; z-index: var(--z-cover); height: auto;
@@ -7512,4 +7512,19 @@ body.is-resizing iframe { pointer-events: none; }
 }
 @media (max-width: 680px) {
   .st-window.is-phone .st-trow:last-child { justify-content: flex-start; gap: 8px; }
+}
+
+/* The browser on a phone, second pass: no bar of its own (the address names the page), tabs only when there is more than one,
+   and one button for the page's size, since a page 1280px wide is a thumbnail at 390. */
+@media (max-width: 680px) {
+  .cell.shot .shot-zoom-cycle { width: auto; min-width: var(--pt-hit); padding: 0 10px; font: 600 13px/1 var(--sans, system-ui); color: var(--text-2); }
+  .cell.shot .shot-tabs { min-height: var(--pt-bar); padding: 4px 6px; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+  .cell.shot .shot-tab { flex: 0 0 auto; max-width: 70%; min-height: var(--pt-hit); border-radius: var(--pt-r); }
+  .cell.shot .shot-tab-main { min-height: var(--pt-hit); }
+}
+
+@media (max-width: 680px) {
+  .cell.shot.is-max { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 64px); }
+  .cell.shot.is-max .shot-stage { padding: 0; overflow: auto; }
+  .cell.shot.is-max .shot-stage .frame { max-height: none; }
 }
