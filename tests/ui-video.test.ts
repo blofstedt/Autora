@@ -159,6 +159,8 @@ async function main() {
       await frame.waitForSelector("[data-autora-phone]", { timeout: 30_000 });
       assert.equal(await frame.locator('[data-phone-sheet="media"]').count(), 1);
       assert.equal(await frame.locator("[data-phone-panel]").count(), 0, "no sheet until asked for");
+      assert.equal(await frame.locator("[data-phone-toolbar] button").count(), 6, "undo, split, duplicate, delete, zoom out and in: the rest is the desktop's");
+      assert.equal(await frame.locator("header").count(), 0, "OpenCut's own header row is gone: the window's bar names the project");
       await frame.click('[data-phone-sheet="media"]');
       await frame.waitForSelector('[data-phone-panel="media"]', { timeout: 5_000 });
       await frame.click('[data-phone-sheet="media"]');

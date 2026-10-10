@@ -201,7 +201,18 @@ async function main() {
       assert.ok(reach.every(Boolean), "every button is on screen and thumb-sized");
       // The bar drives the editor's own tools: Mark up opens Comment, whose modes are Spectra's own.
       await frame.click('[data-phone="markup"]');
-      await frame.waitForSelector('[data-testid="secondary-toolbar"], .secondary-toolbar', { timeout: 10_000 });
+      await frame.waitForSelector('[data-testid="secondary-toolbar"]', { timeout: 10_000 });
+      // Simplified: five marks a thumb makes, no stamp/shape/callout/lock, no Close button; the bar's own button closes it.
+      const visible = (id: string) => frame.evaluate((t) => { const el = document.querySelector(`[data-testid="${t}"]`); return !!el && el.getClientRects().length > 0; }, id);
+      for (const id of ["tool-highlight", "tool-freetext", "tool-ink", "tool-note", "tool-inkerase"]) assert.equal(await visible(id), true, id);
+      for (const id of ["tool-stamp", "tool-shape", "tool-callout", "tool-inkhighlight", "tool-lock", "secondary-action-tools.close"]) assert.equal(await visible(id), false, `${id} is the desktop's`);
+      assert.equal(await frame.getAttribute('[data-phone="markup"]', "aria-pressed"), "true");
+      await frame.click('[data-phone="markup"]');
+      await frame.waitForSelector('[data-testid="secondary-toolbar"]', { state: "detached", timeout: 10_000 });
+      // Find is one row, without the desktop's case / word / regex switches.
+      await frame.click('[data-phone="find"]');
+      await frame.waitForSelector('[data-testid="find-bar"]', { timeout: 10_000 });
+      assert.equal(await frame.evaluate(() => [...document.querySelectorAll('[data-testid="find-bar"] button')].filter((b) => b.getClientRects().length > 0).length), 1, "only the close button");
       await phone.close();
     });
 

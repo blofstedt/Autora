@@ -11,6 +11,7 @@ import { PropertiesPanel } from "@/components/editor/panels/properties";
 import { Timeline } from "@/timeline/components";
 import { PreviewPanel } from "@/preview/components";
 import { EditorHeader } from "@/components/editor/editor-header";
+import { ExportButton } from "@/components/editor/export-button";
 import { EditorProvider } from "@/components/providers/editor-provider";
 import { Onboarding } from "@/components/editor/onboarding";
 import { MigrationDialog } from "@/project/components/migration-dialog";
@@ -45,7 +46,7 @@ export default function Editor() {
 			<EditorProvider projectId={projectId}>
 				<div className="bg-background flex h-screen w-screen flex-col overflow-hidden">
 					<DegradedRendererBanner />
-					<EditorHeader />
+					{!phone && <EditorHeader />}
 					<div className="min-h-0 min-w-0 flex-1">
 						{phone ? <PhoneLayout /> : <EditorLayout />}
 					</div>
@@ -132,6 +133,9 @@ function PhoneLayout() {
 								{which === "media" ? "Media" : "Edit"}
 							</button>
 						))}
+						<div className="shrink-0 [&_button]:h-10 [&_button]:rounded-full [&_button]:bg-primary [&_button]:px-5 [&_button]:py-0 [&_button]:text-primary-foreground [&_button]:items-center [&_button>div]:bg-none [&_button>div]:shadow-none [&_button>div]:px-0 [&_button>div]:py-0 [&_button>div>div]:hidden">
+							<ExportButton />
+						</div>
 					</div>
 					<div className={`relative shrink-0 ${sheet ? "h-[50%]" : "h-[38%] min-h-[160px]"}`}>
 						{/* Kept mounted behind the sheet, so its zoom and scroll are where they were. */}
@@ -139,7 +143,7 @@ function PhoneLayout() {
 							<Timeline />
 						</div>
 						{sheet && (
-							<div className="bg-background size-full overflow-auto rounded-xl border" data-phone-panel={sheet}>
+							<div className="bg-background size-full overflow-auto rounded-xl border pb-16" data-phone-panel={sheet}>
 								{sheet === "media" ? <AssetsPanel /> : <PropertiesPanel />}
 							</div>
 						)}

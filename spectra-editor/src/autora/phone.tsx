@@ -9,13 +9,13 @@
  *
  * Only mounted when the window says it is a phone (`?phone=1`, from components/SpectraWindow.tsx).
  */
+import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { invokeCommand } from "../renderer/commands/context";
 import type { CommandId } from "../renderer/commands/registry";
 
 const ICONS: Record<string, string> = {
   undo: "M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3",
-  redo: "m15 14 5-5-5-5M20 9H10a6 6 0 0 0 0 12h3",
   markup: "m4 20 4-1L19 8l-3-3L5 16l-1 4ZM14 7l3 3",
   sign: "M3 17c3-6 5-9 6-9s0 6 2 6 3-4 5-4 2 4 5 4M3 21h18",
   find: "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14ZM21 21l-5-5",
@@ -23,24 +23,39 @@ const ICONS: Record<string, string> = {
 
 const BUTTONS: { id: string; label: string; icon: string; command: CommandId; mark?: string }[] = [
   { id: "undo", label: "Undo", icon: "undo", command: "edit.undo" },
-  { id: "redo", label: "Redo", icon: "redo", command: "edit.redo" },
   { id: "markup", label: "Mark up", icon: "markup", command: "tools.open.comment" as CommandId, mark: "comment" },
   { id: "sign", label: "Fill & sign", icon: "sign", command: "tools.open.fillsign" as CommandId, mark: "fillsign" },
   { id: "find", label: "Find", icon: "find", command: "edit.find" },
 ];
 
+/** Which tool's strip is up now (the editor's own `data-tool`), or none: read off the page, so the bar needs nothing from the editor's state. */
+function useOpenTool(): string | null {
+  const [open, setOpen] = useState<string | null>(null);
+  useEffect(() => {
+    const read = () => setOpen(document.querySelector<HTMLElement>('[data-testid="secondary-toolbar"]')?.dataset.tool ?? null);
+    read();
+    const watch = new MutationObserver(read);
+    watch.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-tool"] });
+    return () => watch.disconnect();
+  }, []);
+  return open;
+}
+
 function PhoneBar() {
+  const open = useOpenTool();
   return (
     <nav className="autora-phonebar" aria-label="PDF tools" data-testid="phone-bar">
       {BUTTONS.map((b) => (
         <button
           key={b.id}
           type="button"
-          className="autora-phonebar-btn"
+          className={`autora-phonebar-btn${b.mark && b.mark === open ? " is-on" : ""}`}
           data-phone={b.id}
+          aria-pressed={b.mark ? b.mark === open : undefined}
           // A tap on a button must not take the page's focus (and the on-screen keyboard) with it.
           onPointerDown={(e) => e.preventDefault()}
-          onClick={() => { invokeCommand(b.command); }}
+          // Its own tool already up: the same button puts it away (there is no Close button on a phone).
+          onClick={() => { invokeCommand(b.mark && b.mark === open ? ("tools.close" as CommandId) : b.command); }}
         >
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d={ICONS[b.icon]} />

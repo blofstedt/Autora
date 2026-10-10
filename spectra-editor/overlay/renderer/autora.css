@@ -177,6 +177,76 @@
   box-shadow: 0 -12px 32px rgba(0, 0, 0, 0.45);
 }
 
+/* The mark-up strip, simplified: the five things a thumb does to a page (highlight, type, draw, note, erase), the colour,
+   and Done. Freehand highlight, stamp, shape, callout and the lock are the desktop's (and the agent's: it has every tool
+   whatever is shown here). The strip is two tidy rows instead of a wrapped heap. */
+.autora-phone .secondary-toolbar {
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: center;
+  gap: 10px 8px;
+  padding: 10px 12px;
+  background: var(--autora-s1);
+  border-bottom: 1px solid var(--autora-border-strong);
+}
+.autora-phone .secondary-toolbar-title,
+.autora-phone [data-testid="tool-lock"],
+.autora-phone [data-testid="tool-inkhighlight"],
+.autora-phone [data-testid="tool-stamp"],
+.autora-phone [data-testid="tool-shape"],
+.autora-phone [data-testid="tool-callout"] { display: none !important; }
+.autora-phone .secondary-toolbar-modes {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  width: 100%;
+}
+.autora-phone .secondary-toolbar-modes .secondary-tool {
+  flex: 1 1 0;
+  min-width: 0;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 4px;
+  border-radius: 12px;
+  border-color: transparent;
+  background: var(--autora-s2);
+  color: var(--autora-text-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+.autora-phone .secondary-toolbar-modes .secondary-tool.active {
+  background: var(--autora-accent-soft);
+  border-color: var(--autora-accent-line);
+  color: var(--autora-text);
+}
+.autora-phone .secondary-toolbar-opts {
+  max-inline-size: none;
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  gap: 8px;
+}
+.autora-phone .secondary-toolbar .color-swatch,
+.autora-phone .secondary-toolbar .annot-swatch { width: 30px; height: 30px; min-height: 30px; border-radius: 50%; }
+/* No Close Tool: the bar's own button for the open tool puts it away (src/autora/phone.tsx). */
+.autora-phone .secondary-toolbar-actions { display: none !important; }
+
+/* Find: one full-width row (the field, where you are, previous, next, close). Case, whole word and regular expression are
+   the desktop's; the agent searches however it likes. */
+.autora-phone [data-testid="find-bar"] {
+  inset-inline: 8px !important;
+  max-width: none !important;
+  flex-wrap: nowrap !important;
+  gap: 6px !important;
+  padding: 8px !important;
+  border-radius: 14px !important;
+  background: var(--autora-s2) !important;
+  border-color: var(--autora-border-strong) !important;
+}
+.autora-phone [data-testid="find-bar"] input[data-testid="find-input"] { flex: 1 1 auto; width: auto !important; min-height: 42px; border-radius: 10px; padding: 0 12px; background: var(--autora-bg); }
+.autora-phone [data-testid="find-bar"] > :not(input):not([data-testid="find-count"]):not([data-testid="find-cursor"]):not([data-testid="find-prev"]):not([data-testid="find-next"]):not(:last-child) { display: none !important; }
+.autora-phone [data-testid="find-bar"] button { min-width: 42px; min-height: 42px; border-radius: 12px; font-size: 16px; }
+
 .autora-phonebar {
   position: fixed;
   inset: auto 0 0 0;
@@ -204,6 +274,7 @@
   font: 500 10px/1.1 var(--font-sans);
   letter-spacing: 0.01em;
 }
+.autora-phonebar-btn.is-on { color: var(--autora-text); background: var(--autora-accent-soft); }
 .autora-phonebar-btn:active { background: var(--autora-accent-soft); color: var(--autora-text); }
 
 /* Pinned above the conversation the window is a third of the screen: that is for looking at the page, and the bar and

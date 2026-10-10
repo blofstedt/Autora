@@ -170,12 +170,12 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Paired-down tools on a phone. The PDF editor and the Video editor now open as editors
-  made for a thumb instead of the desktop window squeezed small. PDF keeps the page and one
-  bar at the bottom (Mark up, Fill & sign, Find, Undo, Redo) that drives the editor's own
-  tools; the menu bar, toolbar, tabs and side rail are put away. Video shows the picture
-  and the timeline, with Media and Edit as sheets that come up when asked for. The bar at
-  the top of every tool window is now the file's name and round icon buttons (hand over,
-  download, full screen) rather than a row of text pills. Nothing is removed: a desktop
-  gets the full editors exactly as before, the same files open in both, and the agent can
-  still do any of it from the chat.
+  Paired-down tools on a phone. The agent keeps every tool wherever the work is shown; the
+  person gets a very simple app. PDF shows the page and one bar at the bottom (Undo, Mark up,
+  Fill & sign, Find): Mark up is Highlight, Text, Draw, Note and Eraser with a colour, Fill & sign
+  is Fill Fields and Sign, and Find is one row; the menu bar, toolbar, tabs, side rail and every
+  other tool are put away. Video shows the picture and the timeline with Media and Edit as
+  sheets, Export beside them, and a timeline bar of just undo, split, duplicate, delete and
+  zoom. The bar at the top of every tool window is now the file's name and round icon buttons
+  (hand over, download, full screen) rather than a row of text pills. A desktop gets the full
+  editors exactly as before, and the same files open in both.

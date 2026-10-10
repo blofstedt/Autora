@@ -472,9 +472,11 @@ Spectra's fetched renderer is most of what is on disk.
   implementation, and the desktop is untouched. The window adds `&phone=1` to the editor frame's URL (`SpectraWindow`,
   `OpenCutWindow`). PDF: `spectra-editor/src/autora/phone.tsx` sets `html.autora-phone` and mounts one bar (Mark up, Fill & sign,
   Find, Undo, Redo) that calls Spectra's own `invokeCommand`; `overlay/renderer/autora.css` puts the menu bar, toolbar,
-  tabs, rail and the tool dock's all-tools grid away and turns the dock into a sheet. Pinned (a frame under 520px tall) it is
+  tabs, rail and the tool dock's all-tools grid away and turns the dock into a sheet. Mark up is five modes and a colour, Fill & sign two, Find one row, and the bar's own button for an open tool closes it (no Close button);
+  the rest is the desktop's, and the agent has every tool regardless of what is shown. Pinned (a frame under 520px tall) it is
   for looking only. Video: `opencut-editor/overlay/web/app/editor/[project_id]/page.tsx` is a whole-file copy of OpenCut's
-  page with a `PhoneLayout` (preview, timeline, Media and Edit sheets over the timeline slot); keep it in step with the
+  page with a `PhoneLayout` (preview, timeline, Media and Edit sheets over the timeline slot, Export beside them, no header row)
+  and an overlay of `timeline/components/timeline-toolbar.tsx` whose phone branch is six buttons; keep it in step with the
   pin's page, which never moves. Pages, Sheets and Slides were already pictures of the pages with tap-to-point
   (`OfficePages`), and Autora 3D was already built for touch (its own bottom bar). The bar at the top of every window on
   a phone is the name and round icon buttons (`TakeControl`, download, full screen), not text pills. Games are not
