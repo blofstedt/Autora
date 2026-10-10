@@ -52,3 +52,11 @@ Live copy of the first version: https://claude.ai/artifact/A5vaGaNwJ8EFLA35jv3gD
 ## Retrofit order
 
 PDF first (this), then Pages, Sheets, Slides, Video, Games. Browser and 3D already fit.
+
+## Where it is built
+
+- PDF, phone: done (0.9.187). `spectra-editor/src/autora/phone.tsx` and `phone-tools.ts`; see docs/MODULES.md, "Paired-down tools on a phone".
+  What differs from the mockup: Text has colours only (Spectra's text boxes have one fixed size); the slider on Highlight is on
+  "Pen highlight" (the freehand one) because Highlight follows the text; Redact marks are Spectra's pending redactions
+  (applied with its "Redact N regions" button, not blacked out at once); Sign is Spectra's stamp mode showing saved signatures.
+- PDF, desktop: not started. Mockups and screenshots first.

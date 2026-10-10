@@ -534,10 +534,19 @@ Spectra's fetched renderer is most of what is on disk.
   and 12px, not a pill or a circle. Test: `ui-pdfwindow` measures the bar.
 - Paired-down tools on a phone: a phone gets the same files in an editor arranged for a thumb, never a second
   implementation, and the desktop is untouched. The window adds `&phone=1` to the editor frame's URL (`SpectraWindow`,
-  `OpenCutWindow`). PDF: `spectra-editor/src/autora/phone.tsx` sets `html.autora-phone` and mounts one bar (Mark up, Fill & sign,
-  Find, Undo, Redo) that calls Spectra's own `invokeCommand`; `overlay/renderer/autora.css` puts the menu bar, toolbar,
-  tabs, rail and the tool dock's all-tools grid away and turns the dock into a sheet. Mark up is five modes and a colour, Fill & sign two, Find one row, and the bar's own button for an open tool closes it (no Close button);
-  the rest is the desktop's, and the agent has every tool regardless of what is shown. Pinned (a frame under 520px tall) it is
+  `OpenCutWindow`). PDF: `spectra-editor/src/autora/phone.tsx` sets `html.autora-phone` and mounts the phone's arrangement
+  (docs/TOOL-RAIL.md is the spec): a bar of round, coloured tools (`phone-tools.ts`: every tool once, with its colour, glyph and
+  Spectra command; the bar shows as many of `PHONE_DEFAULT` as fit and never scrolls), a grid button that opens every tool in a
+  centred modal, a one-row tray for the open tool (Highlight, Pen highlight, Text, Draw, Shapes, Note, Callout: three colours, a
+  wheel and, for Draw, Shapes and Pen highlight, a thickness slider; Shapes has a button that steps through the figures; Redact
+  has A word / A line), and Undo, Redo and Find along the top. Every button calls Spectra's `invokeCommand`; the colour and
+  thickness go through `spectra-editor/overlay/renderer/autora-style.ts` (which the canvas view and `PageCell` read, and which
+  answers "no preference" on a desktop). `autora-tap.ts` answers a Redact tap from the page's text layer, `PageCell` turns it into
+  Spectra's own redaction mark and gives the mark a handle on each side (phone only); all three edits to Spectra's files are in
+  `overlay/renderer.patch`. Sign is Spectra's stamp mode with only the saved signatures showing (`html.autora-signing`), and its
+  dialog has no image door on a phone. A tool with no tray (Stamps, Measure...) keeps Spectra's own strip, restyled by
+  `overlay/renderer/autora.css`; a tool with a pane (Protect, Compress...) opens it as the dock's sheet. The agent has every tool
+  regardless of what is shown. Pinned (a frame under 520px tall) it is
   for looking only. Video: `opencut-editor/overlay/web/app/editor/[project_id]/page.tsx` is a whole-file copy of OpenCut's
   page with a `PhoneLayout` (preview, timeline, Media and Edit sheets over the timeline slot, Export beside them, no header row)
   and an overlay of `timeline/components/timeline-toolbar.tsx` whose phone branch is six buttons; keep it in step with the

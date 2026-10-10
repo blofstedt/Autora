@@ -191,3 +191,177 @@ index dfba040..64d073f 100644
  adoptStyleNonce();
  stampInitialTheme();
  // The capability report is read before the first render: menus and commands
+diff --git a/src/renderer/components/canvas/PageCell.tsx b/src/renderer/components/canvas/PageCell.tsx
+index 1c0eff7..d35c4c1 100644
+--- a/src/renderer/components/canvas/PageCell.tsx
++++ b/src/renderer/components/canvas/PageCell.tsx
+@@ -1,4 +1,6 @@
+ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
++import { getAutoraDetect, getAutoraWidth, isAutoraPhone } from '../../autora-style';
++import { textRectAt } from '../../autora-tap';
+ import { showsFormWidgets } from '../../commands/tools';
+ import type { PDFDocumentProxy } from 'pdfjs-dist';
+ import type { PageAnnotation, PageRef } from '../../state/types';
+@@ -1441,6 +1443,8 @@ function PageCellImpl({
+   // same pattern as usePageDrag — rather than React synthetic move/up through
+   // pointer capture, which proved unreliable in the WebView.
+   const [band, setBand] = useState<AnnotationRect | null>(null);
++  // Autora (phone): a redaction mark being resized by its handles (the rect shown until release).
++  const [redactEdit, setRedactEdit] = useState<{ id: string; rect: AnnotationRect } | null>(null);
+   const bandActive = useRef(false);
+   // Cancels the in-flight band/stroke (removes window listeners, commits nothing).
+   const cancelBand = useRef<(() => void) | null>(null);
+@@ -2466,7 +2470,7 @@ function PageCellImpl({
+       // Flat-padded box (a horizontal line still needs a clickable body).
+       ...paddedPointsBbox(stored),
+       color: annotationColor ?? SHAPE_COLOR,
+-      strokeWidth: 2,
++      strokeWidth: getAutoraWidth('shape') ?? 2,
+       points: stored,
+     });
+   };
+@@ -2695,10 +2699,12 @@ function PageCellImpl({
+         const style: Pick<PageAnnotation, 'inkStyle' | 'strokeWidth' | 'opacity'> = highlighter
+           ? {
+               inkStyle: 'highlighter',
+-              strokeWidth: HIGHLIGHTER_WIDTH_PT,
++              strokeWidth: getAutoraWidth('inkhighlight') ?? HIGHLIGHTER_WIDTH_PT,
+               opacity: HIGHLIGHTER_OPACITY,
+             }
+-          : {};
++          : getAutoraWidth('ink') !== undefined
++            ? { strokeWidth: getAutoraWidth('ink') }
++            : {};
+         // Pen lifts within the merge window EXTEND the previous ink
+         // annotation instead of spawning a new one — a signature drawn in
+         // four strokes is ONE annotation (one /InkList with four paths),
+@@ -3223,7 +3229,21 @@ function PageCellImpl({
+       cancelBand.current = null;
+       endSnapGesture();
+       setBand(null);
+-      if (commit && tool === 'addimage' && (latest.w <= 0.01 || latest.h <= 0.01)) {
++      if (commit && tool === 'redact' && latest.w <= 0.01 && latest.h <= 0.01 && isAutoraPhone()) {
++        // Autora (phone): a tap on text redacts what is there, a word or the line.
++        const hit = textRectAt(el, e.clientX, e.clientY, getAutoraDetect());
++        if (hit) {
++          const pr = el.getBoundingClientRect();
++          const x = Math.max(0, (hit.left - pr.left) / pr.width);
++          const y = Math.max(0, (hit.top - pr.top) / pr.height);
++          onAddRedactionMark(docId, page.id, {
++            x,
++            y,
++            w: Math.min(1 - x, hit.width / pr.width),
++            h: Math.min(1 - y, hit.height / pr.height),
++          }, page.rotation);
++        }
++      } else if (commit && tool === 'addimage' && (latest.w <= 0.01 || latest.h <= 0.01)) {
+         // A bare CLICK places at natural size — the rect
+         // degenerates to the click point (w=h=0) and App routes it to the
+         // engine's `at` placement instead of a drawn box.
+@@ -3277,7 +3297,7 @@ function PageCellImpl({
+             shapeType,
+             ...b,
+             color: annotationColor ?? SHAPE_COLOR,
+-            strokeWidth: 2,
++            strokeWidth: getAutoraWidth('shape') ?? 2,
+           });
+         } else if (tool === 'callout') {
+           // The band is the TEXT BOX; the default leader lands to its left,
+@@ -4207,7 +4227,8 @@ function PageCellImpl({
+       {(redactionMarks ?? []).map((m) => {
+         // Marks store the rect as drawn; a page rotated in memory since then
+         // just changes the projection (user space is unmoved by /Rotate).
+-        const r = projectMarkRect(m, page.rotation);
++        const projected = projectMarkRect(m, page.rotation);
++        const r = redactEdit?.id === m.id ? redactEdit.rect : projected;
+         return (
+           <div
+             key={m.id}
+@@ -4220,6 +4241,50 @@ function PageCellImpl({
+             }}
+           >
+             <span className="page-redact-label">{tChrome('canvas.mark.redact')}</span>
++            {isAutoraPhone() && (tool === 'select' || tool === 'redact') &&
++              (['n', 'e', 's', 'w'] as const).map((side) => (
++                <i
++                  key={side}
++                  className={`autora-redact-handle is-${side}`}
++                  data-testid={`redact-handle-${side}`}
++                  onPointerDown={(ev) => {
++                    // Autora (phone): drag a side to change what a tap took. The mark is replaced on release: one
++                    // removal and one new mark, which is all Spectra's marks have ever been.
++                    ev.stopPropagation();
++                    ev.preventDefault();
++                    const host = (ev.currentTarget.closest('.page-redact') as HTMLElement).offsetParent as HTMLElement;
++                    const box = host.getBoundingClientRect();
++                    const from = { ...projected };
++                    const MIN = 0.004;
++                    let now = from;
++                    const move = (me: PointerEvent): void => {
++                      const fx = Math.max(0, Math.min(1, (me.clientX - box.left) / box.width));
++                      const fy = Math.max(0, Math.min(1, (me.clientY - box.top) / box.height));
++                      const right = from.x + from.w;
++                      const bottom = from.y + from.h;
++                      const next = { ...from };
++                      if (side === 'e') next.w = Math.max(MIN, fx - from.x);
++                      if (side === 'w') { next.x = Math.min(fx, right - MIN); next.w = right - next.x; }
++                      if (side === 's') next.h = Math.max(MIN, fy - from.y);
++                      if (side === 'n') { next.y = Math.min(fy, bottom - MIN); next.h = bottom - next.y; }
++                      now = next;
++                      setRedactEdit({ id: m.id, rect: next });
++                    };
++                    const up = (): void => {
++                      window.removeEventListener('pointermove', move);
++                      window.removeEventListener('pointerup', up);
++                      window.removeEventListener('pointercancel', up);
++                      setRedactEdit(null);
++                      if (now === from) return;
++                      onRemoveRedactionMark(m.id);
++                      onAddRedactionMark(docId, page.id, now, page.rotation);
++                    };
++                    window.addEventListener('pointermove', move);
++                    window.addEventListener('pointerup', up);
++                    window.addEventListener('pointercancel', up);
++                  }}
++                />
++              ))}
+             {(tool === 'select' || tool === 'redact') && (
+               <button
+                 className="page-annot-x"
+@@ -4970,7 +5035,7 @@ function PageCellImpl({
+             }
+             {...(tool === 'inkhighlight'
+               ? {
+-                  strokeWidth: Math.max(0.75, HIGHLIGHTER_WIDTH_PT * (pageHeight / measDispH)),
++                  strokeWidth: Math.max(0.75, (getAutoraWidth('inkhighlight') ?? HIGHLIGHTER_WIDTH_PT) * (pageHeight / measDispH)),
+                   strokeLinecap: 'round' as const,
+                   strokeLinejoin: 'round' as const,
+                 }
+diff --git a/src/renderer/components/canvas/WorkspaceCanvasView.tsx b/src/renderer/components/canvas/WorkspaceCanvasView.tsx
+index a4fd96f..20d96c9 100644
+--- a/src/renderer/components/canvas/WorkspaceCanvasView.tsx
++++ b/src/renderer/components/canvas/WorkspaceCanvasView.tsx
+@@ -7,6 +7,7 @@ import React, {
+   useState,
+   useSyncExternalStore,
+ } from 'react';
++import { getAutoraColor, subscribeAutoraStyle } from '../../autora-style';
+ import { PermissionRefusal, capabilityBlockText, signBlock } from '../../lib/document-permission-text';
+ import { useAppState, useAppDispatch, useReadAppState, useReadLinkDrafts, useSubscribeAppState } from '../../state/AppStateProvider';
+ import { usePdfProxyState } from '../../hooks/usePdfProxies';
+@@ -942,6 +943,15 @@ export function WorkspaceCanvasView({
+   // (yellow highlight, dark freetext, blue ink); a pick applies to whichever
+   // tool creates the next annotation, across tool switches.
+   const [toolColor, setToolColor] = useState<string | null>(null);
++  // Autora (phone): the option tray picks the colour from outside this tree.
++  useEffect(
++    () =>
++      subscribeAutoraStyle(() => {
++        const picked = getAutoraColor();
++        if (picked !== undefined) setToolColor(picked);
++      }),
++    [],
++  );
+   const [stampPreset, setStampPreset] = useState<StampPreset | null>(null);
+   // Shape mode's figure picker — the stamp-preset pattern.
+   const [shapeType, setShapeType] = useState<ShapeType>('rect');
