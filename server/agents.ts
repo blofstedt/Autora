@@ -16,7 +16,7 @@
 import crypto from "node:crypto";
 import { readDoc, saveDoc } from "./store";
 
-export interface Agent {
+interface Agent {
   id: string;
   name: string;
   /** Its job title: "Researcher", "Editor". */
@@ -185,7 +185,7 @@ export function deleteAgent(id: string): boolean {
   return true;
 }
 
-export interface OrgNode { agent: Agent; reports: OrgNode[] }
+interface OrgNode { agent: Agent; reports: OrgNode[] }
 
 /** The organization as a tree from the lead down. */
 export function orgTree(): OrgNode {

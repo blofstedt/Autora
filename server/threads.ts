@@ -17,7 +17,7 @@ export interface Who {
   name: string;
 }
 
-export interface ThreadComment {
+interface ThreadComment {
   id: string;
   /** The comment this answers, or null for a comment straight on the post. */
   parent: string | null;
@@ -28,7 +28,7 @@ export interface ThreadComment {
   likes: string[];
 }
 
-export interface ThreadPost {
+interface ThreadPost {
   id: string;
   title: string;
   body: string;
@@ -187,7 +187,3 @@ export function describePost(p: ThreadPost): string {
   return out.join("\n");
 }
 
-/** Test hook: forget what was loaded, so a new state directory is read. */
-export function resetThreads() {
-  posts = null;
-}
