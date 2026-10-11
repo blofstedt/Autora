@@ -56,6 +56,19 @@ let posts: ThreadPost[] | null = null;
 
 export class ThreadError extends Error {}
 
+/** Told of every new post and comment, from wherever it was made, so the
+    server can let the person know without each caller remembering to. */
+type Heard = (what: { post: ThreadPost; comment: ThreadComment | null }) => void;
+let heard: Heard | null = null;
+
+export function onThreadActivity(listener: Heard | null) {
+  heard = listener;
+}
+
+function tell(what: { post: ThreadPost; comment: ThreadComment | null }) {
+  try { heard?.(what); } catch { /* news of a post never undoes it */ }
+}
+
 const postId = () => `th_${crypto.randomBytes(6).toString("hex")}`;
 const commentId = () => `cm_${crypto.randomBytes(5).toString("hex")}`;
 const clip = (v: unknown, max: number) => String(v ?? "").replace(/\u0000/g, "").trim().slice(0, max);
@@ -120,6 +133,7 @@ export function createPost(input: { title: unknown; body?: unknown; tags?: unkno
   };
   load().push(post);
   persist();
+  tell({ post, comment: null });
   return post;
 }
 
@@ -142,6 +156,7 @@ export function addComment(postIdRef: string, input: { text: unknown; parent?: u
   const comment: ThreadComment = { id: commentId(), parent, by: sane(input.by), text, created: Date.now(), likes: [], ...(cleanGif(input.gif) ? { gif: cleanGif(input.gif)! } : {}) };
   post.comments.push(comment);
   persist(post);
+  tell({ post, comment });
   return { post, comment };
 }
 

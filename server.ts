@@ -24,7 +24,7 @@ import {
 import { Noticer, dockerContainers, findings, type NoticerMemory } from "./server/noticer";
 import {
   HeldMessages, deliver, readyChannels,
-  type PushKind, type PushMessage,
+  ThreadBuzz, type PushKind, type PushMessage,
 } from "./server/push";
 import { signIns } from "./server/signins";
 import { ensureHostNames } from "./server/hosts";
@@ -68,7 +68,7 @@ import { organizationRoutes } from "./server/routes/organization";
 import { agentBrief, findAgent, getAgent, LEAD_ID, listAgents, recordCollab, recordWork } from "./server/agents";
 import { agentMind, clusters, forgetNote, remember, teach } from "./server/agentmind";
 import { LifeGate, MAX_WONDERS, QUIET_MS, URGE_AT, allowed as lifeAllowed, knownText, lastActivity, lifePrompt, parseChoice, personWaiting, pickAgent, urgeOf, vetLinks, wonderNote, wonderText, wondersOf } from "./server/threadlife";
-import { addComment, createPost, getPost, listPosts, toggleLike } from "./server/threads";
+import { addComment, createPost, getPost, listPosts, onThreadActivity, toggleLike } from "./server/threads";
 import { findGif } from "./server/threadgif";
 import { NewsGate, newsPrompt, nextLookoutMs, parseQuery, parseStudy, queryPrompt, readNews, studyPrompt, workOutcome, workTitle } from "./server/threadnews";
 import { mcpRoutes } from "./server/routes/mcp";
@@ -2672,6 +2672,20 @@ function pushOut(kind: PushKind, msg: PushMessage) {
   sendPush(safe);
 }
 
+/** An agent speaking up in Threads reaches the phone, but a busy forum folds
+    into one message a minute. The person's own posts are not news to them. */
+const threadBuzz = new ThreadBuzz();
+onThreadActivity(({ post, comment }) => {
+  const by = comment ? comment.by : post.by;
+  if (by.kind !== "agent") return;
+  const out = threadBuzz.note({
+    title: comment ? `${by.name} replied in “${post.title}”` : `${by.name} posted in Threads`,
+    body: comment ? comment.text : post.title,
+    url: appLink() && `${appLink()}?page=threads`,
+  }, Date.now());
+  if (out) pushOut("threads", out);
+});
+
 /** Once quiet hours are over, what was held goes out as one message. */
 function flushHeldPushes() {
   if (heldPushes.size === 0 || inQuiet(Date.now(), state.proactivity)) return;
@@ -3459,10 +3473,10 @@ function offerNextSteps(
 }
 
 /** A turn this long is one somebody may have walked away from. */
-const LONG_TURN_MS = 45_000;
+const LONG_TURN_MS = 10_000;
 
 /**
- * Tell the phone that a long piece of work is done -- when nobody is looking
+ * Tell the phone that a piece of work is done -- when nobody is looking
  * at it. A turn watched to the end needs no message, and neither does a
  * short one; a job's turn says so through its own notice.
  */

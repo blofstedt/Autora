@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { Noticer, findings, type NoticerMemory } from "../server/noticer";
 import {
-  HeldMessages, defaultPush, deliver, mergePush,
+  HeldMessages, ThreadBuzz, defaultPush, deliver, mergePush,
 } from "../server/push";
 
 let passed = 0;
@@ -75,7 +75,7 @@ await test("settings: only which news is sent is kept, and nonsense leaves the o
   assert.equal(p.on.jobs, true, "a value that is not a switch is ignored");
   mergePush(p, null);
   mergePush(p, "nonsense");
-  assert.deepEqual(p, { on: { jobs: true, notices: true, turns: false, asks: true } });
+  assert.deepEqual(p, { on: { jobs: true, notices: true, turns: false, asks: true, threads: true } });
 });
 
 await test("settings written by an older build, which named a chat bot and a topic, load without them", () => {
@@ -85,7 +85,7 @@ await test("settings written by an older build, which named a chat bot and a top
     telegram: { enabled: true, chat: "42" },
     on: { asks: false },
   });
-  assert.deepEqual(p, { on: { jobs: true, notices: true, turns: true, asks: false } });
+  assert.deepEqual(p, { on: { jobs: true, notices: true, turns: true, asks: false, threads: true } });
   assert.ok(!("ntfy" in p) && !("telegram" in p), "nothing of the old channels is carried");
 });
 
@@ -121,6 +121,16 @@ await test("held through quiet hours, then sent as one message", () => {
   assert.match(one.body, /^• Backup finished: ok\n• The disk is 91% full: …$/);
   assert.equal(one.urgent, true);
   assert.equal(held.size, 0);
+});
+
+await test("a busy forum buzzes once a minute, and the next message says how many it folded in", () => {
+  const buzz = new ThreadBuzz(60_000);
+  const msg = { title: "Ada posted in Threads", body: "Hello" };
+  assert.deepEqual(buzz.note(msg, 1_000), msg);
+  assert.equal(buzz.note(msg, 5_000), null);
+  assert.equal(buzz.note(msg, 30_000), null);
+  assert.match(buzz.note(msg, 70_000)!.body, /\(\+2 more in Threads\)/);
+  assert.deepEqual(buzz.note(msg, 140_000), msg, "the count starts over");
 });
 
 console.log(`${passed} passed`);

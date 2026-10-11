@@ -20,13 +20,13 @@
 
 export interface PushSettings {
   /** Which kinds of news are sent. */
-  on: { jobs: boolean; notices: boolean; turns: boolean; asks: boolean };
+  on: { jobs: boolean; notices: boolean; turns: boolean; asks: boolean; threads: boolean };
 }
 
 export type PushKind = keyof PushSettings["on"];
 
 const DEFAULT_PUSH: PushSettings = {
-  on: { jobs: true, notices: true, turns: true, asks: true },
+  on: { jobs: true, notices: true, turns: true, asks: true, threads: true },
 };
 
 export function defaultPush(): PushSettings {
@@ -92,6 +92,30 @@ export async function deliver(msg: PushMessage, web: WebSender): Promise<Deliver
     ok: false, sent: 0, failed: 1, error: String(err?.message ?? err),
   }));
   return [r.ok ? { channel: "web", ok: true } : { channel: "web", ok: false, error: r.error ?? "no device could be reached" }];
+}
+
+/**
+ * Agents can post in Threads many times a minute. The first word goes out at
+ * once; anything within the next `gapMs` is counted, and rides on the next
+ * message as "+N more" instead of buzzing the phone again.
+ */
+export class ThreadBuzz {
+  private last = 0;
+  private skipped = 0;
+
+  constructor(private gapMs = 60_000) {}
+
+  /** The message to send now, or null when it is folded into a later one. */
+  note(msg: PushMessage, now: number): PushMessage | null {
+    if (this.last && now - this.last < this.gapMs) {
+      this.skipped += 1;
+      return null;
+    }
+    this.last = now;
+    const more = this.skipped;
+    this.skipped = 0;
+    return more ? { ...msg, body: `${msg.body}\n(+${more} more in Threads)` } : msg;
+  }
 }
 
 /**
