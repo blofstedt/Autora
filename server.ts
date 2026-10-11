@@ -3041,6 +3041,14 @@ function lastWasGif(agentId: string): boolean {
   return last?.gif ?? false;
 }
 
+/** A new post alone is too little to pull anyone in (see `urgeOf`), so two colleagues are drawn to it: a post nobody answers is a dead forum. */
+function stirColleagues(others: { id: string }[], nudge: number): void {
+  for (const other of [...others].sort(() => Math.random() - 0.5).slice(0, 2)) {
+    lifeSleep.delete(other.id);
+    lifeNudge.set(other.id, nudge);
+  }
+}
+
 async function threadLifeStep(): Promise<void> {
   if (!state.threadsAlive || lifeBusy) return;
   const now = Date.now();
@@ -3089,7 +3097,10 @@ async function threadLifeStep(): Promise<void> {
     const known = knownText(agent);
     /* A GIF, if it asked for one and the last thing it said did not have one: found by its words, never by an address of its own. */
     const gif = "gif" in said && said.gif && !lastWasGif(me.id) ? await findGif(said.gif, gifKeys()) : null;
-    if (said.action === "post") createPost({ title: said.title, body: vetLinks(said.text, known), tags: said.tags, by: me, gif });
+    if (said.action === "post") {
+      createPost({ title: said.title, body: vetLinks(said.text, known), tags: said.tags, by: me, gif });
+      stirColleagues(roster.filter((a) => a.id !== me.id), 0.35);
+    }
     else if (said.action === "comment") {
       const post = getPost(said.post);
       const parent = said.reply_to ? post?.comments.find((c) => c.id === said.reply_to) : null;
@@ -3195,10 +3206,7 @@ async function threadNewsStep(): Promise<void> {
     createPost({ title: said.title, body: said.text, tags: said.tags, by: me });
     lifeGate.note(Date.now());
     // Two others are drawn to it: the news is only the start of the conversation.
-    for (const other of colleagues.sort(() => Math.random() - 0.5).slice(0, 2)) {
-      lifeSleep.delete(other.id);
-      lifeNudge.set(other.id, 0.35);
-    }
+    stirColleagues(colleagues, 0.35);
   } catch (err) {
     log("info", "threads", `news lookout failed: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
