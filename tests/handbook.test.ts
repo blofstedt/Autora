@@ -58,6 +58,13 @@ await test("the Office manual teaches the tool bar and not the ribbon it replace
   }
 });
 
+await test("the Video manual teaches the tool bar and not the tab strip and toolbar it replaced", () => {
+  const video = manualText("video");
+  for (const needle of ["All tools", "no strip of tabs", "pin any of them", "keyboard shortcuts work", "video_ui by its name"]) {
+    assert.ok(video.includes(needle), `the Video manual lacks "${needle}"`);
+  }
+});
+
 await test("a tool finds its window's manual, and a tool with no window finds none", () => {
   assert.equal(manualId("browser_click"), "browser");
   assert.equal(manualId("web_search"), "browser");

@@ -52,8 +52,8 @@ Live copy of the first version: https://claude.ai/artifact/A5vaGaNwJ8EFLA35jv3gD
 ## Retrofit order
 
 PDF first, then Music (done, 0.9.196: the first user of the shared host-side component below), 3D (0.9.199), Pages, Sheets and
-Slides (0.9.200: `office/shim/rail.js`, inside the editors' frame; every ribbon command is a tool, the ribbon is never shown), then
-Video, Photo, Games. Autora 3D (done, 0.9.199) wears the rail in its own build (`autora-3d/src/components/Rail.tsx`, Tailwind, same colours and
+Slides (0.9.200: `office/shim/rail.js`, inside the editors' frame; every ribbon command is a tool, the ribbon is never shown), Video (0.9.201: `opencut-editor/src/autora/rail.tsx`, which builds the app's own `ToolRail` into the editor; the tab strip and
+the timeline's toolbar are gone from the page, a phone's timeline gives its track switches 38px instead of 112), then Photo, Games. Autora 3D (done, 0.9.199) wears the rail in its own build (`autora-3d/src/components/Rail.tsx`, Tailwind, same colours and
 rules): its bottom bar of text pills and the menus of its top bar are gone, the top bar is undo, redo and what is selected, and
 every tool is on the bar or in All tools. It is a copy of blofstedt/3D-Modeling, and the change was made in the copy
 (`docs/autora-3d-tool-rail.patch` is the same change; apply it upstream with `git apply -p2` before the next `scripts/sync-autora-3d.mjs`, which would otherwise undo it). Browser is a navigation bar, not a palette.

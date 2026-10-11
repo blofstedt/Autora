@@ -91,7 +91,7 @@ export function ToolRail({
       </nav>
 
       {grid && createPortal(
-        <div className="scrim" onClick={() => setGrid(false)} role="presentation">
+        <div className="rail-scrim" onClick={() => setGrid(false)} role="presentation">
           <div className={`rail-grid is-${kind}`} role="dialog" aria-modal="true" aria-label="All tools" onClick={(e) => e.stopPropagation()}>
             <div className="rail-grid-head">
               <h3>All tools</h3>

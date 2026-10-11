@@ -1,5 +1,4 @@
 import { useEditor } from "@/editor/use-editor";
-import { useElementSelection } from "@/timeline/hooks/element/use-element-selection";
 import {
 	TooltipProvider,
 	Tooltip,
@@ -18,35 +17,15 @@ import { TIMELINE_ZOOM_BUTTON_FACTOR } from "./interaction";
 import { TIMELINE_ZOOM_MAX } from "@/timeline/scale";
 import { sliderToZoom, zoomToSlider } from "@/timeline/zoom-utils";
 import { ScenesView } from "@/components/editor/scenes-view";
-import { type TActionWithOptionalArgs, invokeAction } from "@/actions";
-import {
-	canToggleSourceAudio,
-	getSourceAudioActionLabel,
-	isSourceAudioSeparated,
-} from "@/timeline/audio-separation";
-import { hasMediaId } from "@/timeline";
 import { cn } from "@/utils/ui";
-import { useTimelineStore } from "@/timeline/timeline-store";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-	Bookmark02Icon,
-	Delete02Icon,
-	SnowIcon,
-	ScissorIcon,
-	MagnetIcon,
+	Chart03Icon,
+	Layers01Icon,
 	SearchAddIcon,
 	SearchMinusIcon,
-	Copy01Icon,
-	AlignLeftIcon,
-	AlignRightIcon,
-	Link02Icon,
-	Layers01Icon,
-	Chart03Icon,
-	Unlink02Icon,
-	Undo02Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { OcRippleIcon } from "@/components/icons";
 import { GraphEditorPopover } from "./graph-editor/popover";
 import { PopoverTrigger } from "@/components/ui/popover";
 import { useGraphEditorController } from "./graph-editor/use-controller";
@@ -61,46 +40,12 @@ const onPhone = (() => {
 })();
 
 /**
- * The timeline's toolbar on a phone: what a thumb does to a clip (cut it, copy it, remove it, undo) and how much of the
- * timeline is in view. Snapping, ripple, bookmarks, the graph editor, scenes and the source-audio switch are the
- * desktop's (and the agent has every one of them from the chat). Big, round, evenly spaced.
+ * What the timeline's toolbar used to hold (cut, duplicate, delete, link, bookmark, snapping, ripple, undo) is the tool bar's
+ * (src/autora/rail.tsx): those buttons are not here, so nothing is on the page twice. What is left is what a tool bar cannot
+ * hold: the curves editor (a popover beside its button), the scenes, and the zoom slider. The tool bar's zoom tools reach the
+ * timeline's zoom through `zoomApi`, set below while the timeline is on screen.
  */
-function PhoneToolbar({
-	zoomLevel,
-	minZoom,
-	setZoomLevel,
-}: {
-	zoomLevel: number;
-	minZoom: number;
-	setZoomLevel: ({ zoom }: { zoom: number }) => void;
-}) {
-	const zoom = (direction: "in" | "out") =>
-		setZoomLevel({
-			zoom:
-				direction === "in"
-					? Math.min(TIMELINE_ZOOM_MAX, zoomLevel * TIMELINE_ZOOM_BUTTON_FACTOR)
-					: Math.max(minZoom, zoomLevel / TIMELINE_ZOOM_BUTTON_FACTOR),
-		});
-	const tool = (label: string, icon: typeof ScissorIcon, run: () => void) => (
-		<Button key={label} variant="text" size="icon" aria-label={label} onClick={(event) => { event.stopPropagation(); run(); }} className="size-10 rounded-xl">
-			<HugeiconsIcon icon={icon} className="size-5" />
-		</Button>
-	);
-	return (
-		<div className="flex h-12 items-center justify-between border-b px-2" data-phone-toolbar="">
-			<div className="flex items-center">
-				{tool("Undo", Undo02Icon, () => invokeAction("undo"))}
-				{tool("Split at the playhead", ScissorIcon, () => invokeAction("split"))}
-				{tool("Duplicate", Copy01Icon, () => invokeAction("duplicate-selected"))}
-				{tool("Delete", Delete02Icon, () => invokeAction("delete-selected"))}
-			</div>
-			<div className="flex items-center">
-				{tool("Zoom out", SearchMinusIcon, () => zoom("out"))}
-				{tool("Zoom in", SearchAddIcon, () => zoom("in"))}
-			</div>
-		</div>
-	);
-}
+export const zoomApi: { by?: (direction: "in" | "out") => void } = {};
 
 export function TimelineToolbar({
 	zoomLevel,
@@ -111,8 +56,6 @@ export function TimelineToolbar({
 	minZoom: number;
 	setZoomLevel: ({ zoom }: { zoom: number }) => void;
 }) {
-	if (onPhone) return <PhoneToolbar zoomLevel={zoomLevel} minZoom={minZoom} setZoomLevel={setZoomLevel} />;
-
 	const handleZoom = ({ direction }: { direction: "in" | "out" }) => {
 		const newZoomLevel =
 			direction === "in"
@@ -120,6 +63,10 @@ export function TimelineToolbar({
 				: Math.max(minZoom, zoomLevel / TIMELINE_ZOOM_BUTTON_FACTOR);
 		setZoomLevel({ zoom: newZoomLevel });
 	};
+	zoomApi.by = (direction) => handleZoom({ direction });
+
+	// A phone has no row for it: its zoom is the tool bar's.
+	if (onPhone) return null;
 
 	return (
 		<ScrollArea className="scrollbar-hidden">
@@ -132,7 +79,6 @@ export function TimelineToolbar({
 					zoomLevel={zoomLevel}
 					minZoom={minZoom}
 					onZoomChange={(zoom) => setZoomLevel({ zoom })}
-					onZoom={handleZoom}
 				/>
 			</div>
 		</ScrollArea>
@@ -140,131 +86,11 @@ export function TimelineToolbar({
 }
 
 function ToolbarLeftSection() {
-	const editor = useEditor();
-	const mediaAssets = useEditor((currentEditor) =>
-		currentEditor.media.getAssets(),
-	);
-	const { selectedElements } = useElementSelection();
 	const graphEditor = useGraphEditorController();
-	const isCurrentlyBookmarked = useEditor((e) =>
-		e.scenes.isBookmarked({ time: e.playback.getCurrentTime() }),
-	);
-	const selectedElement =
-		selectedElements.length === 1
-			? (editor.timeline.getElementsWithTracks({
-					elements: selectedElements,
-				})[0] ?? null)
-			: null;
-	const selectedMediaAsset = (() => {
-		if (!selectedElement) {
-			return null;
-		}
-
-		const { element } = selectedElement;
-		if (!hasMediaId(element)) {
-			return null;
-		}
-
-		return mediaAssets.find((asset) => asset.id === element.mediaId) ?? null;
-	})();
-	const canToggleSelectedSourceAudio =
-		!!selectedElement &&
-		canToggleSourceAudio(selectedElement.element, selectedMediaAsset);
-	const sourceAudioLabel =
-		selectedElement?.element.type === "video"
-			? getSourceAudioActionLabel({
-					element: selectedElement.element,
-				})
-			: "Extract audio";
-	const isSelectedSourceAudioSeparated =
-		selectedElement?.element.type === "video" &&
-		isSourceAudioSeparated({
-			element: selectedElement.element,
-		});
-
-	const handleAction = ({
-		action,
-		event,
-	}: {
-		action: TActionWithOptionalArgs;
-		event: React.MouseEvent;
-	}) => {
-		event.stopPropagation();
-		invokeAction(action);
-	};
 
 	return (
 		<div className="flex items-center gap-1">
 			<TooltipProvider delayDuration={500}>
-				<ToolbarButton
-					icon={<HugeiconsIcon icon={ScissorIcon} />}
-					tooltip="Split element"
-					onClick={({ event }) => handleAction({ action: "split", event })}
-				/>
-
-				<ToolbarButton
-					icon={<HugeiconsIcon icon={AlignLeftIcon} />}
-					tooltip="Split left"
-					onClick={({ event }) => handleAction({ action: "split-left", event })}
-				/>
-
-				<ToolbarButton
-					icon={<HugeiconsIcon icon={AlignRightIcon} />}
-					tooltip="Split right"
-					onClick={({ event }) =>
-						handleAction({ action: "split-right", event })
-					}
-				/>
-
-				<ToolbarButton
-					icon={
-						<HugeiconsIcon
-							icon={isSelectedSourceAudioSeparated ? Unlink02Icon : Link02Icon}
-						/>
-					}
-					tooltip={sourceAudioLabel}
-					disabled={!canToggleSelectedSourceAudio}
-					onClick={({ event }) =>
-						handleAction({ action: "toggle-source-audio", event })
-					}
-				/>
-
-				<ToolbarButton
-					icon={<HugeiconsIcon icon={Copy01Icon} />}
-					tooltip="Duplicate element"
-					onClick={({ event }) =>
-						handleAction({ action: "duplicate-selected", event })
-					}
-				/>
-
-				<ToolbarButton
-					icon={<HugeiconsIcon icon={SnowIcon} />}
-					tooltip="Freeze frame (coming soon)"
-					disabled={true}
-					onClick={({ event: _event }) => {}}
-				/>
-
-				<ToolbarButton
-					icon={<HugeiconsIcon icon={Delete02Icon} />}
-					tooltip="Delete element"
-					onClick={({ event }) =>
-						handleAction({ action: "delete-selected", event })
-					}
-				/>
-
-				<div className="bg-border mx-1 h-6 w-px" />
-
-				<Tooltip>
-					<ToolbarButton
-						icon={<HugeiconsIcon icon={Bookmark02Icon} />}
-						isActive={isCurrentlyBookmarked}
-						tooltip={isCurrentlyBookmarked ? "Remove bookmark" : "Add bookmark"}
-						onClick={({ event }) =>
-							handleAction({ action: "toggle-bookmark", event })
-						}
-					/>
-				</Tooltip>
-
 				<GraphEditorPopover
 					open={graphEditor.open}
 					onOpenChange={graphEditor.onOpenChange}
@@ -322,64 +148,26 @@ function ToolbarRightSection({
 	zoomLevel,
 	minZoom,
 	onZoomChange,
-	onZoom,
 }: {
 	zoomLevel: number;
 	minZoom: number;
 	onZoomChange: (zoom: number) => void;
-	onZoom: (options: { direction: "in" | "out" }) => void;
 }) {
-	const snappingEnabled = useTimelineStore((s) => s.snappingEnabled);
-	const rippleEditingEnabled = useTimelineStore((s) => s.rippleEditingEnabled);
-	const toggleSnapping = useTimelineStore((s) => s.toggleSnapping);
-	const toggleRippleEditing = useTimelineStore((s) => s.toggleRippleEditing);
-
 	return (
-		<div className="flex items-center gap-1">
-			<TooltipProvider delayDuration={500}>
-				<ToolbarButton
-					icon={<HugeiconsIcon icon={MagnetIcon} />}
-					isActive={snappingEnabled}
-					tooltip="Auto snapping"
-					onClick={() => toggleSnapping()}
-				/>
-
-				<ToolbarButton
-					icon={<OcRippleIcon size={24} className="scale-110" />}
-					isActive={rippleEditingEnabled}
-					tooltip="Ripple editing"
-					onClick={() => toggleRippleEditing()}
-				/>
-			</TooltipProvider>
-
-			<div className="bg-border mx-1 h-6 w-px" />
-
-			<div className="flex items-center gap-1">
-				<Button
-					variant="text"
-					size="icon"
-					onClick={() => onZoom({ direction: "out" })}
-				>
-					<HugeiconsIcon icon={SearchMinusIcon} />
-				</Button>
-				<Slider
-					className="w-28"
-					value={[zoomToSlider({ zoomLevel, minZoom })]}
-					onValueChange={(values) =>
-						onZoomChange(sliderToZoom({ sliderPosition: values[0], minZoom }))
-					}
-					min={0}
-					max={1}
-					step={0.005}
-				/>
-				<Button
-					variant="text"
-					size="icon"
-					onClick={() => onZoom({ direction: "in" })}
-				>
-					<HugeiconsIcon icon={SearchAddIcon} />
-				</Button>
-			</div>
+		<div className="flex items-center gap-2">
+			<HugeiconsIcon icon={SearchMinusIcon} className="text-muted-foreground size-4" />
+			<Slider
+				className="w-32"
+				aria-label="Zoom"
+				value={[zoomToSlider({ zoomLevel, minZoom })]}
+				onValueChange={(values) =>
+					onZoomChange(sliderToZoom({ sliderPosition: values[0], minZoom }))
+				}
+				min={0}
+				max={1}
+				step={0.005}
+			/>
+			<HugeiconsIcon icon={SearchAddIcon} className="text-muted-foreground size-4" />
 		</div>
 	);
 }

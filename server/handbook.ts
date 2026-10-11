@@ -124,7 +124,15 @@ const VIDEO = [
     "video_frame before you say it is done. video_catalog lists what exists (effects, masks, graphics, stickers) so nothing is guessed. " +
     "When no typed tool covers something, video_ui reads the editor's screen and clicks and types in it as a person would. video_export " +
     "renders a file and can take a while; only when asked. Leave the editor alone while the person holds it. The story, pacing, music " +
-    "and look are theirs.",
+    "and look are theirs. What the person sees (there is no strip of tabs at the left, no row of timeline buttons and, on a phone, no " +
+    "Media / Edit / Export row any more): the preview, the timeline with only its curves, scenes and zoom slider above it, the properties, " +
+    "and a round, coloured tool bar (down the right side on a desktop, along the bottom on a phone) that shows only as many tools as fit: " +
+    "Media, Text, Effects, Captions, Play, Split, Duplicate, Delete, Snapping, Zoom, Undo and Redo on a desktop (Media, Edit, Play, Split, " +
+    "Duplicate, Delete, Undo on a phone). The last button, All tools, opens every tool: the panels (Media, Sounds, Text, Stickers, " +
+    "Effects, Transitions, Captions, Adjustment, Settings), playback, the clip edits (cut left and right, copy, paste, extract audio, " +
+    "mute, show or hide, select all), the timeline (snapping, ripple, bookmark, zoom) and history; a desktop can pin any of them. Each " +
+    "is a button you can click with video_ui by its name. The keyboard shortcuts work on a desktop as ever. Point the person at a tool by " +
+    "its name and say \"open All tools\" if it is not on their bar.",
 ].join("\n");
 
 const STUDIO = [
