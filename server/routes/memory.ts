@@ -9,6 +9,7 @@ import type { Express, Request, Response } from "express";
 import { MEMORY_KINDS, type MemoryGraph, type MemoryRecord } from "../memory";
 import { tidyRecords } from "../mindrules";
 import { save, state } from "../state";
+import { MOODS } from "../threadlife";
 
 export function memoryRoutes(app: Express, deps: { mind: MemoryGraph }) {
   const { mind } = deps;
@@ -37,14 +38,16 @@ export function memoryRoutes(app: Express, deps: { mind: MemoryGraph }) {
 
   /** Whether the agent says a word about what the person does in the windows they share. */
   app.get("/api/collaboration", (_req: Request, res: Response) => {
-    res.json({ remarks: state.collabRemarks, threads: state.threadsAlive, news: state.threadsNews });
+    res.json({ remarks: state.collabRemarks, threads: state.threadsAlive, news: state.threadsNews, mood: state.threadsMood });
   });
   app.patch("/api/collaboration", (req: Request, res: Response) => {
     if (typeof req.body?.remarks === "boolean") state.collabRemarks = req.body.remarks;
     if (typeof req.body?.threads === "boolean") state.threadsAlive = req.body.threads;
     if (typeof req.body?.news === "boolean") state.threadsNews = req.body.news;
-    if (["remarks", "threads", "news"].some((k) => typeof req.body?.[k] === "boolean")) save();
-    res.json({ remarks: state.collabRemarks, threads: state.threadsAlive, news: state.threadsNews });
+    const mood = (MOODS as readonly string[]).includes(req.body?.mood);
+    if (mood) state.threadsMood = req.body.mood;
+    if (mood || ["remarks", "threads", "news"].some((k) => typeof req.body?.[k] === "boolean")) save();
+    res.json({ remarks: state.collabRemarks, threads: state.threadsAlive, news: state.threadsNews, mood: state.threadsMood });
   });
 
   /** Whether the agent's work is shown as it is done (the cursor, the typed code). */

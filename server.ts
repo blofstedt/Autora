@@ -24,7 +24,7 @@ import {
 import { Noticer, dockerContainers, findings, type NoticerMemory } from "./server/noticer";
 import {
   HeldMessages, deliver, readyChannels,
-  type PushKind, type PushMessage,
+  ThreadBuzz, type PushKind, type PushMessage,
 } from "./server/push";
 import { signIns } from "./server/signins";
 import { ensureHostNames } from "./server/hosts";
@@ -67,8 +67,8 @@ import { notebookRoutes } from "./server/routes/notebooks";
 import { organizationRoutes } from "./server/routes/organization";
 import { agentBrief, findAgent, getAgent, LEAD_ID, listAgents, recordCollab, recordWork } from "./server/agents";
 import { agentMind, clusters, forgetNote, remember, teach } from "./server/agentmind";
-import { LifeGate, MAX_WONDERS, QUIET_MS, URGE_AT, allowed as lifeAllowed, knownText, lastActivity, lifePrompt, parseChoice, personWaiting, pickAgent, urgeOf, vetLinks, wonderNote, wonderText, wondersOf } from "./server/threadlife";
-import { addComment, createPost, getPost, listPosts, toggleLike } from "./server/threads";
+import { LifeGate, MAX_WONDERS, perHourFor, QUIET_MS, URGE_AT, allowed as lifeAllowed, knownText, lastActivity, lifePrompt, parseChoice, personWaiting, pickAgent, urgeOf, vetLinks, wonderNote, wonderText, wondersOf } from "./server/threadlife";
+import { addComment, createPost, getPost, listPosts, onThreadActivity, toggleLike } from "./server/threads";
 import { findGif } from "./server/threadgif";
 import { NewsGate, newsPrompt, nextLookoutMs, parseQuery, parseStudy, queryPrompt, readNews, studyPrompt, workOutcome, workTitle } from "./server/threadnews";
 import { mcpRoutes } from "./server/routes/mcp";
@@ -2672,6 +2672,20 @@ function pushOut(kind: PushKind, msg: PushMessage) {
   sendPush(safe);
 }
 
+/** An agent speaking up in Threads reaches the phone, but a busy forum folds
+    into one message a minute. The person's own posts are not news to them. */
+const threadBuzz = new ThreadBuzz();
+onThreadActivity(({ post, comment }) => {
+  const by = comment ? comment.by : post.by;
+  if (by.kind !== "agent") return;
+  const out = threadBuzz.note({
+    title: comment ? `${by.name} replied in “${post.title}”` : `${by.name} posted in Threads`,
+    body: comment ? comment.text : post.title,
+    url: appLink() && `${appLink()}?page=threads`,
+  }, Date.now());
+  if (out) pushOut("threads", out);
+});
+
 /** Once quiet hours are over, what was held goes out as one message. */
 function flushHeldPushes() {
   if (heldPushes.size === 0 || inQuiet(Date.now(), state.proactivity)) return;
@@ -3027,10 +3041,18 @@ function lastWasGif(agentId: string): boolean {
   return last?.gif ?? false;
 }
 
+/** A new post alone is too little to pull anyone in (see `urgeOf`), so two colleagues are drawn to it: a post nobody answers is a dead forum. */
+function stirColleagues(others: { id: string }[], nudge: number): void {
+  for (const other of [...others].sort(() => Math.random() - 0.5).slice(0, 2)) {
+    lifeSleep.delete(other.id);
+    lifeNudge.set(other.id, nudge);
+  }
+}
+
 async function threadLifeStep(): Promise<void> {
   if (!state.threadsAlive || lifeBusy) return;
   const now = Date.now();
-  if (!lifeGate.room(now)) return;
+  if (!lifeGate.room(now, perHourFor(state.threadsMood))) return;
   const roster = listAgents().filter((a) => a.enabled);
   if (roster.length < 2) return;
   let best: { agent: (typeof roster)[number]; urge: number } | null = null;
@@ -3038,7 +3060,7 @@ async function threadLifeStep(): Promise<void> {
     const since = lifeLook.get(agent.id) ?? lifeBoot;
     // The person waiting for an answer wakes anyone; otherwise a sleeping agent stays asleep.
     if ((lifeSleep.get(agent.id) ?? 0) > now && !personWaiting(since)) continue;
-    const urge = urgeOf(agent, since, now, lifeNudge.get(agent.id) ?? 0);
+    const urge = urgeOf(agent, since, now, lifeNudge.get(agent.id) ?? 0, state.threadsMood);
     if (urge >= URGE_AT && (!best || urge > best.urge)) best = { agent, urge };
   }
   /* Nobody feels like speaking and the whole forum has been silent for hours: one
@@ -3075,7 +3097,10 @@ async function threadLifeStep(): Promise<void> {
     const known = knownText(agent);
     /* A GIF, if it asked for one and the last thing it said did not have one: found by its words, never by an address of its own. */
     const gif = "gif" in said && said.gif && !lastWasGif(me.id) ? await findGif(said.gif, gifKeys()) : null;
-    if (said.action === "post") createPost({ title: said.title, body: vetLinks(said.text, known), tags: said.tags, by: me, gif });
+    if (said.action === "post") {
+      createPost({ title: said.title, body: vetLinks(said.text, known), tags: said.tags, by: me, gif });
+      stirColleagues(roster.filter((a) => a.id !== me.id), 0.35);
+    }
     else if (said.action === "comment") {
       const post = getPost(said.post);
       const parent = said.reply_to ? post?.comments.find((c) => c.id === said.reply_to) : null;
@@ -3181,10 +3206,7 @@ async function threadNewsStep(): Promise<void> {
     createPost({ title: said.title, body: said.text, tags: said.tags, by: me });
     lifeGate.note(Date.now());
     // Two others are drawn to it: the news is only the start of the conversation.
-    for (const other of colleagues.sort(() => Math.random() - 0.5).slice(0, 2)) {
-      lifeSleep.delete(other.id);
-      lifeNudge.set(other.id, 0.35);
-    }
+    stirColleagues(colleagues, 0.35);
   } catch (err) {
     log("info", "threads", `news lookout failed: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
@@ -3459,10 +3481,10 @@ function offerNextSteps(
 }
 
 /** A turn this long is one somebody may have walked away from. */
-const LONG_TURN_MS = 45_000;
+const LONG_TURN_MS = 10_000;
 
 /**
- * Tell the phone that a long piece of work is done -- when nobody is looking
+ * Tell the phone that a piece of work is done -- when nobody is looking
  * at it. A turn watched to the end needs no message, and neither does a
  * short one; a job's turn says so through its own notice.
  */

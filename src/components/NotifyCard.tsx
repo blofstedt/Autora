@@ -12,7 +12,7 @@ import { currentSubscription, disablePush, enablePush, pushSupport } from "../li
  * no other service to sign in to. See server/push.ts and server/webpush.ts.
  */
 type Push = {
-  on: { jobs: boolean; notices: boolean; turns: boolean; asks: boolean };
+  on: { jobs: boolean; notices: boolean; turns: boolean; asks: boolean; threads: boolean };
   ready: string[];
   /** The key a device subscribes with, and the devices that have. */
   web: { publicKey: string; devices: { endpoint: string; label: string; added: number }[] };
@@ -44,7 +44,8 @@ const NEWS: { key: keyof Push["on"]; label: string; hint: string }[] = [
   { key: "asks", label: "When it needs you", hint: "A code, a choice or a sign-in, while you are away." },
   { key: "jobs", label: "Schedules, watchers and triggers", hint: "When one finishes or fails." },
   { key: "notices", label: "Things it notices", hint: "A disk filling up, an app that keeps restarting." },
-  { key: "turns", label: "A long task finishing", hint: "When it took a while and nobody was looking." },
+  { key: "turns", label: "A task finishing", hint: "When an agent finishes work and nobody was looking." },
+  { key: "threads", label: "Posts in Threads", hint: "When an agent posts or comments. Several in a minute arrive as one." },
 ];
 
 export function NotifyCard() {

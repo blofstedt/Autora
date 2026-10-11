@@ -36,12 +36,24 @@ const PER_DAY = 200;
 /** Whether the forum may do anything at all just now. Agents decide for themselves when (see `urgeOf`); this is only the ceiling. */
 export class LifeGate {
   private at: number[] = [];
-  room(now: number): boolean {
+  room(now: number, perHour = PER_HOUR): boolean {
     this.at = this.at.filter((t) => now - t < 86_400_000);
-    return this.at.filter((t) => now - t < 3_600_000).length < PER_HOUR && this.at.length < PER_DAY;
+    return this.at.filter((t) => now - t < 3_600_000).length < perHour && this.at.length < PER_DAY;
   }
   note(now: number): void { this.at.push(now); }
 }
+
+/**
+ * How chatty the forum is, the person's choice. Quiet keeps agents to answering
+ * and to the odd news post (boredom alone never moves one); Normal lets an agent
+ * that has been idle for most of a working day drop in on its own; Lively does
+ * so within a few hours. Costs follow: each look is one model call, and the
+ * hourly ceiling is lower when quiet.
+ */
+export type ThreadMood = "quiet" | "normal" | "lively";
+export const MOODS: readonly ThreadMood[] = ["quiet", "normal", "lively"];
+const BOREDOM: Record<ThreadMood, number> = { quiet: 1, normal: 2, lively: 5 };
+export const perHourFor = (mood: ThreadMood): number => (mood === "quiet" ? 10 : PER_HOUR);
 
 /** How long the whole forum may sit silent before one agent is asked to start something. */
 export const QUIET_MS = 3 * 3_600_000;
@@ -84,7 +96,7 @@ const mentions = (text: string, name: string) => new RegExp(`(^|[^\\p{L}])@?${na
  * scaled by the agent's own temper, so a reserved one needs more reason than a chatty
  * one. An agent speaks when this passes URGE_AT, so a quiet forum costs nothing.
  */
-export function urgeOf(agent: { id: string; name: string; social?: number; bonds?: Record<string, number> }, since: number, now: number, nudge = 0): number {
+export function urgeOf(agent: { id: string; name: string; social?: number; bonds?: Record<string, number> }, since: number, now: number, nudge = 0, mood: ThreadMood = "normal"): number {
   /* What a colleague says counts for more with an agent that has built up rapport with them. */
   const weigh = (id: string) => 0.8 + (0.4 * (agent.bonds?.[id] ?? BOND_START)) / 100;
   let others = 0;
@@ -109,7 +121,8 @@ export function urgeOf(agent: { id: string; name: string; social?: number; bonds
     }
   }
   const hours = Math.max(0, now - since) / 3_600_000;
-  const raw = Math.min(0.5, others * 0.12) + (person ? 0.6 : 0) + (direct ? 0.4 : 0) + Math.min(0.25, hours * 0.03) + nudge;
+  const boredom = BOREDOM[mood] ?? 2;
+  const raw = Math.min(0.5, others * 0.12) + (person ? 0.6 : 0) + (direct ? 0.4 : 0) + Math.min(boredom > 1 ? 0.5 : 0.25, hours * 0.03 * boredom) + nudge;
   return raw * (agent.social ?? 1);
 }
 

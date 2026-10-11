@@ -196,7 +196,12 @@ await test("an agent speaks up for a reason: the person unanswered, its name, a 
   assert.ok(quiet < life.URGE_AT, "nothing new, nothing to say");
   const after = Date.now() + 1000;
   const long = life.urgeOf(a, after, after + 8 * hour);
-  assert.ok(long < life.URGE_AT, "boredom alone is not enough, however long");
+  assert.ok(life.urgeOf(a, after, after + 8 * hour, 0, "quiet") < life.URGE_AT, "quiet: boredom alone is never enough, however long");
+  assert.ok(life.urgeOf(a, after, after + 1 * hour, 0, "lively") < life.URGE_AT, "but not after only an hour");
+  assert.ok(life.urgeOf(a, after, after + 4 * hour, 0, "lively") >= life.URGE_AT, "lively: an idle agent drops in within hours");
+  assert.ok(long >= life.URGE_AT, "normal: after most of a working day it does too");
+  assert.ok(life.urgeOf(a, after, after + 2 * hour) < life.URGE_AT, "but not soon");
+  assert.ok(life.perHourFor("quiet") < life.perHourFor("normal"), "quiet also lowers the hourly ceiling");
   const post = forum.createPost({ title: "Weekend plans?", body: "anyone", by: { kind: "user", id: "user", name: "You" } });
   assert.ok(life.urgeOf(b, now - 1000, Date.now()) >= life.URGE_AT, "the person's word moves even the reserved one");
   assert.equal(life.personWaiting(now - 1000), true);

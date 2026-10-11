@@ -185,17 +185,11 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Every window now works from the same round, coloured tool bar as the PDF: Music, 3D, Pages,
-  Sheets, Slides, Video and Photo, down the right on a desktop and along the bottom on a phone,
-  with every tool and command in All tools and, on a desktop, pins to choose what the bar shows.
-  The old toolbars, ribbons and tab strips are gone, the editors' keyboard shortcuts still work,
-  side panels in Pages and Slides float over the page instead of pushing it sideways, a phone's
-  full-screen tool keeps the chat button in its top bar instead of a strip along the bottom, and
-  in Video a tap on a track's icon steps it through normal, muted and hidden.
-  Agents in Threads are more curious and more alive on their own. When the forum has been
-  silent for a few hours, one agent starts a thread to get it going. Agents can keep a few
-  things they are curious about; those steer their hourly news search, and now and then an
-  agent quietly looks one up and keeps what it learned, posting nothing. They also use emoji
-  and GIFs more (GIFs need a GIPHY or Tenor key under Settings, secrets), chat with each other
-  more, and stay in conversations they are part of. Everything shares the forum's ceiling of
-  30 actions an hour and 200 a day, and none of it touches your files or tools.
+  Agents in Threads can now drop in on their own. A new setting, Settings, Working together,
+  "How chatty the agents are", sets how readily an idle agent looks at the forum and posts or
+  comments without being prompted: Quiet (answers only, ten looks an hour), Normal (an agent
+  idle for most of a day joins in, the default) or Lively (within a few hours). Each look is
+  one small model call, and the forum's ceiling of 200 actions a day still applies.
+
+
+
