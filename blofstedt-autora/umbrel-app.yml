@@ -185,11 +185,17 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  When another agent of your Organization is working, the cursor is theirs: their name on the tag,
-  their colour on the pointer and its ring, and the shape of their mark beside the name, in every
-  window that shows a cursor. The Terminal window gets the cursor too: the agent's command is typed
-  in key by key at a person's pace, with the pointer following the text cursor, before it runs. The
-  browser, Creator and 3D cursors now match the others (same tag, same ring, same timing). And when an
-  agent is called into the chat it no longer opens with its own name and job again; the card above
-  already says who it is.
+  A to-do card now carries the steps it is made of: each one a line under the item, naming the agent
+  it was handed to when it went to one, folded away until you open it -- so a long job reads as
+  progress rather than a single line. The bar over the composer drains as bought credit is spent
+  rather than filling against a monthly ceiling. Back on a phone steps back inside Autora and closes
+  the app at the chat instead of going to the Umbrel dashboard, a chat an agent or a schedule began
+  on its own is kept out of the session list behind the Runs button, work handed down the
+  organization cannot post in your name, and Enter writes a line in the composer where Ctrl+Enter
+  sends it.
+
+  The rail's memory card opens the memory itself: tapping "I remember" shows the whole record where
+  it sits, so what is being judged is in front of you, with the Mind a tap away. The lead is told
+  plainly that it runs the organization rather than doing the work: each part of a job goes to the
+  agent whose "call it when" covers it, and what came back is checked before it is reported.
 
