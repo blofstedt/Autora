@@ -66,9 +66,34 @@ async function main() {
       assert.ok(back, "the lead was handed both reports back");
       assert.match(back.last, /Editor \(session-[^)]+\):\nTightened: cut 20%/);
       assert.match(back.last, /Bookkeeper \(session-[^)]+\):\nBooks updated: figures match/);
+      /* An agent operating works IN THIS CHAT (the person's rule). Its run is a session of its own
+         so it has its own log, but it is not one of the person's chats: GET /api/sessions leaves out
+         anything whose origin is not "person", and the Sessions page's Runs button asks for them
+         again with ?all=1. */
+      const runs = (await app.api("GET", "/api/sessions?all=1")).body as { id: string; title: string; origin: string }[];
+      const editorRun = runs.find((x) => x.title.startsWith("Editor: Tighten chapter 2"))!;
+      assert.ok(editorRun, "the Editor's run is there when the runs are asked for");
+      assert.equal(editorRun.origin, "agent");
+      assert.ok(runs.some((x) => x.title.startsWith("Bookkeeper: Continue from Editor")), "and the Bookkeeper's run follows in another");
       const sessions = (await app.api("GET", "/api/sessions")).body as { id: string; title: string }[];
-      assert.ok(sessions.some((x) => x.title.startsWith("Editor: Tighten chapter 2")), "the Editor had a chat of its own");
-      assert.ok(sessions.some((x) => x.title.startsWith("Bookkeeper: Continue from Editor")), "and the Bookkeeper followed in another");
+      assert.ok(!sessions.some((x) => x.title.startsWith("Editor: Tighten chapter 2")), "the Editor's run is not one of the person's chats");
+      assert.ok(!sessions.some((x) => x.title.startsWith("Bookkeeper: Continue from")), "nor is the Bookkeeper's");
+      /* Both agents spoke up in the chat that called them: agent.chime when the run starts and
+         agent.back when it reports -- the two events ChimeCell draws as the agent's own mark.
+         Both carry the run's session id, which is what the page pairs them by. */
+      const chime = ev.find((e) => e.kind === "agent.chime" && e.payload.name === "Editor")!;
+      assert.ok(chime, "the Editor announced itself in this chat");
+      assert.equal(chime.payload.id, editorRun.id, "the chime names the run it belongs to");
+      assert.equal(chime.payload.text, "On it: Tighten chapter 2");
+      const editorBack = ev.find((e) => e.kind === "agent.back" && e.payload.id === chime.payload.id)!;
+      assert.ok(editorBack, "and reported back into this chat");
+      assert.equal(editorBack.payload.ok, true);
+      assert.match(editorBack.payload.reply, /Tightened: cut 20%/);
+      const booksChime = ev.find((e) => e.kind === "agent.chime" && e.payload.name === "Bookkeeper")!;
+      assert.ok(booksChime, "the Bookkeeper announced itself here too");
+      const booksBack = ev.find((e) => e.kind === "agent.back" && e.payload.id === booksChime.payload.id)!;
+      assert.ok(booksBack, "and reported here too");
+      assert.match(booksBack.payload.reply, /Books updated: figures match/);
       const handed = app.seen.find((r) => r.last.includes("Continue from Editor"))!;
       assert.match(handed.last, /Tightened: cut 20%/, "the Bookkeeper was given the Editor's report");
       assert.match(handed.last, /handed to you by Autora -> Editor/);
