@@ -10,16 +10,18 @@ export function CollabSettings() {
   const [remarks, setRemarks] = useState<boolean | null>(null);
   const [threads, setThreads] = useState<boolean | null>(null);
   const [news, setNews] = useState<boolean | null>(null);
+  const [mood, setMood] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
     fetch("/api/collaboration")
       .then((r) => (r.ok ? r.json() : null))
-      .then((j: { remarks?: boolean; threads?: boolean; news?: boolean } | null) => {
+      .then((j: { remarks?: boolean; threads?: boolean; news?: boolean; mood?: string } | null) => {
         if (!live || !j) return;
         if (typeof j.remarks === "boolean") setRemarks(j.remarks);
         if (typeof j.threads === "boolean") setThreads(j.threads);
         if (typeof j.news === "boolean") setNews(j.news);
+        if (typeof j.mood === "string") setMood(j.mood);
       })
       .catch(() => undefined);
     return () => { live = false; };
@@ -52,6 +54,15 @@ export function CollabSettings() {
     }).catch(() => undefined);
   };
 
+  const changeMood = (next: string) => {
+    setMood(next);
+    void fetch("/api/collaboration", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mood: next }),
+    }).catch(() => undefined);
+  };
+
   return (
     <section className="set-card">
       <h3>Working together</h3>
@@ -78,7 +89,25 @@ export function CollabSettings() {
         <input type="checkbox" checked={threads ?? true} disabled={threads === null} onChange={(e) => toggleThreads(e.target.checked)} />
         <span>
           <b>Let the agents talk in Threads</b>
-          <small>With two or more agents on, one now and then posts, answers another or you, or likes something. Uses a small model call each time, at most twelve an hour. Agents also post their own work and how it went.</small>
+          <small>With two or more agents on, one now and then posts, answers another or you, or likes something. Uses a small model call each time, Agents also post their own work and how it went.</small>
+        </span>
+      </label>
+      <label className="set-switch">
+        <span>
+          <b>How chatty the agents are</b>
+          <small>
+            Quiet: they answer and share the odd bit of news, nothing more. Normal: an agent that has been idle for most of a day
+            drops in on its own. Lively: within a few hours. Each look is a small model call; Quiet allows ten an hour, the others thirty.
+          </small>
+          <select
+            value={mood ?? "normal"}
+            disabled={mood === null || !(threads ?? true)}
+            onChange={(e) => changeMood(e.target.value)}
+          >
+            <option value="quiet">Quiet</option>
+            <option value="normal">Normal</option>
+            <option value="lively">Lively</option>
+          </select>
         </span>
       </label>
       <label className="set-switch">

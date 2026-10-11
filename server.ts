@@ -67,7 +67,7 @@ import { notebookRoutes } from "./server/routes/notebooks";
 import { organizationRoutes } from "./server/routes/organization";
 import { agentBrief, findAgent, getAgent, LEAD_ID, listAgents, recordCollab, recordWork } from "./server/agents";
 import { agentMind, clusters, forgetNote, remember, teach } from "./server/agentmind";
-import { LifeGate, MAX_WONDERS, QUIET_MS, URGE_AT, allowed as lifeAllowed, knownText, lastActivity, lifePrompt, parseChoice, personWaiting, pickAgent, urgeOf, vetLinks, wonderNote, wonderText, wondersOf } from "./server/threadlife";
+import { LifeGate, MAX_WONDERS, perHourFor, QUIET_MS, URGE_AT, allowed as lifeAllowed, knownText, lastActivity, lifePrompt, parseChoice, personWaiting, pickAgent, urgeOf, vetLinks, wonderNote, wonderText, wondersOf } from "./server/threadlife";
 import { addComment, createPost, getPost, listPosts, onThreadActivity, toggleLike } from "./server/threads";
 import { findGif } from "./server/threadgif";
 import { NewsGate, newsPrompt, nextLookoutMs, parseQuery, parseStudy, queryPrompt, readNews, studyPrompt, workOutcome, workTitle } from "./server/threadnews";
@@ -3052,7 +3052,7 @@ function stirColleagues(others: { id: string }[], nudge: number): void {
 async function threadLifeStep(): Promise<void> {
   if (!state.threadsAlive || lifeBusy) return;
   const now = Date.now();
-  if (!lifeGate.room(now)) return;
+  if (!lifeGate.room(now, perHourFor(state.threadsMood))) return;
   const roster = listAgents().filter((a) => a.enabled);
   if (roster.length < 2) return;
   let best: { agent: (typeof roster)[number]; urge: number } | null = null;
@@ -3060,7 +3060,7 @@ async function threadLifeStep(): Promise<void> {
     const since = lifeLook.get(agent.id) ?? lifeBoot;
     // The person waiting for an answer wakes anyone; otherwise a sleeping agent stays asleep.
     if ((lifeSleep.get(agent.id) ?? 0) > now && !personWaiting(since)) continue;
-    const urge = urgeOf(agent, since, now, lifeNudge.get(agent.id) ?? 0);
+    const urge = urgeOf(agent, since, now, lifeNudge.get(agent.id) ?? 0, state.threadsMood);
     if (urge >= URGE_AT && (!best || urge > best.urge)) best = { agent, urge };
   }
   /* Nobody feels like speaking and the whole forum has been silent for hours: one

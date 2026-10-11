@@ -28,6 +28,7 @@ import { DEFAULT_CAPTCHA, mergeCaptcha, type CaptchaSettings } from "./captcha";
 import { DEFAULT_PROACTIVITY, mergeProactivity, type Proactivity } from "./quiet";
 import { AUTOMATION_DEFAULTS, mergeAutomation, type AutomationBudget } from "./automation";
 import { defaultPush, mergePush, type PushSettings } from "./push";
+import { MOODS, type ThreadMood } from "./threadlife";
 
 export const THEMES = ["violet", "teal", "nous-blue", "midnight", "ember", "mono", "cyberpunk", "rose"] as const;
 export const FONTS = ["inter", "system", "rounded", "mono"] as const;
@@ -309,6 +310,8 @@ interface PersistedState {
   collabRemarks: boolean;
   /** The agents post, answer and like in Threads on their own. */
   threadsAlive: boolean;
+  /** How readily agents speak up in Threads unprompted (server/threadlife.ts). */
+  threadsMood: ThreadMood;
   /** Once in a while an agent searches the web for its own subject and posts what matters to Threads (server/threadnews.ts). */
   threadsNews: boolean;
   /** Whether the agent reads a site's official documentation before acting on a site it has nothing current on. */
@@ -563,6 +566,7 @@ function blank(): PersistedState {
     agentCursor: true,
     collabRemarks: true,
     threadsAlive: true,
+    threadsMood: "normal",
     threadsNews: true,
     groundFirst: true,
     timezone: "",
@@ -653,6 +657,7 @@ function read(): PersistedState {
     if (typeof raw.agentCursor === "boolean") state.agentCursor = raw.agentCursor;
     if (typeof raw.collabRemarks === "boolean") state.collabRemarks = raw.collabRemarks;
     if (typeof raw.threadsAlive === "boolean") state.threadsAlive = raw.threadsAlive;
+    if (MOODS.includes(raw.threadsMood)) state.threadsMood = raw.threadsMood;
     if (typeof raw.threadsNews === "boolean") state.threadsNews = raw.threadsNews;
     if (typeof raw.groundFirst === "boolean") state.groundFirst = raw.groundFirst;
     if (typeof raw.timezone === "string" && validTimezone(raw.timezone)) {
