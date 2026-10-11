@@ -45,3 +45,5 @@ test("there is no action that goes to the dashboard", () => {
     }
   }
 });
+
+console.log(`${passed} passed`);

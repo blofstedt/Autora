@@ -1956,6 +1956,9 @@ export function App() {
             onOpenSettings={openModelSettings}
             placeholder={placeholder}
             dockedPlanKey={dockPlan ? cellKey(dockPlan) : ""}
+            // The thread stays mounted under the other pages: told which of them is
+            // on screen, so a row that was answered elsewhere catches up.
+            showing={page === "chat"}
             // Anything pinned to the corners of the conversation. Empty
             // unless it is asked for in Settings -> Appearance.
             dock={dockEl}
@@ -2450,6 +2453,8 @@ export function App() {
                   liveBrowserSeq={view.liveBrowserSeq}
                   browserOpen={browser?.open === true}
                   live={live}
+                  // The feed is a window of its own: it follows the page it belongs to.
+                  showing={workOn && sidePane === "work"}
                   phase={reading.phase}
                   onPermissionDecide={handlePermissionDecide}
                   driving={driving}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { LearnedItem } from "../lib/derive";
 import { BUCKETS, KIND_COLOR, type Bucket } from "../lib/memory";
 import { MemoryPeek } from "./MemoryCell";
@@ -27,32 +27,45 @@ export function LearnedCell({
   items,
   changes,
   onOpen,
+  showing = true,
 }: {
   items: LearnedItem[];
   changes: { id: string; title: string; change: string }[];
   onOpen?: () => void;
+  /** The conversation is on screen. An answer can be given somewhere else --
+      the Mind page, another device -- so the rows look again when it is. */
+  showing?: boolean;
 }) {
   const [fate, setFate] = useState<Record<string, Fate>>({});
   const [peeking, setPeeking] = useState<LearnedItem | null>(null);
   /** The memory a rewrite would replace, fetched when one is opened. */
   const [old, setOld] = useState<{ id: string; title: string; body?: string } | null>(null);
 
+  /* Which items are still unanswered, by id. The check below is keyed on that,
+     not on the array: a thread re-renders on every event of every turn, and
+     each new array used to cancel the check that was in flight -- so a row
+     never learned what had become of it. Through a ref because it is only
+     read when the key changes, not part of what the effect depends on. */
+  const pending = useRef<string[]>([]);
+  pending.current = items.filter((item) => item.status !== "confirmed").map((item) => item.id);
+  const pendingKey = pending.current.join("|");
+
   // The event is history; what became of each item since lives on the server.
   useEffect(() => {
+    if (!showing) return;
     let alive = true;
-    for (const item of items) {
-      if (item.status === "confirmed") continue;
-      fetch(`/api/memory/${encodeURIComponent(item.id)}`)
+    for (const id of pending.current) {
+      fetch(`/api/memory/${encodeURIComponent(id)}`)
         .then((r) => (r.status === 404 ? null : r.ok ? r.json() : undefined))
         .then((record) => {
           if (!alive || record === undefined) return;
           const now: Fate = record === null ? "discarded" : record.status === "confirmed" ? "kept" : "open";
-          setFate((prev) => ({ ...prev, [item.id]: now }));
+          setFate((prev) => ({ ...prev, [id]: now }));
         })
         .catch(() => undefined);
     }
     return () => { alive = false; };
-  }, [items]);
+  }, [pendingKey, showing]);
 
   const decide = async (id: string, keep: boolean) => {
     setFate((prev) => ({ ...prev, [id]: "busy" }));
@@ -133,7 +146,7 @@ export function LearnedCell({
           onKeep={(id) => decide(id, true)}
           onDiscard={(id) => decide(id, false)}
           onAnswered={(id, answer) => setFate((prev) => ({ ...prev, [id]: answer === "kept" ? "kept" : "discarded" }))}
-          replaces={old && old.id === peeking.id ? old : null}
+          replaces={old && peeking.revises === old.id ? old : null}
         />
       )}
     </div>

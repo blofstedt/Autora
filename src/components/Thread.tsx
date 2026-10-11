@@ -526,6 +526,10 @@ type WorkState = {
       speaker under it can be one button rather than a play button with a
       separate way to stop it. */
   speakingReply?: { text: string; muted: boolean } | null;
+  /** The conversation is on screen. It stays mounted under the other pages, so
+      a card that reads its state from the server is told when it is looked at
+      again rather than finding out only on a reload. */
+  showing: boolean;
 };
 
 /* TurnBucket, CellView and Reply are memoised, and that is what keeps a long
@@ -907,6 +911,7 @@ const CellView = memo(function CellView({
   onOpenSettings,
   onSpeakReply,
   speakingReply,
+  showing,
 }: {
   cell: Cell;
   sessionId: string;
@@ -959,6 +964,7 @@ const CellView = memo(function CellView({
           live={live}
           open={open}
           docked={docked}
+          showing={showing}
           phase={phase}
           onPermissionDecide={onPermissionDecide}
           driving={driving}
@@ -1002,7 +1008,7 @@ const CellView = memo(function CellView({
     case "memory":
       return <MemoryCell cell={cell} onOpen={onOpenMind} />;
     case "learned":
-      return <LearnedCell items={cell.items} changes={cell.changes} onOpen={onOpenMind} />;
+      return <LearnedCell items={cell.items} changes={cell.changes} onOpen={onOpenMind} showing={showing} />;
     case "ask":
       return <AskCell ask={cell.ask} sessionId={sessionId} readOnly={!live} />;
     case "images":
