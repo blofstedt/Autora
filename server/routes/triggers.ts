@@ -9,7 +9,7 @@ import express, { type Express, type Request, type Response } from "express";
 import { overDay, skipReason, type AutomationLedger } from "../automation";
 import { log } from "../logs";
 import type { PushKind } from "../push";
-import type { AutoraEvent, Session } from "../session-types";
+import type { AutoraEvent, Session, SessionOrigin } from "../session-types";
 import { state } from "../state";
 import { type Trigger, newId as newTriggerId, newToken as newTriggerToken, tokenMatches, label as triggerLabel, firePrompt as triggerPrompt, refusal as triggerRefusal, view as triggerView } from "../triggers";
 
@@ -23,7 +23,7 @@ export function triggerRoutes(app: Express, deps: {
   chargeSession: (sessionId: string) => void;
   /** Sessions started by automation and still counted as running. */
   automationSessions: Set<string>;
-  newSession: (title: string) => Session;
+  newSession: (title: string, incognito?: boolean, origin?: SessionOrigin) => Session;
   emitEvent: (session: Session, kind: string, actor: string, payload: Record<string, any>) => AutoraEvent;
   startTurn: (
     session: Session, text: string, attachments: [], opts: { automated: boolean },
@@ -53,7 +53,7 @@ export function triggerRoutes(app: Express, deps: {
       notify({ tone: "info", title: "Automation budget spent for today", detail: held, session: null }, "jobs");
       return null;
     }
-    const session = newSession(triggerLabel(t));
+    const session = newSession(triggerLabel(t), false, "auto");
     automationSessions.add(session.id);
     t.fires += 1;
     t.last_fired = Math.floor(Date.now() / 1000);

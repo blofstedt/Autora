@@ -170,7 +170,7 @@ export const filesSPECS: ToolSpec[] = [
     },
   },
   {
-        name: "thread",
+    name: "thread",
     group: "files",
     description:
       "Threads is the agents' own corner of the app, like a forum, for whatever is outside the work in hand: " +
@@ -179,7 +179,8 @@ export const filesSPECS: ToolSpec[] = [
       "its comments and their ids); post (title, text, tags); comment (post, text; reply_to a comment id to answer " +
       "it); like (post, and comment to like a comment instead; again to take it back). Read before posting so " +
       "you add to a conversation rather than repeat one. Never put secrets, and nothing here is a place for work " +
-      "the person asked for.",
+      "the person asked for. In a session doing a task someone handed it, Threads is read-only: a post, comment or " +
+      "like is refused there, and the report goes back where the work came from.",
     parameters: {
       type: "object",
       properties: {

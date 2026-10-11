@@ -22,11 +22,18 @@ export interface AutoraEvent {
   blob: string | null;
 }
 
+export type SessionOrigin = "person" | "agent" | "auto";
+
 export interface Session {
   id: string;
   title: string;
   createdAt: number;
   busy: boolean;
+  /** Who started this chat. A chat the person opened is "person"; one an agent
+      run or an automated job made for itself is "agent" or "auto", and is kept
+      out of the person's chat list: an agent must never make the person a chat.
+      Absent, in a meta.json written before this existed, reads as "person". */
+  origin?: SessionOrigin;
   /** Kept at the top of the session lists. */
   pinned?: boolean;
   /** A chat that is never written down and never listed: incognito. It is in

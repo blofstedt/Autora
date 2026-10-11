@@ -1,16 +1,15 @@
 /**
- * The back gesture's destination.
+ * What the back gesture does.
  *
- * Autora is installed from a host with a port on it (the tailscale bridge, or
- * Umbrel's tile), and the dashboard it was opened from is the same host
- * without that port. Get this wrong and back either stays put or leaves the
- * person somewhere that is not Umbrel at all, which is worse than the tab
- * they came from.
+ * Back steps back inside Autora -- a card closes, a page returns to the chat --
+ * and at the chat itself it leaves the app. It does not go to the Umbrel
+ * dashboard: back once meant "leave for https://<host>/", which took the person
+ * out of the app and onto a page they had not asked for.
  *
  *   npm test
  */
 import assert from "node:assert/strict";
-import { umbrelHome } from "../src/lib/back";
+import { backAction } from "../src/lib/back";
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -24,28 +23,25 @@ function test(name: string, fn: () => void) {
   }
 }
 
-test("the tailscale bridge's :8443 leads to the dashboard", () => {
-  assert.equal(umbrelHome("https://umbrel-1.example.ts.net:8443/"), "https://umbrel-1.example.ts.net/");
+test("a card or drawer on top closes first, whatever the app would do", () => {
+  assert.equal(backAction(true, false), "close-layer");
+  assert.equal(backAction(true, true), "close-layer");
 });
 
-test("the tile's :8817 leads to the dashboard, keeping the scheme", () => {
-  assert.equal(umbrelHome("http://umbrel.local:8817/"), "http://umbrel.local/");
+test("with nothing on top, back steps back a screen", () => {
+  assert.equal(backAction(false, true), "step-back");
 });
 
-test("a page inside the app leads to the dashboard, not to that page", () => {
-  assert.equal(
-    umbrelHome("https://umbrel-1.example.ts.net:8443/?page=config&tab=keys#top"),
-    "https://umbrel-1.example.ts.net/",
-  );
+test("at the chat there is nothing to step back to, so back leaves the app", () => {
+  assert.equal(backAction(false, false), "leave-app");
 });
 
-test("a page with no port above it has nowhere to go", () => {
-  assert.equal(umbrelHome("https://autora.example.com/"), null);
-  assert.equal(umbrelHome("http://localhost:3000/"), "http://localhost/");
+test("there is no action that goes to the dashboard", () => {
+  // Every combination: none of them is a navigation, so none of them is the
+  // dashboard. A fourth action would have to be added here to bring it back.
+  for (const layer of [true, false]) {
+    for (const stepped of [true, false]) {
+      assert.ok(["close-layer", "step-back", "leave-app"].includes(backAction(layer, stepped)));
+    }
+  }
 });
-
-test("nonsense is not a destination", () => {
-  assert.equal(umbrelHome("not a url"), null);
-});
-
-console.log(`\n${passed} passed`);

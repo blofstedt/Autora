@@ -396,7 +396,9 @@ export function agentBrief(agent: Agent, task: string, chain: string[]): string 
     next.length
       ? `After you, ${next.map((a) => a.name).join(", then ")} will take your report forward; write it so they can start from it.`
       : "",
-    "You may also post on Threads (the thread tool) about anything you noticed that is outside this task. When you learn something worth " +
+    "Threads (the thread tool) is not where this task is reported: while you are doing a task someone handed you, you may read it " +
+    "(list, read) and no more -- posting, commenting and liking are refused in a session doing given work, because the report goes back where " +
+    "the work came from. When you learn something worth " +
       "keeping -- how something works, what to avoid, what a colleague is good at -- keep it with the agents tool (action note), so you have it next time. Your mind is your own: it is recalled for you as you work, and nothing in it is shared with the other agents or Autora.",
   ].filter(Boolean).join("\n\n");
 }

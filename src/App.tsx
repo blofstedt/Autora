@@ -90,7 +90,7 @@ import { useRelay } from "./components/RelaySetup";
 import { UpdateNotice } from "./components/UpdateNotice";
 import { SetupCard, Welcome } from "./components/SetupCard";
 import { flySpark, visible } from "./lib/presence";
-import { useBackOut } from "./lib/back";
+import { setStepBack, useBackGesture } from "./lib/back";
 import { Notices } from "./components/Notices";
 import { InstallApp } from "./components/InstallApp";
 import { PermissionsPill } from "./components/PermissionsPill";
@@ -176,7 +176,7 @@ export function App() {
      load so the first back is ours to answer: it closes what is open over the
      chat, and otherwise steps out to the Umbrel dashboard rather than out of
      the app. See src/lib/back.ts. */
-  useBackOut();
+  useBackGesture();
 
   const [sessionId, setSessionId] = useState<string | null>(
     () => new URLSearchParams(location.search).get("session"),
@@ -282,6 +282,20 @@ export function App() {
   const [modelReady, setModelReady] = useState<boolean | null>(null);
   /** A turn just failed: the presence shivers and the tab turns red briefly. */
   const [failing, setFailing] = useState(false);
+
+  /* What one back gesture does, in order: close what is open over the chat,
+     then step out of a page back to the chat, and at the chat itself say no --
+     there is nothing of ours to go back to, and the gesture then leaves the app
+     rather than taking the person to the Umbrel dashboard. */
+  useEffect(() => setStepBack(() => {
+    if (sessionsOpen) { setSessionsOpen(false); return true; }
+    if (libraryOpen) { setLibraryOpen(false); return true; }
+    if (toolsOpen) { setToolsOpen(false); return true; }
+    if (notebookOpen) { setNotebookOpen(null); return true; }
+    if (drawerOpen) { setDrawerOpen(false); return true; }
+    if (page !== "chat") { setPage("chat"); return true; }
+    return false;
+  }), [sessionsOpen, libraryOpen, toolsOpen, notebookOpen, drawerOpen, page]);
   const streamRef = useRef<SessionStream | null>(null);
   /** The newest event the presence has already reacted to, so a reload or a
       session switch does not replay old moments. */
@@ -2125,10 +2139,12 @@ export function App() {
                           return;
                         }
                       }
-                      if (e.key === "Enter" && !e.shiftKey) {
+                      // Enter writes a line; it never sends. A message goes with
+                      // the button, with Ctrl/Cmd+Enter, or with Alt+Enter to
+                      // stop the agent first and then send.
+                      if (e.key === "Enter" && (e.metaKey || e.ctrlKey || e.altKey)) {
                         e.preventDefault();
-                        // Alt, Ctrl or Cmd with Enter stops the agent first; plain Enter adds to its work.
-                        submit(e.altKey || e.ctrlKey || e.metaKey);
+                        submit(e.altKey);
                       }
                     }}
                   />
@@ -2342,7 +2358,7 @@ export function App() {
                             && ((!draft.trim() && nothingAttached)
                               || (modelReady === false && !draft.trim().startsWith("/"))))}
                           onClick={running && !draft.trim() && nothingAttached ? () => void stopTurn() : () => submit()}
-                          title={running ? (!draft.trim() && nothingAttached ? "Stop" : "Add to what it is doing (Alt+Enter interrupts & sends)") : "Send"}
+                          title={running ? (!draft.trim() && nothingAttached ? "Stop" : "Add to what it is doing (Ctrl/Cmd+Enter sends, Alt+Enter stops it first)") : "Send"}
                           aria-label={running ? (!draft.trim() && nothingAttached ? "Stop" : "Add to what it is doing") : "Send"}
                         >
                           {running && !draft.trim() && nothingAttached
@@ -2354,7 +2370,7 @@ export function App() {
                   </div>
                 </div>
                 <p className="composer-hint">
-                  <kbd>Enter</kbd> to send · <kbd>Shift</kbd> + <kbd>Enter</kbd> for a new line · <kbd>/</kbd> for commands
+                  <kbd>Enter</kbd> for a new line · <kbd>Ctrl</kbd> + <kbd>Enter</kbd> to send · <kbd>/</kbd> for commands
                 </p>
               </>
             )}

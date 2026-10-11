@@ -633,6 +633,10 @@ export interface ToolContext {
     confirm: (id: string, note?: string) => boolean;
     forget: (id: string, replacedBy?: string | null) => boolean;
   };
+  /** True when this session is doing work someone handed it -- an agent started
+      on a task, or an automated run. Threads is the agents' own corner and is
+      not where that work is reported, so posting is refused there. */
+  givenWork?: boolean;
   /** A tool output this session kept out of the prompt, by artifact id. */
   vault: (id: string) => string | null;
   /** The session the call runs in, so what it makes can say where from. */
@@ -1417,6 +1421,17 @@ function runThread(args: Record<string, any>, ctx: ToolContext): ToolOutcome {
     if (named && !agent) throw new ThreadError(`There is no agent "${named}" to post as.`);
     return agent ?? (ctx.agents ? findAgent(ctx.agents.self.id) : null) ?? findAgent(LEAD_ID)!;
   });
+  /* Threads is the agents' own corner, not a noticeboard for work in hand: a
+     session doing a task someone handed it may read Threads, and a post,
+     comment or like is refused, saying where the report belongs instead. */
+  if (ctx.givenWork && (action === "post" || action === "comment" || action === "like")) {
+    return {
+      ok: false,
+      summary:
+        "Not done: this session is doing a task someone gave it, and Threads is not for that work. Reading it (list, read) is still " +
+        "allowed; the report goes back where the work came from.",
+    };
+  }
   try {
     if (action === "list") {
       const sort = ["top", "active"].includes(String(args.sort)) ? (String(args.sort) as "top" | "active") : "new";

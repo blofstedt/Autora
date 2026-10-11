@@ -107,7 +107,7 @@ import { forgetPresence, presenceFor, type Surface } from "./server/presence";
 import { cleanRemark, REMARK_SYSTEM, remarkPrompt, RemarkGate, SETTLE_MS as REMARK_SETTLE_MS, WINDOW_MS as REMARK_WINDOW_MS, worthRemarking } from "./server/companion";
 import { editFile, type EditArgs } from "./server/editfile";
 import { diffDom } from "./server/domdiff";
-import type { AutoraEvent, Notice, PreviewRun, Session } from "./server/session-types";
+import type { AutoraEvent, Notice, PreviewRun, Session, SessionOrigin } from "./server/session-types";
 import { Workspace, type DiffLine, type FileChange as CodeChange } from "./server/codediff";
 import { runSubagent } from "./server/subagent";
 import { checkLine, failedNote, itemCheckNote, previewNote, previewProblems, type CheckResult } from "./server/verify";
@@ -310,6 +310,9 @@ const metaOf = (session: Session) => ({
   title: session.title,
   createdAt: session.createdAt,
   pinned: session.pinned,
+  /* Who started it, so a chat an agent made for itself comes back after a
+     restart still known as one and stays out of the person's list. */
+  origin: session.origin,
   /* Kept with the rest of what can change about a chat: a mode chosen for a
      conversation should still be there tomorrow, and after an update. */
   mode: session.mode,
@@ -2597,7 +2600,7 @@ function isDefaultTitle(title: string): boolean {
   return !t || t === "New Session" || /^Session [a-z0-9]{1,8}$/i.test(t);
 }
 
-function newSession(title: string, incognito = false): Session {
+function newSession(title: string, incognito = false, origin: SessionOrigin = "person"): Session {
   const id = incognito
     ? ephemeralId()
     : `session-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -2610,6 +2613,7 @@ function newSession(title: string, incognito = false): Session {
     seqCounter: 0,
     counts: countsFor(id),
     ...(incognito ? { incognito: true } : {}),
+    ...(origin === "person" ? {} : { origin }),
   };
   sessions.set(id, session);
   // An incognito chat has no meta.json: the store refuses to write one.
@@ -2876,7 +2880,7 @@ const scheduler = new Scheduler(jobs, {
     return skipReason(job.name, state.automation);
   },
   run: async (job, prompt, reason) => {
-    const session = newSession(job.name);
+    const session = newSession(job.name, false, "auto");
     automationSessions.add(session.id);
     emitEvent(session, "system.log", "system", {
       event: "schedule.fired",
@@ -2978,7 +2982,7 @@ async function runAgentTask(
     if (!agent.enabled) { reports.push(`${agent.name} is switched off, so it was skipped.`); return; }
     if (chain.includes(agent.id)) return;
     const names = chain.map((c) => getAgent(c)?.name ?? c);
-    const child = newSession(`${agent.name}: ${work.replace(/\s+/g, " ").slice(0, 60)}`);
+    const child = newSession(`${agent.name}: ${work.replace(/\s+/g, " ").slice(0, 60)}`, false, "agent");
     agentRuns.set(child.id, { agent: agent.id, depth, chain: [...chain, agent.id] });
     emitEvent(child, "system.log", "system", {
       event: "agent.started", agent: agent.id, name: agent.name, role: agent.role, look: agent.look,
@@ -4399,6 +4403,10 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
 
       const contextFor = (span: string): ToolContext => ({
         research: researchFor,
+        /* A session doing work someone handed it -- an agent started on a task,
+           or an automated run -- may read Threads and may not post to it: the
+           forum is not where that work is reported. */
+        givenWork: agentRuns.has(session.id) || automationSessions.has(session.id),
         agents: (() => {
           const me = getAgent(agentRuns.get(session.id)?.agent ?? LEAD_ID) ?? getAgent(LEAD_ID)!;
           return {
@@ -5779,8 +5787,15 @@ async function startServer() {
       spend.set(u.session, row);
     }
     /* Incognito chats are not in it: there is nobody to come back to them,
-       and the tab that opened one is the only thing holding its id. */
-    const list = Array.from(sessions.values()).filter((s) => !s.incognito).map((s) => {
+       and the tab that opened one is the only thing holding its id. Nor are the
+       sessions an agent run or an automated job made for itself: an agent must
+       never make the person a chat, so they are not in their list. They are
+       still there to be asked for with ?all=1, which is what the Sessions page
+       uses when the runs are wanted. */
+    const showAll = req.query.all === "1" || req.query.all === "true";
+    const list = Array.from(sessions.values())
+      .filter((s) => !s.incognito && (showAll || (s.origin ?? "person") === "person"))
+      .map((s) => {
       /* From the tallies kept alongside the events rather than by walking the
          log: this route is called whenever the rail is drawn, and for a
          session nobody has opened yet that would mean parsing a thread of
@@ -5799,6 +5814,9 @@ async function startServer() {
         live: (sessionSockets.get(s.id)?.size ?? 0) > 0,
         busy: s.busy,
         pinned: !!s.pinned,
+        /* "person" for a chat the person opened, "agent"/"auto" for one made
+           on its own behalf. Only the default list has to care. */
+        origin: s.origin ?? "person",
         mode: workMode(s.mode),
         permissions: permissionsOf(s.permissions),
         ask_when: s.askWhen ?? "",
