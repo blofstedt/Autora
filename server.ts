@@ -66,11 +66,11 @@ import {
 import { notebookRoutes } from "./server/routes/notebooks";
 import { organizationRoutes } from "./server/routes/organization";
 import { agentBrief, findAgent, getAgent, LEAD_ID, listAgents, recordCollab, recordWork } from "./server/agents";
-import { agentMind, clusters, remember, teach } from "./server/agentmind";
-import { LifeGate, URGE_AT, allowed as lifeAllowed, knownText, lifePrompt, parseChoice, personWaiting, pickAgent, urgeOf, vetLinks } from "./server/threadlife";
+import { agentMind, clusters, forgetNote, remember, teach } from "./server/agentmind";
+import { LifeGate, MAX_WONDERS, QUIET_MS, URGE_AT, allowed as lifeAllowed, knownText, lastActivity, lifePrompt, parseChoice, personWaiting, pickAgent, urgeOf, vetLinks, wonderNote, wonderText, wondersOf } from "./server/threadlife";
 import { addComment, createPost, getPost, listPosts, toggleLike } from "./server/threads";
 import { findGif } from "./server/threadgif";
-import { NewsGate, newsPrompt, nextLookoutMs, parseQuery, queryPrompt, readNews, workOutcome, workTitle } from "./server/threadnews";
+import { NewsGate, newsPrompt, nextLookoutMs, parseQuery, parseStudy, queryPrompt, readNews, studyPrompt, workOutcome, workTitle } from "./server/threadnews";
 import { mcpRoutes } from "./server/routes/mcp";
 import { artifactRoutes } from "./server/routes/artifacts";
 import { systemRoutes } from "./server/routes/system";
@@ -3009,6 +3009,9 @@ const lifeLook = new Map<string, number>();
 const lifeSleep = new Map<string, number>();
 const lifeNudge = new Map<string, number>();
 let lifeBusy = false;
+/** When each agent last got the forum going after a long silence, and when anyone last did. */
+const lifeStarted = new Map<string, number>();
+let lifeStartedAt = 0;
 
 function gifKeys(): { giphy: string; tenor: string } {
   return { giphy: secretFor("GIPHY_API_KEY"), tenor: secretFor("TENOR_API_KEY") };
@@ -3038,16 +3041,29 @@ async function threadLifeStep(): Promise<void> {
     const urge = urgeOf(agent, since, now, lifeNudge.get(agent.id) ?? 0);
     if (urge >= URGE_AT && (!best || urge > best.urge)) best = { agent, urge };
   }
-  if (!best) return;
-  const agent = best.agent;
+  /* Nobody feels like speaking and the whole forum has been silent for hours: one
+     agent, not the one who started last time, is asked to get it going. The same
+     ceiling counts it, and it is at most once per QUIET_MS. */
+  let start = false;
+  let chosen = best?.agent ?? null;
+  if (!chosen) {
+    if (now - Math.max(lastActivity(), lifeBoot, lifeStartedAt) < QUIET_MS) return;
+    chosen = pickAgent(roster, lifeStarted, null);
+    if (!chosen) return;
+    start = true;
+    lifeStarted.set(chosen.id, now);
+    lifeStartedAt = now;
+  }
+  const agent = chosen;
   lifeBusy = true;
   try {
     lifeLook.set(agent.id, now);
     lifeNudge.delete(agent.id);
-    const { system, prompt } = lifePrompt(agent, roster.filter((a) => a.id !== agent.id).map((a) => a.name), new Map(roster.map((a) => [a.id, a.name])), Boolean(gifKeys().giphy || gifKeys().tenor));
+    const { system, prompt } = lifePrompt(agent, roster.filter((a) => a.id !== agent.id).map((a) => a.name), new Map(roster.map((a) => [a.id, a.name])), Boolean(gifKeys().giphy || gifKeys().tenor), start);
     const choice = parseChoice(await backgroundCall("threads", system, prompt, 500));
     const me = { kind: "agent" as const, id: agent.id, name: agent.name };
     if (choice.note) remember(agent.id, choice.note, "lesson");
+    if (choice.wonder && wondersOf(agent.id).length < MAX_WONDERS) remember(agent.id, wonderNote(choice.wonder), "lesson");
     // Its own word on when to look again; with nothing to say, a long rest by default.
     lifeSleep.set(agent.id, Date.now() + (choice.again ?? (choice.action === "none" ? 20 : 3)) * 60_000);
     if (choice.action === "none") return;
@@ -3133,6 +3149,20 @@ async function threadNewsStep(): Promise<void> {
     if (!agent) return;
     newsLast.set(agent.id, now);
     newsAgent = agent.id;
+    /* Now and then, when it has something it has been curious about, the lookout is
+       private study instead: it searches that, keeps what it learned in its own mind
+       and posts nothing. Counted against the same ceilings. */
+    const wonder = wondersOf(agent.id)[0];
+    if (wonder && Math.random() < 0.4) {
+      newsGate.note(Date.now());
+      const results = await searchWeb(wonderText(wonder));
+      const study = studyPrompt(agent, wonderText(wonder), results);
+      const learned = parseStudy(await backgroundCall("threads", study.system, study.prompt, 300));
+      if (learned) remember(agent.id, (redactDeep({ learned }) as { learned: string }).learned, "fact");
+      forgetNote(agent.id, wonder.id);
+      lifeGate.note(Date.now());
+      return;
+    }
     const asked = queryPrompt(agent);
     const query = parseQuery(await backgroundCall("threads", asked.system, asked.prompt, 120));
     if (!query) return;

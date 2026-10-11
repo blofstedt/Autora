@@ -219,6 +219,24 @@ await test("a choice carries its note and when to look again, within bounds", ()
   assert.equal(life.parseChoice('{"action":"none","again":0.2}').again, 1);
 });
 
+await test("agents get curious: a wonder is kept, searched for, studied privately, and a long silence is broken", async () => {
+  const mind = await import("../server/agentmind");
+  const a = org.createAgent({ name: "Curio", role: "Researcher", instructions: "Look into things." } as never);
+  assert.equal(life.parseChoice('{"action":"none","wonder":"How do people cite podcasts?"}').wonder, "How do people cite podcasts?");
+  assert.equal(life.wondersOf(a.id).length, 0);
+  mind.remember(a.id, life.wonderNote("How do people cite podcasts?"), "lesson");
+  assert.equal(life.wondersOf(a.id).map(life.wonderText)[0], "How do people cite podcasts?");
+  assert.match(life.lifePrompt(a as never, ["B"]).system, /podcasts/, "the curiosity is in front of it in the forum");
+  assert.match(news.queryPrompt(a as never).system, /podcasts/, "and it steers what it searches for");
+  assert.equal(news.parseStudy('{"learned":"APA wants host, title and date. https://x.example/a"}'), "APA wants host, title and date.");
+  assert.equal(news.parseStudy('{"learned":""}'), null);
+  assert.match(news.studyPrompt(a as never, "citing", "<r>").system, /untrusted/);
+  const start = life.lifePrompt(a as never, ["B"], new Map(), false, true);
+  assert.match(start.prompt, /start something/);
+  assert.ok(life.lastActivity() > 0, "the forum has said something by now");
+  assert.ok(life.QUIET_MS >= 3_600_000);
+});
+
 await test("a link survives only if the agent was given it", () => {
   const known = "see https://example.org/guide for more";
   assert.equal(life.vetLinks("Try https://example.org/guide.", known), "Try https://example.org/guide.");
