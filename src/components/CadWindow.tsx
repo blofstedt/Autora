@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useFullscreen } from "../lib/fullscreen";
 import { cadStateNow, onCadState, useCadState } from "../lib/caddesk";
 import { useAgentCursor } from "../lib/agentCursor";
+import { useCursorWho, whoColors, getCursorWho } from "../lib/cursorWho";
 import { IconCube, IconMaximize, IconMinimize } from "./Icons";
 
 /** The colours Autora sends the frame: the custom properties its own pages are drawn from (autora-3d/src/embed.ts maps them). */
@@ -29,6 +30,13 @@ function themeNow(): Record<string, string> {
  *   - the person changes it (the frame says so, after a pause in their edits) -> it is saved on the server;
  *   - the agent changes it (the server says so) -> the model is fetched again and sent down.
  */
+/** What the 3D frame is told about the cursor: null for Autora's own, else the agent's name, colour and the corners of its mark. */
+function whoNow(): { name: string; color: string; rgb: string; sides: number } | null {
+  const w = getCursorWho();
+  const c = whoColors(w);
+  return c && w.look ? { name: w.name, color: c.accent, rgb: c.rgb, sides: w.look.sides } : null;
+}
+
 export function CadWindow({ sessionId, phone }: { sessionId: string; phone: boolean }) {
   const cad = useCadState();
   const frame = useRef<HTMLIFrameElement>(null);
@@ -45,6 +53,9 @@ export function CadWindow({ sessionId, phone }: { sessionId: string; phone: bool
   const post = useCallback((msg: Record<string, unknown>) => {
     frame.current?.contentWindow?.postMessage(msg, window.location.origin);
   }, []);
+  /* Whose cursor the frame draws: the agent of the Organization this chat belongs to, else Autora (lib/cursorWho.ts). */
+  const who = useCursorWho();
+  useEffect(() => { if (ready.current) post({ autora3d: "who", who: whoNow() }); }, [who, post]);
 
   /** The model as the server has it, sent to the frame. `agent`: the agent just changed it, so its cursor shows how. */
   const load = useCallback(async (agent = false) => {
@@ -97,6 +108,7 @@ export function CadWindow({ sessionId, phone }: { sessionId: string; phone: bool
       if (msg.autora3d === "ready") {
         ready.current = true;
         post({ autora3d: "theme", vars: themeNow() });
+        post({ autora3d: "who", who: whoNow() });
         void load();
       } else if (msg.autora3d === "changed" && msg.doc) {
         void save(msg.doc);

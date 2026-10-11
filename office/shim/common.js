@@ -128,6 +128,13 @@
       if (m.ok) w.resolve(m.value); else w.reject(new Error(String(m.error ?? "the host refused")));
     } else if (m.type === "autora:office-push") {
       for (const fn of pushes.get(m.op) ?? []) { try { fn(m.payload); } catch (e) { console.error(e); } }
+    } else if (m.type === "autora:theme" && m.vars && typeof m.vars === "object") {
+      // The page's theme tokens (src/lib/frameTheme.ts): the Autora look below reads them as --autora-*, with violet as the fallback.
+      for (const [name, value] of Object.entries(m.vars)) {
+        if (/^--autora-[a-z0-9-]+$/.test(name) && typeof value === "string" && /^[#\w(),.%\s-]{1,120}$/.test(value)) {
+          document.documentElement.style.setProperty(name, value);
+        }
+      }
     }
   });
 
@@ -199,60 +206,60 @@
   const AUTORA_TOKENS = `
 :root, :root[data-theme='light'], :root[data-theme='dark'] {
   /* surfaces: Autora --s1 --s2 --s3 --s4, --bg, --sink */
-  --surface: #0e1016 !important;
-  --surface-subtle: #151824 !important;
-  --chrome-bg: #0e1016 !important;
-  --canvas: #08090d !important;
-  --bg-content: #08090d !important;
-  --color-bg-page: #0e1016 !important;
-  --color-bg-subtle: #151824 !important;
+  --surface: var(--autora-s1, #0e1016) !important;
+  --surface-subtle: var(--autora-s2, #151824) !important;
+  --chrome-bg: var(--autora-s1, #0e1016) !important;
+  --canvas: var(--autora-bg, #08090d) !important;
+  --bg-content: var(--autora-bg, #08090d) !important;
+  --color-bg-page: var(--autora-s1, #0e1016) !important;
+  --color-bg-subtle: var(--autora-s2, #151824) !important;
   /* lines */
-  --border: #1d2130 !important;
-  --border-subtle: #151824 !important;
-  --border-strong: #252a3b !important;
-  --border-hover: #252a3b !important;
-  --color-border-default: #1d2130 !important;
-  --color-border-strong: #252a3b !important;
+  --border: var(--autora-s3, #1d2130) !important;
+  --border-subtle: var(--autora-s2, #151824) !important;
+  --border-strong: var(--autora-s4, #252a3b) !important;
+  --border-hover: var(--autora-s4, #252a3b) !important;
+  --color-border-default: var(--autora-s3, #1d2130) !important;
+  --color-border-strong: var(--autora-s4, #252a3b) !important;
   /* text: --text --text-2 --text-3 */
-  --text: #edeff5 !important;
-  --text-primary: #edeff5 !important;
-  --text-secondary: #98a1b6 !important;
-  --text-tertiary: #7a8297 !important;
-  --text-muted: #7a8297 !important;
-  --text-dim: #98a1b6 !important;
-  --icon-muted: #7a8297 !important;
-  --color-text-primary: #edeff5 !important;
-  --color-text-secondary: #98a1b6 !important;
-  --color-text-tertiary: #7a8297 !important;
+  --text: var(--autora-text, #edeff5) !important;
+  --text-primary: var(--autora-text, #edeff5) !important;
+  --text-secondary: var(--autora-text-2, #98a1b6) !important;
+  --text-tertiary: var(--autora-text-3, #7a8297) !important;
+  --text-muted: var(--autora-text-3, #7a8297) !important;
+  --text-dim: var(--autora-text-2, #98a1b6) !important;
+  --icon-muted: var(--autora-text-3, #7a8297) !important;
+  --color-text-primary: var(--autora-text, #edeff5) !important;
+  --color-text-secondary: var(--autora-text-2, #98a1b6) !important;
+  --color-text-tertiary: var(--autora-text-3, #7a8297) !important;
   /* states */
-  --hover: #151824 !important;
-  --pressed: #1d2130 !important;
-  --active-bg: #252a3b !important;
-  --bg-hover: #151824 !important;
-  --bg-hover-subtle: #151824 !important;
-  --bg-hover-strong: #1d2130 !important;
-  --bg-hover-accent: rgba(110, 91, 255, 0.14) !important;
+  --hover: var(--autora-s2, #151824) !important;
+  --pressed: var(--autora-s3, #1d2130) !important;
+  --active-bg: var(--autora-s4, #252a3b) !important;
+  --bg-hover: var(--autora-s2, #151824) !important;
+  --bg-hover-subtle: var(--autora-s2, #151824) !important;
+  --bg-hover-strong: var(--autora-s3, #1d2130) !important;
+  --bg-hover-accent: rgba(var(--autora-accent-rgb, 110, 91, 255), 0.14) !important;
   /* accent: Autora's violet, in place of Word's blue / Excel's green / PowerPoint's orange */
-  --accent: #6e5bff !important;
-  --accent-dark: #5a48e8 !important;
-  --accent-soft: rgba(110, 91, 255, 0.14) !important;
-  --color-ai-action: #6e5bff !important;
-  --color-ai-action-hover: #7d6bff !important;
+  --accent: var(--autora-accent, #6e5bff) !important;
+  --accent-dark: var(--autora-accent-deep, #5a48e8) !important;
+  --accent-soft: rgba(var(--autora-accent-rgb, 110, 91, 255), 0.14) !important;
+  --color-ai-action: var(--autora-accent, #6e5bff) !important;
+  --color-ai-action-hover: var(--autora-accent-light, #7d6bff) !important;
   --color-ai-action-text: #ffffff !important;
-  --color-btn-primary: #6e5bff !important;
-  --color-btn-primary-hover: #5a48e8 !important;
+  --color-btn-primary: var(--autora-accent, #6e5bff) !important;
+  --color-btn-primary-hover: var(--autora-accent-deep, #5a48e8) !important;
   --color-btn-primary-text: #ffffff !important;
-  --color-border-brand: #6e5bff !important;
-  --color-brand-secondary: #22d3ee !important;
+  --color-border-brand: var(--autora-accent, #6e5bff) !important;
+  --color-brand-secondary: var(--autora-accent-2, #22d3ee) !important;
   /* semantic: --danger --live --warn */
-  --danger: #fb7185 !important;
-  --danger-bg: rgba(251, 113, 133, 0.12) !important;
-  --danger-border: rgba(251, 113, 133, 0.35) !important;
-  --color-error: #fb7185 !important;
+  --danger: var(--autora-danger, #fb7185) !important;
+  --danger-bg: rgba(var(--autora-danger-rgb, 251, 113, 133), 0.12) !important;
+  --danger-border: rgba(var(--autora-danger-rgb, 251, 113, 133), 0.35) !important;
+  --color-error: var(--autora-danger, #fb7185) !important;
   --color-error-hover: #f43f5e !important;
-  --success: #34d399 !important;
-  --success-bg: rgba(52, 211, 153, 0.12) !important;
-  --success-border: rgba(52, 211, 153, 0.3) !important;
+  --success: var(--autora-live, #34d399) !important;
+  --success-bg: rgba(var(--autora-live-rgb, 52, 211, 153), 0.12) !important;
+  --success-border: rgba(var(--autora-live-rgb, 52, 211, 153), 0.3) !important;
   /* shadows and motion: --shadow --shadow-lg and --ease */
   --shadow-menu: 0 20px 48px -12px rgba(0, 0, 0, 0.7), 0 2px 8px rgba(0, 0, 0, 0.4) !important;
   --shadow-modal-strong: 0 20px 48px -12px rgba(0, 0, 0, 0.7) !important;
@@ -264,7 +271,7 @@
 }
 /* Autora's type, everywhere in the chrome; the document is drawn with its own fonts. */
 body, #root, .app { font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif !important; }
-::selection { background: rgba(110, 91, 255, 0.35); }
+::selection { background: rgba(var(--autora-accent-rgb, 110, 91, 255), 0.35); }
 `;
 
   /** Add (or replace) a stylesheet in the editor's page. A headless render gets none, so an

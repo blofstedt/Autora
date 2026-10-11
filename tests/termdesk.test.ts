@@ -51,9 +51,11 @@ async function test(name: string, fn: () => Promise<void> | void) {
 function page(extraHeaders: Record<string, string> = {}, cols = 100, rows = 30) {
   const ws = new WebSocket(`ws://127.0.0.1:${port}/api/term/ws?session=${S}&cols=${cols}&rows=${rows}`, { headers: extraHeaders });
   let seen = "";
+  const agent: { on: boolean; at: number }[] = [];
   ws.on("message", (raw) => {
-    const msg = JSON.parse(String(raw)) as { t: string; d?: string };
+    const msg = JSON.parse(String(raw)) as { t: string; d?: string; on?: boolean };
     if (msg.t === "out") seen += msg.d ?? "";
+    else if (msg.t === "agent") agent.push({ on: msg.on === true, at: Date.now() });
   });
   const until = async (re: RegExp, ms = 8000) => {
     const end = Date.now() + ms;
@@ -64,7 +66,7 @@ function page(extraHeaders: Record<string, string> = {}, cols = 100, rows = 30) 
     throw new Error(`never saw ${re} in ${JSON.stringify(seen.slice(-400))}`);
   };
   return {
-    ws, until, text: () => seen,
+    ws, until, text: () => seen, agent,
     open: new Promise<void>((res, rej) => { ws.on("open", res); ws.on("error", rej); ws.on("close", () => rej(new Error("closed"))); }),
     type: (d: string) => ws.send(JSON.stringify({ t: "in", d })),
     size: (cols: number, rows: number) => ws.send(JSON.stringify({ t: "size", cols, rows })),
@@ -126,6 +128,22 @@ await test("what the agent runs is printed into the terminal, marked as its own"
   const seen = await p.until(/\[Autora\] done/);
   assert.match(seen, /\[Autora\] \$ ls -la/);
   assert.match(seen, /one\r\ntwo/);
+  p.ws.close();
+});
+
+await test("the agent's command is typed at a person's pace, then runs on, and the page is told when it is typing", async () => {
+  const p = page();
+  await p.open;
+  const started = Date.now();
+  const id = term.termAgentBegin(S, "echo a-fairly-long-command-to-be-typed-by-hand", work, { name: "Sabrina", rgb: [58, 160, 232] });
+  term.termAgentChunk(S, id, "out\n");
+  term.termAgentEnd(S, id, 0);
+  const seen = await p.until(/\[Sabrina\] done/);
+  assert.match(seen, /\[Sabrina\] \$ echo a-fairly-long-command-to-be-typed-by-hand/);
+  assert.ok(seen.indexOf("$ echo a-fairly") < seen.indexOf("out\r\n"), "its output comes after what was typed");
+  assert.match(seen, /38;2;58;160;232/, "in the agent's own colour");
+  assert.ok(Date.now() - started > 600, "typed, not dropped in");
+  assert.deepEqual(p.agent.map((a) => a.on), [true, false], "typing began, then ended");
   p.ws.close();
 });
 

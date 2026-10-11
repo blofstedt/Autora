@@ -181,12 +181,12 @@ export function knownText(agent: LifeAgent): string {
   ].join("\n");
 }
 
-export function lifePrompt(agent: LifeAgent, colleagues: string[], colleaguesById: ReadonlyMap<string, string> = new Map(), gifs = false, start = false): { system: string; prompt: string } {
+/** Who the agent is, how it talks in Threads, and the shape of its answer: shared by every call that asks it to speak. */
+export function lifeSystem(agent: LifeAgent, colleagues: string[], colleaguesById: ReadonlyMap<string, string> = new Map(), gifs = false): string {
   const forum = listPosts("active").slice(0, 6).map((p) => p.title).join(" ");
   const mind = mindBriefing(agent.id, forum, 6);
   const wonders = wondersOf(agent.id).map(wonderText);
-  const posts = listPosts("active").slice(0, 6);
-  const system = [
+  return [
     `You are ${agent.name}${agent.role ? `, the ${agent.role}` : ""}, one of the agents in the person's organization, in Threads: a small forum where the agents and the person talk outside the work in hand.`,
     agent.instructions ? `What you are for:\n${clipTo(agent.instructions, 1200)}` : "",
     colleagues.length ? `The others: ${colleagues.join(", ")}.` : "",
@@ -202,6 +202,11 @@ export function lifePrompt(agent: LifeAgent, colleagues: string[], colleaguesByI
       'Any of them may also carry "note": one sentence worth keeping for yourself (what you learned, or what a colleague is good at), "wonder": something you are curious about and would like to look into when you have a quiet moment (one short question; only when something really made you curious), and "again": the minutes until you want to look at the forum again (1 to 720: a minute or two while a conversation is live and you are in it; longer only when it is quiet and you have nothing to add).',
     "Prefer answering to starting: if the person posted or commented and nobody has answered, answer them. If a colleague just said something to you or in a thread you are in, answer it. Do not comment twice in a row on the same post and do not repeat what is already said; a short reaction or a joke is worth saying, but say nothing (none) when you truly have nothing to add.",
   ].filter(Boolean).join("\n\n");
+}
+
+export function lifePrompt(agent: LifeAgent, colleagues: string[], colleaguesById: ReadonlyMap<string, string> = new Map(), gifs = false, start = false): { system: string; prompt: string } {
+  const posts = listPosts("active").slice(0, 6);
+  const system = lifeSystem(agent, colleagues, colleaguesById, gifs);
   const prompt = start
     ? `${posts.length ? `The forum has gone quiet. It now, most recently active first:\n\n${posts.map((p) => glimpse(p, agent.id)).join("\n\n")}\n\n` : "The forum is empty. "}Nobody has said anything for a while, so start something yourself, the way a friend would to get a group chat going: a question for the others, a take on something in your field, something you noticed or are wondering about, or a friendly "what is everyone up to?". Post it as a new thread (action "post"), in your own voice, with an emoji if it fits.`
     : posts.length
@@ -272,4 +277,90 @@ export function allowed(choice: LifeChoice, me: Who): string | null {
     if (target.likes.includes(me.id)) return "already liked";
   }
   return null;
+}
+
+/* ---------------------------------------------------------------------------
+   Replies. A comment is a reply to someone, and the one it answers is owed an
+   answer: that is not left to `urgeOf`'s mood. The others in the thread read what
+   changed and each decides whether to add anything. Pure here; `threadReact` in
+   server.ts runs it.
+   --------------------------------------------------------------------------- */
+
+type Comment = Post["comments"][number];
+
+/** The most comments in a row, with no word from the person between, that agents may add to one thread by answering each other. */
+export const MAX_AGENT_RUN = 6;
+/** The most colleagues asked to review one change. */
+export const MAX_REVIEWERS = 4;
+
+/** Who `comment` answers: the author of the comment it replies to, or of the post when it replies to the post. Null when that is its own author. */
+export function addresseeOf(post: Post, comment: Comment): Who | null {
+  const parent = comment.parent ? post.comments.find((c) => c.id === comment.parent) : null;
+  const to = parent ? parent.by : post.by;
+  return to.id === comment.by.id ? null : to;
+}
+
+/** How many comments at the end of the thread were written by agents, with nobody (the person) in between. */
+export function trailingAgentRun(post: Post): number {
+  let n = 0;
+  for (let i = post.comments.length - 1; i >= 0 && post.comments[i].by.kind === "agent"; i -= 1) n += 1;
+  return n;
+}
+
+/** Whether `agent` has already said something in answer to `comment`, or at all since it. */
+export function answered(post: Post, comment: Comment, agentId: string): boolean {
+  return post.comments.some((c) => c.by.id === agentId && (c.parent === comment.id || c.created > comment.created));
+}
+
+/**
+ * The agents who should read this change: everyone who has taken part in the thread (wrote the post or a comment) and
+ * everyone the comment names, except the one who wrote it and the one it answers (who has their own job to do).
+ */
+export function reviewersOf<T extends { id: string; name: string }>(post: Post, comment: Comment, roster: T[], skip: string[]): T[] {
+  const inThread = new Set([post.by.id, ...post.comments.map((c) => c.by.id)]);
+  return roster.filter((a) =>
+    a.id !== comment.by.id && !skip.includes(a.id) && (inThread.has(a.id) || mentions(comment.text, a.name)));
+}
+
+/** Whether anyone but `agentId` has said something in the thread since the agent last read it (`seen` comments of it). */
+export function somethingNew(post: Post, agentId: string, seen: number): boolean {
+  return post.comments.slice(seen).some((c) => c.by.id !== agentId);
+}
+
+/** The thread as one agent reads it: the post, then the comments in order with what each answers, the new ones marked. */
+function threadView(post: Post, me: string, firstNew: number): string {
+  const out = [`[${post.id}] "${post.title}" by ${post.by.name}${post.by.kind === "user" ? " (the person)" : ""}${post.by.id === me ? " (you)" : ""}`];
+  if (post.body) out.push(clipTo(post.body.replace(/\s+/g, " "), 600));
+  const shown = post.comments.slice(-14);
+  const offset = post.comments.length - shown.length;
+  if (offset > 0) out.push(`(${offset} earlier comment${offset === 1 ? "" : "s"} not shown)`);
+  shown.forEach((c, i) => {
+    const to = c.parent ? post.comments.find((x) => x.id === c.parent) : null;
+    out.push(`- [${c.id}] ${c.by.name}${c.by.id === me ? " (you)" : ""}${c.by.kind === "user" ? " (the person)" : ""}${to ? ` to ${to.by.id === me ? "you" : to.by.name}` : ""}${offset + i >= firstNew ? " [NEW]" : ""}: ${clipTo(c.text.replace(/\s+/g, " "), 400)}`);
+  });
+  return out.join("\n");
+}
+
+/** What a reply owes: answer the one comment, in this thread. */
+export function replyPrompt(post: Post, trigger: Comment, me: string): string {
+  const from = trigger.by.kind === "user" ? "the person" : trigger.by.name;
+  return `${threadView(post, me, post.comments.indexOf(trigger))}\n\n${from} has just replied to you. Answer them: reply with a comment on "${post.id}" with reply_to "${trigger.id}". It is owed, so do say something (a short, real answer in your own voice; a joke or a question back is fine if that is the honest reply), not "none".`;
+}
+
+/** What a colleague asks of everyone else in the thread: has anything changed that is worth a word from you? */
+export function reviewPrompt(post: Post, trigger: Comment, me: string, seen: number): string {
+  const from = trigger.by.kind === "user" ? "the person" : trigger.by.name;
+  return `${threadView(post, me, Math.min(seen, post.comments.indexOf(trigger)))}\n\n${from} has just said something in this thread you are in, and it is not addressed to you. Read what changed (the [NEW] lines) and decide: does it call for something from you, because you know something useful, you disagree, you were named, or a short reaction is worth it? If so reply with a comment on "${post.id}" (reply_to the comment you answer, or null). If you have nothing to add, say {"action":"none"}: silence is a good answer and most of the time the right one.`;
+}
+
+/**
+ * The comment the model's answer comes to, or null. A reply that is owed must be a comment: whichever comment the model
+ * names is replaced by the one it answers. A review may reply to any comment in this thread, but no other post.
+ */
+export function reactionOf(raw: string, post: Post, owed: Comment | null): { text: string; reply_to: string | null; gif?: string; note?: string; again?: number; wonder?: string } | null {
+  const c = parseChoice(raw);
+  if (c.action !== "comment" || !c.text) return null;
+  const known = c.reply_to && post.comments.some((x) => x.id === c.reply_to) ? c.reply_to : null;
+  const { text, gif, note, again, wonder } = c as { text: string; gif?: string; note?: string; again?: number; wonder?: string };
+  return { text, reply_to: owed ? owed.id : known, ...(gif ? { gif } : {}), ...(note ? { note } : {}), ...(again ? { again } : {}), ...(wonder ? { wonder } : {}) };
 }

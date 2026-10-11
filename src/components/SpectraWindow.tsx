@@ -7,6 +7,7 @@ import { useAgentCursor } from "../lib/agentCursor";
 import { useBootWatch } from "../lib/bootWatch";
 import { pointerGo, pointerRest, pointerType } from "../lib/pointer";
 import { onSpectraEvent } from "../lib/spectra";
+import { useFrameTheme } from "../lib/frameTheme";
 import { IconDownload, IconFile, IconMaximize, IconMinimize } from "./Icons";
 
 /**
@@ -50,6 +51,7 @@ export function SpectraWindow({ sessionId, phone }: { sessionId: string; phone: 
   const post = useCallback((msg: Record<string, unknown>) => {
     frame.current?.contentWindow?.postMessage(msg, "*");
   }, []);
+  useFrameTheme(frame);
 
   /* The agent's cursor: where the agent just worked on a page (the server's cues), shown as the pointer going there,
      pressing, and typing the words. The frame says where a page is on the screen -- and nothing is shown for a page it

@@ -5,7 +5,7 @@
 
 import { useEffect, useRef } from 'react';
 import { Doc, parseDoc } from './core/doc';
-import { show, type Cue } from './agentCursor';
+import { setWho, show, type Cue, type Who } from './agentCursor';
 
 /**
  * Autora 3D inside Autora's window.
@@ -85,7 +85,7 @@ export function useAutoraEmbed(doc: Doc, apply: (doc: Doc) => void, where?: (bef
     const origin = window.location.origin;
     const onMessage = (e: MessageEvent) => {
       if (e.source !== window.parent || e.origin !== origin) return;
-      const m = e.data as { autora3d?: string; doc?: unknown; vars?: unknown; cue?: unknown } | null;
+      const m = e.data as { autora3d?: string; doc?: unknown; vars?: unknown; cue?: unknown; who?: unknown } | null;
       if (!m || typeof m !== 'object') return;
       if (m.autora3d === 'load') {
         const next = parseDoc(m.doc);
@@ -100,6 +100,11 @@ export function useAutoraEmbed(doc: Doc, apply: (doc: Doc) => void, where?: (bef
         } else {
           applyRef.current(next);
         }
+      } else if (m.autora3d === 'who') {
+        // Whose cursor this is: an agent of the Organization's name, colour and shape, or Autora's own (null).
+        const w = m.who as Partial<Who> | null;
+        setWho(w && typeof w.name === 'string' && typeof w.color === 'string' && typeof w.rgb === 'string' && /^#[0-9a-f]{6}$/i.test(w.color) && /^[\d, ]+$/.test(w.rgb)
+          ? { name: w.name.slice(0, 24), color: w.color, rgb: w.rgb, sides: Number(w.sides) || 3 } : null);
       } else if (m.autora3d === 'theme') {
         for (const [prop, value] of Object.entries(themeStyle(m.vars))) document.documentElement.style.setProperty(prop, value);
       }

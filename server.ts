@@ -67,9 +67,14 @@ import { notebookRoutes } from "./server/routes/notebooks";
 import { organizationRoutes } from "./server/routes/organization";
 import { agentBrief, findAgent, getAgent, LEAD_ID, listAgents, recordCollab, recordWork } from "./server/agents";
 import { agentMind, clusters, forgetNote, remember, teach } from "./server/agentmind";
-import { LifeGate, MAX_WONDERS, perHourFor, QUIET_MS, URGE_AT, allowed as lifeAllowed, knownText, lastActivity, lifePrompt, parseChoice, personWaiting, pickAgent, urgeOf, vetLinks, wonderNote, wonderText, wondersOf } from "./server/threadlife";
-import { addComment, createPost, getPost, listPosts, onThreadActivity, toggleLike } from "./server/threads";
+import {
+  LifeGate, MAX_AGENT_RUN, MAX_REVIEWERS, MAX_WONDERS, perHourFor, QUIET_MS, URGE_AT, addresseeOf, allowed as lifeAllowed, answered, knownText, lastActivity,
+  lifePrompt, lifeSystem, parseChoice, personWaiting, pickAgent, reactionOf, replyPrompt, reviewPrompt, reviewersOf, somethingNew, trailingAgentRun, urgeOf,
+  vetLinks, wonderNote, wonderText, wondersOf,
+} from "./server/threadlife";
+import { addComment, createPost, getPost, listPosts, onThreadActivity, onThreadReply, toggleLike } from "./server/threads";
 import { findGif } from "./server/threadgif";
+import { lookColors, readLook } from "./src/lib/agentlook";
 import { NewsGate, newsPrompt, nextLookoutMs, parseQuery, parseStudy, queryPrompt, readNews, studyPrompt, workOutcome, workTitle } from "./server/threadnews";
 import { mcpRoutes } from "./server/routes/mcp";
 import { artifactRoutes } from "./server/routes/artifacts";
@@ -909,6 +914,7 @@ function browserFor(session: Session): LiveBrowser {
       }
     },
     onFields: () => broadcastBrowserState(session),
+    who: () => cursorWhoFor(session.id),
     onAction: (action, at, url) => {
       emitEvent(session, "browser.action", "agent", {
         action,
@@ -983,6 +989,7 @@ function previewRunFor(session: Session, device: Device): PreviewRun {
       }, 400);
       run.timers.console.unref?.();
     },
+    who: () => cursorWhoFor(session.id),
     onAction: () => undefined,
   }, { viewport: { width: DEVICES[device].width, height: DEVICES[device].height }, fps: 12, quality: 72, sharp: true });
   previews.set(session.id, run);
@@ -2938,6 +2945,15 @@ function saneWatch(raw: any): JobWatch | null {
 /* Chats that are an agent from the Organization page at work: which agent, how
    deep in a chain of hand-offs, and who handed it the task. Cleared in forgetSession. */
 const agentRuns = new Map<string, { agent: string; depth: number; chain: string[] }>();
+
+/** Whose pointer a chat draws in the page: the agent of the Organization it belongs to (its name, colour and the shape of its mark), or null for Autora. */
+function cursorWhoFor(sessionId: string): { name: string; color: string; rgb: string; sides: number } | null {
+  const agent = getAgent(agentRuns.get(sessionId)?.agent ?? "");
+  const look = readLook(agent?.look);
+  if (!agent || !look) return null;
+  const { colors, css } = lookColors(look);
+  return { name: agent.name.slice(0, 24), color: colors.accent, rgb: css["--accent-rgb"], sides: look.sides };
+}
 const MAX_AGENT_DEPTH = 3;
 
 /**
@@ -2973,7 +2989,7 @@ async function runAgentTask(
     const oneLine = work.replace(/\s+/g, " ").trim();
     emitEvent(from, "agent.chime", "agent", {
       id: child.id, agent: agent.id, name: agent.name, role: agent.role, look: agent.look,
-      text: `${agent.name}${agent.role ? `, the ${agent.role},` : ""} here. On it: ${oneLine.length > 160 ? `${oneLine.slice(0, 157)}...` : oneLine}`,
+      text: `On it: ${oneLine.length > 160 ? `${oneLine.slice(0, 157)}...` : oneLine}`,
     });
     const stop = () => stopTurn(child.id);
     signal?.addEventListener("abort", stop, { once: true });
@@ -3116,6 +3132,94 @@ async function threadLifeStep(): Promise<void> {
   }
 }
 
+/* A reply is owed an answer. When anyone comments in Threads, the one the comment answers (the author of the comment it
+   replies to, or of the post) always replies, whatever its mood and however recently it spoke; the person's own words are
+   never held back by the forum's hourly ceiling. Then every other agent in the thread, and any the comment names, reads what
+   changed and decides for itself whether to add something: each is asked once, in turn so that they see each other's words,
+   and "none" is a fine answer. Agents answering each other stop after MAX_AGENT_RUN comments in a row until the person
+   speaks again, and what they add counts against the same ceiling as everything else the forum does. Switched, like the
+   rest of Threads' own life, by `threadsAlive`. */
+const reactSeen = new Map<string, number>();
+let reactChain: Promise<void> = Promise.resolve();
+
+onThreadReply(({ post, comment }) => {
+  if (!comment || !state.threadsAlive) return;
+  reactChain = reactChain
+    .then(() => threadReact(post.id, comment.id))
+    .catch((err) => log("info", "threads", `replies failed: ${err instanceof Error ? err.message : String(err)}`));
+});
+
+async function threadReact(postRef: string, commentRef: string): Promise<void> {
+  const first = getPost(postRef);
+  const trigger = first?.comments.find((c) => c.id === commentRef);
+  if (!first || !trigger || !state.threadsAlive) return;
+  const byPerson = trigger.by.kind === "user";
+  if (!byPerson && trailingAgentRun(first) > MAX_AGENT_RUN) return;
+  // Wait out an autonomous step in progress, then hold the forum while this runs so the two do not talk over each other.
+  for (let i = 0; lifeBusy && i < 240; i += 1) await new Promise((r) => setTimeout(r, 500));
+  if (lifeBusy) return;
+  lifeBusy = true;
+  try {
+    const roster = listAgents().filter((a) => a.enabled);
+    const byId = new Map(roster.map((a) => [a.id, a.name]));
+    const gifs = Boolean(gifKeys().giphy || gifKeys().tenor);
+    const room = () => lifeGate.room(Date.now(), perHourFor(state.threadsMood));
+
+    /** One agent reads the thread and, if it has something, says it. Returns whether a comment was added. */
+    const speak = async (agent: (typeof roster)[number], owed: boolean): Promise<boolean> => {
+      const key = `${postRef}|${agent.id}`;
+      const post = getPost(postRef);
+      if (!post) return false;
+      const seen = reactSeen.get(key) ?? 0;
+      const system = lifeSystem(agent, roster.filter((a) => a.id !== agent.id).map((a) => a.name), byId, gifs);
+      const prompt = owed ? replyPrompt(post, trigger, agent.id) : reviewPrompt(post, trigger, agent.id, seen);
+      let said = reactionOf(await backgroundCall("threads", system, prompt, 500), post, owed ? trigger : null);
+      if (!said && owed) said = reactionOf(await backgroundCall("threads", system, `${prompt}\n\nReply with the one JSON comment object and nothing else.`, 500), post, trigger);
+      reactSeen.set(key, post.comments.length);
+      lifeLook.set(agent.id, Date.now());
+      lifeNudge.delete(agent.id);
+      if (said?.note) remember(agent.id, said.note, "lesson");
+      if (said?.wonder && wondersOf(agent.id).length < MAX_WONDERS) remember(agent.id, wonderNote(said.wonder), "lesson");
+      if (said?.again) lifeSleep.set(agent.id, Date.now() + said.again * 60_000);
+      if (!said) return false;
+      const me = { kind: "agent" as const, id: agent.id, name: agent.name };
+      if (!owed) {
+        const why = lifeAllowed({ action: "comment", post: postRef, text: said.text, reply_to: said.reply_to }, me);
+        if (why) { log("info", "threads", `${agent.name}: skipped, ${why}`); return false; }
+      }
+      const clean = redactDeep({ text: said.text, gif: said.gif }) as { text: string; gif?: string };
+      const gif = clean.gif && !lastWasGif(me.id) ? await findGif(clean.gif, gifKeys()) : null;
+      addComment(postRef, { text: vetLinks(clean.text, knownText(agent)), parent: said.reply_to, by: me, gif });
+      const to = said.reply_to ? post.comments.find((c) => c.id === said!.reply_to)?.by : post.by;
+      if (to?.kind === "agent") recordCollab(me.id, to.id, true, 2);
+      lifeGate.note(Date.now());
+      reactSeen.set(key, (getPost(postRef)?.comments.length ?? 0));
+      return true;
+    };
+
+    // The one who was answered always answers: not held to its mood, its sleep, or (when it is the person speaking) the ceiling.
+    const to = addresseeOf(first, trigger);
+    const owedBy = to?.kind === "agent" ? roster.find((a) => a.id === to.id) : undefined;
+    const skip: string[] = [];
+    if (owedBy) {
+      skip.push(owedBy.id);
+      if (!answered(first, trigger, owedBy.id) && (byPerson || room())) await speak(owedBy, true);
+    }
+    // Everyone else in the thread reads what changed and decides.
+    const reviewers = reviewersOf(first, trigger, roster, skip).sort(() => Math.random() - 0.5);
+    let asked = 0;
+    for (const agent of reviewers) {
+      if (asked >= MAX_REVIEWERS || !room()) break;
+      const now = getPost(postRef);
+      if (!now || !somethingNew(now, agent.id, reactSeen.get(`${postRef}|${agent.id}`) ?? 0)) continue;
+      asked += 1;
+      await speak(agent, false);
+    }
+  } finally {
+    lifeBusy = false;
+  }
+}
+
 /* Work in the open: an agent started from the Organization says so in Threads
    and tells how it went, so the forum shows the organization working. Templated,
    so it costs no model call; a stuck agent asks its manager by name, which wakes
@@ -3137,7 +3241,7 @@ function closeWorkPost(agent: { id: string; name: string; reportsTo: string | nu
   try {
     const boss = agent.reportsTo ? getAgent(agent.reportsTo) : null;
     const line = redactDeep({ text: workOutcome(ok, report, ok ? null : boss?.name ?? null) }) as { text: string };
-    addComment(postId, { text: line.text, by: { kind: "agent", id: agent.id, name: agent.name } });
+    addComment(postId, { text: line.text, by: { kind: "agent", id: agent.id, name: agent.name }, react: false });
     if (!ok && boss && boss.enabled) { // a call for help is answered, not left to the boredom clock
       lifeSleep.delete(boss.id);
       lifeNudge.set(boss.id, 0.6);

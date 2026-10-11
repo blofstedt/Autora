@@ -69,6 +69,14 @@ function tell(what: { post: ThreadPost; comment: ThreadComment | null }) {
   try { heard?.(what); } catch { /* news of a post never undoes it */ }
 }
 
+/** Told of every comment that is a reply someone may owe an answer to. A comment added with `react: false` (a templated
+    status line, say) is news but not a reply: it is not offered here. */
+let replied: Heard | null = null;
+
+export function onThreadReply(listener: Heard | null) {
+  replied = listener;
+}
+
 const postId = () => `th_${crypto.randomBytes(6).toString("hex")}`;
 const commentId = () => `cm_${crypto.randomBytes(5).toString("hex")}`;
 const clip = (v: unknown, max: number) => String(v ?? "").replace(/\u0000/g, "").trim().slice(0, max);
@@ -146,7 +154,7 @@ export function deletePost(id: string): boolean {
   return true;
 }
 
-export function addComment(postIdRef: string, input: { text: unknown; parent?: unknown; by: Who; gif?: unknown }): { post: ThreadPost; comment: ThreadComment } {
+export function addComment(postIdRef: string, input: { text: unknown; parent?: unknown; by: Who; gif?: unknown; react?: boolean }): { post: ThreadPost; comment: ThreadComment } {
   const post = must(postIdRef);
   const text = clip(input.text, MAX_COMMENT);
   if (!text) throw new ThreadError("A comment needs some words.");
@@ -157,6 +165,7 @@ export function addComment(postIdRef: string, input: { text: unknown; parent?: u
   post.comments.push(comment);
   persist(post);
   tell({ post, comment });
+  if (input.react !== false) { try { replied?.({ post, comment }); } catch { /* a reply is never undone by what follows it */ } }
   return { post, comment };
 }
 

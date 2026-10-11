@@ -45,6 +45,7 @@ import os from "node:os";
 import path from "node:path";
 import { GoogleGenAI } from "@google/genai";
 import { MANUAL_IDS, manualText, windowsOverview, type ManualId } from "./handbook";
+import { lookColors, readLook } from "../src/lib/agentlook";
 import { termAgentBegin, termAgentChunk, termAgentEnd, termCwd, termNews } from "./termdesk";
 import { mergeTools, save, state, allSecrets, keyFor, secretFor, redactSecrets as redactStored } from "./state";
 import { APP_GUIDE, BROWSING_GUIDE, MEMORY_GUIDE, OFFICE_GUIDE, TODO_GUIDE, VOICE_GUIDE, WINDOWS_GUIDE } from "./guides";
@@ -1668,7 +1669,10 @@ async function runToolUnredacted(
         const base = termCwd(ctx.session) ?? terminalDir();
         const cwd = asked ? path.resolve(base, asked) : base;
         // The same command appears in the Terminal window, marked as the agent's, and the person's own are told back.
-        const shown = termAgentBegin(ctx.session, command, cwd);
+        const self = ctx.agents ? findAgent(ctx.agents.self.id) : null;
+        const look = readLook(self?.look);
+        const rgb = look ? (lookColors(look).css["--accent-rgb"].split(",").map((n) => Number(n)) as [number, number, number]) : undefined;
+        const shown = termAgentBegin(ctx.session, command, cwd, self && !self.builtin ? { name: self.name, rgb } : undefined);
         const outcome = await runCommand(command, cwd, settings.timeout, {
           ...ctx,
           onOutput: (chunk: string) => { ctx.onOutput(chunk); termAgentChunk(ctx.session, shown, chunk); },

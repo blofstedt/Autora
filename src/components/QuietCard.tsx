@@ -93,7 +93,7 @@ export function QuietCard() {
         answered, and schedules you set still run at the time you set them.
       </p>
 
-      <label style={{ display: "flex", gap: 9, alignItems: "flex-start", margin: "7px 0", fontSize: "calc(12.5px * var(--ts, 1))", lineHeight: 1.5 }}>
+      <label className="opt-check">
         <input
           type="checkbox"
           checked={state?.quiet === true}
@@ -101,7 +101,7 @@ export function QuietCard() {
         />
         <span>
           Hold the agent's own initiative between two times
-          <span style={{ display: "block", color: "var(--text-3)", fontSize: "calc(11.5px * var(--ts, 1))" }}>
+          <span className="opt-note">
             Off means it can speak up at any hour.
           </span>
         </span>
@@ -109,7 +109,7 @@ export function QuietCard() {
 
       {state?.quiet && (
         <>
-          <label className="jf-row" style={{ marginTop: 10 }}>
+          <label className="jf-row is-spaced">
             <span>From</span>
             <input
               type="time"
@@ -117,7 +117,7 @@ export function QuietCard() {
               onChange={(e) => e.target.value && change({ from: e.target.value })}
             />
           </label>
-          <label className="jf-row" style={{ marginTop: 10 }}>
+          <label className="jf-row is-spaced">
             <span>To</span>
             <input
               type="time"
@@ -137,7 +137,7 @@ export function QuietCard() {
           whether it speaks at all. A background job outlives the turn that
           started it, so without this its result waits for you to say
           something -- which is the one step of that work nobody takes. */}
-      <label style={{ display: "flex", gap: 9, alignItems: "flex-start", margin: "14px 0 0", fontSize: "calc(12.5px * var(--ts, 1))", lineHeight: 1.5 }}>
+      <label className="opt-check is-gap">
         <input
           type="checkbox"
           checked={state?.wake === true}
@@ -145,7 +145,7 @@ export function QuietCard() {
         />
         <span>
           Let the console start a turn of its own when a background job finishes
-          <span style={{ display: "block", color: "var(--text-3)", fontSize: "calc(11.5px * var(--ts, 1))", lineHeight: 1.5 }}>
+          <span className="opt-note">
             Off by default. It reads the job's output and reports it in the chat that started it,
             at most three times an hour, never inside quiet hours, and only within the day's
             automation budget. A turn costs what a turn costs, so this is the one setting here

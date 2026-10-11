@@ -98,6 +98,7 @@ import { ModeSelect } from "./components/ModeSelect";
 import { DEFAULT_PERMISSIONS, DEFAULT_WORK_MODE, type Permissions, type WorkMode } from "./lib/modes";
 import { AutoraMark, type MarkState } from "./components/AutoraMark";
 import { readActivity } from "./lib/activity";
+import { setCursorWho, whoFromEvents } from "./lib/cursorWho";
 import { adoptDeviceTimezone } from "./lib/timezone";
 import {
   dictationSupported, recognitionAvailable, sameReply, secureOrigin, speakable,
@@ -112,6 +113,7 @@ import {
   MAX_UPLOAD_BYTES, isPicture, sizeLabel, uploadAttachment, type Attachment,
 } from "./lib/attachments";
 import { SureHost } from "./components/SureHost";
+import { AgentThought } from "./components/AgentThought";
 
 /** How often to re-read the session list, so sessions started elsewhere (or
     from another tab) show up without a reload. */
@@ -263,7 +265,7 @@ export function App() {
     if (!drawerWas.current) return;
     drawerWas.current = false;
     setDrawerLeaving(true);
-    const t = window.setTimeout(() => setDrawerLeaving(false), 240);
+    const t = window.setTimeout(() => setDrawerLeaving(false), 260);
     return () => window.clearTimeout(t);
   }, [drawerOpen]);
   const [appearance, setAppearance] = useState<Appearance>(cachedAppearance);
@@ -528,6 +530,8 @@ export function App() {
      states says that best: a step in flight is the mark building itself,
      everything else is it thinking. */
   const reading = useMemo(() => readActivity(events), [events]);
+  /* Whose cursor the windows draw: the agent of the Organization this chat belongs to, else Autora. */
+  useEffect(() => { setCursorWho(whoFromEvents(events)); }, [events]);
   const doing = reading.text;
   /* How long this turn has been going, ticking on its own so the line counts
      up without needing a new event to arrive. Nothing to show once the turn
@@ -1756,6 +1760,7 @@ export function App() {
         <UpdateNotice />
         <Notices onOpenSession={openSession} />
         <SureHost />
+        <AgentThought events={events} />
         <InstallApp />
 
         <header className="top">

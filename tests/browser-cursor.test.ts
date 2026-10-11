@@ -70,6 +70,34 @@ async function main() {
       await page.waitForTimeout(50);
       assert.match((await cur(".tag")).text ?? "", /scrolling/);
     });
+
+    await test("a few words about what it is doing sit beside it, flip near the edge, and go", async () => {
+      await page.mouse.move(100, 120);
+      await page.evaluate(() => (window as any).__autoraThought("Clicking “Save”"));
+      let c = await cur(".thought");
+      assert.equal(c.text, "Clicking “Save”");
+      assert.match(c.cls, /\bon\b/);
+      assert.doesNotMatch(c.cls, /flip|low/);
+      await page.mouse.move(580, 10);
+      await page.evaluate(() => (window as any).__autoraThought("Filling in “Email”"));
+      c = await cur(".thought");
+      assert.match(c.cls, /flip/);
+      assert.match(c.cls, /low/);
+      await page.waitForTimeout(2800);
+      assert.doesNotMatch((await cur(".thought")).cls, /\bon\b/, "it goes after a moment");
+    });
+
+    await test("an agent of the Organization's pointer wears its name, colour and shape", async () => {
+      await page.evaluate(() => (window as any).__autoraWho("Sabrina", "#3aa0e8", "58, 160, 232", 5));
+      const root = () => page.evaluate(() => {
+        const r = (document.getElementById("__autora_cursor") as HTMLElement);
+        const sr = r.shadowRoot!;
+        return { name: sr.querySelector(".tag b")!.textContent, points: sr.querySelector(".tag polygon")!.getAttribute("points")!.split(" ").length, accent: r.style.getPropertyValue("--a") };
+      });
+      assert.deepEqual(await root(), { name: "Sabrina", points: 5, accent: "#3aa0e8" });
+      await page.evaluate(() => (window as any).__autoraWho("Autora", "#7c5cff", "124, 92, 255", 3));
+      assert.equal((await root()).points, 3);
+    });
   } finally {
     await browser.close();
   }

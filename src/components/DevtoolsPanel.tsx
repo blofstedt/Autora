@@ -53,7 +53,7 @@ export function DevtoolsPanel({
         <label className="shot-dev-only">
           <input type="checkbox" checked={errorsOnly} onChange={(e) => setErrorsOnly(e.target.checked)} /> errors
         </label>
-        <span style={{ flex: 1 }} />
+        <span className="spacer" />
         <button
           className="cell-act"
           onClick={() => void fetch(`${base}/devtools/clear?${q.slice(1)}`, { method: "POST" }).then(load)}

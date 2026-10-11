@@ -67,6 +67,21 @@ const BUTTON: Array<[RegExp, string]> = [
   [/^shapes_subtract$|^shape_cut$/, 'Subtract'],
 ];
 
+/** A few words for what a tool is doing, said beside the pointer while it does it: only ever from the tool itself. */
+const WORDS: Array<[RegExp, string]> = [
+  [/^shape_add$|^shape_draw$/, 'Adding a shape'],
+  [/^library_place$/, 'Placing a part'],
+  [/^shape_move$/, 'Moving it'],
+  [/^shape_turn$/, 'Turning it'],
+  [/^group_create$/, 'Grouping them'],
+  [/^group_remove$/, 'Ungrouping'],
+  [/^repeat_/, 'Repeating it'],
+  [/^shape_delete$/, 'Deleting it'],
+  [/^shapes_join$/, 'Joining them'],
+  [/^shapes_subtract$|^shape_cut$/, 'Cutting it out'],
+];
+const wordsFor = (tool: string): string => WORDS.find(([re]) => re.test(tool))?.[1] ?? 'Shaping the model';
+
 /** The visible control for a tool, or null. */
 function buttonFor(tool: string): HTMLElement | null {
   const label = BUTTON.find(([re]) => re.test(tool))?.[1];
@@ -85,8 +100,22 @@ const centre = (el: HTMLElement): Point => {
   return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
 };
 
+/** Whose cursor it is (Autora's frame is told by the page: src/lib/cursorWho.ts): the name, colour and shape of the agent working. */
+export interface Who { name: string; color: string; rgb: string; sides: number }
+const AUTORA: Who = { name: 'Autora', color: '#7c5cff', rgb: '124, 92, 255', sides: 3 };
+let who: Who = AUTORA;
+const glyph = (sides: number) => {
+  const n = Math.max(3, Math.min(12, Math.round(sides) || 3));
+  return Array.from({ length: n }, (_, i) => {
+    const a = -Math.PI / 2 + (i * 2 * Math.PI) / n;
+    return `${(5 + 5 * Math.cos(a)).toFixed(2)},${(5 + 5 * Math.sin(a)).toFixed(2)}`;
+  }).join(' ');
+};
+
 let layer: HTMLDivElement | null = null;
 let arrow: HTMLDivElement | null = null;
+let thought: HTMLSpanElement | null = null;
+let tag: HTMLSpanElement | null = null;
 let at: Point | null = null;
 let hideTimer = 0;
 let busy: Promise<void> = Promise.resolve();
@@ -100,11 +129,33 @@ function ensureLayer(): HTMLDivElement {
   arrow.style.cssText = 'position:absolute;left:0;top:0;opacity:0;transition:opacity .25s ease;will-change:transform';
   arrow.innerHTML =
     '<svg width="16" height="20" viewBox="0 0 16 20" style="display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,.4))">' +
-    '<path d="M1 1 L1 15 L5 11.5 L8 18 L10.5 17 L7.5 10.5 L13 10.5 Z" fill="#7c5cff" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/></svg>' +
-    '<span style="position:absolute;left:14px;top:14px;padding:1px 7px;border-radius:999px;background:#7c5cff;color:#fff;font:600 10.5px/1.5 system-ui,sans-serif;white-space:nowrap">Autora</span>';
+    '<path class="a" d="M1 1 L1 15 L5 11.5 L8 18 L10.5 17 L7.5 10.5 L13 10.5 Z" fill="#7c5cff" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/></svg>' +
+    '<span class="t" style="position:absolute;left:14px;top:14px;display:inline-flex;align-items:center;gap:4px;padding:1px 8px 1px 6px;border-radius:999px;background:#7c5cff;color:#fff;font:600 10.5px/15px Inter,system-ui,sans-serif;white-space:nowrap">' +
+    '<svg viewBox="0 0 10 10" width="10" height="10" style="flex:none;fill:currentColor"><polygon/></svg><b></b></span>';
+  tag = arrow.querySelector('.t');
+  thought = document.createElement('span');
+  thought.style.cssText = 'position:absolute;left:14px;top:-24px;padding:2px 9px;border-radius:999px;background:rgba(21,24,36,.94);color:#edeff5;border:1px solid rgba(124,92,255,.5);font:550 11px/15px system-ui,sans-serif;white-space:nowrap;opacity:0;transition:opacity .15s ease;box-shadow:0 4px 14px -4px rgba(0,0,0,.5)';
+  arrow.appendChild(thought);
   layer.appendChild(arrow);
   document.body.appendChild(layer);
+  sign();
   return layer;
+}
+
+/** Put the agent's name, shape and colour on the pointer. */
+function sign() {
+  if (!arrow || !tag || !thought) return;
+  arrow.querySelector('b')!.textContent = who.name;
+  arrow.querySelector('polygon')!.setAttribute('points', glyph(who.sides));
+  arrow.querySelector('path.a')!.setAttribute('fill', who.color);
+  tag.style.background = who.color;
+  thought.style.borderColor = `rgba(${who.rgb}, .5)`;
+}
+
+/** The page says whose cursor this is: an agent of the Organization's, or null for Autora's own. */
+export function setWho(next: Who | null) {
+  who = next ?? AUTORA;
+  sign();
 }
 
 function place(p: Point) {
@@ -116,14 +167,14 @@ function place(p: Point) {
 function press(p: Point, control?: HTMLElement | null) {
   const host = ensureLayer();
   const ring = document.createElement('span');
-  ring.style.cssText = `position:absolute;left:${p.x - 14}px;top:${p.y - 14}px;width:28px;height:28px;border-radius:50%;border:2px solid #7c5cff;opacity:.9;transform:scale(.4);transition:transform .45s ease-out,opacity .45s ease-out`;
+  ring.style.cssText = `position:absolute;left:${p.x - 14}px;top:${p.y - 14}px;width:28px;height:28px;border-radius:50%;border:2px solid ${who.color};opacity:.9;transform:scale(.4);transition:transform .42s ease-out,opacity .42s ease-out`;
   host.appendChild(ring);
   requestAnimationFrame(() => requestAnimationFrame(() => { ring.style.transform = 'scale(1.5)'; ring.style.opacity = '0'; }));
   window.setTimeout(() => ring.remove(), 600);
   if (control) {
     const before = control.style.boxShadow;
     control.style.transition = 'box-shadow .2s ease';
-    control.style.boxShadow = '0 0 0 3px rgba(124,92,255,.7)';
+    control.style.boxShadow = `0 0 0 3px rgba(${who.rgb},.7)`;
     window.setTimeout(() => { control.style.boxShadow = before; }, 380);
   }
 }
@@ -158,6 +209,7 @@ async function goTo(to: Point, pressed: boolean, control?: HTMLElement | null) {
 function rest() {
   window.clearTimeout(hideTimer);
   hideTimer = window.setTimeout(() => {
+    if (thought) thought.style.opacity = '0';
     if (arrow) arrow.style.opacity = '0';
     at = null;
   }, 2200);
@@ -180,6 +232,8 @@ export function show(cue: Showing): Promise<void> {
   const run = async () => {
     let applied = false;
     try {
+      ensureLayer();
+      if (thought) { thought.textContent = wordsFor(cue.tool); thought.style.opacity = '1'; }
       const control = buttonFor(cue.tool);
       if (control) await goTo(centre(control), true, control);
       cue.apply();

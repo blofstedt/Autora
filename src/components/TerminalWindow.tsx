@@ -3,6 +3,8 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { useFullscreen } from "../lib/fullscreen";
+import { useAgentCursor } from "../lib/agentCursor";
+import { pointerGo, pointerRest, pointerTyping } from "../lib/pointer";
 import { IconMaximize, IconMinimize, IconTerminal } from "./Icons";
 
 /**
@@ -51,6 +53,9 @@ export function TerminalWindow({ sessionId, phone }: { sessionId: string; phone:
   const term = useRef<Terminal | null>(null);
   const socket = useRef<WebSocket | null>(null);
   const [online, setOnline] = useState(false);
+  const [cursorOn] = useAgentCursor();
+  const cursorRef = useRef(cursorOn);
+  cursorRef.current = cursorOn;
 
   const input = useCallback((data: string) => {
     const ws = socket.current;
@@ -75,6 +80,25 @@ export function TerminalWindow({ sessionId, phone }: { sessionId: string; phone:
     const measure = () => { try { fit.fit(); } catch { /* not laid out yet */ } };
     measure();
 
+    /* The agent is typing a command in the window (the server types it at a person's pace): its pointer goes to the
+       text cursor, follows it along the line, and its tag shows the caret; when it is done the pointer rests. */
+    let follow = 0;
+    const caret = (): { x: number; y: number } | null => {
+      const screen = el.querySelector(".xterm-screen");
+      const r = screen?.getBoundingClientRect();
+      if (!r || r.width < 20 || !t.cols || !t.rows) return null;
+      const b = t.buffer.active;
+      return { x: r.left + Math.min(t.cols - 1, b.cursorX + 1.5) * (r.width / t.cols), y: r.top + Math.min(t.rows - 1, b.cursorY + 0.5) * (r.height / t.rows) };
+    };
+    const agentTyping = (on: boolean) => {
+      window.clearInterval(follow);
+      if (!on) { pointerTyping(false); pointerRest(); return; }
+      if (!cursorRef.current) return;
+      const aim = () => { const p = caret(); if (p) void pointerGo(p, false); };
+      // The line it types on is the one after this: the server starts it with a newline.
+      window.setTimeout(() => { aim(); pointerTyping(true); follow = window.setInterval(aim, 450); }, 80);
+    };
+
     let dead = false;
     let retry: number | undefined;
     let tries = 0;
@@ -97,8 +121,9 @@ export function TerminalWindow({ sessionId, phone }: { sessionId: string; phone:
       };
       ws.onmessage = (e) => {
         try {
-          const msg = JSON.parse(String(e.data)) as { t?: string; d?: string };
+          const msg = JSON.parse(String(e.data)) as { t?: string; d?: string; on?: boolean };
           if (msg.t === "out" && typeof msg.d === "string") t.write(msg.d);
+          else if (msg.t === "agent") agentTyping(msg.on === true);
         } catch { /* not ours */ }
       };
       ws.onclose = () => {
@@ -120,6 +145,8 @@ export function TerminalWindow({ sessionId, phone }: { sessionId: string; phone:
 
     return () => {
       dead = true;
+      window.clearInterval(follow);
+      pointerTyping(false);
       window.clearTimeout(retry);
       typed.dispose();
       sized.dispose();
@@ -137,7 +164,7 @@ export function TerminalWindow({ sessionId, phone }: { sessionId: string; phone:
       <div className="pdf-bar">
         <span className="pdf-bar-ico" aria-hidden="true"><IconTerminal size={14} /></span>
         <span className="pdf-bar-app">Autora Terminal</span>
-        {phone && <span className="pdf-bar-name" title="This machine's shell">{online ? "Terminal" : "Connecting…"}</span>}
+        {phone && <span className="pdf-bar-name" title="This machine's shell">{online ? "Autora Terminal" : "Connecting…"}</span>}
         <span className="pdf-bar-note">{online ? "This machine's shell" : ""}</span>
         <div className="spacer" />
         {phone && (

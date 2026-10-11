@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { along, humanRoute, restMs, routeMs, typingDelays, type Point } from "../lib/humanPath";
 import { clearCursor, reportCursor } from "../lib/cursorPos";
 import type { OfficeCue } from "../lib/officedesk";
+import { CursorTag } from "./CursorTag";
 
 /**
  * The agent working in a document, over its editor: a labelled cursor goes to the place the same way the browser's
@@ -205,7 +206,7 @@ export function OfficeCursor({
         <svg width="16" height="20" viewBox="0 0 16 20" className="office-cursor-arrow" style={{ display: "block", filter: "drop-shadow(0 1px 2px rgba(0,0,0,.35))" }}>
           <path d="M1 1 L1 15 L5 11.5 L8 18 L10.5 17 L7.5 10.5 L13 10.5 Z" fill="#7c5cff" stroke="#fff" strokeWidth="1.2" strokeLinejoin="round" />
         </svg>
-        <span className="office-cursor-name">Autora</span>
+        <CursorTag />
       </div>
     </div>
   );

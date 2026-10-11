@@ -38,6 +38,8 @@ async function main() {
     await app.turn(s, "write app.js");
 
     const open = async (off: boolean) => {
+      // The switch lives on the server and the page follows it, so that is where it is turned (this page's own copy alone is overruled).
+      await app.api("PATCH", "/api/agent-cursor", { on: !off });
       const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 } });
       if (off) await ctx.addInitScript(() => localStorage.setItem("autora.agentCursor", "off"));
       const page = await ctx.newPage();

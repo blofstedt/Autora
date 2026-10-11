@@ -124,7 +124,7 @@ function SchedulesWidget({ t }: { t: DockTargets }) {
       <Head icon={<IconClock size={13} />} title="Schedules" onOpen={() => t.go("cron")} />
       {!jobs.length && <p className="dock-quiet">Nothing set up yet.</p>}
       {running.map((j) => (
-        <button key={j.id} className="dock-line" style={{ background: "none", border: 0, padding: 0, cursor: "pointer", textAlign: "left" }}
+        <button key={j.id} className="dock-line btn-bare"
           onClick={() => (j.last_session ? t.openSession(j.last_session) : t.go("cron"))}>
           <span className="dock-strong">Running</span> · {j.name}
         </button>
@@ -160,8 +160,7 @@ function MindWidget({ t }: { t: DockTargets }) {
       {!record && <p className="dock-quiet">Nothing it has written down yet.</p>}
       {record && (
         <button
-          className="dock-card-body"
-          style={{ background: "none", border: 0, padding: 0, cursor: "pointer", textAlign: "left", display: "flex", flexDirection: "column", gap: 4 }}
+          className="dock-card-body btn-bare"
           onClick={() => t.openMemory(record.id, record.kind)}
           title="Open in Mind"
         >
@@ -209,8 +208,8 @@ function SessionsWidget({ t }: { t: DockTargets }) {
       {recent.map((s) => (
         <button
           key={s.id}
-          className="dock-line"
-          style={{ background: "none", border: 0, padding: 0, cursor: "pointer", textAlign: "left", color: s.busy ? "var(--text)" : undefined }}
+          className="dock-line btn-bare"
+          style={{ color: s.busy ? "var(--text)" : undefined }}
           onClick={() => t.openSession(s.id)}
           title={s.title}
         >
