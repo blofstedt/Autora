@@ -114,7 +114,7 @@ export function NotebooksPage({
   return (
     <div className="page-scroll">
       <div className="page-inner">
-        <p className="jf-hint art-lede">
+        <p className="jf-hint page-lede">
           Files grouped by purpose, with notes between them — a case, a report, a project.
           Make one here, or ask Autora to compile one; hand a notebook to a chat with the
           notebook button beside the message box.

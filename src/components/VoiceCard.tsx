@@ -128,7 +128,7 @@ export function VoiceCard() {
           </div>
           <p className="set-note">Speaking through Deepgram, in the {speech.voice} voice.</p>
 
-          <label style={{ display: "flex", gap: 9, alignItems: "flex-start", margin: "14px 0 0", fontSize: "calc(12.5px * var(--ts, 1))", lineHeight: 1.5 }}>
+          <label className="opt-check is-gap">
             <input
               type="checkbox"
               checked={speech.liveThinking !== false}
@@ -136,14 +136,14 @@ export function VoiceCard() {
             />
             <span>
               Let it think before it answers what you said
-              <span style={{ display: "block", color: "var(--text-3)", fontSize: "calc(11.5px * var(--ts, 1))" }}>
+              <span className="opt-note">
                 Off means spoken replies start sooner, at the cost of a little
                 polish. Typed messages are not affected.
               </span>
             </span>
           </label>
 
-          <label style={{ display: "flex", gap: 9, alignItems: "flex-start", margin: "12px 0 0", fontSize: "calc(12.5px * var(--ts, 1))", lineHeight: 1.5 }}>
+          <label className="opt-check is-gap">
             <input
               type="checkbox"
               checked={speech.liveView === true}
@@ -151,7 +151,7 @@ export function VoiceCard() {
             />
             <span>
               Live view: the camera, in talk mode
-              <span style={{ display: "block", color: "var(--text-3)", fontSize: "calc(11.5px * var(--ts, 1))" }}>
+              <span className="opt-note">
                 On, talk mode opens with the camera on: you get a small live
                 picture in the bar, and the agent is shown what the camera has --
                 a frame about every second, on the message it is answering, and

@@ -75,12 +75,12 @@
 
   /* The focus and selection blues become Autora's violet: every primary
      action, every selected row, every focus ring. */
-  --color-blue-400: #9a8cff;
+  --color-blue-400: color-mix(in srgb, var(--autora-accent-light) 72%, white);
   --color-blue-500: var(--autora-accent-light);
   --color-blue-600: var(--autora-accent);
   --color-blue-700: var(--autora-accent-deep);
-  --color-blue-800: #4636c4;
-  --color-blue-900: #35279b;
+  --color-blue-800: color-mix(in srgb, var(--autora-accent-deep) 78%, black);
+  --color-blue-900: color-mix(in srgb, var(--autora-accent-deep) 58%, black);
 
   /* Tailwind's own border/ring ramps, on the same ladder. */
   --color-neutral-800-border: var(--autora-border);

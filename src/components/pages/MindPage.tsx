@@ -10,6 +10,7 @@ import { MindViewButton } from "../MindViewButton";
 import { IconBrain, IconPlus, IconTrash } from "../Icons";
 import { AgentProfile } from "../AgentProfile";
 import { fetchAgents, type Agent } from "../../lib/organization";
+import { sure } from "../../lib/sure";
 
 type Draft = { title: string; body: string; tags: string; kind: Bucket };
 
@@ -466,7 +467,10 @@ export function MindPage({
                           className="btn icon ghost"
                           title="Delete"
                           aria-label="Delete"
-                          onClick={() => void run(async () => { await deleteRecord(r.id); setOpen(null); setDraft(null); })}
+                          onClick={async () => {
+                            if (!(await sure(`Delete “${r.title}” from what Autora remembers?`))) return;
+                            void run(async () => { await deleteRecord(r.id); setOpen(null); setDraft(null); });
+                          }}
                         >
                           <IconTrash size={14} />
                         </button>

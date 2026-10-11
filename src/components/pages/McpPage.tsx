@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { IconChevron, IconPlug, IconPlus, IconRotateCcw, IconTrash } from "../Icons";
 import { every } from "../../lib/poll";
+import { sure } from "../../lib/sure";
 
 type Server = {
   id: string; name: string; transport: "stdio" | "http";
@@ -110,6 +111,11 @@ export function McpPage({ topSlot }: {
     load();
     return every(load, 5000);
   }, [load]);
+
+  const removeServer = async (s: { id: string; name: string }) => {
+    if (!(await sure(`Remove the “${s.name}” server? Its tools leave the agent's reach.`, "Remove"))) return;
+    await call(s.id, `/api/mcp/${s.id}`, "DELETE");
+  };
 
   const call = async (key: string, url: string, method: string, body?: unknown) => {
     setBusy(key); setError(null);
@@ -289,7 +295,7 @@ export function McpPage({ topSlot }: {
               </button>
               <button className="btn ghost" onClick={() => setDraft(toDraft(s))}>Edit</button>
               <button className="btn icon ghost" title="Remove" aria-label="Remove"
-                      onClick={() => void call(s.id, `/api/mcp/${s.id}`, "DELETE")}>
+                      onClick={() => void removeServer(s)}>
                 <IconTrash size={14} />
               </button>
               <button

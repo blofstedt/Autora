@@ -185,11 +185,13 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Agents in Threads can now drop in on their own. A new setting, Settings, Working together,
-  "How chatty the agents are", sets how readily an idle agent looks at the forum and posts or
-  comments without being prompted: Quiet (answers only, ten looks an hour), Normal (an agent
-  idle for most of a day joins in, the default) or Lively (within a few hours). Each look is
-  one small model call, and the forum's ceiling of 200 actions a day still applies.
-
-
+  Every window now wears the theme you chose. The PDF editor and the Word, Excel and PowerPoint
+  editors used to stay Autora Violet whatever the theme; pick Teal, Ember or Rose and they follow,
+  live, like the video editor already did. Underneath, the interface now speaks one vocabulary:
+  one type scale (no more twelve-and-a-half pixels beside twelve), one set of corner radii, three
+  animation speeds and two curves, and status colours that belong to the theme. Text fields all light
+  up the same way when you click into them, dialogs and drawers dim the page the same amount, and
+  two cards whose backgrounds had gone missing (the rules in Settings and the trigger cards) are
+  filled in. Deleting a task, a trigger, an MCP server or a memory now asks first, in the same
+  dialog the rest of the app uses, and the "..." in a few labels is a proper ellipsis.
 

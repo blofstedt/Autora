@@ -81,6 +81,9 @@ Rules that hold wherever you are:
   `server/handbook.ts` in the same commit (what the person sees, where each tool is, what the agent does differently),
   and the manual's test in `tests/handbook.test.ts`. The PDF window is being rebuilt as a floating tool bar with an
   All-tools grid (`docs/TOOL-RAIL.md`), replacing its old toolbar entirely; every other tool window follows, one at a time.
+- The interface speaks one vocabulary (`docs/DESIGN.md`): type scale `--fs-*`, radii `--r-*`, motion `--dur-*` /
+  `--ease`, colours and status colours from tokens, one focus rule for text fields. Write none of those as literals;
+  `tests/tokens.test.ts` fails when you do. A new bordered text field joins the shared focus rule in `styles.css`.
 - `tests/`: plain `tsx` scripts, one per area; `npm test` runs every
   `tests/*.test.ts` (`npm test -- name` filters), so a new file needs no wiring.
 

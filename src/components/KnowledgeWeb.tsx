@@ -178,7 +178,7 @@ export function KnowledgeWeb({
                   <textarea
                     rows={3}
                     className="field-input field-textarea"
-                    placeholder="Explain execution steps, tools utilized, and verification criteria..."
+                    placeholder="Explain execution steps, tools utilized, and verification criteria…"
                     value={skillBody}
                     onChange={(e) => setSkillBody(e.target.value)}
                   />

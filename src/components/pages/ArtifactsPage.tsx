@@ -443,7 +443,7 @@ export function ArtifactsPage({
       }}
     >
       <div className="page-inner">
-        <p className="jf-hint art-lede">
+        <p className="jf-hint page-lede">
           Everything Autora makes for you and everything you give it: generated
           images, documents it writes, and the files and photos you upload. Grouped
           by the conversation they came out of, with each file drawn as itself. Press

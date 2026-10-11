@@ -141,7 +141,7 @@ export function OrganizationPage({ topSlot }: { topSlot?: HTMLElement | null }) 
   return (
     <div className="page-scroll">
       <div className="page-inner">
-        <p className="jf-hint art-lede">
+        <p className="jf-hint page-lede">
           Your agents and where they fit. Each has its own task and a note on when it should be called; the
           lead, Autora, is told this map and starts the right one — and the ones that follow it, in order —
           when a job calls for it.{" "}

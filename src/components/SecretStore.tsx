@@ -334,14 +334,14 @@ export function SecretStore() {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Filter secrets..."
+                placeholder="Filter secrets…"
               />
             </div>
           )}
         </div>
 
         {loading ? (
-          <div className="ss-empty is-plain">Loading secret store...</div>
+          <div className="ss-empty is-plain">Loading secret store…</div>
         ) : filteredSecrets.length === 0 ? (
           <div className="ss-empty">
             <div className="ss-empty-ico"><IconKey size={24} /></div>
@@ -446,7 +446,7 @@ export function SecretStore() {
             <input
               type={showNewValue ? "text" : "password"}
               className="jf-cron ss-mono ss-wide"
-              placeholder={presets[newName]?.placeholder || "Paste secret token..."}
+              placeholder={presets[newName]?.placeholder || "Paste secret token…"}
               value={newValue}
               onChange={(e) => setNewValue(e.target.value)}
               disabled={busy}

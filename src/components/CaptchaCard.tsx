@@ -38,17 +38,6 @@ const LABELS: { id: Backend; name: string; what: string }[] = [
   { id: "remote", name: "Your own solver", what: "a solver you run yourself, reached by URL" },
 ];
 
-const ROW: React.CSSProperties = {
-  display: "flex",
-  gap: 9,
-  alignItems: "flex-start",
-  margin: "7px 0",
-  fontSize: "calc(12.5px * var(--ts, 1))",
-  lineHeight: 1.5,
-};
-
-const EMOJI_FREE_HINT: React.CSSProperties = { display: "block", color: "var(--text-3)", fontSize: "calc(11.5px * var(--ts, 1))" };
-
 async function load(): Promise<CaptchaSettings | null> {
   try {
     const res = await fetch("/api/settings", { headers: { Accept: "application/json" } });
@@ -130,7 +119,7 @@ export function CaptchaCard() {
         here costs anything beyond the model call the turn is already making.
       </p>
 
-      <label style={ROW}>
+      <label className="opt-check">
         <input
           type="checkbox"
           checked={state?.enabled !== false}
@@ -138,16 +127,16 @@ export function CaptchaCard() {
         />
         <span>
           Answer picture challenges automatically
-          <span style={EMOJI_FREE_HINT}>Off hands every one of them to you instead.</span>
+          <span className="opt-note">Off hands every one of them to you instead.</span>
         </span>
       </label>
 
       {LABELS.map((backend) => (
-        <label style={ROW} key={backend.id}>
+        <label className="opt-check" key={backend.id}>
           <input type="checkbox" checked={on(backend.id)} onChange={() => toggleBackend(backend.id)} />
           <span>
             {backend.name}
-            <span style={EMOJI_FREE_HINT}>
+            <span className="opt-note">
               {backend.what}
               {backend.id === "vision" &&
                 ` — ${state?.vision ? state.vision : "no image-reading model is connected"}`}
@@ -156,12 +145,13 @@ export function CaptchaCard() {
         </label>
       ))}
 
-      <label className="jf-row" style={{ marginTop: 10 }}>
+      <label className="jf-row is-spaced">
         <span>Tries</span>
         <select
+          className="set-select"
           value={state?.attempts ?? 3}
           onChange={(e) => change({ attempts: Number(e.target.value) })}
-          style={{ padding: "9px 11px", borderRadius: "var(--r-sm)", background: "var(--s2)", border: "1px solid var(--border)", color: "var(--text)", fontFamily: "inherit", fontSize: "calc(13px * var(--ts, 1))" }}
+         
         >
           {[1, 2, 3, 4, 5, 6].map((n) => (
             <option key={n} value={n}>
@@ -174,7 +164,7 @@ export function CaptchaCard() {
 
       {on("remote") && (
         <>
-          <label className="jf-row" style={{ marginTop: 10 }}>
+          <label className="jf-row is-spaced">
             <span>Your solver's URL</span>
             <input
               type="text"
@@ -185,7 +175,7 @@ export function CaptchaCard() {
               onBlur={(e) => change({ remoteUrl: e.target.value })}
             />
           </label>
-          <label className="jf-row" style={{ marginTop: 10 }}>
+          <label className="jf-row is-spaced">
             <span>Solver key</span>
             <input
               type="password"

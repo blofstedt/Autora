@@ -263,7 +263,7 @@ export function App() {
     if (!drawerWas.current) return;
     drawerWas.current = false;
     setDrawerLeaving(true);
-    const t = window.setTimeout(() => setDrawerLeaving(false), 240);
+    const t = window.setTimeout(() => setDrawerLeaving(false), 260);
     return () => window.clearTimeout(t);
   }, [drawerOpen]);
   const [appearance, setAppearance] = useState<Appearance>(cachedAppearance);

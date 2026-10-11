@@ -6,6 +6,7 @@ import { TakeControl } from "./TakeControl";
 import { onOfficePush, useOfficeWindow, type OfficeCue, type OfficeKind } from "../lib/officedesk";
 import { OfficeCursor, type Acted, type Located } from "./OfficeCursor";
 import { OfficePages } from "./OfficePages";
+import { useFrameTheme } from "../lib/frameTheme";
 import { IconEdit, IconDownload, IconFile, IconMaximize, IconMinimize } from "./Icons";
 
 /**
@@ -290,6 +291,8 @@ export function OfficeWindow({ sessionId, kind, phone }: { sessionId: string; ki
    */
   const pane = useRef<HTMLDivElement>(null);
   const [room, setRoom] = useState(false);
+  /* The frame carries the page's theme, not Autora Violet, whichever theme is on. */
+  useFrameTheme(frame);
   useEffect(() => {
     const el = pane.current;
     if (!el) return;

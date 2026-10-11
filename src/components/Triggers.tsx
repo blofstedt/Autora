@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { IconCopy, IconPlug, IconPlus, IconRotateCcw, IconTrash, IconX } from "./Icons";
 import { ago } from "../lib/ago";
 import { every } from "../lib/poll";
+import { sure } from "../lib/sure";
 
 /**
  * A trigger: a URL and a secret, with a prompt attached. Anything that can
@@ -105,6 +106,7 @@ export function Triggers({
 
   const removeTrigger = useCallback(
     async (t: TriggerRow) => {
+      if (!(await sure(`Delete the trigger “${t.name}”? Anything calling its URL stops working.`))) return;
       await fetch(`/api/triggers/${t.id}`, { method: "DELETE" });
       setSecret(null);
       await load();

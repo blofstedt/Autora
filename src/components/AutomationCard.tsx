@@ -87,7 +87,7 @@ export function AutomationCard() {
         time. Nothing is switched off or deleted.
       </p>
 
-      <label style={{ display: "flex", gap: 9, alignItems: "flex-start", margin: "7px 0", fontSize: "calc(12.5px * var(--ts, 1))", lineHeight: 1.5 }}>
+      <label className="opt-check">
         <input
           type="checkbox"
           checked={budget?.enabled !== false}
@@ -95,7 +95,7 @@ export function AutomationCard() {
         />
         <span>
           Hold automated runs to a budget
-          <span style={{ display: "block", color: "var(--text-3)", fontSize: "calc(11.5px * var(--ts, 1))" }}>
+          <span className="opt-note">
             Off means jobs run whatever they cost. They still report what they spent.
           </span>
         </span>
@@ -103,7 +103,7 @@ export function AutomationCard() {
 
       {budget?.enabled !== false && (
         <>
-          <label className="jf-row" style={{ marginTop: 10 }}>
+          <label className="jf-row is-spaced">
             <span>All jobs, per day</span>
             <input
               type="number"
@@ -114,7 +114,7 @@ export function AutomationCard() {
               onChange={(e) => e.target.value && change({ dailyUsd: Number(e.target.value) })}
             />
           </label>
-          <label className="jf-row" style={{ marginTop: 10 }}>
+          <label className="jf-row is-spaced">
             <span>One run</span>
             <input
               type="number"

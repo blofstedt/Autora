@@ -73,6 +73,18 @@ export function installHost(): void {
       | null;
     if (!msg || typeof msg !== "object" || typeof msg.type !== "string") return;
 
+    if (msg.type === "autora:theme") {
+      // The page's theme tokens (src/lib/frameTheme.ts), laid on the root: autora.css reads them as `--autora-*`.
+      const vars = (msg as { vars?: unknown }).vars;
+      if (vars && typeof vars === "object") {
+        for (const [name, value] of Object.entries(vars as Record<string, unknown>)) {
+          if (/^--autora-[a-z0-9-]+$/.test(name) && typeof value === "string" && /^[#\w(),.%\s-]{1,120}$/.test(value)) {
+            document.documentElement.style.setProperty(name, value);
+          }
+        }
+      }
+      return;
+    }
     if (msg.type === "autora:spectra:asset-result" && typeof msg.id === "number") {
       const m = msg as { id: number; status?: number; mime?: string; body?: ArrayBuffer };
       const done = wanting.get(m.id);

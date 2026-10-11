@@ -132,7 +132,7 @@ export function PermissionCell({
           <input
             type="text"
             className="perm-text-input"
-            placeholder={prompt.placeholder || "Enter parameter or value..."}
+            placeholder={prompt.placeholder || "Enter parameter or value…"}
             value={userInput}
             onChange={(e) => setUserInput(e.target.value)}
             onKeyDown={(e) => {

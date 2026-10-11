@@ -6,6 +6,7 @@ import {
   IconCheck, IconClock, IconPlay, IconPlus, IconRepeat, IconShield, IconTrash, IconX,
 } from "./Icons";
 import { every } from "../lib/poll";
+import { sure } from "../lib/sure";
 
 export type Job = {
   id: string;
@@ -185,6 +186,7 @@ export function Schedule({
   }, [load]);
 
   const remove = useCallback(async (job: Job) => {
+    if (!(await sure(`Delete the task “${job.name}”? Its run history goes with it.`))) return;
     await fetch(`/api/jobs/${job.id}`, { method: "DELETE" });
     await load();
   }, [load]);
