@@ -88,8 +88,8 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 2300));
     const box = { x: 20, y: 0, w: 10, h: 10 };
     const gone = await violet(await live.capture(), box);
-    // The cursor dot stays where it last was; the outline and its name do not.
-    assert.ok(gone.total < 700, `only the cursor is left (${gone.total} violet pixels)`);
+    // The cursor stays where it last was (its tag, with the shape of the mark beside the name, is some 900 pixels); the outline and its name do not.
+    assert.ok(gone.total < 1100, `only the cursor is left (${gone.total} violet pixels)`);
   });
 } finally {
   await live.close().catch(() => undefined);

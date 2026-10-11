@@ -626,6 +626,6 @@ page (`thoughtFromAction`) into "Clicking “Save”", under `MAX` characters, a
 `lib/cursorPos.ts` -- Office, Video, Game, and `lib/pointer.ts` (PDF, Music, Photo) -- and keeps them 3 s after the call answers,
 since the windows play the work after it; the browser (and so Creator) draws its own inside the page (`__autoraThought` in
 `CURSOR_SCRIPT`, set from `LiveBrowser`'s `hooks.onAction`) and the 3D frame inside its own pointer. Photo's pointer goes to the
-canvas when `X-Photo-Cue` says the agent edited, and the picture changes as it presses. Terminal is the person's own shell: the agent's
-commands do not run in it, so it has no cursor. All of it is off with the agent-cursor switch. Tests: `thought.test.ts`,
+canvas when `X-Photo-Cue` says the agent edited, and the picture changes as it presses. Terminal: the agent's command is typed into the window key by key at a person's pace (`termAgentBegin`, server-side, so the output waits behind it and order holds), the page is told `{t:"agent", on}`, and the pointer follows the text cursor with its tag showing the caret.
+**Whose cursor**: `lib/cursorWho.ts` reads the chat's `agent.started` line and lays `--agent-accent(-rgb)` on the page, which every cursor style reads; the tag carries the agent's name and the polygon of its mark (`CursorTag`, `pointer.ts`); the browser's page pointer is told by `LiveBrowser`'s `who` hook (`cursorWhoFor` in `server.ts`), the 3D frame by `{autora3d:"who"}`, the terminal's own tag by its colour in `termAgentBegin`. All of it is off with the agent-cursor switch. Tests: `thought.test.ts`,
 `browser-cursor.test.ts`.

@@ -118,6 +118,11 @@
   --z-expanded: 1000;
 
   /* Behind a modal, sheet or drawer. */
+  /* Whose cursor is on screen: the theme's accent for Autora, the agent's own colour while an agent of the Organization works
+     (lib/cursorWho.ts lays it on the page). Every cursor, its ring and the words beside it read these. */
+  --agent-accent: var(--accent);
+  --agent-accent-rgb: var(--accent-rgb);
+
   --scrim: rgba(var(--bg-rgb), 0.66);
   --scrim-blur: blur(3px);
 
@@ -6542,18 +6547,20 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 .office-stage { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .office-cursor-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 5; }
 .office-cursor { position: absolute; left: 0; top: 0; will-change: transform; transition: opacity var(--dur-3) var(--ease); }
-.office-cursor-name {
-  position: absolute; left: 14px; top: 14px; padding: 1px 6px; border-radius: var(--r-sm); background: var(--accent); color: #fff;
-  font: 600 10px/14px Inter, system-ui, sans-serif; white-space: nowrap;
+.office-cursor-name, .agent-pointer-name {
+  position: absolute; left: 14px; top: 14px; display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px 1px 6px;
+  border-radius: var(--r-pill); background: var(--agent-accent); color: #fff;
+  font: 600 10.5px/15px Inter, system-ui, sans-serif; white-space: nowrap;
 }
+.cursor-glyph { width: 10px; height: 10px; flex: none; fill: currentColor; }
 .office-cursor-arrow { transform-origin: 1px 1px; transition: transform var(--dur-1) var(--ease); }
 .office-cursor.is-press .office-cursor-arrow { transform: scale(0.82); }
-.office-cursor.is-type .office-cursor-name { background: var(--accent-deep); }
-.office-cursor.is-type .office-cursor-name::after {
+.office-cursor.is-type .office-cursor-name, .agent-pointer.is-typing .agent-pointer-name { background: color-mix(in srgb, var(--agent-accent) 78%, black); }
+.office-cursor.is-type .office-cursor-name::after, .agent-pointer.is-typing .agent-pointer-name::after {
   content: ""; display: inline-block; width: 0; height: 10px; margin-left: 4px; vertical-align: -1px;
   border-right: 2px solid #fff; animation: office-blink 0.7s steps(1) infinite;
 }
-.office-click { position: absolute; width: 28px; height: 28px; border-radius: var(--r-lg); border: 2px solid var(--accent); animation: office-click var(--dur-3) var(--ease) forwards; }
+.office-click { position: absolute; width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--agent-accent); animation: office-click var(--dur-3) var(--ease) forwards; }
 @keyframes office-blink { 50% { opacity: 0; } }
 @keyframes office-click { from { transform: scale(0.4); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .office-click { animation: none; } }
@@ -6669,7 +6676,7 @@ button.app-url:hover { border-color: var(--border-strong); color: var(--text); }
 .office-page { position: relative; width: 100%; background: #fff; border-radius: var(--r-2xs); box-shadow: 0 1px 6px rgb(0 0 0 / 35%); overflow: hidden; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .office-page img { display: block; width: 100%; height: 100%; user-select: none; }
 .office-page.is-stale img { opacity: 0.6; }
-.office-pick { position: absolute; border: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 22%, transparent); border-radius: var(--r-2xs); pointer-events: none; }
+.office-pick { position: absolute; border: 2px solid var(--agent-accent); background: color-mix(in srgb, var(--agent-accent) 22%, transparent); border-radius: var(--r-2xs); pointer-events: none; }
 .office-pick.is-page { inset: 0; border-radius: var(--r-2xs); background: none; }
 .office-pages-note { padding: 16px 8px; text-align: center; color: var(--text-3); font-size: var(--fs-base); }
 .office-pages-clear { margin: 6px 10px 10px; padding: 8px; border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--s2); color: var(--text-2); font-size: var(--fs-base); }
@@ -7308,23 +7315,20 @@ body.is-resizing iframe { pointer-events: none; }
 .agent-pointer-layer { position: fixed; inset: 0; pointer-events: none; z-index: 2147483000; overflow: hidden; }
 .agent-pointer { position: absolute; left: 0; top: 0; opacity: 0; transition: opacity var(--dur-2) var(--ease); will-change: transform; }
 .agent-pointer-layer.is-on .agent-pointer { opacity: 1; }
-.agent-pointer svg { display: block; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4)); }
-.agent-pointer-name {
-  position: absolute; left: 14px; top: 14px; padding: 1px 7px; border-radius: var(--r-pill); background: var(--accent); color: #fff;
-  font: 600 10px/1.5 system-ui, sans-serif; white-space: nowrap;
-}
+.agent-pointer > svg { display: block; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4)); }
+
 .agent-pointer-typed {
   position: absolute; left: 14px; top: 36px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   padding: 2px 8px; border-radius: var(--r-sm); background: rgba(20, 22, 34, 0.92); color: #fff; font: 500 12px/1.5 system-ui, sans-serif;
-  border: 1px solid rgba(var(--accent-rgb), 0.6);
+  border: 1px solid rgba(var(--agent-accent-rgb), 0.6);
 }
 .agent-pointer-typed:empty { display: none; }
 .agent-pointer-ring {
-  position: absolute; width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--accent);
-  animation: agentRing 0.55s var(--ease) both;
+  position: absolute; width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--agent-accent);
+  animation: agentRing var(--dur-3) var(--ease) both;
 }
 @keyframes agentRing { from { transform: scale(0.4); opacity: 0.95; } to { transform: scale(1.6); opacity: 0; } }
-.is-agent-pressed { box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.7) !important; transition: box-shadow var(--dur-2) var(--ease); }
+.is-agent-pressed { box-shadow: 0 0 0 3px rgba(var(--agent-accent-rgb), 0.7) !important; transition: box-shadow var(--dur-2) var(--ease); }
 
 /* ==========================================================================
    Tools on a phone: every window shares one bar, so the same few rules keep
@@ -7800,7 +7804,7 @@ body.is-resizing iframe { pointer-events: none; }
 
 .dock-card-body { display: flex; flex-direction: column; gap: 4px; }
 /* The agent's pointer takes the theme's accent, as its label does. */
-.office-cursor-arrow path { fill: var(--accent); }
+.office-cursor-arrow path, .agent-pointer > svg path { fill: var(--agent-accent); }
 
 /* The few words beside the agent's cursor (components/AgentThought.tsx): a pill up and to the right of the pointer, its
    tail pointing back at it, above the pointer layer so it is never under what it describes. */
@@ -7811,12 +7815,12 @@ body.is-resizing iframe { pointer-events: none; }
 .agent-thought > span {
   position: absolute; left: 16px; bottom: 10px; max-width: 240px; white-space: nowrap;
   padding: 3px 10px; border-radius: var(--r-pill); font-size: var(--fs-xs); font-weight: 550; line-height: 16px;
-  color: var(--text); background: color-mix(in srgb, var(--s2) 94%, transparent); border: 1px solid var(--accent-line);
+  color: var(--text); background: color-mix(in srgb, var(--s2) 94%, transparent); border: 1px solid rgba(var(--agent-accent-rgb), 0.5);
   box-shadow: var(--shadow); animation: thoughtPop var(--dur-1) var(--ease) both;
 }
 .agent-thought > span::before {
   content: ""; position: absolute; left: -3px; bottom: -3px; width: 7px; height: 7px; border-radius: 50%;
-  background: color-mix(in srgb, var(--s2) 94%, transparent); border: 1px solid var(--accent-line);
+  background: color-mix(in srgb, var(--s2) 94%, transparent); border: 1px solid rgba(var(--agent-accent-rgb), 0.5);
 }
 .agent-thought.is-flipped > span { left: auto; right: 8px; }
 .agent-thought.is-flipped > span::before { left: auto; right: -3px; }

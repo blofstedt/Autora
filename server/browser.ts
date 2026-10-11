@@ -464,6 +464,8 @@ interface BrowserHooks {
   onNav: (url: string, title: string) => void;
   /** Something the agent did, with where it did it when that is meaningful. */
   onAction: (action: string, at: { x: number; y: number } | null, url: string) => void;
+  /** Whose pointer to draw: the agent of the Organization working in this chat, or null for Autora itself. */
+  who?: () => { name: string; color: string; rgb: string; sides: number } | null;
   /** The typeable fields on the page moved, appeared or went. */
   onFields: () => void;
   /** The page wrote an error or a warning to its console. */
@@ -762,21 +764,24 @@ export const CURSOR_SCRIPT = `
     root.innerHTML =
       '<style>' +
       '.cur{position:fixed;left:0;top:0;opacity:0;will-change:transform;transition:transform .07s linear,opacity .25s}' +
-      '.cur svg{display:block;transform-origin:1px 1px;transition:transform .09s ease-out;' +
+      '.cur>svg{display:block;transform-origin:1px 1px;transition:transform .09s ease-out;' +
       'filter:drop-shadow(0 1px 2px rgba(0,0,0,.35))}' +
-      '.cur.down svg{transform:scale(.82)}' +
-      '.tag{position:absolute;left:14px;top:14px;padding:1px 6px;border-radius:8px;background:#7c5cff;color:#fff;' +
-      'font:600 10px/14px Inter,system-ui,sans-serif;white-space:nowrap;transition:background .15s}' +
-      '.cur.typing .tag{background:#5b3fe0}' +
+      '.cur>svg path{fill:var(--a,#7c5cff)}' +
+      '.cur.down>svg{transform:scale(.82)}' +
+      '.tag{position:absolute;left:14px;top:14px;display:inline-flex;align-items:center;gap:4px;padding:1px 8px 1px 6px;' +
+      'border-radius:999px;background:var(--a,#7c5cff);color:#fff;font:600 10.5px/15px Inter,system-ui,sans-serif;' +
+      'white-space:nowrap;transition:background .15s}' +
+      '.tag .g{width:10px;height:10px;flex:none;fill:currentColor}.tag i{font-style:normal}' +
+      '.cur.typing .tag{background:color-mix(in srgb,var(--a,#7c5cff) 78%,black)}' +
       '.cur.typing .tag::after{content:"";display:inline-block;width:0;height:10px;margin-left:4px;vertical-align:-1px;' +
       'border-right:2px solid #fff;animation:blink .7s steps(1) infinite}' +
       '@keyframes blink{50%{opacity:0}}' +
       '.thought{position:absolute;left:14px;top:-24px;padding:2px 9px;border-radius:999px;background:rgba(21,24,36,.94);' +
-      'color:#edeff5;border:1px solid rgba(124,92,255,.5);font:550 11px/15px Inter,system-ui,sans-serif;white-space:nowrap;' +
+      'color:#edeff5;border:1px solid rgba(var(--ar,124,92,255),.5);font:550 11px/15px Inter,system-ui,sans-serif;white-space:nowrap;' +
       'opacity:0;transform:translateY(3px);transition:opacity .15s,transform .15s;box-shadow:0 4px 14px -4px rgba(0,0,0,.5)}' +
       '.thought.on{opacity:1;transform:none}.thought.low{top:34px}.thought.flip{left:auto;right:6px}' +
       '.ring{position:fixed;width:28px;height:28px;margin:-14px 0 0 -14px;border-radius:50%;' +
-      'border:2px solid #7c5cff;opacity:0}' +
+      'border:2px solid var(--a,#7c5cff);opacity:0}' +
       '@keyframes tap{from{transform:scale(.4);opacity:1}to{transform:scale(1.8);opacity:0}}' +
       '.ring.go{animation:tap .42s ease-out forwards}' +
       '.mark{position:fixed;box-sizing:border-box;border:2px solid rgba(139,124,246,.95);border-radius:4px;' +
@@ -791,9 +796,11 @@ export const CURSOR_SCRIPT = `
       '<div class="ring"></div>' +
       '<div class="cur"><svg width="16" height="20" viewBox="0 0 16 20">' +
       '<path d="M1 1 L1 15 L5 11.5 L8 18 L10.5 17 L7.5 10.5 L13 10.5 Z" fill="#7c5cff" stroke="#fff" ' +
-      'stroke-width="1.2" stroke-linejoin="round"/></svg><span class="tag">Autora</span><span class="thought"></span></div>';
+      'stroke-width="1.2" stroke-linejoin="round"/></svg><span class="tag"><svg class="g" viewBox="0 0 10 10"><polygon points="5,0 10,10 0,10"/></svg><b>Autora</b><i></i></span><span class="thought"></span></div>';
     const cur = root.querySelector(".cur");
-    const tag = root.querySelector(".tag");
+    const tag = root.querySelector(".tag i");
+    const nameEl = root.querySelector(".tag b");
+    const glyph = root.querySelector(".tag polygon");
     const ring = root.querySelector(".ring");
     const thought = root.querySelector(".thought");
     let thinkTimer = null;
@@ -806,7 +813,7 @@ export const CURSOR_SCRIPT = `
       tag.textContent = text;
       cur.classList.toggle("typing", cls === "typing");
       clearTimeout(doing);
-      doing = setTimeout(() => { tag.textContent = "Autora"; cur.classList.remove("typing"); }, ms);
+      doing = setTimeout(() => { tag.textContent = ""; cur.classList.remove("typing"); }, ms);
     };
     const ripple = (x, y) => {
       // A press and the tap that announces it are one click: once.
@@ -827,6 +834,18 @@ export const CURSOR_SCRIPT = `
       thought.classList.add("on");
       clearTimeout(thinkTimer);
       thinkTimer = setTimeout(() => thought.classList.remove("on"), 2600);
+    };
+    /* Whose pointer it is: the agent of the Organization working here, or Autora (src/lib/cursorWho.ts): its name, colour
+       and the shape of its mark. Said by the server before it moves the pointer. */
+    window.__autoraWho = (name, color, rgb, sides) => {
+      nameEl.textContent = String(name || "Autora");
+      host.style.setProperty("--a", color || "#7c5cff");
+      host.style.setProperty("--ar", rgb || "124,92,255");
+      const n = Math.max(3, Math.min(12, Number(sides) || 3));
+      glyph.setAttribute("points", Array.from({ length: n }, (_, i) => {
+        const a = -Math.PI / 2 + (i * 2 * Math.PI) / n;
+        return (5 + 5 * Math.cos(a)).toFixed(2) + "," + (5 + 5 * Math.sin(a)).toFixed(2);
+      }).join(" "));
     };
     window.__autoraCursor = (x, y, tap) => {
       atX = x; atY = y;
@@ -865,10 +884,10 @@ export const CURSOR_SCRIPT = `
       if (e.isTrusted) cur.classList.remove("down");
     }, opt);
     window.addEventListener("keydown", (e) => {
-      if (e.isTrusted && !e.metaKey && !e.ctrlKey) say("typing", "Autora", 900);
+      if (e.isTrusted && !e.metaKey && !e.ctrlKey) say("typing", "", 900);
     }, opt);
     window.addEventListener("wheel", (e) => {
-      if (e.isTrusted) say("scroll", "Autora · scrolling", 700);
+      if (e.isTrusted) say("scroll", " · scrolling", 700);
     }, opt);
   };
   if (document.readyState === "loading") {
@@ -1958,11 +1977,17 @@ export class LiveBrowser {
   }
 
   /** The words beside the pointer for `action` (see src/lib/thought.ts); nothing for an act with nothing to say. */
+  /** The call that tells the page whose pointer it draws (empty for Autora's own). */
+  private signature(): string {
+    const w = this.hooks.who?.();
+    return w ? `if (window.__autoraWho) window.__autoraWho(${JSON.stringify(w.name)}, ${JSON.stringify(w.color)}, ${JSON.stringify(w.rgb)}, ${Number(w.sides) || 3});` : "";
+  }
+
   private async think(action: string): Promise<void> {
     const words = thoughtFromAction(action);
     if (!words) return;
     await this.page?.evaluate(
-      `(() => { if (window.__autoraCursorMount) window.__autoraCursorMount(); if (window.__autoraThought) window.__autoraThought(${JSON.stringify(words)}); })()`,
+      `(() => { if (window.__autoraCursorMount) window.__autoraCursorMount(); ${this.signature()} if (window.__autoraThought) window.__autoraThought(${JSON.stringify(words)}); })()`,
     ).catch(() => undefined);
   }
 
@@ -4206,7 +4231,7 @@ export class LiveBrowser {
     this.touched();
     await this.page
       ?.evaluate(
-        `(() => { if (window.__autoraCursorMount) window.__autoraCursorMount();
+        `(() => { if (window.__autoraCursorMount) window.__autoraCursorMount(); ${this.signature()}
            if (window.__autoraCursor) window.__autoraCursor(${x}, ${y}, ${tap ? "true" : "false"}); })()`,
       )
       .catch(() => undefined);

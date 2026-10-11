@@ -9,6 +9,7 @@
  */
 import { along, humanRoute, restMs, routeMs, typingDelays, type Point } from "./humanPath";
 import { clearCursor, reportCursor } from "./cursorPos";
+import { getCursorWho, glyphPoints, onCursorWho } from "./cursorWho";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -27,10 +28,27 @@ function ensure(): HTMLDivElement {
   arrow.className = "agent-pointer";
   arrow.innerHTML =
     '<svg width="16" height="20" viewBox="0 0 16 20"><path d="M1 1 L1 15 L5 11.5 L8 18 L10.5 17 L7.5 10.5 L13 10.5 Z" fill="#7c5cff" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/></svg>' +
-    '<span class="agent-pointer-name">Autora</span><span class="agent-pointer-typed"></span>';
+    '<span class="agent-pointer-name"><svg class="cursor-glyph" viewBox="0 0 10 10"><polygon/></svg><b></b></span><span class="agent-pointer-typed"></span>';
   layer.appendChild(arrow);
+  signed();
   document.body.appendChild(layer);
   return layer;
+}
+
+/** Whose pointer it is: the name and the shape of the agent working (lib/cursorWho.ts). The colour comes from the page's variables. */
+function signed() {
+  const who = getCursorWho();
+  const tag = arrow?.querySelector(".agent-pointer-name");
+  if (!tag) return;
+  tag.querySelector("b")!.textContent = who.name;
+  tag.querySelector("polygon")!.setAttribute("points", glyphPoints(who.look?.sides ?? 3));
+}
+onCursorWho(signed);
+
+/** The pointer is typing (the tag shows a caret) while the agent's keys are being struck somewhere it cannot draw them. */
+export function pointerTyping(on: boolean) {
+  ensure();
+  arrow?.classList.toggle("is-typing", on);
 }
 
 function place(p: Point) {

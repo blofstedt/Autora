@@ -185,10 +185,11 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The agent now says what it is doing beside its cursor. A few words ("Clicking Save", "Filling in
-  Email", "Making 3 changes") sit by the pointer in the browser, Creator, PDF, Word, Excel,
-  PowerPoint, Video, Music, Game, 3D and Photo windows, and are made from the action itself, so they
-  always match what the cursor is doing. The Photo window also gained the cursor: when the agent
-  edits a picture the pointer goes to it and presses as the change appears. Everything follows the
-  agent-cursor switch in Settings.
+  When another agent of your Organization is working, the cursor is theirs: their name on the tag,
+  their colour on the pointer and its ring, and the shape of their mark beside the name, in every
+  window that shows a cursor. The Terminal window gets the cursor too: the agent's command is typed
+  in key by key at a person's pace, with the pointer following the text cursor, before it runs. The
+  browser, Creator and 3D cursors now match the others (same tag, same ring, same timing). And when an
+  agent is called into the chat it no longer opens with its own name and job again; the card above
+  already says who it is.
 

@@ -74,6 +74,7 @@ import {
 } from "./server/threadlife";
 import { addComment, createPost, getPost, listPosts, onThreadActivity, onThreadReply, toggleLike } from "./server/threads";
 import { findGif } from "./server/threadgif";
+import { lookColors, readLook } from "./src/lib/agentlook";
 import { NewsGate, newsPrompt, nextLookoutMs, parseQuery, parseStudy, queryPrompt, readNews, studyPrompt, workOutcome, workTitle } from "./server/threadnews";
 import { mcpRoutes } from "./server/routes/mcp";
 import { artifactRoutes } from "./server/routes/artifacts";
@@ -913,6 +914,7 @@ function browserFor(session: Session): LiveBrowser {
       }
     },
     onFields: () => broadcastBrowserState(session),
+    who: () => cursorWhoFor(session.id),
     onAction: (action, at, url) => {
       emitEvent(session, "browser.action", "agent", {
         action,
@@ -987,6 +989,7 @@ function previewRunFor(session: Session, device: Device): PreviewRun {
       }, 400);
       run.timers.console.unref?.();
     },
+    who: () => cursorWhoFor(session.id),
     onAction: () => undefined,
   }, { viewport: { width: DEVICES[device].width, height: DEVICES[device].height }, fps: 12, quality: 72, sharp: true });
   previews.set(session.id, run);
@@ -2942,6 +2945,15 @@ function saneWatch(raw: any): JobWatch | null {
 /* Chats that are an agent from the Organization page at work: which agent, how
    deep in a chain of hand-offs, and who handed it the task. Cleared in forgetSession. */
 const agentRuns = new Map<string, { agent: string; depth: number; chain: string[] }>();
+
+/** Whose pointer a chat draws in the page: the agent of the Organization it belongs to (its name, colour and the shape of its mark), or null for Autora. */
+function cursorWhoFor(sessionId: string): { name: string; color: string; rgb: string; sides: number } | null {
+  const agent = getAgent(agentRuns.get(sessionId)?.agent ?? "");
+  const look = readLook(agent?.look);
+  if (!agent || !look) return null;
+  const { colors, css } = lookColors(look);
+  return { name: agent.name.slice(0, 24), color: colors.accent, rgb: css["--accent-rgb"], sides: look.sides };
+}
 const MAX_AGENT_DEPTH = 3;
 
 /**
@@ -2977,7 +2989,7 @@ async function runAgentTask(
     const oneLine = work.replace(/\s+/g, " ").trim();
     emitEvent(from, "agent.chime", "agent", {
       id: child.id, agent: agent.id, name: agent.name, role: agent.role, look: agent.look,
-      text: `${agent.name}${agent.role ? `, the ${agent.role},` : ""} here. On it: ${oneLine.length > 160 ? `${oneLine.slice(0, 157)}...` : oneLine}`,
+      text: `On it: ${oneLine.length > 160 ? `${oneLine.slice(0, 157)}...` : oneLine}`,
     });
     const stop = () => stopTurn(child.id);
     signal?.addEventListener("abort", stop, { once: true });

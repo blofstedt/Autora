@@ -28,6 +28,7 @@ import { StringDecoder } from "node:string_decoder";
 import fs from "node:fs";
 import { WebSocketServer, type WebSocket } from "ws";
 import { redactForModel, terminalDir, toolSettings } from "./tools";
+import { typingDelays } from "../src/lib/humanPath";
 
 /** Joins a shell's terminal to stdin/stdout. fd 3 (in) takes "R <cols> <rows>" lines; fd 4 (out) says "P <pid>" once. */
 const PTY_HELPER = String.raw`
@@ -116,6 +117,8 @@ interface Desk {
   news: string[];
   /** The agent's command being printed, by id. */
   agentSeq: number;
+  /** What the agent shows in the window is printed in order, its command typed at a person's pace: this is the line it waits in. */
+  printing: Promise<void>;
 }
 
 /** What the window shows, and what the page is told over the socket. */
@@ -136,7 +139,7 @@ const validSession = (id: string) => /^[A-Za-z0-9_-]{1,80}$/.test(id);
 function deskFor(session: string): Desk {
   let desk = desks.get(session);
   if (!desk) {
-    desk = { open: false, since: 0, cwd: "", rev: 0, shell: null, news: [], agentSeq: 0 };
+    desk = { open: false, since: 0, cwd: "", rev: 0, shell: null, news: [], agentSeq: 0, printing: Promise.resolve() };
     desks.set(session, desk);
   }
   return desk;
@@ -345,23 +348,63 @@ export function termUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer, 
 
 // ------------------------------------------------------------ the agent's side --
 
-/** The agent starts a command in its terminal tool: it is printed into the window, marked as the agent's. */
-export function termAgentBegin(session: string, command: string, _cwd: string): number {
+const nap = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+/** The most of a command typed key by key; the rest of a very long one goes in at once. */
+const TYPED_CHARS = 160;
+
+/** Who is typing: the agent's name, and the colour of its tag in the window (Autora's own is dim violet). */
+export interface TermWho { name: string; rgb?: [number, number, number] }
+const tagOf = (who?: TermWho) => (who?.rgb ? `\x1b[2;38;2;${who.rgb.join(";")}m` : "\x1b[2;35m") + `[${who?.name ?? "Autora"}]`;
+const whoOf = new Map<string, TermWho | undefined>();
+
+/** Tell the page whether the agent is typing in the window, so its pointer can go there and its tag show the caret. */
+function typing(shell: Shell, on: boolean, who?: TermWho) {
+  for (const ws of shell.watchers) send(ws, { t: "agent", on, name: who?.name ?? "Autora" });
+}
+
+/**
+ * The agent starts a command in its terminal tool: it is printed into the window, marked as the agent's, and typed at a
+ * person's pace (the command itself runs at once; what it prints waits behind the typing, so the order is the one a
+ * person would see). The page is told it is typing, for the pointer.
+ */
+export function termAgentBegin(session: string, command: string, _cwd: string, who?: TermWho): number {
   const desk = deskFor(session);
   const id = ++desk.agentSeq;
-  const shell = desk.shell;
-  if (shell) emit(shell, `\r\n\x1b[2;35m[Autora] $ ${redactForModel(command).replace(/\r?\n/g, "\r\n  ")}\x1b[0m\r\n`);
+  whoOf.set(session, who);
+  const text = redactForModel(command).replace(/\r?\n/g, "\r\n  ");
+  desk.printing = desk.printing.then(async () => {
+    const shell = desk.shell;
+    if (!shell) return;
+    typing(shell, true, who);
+    emit(shell, `\r\n${tagOf(who)} $ `);
+    const chars = Array.from(text);
+    const head = chars.slice(0, TYPED_CHARS);
+    const gaps = typingDelays(head.join(""), 1500);
+    for (let i = 0; i < head.length; i += 1) {
+      emit(shell, head[i]);
+      await nap(gaps[i] ?? 40);
+    }
+    emit(shell, `${chars.slice(TYPED_CHARS).join("")}\x1b[0m\r\n`);
+  }).catch(() => undefined);
   return id;
 }
 
 export function termAgentChunk(session: string, _id: number, text: string) {
-  const shell = desks.get(session)?.shell;
-  if (shell && text) emit(shell, `\x1b[2m${text.replace(/\r?\n/g, "\r\n")}\x1b[0m`);
+  const desk = desks.get(session);
+  if (!desk || !text) return;
+  desk.printing = desk.printing.then(() => { if (desk.shell) emit(desk.shell, `\x1b[2m${text.replace(/\r?\n/g, "\r\n")}\x1b[0m`); }).catch(() => undefined);
 }
 
 export function termAgentEnd(session: string, _id: number, exit: number | undefined) {
-  const shell = desks.get(session)?.shell;
-  if (shell) emit(shell, `\r\n\x1b[2;35m[Autora] ${exit === 0 || exit === undefined ? "done" : `exit ${exit}`}\x1b[0m\r\n`);
+  const desk = desks.get(session);
+  if (!desk) return;
+  const who = whoOf.get(session);
+  desk.printing = desk.printing.then(() => {
+    const shell = desk.shell;
+    if (!shell) return;
+    emit(shell, `\r\n${tagOf(who)} ${exit === 0 || exit === undefined ? "done" : `exit ${exit}`}\x1b[0m\r\n`);
+    typing(shell, false, who);
+  }).catch(() => undefined);
 }
 
 /** What the person ran in the window since the agent was last told, as a line for the agent; empty if nothing. */

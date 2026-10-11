@@ -26,7 +26,8 @@ const OVERVIEW = [
     "and again after you change something. Never overwrite the person's edit with an old copy.",
   "- You are seen working. With the cursor switch on (Settings), a labelled cursor moves in the window to what you are changing, " +
     "clicks, and types, with a few words beside it about what that act is (made from the tool call itself: \"Clicking Save\", \"Making 3 changes\"). " +
-    "It shows in the browser, Creator, PDF, Pages, Sheets, Slides, Video, Music, Game, 3D and Photo windows; Terminal is the person's own shell, so there is nothing to point at there. " +
+    "It shows in the browser, Creator, PDF, Pages, Sheets, Slides, Video, Music, Game, 3D, Photo and Terminal windows (in Terminal your command is typed at a person's pace beside the pointer, then runs). " +
+    "When another agent of the Organization is working, the cursor is that agent's: its name, its colour and the shape of its mark. " +
     "Do not describe the motion; do the work, then say what you did in a line.",
   "- Switches. Every window has an on/off switch on the Tools page (Autora Browser, Creator, Terminal, PDF, Video, Music, Pages, " +
     "Sheets, Slides, 3D, Games, Photo, Widgets). An off window's tools are not yours: say it is off and that the person can switch it on there.",
