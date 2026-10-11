@@ -7797,3 +7797,22 @@ body.is-resizing iframe { pointer-events: none; }
 .st-window.is-phone .rail-tray .st-stepper input { width: 3em; min-height: 30px; font-size: 13px; }
 .st-window.is-phone .rail-tray .st-keypick { display: flex; gap: 4px; }
 .st-window.is-phone .rail-tray .st-keypick select, .st-window.is-phone .rail-tray .st-field select { min-height: 30px; font-size: 12px; max-width: 5.6em; }
+/* Tempo, key and bars on one line in a phone's tray: shorter controls, the unit small beside the number. */
+.st-song { display: contents; }
+.has-rail.is-phone .rail-tray-head { display: none; }
+.has-rail.is-phone .rail-tray { padding-left: 8px; }
+.st-window.is-phone .rail-tray .st-song { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; min-width: 0; }
+.st-window.is-phone .rail-tray .st-song .st-field { flex: none; gap: 2px; }
+.st-window.is-phone .rail-tray .st-song .st-stepper button { width: 22px; min-height: 28px; }
+.st-window.is-phone .rail-tray .st-song .st-stepper input { width: 2.5em; min-height: 28px; font-size: 13px; padding: 0 2px; text-align: center; }
+.st-window.is-phone .rail-tray .st-song .st-unit { font-size: 9px; }
+.st-window.is-phone .rail-tray .st-song .st-keypick { gap: 2px; }
+.st-window.is-phone .rail-tray .st-song .st-keypick select { min-height: 28px; font-size: 12px; padding: 0 2px; }
+.st-window.is-phone .rail-tray .st-song .st-keypick select:first-child { width: 3.4em; max-width: 3.4em; }
+.st-window.is-phone .rail-tray .st-song .st-keypick select:last-child { width: 5.6em; max-width: 5.6em; text-overflow: ellipsis; }
+.st-window.is-phone .rail-tray .st-song .st-unit { display: none; }
+.st-window.is-phone .rail-tray .st-song { gap: 6px; }
+.st-window.is-phone .rail-tray .st-song .st-stepper button { width: 20px; }
+.st-window.is-phone .rail-tray .st-song .st-stepper input { width: 2.3em; }
+.st-window.is-phone .rail-tray .st-song .st-keypick select:first-child { width: 3.1em; max-width: 3.1em; }
+.st-window.is-phone .rail-tray .st-song .st-keypick select:last-child { width: 4.8em; max-width: 4.8em; }

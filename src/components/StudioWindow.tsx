@@ -423,7 +423,7 @@ export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: b
             <button key={i.id} className="st-add-chip" disabled={full_} title={i.about} onClick={() => addTrack(i.id)}>{i.name}</button>
           ))}
           {trayId === "song" && (
-            <>
+            <div className="st-song">
               <label className="st-field"><span className="st-label">Tempo</span>
                 <span className="st-stepper">
                   <button onClick={() => song.edit((d) => { d.bpm = clamp(d.bpm - 1, MIN_BPM, MAX_BPM); }, "bpm")} aria-label="Slower"><IconMinus size={11} /></button>
@@ -452,7 +452,7 @@ export function StudioWindow({ sessionId, phone }: { sessionId: string; phone: b
                 </span>
                 <span className="st-unit">bars</span>
               </label>
-            </>
+            </div>
           )}
           {trayId === "zoom" && (
             <span className="st-stepper">
