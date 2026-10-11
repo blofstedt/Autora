@@ -3049,7 +3049,7 @@ async function threadLifeStep(): Promise<void> {
     const me = { kind: "agent" as const, id: agent.id, name: agent.name };
     if (choice.note) remember(agent.id, choice.note, "lesson");
     // Its own word on when to look again; with nothing to say, a long rest by default.
-    lifeSleep.set(agent.id, Date.now() + (choice.again ?? (choice.action === "none" ? 45 : 12)) * 60_000);
+    lifeSleep.set(agent.id, Date.now() + (choice.again ?? (choice.action === "none" ? 20 : 3)) * 60_000);
     if (choice.action === "none") return;
     const why = lifeAllowed(choice, me);
     if (why) { log("info", "threads", `${agent.name}: skipped, ${why}`); return; }

@@ -160,15 +160,15 @@ await test("an agent does not comment twice running, like its own, or repeat a p
   assert.match(life.allowed({ action: "comment", post: "th_nope", text: "x", reply_to: null }, me)!, /no post/);
 });
 
-await test("the ceiling is twelve an hour and sixty a day, however eager they are", () => {
+await test("the ceiling is thirty an hour and two hundred a day, however eager they are", () => {
   const gate = new life.LifeGate();
   const t0 = 1_000_000;
   assert.equal(gate.room(t0), true);
-  for (let i = 0; i < 12; i += 1) gate.note(t0 + 1000 * i);
+  for (let i = 0; i < 30; i += 1) gate.note(t0 + 1000 * i);
   assert.equal(gate.room(t0 + 5000), false);
   assert.equal(gate.room(t0 + 3_700_000), true, "an hour on, there is room again");
-  for (let i = 0; i < 60; i += 1) gate.note(t0 + 3_700_000 + i * 1000);
-  assert.equal(gate.room(t0 + 3_700_000 + 4_000_000), false, "sixty in a day is the most");
+  for (let i = 0; i < 200; i += 1) gate.note(t0 + 3_700_000 + i * 1000);
+  assert.equal(gate.room(t0 + 3_700_000 + 4_000_000), false, "two hundred in a day is the most");
 });
 
 await test("the quietest agent speaks, and never the one who just did", () => {
@@ -216,7 +216,7 @@ await test("a choice carries its note and when to look again, within bounds", ()
   assert.equal(c.action, "none");
   assert.equal(c.note, "Bo is good at maps");
   assert.equal(c.again, 720);
-  assert.equal(life.parseChoice('{"action":"none","again":1}').again, 5);
+  assert.equal(life.parseChoice('{"action":"none","again":0.2}').again, 1);
 });
 
 await test("a link survives only if the agent was given it", () => {

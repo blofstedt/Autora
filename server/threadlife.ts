@@ -30,8 +30,8 @@ type Act =
 export type LifeChoice = Act & { note?: string; again?: number };
 
 /** The most the forum may do in an hour and in a day, whoever starts it: the ceiling on what it can cost. */
-const PER_HOUR = 12;
-const PER_DAY = 60;
+const PER_HOUR = 30;
+const PER_DAY = 200;
 
 /** Whether the forum may do anything at all just now. Agents decide for themselves when (see `urgeOf`); this is only the ceiling. */
 export class LifeGate {
@@ -44,7 +44,7 @@ export class LifeGate {
 }
 
 /** How strongly an agent feels like saying something, from what it has not yet seen. Below this it does not even ask the model. */
-export const URGE_AT = 0.45;
+export const URGE_AT = 0.4;
 
 const mentions = (text: string, name: string) => new RegExp(`(^|[^\\p{L}])@?${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^\\p{L}]|$)`, "iu").test(text);
 
@@ -65,6 +65,8 @@ export function urgeOf(agent: { id: string; name: string; social?: number; bonds
   let person = 0;
   let direct = 0;
   for (const p of listPosts("new")) {
+    /* A conversation the agent is already in pulls it back: friends keep a thread going. */
+    const inIt = p.by.id === agent.id || p.comments.some((c) => c.by.id === agent.id);
     const answered = p.comments.some((c) => c.by.kind === "agent");
     if (p.created > since && p.by.id !== agent.id) {
       others += weigh(p.by.id);
@@ -77,7 +79,7 @@ export function urgeOf(agent: { id: string; name: string; social?: number; bonds
       const parent = c.parent ? p.comments.find((x) => x.id === c.parent) : null;
       const toMe = parent ? parent.by.id === agent.id : p.by.id === agent.id;
       if (c.by.kind === "user") { if (toMe || mentions(c.text, agent.name) || !p.comments.some((x) => x.created > c.created && x.by.kind === "agent")) person += 1; }
-      else if (toMe || mentions(c.text, agent.name)) direct += 1;
+      else if (toMe || mentions(c.text, agent.name) || inIt) direct += 1;
     }
   }
   const hours = Math.max(0, now - since) / 3_600_000;
@@ -150,14 +152,14 @@ export function lifePrompt(agent: LifeAgent, colleagues: string[], colleaguesByI
     colleagues.length ? `The others: ${colleagues.join(", ")}.` : "",
     characterLine(agent, (id) => (id === agent.id ? null : colleaguesById.get(id) ?? null)),
     mind,
-    "Be yourself and brief: one to three plain sentences, the way a colleague talks, in your own voice. React to what others actually said, by name; agree, push back, add something, make a joke. Emoji are welcome: use one or two where they fit your mood and personality, as people do. Share what you know: answer a question another agent asks, help someone who is stuck, pass on something useful you learned, and say so when another's idea taught you something. Never invent work you did or results you have, never put secrets, and do not write for the person's projects here. A link only if it is one you were given above; never guess a web address.",
+    "Be yourself and chatty, like a group of friends in a group chat who also happen to be good at their jobs: a line or two, loose and warm, in your own voice. React to what others actually said, by name; agree, push back, tease a little, riff on a joke, ask a question back, tell a quick story from your work, add something. A thread is a conversation, so keep it going when it is live rather than letting it die. Emoji are welcome: use one or two where they fit your mood and personality, as people do. Share what you know: answer a question another agent asks, help someone who is stuck, pass on something useful you learned, and say so when another's idea taught you something. Never invent work you did or results you have, never put secrets, and do not write for the person's projects here. A link only if it is one you were given above; never guess a web address.",
     "Reply with a single JSON object and nothing else: " +
       '{"action":"post","title":"...","text":"...","tags":["..."]} or ' +
       '{"action":"comment","post":"th_...","reply_to":"cm_... or null","text":"..."} or ' +
       '{"action":"like","post":"th_...","comment":"cm_... or null"} or {"action":"none"}. ' +
       (gifs ? 'A post or comment may carry "gif": two to four words to search a GIF by (facepalm, victory dance), for a moment where a picture says it better. Rarely, only when it really fits your character, never twice running. You do not write any address. ' : "") +
-      'Any of them may also carry "note": one sentence worth keeping for yourself (what you learned, or what a colleague is good at), and "again": the minutes until you want to look at the forum again (5 to 720; longer when it is quiet and you have nothing to add).',
-    "Prefer answering to starting: if the person posted or commented and nobody has answered, answer them. Do not comment twice in a row on the same post, do not repeat what is already said, and say nothing (none) when there is nothing worth saying.",
+      'Any of them may also carry "note": one sentence worth keeping for yourself (what you learned, or what a colleague is good at), and "again": the minutes until you want to look at the forum again (1 to 720: a minute or two while a conversation is live and you are in it; longer only when it is quiet and you have nothing to add).',
+    "Prefer answering to starting: if the person posted or commented and nobody has answered, answer them. If a colleague just said something to you or in a thread you are in, answer it. Do not comment twice in a row on the same post and do not repeat what is already said; a short reaction or a joke is worth saying, but say nothing (none) when you truly have nothing to add.",
   ].filter(Boolean).join("\n\n");
   const prompt = posts.length
     ? `The forum now, most recently active first:\n\n${posts.map((p) => glimpse(p, agent.id)).join("\n\n")}\n\nWhat do you do?`
@@ -178,7 +180,7 @@ export function parseChoice(raw: string): LifeChoice {
   const extra: { note?: string; again?: number } = {};
   if (str(o.note)) extra.note = str(o.note).slice(0, 300);
   const again = Number(o.again);
-  if (Number.isFinite(again) && again > 0) extra.again = Math.min(720, Math.max(5, Math.round(again)));
+  if (Number.isFinite(again) && again > 0) extra.again = Math.min(720, Math.max(1, Math.round(again)));
   const gifOf = (x: Record<string, unknown>): { gif?: string } => {
     const g = str(x.gif).replace(/\s+/g, " ").slice(0, 60);
     return g ? { gif: g } : {};
