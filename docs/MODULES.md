@@ -518,12 +518,17 @@ Spectra's fetched renderer is most of what is on disk.
   workers included (`polyfillFirst` in `spectra-editor/vite.config.ts`): pdf.js needs it and older browsers lack it.
 - The rest of the phone's tools: Pages/Sheets/Slides on a phone are two views. Pinned, the pictures of the pages (`OfficePages`:
   tap text to point at it, the message to the agent carries it). The pencil in the window's bar opens the phone's editor, full
-  screen: `office/shim/phone.js` (injected into the editor page when the window adds `?phone=1`) closes the ribbon, hides the
-  status bar and the notes pane, and lays one bar over the bottom (undo, redo, bold, italic, a list or a row or a slide, the
-  size) whose buttons press the editor's own, found by the start of the name each carries (`data-tip`, `aria-label`, `title`;
-  `data-linked` marks the ones found, which `ui-office-phone` checks). "More" opens the real ribbon in place over the top of the
-  page. The ribbon is closed to a height of nothing, never removed: Sheets lays out in rows and moves every row up when one goes.
-  The ribbon's AI group ("Autora" on Home) is gone on every screen (`office/shim/common.js`). The window's bar loses the cursor
+  screen. On a desktop and a phone alike the editors wear the tool bar (docs/TOOL-RAIL.md): `office/shim/rail.js` (plus `rail-icons.js`,
+  Lucide's glyphs, generated; injected into the editor page in place of the old `phone.js`) closes the ribbon to a height of nothing, never
+  removes it (Sheets lays out in rows and moves every row up when one goes), and draws round coloured tools (down the right, or along the
+  bottom with `?phone=1`) and an All tools grid. Every ribbon command is a tool: the common ones are listed in `rail.js` (`TOOLS`: colour per
+  verb, `phone`/`desktop` marks for the bar), and the rest are read from the ribbon itself once the editor is up (`scan()` opens each tab once,
+  unseen) and listed under the name of their tab. A tool presses the editor's own button, found by the start of the name it carries (`data-tip`,
+  `aria-label`, `title`), with the press a hand makes (`press()`: some buttons act on mousedown); `data-linked` marks the ones found, which
+  `ui-office-phone` and `ui-office-rail` check. A command that opens a drop-down has the (unseen) ribbon laid out at a fixed place beside the
+  bar while it runs (`html.rail-ribbon`), so the drop-down opens there, and its popovers are shown. The editors keep their own keyboard shortcuts
+  (the rail takes no keys but Escape) and the bar's tooltips say them. Pins live in the page's storage, which a frame with no origin has only for
+  the session. The ribbon's AI group ("Autora" on Home) is gone on every screen (`office/shim/common.js`). The window's bar loses the cursor
   switch and the versions pill, and "Page view" is an icon. The browser's toolbar on a phone is back, reload, the address, hand-over, drag and
   enlarge (CSS in `styles.css`). Autora Photo is paired down in Rust, in `photo/overlay/autora.rs` (the `phone_*` functions): with
   `?phone=1` the editor shows the picture alone (`screen_mode = "fullScreen"`, forced each frame in `pump`) and draws one bar

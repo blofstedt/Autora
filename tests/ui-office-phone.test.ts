@@ -83,21 +83,26 @@ async function main() {
       await until("the agent to see it", async () => app.seen.some((r) => /Pointing at the shape “Quarterly review” \(element e_[0-9a-f]+\) on slide 1/.test(JSON.stringify(r.messages))), 30_000);
     });
 
-    await test("a phone edits in a simpler editor: a bar of what a thumb does, the ribbon behind More, and no AI button", async () => {
+    await test("a phone edits in a simpler editor: the tool bar along the bottom, the ribbon behind All tools, and no AI button", async () => {
       // (The next test opens the same editor; this one looks at what is in it.)
       await page.getByRole("button", { name: "Edit", exact: true }).click();
       const frame = await (async () => {
         for (let i = 0; i < 150; i++) { const f = page.frames().find((fr) => fr.url().includes("/office-app/slides/")); if (f) return f; await sleep(200); }
         throw new Error("the editor frame never appeared");
       })();
-      await frame.waitForSelector("#autora-phonebar", { timeout: 30_000 });
-      await until("every button on the bar to have an editor button behind it", async () => (await frame.locator("#autora-phonebar button[data-starts]:not([data-linked])").count()) === 0 && (await frame.locator("#autora-phonebar button[data-linked]").count()) >= 6, 20_000);
+      await frame.waitForSelector("#autora-rail", { timeout: 30_000 });
+      await until("every button on the bar to have an editor button behind it", async () => (await frame.locator("#autora-rail button[data-starts]:not([data-linked])").count()) === 0 && (await frame.locator("#autora-rail button[data-linked]").count()) >= 6, 20_000);
       const box = async (sel: string) => frame.evaluate((q) => { const r = document.querySelector(q)?.getBoundingClientRect(); return r ? [Math.round(r.height)] : null; }, sel);
       assert.equal((await box(".ribbon"))?.[0], 0, "the ribbon is closed");
-      await frame.click('[aria-label="More tools"]');
-      await until("the ribbon to open", async () => ((await box(".ribbon"))?.[0] ?? 0) > 60, 5_000);
+      assert.equal(await frame.locator("#autora-phonebar").count(), 0, "the old bar and its More are gone: the rail replaced them");
+      await until("every ribbon command to be a tool in All tools", async () => {
+        await frame.click('#autora-rail [aria-label="All tools"]');
+        const n = await frame.locator("#autora-grid .ar-tile").count();
+        await frame.click('#autora-grid [aria-label="Close"]');
+        return n > 40;
+      }, 40_000);
+      assert.equal(((await box(".ribbon"))?.[0]) ?? 0, 0, "and the ribbon is still never shown");
       assert.equal(await frame.locator(".ai-entry:visible").count(), 0, "the ribbon has no AI group");
-      await frame.click('[aria-label="More tools"]');
       await page.getByRole("button", { name: "Page view", exact: true }).click();
       await until("the pictures again", async () => (await page.locator(".office-page img").count()) > 0, 20_000);
     });

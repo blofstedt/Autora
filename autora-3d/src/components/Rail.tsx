@@ -112,6 +112,9 @@ interface Tool {
 
 const PINS = 'autora-3d-rail-pins';
 const BTN = { phone: 40, desktop: 44 };
+/** The keyboard shortcuts the app has always had (App.tsx's key handler); a desktop's tooltips say them. */
+const KEYS: Record<string, string> = { draw: 'D', move: 'M', group: 'G', repeat: 'R', join: 'J', subtract: 'S', isolate: 'I', hide: 'H', delete: 'Del' };
+const nameOf = (t: { id: string; label: string; disabled?: boolean; hint?: string }) => (t.disabled && t.hint ? `${t.label} · ${t.hint}` : KEYS[t.id] ? `${t.label} (${KEYS[t.id]})` : t.label);
 
 const usePhone = () => {
   const q = '(max-width: 639px)';
@@ -309,7 +312,7 @@ export default function Rail(props: RailProps) {
               type="button"
               aria-label={t.label}
               aria-pressed={t.on || undefined}
-              title={t.disabled && t.hint ? `${t.label} · ${t.hint}` : t.label}
+              title={nameOf(t)}
               disabled={t.disabled}
               onClick={() => press(t)}
               style={{ ['--tc' as string]: t.color, background: t.on ? t.color : `color-mix(in srgb, ${t.color} 16%, transparent)`, color: t.on ? '#fff' : t.color, boxShadow: t.on ? `0 6px 18px color-mix(in srgb, ${t.color} 45%, transparent)` : undefined }}
@@ -347,7 +350,7 @@ export default function Rail(props: RailProps) {
                         <button
                           type="button"
                           disabled={t.disabled}
-                          title={t.disabled && t.hint ? t.hint : undefined}
+                          title={nameOf(t)}
                           onClick={() => press(t)}
                           style={{ color: t.color, background: `color-mix(in srgb, ${t.color} ${t.on ? 30 : 16}%, transparent)` }}
                           className={`w-full flex flex-col items-center justify-center gap-1.5 px-1 text-center disabled:opacity-35 disabled:pointer-events-none rounded-2xl ${phone ? 'h-14 text-[10px]' : 'h-[4.5rem] text-[11.5px]'}`}

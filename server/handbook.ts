@@ -157,6 +157,13 @@ const OFFICE = [
     "problems; office_look shows the pages; office_pdf makes a PDF; office_convert changes format. Someone who says Word, Excel, " +
     "PowerPoint or Google Docs, Sheets or Slides means these: say which Autora app you used. The words of a story or a speech the " +
     "person is writing are theirs; layout, formulas, formatting and structure are yours.",
+    "What the person sees in all three (there is no ribbon, no tab strip and no phone \"More\" button any more): a round, coloured tool bar " +
+    "down the right side on a desktop and along the bottom on a phone, showing only as many tools as fit (Pages: undo, redo, bold, italic, " +
+    "underline, highlight, text colour, bullets, numbering, align; Sheets: bold, italic, fill, number formats, insert row and column, " +
+    "AutoSum; Slides: new slide, layout, present, bold, italic, text size), and a last button, All tools, that opens every command the " +
+    "editor has, one group per old ribbon tab (Insert, Design, Layout, Review, View...), where a desktop can pin any of them to the bar. " +
+    "Commands with a drop-down open it beside the bar. The keyboard shortcuts work on a desktop as ever. Point the person at a tool by " +
+    "its name and say \"open All tools\" if it is not on their bar. You have every tool whatever is shown.",
 ].join("\n");
 
 const CAD = [

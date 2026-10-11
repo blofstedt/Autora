@@ -185,10 +185,9 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  3D now has the same round, coloured tool bar as the PDF and Music windows: down the right on
-  a desktop, along the bottom on a phone, with an All tools window that holds every tool
-  (shapes, draw, move, group, repeat, join, subtract, isolate, hide, size and position,
-  material, library, export) and pins on a desktop. The bottom bar of text buttons and the
-  menus in the top bar are gone, and the model gets the room. Earlier in this release line,
-  Music got the same bar, and every full-screen tool on a phone gives the chat button a place
-  in its top bar instead of a strip along the bottom.
+  Pages, Sheets and Slides now work from the same round, coloured tool bar as the PDF, Music and
+  3D windows: down the right on a desktop, along the bottom on a phone. The ribbon is gone
+  from sight; every command it had is a tool, in All tools under the name of its old tab, and
+  desktop users can pin any of them to the bar. Keyboard shortcuts work as before and the
+  tooltips say them. 3D, Music and phone full screen got the same treatment earlier in this
+  release line.

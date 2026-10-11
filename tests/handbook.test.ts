@@ -51,6 +51,13 @@ await test("the 3D manual teaches the tool bar and not the bottom bar it replace
   }
 });
 
+await test("the Office manual teaches the tool bar and not the ribbon it replaced", () => {
+  const office = manualText("office");
+  for (const needle of ["All tools", "no ribbon", "one group per old ribbon tab", "pin any of them", "keyboard shortcuts work", "whatever is shown"]) {
+    assert.ok(office.includes(needle), `the Office manual lacks "${needle}"`);
+  }
+});
+
 await test("a tool finds its window's manual, and a tool with no window finds none", () => {
   assert.equal(manualId("browser_click"), "browser");
   assert.equal(manualId("web_search"), "browser");

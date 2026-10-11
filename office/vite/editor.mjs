@@ -71,7 +71,7 @@ function autoraPage() {
       order: "pre",
       handler: (html) => html
         .replace(/<meta\s+http-equiv="Content-Security-Policy"[^>]*>/i, "")
-        .replace("<head>", () => `<head><script>${read("common.js")}</script><script>${read("cursor.js")}</script><script>${read("phone.js")}</script>${preload()}<script>${read(`${app}.js`)}</script>`),
+        .replace("<head>", () => `<head><script>${read("common.js")}</script><script>${read("cursor.js")}</script><script>${read("rail-icons.js")}</script><script>${read("rail.js")}</script>${preload()}<script>${read(`${app}.js`)}</script>`),
     },
     // The parse worker as an inline classic worker: a frame with no origin cannot start a module one.
     transform(code, id) {
