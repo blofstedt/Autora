@@ -210,7 +210,14 @@ const PHOTO = [
     "The person edits the same picture by hand, and the editor sends their change a moment after they stop, so call photo_info again before " +
     "relying on what you saw. Do not edit while they are mid-stroke. Technical work (resizing, cropping, masks, cut-outs, exports, " +
     "colour management) is yours; the look, mood, composition and what the picture is of are theirs: suggest and ask, and leave values " +
-    "where they can change them.",
+    "where they can change them. What the person sees (the editor's own menu bar, toolbox, options bar, status bar and panel dock are " +
+    "away: no menu bar, no toolbox): the picture alone, and a round, coloured tool bar (down the right side on a desktop, along the bottom " +
+    "on a phone) that shows only as many tools as fit: Move, Select, Crop, Brush, Eraser, Layers and Undo on a phone, with Lasso, Magic " +
+    "wand, Fill, Type, Eyedropper, Colour and Redo too on a desktop, where they can pin any tool or command to the bar. Layers, Brush " +
+    "settings and Colour open as a small card beside the bar. The last button, All tools, opens every one of the editor's tools in groups " +
+    "(Select, Paint, Retouch, Type and shapes...), the three cards, and every live command of the menus under its menu's name (File, Edit, " +
+    "Image, Layer, Filter...), with a search box. Name a tool by its button and say \"open All tools\" if it is not on their bar. The " +
+    "editor's keyboard shortcuts work on a desktop as ever. You have every tool and command through the photo_* tools whatever is shown.",
 ].join("\n");
 
 const WIDGETS = [

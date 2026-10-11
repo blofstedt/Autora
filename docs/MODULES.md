@@ -530,11 +530,7 @@ Spectra's fetched renderer is most of what is on disk.
   (the rail takes no keys but Escape) and the bar's tooltips say them. Pins live in the page's storage, which a frame with no origin has only for
   the session. The ribbon's AI group ("Autora" on Home) is gone on every screen (`office/shim/common.js`). The window's bar loses the cursor
   switch and the versions pill, and "Page view" is an icon. The browser's toolbar on a phone is back, reload, the address, hand-over, drag and
-  enlarge (CSS in `styles.css`). Autora Photo is paired down in Rust, in `photo/overlay/autora.rs` (the `phone_*` functions): with
-  `?phone=1` the editor shows the picture alone (`screen_mode = "fullScreen"`, forced each frame in `pump`) and draws one bar
-  (Undo, Redo, Tools, Brush, Layers, Fit) with a sheet over it (nine tools, brush size/strength/colour, layers with eye, name,
-  opacity, new, delete). The bar's taps are queued in `tick` (which only sees the app) and done in the next frame's `pump`, through
-  the editor's own commands (`menus::invoke`). Sizes are asked for in CSS pixels (`per_css_px`), because a headless browser at a
+  enlarge (CSS in `styles.css`). Autora Photo wears the tool bar (docs/TOOL-RAIL.md) in Rust, in `photo/overlay/autora.rs` (the `rail_*` functions): on a desktop and on a phone (`?phone=1`) the editor shows the picture alone (`screen_mode = "fullScreen"`, forced each frame in `rail_pump`: no menu bar, toolbox, options bar, status bar or dock) and draws round coloured tools (down the right, or along the bottom) over it, with Layers, Brush settings and Colour as sheets and an All tools grid built from the editor itself: `Tool::ALL` in groups, and every live command of `menus::menu_items` under its menu's name (Window's panels excepted: the dock is away), searchable, each pinnable on a desktop (pins last the session; the frame has no storage). The editor's keyboard shortcuts are its own and still work. The bar's taps are queued in `tick` (which only sees the app) and done in the next frame's `pump`, through the editor's own commands (`menus::invoke`). Sizes are asked for in CSS pixels (`per_css_px`), because a headless browser at a
   device ratio above 1 reports an editor canvas half the page's resolution and a pointer the editor mis-maps: test the phone at
   1:1 (`tests/ui-photo.test.ts`). `build-photo.mjs` adds `serde_json` to the web app for it. The pin never moves.
 - Second pass on a phone: the pages (Sessions, Artifacts, Tools, Settings, Mind...), the drawer, the composer and the thread were already

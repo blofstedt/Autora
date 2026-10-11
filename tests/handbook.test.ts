@@ -65,6 +65,13 @@ await test("the Video manual teaches the tool bar and not the tab strip and tool
   }
 });
 
+await test("the Photo manual teaches the tool bar and not the menu bar and toolbox it replaced", () => {
+  const photo = manualText("photo");
+  for (const needle of ["All tools", "no menu bar, no toolbox", "pin any tool or command", "keyboard shortcuts work", "whatever is shown"]) {
+    assert.ok(photo.includes(needle), `the Photo manual lacks "${needle}"`);
+  }
+});
+
 await test("a tool finds its window's manual, and a tool with no window finds none", () => {
   assert.equal(manualId("browser_click"), "browser");
   assert.equal(manualId("web_search"), "browser");

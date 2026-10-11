@@ -185,9 +185,8 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Video now works from the same round, coloured tool bar as the PDF, Music, 3D, Pages, Sheets and
-  Slides windows: down the right on a desktop, along the bottom on a phone, with every tool
-  (media, text, effects, captions, split, snapping, zoom...) in All tools. The strip of tabs and
-  the row of timeline buttons are gone, and on a phone the timeline's track switches take a
-  narrow column instead of a third of the screen, so the clips get the room. Keyboard shortcuts
-  work as before.
+  Photo now works from the same round, coloured tool bar as the other windows: down the right
+  on a desktop, along the bottom on a phone. The editor's menu bar, toolbox and panels are out of
+  the way, so the picture gets the room; every tool and menu command is in All tools, which can
+  be searched, and a desktop can pin any of them to the bar. Layers, brush settings and colour
+  open as small cards beside the bar. The editor's keyboard shortcuts work as before.
