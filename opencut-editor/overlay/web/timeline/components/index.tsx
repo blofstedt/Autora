@@ -39,7 +39,6 @@ import { useBoxSelect } from "@/selection/hooks/use-box-select";
 import { SnapIndicator } from "./snap-indicator";
 import type { SnapPoint } from "@/timeline/snapping";
 import type { TimelineTrack } from "@/timeline";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
 	TIMELINE_SCROLLBAR_SIZE_PX,
 	TIMELINE_CONTENT_TOP_PADDING_PX,
@@ -921,52 +920,36 @@ const onPhone = (() => {
 
 /**
  * A track's switches on a phone. Mute, show/hide and the track's own icon are three small targets side by side, in a
- * column a thumb cannot use and a screen cannot spare: here the track's icon is the one button, and it opens a short menu
- * with a row for each switch, in words. The same switches (`toggleTrackMute`, `toggleTrackVisibility`), nothing new.
+ * column a thumb cannot use and a screen cannot spare: here the track's icon is the one button, and a tap steps it through
+ * the track as it is (the camera or whatever the track is), muted (the speaker crossed out) and hidden (the eye crossed
+ * out), and round again. The same switches (`toggleTrackMute`, `toggleTrackVisibility`), nothing new; a track that has no
+ * sound or cannot be hidden skips that step.
  */
 function PhoneTrackMenu({ track }: { track: TimelineTrack }) {
 	const editor = useEditor();
-	const rows: { label: string; on: boolean; run: () => void }[] = [];
-	if (canTrackHaveAudio(track)) {
-		rows.push({
-			label: track.muted ? "Unmute" : "Mute",
-			on: !!track.muted,
-			run: () => editor.timeline.toggleTrackMute({ trackId: track.id }),
-		});
-	}
-	if (canTrackBeHidden(track)) {
-		rows.push({
-			label: track.hidden ? "Show" : "Hide",
-			on: !!track.hidden,
-			run: () => editor.timeline.toggleTrackVisibility({ trackId: track.id }),
-		});
-	}
-	const off = ("muted" in track && !!track.muted) || ("hidden" in track && !!track.hidden);
+	const canMute = canTrackHaveAudio(track);
+	const canHide = canTrackBeHidden(track);
+	const muted = canMute && "muted" in track && !!track.muted;
+	const hidden = canHide && "hidden" in track && !!track.hidden;
+	const steps: ("on" | "muted" | "hidden")[] = ["on", ...(canMute ? (["muted"] as const) : []), ...(canHide ? (["hidden"] as const) : [])];
+	const now = hidden ? "hidden" : muted ? "muted" : "on";
+	const next = steps[(steps.indexOf(now) + 1) % steps.length] ?? "on";
+	const step = () => {
+		// Each step is the one switch that differs from the track as it is.
+		if (muted !== (next === "muted")) editor.timeline.toggleTrackMute({ trackId: track.id });
+		if (hidden !== (next === "hidden")) editor.timeline.toggleTrackVisibility({ trackId: track.id });
+	};
+	const label = now === "on" ? `${track.name}: tap to mute` : now === "muted" ? `${track.name} is muted: tap to hide` : `${track.name} is hidden: tap to show`;
 	return (
-		<Popover>
-			<PopoverTrigger asChild>
-				<button
-					type="button"
-					aria-label={`${track.name}: switches`}
-					className={cn("flex size-7 items-center justify-center rounded-md", off ? "text-destructive" : "text-muted-foreground")}
-				>
-					<TrackIcon track={track} />
-				</button>
-			</PopoverTrigger>
-			<PopoverContent side="right" align="start" className="w-36 p-1">
-				{rows.length === 0 && <p className="text-muted-foreground px-2 py-1.5 text-xs">Nothing to switch.</p>}
-				{rows.map((row) => (
-					<button
-						key={row.label}
-						type="button"
-						onClick={row.run}
-						className={cn("hover:bg-accent flex h-9 w-full items-center justify-between rounded-md px-2 text-sm", row.on && "text-destructive")}
-					>
-						{row.label}
-					</button>
-				))}
-			</PopoverContent>
-		</Popover>
+		<button
+			type="button"
+			aria-label={label}
+			title={label}
+			onClick={step}
+			className={cn("flex size-8 items-center justify-center rounded-md", now === "on" ? "text-muted-foreground" : "text-destructive")}
+		>
+			{now === "on" ? <TrackIcon track={track} /> : <HugeiconsIcon icon={now === "muted" ? VolumeOffIcon : ViewOffSlashIcon} className="size-4" />}
+		</button>
 	);
 }
 

@@ -187,5 +187,6 @@ gallery: []
 releaseNotes: >-
   Side panels in Pages, Sheets and Slides (Styles, Comments, Navigation, Format) now float over the
   page beside the tool bar instead of pushing the page sideways. In Video on a phone, each track's
-  three small icons (sound, show, track type) are one button that opens a short Mute / Hide menu.
+  three small icons (sound, show, track type) are one button: tap it to go from normal to muted to
+  hidden and back.
   Photo, Video, Pages, Sheets, Slides, 3D and Music all share the same round, coloured tool bar.
