@@ -75,7 +75,7 @@ import {
 import { addComment, createPost, getPost, listPosts, onThreadActivity, onThreadReply, toggleLike } from "./server/threads";
 import { findGif } from "./server/threadgif";
 import { lookColors, readLook } from "./src/lib/agentlook";
-import { NewsGate, newsPrompt, nextLookoutMs, parseQuery, parseStudy, queryPrompt, readNews, studyPrompt, workOutcome, workTitle } from "./server/threadnews";
+import { NewsGate, newsPrompt, nextLookoutMs, parseQuery, parseStudy, queryPrompt, readNews, studyPrompt } from "./server/threadnews";
 import { mcpRoutes } from "./server/routes/mcp";
 import { artifactRoutes } from "./server/routes/artifacts";
 import { systemRoutes } from "./server/routes/system";
@@ -2997,14 +2997,12 @@ async function runAgentTask(
     });
     const stop = () => stopTurn(child.id);
     signal?.addEventListener("abort", stop, { once: true });
-    const workPost = openWorkPost(agent, work);
     const result = await startTurn(child, agentBrief(agent, work, names), [], { automated: true }).finally(() => signal?.removeEventListener("abort", stop));
     const said = (result.reply || result.error || "(it said nothing)").trim();
     /* It reports in the chat that called it, in its own name and mark: the agent joins the conversation rather than
        working out of sight and having Autora paraphrase it. */
     emitEvent(from, "agent.back", "agent", { id: child.id, ok: result.ok, reply: said.length > 1600 ? `${said.slice(0, 1597)}...` : said });
     lifeNudge.set(agent.id, 0.4); // it has just done something: it may want to say how it went
-    closeWorkPost(agent, workPost, result.ok && !result.stopped, said);
     /* The work counts toward who it is: its record, and a better bond with whoever handed it the task (the lead keeps none). */
     if (!result.stopped) {
       recordWork(agent.id, result.ok);
@@ -3061,9 +3059,11 @@ function lastWasGif(agentId: string): boolean {
   return last?.gif ?? false;
 }
 
-/** A new post alone is too little to pull anyone in (see `urgeOf`), so two colleagues are drawn to it: a post nobody answers is a dead forum. */
+/** A new post alone is too little to pull anyone in (see `urgeOf`), so three colleagues are drawn
+ * to it: a post nobody answers is a dead forum. The person's complaint was that this forum reads as
+ * agents who only ever introduce themselves; one post that then dies is exactly that. */
 function stirColleagues(others: { id: string }[], nudge: number): void {
-  for (const other of [...others].sort(() => Math.random() - 0.5).slice(0, 2)) {
+  for (const other of [...others].sort(() => Math.random() - 0.5).slice(0, 3)) {
     lifeSleep.delete(other.id);
     lifeNudge.set(other.id, nudge);
   }
@@ -3110,8 +3110,10 @@ async function threadLifeStep(): Promise<void> {
     const me = { kind: "agent" as const, id: agent.id, name: agent.name };
     if (choice.note) remember(agent.id, choice.note, "lesson");
     if (choice.wonder && wondersOf(agent.id).length < MAX_WONDERS) remember(agent.id, wonderNote(choice.wonder), "lesson");
-    // Its own word on when to look again; with nothing to say, a long rest by default.
-    lifeSleep.set(agent.id, Date.now() + (choice.again ?? (choice.action === "none" ? 20 : 3)) * 60_000);
+    // Its own word on when to look again; 10 minutes when it found nothing to say, 2 when it spoke.
+    // Twenty and three before: with the forum this quiet, a silent agent sat out a third of an hour
+    // over and over, so the few agents actually willing to talk still rarely did.
+    lifeSleep.set(agent.id, Date.now() + (choice.again ?? (choice.action === "none" ? 10 : 2)) * 60_000);
     if (choice.action === "none") return;
     const why = lifeAllowed(choice, me);
     if (why) { log("info", "threads", `${agent.name}: skipped, ${why}`); return; }
@@ -3123,7 +3125,7 @@ async function threadLifeStep(): Promise<void> {
     const gif = "gif" in said && said.gif && !lastWasGif(me.id) ? await findGif(said.gif, gifKeys()) : null;
     if (said.action === "post") {
       createPost({ title: said.title, body: vetLinks(said.text, known), tags: said.tags, by: me, gif });
-      stirColleagues(roster.filter((a) => a.id !== me.id), 0.35);
+      stirColleagues(roster.filter((a) => a.id !== me.id), 0.5);
     }
     else if (said.action === "comment") {
       const post = getPost(said.post);
@@ -3228,36 +3230,10 @@ async function threadReact(postRef: string, commentRef: string): Promise<void> {
   }
 }
 
-/* Work in the open: an agent started from the Organization says so in Threads
-   and tells how it went, so the forum shows the organization working. Templated,
-   so it costs no model call; a stuck agent asks its manager by name, which wakes
-   the manager (and only then) to answer. */
-function openWorkPost(agent: { id: string; name: string }, work: string): string | null {
-  if (!state.threadsAlive) return null;
-  try {
-    const by = { kind: "agent" as const, id: agent.id, name: agent.name };
-    const redacted = redactDeep({ title: workTitle(agent.name, work) }) as { title: string };
-    return createPost({ title: redacted.title, body: "Starting on this now.", tags: ["work"], by }).id;
-  } catch (err) {
-    log("info", "threads", `work post failed: ${err instanceof Error ? err.message : String(err)}`);
-    return null;
-  }
-}
-
-function closeWorkPost(agent: { id: string; name: string; reportsTo: string | null }, postId: string | null, ok: boolean, report: string): void {
-  if (!postId) return;
-  try {
-    const boss = agent.reportsTo ? getAgent(agent.reportsTo) : null;
-    const line = redactDeep({ text: workOutcome(ok, report, ok ? null : boss?.name ?? null) }) as { text: string };
-    addComment(postId, { text: line.text, by: { kind: "agent", id: agent.id, name: agent.name }, react: false });
-    if (!ok && boss && boss.enabled) { // a call for help is answered, not left to the boredom clock
-      lifeSleep.delete(boss.id);
-      lifeNudge.set(boss.id, 0.6);
-    }
-  } catch (err) {
-    log("info", "threads", `work post failed: ${err instanceof Error ? err.message : String(err)}`);
-  }
-}
+/* A task handed to an agent is not announced in Threads. It is started in the chat
+   that called it and reports back there (agent.chime / agent.back): the person asked
+   for the work in the chat, not a post per call. The forum is for what an agent wants
+   to say of its own accord (threadlife.ts) and for the news (threadnews.ts). */
 
 /* The organization looking outward. About once an hour, one agent (not the one who
    went last) is asked what to search for in its own field, the web is searched, and
@@ -3317,8 +3293,8 @@ async function threadNewsStep(): Promise<void> {
     if (said.note) remember(agent.id, said.note, "lesson");
     createPost({ title: said.title, body: said.text, tags: said.tags, by: me });
     lifeGate.note(Date.now());
-    // Two others are drawn to it: the news is only the start of the conversation.
-    stirColleagues(colleagues, 0.35);
+    // Three others are drawn to it: the news is only the start of the conversation.
+    stirColleagues(colleagues, 0.5);
   } catch (err) {
     log("info", "threads", `news lookout failed: ${err instanceof Error ? err.message : String(err)}`);
   } finally {

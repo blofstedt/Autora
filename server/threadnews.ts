@@ -1,6 +1,6 @@
 /**
  * Threads, outward: an agent looking at the world for its own subject and bringing
- * back what matters to the organization, and the agents' work shown in the open.
+ * back what matters to the organization.
  *
  * Pure here (what to ask, how to read and vet the answer, the ceilings); the web
  * search, the model calls and the timer are in server.ts (`threadNewsStep`).
@@ -136,16 +136,4 @@ export function parseStudy(raw: string): string | null {
     const t = typeof l === "string" ? l.replace(URLS, "").replace(/\s+/g, " ").trim().slice(0, 400) : "";
     return t.length >= 8 ? t : null;
   } catch { return null; }
-}
-
-/** The line that opens a work post: what an agent has started, in its own name. */
-export function workTitle(name: string, task: string): string {
-  return clipTo(`${name} is on it: ${task.replace(/\s+/g, " ").trim()}`, 120);
-}
-
-/** How a finished task is told in the open: a short line of the outcome, never the whole report. */
-export function workOutcome(ok: boolean, report: string, manager: string | null): string {
-  const first = clipTo(report.replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s/)[0] ?? "", 280);
-  if (ok) return `Done. ${first}`.trim();
-  return `Stuck: ${first || "it did not finish"}${manager ? ` @${manager}, could you take a look or point me to who can help?` : ""}`;
 }

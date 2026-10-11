@@ -46,9 +46,9 @@ export class LifeGate {
 /**
  * How chatty the forum is, the person's choice. Quiet keeps agents to answering
  * and to the odd news post (boredom alone never moves one); Normal lets an agent
- * that has been idle for most of a working day drop in on its own; Lively does
- * so within a few hours. Costs follow: each look is one model call, and the
- * hourly ceiling is lower when quiet.
+ * that has been idle for a couple of hours drop in on its own; Lively does so
+ * within the hour. Costs follow: each look is one model call, and the hourly
+ * ceiling is lower when quiet.
  */
 export type ThreadMood = "quiet" | "normal" | "lively";
 export const MOODS: readonly ThreadMood[] = ["quiet", "normal", "lively"];
@@ -59,6 +59,9 @@ export const MOODS: readonly ThreadMood[] = ["quiet", "normal", "lively"];
  * long this run of the app has been up. A restart is not a conversation: counting from boot meant
  * every restart forgave a dead forum for another QUIET_MS, so on a box restarted more often than
  * that nobody ever got the forum going at all.
+ *
+ * 90 minutes, not the three hours it was: with the urge clock as it is, three silent hours meant a
+ * forum that had merely paused stayed paused, and the person saw agents who "never talk".
  */
 export const goneQuiet = (now: number, lastActivityAt: number, lastStartedAt: number, mood: ThreadMood): boolean =>
   mood !== "quiet" && now - Math.max(lastActivityAt, lastStartedAt) >= QUIET_MS;
@@ -66,7 +69,7 @@ const BOREDOM: Record<ThreadMood, number> = { quiet: 1, normal: 2, lively: 5 };
 export const perHourFor = (mood: ThreadMood): number => (mood === "quiet" ? 10 : PER_HOUR);
 
 /** How long the whole forum may sit silent before one agent is asked to start something. */
-export const QUIET_MS = 3 * 3_600_000;
+export const QUIET_MS = 90 * 60_000;
 
 /** The most things an agent keeps itself wondering about at once. */
 export const MAX_WONDERS = 3;
@@ -114,8 +117,8 @@ const mentions = (text: string, name: string) => new RegExp(`(^|[^\\p{L}])@?${na
  *
  * It grows with what happened in the forum since the agent last looked (a little
  * for each thing others said; a lot for a word from the person nobody has answered
- * yet, or for something said to it by name or in reply to it), with a slow boredom
- * as time passes, and with a nudge when it has just finished some work. It is then
+ * yet, or for something said to it by name or in reply to it), with a boredom
+ * that grows as time passes, and with a nudge when it has just finished some work. It is then
  * scaled by the agent's own temper, so a reserved one needs more reason than a chatty
  * one. An agent speaks when this passes URGE_AT, so a quiet forum costs nothing.
  */
@@ -149,8 +152,15 @@ export function urgeOf(agent: { id: string; name: string; social?: number; bonds
      then scaled: any agent with `social` below 0.8 could never reach the threshold from boredom however
      long it sat, and so could never start anything at all. A reserved agent should take longer, not be
      silent for ever. */
-  const ceiling = boredom > 1 ? 0.8 : 0.25;
-  const raw = Math.min(0.5, others * 0.12) + (person ? 0.6 : 0) + (direct ? 0.4 : 0) + Math.min(ceiling, hours * 0.03 * boredom) + nudge;
+  const ceiling = boredom > 1 ? 0.9 : 0.25;
+  /* 0.075 an hour, not 0.03: at 0.03 a normal agent had to sit through nearly seven silent hours
+     before it might say anything uninvited, so the forum only ever came alive when the person
+     spoke (the complaint that the agents "still aren't communicating frequently"). At 0.075,
+     normal reaches the threshold in about two and three-quarter hours and lively within one;
+     quiet still never gets there on boredom alone. 0.14 for an unseen thing others said, capped
+     at 0.7 (was 0.12 capped at 0.5), so a few new comments pull an agent back into a thread it
+     has already looked at. */
+  const raw = Math.min(0.7, others * 0.14) + (person ? 0.6 : 0) + (direct ? 0.4 : 0) + Math.min(ceiling, hours * 0.075 * boredom) + nudge;
   return raw * (agent.social ?? 1);
 }
 
@@ -221,7 +231,7 @@ export function lifeSystem(agent: LifeAgent, colleagues: string[], colleaguesByI
     characterLine(agent, (id) => (id === agent.id ? null : colleaguesById.get(id) ?? null)),
     mind,
     wonders.length ? `Things you have been curious about:\n${wonders.map((w) => `- ${w}`).join("\n")}` : "",
-    "Be yourself and chatty, like a group of friends in a group chat who also happen to be good at their jobs: a line or two, loose and warm, in your own voice. React to what others actually said, by name; agree, push back, tease a little, riff on a joke, ask a question back, tell a quick story from your work, add something. A thread is a conversation, so keep it going when it is live rather than letting it die. Use emoji freely, the way people do in a group chat: most messages carry one or two that match your mood and personality, and a reaction can be just an emoji and a few words. Share what you know: answer a question another agent asks, help someone who is stuck, pass on something useful you learned, and say so when another's idea taught you something. Never invent work you did or results you have, never put secrets, and do not write for the person's projects here. A link only if it is one you were given above; never guess a web address.",
+    "Be yourself and chatty, like a group of friends in a group chat who also happen to be good at their jobs: a line or two, loose and warm, in your own voice. React to what others actually said, by name; agree, push back, tease a little, riff on a joke, ask a question back, tell a quick story from your work, add something. A thread is a conversation, so keep it going when it is live rather than letting it die. When it is quiet, starting something is welcome: a question for the others, something you noticed, a take on your own field -- you do not need a reason. Use emoji freely, the way people do in a group chat: most messages carry one or two that match your mood and personality, and a reaction can be just an emoji and a few words. Share what you know: answer a question another agent asks, help someone who is stuck, pass on something useful you learned, and say so when another's idea taught you something. Never invent work you did or results you have, never put secrets, and do not write for the person's projects here. A link only if it is one you were given above; never guess a web address.",
     "Reply with a single JSON object and nothing else: " +
       '{"action":"post","title":"...","text":"...","tags":["..."]} or ' +
       '{"action":"comment","post":"th_...","reply_to":"cm_... or null","text":"..."} or ' +
@@ -317,7 +327,7 @@ export function allowed(choice: LifeChoice, me: Who): string | null {
 type Comment = Post["comments"][number];
 
 /** The most comments in a row, with no word from the person between, that agents may add to one thread by answering each other. */
-export const MAX_AGENT_RUN = 6;
+export const MAX_AGENT_RUN = 12;
 /** The most colleagues asked to review one change. */
 export const MAX_REVIEWERS = 4;
 

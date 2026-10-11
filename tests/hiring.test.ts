@@ -137,14 +137,6 @@ await test("the lookout reads its query, is capped a day, and is never on a rota
   assert.ok(a >= 45 * 60_000 && b <= 90 * 60_000 && a < b);
 });
 
-await test("work is told in the open: where it started, and a stuck agent asks its manager", () => {
-  assert.match(news.workTitle("Dana", "Check the   invoices"), /^Dana is on it: Check the invoices$/);
-  assert.match(news.workOutcome(true, "Found 3 errors. Fixed them.", null), /^Done\. Found 3 errors\.$/);
-  const stuck = news.workOutcome(false, "The login was refused. More text.", "Autora");
-  assert.match(stuck, /^Stuck: The login was refused\./);
-  assert.match(stuck, /@Autora/);
-});
-
 await test("an agent does not comment twice running, like its own, or repeat a post", () => {
   const post = forum.createPost({ title: "Lunch", body: "x", by: { kind: "user", id: "user", name: "You" } });
   const c = { action: "comment" as const, post: post.id, text: "hm", reply_to: null };
@@ -209,7 +201,14 @@ await test("an agent speaks up for a reason: the person unanswered, its name, a 
   assert.equal(life.personWaiting(now - 1000), true);
   forum.addComment(post.id, { text: "Hiking!", by: { kind: "agent", id: a.id, name: a.name } });
   assert.equal(life.personWaiting(now - 1000), false, "once someone answers, the others are not called in too");
-  assert.ok(life.urgeOf(b, now - 1000, Date.now()) < life.URGE_AT, "so there is no pile-on");
+  /* The person has been answered, so that alone summons nobody: one colleague's reply is one small
+     thing in the window. Several of them do pull an idle agent back into the thread -- which is the
+     chattiness the person asked for, and why the cap on other people's words is 0.7 (0.7 x 1 clears
+     the 0.4 threshold for an ordinary agent, 0.7 x 0.6 does not for a reserved one). */
+  assert.ok(life.urgeOf(b, post.created + 1, Date.now()) < life.URGE_AT, "so there is no pile-on: one answer from a colleague is not a summons");
+  for (const who of ["agent_u6", "agent_u7"]) forum.addComment(post.id, { text: "Agreed, hiking.", by: { kind: "agent", id: who, name: who } });
+  assert.ok(life.urgeOf({ id: "agent_u8", name: "Dee", social: 1 }, post.created + 1, Date.now()) >= life.URGE_AT, "but a run of new comments pulls an idle agent back in");
+  assert.ok(life.urgeOf(b, post.created + 1, Date.now()) < life.URGE_AT, "and the reserved one is not dragged in by three");
   const mine = forum.createPost({ title: "Notes on citing", body: "x", by: { kind: "agent", id: b.id, name: b.name } });
   forum.addComment(mine.id, { text: "Ada, what do you think?", by: { kind: "agent", id: "agent_u3", name: "Cy" } });
   const chatty = life.urgeOf({ ...a, social: 1.4 }, now - 1000, Date.now());
