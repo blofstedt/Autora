@@ -7433,11 +7433,15 @@ body.is-resizing iframe { pointer-events: none; }
   .office-pages-bar .pdf-pill, .office-pages-clear { min-height: var(--pt-hit); padding: 0 14px; border-radius: var(--pt-r); font-size: calc(13px * var(--ts, 1)); }
 }
 
-/* Full screen on a phone keeps a strip at the bottom for Autora's own controls (the chat button and Follow, laid over by
-   ImmersiveChat), the same one in every tool. They used to float over each editor's bottom bar: 3D's Organize and Delete,
-   the PDF's Find, the terminal's keys. The editors now end where the strip starts. */
+/* Full screen on a phone gives every pixel to the tool. Autora's own controls (the chat button and Follow, laid over by
+   ImmersiveChat) sit in the tool's top bar, in a slot the bar keeps for them, and not in a strip of their own at the bottom. */
 @media (max-width: 680px) {
-  .pdf-window.is-full, .app-window.is-full { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 64px); background: var(--bg); }
+  .pdf-window.is-full, .app-window.is-full { background: var(--bg); }
+  .pdf-window.is-full .pdf-bar, .app-window.is-full .app-bar { padding-right: 56px; }
+  body:has(.immersive-follow) .cell.widget.is-expanded .cell-top, body:has(.immersive-follow) .cell.shot.is-max .cell-top,
+  body:has(.immersive-follow) .pdf-window.is-full .pdf-bar, body:has(.immersive-follow) .app-window.is-full .app-bar { padding-right: 130px; }
+  .immersive-corner { bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 5px); right: 8px; }
+  .immersive-chat { width: 38px; height: 38px; opacity: 0.9; }
 }
 
 /* Music on a phone: play, the clock and undo on one row, the three song settings on the next. Skip-back, loop and the
@@ -7497,7 +7501,7 @@ body.is-resizing iframe { pointer-events: none; }
   /* A widget's header is a window bar like the others. */
   .cell.widget .cell-top { min-height: var(--pt-bar); gap: 4px; }
   .cell.widget .cell-top .btn.icon { width: var(--pt-hit); height: var(--pt-hit); border-radius: var(--pt-r); }
-  .cell.widget.is-expanded { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 64px); }
+  .cell.widget.is-expanded .cell-top { padding-right: 56px; }
 }
 
 @media (max-width: 680px) {
@@ -7533,7 +7537,7 @@ body.is-resizing iframe { pointer-events: none; }
 }
 
 @media (max-width: 680px) {
-  .cell.shot.is-max { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 64px); }
+  .cell.shot.is-max .cell-top { padding-right: 56px; }
   .cell.shot.is-max .shot-stage { padding: 0; overflow: auto; }
   .cell.shot.is-max .shot-stage .frame { max-height: none; }
 }
