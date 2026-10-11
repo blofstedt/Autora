@@ -20,27 +20,73 @@ function Box() {
   );
 }
 
+/**
+ * The steps one item is made of, under the item, folded away until asked for.
+ *
+ * A card is often several pieces of work, and more than one of them may belong
+ * to another agent -- so a step carries the name of whoever is doing it. Closed
+ * by default: the list stays the length it was, and the person opens the one
+ * card they are curious about. A native details element does the folding, so it
+ * opens with the keyboard, is announced by a screen reader, and keeps whatever
+ * the person left open across the list being rewritten every turn.
+ */
+function Steps({ item }: { item: TodoItem }) {
+  const steps = item.subtasks ?? [];
+  const done = steps.filter((step) => step.status === "completed").length;
+  return (
+    <details className="todo-steps">
+      <summary className="todo-steps-head">
+        <span className="todo-steps-count">
+          {steps.length} step{steps.length === 1 ? "" : "s"}
+          {done > 0 && ` · ${done === steps.length ? "all done" : `${done} done`}`}
+        </span>
+      </summary>
+      <ol className="todo-steps-list">
+        {steps.map((step, index) => (
+          <li
+            key={`${item.id}.${index + 1}`}
+            className={`todo-step${step.status === "completed" ? " is-done" : ""}${step.status === "in-progress" ? " is-doing" : ""}`}
+          >
+            <span className="todo-step-mark" aria-hidden="true" />
+            <span className="todo-step-title">{step.title}</span>
+            {step.agent && <span className="todo-step-agent">{step.agent}</span>}
+            <span className="sr-only">
+              {step.status === "completed" ? " (done)" : step.status === "in-progress" ? " (in progress)" : ""}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </details>
+  );
+}
+
 /** The rows themselves: shared by the card and the dock above the message box. */
 /** `fresh` names the tasks finished just now, which alone get the burst: one that arrives done simply appears so. */
 export function TodoList({ items, fresh = [] }: { items: TodoItem[]; fresh?: string[] }) {
   return (
     <ol className="todo-list">
-      {items.map((item) => (
-        <li
-          key={item.id}
-          data-todo-id={item.id}
-          className={`todo-item${item.status === "in-progress" ? " is-doing" : ""}${item.status === "completed" ? " is-done" : ""}${fresh.includes(item.id) ? " is-fresh" : ""}`}
-          aria-current={item.status === "in-progress" ? "step" : undefined}
-        >
-          <Box />
-          <span className="todo-title">
-            <span className="todo-words">{item.title}</span>
-            <span className="sr-only">
-              {item.status === "completed" ? " (done)" : item.status === "in-progress" ? " (in progress)" : ""}
+      {items.map((item) => {
+        const steps = item.subtasks ?? [];
+        return (
+          <li
+            key={item.id}
+            data-todo-id={item.id}
+            className={`todo-item${item.status === "in-progress" ? " is-doing" : ""}${item.status === "completed" ? " is-done" : ""}${fresh.includes(item.id) ? " is-fresh" : ""}${steps.length > 0 ? " has-steps" : ""}`}
+            aria-current={item.status === "in-progress" ? "step" : undefined}
+          >
+            <Box />
+            <span className="todo-title">
+              <span className="todo-words">{item.title}</span>
+              <span className="sr-only">
+                {item.status === "completed" ? " (done)" : item.status === "in-progress" ? " (in progress)" : ""}
+              </span>
             </span>
-          </span>
-        </li>
-      ))}
+            {/* Only an item that has steps gets any of this: a card without
+                them is the same two elements it always was. */}
+            {steps.length > 0 && <Steps item={item} />}
+          </li>
+        );
+      })}
     </ol>
   );
 }

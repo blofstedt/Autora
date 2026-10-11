@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { IconCoin, IconRepeat, IconTrash } from "./Icons";
+import { creditLeft } from "../lib/spend";
 
 type Bucket = {
   cost: number;
@@ -81,6 +82,18 @@ export type Usage = {
     /** False when there is no paid-in figure, so the line is a balance rather
         than a spend. */
     spent_known: boolean;
+    /** What this vendor's own turns cost this month, nobody else's in it. */
+    month_usd?: number;
+    /** True for the account the console is spending right now. */
+    selected?: boolean;
+    /** What is left of this vendor's top-up: paid in, what has gone, the share
+        left. Worked out on the server from the figures it already keeps. */
+    credit?: {
+      paid_usd: number;
+      spent_usd: number;
+      left_usd: number;
+      left_fraction: number;
+    } | null;
   }[];
   tool_feed?: { tool: string; calls: number; tokens: number }[];
   budget: {
@@ -233,6 +246,9 @@ export function Billing({
   );
   const cap = usage.budget.monthly_usd;
   const used = cap && cap > 0 ? Math.min(1, usage.month.cost / cap) : 0;
+  /* What is left of the top-up, which is the figure the bar over the composer
+     drains and the one worth having first here too. */
+  const credit = creditLeft(usage.vendors);
 
   return (
     <section className="set-card">
@@ -246,7 +262,12 @@ export function Billing({
       </div>
 
       <div className="bill-tiles">
-        <Tile label="This month" value={money(usage.month.cost)} sub={turns(usage.month.turns)} lead />
+        <Tile
+          label="Credit left"
+          value={credit ? money(credit.left) : "—"}
+          sub={credit ? `of ${money(credit.paid)} topped up` : "no balance to read"}
+          lead
+        />
         <Tile label="Today" value={money(usage.today.cost)} sub={turns(usage.today.turns)} />
         <Tile
           label="All time"

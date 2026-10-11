@@ -120,7 +120,9 @@ export const TODO_GUIDE =
   "finished, one in progress at a time. Every call writes the whole list. Write it before the first step, so the person " +
   "watches the work tick off rather than reading a promise. Size it to the job: a dozen items for programming, a few for an " +
   "errand. Do not ask whether to make a list or wait to be told to tick one off. A one-line answer needs none. Titles are " +
-  "one short line. Only you change the list; the person watches.";
+  "one short line. An item that is really several steps can carry subtasks -- the steps it is made of, each with the name of " +
+  "the agent it was handed to (Sabrina, Trevor, Victor...) when it is not yours -- and the list shows them under the item, " +
+  "collapsed until the person opens it. Only you change the list; the person watches.";
 
 /**
  * The office suite, said every turn. The tools themselves are brought in with

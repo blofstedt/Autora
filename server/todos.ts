@@ -15,10 +15,29 @@
 
 export type TodoStatus = "not-started" | "in-progress" | "completed";
 
+/**
+ * One piece of an item: the steps a card is made of.
+ *
+ * Often the work on a card is not this agent's -- it is handed to one of the
+ * others (Sabrina on the repository, Trevor on what is true today, Victor on a
+ * release) -- so a step can say whose it is. That is a name, not a link: the
+ * list says who is doing it, and the agent is still started, watched and
+ * reported on the way it always was.
+ */
+export interface TodoSubtask {
+  title: string;
+  /** The agent this step belongs to, when it was handed to one. */
+  agent?: string;
+  status: TodoStatus;
+}
+
 export interface TodoItem {
   id: string;
   title: string;
   status: TodoStatus;
+  /** The steps under this item, when it has any. Left off an item that has
+      none, so a card written before subtasks existed is unchanged. */
+  subtasks?: TodoSubtask[];
 }
 
 export interface TodoList {
@@ -42,6 +61,12 @@ export interface TodoResult {
 
 const MAX_ITEMS = 40;
 const MAX_TITLE = 200;
+/** Enough steps to say what a card is made of without turning one card into a
+    list of its own. Past this the rest are dropped rather than refused: the
+    item is still a real item. */
+const MAX_SUBTASKS = 20;
+/** A name, not a biography. */
+const MAX_AGENT = 60;
 
 /**
  * The three states, from whatever the model called them.
@@ -84,21 +109,64 @@ export function readItems(raw: unknown): TodoItem[] {
     const title = text.replace(/\s+/g, " ").trim().slice(0, MAX_TITLE);
     if (!title) continue;
     const status = typeof entry === "object" ? statusOf((entry as any)?.status) : null;
-    items.push({ id: String(items.length + 1), title, status: status ?? "not-started" });
+    const item: TodoItem = { id: String(items.length + 1), title, status: status ?? "not-started" };
+    const subtasks = readSubtasks((entry as any)?.subtasks, item.status);
+    /* Left off entirely when there are none: a card with no steps has no
+       subtasks key at all, exactly as it did before any of this existed. */
+    if (subtasks.length > 0) item.subtasks = subtasks;
+    items.push(item);
     if (items.length >= MAX_ITEMS) break;
   }
   return items;
 }
 
-/** The list as the model reads it back: a checklist with each item's state. */
+/**
+ * The steps under one item, as the page and the model both need them.
+ *
+ * A step is either a string or {title, agent?, status?}, so an agent in a hurry
+ * can write the steps as a plain list of what has to be done and add a name
+ * only where there is one. A step's state moves with the card's: a card that is
+ * completed has finished everything on it, whatever its steps were left saying,
+ * because the card is the thing the person ticks. A card that is not started
+ * but whose steps say some of them are done is left as it says -- steps get
+ * done before the card is ticked, not after.
+ */
+export function readSubtasks(raw: unknown, parentStatus: TodoStatus = "not-started"): TodoSubtask[] {
+  if (!Array.isArray(raw)) return [];
+  const out: TodoSubtask[] = [];
+  for (const entry of raw) {
+    if (out.length >= MAX_SUBTASKS) break;
+    const text = typeof entry === "string"
+      ? entry
+      : String((entry as any)?.title ?? (entry as any)?.text ?? (entry as any)?.task ?? "");
+    const title = text.replace(/\s+/g, " ").trim().slice(0, MAX_TITLE);
+    if (!title) continue;
+    const named = typeof entry === "object" && entry ? (entry as any)?.agent ?? (entry as any)?.who : "";
+    const agent = String(named ?? "").replace(/\s+/g, " ").trim().slice(0, MAX_AGENT);
+    const status = typeof entry === "object" ? statusOf((entry as any)?.status) : null;
+    const step: TodoSubtask = { title, status: status ?? "not-started" };
+    if (agent) step.agent = agent;
+    out.push(step);
+  }
+  if (parentStatus === "completed") for (const step of out) step.status = "completed";
+  return out;
+}
+
+/** The list as the model reads it back: a checklist with each item's state,
+    and the steps under an item indented beneath it, each saying whose it is. */
 export function describeTodos(list: TodoList): string {
   if (list.items.length === 0) return "The to-do list is empty.";
   const done = list.items.filter((i) => i.status === "completed").length;
   const mark = { "not-started": "[ ]", "in-progress": "[~]", completed: "[x]" } as const;
-  return [
-    `To-do list -- ${done} of ${list.items.length} done:`,
-    ...list.items.map((i) => `${mark[i.status]} ${i.id}. ${i.title}`),
-  ].join("\n");
+  const lines: string[] = [];
+  for (const item of list.items) {
+    lines.push(`${mark[item.status]} ${item.id}. ${item.title}`);
+    (item.subtasks ?? []).forEach((step, index) => {
+      const who = step.agent ? ` (${step.agent})` : "";
+      lines.push(`    ${mark[step.status]} ${item.id}.${index + 1} ${step.title}${who}`);
+    });
+  }
+  return [`To-do list -- ${done} of ${list.items.length} done:`, ...lines].join("\n");
 }
 
 /**
@@ -131,6 +199,24 @@ export function applyTodos(current: TodoList | null, action: Record<string, any>
     return {
       ok: false,
       summary: `"${String(unknown.status)}" is not a status. Use not-started, in-progress or completed.`,
+    };
+  }
+  /* A step's status is checked the way an item's is: a word meaning none of the
+     three is said so, rather than quietly read as not started. */
+  const badStep = raw.find(
+    (e: any) =>
+      e && typeof e === "object" && Array.isArray(e.subtasks) &&
+      e.subtasks.some(
+        (s: any) => s && typeof s === "object" && s.status !== undefined && statusOf(s.status) === null,
+      ),
+  );
+  if (badStep) {
+    const step = (badStep as any).subtasks.find(
+      (s: any) => s && typeof s === "object" && s.status !== undefined && statusOf(s.status) === null,
+    );
+    return {
+      ok: false,
+      summary: `"${String(step.status)}" is not a status for a subtask either. Use not-started, in-progress or completed.`,
     };
   }
   const items = readItems(raw);

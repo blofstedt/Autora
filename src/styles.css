@@ -2567,6 +2567,48 @@ label + .jf-hint { margin-top: -5px; }
 }
 .todo-item.is-done { color: var(--text-3); }
 .todo-item.is-done .todo-words { background-size: 100% 2px; }
+/* An item that carries steps. The row keeps the shape it always had and the
+   steps take a line of their own under it, so only an item that has them lays
+   out any differently from the way it did before subtasks existed. */
+.todo-item.has-steps { flex-wrap: wrap; }
+.todo-steps { flex: 1 0 100%; min-width: 0; margin-left: 30px; }
+.todo-steps-head {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 1px 0; cursor: pointer; user-select: none; list-style: none;
+  font-size: var(--fs-xs); color: var(--text-3);
+}
+.todo-steps-head::-webkit-details-marker { display: none; }
+.todo-steps-head::before {
+  content: ""; width: 5px; height: 5px; flex: 0 0 auto;
+  border-right: 1.4px solid currentColor; border-bottom: 1.4px solid currentColor;
+  transform: rotate(-45deg); transition: transform var(--dur-2) var(--ease);
+}
+.todo-steps[open] > .todo-steps-head::before { transform: rotate(45deg); }
+.todo-steps-head:hover, .todo-steps[open] > .todo-steps-head { color: var(--text-2); }
+.todo-steps-list { list-style: none; margin: 3px 0 2px; padding: 0; }
+.todo-step {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 2px 0; font-size: var(--fs-sm); line-height: 1.4; color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+/* A step's own mark: a small ring that fills when it is done, so a step reads
+   the same way an item does without a second marching box beside it. */
+.todo-step-mark {
+  flex: 0 0 auto; width: 5px; height: 5px; border-radius: 50%;
+  background: transparent; box-shadow: inset 0 0 0 1.4px var(--text-3);
+  transition: background var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease);
+}
+.todo-step.is-doing .todo-step-mark { box-shadow: inset 0 0 0 1.4px var(--glow-light); }
+.todo-step.is-done .todo-step-mark { background: var(--live); box-shadow: inset 0 0 0 1.4px var(--live); }
+.todo-step-title { min-width: 0; }
+.todo-step.is-doing .todo-step-title { color: var(--text); }
+.todo-step.is-done .todo-step-title { color: var(--text-3); text-decoration: line-through; }
+/* Whose step it is, at the right-hand end of the line. */
+.todo-step-agent {
+  flex: 0 0 auto; margin-left: auto; padding: 0 6px; border-radius: var(--r-pill);
+  font-size: var(--fs-xs); white-space: nowrap;
+  color: var(--text-3); background: rgba(255, 255, 255, 0.06);
+}
 /* The moment a task is ticked off, and only that moment (TodoList `fresh`): the box pops and a ring of its colour
    leaves it, a beat before the tick draws itself. */
 .todo-burst { fill: none; stroke: var(--live); stroke-width: 2; opacity: 0; transform-origin: 10px 10px; }

@@ -9,7 +9,7 @@
  *   npm test
  */
 import assert from "node:assert/strict";
-import { barVendor, combineVendorViews, creditTotal, spendView, vendorSpendView } from "../src/lib/spend";
+import { barVendor, combineVendorViews, creditLeft, creditTotal, spendView, vendorSpendView } from "../src/lib/spend";
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -228,6 +228,7 @@ function line(extra: Partial<{
   headline: boolean;
   selected: boolean;
   month_usd: number;
+  credit: { paid_usd: number; spent_usd: number; left_usd: number; left_fraction: number } | null;
 }>) {
   return {
     provider: "deepseek",
@@ -303,6 +304,82 @@ test("the combined bar adds each credited vendor and skips balance-only ones", (
   assert.equal(total.near, false);
   assert.equal(total.show, true);
   assert.equal(combineVendorViews([c]).show, false);
+});
+
+/* ------------------------------------------------------- what is left --- */
+
+/* The bar drains. What is checked here is that what is left is the share it
+   draws, that it can never be drawn outside the track however the two readings
+   disagree, and that the pages which report the same figure get it from the
+   server's own arithmetic when it is there. */
+
+test("the fill is what is left of the credit, and it falls as the money goes", () => {
+  const view = spendView({ spent: 3.2, session: 0.4, budget: null, lifetime: 27.36, credit: 30 });
+  assert.equal(view.onCredit, true);
+  assert.equal(view.meter, 30);
+  near(view.left, 2.64);
+  near(view.leftShare, 2.64 / 30);
+  /* Spent right down: an empty bar, not a full one. */
+  const gone = spendView({ spent: 3.2, session: 0, budget: null, lifetime: 30, credit: 30 });
+  assert.equal(gone.left, 0);
+  assert.equal(gone.leftShare, 0);
+  /* Spent past what was paid in -- a stale reading -- still cannot go below
+     nothing left. */
+  const over = spendView({ spent: 3.2, session: 0, budget: null, lifetime: 35, credit: 30 });
+  assert.equal(over.left, 0);
+  assert.equal(over.leftShare, 0);
+});
+
+test("with no credit to read, what is left is the ceiling the month has not reached", () => {
+  const view = spendView({ spent: 20, session: 1, budget: 30, lifetime: 20 });
+  assert.equal(view.onCredit, false);
+  assert.equal(view.meter, 30);
+  assert.equal(view.left, 10);
+  near(view.leftShare, 10 / 30);
+  /* Past the ceiling there is nothing left of it, and never less than that. */
+  const over = spendView({ spent: 44, session: 1, budget: 30, lifetime: 44 });
+  assert.equal(over.left, 0);
+  assert.equal(over.leftShare, 0);
+  /* No ceiling and no credit: the meter is the month itself, so nothing of it
+     is left. The bar is not drawn as a draining one in that case. */
+  const bare = spendView({ spent: 6, session: 1, budget: null, lifetime: 6 });
+  assert.equal(bare.leftShare, 0);
+  assert.equal(bare.show, true);
+});
+
+test("the page is told what is left, from the figure the server worked out", () => {
+  const sent = line({ credit: { paid_usd: 30, spent_usd: 27.36, left_usd: 2.64, left_fraction: 2.64 / 30 } });
+  const credit = creditLeft([sent])!;
+  assert.equal(credit.provider, "deepseek");
+  assert.equal(credit.label, "DeepSeek");
+  near(credit.paid, 30);
+  near(credit.spent, 27.36);
+  near(credit.left, 2.64);
+  near(credit.share, 2.64 / 30);
+});
+
+test("with no figure sent, the two readings the line carries still answer", () => {
+  const credit = creditLeft([line({})])!;
+  near(credit.paid, 30);
+  near(credit.left, 2.64);
+  near(credit.spent, 27.36);
+  /* A balance with nobody saying what was paid in is a balance, not a share of
+     a top-up: there is nothing to have spent it down from. */
+  assert.equal(creditLeft([line({ topped_up_usd: null, lifetime_usd: null })]), null);
+  assert.equal(creditLeft([]), null);
+  assert.equal(creditLeft(null), null);
+});
+
+test("a line with only the server's credit on it is still worth drawing", () => {
+  const only = {
+    provider: "deepseek",
+    label: "DeepSeek",
+    credit: { paid_usd: 20, spent_usd: 5, left_usd: 15, left_fraction: 0.75 },
+  };
+  const credit = creditLeft([only])!;
+  near(credit.paid, 20);
+  near(credit.left, 15);
+  near(credit.share, 0.75);
 });
 
 console.log(`${passed} passed`);

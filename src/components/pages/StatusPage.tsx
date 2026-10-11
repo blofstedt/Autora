@@ -6,6 +6,7 @@ import { duration } from "../Settings";
 import type { SystemTab } from "../../lib/systemTabs";
 import { every } from "../../lib/poll";
 import { sure } from "../../lib/sure";
+import { creditLeft, type VendorLine } from "../../lib/spend";
 
 type Snapshot = {
   system: { version: string; uptime_s: number; sessions: number; busy: number; browsers: number } | null;
@@ -13,7 +14,12 @@ type Snapshot = {
     active: { model: string | null; provider: string | null; hint: string | null };
     tools: { groups: { group: string; label: string; enabled: boolean; available: boolean; detail: string }[] };
   } | null;
-  usage: { month: { cost: number; turns: number }; today: { cost: number; turns: number } } | null;
+  usage: {
+    month: { cost: number; turns: number };
+    today: { cost: number; turns: number };
+    /** Each provider's own till, for what is left of its top-up. */
+    vendors?: readonly VendorLine[] | null;
+  } | null;
   mcp: { servers: { name: string; status: string; tools: unknown[] }[] } | null;
   errors: number;
   health: {
@@ -87,6 +93,10 @@ export function StatusPage({
 
   const groups = snap.settings?.tools.groups ?? [];
   const ready = groups.filter((g) => g.available).length;
+  /* What is left of the provider top-up, on the card that used to report the
+     month. The bar over the composer drains, and this is the same figure: the
+     money is bought in as credit and spent down. */
+  const credit = snap.usage ? creditLeft(snap.usage.vendors) : null;
   const servers = snap.mcp?.servers ?? [];
   const connected = servers.filter((s) => s.status === "connected");
   const mcpTools = connected.reduce((n, s) => n + s.tools.length, 0);
@@ -117,9 +127,17 @@ export function StatusPage({
             </span>
           </button>
           <button className="stat-card" onClick={() => onNavigate("analytics")}>
-            <span className="stat-label">Spend this month</span>
-            <b className="stat-value">{snap.usage ? money(snap.usage.month.cost) : "…"}</b>
-            <span className="stat-sub">{snap.usage ? `${money(snap.usage.today.cost)} today · ${snap.usage.month.turns} calls` : ""}</span>
+            <span className="stat-label">Credit left</span>
+            <b className="stat-value">
+              {snap.usage ? (credit ? money(credit.left) : "—") : "…"}
+            </b>
+            <span className="stat-sub">
+              {credit
+                ? `${money(credit.spent)} spent of ${money(credit.paid)} topped up`
+                : snap.usage
+                  ? "no balance to read at the provider"
+                  : ""}
+            </span>
           </button>
           <button className="stat-card" onClick={() => onNavigate("config")}>
             <span className="stat-label">What it can use</span>

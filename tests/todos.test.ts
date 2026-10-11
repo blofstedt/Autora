@@ -10,7 +10,8 @@
  */
 import assert from "node:assert/strict";
 
-const { applyTodos, describeTodos, latestTodos, statusOf, readItems, todoBriefing, unfinishedTodos } = await import("../server/todos");
+const { applyTodos, describeTodos, latestTodos, readItems, readSubtasks, statusOf, todoBriefing, unfinishedTodos } =
+  await import("../server/todos");
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -134,6 +135,78 @@ test("a turn ending with open items is reminded of them, a finished list is not"
   assert.match(open, /2 of 3 items not completed/);
   assert.match(open, /- 2\. b \(in-progress\)\n- 3\. c \(not-started\)/);
   assert.doesNotMatch(open, /- 1\. a/);
+});
+
+test("an item can carry steps, each saying whose it is", () => {
+  const r = applyTodos(null, { todos: [
+    { title: "Ship the feature", status: "in-progress", subtasks: [
+      "read the ticket",
+      { title: "write the server test", agent: "Sabrina", status: "done" },
+      { title: "check it against the docs", agent: "Trevor" },
+      { title: "   " },
+    ] },
+  ] });
+  assert.ok(r.ok);
+  const item = r.list!.items[0];
+  assert.deepEqual(item.subtasks, [
+    { title: "read the ticket", status: "not-started" },
+    { title: "write the server test", agent: "Sabrina", status: "completed" },
+    { title: "check it against the docs", agent: "Trevor", status: "not-started" },
+  ]);
+});
+
+test("the steps survive the write and the read back out of the event", () => {
+  const written = applyTodos(null, { todos: [
+    { title: "one", subtasks: [{ title: "step", agent: "Victor", status: "doing" }] },
+  ] }).list!;
+  const back = latestTodos([{ kind: "todo.update", payload: { items: written.items } }])!;
+  assert.deepEqual(back.items[0].subtasks, [{ title: "step", agent: "Victor", status: "in-progress" }]);
+  /* Said back to the model under its own item, numbered, with whose it is. */
+  assert.match(describeTodos(back), /\[ \] 1\. one\n {4}\[~\] 1\.1 step \(Victor\)/);
+});
+
+test("a card with no steps carries no subtasks at all", () => {
+  const item = applyTodos(null, { todos: ["plain"] }).list!.items[0];
+  /* The shape a card had before subtasks existed, byte for byte: no empty key
+     for the page to read, no layout change for the person. */
+  assert.deepEqual(Object.keys(item), ["id", "title", "status"]);
+  assert.deepEqual(readItems([{ title: "plain", subtasks: [] }])[0], {
+    id: "1",
+    title: "plain",
+    status: "not-started",
+  });
+  assert.deepEqual(readSubtasks(null), []);
+  assert.deepEqual(readSubtasks("not a list"), []);
+});
+
+test("a card that is done has finished the steps on it", () => {
+  const item = applyTodos(null, { todos: [
+    { title: "all in", status: "done", subtasks: [{ title: "a", agent: "Sabrina" }, { title: "b", status: "doing" }] },
+  ] }).list!.items[0];
+  assert.deepEqual(item.subtasks!.map((s) => s.status), ["completed", "completed"]);
+});
+
+test("a step's own word for a status is refused the way an item's is", () => {
+  const r = applyTodos(null, { todos: [{ title: "x", subtasks: [{ title: "s", status: "blocked" }] }] });
+  assert.equal(r.ok, false);
+  assert.match(r.summary, /not a status for a subtask/);
+  assert.equal(r.list, undefined);
+});
+
+test("a step in progress does not count as an item in progress", () => {
+  const r = applyTodos(null, { todos: [{ title: "a", subtasks: [{ title: "s", status: "doing" }] }] });
+  assert.ok(r.ok);
+  assert.doesNotMatch(r.summary, /items are in progress/);
+  /* The rule is about the cards: one card in progress at a time, whatever the
+     steps under it are doing. */
+  const two = applyTodos(null, { todos: [{ title: "a", status: "doing" }, { title: "b", status: "doing" }] });
+  assert.match(two.summary, /2 items are in progress/);
+});
+
+test("steps past the cap are dropped, and the item stays an item", () => {
+  const many = Array.from({ length: 25 }, (_, i) => ({ title: `s${i}` }));
+  const item = applyTodos(null, { todos: [{ title: "big", subtasks: many }] }).list!.items[0];
+  assert.equal(item.subtasks!.length, 20);
 });
 
 console.log(`\n${passed} passed`);

@@ -149,31 +149,38 @@ export function SpendPeek({
               <div className="spend-peek-bar">
                 <span className="spend-track" aria-hidden="true">
                   <i
-                    className={`spend-used ${view.used > 0 ? "is-any" : ""}`.trim()}
-                    style={{ width: `${Math.min(100, Math.max(0, view.used * 100))}%` }}
+                    className={`spend-used ${(view.onCredit ? view.leftShare : view.used) > 0 ? "is-any" : ""}`.trim()}
+                    style={{ width: `${Math.min(100, Math.max(0, (view.onCredit ? view.leftShare : view.used) * 100))}%` }}
                   >
                     <i
                       className={`spend-mine ${view.slice > 0 ? "is-any" : ""}`.trim()}
                       style={{
-                        width: view.used > 0 ? `${Math.min(100, Math.max(0, (view.slice / view.used) * 100))}%` : "0%",
+                        /* This conversation's share of the money the bar shows:
+                           of what is left, when the bar is the credit that
+                           remains, and of the month otherwise. */
+                        width:
+                          view.onCredit && view.left > 0
+                            ? `${Math.min(100, Math.max(0, (session / view.left) * 100))}%`
+                            : view.used > 0
+                              ? `${Math.min(100, Math.max(0, (view.slice / view.used) * 100))}%`
+                              : "0%",
                       }}
                     />
                   </i>
                 </span>
                 <p className="spend-peek-said">
                   {/* The same headline the bar carries, in the words of the
-                      card: consumed of what was paid in, then the ceiling the
-                      month is measured against -- which is a different
-                      question and still worth its sentence. */}
+                      card: what is left of what was paid in. The month and the
+                      ceiling are the rows below and are not said twice here. */}
                   {view.onCredit &&
                     `${chosen && !chosen.headline ? `${chosen.label}: ` : ""}` +
-                      `${money(view.drawn)} of the ${money(view.meter)} paid in — ` +
-                      `${money(Math.max(0, view.meter - view.drawn))} left. `}
-                  {cap === null
-                    ? `${money(spent)} this month, with no ceiling set.`
-                    : view.over
-                      ? `${money(spent)} this month — ${money(spent - cap)} past the ${money(cap)} ceiling you set.`
-                      : `${money(spent)} of the ${money(cap)} ceiling you set — ${money(left ?? 0)} left.`}
+                      `${money(view.left)} left of the ${money(view.meter)} paid in. `}
+                  {!view.onCredit &&
+                    (cap === null
+                      ? `${money(spent)} this month, with no ceiling set.`
+                      : view.over
+                        ? `${money(spent)} this month — ${money(spent - cap)} past the ${money(cap)} ceiling you set.`
+                        : `${money(spent)} of the ${money(cap)} ceiling you set — ${money(left ?? 0)} left.`)}
                 </p>
               </div>
 

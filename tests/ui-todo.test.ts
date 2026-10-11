@@ -34,7 +34,8 @@ async function main() {
       { text: "All done." },
     );
     await page.fill('textarea[aria-label="Task"]', "do three things");
-    await page.keyboard.press("Enter");
+    /* Enter writes a line in the composer; Ctrl+Enter is what sends. */
+    await page.keyboard.press("Control+Enter");
 
     console.log("a finished task");
     await test("the list opens by itself, then the tick and the strike are drawn in front of the person", async () => {

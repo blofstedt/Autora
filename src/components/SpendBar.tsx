@@ -93,9 +93,12 @@ export const SpendBar = memo(function SpendBar({
     const total = combineVendorViews(rows.map((row) => row.view));
     const monthAll = rows.reduce((sum, row) => sum + row.month, 0);
     const tone = total.over ? "is-over" : total.near ? "is-near" : "";
+    /* The bar across the APIs is what is left of their credit, so it drains
+       rather than fills. */
+    const leftAll = Math.max(0, total.paid - total.drawn);
+    const leftShareAll = total.paid > 0 ? Math.min(1, leftAll / total.paid) : 0;
     const said = total.show
-      ? `${money(total.drawn)} of ${money(total.paid)} credit across ${total.count} APIs` +
-        ` · ${money(monthAll)} this month`
+      ? `${money(leftAll)} left of ${money(total.paid)} credit across ${total.count} APIs`
       : `${money(monthAll)} this month across ${rows.length} APIs`;
 
     return (
@@ -118,14 +121,14 @@ export const SpendBar = memo(function SpendBar({
             </span>
             <span className="spend-track" aria-hidden="true">
               <i
-                className={`spend-used ${total.used > 0 ? "is-any" : ""}`.trim()}
-                style={{ width: share(total.used) }}
+                className={`spend-used ${leftShareAll > 0 ? "is-any" : ""}`.trim()}
+                style={{ width: share(leftShareAll) }}
               />
             </span>
             <span className="spend-text">
               <span className="spend-long">{said}</span>
               <span className="spend-short">
-                {total.show ? `${money(total.drawn)}/${money(total.paid)}` : money(monthAll)}
+                {total.show ? `${money(leftAll)}/${money(total.paid)}` : money(monthAll)}
               </span>
             </span>
             <IconChevron size={12} className="spend-caret" />
@@ -134,9 +137,18 @@ export const SpendBar = memo(function SpendBar({
             <div className="spend-each">
               {rows.map(({ view, month }) => {
                 const rowTone = view.over ? "is-over" : view.near ? "is-near" : "";
+                /* Said as what is left, set first: the bar beside these words
+                   drains. A vendor that only publishes a balance has no credit
+                   to consume, so its whole bar is what is left there. */
+                const leftHere = Math.max(0, (view.paid ?? 0) - view.drawn);
+                const leftShare = view.remaining
+                  ? 1
+                  : view.paid && view.paid > 0
+                    ? Math.min(1, leftHere / view.paid)
+                    : 0;
                 const figures = view.remaining
                   ? `${money(view.drawn)} left`
-                  : `${money(view.drawn)} of ${money(view.paid!)} · ${money(Math.max(0, view.paid! - view.drawn))} left`;
+                  : `${money(leftHere)} left of ${money(view.paid!)}`;
                 const said = `${view.label}: ${figures}, ${money(month)} this month`;
                 return (
                   <div key={view.provider} className={`spend-row ${rowTone}`.trim()} title={said}>
@@ -144,14 +156,14 @@ export const SpendBar = memo(function SpendBar({
                     <span className="spend-row-name">{view.label}</span>
                     <span className="spend-track" aria-hidden="true">
                       <i
-                        className={`spend-used ${view.used > 0 ? "is-any" : ""}`.trim()}
-                        style={{ width: share(view.used) }}
+                        className={`spend-used ${leftShare > 0 ? "is-any" : ""}`.trim()}
+                        style={{ width: share(leftShare) }}
                       />
                     </span>
                     <span className="spend-text" aria-label={said}>
                       <span className="spend-long">{figures} · {money(month)} this month</span>
                       <span className="spend-short">
-                        {view.remaining ? money(view.drawn) : `${money(view.drawn)}/${money(view.paid!)}`}
+                        {view.remaining ? money(view.drawn) : `${money(leftHere)}/${money(view.paid!)}`}
                       </span>
                     </span>
                   </div>
@@ -181,22 +193,32 @@ export const SpendBar = memo(function SpendBar({
   if (!view.show) return null;
 
   const share = (n: number) => `${Math.min(100, Math.max(0, n * 100))}%`;
-  // The session's slice is drawn as part of the fill, so it always sits at the
-  // fill's right-hand end and can never stick out past the month it is in.
-  const ofFill = view.used > 0 ? share(view.slice / view.used) : "0%";
+  /* The fill is what is left, so the bar drains as the credit is spent: the
+     money is bought in and spent down, and what is worth watching is what has
+     not gone yet. The session's slice is drawn inside that fill, at its
+     right-hand end, as this conversation's share of what remains -- never wider
+     than the fill, which is what the clamp is for. On a month bar, which has no
+     top-up behind it, the fill stays the month consumed, as it always was. */
+  const fill = view.onCredit ? view.leftShare : view.used;
+  const ofFill = view.onCredit
+    ? view.left > 0
+      ? share(Math.min(1, session / view.left))
+      : "0%"
+    : view.used > 0
+      ? share(view.slice / view.used)
+      : "0%";
   const tone = view.over ? "is-over" : view.near ? "is-near" : "";
 
-  /* Consumed of what was paid in, the month, then this conversation. The month
-     is not named twice: when the whole of the lifetime fell inside it the two
-     figures are the same money, and printing it twice reads as two facts. */
+  /* What is left of the top-up, said first: the bar drains, and this is the
+     figure worth having while typing. The month is deliberately not printed
+     here any more -- what is left is the whole point of the bar, and the month,
+     the ceiling and this conversation are one tap away in the card. */
   /* Whose till it is, when the bar is not the whole ledger's money. Somebody
-     reading "$27.36 of $30.00 credit" over a console that also pays another
-     vendor has to be told which account that is. */
+     reading "$27.36 left of $30.00 credit" over a console that also pays
+     another vendor has to be told which account that is. */
   const whose = chosen && !chosen.headline ? `${chosen.label}: ` : "";
-  const monthIsAll = Math.abs(view.drawn - ownMonth) < 0.005;
   const consumed = view.onCredit
-    ? `${whose}${money(view.drawn)} of ${money(view.meter)} credit` +
-      (monthIsAll ? " this month" : ` · ${money(ownMonth)} this month`)
+    ? `${whose}${money(view.left)} left of ${money(view.meter)} credit`
     : view.cap !== null
       ? `${money(ownMonth)} of ${money(view.cap)} this month`
       : `${money(ownMonth)} this month`;
@@ -207,7 +229,7 @@ export const SpendBar = memo(function SpendBar({
      sentence. Written out for that width instead: the two figures the fill
      stands for, as a division, with the session after it. */
   const short = view.onCredit || view.cap !== null
-    ? `${money(view.onCredit ? view.drawn : ownMonth)}/${money(view.meter)}`
+    ? `${money(view.onCredit ? view.left : ownMonth)}/${money(view.meter)}`
     : money(ownMonth);
 
   return (
@@ -226,8 +248,8 @@ export const SpendBar = memo(function SpendBar({
       )}
       <span className="spend-track" aria-hidden="true">
         <i
-          className={`spend-used ${view.used > 0 ? "is-any" : ""}`.trim()}
-          style={{ width: share(view.used) }}
+          className={`spend-used ${fill > 0 ? "is-any" : ""}`.trim()}
+          style={{ width: share(fill) }}
         >
           <i
             className={`spend-mine ${view.slice > 0 ? "is-any" : ""}`.trim()}

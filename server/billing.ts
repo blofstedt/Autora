@@ -279,6 +279,9 @@ export function billingSummary() {
       month_real_usd: entry.month_real_usd,
       month_since: entry.month_since,
       auto_top_ups: entry.auto_top_ups,
+      /* What is left of this vendor's top-up, worked out where the record
+         lives so the page does not have to do the arithmetic again. */
+      credit: entry.credit,
       /* This vendor's own turns, not the whole ledger's: the comparison is
          this account against what this account billed. */
       counted_usd: countedFor(entry.provider),

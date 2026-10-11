@@ -57,7 +57,48 @@ type VendorMoney = {
   month_since: number | null;
   /** Payments worked out from a rising balance, so a wrong one can be undone. */
   auto_top_ups: { at: number; usd: number }[];
+  /** What is left of the money paid in, and what share of it that is. Null
+      while there is no paid-in figure to measure a balance against. */
+  credit: Credit | null;
 };
+
+/**
+ * What is left of the money paid in at one vendor: the top-up, what has gone
+ * out of it since, and what remains as a fraction of the whole.
+ *
+ * This is the figure the composer's bar drains -- the money is bought in as
+ * credit and spent down, so what is worth watching is what is left rather than
+ * what has already gone. Everything here comes from figures already kept: what
+ * was paid in, and the last balance read from the vendor. No call is made.
+ *
+ * A balance above the paid-in total is not a spend of negative money: it means
+ * more went in than anyone wrote down, so nothing has gone and the fraction
+ * sits at 1 rather than above it. Likewise a balance that a vendor reports as
+ * spent past zero leaves 0, not a negative bar.
+ */
+export type Credit = {
+  /** The money paid in, which is what the fraction is of. */
+  paid_usd: number;
+  /** Paid in less what is left: what has gone since the top-up. */
+  spent_usd: number;
+  /** What is left, never below zero. */
+  left_usd: number;
+  /** What is left as a share of what was paid in, 0..1. */
+  left_fraction: number;
+};
+
+export function creditOf(balance: number | null, toppedUp: number | null): Credit | null {
+  if (typeof balance !== "number" || !Number.isFinite(balance)) return null;
+  if (typeof toppedUp !== "number" || !Number.isFinite(toppedUp) || toppedUp <= 0) return null;
+  const left = Math.max(0, balance);
+  const spent = Math.max(0, toppedUp - left);
+  return {
+    paid_usd: toppedUp,
+    spent_usd: spent,
+    left_usd: left,
+    left_fraction: Math.min(1, Math.max(0, left / toppedUp)),
+  };
+}
 
 /** How old a reading may be before another is worth making. The page asks for
     usage often; the vendor's server should not be asked on every render. */
@@ -207,6 +248,7 @@ export function vendorMoneyFor(id: string): VendorMoney | null {
     month_real_usd: thisMonth && lifetime !== null ? Math.max(0, lifetime - base.spent) : null,
     month_since: thisMonth ? base.since : null,
     auto_top_ups: (state.autoTopUps[id] ?? []).map(({ at: when, usd: amount }) => ({ at: when, usd: amount })),
+    credit: creditOf(usd, toppedUp),
   };
 }
 

@@ -65,15 +65,22 @@ async function main() {
       assert.match(text, /hello there/);
       assert.equal(await page.inputValue('textarea[aria-label="Task"]'), "");
     });
-    await test("Enter sends and Shift+Enter makes a new line", async () => {
+    await test("Enter writes a line rather than sending, and Ctrl+Enter sends the whole thing", async () => {
       app.decide = () => ({ text: "Second reply." });
       await page.fill('textarea[aria-label="Task"]', "line one");
       await page.press('textarea[aria-label="Task"]', "Shift+Enter");
       await page.type('textarea[aria-label="Task"]', "line two");
       assert.equal(await page.inputValue('textarea[aria-label="Task"]'), "line one\nline two");
+      /* Enter writes a line; it never sends. Nothing was sent, so the box still
+         holds what was typed -- a send would have cleared it. */
       await page.press('textarea[aria-label="Task"]', "Enter");
+      await page.type('textarea[aria-label="Task"]', "line three");
+      assert.equal(await page.inputValue('textarea[aria-label="Task"]'), "line one\nline two\nline three");
+      /* Enter writes a line in the composer; Ctrl+Enter is what sends. */
+      await page.press('textarea[aria-label="Task"]', "Control+Enter");
       await page.waitForFunction(() => document.body.innerText.includes("Second reply."), null, { timeout: 15_000 });
-      assert.match(await bodyText(), /line one\s+line two/);
+      assert.equal(await page.inputValue('textarea[aria-label="Task"]'), "");
+      assert.match(await bodyText(), /line one\s+line two\s+line three/);
     });
     await test("a reply that is still streaming can be stopped from the page", async () => {
       app.decide = () => ({ text: "slowword ".repeat(200), slow: true });

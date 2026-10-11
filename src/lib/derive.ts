@@ -58,7 +58,50 @@ export type TodoItem = {
   id: string;
   title: string;
   status: "not-started" | "in-progress" | "completed";
+  /** The steps this item is made of, when it has any. Left off an item that
+      has none, so a card drawn before subtasks existed is unchanged. */
+  subtasks?: TodoSubtask[];
 };
+
+/** One step of a to-do item, and the agent it was handed to when it was. */
+export type TodoSubtask = {
+  title: string;
+  /** The agent that owns this step, by name. Absent when the step is the
+      lead's own. */
+  agent?: string;
+  status: "not-started" | "in-progress" | "completed";
+};
+
+/** The three states, from the words the server accepts and the older ones. */
+function todoStatus(status: string): TodoItem["status"] {
+  return status === "completed" || status === "done"
+    ? "completed"
+    : status === "in-progress" || status === "doing"
+      ? "in-progress"
+      : "not-started";
+}
+
+/** An item's steps, as the page draws them: what it is, whose it is, and where
+    it has got to. A card that is completed has finished its steps, whatever
+    they were left saying. */
+function todoSubtasks(raw: unknown, parent: TodoItem["status"]): TodoSubtask[] {
+  if (!Array.isArray(raw)) return [];
+  const out: TodoSubtask[] = [];
+  for (const entry of raw) {
+    /* A step written as a bare string is a step like any other: only the name
+       of the agent needs a shape. */
+    const title = String(entry?.title ?? entry ?? "").trim();
+    if (!title) continue;
+    const agent = String(entry?.agent ?? "").trim();
+    const step: TodoSubtask = {
+      title,
+      status: parent === "completed" ? "completed" : todoStatus(String(entry?.status ?? "")),
+    };
+    if (agent) step.agent = agent;
+    out.push(step);
+  }
+  return out;
+}
 
 /** Items as the page draws them; a list that predates the to-do list has its
     old three columns mapped onto the three states. */
@@ -68,14 +111,14 @@ function todoItems(raw: unknown): TodoItem[] {
   for (const entry of raw) {
     const title = String(entry?.title ?? "").trim();
     if (!title) continue;
-    const status = String(entry?.status ?? "");
-    items.push({
+    const item: TodoItem = {
       id: String(entry?.id ?? items.length + 1),
       title,
-      status: status === "completed" || status === "done"
-        ? "completed"
-        : status === "in-progress" || status === "doing" ? "in-progress" : "not-started",
-    });
+      status: todoStatus(String(entry?.status ?? "")),
+    };
+    const subtasks = todoSubtasks(entry?.subtasks, item.status);
+    if (subtasks.length > 0) item.subtasks = subtasks;
+    items.push(item);
   }
   return items;
 }

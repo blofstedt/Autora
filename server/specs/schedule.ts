@@ -173,8 +173,9 @@ export const scheduleSPECS: ToolSpec[] = [
       "it now stands, in order. Keep one item in-progress at a time. The list " +
       "appears by itself on the first call. Use it for programming (many " +
       "items), and for small errands too -- an email is read it, pull the " +
-      "attachment, draft the reply, show it, send it. Call it with no " +
-      "arguments to read the list back.",
+      "attachment, draft the reply, show it, send it. An item may carry " +
+      "subtasks: the steps it is made of, each optionally naming the agent it " +
+      "was handed to. Call it with no arguments to read the list back.",
     parameters: {
       type: "object",
       properties: {
@@ -182,7 +183,7 @@ export const scheduleSPECS: ToolSpec[] = [
           type: "array",
           description:
             "The whole list, in order. Each item is a short title, or " +
-            "{title, status}. Status is not-started (the default), " +
+            "{title, status, subtasks?}. Status is not-started (the default), " +
             "in-progress or completed.",
           items: {
             anyOf: [
@@ -192,6 +193,37 @@ export const scheduleSPECS: ToolSpec[] = [
                 properties: {
                   title: { type: "string", description: "One short line: what this step does." },
                   status: { type: "string", description: "not-started, in-progress or completed." },
+                  subtasks: {
+                    type: "array",
+                    description:
+                      "The steps this item is made of, when it is more than " +
+                      "one thing -- especially when some of them are handed to " +
+                      "another agent. Each is a title, or {title, agent, " +
+                      "status}. Leave it out on an item that is one step.",
+                    items: {
+                      anyOf: [
+                        { type: "string" },
+                        {
+                          type: "object",
+                          properties: {
+                            title: { type: "string", description: "One short line: the step." },
+                            agent: {
+                              type: "string",
+                              description:
+                                "The agent this step was handed to, by its name " +
+                                "(Sabrina, Trevor, Victor...). Omit when the step " +
+                                "is yours.",
+                            },
+                            status: {
+                              type: "string",
+                              description: "not-started (the default), in-progress or completed.",
+                            },
+                          },
+                          required: ["title"],
+                        },
+                      ],
+                    },
+                  },
                 },
                 required: ["title"],
               },

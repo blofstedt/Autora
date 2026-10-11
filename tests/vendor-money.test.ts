@@ -21,7 +21,7 @@ import path from "node:path";
 
 process.env.AUTORA_STATE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "autora-vendor-money-"));
 
-const { realSpend, vendorMoneyFor, vendorMoneyAll, readBalance, forgetVendorMoney } =
+const { realSpend, creditOf, vendorMoneyFor, vendorMoneyAll, readBalance, forgetVendorMoney } =
   await import("../server/vendor-money");
 const { recordUsage, clearUsage, state } = await import("../server/state");
 const { billingSummary } = await import("../server/billing");
@@ -420,6 +420,78 @@ test("each vendor's line carries its own month, and the account in use is marked
   near(theirs.month_usd, 91.2);
   /* The ledger's whole month is unchanged by either figure. */
   near(b.month.cost, 93.7);
+});
+
+/* ------------------------------------------------------- what is left --- */
+
+/* The composer's bar drains: it is the money bought in as credit and spent
+   down, so the figure worth watching is what is left of the top-up. What is
+   checked here is that this arithmetic never leaves the bar: a fraction is a
+   share of what was paid in, so it is never below 0 and never above 1, however
+   odd the two readings are. */
+
+test("what is left is the balance, and what has gone is the top-up less it", () => {
+  const credit = creditOf(20.3, 30);
+  assert.ok(credit);
+  near(credit.paid_usd, 30);
+  near(credit.left_usd, 20.3);
+  near(credit.spent_usd, 9.7);
+  near(credit.left_fraction, 20.3 / 30);
+  /* Untouched top-up: all of it left, none of it gone. */
+  const whole = creditOf(30, 30)!;
+  near(whole.left_usd, 30);
+  near(whole.spent_usd, 0);
+  near(whole.left_fraction, 1);
+  /* Spent right down to nothing. */
+  const gone = creditOf(0, 30)!;
+  near(gone.left_usd, 0);
+  near(gone.spent_usd, 30);
+  near(gone.left_fraction, 0);
+});
+
+test("a fraction stays between 0 and 1 however odd the readings are", () => {
+  /* More paid in than anyone wrote down: nothing has gone, so the bar is full
+     rather than longer than its own track. */
+  const over = creditOf(35, 30)!;
+  near(over.left_fraction, 1);
+  near(over.spent_usd, 0);
+  near(over.left_usd, 35);
+  /* A balance below zero is not negative money left. */
+  const below = creditOf(-4, 30)!;
+  near(below.left_usd, 0);
+  near(below.left_fraction, 0);
+  near(below.spent_usd, 30);
+  /* A very small top-up still reads as a fraction of itself. */
+  near(creditOf(0.25, 1)!.left_fraction, 0.25);
+});
+
+test("with nothing to measure against there is no credit, not a guess", () => {
+  /* No paid-in figure: a balance on its own says what is left, not what share
+     of anything it is. */
+  assert.equal(creditOf(20, null), null);
+  /* Nothing paid in is nothing to have left of. */
+  assert.equal(creditOf(20, 0), null);
+  assert.equal(creditOf(null, 30), null);
+  assert.equal(creditOf(Number.NaN, 30), null);
+  assert.equal(creditOf(20, Number.NaN), null);
+});
+
+test("the vendor record and the API both carry what is left", () => {
+  vendor(20.3, 30);
+  const record = vendorMoneyFor("deepseek");
+  assert.ok(record);
+  const credit = record.credit;
+  assert.ok(credit, "the record the page reads has the credit on it");
+  near(credit.left_usd, 20.3);
+  near(credit.left_fraction, 20.3 / 30);
+  const line = billingSummary().vendors.find((v) => v.provider === "deepseek");
+  assert.ok(line);
+  assert.ok(line.credit, "and it survives into /api/usage");
+  near(line.credit.left_usd, 20.3);
+  /* A vendor with no paid-in figure reports no credit rather than a zero one:
+     a zero fraction would draw an empty bar for money that is plainly there. */
+  vendor(12, null);
+  assert.equal(vendorMoneyFor("deepseek")!.credit, null);
 });
 
 console.log(`\n${passed} passed`);

@@ -53,6 +53,14 @@ type SpendView = {
   meter: number;
   /** True when the bar is the credit consumed rather than the month. */
   onCredit: boolean;
+  /** What is left of the meter, in dollars: the credit not yet spent, or the
+      ceiling not yet reached. Never below zero, never above the meter. */
+  left: number;
+  /** What is left as a share of the bar's whole width, 0..1. This is what the
+      bar draws when it is a draining credit bar: the money is bought in and
+      spent down, so the width falls as it goes. On a month bar the fill grows
+      with spend instead, so this figure is not what is drawn there. */
+  leftShare: number;
 };
 
 /** Anything that is not a positive number of dollars is nothing. */
@@ -84,7 +92,7 @@ export function creditTotal(
 }
 
 /** One line of `/api/usage`'s vendors[], as much as choosing one needs. */
-type VendorLine = {
+export type VendorLine = {
   provider: string;
   label?: string;
   topped_up_usd?: number | null;
@@ -96,6 +104,14 @@ type VendorLine = {
   selected?: boolean;
   /** What this vendor's own turns cost this month, nobody else's in it. */
   month_usd?: number;
+  /** What is left of this vendor's top-up, worked out where the record lives
+      from the figures already kept: paid in, what has gone, the share left. */
+  credit?: {
+    paid_usd: number;
+    spent_usd: number;
+    left_usd: number;
+    left_fraction: number;
+  } | null;
 };
 
 /**
@@ -111,7 +127,9 @@ type VendorLine = {
  * month against the ceiling, as it always was.
  */
 export function barVendor(vendors: readonly VendorLine[] | null | undefined): VendorLine | null {
-  const lines = (vendors ?? []).filter((vendor) => creditTotal(vendor) !== null);
+  const lines = (vendors ?? []).filter(
+    (vendor) => creditTotal(vendor) !== null || dollars(vendor.credit?.paid_usd) > 0,
+  );
   return (
     lines.find((vendor) => vendor.selected) ??
     lines.find((vendor) => vendor.headline) ??
@@ -233,6 +251,13 @@ export function spendView({ spent, session, budget, lifetime, credit }: SpendInp
      reset under it; it cannot have more of the bar than the month does. */
   const slice = meter > 0 ? Math.min(used, mine / meter) : 0;
 
+  /* What is left: the bar is the money bought in, and this is the part of it
+     that has not gone yet. Clamped at both ends -- more spent than was paid in
+     leaves an empty bar rather than a negative one, and a meter of nothing has
+     nothing left of it. */
+  const left = Math.max(0, Math.min(meter, meter - drawn));
+  const leftShare = meter > 0 ? left / meter : 0;
+
   return {
     used,
     slice,
@@ -245,6 +270,8 @@ export function spendView({ spent, session, budget, lifetime, credit }: SpendInp
     drawn,
     meter,
     onCredit,
+    left,
+    leftShare,
   };
 }
 
@@ -282,5 +309,57 @@ export function combineVendorViews(views: readonly VendorView[]): CombinedView {
     near: paid > 0 && drawn <= paid && drawn > paid * 0.8,
     count: credited.length,
     show: credited.length > 0,
+  };
+}
+
+/** One account's credit, in the figures a page prints. */
+export type CreditLeft = {
+  provider: string;
+  /** What to call it on screen. */
+  label: string;
+  /** True for the one line that is the whole ledger's own money, so the page
+      need not say whose account it is. */
+  headline: boolean;
+  /** Paid in. */
+  paid: number;
+  /** What has gone out of it since the top-up. */
+  spent: number;
+  /** What is left of it. */
+  left: number;
+  /** What is left as a share of the top-up, 0..1. */
+  share: number;
+};
+
+/**
+ * What is left of the top-up, for the one vendor the composer's bar speaks for.
+ *
+ * The composer's bar drains -- the money is bought in as credit and spent down
+ * -- and the pages that report the same figure need it without drawing a bar
+ * first. The server works the arithmetic out where the record lives and sends
+ * it; this prefers that figure and falls back to the two readings the line
+ * always carries, so an older answer still reports something rather than
+ * nothing.
+ *
+ * Null when no account can say: nothing paid in is nothing to have left of,
+ * and a balance on its own is a balance, not a share of a top-up.
+ */
+export function creditLeft(
+  vendors: readonly VendorLine[] | null | undefined,
+): CreditLeft | null {
+  const chosen = barVendor(vendors);
+  if (!chosen) return null;
+  const sent = chosen.credit;
+  const paid = dollars(sent?.paid_usd) || creditTotal(chosen);
+  if (paid === null || paid <= 0) return null;
+  const left = sent ? Math.max(0, sent.left_usd) : Math.min(paid, dollars(chosen.balance_usd));
+  const spent = sent ? Math.max(0, sent.spent_usd) : Math.max(0, paid - left);
+  return {
+    provider: chosen.provider,
+    label: chosen.label ?? chosen.provider,
+    headline: chosen.headline === true,
+    paid,
+    spent,
+    left,
+    share: sent ? Math.min(1, Math.max(0, sent.left_fraction)) : left / paid,
   };
 }
