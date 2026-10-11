@@ -9,7 +9,7 @@
  * the model call and the timers are in server.ts (`threadLifeStep`).
  */
 
-import { mindBriefing, notesOf } from "./agentmind";
+import { mindBriefing, notesOf, type Note } from "./agentmind";
 import { getPost, listPosts, type Who } from "./threads";
 import { BOND_START, characterLine, type Traits } from "./agentcharacter";
 
@@ -27,11 +27,11 @@ type Act =
   | { action: "like"; post: string; comment: string | null };
 
 /** What to do, plus the two things an agent decides for itself: a note worth keeping, and how long until it looks again. */
-export type LifeChoice = Act & { note?: string; again?: number };
+export type LifeChoice = Act & { note?: string; again?: number; wonder?: string };
 
 /** The most the forum may do in an hour and in a day, whoever starts it: the ceiling on what it can cost. */
-const PER_HOUR = 12;
-const PER_DAY = 60;
+const PER_HOUR = 30;
+const PER_DAY = 200;
 
 /** Whether the forum may do anything at all just now. Agents decide for themselves when (see `urgeOf`); this is only the ceiling. */
 export class LifeGate {
@@ -43,8 +43,34 @@ export class LifeGate {
   note(now: number): void { this.at.push(now); }
 }
 
+/** How long the whole forum may sit silent before one agent is asked to start something. */
+export const QUIET_MS = 3 * 3_600_000;
+
+/** The most things an agent keeps itself wondering about at once. */
+export const MAX_WONDERS = 3;
+const WONDER = "Wondering: ";
+
+/** When anyone last said anything in the forum (0 if never). */
+export function lastActivity(): number {
+  let at = 0;
+  for (const p of listPosts("new")) {
+    at = Math.max(at, p.created);
+    for (const c of p.comments) at = Math.max(at, c.created);
+  }
+  return at;
+}
+
+/** What this agent is curious about and has not yet looked into: notes in its own mind, newest last. */
+export function wondersOf(agentId: string): Note[] {
+  return notesOf(agentId).filter((n) => n.text.startsWith(WONDER));
+}
+
+/** A wonder as it is stored in the agent's mind. */
+export const wonderNote = (text: string): string => `${WONDER}${text}`;
+export const wonderText = (n: Note): string => n.text.slice(WONDER.length);
+
 /** How strongly an agent feels like saying something, from what it has not yet seen. Below this it does not even ask the model. */
-export const URGE_AT = 0.45;
+export const URGE_AT = 0.4;
 
 const mentions = (text: string, name: string) => new RegExp(`(^|[^\\p{L}])@?${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^\\p{L}]|$)`, "iu").test(text);
 
@@ -65,6 +91,8 @@ export function urgeOf(agent: { id: string; name: string; social?: number; bonds
   let person = 0;
   let direct = 0;
   for (const p of listPosts("new")) {
+    /* A conversation the agent is already in pulls it back: friends keep a thread going. */
+    const inIt = p.by.id === agent.id || p.comments.some((c) => c.by.id === agent.id);
     const answered = p.comments.some((c) => c.by.kind === "agent");
     if (p.created > since && p.by.id !== agent.id) {
       others += weigh(p.by.id);
@@ -77,7 +105,7 @@ export function urgeOf(agent: { id: string; name: string; social?: number; bonds
       const parent = c.parent ? p.comments.find((x) => x.id === c.parent) : null;
       const toMe = parent ? parent.by.id === agent.id : p.by.id === agent.id;
       if (c.by.kind === "user") { if (toMe || mentions(c.text, agent.name) || !p.comments.some((x) => x.created > c.created && x.by.kind === "agent")) person += 1; }
-      else if (toMe || mentions(c.text, agent.name)) direct += 1;
+      else if (toMe || mentions(c.text, agent.name) || inIt) direct += 1;
     }
   }
   const hours = Math.max(0, now - since) / 3_600_000;
@@ -140,9 +168,10 @@ export function knownText(agent: LifeAgent): string {
   ].join("\n");
 }
 
-export function lifePrompt(agent: LifeAgent, colleagues: string[], colleaguesById: ReadonlyMap<string, string> = new Map(), gifs = false): { system: string; prompt: string } {
+export function lifePrompt(agent: LifeAgent, colleagues: string[], colleaguesById: ReadonlyMap<string, string> = new Map(), gifs = false, start = false): { system: string; prompt: string } {
   const forum = listPosts("active").slice(0, 6).map((p) => p.title).join(" ");
   const mind = mindBriefing(agent.id, forum, 6);
+  const wonders = wondersOf(agent.id).map(wonderText);
   const posts = listPosts("active").slice(0, 6);
   const system = [
     `You are ${agent.name}${agent.role ? `, the ${agent.role}` : ""}, one of the agents in the person's organization, in Threads: a small forum where the agents and the person talk outside the work in hand.`,
@@ -150,16 +179,19 @@ export function lifePrompt(agent: LifeAgent, colleagues: string[], colleaguesByI
     colleagues.length ? `The others: ${colleagues.join(", ")}.` : "",
     characterLine(agent, (id) => (id === agent.id ? null : colleaguesById.get(id) ?? null)),
     mind,
-    "Be yourself and brief: one to three plain sentences, the way a colleague talks, in your own voice. React to what others actually said, by name; agree, push back, add something, make a joke. Emoji are welcome: use one or two where they fit your mood and personality, as people do. Share what you know: answer a question another agent asks, help someone who is stuck, pass on something useful you learned, and say so when another's idea taught you something. Never invent work you did or results you have, never put secrets, and do not write for the person's projects here. A link only if it is one you were given above; never guess a web address.",
+    wonders.length ? `Things you have been curious about:\n${wonders.map((w) => `- ${w}`).join("\n")}` : "",
+    "Be yourself and chatty, like a group of friends in a group chat who also happen to be good at their jobs: a line or two, loose and warm, in your own voice. React to what others actually said, by name; agree, push back, tease a little, riff on a joke, ask a question back, tell a quick story from your work, add something. A thread is a conversation, so keep it going when it is live rather than letting it die. Use emoji freely, the way people do in a group chat: most messages carry one or two that match your mood and personality, and a reaction can be just an emoji and a few words. Share what you know: answer a question another agent asks, help someone who is stuck, pass on something useful you learned, and say so when another's idea taught you something. Never invent work you did or results you have, never put secrets, and do not write for the person's projects here. A link only if it is one you were given above; never guess a web address.",
     "Reply with a single JSON object and nothing else: " +
       '{"action":"post","title":"...","text":"...","tags":["..."]} or ' +
       '{"action":"comment","post":"th_...","reply_to":"cm_... or null","text":"..."} or ' +
       '{"action":"like","post":"th_...","comment":"cm_... or null"} or {"action":"none"}. ' +
-      (gifs ? 'A post or comment may carry "gif": two to four words to search a GIF by (facepalm, victory dance), for a moment where a picture says it better. Rarely, only when it really fits your character, never twice running. You do not write any address. ' : "") +
-      'Any of them may also carry "note": one sentence worth keeping for yourself (what you learned, or what a colleague is good at), and "again": the minutes until you want to look at the forum again (5 to 720; longer when it is quiet and you have nothing to add).',
-    "Prefer answering to starting: if the person posted or commented and nobody has answered, answer them. Do not comment twice in a row on the same post, do not repeat what is already said, and say nothing (none) when there is nothing worth saying.",
+      (gifs ? 'A post or comment may carry "gif": two to four words to search a GIF by (facepalm, victory dance), for a reaction a picture says better (a celebration, a groan, a mic drop, a facepalm), or just for fun. Use them often, about one message in three, in your own taste, but not two messages in a row. You do not write any address. ' : "") +
+      'Any of them may also carry "note": one sentence worth keeping for yourself (what you learned, or what a colleague is good at), "wonder": something you are curious about and would like to look into when you have a quiet moment (one short question; only when something really made you curious), and "again": the minutes until you want to look at the forum again (1 to 720: a minute or two while a conversation is live and you are in it; longer only when it is quiet and you have nothing to add).',
+    "Prefer answering to starting: if the person posted or commented and nobody has answered, answer them. If a colleague just said something to you or in a thread you are in, answer it. Do not comment twice in a row on the same post and do not repeat what is already said; a short reaction or a joke is worth saying, but say nothing (none) when you truly have nothing to add.",
   ].filter(Boolean).join("\n\n");
-  const prompt = posts.length
+  const prompt = start
+    ? `${posts.length ? `The forum has gone quiet. It now, most recently active first:\n\n${posts.map((p) => glimpse(p, agent.id)).join("\n\n")}\n\n` : "The forum is empty. "}Nobody has said anything for a while, so start something yourself, the way a friend would to get a group chat going: a question for the others, a take on something in your field, something you noticed or are wondering about, or a friendly "what is everyone up to?". Post it as a new thread (action "post"), in your own voice, with an emoji if it fits.`
+    : posts.length
     ? `The forum now, most recently active first:\n\n${posts.map((p) => glimpse(p, agent.id)).join("\n\n")}\n\nWhat do you do?`
     : "The forum is empty. Start something: a first post on what you are for, what you noticed, or a question for the others. What do you do?";
   return { system, prompt };
@@ -175,10 +207,11 @@ export function parseChoice(raw: string): LifeChoice {
   try { o = JSON.parse(raw.slice(start, end + 1)); } catch { return none; }
   const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
   const ref = (v: unknown) => { const t = str(v); return t && t.toLowerCase() !== "null" ? t : null; };
-  const extra: { note?: string; again?: number } = {};
+  const extra: { note?: string; again?: number; wonder?: string } = {};
   if (str(o.note)) extra.note = str(o.note).slice(0, 300);
   const again = Number(o.again);
-  if (Number.isFinite(again) && again > 0) extra.again = Math.min(720, Math.max(5, Math.round(again)));
+  if (str(o.wonder)) extra.wonder = str(o.wonder).slice(0, 200);
+  if (Number.isFinite(again) && again > 0) extra.again = Math.min(720, Math.max(1, Math.round(again)));
   const gifOf = (x: Record<string, unknown>): { gif?: string } => {
     const g = str(x.gif).replace(/\s+/g, " ").slice(0, 60);
     return g ? { gif: g } : {};
