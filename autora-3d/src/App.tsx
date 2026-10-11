@@ -25,7 +25,7 @@ import { installBridge } from './core/bridge';
 import { embedded, useAutoraEmbed } from './embed';
 import type { AgentHost } from './core/agent';
 import Sidebar from './components/Sidebar';
-import BottomBar from './components/BottomBar';
+import Rail, { type RailProps } from './components/Rail';
 import TopBar from './components/TopBar';
 import ConfirmDeleteModal from './components/ConfirmDeleteModal';
 import { useHistory } from './hooks/useHistory';
@@ -897,43 +897,74 @@ export default function App() {
         .join(', ') + (isolatedIds.length > 2 ? ` +${isolatedIds.length - 2}` : '')
     : '';
 
+  const railProps: RailProps = {
+    openId: openMenu,
+    setOpenId: setOpenMenu,
+    canUndo: history.canUndo,
+    canRedo: history.canRedo,
+    onUndo: doUndo,
+    onRedo: doRedo,
+    selected: selectedBodies,
+    joined: joinedSelected,
+    edges: selectedEdges,
+    face: selectedFace,
+    onEdgeChange: handleEdgeChange,
+    onClearEdges: () => setSelectedEdges([]),
+    onSelectEdges: setSelectedEdges,
+    onExtrudeFace: handleExtrudeFace,
+    onClearFace: () => setSelectedFace(null),
+    onMove: (dx, dy, dz) => moveSelection(dx, dy, dz),
+    onResize: handleResize,
+    onUpdateBody: handleUpdateBody,
+    group: selectedGroup ? { id: selectedGroup.id, name: selectedGroup.name } : undefined,
+    object: selectedGroup?.libraryId
+            ? { state: selectedGroup.place ? 'linked' : 'editing', item: library.find((i) => i.id === selectedGroup.libraryId)?.name ?? 'object' }
+            : undefined,
+    canSave: !selectedGroup?.libraryId &&
+          (selectedGroup ? !selectedGroup.joined : selectedBodies.length === 1 && !selectedBodies[0].groupId && !selectedBodies[0].repeatOf && !selectedBodies[0].instanceOf && !selectedBodies[0].frame),
+    onSaveToLibrary: handleSaveToLibrary,
+    onEditObject: handleEditObject,
+    onSeparateObject: handleSeparateObject,
+    onRenameGroup: (group, name) => void runOp((d) => ops.renameGroup(d, { group, name })),
+    sidebar: sidebarProps,
+    selectedCount: selectedBodyIds.length,
+    bodyCount: displayBodies.length,
+    isolated: !!isolatedIds,
+    moveOn: moveOn && selectedBodyIds.length > 0,
+    addOnTop: selectedFace?.kind === 'top' && selectedBodyIds.length === 1,
+    onAddShape: addShape,
+    library: [
+          ...library.map((i) => ({ id: i.id, name: i.name, shapes: i.bodies.length, shared: !!i.shared, inProject: true, thumb: thumbnailUrl(i, 88) })),
+          ...sharedItems.filter((i) => !library.some((x) => x.id === i.id)).map((i) => ({ id: i.id, name: i.name, shapes: i.bodies.length, shared: true, inProject: false, thumb: thumbnailUrl(i, 88) })),
+        ],
+    onPlaceItem: handlePlaceItem,
+    onShareItem: handleShareItem,
+    onRemoveItem: handleRemoveItem,
+    onToggleMove: () => setMoveOn((v) => !v),
+    onIsolate: toggleIsolate,
+    grouped: !!selectedGroupId,
+    hiddenCount: hiddenCount,
+    onHide: hideSelected,
+    onShowHidden: showHidden,
+    onGroup: () => {
+          if (joinedSelected) notify('This is a joined shape: it already moves as one.');
+          else if (selectedGroupId) handleUngroup(selectedGroupId);
+          else handleGroupSelected();
+        },
+    onJoin: handleMergeSelected,
+    onSubtract: handleSubtractSelected,
+    repeatOn: !!repeat,
+    drawOn: !!draw,
+    onDraw: handleToggleDraw,
+    repeated: selectedBodyIds.some((id) => repeats.some((l) => l.bodyId === id)),
+    onBreakRepeat: handleBreakRepeat,
+    onPattern: handleOpenRepeat,
+    onDelete: () => requestDelete(),
+  };
+
   return (
     <div className="h-dvh flex flex-col bg-slate-950 text-slate-100 font-sans select-none overflow-hidden">
-      <TopBar
-        openId={openMenu}
-        setOpenId={setOpenMenu}
-        canUndo={history.canUndo}
-        canRedo={history.canRedo}
-        onUndo={doUndo}
-        onRedo={doRedo}
-        selected={selectedBodies}
-        joined={joinedSelected}
-        edges={selectedEdges}
-        face={selectedFace}
-        onEdgeChange={handleEdgeChange}
-        onClearEdges={() => setSelectedEdges([])}
-        onSelectEdges={setSelectedEdges}
-        onExtrudeFace={handleExtrudeFace}
-        onClearFace={() => setSelectedFace(null)}
-        onMove={(dx, dy, dz) => moveSelection(dx, dy, dz)}
-        onResize={handleResize}
-        onUpdateBody={handleUpdateBody}
-        group={selectedGroup ? { id: selectedGroup.id, name: selectedGroup.name } : undefined}
-        object={
-          selectedGroup?.libraryId
-            ? { state: selectedGroup.place ? 'linked' : 'editing', item: library.find((i) => i.id === selectedGroup.libraryId)?.name ?? 'object' }
-            : undefined
-        }
-        canSave={
-          !selectedGroup?.libraryId &&
-          (selectedGroup ? !selectedGroup.joined : selectedBodies.length === 1 && !selectedBodies[0].groupId && !selectedBodies[0].repeatOf && !selectedBodies[0].instanceOf && !selectedBodies[0].frame)
-        }
-        onSaveToLibrary={handleSaveToLibrary}
-        onEditObject={handleEditObject}
-        onSeparateObject={handleSeparateObject}
-        onRenameGroup={(group, name) => void runOp((d) => ops.renameGroup(d, { group, name }))}
-        sidebar={sidebarProps}
-      />
+      <TopBar {...railProps} />
 
       <div className="flex-1 min-h-0 flex">
         {/* Viewport */}
@@ -1069,43 +1100,7 @@ export default function App() {
 
       </div>
 
-      <BottomBar
-        openId={openMenu}
-        setOpenId={setOpenMenu}
-        selectedCount={selectedBodyIds.length}
-        bodyCount={displayBodies.length}
-        isolated={!!isolatedIds}
-        moveOn={moveOn && selectedBodyIds.length > 0}
-        addOnTop={selectedFace?.kind === 'top' && selectedBodyIds.length === 1}
-        onAddShape={addShape}
-        library={[
-          ...library.map((i) => ({ id: i.id, name: i.name, shapes: i.bodies.length, shared: !!i.shared, inProject: true, thumb: thumbnailUrl(i, 88) })),
-          ...sharedItems.filter((i) => !library.some((x) => x.id === i.id)).map((i) => ({ id: i.id, name: i.name, shapes: i.bodies.length, shared: true, inProject: false, thumb: thumbnailUrl(i, 88) })),
-        ]}
-        onPlaceItem={handlePlaceItem}
-        onShareItem={handleShareItem}
-        onRemoveItem={handleRemoveItem}
-        onToggleMove={() => setMoveOn((v) => !v)}
-        onIsolate={toggleIsolate}
-        grouped={!!selectedGroupId}
-        hiddenCount={hiddenCount}
-        onHide={hideSelected}
-        onShowHidden={showHidden}
-        onGroup={() => {
-          if (joinedSelected) notify('This is a joined shape: it already moves as one.');
-          else if (selectedGroupId) handleUngroup(selectedGroupId);
-          else handleGroupSelected();
-        }}
-        onJoin={handleMergeSelected}
-        onSubtract={handleSubtractSelected}
-        repeatOn={!!repeat}
-        drawOn={!!draw}
-        onDraw={handleToggleDraw}
-        repeated={selectedBodyIds.some((id) => repeats.some((l) => l.bodyId === id))}
-        onBreakRepeat={handleBreakRepeat}
-        onPattern={handleOpenRepeat}
-        onDelete={() => requestDelete()}
-      />
+      <Rail {...railProps} />
 
       <AnimatePresence>
         {confirmDeleteIds && (

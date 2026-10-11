@@ -2,6 +2,7 @@
    are the same few names (--background, --card, --primary...) on every surface;
    pointing them at Autora's own tokens is the whole of the retheme. */
 @import "../web/app/globals.css";
+@import "../../../src/rail.css";
 
 /* The sources are fetched, so gitignored, and Tailwind skips what git ignores. */
 @source "../web";
@@ -138,3 +139,15 @@ body,
 .to-\[\#37B6F7\] {
   --tw-gradient-to: var(--a-accent-light);
 }
+
+/* The names the shared tool rail (src/rail.css) draws with, as Autora's tokens. */
+:root {
+  --bg: var(--a-bg); --s1: var(--a-s1); --s2: var(--a-s2); --s3: var(--a-s3); --text: var(--a-text); --text-2: var(--a-text-2); --text-3: var(--a-text-3);
+  --border: var(--a-border); --border-strong: var(--a-border-strong); --accent: var(--a-accent); --accent-line: var(--a-accent-line); --accent-soft: var(--a-accent-soft);
+  --sans: var(--a-sans); --r-sm: var(--a-r-sm); --r-lg: var(--a-r-lg); --r-pill: 999px; --is: 1; --ts: 1; --z-modal: 60;
+  --shadow-lg: 0 20px 48px -12px rgba(0, 0, 0, 0.7), 0 2px 8px rgba(0, 0, 0, 0.4); --bg-rgb: 8, 9, 13;
+}
+
+/* A phone's timeline: the track switches (mute, show) sit side by side, or two high, in a narrow column (overlay layout.ts), not in a third of the screen. */
+[data-autora-phone] .group > .justify-end { padding: 0 1px !important; gap: 2px !important; justify-content: center !important; flex-wrap: wrap; align-content: center; }
+[data-autora-phone] .group > .justify-end svg { width: 15px; height: 15px; }

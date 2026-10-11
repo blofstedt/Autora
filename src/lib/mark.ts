@@ -469,8 +469,6 @@ export const bloomOf = (sides = 3): string[] => [
   trianglePath({ sides, scale: 1.03 }),
   restOf(sides),
 ];
-export const BLOOM = bloomOf();
-
 
 /** How long the finishing bloom runs. Kept in step with --settle-ms in
     styles.css: the shape and the light behind it are animated apart and have to

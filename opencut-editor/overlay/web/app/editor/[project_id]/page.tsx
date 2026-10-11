@@ -18,6 +18,7 @@ import { MigrationDialog } from "@/project/components/migration-dialog";
 import { usePanelStore } from "@/editor/panel-store";
 import { usePasteMedia } from "@/media/use-paste-media";
 import { MobileGate } from "@/components/editor/mobile-gate";
+import { VideoRail, type Sheet } from "../../../../autora/rail";
 import { useEffect, useMemo, useState } from "react";
 import { useEditor } from "@/editor/use-editor";
 import { Cancel01Icon } from "@hugeicons/core-free-icons";
@@ -40,16 +41,20 @@ export default function Editor() {
 	const params = useParams();
 	const projectId = params.project_id as string;
 	const phone = isPhone();
+	const short = useShort();
+	const [sheet, setSheet] = useState<Sheet>(null);
 
 	return (
 		<MobileGate>
 			<EditorProvider projectId={projectId}>
-				<div className="bg-background flex h-screen w-screen flex-col overflow-hidden">
+				<div className={`bg-background has-rail ${phone ? "is-phone" : "is-desk"} flex h-screen w-screen flex-col overflow-hidden`}>
 					<DegradedRendererBanner />
 					{!phone && <EditorHeader />}
 					<div className="min-h-0 min-w-0 flex-1">
-						{phone ? <PhoneLayout /> : <EditorLayout />}
+						{phone ? <PhoneLayout sheet={sheet} /> : <EditorLayout />}
 					</div>
+					{/* The tool bar: every tool of the editor, in the one place (a phone pinned above the chat is for looking only). */}
+					{!(phone && short) && <VideoRail phone={phone} sheet={sheet} setSheet={setSheet} />}
 					<Onboarding />
 					<MigrationDialog />
 					<ChangelogNotification />
@@ -106,10 +111,9 @@ function useShort() {
  * (the selected clip's properties) come up over the timeline when asked for. The same project, the same panels and
  * the same timeline: only the arrangement is different, and the agent can still do anything from the chat.
  */
-function PhoneLayout() {
+function PhoneLayout({ sheet }: { sheet: Sheet }) {
 	usePasteMedia();
 	const short = useShort();
-	const [sheet, setSheet] = useState<"media" | "edit" | null>(null);
 	const overlayControls = useMemo(() => [], []);
 	const noop = () => undefined;
 
@@ -120,22 +124,9 @@ function PhoneLayout() {
 			</div>
 			{!short && (
 				<>
-					<div className="flex shrink-0 gap-2">
-						{(["media", "edit"] as const).map((which) => (
-							<button
-								key={which}
-								type="button"
-								data-phone-sheet={which}
-								aria-pressed={sheet === which}
-								onClick={() => setSheet((now) => (now === which ? null : which))}
-								className={`h-10 flex-1 rounded-xl border text-sm font-medium ${sheet === which ? "bg-primary text-primary-foreground border-transparent" : "bg-accent text-foreground"}`}
-							>
-								{which === "media" ? "Media" : "Edit"}
-							</button>
-						))}
-						<div className="shrink-0 [&_button]:h-10 [&_button]:rounded-xl [&_button]:bg-primary [&_button]:px-5 [&_button]:py-0 [&_button]:text-primary-foreground [&_button]:items-center [&_button>div]:bg-none [&_button>div]:shadow-none [&_button>div]:px-0 [&_button>div]:py-0 [&_button>div>div]:hidden">
-							<ExportButton />
-						</div>
+					{/* Export is a tool of the bar (its button is kept here, unseen, because the render dialog opens beside its button). */}
+					<div data-autora-export="" className="pointer-events-none fixed right-2 top-1 size-8 opacity-0" aria-hidden="true">
+						<ExportButton />
 					</div>
 					<div className={`relative shrink-0 ${sheet ? "h-[50%]" : "h-[38%] min-h-[160px]"}`}>
 						{/* Kept mounted behind the sheet, so its zoom and scroll are where they were. */}

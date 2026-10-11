@@ -149,7 +149,7 @@ async function main() {
     clearInterval(watch);
     await page.close();
 
-    await test("on a phone the editor is the paired-down one: the picture, the timeline, and Media and Edit as sheets", async () => {
+    await test("on a phone the editor is the paired-down one: the picture, the timeline, the tool bar along the bottom, and Media and Edit as sheets", async () => {
       const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
       await phone.goto(`${app.base}/?session=${s}`);
       await phone.waitForSelector(".stage .pdf-window", { timeout: 20_000 });
@@ -157,13 +157,15 @@ async function main() {
       await phone.tap('.pdf-bar button[aria-label="Full screen"]');
       const frame = await editorIn(phone);
       await frame.waitForSelector("[data-autora-phone]", { timeout: 30_000 });
-      assert.equal(await frame.locator('[data-phone-sheet="media"]').count(), 1);
+      assert.equal(await frame.locator('.rail-bar.is-phone button[aria-label="Media"]').count(), 1, "Media is a tool of the bar");
       assert.equal(await frame.locator("[data-phone-panel]").count(), 0, "no sheet until asked for");
-      assert.equal(await frame.locator("[data-phone-toolbar] button").count(), 6, "undo, split, duplicate, delete, zoom out and in: the rest is the desktop's");
+      assert.equal(await frame.locator("[data-phone-toolbar]").count(), 0, "the old row of timeline buttons is gone: they are tools of the bar");
+      assert.equal(await frame.locator(".rail-bar.is-phone button").count(), 8, "seven tools and the grid button; every other tool is one tap away in All tools");
+      assert.equal(await frame.locator("[data-phone-sheet]").count(), 0, "and no second Media / Edit row");
       assert.equal(await frame.locator("header").count(), 0, "OpenCut's own header row is gone: the window's bar names the project");
-      await frame.click('[data-phone-sheet="media"]');
+      await frame.click('.rail-bar.is-phone button[aria-label="Media"]');
       await frame.waitForSelector('[data-phone-panel="media"]', { timeout: 5_000 });
-      await frame.click('[data-phone-sheet="media"]');
+      await frame.click('.rail-bar.is-phone button[aria-label="Media"]');
       assert.equal(await frame.locator("[data-phone-panel]").count(), 0, "the same button puts it away");
       await phone.close();
     });

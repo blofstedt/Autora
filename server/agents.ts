@@ -57,7 +57,7 @@ export const LEAD_ID = "agent_autora";
 /** A temper between reserved and chatty. */
 const temper = (random: () => number = Math.random) => Math.round((0.6 + random() * 0.8) * 100) / 100;
 
-export interface AgentLook { sides: number; hue: number }
+interface AgentLook { sides: number; hue: number }
 
 /** Shapes and hues the agents are drawn from. The triangle and the violet
     around 270 are Autora's own. 5 shapes x 12 hues is 60 looks, one per agent
@@ -70,7 +70,7 @@ const HUES = [0, 25, 50, 80, 120, 155, 185, 210, 235, 305, 330, 350];
  * that neither is yet used, then a new shape or a new hue alone, then (only when
  * all sixty are taken) anything.
  */
-export function pickLook(taken: AgentLook[], random: () => number = Math.random): AgentLook {
+function pickLook(taken: AgentLook[], random: () => number = Math.random): AgentLook {
   const all = SIDES.flatMap((sides) => HUES.map((hue) => ({ sides, hue })));
   const free = all.filter((l) => !taken.some((t) => t.sides === l.sides && t.hue === l.hue));
   const fresh = (l: AgentLook) => ({

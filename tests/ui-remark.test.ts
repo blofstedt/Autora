@@ -54,7 +54,8 @@ async function main() {
     });
 
     await test("the Working together switches in Settings change what the server does", async () => {
-      await page.getByRole("link", { name: /Settings/ }).first().click().catch(async () => { await page.getByText("Settings", { exact: true }).first().click(); });
+      // The menu is a strip of icons at this width, so its labels have no size: the button is found by the page it opens.
+      await page.locator('.rail-nav-item[data-page="config"]').click();
       const remarks = page.getByLabel(/Let the agent say a word about what I do/);
       await remarks.waitFor({ timeout: 10_000 });
       assert.equal(await remarks.isChecked(), true);

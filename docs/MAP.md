@@ -115,6 +115,7 @@ task is about the PDF editor's shim or overlay.
 | Settings cards | `Settings.tsx` (1.5k), `SecretStore`, `Credentials`, `VoiceCard`, `NotifyCard`, `QuietCard`, `CaptchaCard`, `AutomationCard`, `CollabSettings`, `TimeZoneCard`, `ModelPicker`, `SetupCard` |
 | Composer | `DictateButton`, `AttachButton`, `SlashMenu` + `lib/commands.ts`, `ModeSelect`, `PermissionsPill`, `SpendBar`/`SpendPeek` + `lib/spend.ts`, `LiveChat` + `lib/voice.ts` (1.9k), `lib/liveview.ts` |
 | Shared hooks | `lib/poll.ts` (`every`, `usePoll`: polling that pauses while the tab is hidden), `lib/sure.ts` + `components/SureHost.tsx` (the "are you sure?" dialog; never `confirm()`), `lib/ago.ts`, `lib/systemTabs.ts` |
+| Tool rail | `components/ToolRail.tsx` (bar, All tools grid, tray), `lib/toolrail.ts` (tool list type, verb colours, pins); `docs/TOOL-RAIL.md` is the spec |
 | Look | `styles.css` (6.6k, one file), `fonts.css`, `lib/theme.ts`, `lib/mark.ts` + `AutoraMark.tsx`, `Icons.tsx` |
 
 `styles.css` is ordered roughly by feature; search for the component's root

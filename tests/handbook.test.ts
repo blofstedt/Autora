@@ -37,6 +37,41 @@ await test("the PDF manual teaches the window as it is now: the bar, the grid, t
   assert.ok(!/menu bar of|Mark up, Fill & sign/.test(pdf), "and says nothing of the bar it replaced, except that it is replaced");
 });
 
+await test("the Music manual teaches the tool bar and not the toolbar it replaced", () => {
+  const music = manualText("studio");
+  for (const needle of ["All tools", "Add track", "Split, Duplicate and Delete", "pin any tool", "no old toolbar", "whatever is shown"]) {
+    assert.ok(music.includes(needle), `the Music manual lacks "${needle}"`);
+  }
+});
+
+await test("the 3D manual teaches the tool bar and not the bottom bar it replaced", () => {
+  const cad = manualText("cad");
+  for (const needle of ["All tools", "Size & position", "Pick edges", "Push & pull", "pin any tool", "no bottom bar", "whatever is shown"]) {
+    assert.ok(cad.includes(needle), `the 3D manual lacks "${needle}"`);
+  }
+});
+
+await test("the Office manual teaches the tool bar and not the ribbon it replaced", () => {
+  const office = manualText("office");
+  for (const needle of ["All tools", "no ribbon", "one group per old ribbon tab", "pin any of them", "keyboard shortcuts work", "whatever is shown"]) {
+    assert.ok(office.includes(needle), `the Office manual lacks "${needle}"`);
+  }
+});
+
+await test("the Video manual teaches the tool bar and not the tab strip and toolbar it replaced", () => {
+  const video = manualText("video");
+  for (const needle of ["All tools", "no strip of tabs", "pin any of them", "keyboard shortcuts work", "video_ui by its name"]) {
+    assert.ok(video.includes(needle), `the Video manual lacks "${needle}"`);
+  }
+});
+
+await test("the Photo manual teaches the tool bar and not the menu bar and toolbox it replaced", () => {
+  const photo = manualText("photo");
+  for (const needle of ["All tools", "no menu bar, no toolbox", "pin any tool or command", "keyboard shortcuts work", "whatever is shown"]) {
+    assert.ok(photo.includes(needle), `the Photo manual lacks "${needle}"`);
+  }
+});
+
 await test("a tool finds its window's manual, and a tool with no window finds none", () => {
   assert.equal(manualId("browser_click"), "browser");
   assert.equal(manualId("web_search"), "browser");

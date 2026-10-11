@@ -157,7 +157,9 @@ async function main() {
 
     await test("the screen can be read, clicked and typed into like a person would", async () => {
       const out = await run([
-        { tool: "video_ui", args: { action: "read" }, expect: /Export/ },
+        // Settings is not on the bar (a desktop's has room for thirteen): it is in All tools, one tap further, as the manual says.
+        // (The click's answer lists the screen, so this is also the read.)
+        { tool: "video_ui", args: { action: "click", label: "All tools" }, expect: /Export|controls/ },
         { tool: "video_ui", args: { action: "click", label: "Settings" }, expect: /controls/ },
         { tool: "video_ui", args: { action: "type", label: "Project name", text: "Typed by hand", enter: true }, expect: /Done \(type\)|Typed by hand/ },
         { tool: "video_look", args: {}, expect: /Typed by hand/ },

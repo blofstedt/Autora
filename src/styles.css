@@ -1,3 +1,4 @@
+@import "./rail.css";
 @import url("./fonts.css");
 
 /* ============================================================================
@@ -6992,7 +6993,7 @@ body.is-resizing iframe { pointer-events: none; }
 .st-save.is-error { color: var(--danger); }
 
 /* buttons */
-.st-tool, .st-icon, .st-play, .st-ms, .st-tab, .st-chip, .st-start, .st-link {
+.st-tool, .st-icon, .st-play, .st-ms, .st-start, .st-link {
   font: inherit; color: var(--text-2); cursor: pointer; transition: background 0.12s, color 0.12s, border-color 0.12s, transform 0.08s;
 }
 .st-tool {
@@ -7032,11 +7033,11 @@ body.is-resizing iframe { pointer-events: none; }
   padding: 6px 10px; border-radius: var(--r-sm); min-width: 11.5em; text-align: center; font-variant-numeric: tabular-nums;
 }
 .st-field { display: inline-flex; align-items: center; gap: 6px; font-size: calc(11px * var(--ts, 1)); color: var(--text-3); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
-.st-field select, .st-field input[type="number"], .st-clip-name-input, .st-ask input, .st-name-input {
+.st-field select, .st-field input[type="number"], .st-clip-name-input, .st-name-input {
   background: var(--s2); border: 1px solid var(--border); color: var(--text); border-radius: var(--r-xs);
   font: 550 calc(12.5px * var(--ts, 1)) var(--sans); text-transform: none; letter-spacing: 0; padding: 4px 6px;
 }
-.st-field select:focus, .st-field input:focus, .st-clip-name-input:focus, .st-ask input:focus, .st-name-input:focus { outline: none; border-color: var(--accent-line); }
+.st-field select:focus, .st-field input:focus, .st-clip-name-input:focus, .st-name-input:focus { outline: none; border-color: var(--accent-line); }
 .st-stepper { display: inline-flex; align-items: stretch; border-radius: var(--r-xs); overflow: hidden; border: 1px solid var(--border); background: var(--s2); }
 .st-stepper button { width: 24px; background: transparent; border: 0; color: var(--text-2); cursor: pointer; display: grid; place-items: center; }
 .st-stepper button:hover:not(:disabled) { background: var(--s3); color: var(--text); }
@@ -7120,9 +7121,6 @@ body.is-resizing iframe { pointer-events: none; }
 .st-mini { position: absolute; left: 0; right: 0; top: 18px; bottom: 4px; width: 100%; height: calc(100% - 22px); fill: var(--text); pointer-events: none; }
 .st-clip-size { position: absolute; right: 0; top: 0; bottom: 0; width: 9px; cursor: ew-resize; z-index: 2; }
 .st-clip-size:hover { background: rgba(255, 255, 255, 0.18); }
-.st-add-row { height: 44px; border-bottom: 0; }
-.st-add { padding: 0 12px; background: var(--s1); border-right: 1px solid var(--border-strong); color: var(--text-3); font-size: calc(12px * var(--ts, 1)); font-weight: 600; gap: 7px; }
-.st-add-chips { display: flex; align-items: center; gap: 6px; padding: 0 10px; position: sticky; }
 .st-add-chip {
   padding: 5px 11px; border-radius: var(--r-pill); cursor: pointer; white-space: nowrap;
   background: var(--s2); border: 1px dashed var(--border-strong); color: var(--text-2); font: 550 calc(12px * var(--ts, 1)) var(--sans);
@@ -7156,9 +7154,6 @@ body.is-resizing iframe { pointer-events: none; }
 .st-dock.is-editor, .st-dock.is-mixer { height: clamp(210px, 38%, 330px); }
 .st-dock-bar { display: flex; align-items: center; gap: 6px; padding: 5px 8px; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
 .st-dock.is-closed .st-dock-bar { border-bottom: 0; }
-.st-tab { padding: 5px 11px; border-radius: var(--r-pill); background: transparent; border: 1px solid transparent; font-size: calc(12px * var(--ts, 1)); font-weight: 600; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.st-tab.is-on { color: var(--text); background: var(--s3); border-color: var(--border-strong); }
-.st-tab:hover { color: var(--text); }
 .st-clip-name-input { width: 130px; }
 .st-dock-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 
@@ -7236,12 +7231,6 @@ body.is-resizing iframe { pointer-events: none; }
 .st-balance { font-size: 10.5px; white-space: normal; text-align: center; justify-content: center; }
 
 /* asking Autora */
-.st-ask { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-top: 1px solid var(--border); background: var(--s1); color: var(--accent-light); }
-.st-ask input { flex: 1; min-width: 0; padding: 7px 10px; border-radius: var(--r-pill); }
-.st-chips { display: flex; gap: 6px; padding: 0 10px 8px; flex-wrap: wrap; background: var(--s1); }
-.st-chip { padding: 4px 10px; border-radius: var(--r-pill); background: transparent; border: 1px solid var(--border-strong); font-size: calc(11.5px * var(--ts, 1)); }
-.st-chip:hover { color: var(--text); border-color: var(--accent-line); background: var(--accent-soft); }
-.st-sent { font-size: calc(11.5px * var(--ts, 1)); color: var(--live); }
 
 .st-window.is-phone .st-export-text, .st-window.is-phone .st-meter-h, .st-window.is-phone .st-zoom { display: none; }
 .st-window.is-phone .st-field { flex-direction: column; align-items: flex-start; gap: 1px; }
@@ -7438,7 +7427,6 @@ body.is-resizing iframe { pointer-events: none; }
   .st-window.is-phone .st-icon { width: var(--pt-hit); height: var(--pt-hit); border-radius: var(--pt-r); }
   .st-window.is-phone .st-play { width: 48px; height: 48px; border-radius: 14px; }
   .st-window.is-phone .st-stepper button { width: 34px; min-height: 34px; }
-  .st-window.is-phone .st-tab { min-height: var(--pt-hit); border-radius: var(--pt-r); padding: 0 14px; }
 
   /* Terminal's keys, and the Office page view's bar. */
   .tm-window.is-phone .tm-key { min-height: var(--pt-hit); border-radius: var(--pt-r); }
@@ -7446,23 +7434,24 @@ body.is-resizing iframe { pointer-events: none; }
   .office-pages-bar .pdf-pill, .office-pages-clear { min-height: var(--pt-hit); padding: 0 14px; border-radius: var(--pt-r); font-size: calc(13px * var(--ts, 1)); }
 }
 
-/* Full screen on a phone keeps a strip at the bottom for Autora's own controls (the chat button and Follow, laid over by
-   ImmersiveChat), the same one in every tool. They used to float over each editor's bottom bar: 3D's Organize and Delete,
-   the PDF's Find, the terminal's keys. The editors now end where the strip starts. */
+/* Full screen on a phone gives every pixel to the tool. Autora's own controls (the chat button and Follow, laid over by
+   ImmersiveChat) sit in the tool's top bar, in a slot the bar keeps for them, and not in a strip of their own at the bottom. */
 @media (max-width: 680px) {
-  .pdf-window.is-full, .app-window.is-full { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 64px); background: var(--bg); }
+  .pdf-window.is-full, .app-window.is-full { background: var(--bg); }
+  .pdf-window.is-full .pdf-bar, .app-window.is-full .app-bar { padding-right: 56px; }
+  body:has(.immersive-follow) .cell.widget.is-expanded .cell-top, body:has(.immersive-follow) .cell.shot.is-max .cell-top,
+  body:has(.immersive-follow) .pdf-window.is-full .pdf-bar, body:has(.immersive-follow) .app-window.is-full .app-bar { padding-right: 130px; }
+  .immersive-corner { bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 5px); right: 8px; }
+  .immersive-chat { width: 38px; height: 38px; opacity: 0.9; }
 }
 
 /* Music on a phone: play, the clock and undo on one row, the three song settings on the next. Skip-back, loop and the
    click track are the desktop's (and the agent's): they were three more buttons on a screen with none to spare. */
 @media (max-width: 680px) {
   .st-window.is-phone .st-group button[aria-label="Back to the start"],
-  .st-window.is-phone .st-group button[aria-label="Loop"],
-  .st-window.is-phone .st-group button[aria-label="Metronome"] { display: none; }
   .st-window.is-phone .st-stepper button { width: 30px; min-height: 34px; }
   .st-window.is-phone .st-stepper input { width: 2.4em; }
   .st-window.is-phone .st-trow { flex-wrap: nowrap; gap: 8px; }
-  .st-window.is-phone .st-trow:last-child { flex-wrap: wrap; justify-content: space-between; row-gap: 6px; }
   .st-window.is-phone .st-clock { flex: 1 1 auto; text-align: center; }
 }
 
@@ -7513,7 +7502,7 @@ body.is-resizing iframe { pointer-events: none; }
   /* A widget's header is a window bar like the others. */
   .cell.widget .cell-top { min-height: var(--pt-bar); gap: 4px; }
   .cell.widget .cell-top .btn.icon { width: var(--pt-hit); height: var(--pt-hit); border-radius: var(--pt-r); }
-  .cell.widget.is-expanded { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 64px); }
+  .cell.widget.is-expanded .cell-top { padding-right: 56px; }
 }
 
 @media (max-width: 680px) {
@@ -7533,17 +7522,10 @@ body.is-resizing iframe { pointer-events: none; }
   .app-window.is-phone .app-seg { gap: 0; padding: 2px; }
   .app-window.is-phone .app-seg button { width: 36px; padding: 0; }
   .app-window.is-phone .app-bar .app-url { flex: 1 1 0; min-width: 0; padding-left: 8px; padding-right: 8px; }
-  /* Music's settings: tempo and bars side by side, the key under them across the screen. */
-  .st-window.is-phone .st-trow:last-child > .st-field:nth-child(1) { order: 1; }
-  .st-window.is-phone .st-trow:last-child > .st-field:nth-child(3) { order: 2; }
-  .st-window.is-phone .st-trow:last-child > .st-field:nth-child(2) { order: 3; flex: 1 0 100%; }
   .st-window.is-phone .st-keypick { display: flex; gap: 8px; }
   .st-window.is-phone .st-keypick select { flex: 1 1 0; max-width: none; }
   .st-window.is-phone .st-stepper input { width: 3.2em; }
   .st-window.is-phone .st-stepper button { width: 32px; }
-}
-@media (max-width: 680px) {
-  .st-window.is-phone .st-trow:last-child { justify-content: flex-start; gap: 8px; }
 }
 
 /* The browser on a phone, second pass: no bar of its own (the address names the page), tabs only when there is more than one,
@@ -7556,7 +7538,7 @@ body.is-resizing iframe { pointer-events: none; }
 }
 
 @media (max-width: 680px) {
-  .cell.shot.is-max { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 64px); }
+  .cell.shot.is-max .cell-top { padding-right: 56px; }
   .cell.shot.is-max .shot-stage { padding: 0; overflow: auto; }
   .cell.shot.is-max .shot-stage .frame { max-height: none; }
 }
@@ -7618,6 +7600,8 @@ body.is-resizing iframe { pointer-events: none; }
   border: 1px solid var(--border); font-size: calc(11.5px * var(--ts, 1)); color: var(--text-2);
 }
 .org-editor { width: 100%; max-width: 560px; margin: 0 auto; box-sizing: border-box; }
+/* The editor as a dialog: it scrolls inside itself when the form is taller than the screen. */
+.modal.org-modal { max-width: 560px; max-height: 90vh; overflow-y: auto; padding: 14px 16px; gap: 12px; }
 .org-editor-head { display: flex; align-items: center; gap: 8px; }
 .org-field { display: flex; flex-direction: column; gap: 4px; font-size: calc(12px * var(--ts, 1)); color: var(--text-2); }
 .org-field input, .org-field textarea, .org-field select {
@@ -7728,3 +7712,42 @@ body.is-resizing iframe { pointer-events: none; }
 
 /* A GIF an agent added to a post or comment. */
 .th-gif { display: block; max-width: min(280px, 100%); max-height: 240px; margin-top: 6px; border-radius: var(--r); background: var(--s3); }
+
+
+.st-dock-title { font-size: calc(12px * var(--ts, 1)); font-weight: 550; color: var(--text-2); }
+.rail-tray .st-add-chip { padding: 5px 11px; }
+/* With no clip open the piano roll has nothing to show: a one-line hint, so the song gets the room. */
+.st-dock.is-idle, .st-window.is-phone .st-dock.is-idle { height: auto; }
+.st-dock.is-idle .st-dock-body { flex: none; }
+.st-dock.is-idle .st-pad { margin: 0; padding: 8px 12px; }
+/* The song's settings in a phone's one-row tray. */
+.has-rail.is-phone .rail-tray { flex-wrap: nowrap; }
+.has-rail.is-phone .rail-tray-head { flex: none; }
+.has-rail.is-phone .rail-tray-body { flex: 1 1 0; gap: 6px 10px; }
+.st-window.is-phone .rail-tray .st-field { flex-direction: row; align-items: center; gap: 4px; }
+.st-unit { display: none; }
+.st-window.is-phone .rail-tray .st-label { display: none; }
+.st-window.is-phone .rail-tray .st-unit { display: inline; font-size: 10px; color: var(--text-3); text-transform: none; letter-spacing: 0; }
+.st-window.is-phone .rail-tray .st-stepper button { width: 26px; min-height: 30px; }
+.st-window.is-phone .rail-tray .st-stepper input { width: 3em; min-height: 30px; font-size: 13px; }
+.st-window.is-phone .rail-tray .st-keypick { display: flex; gap: 4px; }
+.st-window.is-phone .rail-tray .st-keypick select, .st-window.is-phone .rail-tray .st-field select { min-height: 30px; font-size: 12px; max-width: 5.6em; }
+/* Tempo, key and bars on one line in a phone's tray: shorter controls, the unit small beside the number. */
+.st-song { display: contents; }
+.has-rail.is-phone .rail-tray-head { display: none; }
+.has-rail.is-phone .rail-tray { padding-left: 8px; }
+.st-window.is-phone .rail-tray .st-song { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; min-width: 0; }
+.st-window.is-phone .rail-tray .st-song .st-field { flex: none; gap: 2px; }
+.st-window.is-phone .rail-tray .st-song .st-stepper button { width: 22px; min-height: 28px; }
+.st-window.is-phone .rail-tray .st-song .st-stepper input { width: 2.5em; min-height: 28px; font-size: 13px; padding: 0 2px; text-align: center; }
+.st-window.is-phone .rail-tray .st-song .st-unit { font-size: 9px; }
+.st-window.is-phone .rail-tray .st-song .st-keypick { gap: 2px; }
+.st-window.is-phone .rail-tray .st-song .st-keypick select { min-height: 28px; font-size: 12px; padding: 0 2px; }
+.st-window.is-phone .rail-tray .st-song .st-keypick select:first-child { width: 3.4em; max-width: 3.4em; }
+.st-window.is-phone .rail-tray .st-song .st-keypick select:last-child { width: 5.6em; max-width: 5.6em; text-overflow: ellipsis; }
+.st-window.is-phone .rail-tray .st-song .st-unit { display: none; }
+.st-window.is-phone .rail-tray .st-song { gap: 6px; }
+.st-window.is-phone .rail-tray .st-song .st-stepper button { width: 20px; }
+.st-window.is-phone .rail-tray .st-song .st-stepper input { width: 2.3em; }
+.st-window.is-phone .rail-tray .st-song .st-keypick select:first-child { width: 3.1em; max-width: 3.1em; }
+.st-window.is-phone .rail-tray .st-song .st-keypick select:last-child { width: 4.8em; max-width: 4.8em; }

@@ -327,7 +327,7 @@ Spectra's fetched renderer is most of what is on disk.
   Enter: best-effort). Completion, history, colours and full-screen programs are the shell's own. A touch screen gets a key row (Esc, Tab, Ctrl+C,
   arrows, `| / ~`). The socket to the page carries only `{open, cwd, rev, running}` (`termdesk`). Class names are `tm-*` (`term-*` is the thread's cell).
 - `autora-3d/` and `server/caddesk.ts`: **Autora 3D**, the 3D modelling window (a sketch-and-extrude CAD modeller) and the agent's
-  `cad_*` tools. `autora-3d/` is a **copy** of github.com/blofstedt/3D-Modeling, which is also its own app: never edit it here, change
+  `cad_*` tools. `autora-3d/` is a **copy** of github.com/blofstedt/3D-Modeling, which is also its own app: never edit it here (the tool rail is the one exception so far: `docs/autora-3d-tool-rail.patch` is to be applied upstream), change
   it there and run `node scripts/sync-autora-3d.mjs [checkout]` (it also regenerates `server/specs/cad.ts`, one `cad_*` tool for
   each call the modeller declares, so the two cannot drift). `npm run build` builds it into `dist/autora-3d/` (the window's page) and
   `dist/autora-3d-engine/` (`engine.mjs` + `manifold.wasm`: the headless model, loaded by the server at run time, so the server is
@@ -518,18 +518,19 @@ Spectra's fetched renderer is most of what is on disk.
   workers included (`polyfillFirst` in `spectra-editor/vite.config.ts`): pdf.js needs it and older browsers lack it.
 - The rest of the phone's tools: Pages/Sheets/Slides on a phone are two views. Pinned, the pictures of the pages (`OfficePages`:
   tap text to point at it, the message to the agent carries it). The pencil in the window's bar opens the phone's editor, full
-  screen: `office/shim/phone.js` (injected into the editor page when the window adds `?phone=1`) closes the ribbon, hides the
-  status bar and the notes pane, and lays one bar over the bottom (undo, redo, bold, italic, a list or a row or a slide, the
-  size) whose buttons press the editor's own, found by the start of the name each carries (`data-tip`, `aria-label`, `title`;
-  `data-linked` marks the ones found, which `ui-office-phone` checks). "More" opens the real ribbon in place over the top of the
-  page. The ribbon is closed to a height of nothing, never removed: Sheets lays out in rows and moves every row up when one goes.
-  The ribbon's AI group ("Autora" on Home) is gone on every screen (`office/shim/common.js`). The window's bar loses the cursor
+  screen. On a desktop and a phone alike the editors wear the tool bar (docs/TOOL-RAIL.md): `office/shim/rail.js` (plus `rail-icons.js`,
+  Lucide's glyphs, generated; injected into the editor page in place of the old `phone.js`) closes the ribbon to a height of nothing, never
+  removes it (Sheets lays out in rows and moves every row up when one goes), and draws round coloured tools (down the right, or along the
+  bottom with `?phone=1`) and an All tools grid. Every ribbon command is a tool: the common ones are listed in `rail.js` (`TOOLS`: colour per
+  verb, `phone`/`desktop` marks for the bar), and the rest are read from the ribbon itself once the editor is up (`scan()` opens each tab once,
+  unseen) and listed under the name of their tab. A tool presses the editor's own button, found by the start of the name it carries (`data-tip`,
+  `aria-label`, `title`), with the press a hand makes (`press()`: some buttons act on mousedown); `data-linked` marks the ones found, which
+  `ui-office-phone` and `ui-office-rail` check. A command that opens a drop-down has the (unseen) ribbon laid out at a fixed place beside the
+  bar while it runs (`html.rail-ribbon`), so the drop-down opens there, and its popovers are shown. A side pane (Styles, Comments, Navigation, the Slides format pane) floats over the work area beside the bar and never pushes the page sideways (CSS in `rail.js`). The editors keep their own keyboard shortcuts
+  (the rail takes no keys but Escape) and the bar's tooltips say them. Pins live in the page's storage, which a frame with no origin has only for
+  the session. The ribbon's AI group ("Autora" on Home) is gone on every screen (`office/shim/common.js`). The window's bar loses the cursor
   switch and the versions pill, and "Page view" is an icon. The browser's toolbar on a phone is back, reload, the address, hand-over, drag and
-  enlarge (CSS in `styles.css`). Autora Photo is paired down in Rust, in `photo/overlay/autora.rs` (the `phone_*` functions): with
-  `?phone=1` the editor shows the picture alone (`screen_mode = "fullScreen"`, forced each frame in `pump`) and draws one bar
-  (Undo, Redo, Tools, Brush, Layers, Fit) with a sheet over it (nine tools, brush size/strength/colour, layers with eye, name,
-  opacity, new, delete). The bar's taps are queued in `tick` (which only sees the app) and done in the next frame's `pump`, through
-  the editor's own commands (`menus::invoke`). Sizes are asked for in CSS pixels (`per_css_px`), because a headless browser at a
+  enlarge (CSS in `styles.css`). Autora Photo wears the tool bar (docs/TOOL-RAIL.md) in Rust, in `photo/overlay/autora.rs` (the `rail_*` functions): on a desktop and on a phone (`?phone=1`) the editor shows the picture alone (`screen_mode = "fullScreen"`, forced each frame in `rail_pump`: no menu bar, toolbox, options bar, status bar or dock) and draws round coloured tools (down the right, or along the bottom) over it, with Layers, Brush settings and Colour as sheets and an All tools grid built from the editor itself: `Tool::ALL` in groups, and every live command of `menus::menu_items` under its menu's name (Window's panels excepted: the dock is away), searchable, each pinnable on a desktop (pins last the session; the frame has no storage). The editor's keyboard shortcuts are its own and still work. The bar's taps are queued in `tick` (which only sees the app) and done in the next frame's `pump`, through the editor's own commands (`menus::invoke`). Sizes are asked for in CSS pixels (`per_css_px`), because a headless browser at a
   device ratio above 1 reports an editor canvas half the page's resolution and a pointer the editor mis-maps: test the phone at
   1:1 (`tests/ui-photo.test.ts`). `build-photo.mjs` adds `serde_json` to the web app for it. The pin never moves.
 - Second pass on a phone: the pages (Sessions, Artifacts, Tools, Settings, Mind...), the drawer, the composer and the thread were already
@@ -572,13 +573,13 @@ Spectra's fetched renderer is most of what is on disk.
   has no image door. A tool with no tray (Stamps, Measure...) keeps Spectra's own strip (restyled: a card beside the bar on a
   desktop); a tool with a pane (Protect, Compress...) opens it as the dock's window in the middle on a desktop and as a sheet on a
   phone. The agent has every tool regardless of what is shown, and its manual (`server/handbook.ts`) describes this window. Pinned (a frame under 520px tall) it is
-  for looking only. Video: `opencut-editor/overlay/web/app/editor/[project_id]/page.tsx` is a whole-file copy of OpenCut's
+  for looking only. Video wears the tool bar (docs/TOOL-RAIL.md): `opencut-editor/src/autora/rail.tsx` (`VideoRail`) builds `src/components/ToolRail.tsx` (and `src/rail.css`, with `--s1`... named from the editor's `--a-*` tokens in `autora.css`) into the editor; a tool runs one of OpenCut's own actions (`invokeAction`, the keyboard shortcuts' registry), opens an assets-panel tab (`useAssetsPanelStore`) or flips a timeline switch; the overlay of `panels/assets/index.tsx` has no tab strip and the overlay of `timeline-toolbar.tsx` keeps only curves, scenes and the zoom slider (`zoomApi` is how the bar zooms); the overlay of `timeline/components/layout.ts` makes the track-switch column 38px on a phone, and the overlay of `timeline/components/index.tsx` gives each track on a phone one button (its type icon) that a tap steps through on, muted and hidden (`PhoneTrackMenu`), in place of three icons. Video, before that: `opencut-editor/overlay/web/app/editor/[project_id]/page.tsx` is a whole-file copy of OpenCut's
   page with a `PhoneLayout` (preview, timeline, Media and Edit sheets over the timeline slot, Export beside them, no header row)
   and an overlay of `timeline/components/timeline-toolbar.tsx` whose phone branch is six buttons; keep it in step with the
   pin's page, which never moves. Pages, Sheets and Slides were already pictures of the pages with tap-to-point
   (`OfficePages`), and Autora 3D was already built for touch (its own bottom bar). The bar at the top of every window on
   a phone is the name and round icon buttons (`TakeControl`, download, full screen), not text pills. Games are not
-  done yet. Tests: `ui-pdfwindow`, `ui-video`.
+  done yet. Music wears the shared rail (`src/components/ToolRail.tsx`, `src/lib/toolrail.ts`; docs/TOOL-RAIL.md): one slim transport row, the arrangement, a piano roll or mixer that opens with a clip or the Mixer tool and is one line when idle, trays for Song (tempo, key, bars), Add track and Zoom, and Ask Autora in the grid. Tests: `ui-pdfwindow`, `ui-video`, `ui-studio`.
 - Full screen on a phone (`lib/fullscreen.ts`): one shared flag for every pinned tool (browser, app window, PDF,
   Pages/Sheets/Slides, widget), so Follow (`busiestSurface` in `Thread`) moves the stage to the next tool with the
   screen still full. While it is up, `components/ImmersiveChat.tsx` is laid over it: the agent's last reply as a

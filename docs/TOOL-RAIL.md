@@ -51,7 +51,18 @@ Live copy of the first version: https://claude.ai/artifact/A5vaGaNwJ8EFLA35jv3gD
 
 ## Retrofit order
 
-PDF first (this), then Pages, Sheets, Slides, Video, Games. Browser and 3D already fit.
+PDF first, then Music (done, 0.9.196: the first user of the shared host-side component below), 3D (0.9.199), Pages, Sheets and
+Slides (0.9.200: `office/shim/rail.js`, inside the editors' frame; every ribbon command is a tool, the ribbon is never shown), Video (0.9.201: `opencut-editor/src/autora/rail.tsx`, which builds the app's own `ToolRail` into the editor; the tab strip and
+the timeline's toolbar are gone from the page, a phone's timeline gives its track switches 38px instead of 112), Photo (0.9.202: `photo/overlay/autora.rs`, in Rust/egui: the same bar, the same grid built from the editor's own tools and menu catalogue, the editor's menu bar, toolbox, options bar, status bar and dock away), then Games. Autora 3D (done, 0.9.199) wears the rail in its own build (`autora-3d/src/components/Rail.tsx`, Tailwind, same colours and
+rules): its bottom bar of text pills and the menus of its top bar are gone, the top bar is undo, redo and what is selected, and
+every tool is on the bar or in All tools. It is a copy of blofstedt/3D-Modeling, and the change was made in the copy
+(`docs/autora-3d-tool-rail.patch` is the same change; apply it upstream with `git apply -p2` before the next `scripts/sync-autora-3d.mjs`, which would otherwise undo it). Browser is a navigation bar, not a palette.
+
+**No repeats.** When an app takes the rail, everything the rail now does is removed from the old chrome in the same change:
+a tool that is on the bar is not also a button in a toolbar, a tab, a row of chips or a form. Music dropped its tempo/key row,
+the Editor/Mixer tabs, the Split/Duplicate/Delete buttons in the dock, the "Add a track" row, and the phone's ask box and chips
+(the chat is the chat; the suggestions are under Ask Autora in All tools). **Space.** An empty panel collapses to a line
+(Music's piano roll with no clip open) so the canvas gets the room.
 
 ## Where it is built
 
@@ -64,6 +75,15 @@ PDF first (this), then Pages, Sheets, Slides, Video, Games. Browser and 3D alrea
   menu tree) behind the button at the top left. Panes (Protect...) open as a window in the middle. The left side is the
   file menu (nine tiles), a row of buttons that switch Spectra's own panels, and the page thumbnails (SecurePDF's "Page Thumbnails"
   panel and header menu, in Autora's look); Spectra's icon strip is put away. A phone has no left panel.
+
+## One component for apps whose editor lives in the host page
+
+`src/components/ToolRail.tsx` (`ToolRail`: the bar, the All tools grid with pins, "Reset bar"; `RailTray`: the open tool's
+options) and `src/lib/toolrail.ts` (`RailTool`, `VERB` colours, `usePins`). An app hands over a list of tools, each with a
+colour (by verb, the same in every app), a grid group, `phone` (in the phone's bar) or `desktop` (pinned to start with),
+and `run`. The window is `has-rail` plus `is-desk` or `is-phone`; the rail measures its window (`ResizeObserver`) and shows
+only what fits. Pins are per app in `localStorage` (`autora-rail-pins-<app>`). Spectra's rail (inside its frame) is the same
+design and is not yet this component.
 
 ## The agent has to know (it replaces the old window)
 

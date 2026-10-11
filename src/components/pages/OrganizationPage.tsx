@@ -192,7 +192,7 @@ export function OrganizationPage({ topSlot }: { topSlot?: HTMLElement | null }) 
                 dirty.current = false;
                 setAgents((list) => (list ?? []).some((x) => x.id === a.id)
                   ? (list ?? []).map((x) => (x.id === a.id ? a : x)) : [...(list ?? []), a]);
-                setSelected(a.id);
+                setSelected(null);
                 load();
               }}
               onDeleted={() => { dirty.current = false; setSelected(null); load(); }}
@@ -220,9 +220,6 @@ function AgentEditor({
     : { ...BLANK, reportsTo: agents.find((a) => a.builtin)?.id ?? "" });
   const [enabled, setEnabled] = useState(agent?.enabled ?? true);
   const [adding, setAdding] = useState("");
-  const top = useRef<HTMLFormElement>(null);
-  // Opened below the chart: bring it into view, or a tap on a card seems to do nothing on a phone.
-  useEffect(() => { top.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -271,7 +268,8 @@ function AgentEditor({
   };
 
   return (
-    <form ref={top} className="org-editor nb-new" onSubmit={(e) => { e.preventDefault(); void save(); }} aria-label={agent ? `Edit ${agent.name}` : "New agent"}>
+    <div className="scrim" onClick={onClose} role="presentation">
+    <form className="modal org-modal org-editor nb-new" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} onSubmit={(e) => { e.preventDefault(); void save(); }} aria-label={agent ? `Edit ${agent.name}` : "New agent"}>
       <div className="org-editor-head">
         <b>{agent ? `Edit ${agent.name}` : "New agent"}</b>
         <div className="spacer" />
@@ -356,5 +354,6 @@ function AgentEditor({
         <button type="submit" className="btn primary" disabled={busy || (!!agent && !form.name.trim())}>{agent ? "Save" : "Add agent"}</button>
       </div>
     </form>
+    </div>
   );
 }

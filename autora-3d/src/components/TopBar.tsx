@@ -4,18 +4,16 @@
  */
 
 import React from 'react';
-import { AnimatePresence, motion } from 'motion/react';
-import { BookmarkPlus, Box, FileDown, Link2, Move, Pencil, Unlink, SquareDashed, Palette, Redo2, SlidersHorizontal, Trash2, Undo2, X } from 'lucide-react';
+import { Box, Link2, Redo2, Trash2, Undo2, X } from 'lucide-react';
 import { BevelStyle, Body3D, EdgeSel, FaceSel } from '../types';
-import { describeEdges, edgeSize, edgesOfKind, edgeStyle, isWholeGroup, MAX_BEVEL_SIZE, maxBevelSize, primaryEdge, type EdgeGroup } from '../utils/edges';
+import { describeEdges, edgesOfKind, isWholeGroup, type EdgeGroup } from '../utils/edges';
 import { selectionBounds } from '../utils/transform';
-import MenuButton from './Menu';
 import Sidebar from './Sidebar';
-import { IconButton, NumberBox, Segmented, StepButton, signed, spring } from './controls';
+import { IconButton, NumberBox, StepButton, signed } from './controls';
 
 type SidebarProps = React.ComponentProps<typeof Sidebar>;
 
-interface TopBarProps {
+export interface TopBarProps {
   openId: string | null;
   setOpenId: (id: string | null) => void;
   canUndo: boolean;
@@ -55,21 +53,6 @@ const Chip = ({ children, sub }: { children: React.ReactNode; sub?: string }) =>
   </div>
 );
 
-/** A small labelled button for an action on the selected object. */
-const PillButton = ({ icon: Icon, label, onClick, title }: { icon: React.ComponentType<{ size?: number; strokeWidth?: number }>; label: string; onClick: () => void; title: string }) => (
-  <motion.button
-    type="button"
-    onClick={onClick}
-    title={title}
-    whileTap={{ scale: 0.92 }}
-    transition={spring}
-    className="shrink-0 h-8 px-3 rounded-full bg-white/8 hover:bg-white/14 text-[13px] font-medium text-slate-100 flex items-center gap-1.5 transition-colors"
-  >
-    <Icon size={15} strokeWidth={1.75} />
-    {label}
-  </motion.button>
-);
-
 /** A group's name, changed by tapping it. Saves on Enter or when you tap away; Escape keeps the old one. */
 function GroupName({ name, onRename }: { name: string; onRename: (name: string) => void }) {
   const [draft, setDraft] = React.useState<string | null>(null);
@@ -104,7 +87,7 @@ function GroupName({ name, onRename }: { name: string; onRename: (name: string) 
 }
 
 /** Width, depth, height and where it is: all typed in one small menu. */
-function SizePositionPanel({ selected, onMove, onResize, onUpdateBody }: Pick<TopBarProps, 'selected' | 'onMove' | 'onResize' | 'onUpdateBody'>) {
+export function SizePositionPanel({ selected, onMove, onResize, onUpdateBody }: Pick<TopBarProps, 'selected' | 'onMove' | 'onResize' | 'onUpdateBody'>) {
   const b = selectionBounds(selected);
   if (!b) return null;
   const single = selected.length === 1 ? selected[0] : null;
@@ -145,156 +128,88 @@ function SizePositionPanel({ selected, onMove, onResize, onUpdateBody }: Pick<To
   );
 }
 
-export default function TopBar(props: TopBarProps) {
-  const { selected, edges, face, openId, setOpenId } = props;
+/** What the selection is, for the bar's title and for which panel the rail opens by itself. */
+export function selectionMode(props: Pick<TopBarProps, 'selected' | 'edges' | 'face' | 'group'>): 'none' | 'edge' | 'face' | 'shape' | 'multi' {
+  const { selected, edges, face } = props;
   const body = selected.length === 1 ? selected[0] : null;
+  if (body && edges.length) return 'edge';
+  if (body && face && face.bodyId === body.id) return 'face';
+  if (body && !props.group) return 'shape';
+  if (selected.length > 1 || props.group) return 'multi';
+  return 'none';
+}
 
-  let mode = 'none';
-  if (body && edges.length) mode = 'edge';
-  else if (body && face && face.bodyId === body.id) mode = 'face';
-  else if (body && !props.group) mode = 'shape';
-  else if (selected.length > 1 || props.group) mode = 'multi';
-
-  const dynamic = (() => {
-    if (mode === 'edge' && body) {
-      const onlyCorners = edges.every((e) => e.kind === 'corner');
-      const size = edgeSize(body, primaryEdge(edges));
-      const style = edgeStyle(body, edges.find((e) => e.kind !== 'corner') ?? edges[0]) ?? 'round';
-      const most = onlyCorners ? MAX_BEVEL_SIZE : maxBevelSize(body, edges);
-      const set = (v: number) => props.onEdgeChange(edges, { size: Math.max(0, Math.min(most, v)) });
-      return (
-        <>
-          <Chip sub={describeEdges(body, edges).sub}>{describeEdges(body, edges).title}</Chip>
-          <NumberBox label={onlyCorners ? 'Radius' : 'Size'} value={size} step={0.5} min={0} max={most} onCommit={set} />
-          {!onlyCorners && (
-            <Segmented
-              id="bar-profile"
-              label="Edge profile"
-              // With no bevel yet neither profile is lit: nothing is chosen until one is.
-              value={size > 0 ? style : ('' as typeof style)}
-              onChange={(v) => props.onEdgeChange(edges, { style: v })}
-              options={[
-                { value: 'round', label: 'Curved' },
-                { value: 'chamfer', label: 'Flat' },
-              ]}
-            />
-          )}
-          <MenuButton id="edge-select" openId={openId} setOpenId={setOpenId} label="Select" icon={SquareDashed} placement="down" title="Select edges in bulk">
-            <div className="p-2 flex flex-col gap-1 w-[min(15rem,calc(100vw-1.5rem))]">
-              {(
-                [
-                  ['top', 'Top edges'],
-                  ['bottom', 'Bottom edges'],
-                  ['corner', 'Vertical corners'],
-                  ['all', 'All edges'],
-                ] as [EdgeGroup, string][]
-              ).map(([group, text]) => (
-                <button
-                  key={group}
-                  type="button"
-                  onClick={() => {
-                    props.onSelectEdges(edgesOfKind(body, group));
-                    setOpenId(null);
-                  }}
-                  className={`h-11 px-4 rounded-full text-left text-sm font-medium transition-colors ${
-                    isWholeGroup(body, edges, group) ? 'bg-accent-500 text-white' : 'text-slate-100 hover:bg-white/10'
-                  }`}
-                >
-                  {text}
-                </button>
-              ))}
-              <button
-                type="button"
-                onClick={() => {
-                  props.onClearEdges();
-                  setOpenId(null);
-                }}
-                className="h-11 px-4 rounded-full text-left text-sm font-medium text-slate-400 hover:bg-white/10 hover:text-white transition-colors"
-              >
-                Clear
-              </button>
-            </div>
-          </MenuButton>
-          <IconButton icon={Trash2} label="Remove bevel (Del)" onClick={() => props.onEdgeChange(edges, { size: 0 })} danger />
-          <IconButton icon={X} label="Done (Esc)" onClick={props.onClearEdges} />
-        </>
-      );
-    }
-    if (mode === 'face' && body && face) {
-      const elev = body.elevation ?? 0;
-      return (
-        <>
-          <Chip sub={body.name}>{face.kind === 'top' ? 'Top face' : face.kind === 'bottom' ? 'Bottom face' : `Wall ${(face.index ?? 0) + 1}`}</Chip>
-          {face.kind === 'top' && <NumberBox label="Height" value={body.extrusionHeight} min={2} max={600} onCommit={(v) => props.onExtrudeFace(face, v - body.extrusionHeight)} />}
-          {face.kind === 'bottom' && <NumberBox label="Bottom at" value={elev} min={0} onCommit={(v) => props.onExtrudeFace(face, elev - Math.max(0, v))} />}
-          <div className="flex items-center gap-1">
-            {[-10, -1, 1, 10].map((n) => (
-              <StepButton key={n} onClick={() => props.onExtrudeFace(face, n)} title={`${n > 0 ? 'Pull out' : 'Push in'} ${Math.abs(n)} mm`}>
-                {signed(n)}
-              </StepButton>
-            ))}
-          </div>
-          <IconButton icon={X} label="Done (Esc)" onClick={props.onClearFace} />
-          <MenuButton id="size" openId={openId} setOpenId={setOpenId} label="Size & position" icon={Move} placement="down">
-            <SizePositionPanel {...props} />
-          </MenuButton>
-          <MenuButton id="material" openId={openId} setOpenId={setOpenId} label="Material" icon={Palette} placement="down">
-            <Sidebar {...props.sidebar} section="material" />
-          </MenuButton>
-          {props.canSave && <PillButton icon={BookmarkPlus} label="Save to library" onClick={props.onSaveToLibrary} title="Keep this object in the project library so you can place linked copies" />}
-        </>
-      );
-    }
-    if (mode === 'shape' && body) {
-      return (
-        <>
-          <MenuButton id="props" openId={openId} setOpenId={setOpenId} label={body.name} icon={SlidersHorizontal} placement="down" title="Shape properties">
-            <Sidebar {...props.sidebar} section="properties" />
-          </MenuButton>
-          <MenuButton id="size" openId={openId} setOpenId={setOpenId} label="Size & position" icon={Move} placement="down">
-            <SizePositionPanel {...props} />
-          </MenuButton>
-          <MenuButton id="material" openId={openId} setOpenId={setOpenId} label="Material" icon={Palette} placement="down">
-            <Sidebar {...props.sidebar} section="material" />
-          </MenuButton>
-        </>
-      );
-    }
-    if (mode === 'multi') {
-      return (
-        <>
-          {props.group ? (
-            <GroupName key={props.group.id} name={props.group.name} onRename={(n) => props.onRenameGroup(props.group!.id, n)} />
-          ) : (
-            <Chip sub={props.joined ? 'Joined · moves as one' : 'Drag one to move them all'}>{props.joined ? selected[0].name : `${selected.length} shapes`}</Chip>
-          )}
-          {props.object?.state === 'linked' && (
-            <>
-              <span className="shrink-0 text-[11px] text-slate-400 flex items-center gap-1 whitespace-nowrap">
-                <Link2 size={13} /> Linked to “{props.object.item}”
-              </span>
-              <PillButton icon={Pencil} label="Edit" onClick={props.onEditObject} title="Open this object for editing: save it back and every copy follows" />
-              <PillButton icon={Unlink} label="Separate" onClick={props.onSeparateObject} title="Make this copy independent of the library" />
-            </>
-          )}
-          {props.object?.state === 'editing' && (
-            <>
-              <PillButton icon={BookmarkPlus} label={`Save to “${props.object.item}”`} onClick={props.onSaveToLibrary} title="Update the library object: every linked copy follows" />
-              <PillButton icon={Unlink} label="Separate" onClick={props.onSeparateObject} title="Forget the library object: this stays as plain shapes" />
-            </>
-          )}
-          {!props.object && props.canSave && <PillButton icon={BookmarkPlus} label="Save to library" onClick={props.onSaveToLibrary} title="Keep this object in the project library so you can place linked copies" />}
-          <MenuButton id="size" openId={openId} setOpenId={setOpenId} label="Position" icon={Move} placement="down">
-            <SizePositionPanel {...props} />
-          </MenuButton>
-        </>
-      );
-    }
-    return <span className="text-[13px] text-slate-500 whitespace-nowrap">Tap a shape to see its properties</span>;
-  })();
-
+/** Picking edges in bulk, and taking a bevel off. The bevel's size and profile are the model's own floating card, not repeated here. */
+export function EdgePanel(props: TopBarProps) {
+  const { selected, edges } = props;
+  const body = selected[0];
+  if (!body || !edges.length) return null;
   return (
-    <header className="h-14 shrink-0 px-3 flex items-center gap-2 bg-slate-900 border-b border-white/8 z-40">
+    <div className="p-4 flex flex-col gap-3 w-[min(19rem,calc(100vw-1.5rem))]">
+      <Chip sub={describeEdges(body, edges).sub}>{describeEdges(body, edges).title}</Chip>
+      <div className="flex flex-wrap gap-1.5">
+        {(
+          [
+            ['top', 'Top'],
+            ['bottom', 'Bottom'],
+            ['corner', 'Corners'],
+            ['all', 'All'],
+          ] as [EdgeGroup, string][]
+        ).map(([group, text]) => (
+          <button
+            key={group}
+            type="button"
+            onClick={() => props.onSelectEdges(edgesOfKind(body, group))}
+            className={`h-8 px-3 rounded-full text-[13px] font-medium transition-colors ${isWholeGroup(body, edges, group) ? 'bg-accent-500 text-white' : 'bg-white/6 text-slate-100 hover:bg-white/12'}`}
+          >
+            {text}
+          </button>
+        ))}
+        <button type="button" onClick={props.onClearEdges} className="h-8 px-3 rounded-full text-[13px] font-medium text-slate-400 hover:bg-white/10 hover:text-white transition-colors">Clear</button>
+        <button type="button" onClick={() => props.onEdgeChange(edges, { size: 0 })} className="h-8 px-3 rounded-full text-[13px] font-medium text-rose-300 hover:bg-rose-500/15 transition-colors">Remove bevel</button>
+      </div>
+    </div>
+  );
+}
+
+/** Pushing or pulling the picked face in set steps. The typed height is the model's own floating card, not repeated here. */
+export function FacePanel(props: TopBarProps) {
+  const { selected, face } = props;
+  const body = selected[0];
+  if (!body || !face) return null;
+  return (
+    <div className="p-4 flex flex-col gap-3 w-[min(19rem,calc(100vw-1.5rem))]">
+      <Chip sub={body.name}>{face.kind === 'top' ? 'Top face' : face.kind === 'bottom' ? 'Bottom face' : `Wall ${(face.index ?? 0) + 1}`}</Chip>
+      <div className="flex items-center gap-1.5">
+        {[-10, -1, 1, 10].map((n) => (
+          <StepButton key={n} onClick={() => props.onExtrudeFace(face, n)} title={`${n > 0 ? 'Pull out' : 'Push in'} ${Math.abs(n)} mm`}>
+            {signed(n)}
+          </StepButton>
+        ))}
+        <span className="text-xs text-slate-400 ml-1">mm</span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The slim top bar: what the app is, undo and redo, and what is selected. Every tool is on the rail (Rail.tsx), none is
+ * repeated here; a group's name stays a field because it is text, not a tool.
+ */
+export default function TopBar(props: TopBarProps) {
+  const { selected } = props;
+  const body = selected.length === 1 ? selected[0] : null;
+  const mode = selectionMode(props);
+  const title =
+    mode === 'edge' ? <Chip sub={describeEdges(body!, props.edges).sub}>{describeEdges(body!, props.edges).title}</Chip>
+    : mode === 'face' ? <Chip sub={body!.name}>{props.face!.kind === 'top' ? 'Top face' : props.face!.kind === 'bottom' ? 'Bottom face' : `Wall ${(props.face!.index ?? 0) + 1}`}</Chip>
+    : mode === 'shape' ? <Chip>{body!.name}</Chip>
+    : mode === 'multi' ? (
+      props.group ? <GroupName key={props.group.id} name={props.group.name} onRename={(n) => props.onRenameGroup(props.group!.id, n)} />
+      : <Chip sub={props.joined ? 'Joined · moves as one' : 'Drag one to move them all'}>{props.joined ? selected[0].name : `${selected.length} shapes`}</Chip>
+    ) : null;
+  return (
+    <header className="h-12 shrink-0 px-3 flex items-center gap-2 bg-slate-900 border-b border-white/8 z-40">
       <div className="flex items-center gap-1.5 shrink-0">
         <div className="w-8 h-8 rounded-full bg-accent-500 flex items-center justify-center text-white">
           <Box size={16} strokeWidth={2} />
@@ -302,27 +217,13 @@ export default function TopBar(props: TopBarProps) {
         <IconButton icon={Undo2} label="Undo (⌘Z)" onClick={props.onUndo} />
         <IconButton icon={Redo2} label="Redo (⇧⌘Z)" onClick={props.onRedo} />
       </div>
-
-      <div className="flex-1 min-w-0 overflow-x-auto no-scrollbar [mask-image:linear-gradient(to_right,black_calc(100%-16px),transparent)]">
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.div
-            key={mode}
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 6, transition: { duration: 0.08 } }}
-            transition={spring}
-            className="flex items-center justify-start sm:justify-center gap-2 min-w-max sm:min-w-0 sm:px-2"
-          >
-            {dynamic}
-          </motion.div>
-        </AnimatePresence>
-      </div>
-
-      <div className="flex items-center gap-1.5 shrink-0">
-        <MenuButton id="file" openId={openId} setOpenId={setOpenId} icon={FileDown} placement="down" title="Export and file">
-          <Sidebar {...props.sidebar} section="export" />
-        </MenuButton>
-      </div>
+      <div className="flex-1 min-w-0 overflow-hidden">{title}</div>
+      {props.object?.state === 'linked' && (
+        <span className="shrink-0 text-[11px] text-slate-400 hidden sm:flex items-center gap-1 whitespace-nowrap"><Link2 size={13} /> Linked to “{props.object.item}”</span>
+      )}
+      {mode !== 'none' && (
+        <IconButton icon={X} label="Deselect (Esc)" onClick={() => { props.onClearEdges(); props.onClearFace(); }} />
+      )}
     </header>
   );
 }

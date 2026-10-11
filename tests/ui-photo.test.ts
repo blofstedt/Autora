@@ -131,7 +131,7 @@ async function main() {
       await phone.waitForSelector(".pdf-window.is-full");
       assert.match(await phone.locator("iframe[title='Autora Photo']").getAttribute("src") ?? "", /phone=1/);
       /* The desktop's chrome is away: the strip above the bar, where Photoshop's toolbox and options would be, is the picture's
-         own black, with no menu bar's grey. Then the bar's Tools opens a sheet there. */
+         own black, with no menu bar's grey. Then the bar's Layers opens a sheet there. */
       const box = (await phone.locator("iframe[title='Autora Photo']").boundingBox())!;
       const lit = async (y0: number, y1: number) => {
         const png = (await phone.screenshot({ clip: { x: 8, y: box.y + y0, width: 374, height: y1 - y0 } })).toString("base64");
@@ -152,13 +152,13 @@ async function main() {
       };
       await waitFor("the bar", async () => (await lit(box.height - 80, box.height - 4)) > 3000, 60_000);
       const before = await lit(box.height - 230, box.height - 90);
-      // The bar's Tools button: the second row of three, the third of six across the frame.
-      await phone.mouse.move(box.x + 163, box.y + box.height - 34);
+      // The bar's Layers button: the sixth of the round buttons (Move, Select, Crop, Brush, Eraser, Layers), 40 wide with 2 between.
+      await phone.mouse.move(box.x + 236, box.y + box.height - 28);
       await sleep(200);
       await phone.mouse.down();
       await sleep(150);
       await phone.mouse.up();
-      await waitFor("the tools sheet over the picture", async () => (await lit(box.height - 230, box.height - 90)) > before + 3000, 20_000);
+      await waitFor("the layers sheet over the picture", async () => (await lit(box.height - 230, box.height - 90)) > before + 3000, 20_000);
       await ctx.close();
     });
 
