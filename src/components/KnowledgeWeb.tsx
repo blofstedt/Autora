@@ -151,11 +151,12 @@ export function KnowledgeWeb({
       <div className="kweb-body">
         {onBuckets && <MindViewButton to="buckets" onClick={onBuckets} />}
         {showNewSkill && (
-          <div className="new-skill-backdrop" onClick={() => setShowNewSkill(false)}>
-            <div className="new-skill-dialog" onClick={(e) => e.stopPropagation()}>
+          <div className="new-skill-backdrop" role="presentation" onClick={() => setShowNewSkill(false)}
+               onKeyDown={(e) => { if (e.key === "Escape") setShowNewSkill(false); }}>
+            <div className="new-skill-dialog" role="dialog" aria-modal="true" aria-label="Register a new skill" onClick={(e) => e.stopPropagation()}>
               <div className="new-skill-header">
                 <h4>Register New Agent Skill</h4>
-                <button className="btn icon ghost sm" onClick={() => setShowNewSkill(false)}>
+                <button className="btn icon ghost sm" onClick={() => setShowNewSkill(false)} aria-label="Close">
                   <IconX size={14} />
                 </button>
               </div>
