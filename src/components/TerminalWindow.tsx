@@ -137,7 +137,7 @@ export function TerminalWindow({ sessionId, phone }: { sessionId: string; phone:
       <div className="pdf-bar">
         <span className="pdf-bar-ico" aria-hidden="true"><IconTerminal size={14} /></span>
         <span className="pdf-bar-app">Autora Terminal</span>
-        {phone && <span className="pdf-bar-name" title="This machine's shell">{online ? "Terminal" : "Connecting…"}</span>}
+        {phone && <span className="pdf-bar-name" title="This machine's shell">{online ? "Autora Terminal" : "Connecting…"}</span>}
         <span className="pdf-bar-note">{online ? "This machine's shell" : ""}</span>
         <div className="spacer" />
         {phone && (

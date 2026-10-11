@@ -672,7 +672,7 @@ body::before {
      scroll and slides its own URL bar in and out, the viewport changes height
      under an app that is 100dvh, and the thread jumps as it relayouts. */
   overscroll-behavior-x: none; overscroll-behavior-y: contain;
-  padding: 16px 16px 48px;
+  padding: 16px 16px 16px;
 }
 .thread-content {
   display: flex; flex-direction: column; gap: 18px; min-width: 0;
@@ -1554,7 +1554,7 @@ button.hint.voice-note:hover { text-decoration: underline; }
   /* ── one column, and the stage gets a smaller share of a short screen ── */
   .page { border: 0; }
   .ribbon { padding: 6px 10px; }
-  .thread { padding: 12px 12px 40px; }
+  .thread { padding: 12px 12px 12px; }
 
   /* A phone has no ⇧↵, and the row it was occupying is exactly the room the
      voice controls need. The labels stay: a microphone you cannot find is the
@@ -2319,7 +2319,7 @@ label + .jf-hint { margin-top: -5px; }
 /* Laptops and small desktops: more room for the column itself. */
 @media (min-width: 1000px) {
   :root { --read: 1000px; }
-  .thread { padding: 20px 22px 52px; }
+  .thread { padding: 20px 22px 20px; }
   .approvals { padding: 0 22px 14px; }
 }
 

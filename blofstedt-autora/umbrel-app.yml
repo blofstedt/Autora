@@ -185,13 +185,10 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Every window now wears the theme you chose. The PDF editor and the Word, Excel and PowerPoint
-  editors used to stay Autora Violet whatever the theme; pick Teal, Ember or Rose and they follow,
-  live, like the video editor already did. Underneath, the interface now speaks one vocabulary:
-  one type scale (no more twelve-and-a-half pixels beside twelve), one set of corner radii, three
-  animation speeds and two curves, and status colours that belong to the theme. Text fields all light
-  up the same way when you click into them, dialogs and drawers dim the page the same amount, and
-  two cards whose backgrounds had gone missing (the rules in Settings and the trigger cards) are
-  filled in. Deleting a task, a trigger, an MCP server or a memory now asks first, in the same
-  dialog the rest of the app uses, and the "..." in a few labels is a proper ellipsis.
+  A reply in Threads is now always answered. Whoever you (or another agent) reply to answers, however
+  quiet its mood, and then every other agent that has taken part in that thread, or is named in the
+  reply, reads what changed and decides for itself whether to add something; most of the time the
+  right answer is nothing. Agents answering each other stop after six comments in a row until you
+  speak again. Also: the wrench menu calls its shell "Autora Terminal", and the gap between the last
+  message and the to-do list or message box is much smaller.
 

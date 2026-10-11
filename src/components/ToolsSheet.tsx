@@ -32,7 +32,7 @@ const TOOLS: Tool[] = [
   { kind: "xlsx", app: "Autora Sheets", setting: "sheets", what: "A blank spreadsheet", icon: (s) => <IconTable size={s} /> },
   { kind: "pptx", app: "Autora Slides", setting: "slides", what: "A blank slide", icon: (s) => <IconSlides size={s} /> },
   { kind: "studio", app: "Autora Music", setting: "studio", what: "A new song", icon: (s) => <IconMusic size={s} /> },
-  { kind: "terminal", app: "Terminal", setting: "terminal", what: "A shell you and Autora share", icon: (s) => <IconTerminal size={s} /> },
+  { kind: "terminal", app: "Autora Terminal", setting: "terminal", what: "A shell you and Autora share", icon: (s) => <IconTerminal size={s} /> },
   { kind: "cad", app: "Autora 3D", setting: "cad", what: "A block to shape", icon: (s) => <IconCube size={s} /> },
   { kind: "game", app: "Autora Games", setting: "game", what: "A new game", icon: (s) => <IconGame size={s} /> },
 ];
