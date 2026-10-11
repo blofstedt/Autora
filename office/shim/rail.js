@@ -33,6 +33,13 @@
     html.autora-rail-ui.rail-ribbon header.excel-header :is([class*="picker"], [class*="popover"], [class*="popup"], [class*="menu"], [class*="dropdown"], [class*="gallery"], [role="menu"], [role="listbox"], [role="dialog"]) { visibility: visible; pointer-events: auto; box-shadow: 0 16px 48px -10px #000; outline: 1px solid rgba(255,255,255,.16); border-radius: 10px; }
     html.autora-desktop.rail-ribbon .ribbon, html.autora-desktop.rail-ribbon header.excel-header { right: 76px; top: 12px; width: min(680px, calc(100vw - 100px)); }
     html.autora-phone.rail-ribbon .ribbon, html.autora-phone.rail-ribbon header.excel-header { left: 8px; right: 8px; bottom: 64px; max-height: 46vh !important; }
+    /* A side pane (Styles, Comments, the format pane) floats over the work area, beside the bar (above the dock on a phone): it never
+       pushes the page or the slide sideways, so what is being worked on stays where it is. */
+    html.autora-rail-ui aside.styles-pane, html.autora-rail-ui aside.comments-pane, html.autora-rail-ui aside.format-pane, html.autora-rail-ui aside.nav-pane {
+      position: fixed !important; z-index: 60; box-sizing: border-box; border: 1px solid rgba(255,255,255,.14) !important; border-radius: 16px; box-shadow: 0 24px 60px -16px #000; overflow: hidden; }
+    html.autora-desktop aside.styles-pane, html.autora-desktop aside.comments-pane, html.autora-desktop aside.format-pane { right: 76px; top: 12px; bottom: 12px; width: 300px !important; }
+    html.autora-desktop aside.nav-pane { left: 12px; top: 12px; bottom: 12px; }
+    html.autora-phone aside.styles-pane, html.autora-phone aside.comments-pane, html.autora-phone aside.format-pane, html.autora-phone aside.nav-pane { left: 8px; right: 8px; bottom: 64px; top: auto; width: auto !important; max-height: 55vh; }
     html.autora-rail-ui .qa-btn, html.autora-rail-ui .autosave-toggle, html.autora-rail-ui .ribbon-tab-file { display: none !important; }
     html.autora-rail-ui .ribbon-tabs { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
     html.autora-rail-ui .ribbon-tabs::-webkit-scrollbar { display: none; }
