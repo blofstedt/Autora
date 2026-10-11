@@ -42,6 +42,7 @@ import { stateFilePath } from "./state";
 import type { BrowserCookie } from "./cookies";
 import { humanClick, humanMove, humanPath, humanType, pointIn, wander, type Point } from "./human";
 import { DEFAULT_CAPTCHA, findChallenge, findPageCheckbox, solveChallenge, type CaptchaSettings, type SolveReport } from "./captcha";
+import { thoughtFromAction } from "../src/lib/thought";
 
 /* Playwright's types are not imported: the package is optional, and a type
    import would make the server half fail to compile wherever it is not
@@ -770,6 +771,10 @@ export const CURSOR_SCRIPT = `
       '.cur.typing .tag::after{content:"";display:inline-block;width:0;height:10px;margin-left:4px;vertical-align:-1px;' +
       'border-right:2px solid #fff;animation:blink .7s steps(1) infinite}' +
       '@keyframes blink{50%{opacity:0}}' +
+      '.thought{position:absolute;left:14px;top:-24px;padding:2px 9px;border-radius:999px;background:rgba(21,24,36,.94);' +
+      'color:#edeff5;border:1px solid rgba(124,92,255,.5);font:550 11px/15px Inter,system-ui,sans-serif;white-space:nowrap;' +
+      'opacity:0;transform:translateY(3px);transition:opacity .15s,transform .15s;box-shadow:0 4px 14px -4px rgba(0,0,0,.5)}' +
+      '.thought.on{opacity:1;transform:none}.thought.low{top:34px}.thought.flip{left:auto;right:6px}' +
       '.ring{position:fixed;width:28px;height:28px;margin:-14px 0 0 -14px;border-radius:50%;' +
       'border:2px solid #7c5cff;opacity:0}' +
       '@keyframes tap{from{transform:scale(.4);opacity:1}to{transform:scale(1.8);opacity:0}}' +
@@ -786,10 +791,14 @@ export const CURSOR_SCRIPT = `
       '<div class="ring"></div>' +
       '<div class="cur"><svg width="16" height="20" viewBox="0 0 16 20">' +
       '<path d="M1 1 L1 15 L5 11.5 L8 18 L10.5 17 L7.5 10.5 L13 10.5 Z" fill="#7c5cff" stroke="#fff" ' +
-      'stroke-width="1.2" stroke-linejoin="round"/></svg><span class="tag">Autora</span></div>';
+      'stroke-width="1.2" stroke-linejoin="round"/></svg><span class="tag">Autora</span><span class="thought"></span></div>';
     const cur = root.querySelector(".cur");
     const tag = root.querySelector(".tag");
     const ring = root.querySelector(".ring");
+    const thought = root.querySelector(".thought");
+    let thinkTimer = null;
+    let atX = 0;
+    let atY = 0;
     document.body.appendChild(host);
     let ringAt = 0;
     let doing = null;
@@ -809,7 +818,18 @@ export const CURSOR_SCRIPT = `
       void ring.offsetWidth;
       ring.classList.add("go");
     };
+    /* A few words about what it is doing, beside the pointer, for a moment: said by the server from the action it is
+       about to take, so it is only ever what the pointer is really doing. */
+    window.__autoraThought = (text) => {
+      thought.textContent = String(text || "");
+      thought.classList.toggle("low", atY < 40);
+      thought.classList.toggle("flip", atX > innerWidth - 230);
+      thought.classList.add("on");
+      clearTimeout(thinkTimer);
+      thinkTimer = setTimeout(() => thought.classList.remove("on"), 2600);
+    };
     window.__autoraCursor = (x, y, tap) => {
+      atX = x; atY = y;
       cur.style.transform = "translate(" + x + "px," + y + "px)";
       cur.style.opacity = "1";
       if (tap) ripple(x, y);
@@ -1932,6 +1952,18 @@ export class LiveBrowser {
     private opts: { viewport?: { width: number; height: number }; fps?: number; quality?: number; sharp?: boolean } = {},
   ) {
     if (opts.viewport) this.vp = { ...opts.viewport };
+    /* Whatever the browser says it is doing is also said, in a few words, beside its pointer in the page. */
+    const said = hooks.onAction;
+    this.hooks = { ...hooks, onAction: (action, at, url) => { said(action, at, url); void this.think(action); } };
+  }
+
+  /** The words beside the pointer for `action` (see src/lib/thought.ts); nothing for an act with nothing to say. */
+  private async think(action: string): Promise<void> {
+    const words = thoughtFromAction(action);
+    if (!words) return;
+    await this.page?.evaluate(
+      `(() => { if (window.__autoraCursorMount) window.__autoraCursorMount(); if (window.__autoraThought) window.__autoraThought(${JSON.stringify(words)}); })()`,
+    ).catch(() => undefined);
   }
 
   // ------------------------------------------------------------- lifecycle --

@@ -7801,3 +7801,25 @@ body.is-resizing iframe { pointer-events: none; }
 .dock-card-body { display: flex; flex-direction: column; gap: 4px; }
 /* The agent's pointer takes the theme's accent, as its label does. */
 .office-cursor-arrow path { fill: var(--accent); }
+
+/* The few words beside the agent's cursor (components/AgentThought.tsx): a pill up and to the right of the pointer, its
+   tail pointing back at it, above the pointer layer so it is never under what it describes. */
+.agent-thought {
+  position: fixed; left: 0; top: 0; z-index: 2147483001; pointer-events: none;
+  transition: transform 0.09s linear;
+}
+.agent-thought > span {
+  position: absolute; left: 16px; bottom: 10px; max-width: 240px; white-space: nowrap;
+  padding: 3px 10px; border-radius: var(--r-pill); font-size: var(--fs-xs); font-weight: 550; line-height: 16px;
+  color: var(--text); background: color-mix(in srgb, var(--s2) 94%, transparent); border: 1px solid var(--accent-line);
+  box-shadow: var(--shadow); animation: thoughtPop var(--dur-1) var(--ease) both;
+}
+.agent-thought > span::before {
+  content: ""; position: absolute; left: -3px; bottom: -3px; width: 7px; height: 7px; border-radius: 50%;
+  background: color-mix(in srgb, var(--s2) 94%, transparent); border: 1px solid var(--accent-line);
+}
+.agent-thought.is-flipped > span { left: auto; right: 8px; }
+.agent-thought.is-flipped > span::before { left: auto; right: -3px; }
+.agent-thought.is-below > span { bottom: auto; top: 26px; }
+@keyframes thoughtPop { from { opacity: 0; transform: translateY(3px) scale(0.96); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .agent-thought { transition: none; } .agent-thought > span { animation: none; } }

@@ -614,3 +614,18 @@ Spectra's fetched renderer is most of what is on disk.
 - `tests/`: plain `tsx` scripts, one per area. `npm test` runs every
   `tests/*.test.ts` it finds (`tests/run.ts`), so a new file needs no wiring.
 - `docs/ARCHITECTURE.md`: why it is built this way.
+
+## The agent's cursor and the few words beside it
+
+Every window that shows the agent working has a cursor that goes to a real element the way a hand does (`lib/humanPath.ts`
+for the app's windows: arc, easing, tremor, overshoot, rest, press; `server/human.ts` for the browser's page; `autora-3d/src/agentCursor.ts`
+in the 3D frame). Beside it, a short thought, **made from the act and never written by the model**: `lib/thought.ts` turns the
+tool call in flight (`thoughtForTool`, read from the log by `liveTool`) or the browser's own description of its click, fill or
+page (`thoughtFromAction`) into "Clicking “Save”", under `MAX` characters, and says nothing for an act with nothing to say.
+`components/AgentThought.tsx` (mounted once in `App.tsx`) puts the tool's words at the position every cursor reports to
+`lib/cursorPos.ts` -- Office, Video, Game, and `lib/pointer.ts` (PDF, Music, Photo) -- and keeps them 3 s after the call answers,
+since the windows play the work after it; the browser (and so Creator) draws its own inside the page (`__autoraThought` in
+`CURSOR_SCRIPT`, set from `LiveBrowser`'s `hooks.onAction`) and the 3D frame inside its own pointer. Photo's pointer goes to the
+canvas when `X-Photo-Cue` says the agent edited, and the picture changes as it presses. Terminal is the person's own shell: the agent's
+commands do not run in it, so it has no cursor. All of it is off with the agent-cursor switch. Tests: `thought.test.ts`,
+`browser-cursor.test.ts`.

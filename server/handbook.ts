@@ -25,7 +25,9 @@ const OVERVIEW = [
     "next look, so read the current state (the *_look / *_get / read tool of that window) before relying on what you saw earlier, " +
     "and again after you change something. Never overwrite the person's edit with an old copy.",
   "- You are seen working. With the cursor switch on (Settings), a labelled cursor moves in the window to what you are changing, " +
-    "clicks, and types. Do not describe the motion; do the work, then say what you did in a line.",
+    "clicks, and types, with a few words beside it about what that act is (made from the tool call itself: \"Clicking Save\", \"Making 3 changes\"). " +
+    "It shows in the browser, Creator, PDF, Pages, Sheets, Slides, Video, Music, Game, 3D and Photo windows; Terminal is the person's own shell, so there is nothing to point at there. " +
+    "Do not describe the motion; do the work, then say what you did in a line.",
   "- Switches. Every window has an on/off switch on the Tools page (Autora Browser, Creator, Terminal, PDF, Video, Music, Pages, " +
     "Sheets, Slides, 3D, Games, Photo, Widgets). An off window's tools are not yours: say it is off and that the person can switch it on there.",
   "- Whose choices. Productivity work (documents, spreadsheets, decks, PDFs, forms, files, set-up, wiring, code, databases) you do " +

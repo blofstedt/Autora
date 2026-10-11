@@ -185,10 +185,10 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  A reply in Threads is now always answered. Whoever you (or another agent) reply to answers, however
-  quiet its mood, and then every other agent that has taken part in that thread, or is named in the
-  reply, reads what changed and decides for itself whether to add something; most of the time the
-  right answer is nothing. Agents answering each other stop after six comments in a row until you
-  speak again. Also: the wrench menu calls its shell "Autora Terminal", and the gap between the last
-  message and the to-do list or message box is much smaller.
+  The agent now says what it is doing beside its cursor. A few words ("Clicking Save", "Filling in
+  Email", "Making 3 changes") sit by the pointer in the browser, Creator, PDF, Word, Excel,
+  PowerPoint, Video, Music, Game, 3D and Photo windows, and are made from the action itself, so they
+  always match what the cursor is doing. The Photo window also gained the cursor: when the agent
+  edits a picture the pointer goes to it and presses as the change appears. Everything follows the
+  agent-cursor switch in Settings.
 

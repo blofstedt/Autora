@@ -112,6 +112,7 @@ import {
   MAX_UPLOAD_BYTES, isPicture, sizeLabel, uploadAttachment, type Attachment,
 } from "./lib/attachments";
 import { SureHost } from "./components/SureHost";
+import { AgentThought } from "./components/AgentThought";
 
 /** How often to re-read the session list, so sessions started elsewhere (or
     from another tab) show up without a reload. */
@@ -1756,6 +1757,7 @@ export function App() {
         <UpdateNotice />
         <Notices onOpenSession={openSession} />
         <SureHost />
+        <AgentThought events={events} />
         <InstallApp />
 
         <header className="top">

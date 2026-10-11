@@ -67,6 +67,21 @@ const BUTTON: Array<[RegExp, string]> = [
   [/^shapes_subtract$|^shape_cut$/, 'Subtract'],
 ];
 
+/** A few words for what a tool is doing, said beside the pointer while it does it: only ever from the tool itself. */
+const WORDS: Array<[RegExp, string]> = [
+  [/^shape_add$|^shape_draw$/, 'Adding a shape'],
+  [/^library_place$/, 'Placing a part'],
+  [/^shape_move$/, 'Moving it'],
+  [/^shape_turn$/, 'Turning it'],
+  [/^group_create$/, 'Grouping them'],
+  [/^group_remove$/, 'Ungrouping'],
+  [/^repeat_/, 'Repeating it'],
+  [/^shape_delete$/, 'Deleting it'],
+  [/^shapes_join$/, 'Joining them'],
+  [/^shapes_subtract$|^shape_cut$/, 'Cutting it out'],
+];
+const wordsFor = (tool: string): string => WORDS.find(([re]) => re.test(tool))?.[1] ?? 'Shaping the model';
+
 /** The visible control for a tool, or null. */
 function buttonFor(tool: string): HTMLElement | null {
   const label = BUTTON.find(([re]) => re.test(tool))?.[1];
@@ -87,6 +102,7 @@ const centre = (el: HTMLElement): Point => {
 
 let layer: HTMLDivElement | null = null;
 let arrow: HTMLDivElement | null = null;
+let thought: HTMLSpanElement | null = null;
 let at: Point | null = null;
 let hideTimer = 0;
 let busy: Promise<void> = Promise.resolve();
@@ -102,6 +118,9 @@ function ensureLayer(): HTMLDivElement {
     '<svg width="16" height="20" viewBox="0 0 16 20" style="display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,.4))">' +
     '<path d="M1 1 L1 15 L5 11.5 L8 18 L10.5 17 L7.5 10.5 L13 10.5 Z" fill="#7c5cff" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/></svg>' +
     '<span style="position:absolute;left:14px;top:14px;padding:1px 7px;border-radius:999px;background:#7c5cff;color:#fff;font:600 10.5px/1.5 system-ui,sans-serif;white-space:nowrap">Autora</span>';
+  thought = document.createElement('span');
+  thought.style.cssText = 'position:absolute;left:14px;top:-24px;padding:2px 9px;border-radius:999px;background:rgba(21,24,36,.94);color:#edeff5;border:1px solid rgba(124,92,255,.5);font:550 11px/15px system-ui,sans-serif;white-space:nowrap;opacity:0;transition:opacity .15s ease;box-shadow:0 4px 14px -4px rgba(0,0,0,.5)';
+  arrow.appendChild(thought);
   layer.appendChild(arrow);
   document.body.appendChild(layer);
   return layer;
@@ -158,6 +177,7 @@ async function goTo(to: Point, pressed: boolean, control?: HTMLElement | null) {
 function rest() {
   window.clearTimeout(hideTimer);
   hideTimer = window.setTimeout(() => {
+    if (thought) thought.style.opacity = '0';
     if (arrow) arrow.style.opacity = '0';
     at = null;
   }, 2200);
@@ -180,6 +200,8 @@ export function show(cue: Showing): Promise<void> {
   const run = async () => {
     let applied = false;
     try {
+      ensureLayer();
+      if (thought) { thought.textContent = wordsFor(cue.tool); thought.style.opacity = '1'; }
       const control = buttonFor(cue.tool);
       if (control) await goTo(centre(control), true, control);
       cue.apply();

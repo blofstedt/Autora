@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFullscreen } from "../lib/fullscreen";
+import { useAgentCursor } from "../lib/agentCursor";
 import { onPhotoState, photoStateNow, usePhotoState } from "../lib/photodesk";
+import { pointerGo, pointerRest } from "../lib/pointer";
 import { IconImage, IconMaximize, IconMinimize } from "./Icons";
 
 /**
@@ -24,6 +26,11 @@ export function PhotoWindow({ sessionId, phone }: { sessionId: string; phone: bo
   const known = useRef(-1);
   const [trouble, setTrouble] = useState<string | null>(null);
   const [full, setFull] = useFullscreen();
+  /* The agent's cursor: when it changed the picture, the pointer goes to the canvas and presses there, and the new
+     picture appears as it does -- so the change is seen being made rather than found. */
+  const [cursorOn] = useAgentCursor();
+  const cursorRef = useRef(cursorOn);
+  cursorRef.current = cursorOn;
 
   const post = useCallback((msg: Record<string, unknown>, transfer: Transferable[] = []) => {
     frame.current?.contentWindow?.postMessage(msg, window.location.origin, transfer);
@@ -37,6 +44,21 @@ export function PhotoWindow({ sessionId, phone }: { sessionId: string; phone: bo
       if (!res.ok) throw new Error(`Autora answered ${res.status}`);
       const bytes = await res.arrayBuffer();
       known.current = Number(res.headers.get("X-Photo-Rev") ?? 0);
+      let tool = "";
+      try { tool = String((JSON.parse(res.headers.get("X-Photo-Cue") ?? "null") as { tool?: string } | null)?.tool ?? ""); } catch { /* no cue */ }
+      if (tool && cursorRef.current) {
+        /* Somewhere on the picture itself (a real element: the editor's canvas), not its dead centre every time. */
+        const canvas = frame.current?.contentDocument?.querySelector("canvas") ?? null;
+        const r = (canvas ?? frame.current)?.getBoundingClientRect();
+        const origin = canvas ? frame.current?.getBoundingClientRect() : null;
+        if (r && r.width > 40 && r.height > 40) {
+          const jitter = () => 0.5 + (Math.random() - 0.5) * 0.4;
+          const x = (origin ? origin.left : 0) + r.left + r.width * jitter();
+          const y = (origin ? origin.top : 0) + r.top + r.height * jitter();
+          await pointerGo({ x, y }, tool === "edit" || tool === "open");
+          pointerRest();
+        }
+      }
       post({ autoraPhoto: "load", name: "work.pcraft", bytes }, [bytes]);
       setTrouble(null);
     } catch (err) {
