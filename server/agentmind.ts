@@ -110,7 +110,7 @@ export function mergeMind(fromId: string, intoId: string): void {
  * first. What the person told Autora about themselves (preferences) never goes:
  * it is not domain knowledge and is not a specialist's to hold.
  */
-export function copyRecords(from: MemoryGraph, to: MemoryGraph, ids: string[], move: boolean): MemoryRecord[] {
+function copyRecords(from: MemoryGraph, to: MemoryGraph, ids: string[], move: boolean): MemoryRecord[] {
   const moved: MemoryRecord[] = [];
   for (const id of ids) {
     const r = from.get(id);
@@ -169,5 +169,3 @@ export function mindBriefing(agentId: string, query = "", max = 6): string {
   return "What you have learned and kept (your own mind):\n" + hits.map((r) => `- ${r.body || r.title}${r.source ? ` (from ${r.source})` : ""}`).join("\n");
 }
 
-/** Test hook. */
-export function resetMinds(): void { graphs.clear(); }

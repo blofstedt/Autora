@@ -12,12 +12,12 @@
  * agents.ts keeps them, and the prompts (agentBrief, the Threads call) read them.
  */
 
-export const TRAITS = ["warmth", "candor", "rigor", "curiosity", "humor", "initiative", "teamwork"] as const;
+const TRAITS = ["warmth", "candor", "rigor", "curiosity", "humor", "initiative", "teamwork"] as const;
 export type TraitName = (typeof TRAITS)[number];
 export type Traits = Record<TraitName, number>;
 
 /** What each end of a trait means, for the person's sliders and for the agent's own briefing. */
-export const TRAIT_WORDS: Record<TraitName, { label: string; high: string; low: string }> = {
+const TRAIT_WORDS: Record<TraitName, { label: string; high: string; low: string }> = {
   warmth: { label: "Warmth", high: "warm and encouraging", low: "cool and businesslike" },
   candor: { label: "Candor", high: "blunt: it says the hard thing plainly", low: "diplomatic: it softens bad news" },
   rigor: { label: "Rigor", high: "exacting: it checks everything twice", low: "loose: it prefers speed to polish" },
@@ -76,7 +76,7 @@ const NEUTRAL: Archetype = {
   traits: A(60, 60, 65, 60, 50, 60),
 };
 
-export function archetypeFor(role: string, instructions = ""): Archetype {
+function archetypeFor(role: string, instructions = ""): Archetype {
   // The role is the strongest sign; the instructions only decide when the role says nothing.
   return ARCHETYPES.find((a) => a.match.test(role)) ?? ARCHETYPES.find((a) => a.match.test(instructions.slice(0, 600))) ?? NEUTRAL;
 }

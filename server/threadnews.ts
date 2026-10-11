@@ -38,12 +38,12 @@ const URLS = /https?:\/\/[^\s)<>"'\]]+/gi;
 const trimUrl = (u: string) => u.replace(/[.,;:!?]+$/, "");
 
 /** The addresses in a search's results, as the only sources a news post may cite. */
-export function sourcesOf(results: string): Set<string> {
+function sourcesOf(results: string): Set<string> {
   return new Set((results.match(URLS) ?? []).map(trimUrl));
 }
 
 /** What the agent watches: who it is and what it is for. */
-export function beatOf(agent: LifeAgent): string {
+function beatOf(agent: LifeAgent): string {
   return [agent.role, clipTo(agent.instructions.replace(/\s+/g, " "), 400)].filter(Boolean).join(": ") || agent.name;
 }
 
