@@ -44,6 +44,13 @@ await test("the Music manual teaches the tool bar and not the toolbar it replace
   }
 });
 
+await test("the 3D manual teaches the tool bar and not the bottom bar it replaced", () => {
+  const cad = manualText("cad");
+  for (const needle of ["All tools", "Size & position", "Pick edges", "Push & pull", "pin any tool", "no bottom bar", "whatever is shown"]) {
+    assert.ok(cad.includes(needle), `the 3D manual lacks "${needle}"`);
+  }
+});
+
 await test("a tool finds its window's manual, and a tool with no window finds none", () => {
   assert.equal(manualId("browser_click"), "browser");
   assert.equal(manualId("web_search"), "browser");

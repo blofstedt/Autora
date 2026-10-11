@@ -52,9 +52,10 @@ Live copy of the first version: https://claude.ai/artifact/A5vaGaNwJ8EFLA35jv3gD
 ## Retrofit order
 
 PDF first, then Music (done, 0.9.196: the first user of the shared host-side component below), then Video, Pages, Sheets,
-Slides, Photo, Games. Autora 3D is a copy of its own repo (blofstedt/3D-Modeling), so its bar changes there; it has a bottom
-bar of text pills with sub-menus (Shape, Draw, Move, Group, Repeat, Organize, Delete), which is close but is not the rail
-(no colour per tool, no All tools grid, at the bottom and not the right on a desktop). Browser is a navigation bar, not a palette.
+Slides, Photo, Games. Autora 3D (done, 0.9.199) wears the rail in its own build (`autora-3d/src/components/Rail.tsx`, Tailwind, same colours and
+rules): its bottom bar of text pills and the menus of its top bar are gone, the top bar is undo, redo and what is selected, and
+every tool is on the bar or in All tools. It is a copy of blofstedt/3D-Modeling, and the change was made in the copy
+(`docs/autora-3d-tool-rail.patch` is the same change; apply it upstream with `git apply -p2` before the next `scripts/sync-autora-3d.mjs`, which would otherwise undo it). Browser is a navigation bar, not a palette.
 
 **No repeats.** When an app takes the rail, everything the rail now does is removed from the old chrome in the same change:
 a tool that is on the bar is not also a button in a toolbar, a tab, a row of chips or a form. Music dropped its tempo/key row,

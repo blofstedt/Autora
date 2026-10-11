@@ -185,7 +185,10 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Music now has the same round, coloured tool bar as the PDF window: down the right on a
-  desktop, along the bottom on a phone, with an All tools window for the rest and tempo, key,
-  zoom and instruments in small trays. The old toolbar rows, tabs, add-track row and the
-  phone's ask box are gone, and the song gets the room. On a phone, tempo, key and bars share one short line, and every full-screen tool now keeps the chat button in its top bar instead of a strip along the bottom, so the tool gets the whole screen.
+  3D now has the same round, coloured tool bar as the PDF and Music windows: down the right on
+  a desktop, along the bottom on a phone, with an All tools window that holds every tool
+  (shapes, draw, move, group, repeat, join, subtract, isolate, hide, size and position,
+  material, library, export) and pins on a desktop. The bottom bar of text buttons and the
+  menus in the top bar are gone, and the model gets the room. Earlier in this release line,
+  Music got the same bar, and every full-screen tool on a phone gives the chat button a place
+  in its top bar instead of a strip along the bottom.

@@ -1,0 +1,1260 @@
+diff --git a/autora-3d/src/App.tsx b/autora-3d/src/App.tsx
+index 95c1642..80e5c6e 100644
+--- a/autora-3d/src/App.tsx
++++ b/autora-3d/src/App.tsx
+@@ -25,7 +25,7 @@ import { installBridge } from './core/bridge';
+ import { embedded, useAutoraEmbed } from './embed';
+ import type { AgentHost } from './core/agent';
+ import Sidebar from './components/Sidebar';
+-import BottomBar from './components/BottomBar';
++import Rail, { type RailProps } from './components/Rail';
+ import TopBar from './components/TopBar';
+ import ConfirmDeleteModal from './components/ConfirmDeleteModal';
+ import { useHistory } from './hooks/useHistory';
+@@ -897,43 +897,74 @@ export default function App() {
+         .join(', ') + (isolatedIds.length > 2 ? ` +${isolatedIds.length - 2}` : '')
+     : '';
+ 
++  const railProps: RailProps = {
++    openId: openMenu,
++    setOpenId: setOpenMenu,
++    canUndo: history.canUndo,
++    canRedo: history.canRedo,
++    onUndo: doUndo,
++    onRedo: doRedo,
++    selected: selectedBodies,
++    joined: joinedSelected,
++    edges: selectedEdges,
++    face: selectedFace,
++    onEdgeChange: handleEdgeChange,
++    onClearEdges: () => setSelectedEdges([]),
++    onSelectEdges: setSelectedEdges,
++    onExtrudeFace: handleExtrudeFace,
++    onClearFace: () => setSelectedFace(null),
++    onMove: (dx, dy, dz) => moveSelection(dx, dy, dz),
++    onResize: handleResize,
++    onUpdateBody: handleUpdateBody,
++    group: selectedGroup ? { id: selectedGroup.id, name: selectedGroup.name } : undefined,
++    object: selectedGroup?.libraryId
++            ? { state: selectedGroup.place ? 'linked' : 'editing', item: library.find((i) => i.id === selectedGroup.libraryId)?.name ?? 'object' }
++            : undefined,
++    canSave: !selectedGroup?.libraryId &&
++          (selectedGroup ? !selectedGroup.joined : selectedBodies.length === 1 && !selectedBodies[0].groupId && !selectedBodies[0].repeatOf && !selectedBodies[0].instanceOf && !selectedBodies[0].frame),
++    onSaveToLibrary: handleSaveToLibrary,
++    onEditObject: handleEditObject,
++    onSeparateObject: handleSeparateObject,
++    onRenameGroup: (group, name) => void runOp((d) => ops.renameGroup(d, { group, name })),
++    sidebar: sidebarProps,
++    selectedCount: selectedBodyIds.length,
++    bodyCount: displayBodies.length,
++    isolated: !!isolatedIds,
++    moveOn: moveOn && selectedBodyIds.length > 0,
++    addOnTop: selectedFace?.kind === 'top' && selectedBodyIds.length === 1,
++    onAddShape: addShape,
++    library: [
++          ...library.map((i) => ({ id: i.id, name: i.name, shapes: i.bodies.length, shared: !!i.shared, inProject: true, thumb: thumbnailUrl(i, 88) })),
++          ...sharedItems.filter((i) => !library.some((x) => x.id === i.id)).map((i) => ({ id: i.id, name: i.name, shapes: i.bodies.length, shared: true, inProject: false, thumb: thumbnailUrl(i, 88) })),
++        ],
++    onPlaceItem: handlePlaceItem,
++    onShareItem: handleShareItem,
++    onRemoveItem: handleRemoveItem,
++    onToggleMove: () => setMoveOn((v) => !v),
++    onIsolate: toggleIsolate,
++    grouped: !!selectedGroupId,
++    hiddenCount: hiddenCount,
++    onHide: hideSelected,
++    onShowHidden: showHidden,
++    onGroup: () => {
++          if (joinedSelected) notify('This is a joined shape: it already moves as one.');
++          else if (selectedGroupId) handleUngroup(selectedGroupId);
++          else handleGroupSelected();
++        },
++    onJoin: handleMergeSelected,
++    onSubtract: handleSubtractSelected,
++    repeatOn: !!repeat,
++    drawOn: !!draw,
++    onDraw: handleToggleDraw,
++    repeated: selectedBodyIds.some((id) => repeats.some((l) => l.bodyId === id)),
++    onBreakRepeat: handleBreakRepeat,
++    onPattern: handleOpenRepeat,
++    onDelete: () => requestDelete(),
++  };
++
+   return (
+     <div className="h-dvh flex flex-col bg-slate-950 text-slate-100 font-sans select-none overflow-hidden">
+-      <TopBar
+-        openId={openMenu}
+-        setOpenId={setOpenMenu}
+-        canUndo={history.canUndo}
+-        canRedo={history.canRedo}
+-        onUndo={doUndo}
+-        onRedo={doRedo}
+-        selected={selectedBodies}
+-        joined={joinedSelected}
+-        edges={selectedEdges}
+-        face={selectedFace}
+-        onEdgeChange={handleEdgeChange}
+-        onClearEdges={() => setSelectedEdges([])}
+-        onSelectEdges={setSelectedEdges}
+-        onExtrudeFace={handleExtrudeFace}
+-        onClearFace={() => setSelectedFace(null)}
+-        onMove={(dx, dy, dz) => moveSelection(dx, dy, dz)}
+-        onResize={handleResize}
+-        onUpdateBody={handleUpdateBody}
+-        group={selectedGroup ? { id: selectedGroup.id, name: selectedGroup.name } : undefined}
+-        object={
+-          selectedGroup?.libraryId
+-            ? { state: selectedGroup.place ? 'linked' : 'editing', item: library.find((i) => i.id === selectedGroup.libraryId)?.name ?? 'object' }
+-            : undefined
+-        }
+-        canSave={
+-          !selectedGroup?.libraryId &&
+-          (selectedGroup ? !selectedGroup.joined : selectedBodies.length === 1 && !selectedBodies[0].groupId && !selectedBodies[0].repeatOf && !selectedBodies[0].instanceOf && !selectedBodies[0].frame)
+-        }
+-        onSaveToLibrary={handleSaveToLibrary}
+-        onEditObject={handleEditObject}
+-        onSeparateObject={handleSeparateObject}
+-        onRenameGroup={(group, name) => void runOp((d) => ops.renameGroup(d, { group, name }))}
+-        sidebar={sidebarProps}
+-      />
++      <TopBar {...railProps} />
+ 
+       <div className="flex-1 min-h-0 flex">
+         {/* Viewport */}
+@@ -1069,43 +1100,7 @@ export default function App() {
+ 
+       </div>
+ 
+-      <BottomBar
+-        openId={openMenu}
+-        setOpenId={setOpenMenu}
+-        selectedCount={selectedBodyIds.length}
+-        bodyCount={displayBodies.length}
+-        isolated={!!isolatedIds}
+-        moveOn={moveOn && selectedBodyIds.length > 0}
+-        addOnTop={selectedFace?.kind === 'top' && selectedBodyIds.length === 1}
+-        onAddShape={addShape}
+-        library={[
+-          ...library.map((i) => ({ id: i.id, name: i.name, shapes: i.bodies.length, shared: !!i.shared, inProject: true, thumb: thumbnailUrl(i, 88) })),
+-          ...sharedItems.filter((i) => !library.some((x) => x.id === i.id)).map((i) => ({ id: i.id, name: i.name, shapes: i.bodies.length, shared: true, inProject: false, thumb: thumbnailUrl(i, 88) })),
+-        ]}
+-        onPlaceItem={handlePlaceItem}
+-        onShareItem={handleShareItem}
+-        onRemoveItem={handleRemoveItem}
+-        onToggleMove={() => setMoveOn((v) => !v)}
+-        onIsolate={toggleIsolate}
+-        grouped={!!selectedGroupId}
+-        hiddenCount={hiddenCount}
+-        onHide={hideSelected}
+-        onShowHidden={showHidden}
+-        onGroup={() => {
+-          if (joinedSelected) notify('This is a joined shape: it already moves as one.');
+-          else if (selectedGroupId) handleUngroup(selectedGroupId);
+-          else handleGroupSelected();
+-        }}
+-        onJoin={handleMergeSelected}
+-        onSubtract={handleSubtractSelected}
+-        repeatOn={!!repeat}
+-        drawOn={!!draw}
+-        onDraw={handleToggleDraw}
+-        repeated={selectedBodyIds.some((id) => repeats.some((l) => l.bodyId === id))}
+-        onBreakRepeat={handleBreakRepeat}
+-        onPattern={handleOpenRepeat}
+-        onDelete={() => requestDelete()}
+-      />
++      <Rail {...railProps} />
+ 
+       <AnimatePresence>
+         {confirmDeleteIds && (
+diff --git a/autora-3d/src/components/BottomBar.tsx b/autora-3d/src/components/BottomBar.tsx
+deleted file mode 100644
+index 8f31f95..0000000
+--- a/autora-3d/src/components/BottomBar.tsx
++++ /dev/null
+@@ -1,262 +0,0 @@
+-/**
+- * @license
+- * SPDX-License-Identifier: Apache-2.0
+- */
+-
+-import React from 'react';
+-import { motion } from 'motion/react';
+-import {
+-  Boxes,
+-  Circle,
+-  Eye,
+-  EyeOff,
+-  Focus,
+-  Hexagon,
+-  Layers3,
+-  Combine,
+-  Ungroup,
+-  Move3d,
+-  Octagon,
+-  PenTool,
+-  Pentagon,
+-  Repeat,
+-  SquareMinus,
+-  Shapes,
+-  Square,
+-  SquareRoundCorner,
+-  Star,
+-  Trash2,
+-  Unlink,
+-  Triangle,
+-  TriangleRight,
+-  type LucideIcon,
+-  Globe,
+-} from 'lucide-react';
+-import { SHAPE_LABELS, ShapeKind } from '../utils/primitives';
+-import MenuButton from './Menu';
+-import { spring } from './controls';
+-
+-const SHAPE_ICONS: Record<ShapeKind, LucideIcon> = {
+-  box: Square,
+-  roundedBox: SquareRoundCorner,
+-  cylinder: Circle,
+-  triangle: Triangle,
+-  wedge: TriangleRight,
+-  pentagon: Pentagon,
+-  hexagon: Hexagon,
+-  octagon: Octagon,
+-  star: Star,
+-};
+-
+-interface BottomBarProps {
+-  openId: string | null;
+-  setOpenId: (id: string | null) => void;
+-  selectedCount: number;
+-  bodyCount: number;
+-  isolated: boolean;
+-  moveOn: boolean;
+-  /** True when the next shape will be placed on the selected top face. */
+-  addOnTop: boolean;
+-  onAddShape: (kind: ShapeKind) => void;
+-  /** The project's saved objects: tapping one places a linked copy. */
+-  library: { id: string; name: string; shapes: number; shared: boolean; inProject: boolean; thumb: string }[];
+-  onPlaceItem: (id: string) => void;
+-  onShareItem: (id: string) => void;
+-  onRemoveItem: (id: string) => void;
+-  onToggleMove: () => void;
+-  onIsolate: () => void;
+-  /** The selection is already a group, so the Group tool becomes Ungroup. */
+-  grouped: boolean;
+-  hiddenCount: number;
+-  onHide: () => void;
+-  onShowHidden: () => void;
+-  onGroup: () => void;
+-  onJoin: () => void;
+-  onSubtract: () => void;
+-  /** A repeat is open: the tool shows as on and pressing it keeps the copies. */
+-  repeatOn: boolean;
+-  /** A sketch is open: the Draw tool shows as on. */
+-  drawOn: boolean;
+-  onDraw: () => void;
+-  /** The selected shape has a live repeat, so Organize can let its copies go. */
+-  repeated: boolean;
+-  onBreakRepeat: () => void;
+-  onPattern: () => void;
+-  onDelete: () => void;
+-}
+-
+-interface Tool {
+-  label: string;
+-  key: string;
+-  icon: LucideIcon;
+-  onClick: () => void;
+-  disabled?: boolean;
+-  hint?: string;
+-  active?: boolean;
+-  danger?: boolean;
+-}
+-
+-/** The tools: one Shape tool that opens the shape list, then the commands. */
+-export default function BottomBar(props: BottomBarProps) {
+-  const { selectedCount, bodyCount } = props;
+-  /* How a second shape is added to the selection depends on what is in the person's hand. */
+-  const addHint = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? 'Hold a shape to add it' : 'Shift-click a shape to add it';
+-  const tools: Tool[] = [
+-    { label: 'Draw', key: 'D', icon: PenTool, onClick: props.onDraw, active: props.drawOn },
+-    { label: 'Move', key: 'M', icon: Move3d, onClick: props.onToggleMove, active: props.moveOn, disabled: selectedCount < 1, hint: 'Select a shape' },
+-    { label: props.grouped ? 'Ungroup' : 'Group', key: 'G', icon: props.grouped ? Ungroup : Boxes, onClick: props.onGroup, disabled: !props.grouped && selectedCount < 2, hint: addHint },
+-    { label: 'Repeat', key: 'R', icon: Repeat, onClick: props.onPattern, active: props.repeatOn, disabled: !props.repeatOn && selectedCount < 1, hint: 'Select a shape' },
+-  ];
+-  const organize: Tool[] = [
+-    { label: 'Join', key: 'J', icon: Combine, onClick: props.onJoin, disabled: selectedCount < 2, hint: addHint },
+-    { label: 'Subtract', key: 'S', icon: SquareMinus, onClick: props.onSubtract, disabled: selectedCount < 2, hint: addHint },
+-    { label: props.isolated ? 'Show everything' : 'Isolate', key: 'I', icon: Focus, onClick: props.onIsolate, active: props.isolated, disabled: !props.isolated && selectedCount < 1, hint: 'Select a shape' },
+-    { label: 'Hide', key: 'H', icon: EyeOff, onClick: props.onHide, disabled: selectedCount < 1, hint: 'Select a shape' },
+-    ...(props.repeated ? [{ label: 'Make copies separate', key: '', icon: Unlink, onClick: props.onBreakRepeat } as Tool] : []),
+-    ...(props.hiddenCount > 0 ? [{ label: `Show hidden (${props.hiddenCount})`, key: '', icon: Eye, onClick: props.onShowHidden } as Tool] : []),
+-  ];
+-  const deleteTool: Tool = { label: 'Delete', key: 'Del', icon: Trash2, onClick: props.onDelete, disabled: selectedCount < 1, hint: 'Select a shape', danger: true };
+-
+-  const renderTool = (t: Tool) => {
+-        const Icon = t.icon;
+-        return (
+-          <motion.button
+-            key={t.label}
+-            type="button"
+-            onClick={t.onClick}
+-            disabled={t.disabled}
+-            aria-label={t.label}
+-            aria-pressed={t.active || undefined}
+-            title={t.disabled && t.hint ? `${t.label} · ${t.hint}` : `${t.label} (${t.key})`}
+-            whileHover={t.disabled ? undefined : { scale: 1.05 }}
+-            whileTap={t.disabled ? undefined : { scale: 0.92 }}
+-            transition={spring}
+-            className={`shrink-0 h-[46px] w-[46px] sm:h-9 sm:w-auto sm:px-3.5 rounded-full flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 text-[9.5px] sm:text-[13px] leading-none font-medium transition-colors ${
+-              t.active
+-                ? 'bg-accent-500 text-white shadow-md shadow-accent-500/30'
+-                : t.danger
+-                  ? 'bg-white/6 text-slate-200 hover:bg-rose-500/20 hover:text-rose-300 disabled:bg-transparent'
+-                  : 'bg-white/6 text-slate-200 hover:bg-white/12 hover:text-white disabled:bg-transparent'
+-            } disabled:text-slate-600 disabled:pointer-events-none`}
+-          >
+-            <Icon size={17} strokeWidth={1.75} />
+-            <span>{t.label}</span>
+-          </motion.button>
+-        );
+-      };
+-
+-  return (
+-    <nav aria-label="Tools" className="shrink-0 h-[calc(4rem+env(safe-area-inset-bottom))] pb-[env(safe-area-inset-bottom)] bg-slate-900 border-t border-white/8 z-40 flex items-center justify-evenly sm:justify-center sm:gap-1.5 px-2 sm:px-3">
+-      <MenuButton id="shapes" openId={props.openId} setOpenId={props.setOpenId} label="Shape" icon={Shapes} placement="up" title="Add a shape" stackedOnMobile>
+-        <div className="p-3 w-[min(19rem,calc(100vw-1.5rem))]">
+-          <p className="px-2 pb-2 text-xs text-slate-400">{props.addOnTop ? 'Adds on top of the selected face' : 'Add a shape'}</p>
+-          <div className="grid grid-cols-3 gap-2">
+-            {(Object.keys(SHAPE_LABELS) as ShapeKind[]).map((kind, i) => {
+-              const Icon = SHAPE_ICONS[kind];
+-              return (
+-                <motion.button
+-                  key={kind}
+-                  type="button"
+-                  initial={{ opacity: 0, scale: 0.6 }}
+-                  animate={{ opacity: 1, scale: 1 }}
+-                  transition={{ ...spring, delay: i * 0.025 }}
+-                  whileHover={{ scale: 1.06 }}
+-                  whileTap={{ scale: 0.92 }}
+-                  onClick={() => {
+-                    props.onAddShape(kind);
+-                    props.setOpenId(null);
+-                  }}
+-                  className="h-20 rounded-[1.4rem] bg-white/6 hover:bg-white/12 flex flex-col items-center justify-center gap-1.5 text-slate-200 hover:text-white transition-colors"
+-                >
+-                  <Icon size={24} strokeWidth={1.6} />
+-                  <span className="text-[11px]">{SHAPE_LABELS[kind]}</span>
+-                </motion.button>
+-              );
+-            })}
+-          </div>
+-          {props.library.length > 0 && (
+-            <div className="mt-3 pt-3 border-t border-white/8">
+-              <p className="px-2 pb-2 text-xs text-slate-400">Your objects · placed copies stay linked · globe = in every project</p>
+-              <div className="flex flex-col gap-1 max-h-60 overflow-y-auto">
+-                {props.library.map((item) => (
+-                  <div key={item.id} className="flex items-center gap-1">
+-                    <button
+-                      type="button"
+-                      onClick={() => {
+-                        props.onPlaceItem(item.id);
+-                        props.setOpenId(null);
+-                      }}
+-                      className="flex-1 min-w-0 h-14 pl-2 pr-4 rounded-full bg-white/6 hover:bg-white/12 text-left text-sm font-medium text-slate-100 flex items-center gap-2.5 transition-colors"
+-                    >
+-                      <img src={item.thumb} alt="" width={44} height={44} className="w-11 h-11 shrink-0 rounded-full bg-slate-950/60" draggable={false} />
+-                      <span className="truncate">{item.name}</span>
+-                      <span className="ml-auto text-[11px] text-slate-400">{item.shapes} {item.shapes === 1 ? 'shape' : 'shapes'}</span>
+-                    </button>
+-                    {item.inProject ? (
+-                      <button
+-                        type="button"
+-                        onClick={() => props.onShareItem(item.id)}
+-                        aria-pressed={item.shared}
+-                        aria-label={item.shared ? `${item.name} is in every project: tap to keep it in this project only` : `Keep ${item.name} in every project`}
+-                        title={item.shared ? 'In every project (tap to keep it only here)' : 'Keep in every project'}
+-                        className={`w-11 h-11 shrink-0 rounded-full flex items-center justify-center transition-colors ${item.shared ? 'bg-accent-500/25 text-accent-200' : 'text-slate-400 hover:text-white hover:bg-white/10'}`}
+-                      >
+-                        <Globe size={16} />
+-                      </button>
+-                    ) : (
+-                      <span className="w-11 h-11 shrink-0 flex items-center justify-center text-accent-200" title="From the app-wide library"><Globe size={16} /></span>
+-                    )}
+-                    <button
+-                      type="button"
+-                      onClick={() => props.onRemoveItem(item.id)}
+-                      aria-label={item.inProject ? `Remove ${item.name} from this project's library` : `Remove ${item.name} from every project`}
+-                      title={item.inProject ? 'Remove from this project (placed copies stay as shapes)' : 'Remove from every project'}
+-                      className="w-11 h-11 shrink-0 rounded-full text-slate-400 hover:text-rose-300 hover:bg-rose-500/15 flex items-center justify-center transition-colors"
+-                    >
+-                      <Trash2 size={16} />
+-                    </button>
+-                  </div>
+-                ))}
+-              </div>
+-            </div>
+-          )}
+-        </div>
+-      </MenuButton>
+-
+-      <div className="hidden sm:block shrink-0 w-px h-6 bg-white/10 mx-1" />
+-
+-      {tools.map(renderTool)}
+-
+-      <MenuButton id="organize" openId={props.openId} setOpenId={props.setOpenId} label="Organize" icon={Layers3} placement="up" title="Join, isolate, hide" stackedOnMobile>
+-        <div className="p-2 flex flex-col gap-1 w-[min(15rem,calc(100vw-1.5rem))]">
+-          {organize.map((t, i) => {
+-            const Icon = t.icon;
+-            return (
+-              <motion.button
+-                key={t.label}
+-                type="button"
+-                disabled={t.disabled}
+-                initial={{ opacity: 0, x: -8 }}
+-                animate={{ opacity: 1, x: 0 }}
+-                transition={{ ...spring, delay: i * 0.03 }}
+-                onClick={() => {
+-                  t.onClick();
+-                  props.setOpenId(null);
+-                }}
+-                className={`h-11 px-3 rounded-full flex items-center gap-3 text-sm font-medium transition-colors disabled:text-slate-600 disabled:pointer-events-none ${
+-                  t.active ? 'bg-accent-500 text-white' : 'text-slate-100 hover:bg-white/10'
+-                }`}
+-              >
+-                <Icon size={17} strokeWidth={1.75} />
+-                <span>{t.label}</span>
+-                {t.key && <kbd className="ml-auto text-[11px] text-slate-400 font-sans">{t.key}</kbd>}
+-              </motion.button>
+-            );
+-          })}
+-        </div>
+-      </MenuButton>
+-
+-      {renderTool(deleteTool)}
+-    </nav>
+-  );
+-}
+diff --git a/autora-3d/src/components/Menu.tsx b/autora-3d/src/components/Menu.tsx
+deleted file mode 100644
+index 3912baa..0000000
+--- a/autora-3d/src/components/Menu.tsx
++++ /dev/null
+@@ -1,100 +0,0 @@
+-/**
+- * @license
+- * SPDX-License-Identifier: Apache-2.0
+- */
+-
+-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+-import { AnimatePresence, motion } from 'motion/react';
+-import { ChevronDown, ChevronUp, type LucideIcon } from 'lucide-react';
+-import { spring } from './controls';
+-
+-interface MenuButtonProps {
+-  id: string;
+-  openId: string | null;
+-  setOpenId: (id: string | null) => void;
+-  label?: string;
+-  icon?: LucideIcon;
+-  /** Open downwards from a top bar, or upwards from the bottom bar. */
+-  placement: 'down' | 'up';
+-  active?: boolean;
+-  /** On phones the label sits under the icon in a small round button; from sm up it is a pill. */
+-  stackedOnMobile?: boolean;
+-  disabled?: boolean;
+-  title?: string;
+-  /** Rendered as a round icon-only button when there is no label. */
+-  children: React.ReactNode;
+-}
+-
+-/** A round button that opens a small rounded menu next to it. One menu is open at a time. */
+-export default function MenuButton({ id, openId, setOpenId, label, icon: Icon, placement, active, stackedOnMobile, disabled, title, children }: MenuButtonProps) {
+-  const open = openId === id;
+-  const btnRef = useRef<HTMLButtonElement>(null);
+-  const popRef = useRef<HTMLDivElement>(null);
+-  const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number }>({ left: 8 });
+-
+-  // Position next to the trigger, kept inside the screen.
+-  useLayoutEffect(() => {
+-    if (!open || !btnRef.current) return;
+-    const r = btnRef.current.getBoundingClientRect();
+-    const w = popRef.current?.offsetWidth ?? 280;
+-    const left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width / 2 - w / 2));
+-    setPos(placement === 'down' ? { left, top: r.bottom + 8 } : { left, bottom: window.innerHeight - r.top + 8 });
+-  }, [open, placement, children]);
+-
+-  // Click outside or Escape closes it.
+-  useEffect(() => {
+-    if (!open) return;
+-    const down = (e: PointerEvent) => {
+-      const t = e.target as Node;
+-      if (popRef.current?.contains(t) || btnRef.current?.contains(t)) return;
+-      setOpenId(null);
+-    };
+-    window.addEventListener('pointerdown', down, true);
+-    return () => window.removeEventListener('pointerdown', down, true);
+-  }, [open, setOpenId]);
+-
+-  const Chevron = placement === 'down' ? ChevronDown : ChevronUp;
+-  return (
+-    <>
+-      <motion.button
+-        ref={btnRef}
+-        type="button"
+-        disabled={disabled}
+-        title={title ?? label}
+-        aria-label={label ?? title}
+-        aria-haspopup="menu"
+-        aria-expanded={open}
+-        onClick={() => setOpenId(open ? null : id)}
+-        whileTap={{ scale: 0.94 }}
+-        transition={spring}
+-        className={`shrink-0 rounded-full flex items-center justify-center font-medium transition-colors disabled:text-slate-600 disabled:pointer-events-none ${
+-          !label
+-            ? 'h-9 w-9 text-[13px]'
+-            : stackedOnMobile
+-              ? 'h-[46px] w-[46px] flex-col gap-0.5 text-[9.5px] leading-none sm:h-9 sm:w-auto sm:flex-row sm:gap-1.5 sm:pl-3.5 sm:pr-2.5 sm:text-[13px]'
+-              : 'h-9 gap-1.5 pl-3.5 pr-2.5 text-[13px]'
+-        } ${open || active ? 'bg-accent-500 text-white shadow-md shadow-accent-500/30' : 'bg-white/6 text-slate-200 hover:bg-white/12 hover:text-white'}`}
+-      >
+-        {Icon && <Icon size={16} strokeWidth={1.75} />}
+-        {label && <span className="whitespace-nowrap">{label}</span>}
+-        {label && <Chevron size={13} className={`opacity-70 ${stackedOnMobile ? 'hidden sm:block' : ''}`} />}
+-      </motion.button>
+-      <AnimatePresence>
+-        {open && (
+-          <motion.div
+-            ref={popRef}
+-            role="menu"
+-            initial={{ opacity: 0, scale: 0.88, y: placement === 'down' ? -8 : 8 }}
+-            animate={{ opacity: 1, scale: 1, y: 0 }}
+-            exit={{ opacity: 0, scale: 0.94, transition: { duration: 0.1 } }}
+-            transition={{ ...spring, stiffness: 440, damping: 30 }}
+-            style={{ position: 'fixed', left: pos.left, top: pos.top, bottom: pos.bottom, transformOrigin: placement === 'down' ? '50% 0%' : '50% 100%' }}
+-            className="z-50 max-w-[calc(100vw-1rem)] max-h-[min(70dvh,34rem)] overflow-y-auto rounded-[1.75rem] bg-slate-800 border border-white/10 shadow-2xl shadow-black/60"
+-          >
+-            {children}
+-          </motion.div>
+-        )}
+-      </AnimatePresence>
+-    </>
+-  );
+-}
+diff --git a/autora-3d/src/components/Rail.tsx b/autora-3d/src/components/Rail.tsx
+new file mode 100644
+index 0000000..090c735
+--- /dev/null
++++ b/autora-3d/src/components/Rail.tsx
+@@ -0,0 +1,385 @@
++/**
++ * @license
++ * SPDX-License-Identifier: Apache-2.0
++ */
++
++import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
++import {
++  BookmarkPlus,
++  Boxes,
++  Circle,
++  Combine,
++  Eye,
++  EyeOff,
++  FileDown,
++  Focus,
++  Globe,
++  Hexagon,
++  LayoutGrid,
++  Layers3,
++  Library,
++  Move,
++  Move3d,
++  Octagon,
++  Palette,
++  Pencil,
++  PenTool,
++  Pentagon,
++  Pin,
++  Repeat,
++  Shapes,
++  SlidersHorizontal,
++  Square,
++  SquareDashed,
++  SquareMinus,
++  SquareRoundCorner,
++  Star,
++  Trash2,
++  Triangle,
++  TriangleRight,
++  Ungroup,
++  Unlink,
++  X,
++  type LucideIcon,
++} from 'lucide-react';
++import { SHAPE_LABELS, ShapeKind } from '../utils/primitives';
++import Sidebar from './Sidebar';
++import { EdgePanel, FacePanel, SizePositionPanel, selectionMode, type TopBarProps } from './TopBar';
++
++const SHAPE_ICONS: Record<ShapeKind, LucideIcon> = {
++  box: Square,
++  roundedBox: SquareRoundCorner,
++  cylinder: Circle,
++  triangle: Triangle,
++  wedge: TriangleRight,
++  pentagon: Pentagon,
++  hexagon: Hexagon,
++  octagon: Octagon,
++  star: Star,
++};
++
++/** One colour per verb, the same ones every Autora app's tool bar uses (docs/TOOL-RAIL.md in Autora). */
++const C = { select: '#2563eb', text: '#059669', amber: '#f59e0b', draw: '#9333ea', shape: '#4f46e5', note: '#0284c7', gold: '#d97706', remove: '#e11d48', insert: '#0891b2' };
++
++export interface RailProps extends TopBarProps {
++  selectedCount: number;
++  bodyCount: number;
++  isolated: boolean;
++  moveOn: boolean;
++  /** True when the next shape will be placed on the selected top face. */
++  addOnTop: boolean;
++  onAddShape: (kind: ShapeKind) => void;
++  /** The project's saved objects: tapping one places a linked copy. */
++  library: { id: string; name: string; shapes: number; shared: boolean; inProject: boolean; thumb: string }[];
++  onPlaceItem: (id: string) => void;
++  onShareItem: (id: string) => void;
++  onRemoveItem: (id: string) => void;
++  onToggleMove: () => void;
++  onIsolate: () => void;
++  /** The selection is already a group, so the Group tool becomes Ungroup. */
++  grouped: boolean;
++  hiddenCount: number;
++  onHide: () => void;
++  onShowHidden: () => void;
++  onGroup: () => void;
++  onJoin: () => void;
++  onSubtract: () => void;
++  /** A repeat is open: the tool shows as on and pressing it keeps the copies. */
++  repeatOn: boolean;
++  /** A sketch is open: the Draw tool shows as on. */
++  drawOn: boolean;
++  onDraw: () => void;
++  /** The selected shape has a live repeat, so its copies can be let go. */
++  repeated: boolean;
++  onBreakRepeat: () => void;
++  onPattern: () => void;
++  onDelete: () => void;
++}
++
++interface Tool {
++  id: string;
++  label: string;
++  group: string;
++  icon: LucideIcon;
++  color: string;
++  phone?: boolean;
++  desktop?: boolean;
++  on?: boolean;
++  disabled?: boolean;
++  hint?: string;
++  run: () => void;
++}
++
++const PINS = 'autora-3d-rail-pins';
++const BTN = { phone: 40, desktop: 44 };
++
++const usePhone = () => {
++  const q = '(max-width: 639px)';
++  const [phone, setPhone] = useState(() => matchMedia(q).matches);
++  useEffect(() => {
++    const m = matchMedia(q);
++    const on = () => setPhone(m.matches);
++    m.addEventListener('change', on);
++    return () => m.removeEventListener('change', on);
++  }, []);
++  return phone;
++};
++
++/**
++ * Every tool of the modeller, in the one bar the PDF window and the other Autora apps wear: round coloured buttons down the
++ * right side on a desktop and along the bottom on a phone, as many as fit and never scrolling, and an All tools grid for
++ * the rest (with pins on a desktop). The panels a tool opens (shapes, size, material, bevel...) are cards beside the bar.
++ * Nothing is repeated elsewhere: the top bar holds only undo, redo and what is selected.
++ */
++export default function Rail(props: RailProps) {
++  const phone = usePhone();
++  const kind = phone ? 'phone' : 'desktop';
++  const { selectedCount: n, openId, setOpenId } = props;
++  const mode = selectionMode(props);
++  const [grid, setGrid] = useState(false);
++  const [room, setRoom] = useState(99);
++  const [toast, setToast] = useState<string | null>(null);
++  const bar = useRef<HTMLElement>(null);
++
++  const addHint = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? 'Hold a shape to add it' : 'Shift-click a shape to add it';
++  const picked = 'Select a shape';
++  const open = (id: string) => setOpenId(openId === id ? null : id);
++  const toggleOpen = (id: string) => () => open(id);
++
++  const tools: Tool[] = [
++    { id: 'shapes', label: 'Shape', group: 'Build', icon: Shapes, color: C.shape, phone: true, desktop: true, on: openId === 'shapes', run: toggleOpen('shapes') },
++    { id: 'draw', label: 'Draw', group: 'Build', icon: PenTool, color: C.draw, phone: true, desktop: true, on: props.drawOn, run: props.onDraw },
++    { id: 'library', label: 'Library', group: 'Build', icon: Library, color: C.gold, on: openId === 'library', run: toggleOpen('library') },
++    { id: 'move', label: 'Move', group: 'Edit', icon: Move3d, color: C.select, phone: true, desktop: true, on: props.moveOn, disabled: n < 1, hint: picked, run: props.onToggleMove },
++    { id: 'group', label: props.grouped ? 'Ungroup' : 'Group', group: 'Edit', icon: props.grouped ? Ungroup : Boxes, color: C.text, phone: true, desktop: true, disabled: !props.grouped && n < 2, hint: addHint, run: props.onGroup },
++    { id: 'repeat', label: 'Repeat', group: 'Edit', icon: Repeat, color: C.note, phone: true, desktop: true, on: props.repeatOn, disabled: !props.repeatOn && n < 1, hint: picked, run: props.onPattern },
++    { id: 'join', label: 'Join', group: 'Combine', icon: Combine, color: C.insert, desktop: true, disabled: n < 2, hint: addHint, run: props.onJoin },
++    { id: 'subtract', label: 'Subtract', group: 'Combine', icon: SquareMinus, color: C.remove, desktop: true, disabled: n < 2, hint: addHint, run: props.onSubtract },
++    { id: 'isolate', label: props.isolated ? 'Show everything' : 'Isolate', group: 'Combine', icon: Focus, color: C.amber, desktop: true, on: props.isolated, disabled: !props.isolated && n < 1, hint: picked, run: props.onIsolate },
++    { id: 'hide', label: 'Hide', group: 'Combine', icon: EyeOff, color: C.amber, desktop: true, disabled: n < 1, hint: picked, run: props.onHide },
++    { id: 'unhide', label: `Show hidden${props.hiddenCount ? ` (${props.hiddenCount})` : ''}`, group: 'Combine', icon: Eye, color: C.amber, disabled: props.hiddenCount < 1, run: props.onShowHidden },
++    { id: 'breakrepeat', label: 'Make copies separate', group: 'Combine', icon: Unlink, color: C.note, disabled: !props.repeated, run: props.onBreakRepeat },
++    { id: 'size', label: 'Size & position', group: 'Shape', icon: Move, color: C.insert, phone: true, desktop: true, on: openId === 'size', disabled: n < 1, hint: picked, run: toggleOpen('size') },
++    { id: 'props', label: 'Properties', group: 'Shape', icon: SlidersHorizontal, color: C.select, on: openId === 'props', disabled: !(props.selected.length === 1 && !props.group), hint: picked, run: toggleOpen('props') },
++    { id: 'material', label: 'Material', group: 'Shape', icon: Palette, color: C.text, desktop: true, on: openId === 'material', disabled: !(props.selected.length === 1 && !props.group), hint: picked, run: toggleOpen('material') },
++    { id: 'edges', label: 'Pick edges', group: 'Shape', icon: SquareDashed, color: C.shape, on: openId === 'edges', disabled: mode !== 'edge', hint: 'Tap an edge of a shape', run: toggleOpen('edges') },
++    { id: 'face', label: 'Push & pull', group: 'Shape', icon: Layers3, color: C.note, on: openId === 'face', disabled: mode !== 'face', hint: 'Tap a face of a shape', run: toggleOpen('face') },
++    { id: 'save', label: props.object?.state === 'editing' ? `Save to “${props.object.item}”` : 'Save to library', group: 'Library', icon: BookmarkPlus, color: C.gold, disabled: !props.canSave && props.object?.state !== 'editing', hint: 'Select a group or a shape', run: props.onSaveToLibrary },
++    { id: 'editobject', label: 'Edit object', group: 'Library', icon: Pencil, color: C.select, disabled: props.object?.state !== 'linked', hint: 'Select a copy from the library', run: props.onEditObject },
++    { id: 'separate', label: 'Separate', group: 'Library', icon: Unlink, color: C.remove, disabled: !props.object, hint: 'Select a library copy', run: props.onSeparateObject },
++    { id: 'file', label: 'Export & file', group: 'File', icon: FileDown, color: C.shape, desktop: true, on: openId === 'file', run: toggleOpen('file') },
++    { id: 'delete', label: 'Delete', group: 'Edit', icon: Trash2, color: C.remove, phone: true, desktop: true, disabled: n < 1, hint: picked, run: props.onDelete },
++  ];
++  const byId = new Map(tools.map((t) => [t.id, t]));
++
++  const [pins, setPins] = useState<string[]>(() => {
++    try {
++      const saved = JSON.parse(localStorage.getItem(PINS) ?? 'null') as unknown;
++      if (Array.isArray(saved)) return saved.filter((x): x is string => typeof x === 'string');
++    } catch { /* no storage: the defaults */ }
++    return tools.filter((t) => t.desktop).map((t) => t.id);
++  });
++  const savePins = (next: string[]) => {
++    setPins(next);
++    try { localStorage.setItem(PINS, JSON.stringify(next)); } catch { /* still works this session */ }
++  };
++  const ids = phone ? tools.filter((t) => t.phone).map((t) => t.id) : pins.filter((id) => byId.has(id));
++
++  // The window's own size is the room: its height on a desktop (the bar is a column), its width on a phone (a row).
++  useLayoutEffect(() => {
++    const measure = () => {
++      const space = phone ? window.innerWidth : window.innerHeight - 48 - 24;
++      setRoom(Math.max(1, Math.floor((space - 16 - 12 + 4) / (BTN[kind] + 4)) - 1));
++    };
++    measure();
++    window.addEventListener('resize', measure);
++    return () => window.removeEventListener('resize', measure);
++  }, [phone, kind]);
++
++  useEffect(() => {
++    if (!toast) return;
++    const t = setTimeout(() => setToast(null), 2200);
++    return () => clearTimeout(t);
++  }, [toast]);
++
++  useEffect(() => {
++    if (!grid) return;
++    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setGrid(false); };
++    window.addEventListener('keydown', key);
++    return () => window.removeEventListener('keydown', key);
++  }, [grid]);
++
++  const auto = openId;
++  const closePanel = () => setOpenId(null);
++
++  const press = (t: Tool) => { setGrid(false); t.run(); };
++  const sidebar = props.sidebar;
++  const panel = (() => {
++    switch (auto) {
++      case 'shapes':
++        return (
++          <div className="p-3 w-[min(19rem,calc(100vw-1.5rem))]">
++            <p className="px-2 pb-2 text-xs text-slate-400">{props.addOnTop ? 'Adds on top of the selected face' : 'Add a shape'}</p>
++            <div className="grid grid-cols-3 gap-2">
++              {(Object.keys(SHAPE_LABELS) as ShapeKind[]).map((k) => {
++                const Icon = SHAPE_ICONS[k];
++                return (
++                  <button key={k} type="button" onClick={() => { props.onAddShape(k); setOpenId(null); }} className="h-16 rounded-[1.2rem] bg-white/6 hover:bg-white/12 flex flex-col items-center justify-center gap-1 text-slate-200 hover:text-white transition-colors">
++                    <Icon size={22} strokeWidth={1.6} />
++                    <span className="text-[11px]">{SHAPE_LABELS[k]}</span>
++                  </button>
++                );
++              })}
++            </div>
++          </div>
++        );
++      case 'library':
++        return (
++          <div className="p-3 w-[min(19rem,calc(100vw-1.5rem))]">
++            <p className="px-2 pb-2 text-xs text-slate-400">{props.library.length ? 'Your objects · placed copies stay linked · globe = in every project' : 'Nothing saved yet. Select a group or a shape and use Save to library.'}</p>
++            <div className="flex flex-col gap-1 max-h-72 overflow-y-auto">
++              {props.library.map((item) => (
++                <div key={item.id} className="flex items-center gap-1">
++                  <button type="button" onClick={() => { props.onPlaceItem(item.id); setOpenId(null); }} className="flex-1 min-w-0 h-14 pl-2 pr-4 rounded-full bg-white/6 hover:bg-white/12 text-left text-sm font-medium text-slate-100 flex items-center gap-2.5 transition-colors">
++                    <img src={item.thumb} alt="" width={44} height={44} className="w-11 h-11 shrink-0 rounded-full bg-slate-950/60" draggable={false} />
++                    <span className="truncate">{item.name}</span>
++                    <span className="ml-auto text-[11px] text-slate-400">{item.shapes} {item.shapes === 1 ? 'shape' : 'shapes'}</span>
++                  </button>
++                  {item.inProject ? (
++                    <button type="button" onClick={() => props.onShareItem(item.id)} aria-pressed={item.shared} aria-label={item.shared ? `${item.name} is in every project: tap to keep it in this project only` : `Keep ${item.name} in every project`} title={item.shared ? 'In every project (tap to keep it only here)' : 'Keep in every project'} className={`w-11 h-11 shrink-0 rounded-full flex items-center justify-center transition-colors ${item.shared ? 'bg-accent-500/25 text-accent-200' : 'text-slate-400 hover:text-white hover:bg-white/10'}`}>
++                      <Globe size={16} />
++                    </button>
++                  ) : (
++                    <span className="w-11 h-11 shrink-0 flex items-center justify-center text-accent-200" title="From the app-wide library"><Globe size={16} /></span>
++                  )}
++                  <button type="button" onClick={() => props.onRemoveItem(item.id)} aria-label={item.inProject ? `Remove ${item.name} from this project's library` : `Remove ${item.name} from every project`} title={item.inProject ? 'Remove from this project (placed copies stay as shapes)' : 'Remove from every project'} className="w-11 h-11 shrink-0 rounded-full text-slate-400 hover:text-rose-300 hover:bg-rose-500/15 flex items-center justify-center transition-colors">
++                    <Trash2 size={16} />
++                  </button>
++                </div>
++              ))}
++            </div>
++          </div>
++        );
++      case 'size': return <SizePositionPanel {...props} />;
++      case 'props': return <Sidebar {...sidebar} section="properties" />;
++      case 'material': return <Sidebar {...sidebar} section="material" />;
++      case 'file': return <Sidebar {...sidebar} section="export" />;
++      case 'edges': return <EdgePanel {...props} />;
++      case 'face': return <FacePanel {...props} />;
++      default: return null;
++    }
++  })();
++  const panelTool = auto ? byId.get(auto) ?? null : null;
++
++  const groups: string[] = [];
++  for (const t of tools) if (!groups.includes(t.group)) groups.push(t.group);
++
++  return (
++    <>
++      {panel && panelTool && (
++        <section
++          aria-label={`${panelTool.label} options`}
++          style={{ ['--tc' as string]: panelTool.color }}
++          className={`z-40 max-h-[min(60dvh,34rem)] overflow-y-auto rounded-[1.5rem] bg-slate-800 border shadow-2xl shadow-black/60 ${phone ? 'fixed left-1/2 -translate-x-1/2 bottom-[calc(3.5rem+env(safe-area-inset-bottom)+0.5rem)]' : 'fixed right-[4.75rem] top-1/2 -translate-y-1/2'}`}
++        >
++          <div style={{ borderColor: panelTool.color }} className="sticky top-0 z-10 flex items-center gap-2 px-4 pt-3 pb-1 bg-slate-800 border-t-0">
++            <span style={{ color: panelTool.color }} className="flex items-center gap-2 text-[13px] font-medium"><panelTool.icon size={16} strokeWidth={1.75} />{panelTool.label}</span>
++            <div className="flex-1" />
++            <button type="button" aria-label="Close options" onClick={closePanel} className="w-7 h-7 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10"><X size={14} /></button>
++          </div>
++          {panel}
++        </section>
++      )}
++
++      <nav
++        ref={bar}
++        aria-label="Tools"
++        className={
++          phone
++            ? 'shrink-0 flex items-center justify-center gap-0.5 px-2 pt-1.5 pb-[calc(0.375rem+env(safe-area-inset-bottom))] bg-slate-900 border-t border-white/8 z-40'
++            : 'fixed right-2.5 top-1/2 -translate-y-1/2 z-40 flex flex-col items-center gap-1 p-2 rounded-full bg-slate-800/90 backdrop-blur border border-white/10 shadow-2xl shadow-black/50 max-h-[calc(100%-1.5rem)] overflow-hidden'
++        }
++      >
++        {ids.slice(0, room).map((id) => {
++          const t = byId.get(id)!;
++          const Icon = t.icon;
++          return (
++            <button
++              key={id}
++              type="button"
++              aria-label={t.label}
++              aria-pressed={t.on || undefined}
++              title={t.disabled && t.hint ? `${t.label} · ${t.hint}` : t.label}
++              disabled={t.disabled}
++              onClick={() => press(t)}
++              style={{ ['--tc' as string]: t.color, background: t.on ? t.color : `color-mix(in srgb, ${t.color} 16%, transparent)`, color: t.on ? '#fff' : t.color, boxShadow: t.on ? `0 6px 18px color-mix(in srgb, ${t.color} 45%, transparent)` : undefined }}
++              className={`shrink-0 rounded-full flex items-center justify-center transition-colors disabled:opacity-35 disabled:pointer-events-none ${phone ? 'h-10 w-10' : 'h-11 w-11'}`}
++            >
++              <Icon size={20} strokeWidth={1.75} />
++            </button>
++          );
++        })}
++        <i aria-hidden="true" className={`shrink-0 bg-white/12 ${phone ? 'w-px h-6 mx-1' : 'w-6 h-px my-0.5'}`} />
++        <button type="button" aria-label="All tools" aria-haspopup="dialog" title="All tools" onClick={() => setGrid(true)} className={`shrink-0 rounded-full flex items-center justify-center bg-white/8 text-slate-300 hover:text-white ${phone ? 'h-10 w-10' : 'h-11 w-11'}`}>
++          <LayoutGrid size={18} />
++        </button>
++      </nav>
++
++      {grid && (
++        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm" onClick={() => setGrid(false)} role="presentation">
++          <div role="dialog" aria-modal="true" aria-label="All tools" onClick={(e) => e.stopPropagation()} className={`w-full max-h-[86dvh] overflow-y-auto rounded-[1.5rem] bg-slate-900 border border-white/12 shadow-2xl ${phone ? 'max-w-[21rem] p-3' : 'max-w-[35rem] p-4'}`}>
++            <div className="flex items-center gap-2">
++              <h3 className="text-[15px] font-semibold text-white">All tools</h3>
++              <div className="flex-1" />
++              {!phone && <button type="button" onClick={() => savePins(tools.filter((t) => t.desktop).map((t) => t.id))} className="text-xs text-slate-300 hover:text-white px-2 py-1 rounded-full hover:bg-white/8">Reset bar</button>}
++              <button type="button" aria-label="Close" onClick={() => setGrid(false)} className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10"><X size={16} /></button>
++            </div>
++            <p className="mt-1 text-xs text-slate-400 min-h-[1.2em]">{toast ?? (phone ? 'Tap a tool to use it.' : `Pin the tools you use most to your bar. It has room for ${room} at this window size (${ids.length} pinned).`)}</p>
++            {groups.map((g) => (
++              <section key={g}>
++                <h4 className="mt-3.5 mb-2 px-1 text-[10.5px] font-medium uppercase tracking-[0.08em] text-slate-500">{g}</h4>
++                <div className={`grid gap-2 ${phone ? 'grid-cols-4' : 'grid-cols-5'}`}>
++                  {tools.filter((t) => t.group === g).map((t) => {
++                    const Icon = t.icon;
++                    const pinned = ids.includes(t.id);
++                    return (
++                      <div key={t.id} className="relative">
++                        <button
++                          type="button"
++                          disabled={t.disabled}
++                          title={t.disabled && t.hint ? t.hint : undefined}
++                          onClick={() => press(t)}
++                          style={{ color: t.color, background: `color-mix(in srgb, ${t.color} ${t.on ? 30 : 16}%, transparent)` }}
++                          className={`w-full flex flex-col items-center justify-center gap-1.5 px-1 text-center disabled:opacity-35 disabled:pointer-events-none rounded-2xl ${phone ? 'h-14 text-[10px]' : 'h-[4.5rem] text-[11.5px]'}`}
++                        >
++                          <Icon size={20} strokeWidth={1.75} />
++                          <span className="text-slate-100 leading-tight">{t.label}</span>
++                        </button>
++                        {!phone && (
++                          <button
++                            type="button"
++                            aria-pressed={pinned}
++                            aria-label={`${pinned ? 'Unpin' : 'Pin'} ${t.label} ${pinned ? 'from' : 'to'} the bar`}
++                            onClick={() => {
++                              if (pinned) savePins(pins.filter((p) => p !== t.id));
++                              else if (ids.length >= room) setToast('The bar is full. Unpin a tool first.');
++                              else savePins([...pins, t.id]);
++                            }}
++                            style={pinned ? { background: t.color } : undefined}
++                            className={`absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center ${pinned ? 'text-white' : 'text-slate-500 hover:text-white'}`}
++                          >
++                            <Pin size={11} />
++                          </button>
++                        )}
++                      </div>
++                    );
++                  })}
++                </div>
++              </section>
++            ))}
++          </div>
++        </div>
++      )}
++    </>
++  );
++}
+diff --git a/autora-3d/src/components/TopBar.tsx b/autora-3d/src/components/TopBar.tsx
+index 9667e5e..c863a32 100644
+--- a/autora-3d/src/components/TopBar.tsx
++++ b/autora-3d/src/components/TopBar.tsx
+@@ -4,18 +4,16 @@
+  */
+ 
+ import React from 'react';
+-import { AnimatePresence, motion } from 'motion/react';
+-import { BookmarkPlus, Box, FileDown, Link2, Move, Pencil, Unlink, SquareDashed, Palette, Redo2, SlidersHorizontal, Trash2, Undo2, X } from 'lucide-react';
++import { Box, Link2, Redo2, Trash2, Undo2, X } from 'lucide-react';
+ import { BevelStyle, Body3D, EdgeSel, FaceSel } from '../types';
+-import { describeEdges, edgeSize, edgesOfKind, edgeStyle, isWholeGroup, MAX_BEVEL_SIZE, maxBevelSize, primaryEdge, type EdgeGroup } from '../utils/edges';
++import { describeEdges, edgesOfKind, isWholeGroup, type EdgeGroup } from '../utils/edges';
+ import { selectionBounds } from '../utils/transform';
+-import MenuButton from './Menu';
+ import Sidebar from './Sidebar';
+-import { IconButton, NumberBox, Segmented, StepButton, signed, spring } from './controls';
++import { IconButton, NumberBox, StepButton, signed } from './controls';
+ 
+ type SidebarProps = React.ComponentProps<typeof Sidebar>;
+ 
+-interface TopBarProps {
++export interface TopBarProps {
+   openId: string | null;
+   setOpenId: (id: string | null) => void;
+   canUndo: boolean;
+@@ -55,21 +53,6 @@ const Chip = ({ children, sub }: { children: React.ReactNode; sub?: string }) =>
+   </div>
+ );
+ 
+-/** A small labelled button for an action on the selected object. */
+-const PillButton = ({ icon: Icon, label, onClick, title }: { icon: React.ComponentType<{ size?: number; strokeWidth?: number }>; label: string; onClick: () => void; title: string }) => (
+-  <motion.button
+-    type="button"
+-    onClick={onClick}
+-    title={title}
+-    whileTap={{ scale: 0.92 }}
+-    transition={spring}
+-    className="shrink-0 h-8 px-3 rounded-full bg-white/8 hover:bg-white/14 text-[13px] font-medium text-slate-100 flex items-center gap-1.5 transition-colors"
+-  >
+-    <Icon size={15} strokeWidth={1.75} />
+-    {label}
+-  </motion.button>
+-);
+-
+ /** A group's name, changed by tapping it. Saves on Enter or when you tap away; Escape keeps the old one. */
+ function GroupName({ name, onRename }: { name: string; onRename: (name: string) => void }) {
+   const [draft, setDraft] = React.useState<string | null>(null);
+@@ -104,7 +87,7 @@ function GroupName({ name, onRename }: { name: string; onRename: (name: string)
+ }
+ 
+ /** Width, depth, height and where it is: all typed in one small menu. */
+-function SizePositionPanel({ selected, onMove, onResize, onUpdateBody }: Pick<TopBarProps, 'selected' | 'onMove' | 'onResize' | 'onUpdateBody'>) {
++export function SizePositionPanel({ selected, onMove, onResize, onUpdateBody }: Pick<TopBarProps, 'selected' | 'onMove' | 'onResize' | 'onUpdateBody'>) {
+   const b = selectionBounds(selected);
+   if (!b) return null;
+   const single = selected.length === 1 ? selected[0] : null;
+@@ -145,156 +128,88 @@ function SizePositionPanel({ selected, onMove, onResize, onUpdateBody }: Pick<To
+   );
+ }
+ 
+-export default function TopBar(props: TopBarProps) {
+-  const { selected, edges, face, openId, setOpenId } = props;
++/** What the selection is, for the bar's title and for which panel the rail opens by itself. */
++export function selectionMode(props: Pick<TopBarProps, 'selected' | 'edges' | 'face' | 'group'>): 'none' | 'edge' | 'face' | 'shape' | 'multi' {
++  const { selected, edges, face } = props;
+   const body = selected.length === 1 ? selected[0] : null;
++  if (body && edges.length) return 'edge';
++  if (body && face && face.bodyId === body.id) return 'face';
++  if (body && !props.group) return 'shape';
++  if (selected.length > 1 || props.group) return 'multi';
++  return 'none';
++}
+ 
+-  let mode = 'none';
+-  if (body && edges.length) mode = 'edge';
+-  else if (body && face && face.bodyId === body.id) mode = 'face';
+-  else if (body && !props.group) mode = 'shape';
+-  else if (selected.length > 1 || props.group) mode = 'multi';
++/** Picking edges in bulk, and taking a bevel off. The bevel's size and profile are the model's own floating card, not repeated here. */
++export function EdgePanel(props: TopBarProps) {
++  const { selected, edges } = props;
++  const body = selected[0];
++  if (!body || !edges.length) return null;
++  return (
++    <div className="p-4 flex flex-col gap-3 w-[min(19rem,calc(100vw-1.5rem))]">
++      <Chip sub={describeEdges(body, edges).sub}>{describeEdges(body, edges).title}</Chip>
++      <div className="flex flex-wrap gap-1.5">
++        {(
++          [
++            ['top', 'Top'],
++            ['bottom', 'Bottom'],
++            ['corner', 'Corners'],
++            ['all', 'All'],
++          ] as [EdgeGroup, string][]
++        ).map(([group, text]) => (
++          <button
++            key={group}
++            type="button"
++            onClick={() => props.onSelectEdges(edgesOfKind(body, group))}
++            className={`h-8 px-3 rounded-full text-[13px] font-medium transition-colors ${isWholeGroup(body, edges, group) ? 'bg-accent-500 text-white' : 'bg-white/6 text-slate-100 hover:bg-white/12'}`}
++          >
++            {text}
++          </button>
++        ))}
++        <button type="button" onClick={props.onClearEdges} className="h-8 px-3 rounded-full text-[13px] font-medium text-slate-400 hover:bg-white/10 hover:text-white transition-colors">Clear</button>
++        <button type="button" onClick={() => props.onEdgeChange(edges, { size: 0 })} className="h-8 px-3 rounded-full text-[13px] font-medium text-rose-300 hover:bg-rose-500/15 transition-colors">Remove bevel</button>
++      </div>
++    </div>
++  );
++}
+ 
+-  const dynamic = (() => {
+-    if (mode === 'edge' && body) {
+-      const onlyCorners = edges.every((e) => e.kind === 'corner');
+-      const size = edgeSize(body, primaryEdge(edges));
+-      const style = edgeStyle(body, edges.find((e) => e.kind !== 'corner') ?? edges[0]) ?? 'round';
+-      const most = onlyCorners ? MAX_BEVEL_SIZE : maxBevelSize(body, edges);
+-      const set = (v: number) => props.onEdgeChange(edges, { size: Math.max(0, Math.min(most, v)) });
+-      return (
+-        <>
+-          <Chip sub={describeEdges(body, edges).sub}>{describeEdges(body, edges).title}</Chip>
+-          <NumberBox label={onlyCorners ? 'Radius' : 'Size'} value={size} step={0.5} min={0} max={most} onCommit={set} />
+-          {!onlyCorners && (
+-            <Segmented
+-              id="bar-profile"
+-              label="Edge profile"
+-              // With no bevel yet neither profile is lit: nothing is chosen until one is.
+-              value={size > 0 ? style : ('' as typeof style)}
+-              onChange={(v) => props.onEdgeChange(edges, { style: v })}
+-              options={[
+-                { value: 'round', label: 'Curved' },
+-                { value: 'chamfer', label: 'Flat' },
+-              ]}
+-            />
+-          )}
+-          <MenuButton id="edge-select" openId={openId} setOpenId={setOpenId} label="Select" icon={SquareDashed} placement="down" title="Select edges in bulk">
+-            <div className="p-2 flex flex-col gap-1 w-[min(15rem,calc(100vw-1.5rem))]">
+-              {(
+-                [
+-                  ['top', 'Top edges'],
+-                  ['bottom', 'Bottom edges'],
+-                  ['corner', 'Vertical corners'],
+-                  ['all', 'All edges'],
+-                ] as [EdgeGroup, string][]
+-              ).map(([group, text]) => (
+-                <button
+-                  key={group}
+-                  type="button"
+-                  onClick={() => {
+-                    props.onSelectEdges(edgesOfKind(body, group));
+-                    setOpenId(null);
+-                  }}
+-                  className={`h-11 px-4 rounded-full text-left text-sm font-medium transition-colors ${
+-                    isWholeGroup(body, edges, group) ? 'bg-accent-500 text-white' : 'text-slate-100 hover:bg-white/10'
+-                  }`}
+-                >
+-                  {text}
+-                </button>
+-              ))}
+-              <button
+-                type="button"
+-                onClick={() => {
+-                  props.onClearEdges();
+-                  setOpenId(null);
+-                }}
+-                className="h-11 px-4 rounded-full text-left text-sm font-medium text-slate-400 hover:bg-white/10 hover:text-white transition-colors"
+-              >
+-                Clear
+-              </button>
+-            </div>
+-          </MenuButton>
+-          <IconButton icon={Trash2} label="Remove bevel (Del)" onClick={() => props.onEdgeChange(edges, { size: 0 })} danger />
+-          <IconButton icon={X} label="Done (Esc)" onClick={props.onClearEdges} />
+-        </>
+-      );
+-    }
+-    if (mode === 'face' && body && face) {
+-      const elev = body.elevation ?? 0;
+-      return (
+-        <>
+-          <Chip sub={body.name}>{face.kind === 'top' ? 'Top face' : face.kind === 'bottom' ? 'Bottom face' : `Wall ${(face.index ?? 0) + 1}`}</Chip>
+-          {face.kind === 'top' && <NumberBox label="Height" value={body.extrusionHeight} min={2} max={600} onCommit={(v) => props.onExtrudeFace(face, v - body.extrusionHeight)} />}
+-          {face.kind === 'bottom' && <NumberBox label="Bottom at" value={elev} min={0} onCommit={(v) => props.onExtrudeFace(face, elev - Math.max(0, v))} />}
+-          <div className="flex items-center gap-1">
+-            {[-10, -1, 1, 10].map((n) => (
+-              <StepButton key={n} onClick={() => props.onExtrudeFace(face, n)} title={`${n > 0 ? 'Pull out' : 'Push in'} ${Math.abs(n)} mm`}>
+-                {signed(n)}
+-              </StepButton>
+-            ))}
+-          </div>
+-          <IconButton icon={X} label="Done (Esc)" onClick={props.onClearFace} />
+-          <MenuButton id="size" openId={openId} setOpenId={setOpenId} label="Size & position" icon={Move} placement="down">
+-            <SizePositionPanel {...props} />
+-          </MenuButton>
+-          <MenuButton id="material" openId={openId} setOpenId={setOpenId} label="Material" icon={Palette} placement="down">
+-            <Sidebar {...props.sidebar} section="material" />
+-          </MenuButton>
+-          {props.canSave && <PillButton icon={BookmarkPlus} label="Save to library" onClick={props.onSaveToLibrary} title="Keep this object in the project library so you can place linked copies" />}
+-        </>
+-      );
+-    }
+-    if (mode === 'shape' && body) {
+-      return (
+-        <>
+-          <MenuButton id="props" openId={openId} setOpenId={setOpenId} label={body.name} icon={SlidersHorizontal} placement="down" title="Shape properties">
+-            <Sidebar {...props.sidebar} section="properties" />
+-          </MenuButton>
+-          <MenuButton id="size" openId={openId} setOpenId={setOpenId} label="Size & position" icon={Move} placement="down">
+-            <SizePositionPanel {...props} />
+-          </MenuButton>
+-          <MenuButton id="material" openId={openId} setOpenId={setOpenId} label="Material" icon={Palette} placement="down">
+-            <Sidebar {...props.sidebar} section="material" />
+-          </MenuButton>
+-        </>
+-      );
+-    }
+-    if (mode === 'multi') {
+-      return (
+-        <>
+-          {props.group ? (
+-            <GroupName key={props.group.id} name={props.group.name} onRename={(n) => props.onRenameGroup(props.group!.id, n)} />
+-          ) : (
+-            <Chip sub={props.joined ? 'Joined · moves as one' : 'Drag one to move them all'}>{props.joined ? selected[0].name : `${selected.length} shapes`}</Chip>
+-          )}
+-          {props.object?.state === 'linked' && (
+-            <>
+-              <span className="shrink-0 text-[11px] text-slate-400 flex items-center gap-1 whitespace-nowrap">
+-                <Link2 size={13} /> Linked to “{props.object.item}”
+-              </span>
+-              <PillButton icon={Pencil} label="Edit" onClick={props.onEditObject} title="Open this object for editing: save it back and every copy follows" />
+-              <PillButton icon={Unlink} label="Separate" onClick={props.onSeparateObject} title="Make this copy independent of the library" />
+-            </>
+-          )}
+-          {props.object?.state === 'editing' && (
+-            <>
+-              <PillButton icon={BookmarkPlus} label={`Save to “${props.object.item}”`} onClick={props.onSaveToLibrary} title="Update the library object: every linked copy follows" />
+-              <PillButton icon={Unlink} label="Separate" onClick={props.onSeparateObject} title="Forget the library object: this stays as plain shapes" />
+-            </>
+-          )}
+-          {!props.object && props.canSave && <PillButton icon={BookmarkPlus} label="Save to library" onClick={props.onSaveToLibrary} title="Keep this object in the project library so you can place linked copies" />}
+-          <MenuButton id="size" openId={openId} setOpenId={setOpenId} label="Position" icon={Move} placement="down">
+-            <SizePositionPanel {...props} />
+-          </MenuButton>
+-        </>
+-      );
+-    }
+-    return <span className="text-[13px] text-slate-500 whitespace-nowrap">Tap a shape to see its properties</span>;
+-  })();
++/** Pushing or pulling the picked face in set steps. The typed height is the model's own floating card, not repeated here. */
++export function FacePanel(props: TopBarProps) {
++  const { selected, face } = props;
++  const body = selected[0];
++  if (!body || !face) return null;
++  return (
++    <div className="p-4 flex flex-col gap-3 w-[min(19rem,calc(100vw-1.5rem))]">
++      <Chip sub={body.name}>{face.kind === 'top' ? 'Top face' : face.kind === 'bottom' ? 'Bottom face' : `Wall ${(face.index ?? 0) + 1}`}</Chip>
++      <div className="flex items-center gap-1.5">
++        {[-10, -1, 1, 10].map((n) => (
++          <StepButton key={n} onClick={() => props.onExtrudeFace(face, n)} title={`${n > 0 ? 'Pull out' : 'Push in'} ${Math.abs(n)} mm`}>
++            {signed(n)}
++          </StepButton>
++        ))}
++        <span className="text-xs text-slate-400 ml-1">mm</span>
++      </div>
++    </div>
++  );
++}
+ 
++/**
++ * The slim top bar: what the app is, undo and redo, and what is selected. Every tool is on the rail (Rail.tsx), none is
++ * repeated here; a group's name stays a field because it is text, not a tool.
++ */
++export default function TopBar(props: TopBarProps) {
++  const { selected } = props;
++  const body = selected.length === 1 ? selected[0] : null;
++  const mode = selectionMode(props);
++  const title =
++    mode === 'edge' ? <Chip sub={describeEdges(body!, props.edges).sub}>{describeEdges(body!, props.edges).title}</Chip>
++    : mode === 'face' ? <Chip sub={body!.name}>{props.face!.kind === 'top' ? 'Top face' : props.face!.kind === 'bottom' ? 'Bottom face' : `Wall ${(props.face!.index ?? 0) + 1}`}</Chip>
++    : mode === 'shape' ? <Chip>{body!.name}</Chip>
++    : mode === 'multi' ? (
++      props.group ? <GroupName key={props.group.id} name={props.group.name} onRename={(n) => props.onRenameGroup(props.group!.id, n)} />
++      : <Chip sub={props.joined ? 'Joined · moves as one' : 'Drag one to move them all'}>{props.joined ? selected[0].name : `${selected.length} shapes`}</Chip>
++    ) : null;
+   return (
+-    <header className="h-14 shrink-0 px-3 flex items-center gap-2 bg-slate-900 border-b border-white/8 z-40">
++    <header className="h-12 shrink-0 px-3 flex items-center gap-2 bg-slate-900 border-b border-white/8 z-40">
+       <div className="flex items-center gap-1.5 shrink-0">
+         <div className="w-8 h-8 rounded-full bg-accent-500 flex items-center justify-center text-white">
+           <Box size={16} strokeWidth={2} />
+@@ -302,27 +217,13 @@ export default function TopBar(props: TopBarProps) {
+         <IconButton icon={Undo2} label="Undo (⌘Z)" onClick={props.onUndo} />
+         <IconButton icon={Redo2} label="Redo (⇧⌘Z)" onClick={props.onRedo} />
+       </div>
+-
+-      <div className="flex-1 min-w-0 overflow-x-auto no-scrollbar [mask-image:linear-gradient(to_right,black_calc(100%-16px),transparent)]">
+-        <AnimatePresence mode="wait" initial={false}>
+-          <motion.div
+-            key={mode}
+-            initial={{ opacity: 0, y: -6 }}
+-            animate={{ opacity: 1, y: 0 }}
+-            exit={{ opacity: 0, y: 6, transition: { duration: 0.08 } }}
+-            transition={spring}
+-            className="flex items-center justify-start sm:justify-center gap-2 min-w-max sm:min-w-0 sm:px-2"
+-          >
+-            {dynamic}
+-          </motion.div>
+-        </AnimatePresence>
+-      </div>
+-
+-      <div className="flex items-center gap-1.5 shrink-0">
+-        <MenuButton id="file" openId={openId} setOpenId={setOpenId} icon={FileDown} placement="down" title="Export and file">
+-          <Sidebar {...props.sidebar} section="export" />
+-        </MenuButton>
+-      </div>
++      <div className="flex-1 min-w-0 overflow-hidden">{title}</div>
++      {props.object?.state === 'linked' && (
++        <span className="shrink-0 text-[11px] text-slate-400 hidden sm:flex items-center gap-1 whitespace-nowrap"><Link2 size={13} /> Linked to “{props.object.item}”</span>
++      )}
++      {mode !== 'none' && (
++        <IconButton icon={X} label="Deselect (Esc)" onClick={() => { props.onClearEdges(); props.onClearFace(); }} />
++      )}
+     </header>
+   );
+ }

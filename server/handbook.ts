@@ -166,7 +166,14 @@ const CAD = [
     "groups and a library hold reusable parts; cad_history_undo / redo step back; cad_batch does many in one call. Check a part " +
     "with cad_shape_measure (is it watertight) before cad_export, which gives STL for printing or GLB for games. The person pushes " +
     "and pulls the same model by hand, so call cad_scene_get again before relying on what you saw. What to make and how it looks are " +
-    "theirs; the geometry is yours.",
+    "theirs; the geometry is yours. What the person sees (there is no bottom bar of text buttons and no menu in the top bar any more): a " +
+    "slim top bar (undo, redo, what is selected), the model, and a round, coloured tool bar (down the right side on a desktop, along " +
+    "the bottom on a phone) that shows only as many tools as fit: Shape, Draw, Move, Group, Repeat, Size & position and Delete on a phone, " +
+    "with Join, Subtract, Isolate, Hide, Material and Export too on a desktop, where they can pin any tool. The last button, All tools, " +
+    "opens every tool: Shape, Draw, Library; Move, Group, Repeat, Delete; Join, Subtract, Isolate, Hide, Show hidden, Make copies " +
+    "separate; Size & position, Properties, Material, Pick edges, Push & pull; Save to library, Edit object, Separate; Export & file. " +
+    "A tool that does not apply yet (Join with one shape picked) is dimmed. Name a tool by its button and say \"open All tools\" if " +
+    "it is not on their bar. Everything they can do you can do with the cad_* tools, whatever is shown.",
 ].join("\n");
 
 const GAME = [
