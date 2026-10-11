@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { MemoryItem, MemoryTouch } from "../lib/derive";
 import { BUCKETS, KIND_COLOR, type Bucket } from "../lib/memory";
-import { IconChevron, IconX } from "./Icons";
+import { IconCheck, IconChevron, IconX } from "./Icons";
 
 const isBucket = (kind: string | null | undefined): kind is Bucket =>
   !!kind && BUCKETS.some((b) => b.kind === kind);
@@ -28,7 +28,7 @@ const when = (ts: number | undefined): string => {
 };
 
 /** A record, as the graph gives it back (see GET /api/memory/:id). */
-type MemoryDetail = {
+export type MemoryDetail = {
   title?: string;
   body?: string;
   kind?: string;
@@ -45,18 +45,36 @@ type MemoryDetail = {
  * The chips in the thread name a memory; this is the memory. It is fetched by
  * id rather than carried in the event, so it is what is stored now -- and a
  * record that has since been forgotten says so instead of showing stale text.
+ *
+ * The same modal answers for the places that ask whether a learned memory is
+ * right -- the rail card, the Mind's review queue and the "learned from this"
+ * row -- so it takes the answer here too, in its foot, rather than only where
+ * the record is listed.
  */
-function MemoryPeek({
+export function MemoryPeek({
   item,
   onClose,
   onOpenMind,
+  onKeep,
+  onDiscard,
+  onAnswered,
+  replaces,
 }: {
   item: MemoryItem;
   onClose: () => void;
   onOpenMind?: () => void;
+  /** Keep it: known from now on. Offered in the foot while it is unconfirmed. */
+  onKeep?: (id: string) => Promise<unknown> | unknown;
+  /** Discard it: forgotten for good. */
+  onDiscard?: (id: string) => Promise<unknown> | unknown;
+  /** Told once the answer has landed, so the row behind this can go. */
+  onAnswered?: (id: string, answer: "kept" | "discarded") => void;
+  /** A learned rewrite: the memory this one would replace once kept. */
+  replaces?: { title: string; body?: string } | null;
 }) {
   const [detail, setDetail] = useState<MemoryDetail | null>(null);
   const [state, setState] = useState<"loading" | "ok" | "gone" | "error">("loading");
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -89,6 +107,22 @@ function MemoryPeek({
   const kind = detail?.kind ?? item.kind;
   const known = isBucket(kind);
   const title = detail?.title ?? item.title;
+  const asking = state === "ok" && detail?.status === "provisional" && !!(onKeep || onDiscard);
+
+  /** Keep or discard from inside the modal; it closes once the answer lands. */
+  const answer = async (keep: boolean) => {
+    const work = keep ? onKeep : onDiscard;
+    if (!work) return;
+    setBusy(true);
+    try {
+      await work(item.id);
+      onAnswered?.(item.id, keep ? "kept" : "discarded");
+      onClose();
+    } catch {
+      /* it stays open: the page behind says what went wrong */
+      setBusy(false);
+    }
+  };
 
   return createPortal(
     <div
@@ -136,6 +170,12 @@ function MemoryPeek({
           {state === "ok" && (
             <>
               <p className="peek-body">{detail?.body?.trim() || "Stored with no text."}</p>
+              {replaces && (
+                <p className="peek-old">
+                  Replaces “{replaces.title}”
+                  {replaces.body ? `: ${replaces.body}` : null}
+                </p>
+              )}
               {item.reason && (
                 <p className="peek-why">
                   {item.action && item.action !== "added"
@@ -158,7 +198,17 @@ function MemoryPeek({
           )}
         </div>
 
-        <div className="modal-foot">
+        <div className={`modal-foot ${asking ? "peek-foot" : ""}`.trim()}>
+          {asking && onDiscard && (
+            <button className="btn tiny ghost" disabled={busy} onClick={() => void answer(false)}>
+              Discard
+            </button>
+          )}
+          {asking && onKeep && (
+            <button className="btn tiny" disabled={busy} onClick={() => void answer(true)}>
+              <IconCheck size={11} /> Keep
+            </button>
+          )}
           <button className="setup-more" onClick={onClose}>
             Close
           </button>

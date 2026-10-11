@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { LearnedItem } from "../lib/derive";
 import { BUCKETS, KIND_COLOR, type Bucket } from "../lib/memory";
+import { MemoryPeek } from "./MemoryCell";
 
 type Fate = "open" | "kept" | "discarded" | "busy";
 
@@ -18,7 +19,9 @@ const CHANGE_WORDS: Record<string, string> = {
  *
  * Each item is unconfirmed until kept here, or until it works again on its
  * own. Keep makes it known now; Discard deletes it. Where it rewrites an
- * existing memory, keeping it retires the old one.
+ * existing memory, keeping it retires the old one. The title opens the memory
+ * itself -- its whole text, what it replaces and its tags -- and the answer
+ * can be given in there too.
  */
 export function LearnedCell({
   items,
@@ -30,6 +33,9 @@ export function LearnedCell({
   onOpen?: () => void;
 }) {
   const [fate, setFate] = useState<Record<string, Fate>>({});
+  const [peeking, setPeeking] = useState<LearnedItem | null>(null);
+  /** The memory a rewrite would replace, fetched when one is opened. */
+  const [old, setOld] = useState<{ id: string; title: string; body?: string } | null>(null);
 
   // The event is history; what became of each item since lives on the server.
   useEffect(() => {
@@ -53,7 +59,23 @@ export function LearnedCell({
     const res = await fetch(`/api/memory/${encodeURIComponent(id)}${keep ? "/confirm" : ""}`, {
       method: keep ? "POST" : "DELETE",
     }).catch(() => null);
-    setFate((prev) => ({ ...prev, [id]: res?.ok ? (keep ? "kept" : "discarded") : "open" }));
+    const ok = !!res?.ok;
+    setFate((prev) => ({ ...prev, [id]: ok ? (keep ? "kept" : "discarded") : "open" }));
+    // The modal stays open on a failure; the row goes back to asking.
+    if (!ok) throw new Error("Could not save it");
+  };
+
+  /** Open the memory itself, and for a rewrite the one it would replace. */
+  const openItem = (item: LearnedItem) => {
+    setPeeking(item);
+    setOld(null);
+    if (!item.revises) return;
+    fetch(`/api/memory/${encodeURIComponent(item.revises)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((record) => {
+        if (record) setOld({ id: item.revises!, title: record.title, body: record.body });
+      })
+      .catch(() => undefined);
   };
 
   return (
@@ -66,13 +88,20 @@ export function LearnedCell({
         const state = item.status === "confirmed" ? "kept" : fate[item.id] ?? "open";
         return (
           <div key={item.id} className={`learned-item is-${state}`}>
-            <span
-              className="mem-chip"
-              style={isBucket(item.kind) ? ({ "--chip": KIND_COLOR[item.kind] } as React.CSSProperties) : undefined}
+            <button
+              type="button"
+              className="learned-open"
+              onClick={() => openItem(item)}
+              title="Open this memory"
             >
-              <em>{item.kind}</em>
-              {item.title}
-            </span>
+              <span
+                className="mem-chip"
+                style={isBucket(item.kind) ? ({ "--chip": KIND_COLOR[item.kind] } as React.CSSProperties) : undefined}
+              >
+                <em>{item.kind}</em>
+                {item.title}
+              </span>
+            </button>
             <span className="learned-note">
               {item.action === "proposed" || item.revises ? "a correction to an existing memory" :
                 item.action === "reinforced" ? "already known; counted as having worked" :
@@ -80,8 +109,8 @@ export function LearnedCell({
             </span>
             {state === "open" || state === "busy" ? (
               <span className="learned-actions">
-                <button type="button" className="btn tiny" disabled={state === "busy"} onClick={() => void decide(item.id, true)}>Keep</button>
-                <button type="button" className="btn tiny ghost" disabled={state === "busy"} onClick={() => void decide(item.id, false)}>Discard</button>
+                <button type="button" className="btn tiny" disabled={state === "busy"} onClick={() => void decide(item.id, true).catch(() => undefined)}>Keep</button>
+                <button type="button" className="btn tiny ghost" disabled={state === "busy"} onClick={() => void decide(item.id, false).catch(() => undefined)}>Discard</button>
               </span>
             ) : (
               <span className="learned-fate">{state === "kept" ? "kept" : "discarded"}</span>
@@ -95,6 +124,18 @@ export function LearnedCell({
           <span className="learned-note">{CHANGE_WORDS[c.change] ?? c.change}</span>
         </div>
       ))}
+
+      {peeking && (
+        <MemoryPeek
+          item={{ id: peeking.id, title: peeking.title, kind: peeking.kind }}
+          onClose={() => setPeeking(null)}
+          onOpenMind={onOpen}
+          onKeep={(id) => decide(id, true)}
+          onDiscard={(id) => decide(id, false)}
+          onAnswered={(id, answer) => setFate((prev) => ({ ...prev, [id]: answer === "kept" ? "kept" : "discarded" }))}
+          replaces={old && old.id === peeking.id ? old : null}
+        />
+      )}
     </div>
   );
 }

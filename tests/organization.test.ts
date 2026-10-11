@@ -155,6 +155,12 @@ await test("the lead is told the map, and an agent is told its task, where it ca
   assert.match(briefing, /Editor \(agent_[0-9a-f]+\), Tightens prose\. Reports to Autora\. Call it when: a draft needs tightening Then hands to: Bookkeeper/);
   org.updateAgent(books.id, { enabled: false });
   assert.match(org.orgBriefing(), /Bookkeeper.*\[switched off\]/);
+  // It routes the work rather than doing it: matching work goes to the agent
+  // whose "call it when" fits, and the line that let it do the work itself is gone.
+  const routing = org.orgBriefing();
+  assert.match(routing, /matches an agent's 'call it when', that agent does it/);
+  assert.match(routing, /Say which agent each part went to/);
+  assert.doesNotMatch(routing, /step or two/, "nothing tells the lead to do the work itself");
   const brief = org.agentBrief(org.getAgent(editor.id)!, "Tighten chapter 2", ["Autora"]);
   assert.match(brief, /You are Editor, the Tightens prose/);
   assert.match(brief, /handed to you by Autora/);

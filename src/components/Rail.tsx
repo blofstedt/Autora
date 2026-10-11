@@ -18,6 +18,7 @@ import {
   BUCKETS, announceChange, confirmRecord, deleteRecord, fetchKnowledge, onKnowledgeChange,
   type Bucket, type MemoryRecord,
 } from "../lib/memory";
+import { MemoryPeek } from "./MemoryCell";
 import { every, usePoll } from "../lib/poll";
 
 export type PageId =
@@ -320,11 +321,16 @@ function pickOne(list: MemoryRecord[], not: string | null): MemoryRecord | null 
  * right on the card: confirming is how a guess becomes something it knows,
  * and until now only the Mind page asked. Once everything is kept, a
  * random memory rotates through instead, as a reminder of what it knows.
+ *
+ * Tapping the card opens the memory itself rather than jumping to the Mind:
+ * the whole text is the thing being judged, and "Open the Mind" in the foot
+ * keeps the page one tap away.
  */
 function MemoryCard({ onOpen }: { onOpen: (id: string, kind: Bucket) => void }) {
   const [records, setRecords] = useState<MemoryRecord[]>([]);
   const [shownId, setShownId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [peeking, setPeeking] = useState<MemoryRecord | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -371,6 +377,7 @@ function MemoryCard({ onOpen }: { onOpen: (id: string, kind: Bucket) => void }) 
       announceChange();
     } catch {
       /* it stays on the card; the Mind page says what went wrong */
+      throw new Error("Could not save it");
     } finally {
       setBusy(false);
     }
@@ -378,7 +385,7 @@ function MemoryCard({ onOpen }: { onOpen: (id: string, kind: Bucket) => void }) 
 
   return (
     <section className={`rail-mem ${provisional ? "is-new" : ""}`} aria-label="Something it remembers">
-      <button className="rail-mem-body" onClick={() => onOpen(shown.id, shown.kind)} title="Open in Mind">
+      <button className="rail-mem-body" onClick={() => setPeeking(shown)} title="Open this memory">
         <span className="rail-mem-head">
           <IconBrain size={12} />
           {provisional ? "Learned" : "I remember"} · {bucket} · {ago(shown.created)}
@@ -389,13 +396,32 @@ function MemoryCard({ onOpen }: { onOpen: (id: string, kind: Bucket) => void }) 
         <div className="rail-mem-ask">
           <span>Is this right?</span>
           <div className="spacer" />
-          <button className="btn tiny" disabled={busy} onClick={() => void answer(confirmRecord)}>
+          <button className="btn tiny" disabled={busy} onClick={() => void answer(confirmRecord).catch(() => undefined)}>
             <IconCheck size={11} /> Keep
           </button>
-          <button className="btn tiny ghost" disabled={busy} onClick={() => void answer(deleteRecord)}>
+          <button className="btn tiny ghost" disabled={busy} onClick={() => void answer(deleteRecord).catch(() => undefined)}>
             Discard
           </button>
         </div>
+      )}
+
+      {peeking && (
+        <MemoryPeek
+          item={{ id: peeking.id, title: peeking.title, kind: peeking.kind }}
+          onClose={() => setPeeking(null)}
+          onOpenMind={() => onOpen(peeking.id, peeking.kind)}
+          onKeep={confirmRecord}
+          onDiscard={deleteRecord}
+          onAnswered={() => { announceChange(); setPeeking(null); }}
+          replaces={
+            peeking.replaces
+              ? (() => {
+                  const r = records.find((x) => x.id === peeking.replaces);
+                  return r ? { title: r.title, body: r.body } : null;
+                })()
+              : null
+          }
+        />
       )}
     </section>
   );

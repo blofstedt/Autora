@@ -6,6 +6,7 @@ import {
 } from "../../lib/memory";
 import type { MemoryMark } from "../../lib/derive";
 import { KnowledgeWeb } from "../KnowledgeWeb";
+import { MemoryPeek } from "../MemoryCell";
 import { MindViewButton } from "../MindViewButton";
 import { IconBrain, IconPlus, IconTrash } from "../Icons";
 import { AgentProfile } from "../AgentProfile";
@@ -72,6 +73,8 @@ export function MindPage({
   const who = whose ? team.find((a) => a.id === whose) ?? null : null;
   const [error, setError] = useState<string | null>(null);
   const [tidied, setTidied] = useState<TidyReport | null>(null);
+  /** The learned memory opened in the modal, up for a decision in there too. */
+  const [reviewing, setReviewing] = useState<MemoryRecord | null>(null);
 
   const load = useCallback(() => {
     fetchKnowledge().then(setData).catch(() => setData(null));
@@ -180,6 +183,23 @@ export function MindPage({
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
       return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** The same answer as the row's, but a failure is thrown: the modal that
+      asked stays open rather than closing on an answer that did not land. */
+  const answerReview = async (id: string, keep: boolean) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await (keep ? confirmRecord(id) : deleteRecord(id));
+      announceChange();
+      load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
+      throw e;
     } finally {
       setBusy(false);
     }
@@ -315,7 +335,12 @@ export function MindPage({
                 const old = r.replaces ? byId.get(r.replaces) : null;
                 return (
                   <div key={r.id} className="mind-review-item" style={{ "--chip": KIND_COLOR[r.kind] } as React.CSSProperties}>
-                    <div className="mind-review-text">
+                    <button
+                      type="button"
+                      className="mind-review-text mind-review-open"
+                      onClick={() => setReviewing(r)}
+                      title="Open this memory"
+                    >
                       <span className="mind-item-title">
                         <i />
                         <b>{r.title}</b>
@@ -324,7 +349,7 @@ export function MindPage({
                       </span>
                       <span className="mind-item-body"><Body text={r.body} /></span>
                       {old && <span className="mind-review-old">Replaces “{old.title}”: <Body text={old.body} /></span>}
-                    </div>
+                    </button>
                     <div className="mind-review-actions">
                       <button className="btn tiny" disabled={busy} onClick={() => void run(() => confirmRecord(r.id))}>Keep</button>
                       <button className="btn tiny ghost" disabled={busy} onClick={() => void run(() => deleteRecord(r.id))}>Discard</button>
@@ -542,6 +567,23 @@ export function MindPage({
           )}
         </div>
       </div>
+      )}
+      {reviewing && (
+        <MemoryPeek
+          item={{ id: reviewing.id, title: reviewing.title, kind: reviewing.kind }}
+          onClose={() => setReviewing(null)}
+          onKeep={(id) => answerReview(id, true)}
+          onDiscard={(id) => answerReview(id, false)}
+          onAnswered={() => setReviewing(null)}
+          replaces={
+            reviewing.replaces
+              ? (() => {
+                  const r = byId.get(reviewing.replaces!);
+                  return r ? { title: r.title, body: r.body } : null;
+                })()
+              : null
+          }
+        />
       )}
     </div>
   );

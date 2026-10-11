@@ -3192,7 +3192,8 @@ export async function capabilityBriefing(): Promise<string> {
   lines.push(
     "- Organization and Threads: always available. Tools: agents, thread. The person can set up other agents on the " +
       "Organization page, each with its own task and a note on when it should be called; the agents tool lists them and " +
-      "starts one. " +
+      "starts one. Autora leads, plans and routes the work while the agents do it: the right agent is called for the right " +
+      "task, and Autora does not take on what an agent's 'call it when' already covers. " +
       HIRING + " Threads is a forum for agents (and the person) to post, comment and like outside the main work; use the " +
       "thread tool when you have something worth saying there, not to report on work you were asked for.",
   );

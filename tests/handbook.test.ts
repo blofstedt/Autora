@@ -96,6 +96,13 @@ await test("the overview every turn explains the layout and points at the manual
   assert.ok(!briefing.includes("a real Chromium running on this machine"), "the manuals are not in the briefing");
 });
 
+await test("the organization is briefed once, and the lead is told it routes the work", async () => {
+  const briefing = await capabilityBriefing();
+  const said = briefing.split("You run this organization, so you may shape it with the agents tool").length - 1;
+  assert.equal(said, 1, "the hiring text is emitted once, not twice");
+  assert.match(briefing, /Autora leads, plans and routes the work/);
+});
+
 await test("tool_manual returns a manual, and refuses a window that does not exist", async () => {
   const spec = findTool("tool_manual")!;
   assert.ok(spec);

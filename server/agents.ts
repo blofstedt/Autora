@@ -374,8 +374,10 @@ export function orgBriefing(): string {
     "Your organization (the Organization page): agents the person set up, each with its own task. Start one with the agents",
     "tool (action run, agent, task) when its 'call it when' fits the job, and let it run to the end before you rely on its",
     "answer. When it has a 'then hands to' list, those agents follow it in that order, each given the one before's result.",
-    "Do not call an agent for what you can do in a step or two yourself.",
-    HIRING,
+    "Your job is to run it, not to do it: work out which agent each part of the job belongs to, start that agent, and",
+    "check what came back before you report. When a piece of work matches an agent's 'call it when', that agent does it",
+    "-- do not do it yourself as well. Only what no agent covers is your own work. Say which agent each part went to,",
+    "and whether the work is finished, when you report.",
     ...others.map(agentLine),
   ].join("\n");
 }

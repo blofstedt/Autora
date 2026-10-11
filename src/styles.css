@@ -353,6 +353,10 @@ body::before {
 /* One memory, opened from the thread: its name, its kind, and its text. */
 .modal.peek { max-width: 520px; max-height: min(76vh, 620px); }
 .peek-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Asked whether it is right: the foot carries the answer, laid out like the
+   other modal feet that hold one. */
+.modal-foot.peek-foot { justify-content: flex-end; align-items: center; gap: 8px; padding: 10px 12px; }
+.peek-old { margin: 8px 2px 0; font-size: var(--fs-xs); line-height: 1.55; color: var(--text-3); }
 .peek-body {
   margin: 0; padding: 11px 13px; border-radius: var(--r-sm);
   background: var(--s2); border-left: 2px solid var(--accent-line);
@@ -5124,6 +5128,13 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 .modal-foot.lib-foot { justify-content: flex-end; align-items: center; gap: 8px; padding: 10px 12px; }
 .lib-count { font-size: var(--fs-sm); color: var(--text-3); }
 
+/* The chip is the way into the memory itself: a button, not a label. */
+.learned-open {
+  align-self: flex-start; max-width: 100%; padding: 0; background: none; border: 0;
+  font: inherit; text-align: left; cursor: pointer; border-radius: var(--r-sm);
+}
+.learned-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 /* What the agent learned from a turn, up for keeping. */
 .learned {
   display: flex; flex-direction: column; gap: 6px;
@@ -5221,6 +5232,12 @@ button.stat-card:hover { border-color: var(--accent-line); transform: translateY
 }
 .mind-review-item:first-of-type { border-top: 0; }
 .mind-review-text { flex: 1 1 260px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+/* The item's own text is the way into the memory: a button, not a label. */
+.mind-review-open {
+  padding: 0; background: none; border: 0; font: inherit; color: inherit;
+  text-align: left; cursor: pointer; border-radius: var(--r-sm);
+}
+.mind-review-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .mind-review-old { font-size: var(--fs-xs); color: var(--text-3); }
 .mind-review-actions { display: flex; gap: 6px; }
 
