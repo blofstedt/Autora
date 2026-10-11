@@ -88,6 +88,11 @@ async function main() {
       await p2.goto(`${app.base}/?session=${d}`);
       await p2.waitForSelector(".pane-handle.is-chat", { state: "visible", timeout: 30_000 });
       const w = (sel: string) => p2.locator(sel).first().evaluate((el) => Math.round(el.getBoundingClientRect().width));
+      /* This window has never been sized, so its menu opens as the strip of
+         icons (RAIL.fallback). The whole menu is asked for first, because what
+         follows is about folding it away and giving its room to the window. */
+      const whole = p2.getByRole("button", { name: "Show the whole menu" });
+      if (await whole.count()) { await whole.click(); await sleep(300); }
       const before = await w(".chat-view.has-app > .page");
       const h = (await p2.locator(".pane-handle.is-chat").boundingBox())!;
       await p2.mouse.move(h.x + h.width / 2, h.y + 300);

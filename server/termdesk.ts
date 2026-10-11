@@ -353,7 +353,7 @@ const nap = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const TYPED_CHARS = 160;
 
 /** Who is typing: the agent's name, and the colour of its tag in the window (Autora's own is dim violet). */
-export interface TermWho { name: string; rgb?: [number, number, number] }
+interface TermWho { name: string; rgb?: [number, number, number] }
 const tagOf = (who?: TermWho) => (who?.rgb ? `\x1b[2;38;2;${who.rgb.join(";")}m` : "\x1b[2;35m") + `[${who?.name ?? "Autora"}]`;
 const whoOf = new Map<string, TermWho | undefined>();
 

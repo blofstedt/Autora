@@ -185,6 +185,12 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
+  The seam between the menu and the conversation now puts the menu where your hand asked. Dragged
+  across the width at which the menu's labels appear, the pane was held open by those labels and
+  jumped to a width of its own -- the drag that should have given 136 pixels gave 158. A menu with
+  room to read the labels is a menu of that width (160); below it the menu is the strip of icons it
+  opens as, and a double click on the seam brings the whole menu back.
+
   Each memory a turn learned now says what it would replace: opening one names the memory it would
   retire, so a correction is judged against the thing it corrects rather than in the dark. A row
   settles the moment that memory is kept -- here, or from the Mind page -- instead of waiting for the

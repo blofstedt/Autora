@@ -28,7 +28,7 @@ const when = (ts: number | undefined): string => {
 };
 
 /** A record, as the graph gives it back (see GET /api/memory/:id). */
-export type MemoryDetail = {
+type MemoryDetail = {
   title?: string;
   body?: string;
   kind?: string;

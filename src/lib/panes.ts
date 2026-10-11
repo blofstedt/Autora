@@ -9,8 +9,11 @@ export const RAIL = {
   min: 48, max: 520,
   /** Icons only, a third of what the menu used to be. */
   fallback: 56,
-  /** Below this the labels do not fit, so the menu shows icons only. */
-  words: 120,
+  /** Below this the labels do not fit, so the menu shows icons only. The
+      labels need about 157px uncut, so a menu narrower than this is a strip of
+      icons: at 120 the words appeared at a width they could not sit in, and the
+      pane was dragged wide by its own content rather than by hand. */
+  words: 160,
   /** What "show the whole menu" widens to. */
   whole: 164,
 };

@@ -1765,7 +1765,10 @@ export function App() {
         min={RAIL.min}
         max={RAIL.max}
         onChange={setRailWidth}
-        onReset={() => setRailWidth(null)}
+        // Back to the menu the words fit in, the same width the rail's own
+        // "Show the whole menu" widens to: a double click that left a strip of
+        // icons would need the button pressed anyway to read anything.
+        onReset={() => setRailWidth(RAIL.whole)}
       />
 
       <div className="shell">

@@ -11,7 +11,7 @@ import { useSyncExternalStore } from "react";
 import { lookColors, readLook, type AgentLook } from "./agentlook";
 import { Kind, type AutoraEvent } from "./types";
 
-export type CursorWho = { name: string; look: AgentLook | null };
+type CursorWho = { name: string; look: AgentLook | null };
 
 const AUTORA: CursorWho = { name: "Autora", look: null };
 let who: CursorWho = AUTORA;

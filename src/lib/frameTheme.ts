@@ -29,7 +29,7 @@ const TOKENS: Array<[string, string]> = [
   ["--autora-danger", "--danger"], ["--autora-danger-rgb", "--danger-rgb"],
 ];
 
-export function frameThemeVars(): Record<string, string> {
+function frameThemeVars(): Record<string, string> {
   const css = getComputedStyle(document.documentElement);
   const out: Record<string, string> = {};
   for (const [to, from] of TOKENS) {

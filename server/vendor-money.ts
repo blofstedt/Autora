@@ -76,7 +76,7 @@ type VendorMoney = {
  * sits at 1 rather than above it. Likewise a balance that a vendor reports as
  * spent past zero leaves 0, not a negative bar.
  */
-export type Credit = {
+type Credit = {
   /** The money paid in, which is what the fraction is of. */
   paid_usd: number;
   /** Paid in less what is left: what has gone since the top-up. */

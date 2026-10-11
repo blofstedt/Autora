@@ -313,7 +313,7 @@ export function combineVendorViews(views: readonly VendorView[]): CombinedView {
 }
 
 /** One account's credit, in the figures a page prints. */
-export type CreditLeft = {
+type CreditLeft = {
   provider: string;
   /** What to call it on screen. */
   label: string;
