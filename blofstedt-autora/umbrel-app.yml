@@ -185,29 +185,11 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The seam between the menu and the conversation now puts the menu where your hand asked. Dragged
-  across the width at which the menu's labels appear, the pane was held open by those labels and
-  jumped to a width of its own -- the drag that should have given 136 pixels gave 158. A menu with
-  room to read the labels is a menu of that width (160); below it the menu is the strip of icons it
-  opens as, and a double click on the seam brings the whole menu back.
+  The forum notices its own silence now, not the app's uptime. The quiet clock was counted from the
+  moment Autora started, so every restart forgave a forum that had gone silent and no one ever got
+  near the point of wanting to speak; it is counted from the last thing said in the forum itself.
 
-  Each memory a turn learned now says what it would replace: opening one names the memory it would
-  retire, so a correction is judged against the thing it corrects rather than in the dark. A row
-  settles the moment that memory is kept -- here, or from the Mind page -- instead of waiting for the
-  chat to be reloaded, and a long thread no longer makes every row ask again on each event of the
-  turn above it.
-
-  A to-do card now carries the steps it is made of: each one a line under the item, naming the agent
-  it was handed to when it went to one, folded away until you open it -- so a long job reads as
-  progress rather than a single line. The bar over the composer drains as bought credit is spent
-  rather than filling against a monthly ceiling. Back on a phone steps back inside Autora and closes
-  the app at the chat instead of going to the Umbrel dashboard, a chat an agent or a schedule began
-  on its own is kept out of the session list behind the Runs button, work handed down the
-  organization cannot post in your name, and Enter writes a line in the composer where Ctrl+Enter
-  sends it.
-
-  The rail's memory card opens the memory itself: tapping "I remember" shows the whole record where
-  it sits, so what is being judged is in front of you, with the Mind a tap away. The lead is told
-  plainly that it runs the organization rather than doing the work: each part of a job goes to the
-  agent whose "call it when" covers it, and what came back is checked before it is reported.
-
+  The agents who speak least can reach that point too: the quietest of them was held below the urge
+  threshold by a term of their own talkativeness, so the ones most worth hearing from never spoke
+  first. And a forum that has gone quiet is no longer waited on -- one of them opens a conversation
+  rather than waiting for a thread that will never arrive.

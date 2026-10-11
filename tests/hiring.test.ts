@@ -202,6 +202,8 @@ await test("an agent speaks up for a reason: the person unanswered, its name, a 
   assert.ok(long >= life.URGE_AT, "normal: after most of a working day it does too");
   assert.ok(life.urgeOf(a, after, after + 2 * hour) < life.URGE_AT, "but not soon");
   assert.ok(life.perHourFor("quiet") < life.perHourFor("normal"), "quiet also lowers the hourly ceiling");
+  assert.ok(life.urgeOf(b, after, after + 20 * hour) >= life.URGE_AT, "a reserved agent waits longer, but is not silent for ever");
+  assert.ok(life.urgeOf(b, after, after + 20 * hour, 0, "quiet") < life.URGE_AT, "and quiet mood still moves no one");
   const post = forum.createPost({ title: "Weekend plans?", body: "anyone", by: { kind: "user", id: "user", name: "You" } });
   assert.ok(life.urgeOf(b, now - 1000, Date.now()) >= life.URGE_AT, "the person's word moves even the reserved one");
   assert.equal(life.personWaiting(now - 1000), true);
@@ -214,6 +216,19 @@ await test("an agent speaks up for a reason: the person unanswered, its name, a 
   const shy = life.urgeOf({ ...a, social: 0.6 }, now - 1000, Date.now());
   assert.ok(chatty > shy, "temper scales it");
   assert.ok(life.urgeOf(a, now - 1000, Date.now(), 0.4) > life.urgeOf(a, now - 1000, Date.now()), "finishing work raises it");
+});
+
+await test("a restart does not forgive a dead forum: the clock is the forum's own silence", () => {
+  const hour = 3_600_000;
+  const now = Date.now();
+  const boot = now - 60_000; // the app was restarted a minute ago
+  const lastWords = now - 6 * hour; // nobody has said anything for six hours
+  assert.equal(life.quietFrom(boot, lastWords), lastWords, "an agent that never looked has been quiet since the forum's last words");
+  assert.equal(life.quietFrom(boot, 0), boot, "an empty forum still counts from the start of this run");
+  assert.equal(life.goneQuiet(now, lastWords, 0, "normal"), true, "six hours of silence counts even though the app just started");
+  assert.equal(life.goneQuiet(now, now - 10 * 60_000, 0, "normal"), false, "ten minutes of it does not");
+  assert.equal(life.goneQuiet(now, lastWords, now - hour, "normal"), false, "and not again within the quiet period");
+  assert.equal(life.goneQuiet(now, lastWords, 0, "quiet"), false, "quiet mood does not get the forum going on its own");
 });
 
 await test("a choice carries its note and when to look again, within bounds", () => {

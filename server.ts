@@ -68,7 +68,7 @@ import { organizationRoutes } from "./server/routes/organization";
 import { agentBrief, findAgent, getAgent, LEAD_ID, listAgents, recordCollab, recordWork } from "./server/agents";
 import { agentMind, clusters, forgetNote, remember, teach } from "./server/agentmind";
 import {
-  LifeGate, MAX_AGENT_RUN, MAX_REVIEWERS, MAX_WONDERS, perHourFor, QUIET_MS, URGE_AT, addresseeOf, allowed as lifeAllowed, answered, knownText, lastActivity,
+  LifeGate, MAX_AGENT_RUN, MAX_REVIEWERS, MAX_WONDERS, perHourFor, URGE_AT, addresseeOf, allowed as lifeAllowed, answered, goneQuiet, knownText, lastActivity, quietFrom, unseenBy,
   lifePrompt, lifeSystem, parseChoice, personWaiting, pickAgent, reactionOf, replyPrompt, reviewPrompt, reviewersOf, somethingNew, trailingAgentRun, urgeOf,
   vetLinks, wonderNote, wonderText, wondersOf,
 } from "./server/threadlife";
@@ -3075,27 +3075,31 @@ async function threadLifeStep(): Promise<void> {
   if (!lifeGate.room(now, perHourFor(state.threadsMood))) return;
   const roster = listAgents().filter((a) => a.enabled);
   if (roster.length < 2) return;
-  let best: { agent: (typeof roster)[number]; urge: number } | null = null;
+  let best: { agent: (typeof roster)[number]; urge: number; since: number } | null = null;
   for (const agent of roster) {
-    const since = lifeLook.get(agent.id) ?? lifeBoot;
+    /* An agent that has never looked counts its quiet from the forum's own last words, not from the
+       start of this run: a restart must not hand it a fresh silence to sit in (see `quietFrom`). */
+    const since = lifeLook.get(agent.id) ?? quietFrom(lifeBoot, lastActivity());
     // The person waiting for an answer wakes anyone; otherwise a sleeping agent stays asleep.
     if ((lifeSleep.get(agent.id) ?? 0) > now && !personWaiting(since)) continue;
     const urge = urgeOf(agent, since, now, lifeNudge.get(agent.id) ?? 0, state.threadsMood);
-    if (urge >= URGE_AT && (!best || urge > best.urge)) best = { agent, urge };
+    if (urge >= URGE_AT && (!best || urge > best.urge)) best = { agent, urge, since };
   }
-  /* Nobody feels like speaking and the whole forum has been silent for hours: one
-     agent, not the one who started last time, is asked to get it going. The same
-     ceiling counts it, and it is at most once per QUIET_MS. */
+  /* The forum has said nothing for hours: one agent, not the one that got it going last time, is
+     asked to start something -- whoever is keenest, or the one that has waited longest. The clock
+     is the forum's own silence, not this run's age (see `goneQuiet`), at most once per QUIET_MS. */
   let start = false;
   let chosen = best?.agent ?? null;
-  if (!chosen) {
-    if (now - Math.max(lastActivity(), lifeBoot, lifeStartedAt) < QUIET_MS) return;
-    chosen = pickAgent(roster, lifeStarted, null);
-    if (!chosen) return;
-    start = true;
-    lifeStarted.set(chosen.id, now);
-    lifeStartedAt = now;
+  if (goneQuiet(now, lastActivity(), lifeStartedAt, state.threadsMood) && (!best || !unseenBy(best.agent.id, best.since))) {
+    const awake = roster.filter((a) => (lifeSleep.get(a.id) ?? 0) <= now);
+    chosen = pickAgent(awake.length ? awake : roster, lifeStarted, null);
+    if (chosen) {
+      start = true;
+      lifeStarted.set(chosen.id, now);
+      lifeStartedAt = now;
+    }
   }
+  if (!chosen) return;
   const agent = chosen;
   lifeBusy = true;
   try {

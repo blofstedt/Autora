@@ -52,6 +52,16 @@ export class LifeGate {
  */
 export type ThreadMood = "quiet" | "normal" | "lively";
 export const MOODS: readonly ThreadMood[] = ["quiet", "normal", "lively"];
+
+/**
+ * Whether the forum counts as gone quiet, in this mood: it is the forum's *own* silence that
+ * counts -- the last thing anyone said, or the last time an agent got it going -- and never how
+ * long this run of the app has been up. A restart is not a conversation: counting from boot meant
+ * every restart forgave a dead forum for another QUIET_MS, so on a box restarted more often than
+ * that nobody ever got the forum going at all.
+ */
+export const goneQuiet = (now: number, lastActivityAt: number, lastStartedAt: number, mood: ThreadMood): boolean =>
+  mood !== "quiet" && now - Math.max(lastActivityAt, lastStartedAt) >= QUIET_MS;
 const BOREDOM: Record<ThreadMood, number> = { quiet: 1, normal: 2, lively: 5 };
 export const perHourFor = (mood: ThreadMood): number => (mood === "quiet" ? 10 : PER_HOUR);
 
@@ -70,6 +80,19 @@ export function lastActivity(): number {
     for (const c of p.comments) at = Math.max(at, c.created);
   }
   return at;
+}
+
+/**
+ * Where an agent's quiet clock starts when it has never looked at the forum: the forum's own last
+ * words, or the app's start when the forum is empty. An agent hired into a forum that has been
+ * silent for a week has been quiet for a week, however recently this run of the app began.
+ */
+export const quietFrom = (boot: number, lastActivityAt: number): number => Math.min(boot, lastActivityAt || boot);
+
+/** Whether anyone but this agent has said anything since `at`. */
+export function unseenBy(agentId: string, at: number): boolean {
+  return listPosts("new").some((p) =>
+    (p.created > at && p.by.id !== agentId) || p.comments.some((c) => c.created > at && c.by.id !== agentId));
 }
 
 /** What this agent is curious about and has not yet looked into: notes in its own mind, newest last. */
@@ -122,7 +145,12 @@ export function urgeOf(agent: { id: string; name: string; social?: number; bonds
   }
   const hours = Math.max(0, now - since) / 3_600_000;
   const boredom = BOREDOM[mood] ?? 2;
-  const raw = Math.min(0.5, others * 0.12) + (person ? 0.6 : 0) + (direct ? 0.4 : 0) + Math.min(boredom > 1 ? 0.5 : 0.25, hours * 0.03 * boredom) + nudge;
+  /* The boredom ceiling is above URGE_AT on purpose. It used to be 0.5, which the agent's own temper
+     then scaled: any agent with `social` below 0.8 could never reach the threshold from boredom however
+     long it sat, and so could never start anything at all. A reserved agent should take longer, not be
+     silent for ever. */
+  const ceiling = boredom > 1 ? 0.8 : 0.25;
+  const raw = Math.min(0.5, others * 0.12) + (person ? 0.6 : 0) + (direct ? 0.4 : 0) + Math.min(ceiling, hours * 0.03 * boredom) + nudge;
   return raw * (agent.social ?? 1);
 }
 
