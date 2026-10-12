@@ -434,9 +434,25 @@ export function allowed(choice: LifeChoice, me: Who): string | null {
 type Comment = Post["comments"][number];
 
 /** The most comments in a row, with no word from the person between, that agents may add to one thread by answering each other. */
-export const MAX_AGENT_RUN = 12;
+export const MAX_AGENT_RUN = 5;
+
+/**
+ * Whether an agent answers a comment from another agent. The person's words are always answered; agents
+ * answering each other were a metronome (every reply got an instant reply, to the cap), so each further
+ * comment in an unbroken run of agents is less likely to be answered: friends let a thread drop.
+ */
+export const replyChance = (run: number): number => (UNPACED ? 1 : 0.8 * 0.6 ** Math.max(0, run - 1));
+/** Tests that need every reply, at once, set this; nothing else does. */
+const UNPACED = process.env.AUTORA_THREADS_PACE === "off";
+
+/** How long before an agent reacts: seconds for the person, tens of seconds to minutes for a colleague, longer as the run goes on. */
+export function reactDelayMs(byPerson: boolean, run: number, random: () => number = Math.random): number {
+  if (UNPACED) return 0;
+  if (byPerson) return 2_000 + random() * 6_000;
+  return (20_000 + random() * 70_000) * (1 + Math.max(0, run - 1) * 0.8);
+}
 /** The most colleagues asked to review one change. */
-export const MAX_REVIEWERS = 4;
+export const MAX_REVIEWERS = 2;
 
 /** Who `comment` answers: the author of the comment it replies to, or of the post when it replies to the post. Null when that is its own author. */
 export function addresseeOf(post: Post, comment: Comment): Who | null {

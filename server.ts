@@ -68,7 +68,7 @@ import { organizationRoutes } from "./server/routes/organization";
 import { agentBrief, findAgent, getAgent, LEAD_ID, listAgents, recordCollab, recordWork } from "./server/agents";
 import { agentMind, clusters, forgetNote, remember, teach } from "./server/agentmind";
 import {
-  LifeGate, MAX_AGENT_RUN, MAX_REVIEWERS, MAX_WONDERS, perHourFor, URGE_AT, addresseeOf, allowed as lifeAllowed, answered, goneQuiet, knownText, lastActivity, quietFrom, unseenBy,
+  LifeGate, MAX_AGENT_RUN, MAX_REVIEWERS, MAX_WONDERS, perHourFor, URGE_AT, addresseeOf, allowed as lifeAllowed, reactDelayMs, replyChance, answered, goneQuiet, knownText, lastActivity, quietFrom, unseenBy,
   lifePrompt, lifeSystem, parseChoice, personWaiting, pickAgent, reactionOf, replyPrompt, reviewPrompt, reviewersOf, somethingNew, trailingAgentRun, urgeOf,
   vetLinks, wonderNote, wonderText, wondersOf,
 } from "./server/threadlife";
@@ -3181,9 +3181,13 @@ let reactChain: Promise<void> = Promise.resolve();
 
 onThreadReply(({ post, comment }) => {
   if (!comment || !state.threadsAlive) return;
-  reactChain = reactChain
-    .then(() => threadReact(post.id, comment.id))
-    .catch((err) => log("info", "threads", `replies failed: ${err instanceof Error ? err.message : String(err)}`));
+  // Agents do not answer each other the instant a comment lands: a pause that varies, and grows as a run of agents goes on.
+  const wait = reactDelayMs(comment.by.kind === "user", trailingAgentRun(post));
+  setTimeout(() => {
+    reactChain = reactChain
+      .then(() => threadReact(post.id, comment.id))
+      .catch((err) => log("info", "threads", `replies failed: ${err instanceof Error ? err.message : String(err)}`));
+  }, wait).unref();
 });
 
 async function threadReact(postRef: string, commentRef: string): Promise<void> {
@@ -3191,7 +3195,8 @@ async function threadReact(postRef: string, commentRef: string): Promise<void> {
   const trigger = first?.comments.find((c) => c.id === commentRef);
   if (!first || !trigger || !state.threadsAlive) return;
   const byPerson = trigger.by.kind === "user";
-  if (!byPerson && trailingAgentRun(first) > MAX_AGENT_RUN) return;
+  const run = trailingAgentRun(first);
+  if (!byPerson && (run > MAX_AGENT_RUN || first.comments[first.comments.length - 1]?.id !== trigger.id)) return;
   // Wait out an autonomous step in progress, then hold the forum while this runs so the two do not talk over each other.
   for (let i = 0; lifeBusy && i < 240; i += 1) await new Promise((r) => setTimeout(r, 500));
   if (lifeBusy) { log("info", "threads", "replies: skipped, the forum stayed busy for two minutes"); return; }
@@ -3243,13 +3248,15 @@ async function threadReact(postRef: string, commentRef: string): Promise<void> {
     const skip: string[] = [];
     if (owedBy) {
       skip.push(owedBy.id);
-      if (!answered(first, trigger, owedBy.id) && (byPerson || room())) await speak(owedBy, true);
+      if (!answered(first, trigger, owedBy.id) && (byPerson || (room() && Math.random() < replyChance(run)))) await speak(owedBy, true);
     }
     // Everyone else in the thread reads what changed and decides.
     const reviewers = reviewersOf(first, trigger, roster, skip).sort(() => Math.random() - 0.5);
     let asked = 0;
     for (const agent of reviewers) {
       if (asked >= MAX_REVIEWERS || !room()) break;
+      // Most of the time a colleague has nothing to add; the person's words get more attention than another agent's.
+      if (Math.random() > (byPerson ? 0.7 : replyChance(run) * 0.5) && replyChance(0) < 1) continue;
       const now = getPost(postRef);
       if (!now || !somethingNew(now, agent.id, reactSeen.get(`${postRef}|${agent.id}`) ?? 0)) continue;
       asked += 1;

@@ -19,7 +19,7 @@ const json = (o: unknown) => ({ text: JSON.stringify(o) });
 const who = (req: Seen) => /You are (Ada|Ben|Cy)\b/.exec(req.system)?.[1] ?? "";
 
 async function main() {
-  const app: App = await startApp();
+  const app: App = await startApp({ env: { AUTORA_THREADS_PACE: "off" } });
   try {
     for (const name of ["Ada", "Ben", "Cy"]) {
       const r = await app.api("POST", "/api/agents", { name, role: `${name}'s job`, when: "when asked" });

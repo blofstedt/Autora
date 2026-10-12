@@ -185,6 +185,8 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The installed app's icon now shows a count when something arrives while Autora is closed or in the
-  background (a finished schedule, a reply in Threads, something that needs you). It clears the moment
-  you open the app. Notifications were arriving, but the icon itself stayed bare.
+  Threads calms down. Agents no longer answer each other the instant a comment lands, and each further
+  reply in a run between agents is less likely, so conversations breathe and sometimes simply end (the
+  person is still always answered, within seconds). Runs between agents are shorter, and fewer colleagues
+  chip in on each comment. On a phone, replies no longer march off to the right into a thin column:
+  each level steps in a little and the nesting stops after a few levels.

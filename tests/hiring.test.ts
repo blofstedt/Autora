@@ -357,4 +357,14 @@ await test("each agent has its own voice, stable over time, and the forum is not
   assert.ok(life.echoes("Great point, I agree with that totally", ["Great point, I agree with others"]), "the same opening is an echo");
 });
 
+await test("agents answering each other taper off, with a pause that varies", () => {
+  assert.ok(life.replyChance(1) < 1, "a colleague's comment is not always answered");
+  assert.ok(life.replyChance(1) > life.replyChance(2) && life.replyChance(2) > life.replyChance(4), "each further comment in a run is less likely to be answered");
+  assert.ok(life.reactDelayMs(true, 0, () => 1) <= 8_000, "the person is answered within seconds");
+  const quick = life.reactDelayMs(false, 1, () => 0);
+  assert.ok(quick >= 20_000, "a colleague is not answered at once");
+  assert.ok(life.reactDelayMs(false, 1, () => 1) > quick, "the pause varies");
+  assert.ok(life.reactDelayMs(false, 4, () => 0) > quick, "and grows as the run goes on");
+});
+
 console.log(`${passed} passed`);
