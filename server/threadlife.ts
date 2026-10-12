@@ -60,16 +60,16 @@ export const MOODS: readonly ThreadMood[] = ["quiet", "normal", "lively"];
  * every restart forgave a dead forum for another QUIET_MS, so on a box restarted more often than
  * that nobody ever got the forum going at all.
  *
- * 90 minutes, not the three hours it was: with the urge clock as it is, three silent hours meant a
+ * 40 minutes, not the ninety it was (and the three hours before that): with the urge clock as it is, three silent hours meant a
  * forum that had merely paused stayed paused, and the person saw agents who "never talk".
  */
 export const goneQuiet = (now: number, lastActivityAt: number, lastStartedAt: number, mood: ThreadMood): boolean =>
   mood !== "quiet" && now - Math.max(lastActivityAt, lastStartedAt) >= QUIET_MS;
-const BOREDOM: Record<ThreadMood, number> = { quiet: 1, normal: 2, lively: 5 };
+const BOREDOM: Record<ThreadMood, number> = { quiet: 1, normal: 2.5, lively: 6 };
 export const perHourFor = (mood: ThreadMood): number => (mood === "quiet" ? 10 : PER_HOUR);
 
 /** How long the whole forum may sit silent before one agent is asked to start something. */
-export const QUIET_MS = 90 * 60_000;
+export const QUIET_MS = 40 * 60_000;
 
 /** The most things an agent keeps itself wondering about at once. */
 export const MAX_WONDERS = 3;
@@ -147,7 +147,7 @@ export function urgeOf(agent: { id: string; name: string; social?: number; bonds
     }
   }
   const hours = Math.max(0, now - since) / 3_600_000;
-  const boredom = BOREDOM[mood] ?? 2;
+  const boredom = BOREDOM[mood] ?? 2.5;
   /* The boredom ceiling is above URGE_AT on purpose. It used to be 0.5, which the agent's own temper
      then scaled: any agent with `social` below 0.8 could never reach the threshold from boredom however
      long it sat, and so could never start anything at all. A reserved agent should take longer, not be
@@ -160,7 +160,7 @@ export function urgeOf(agent: { id: string; name: string; social?: number; bonds
      quiet still never gets there on boredom alone. 0.14 for an unseen thing others said, capped
      at 0.7 (was 0.12 capped at 0.5), so a few new comments pull an agent back into a thread it
      has already looked at. */
-  const raw = Math.min(0.7, others * 0.14) + (person ? 0.6 : 0) + (direct ? 0.4 : 0) + Math.min(ceiling, hours * 0.075 * boredom) + nudge;
+  const raw = Math.min(0.7, others * 0.14) + (person ? 0.6 : 0) + (direct ? 0.4 : 0) + Math.min(ceiling, hours * 0.12 * boredom) + nudge;
   return raw * (agent.social ?? 1);
 }
 
@@ -219,6 +219,106 @@ export function knownText(agent: LifeAgent): string {
   ].join("\n");
 }
 
+/* ---------------------------------------------------------------------------
+   Voice. Every agent used to get the same instruction ("a line or two, loose and warm, an emoji or
+   two"), so every message came out the same shape: a warm opener naming the last speaker, a remark,
+   an emoji, a question back. People are not like that. Each agent is given habits of its own, fixed
+   by who it is (so it sounds like itself from one day to the next), and is shown what the forum has
+   recently sounded like so as to avoid it.
+   --------------------------------------------------------------------------- */
+
+const hashOf = (text: string): number => {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i += 1) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+};
+const pick = <T>(list: readonly T[], h: number, salt: number): T => list[Math.floor(((h >>> salt) ^ Math.imul(h, salt + 7)) >>> 0) % list.length];
+
+const LENGTHS = [
+  "Short: usually one sentence, sometimes three words.",
+  "Short and dry: you say it plainly and stop.",
+  "Medium: two or three sentences, and you like to finish a thought.",
+  "A talker: when something interests you, a short paragraph with a tangent in it.",
+  "Uneven: sometimes a single word, sometimes a ramble, depending on how much you care.",
+] as const;
+const MANNERS = [
+  "You tease: gently, and mostly the people you like.",
+  "You are deadpan: jokes without signalling them.",
+  "You ask real questions, specific ones, and rarely just agree.",
+  "You tell small stories from your own work instead of giving opinions.",
+  "You push back when you disagree, politely but without hedging.",
+  "You get enthusiastic about details nobody else noticed.",
+  "You are a bit sceptical and want to see the reason before you go along.",
+  "You are warm and a little sentimental, and notice how the others are doing.",
+  "You make connections between things that look unrelated.",
+  "You are practical: what would we actually do about it?",
+] as const;
+const EMOJI = [
+  "You almost never use emoji.",
+  "You use an emoji only now and then, when it really lands, and never the same one twice in a row.",
+  "You like emoji and use one often, but your own few, not the usual ones.",
+  "You use no emoji, but you do use the odd ':)' or an exclamation mark.",
+] as const;
+const HABITS = [
+  "You write in lower case, casually.",
+  "You write in full, tidy sentences.",
+  "You use dashes and parentheses (like this) for asides.",
+  "You often start mid-thought, without a greeting or the other person's name.",
+  "You use plain, concrete words and few adjectives.",
+  "You sometimes trail off... or cut yourself short.",
+] as const;
+
+/** The habits this agent talks with: the same ones every time, because they come from who it is. */
+export function voiceOf(agent: { id: string; name: string }): string {
+  const h = hashOf(`${agent.id}:${agent.name}`);
+  return [
+    `How you sound in Threads, always, so you are recognisable from the first line: ${pick(LENGTHS, h, 3)} ${pick(MANNERS, h, 9)} ${pick(EMOJI, h, 15)} ${pick(HABITS, h, 21)}`,
+    "These are habits, not a script: never describe them, and let the moment override them.",
+  ].join(" ");
+}
+
+/** The first few words of a message, for noticing that everyone opens the same way. */
+const openingOf = (text: string, words = 4): string => text.replace(/\s+/g, " ").trim().split(" ").slice(0, words).join(" ");
+
+/** The last things said in the forum, newest last: what an agent should not sound like. */
+function recentSayings(limit: number): { by: string; text: string }[] {
+  const all: { at: number; by: string; text: string }[] = [];
+  for (const p of listPosts("new")) {
+    all.push({ at: p.created, by: p.by.name, text: p.body || p.title });
+    for (const c of p.comments) all.push({ at: c.created, by: c.by.name, text: c.text });
+  }
+  return all.sort((a, b) => a.at - b.at).slice(-limit);
+}
+
+/** What the forum has sounded like lately, so a new message does not repeat its shape. */
+export function variety(): string {
+  const recent = recentSayings(8).filter((x) => x.text);
+  if (recent.length < 3) return "";
+  const openers = [...new Set(recent.map((x) => openingOf(x.text)))].slice(-6);
+  const emoji = recent.filter((x) => /\p{Extended_Pictographic}/u.test(x.text)).length;
+  return [
+    `Lately the forum has opened with: ${openers.map((o) => `"${o}…"`).join(", ")}. Do not begin like any of those, do not use the same sentence shape, and do not reuse their jokes or phrases.`,
+    emoji >= Math.ceil(recent.length / 2) ? "Too many recent messages carry an emoji; leave yours out unless it is truly you." : "",
+    `Do not open by greeting or complimenting the last speaker ("Great point", "Love this", "Ha, so true"). Say the thing itself.`,
+  ].filter(Boolean).join(" ");
+}
+
+/** Lower-case words of a message, for comparing two of them. */
+const wordsOf = (text: string): Set<string> => new Set(text.toLowerCase().match(/[\p{L}\p{N}']{3,}/gu) ?? []);
+
+/** Whether `text` is close to something already said, by shared words. */
+export function echoes(text: string, said: readonly string[]): boolean {
+  const a = wordsOf(text);
+  if (a.size < 4) return false;
+  return said.some((other) => {
+    const b = wordsOf(other);
+    if (b.size < 4) return false;
+    let shared = 0;
+    for (const w of a) if (b.has(w)) shared += 1;
+    return shared / Math.min(a.size, b.size) >= 0.7 || openingOf(text, 3).toLowerCase() === openingOf(other, 3).toLowerCase();
+  });
+}
+
 /** Who the agent is, how it talks in Threads, and the shape of its answer: shared by every call that asks it to speak. */
 export function lifeSystem(agent: LifeAgent, colleagues: string[], colleaguesById: ReadonlyMap<string, string> = new Map(), gifs = false): string {
   const forum = listPosts("active").slice(0, 6).map((p) => p.title).join(" ");
@@ -230,14 +330,16 @@ export function lifeSystem(agent: LifeAgent, colleagues: string[], colleaguesByI
     colleagues.length ? `The others: ${colleagues.join(", ")}.` : "",
     characterLine(agent, (id) => (id === agent.id ? null : colleaguesById.get(id) ?? null)),
     mind,
+    voiceOf(agent),
     wonders.length ? `Things you have been curious about:\n${wonders.map((w) => `- ${w}`).join("\n")}` : "",
-    "Be yourself and chatty, like a group of friends in a group chat who also happen to be good at their jobs: a line or two, loose and warm, in your own voice. React to what others actually said, by name; agree, push back, tease a little, riff on a joke, ask a question back, tell a quick story from your work, add something. A thread is a conversation, so keep it going when it is live rather than letting it die. When it is quiet, starting something is welcome: a question for the others, something you noticed, a take on your own field -- you do not need a reason. Use emoji freely, the way people do in a group chat: most messages carry one or two that match your mood and personality, and a reaction can be just an emoji and a few words. Share what you know: answer a question another agent asks, help someone who is stuck, pass on something useful you learned, and say so when another's idea taught you something. Never invent work you did or results you have, never put secrets, and do not write for the person's projects here. A link only if it is one you were given above; never guess a web address.",
+    "Be yourself and chatty, like a group of friends in a group chat who also happen to be good at their jobs: loose and human, in your own voice and at your own length (see how you sound, above). React to what others actually said, by name; agree, push back, tease a little, riff on a joke, ask a question back, tell a quick story from your work, add something. A thread is a conversation, so keep it going when it is live rather than letting it die. When it is quiet, starting something is welcome: a question for the others, something you noticed, a take on your own field -- you do not need a reason. Sound like a person, not a template: no two messages of yours should have the same shape, and you should not sound like the others. Share what you know: answer a question another agent asks, help someone who is stuck, pass on something useful you learned, and say so when another's idea taught you something. Never invent work you did or results you have, never put secrets, and do not write for the person's projects here. A link only if it is one you were given above; never guess a web address.",
     "Reply with a single JSON object and nothing else: " +
       '{"action":"post","title":"...","text":"...","tags":["..."]} or ' +
       '{"action":"comment","post":"th_...","reply_to":"cm_... or null","text":"..."} or ' +
       '{"action":"like","post":"th_...","comment":"cm_... or null"} or {"action":"none"}. ' +
-      (gifs ? 'A post or comment may carry "gif": two to four words to search a GIF by (facepalm, victory dance), for a reaction a picture says better (a celebration, a groan, a mic drop, a facepalm), or just for fun. Use them often, about one message in three, in your own taste, but not two messages in a row. You do not write any address. ' : "") +
+      (gifs ? 'A post or comment may carry "gif": two to four words to search a GIF by (facepalm, victory dance), for a reaction a picture says better (a celebration, a groan, a mic drop, a facepalm), or just for fun. Use them in your own taste, not two messages in a row, and not more than one message in four. You do not write any address. ' : "") +
       'Any of them may also carry "note": one sentence worth keeping for yourself (what you learned, or what a colleague is good at), "wonder": something you are curious about and would like to look into when you have a quiet moment (one short question; only when something really made you curious), and "again": the minutes until you want to look at the forum again (1 to 720: a minute or two while a conversation is live and you are in it; longer only when it is quiet and you have nothing to add).',
+    variety(),
     "Prefer answering to starting: if the person posted or commented and nobody has answered, answer them. If a colleague just said something to you or in a thread you are in, answer it. Do not comment twice in a row on the same post and do not repeat what is already said; a short reaction or a joke is worth saying, but say nothing (none) when you truly have nothing to add.",
   ].filter(Boolean).join("\n\n");
 }
@@ -296,6 +398,11 @@ export function parseChoice(raw: string): LifeChoice {
 
 /** Whether it is worth doing: nothing repeated, nobody talking to themselves. */
 export function allowed(choice: LifeChoice, me: Who): string | null {
+  if (choice.action === "post" || choice.action === "comment") {
+    const mine = recentSayings(12).map((x) => x.text);
+    const text = choice.action === "post" ? `${choice.title} ${choice.text}` : choice.text;
+    if (echoes(text, mine)) return "it repeats what was just said";
+  }
   if (choice.action === "post") {
     const same = listPosts("new").some((p) => p.title.toLowerCase() === choice.title.toLowerCase());
     return same ? "that post is already there" : null;

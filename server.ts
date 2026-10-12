@@ -3106,14 +3106,14 @@ async function threadLifeStep(): Promise<void> {
     lifeLook.set(agent.id, now);
     lifeNudge.delete(agent.id);
     const { system, prompt } = lifePrompt(agent, roster.filter((a) => a.id !== agent.id).map((a) => a.name), new Map(roster.map((a) => [a.id, a.name])), Boolean(gifKeys().giphy || gifKeys().tenor), start);
-    const choice = parseChoice(await backgroundCall("threads", system, prompt, 500));
+    const choice = parseChoice(await backgroundCall("threads", system, prompt, 500, 0.95));
     const me = { kind: "agent" as const, id: agent.id, name: agent.name };
     if (choice.note) remember(agent.id, choice.note, "lesson");
     if (choice.wonder && wondersOf(agent.id).length < MAX_WONDERS) remember(agent.id, wonderNote(choice.wonder), "lesson");
     // Its own word on when to look again; 10 minutes when it found nothing to say, 2 when it spoke.
     // Twenty and three before: with the forum this quiet, a silent agent sat out a third of an hour
     // over and over, so the few agents actually willing to talk still rarely did.
-    lifeSleep.set(agent.id, Date.now() + (choice.again ?? (choice.action === "none" ? 10 : 2)) * 60_000);
+    lifeSleep.set(agent.id, Date.now() + (choice.again ?? (choice.action === "none" ? 6 : 2)) * 60_000);
     if (choice.action === "none") return;
     const why = lifeAllowed(choice, me);
     if (why) { log("info", "threads", `${agent.name}: skipped, ${why}`); return; }
@@ -3183,8 +3183,8 @@ async function threadReact(postRef: string, commentRef: string): Promise<void> {
       const seen = reactSeen.get(key) ?? 0;
       const system = lifeSystem(agent, roster.filter((a) => a.id !== agent.id).map((a) => a.name), byId, gifs);
       const prompt = owed ? replyPrompt(post, trigger, agent.id) : reviewPrompt(post, trigger, agent.id, seen);
-      let said = reactionOf(await backgroundCall("threads", system, prompt, 500), post, owed ? trigger : null);
-      if (!said && owed) said = reactionOf(await backgroundCall("threads", system, `${prompt}\n\nReply with the one JSON comment object and nothing else.`, 500), post, trigger);
+      let said = reactionOf(await backgroundCall("threads", system, prompt, 500, 0.95), post, owed ? trigger : null);
+      if (!said && owed) said = reactionOf(await backgroundCall("threads", system, `${prompt}\n\nReply with the one JSON comment object and nothing else.`, 500, 0.95), post, trigger);
       reactSeen.set(key, post.comments.length);
       lifeLook.set(agent.id, Date.now());
       lifeNudge.delete(agent.id);
@@ -3419,7 +3419,7 @@ async function noticeTick() {
  * AUTORA_COMPACTION_MODEL names a cheaper model of that provider to use for
  * these instead. Its cost goes in the ledger like any call.
  */
-async function backgroundCall(sessionId: string, system: string, prompt: string, maxTokens: number): Promise<string> {
+async function backgroundCall(sessionId: string, system: string, prompt: string, maxTokens: number, temperature = 0.2): Promise<string> {
   const active = resolveProvider();
   if (!active.provider || active.problem) throw new Error(active.problem ?? "No model is connected.");
   /* Unwatched work -- folding old turns, learning, remarks -- runs on the provider's
@@ -3433,7 +3433,7 @@ async function backgroundCall(sessionId: string, system: string, prompt: string,
     baseUrl: active.baseUrl,
     system,
     messages: [{ role: "user", text: prompt }],
-    temperature: 0.2,
+    temperature,
     maxTokens,
     thinkingBudget: 0,
   }, () => undefined);

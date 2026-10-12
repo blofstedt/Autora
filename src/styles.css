@@ -2535,8 +2535,8 @@ label + .jf-hint { margin-top: -5px; }
 .todo-list { list-style: none; margin: 0; padding: 6px 0; }
 .todo-item {
   display: flex; align-items: flex-start; gap: 10px;
-  padding: 7px 13px; min-width: 0;
-  font-size: var(--fs-base); line-height: 1.45; color: var(--text);
+  padding: 6px 13px; min-width: 0;
+  font-size: var(--fs-base); line-height: 1.4; color: var(--text);
   overflow-wrap: anywhere;
 }
 .todo-box { flex: 0 0 auto; width: 20px; height: 20px; margin-top: 0; overflow: visible; transform-origin: center; transform: scale(0.94); transition: transform var(--dur-3) var(--ease-spring); }
@@ -2574,44 +2574,47 @@ label + .jf-hint { margin-top: -5px; }
 /* An item that carries steps. The row keeps the shape it always had and the
    steps take a line of their own under it, so only an item that has them lays
    out any differently from the way it did before subtasks existed. */
-.todo-item.has-steps { flex-wrap: wrap; }
+.todo-item.has-steps { flex-wrap: wrap; row-gap: 2px; }
+/* Steps sit under the title, lined up with its first letter (box 20px + gap 10px), as a quiet indented outline: one
+   thin guide line down the left, small type, no second set of boxes. */
 .todo-steps { flex: 1 0 100%; min-width: 0; margin-left: 30px; }
 .todo-steps-head {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 1px 0; cursor: pointer; user-select: none; list-style: none;
-  font-size: var(--fs-xs); color: var(--text-3);
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 0; cursor: pointer; user-select: none; list-style: none;
+  font-size: var(--fs-xs); color: var(--text-3); line-height: 1.3;
 }
 .todo-steps-head::-webkit-details-marker { display: none; }
 .todo-steps-head::before {
-  content: ""; width: 5px; height: 5px; flex: 0 0 auto;
-  border-right: 1.4px solid currentColor; border-bottom: 1.4px solid currentColor;
+  content: ""; width: 4px; height: 4px; flex: 0 0 auto;
+  border-right: 1.3px solid currentColor; border-bottom: 1.3px solid currentColor;
   transform: rotate(-45deg); transition: transform var(--dur-2) var(--ease);
 }
 .todo-steps[open] > .todo-steps-head::before { transform: rotate(45deg); }
 .todo-steps-head:hover, .todo-steps[open] > .todo-steps-head { color: var(--text-2); }
-.todo-steps-list { list-style: none; margin: 3px 0 2px; padding: 0; }
+.todo-steps-list {
+  list-style: none; margin: 4px 0 1px; padding: 0 0 0 10px;
+  border-left: 1px solid var(--border);
+}
 .todo-step {
-  display: flex; align-items: baseline; gap: 8px;
-  padding: 2px 0; font-size: var(--fs-sm); line-height: 1.4; color: var(--text-2);
+  display: flex; align-items: center; gap: 8px;
+  padding: 2px 0; font-size: var(--fs-sm); line-height: 1.35; color: var(--text-3);
   overflow-wrap: anywhere;
 }
-/* A step's own mark: a small ring that fills when it is done, so a step reads
-   the same way an item does without a second marching box beside it. */
+/* A step's own mark: a tiny dot, hollow until it is under way, solid when done. */
 .todo-step-mark {
-  flex: 0 0 auto; width: 5px; height: 5px; border-radius: 50%;
-  background: transparent; box-shadow: inset 0 0 0 1.4px var(--text-3);
+  flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%;
+  background: transparent; box-shadow: inset 0 0 0 1.2px var(--text-3);
   transition: background var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease);
 }
-.todo-step.is-doing .todo-step-mark { box-shadow: inset 0 0 0 1.4px var(--glow-light); }
-.todo-step.is-done .todo-step-mark { background: var(--live); box-shadow: inset 0 0 0 1.4px var(--live); }
-.todo-step-title { min-width: 0; }
+.todo-step.is-doing .todo-step-mark { background: rgba(var(--glow-rgb), 0.35); box-shadow: inset 0 0 0 1.2px var(--glow-light); }
+.todo-step.is-done .todo-step-mark { background: var(--live); box-shadow: none; }
+.todo-step-title { min-width: 0; flex: 1 1 auto; }
 .todo-step.is-doing .todo-step-title { color: var(--text); }
-.todo-step.is-done .todo-step-title { color: var(--text-3); text-decoration: line-through; }
-/* Whose step it is, at the right-hand end of the line. */
+.todo-step.is-done .todo-step-title { opacity: 0.6; text-decoration: line-through; text-decoration-thickness: 1px; }
+/* Whose step it is: plain small text at the right-hand end, not a filled pill. */
 .todo-step-agent {
-  flex: 0 0 auto; margin-left: auto; padding: 0 6px; border-radius: var(--r-pill);
-  font-size: var(--fs-xs); white-space: nowrap;
-  color: var(--text-3); background: rgba(255, 255, 255, 0.06);
+  flex: 0 0 auto; margin-left: auto; white-space: nowrap;
+  font-size: var(--fs-xs); color: var(--text-3); opacity: 0.8;
 }
 /* The moment a task is ticked off, and only that moment (TodoList `fresh`): the box pops and a ring of its colour
    leaves it, a beat before the tick draws itself. */
@@ -2652,7 +2655,7 @@ label + .jf-hint { margin-top: -5px; }
   border-bottom: 1px solid var(--border);
 }
 .todo-dock-list .todo-list { padding: 4px 0; }
-.todo-dock-list .todo-item { font-size: var(--fs-base); padding: 6px 12px; }
+.todo-dock-list .todo-item { font-size: var(--fs-base); padding: 5px 12px; }
 .todo-dock-bar {
   position: relative; display: flex; align-items: center; gap: 10px; width: 100%;
   height: 36px; padding: 0 10px 0 12px; border: 0; background: none; cursor: pointer;
