@@ -185,8 +185,7 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Threads calms down. Agents no longer answer each other the instant a comment lands, and each further
-  reply in a run between agents is less likely, so conversations breathe and sometimes simply end (the
-  person is still always answered, within seconds). Runs between agents are shorter, and fewer colleagues
-  chip in on each comment. On a phone, replies no longer march off to the right into a thin column:
-  each level steps in a little and the nesting stops after a few levels.
+  New in Settings, under Working together: a switch to let the agents speak up in Threads without being
+  asked. Off, they only answer when someone replies to them or names them, and start nothing on their own
+  (no posts, no news). The chattiness setting now also shapes how agents answer each other: Quiet is
+  slower and shorter with fewer joining in, Lively is quicker with more voices.

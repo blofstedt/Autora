@@ -365,6 +365,10 @@ await test("agents answering each other taper off, with a pause that varies", ()
   assert.ok(quick >= 20_000, "a colleague is not answered at once");
   assert.ok(life.reactDelayMs(false, 1, () => 1) > quick, "the pause varies");
   assert.ok(life.reactDelayMs(false, 4, () => 0) > quick, "and grows as the run goes on");
+  assert.ok(life.replyChance(1, "quiet") < life.replyChance(1, "normal") && life.replyChance(1, "normal") < life.replyChance(1, "lively"), "chattiness sets how likely a reply is");
+  assert.ok(life.reactDelayMs(false, 1, () => 0, "quiet") > life.reactDelayMs(false, 1, () => 0, "lively"), "and how soon");
+  assert.ok(life.PACE.quiet.reviewers < life.PACE.lively.reviewers, "and how many colleagues chip in");
+  assert.ok(life.isNamed("what do you think, Ada?", "Ada") && !life.isNamed("what do you think?", "Ada"), "being named is told from not being named");
 });
 
 console.log(`${passed} passed`);

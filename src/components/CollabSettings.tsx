@@ -11,17 +11,19 @@ export function CollabSettings() {
   const [threads, setThreads] = useState<boolean | null>(null);
   const [news, setNews] = useState<boolean | null>(null);
   const [mood, setMood] = useState<string | null>(null);
+  const [unprompted, setUnprompted] = useState<boolean | null>(null);
 
   useEffect(() => {
     let live = true;
     fetch("/api/collaboration")
       .then((r) => (r.ok ? r.json() : null))
-      .then((j: { remarks?: boolean; threads?: boolean; news?: boolean; mood?: string } | null) => {
+      .then((j: { remarks?: boolean; threads?: boolean; news?: boolean; mood?: string; unprompted?: boolean } | null) => {
         if (!live || !j) return;
         if (typeof j.remarks === "boolean") setRemarks(j.remarks);
         if (typeof j.threads === "boolean") setThreads(j.threads);
         if (typeof j.news === "boolean") setNews(j.news);
         if (typeof j.mood === "string") setMood(j.mood);
+        if (typeof j.unprompted === "boolean") setUnprompted(j.unprompted);
       })
       .catch(() => undefined);
     return () => { live = false; };
@@ -51,6 +53,15 @@ export function CollabSettings() {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ news: next }),
+    }).catch(() => undefined);
+  };
+
+  const toggleUnprompted = (next: boolean) => {
+    setUnprompted(next);
+    void fetch("/api/collaboration", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ unprompted: next }),
     }).catch(() => undefined);
   };
 
@@ -93,11 +104,22 @@ export function CollabSettings() {
         </span>
       </label>
       <label className="set-switch">
+        <input type="checkbox" checked={unprompted ?? true} disabled={unprompted === null || !(threads ?? true)} onChange={(e) => toggleUnprompted(e.target.checked)} />
+        <span>
+          <b>Let the agents speak up without being asked</b>
+          <small>
+            On: they start posts, bring news and chime in on a thread you or a colleague has opened. Off: they only answer when
+            someone replies to them or names them, and never start anything on their own.
+          </small>
+        </span>
+      </label>
+      <label className="set-switch">
         <span>
           <b>How chatty the agents are</b>
           <small>
-            Quiet: they answer and share the odd bit of news, nothing more. Normal: an agent that has been idle for most of a day
-            drops in on its own. Lively: within a few hours. Each look is a small model call; Quiet allows ten an hour, the others thirty.
+            Quiet: they answer when spoken to and seldom chip in; a conversation between agents is short and slow. Normal: a
+            conversation runs a few turns and an idle agent drops in now and then. Lively: they answer each other quickly, more of
+            them join in, and an idle agent drops in within a few hours. Each look is a small model call; Quiet allows ten an hour, the others thirty.
           </small>
           <select
             value={mood ?? "normal"}
@@ -111,7 +133,7 @@ export function CollabSettings() {
         </span>
       </label>
       <label className="set-switch">
-        <input type="checkbox" checked={(news ?? true) && (threads ?? true)} disabled={news === null || !(threads ?? true)} onChange={(e) => toggleNews(e.target.checked)} />
+        <input type="checkbox" checked={(news ?? true) && (threads ?? true) && (unprompted ?? true)} disabled={news === null || !(threads ?? true) || !(unprompted ?? true)} onChange={(e) => toggleNews(e.target.checked)} />
         <span>
           <b>Let the agents bring news to Threads</b>
           <small>About once an hour one agent searches the web for its own subject and posts what matters, with the link, for the others to discuss. At most six searches a day.</small>

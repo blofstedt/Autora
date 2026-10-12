@@ -68,7 +68,7 @@ import { organizationRoutes } from "./server/routes/organization";
 import { agentBrief, findAgent, getAgent, LEAD_ID, listAgents, recordCollab, recordWork } from "./server/agents";
 import { agentMind, clusters, forgetNote, remember, teach } from "./server/agentmind";
 import {
-  LifeGate, MAX_AGENT_RUN, MAX_REVIEWERS, MAX_WONDERS, perHourFor, URGE_AT, addresseeOf, allowed as lifeAllowed, reactDelayMs, replyChance, answered, goneQuiet, knownText, lastActivity, quietFrom, unseenBy,
+  LifeGate, MAX_AGENT_RUN, MAX_WONDERS, PACE, isNamed, perHourFor, URGE_AT, addresseeOf, allowed as lifeAllowed, reactDelayMs, replyChance, answered, goneQuiet, knownText, lastActivity, quietFrom, unseenBy,
   lifePrompt, lifeSystem, parseChoice, personWaiting, pickAgent, reactionOf, replyPrompt, reviewPrompt, reviewersOf, somethingNew, trailingAgentRun, urgeOf,
   vetLinks, wonderNote, wonderText, wondersOf,
 } from "./server/threadlife";
@@ -3094,6 +3094,7 @@ function noteUnreadable(who: string, raw: string): void {
 
 async function threadLifeStep(): Promise<void> {
   if (!state.threadsAlive) return lifeWhy("Threads is switched off in Settings");
+  if (!state.threadsUnprompted) return lifeWhy("agents are set to speak in Threads only when addressed");
   if (lifeBusy) return lifeWhy(`a forum step has been running for ${Math.round((Date.now() - lifeBusySince) / 60_000)} min`);
   const now = Date.now();
   if (!lifeGate.room(now, perHourFor(state.threadsMood))) return lifeWhy("the hourly or daily ceiling is reached");
@@ -3182,7 +3183,7 @@ let reactChain: Promise<void> = Promise.resolve();
 onThreadReply(({ post, comment }) => {
   if (!comment || !state.threadsAlive) return;
   // Agents do not answer each other the instant a comment lands: a pause that varies, and grows as a run of agents goes on.
-  const wait = reactDelayMs(comment.by.kind === "user", trailingAgentRun(post));
+  const wait = reactDelayMs(comment.by.kind === "user", trailingAgentRun(post), Math.random, state.threadsMood);
   setTimeout(() => {
     reactChain = reactChain
       .then(() => threadReact(post.id, comment.id))
@@ -3248,15 +3249,15 @@ async function threadReact(postRef: string, commentRef: string): Promise<void> {
     const skip: string[] = [];
     if (owedBy) {
       skip.push(owedBy.id);
-      if (!answered(first, trigger, owedBy.id) && (byPerson || (room() && Math.random() < replyChance(run)))) await speak(owedBy, true);
+      if (!answered(first, trigger, owedBy.id) && (byPerson || (room() && Math.random() < replyChance(run, state.threadsMood)))) await speak(owedBy, true);
     }
     // Everyone else in the thread reads what changed and decides.
-    const reviewers = reviewersOf(first, trigger, roster, skip).sort(() => Math.random() - 0.5);
+    const reviewers = reviewersOf(first, trigger, roster, skip, !state.threadsUnprompted).sort(() => Math.random() - 0.5);
     let asked = 0;
     for (const agent of reviewers) {
-      if (asked >= MAX_REVIEWERS || !room()) break;
+      if (asked >= PACE[state.threadsMood].reviewers || !room()) break;
       // Most of the time a colleague has nothing to add; the person's words get more attention than another agent's.
-      if (Math.random() > (byPerson ? 0.7 : replyChance(run) * 0.5) && replyChance(0) < 1) continue;
+      if (!isNamed(trigger.text, agent.name) && Math.random() > (byPerson ? 0.7 : replyChance(run, state.threadsMood) * 0.5) && replyChance(0) < 1) continue;
       const now = getPost(postRef);
       if (!now || !somethingNew(now, agent.id, reactSeen.get(`${postRef}|${agent.id}`) ?? 0)) continue;
       asked += 1;
@@ -3286,7 +3287,7 @@ let newsAgent: string | null = null;
 let newsBusy = false;
 
 async function threadNewsStep(): Promise<void> {
-  if (!state.threadsAlive || !state.threadsNews || newsBusy || lifeBusy) return;
+  if (!state.threadsAlive || !state.threadsUnprompted || !state.threadsNews || newsBusy || lifeBusy) return;
   const now = Date.now();
   if (now < newsDue || !newsGate.room(now) || !lifeGate.room(now)) return;
   const roster = listAgents().filter((a) => a.enabled);

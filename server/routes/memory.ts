@@ -38,16 +38,17 @@ export function memoryRoutes(app: Express, deps: { mind: MemoryGraph }) {
 
   /** Whether the agent says a word about what the person does in the windows they share. */
   app.get("/api/collaboration", (_req: Request, res: Response) => {
-    res.json({ remarks: state.collabRemarks, threads: state.threadsAlive, news: state.threadsNews, mood: state.threadsMood });
+    res.json({ remarks: state.collabRemarks, threads: state.threadsAlive, news: state.threadsNews, mood: state.threadsMood, unprompted: state.threadsUnprompted });
   });
   app.patch("/api/collaboration", (req: Request, res: Response) => {
     if (typeof req.body?.remarks === "boolean") state.collabRemarks = req.body.remarks;
     if (typeof req.body?.threads === "boolean") state.threadsAlive = req.body.threads;
     if (typeof req.body?.news === "boolean") state.threadsNews = req.body.news;
+    if (typeof req.body?.unprompted === "boolean") state.threadsUnprompted = req.body.unprompted;
     const mood = (MOODS as readonly string[]).includes(req.body?.mood);
     if (mood) state.threadsMood = req.body.mood;
-    if (mood || ["remarks", "threads", "news"].some((k) => typeof req.body?.[k] === "boolean")) save();
-    res.json({ remarks: state.collabRemarks, threads: state.threadsAlive, news: state.threadsNews, mood: state.threadsMood });
+    if (mood || ["remarks", "threads", "news", "unprompted"].some((k) => typeof req.body?.[k] === "boolean")) save();
+    res.json({ remarks: state.collabRemarks, threads: state.threadsAlive, news: state.threadsNews, mood: state.threadsMood, unprompted: state.threadsUnprompted });
   });
 
   /** Whether the agent's work is shown as it is done (the cursor, the typed code). */

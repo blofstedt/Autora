@@ -310,6 +310,8 @@ interface PersistedState {
   collabRemarks: boolean;
   /** The agents post, answer and like in Threads on their own. */
   threadsAlive: boolean;
+  /** Whether agents may speak in Threads without being addressed or named: start posts, bring news, chime in on a thread. Off, they only answer. */
+  threadsUnprompted: boolean;
   /** How readily agents speak up in Threads unprompted (server/threadlife.ts). */
   threadsMood: ThreadMood;
   /** Once in a while an agent searches the web for its own subject and posts what matters to Threads (server/threadnews.ts). */
@@ -567,6 +569,7 @@ function blank(): PersistedState {
     collabRemarks: true,
     threadsAlive: true,
     threadsMood: "normal",
+    threadsUnprompted: true,
     threadsNews: true,
     groundFirst: true,
     timezone: "",
@@ -657,6 +660,7 @@ function read(): PersistedState {
     if (typeof raw.agentCursor === "boolean") state.agentCursor = raw.agentCursor;
     if (typeof raw.collabRemarks === "boolean") state.collabRemarks = raw.collabRemarks;
     if (typeof raw.threadsAlive === "boolean") state.threadsAlive = raw.threadsAlive;
+    if (typeof raw.threadsUnprompted === "boolean") state.threadsUnprompted = raw.threadsUnprompted;
     if (MOODS.includes(raw.threadsMood)) state.threadsMood = raw.threadsMood;
     if (typeof raw.threadsNews === "boolean") state.threadsNews = raw.threadsNews;
     if (typeof raw.groundFirst === "boolean") state.groundFirst = raw.groundFirst;
