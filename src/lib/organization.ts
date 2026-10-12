@@ -52,6 +52,8 @@ export type ThreadComment = {
   /** A GIF the author added: an address on a GIF service, and a caption. */
   gif?: { url: string; alt: string };
   likes: string[];
+  downs: string[];
+  edited?: number;
 };
 
 export type ThreadPost = {
@@ -64,10 +66,21 @@ export type ThreadPost = {
   updated: number;
   gif?: { url: string; alt: string };
   likes: string[];
+  downs: string[];
   comments: ThreadComment[];
+  pinned?: boolean;
+  locked?: boolean;
+  saved?: boolean;
+  edited?: number;
 };
 
-export type ThreadSort = "new" | "top" | "active";
+export type ThreadSort = "new" | "hot" | "top" | "active";
+
+/** Up minus down. */
+export const scoreOf = (t: { likes: string[]; downs: string[] }) => t.likes.length - t.downs.length;
+
+/** What the list is narrowed to. */
+export type ThreadFilter = { tag?: string; q?: string; saved?: boolean };
 
 /** The id the person's own likes are kept under. */
 export const ME = "user";
@@ -124,8 +137,20 @@ export const forgetMemory = (id: string, memory: string) =>
   call<{ ok: true }>(`/api/agents/${id}/mind/${memory}`, { method: "DELETE" });
 export const deleteAgent = (id: string) => call<{ ok: true }>(`/api/agents/${id}`, { method: "DELETE" });
 
-export const fetchPosts = (sort: ThreadSort) =>
-  call<{ posts: ThreadPost[] }>(`/api/threads?sort=${sort}`).then((d) => d.posts ?? []);
+export type ThreadTag = { tag: string; count: number };
+export const fetchPosts = (sort: ThreadSort, filter: ThreadFilter = {}) => {
+  const q = new URLSearchParams({ sort });
+  if (filter.tag) q.set("tag", filter.tag);
+  if (filter.q) q.set("q", filter.q);
+  if (filter.saved) q.set("saved", "1");
+  return call<{ posts: ThreadPost[]; tags?: ThreadTag[] }>(`/api/threads?${q}`).then((d) => ({ posts: d.posts ?? [], tags: d.tags ?? [] }));
+};
+export const markPost = (id: string, marks: { pinned?: boolean; locked?: boolean; saved?: boolean }) =>
+  call<{ post: ThreadPost }>(`/api/threads/${id}`, json("PATCH", marks)).then((d) => d.post);
+export const editPost = (id: string, title: string, body: string) =>
+  call<{ post: ThreadPost }>(`/api/threads/${id}`, json("PATCH", { title, body })).then((d) => d.post);
+export const editComment = (post: string, comment: string, text: string) =>
+  call<{ post: ThreadPost }>(`/api/threads/${post}/comments/${comment}`, json("PATCH", { text })).then((d) => d.post);
 export const makePost = (title: string, body: string, tags: string[]) =>
   call<{ post: ThreadPost }>("/api/threads", json("POST", { title, body, tags })).then((d) => d.post);
 export const deletePost = (id: string) => call<{ ok: true }>(`/api/threads/${id}`, { method: "DELETE" });
@@ -133,8 +158,8 @@ export const makeComment = (post: string, text: string, parent: string | null) =
   call<{ post: ThreadPost }>(`/api/threads/${post}/comments`, json("POST", { text, parent })).then((d) => d.post);
 export const deleteComment = (post: string, comment: string) =>
   call<{ ok: true }>(`/api/threads/${post}/comments/${comment}`, { method: "DELETE" });
-export const likeIn = (post: string, comment?: string) =>
-  call<{ post: ThreadPost }>(`/api/threads/${post}/like`, json("POST", { comment })).then((d) => d.post);
+export const likeIn = (post: string, comment?: string, dir: "up" | "down" = "up") =>
+  call<{ post: ThreadPost }>(`/api/threads/${post}/like`, json("POST", { comment, dir })).then((d) => d.post);
 
 /** Ids of everyone below `id` in the org, so the "reports to" choice cannot make a loop. */
 export function underneath(agents: Agent[], id: string): Set<string> {

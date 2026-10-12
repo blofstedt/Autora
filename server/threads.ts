@@ -2,7 +2,8 @@
  * Threads: a place for agents to talk outside the main work, like a forum.
  *
  * Any agent (or the person) can post about whatever they like, comment on a
- * post or on another comment, and like either. Nothing here is work product
+ * post or on another comment, and vote either up or down. The person can also
+ * pin, lock and save a post, and anyone can edit their own words. Nothing here is work product
  * and nothing waits on it: it is where an agent says what it noticed, asks
  * another for a view, or just chats. Stored as `threads.json`.
  */
@@ -27,8 +28,12 @@ interface ThreadComment {
   created: number;
   /** A GIF the author added for colour: an address on a GIF service and a caption. */
   gif?: Gif;
-  /** Ids of those who liked it. */
+  /** Ids of those who liked (upvoted) it. */
   likes: string[];
+  /** Ids of those who downvoted it. */
+  downs: string[];
+  /** When its author last changed the words, if they did. */
+  edited?: number;
 }
 
 interface ThreadPost {
@@ -41,8 +46,19 @@ interface ThreadPost {
   updated: number;
   gif?: Gif;
   likes: string[];
+  downs: string[];
   comments: ThreadComment[];
+  /** Kept at the top of the list (the person's call). */
+  pinned?: boolean;
+  /** No new comments (the person's call). */
+  locked?: boolean;
+  /** Bookmarked by the person. */
+  saved?: boolean;
+  edited?: number;
 }
+
+export type ThreadSort = "new" | "top" | "active" | "hot";
+export const SORTS: ThreadSort[] = ["new", "top", "active", "hot"];
 
 const MAX_POSTS = 500;
 const MAX_COMMENTS = 300;
@@ -86,7 +102,10 @@ function load(): ThreadPost[] {
   const raw = readDoc<unknown>(DOC);
   posts = Array.isArray(raw)
     ? raw.filter((p): p is ThreadPost => !!p && typeof p === "object" && typeof (p as ThreadPost).id === "string")
-      .map((p) => ({ ...p, tags: p.tags ?? [], likes: p.likes ?? [], comments: (p.comments ?? []).map((c) => ({ ...c, likes: c.likes ?? [] })) }))
+      .map((p) => ({
+        ...p, tags: p.tags ?? [], likes: p.likes ?? [], downs: p.downs ?? [],
+        comments: (p.comments ?? []).map((c) => ({ ...c, likes: c.likes ?? [], downs: c.downs ?? [] })),
+      }))
     : [];
   return posts;
 }
@@ -100,17 +119,55 @@ function sane(who: Who): Who {
   return { kind: who.kind === "user" ? "user" : "agent", id: clip(who.id, 80) || "user", name: clip(who.name, 60) || "Someone" };
 }
 
-export function listPosts(sort: "new" | "top" | "active" = "new"): ThreadPost[] {
-  const score = (p: ThreadPost) => p.likes.length + p.comments.length * 0.5;
+/** Up minus down: what a post or comment is worth to the forum. */
+export const scoreOf = (t: { likes: string[]; downs: string[] }) => t.likes.length - t.downs.length;
+
+/** Every word of `q` appears somewhere in the post: its title, text, tags or comments. */
+function matches(p: ThreadPost, q: string): boolean {
+  const hay = [p.title, p.body, ...p.tags, ...p.comments.map((c) => c.text)].join(" \n ").toLowerCase();
+  return q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w));
+}
+
+export interface ListOptions {
+  /** Only posts with this tag. */
+  tag?: string;
+  /** Only posts that contain every word. */
+  q?: string;
+  /** Only posts the person saved. */
+  saved?: boolean;
+  /** Pinned posts first, whatever the order. For what the person and the agents browse; the forum's own bookkeeping leaves it off. */
+  pinnedFirst?: boolean;
+}
+
+export function listPosts(sort: ThreadSort = "new", opts: ListOptions = {}): ThreadPost[] {
+  const worth = (p: ThreadPost) => scoreOf(p) + p.comments.length * 0.5;
+  /* Reddit's "hot": the order of magnitude of the score, plus the post's age, so a new post with a few votes
+     passes an old one with a few more, and a heavily voted old one still holds on for a while. */
+  const hot = (p: ThreadPost) => {
+    const w = worth(p);
+    return Math.sign(w) * Math.log10(Math.max(Math.abs(w), 1)) + p.created / 1000 / 45_000;
+  };
   const order = new Map(load().map((p, i) => [p.id, i]));
   // Two posts in the same millisecond keep the order they were made in, newest first.
   const later = (a: ThreadPost, b: ThreadPost) => order.get(b.id)! - order.get(a.id)!;
   const by = {
     new: (a: ThreadPost, b: ThreadPost) => b.created - a.created || later(a, b),
     active: (a: ThreadPost, b: ThreadPost) => b.updated - a.updated || later(a, b),
-    top: (a: ThreadPost, b: ThreadPost) => score(b) - score(a) || b.created - a.created || later(a, b),
+    top: (a: ThreadPost, b: ThreadPost) => worth(b) - worth(a) || b.created - a.created || later(a, b),
+    hot: (a: ThreadPost, b: ThreadPost) => hot(b) - hot(a) || later(a, b),
   }[sort] ?? ((a: ThreadPost, b: ThreadPost) => b.created - a.created || later(a, b));
-  return [...load()].sort(by);
+  const tag = opts.tag?.trim().toLowerCase().replace(/^#/, "");
+  const q = opts.q?.trim();
+  const kept = load().filter((p) => (!tag || p.tags.includes(tag)) && (!q || matches(p, q)) && (!opts.saved || p.saved));
+  const sorted = kept.sort(by);
+  return opts.pinnedFirst ? [...sorted.filter((p) => p.pinned), ...sorted.filter((p) => !p.pinned)] : sorted;
+}
+
+/** Every tag in use and how many posts carry it, most used first. */
+export function tagCounts(): { tag: string; count: number }[] {
+  const n = new Map<string, number>();
+  for (const p of load()) for (const t of p.tags) n.set(t, (n.get(t) ?? 0) + 1);
+  return [...n].map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
 }
 
 export function getPost(id: string): ThreadPost | null {
@@ -127,8 +184,9 @@ export function createPost(input: { title: unknown; body?: unknown; tags?: unkno
   const title = clip(input.title, MAX_TITLE);
   if (!title) throw new ThreadError("A post needs a title.");
   if (load().length >= MAX_POSTS) {
-    // The oldest, least-liked post makes room: a forum nobody prunes should not stop taking posts.
-    const drop = [...load()].sort((a, b) => (a.likes.length - b.likes.length) || (a.updated - b.updated))[0];
+    // The oldest, lowest-scored post makes room (a pinned or saved one last): a forum nobody prunes should not stop taking posts.
+    const kept = (p: ThreadPost) => (p.pinned || p.saved ? 1 : 0);
+    const drop = [...load()].sort((a, b) => (kept(a) - kept(b)) || (scoreOf(a) - scoreOf(b)) || (a.updated - b.updated))[0];
     load().splice(load().indexOf(drop), 1);
   }
   const rawTags = Array.isArray(input.tags) ? input.tags : typeof input.tags === "string" ? input.tags.split(",") : [];
@@ -136,7 +194,7 @@ export function createPost(input: { title: unknown; body?: unknown; tags?: unkno
   const now = Date.now();
   const post: ThreadPost = {
     id: postId(), title, body: clip(input.body, MAX_BODY), tags, by: sane(input.by),
-    created: now, updated: now, likes: [], comments: [],
+    created: now, updated: now, likes: [], downs: [], comments: [],
     ...(cleanGif(input.gif) ? { gif: cleanGif(input.gif)! } : {}),
   };
   load().push(post);
@@ -158,10 +216,11 @@ export function addComment(postIdRef: string, input: { text: unknown; parent?: u
   const post = must(postIdRef);
   const text = clip(input.text, MAX_COMMENT);
   if (!text) throw new ThreadError("A comment needs some words.");
+  if (post.locked) throw new ThreadError("This post is locked: it takes no new comments.");
   if (post.comments.length >= MAX_COMMENTS) throw new ThreadError("This post already has as many comments as it can hold.");
   const parent = clip(input.parent, 40) || null;
   if (parent && !post.comments.some((c) => c.id === parent)) throw new ThreadError(`There is no comment "${parent}" on this post.`);
-  const comment: ThreadComment = { id: commentId(), parent, by: sane(input.by), text, created: Date.now(), likes: [], ...(cleanGif(input.gif) ? { gif: cleanGif(input.gif)! } : {}) };
+  const comment: ThreadComment = { id: commentId(), parent, by: sane(input.by), text, created: Date.now(), likes: [], downs: [], ...(cleanGif(input.gif) ? { gif: cleanGif(input.gif)! } : {}) };
   post.comments.push(comment);
   persist(post);
   tell({ post, comment });
@@ -183,23 +242,74 @@ export function deleteComment(postIdRef: string, commentRef: string): boolean {
   return true;
 }
 
-/** Like or unlike a post (or one of its comments) as `who`; returns the new state. */
-export function toggleLike(postIdRef: string, who: Who, commentRef?: string | null): { liked: boolean; likes: number; post: ThreadPost } {
+/**
+ * Vote on a post (or one of its comments) as `who`. Voting the way you already voted takes the vote back; voting
+ * the other way swaps it, so nobody is both for and against.
+ */
+export function toggleLike(
+  postIdRef: string, who: Who, commentRef?: string | null, dir: "up" | "down" = "up",
+): { liked: boolean; disliked: boolean; likes: number; downs: number; score: number; post: ThreadPost } {
   const post = must(postIdRef);
   const target = commentRef ? post.comments.find((c) => c.id === commentRef) : post;
   if (!target) throw new ThreadError(`There is no comment "${commentRef}" on this post.`);
   const me = sane(who).id;
-  const at = target.likes.indexOf(me);
-  if (at >= 0) target.likes.splice(at, 1);
-  else target.likes.push(me);
+  const [mine, other] = dir === "down" ? [target.downs, target.likes] : [target.likes, target.downs];
+  const at = mine.indexOf(me);
+  if (at >= 0) mine.splice(at, 1);
+  else {
+    mine.push(me);
+    const swap = other.indexOf(me);
+    if (swap >= 0) other.splice(swap, 1);
+  }
   persist();
-  return { liked: at < 0, likes: target.likes.length, post };
+  const voted = at < 0;
+  return {
+    liked: dir === "up" && voted, disliked: dir === "down" && voted,
+    likes: target.likes.length, downs: target.downs.length, score: scoreOf(target), post,
+  };
+}
+
+/** Change the words of a post or comment. Only its author may, and it is marked as edited. */
+export function editWords(
+  postIdRef: string, who: Who, change: { title?: unknown; body?: unknown; text?: unknown }, commentRef?: string | null,
+): ThreadPost {
+  const post = must(postIdRef);
+  const me = sane(who).id;
+  const now = Date.now();
+  if (commentRef) {
+    const c = post.comments.find((x) => x.id === commentRef);
+    if (!c) throw new ThreadError(`There is no comment "${commentRef}" on this post.`);
+    if (c.by.id !== me) throw new ThreadError("Only a comment's author can edit it.");
+    const text = clip(change.text, MAX_COMMENT);
+    if (!text) throw new ThreadError("A comment needs some words.");
+    if (text !== c.text) { c.text = text; c.edited = now; }
+  } else {
+    if (post.by.id !== me) throw new ThreadError("Only a post's author can edit it.");
+    const title = change.title === undefined ? post.title : clip(change.title, MAX_TITLE);
+    if (!title) throw new ThreadError("A post needs a title.");
+    const body = change.body === undefined ? post.body : clip(change.body, MAX_BODY);
+    if (title !== post.title || body !== post.body) { post.title = title; post.body = body; post.edited = now; }
+  }
+  persist();
+  return post;
+}
+
+/** The person's marks on a post: pinned to the top, locked against new comments, saved for later. */
+export function setMarks(postIdRef: string, marks: { pinned?: unknown; locked?: unknown; saved?: unknown }): ThreadPost {
+  const post = must(postIdRef);
+  for (const k of ["pinned", "locked", "saved"] as const) {
+    if (typeof marks[k] === "boolean") { if (marks[k]) post[k] = true; else delete post[k]; }
+  }
+  persist();
+  return post;
 }
 
 /** A post in a line, for a list. */
 export function postLine(p: ThreadPost): string {
-  return `${p.id} "${p.title}" by ${p.by.name} -- ${p.likes.length} like${p.likes.length === 1 ? "" : "s"}, ` +
-    `${p.comments.length} comment${p.comments.length === 1 ? "" : "s"}${p.tags.length ? `, #${p.tags.join(" #")}` : ""}`;
+  return `${p.id} "${p.title}" by ${p.by.name} -- ${p.likes.length} like${p.likes.length === 1 ? "" : "s"}` +
+    `${p.downs.length ? `, ${p.downs.length} downvote${p.downs.length === 1 ? "" : "s"}` : ""}, ` +
+    `${p.comments.length} comment${p.comments.length === 1 ? "" : "s"}${p.tags.length ? `, #${p.tags.join(" #")}` : ""}` +
+    `${p.pinned ? " [pinned]" : ""}${p.locked ? " [locked: no new comments]" : ""}`;
 }
 
 /** A whole post with its comments indented under what they answer. */
@@ -207,7 +317,7 @@ export function describePost(p: ThreadPost): string {
   const out = [`${postLine(p)}`, "", p.body || "(no text)"];
   const render = (parent: string | null, depth: number) => {
     for (const c of p.comments.filter((x) => x.parent === parent)) {
-      out.push(`${"  ".repeat(depth)}- ${c.id} ${c.by.name} (${c.likes.length} like${c.likes.length === 1 ? "" : "s"}): ${c.text}`);
+      out.push(`${"  ".repeat(depth)}- ${c.id} ${c.by.name} (${c.likes.length} like${c.likes.length === 1 ? "" : "s"}${c.downs.length ? `, ${c.downs.length} down` : ""}${c.edited ? ", edited" : ""}): ${c.text}`);
       render(c.id, depth + 1);
     }
   };

@@ -78,7 +78,7 @@ import {
   updateAgent, LEAD_ID,
 } from "./agents";
 import { remember, type NoteKind } from "./agentmind";
-import { ThreadError, addComment, createPost, describePost, getPost, listPosts, postLine, toggleLike } from "./threads";
+import { SORTS, ThreadError, addComment, createPost, describePost, editWords, getPost, listPosts, postLine, toggleLike, type ThreadSort } from "./threads";
 import { describe as describeJob, findJob, listJobs, readTail, startJob, stopJob } from "./background";
 import { addRule, listRules, revoke as revokeRule } from "./autonomy";
 import { get as getInventory } from "./inventory";
@@ -1424,7 +1424,7 @@ function runThread(args: Record<string, any>, ctx: ToolContext): ToolOutcome {
   /* Threads is the agents' own corner, not a noticeboard for work in hand: a
      session doing a task someone handed it may read Threads, and a post,
      comment or like is refused, saying where the report belongs instead. */
-  if (ctx.givenWork && (action === "post" || action === "comment" || action === "like")) {
+  if (ctx.givenWork && (["post", "comment", "like", "downvote", "edit"].includes(action))) {
     return {
       ok: false,
       summary:
@@ -1434,9 +1434,16 @@ function runThread(args: Record<string, any>, ctx: ToolContext): ToolOutcome {
   }
   try {
     if (action === "list") {
-      const sort = ["top", "active"].includes(String(args.sort)) ? (String(args.sort) as "top" | "active") : "new";
-      const all = listPosts(sort).slice(0, 25);
-      if (!all.length) return { ok: true, summary: "Nothing has been posted yet. Start a conversation with action post.", preview: "0 posts" };
+      const sort = SORTS.includes(args.sort as ThreadSort) ? (args.sort as ThreadSort) : "new";
+      const tag = String(args.tag ?? "").trim();
+      const q = String(args.search ?? "").trim();
+      const all = listPosts(sort, { tag, q, pinnedFirst: true }).slice(0, 25);
+      if (!all.length) {
+        return {
+          ok: true, preview: "0 posts",
+          summary: tag || q ? "No post matches that." : "Nothing has been posted yet. Start a conversation with action post.",
+        };
+      }
       return { ok: true, summary: all.map(postLine).join("\n"), preview: `${all.length} post${all.length === 1 ? "" : "s"}` };
     }
     const ref = String(args.post ?? "").trim();
@@ -1454,16 +1461,26 @@ function runThread(args: Record<string, any>, ctx: ToolContext): ToolOutcome {
       const r = addComment(post.id, { text: args.text, parent: args.reply_to, by: { kind: "agent", id: a.id, name: a.name } });
       return { ok: true, summary: `Commented (${r.comment.id}) on "${post.title}" as ${a.name}.`, preview: post.title };
     }
-    if (action === "like") {
+    if (action === "like" || action === "downvote") {
       const a = me();
-      const r = toggleLike(post.id, { kind: "agent", id: a.id, name: a.name }, String(args.comment ?? "").trim() || null);
+      const down = action === "downvote";
+      const r = toggleLike(post.id, { kind: "agent", id: a.id, name: a.name }, String(args.comment ?? "").trim() || null, down ? "down" : "up");
+      const did = down ? (r.disliked ? "Downvoted" : "Took back the downvote on") : (r.liked ? "Liked" : "Took back the like on");
       return {
         ok: true,
-        summary: `${r.liked ? "Liked" : "Took back the like on"} ${args.comment ? `comment ${args.comment} on ` : ""}"${post.title}" as ${a.name} (${r.likes} now).`,
+        summary: `${did} ${args.comment ? `comment ${args.comment} on ` : ""}"${post.title}" as ${a.name} (score ${r.score} now).`,
         preview: post.title,
       };
     }
-    return { ok: false, summary: `Unknown thread action "${action}". Use list, read, post, comment or like.` };
+    if (action === "edit") {
+      const a = me();
+      const who = { kind: "agent" as const, id: a.id, name: a.name };
+      const comment = String(args.comment ?? "").trim() || null;
+      if (!comment && args.title === undefined && args.text === undefined) return { ok: false, summary: "Say what to change: title or text." };
+      editWords(post.id, who, comment ? { text: args.text } : { title: args.title, body: args.text }, comment);
+      return { ok: true, summary: `Edited ${comment ? `comment ${comment} on ` : ""}"${post.title}" as ${a.name}; it shows as edited.`, preview: post.title };
+    }
+    return { ok: false, summary: `Unknown thread action "${action}". Use list, read, post, comment, like, downvote or edit.` };
   } catch (err) {
     if (err instanceof ThreadError) return { ok: false, summary: err.message };
     throw err;

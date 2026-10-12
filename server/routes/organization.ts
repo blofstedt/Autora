@@ -13,7 +13,8 @@ import {
 } from "../agents";
 import { agentMind, forgetNote, notesOf } from "../agentmind";
 import {
-  ThreadError, addComment, createPost, deleteComment, deletePost, getPost, listPosts, toggleLike, type Who,
+  SORTS, ThreadError, addComment, createPost, deleteComment, deletePost, editWords, getPost, listPosts, setMarks, tagCounts, toggleLike,
+  type ThreadSort, type Who,
 } from "../threads";
 
 const PERSON: Who = { kind: "user", id: "user", name: "You" };
@@ -73,8 +74,16 @@ export function organizationRoutes(app: Express, onPerson: () => void = () => un
   });
 
   app.get("/api/threads", (req: Request, res: Response) => {
-    const sort = ["top", "active"].includes(String(req.query.sort)) ? (String(req.query.sort) as "top" | "active") : "new";
-    res.json({ posts: listPosts(sort) });
+    const sort = SORTS.includes(req.query.sort as ThreadSort) ? (req.query.sort as ThreadSort) : "new";
+    res.json({
+      posts: listPosts(sort, {
+        tag: typeof req.query.tag === "string" ? req.query.tag : undefined,
+        q: typeof req.query.q === "string" ? req.query.q : undefined,
+        saved: req.query.saved === "1",
+        pinnedFirst: true,
+      }),
+      tags: tagCounts(),
+    });
   });
 
   /** How much the agents have said since `since` (ms): the count behind the unread marker on Threads. The person's own words never count. */
@@ -105,6 +114,25 @@ export function organizationRoutes(app: Express, onPerson: () => void = () => un
     res.json({ post });
   });
 
+  /** The person's marks on a post: `pinned`, `locked`, `saved` (booleans), or an edit of `title` / `body` to their own post. */
+  app.patch("/api/threads/:id", (req: Request, res: Response) => {
+    try {
+      const b = req.body ?? {};
+      if ("title" in b || "body" in b) editWords(req.params.id, PERSON, { title: b.title, body: b.body });
+      res.json({ post: setMarks(req.params.id, b) });
+    } catch (err) {
+      failed(res, err);
+    }
+  });
+
+  app.patch("/api/threads/:id/comments/:comment", (req: Request, res: Response) => {
+    try {
+      res.json({ post: editWords(req.params.id, PERSON, { text: req.body?.text }, req.params.comment) });
+    } catch (err) {
+      failed(res, err);
+    }
+  });
+
   app.delete("/api/threads/:id", (req: Request, res: Response) => {
     if (!deletePost(req.params.id)) return res.status(404).json({ error: "No such post" });
     res.json({ ok: true });
@@ -125,10 +153,10 @@ export function organizationRoutes(app: Express, onPerson: () => void = () => un
     res.json({ ok: true });
   });
 
-  /** Like or unlike, as the person. `comment` in the body is a comment on the post; without it, the post. */
+  /** Upvote or downvote (`dir` "down"), or take the vote back, as the person. `comment` in the body is a comment on the post; without it, the post. */
   app.post("/api/threads/:id/like", (req: Request, res: Response) => {
     try {
-      res.json(toggleLike(req.params.id, PERSON, req.body?.comment ? String(req.body.comment) : null));
+      res.json(toggleLike(req.params.id, PERSON, req.body?.comment ? String(req.body.comment) : null, req.body?.dir === "down" ? "down" : "up"));
     } catch (err) {
       failed(res, err);
     }
