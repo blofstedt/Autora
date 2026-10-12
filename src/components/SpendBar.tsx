@@ -1,6 +1,6 @@
 import { memo, useState } from "react";
 import { money } from "./Billing";
-import { barVendor, combineVendorViews, creditTotal, spendView, vendorSpendView } from "../lib/spend";
+import { barVendor, combineVendorViews, creditTotal, ownSpent, spendView, vendorSpendView } from "../lib/spend";
 import { SpendPeek } from "./SpendPeek";
 import { VendorLogo } from "./VendorLogo";
 import { IconChevron } from "./Icons";
@@ -189,7 +189,13 @@ export const SpendBar = memo(function SpendBar({
      API's turns, and printing it here reads as this account's spend. */
   const ownMonth =
     credit !== null && chosen && typeof chosen.month_usd === "number" ? chosen.month_usd : spent;
-  const view = spendView({ spent: ownMonth, session, budget, lifetime, credit });
+  const view = spendView({
+    spent: ownMonth,
+    session,
+    budget,
+    lifetime: credit !== null ? ownSpent(chosen, lifetime) : lifetime,
+    credit,
+  });
   if (!view.show) return null;
 
   const share = (n: number) => `${Math.min(100, Math.max(0, n * 100))}%`;

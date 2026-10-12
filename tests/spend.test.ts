@@ -9,7 +9,7 @@
  *   npm test
  */
 import assert from "node:assert/strict";
-import { barVendor, combineVendorViews, creditLeft, creditTotal, spendView, vendorSpendView } from "../src/lib/spend";
+import { barVendor, combineVendorViews, creditLeft, creditTotal, ownSpent, spendView, vendorSpendView } from "../src/lib/spend";
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -383,3 +383,24 @@ test("a line with only the server's credit on it is still worth drawing", () => 
 });
 
 console.log(`${passed} passed`);
+
+test("the bar drains by the chosen vendor's own spend, not the whole ledger's", () => {
+  const deepseek = {
+    provider: "deepseek",
+    topped_up_usd: 19.92,
+    balance_usd: 16.69,
+    lifetime_usd: 3.23,
+    credit: { paid_usd: 19.92, spent_usd: 3.23, left_usd: 16.69, left_fraction: 16.69 / 19.92 },
+  };
+  /* The ledger has $56.79 of everyone's turns in it. */
+  const view = spendView({
+    spent: 3.23,
+    session: 0.35,
+    budget: null,
+    lifetime: ownSpent(deepseek, 56.79),
+    credit: creditTotal(deepseek),
+  });
+  near(view.left, 16.69);
+  near(view.leftShare, 16.69 / 19.92);
+  assert.equal(ownSpent(null, 56.79), 56.79);
+});

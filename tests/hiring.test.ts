@@ -189,10 +189,10 @@ await test("an agent speaks up for a reason: the person unanswered, its name, a 
   const after = Date.now() + 1000;
   const long = life.urgeOf(a, after, after + 8 * hour);
   assert.ok(life.urgeOf(a, after, after + 8 * hour, 0, "quiet") < life.URGE_AT, "quiet: boredom alone is never enough, however long");
-  assert.ok(life.urgeOf(a, after, after + 1 * hour, 0, "lively") < life.URGE_AT, "but not after only an hour");
-  assert.ok(life.urgeOf(a, after, after + 4 * hour, 0, "lively") >= life.URGE_AT, "lively: an idle agent drops in within hours");
+  assert.ok(life.urgeOf(a, after, after + hour / 4, 0, "lively") < life.URGE_AT, "but not after only a quarter of an hour");
+  assert.ok(life.urgeOf(a, after, after + 1 * hour, 0, "lively") >= life.URGE_AT, "lively: an idle agent drops in within the hour");
   assert.ok(long >= life.URGE_AT, "normal: after most of a working day it does too");
-  assert.ok(life.urgeOf(a, after, after + 2 * hour) < life.URGE_AT, "but not soon");
+  assert.ok(life.urgeOf(a, after, after + hour / 2) < life.URGE_AT, "but not soon"); assert.ok(life.urgeOf(a, after, after + 2 * hour) >= life.URGE_AT, "normal: within a couple of hours");
   assert.ok(life.perHourFor("quiet") < life.perHourFor("normal"), "quiet also lowers the hourly ceiling");
   assert.ok(life.urgeOf(b, after, after + 20 * hour) >= life.URGE_AT, "a reserved agent waits longer, but is not silent for ever");
   assert.ok(life.urgeOf(b, after, after + 20 * hour, 0, "quiet") < life.URGE_AT, "and quiet mood still moves no one");
@@ -253,7 +253,7 @@ await test("agents get curious: a wonder is kept, searched for, studied privatel
   const start = life.lifePrompt(a as never, ["B"], new Map(), false, true);
   assert.match(start.prompt, /start something/);
   assert.ok(life.lastActivity() > 0, "the forum has said something by now");
-  assert.ok(life.QUIET_MS >= 3_600_000);
+  assert.ok(life.QUIET_MS >= 30 * 60_000 && life.QUIET_MS <= 60 * 60_000);
 });
 
 await test("a link survives only if the agent was given it", () => {
@@ -345,6 +345,16 @@ await test("the agents tool: domains, teach, and hiring with knowledge", async (
   assert.equal(agentMind(hand.id).active().length, 2);
   assert.equal(main.active().length, 0);
   assert.equal((await runTool(spec, { action: "teach", agent: "Nobody", query: "x" }, withMind)).ok, false);
+});
+
+
+await test("each agent has its own voice, stable over time, and the forum is not allowed to echo itself", () => {
+  const voices = new Set(["agent_a", "agent_b", "agent_c", "agent_d", "agent_e", "agent_f"].map((id) => life.voiceOf({ id, name: id.slice(-1) })));
+  assert.ok(voices.size >= 4, `six agents sound like at least four different people (${voices.size})`);
+  assert.equal(life.voiceOf({ id: "agent_a", name: "A" }), life.voiceOf({ id: "agent_a", name: "A" }), "the same agent sounds the same tomorrow");
+  assert.ok(life.echoes("Honestly the build cache is the real culprit here again", ["the build cache is the real culprit here, honestly"]), "a message that restates another is an echo");
+  assert.ok(!life.echoes("I keep thinking about how Tuesday's deploy went", ["the build cache is the real culprit here, honestly"]), "a different thought is not");
+  assert.ok(life.echoes("Great point, I agree with that totally", ["Great point, I agree with others"]), "the same opening is an echo");
 });
 
 console.log(`${passed} passed`);
