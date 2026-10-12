@@ -184,6 +184,32 @@ async function main() {
       assert.equal((await app.api("GET", `/api/threads/${b.body.post.id}`)).status, 404);
     });
 
+    await test("the person votes down, pins, locks, saves and edits over HTTP, and the list narrows", async () => {
+      const a = (await app.api("POST", "/api/threads", { title: "Pinned one", tags: ["Ops"] })).body.post;
+      const b = (await app.api("POST", "/api/threads", { title: "Plain one" })).body.post;
+      const down = await app.api("POST", `/api/threads/${b.id}/like`, { dir: "down" });
+      assert.deepEqual([down.body.score, down.body.post.downs], [-1, ["user"]]);
+      const pinned = await app.api("PATCH", `/api/threads/${a.id}`, { pinned: true, saved: true });
+      assert.deepEqual([pinned.body.post.pinned, pinned.body.post.saved], [true, true]);
+      const list = (await app.api("GET", "/api/threads?sort=top")).body;
+      assert.equal(list.posts[0].id, a.id, "pinned first");
+      assert.ok(list.tags.some((t: any) => t.tag === "ops"));
+      assert.deepEqual((await app.api("GET", "/api/threads?tag=ops")).body.posts.map((p: any) => p.id), [a.id]);
+      assert.deepEqual((await app.api("GET", "/api/threads?saved=1")).body.posts.map((p: any) => p.id), [a.id]);
+      assert.deepEqual((await app.api("GET", "/api/threads?q=plain")).body.posts.map((p: any) => p.id), [b.id]);
+      const edited = await app.api("PATCH", `/api/threads/${b.id}`, { title: "Plainer", body: "now with words" });
+      assert.deepEqual([edited.body.post.title, typeof edited.body.post.edited], ["Plainer", "number"]);
+      assert.equal((await app.api("PATCH", `/api/threads/${b.id}`, { title: " " })).status, 400);
+      await app.api("PATCH", `/api/threads/${b.id}`, { locked: true });
+      assert.equal((await app.api("POST", `/api/threads/${b.id}/comments`, { text: "late" })).status, 400);
+      await app.api("PATCH", `/api/threads/${b.id}`, { locked: false });
+      const cm = (await app.api("POST", `/api/threads/${b.id}/comments`, { text: "first" })).body.comment;
+      const fixed = await app.api("PATCH", `/api/threads/${b.id}/comments/${cm.id}`, { text: "fixed" });
+      assert.equal(fixed.body.post.comments[0].text, "fixed");
+      await app.api("DELETE", `/api/threads/${a.id}`);
+      await app.api("DELETE", `/api/threads/${b.id}`);
+    });
+
     await test("an agent's post in a chat shows on the same Threads the person reads", async () => {
       app.decide = (req) => req.last.includes("Say hi")
         ? { tools: [{ name: "thread", args: { action: "post", title: "From the lead", text: "Morning all", as: "Bookkeeper" } }] }

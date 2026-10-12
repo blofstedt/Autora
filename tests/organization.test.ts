@@ -225,6 +225,68 @@ await test("deleting a comment takes the replies under it, and deleting a post t
   assert.equal(forum.getPost(post.id), null);
 });
 
+await test("a downvote swaps the upvote, counts against the score, and is taken back by repeating it", () => {
+  const post = forum.createPost({ title: "Vote on me", by: me });
+  assert.deepEqual(
+    [forum.toggleLike(post.id, person).score, forum.toggleLike(post.id, me, null, "down").score, forum.toggleLike(post.id, person, null, "down").score],
+    [1, 0, -2],
+  );
+  const now = forum.getPost(post.id)!;
+  assert.deepEqual([now.likes.length, now.downs.length], [0, 2], "the person's upvote became a downvote");
+  assert.equal(forum.toggleLike(post.id, me, null, "down").disliked, false, "again takes it back");
+  const c = forum.addComment(post.id, { text: "Hmm", by: me, react: false }).comment;
+  assert.equal(forum.toggleLike(post.id, person, c.id, "down").score, -1);
+  forum.deletePost(post.id);
+});
+
+await test("hot puts a new post with a few votes above an old one with a few more", () => {
+  const old = forum.createPost({ title: "Hot old", by: me });
+  forum.toggleLike(old.id, person);
+  forum.toggleLike(old.id, me);
+  forum.getPost(old.id)!.created -= 3 * 24 * 3600 * 1000;
+  const fresh = forum.createPost({ title: "Hot fresh", by: me });
+  forum.toggleLike(fresh.id, person);
+  const ids = forum.listPosts("hot").map((p) => p.id);
+  assert.ok(ids.indexOf(fresh.id) < ids.indexOf(old.id));
+  forum.deletePost(old.id);
+  forum.deletePost(fresh.id);
+});
+
+await test("the list narrows by tag and by words (in comments too), and pinned posts come first", () => {
+  const a = forum.createPost({ title: "Fonts", tags: ["Design", "type"], by: me });
+  const b = forum.createPost({ title: "Lunch", by: me });
+  forum.addComment(b.id, { text: "Anyone tried kerning games?", by: person, react: false });
+  assert.deepEqual(forum.listPosts("new", { tag: "#design" }).map((p) => p.id), [a.id]);
+  assert.deepEqual(forum.listPosts("new", { q: "KERNING games" }).map((p) => p.id), [b.id]);
+  assert.deepEqual(forum.listPosts("new", { q: "kerning nothing" }), []);
+  assert.ok(forum.tagCounts().some((t) => t.tag === "design" && t.count === 1));
+  forum.setMarks(a.id, { pinned: true });
+  assert.equal(forum.listPosts("new", { pinnedFirst: true })[0].id, a.id);
+  assert.notEqual(forum.listPosts("new")[0].id, a.id, "the forum's own reads ignore pins");
+  forum.setMarks(b.id, { saved: true });
+  assert.deepEqual(forum.listPosts("new", { saved: true }).map((p) => p.id), [b.id]);
+  forum.setMarks(b.id, { saved: false });
+  assert.equal(forum.getPost(b.id)!.saved, undefined);
+  forum.deletePost(a.id);
+  forum.deletePost(b.id);
+});
+
+await test("a locked post takes no comments; only an author edits their own words, and it shows as edited", () => {
+  const post = forum.createPost({ title: "Mine", body: "one", by: me });
+  const c = forum.addComment(post.id, { text: "first", by: me, react: false }).comment;
+  assert.throws(() => forum.editWords(post.id, person, { body: "hijack" }), /Only a post's author/);
+  assert.throws(() => forum.editWords(post.id, person, { text: "hijack" }, c.id), /Only a comment's author/);
+  assert.throws(() => forum.editWords(post.id, me, { title: " " }), /needs a title/);
+  const edited = forum.editWords(post.id, me, { body: "two" });
+  assert.deepEqual([edited.body, typeof edited.edited], ["two", "number"]);
+  assert.equal(forum.editWords(post.id, me, { text: "second" }, c.id).comments[0].text, "second");
+  forum.setMarks(post.id, { locked: true });
+  assert.throws(() => forum.addComment(post.id, { text: "late", by: person }), /locked/);
+  forum.setMarks(post.id, { locked: false });
+  assert.doesNotThrow(() => forum.addComment(post.id, { text: "ok now", by: person, react: false }));
+  forum.deletePost(post.id);
+});
+
 const ctx = (self = { id: org.LEAD_ID, name: "Autora" }) => ({
   session: "s1", onOutput: () => undefined, cancelled: () => false,
   agents: { self, run: async (agent: string, task: string) => ({ ok: true, summary: `ran ${agent}: ${task}` }) },
@@ -258,6 +320,12 @@ await test("the thread tool posts as the agent that is asking, or as another by 
   assert.match(liked.summary, /Liked/);
   assert.match((await runTool(spec, { action: "like", post: post.id }, ctx())).summary, /Took back/);
   assert.match((await runTool(spec, { action: "read", post: post.id }, ctx())).summary, /Welcome/);
+  assert.match((await runTool(spec, { action: "downvote", post: post.id }, ctx())).summary, /Downvoted.*score -1/);
+  assert.match((await runTool(spec, { action: "list", tag: "intro", search: "lead" }, ctx())).summary, /Hello from the lead/);
+  assert.match((await runTool(spec, { action: "list", search: "zzzzz" }, ctx())).summary, /No post matches/);
+  assert.equal((await runTool(spec, { action: "edit", post: post.id, text: "Second!" }, ctx())).ok, true);
+  assert.equal(forum.getPost(post.id)!.body, "Second!");
+  assert.equal((await runTool(spec, { action: "edit", post: post.id, comment: forum.getPost(post.id)!.comments[0].id, text: "x" }, ctx())).ok, false, "not their comment");
   assert.match((await runTool(spec, { action: "list" }, ctx())).summary, /Hello from the lead/);
   assert.equal((await runTool(spec, { action: "post", title: "x", as: "Ghost" }, ctx())).ok, false);
   assert.equal((await runTool(spec, { action: "read", post: "th_nope" }, ctx())).ok, false);
@@ -267,7 +335,7 @@ await test("planning lets the agent look at the organization and Threads, but no
   assert.equal(modes.looksOnly("agents", { action: "list" }), true);
   assert.equal(modes.looksOnly("agents", { action: "run" }), false);
   for (const action of ["list", "read"]) assert.equal(modes.looksOnly("thread", { action }), true, action);
-  for (const action of ["post", "comment", "like"]) assert.equal(modes.looksOnly("thread", { action }), false, action);
+  for (const action of ["post", "comment", "like", "downvote", "edit"]) assert.equal(modes.looksOnly("thread", { action }), false, action);
 });
 
 await test("both tools belong to one set that a message about the organization brings in", () => {
