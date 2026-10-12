@@ -3,6 +3,11 @@ name: Check
 # The same three things CLAUDE.md asks for before a push, so a change that
 # skips them is caught here rather than by the image build.
 
+# A newer push to the same pull request makes the older run pointless.
+concurrency:
+  group: check-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 on:
   pull_request:
     branches: [main]
@@ -10,7 +15,9 @@ on:
     branches: [main]
 
 jobs:
-  check:
+  # Static checks and the build/test job share nothing, so they run side by
+  # side; the slower of the two sets how long the pull request waits.
+  static:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,19 +48,41 @@ jobs:
       - name: Unused code
         run: npm run unused
 
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # And Spectra's, which is now what that window shows.
+      - run: npm --prefix spectra-editor ci
+
+      # And OpenCut's, the video window's editor.
+      - run: npm --prefix opencut-editor ci
+
+      # And GDevelop's, the game window's editor (its patches to its dependencies are applied by the install).
+      - run: npm --prefix gdevelop-editor ci
+
+      # And Autora 3D's: `npm run lint` typechecks it, and `npm run build` builds it.
+      - run: npm --prefix autora-3d ci
+
       # Built before the tests: the PDF window's test drives the built editor.
       - name: Build
         run: npm run build
 
-      # The Office tools' command line and spreadsheet engine, from the commit
-      # pinned in office/PIN.json, so their tests run against the real engines.
-      - name: Build the Office tools
-        run: node scripts/build-office.mjs
-
-      # Autora Photo: PhotoCraft's editor (WebAssembly) and command line, from the
-      # commit pinned in photo/PIN.json, so its tests run against the real thing.
-      # A Rust build, so the toolchain's work is cached between runs. If it cannot
-      # be built the script says so and the tests that need it skip.
+      # Autora Photo, the slowest step (a Rust build): PhotoCraft's editor
+      # (WebAssembly) and command line, from the commit pinned in
+      # photo/PIN.json, so its tests run against the real thing. Started once
+      # the build is done (the build empties dist/, where Photo goes) and left
+      # to compile while the Office tools and Spectra build; the step below
+      # waits for it. If it cannot be built the script says so and the tests
+      # that need it skip.
       - name: Cache Autora Photo's Rust build
         uses: actions/cache@v4
         with:
@@ -63,16 +92,38 @@ jobs:
             .cache/photo/photocraft/target
           key: photo-${{ hashFiles('photo/PIN.json') }}
           restore-keys: photo-
-      - name: Build Autora Photo
+      - name: Start building Autora Photo
         run: |
           command -v trunk >/dev/null || cargo install trunk --locked --version "$(node -p 'require("./photo/PIN.json").trunk')"
-          node scripts/build-photo.mjs
+          nohup bash -c 'node scripts/build-photo.mjs; echo $? > "$RUNNER_TEMP/photo.status"' > "$RUNNER_TEMP/photo.log" 2>&1 < /dev/null &
 
-      # And the PDF window's engine, from the commit pinned in
-      # spectra/PIN.json: the same bundle the image carries, so a broken pin or
-      # a missing package fails here rather than in the image.
+      # The Office tools' command line and spreadsheet engine, from the commit
+      # pinned in office/PIN.json, so their tests run against the real engines.
+      - name: Build the Office tools
+        run: node scripts/build-office.mjs
+
+      # And the PDF engine, from the commit pinned in spectra/PIN.json: the
+      # same bundle the image carries, so a broken pin or a missing package
+      # fails here rather than in the image.
       - name: Build the PDF engine (Spectra's)
         run: node scripts/build-spectra.mjs
 
+      - name: Wait for Autora Photo
+        run: |
+          while [ ! -f "$RUNNER_TEMP/photo.status" ]; do sleep 5; done
+          cat "$RUNNER_TEMP/photo.log"
+          exit "$(cat "$RUNNER_TEMP/photo.status")"
+
+      # Three files at a time (tests/run.ts keeps the browser ones one at a
+      # time); each test has its own state directory and port.
       - name: Test
-        run: npm test
+        run: npm test -- -j 3
+
+  # The one name to require in branch protection: green only when both are.
+  check:
+    needs: [static, test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          [ "${{ needs.static.result }}" = success ] && [ "${{ needs.test.result }}" = success ]
