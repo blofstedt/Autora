@@ -19,12 +19,15 @@ const json = (o: unknown) => ({ text: JSON.stringify(o) });
 const who = (req: Seen) => /You are (Ada|Ben|Cy)\b/.exec(req.system)?.[1] ?? "";
 
 async function main() {
-  const app: App = await startApp();
+  const app: App = await startApp({ env: { AUTORA_THREADS_PACE: "off" } });
   try {
     for (const name of ["Ada", "Ben", "Cy"]) {
       const r = await app.api("POST", "/api/agents", { name, role: `${name}'s job`, when: "when asked" });
       assert.equal(r.status, 200, JSON.stringify(r.body));
     }
+    assert.equal((await app.api("GET", "/api/collaboration")).body.unprompted, true, "agents may speak up unasked by default");
+    assert.equal((await app.api("PATCH", "/api/collaboration", { unprompted: false })).body.unprompted, false);
+    assert.equal((await app.api("PATCH", "/api/collaboration", { unprompted: true })).body.unprompted, true);
     const post = (await app.api("POST", "/api/threads", { title: "Ideas", body: "What should we try next?" })).body.post.id as string;
     const comments = async () => (await app.api("GET", `/api/threads/${post}`)).body.post.comments as { id: string; parent: string | null; by: { name: string }; text: string }[];
 

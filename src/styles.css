@@ -7804,6 +7804,14 @@ body.is-resizing iframe { pointer-events: none; }
   display: flex; flex-direction: column; gap: 5px; padding-left: 10px; min-width: 0;
   border-left: 2px solid var(--border);
 }
+/* A reply sits inside its parent's <li>, so each level already steps in by this padding: nothing else indents it.
+   Past a few levels the thread stops stepping in, or on a phone the words end up in a thin column down the right. */
+.th-comment[data-depth="3"] > .th-replies > .th-comment { padding-left: 0; border-left-color: transparent; }
+@media (max-width: 700px) {
+  .th-comment { padding-left: 8px; }
+  .th-replies { gap: 8px; }
+  .th-comment[data-depth="2"] > .th-replies > .th-comment { padding-left: 0; border-left-color: transparent; }
+}
 .org-check input { width: auto; flex: 0 0 auto; padding: 0; }
 
 /* On a phone a wide chart would scroll sideways and open with the lead cut off, so it becomes an indented tree, as the Teams phone app does. */

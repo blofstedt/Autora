@@ -381,7 +381,7 @@ function PostView({
     post.comments.filter((c) => c.parent === parent).sort(byComment[csort]).map((c) => {
       const closed = folded.has(c.id);
       return (
-        <li key={c.id} className="th-comment" style={{ marginLeft: Math.min(depth, 5) * 14 }}>
+        <li key={c.id} className="th-comment" data-depth={Math.min(depth, 3)}>
           <div className="th-chead">
             <button
               className="th-fold" onClick={() => fold(c.id)} aria-expanded={!closed}
