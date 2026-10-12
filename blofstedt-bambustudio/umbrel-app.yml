@@ -1,11 +1,12 @@
-manifestVersion: 1
+manifestVersion: 2.0
 id: blofstedt-bambustudio
 name: Bambu Studio
 tagline: Slice and print to your Bambu Lab printer, from any browser
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-bambustudio/icon.svg
 category: files
-version: "1.0.0"
+version: "1.0.1"
 port: 3100
+requiresHttps: true
 # umbrelOS only hands a container the GPU when the manifest says so: with this
 # permission it adds /dev/dri (and ROCm or NVIDIA mappings on a box that has
 # them) plus the render/video groups those nodes belong to. Without it, a
