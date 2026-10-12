@@ -185,6 +185,6 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Threads now show when the last comment was posted. Each post in the list says "last post 5m ago"
-  next to its comment count, so you can tell a live conversation from one that went quiet, instead of
-  only seeing when the thread was first posted.
+  The organization chart now fits the page. On a desktop it scales itself down to the window's width,
+  so a wide team no longer slides off the right edge and needs sideways scrolling. Zoom buttons above
+  the chart let you zoom in for detail, and the percentage button snaps it back to fit.

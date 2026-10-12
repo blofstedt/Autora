@@ -7663,7 +7663,13 @@ body.is-resizing iframe { pointer-events: none; }
   color: #fff; font-weight: 600; line-height: 1; user-select: none;
 }
 .org-layout { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-/* A top-down chart: each level's cards in a row, joined to their manager by lines. It scrolls sideways when it is wider than the page. */
+/* A top-down chart: each level's cards in a row, joined to their manager by lines. It is scaled to fit the page's width; it scrolls sideways only when the person zooms in past that. */
+.orgchart-wrap { position: relative; min-width: 0; }
+.orgchart-zoom { display: flex; justify-content: flex-end; align-items: center; gap: 4px; margin-bottom: 4px; }
+.orgchart-zoom .rail-icon-btn { min-width: 28px; font-size: var(--fs-sm); }
+.orgchart-zoom .org-fit { padding: 0 8px; }
+.orgchart-sizer { margin: 0 auto; }
+.orgchart-inner { width: max-content; transform-origin: top left; }
 .orgchart { --org-line: color-mix(in srgb, var(--text-3) 60%, transparent); overflow-x: auto; padding: 8px 4px 18px; text-align: center; }
 .orgchart ul { display: flex; justify-content: center; list-style: none; margin: 0; padding: 26px 0 0; position: relative; width: max-content; min-width: 100%; }
 .orgchart > ul { padding-top: 0; }
@@ -7819,6 +7825,8 @@ body.is-resizing iframe { pointer-events: none; }
 @media (max-width: 700px) {
   .org-drag-hint { display: none; }
   .org-tap-hint { display: inline; }
+  .orgchart-zoom { display: none; }
+  .orgchart-inner { width: auto; }
   .orgchart { overflow-x: visible; text-align: left; padding: 4px 0 14px; }
   .orgchart ul, .orgchart ul ul { display: block; width: auto; min-width: 0; padding: 0; margin: 0; }
   .orgchart ul ul { margin-left: 20px; padding-left: 14px; border-left: 1px solid var(--org-line); }
