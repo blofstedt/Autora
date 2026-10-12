@@ -1,0 +1,59 @@
+manifestVersion: 1
+id: blofstedt-bambustudio
+name: Bambu Studio
+tagline: Slice and print to your Bambu Lab printer, from any browser
+icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-bambustudio/icon.svg
+category: files
+version: "1.0.0"
+port: 3100
+# umbrelOS only hands a container the GPU when the manifest says so: with this
+# permission it adds /dev/dri (and ROCm or NVIDIA mappings on a box that has
+# them) plus the render/video groups those nodes belong to. Without it, a
+# hand-written `devices: /dev/dri` in docker-compose.yml is deleted when
+# umbrelOS patches that file at install time.
+permissions:
+  - GPU
+description: >-
+  Bambu Studio 2.8.2.61 — Bambu Lab's own slicer — running on your Umbrel
+  inside a small XFCE desktop you open in a web browser. Slice a model and send
+  the print from any device on the network, phone and tablet included: nothing
+  to install on the machine you happen to be sitting at, and the slicing itself
+  happens on the Umbrel, not on it. That same desktop is reachable from a
+  browser anywhere you can reach your Umbrel, so a laptop with nothing
+  installed on it can print.
+
+
+  Sign in to your Bambu Lab account once, inside Studio, and your printer
+  appears the way it does on a desktop computer. Bambu Cloud carries on working
+  exactly as it does now, so the Bambu Handy app on your phone keeps printing
+  to the same printer, and no Developer Mode, LAN mode or firmware change is
+  needed. The printer is never modified: this app is a desktop around the
+  slicer, and nothing touches the machine on your bench.
+
+
+  • The desktop is behind Umbrel's own login — the same sign-in as the rest of
+  your apps — and it is not published to the network on a port of its own.
+
+  • Your models, printer profiles and Studio settings live in the app's data
+  directory under umbrel/app-data/blofstedt-bambustudio, so they survive
+  updates of the app.
+
+  • Slicing uses the Umbrel's CPU; the desktop is drawn and streamed through
+  the Intel iGPU. Idle, with the desktop just up, the app sits at about
+  400 MB of memory.
+
+  • The first launch is slow while Studio unpacks itself into place; after that
+  it opens straight onto the desktop.
+
+
+  Bambu Studio is Bambu Lab's software, installed from their official release.
+  This app only puts a browser desktop around it.
+developer: blofstedt
+website: https://github.com/blofstedt/Autora
+submitter: blofstedt
+submission: https://github.com/blofstedt/Autora
+repo: https://github.com/blofstedt/Autora
+support: https://github.com/blofstedt/Autora/issues
+gallery: []
+releaseNotes: >-
+  First release — Bambu Studio 2.8.2.61 in a browser desktop.

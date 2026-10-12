@@ -1,0 +1,56 @@
+version: "3.7"
+
+services:
+  # Umbrel's reverse proxy, and the only way into this app. APP_HOST follows
+  # <app-id>_<service-name>_1, which is why the service below is called `web`.
+  # The proxy is what carries the login: it validates the session token on
+  # every request and on the WebSocket upgrade, which is what the desktop's
+  # stream needs -- so the app itself runs with no auth of its own.
+  app_proxy:
+    environment:
+      APP_HOST: blofstedt-bambustudio_web_1
+      APP_PORT: 3000
+
+  web:
+    # linuxserver's webtop with the Ubuntu XFCE desktop in it: the same image
+    # the loose container on this box runs, but pinned to a build rather than
+    # the floating `ubuntu-xfce` tag -- 5a2151ed-ls5 (built 2026-10-10) with
+    # the digest the registry served for that tag, so an update to the desktop
+    # image is a decision rather than a surprise. Bambu Studio is not in the
+    # image at all; it lives in /config (below), so moving this pin loses
+    # nothing.
+    image: lscr.io/linuxserver/webtop:ubuntu-xfce-5a2151ed-ls5@sha256:c766271bf5de1c7c8c6cd7be1ae4015953f1b45a9325dbc1c94f7a163ff7ffc7
+    restart: unless-stopped
+    # A desktop session is a whole X server plus a screen scraper and an
+    # encoder; the default 64 MB of /dev/shm is nowhere near enough, and
+    # webtop's own documentation asks for 1 GB.
+    shm_size: "1gb"
+    # The GPU is granted by umbrelOS, not here. umbrelOS strips a hand-written
+    # `devices: /dev/dri` from every service when it patches this file at
+    # install time, and adds the device node back -- with the render and video
+    # groups that own it, and ROCm or NVIDIA mappings on a box that has them --
+    # only because the manifest asks for GPU access. Keeping the request in
+    # umbrel-app.yml and not here means one place decides it and it survives.
+    # webtop finds the device on start and switches itself to zero-copy
+    # rendering; without it everything falls back to the CPU pipeline, which is
+    # slower and much hungrier.
+    # No CUSTOM_USER and no PASSWORD here, on purpose. Those two variables are
+    # what switch on webtop's own HTTP basic auth. Setting either would put a
+    # password prompt in front of a login this app already has: app_proxy
+    # refuses a request whose Umbrel session token is not valid, so the
+    # desktop sits behind Umbrel's own sign-in -- one password, not two, and
+    # no second password to keep in a note or reuse somewhere else.
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: "${TZ:-America/Edmonton}"
+    volumes:
+      # The only directory that survives an update. webtop's HOME is /config,
+      # so this holds the installed Bambu Studio AppImage, its printer
+      # profiles and your sliced models. The loose container on this box kept
+      # them in ~/umbrel/home/bambustudio/config; that is a one-off move to
+      # ${APP_DATA_DIR}/data before the app is first started, not something
+      # this file can do.
+      - "${APP_DATA_DIR}/data:/config"
+    # And no `ports:` at all, on purpose: a published port would be a second
+    # door that skips Umbrel's login entirely. app_proxy is the only way in.
