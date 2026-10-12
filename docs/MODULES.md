@@ -118,7 +118,8 @@ Spectra's fetched renderer is most of what is on disk.
   drawn at random and never repeated (`pickLook`); the client draws it with `AutoraMark look=`
   (`lib/agentlook.ts`; `lib/mark.ts` takes `sides`). The `agents` tool (`list`, `run`, and the
   lead's `hire`, `edit`, `merge`, `remove`, `move`) starts an agent in
-  a chat of its own through `runAgentTask` in `server.ts`, which waits for the report and
+  a chat of its own through `runAgentTask` in `server.ts`, which waits for the report (saying what the agent is doing into the calling chat as it works:
+  `agent.progress`, read from the agent's own log by `readActivity`, shown on its `ChimeCell`) and
   then runs the agent's `next` list in order; it stops at a depth of three and never starts
   an agent twice in one chain (`agentRuns` is per chat, cleared in `forgetSession`). The
   `thread` tool posts as the agent whose chat it is (or `as` another). Both belong to the

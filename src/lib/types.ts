@@ -89,6 +89,8 @@ export const Kind = {
   /** An agent of the Organization speaking up as the chat calls it, and
       (AgentBack) reporting that it has finished. */
   AgentChime: "agent.chime",
+  /** What that agent is doing now, said into the chat that called it while it works (so a quiet one is visibly quiet). */
+  AgentProgress: "agent.progress",
   AgentBack: "agent.back",
   TodoUpdate: "todo.update",
   ModeSwitch: "mode.switch",

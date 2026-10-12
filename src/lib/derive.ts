@@ -277,7 +277,9 @@ export type Cell =
   | { kind: "remark"; seq: number; text: string; surface: string }
   /** An agent of the Organization chiming in as it is called; `done` once it
       has reported back. */
-  | { kind: "chime"; seq: number; id: string; name: string; role: string; look: AgentLook | null; text: string; done: boolean; report: string; ok: boolean }
+  | { kind: "chime"; seq: number; id: string; name: string; role: string; look: AgentLook | null; text: string; done: boolean; report: string; ok: boolean;
+      /** The agent's latest word on what it is doing (agent.progress): `at` is when, in ms, `steps` its tool calls so far. */
+      progress: { text: string; steps: number; at: number } | null }
   | { kind: "tool"; seq: number; span: SpanState }
   | { kind: "note"; seq: number; tone: "bad" | "warn" | "plain"; text: string }
   /** Agent mode moving between planning and building: said in the thread,
@@ -1074,11 +1076,19 @@ export function derive(events: AutoraEvent[]): Derived {
           const id = String(e.payload.id ?? e.seq);
           const chime = push({
             kind: "chime", seq: e.seq, id, name: String(e.payload.name ?? "Agent"),
-            role: String(e.payload.role ?? ""), look: readLook(e.payload.look), text: e.payload.text, done: false, report: "", ok: true,
+            role: String(e.payload.role ?? ""), look: readLook(e.payload.look), text: e.payload.text, done: false, report: "", ok: true, progress: null,
           });
           chimes.set(id, chime as Extract<Cell, { kind: "chime" }>);
         }
         break;
+
+      case Kind.AgentProgress: {
+        const chime = chimes.get(String(e.payload.id ?? ""));
+        if (chime && !chime.done && typeof e.payload.text === "string" && e.payload.text) {
+          chime.progress = { text: e.payload.text, steps: Number(e.payload.steps) || 0, at: e.ts * 1000 };
+        }
+        break;
+      }
 
       case Kind.AgentBack: {
         const chime = chimes.get(String(e.payload.id ?? ""));

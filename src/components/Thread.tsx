@@ -66,6 +66,7 @@ export function Thread({
   busy,
   doing,
   elapsedMs = 0,
+  quietMs = 0,
   steps = 0,
   phase = "thinking",
   sessionId,
@@ -98,6 +99,8 @@ export function Thread({
   doing?: string | null;
   /** How long this turn has been going, in ms. Zero before it starts. */
   elapsedMs?: number;
+  /** How long since the turn last did anything. Past a minute the line says so, so a long step reads differently from a stall. */
+  quietMs?: number;
   /** How many tool calls this turn has made. A long turn with no visible
       progress looks stalled; the count says it is still moving. */
   steps?: number;
@@ -490,6 +493,9 @@ export function Thread({
                 {elapsedMs >= 3000 ? clock(elapsedMs) : ""}
                 {steps > 1 && !chatOnly ? `${elapsedMs >= 3000 ? " · " : ""}${steps} steps` : ""}
               </span>
+            )}
+            {quietMs >= 60_000 && (
+              <span className="working-quiet">nothing new for {clock(quietMs)}</span>
             )}
           </div>
         )}
@@ -1023,7 +1029,7 @@ const CellView = memo(function CellView({
     case "remark":
       return <RemarkCell text={cell.text} />;
     case "chime":
-      return <ChimeCell name={cell.name} role={cell.role} look={cell.look} text={cell.text} report={cell.report} ok={cell.ok} working={live && !cell.done} />;
+      return <ChimeCell name={cell.name} role={cell.role} look={cell.look} text={cell.text} report={cell.report} ok={cell.ok} working={live && !cell.done} progress={cell.progress} />;
     case "tool":
       return <ToolCell span={cell.span} />;
     case "todo": {
