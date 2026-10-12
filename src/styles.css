@@ -7847,6 +7847,7 @@ body.is-resizing iframe { pointer-events: none; }
 /* An agent's own report in the chat, under the line that announced it. */
 .chime-report { margin-top: 6px; padding: 8px 10px; border-left: 2px solid var(--accent-line); border-radius: 0 var(--r-sm) var(--r-sm) 0; background: var(--s2); font-size: var(--fs-base); color: var(--text); overflow-wrap: anywhere; }
 .chime-report.is-bad { border-left-color: var(--danger); }
+.working-quiet { margin-left: 8px; font-size: var(--fs-sm); color: var(--warn); }
 .chime-progress { display: flex; flex-wrap: wrap; gap: 2px 8px; margin-top: 2px; font-size: var(--fs-sm); color: var(--text-3); overflow-wrap: anywhere; }
 .chime-now { animation: chimeIn var(--dur-2) var(--ease) both; }
 .chime-progress.is-quiet .chime-meta { color: var(--warn); }

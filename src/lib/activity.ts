@@ -20,6 +20,8 @@ type Reading = {
   /** How many tool calls this turn has made so far. A long turn with no count
       looks stalled even when it is working; the count says it is moving. */
   steps: number;
+  /** When the turn last did anything (any event after its request), in ms: how long it has been quiet is now minus this. */
+  lastAt: number | null;
 };
 
 /**
@@ -33,7 +35,7 @@ type Reading = {
  * so a reload mid-turn says the same thing as the page that watched it start.
  */
 export function readActivity(events: AutoraEvent[]): Reading {
-  const idle: Reading = { text: null, phase: "thinking", since: null, steps: 0 };
+  const idle: Reading = { text: null, phase: "thinking", since: null, steps: 0, lastAt: null };
   // Only the turn in flight counts; everything before its request is history.
   let start = -1;
   for (let i = events.length - 1; i >= 0; i--) {
@@ -89,14 +91,16 @@ export function readActivity(events: AutoraEvent[]): Reading {
   const stamp = [events[start].ts, events[start + 1]?.ts].find((t) => typeof t === "number" && t > 0);
   // Events are stamped in seconds; the line under the thread counts in milliseconds.
   const since = stamp === undefined ? null : stamp * 1000;
+  const lastStamp = events[events.length - 1]?.ts;
+  const lastAt = typeof lastStamp === "number" && lastStamp > 0 ? lastStamp * 1000 : since;
 
-  if (asking) return { text: "Waiting for your answer", phase: "thinking", since, steps };
+  if (asking) return { text: "Waiting for your answer", phase: "thinking", since, steps, lastAt };
   const running = [...open.values()].pop();
   // A step in flight: this is the mark stacking itself together.
   if (running) {
-    return { text: doing(String(running.payload?.name ?? "tool"), running.payload?.args ?? {}), phase: "building", since, steps };
+    return { text: doing(String(running.payload?.name ?? "tool"), running.payload?.args ?? {}), phase: "building", since, steps, lastAt };
   }
-  if (lastKind === Kind.AgentText) return { text: "Writing the reply", phase: "thinking", since, steps };
+  if (lastKind === Kind.AgentText) return { text: "Writing the reply", phase: "thinking", since, steps, lastAt };
   if (last) {
     return {
       text: last.failed
@@ -105,10 +109,11 @@ export function readActivity(events: AutoraEvent[]): Reading {
       phase: "thinking",
       since,
       steps,
+      lastAt,
     };
   }
   const gist = brief(request, 6);
-  return { text: gist ? `Thinking about “${gist}”` : "Thinking", phase: "thinking", since, steps };
+  return { text: gist ? `Thinking about “${gist}”` : "Thinking", phase: "thinking", since, steps, lastAt };
 }
 
 /** The same reading, for the callers that only wanted the words. */

@@ -551,13 +551,17 @@ export function App() {
      up without needing a new event to arrive. Nothing to show once the turn
      is over. */
   const [elapsed, setElapsed] = useState(0);
+  const [quiet, setQuiet] = useState(0);
   useEffect(() => {
-    if (!reading.since) { setElapsed(0); return; }
-    const tick = () => setElapsed(Date.now() - reading.since!);
+    if (!reading.since) { setElapsed(0); setQuiet(0); return; }
+    const tick = () => {
+      setElapsed(Date.now() - reading.since!);
+      setQuiet(reading.lastAt ? Date.now() - reading.lastAt : 0);
+    };
     tick();
     const id = window.setInterval(tick, 1000);
     return () => window.clearInterval(id);
-  }, [reading.since]);
+  }, [reading.since, reading.lastAt]);
 
   // A page that has been closed has no more frames coming, and the last one
   // to arrive would otherwise sit on the card claiming to be live forever.
@@ -1942,6 +1946,7 @@ export function App() {
             busy={view.busy && !view.asking}
             doing={doing}
             elapsedMs={elapsed}
+            quietMs={quiet}
             steps={reading.steps}
             phase={reading.phase}
             sessionId={sessionId ?? ""}

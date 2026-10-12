@@ -270,4 +270,15 @@ test("the working clock counts from the turn's start in milliseconds, not second
   assert.equal(readActivity(events).since, null, "a missing stamp is not the year 1970");
 });
 
+test("the working line knows when the turn last did anything", () => {
+  const now = Math.floor(Date.now() / 1000);
+  const events: AutoraEvent[] = [
+    { seq: 1, ts: now - 200, kind: Kind.UserMessage, actor: "user", span: null, payload: { text: "go" }, blob: null },
+    { seq: 2, ts: now - 150, kind: Kind.ToolCall, actor: "agent", span: "a", payload: { name: "terminal", args: { command: "sleep 999" } }, blob: null },
+  ];
+  const r = readActivity(events);
+  assert.equal(r.lastAt, (now - 150) * 1000);
+  assert.ok(r.since !== null && r.since < r.lastAt!);
+});
+
 console.log(`\nderive: ${passed} passed`);

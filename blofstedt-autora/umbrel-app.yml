@@ -185,7 +185,7 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  A long task is no longer a silent wait. An agent you send off (Victor, Sabrina...) now says what it is
-  doing as it works, right on its card in your chat: the step it is on, how many steps it has taken, and,
-  if it has said nothing new for a minute, how long it has been quiet, so you can tell a long step from
-  a stall. Also fixes the "Working" clock under the thread, which showed a huge number of minutes.
+  A long task is no longer a silent wait, for any agent. The "Working" line under the thread now says
+  "nothing new for 2:10" once the agent has done nothing for a minute, so you can tell a long step from a
+  stall, and an agent you send off (Victor, Sabrina...) reports what it is doing on its card in your chat.
+  Also fixes the "Working" clock, which showed a huge number of minutes.
