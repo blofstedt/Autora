@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AutoraMark } from "../AutoraMark";
 import { IconArrowDown, IconArrowUp, IconBot, IconChevron, IconOrg, IconPlus, IconTrash, IconX } from "../Icons";
@@ -51,6 +51,32 @@ export function OrganizationPage({ topSlot }: { topSlot?: HTMLElement | null }) 
   /** Managers whose team is folded away, as in Teams and Outlook. */
   const [folded, setFolded] = useState<Set<string>>(() => new Set());
   const fold = (id: string) => setFolded((f) => { const n = new Set(f); if (!n.delete(id)) n.add(id); return n; });
+
+  /** The chart is scaled down to the page's width (never up), then by the person's own zoom on top. */
+  const chartRef = useRef<HTMLDivElement>(null);
+  const innerRef = useRef<HTMLDivElement>(null);
+  const [fit, setFit] = useState(1);
+  const [size, setSize] = useState({ w: 0, h: 0 });
+  const [zoom, setZoom] = useState(1);
+  useLayoutEffect(() => {
+    const box = chartRef.current;
+    const inner = innerRef.current;
+    if (!box || !inner) return;
+    const measure = () => {
+      const phone = window.matchMedia("(max-width: 700px)").matches;
+      const w = inner.offsetWidth;
+      const avail = box.clientWidth - 8;
+      setSize({ w, h: inner.offsetHeight });
+      setFit(phone || w <= 0 ? 1 : Math.min(1, Math.max(0.3, avail / w)));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(box);
+    ro.observe(inner);
+    return () => ro.disconnect();
+  }, [agents, folded]);
+  const phone = typeof window !== "undefined" && window.matchMedia("(max-width: 700px)").matches;
+  const scale = phone ? 1 : Math.min(2, Math.max(0.2, fit * zoom));
 
   const load = useCallback(() => {
     if (dirty.current) return;
@@ -177,8 +203,19 @@ export function OrganizationPage({ topSlot }: { topSlot?: HTMLElement | null }) 
         )}
 
         <div className="org-layout">
-          <div className="orgchart" aria-label="Organization chart">
-            <ul>{lead && node(lead, new Set())}</ul>
+          <div className="orgchart-wrap">
+            <div className="orgchart-zoom" role="group" aria-label="Zoom the chart">
+              <button type="button" className="rail-icon-btn" onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))} aria-label="Zoom out">−</button>
+              <button type="button" className="rail-icon-btn org-fit" onClick={() => setZoom(1)} aria-label="Fit the chart to the page">{Math.round(scale * 100)}%</button>
+              <button type="button" className="rail-icon-btn" onClick={() => setZoom((z) => Math.min(3, +(z + 0.25).toFixed(2)))} aria-label="Zoom in">+</button>
+            </div>
+            <div className="orgchart" ref={chartRef} aria-label="Organization chart">
+              <div className="orgchart-sizer" style={scale === 1 ? undefined : { width: size.w * scale, height: size.h * scale }}>
+                <div className="orgchart-inner" ref={innerRef} style={scale === 1 ? undefined : { transform: `scale(${scale})` }}>
+                  <ul>{lead && node(lead, new Set())}</ul>
+                </div>
+              </div>
+            </div>
           </div>
 
           {selected && agents && (
