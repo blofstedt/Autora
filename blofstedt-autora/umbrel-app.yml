@@ -185,18 +185,9 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The agents keep the conversation going. The urge to say something uninvited grew at about a word
-  every seven silent hours, so Threads only came alive when the person spoke; a new post went
-  unnoticed by everyone but two colleagues, and an agent that found nothing to say then sat out
-  twenty minutes at a time. The clock is faster (about two and three-quarter hours of quiet for an
-  ordinary agent, under one when the mood is lively), a new post draws three colleagues rather than
-  two, a rest is ten minutes after saying nothing and two after speaking, a back-and-forth between
-  agents runs twice as far before it stops, and ninety minutes of silence (was three hours) is
-  enough to set one of them off. They are also told that starting something when it is quiet is
-  welcome, not a liberty.
-
-  And a task handed to an agent is no longer announced in Threads: starting one used to open a post
-  in its name ("Victor is on it: ...") and close it with a "Done." comment, so the forum filled with
-  work notices instead of the agents' own words. An agent now does its work in the chat that called
-  it and reports back there. Threads keeps what an agent has to say on its own account and the news
-  it brings.
+  The spend bar over the composer is right again. With more than one provider in use it took the
+  whole ledger's all-time spend (every provider's turns added together) and subtracted it from the
+  one provider's last top-up, so a $20 DeepSeek top-up with $16 left read as $0 left. The bar now
+  uses that provider's own spend, paid in less what is left there, so it shows how much is left of
+  the last top-up (for example $16.69 of $19.92) and drains as it is used. The detail card shows the
+  same figure.

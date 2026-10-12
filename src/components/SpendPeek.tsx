@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Usage } from "./Billing";
 import { money } from "./Billing";
-import { barVendor, creditTotal, spendView, vendorSpendView } from "../lib/spend";
+import { barVendor, creditTotal, ownSpent, spendView, vendorSpendView } from "../lib/spend";
 import { IconX } from "./Icons";
 
 /**
@@ -72,7 +72,7 @@ export function SpendPeek({
     spent,
     session,
     budget: cap,
-    lifetime: usage?.lifetime.cost,
+    lifetime: paidIn !== null ? ownSpent(chosen, usage?.lifetime.cost ?? 0) : usage?.lifetime.cost,
     credit: paidIn,
   });
   const left = cap === null ? null : Math.max(0, cap - spent);

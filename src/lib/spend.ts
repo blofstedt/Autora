@@ -137,6 +137,18 @@ export function barVendor(vendors: readonly VendorLine[] | null | undefined): Ve
   );
 }
 
+/**
+ * What has gone out of the chosen vendor's top-up: its own till's spend (paid in
+ * less left), never the ledger's all-time total, which has every other vendor's
+ * turns in it and would drain a $20 top-up with $57 of mixed spend. Falls back to
+ * the ledger figure only when no vendor was chosen.
+ */
+export function ownSpent(chosen: VendorLine | null | undefined, ledger: number): number {
+  if (!chosen) return ledger;
+  const own = chosen.credit?.spent_usd ?? chosen.lifetime_usd;
+  return typeof own === "number" && Number.isFinite(own) ? own : ledger;
+}
+
 /** One vendor's own till, as the per-vendor bars need it. */
 type VendorSpend = {
   /** The vendor, as the ledger names it. */
