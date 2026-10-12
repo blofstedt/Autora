@@ -3069,12 +3069,26 @@ function stirColleagues(others: { id: string }[], nudge: number): void {
   }
 }
 
-async function threadLifeStep(): Promise<void> {
-  if (!state.threadsAlive || lifeBusy) return;
+/** Why the forum did nothing this minute, said in the log when the reason changes and at most every 15 minutes
+    otherwise: a forum that stays quiet must be able to say why. */
+let lifeWhyLast = "";
+let lifeWhyAt = 0;
+let lifeBusySince = 0;
+function lifeWhy(why: string): void {
   const now = Date.now();
-  if (!lifeGate.room(now, perHourFor(state.threadsMood))) return;
+  if (why === lifeWhyLast && now - lifeWhyAt < 15 * 60_000) return;
+  lifeWhyLast = why;
+  lifeWhyAt = now;
+  log("info", "threads", `quiet: ${why}`);
+}
+
+async function threadLifeStep(): Promise<void> {
+  if (!state.threadsAlive) return lifeWhy("Threads is switched off in Settings");
+  if (lifeBusy) return lifeWhy(`a forum step has been running for ${Math.round((Date.now() - lifeBusySince) / 60_000)} min`);
+  const now = Date.now();
+  if (!lifeGate.room(now, perHourFor(state.threadsMood))) return lifeWhy("the hourly or daily ceiling is reached");
   const roster = listAgents().filter((a) => a.enabled);
-  if (roster.length < 2) return;
+  if (roster.length < 2) return lifeWhy("fewer than two agents are switched on");
   let best: { agent: (typeof roster)[number]; urge: number; since: number } | null = null;
   for (const agent of roster) {
     /* An agent that has never looked counts its quiet from the forum's own last words, not from the
@@ -3099,9 +3113,10 @@ async function threadLifeStep(): Promise<void> {
       lifeStartedAt = now;
     }
   }
-  if (!chosen) return;
+  if (!chosen) return lifeWhy(`nobody feels like speaking (mood ${state.threadsMood}, ${roster.length} agents)`);
   const agent = chosen;
   lifeBusy = true;
+  lifeBusySince = Date.now();
   try {
     lifeLook.set(agent.id, now);
     lifeNudge.delete(agent.id);
@@ -3114,7 +3129,7 @@ async function threadLifeStep(): Promise<void> {
     // Twenty and three before: with the forum this quiet, a silent agent sat out a third of an hour
     // over and over, so the few agents actually willing to talk still rarely did.
     lifeSleep.set(agent.id, Date.now() + (choice.again ?? (choice.action === "none" ? 6 : 2)) * 60_000);
-    if (choice.action === "none") return;
+    if (choice.action === "none") { log("info", "threads", `${agent.name}: looked, had nothing to add`); return; }
     const why = lifeAllowed(choice, me);
     if (why) { log("info", "threads", `${agent.name}: skipped, ${why}`); return; }
     /* Forum text never carries a secret (the blanking events get), and a link only
@@ -3167,8 +3182,9 @@ async function threadReact(postRef: string, commentRef: string): Promise<void> {
   if (!byPerson && trailingAgentRun(first) > MAX_AGENT_RUN) return;
   // Wait out an autonomous step in progress, then hold the forum while this runs so the two do not talk over each other.
   for (let i = 0; lifeBusy && i < 240; i += 1) await new Promise((r) => setTimeout(r, 500));
-  if (lifeBusy) return;
+  if (lifeBusy) { log("info", "threads", "replies: skipped, the forum stayed busy for two minutes"); return; }
   lifeBusy = true;
+  lifeBusySince = Date.now();
   try {
     const roster = listAgents().filter((a) => a.enabled);
     const byId = new Map(roster.map((a) => [a.id, a.name]));
