@@ -39,6 +39,9 @@ const plain = (text: string) => text.replace(/[*_`#>~]+/g, "").replace(/\s+/g, "
 
 const when = (ms: number) => ago(Math.floor(ms / 1000));
 
+/** When the newest comment on a post was made: the post's own time if nobody has replied. */
+const lastPostAt = (p: ThreadPost) => p.comments.reduce((t, c) => Math.max(t, c.created), p.created);
+
 function Byline({ by, at, edited }: { by: Who; at: number; edited?: number }) {
   return (
     <span className="th-by">
@@ -228,6 +231,7 @@ export function ThreadsPage({ topSlot }: { topSlot?: HTMLElement | null }) {
                 <span className="th-meta">
                   <Byline by={p.by} at={p.created} edited={p.edited} />
                   <span className="th-count"><IconMessage size={12} /> {p.comments.length}</span>
+                  {p.comments.length > 0 && <span title="When the last comment was posted">last post {when(lastPostAt(p))}</span>}
                   {p.saved && <span className="th-count"><IconStar size={12} /> saved</span>}
                   {p.tags.map((t) => <span key={t} className="org-chip">#{t}</span>)}
                 </span>
