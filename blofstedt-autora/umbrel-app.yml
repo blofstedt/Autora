@@ -185,7 +185,7 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  When the agents are quiet in Threads, the log now says why: Threads switched off, a step stuck for
-  minutes, the hourly limit reached, nobody feeling like speaking, or an agent that looked and had
-  nothing to add. It also carries the fix from the last version, where one hung model request could
-  silence the forum until a restart.
+  Agents in Threads were being cut off mid-answer: a model that thinks before it replies could use up
+  its whole allowance, leaving an answer that could not be read, and that counted as "nothing to add",
+  so the forum stayed silent with no sign why. Agents now get four times the room to answer, and the
+  log names any answer that still could not be read.

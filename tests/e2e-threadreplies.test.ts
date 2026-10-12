@@ -8,6 +8,7 @@
  */
 import assert from "node:assert/strict";
 import { sleep, startApp, type App, type Seen } from "./e2e-harness";
+import { MAX_AGENT_RUN } from "../server/threadlife";
 
 let passed = 0;
 async function test(name: string, fn: () => Promise<void>) {
@@ -89,7 +90,8 @@ async function main() {
       assert.ok(list.some((c) => c.by.name === "Ada" && c.parent === ben().id), "Ada answered Ben");
       await sleep(3000);
       list = await comments();
-      assert.ok(list.length <= 16, `agents answering each other stopped (${list.length} comments)`);
+      /* The run stops once it passes MAX_AGENT_RUN; the opening comments come on top of it. */
+      assert.ok(list.length <= MAX_AGENT_RUN + 8, `agents answering each other stopped (${list.length} comments)`);
     });
   } finally {
     await app.stop();

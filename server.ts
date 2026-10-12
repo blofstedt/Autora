@@ -3082,6 +3082,16 @@ function lifeWhy(why: string): void {
   log("info", "threads", `quiet: ${why}`);
 }
 
+/** Room for a forum answer. 500 was tight: a model that thinks before it answers (or a chatty one) was cut off
+    mid-JSON or left with no text, and `parseChoice` turns that into "none", so the forum looked quiet by choice. */
+const FORUM_TOKENS = 2000;
+
+/** Say in the log when a forum answer could not be read at all, so a silent forum can show why. */
+function noteUnreadable(who: string, raw: string): void {
+  if (/"action"\s*:\s*"none"/.test(raw)) return;
+  log("info", "threads", `${who}: answer could not be read (${raw.trim() ? `"${raw.trim().slice(0, 120).replace(/\s+/g, " ")}"` : "empty"})`);
+}
+
 async function threadLifeStep(): Promise<void> {
   if (!state.threadsAlive) return lifeWhy("Threads is switched off in Settings");
   if (lifeBusy) return lifeWhy(`a forum step has been running for ${Math.round((Date.now() - lifeBusySince) / 60_000)} min`);
@@ -3121,7 +3131,9 @@ async function threadLifeStep(): Promise<void> {
     lifeLook.set(agent.id, now);
     lifeNudge.delete(agent.id);
     const { system, prompt } = lifePrompt(agent, roster.filter((a) => a.id !== agent.id).map((a) => a.name), new Map(roster.map((a) => [a.id, a.name])), Boolean(gifKeys().giphy || gifKeys().tenor), start);
-    const choice = parseChoice(await backgroundCall("threads", system, prompt, 500, 0.95));
+    const raw = await backgroundCall("threads", system, prompt, FORUM_TOKENS, 0.95);
+    const choice = parseChoice(raw);
+    if (choice.action === "none") noteUnreadable(agent.name, raw);
     const me = { kind: "agent" as const, id: agent.id, name: agent.name };
     if (choice.note) remember(agent.id, choice.note, "lesson");
     if (choice.wonder && wondersOf(agent.id).length < MAX_WONDERS) remember(agent.id, wonderNote(choice.wonder), "lesson");
@@ -3199,8 +3211,10 @@ async function threadReact(postRef: string, commentRef: string): Promise<void> {
       const seen = reactSeen.get(key) ?? 0;
       const system = lifeSystem(agent, roster.filter((a) => a.id !== agent.id).map((a) => a.name), byId, gifs);
       const prompt = owed ? replyPrompt(post, trigger, agent.id) : reviewPrompt(post, trigger, agent.id, seen);
-      let said = reactionOf(await backgroundCall("threads", system, prompt, 500, 0.95), post, owed ? trigger : null);
-      if (!said && owed) said = reactionOf(await backgroundCall("threads", system, `${prompt}\n\nReply with the one JSON comment object and nothing else.`, 500, 0.95), post, trigger);
+      const raw = await backgroundCall("threads", system, prompt, FORUM_TOKENS, 0.95);
+      let said = reactionOf(raw, post, owed ? trigger : null);
+      if (!said) noteUnreadable(agent.name, raw);
+      if (!said && owed) said = reactionOf(await backgroundCall("threads", system, `${prompt}\n\nReply with the one JSON comment object and nothing else.`, FORUM_TOKENS, 0.95), post, trigger);
       reactSeen.set(key, post.comments.length);
       lifeLook.set(agent.id, Date.now());
       lifeNudge.delete(agent.id);
