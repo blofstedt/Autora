@@ -3413,6 +3413,9 @@ async function noticeTick() {
   flushHeldPushes();
 }
 
+/** How long an unwatched model call may take before it is abandoned. */
+const BACKGROUND_CALL_MS = 90_000;
+
 /**
  * A model call nobody watches: compaction, learning. The same provider as the
  * turns, no tools, a low temperature, nothing streamed to the thread.
@@ -3436,6 +3439,9 @@ async function backgroundCall(sessionId: string, system: string, prompt: string,
     temperature,
     maxTokens,
     thinkingBudget: 0,
+    /* Unwatched work must not wait for ever: Threads holds `lifeBusy` across this call, so one
+       hung request would silence the whole forum until a restart. */
+    signal: AbortSignal.timeout(BACKGROUND_CALL_MS),
   }, () => undefined);
   recordUsage({
     ts: Math.floor(Date.now() / 1000),
