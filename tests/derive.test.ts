@@ -12,6 +12,7 @@
  */
 import assert from "node:assert/strict";
 import { derive } from "../src/lib/derive";
+import { readActivity } from "../src/lib/activity";
 import { Kind, type AutoraEvent } from "../src/lib/types";
 
 let passed = 0;
@@ -238,6 +239,35 @@ test("an agent called from the chat joins it by name and, when done, says its ow
   chime = derive(events).buckets[0].cells.find((c) => c.kind === "chime");
   assert.ok(chime && chime.kind === "chime" && chime.done && chime.ok && /break clause/.test(chime.report));
   assert.equal(chime.name, "Sabrina");
+});
+
+test("an agent at work says what it is doing on its card, and stops once it has reported back", () => {
+  const events: AutoraEvent[] = [];
+  const add = (seq: number, kind: string, payload: Record<string, any>) =>
+    events.push({ seq, ts: 1_700_000_000 + seq * 10, kind, actor: "agent", span: null, payload, blob: null });
+  add(1, Kind.UserMessage, { text: "fix the container" });
+  add(2, Kind.AgentChime, { id: "s1", name: "Victor", role: "Release Engineer", text: "On it: fix the container" });
+  add(3, Kind.AgentProgress, { id: "s1", text: "Running docker ps", steps: 3 });
+  add(4, Kind.AgentProgress, { id: "s1", text: "Running docker logs bambu", steps: 4 });
+  const card = () => derive(events).buckets[0].cells.find((c) => c.kind === "chime");
+  let chime = card();
+  assert.ok(chime && chime.kind === "chime" && chime.progress);
+  assert.deepEqual(chime.progress, { text: "Running docker logs bambu", steps: 4, at: (1_700_000_000 + 40) * 1000 }, "the latest word wins, with its time in ms");
+  add(5, Kind.AgentBack, { id: "s1", ok: true, reply: "Done." });
+  add(6, Kind.AgentProgress, { id: "s1", text: "late", steps: 9 });
+  chime = card();
+  assert.ok(chime && chime.kind === "chime" && chime.done && chime.progress?.text === "Running docker logs bambu", "a word after the report changes nothing");
+});
+
+test("the working clock counts from the turn's start in milliseconds, not seconds", () => {
+  const start = Math.floor(Date.now() / 1000) - 90;
+  const events: AutoraEvent[] = [
+    { seq: 1, ts: start, kind: Kind.UserMessage, actor: "user", span: null, payload: { text: "go" }, blob: null },
+  ];
+  const since = readActivity(events).since;
+  assert.ok(since !== null && Date.now() - since >= 89_000 && Date.now() - since < 120_000);
+  events[0].ts = 0;
+  assert.equal(readActivity(events).since, null, "a missing stamp is not the year 1970");
 });
 
 console.log(`\nderive: ${passed} passed`);

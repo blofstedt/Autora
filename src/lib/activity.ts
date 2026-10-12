@@ -86,7 +86,9 @@ export function readActivity(events: AutoraEvent[]): Reading {
 
   /* The turn began when its request was written; lacking a timestamp on it,
      the first thing after it stands in. */
-  const since = start >= 0 ? (events[start].ts ?? events[start + 1]?.ts ?? null) : null;
+  const stamp = [events[start].ts, events[start + 1]?.ts].find((t) => typeof t === "number" && t > 0);
+  // Events are stamped in seconds; the line under the thread counts in milliseconds.
+  const since = stamp === undefined ? null : stamp * 1000;
 
   if (asking) return { text: "Waiting for your answer", phase: "thinking", since, steps };
   const running = [...open.values()].pop();

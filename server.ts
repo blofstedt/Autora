@@ -75,6 +75,7 @@ import {
 import { addComment, createPost, getPost, listPosts, onThreadActivity, onThreadReply, toggleLike } from "./server/threads";
 import { findGif } from "./server/threadgif";
 import { lookColors, readLook } from "./src/lib/agentlook";
+import { readActivity } from "./src/lib/activity";
 import { NewsGate, newsPrompt, nextLookoutMs, parseQuery, parseStudy, queryPrompt, readNews, studyPrompt } from "./server/threadnews";
 import { mcpRoutes } from "./server/routes/mcp";
 import { artifactRoutes } from "./server/routes/artifacts";
@@ -2959,6 +2960,9 @@ function cursorWhoFor(sessionId: string): { name: string; color: string; rgb: st
   return { name: agent.name.slice(0, 24), color: colors.accent, rgb: css["--accent-rgb"], sides: look.sides };
 }
 const MAX_AGENT_DEPTH = 3;
+/** How often an agent at work tells the chat that called it what it is doing (see `runAgentTask`). */
+const PROGRESS_GAP_MS = 5_000;
+const PROGRESS_BEAT_MS = 20_000;
 
 /**
  * Starts an agent from the Organization on a task in a chat of its own, waits
@@ -2997,7 +3001,26 @@ async function runAgentTask(
     });
     const stop = () => stopTurn(child.id);
     signal?.addEventListener("abort", stop, { once: true });
-    const result = await startTurn(child, agentBrief(agent, work, names), [], { automated: true }).finally(() => signal?.removeEventListener("abort", stop));
+    /* While it works it says what it is on, in the chat that called it (agent.progress), so a long task is
+       never a silent wait: a new step is said at once (not more than every PROGRESS_GAP_MS), and a step that
+       simply takes long is repeated every PROGRESS_BEAT_MS for as long as the agent is still producing events.
+       An agent that has gone quiet stops being repeated, which is how the card shows it has gone quiet. */
+    let last = { text: "", steps: -1, seq: 0, at: 0 };
+    const report = () => {
+      const now = Date.now();
+      const reading = readActivity(child.events);
+      const seq = child.seqCounter;
+      if (!reading.text || reading.since === null) return;
+      const changed = reading.text !== last.text || reading.steps !== last.steps;
+      if (changed ? now - last.at < PROGRESS_GAP_MS : seq === last.seq || now - last.at < PROGRESS_BEAT_MS) return;
+      last = { text: reading.text, steps: reading.steps, seq, at: now };
+      emitEvent(from, "agent.progress", "agent", { id: child.id, text: reading.text, steps: reading.steps });
+    };
+    const watching = setInterval(report, PROGRESS_GAP_MS);
+    const result = await startTurn(child, agentBrief(agent, work, names), [], { automated: true }).finally(() => {
+      clearInterval(watching);
+      signal?.removeEventListener("abort", stop);
+    });
     const said = (result.reply || result.error || "(it said nothing)").trim();
     /* It reports in the chat that called it, in its own name and mark: the agent joins the conversation rather than
        working out of sight and having Autora paraphrase it. */

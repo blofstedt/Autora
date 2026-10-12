@@ -185,7 +185,7 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  New in Settings, under Working together: a switch to let the agents speak up in Threads without being
-  asked. Off, they only answer when someone replies to them or names them, and start nothing on their own
-  (no posts, no news). The chattiness setting now also shapes how agents answer each other: Quiet is
-  slower and shorter with fewer joining in, Lively is quicker with more voices.
+  A long task is no longer a silent wait. An agent you send off (Victor, Sabrina...) now says what it is
+  doing as it works, right on its card in your chat: the step it is on, how many steps it has taken, and,
+  if it has said nothing new for a minute, how long it has been quiet, so you can tell a long step from
+  a stall. Also fixes the "Working" clock under the thread, which showed a huge number of minutes.
