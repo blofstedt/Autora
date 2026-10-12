@@ -90,6 +90,27 @@ self.addEventListener("fetch", (event) => {
   }
 });
 
+/* ------------------------------------------------------------- badge --
+   The number on the app's icon (the Home Screen, the dock, the taskbar). A
+   notification alone does not put one there: on an iPhone in particular the
+   icon stays bare unless the app sets it. It counts what has come in since the
+   app was last on screen, kept in the cache so it survives the worker being
+   stopped between pushes, and the page clears it (src/main.tsx) the moment it
+   is looked at. */
+const BADGE_KEY = "/__badge";
+
+async function bumpBadge() {
+  try {
+    const cache = await caches.open(CACHE);
+    const hit = await cache.match(BADGE_KEY);
+    const count = ((hit && parseInt(await hit.text(), 10)) || 0) + 1;
+    await cache.put(BADGE_KEY, new Response(String(count)));
+    if (self.navigator && "setAppBadge" in self.navigator) await self.navigator.setAppBadge(count);
+  } catch {
+    // No badge support here; the notification is the message.
+  }
+}
+
 /* ---------------------------------------------------------------- push --
    A message from the console (server/webpush.ts), shown even with the app
    closed. A notification is only for someone who is not already looking: if
@@ -105,7 +126,7 @@ self.addEventListener("push", (event) => {
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
       if (windows.some((w) => w.visibilityState === "visible")) return undefined;
-      return self.registration.showNotification(data.title || "Autora", {
+      return bumpBadge().then(() => self.registration.showNotification(data.title || "Autora", {
         body: data.body || "",
         icon: "/icons/icon-192.png",
         badge: "/icons/icon-192.png",
@@ -115,7 +136,7 @@ self.addEventListener("push", (event) => {
         renotify: true,
         requireInteraction: !!data.urgent,
         data: { url: data.url || "/" },
-      });
+      }));
     }),
   );
 });

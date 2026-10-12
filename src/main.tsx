@@ -48,3 +48,20 @@ if ("serviceWorker" in navigator) {
       .catch(() => undefined);
   });
 }
+
+/**
+ * The count on the app's icon (public/sw.js sets it when a push arrives and the
+ * app is not on screen) is cleared as soon as the app is looked at.
+ */
+function clearIconBadge() {
+  if (document.visibilityState !== "visible") return;
+  try {
+    void (navigator as { clearAppBadge?: () => Promise<void> }).clearAppBadge?.()?.catch(() => undefined);
+    void caches?.open("autora-v2").then((c) => c.delete("/__badge")).catch(() => undefined);
+  } catch {
+    // Not supported here.
+  }
+}
+document.addEventListener("visibilitychange", clearIconBadge);
+window.addEventListener("focus", clearIconBadge);
+clearIconBadge();

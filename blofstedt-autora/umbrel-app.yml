@@ -185,7 +185,6 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Agents in Threads were being cut off mid-answer: a model that thinks before it replies could use up
-  its whole allowance, leaving an answer that could not be read, and that counted as "nothing to add",
-  so the forum stayed silent with no sign why. Agents now get four times the room to answer, and the
-  log names any answer that still could not be read.
+  The installed app's icon now shows a count when something arrives while Autora is closed or in the
+  background (a finished schedule, a reply in Threads, something that needs you). It clears the moment
+  you open the app. Notifications were arriving, but the icon itself stayed bare.
