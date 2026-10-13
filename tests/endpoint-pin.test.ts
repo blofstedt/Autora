@@ -190,6 +190,27 @@ await test("a pin for a vendor that does not exist is ignored, not stored", asyn
   assert.equal(endpointPinSaved("openrouter"), null, "and a number is not an endpoint");
 });
 
+await test("a pin is refused for a vendor with one endpoint, and for auto", async () => {
+  /* A pin on a vendor that never routes is a setting nothing reads and no
+     screen offers: kept on disk it is invisible and unclearable, so the route
+     refuses it. Found by QA on c300034. */
+  const res = await patch({
+    models: { openai: "gpt-4o-mini" },
+    endpoint_pins: { openai: "azure", auto: "deepinfra" },
+  });
+  assert.equal(res.ok, true, "the request itself is still fine");
+  assert.equal("openai" in state.endpointPins, false, "an ordinary vendor cannot hold a pin");
+  assert.equal("auto" in state.endpointPins, false, "auto is not a vendor");
+
+  /* One already on disk (an older build, or a hand-edited settings.json) is
+     still cleared by the empty string, or nothing could ever take it off. */
+  setEndpointPin("openai", "azure", "gpt-4o-mini");
+  assert.deepEqual(endpointPinSaved("openai"), { model: "gpt-4o-mini", endpoint: "azure" });
+  const cleared = await patch({ endpoint_pins: { openai: "" } });
+  assert.equal(cleared.ok, true);
+  assert.equal(endpointPinSaved("openai"), null, "an empty string clears even a stray pin");
+});
+
 ui.close();
 vendor.close();
 console.log(`\n${passed} passed`);

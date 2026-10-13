@@ -9,7 +9,7 @@ import type { Express, Request, Response } from "express";
 import { mergeAutomation } from "../automation";
 import { mergeCaptcha } from "../captcha";
 import { dictationStatus } from "../dictation";
-import { AUTO_ORDER, PRICES_CHECKED, PROVIDERS, modelsFor } from "../providers";
+import { AUTO_ORDER, PRICES_CHECKED, PROVIDERS, modelsFor, providerSpec } from "../providers";
 import { mergePush, readyChannels } from "../push";
 import { mergeProactivity } from "../quiet";
 import { forgetSpeech, speakStream, speechStatus, speak as synthesise } from "../speech";
@@ -247,6 +247,13 @@ export function settingsRoutes(app: Express, deps: {
     if (body.endpoint_pins && typeof body.endpoint_pins === "object") {
       for (const [id, endpoint] of Object.entries(body.endpoint_pins)) {
         if (!known.has(id) || typeof endpoint !== "string") continue;
+        /* Only a vendor that routes between endpoints can hold one. "auto"
+           is not a vendor and an ordinary vendor has one endpoint, so a pin
+           on either would be a setting nothing reads and no screen shows --
+           it would sit in settings.json forever, unclearable. An EMPTY
+           string still goes through: that is how one left on disk by an
+           older build is cleared. */
+        if (endpoint.trim() && !providerSpec(id)?.pinnable) continue;
         setEndpointPin(id, endpoint, modelFor(id));
       }
     }
