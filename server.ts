@@ -11,6 +11,7 @@ import {
 import {
   flushState, recordUsage,
   resolveProvider, save, state, stateDir, stateFilePath, type Resolved,
+  endpointPinFor,
   allSecrets, secretFor, redactSecrets as redactStored,
   saneMcp, recordToolFeed, type CostParts,
   DEFAULT_PROMPT, standingRules, } from "./server/state";
@@ -845,6 +846,7 @@ async function captchaVision(sessionId: string, prompt: string, pngs: Buffer[]):
     model,
     key: active.key,
     baseUrl: active.baseUrl,
+    endpoint: endpointPinFor(active.provider, model),
     system: VISION_SYSTEM,
     messages: [
       {
@@ -3506,6 +3508,7 @@ async function backgroundCall(sessionId: string, system: string, prompt: string,
     model,
     key: active.key,
     baseUrl: active.baseUrl,
+    endpoint: endpointPinFor(active.provider, model),
     system,
     messages: [{ role: "user", text: prompt }],
     temperature,
@@ -4125,6 +4128,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
             model: voice,
             key: active.key,
             baseUrl: active.baseUrl,
+            endpoint: endpointPinFor(active.provider, voice),
             system: brief,
             messages: [{ role: "user", text: material }],
             temperature: 0.6,
@@ -4249,6 +4253,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
               model: handedOver ? active.model : voice,
               key: active.key,
               baseUrl: active.baseUrl,
+              endpoint: endpointPinFor(active.provider, handedOver ? active.model : voice),
               system,
               messages: context.messagesFor(system),
               temperature: 0.7,
@@ -4436,6 +4441,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           ask: async (system, messages, list) => {
             const turn = await streamChat({
               provider: active.provider, model: active.model, key: active.key, baseUrl: active.baseUrl,
+              endpoint: endpointPinFor(active.provider, active.model),
               system, messages, temperature: 0.2, maxTokens: 2000, thinking: "off",
               signal: running.get(session.id)?.signal,
               tools: list.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })),

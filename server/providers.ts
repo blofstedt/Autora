@@ -75,6 +75,13 @@ interface ProviderSpec {
       -- and then no balance is claimed for it at all, rather than borrowing
       another vendor's. See ./vendor-money. */
   balance?: BalanceSpec;
+  /** True where one model is served from several endpoints and a request may
+      say which one (OpenRouter, and only OpenRouter here). Such a vendor's
+      model rows get a pin field in Settings, and a pinned turn sends the
+      vendor's routing block. Absent everywhere else on purpose: the block is
+      not a vendor-neutral field, and a gateway that does not know it refuses
+      the whole request rather than ignoring it. */
+  pinnable?: boolean;
 }
 
 /**
@@ -213,6 +220,7 @@ export const PROVIDERS: ProviderSpec[] = [
     baseUrl: "https://openrouter.ai/api/v1",
     defaultModel: "openai/gpt-4o-mini",
     listable: true,
+    pinnable: true,
     balance: { path: "/credits", field: "openrouter" },
     models: [
       { id: "openai/gpt-4o-mini", label: "OpenAI GPT-4o mini", input: 0.15, output: 0.6 },

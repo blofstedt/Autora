@@ -240,6 +240,14 @@ key** asks the vendor whether the key works before you rely on it, and fills
 the model list from the same call; **Refresh models** re-asks later, which is
 how the OpenRouter catalogue stays current.
 
+OpenRouter routes one model to several providers of its own, so a turn may be
+answered by a different one each time -- another machine, at another price.
+**Endpoint**, on its row, holds the model chosen above to one of them: the slug
+OpenRouter lists for that model (`deepinfra`, `chutes`), with no fallback to the
+rest. It belongs to that model alone, so changing the model sends no routing
+instruction again, and talk mode's faster model is never held to an endpoint
+that does not serve it.
+
 Keys pasted into the panel are saved on the server in `.autora/settings.json`,
 created readable only by the account Autora runs as. Keys set in the
 environment (`GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,

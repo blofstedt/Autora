@@ -103,6 +103,14 @@ export interface ChatCall {
       the request then carries no tool field at all -- some local servers 400
       on an empty array. */
   tools?: ToolDef[];
+  /**
+   * One endpoint of the chosen model, for a vendor that routes between
+   * several (OpenRouter). A slug, not an address: `deepinfra`, `chutes`.
+   *
+   * Empty or missing is the default and the old behaviour -- no routing block
+   * in the body at all, so any endpoint serving the model may answer.
+   */
+  endpoint?: string;
   /** Stops the call mid-stream: the person pressed Stop, and every word
       after that would be spoken into a turn that is over. */
   signal?: AbortSignal;
@@ -405,12 +413,25 @@ export function openAiMessages(call: ChatCall): any[] {
 
 async function streamOpenAi(call: ChatCall, onDelta: (text: string) => void): Promise<ChatTurn> {
   const deepseek = (call.provider ?? "") === "deepseek" || /api\.deepseek\.com/.test(call.baseUrl ?? "");
+  /* OpenRouter is a router: one model is served from several endpoints, and
+     without being told which, it may answer a turn from a different one --
+     another machine, at another price -- from call to call. A pin names one
+     and refuses the rest: `allow_fallbacks: false` makes it an answer rather
+     than a preference, so if that endpoint is down or does not carry the
+     model the call fails and says so instead of being served from somewhere
+     nobody chose. Sent to a vendor that routes and no other -- providers.ts
+     marks it, and OpenAI and most gateways refuse a field they do not know --
+     and only when a pin is set, so an install that never chose one sends the
+     body it always did. */
+  const pin = (call.endpoint ?? "").trim();
+  const openrouter = Boolean(providerSpec(call.provider)?.pinnable) || /(^|\.)openrouter\.ai/.test(call.baseUrl ?? "");
   const res = await request(`${trimSlash(call.baseUrl)}/chat/completions`, {
     method: "POST",
     signal: call.signal,
     headers: openAiHeaders(call),
     body: JSON.stringify({
       model: call.model,
+      ...(openrouter && pin ? { provider: { only: [pin], allow_fallbacks: false } } : {}),
       stream: true,
       stream_options: { include_usage: true },
       temperature: call.temperature ?? 0.7,

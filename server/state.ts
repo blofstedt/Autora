@@ -247,6 +247,22 @@ interface PersistedState {
   fastModels: Record<string, string>;
   /** Per-provider API root override. Mostly for local servers and proxies. */
   baseUrls: Record<string, string>;
+  /** Per-provider endpoint pin: the ONE model and the ONE endpoint of it that
+      a vendor which routes between endpoints should be held to, by provider id.
+
+      Only OpenRouter uses it today, and the endpoint is not an address: it is
+      the slug of one of the endpoints that serve that model there (`deepinfra`,
+      `chutes`). OpenRouter is a router, so without being told it may answer a
+      turn from a different endpoint of the same model -- another machine, at
+      another price -- from call to call.
+
+      The model is part of the pin on purpose. A vendor's other models are not
+      served from that endpoint, so a pin that travelled to them would turn
+      every other call -- talk mode's faster model, an agent's handed-over
+      turn -- into a refusal. A pin applies to the model it was made for and no
+      other; change the model and the pin no longer applies, which is the
+      person's cue to choose again. */
+  endpointPins: Record<string, EndpointPin>;
   systemPrompt: string;
   /** Provider id (or voice credential name) -> secret. */
   keys: Record<string, string>;
@@ -542,6 +558,7 @@ function blank(): PersistedState {
     models: {},
     fastModels: {},
     baseUrls: {},
+    endpointPins: {},
     systemPrompt: DEFAULT_PROMPT,
     keys: {},
     secrets: {},
@@ -639,6 +656,7 @@ function read(): PersistedState {
     if (raw.models && typeof raw.models === "object") state.models = { ...raw.models };
     if (raw.fastModels && typeof raw.fastModels === "object") state.fastModels = { ...raw.fastModels };
     if (raw.baseUrls && typeof raw.baseUrls === "object") state.baseUrls = { ...raw.baseUrls };
+    if (raw.endpointPins && typeof raw.endpointPins === "object") state.endpointPins = { ...raw.endpointPins };
     if (typeof raw.systemPrompt === "string") state.systemPrompt = raw.systemPrompt;
     if (raw.keys && typeof raw.keys === "object") state.keys = { ...raw.keys };
     if (raw.secrets && typeof raw.secrets === "object") state.secrets = { ...raw.secrets };
@@ -1115,6 +1133,49 @@ export function modelFor(providerId: string): string {
     provider. Empty means talk mode uses the main model. */
 export function fastModelFor(providerId: string): string {
   return (state.fastModels[providerId] || "").trim();
+}
+
+/** One model, and one endpoint of it, a routing vendor is held to. */
+export interface EndpointPin {
+  /** The model this pin was made for; the pin applies to it and no other. */
+  model: string;
+  /** The endpoint's own slug (`deepinfra`), passed back to the vendor. */
+  endpoint: string;
+}
+
+/**
+ * The endpoint to hold `model` to on this provider, or empty for none.
+ *
+ * Empty is also the answer when a pin exists for a different model: the pin
+ * belongs to the model it was made for, so nothing is sent for any other --
+ * which is what keeps a pinned OpenRouter account from refusing talk mode's
+ * faster model because that model is not served from the endpoint chosen.
+ */
+export function endpointPinFor(providerId: string, model: string): string {
+  const pin = state.endpointPins?.[providerId];
+  if (!pin || !pin.endpoint) return "";
+  return (pin.model || "") === (model || "") ? pin.endpoint.trim() : "";
+}
+
+/** The pin saved for a provider, whatever model it was made for, so Settings
+    can show it and say which model it is holding. Null when there is none. */
+export function endpointPinSaved(providerId: string): EndpointPin | null {
+  const pin = state.endpointPins?.[providerId];
+  return pin && pin.endpoint ? { ...pin } : null;
+}
+
+/**
+ * Set, change or clear a provider's endpoint pin.
+ *
+ * `model` is the model chosen at the moment the endpoint was: the pair is the
+ * pin. An empty endpoint clears the whole thing rather than storing a blank,
+ * so "no pin" has exactly one shape on disk.
+ */
+export function setEndpointPin(providerId: string, endpoint: string, model: string): void {
+  const slug = endpoint.trim();
+  if (!slug) delete state.endpointPins[providerId];
+  else state.endpointPins[providerId] = { model: (model || "").trim(), endpoint: slug };
+  save();
 }
 
 export function baseUrlFor(providerId: string): string {

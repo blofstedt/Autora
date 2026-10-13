@@ -67,6 +67,16 @@ type ProviderCard = {
   /** Talk mode's own model for this provider; empty means the one above. */
   fast_model: string;
   models: ModelOption[];
+  /** True where this vendor serves one model from several endpoints, so the
+      row offers a field to pin one (OpenRouter). Absent on an older server. */
+  pinnable?: boolean;
+  /** The endpoint this vendor's turns are pinned to, or empty for any of them.
+      A slug the vendor resolves, not an address -- and not the base URL above,
+      which is where the vendor itself is reached. */
+  endpoint_pin?: string;
+  /** The model that pin is holding. A pin belongs to the model it was made
+      for, so when this is not the model chosen now the pin is not in force. */
+  endpoint_pin_model?: string;
 };
 
 export type ToolGroupName = "terminal" | "browser" | "computer" | "memory" | "voice";
@@ -218,6 +228,7 @@ export function Settings({
   const [modelDrafts, setModelDrafts] = useState<Record<string, string>>({});
   const [fastDrafts, setFastDrafts] = useState<Record<string, string>>({});
   const [urlDrafts, setUrlDrafts] = useState<Record<string, string>>({});
+  const [endpointDrafts, setEndpointDrafts] = useState<Record<string, string>>({});
   const [provider, setProvider] = useState("auto");
   const [prompt, setPrompt] = useState("");
   const [budget, setBudget] = useState("");
@@ -301,6 +312,7 @@ export function Settings({
     models: modelDrafts,
     fast_models: fastDrafts,
     base_urls: urlDrafts,
+    endpoint_pins: endpointDrafts,
     system_prompt: prompt,
     budget_usd: budget.trim() === "" ? null : Number(budget),
     top_up_usd: topUp.trim() === "" ? null : Number(topUp),
@@ -308,7 +320,7 @@ export function Settings({
     ...(loop ? { loop } : {}),
     ...(verify ? { verify } : {}),
     ...(keep ? { retention: keep } : {}),
-  }), [provider, modelDrafts, fastDrafts, urlDrafts, prompt, budget, topUp, topUpProvider, loop, verify, keep]);
+  }), [provider, modelDrafts, fastDrafts, urlDrafts, endpointDrafts, prompt, budget, topUp, topUpProvider, loop, verify, keep]);
 
   const save = useCallback(async (sent: typeof body) => {
     setSaving(true);
@@ -333,6 +345,7 @@ export function Settings({
       setModelDrafts((d) => settle(d, sent.models));
       setFastDrafts((d) => settle(d, sent.fast_models));
       setUrlDrafts((d) => settle(d, sent.base_urls));
+      setEndpointDrafts((d) => settle(d, sent.endpoint_pins));
       /* The server may tidy what it was sent (a limit clamped into range, a
          budget of "20.0" stored as 20). Take its version of any field left
          untouched since, or the page would look unsaved and save forever. */
@@ -406,6 +419,7 @@ export function Settings({
   const dirty = !!state && (
     Object.keys(modelDrafts).length > 0 ||
     Object.keys(urlDrafts).length > 0 ||
+    Object.keys(endpointDrafts).length > 0 ||
     provider !== state.provider ||
     prompt !== (state.system_prompt ?? "") ||
     (budget.trim() === "" ? null : Number(budget)) !== (state.budget_usd ?? null) ||
@@ -500,12 +514,14 @@ export function Settings({
       modelDraft={modelDrafts[card.id]}
       fastDraft={fastDrafts[card.id]}
       urlDraft={urlDrafts[card.id]}
+      endpointDraft={endpointDrafts[card.id]}
       onKey={(v) => setKeyDrafts((d) => ({ ...d, [card.id]: v }))}
       onKeyCancel={() => setKeyDrafts(({ [card.id]: _drop, ...rest }) => rest)}
       onKeySave={(v) => void saveKey(card.id, v)}
       onModel={(v) => setModelDrafts((d) => ({ ...d, [card.id]: v }))}
       onFast={(v) => setFastDrafts((d) => ({ ...d, [card.id]: v }))}
       onUrl={(v) => setUrlDrafts((d) => ({ ...d, [card.id]: v }))}
+      onEndpoint={(v) => setEndpointDrafts((d) => ({ ...d, [card.id]: v }))}
       onModels={(models) => replaceModels(card.id, models)}
       onUse={() => setProvider(card.id)}
     />
@@ -847,8 +863,8 @@ export function Settings({
  * chosen.
  */
 function ProviderRow({
-  card, selected, inUse, keyDraft, modelDraft, fastDraft, urlDraft,
-  onKey, onKeyCancel, onKeySave, onModel, onFast, onUrl, onModels, onUse,
+  card, selected, inUse, keyDraft, modelDraft, fastDraft, urlDraft, endpointDraft,
+  onKey, onKeyCancel, onKeySave, onModel, onFast, onUrl, onEndpoint, onModels, onUse,
 }: {
   card: ProviderCard;
   selected: boolean;
@@ -857,12 +873,15 @@ function ProviderRow({
   modelDraft: string | undefined;
   fastDraft: string | undefined;
   urlDraft: string | undefined;
+  /** The endpoint pin as typed, or undefined while it is whatever is saved. */
+  endpointDraft: string | undefined;
   onKey: (v: string) => void;
   onKeyCancel: () => void;
   onKeySave: (v: string) => void;
   onModel: (v: string) => void;
   onFast: (v: string) => void;
   onUrl: (v: string) => void;
+  onEndpoint: (v: string) => void;
   onModels: (models: ModelOption[]) => void;
   onUse: () => void;
 }) {
@@ -871,6 +890,12 @@ function ProviderRow({
   const [checked, setChecked] = useState<{ ok: boolean; text: string } | null>(null);
 
   const model = modelDraft ?? card.model;
+  /* A pin belongs to the model it was made for, so say so when it is holding a
+     different one: a field that looks in force while nothing it holds is being
+     called would be a lie about what the account is spending where. */
+  const pinHeld = card.endpoint_pin && card.endpoint_pin_model && card.endpoint_pin_model !== model
+    ? card.endpoint_pin_model
+    : "";
   const listed = card.models.some((m) => m.id === model);
   // A local server has no catalogue to offer, so it opens straight into the
   // text field rather than a picker with one item in it saying "Custom".
@@ -1119,6 +1144,28 @@ function ProviderRow({
             Leave as it is unless you are going through a proxy or running the
             model yourself.
           </p>
+          {card.pinnable && (
+            <label className="jf-row">
+              <span>Endpoint</span>
+              <input
+                value={endpointDraft ?? card.endpoint_pin ?? ""}
+                onChange={(e) => onEndpoint(e.target.value)}
+                placeholder="any endpoint of the model"
+                spellCheck={false}
+                className="jf-cron"
+                aria-label={`${card.label} endpoint`}
+              />
+            </label>
+          )}
+          {card.pinnable && (
+            <p className="jf-hint">
+              {card.label} serves one model from several providers, so a turn may
+              be answered by a different one each time. Name one here to pin
+              the model chosen above to it: the slug {card.label} lists for that
+              model (deepinfra, chutes). Empty leaves the choice to {card.label}.
+              {pinHeld && ` The endpoint saved is holding ${pinHeld}, and is not in force while another model is chosen.`}
+            </p>
+          )}
         </div>
       )}
     </div>

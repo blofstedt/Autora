@@ -13,7 +13,7 @@ import { AUTO_ORDER, PRICES_CHECKED, PROVIDERS, modelsFor } from "../providers";
 import { mergePush, readyChannels } from "../push";
 import { mergeProactivity } from "../quiet";
 import { forgetSpeech, speakStream, speechStatus, speak as synthesise } from "../speech";
-import { FONTS, THEMES, applyTimezone, baseUrlFor, fastModelFor, keyFor, keySource, machineTimezone, maskKey, mergeAppearance, mergeLoop, mergeRetention, mergeSpeech, modelFor, resolveProvider, save, setKey, state, stateFilePath, validTimezone } from "../state";
+import { FONTS, THEMES, applyTimezone, baseUrlFor, endpointPinSaved, fastModelFor, keyFor, keySource, machineTimezone, maskKey, mergeAppearance, mergeLoop, mergeRetention, mergeSpeech, modelFor, resolveProvider, save, setEndpointPin, setKey, state, stateFilePath, validTimezone } from "../state";
 import { groupStates, toolSettings, updateToolSettings } from "../tools";
 import { forgetVendorMoney, setTopUp } from "../vendor-money";
 import { mergeVerify } from "../verify";
@@ -73,6 +73,11 @@ export function settingsRoutes(app: Express, deps: {
            offer the "paid in" box only where the figure can be turned into a
            spend, rather than collecting a number it can never use. */
         balance_endpoints: Boolean(spec.balance),
+        /* Whether this vendor serves one model from several endpoints, so the
+           row offers a field to pin one. The server sends the block only here
+           too (streamOpenAi): a box whose value changed nothing would be worse
+           than no box. */
+        pinnable: Boolean(spec.pinnable),
         key: {
           set: Boolean(keyFor(spec.id)),
           source,
@@ -81,6 +86,10 @@ export function settingsRoutes(app: Express, deps: {
         },
         model: modelFor(spec.id),
         fast_model: fastModelFor(spec.id),
+        endpoint_pin: endpointPinSaved(spec.id)?.endpoint ?? "",
+        /* Which model that pin is holding. The row says so when it is not the
+           model chosen now: the pin applies to the model it was made for. */
+        endpoint_pin_model: endpointPinSaved(spec.id)?.model ?? "",
         models: modelsFor(spec.id),
       };
     });
@@ -225,6 +234,21 @@ export function settingsRoutes(app: Express, deps: {
       }
     } else if (typeof body.base_url === "string" && target) {
       state.baseUrls[target] = body.base_url.trim();
+    }
+
+    /* One endpoint of a routed vendor, per provider. A slug the vendor itself
+       resolves (`deepinfra`, `chutes`), not an address, and only ever sent to
+       the vendor that routes, for the model it was chosen with -- see
+       streamOpenAi and state.endpointPinFor. Empty clears the pin, so "no pin"
+       has one shape on disk however it was arrived at.
+
+       Applied after the models above on purpose: the model saved at this moment
+       is the one the pin is made for. */
+    if (body.endpoint_pins && typeof body.endpoint_pins === "object") {
+      for (const [id, endpoint] of Object.entries(body.endpoint_pins)) {
+        if (!known.has(id) || typeof endpoint !== "string") continue;
+        setEndpointPin(id, endpoint, modelFor(id));
+      }
     }
 
     if (typeof body.system_prompt === "string") {
