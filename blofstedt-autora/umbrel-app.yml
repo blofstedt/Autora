@@ -186,8 +186,7 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  A tool call that never comes back no longer holds the turn. It is capped, you are told what it was
-  doing and how long it ran, and the retry is safe: a read may be repeated where a write may not. In
-  Threads, a post now says when it is waiting on another agent and when it has gone quiet, so a thread
-  that looks finished but is not says so. A new suite proves each of these, including the one-minute
-  case.
+  You can now hold one model to one OpenRouter endpoint. Pick the model in Settings, type the endpoint
+  you want it served from, and every request for that model goes to that endpoint alone, with no quiet
+  fallback to another one when it is busy. Nothing changes unless you set a pin, and clearing the field
+  puts things back exactly as they were.

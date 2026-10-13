@@ -1136,7 +1136,7 @@ export function fastModelFor(providerId: string): string {
 }
 
 /** One model, and one endpoint of it, a routing vendor is held to. */
-export interface EndpointPin {
+interface EndpointPin {
   /** The model this pin was made for; the pin applies to it and no other. */
   model: string;
   /** The endpoint's own slug (`deepinfra`), passed back to the vendor. */
