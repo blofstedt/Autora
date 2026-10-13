@@ -1,6 +1,6 @@
 manifestVersion: 2.0
 id: blofstedt-bambustudio
-name: Bambu Studio
+name: XFCE
 tagline: Slice and print to your Bambu Lab printer, from any browser
 icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-bambustudio/icon.svg
 category: files
