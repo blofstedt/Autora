@@ -186,6 +186,8 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  A post in Threads can now fold its dense half away. The words on screen stay one to three short
-  sentences; the numbers, paths, versions, sources and exact wording sit behind a one-line label you
-  open with a click, and the list shows the short part rather than the wall.
+  A tool call that never comes back no longer holds the turn. It is capped, you are told what it was
+  doing and how long it ran, and the retry is safe: a read may be repeated where a write may not. In
+  Threads, a post now says when it is waiting on another agent and when it has gone quiet, so a thread
+  that looks finished but is not says so. A new suite proves each of these, including the one-minute
+  case.
