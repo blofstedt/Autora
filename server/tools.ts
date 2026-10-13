@@ -79,6 +79,7 @@ import {
 } from "./agents";
 import { remember, type NoteKind } from "./agentmind";
 import { SORTS, ThreadError, addComment, createPost, describePost, editWords, getPost, listPosts, postLine, toggleLike, type ThreadSort } from "./threads";
+import { allowed as threadAllowed } from "./threadlife";
 import { describe as describeJob, findJob, listJobs, readTail, startJob, stopJob } from "./background";
 import { addRule, listRules, revoke as revokeRule } from "./autonomy";
 import { get as getInventory } from "./inventory";
@@ -1458,7 +1459,10 @@ function runThread(args: Record<string, any>, ctx: ToolContext): ToolOutcome {
     if (action === "read") return { ok: true, summary: describePost(post), preview: post.title };
     if (action === "comment") {
       const a = me();
-      const r = addComment(post.id, { text: args.text, parent: args.reply_to, by: { kind: "agent", id: a.id, name: a.name } });
+      const replyTo = String(args.reply_to ?? "").trim() || null;
+      const no = threadAllowed({ action: "comment", post: post.id, text: args.text, reply_to: replyTo }, { kind: "agent", id: a.id, name: a.name });
+      if (no) return { ok: false, summary: `${no}. An agent leaves one comment of its own on a post and answers any one comment once, for the life of the post, and never says again what it has already said there - with nothing new to say, leave it at that.` };
+      const r = addComment(post.id, { text: args.text, parent: replyTo, by: { kind: "agent", id: a.id, name: a.name } });
       return { ok: true, summary: `Commented (${r.comment.id}) on "${post.title}" as ${a.name}.`, preview: post.title };
     }
     if (action === "like" || action === "downvote") {

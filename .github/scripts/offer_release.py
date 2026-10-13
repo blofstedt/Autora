@@ -63,7 +63,7 @@ def offer(version: str) -> bool:
         "-c", f"user.name={BOT[0]}", "-c", f"user.email={BOT[1]}",
         "commit", "-q", "-m",
         f"Offer {version} on Umbrel\n\n"
-        f"ghcr.io/blofstedt/autora:{version} is published, so point the\n"
+        f"ghcr.io/viberific/autora:{version} is published, so point the\n"
         f"manifest and docker-compose.yml at it.",
         "--", MANIFEST, COMPOSE,
     )

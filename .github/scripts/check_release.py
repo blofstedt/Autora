@@ -74,7 +74,14 @@ WATCHED = (
 
 COMPOSE = "blofstedt-autora/docker-compose.yml"
 
-IMAGE_LINE = re.compile(r'^\s*image:\s*"?ghcr\.io/blofstedt/autora:([^"\s]+)"?\s*$', re.MULTILINE)
+#: The registry path follows the GitHub account, and the account was renamed
+#: `blofstedt` -> `viberific` on 2026-10-12 (its packages moved with it, and
+#: the old path now answers "denied"). Both spellings are read, so the tag in
+#: a commit made before the rename still compares as the same tag.
+IMAGE_LINE = re.compile(
+    r'^\s*image:\s*"?ghcr\.io/(?:blofstedt|viberific)/autora:([^"\s]+)"?\s*$',
+    re.MULTILINE,
+)
 
 #: What Umbrel's own manifest parser (zod, in umbreld) insists on. An app
 #: missing any of these is dropped from the store's registry without a word --

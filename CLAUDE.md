@@ -16,7 +16,7 @@ change to `src/`, `server/`, `server.ts`, `package.json`, `public/`,
 
 Do not touch `version` in `umbrel-app.yml` or the image tag in
 `blofstedt-autora/docker-compose.yml`; the check fails if you do. After the
-merge, the image workflow builds and publishes `ghcr.io/blofstedt/autora:<version>`
+merge, the image workflow builds and publishes `ghcr.io/viberific/autora:<version>`
 and only then commits both to main (`.github/scripts/offer_release.py`), so
 Umbrel never offers an update whose image is still building ("manifest
 unknown").

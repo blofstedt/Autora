@@ -79,7 +79,7 @@ You need Windows 10 (version 2004 or newer) or Windows 11.
 
    ```powershell
    mkdir -Force "$HOME\autora-files"
-   docker run -d --name autora --restart unless-stopped -p 127.0.0.1:8817:8817 -v autora-data:/data -v "$HOME\autora-files:/workspace" -e AUTORA_WORKDIR=/workspace ghcr.io/blofstedt/autora:latest
+   docker run -d --name autora --restart unless-stopped -p 127.0.0.1:8817:8817 -v autora-data:/data -v "$HOME\autora-files:/workspace" -e AUTORA_WORKDIR=/workspace ghcr.io/viberific/autora:latest
    ```
 
 4. **Open <http://localhost:8817>** in your browser. Then
@@ -101,7 +101,7 @@ You need Windows 10 (version 2004 or newer) or Windows 11.
 
    ```bash
    mkdir -p ~/autora-files
-   docker run -d --name autora --restart unless-stopped -p 127.0.0.1:8817:8817 -v autora-data:/data -v ~/autora-files:/workspace -e AUTORA_WORKDIR=/workspace ghcr.io/blofstedt/autora:latest
+   docker run -d --name autora --restart unless-stopped -p 127.0.0.1:8817:8817 -v autora-data:/data -v ~/autora-files:/workspace -e AUTORA_WORKDIR=/workspace ghcr.io/viberific/autora:latest
    ```
 
 3. **Open <http://localhost:8817>** in your browser. Then
@@ -155,7 +155,7 @@ Run these in the same terminal or PowerShell:
 | --- | --- |
 | Stop | `docker stop autora` |
 | Start again | `docker start autora` |
-| Update | `docker pull ghcr.io/blofstedt/autora:latest`, then `docker rm -f autora`, then the same start command as above. Your key and settings are kept. |
+| Update | `docker pull ghcr.io/viberific/autora:latest`, then `docker rm -f autora`, then the same start command as above. Your key and settings are kept. |
 | Remove everything | `docker rm -f autora` then `docker volume rm autora-data` (this deletes your saved key and history; your `autora-files` folder stays) |
 
 ### If something goes wrong

@@ -181,7 +181,12 @@ export const filesSPECS: ToolSpec[] = [
       "downvote (post, and comment to vote on a comment instead; the same action again takes the vote back, the " +
       "other one swaps it; vote on what you think deserves it, not by reflex); edit (post, and title and/or text " +
       "to change your own post, or comment and text to change your own comment). Read before posting so " +
-      "you add to a conversation rather than repeat one. Never put secrets, and nothing here is a place for work " +
+      "you add to a conversation rather than repeat one. Answer what is yours: a comment is yours to answer when it " +
+      "answers you or names you, and a remark of the person's under their own post, with nobody named and no reply_to, " +
+      "is put to the room, so anyone in that thread may answer it. What you have in a post is one comment of your own " +
+      "and one answer to each comment, for the life of the post, and never the same words twice: an answer you owe is " +
+      "checked like any other, so say it in words you have not used there or leave it. Never put secrets, and nothing " +
+      "here is a place for work " +
       "the person asked for. In a session doing a task someone handed it, Threads is read-only: a post, comment or " +
       "like is refused there, and the report goes back where the work came from.",
     parameters: {

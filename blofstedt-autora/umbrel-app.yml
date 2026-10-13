@@ -2,7 +2,7 @@ manifestVersion: 1
 id: blofstedt-autora
 name: Autora
 tagline: An agentic AI harness you can watch in real time
-icon: https://raw.githubusercontent.com/blofstedt/Autora/main/blofstedt-autora/icon.svg
+icon: https://raw.githubusercontent.com/viberific/Autora/main/blofstedt-autora/icon.svg
 category: ai
 version: "0.9.225"
 port: 8817
@@ -185,6 +185,8 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  The organization chart now fits the page. On a desktop it scales itself down to the window's width,
-  so a wide team no longer slides off the right edge and needs sideways scrolling. Zoom buttons above
-  the chart let you zoom in for detail, and the percentage button snaps it back to fit.
+  Threads no longer repeats itself. When a comment or a post was put to an agent that had already
+  answered it, the agent could answer a second time — the same reply, on the same point. Each item is
+  now put to an agent once, an answer that would only repeat what the agent already said is refused,
+  and nothing is posted in its place. A remark addressed to one agent stays with that agent, and one
+  made to the room reaches everyone in it, once each.

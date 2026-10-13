@@ -1,14 +1,16 @@
 /**
- * A reply in Threads is owed an answer.
+ * A reply in Threads is owed an answer, and it is the only thing that is.
  *
- * The one a comment answers always replies (whatever its mood), whoever wrote the comment; and every other
- * agent who has taken part reads what changed and decides for itself, each in turn so they see each other.
+ * The one a comment answers always replies (whatever its mood), whoever wrote the comment. A comment is also put
+ * to anyone it names, and to nobody else: a thread where every arrival is read by everyone is a thread where the
+ * same handful of near-identical replies keeps arriving. The one exception is the person speaking to the thread
+ * itself, with nobody named: that is addressed to the room, and everyone in it answers, once each. And an agent
+ * says a thing once - one comment of its own on a post, one answer to any one comment, for the life of the post.
  *
  *   npx tsx tests/e2e-threadreplies.test.ts
  */
 import assert from "node:assert/strict";
 import { sleep, startApp, type App, type Seen } from "./e2e-harness";
-import { MAX_AGENT_RUN } from "../server/threadlife";
 
 let passed = 0;
 async function test(name: string, fn: () => Promise<void>) {
@@ -32,19 +34,38 @@ async function main() {
     const comments = async () => (await app.api("GET", `/api/threads/${post}`)).body.post.comments as { id: string; parent: string | null; by: { name: string }; text: string }[];
 
     /* Nothing is asked of anyone until the person's reply: the forum's own life gets "none" here, so the replies are the only thing under test. */
-    let benSaid = 0;
+    let mine = "";
     let armed = false;
+    /* When this is on, an owed answer comes back as words the agent has already used in the thread. */
+    let echo = false;
+    /* Each scripted answer is written in words of its own. The no-repeat rule is real, so a fixture that hands an
+       agent the same phrase twice in one thread has that answer refused - which is how the room case below first
+       failed - and the case then fails for a reason that has nothing to do with what it is testing. */
+    let told = 0;
+    const freshWords = (me: string) => {
+      const lines = [
+        "The tools page could be simpler, I think.",
+        "I keep coming back to the docs, and they need work.",
+        "Nothing much from me, only that the release looks fine.",
+        "Worth saying: I read it the other way round.",
+        "A short thought about the tools page and the docs.",
+        "I have a question about the next release.",
+      ];
+      const line = lines[told % lines.length];
+      told += 1;
+      return `${me}: ${line}`;
+    };
     app.decide = (req) => {
       if (!req.system.includes("a small forum")) return null;
       const me = who(req);
       if (req.last.includes("has just replied to you")) {
         const reply = /reply_to "(cm_[a-z0-9]+)"/.exec(req.last)?.[1] ?? null;
-        return json({ action: "comment", post, reply_to: reply, text: `${me} answers` });
+        return json({ action: "comment", post, reply_to: reply, text: echo ? `${me} was here first` : `${me} answers` });
       }
-      if (req.last.includes("not addressed to you") && me === "Ben" && armed && benSaid === 0) {
-        benSaid += 1;
-        const adaReply = [...req.last.matchAll(/\[(cm_[a-z0-9]+)\] Ada[^:\n]*: Ada answers/g)].pop()?.[1] ?? null;
-        return json({ action: "comment", post, reply_to: adaReply, text: "Ben chimes in" });
+      /* Asked to read a change that is not addressed to it: answer the person's latest comment, the one that changed. */
+      if (armed && req.last.includes("not addressed to you")) {
+        const toPerson = [...req.last.matchAll(/\[(cm_[a-z0-9]+)\] [^\n]*?\(the person\)/g)].pop()?.[1] ?? null;
+        return json({ action: "comment", post, reply_to: toPerson, text: freshWords(me) });
       }
       return json({ action: "none" });
     };
@@ -63,7 +84,7 @@ async function main() {
     await test("a reply to an agent always makes that agent answer, as a reply to it", async () => {
       app.seen.length = 0;
       armed = true;
-      const mine = (await app.api("POST", `/api/threads/${post}/comments`, { text: "Ada, what about the tools page?", parent: adas.id })).body.comment.id as string;
+      mine = (await app.api("POST", `/api/threads/${post}/comments`, { text: "Ada, what about the tools page?", parent: adas.id })).body.comment.id as string;
       const deadline = Date.now() + 20_000;
       let list = await comments();
       while (!list.some((c) => c.by.name === "Ada" && c.parent === mine) && Date.now() < deadline) { await sleep(250); list = await comments(); }
@@ -72,30 +93,122 @@ async function main() {
       assert.equal(answer!.text, "Ada answers");
     });
 
-    await test("the others in the thread are asked what they make of it: one adds something, one stays silent", async () => {
-      await sleep(1500);
-      const reviews = app.seen.filter((r) => r.system.includes("a small forum") && r.last.includes("not addressed to you"));
-      const asked = new Set(reviews.map(who));
-      assert.ok(asked.has("Ben") && asked.has("Cy"), `both read it (${[...asked].join(", ")})`);
-      assert.ok(!asked.has("Ada") || reviews.filter((r) => who(r) === "Ada").length >= 0);
-      const first = reviews.find((r) => who(r) === "Ben" || who(r) === "Cy")!;
-      assert.ok(first.last.includes("[NEW]"), "what changed is marked");
+    await test("only the one it is addressed to is asked: the others are left in peace", async () => {
+      const mark = app.seen.length;
+      await sleep(2000);
+      const reviews = app.seen.slice(mark).filter((r) => r.system.includes("a small forum") && r.last.includes("not addressed to you"));
+      assert.deepEqual(reviews.map(who), [], "one agent was answered, so no one else was called in");
       const list = await comments();
-      assert.ok(list.some((c) => c.by.name === "Ben" && c.text === "Ben chimes in"), "Ben chimed in");
-      assert.ok(!list.some((c) => c.by.name === "Cy" && c.text !== "Cy was here first"), "Cy had nothing to add");
+      const answers = list.filter((c) => c.parent === mine);
+      assert.equal(answers.length, 1, "exactly one answer to the person's comment");
+      assert.equal(answers[0].by.name, "Ada", "from the one it was addressed to");
+      for (const name of ["Ada", "Ben", "Cy"]) {
+        assert.equal(list.filter((c) => c.by.name === name && !c.parent).length, 1, `${name} has one comment of its own on the post, no more`);
+      }
     });
 
-    await test("an agent answered by another agent answers too, and the exchange is bounded", async () => {
-      const deadline = Date.now() + 20_000;
+    await test("a comment naming an agent is put to it, and to nobody it does not name", async () => {
+      app.seen.length = 0;
+      const asked = (await app.api("POST", `/api/threads/${post}/comments`, { text: "Ben, and Ada: what about the tools page?" })).body.comment.id as string;
+      const started = Date.now();
+      const deadline = started + 45_000;
       let list = await comments();
-      const ben = () => list.find((c) => c.text === "Ben chimes in")!;
-      while (!list.some((c) => c.by.name === "Ada" && c.parent === ben()?.id) && Date.now() < deadline) { await sleep(250); list = await comments(); }
-      assert.ok(list.some((c) => c.by.name === "Ada" && c.parent === ben().id), "Ada answered Ben");
-      await sleep(3000);
-      list = await comments();
-      /* The run stops once it passes MAX_AGENT_RUN; the opening comments come on top of it. */
-      assert.ok(list.length <= MAX_AGENT_RUN + 8, `agents answering each other stopped (${list.length} comments)`);
+      while (list.filter((c) => c.parent === asked).length < 2 && Date.now() < deadline) { await sleep(250); list = await comments(); }
+      assert.deepEqual(
+        list.filter((c) => c.parent === asked).map((c) => c.by.name).sort(),
+        ["Ada", "Ben"],
+        "both of the named agents answered the person's comment",
+      );
+      const reviews = app.seen.filter((r) => r.system.includes("a small forum") && r.last.includes("not addressed to you"));
+      assert.ok(!reviews.some((r) => who(r) === "Cy"), "Cy was not asked: the comment is not about it");
+      assert.ok(reviews.some((r) => r.last.includes("[NEW]")), "and what changed is marked in what they read");
+      for (const name of ["Ada", "Ben", "Cy"]) {
+        const said = list.filter((c) => c.by.name === name).map((c) => c.text);
+        assert.equal(new Set(said).size, said.length, `${name} never says the same thing twice`);
+      }
     });
+
+    await test("the agent a comment answers is owed an answer even now, and answers it once", async () => {
+      const list0 = await comments();
+      const bens = list0.find((c) => c.by.name === "Ben" && c.parent)!;
+      const back = (await app.api("POST", `/api/threads/${post}/comments`, { text: "Ben, is that settled?", parent: bens.id })).body.comment.id as string;
+      const deadline = Date.now() + 25_000;
+      let list = await comments();
+      while (!list.some((c) => c.by.name === "Ben" && c.parent === back) && Date.now() < deadline) { await sleep(250); list = await comments(); }
+      assert.equal(list.filter((c) => c.by.name === "Ben" && c.parent === back).length, 1, "Ben answered the reply to him, once");
+      await sleep(2000);
+      list = await comments();
+      assert.equal(list.filter((c) => c.parent === back).length, 1, "and no one else piled in");
+    });
+    await test("a word to the room, naming nobody, is put to everyone in it, once each", async () => {
+      app.seen.length = 0;
+      const opening = (await comments()).length;
+      const room = (await app.api("POST", `/api/threads/${post}/comments`, { text: "What should we all be thinking about?" })).body.comment.id as string;
+      /* Three agents are asked in turn, so the wait has to survive a loaded machine: 60s was not enough when a
+         typecheck ran beside this test, and the case then failed with the third agent still mid-turn. */
+      const deadline = Date.now() + 90_000;
+      let list = await comments();
+      while (new Set(list.filter((c) => c.parent === room).map((c) => c.by.name)).size < 3 && Date.now() < deadline) { await sleep(250); list = await comments(); }
+      const answers = list.filter((c) => c.parent === room);
+      assert.deepEqual([...answers.map((c) => c.by.name)].sort(), ["Ada", "Ben", "Cy"], "everyone in it answered the person's remark, and nobody from outside did");
+      const asked = app.seen.filter((r) => r.system.includes("a small forum") && r.last.includes("not addressed to you"));
+      assert.deepEqual(asked.map(who).sort(), ["Ada", "Ben", "Cy"], "each of them was asked once, and nobody twice");
+      await sleep(2500);
+      list = await comments();
+      /* Exactly the person's remark and one answer from each of the three: nothing added by an agent
+         answering another agent, and nothing said twice. */
+      assert.equal(list.length, opening + 4, `the remark and three answers, and nothing else (${list.length - opening} comments added)`);
+      assert.equal(list.filter((c) => c.parent === room).length, 3, "and nobody answered a second time");
+    });
+
+    await test("an owed answer that would only repeat the agent is refused, and nothing is posted in its place", async () => {
+      const list0 = await comments();
+      const asks = list0.filter((c) => c.by.name === "Ada" && c.parent).pop()!;
+      const mark = app.seen.length;
+      echo = true;
+      const said = (await app.api("POST", `/api/threads/${post}/comments`, { text: "Ada, one more thing?", parent: asks.id })).body.comment.id as string;
+      /* Wait for the ask, so that what follows is about a refusal and not merely about an answer that has not come yet. */
+      const owed = () => app.seen.slice(mark).filter((r) => who(r) === "Ada" && r.last.includes("has just replied to you"));
+      const deadline = Date.now() + 20_000;
+      while (owed().length === 0 && Date.now() < deadline) { await sleep(250); }
+      assert.ok(owed().length > 0, "Ada was asked for the answer she owed");
+      await sleep(5000);
+      const list = await comments();
+      assert.equal(list.length, list0.length + 1, "the only thing added is the person's comment: the echo was refused");
+      assert.equal(list[list.length - 1].id, said, "the person's comment is still the thread's last word");
+      echo = false;
+    });
+
+    await test("a scripted model that comments on the post twice, or answers the same comment twice, is refused", async () => {
+      /* Through the thread tool, as a scripted model would, with nothing kind about it. The thread's last word is the
+         person's, so what refuses these two is the budget itself - a second comment of its own, and a second answer to
+         one comment - and not the "second comment in a row" or the no-repeat rules the cases above are about. */
+      const list0 = await comments();
+      const theirs = (c: { by: { name: string } }) => !["Ada", "Ben", "Cy"].includes(c.by.name);
+      const answered = list0.filter(theirs).find((c) => list0.some((a) => a.by.name === "Ada" && a.parent === c.id))!;
+      assert.notEqual(list0[list0.length - 1].by.name, "Ada", "with the person last, the budget is what refuses these");
+
+      const s2 = await app.newSession("scripted", "build");
+      app.script.push({
+        tools: [
+          { name: "thread", args: { action: "comment", post, text: "Ada: one more thought of my own, in words I have not used here.", as: "Ada" } },
+          { name: "thread", args: { action: "comment", post, text: "Ada: and a second answer to that same comment.", reply_to: answered.id, as: "Ada" } },
+        ],
+      });
+      app.script.push({ text: "done" });
+      await app.turn(s2, "try to say two things at once");
+
+      const told = app.seen
+        .flatMap((r) => r.messages)
+        .filter((m) => m.role === "tool")
+        .map((m) => String(m.content ?? ""))
+        .join("\n");
+      assert.match(told, /it has already commented on this post/, "a second comment of its own was refused");
+      assert.match(told, /it has already answered that comment/, "a second answer to the same comment was refused");
+      const list = await comments();
+      assert.equal(list.length, list0.length, "and neither was posted in its place");
+    });
+
   } finally {
     await app.stop();
   }

@@ -69,7 +69,7 @@ import { agentBrief, findAgent, getAgent, LEAD_ID, listAgents, recordCollab, rec
 import { agentMind, clusters, forgetNote, remember, teach } from "./server/agentmind";
 import {
   LifeGate, MAX_AGENT_RUN, MAX_WONDERS, PACE, isNamed, perHourFor, URGE_AT, addresseeOf, allowed as lifeAllowed, reactDelayMs, replyChance, answered, goneQuiet, knownText, lastActivity, quietFrom, unseenBy,
-  lifePrompt, lifeSystem, parseChoice, personWaiting, pickAgent, reactionOf, replyPrompt, reviewPrompt, reviewersOf, somethingNew, trailingAgentRun, urgeOf,
+  lifePrompt, lifeSystem, parseChoice, personWaiting, pickAgent, reactionOf, replyPrompt, reviewPrompt, reviewersOf, somethingNew, toTheRoom, trailingAgentRun, urgeOf,
   vetLinks, wonderNote, wonderText, wondersOf,
 } from "./server/threadlife";
 import { addComment, createPost, getPost, listPosts, onThreadActivity, onThreadReply, toggleLike } from "./server/threads";
@@ -3195,8 +3195,13 @@ async function threadLifeStep(): Promise<void> {
 
 /* A reply is owed an answer. When anyone comments in Threads, the one the comment answers (the author of the comment it
    replies to, or of the post) always replies, whatever its mood and however recently it spoke; the person's own words are
-   never held back by the forum's hourly ceiling. Then every other agent in the thread, and any the comment names, reads what
-   changed and decides for itself whether to add something: each is asked once, in turn so that they see each other's words,
+   never held back by the forum's hourly ceiling. "However recently it spoke" is about the ceiling and its sleep, not the
+   budget: the answer it owes is checked like any other comment, so it answers in words it has not used in this thread or
+   says nothing at all. Then every other agent in the thread, and any the comment names, reads what
+   changed and decides for itself whether to add something (and when the person speaks to the thread itself, with nobody
+   named, it is put to everyone in it - the mood's reviewer cap is for colleagues chipping in, not for a question of
+   theirs): each is asked once,
+   in turn so that they see each other's words,
    and "none" is a fine answer. Agents answering each other stop after MAX_AGENT_RUN comments in a row until the person
    speaks again, and what they add counts against the same ceiling as everything else the forum does. Switched, like the
    rest of Threads' own life, by `threadsAlive`. */
@@ -3252,10 +3257,11 @@ async function threadReact(postRef: string, commentRef: string): Promise<void> {
       if (said?.again) lifeSleep.set(agent.id, Date.now() + said.again * 60_000);
       if (!said) return false;
       const me = { kind: "agent" as const, id: agent.id, name: agent.name };
-      if (!owed) {
-        const why = lifeAllowed({ action: "comment", post: postRef, text: said.text, reply_to: said.reply_to }, me);
-        if (why) { log("info", "threads", `${agent.name}: skipped, ${why}`); return false; }
-      }
+      /* An owed answer is checked like any other telling. One that owes a reply is expected to say something, but not
+         the same words it has already said in this thread: refused, it falls through to none rather than posting the
+         echo this budget exists to stop - and both prompts tell it so before it writes. */
+      const why = lifeAllowed({ action: "comment", post: postRef, text: said.text, reply_to: said.reply_to }, me);
+      if (why) { log("info", "threads", `${agent.name}: ${owed ? "owed answer" : "comment"} not made, ${why}`); return false; }
       const clean = redactDeep({ text: said.text, gif: said.gif }) as { text: string; gif?: string };
       const gif = clean.gif && !lastWasGif(me.id) ? await findGif(clean.gif, gifKeys()) : null;
       addComment(postRef, { text: vetLinks(clean.text, knownText(agent)), parent: said.reply_to, by: me, gif });
@@ -3276,11 +3282,16 @@ async function threadReact(postRef: string, commentRef: string): Promise<void> {
     }
     // Everyone else in the thread reads what changed and decides.
     const reviewers = reviewersOf(first, trigger, roster, skip, !state.threadsUnprompted).sort(() => Math.random() - 0.5);
+    /* The person speaking to the room is put to everyone in it, once each. The mood's reviewer cap, and the chance that
+       a colleague has nothing to add, are for agents chipping in of their own accord - not for a question of the
+       person's, where two of three happening to see it is two of three answering it. */
+    const toRoom = toTheRoom(first, trigger, roster);
+    const reviewCap = toRoom ? reviewers.length : PACE[state.threadsMood].reviewers;
     let asked = 0;
     for (const agent of reviewers) {
-      if (asked >= PACE[state.threadsMood].reviewers || !room()) break;
+      if (asked >= reviewCap || !room()) break;
       // Most of the time a colleague has nothing to add; the person's words get more attention than another agent's.
-      if (!isNamed(trigger.text, agent.name) && Math.random() > (byPerson ? 0.7 : replyChance(run, state.threadsMood) * 0.5) && replyChance(0) < 1) continue;
+      if (!toRoom && !isNamed(trigger.text, agent.name) && Math.random() > (byPerson ? 0.7 : replyChance(run, state.threadsMood) * 0.5) && replyChance(0) < 1) continue;
       const now = getPost(postRef);
       if (!now || !somethingNew(now, agent.id, reactSeen.get(`${postRef}|${agent.id}`) ?? 0)) continue;
       asked += 1;

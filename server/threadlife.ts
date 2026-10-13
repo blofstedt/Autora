@@ -284,11 +284,11 @@ export function voiceOf(agent: { id: string; name: string }): string {
 const openingOf = (text: string, words = 4): string => text.replace(/\s+/g, " ").trim().split(" ").slice(0, words).join(" ");
 
 /** The last things said in the forum, newest last: what an agent should not sound like. */
-function recentSayings(limit: number): { by: string; text: string }[] {
-  const all: { at: number; by: string; text: string }[] = [];
+function recentSayings(limit: number): { by: string; text: string; post: string }[] {
+  const all: { at: number; by: string; text: string; post: string }[] = [];
   for (const p of listPosts("new")) {
-    all.push({ at: p.created, by: p.by.name, text: p.body || p.title });
-    for (const c of p.comments) all.push({ at: c.created, by: c.by.name, text: c.text });
+    all.push({ at: p.created, by: p.by.name, text: p.body || p.title, post: p.id });
+    for (const c of p.comments) all.push({ at: c.created, by: c.by.name, text: c.text, post: p.id });
   }
   return all.sort((a, b) => a.at - b.at).slice(-limit);
 }
@@ -343,7 +343,7 @@ export function lifeSystem(agent: LifeAgent, colleagues: string[], colleaguesByI
       (gifs ? 'A post or comment may carry "gif": two to four words to search a GIF by (facepalm, victory dance), for a reaction a picture says better (a celebration, a groan, a mic drop, a facepalm), or just for fun. Use them in your own taste, not two messages in a row, and not more than one message in four. You do not write any address. ' : "") +
       'Any of them may also carry "note": one sentence worth keeping for yourself (what you learned, or what a colleague is good at), "wonder": something you are curious about and would like to look into when you have a quiet moment (one short question; only when something really made you curious), and "again": the minutes until you want to look at the forum again (1 to 720: a minute or two while a conversation is live and you are in it; longer only when it is quiet and you have nothing to add).',
     variety(),
-    "Prefer answering to starting: if the person posted or commented and nobody has answered, answer them. If a colleague just said something to you or in a thread you are in, answer it. Do not comment twice in a row on the same post and do not repeat what is already said; a short reaction or a joke is worth saying, but say nothing (none) when you truly have nothing to add.",
+    "Prefer answering to starting: if the person posted or commented and nobody has answered, answer them. If a colleague just said something to you or in a thread you are in, answer it. Answer what is yours: a comment is yours to answer when it answers you or names you, and a remark of the person's under their own post, with nobody named and no reply_to, is put to the room, so anyone in that thread may answer it. What you have in a thread is one comment of your own on the post and one answer to each comment, for the life of the post, and the same words never twice: an owed answer is checked like any other, so when what is owed is something you have already said there, say {\"action\":\"none\"} - saying it again is refused and leaves the person with nothing. A short reaction or a joke is worth saying, and a new thought always is; say none when you truly have nothing to add.",
   ].filter(Boolean).join("\n\n");
 }
 
@@ -399,14 +399,15 @@ export function parseChoice(raw: string): LifeChoice {
   return { ...act, ...extra };
 }
 
-/** Whether it is worth doing: nothing repeated, nobody talking to themselves. */
+/**
+ * Whether it is worth doing: nothing repeated, nobody talking to themselves, and - in a thread - one comment straight
+ * on a post and one answer to each comment, for the life of the post. An agent may comment on the post once, and may
+ * answer any one comment once; what it may not do is keep arriving at the same post with the same words.
+ */
 export function allowed(choice: LifeChoice, me: Who): string | null {
-  if (choice.action === "post" || choice.action === "comment") {
-    const mine = recentSayings(12).map((x) => x.text);
-    const text = choice.action === "post" ? `${choice.title} ${choice.text}` : choice.text;
-    if (echoes(text, mine)) return "it repeats what was just said";
-  }
   if (choice.action === "post") {
+    const mine = recentSayings(12).map((x) => x.text);
+    if (echoes(`${choice.title} ${choice.text}`, mine)) return "it repeats what was just said";
     const same = listPosts("new").some((p) => p.title.toLowerCase() === choice.title.toLowerCase());
     return same ? "that post is already there" : null;
   }
@@ -417,6 +418,20 @@ export function allowed(choice: LifeChoice, me: Who): string | null {
     const last = post.comments[post.comments.length - 1];
     if (last && last.by.id === me.id) return "it would be a second comment in a row";
     if (!last && post.by.id === me.id) return "it would be commenting on its own post with no one else there";
+    const parent = choice.reply_to ?? null;
+    if (!parent) {
+      if (commentedOnPost(post, me.id)) return "it has already commented on this post";
+    } else {
+      const to = post.comments.find((c) => c.id === parent);
+      if (!to) return `there is no comment ${parent} in ${post.id} to answer`;
+      if (answeredComment(post, me.id, parent)) return "it has already answered that comment";
+    }
+    if (repeated(post, me.id, choice.text)) return "it would say what it has already said in this thread";
+    /* Nothing that has just been said elsewhere in the forum either. This is the same rule as the budget above, not the
+       blunter `echoes` the posts go through: shared wording alone cannot tell "a new claim sharing the frame" from "the
+       same claim again", and a comment refused for being the wrong shape is a comment the thread never hears. What the
+       budget does not see is the other posts, so those are what this asks about. */
+    if (tellingAgain(choice.text, recentSayings(12).filter((x) => x.post !== post.id).map((x) => x.text))) return "it repeats what was just said";
   }
   if (choice.action === "like") {
     const target = choice.comment ? post.comments.find((c) => c.id === choice.comment) : post;
@@ -435,6 +450,99 @@ export function allowed(choice: LifeChoice, me: Who): string | null {
    --------------------------------------------------------------------------- */
 
 type Comment = Post["comments"][number];
+
+/* ---------------------------------------------------------------------------
+   The budget, and the words. A thread fills up with the same handful of replies
+   because an agent keeps arriving at the same post with the same thought in
+   slightly different words. What an agent has in a post is one comment of its
+   own on it, and one answer to any one comment, for the life of the post; and
+   whatever it says there, it says once. Pure here, and checked by `allowed`
+   below - which both the forum's own life and the agent's thread tool go
+   through, so a comment refused here is refused however it was going to arrive.
+   --------------------------------------------------------------------------- */
+
+/** What a text says once case, punctuation and spacing stop making two tellings of it look different. */
+export function shapeOf(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** The words of a text, for asking how much of one telling is in another. Not `wordsOf` above, which drops short words: this budget counts every one of them, so "fair" against "fair" is seen. */
+function tellingWords(text: string): Set<string> {
+  return new Set(shapeOf(text).split(" ").filter(Boolean));
+}
+
+/** How much two texts say the same thing: 1 is every word shared, 0 is nothing. */
+function sameness(a: string, b: string): number {
+  const x = tellingWords(a);
+  const y = tellingWords(b);
+  if (!x.size || !y.size) return 0;
+  let shared = 0;
+  x.forEach((w) => { if (y.has(w)) shared += 1; });
+  return shared / (x.size + y.size - shared);
+}
+
+/** The words one telling has that the other has not, counted: how far apart two tellings are, in words. */
+function differed(a: string, b: string): number {
+  const x = tellingWords(a);
+  const y = tellingWords(b);
+  let only = 0;
+  x.forEach((w) => { if (!y.has(w)) only += 1; });
+  y.forEach((w) => { if (!x.has(w)) only += 1; });
+  return only;
+}
+
+/** How much of a long comment may be shared with another before it reads as the same words said again. */
+export const REPEAT_SAME = 0.7;
+/** Comments shorter than this many words are repeats only when they are the same words: "fair", "ha", "+1" are replies, not echoes. */
+export const REPEAT_SHORT = 3;
+/**
+ * Two tellings sharing this much wording are the same thought said again - unless they are this few words apart, which
+ * is not the same thought but a different one: a change of subject ("the docs" -> "the tools page"), a correction
+ * ("is right" -> "is wrong"), one word of emphasis added or dropped. Nearness of wording alone cannot tell those
+ * apart - "...before it is usable" and "...before anyone can use it" share no more than a subject swap does - so a
+ * small edit is taken as what it is and only a telling that has been rewritten is refused.
+ */
+export const REPEAT_EDIT = 3;
+
+/**
+ * Whether `text` is one of `others` said again, by the rule below: the same words however they are spaced or
+ * punctuated, or - in a telling long enough to have a point, and more than REPEAT_EDIT words away from it - very
+ * nearly the same words. A short reply is held to a short reply alone, so "fair" after a paragraph is a reply and
+ * "fair" after "fair" is the same thing twice.
+ */
+function tellingAgain(text: string, others: readonly string[]): boolean {
+  const shape = shapeOf(text);
+  if (!shape) return false;
+  return others.some((other) => {
+    if (shapeOf(other) === shape) return true;
+    if (tellingWords(text).size < REPEAT_SHORT || tellingWords(other).size < REPEAT_SHORT) return false;
+    if (sameness(text, other) < REPEAT_SAME) return false;
+    return differed(text, other) > REPEAT_EDIT;
+  });
+}
+
+/**
+ * Whether `text` would say what `agentId` has already said in this thread: its own words of it, judged by the rule
+ * above. This is the one that matters - a thread is where the same handful of replies kept arriving.
+ */
+export function repeated(post: Post, agentId: string, text: string): boolean {
+  return tellingAgain(text, post.comments.filter((c) => c.by.id === agentId).map((c) => c.text));
+}
+
+/** Whether `agentId` has already spent its one comment straight on this post - the one with no reply_to. */
+export function commentedOnPost(post: Post, agentId: string): boolean {
+  return post.comments.some((c) => c.by.id === agentId && !c.parent);
+}
+
+/** Whether `agentId` has already answered `commentId`. */
+export function answeredComment(post: Post, agentId: string, commentId: string): boolean {
+  return post.comments.some((c) => c.by.id === agentId && c.parent === commentId);
+}
 
 /** The most comments in a row, with no word from the person between, that agents may add to one thread by answering each other. */
 export const MAX_AGENT_RUN = 5;
@@ -484,13 +592,41 @@ export function answered(post: Post, comment: Comment, agentId: string): boolean
 }
 
 /**
- * The agents who should read this change: everyone who has taken part in the thread (wrote the post or a comment) and
- * everyone the comment names, except the one who wrote it and the one it answers (who has their own job to do).
+ * The agents a change should be put to: those it applies to, and nobody else. That is the one it is addressed to (the
+ * author of the comment it answers, or of the post) and anyone it names. Everyone else in the thread is left in peace;
+ * a forum where every arrival is read by everyone is a forum where the same handful of near-identical replies keeps
+ * arriving. The one who wrote the change, and anyone the caller has already dealt with (`skip`), are left out.
+ *
+ * An agent that has already had its one comment of its own on this post is not left out when it is the one addressed:
+ * a comment answering it is owed an answer, and answering is a separate budget from commenting.
+ *
+ * The one exception is the person speaking to the thread itself: a comment of theirs on their own post, with no
+ * reply_to and nobody named, is addressed to the room (see `toTheRoom`), and everyone who has posted or commented in
+ * that thread answers it, once each: the mood's reviewer cap in server.ts is for colleagues chipping in, not for a
+ * question of the person's. Picking one of them by accident of address
+ * order is how a remark of theirs goes unanswered. Under an agent's post a remark of theirs is not addressed to the
+ * room at all: the agent whose post it is answers, as the one addressed. `namedOnly` (the forum set to answer only
+ * when spoken to) keeps the old narrower reading: an agent is asked when it is named, and otherwise not at all.
  */
+/**
+ * Whether this comment is the person speaking to the thread itself: their own post, nothing answered, nobody named.
+ * That one is addressed to the room rather than to any agent, so everyone who has taken part in the thread answers it.
+ * The caller reads this to lift the reviewer cap and the pacing: a remark of the person's is nobody's spare moment.
+ */
+export function toTheRoom(post: Post, comment: Comment, roster: { name: string }[]): boolean {
+  const parent = comment.parent ? post.comments.find((c) => c.id === comment.parent) : null;
+  return comment.by.kind === "user" && post.by.kind === "user" && !parent && !roster.some((a) => mentions(comment.text, a.name));
+}
+
 export function reviewersOf<T extends { id: string; name: string }>(post: Post, comment: Comment, roster: T[], skip: string[], namedOnly = false): T[] {
-  const inThread = new Set([post.by.id, ...post.comments.map((c) => c.by.id)]);
+  const parent = comment.parent ? post.comments.find((c) => c.id === comment.parent) : null;
+  const to = parent ? parent.by.id : post.by.id;
+  const room = toTheRoom(post, comment, roster);
+  const inIt = (a: T) => post.by.id === a.id || post.comments.some((c) => c.by.id === a.id);
   return roster.filter((a) =>
-    a.id !== comment.by.id && !skip.includes(a.id) && ((!namedOnly && inThread.has(a.id)) || mentions(comment.text, a.name)));
+    a.id !== comment.by.id &&
+    !skip.includes(a.id) &&
+    ((!namedOnly && (a.id === to || (room && inIt(a)))) || mentions(comment.text, a.name)));
 }
 
 /** Whether anyone but `agentId` has said something in the thread since the agent last read it (`seen` comments of it). */
@@ -515,13 +651,13 @@ function threadView(post: Post, me: string, firstNew: number): string {
 /** What a reply owes: answer the one comment, in this thread. */
 export function replyPrompt(post: Post, trigger: Comment, me: string): string {
   const from = trigger.by.kind === "user" ? "the person" : trigger.by.name;
-  return `${threadView(post, me, post.comments.indexOf(trigger))}\n\n${from} has just replied to you. Answer them: reply with a comment on "${post.id}" with reply_to "${trigger.id}". It is owed, so do say something (a short, real answer in your own voice; a joke or a question back is fine if that is the honest reply), not "none".`;
+  return `${threadView(post, me, post.comments.indexOf(trigger))}\n\n${from} has just replied to you. Answer them: reply with a comment on "${post.id}" with reply_to "${trigger.id}". It is owed, so do say something (a short, real answer in your own voice; a joke or a question back is fine if that is the honest reply), not "none" - unless it would be what you have already said in this thread, which is refused, in which case say none rather than the same words again.`;
 }
 
 /** What a colleague asks of everyone else in the thread: has anything changed that is worth a word from you? */
 export function reviewPrompt(post: Post, trigger: Comment, me: string, seen: number): string {
   const from = trigger.by.kind === "user" ? "the person" : trigger.by.name;
-  return `${threadView(post, me, Math.min(seen, post.comments.indexOf(trigger)))}\n\n${from} has just said something in this thread you are in, and it is not addressed to you. Read what changed (the [NEW] lines) and decide: does it call for something from you, because you know something useful, you disagree, you were named, or a short reaction is worth it? If so reply with a comment on "${post.id}" (reply_to the comment you answer, or null). If you have nothing to add, say {"action":"none"}: silence is a good answer and most of the time the right one.`;
+  return `${threadView(post, me, Math.min(seen, post.comments.indexOf(trigger)))}\n\n${from} has just said something in this thread you are in, and it is not addressed to you. Read what changed (the [NEW] lines) and decide: does it call for something from you, because you know something useful, you disagree, you were named, or a short reaction is worth it? If so reply with a comment on "${post.id}" (reply_to the comment you answer, or null). Say it once: an agent answers any one comment once, and leaves one comment of its own on the post, for the life of the post - if you have already said your piece there, or the tool asks you again about the same comment, leave it. Never send the same thought again, in these words or in other ones: that is refused whether the answer was owed or chosen, so say {"action":"none"} instead. If you have nothing to add, say {"action":"none"}: silence is a good answer and most of the time the right one.`;
 }
 
 /**

@@ -65,7 +65,7 @@ jobs:
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/blofstedt/autora
+          images: ghcr.io/viberific/autora
           # :latest only ever from main.
           tags: |
             type=raw,value=latest,enable=${{ github.event_name != 'pull_request' }}
