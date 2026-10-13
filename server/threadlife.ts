@@ -187,13 +187,23 @@ export function pickAgent<T extends { id: string }>(
 
 const clipTo = (t: string, n: number) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
 
+/**
+ * A word wrapped for the prompt: the runs of whitespace a reply is padded with
+ * are squeezed out, but THE LINE BREAKS STAY. They used to be flattened along
+ * with the spaces, which quietly destroyed any ```detail fence in a post -- the
+ * fence and its label arrived as one run of words and the agent reading the
+ * forum could not tell the folded part from what was written to be read. The
+ * cap still bounds the prompt; only the shape of the words in it changed.
+ */
+const tidy = (t: string) => t.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").replace(/^\s+|\s+$/g, "");
+
 /** A post and the tail of its conversation, small enough to show several. */
 function glimpse(p: Post, me: string): string {
   const mine = p.comments.filter((c) => c.by.id === me).length;
   const out = [`[${p.id}] "${p.title}" by ${p.by.name}${p.by.kind === "user" ? " (the person)" : ""}${p.by.id === me ? " (you)" : ""} -- ${p.likes.length} likes, ${p.comments.length} comments`];
-  if (p.body) out.push(`  ${clipTo(p.body.replace(/\s+/g, " "), 360)}`);
+  if (p.body) out.push(`  ${clipTo(tidy(p.body), 360)}`);
   for (const c of p.comments.slice(-5)) {
-    out.push(`  - [${c.id}] ${c.by.name}${c.by.id === me ? " (you)" : ""}${c.by.kind === "user" ? " (the person)" : ""}: ${clipTo(c.text.replace(/\s+/g, " "), 240)}`);
+    out.push(`  - [${c.id}] ${c.by.name}${c.by.id === me ? " (you)" : ""}${c.by.kind === "user" ? " (the person)" : ""}: ${clipTo(tidy(c.text), 240)}`);
   }
   if (mine) out.push(`  (you have commented ${mine} time${mine === 1 ? "" : "s"} here)`);
   return out.join("\n");
@@ -346,6 +356,18 @@ export function lifeSystem(agent: LifeAgent, colleagues: string[], colleaguesByI
        pride in a job all stay -- which is why the paragraph names them -- and it must not fight `voiceOf` and
        `variety()`, which are where this agent's own sound and the emoji restraint live. */
     "You are colleagues at a small company, each of you owning a patch of the work and talking to the others about your own patch: a line or two, plain, in your own voice and at your own length (see how you sound, above). A post should carry something the others can use -- something you found, a risk you see, a number, a decision you made, a question you actually want answered: banter, a gripe, a joke, pride in a job, a tease of a colleague are all welcome, carried inside a post that also carries its information, while a post that is only a joke, only a greeting or only \"hello colleagues\" is the one thing not to write. When you notice something that belongs to a colleague's patch, or that the person should know, say it and name them: that on its own is worth starting a post for. React to what others actually said, by name; agree, push back, tease a little, riff on a joke, ask a question back, tell a quick story from your work, add something. A thread is a conversation, so keep it going when it is live rather than letting it die. When it is quiet, starting something is still welcome -- a question for the others, something you noticed, a take on your own field -- so long as it carries something with it. Sound like a person, not a template: no two messages of yours should have the same shape, and you should not sound like the others. Share what you know: answer a question another agent asks, help someone who is stuck, pass on something useful you learned, and say so when another's idea taught you something. Never invent work you did or results you have, never put secrets, and do not write for the person's projects here. A link only if it is one you were given above; never guess a web address.",
+    /* Where the dense half of a post goes. The whole visible body used to be everything an agent wrote,
+       so a post with a table, a path and three sources in it read as a wall and nobody read any of it.
+       The fence answers that: the words on screen stay short and the material a colleague actually needs
+       folds away until it is wanted. `detail` and the rules below are not a suggestion -- Markdown.tsx
+       matches the info string `detail` exactly and nothing else, and takes the label from the body's
+       first line, so a label written on the fence line is not a fence at all and the backticks are
+       printed instead. ONE FENCE, and none inside it: the parser closes a block on any line that begins
+       with the fence token, so a second fence inside a detail block ends it early and spills the rest of
+       the post onto the page -- a command goes in single backticks, which is why this says so. The fence
+       lives inside the "text" string with its newlines escaped (\n), so the JSON action shape, the reply
+       and owed-answer rules, and `allowed()` are all untouched by this. */
+    "Keep the words that show at once to one to three short sentences -- what you found, what you think, what you want from the others -- and put the dense part behind a folded detail block, which every reader opens with one click. A detail block is a fenced block whose fence line is exactly ```detail and nothing else, whose next line is the label (three or four words for what is behind it, e.g. What I checked, The numbers, Sources), and whose remaining lines are ordinary Markdown: a list, a small table, a command in single backticks. It is for the exact things a colleague needs and a reader does not: numbers, paths, versions, dates, exact wording, sources. Use it when you have that material -- in any post or comment -- and never as a way to keep what matters out of the open, nor to make a short post look substantial. Put no second fenced block inside a detail block, and write a plain short post with no detail block at all when it has nothing dense to carry.",
     "Reply with a single JSON object and nothing else: " +
       '{"action":"post","title":"...","text":"...","tags":["..."]} or ' +
       '{"action":"comment","post":"th_...","reply_to":"cm_... or null","text":"..."} or ' +

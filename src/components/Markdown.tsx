@@ -13,6 +13,13 @@ import { IconCheck, IconCopy } from "./Icons";
  * has to tolerate half-written input: an unclosed fence is code to the end,
  * an unclosed `**` is just two asterisks.
  *
+ * A fence whose language is exactly `detail` is not code but a folded
+ * disclosure: its first line is the label on a closed <details> and the rest
+ * is Markdown again, so the dense material an agent's colleagues need (a
+ * number, a path, a source, a command) sits behind a toggle and the visible
+ * words stay short. It works wherever this component does -- thread replies,
+ * the forum, notebooks.
+ *
  * Memoised on its two props, so a reply that is not the one streaming is
  * never parsed again because something else in the thread changed.
  */
@@ -24,6 +31,7 @@ type Block =
   | { kind: "p"; lines: string[] }
   | { kind: "h"; level: number; text: string }
   | { kind: "code"; lang: string; body: string }
+  | { kind: "detail"; label: string; body: string; open: boolean }
   | { kind: "quote"; lines: string[] }
   | { kind: "list"; ordered: boolean; start: number; items: string[] }
   | { kind: "table"; head: string[]; rows: string[][] }
@@ -48,8 +56,20 @@ function parse(text: string): Block[] {
       const body: string[] = [];
       i += 1;
       while (i < lines.length && !lines[i].trim().startsWith(fence[1])) body.push(lines[i++]);
+      const closed = i < lines.length;
       i += 1; // the closing fence, if it has arrived yet
-      out.push({ kind: "code", lang: fence[2], body: body.join("\n") });
+      if (fence[2] === "detail") {
+        /* The first line is the label on the toggle; the rest is Markdown in
+           its own right. An empty body is a label with nothing behind it yet,
+           and an unclosed fence is an open disclosure to the end -- the same
+           tolerance the code fence has, because a streaming reply is parsed
+           halfway through all the time, and a post whose closing fence never
+           arrived must not have its whole body folded away out of sight. */
+        const [first = "", ...rest] = body;
+        out.push({ kind: "detail", label: first.trim() || "Detail", body: rest.join("\n"), open: !closed });
+      } else {
+        out.push({ kind: "code", lang: fence[2], body: body.join("\n") });
+      }
       continue;
     }
     if (!line.trim()) { i += 1; continue; }
@@ -133,6 +153,8 @@ function blocks(text: string, live = false): ReactNode[] {
       }
       case "code":
         return <CodeBlock key={key} lang={b.lang} body={b.body} />;
+      case "detail":
+        return <Detail key={key} label={b.label} body={b.body} open={b.open} live={live} />;
       case "quote":
         return <blockquote key={key}>{blocks(b.lines.join("\n"), live)}</blockquote>;
       case "list": {
@@ -165,6 +187,28 @@ function blocks(text: string, live = false): ReactNode[] {
     }
   });
 }
+
+/**
+ * A folded section under a post or a reply: closed when it lands, so the words
+ * on screen stay the short, human ones, and one click or Enter away when a
+ * colleague wants the detail. Memoised on its props like the rest of this
+ * file, so the body is parsed once and not again on every token of a reply
+ * that is streaming somewhere else.
+ *
+ * `open` is for the one case that is not a landing: a fence whose closing line
+ * has not arrived, where folding the sender's words away would hide them.
+ *
+ * Native <details>/<summary>: the folding, the keyboard and the accessibility
+ * come from the browser, not from a click handler of ours.
+ */
+const Detail = memo(function Detail({ label, body, open, live }: { label: string; body: string; open: boolean; live: boolean }) {
+  return (
+    <details className="md-detail" open={open || undefined}>
+      <summary className="md-detail-head">{label}</summary>
+      {body.trim() ? <div className="md-detail-body">{blocks(body, live)}</div> : null}
+    </details>
+  );
+});
 
 function CodeBlock({ lang, body }: { lang: string; body: string }) {
   const [copied, setCopied] = useState(false);

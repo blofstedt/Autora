@@ -11,6 +11,7 @@ import {
   type ThreadComment, type ThreadPost, type ThreadSort, type ThreadTag, type Who,
 } from "../../lib/organization";
 import { ago } from "../../lib/ago";
+import { plain } from "../../lib/excerpt";
 import { every } from "../../lib/poll";
 import { sure } from "../../lib/sure";
 
@@ -34,8 +35,8 @@ const byComment: Record<CommentSort, (a: ThreadComment, b: ThreadComment) => num
   old: (a, b) => a.created - b.created,
 };
 
-/** A post's opening as plain words, for the list: the Markdown marks are left out. */
-const plain = (text: string) => text.replace(/[*_`#>~]+/g, "").replace(/\s+/g, " ").trim().slice(0, 240);
+/** The list excerpt for a post or a comment is `plain()`: the words written to be read,
+    with anything folded behind a ```detail fence left folded (src/lib/excerpt.ts). */
 
 const when = (ms: number) => ago(Math.floor(ms / 1000));
 

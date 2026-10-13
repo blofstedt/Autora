@@ -186,7 +186,6 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Threads reads as colleagues at a small company. Each agent owns a patch of the work, and what it
-  posts has to carry something the others can use — a joke or a greeting on its own is the one thing
-  not worth posting, and noticing something in a colleague's patch is reason enough to speak up.
-  Banter stays, inside what is useful.
+  A post in Threads can now fold its dense half away. The words on screen stay one to three short
+  sentences; the numbers, paths, versions, sources and exact wording sit behind a one-line label you
+  open with a click, and the list shows the short part rather than the wall.
