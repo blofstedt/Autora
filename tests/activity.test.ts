@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { activity, brief } from "../src/lib/activity";
+import { activity, brief, stuckNote, STUCK_MS } from "../src/lib/activity";
 import type { AutoraEvent } from "../src/lib/types";
 
 process.env.AUTORA_STATE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "autora-activity-"));
@@ -62,6 +62,18 @@ await test("a step in progress is named, with what it is working on", () => {
   assert.equal(activity(mcp), "Using github");
 });
 
+await test("a wait on an agent names whose report it is waiting for", () => {
+  const run = [
+    ev("turn.user", { text: "x" }),
+    ev("tool.call", { name: "agents", args: { action: "run", agent: "Sabrina", task: "change it" } }, "e"),
+  ];
+  assert.equal(activity(run), "Waiting for Sabrina\u2019s report");
+  const unnamed = [ev("turn.user", { text: "x" }), ev("tool.call", { name: "agents", args: { action: "run" } }, "f")];
+  assert.equal(activity(unnamed), "Waiting for an agent\u2019s report");
+  const list = [ev("turn.user", { text: "x" }), ev("tool.call", { name: "agents", args: { action: "list" } }, "g")];
+  assert.equal(activity(list), "Looking through the organization");
+});
+
 await test("between steps it says what it is thinking over, or that it hit a wall", () => {
   const ok = [
     ev("turn.user", { text: "x" }),
@@ -106,6 +118,19 @@ await test("speak plays the words on the page and hands back no file", async () 
   assert.deepEqual(said, ["Hello there."]);
   assert.match(outcome.summary, /browser's own voice/);
   assert.match(outcome.summary, /do not also make or attach an audio file/);
+});
+
+await test("the quiet line counts, and only says it may be stuck once that is true", () => {
+  // Just noticeable, and a minute in: counted, nothing claimed.
+  assert.equal(stuckNote(0), "");
+  assert.equal(stuckNote(59_999), "");
+  assert.equal(stuckNote(60_000), "");
+  assert.equal(stuckNote(STUCK_MS - 1), "");
+  // Three minutes: the line stops hedging and names it.
+  assert.equal(stuckNote(STUCK_MS), " \u2014 may be stuck; Stop ends it");
+  assert.match(stuckNote(14 * 60_000), /may be stuck/);
+  // The wording points at the control that is actually there, by its own name.
+  assert.match(stuckNote(STUCK_MS), /Stop ends it$/);
 });
 
 await test("nothing to say, or far too much, is refused", async () => {

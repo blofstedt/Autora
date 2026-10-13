@@ -9,6 +9,25 @@ import { Kind, type AutoraEvent } from "./types";
  */
 export type MarkPhase = "thinking" | "building";
 
+/**
+ * How long a turn may be silent before the line says what the silence probably
+ * means. A minute of it is worth mentioning; three is worth acting on: with the
+ * per-call cap in place a tool that never comes back is given up on within a
+ * minute or two, so a silence past that is something else -- a model stream
+ * that has stopped, an agent whose report is not coming -- and the only honest
+ * thing left to say is that it may be stuck.
+ */
+export const STUCK_MS = 180_000;
+
+/**
+ * The tail the quiet line carries once the silence has gone on too long, or
+ * nothing while it is only worth mentioning. Worded as the person's next move
+ * (Stop is the send button of the turn in flight), because by then it is one.
+ */
+export function stuckNote(quietMs: number): string {
+  return quietMs >= STUCK_MS ? " \u2014 may be stuck; Stop ends it" : "";
+}
+
 type Reading = {
   /** What it is doing, in a few words. */
   text: string | null;
@@ -205,6 +224,18 @@ function doing(name: string, args: Record<string, any>): string {
     case "vault_read": return "Reading the vault";
     case "tool_create": return "Saving a new tool";
     case "tool_delete": return "Removing a tool";
+    /* A call into the Organization. This is the longest honest wait the console
+       has -- the turn is held until the agent reports -- and it used to fall to
+       the default and read "Using agents", which said none of it. The agent's
+       own progress is shown under this line by its own card (agent.chime and
+       agent.progress), so this says only whose report the turn is waiting on. */
+    case "agents": {
+      const action = String(args.action ?? "").trim().toLowerCase();
+      const who = String(args.agent ?? "").trim();
+      if (action === "run") return who ? `Waiting for ${who}\u2019s report` : "Waiting for an agent\u2019s report";
+      if (action === "list") return "Looking through the organization";
+      return "Working on the organization";
+    }
     default: return `Using ${name.replace(/^custom_/, "").replace(/_/g, " ")}`;
   }
 }

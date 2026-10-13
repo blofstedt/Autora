@@ -11,6 +11,7 @@ import { setFollowing, useFollowing } from "../lib/follow";
 import { setFullscreen, useFullscreen } from "../lib/fullscreen";
 import { AutoraMark } from "./AutoraMark";
 import type { MarkPhase } from "../lib/activity";
+import { stuckNote } from "../lib/activity";
 import { TerminalCell } from "./TerminalCell";
 import { ScreencastCell } from "./ScreencastCell";
 import { FileCell } from "./FileCell";
@@ -495,7 +496,7 @@ export function Thread({
               </span>
             )}
             {quietMs >= 60_000 && (
-              <span className="working-quiet">nothing new for {clock(quietMs)}</span>
+              <span className="working-quiet">nothing new for {clock(quietMs)}{stuckNote(quietMs)}</span>
             )}
           </div>
         )}
