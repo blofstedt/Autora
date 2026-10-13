@@ -154,6 +154,12 @@ export function readFile(args: ReadArgs, deps: { root: string; protect?: string[
     try { names = fs.readdirSync(file).sort(); } catch { /* unreadable */ }
     return { ok: true, text: `${file} is a folder with ${names.length} entries:\n${names.slice(0, 80).join("\n")}${names.length > 80 ? `\n... and ${names.length - 80} more` : ""}` };
   }
+  /* A pipe, a socket, a device: opening one for reading can wait for ever, and
+     this read is synchronous, so nothing -- not Stop, not a cap -- can reach
+     it once it starts. It froze the whole server until this check. */
+  if (!stat.isFile()) {
+    return { ok: false, text: `${file} is not a regular file, and reading one could wait for ever. Read the file it is fed from, or use the terminal.` };
+  }
   if (/^\.env/.test(path.basename(file))) return { ok: false, text: "Environment files hold secrets and are not read this way." };
   if (stat.size > MAX_BYTES) return { ok: false, text: `${file} is ${(stat.size / 1048576).toFixed(1)} MB: too large to read whole. Search it with code_search or read a part with the terminal.` };
   let data: Buffer;

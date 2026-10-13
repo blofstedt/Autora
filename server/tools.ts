@@ -1672,19 +1672,237 @@ function incognitoMemory(): { ok: boolean; summary: string } {
   };
 }
 
+/* ------------------------------------------------------------ giving up --
+
+   A tool call that never came back used to hold the whole turn. Nothing
+   counted the seconds, nothing told the model that the call was gone, and the
+   person watched a mark that said it was working with no way to tell a slow
+   step from a wedged one. The other half is the line under the thread, built in
+   src/lib/activity.ts, which says how long the turn has been quiet: the cap here
+   is what makes that line end in a real outcome instead of waiting for ever.
+
+   `requestSignal` below is the same idea for the two fetches that had one; this
+   is the same idea for every call. The cap is a ceiling, not a promise -- a tool
+   that answers inside it is untouched, and anything that waits for a person is
+   not capped at all, because waiting there is the tool doing its job. */
+const CAP_DEFAULT_MS = 90_000;
+/** A look, a read, a list, a fetch: it has answered by now or it is wedged. */
+const CAP_READ_MS = 60_000;
+/** The shell. A build or a test run on the terminal is a real thing to do, so
+    it keeps the terminal's own limit with room to spare (and the long ones
+    belong in run_background anyway, which returns at once). */
+const CAP_TERMINAL_MS = 600_000;
+/** Exports, renders, composites, the person's own tools: minutes of honest
+    work by design, so the cap must never be the thing that ends them. */
+const CAP_LONG_MS = 900_000;
+/** One agent's run, as a call to the agents tool waits for it: long enough
+    for real work, short enough that the caller cannot wait for ever. The call
+    gives up and says so; the agent's own turn ends on its own, or when the
+    person stops it (runAgents has no abort to hand it). */
+export const AGENT_RUN_CAP_MS = 600_000;
+/** Chains: an agent may hand on to more, and each of those is capped too. */
+const CAP_AGENT_MS = AGENT_RUN_CAP_MS * 3 + 60_000;
+/** How long the second attempt waits before it goes. */
+const RETRY_BACKOFF_MS = 1_500;
+
+/** Tools that are the person's own machine, where the shell's limit applies. */
+const SHELL_TOOLS = new Set(["terminal", "run_background"]);
+
+/** Work that is minutes long by design, and must never be cut short by a cap. */
+const LONG_TOOLS = new Set([
+  "research", "widget_show", "browser_captcha", "image_generate",
+  "video_export", "video_import", "studio_export", "cad_export", "cad_doc_set",
+  "pdf_compose", "pdf_edit", "pdf_compress", "pdf_pages",
+  "office_create", "office_edit", "office_convert", "office_pdf",
+  "game_import", "notebook", "schedule",
+]);
+
+/**
+ * Reads and lookups that change nothing, so running one a second time cannot
+ * cost anything but the wait. Everything not named here -- every edit, create,
+ * set, add, delete, click, fill, press, save, send -- is left alone: a second
+ * attempt at one of those is a second effect, and "did the first one land?" is
+ * exactly what a timed-out call cannot say.
+ */
+const REPEATABLE = new Set([
+  "memory_search", "code_search", "web_search", "browser_read", "browser_scroll",
+  "browser_screenshot", "artifact_list", "artifact_read", "read_file",
+  "background_output", "background_jobs", "inventory", "mcp_servers", "vault_read",
+]);
+
+/** Whether repeating this call can only ever ask the same question again. */
+export function canRepeat(spec: ToolSpec, _args: Record<string, any>): boolean {
+  /* Anything that changes the world rather than reading it. http_request is one
+     of these on purpose: its address is arbitrary, a GET to somebody's API can
+     be a send as easily as a read, and the person's saved sign-ins go out with
+     it. Asked twice, it asks their server twice. */
+  if (spec.risky) return false;
+  // Somebody else's tool: the person's own scripts, and MCP servers, may do
+  // anything, and nothing here says which.
+  if (spec.name.startsWith("my_") || spec.name.startsWith("mcp__")) return false;
+  if (REPEATABLE.has(spec.name)) return true;
+  // *_look, *_read, *_get, *_list: the naming rule for "asks, never tells".
+  return /(_look|_read|_get|_list)$/.test(spec.name);
+}
+
+/** Whether this is one of those reads, for the shorter cap. */
+function isRead(spec: ToolSpec, args: Record<string, any>): boolean {
+  return canRepeat(spec, args) || spec.name === "browser_devtools";
+}
+
+/** How long this call may take. 0 means no cap at all. */
+export function capFor(spec: ToolSpec, args: Record<string, any>): number {
+  /* Waiting is the whole job: the person has to read, click, type a password
+     or solve a puzzle, and no cap of ours may cut that short. */
+  if (spec.name === "ask_user" || spec.name === "browser_handoff") return 0;
+  if (spec.name === "agents") return CAP_AGENT_MS;
+  if (SHELL_TOOLS.has(spec.name)) {
+    return Math.max(CAP_TERMINAL_MS, toolSettings().terminal.timeout * 1000 + 10_000);
+  }
+  if (LONG_TOOLS.has(spec.name)) return CAP_LONG_MS;
+  /* Somebody else's tool. The person's own scripts and a server's tools may
+     take as long as they take, and nothing here knows which is quick. */
+  if (spec.name.startsWith("my_") || spec.name.startsWith("mcp__")) return CAP_LONG_MS;
+  if (isRead(spec, args)) return CAP_READ_MS;
+  return CAP_DEFAULT_MS;
+}
+
+/** A tool that threw, in the words the model has always been given. */
+function toolFailure(spec: ToolSpec, err: any): ToolOutcome {
+  return { ok: false, summary: `${spec.name} failed: ${err?.message ?? String(err)}` };
+}
+
+type Attempt = { outcome: ToolOutcome; gaveUp: boolean };
+
+/**
+ * One attempt, under a ceiling. When the time is up the tool is asked to stop
+ * the same way Stop asks it -- every tool that listens for a cancel listens to
+ * this one too, so a terminal command really is killed and a fetch really is
+ * aborted -- and the caller is told it was given up on rather than left holding
+ * a promise that may never settle.
+ */
+function attemptTool(
+  spec: ToolSpec, args: Record<string, any>, ctx: ToolContext, ms: number,
+): Promise<Attempt> {
+  if (ms <= 0) {
+    return runToolUnredacted(spec, args, ctx).then(
+      (outcome) => ({ outcome, gaveUp: false }),
+      (err): Attempt => ({ outcome: toolFailure(spec, err), gaveUp: false }),
+    );
+  }
+  return new Promise<Attempt>((resolve) => {
+    const stops: Array<() => void> = [];
+    let settled = false;
+    const finish = (result: Attempt) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const timer = setTimeout(() => {
+      for (const stop of stops) {
+        try {
+          stop();
+        } catch {
+          // A kill that fails because the thing is already gone is not news.
+        }
+      }
+      finish({ outcome: { ok: false, summary: "" }, gaveUp: true });
+    }, ms);
+    const watched: ToolContext = {
+      ...ctx,
+      // Both the real Stop and our own ceiling reach the tool.
+      onCancel: (stop: () => void) => {
+        ctx.onCancel(stop);
+        stops.push(stop);
+      },
+    };
+    /* One call, not two: the ceiling races this one execution. */
+    runToolUnredacted(spec, args, watched).then(
+      (outcome) => finish({ outcome, gaveUp: false }),
+      (err) => finish({ outcome: toolFailure(spec, err), gaveUp: false }),
+    );
+  });
+}
+
+/** "gave up after 60s", and what that does and does not mean. */
+function gaveUpNote(spec: ToolSpec, ms: number, repeatable: boolean): string {
+  const secs = Math.round(ms / 1000);
+  return (
+    `${spec.name} gave up after ${secs}s: it was still running, so this call ended and the work behind it was asked to stop. ` +
+    (repeatable
+      ? "Nothing was changed by it that this call knows of."
+      : "Whether it changed anything before the cap is not known from here -- read the thing back before doing it again.") +
+    " Say what you have and take another way round."
+  );
+}
+
 export async function runTool(
   spec: ToolSpec,
   args: Record<string, any>,
   ctx: ToolContext,
+  /* The tests pass a short one so a cap can be watched firing; nothing in the
+     app does, and the table above is the only answer to how long a call has. */
+  capMs?: number,
 ): Promise<ToolOutcome> {
+  const cap = capMs ?? capFor(spec, args);
+  const first = await attemptTool(spec, args, ctx, cap);
+  let outcome = first.outcome;
+
+  if (first.gaveUp) outcome = await afterGivingUp(spec, args, ctx, cap, attemptTool);
+
   /* Whatever the tool read -- a page that now shows the address it was
      given, a form echoing a username -- goes back to the model with the
      person's saved details blanked out. */
-  const outcome = await runToolUnredacted(spec, args, ctx);
   return {
     ...outcome,
     summary: redactForModel(outcome.summary),
     ...(outcome.preview !== undefined ? { preview: redactForModel(outcome.preview) } : {}),
+  };
+}
+
+/**
+ * What happens when a call does not answer in time.
+ *
+ * A read is asked once more, because asking again cannot cost anything but the
+ * wait. Anything that changes the world is not: "did the first one land?" is
+ * exactly what a call that gave up cannot say, and a second attempt would be a
+ * second effect. `attempt` is the one door a second try goes through, so the
+ * tests can watch this decide without a tool that really hangs.
+ */
+export async function afterGivingUp(
+  spec: ToolSpec,
+  args: Record<string, any>,
+  ctx: Pick<ToolContext, "cancelled">,
+  cap: number,
+  attempt: (spec: ToolSpec, args: Record<string, any>, ctx: ToolContext, ms: number) => Promise<Attempt>,
+  waitMs: number = RETRY_BACKOFF_MS,
+): Promise<ToolOutcome> {
+  if (!canRepeat(spec, args)) return { ok: false, summary: gaveUpNote(spec, cap, false) };
+  // Stop was pressed while it ran: the person is not waiting for a retry.
+  if (ctx.cancelled()) return { ok: false, summary: "Stopped." };
+
+  const secs = Math.round(cap / 1000);
+  const wait = Math.round(waitMs / 1000);
+  await new Promise((done) => setTimeout(done, waitMs));
+  const second = await attempt(spec, args, ctx as ToolContext, cap);
+
+  if (second.gaveUp) {
+    return {
+      ok: false,
+      summary:
+        `${spec.name} gave up after ${secs}s. Tried once more, ${wait}s later, ` +
+        `and the second attempt gave up after the same ${secs}s. Twice now it has not answered: ` +
+        "do not try it a third time the same way. Take another way round, or tell the person it may be stuck.",
+    };
+  }
+  return {
+    ...second.outcome,
+    summary: second.outcome.ok
+      ? `${spec.name} gave up after ${secs}s: it did not answer in time. ` +
+        `Tried once more, ${wait}s later, and the second attempt worked -- what it brought back is below.\n\n${second.outcome.summary}`
+      : `${spec.name} gave up after ${secs}s: it did not answer in time. ` +
+        `Tried once more, ${wait}s later, and it answered with this:\n\n${second.outcome.summary}`,
   };
 }
 
