@@ -186,7 +186,7 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  You can now hold one model to one OpenRouter endpoint. Pick the model in Settings, type the endpoint
-  you want it served from, and every request for that model goes to that endpoint alone, with no quiet
-  fallback to another one when it is busy. Nothing changes unless you set a pin, and clearing the field
-  puts things back exactly as they were.
+  Tool calls that lose their arguments on the way in are now caught at the door: the console names
+  the missing argument and asks for the call to be resent, instead of a tool saying its own vague
+  refusal and the model debugging the wrong end of the pipe. Agent handoffs (agents run) tell you
+  plainly when agent and task never arrived.

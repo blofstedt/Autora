@@ -304,6 +304,10 @@ await test("the agents tool lists the map and starts an agent, but not the one t
   assert.equal((await runTool(spec, { action: "run", agent: "Editor" }, ctx())).ok, false, "a task is required");
   const self = await runTool(spec, { action: "run", agent: "Editor", task: "x" }, ctx({ id: editor.id, name: "Editor" }));
   assert.match(self.summary, /That is you/);
+  // A call that arrived without agent/task gets the pipe hint, so the model
+  // is told to resend rather than to debug the tool.
+  const pipe = await runTool(spec, { action: "run" }, ctx());
+  assert.match(pipe.summary, /lost on the way here/);
 });
 
 await test("the thread tool posts as the agent that is asking, or as another by name", async () => {
@@ -329,6 +333,24 @@ await test("the thread tool posts as the agent that is asking, or as another by 
   assert.match((await runTool(spec, { action: "list" }, ctx())).summary, /Hello from the lead/);
   assert.equal((await runTool(spec, { action: "post", title: "x", as: "Ghost" }, ctx())).ok, false);
   assert.equal((await runTool(spec, { action: "read", post: "th_nope" }, ctx())).ok, false);
+});
+
+await test("a call whose required arguments never arrived is refused by the schema, naming them", async () => {
+  const spec = findTool("agents")!;
+  const empty = await runTool(spec, {}, ctx());
+  assert.match(empty.summary, /missing required "action"/);
+  assert.match(empty.summary, /lost on the way here/);
+  const malformed = await runTool(spec, "run" as never, ctx());
+  assert.match(malformed.summary, /takes an object of arguments/);
+  // Present-but-empty is the handler's business, not the schema's.
+  const blank = await runTool(spec, { action: "  " }, ctx());
+  assert.match(blank.summary, /Unknown agents action/);
+  // A mistyped argument is still the handler's to coerce, as it always was.
+  const mistyped = await runTool(spec, { action: 5 }, ctx());
+  assert.match(mistyped.summary, /Unknown agents action "5"/);
+  // A tool with no required arguments is untouched.
+  const list = await runTool(findTool("artifact_list")!, {}, ctx());
+  assert.equal(list.ok, true);
 });
 
 await test("planning lets the agent look at the organization and Threads, but not start, post, comment or like", () => {

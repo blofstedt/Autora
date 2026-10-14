@@ -28,6 +28,7 @@ import type { TodoResult } from "./todos";
 import type { LedgerResult } from "./ledger";
 import type { RequirementResult } from "./requirements";
 import { checkEntry } from "./mindrules";
+import { checkArgs } from "./argcheck";
 import { officeDir, runOfficeTool } from "./office";
 import type { Phase } from "./modes";
 import { callMcpTool, mcpTools, statusOf as mcpStatusOf } from "./mcp";
@@ -1403,7 +1404,16 @@ async function runAgents(args: Record<string, any>, ctx: ToolContext): Promise<T
   if (action !== "run") return { ok: false, summary: `Unknown agents action "${action}". Use list, run, domains, teach, note, hire, edit, merge, remove or move.` };
   const ref = String(args.agent ?? "").trim();
   const task = String(args.task ?? "").trim();
-  if (!ref || !task) return { ok: false, summary: "Say which agent and what its task is (agent, task)." };
+  if (!ref || !task) {
+    const absent = !("agent" in args) || !("task" in args);
+    return {
+      ok: false,
+      summary: "Say which agent and what its task is (agent, task)." +
+        (absent
+          ? " The call arrived without them -- if you did send them, they were lost on the way here; resend the call."
+          : ""),
+    };
+  }
   const found = findAgent(ref);
   if (!found) return { ok: false, summary: `There is no agent "${ref}". Use agents list to see who there is.` };
   if (found.id === ctx.agents?.self.id || (found.id === LEAD_ID && !ctx.agents)) {
@@ -1845,6 +1855,25 @@ export async function runTool(
      app does, and the table above is the only answer to how long a call has. */
   capMs?: number,
 ): Promise<ToolOutcome> {
+  /* A call whose arguments do not fit the tool's schema is refused before
+     the tool runs, in the schema's terms. Only what a handler could never
+     repair is enforced here -- a missing required argument, or a call that
+     is not an object at all; everything else stays with the handler's own
+     coercion. Arguments are dropped on the way in more often than anyone
+     would like -- a provider streaming a long call can lose part of it --
+     and a tool's own "say which agent and what its task is" then reads as
+     the tool refusing, sending the model to debug the wrong end of the
+     pipe. checkArgs says what is wrong in the schema's terms, and when a
+     required argument is what is missing, this adds that the pipe may have
+     eaten it. */
+  const bad = checkArgs(spec.name, spec.parameters, args, { requiredOnly: true });
+  if (bad) {
+    const missing = (spec.parameters.required ?? []).filter((k) => args?.[k] === undefined || args?.[k] === null);
+    const pipe = missing.length
+      ? " The arguments may have been lost on the way here -- resend the call with them set; a long call is the likeliest to lose them."
+      : "";
+    return { ok: false, summary: bad + pipe };
+  }
   const cap = capMs ?? capFor(spec, args);
   const first = await attemptTool(spec, args, ctx, cap);
   let outcome = first.outcome;

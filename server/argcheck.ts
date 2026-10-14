@@ -23,8 +23,19 @@ function fits(want: string, value: unknown): boolean {
   return kind(value) === want;
 }
 
-/** Null when the arguments fit; otherwise one message naming every problem. */
-export function checkArgs(name: string, schema: Schema, args: unknown): string | null {
+/** Null when the arguments fit; otherwise one message naming every problem.
+ *
+ *  `requiredOnly` checks only that the call is an object carrying every
+ *  required argument -- the gate the main executor runs. The full check is
+ *  for callers whose handlers do not coerce (the research worker), because
+ *  the chat's handlers repair mistyped values (`String(args.x ?? "")`) and
+ *  refusing those would break calls that work today. */
+export function checkArgs(
+  name: string,
+  schema: Schema,
+  args: unknown,
+  opts?: { requiredOnly?: boolean },
+): string | null {
   if (kind(args) !== "object") {
     return `Not run: ${name} takes an object of arguments, got ${kind(args)}.`;
   }
@@ -35,6 +46,10 @@ export function checkArgs(name: string, schema: Schema, args: unknown): string |
       const spec = schema.properties[key] ?? {};
       problems.push(`missing required "${key}"${spec.type ? ` (${spec.type})` : ""}`);
     }
+  }
+  if (opts?.requiredOnly) {
+    if (problems.length === 0) return null;
+    return `Not run: ${name} was called without ${problems.length === 1 ? "its" : "these"} required argument${problems.length === 1 ? "" : "s"} -- ${problems.join("; ")}.`;
   }
   for (const [key, value] of Object.entries(given)) {
     const spec = schema.properties[key];
