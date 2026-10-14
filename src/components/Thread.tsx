@@ -1090,6 +1090,7 @@ const CellView = memo(function CellView({
         <div className={`mode-chip is-${cell.to}`}>
           <i aria-hidden="true" />
           <b>{cell.to === "plan" ? "Planning" : "Building"}</b>
+          {cell.model && <span>· {cell.model}</span>}
           {cell.reason && <span>· {cell.reason}</span>}
         </div>
       );

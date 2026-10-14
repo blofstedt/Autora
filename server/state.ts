@@ -246,6 +246,15 @@ interface PersistedState {
       over when the question turns out to need the work. Empty means talk mode
       uses the main model, exactly as it did before this existed. */
   fastModels: Record<string, string>;
+  /** Roles (see ./roles): the model that plans, per provider. In Agent and Plan
+      mode the planning rounds run on it, and the building rounds on the main
+      model above, so a smart model thinks the task through and a cheaper one
+      does the many rounds of work. Empty means the main model plans too. */
+  plannerModels: Record<string, string>;
+  /** Roles: the model for unwatched work (condensing old turns, learning,
+      remarks), per provider. Empty means talk mode's model when one is named,
+      else the main model -- what background work used before roles existed. */
+  backgroundModels: Record<string, string>;
   /** Per-provider API root override. Mostly for local servers and proxies. */
   baseUrls: Record<string, string>;
   /** Per-provider endpoint pin: the ONE model and the ONE endpoint of it that
@@ -556,6 +565,8 @@ function blank(): PersistedState {
     provider: "auto",
     models: {},
     fastModels: {},
+    plannerModels: {},
+    backgroundModels: {},
     baseUrls: {},
     endpointPins: {},
     systemPrompt: DEFAULT_PROMPT,
@@ -653,6 +664,8 @@ function read(): PersistedState {
     if (typeof raw.provider === "string") state.provider = raw.provider;
     if (raw.models && typeof raw.models === "object") state.models = { ...raw.models };
     if (raw.fastModels && typeof raw.fastModels === "object") state.fastModels = { ...raw.fastModels };
+    if (raw.plannerModels && typeof raw.plannerModels === "object") state.plannerModels = { ...raw.plannerModels };
+    if (raw.backgroundModels && typeof raw.backgroundModels === "object") state.backgroundModels = { ...raw.backgroundModels };
     if (raw.baseUrls && typeof raw.baseUrls === "object") state.baseUrls = { ...raw.baseUrls };
     if (raw.endpointPins && typeof raw.endpointPins === "object") state.endpointPins = { ...raw.endpointPins };
     if (typeof raw.systemPrompt === "string") state.systemPrompt = raw.systemPrompt;
@@ -1132,6 +1145,18 @@ export function fastModelFor(providerId: string): string {
   return (state.fastModels[providerId] || "").trim();
 }
 
+/** The model that plans, when one is named for the provider. Empty means the
+    main model plans as well. See ./roles. */
+export function plannerModelFor(providerId: string): string {
+  return (state.plannerModels[providerId] || "").trim();
+}
+
+/** The model for background work, when one is named. Empty means the old rule
+    (talk mode's model, else the main one). See ./roles. */
+export function backgroundModelFor(providerId: string): string {
+  return (state.backgroundModels[providerId] || "").trim();
+}
+
 /** One model, and one endpoint of it, a routing vendor is held to. */
 interface EndpointPin {
   /** The model this pin was made for; the pin applies to it and no other. */
@@ -1190,6 +1215,10 @@ export interface Resolved {
   /** Talk mode's own model: the fast one, when the vendor has one named.
       Empty when live voice should answer with `model` like everything else. */
   fastModel: string;
+  /** The planning model when one is named; empty means `model` plans too. */
+  plannerModel: string;
+  /** The background model when one is named; empty means the old rule. */
+  backgroundModel: string;
   key: string;
   baseUrl: string;
   /** Why nothing is usable, when nothing is. */
@@ -1221,6 +1250,8 @@ export function resolveProvider(): Resolved {
         provider: "",
         model: "",
         fastModel: "",
+        plannerModel: "",
+        backgroundModel: "",
         key: "",
         baseUrl: "",
         problem: "No provider is connected yet. Add an API key for one.",
@@ -1234,6 +1265,8 @@ export function resolveProvider(): Resolved {
       provider: chosen,
       model: "",
       fastModel: "",
+      plannerModel: "",
+      backgroundModel: "",
       key: "",
       baseUrl: "",
       problem: `Unknown provider "${chosen}".`,
@@ -1250,6 +1283,8 @@ export function resolveProvider(): Resolved {
     provider: chosen,
     model,
     fastModel: fastModelFor(chosen),
+    plannerModel: plannerModelFor(chosen),
+    backgroundModel: backgroundModelFor(chosen),
     key,
     baseUrl: baseUrlFor(chosen),
     problem,

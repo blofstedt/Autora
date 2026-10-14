@@ -186,7 +186,12 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Plainer wording across the left-hand menus. Settings, Usage (Billing and Cost per good result), Tools,
-  Integrations, the Secret Store, Credentials and the sidebar's own tooltips now say the same things in fewer
-  words: shorter hints, shorter error messages, and no repeated explanations. Nothing works differently, and
-  every button keeps its name.
+  Roles: a smarter model can plan while a cheaper one builds. Under Settings, each provider now has a Planner and
+  a Background model beside Talk mode. With a planner named, the planning rounds of Agent mode (and Plan mode)
+  run on it and the building rounds on your main model, so the expensive model only does the thinking. When
+  the cheaper model gets stuck (it keeps repeating a call, the same error keeps coming back, nothing changes
+  for several rounds, or your project check fails twice in a row) the work goes back to the planner
+  automatically, up to twice a task, before anything is stopped. The chat's Planning and Building chips name
+  the model, and Cost per good result shows planner and builder as a pair so you can see whether the split
+  pays. Background work (condensing, learning, remarks) can have its own cheap model. Leave them empty and
+  nothing changes. Also: plainer, shorter wording across Settings, Usage and the other left-hand menus.

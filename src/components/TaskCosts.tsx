@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { IconCheck, IconCoin, IconRepeat, IconX } from "./Icons";
 import { money } from "./Billing";
-import { groupByKind, perGoodText, verdictText, type Mark, type TaskRow, type TaskSummary } from "../lib/taskcost";
+import { groupByKind, modelLabel, perGoodText, verdictText, type Mark, type TaskRow, type TaskSummary } from "../lib/taskcost";
 
 const when = (ts: number) =>
   new Date(ts * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -106,8 +106,8 @@ export function TaskCosts() {
               const figure = perGoodText(cell, summary.minJudged);
               const mixed = cell.versions.length > 1;
               return (
-                <div key={`${cell.provider}/${cell.model}`} className="task-cell" title={figure.why}>
-                  <code className="task-model">{cell.model}</code>
+                <div key={`${cell.provider}/${cell.planner ?? ""}/${cell.model}`} className="task-cell" title={figure.why}>
+                  <code className="task-model">{modelLabel(cell)}</code>
                   <span className="task-meta">
                     {count(cell.tasks, "task")}
                     {cell.judged > 0 ? ` · ${cell.good} good, ${cell.poor} poor` : ""}
@@ -132,7 +132,7 @@ export function TaskCosts() {
             <div key={row.id} className="task-row">
               <span className="bill-turn-when">{when(row.ts)}</span>
               <span className="task-row-kind">{row.kindLabel}{row.automated ? " (scheduled)" : ""}</span>
-              <code>{row.model}</code>
+              <code>{modelLabel(row)}</code>
               <span className={`task-verdict ${row.verdict ? `is-${row.verdict}` : ""}`}>{verdictText(row)}</span>
               <em>{row.priced ? money(row.cost) : "—"}</em>
               <button

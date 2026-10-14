@@ -623,6 +623,22 @@ Spectra's fetched renderer is most of what is on disk.
   `tests/*.test.ts` it finds (`tests/run.ts`), so a new file needs no wiring.
 - `docs/ARCHITECTURE.md`: why it is built this way.
 
+## Roles: which model does which part
+
+- **Roles** (`server/roles.ts`; per provider in `state.ts`: `models` builds, `plannerModels`, `fastModels` for talk mode,
+  `backgroundModels`; the pickers are `RoleRow` in `Settings.tsx`). Each role left empty keeps the rule from before roles: the main
+  model does everything, and background work uses talk mode's model, else the main one (`AUTORA_COMPACTION_MODEL` still overrides).
+  With a planner named, `runTurn` asks `workModel(active, phase)` every round, so Agent mode's planning rounds and every round of
+  a Plan-mode chat run on the planner, and building rounds on the main model. The model only changes where the work already changes
+  hands (`set_mode`, a talk-mode handover); each change costs one uncached read of the conversation by the model taking over, which
+  is why small talk has no role of its own. The context window is the smallest of `conversationModels`. **Escalation**: the loop
+  watch's and error budget's notes, the `[Stall]` checkpoint and two project-check failures in a row (`Escalation`) switch an Agent
+  chat that is building back to planning, on the planner, at most `MAX_ESCALATIONS` times a turn and never in a spoken turn; the
+  stops behind those warnings are unchanged. The `mode.switch` event carries `model` (shown on the chip) and `auto: true` for an
+  escalation. A task the planner worked on records `planner` in `tasks.json`, and Cost per good result keeps the pair as its own
+  cell. Traps: `pinned` names both models and must not change between rounds (cache); roles are per provider, so a planner from
+  another vendor is not possible yet (`active.key`, `baseUrl`, `charge`, `applyWindow` all assume one provider per turn).
+
 ## Cost per task, the improvements log, hand-offs and personality
 
 - **Cost per task** (`server/taskledger.ts`, `routes/tasks.ts`, `src/components/TaskCosts.tsx` on the Usage page). One record per

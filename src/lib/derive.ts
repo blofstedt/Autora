@@ -284,7 +284,9 @@ export type Cell =
   | { kind: "note"; seq: number; tone: "bad" | "warn" | "plain"; text: string }
   /** Agent mode moving between planning and building: said in the thread,
       where it happened, and nowhere else. */
-  | { kind: "mode"; seq: number; to: "plan" | "build"; reason: string }
+  | { kind: "mode"; seq: number; to: "plan" | "build"; reason: string;
+      /** The model taking over, when Settings names a planner (server/roles.ts). */
+      model?: string }
   /** The app window was opened here: a preview of what is being built. The
       window itself is live state (lib/preview.ts); this marks where. */
   | { kind: "app"; seq: number; url: string }
@@ -1109,6 +1111,7 @@ export function derive(events: AutoraEvent[]): Derived {
           kind: "mode", seq: e.seq,
           to: e.payload.to === "build" ? "build" : "plan",
           reason: typeof e.payload.reason === "string" ? e.payload.reason.slice(0, 160) : "",
+          ...(typeof e.payload.model === "string" && e.payload.model ? { model: e.payload.model.slice(0, 120) } : {}),
         });
         break;
 

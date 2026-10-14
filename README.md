@@ -1064,7 +1064,7 @@ guard's standing agreements and the irrecoverable tier ask whatever they say.
 | `AUTORA_COMPACT_AT` | Fraction of that window at which older turns are folded into working memory in the background (default `0.75`) |
 | `AUTORA_PROTECTED_TURNS` | Most recent messages that are never summarised (default `6`) |
 | `AUTORA_MAX_TOOL_TOKENS` | Tool output longer than this is kept in the session vault, with its start and end left in the prompt (default `3000`) |
-| `AUTORA_COMPACTION_MODEL` | A cheaper model of the same provider to write the working memory with (default: the chat model) |
+| `AUTORA_COMPACTION_MODEL` | A cheaper model of the same provider to write the working memory with (default: Settings' Background model, then the talk-mode model, then the chat model) |
 | `AUTORA_MAX_OUTPUT_TOKENS` | Output tokens the model may write per step of a task (default: 8192) |
 | `DEEPGRAM_API_KEY` | Speak through Deepgram's hosted Aura voices; a key saved in Settings -> Secrets wins |
 | `AUTORA_DEEPGRAM_VOICE` | The Deepgram voice to start with (default `aura-2-thalia-en`); a voice picked in Settings wins |

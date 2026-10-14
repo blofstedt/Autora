@@ -124,6 +124,13 @@ interface TaskRecord {
   /** The model the turn was run on. The cost is everything it took, including
       what a cheaper model did for it (compaction, the look back). */
   model: string;
+  /** The planner, when a different model planned part of it (server/roles.ts):
+      the task was the pair's work, and is priced as the pair. Absent otherwise,
+      and on every task recorded before roles existed. */
+  planner?: string;
+  /** The main model answered a round itself. With a planner, false means the
+      planner did all of it (a Plan-mode chat), and the task is the planner's alone. */
+  built?: boolean;
   /** Which build of Autora ran it: a model is only comparable against the same
       harness, and the harness changes. */
   version: string;
@@ -243,6 +250,23 @@ export function noteCall(name: string, args: Record<string, any> = {}) {
   save();
 }
 
+/** A round of the task's own work ran: on the planner (a model other than the
+    main one), or on the main model. The voice and background calls are not rounds. */
+export function noteRound(model: string, planner: boolean) {
+  const rec = current();
+  if (!rec || !model) return;
+  if (planner ? rec.planner === model : rec.built) return;
+  if (planner) rec.planner = model; else rec.built = true;
+  save();
+}
+
+/** Which model, or pair, a task is filed under: the pair only when both worked. */
+function workedBy(rec: TaskRecord): { model: string; planner: string | null } {
+  if (!rec.planner) return { model: rec.model, planner: null };
+  if (!rec.built) return { model: rec.planner, planner: null };
+  return { model: rec.model, planner: rec.planner };
+}
+
 /** The project's own check ran, and passed or did not. The last run stands. */
 export function noteCheck(ok: boolean) {
   const rec = current();
@@ -293,6 +317,8 @@ interface Cell {
   provider: string;
   label: string;
   model: string;
+  /** The planner that worked with `model`, or null for the model alone. */
+  planner: string | null;
   kind: TaskKind;
   kindLabel: string;
   /** Finished tasks of this kind on this model. */
@@ -325,6 +351,7 @@ interface TaskRow {
   kindLabel: string;
   provider: string;
   model: string;
+  planner: string | null;
   version: string;
   cost: number;
   priced: boolean;
@@ -355,12 +382,13 @@ export function taskSummary(opts: { version?: string | null } = {}) {
 
   const cells = new Map<string, Cell & { _judgedSpend: number; _v: Set<string> }>();
   for (const rec of use) {
-    const key = `${rec.provider}\u0000${rec.model}\u0000${rec.kind}`;
+    const by = workedBy(rec);
+    const key = `${rec.provider}\u0000${by.planner ?? ""}\u0000${by.model}\u0000${rec.kind}`;
     let cell = cells.get(key);
     if (!cell) {
       cell = {
         provider: rec.provider, label: providerSpec(rec.provider)?.label ?? rec.provider,
-        model: rec.model, kind: rec.kind, kindLabel: KIND_LABEL[rec.kind],
+        model: by.model, planner: by.planner, kind: rec.kind, kindLabel: KIND_LABEL[rec.kind],
         tasks: 0, unpriced: 0, spend: 0, avgCost: null, judged: 0, good: 0, poor: 0, unjudged: 0,
         perGood: null, goodRate: null, versions: [], _judgedSpend: 0, _v: new Set(),
       };
@@ -392,7 +420,7 @@ export function taskSummary(opts: { version?: string | null } = {}) {
     const said = verdictOf(r);
     return {
       id: r.id, ts: r.ts, kind: r.kind, kindLabel: KIND_LABEL[r.kind], provider: r.provider,
-      model: r.model, version: r.version, cost: r.cost, priced: r.priced, automated: r.automated,
+      ...workedBy(r), version: r.version, cost: r.cost, priced: r.priced, automated: r.automated,
       outcome: r.outcome, check: r.check, mark: r.mark,
       verdict: said?.verdict ?? null, source: said?.source ?? null,
     };
