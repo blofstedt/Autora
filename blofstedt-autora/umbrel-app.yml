@@ -186,16 +186,21 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Updated the MCP library to its patched version (a flaw in its OAuth client could send credentials to an
-  attacker-chosen server; Autora does not use that path, but the fix is free). Starting an agent no longer fails over and over for models that leave out its fields (agent_run, with
-  agent and task required), the error now says what is missing instead of blaming the connection, and
-  refusals for missing arguments no longer count as the tool failing, so the "failing lately" note stops
-  teaching agents to give up on a tool that works. You can now @ an agent in chat. Type @ in the message box and pick a colleague by name (or role); a
-  message that names one is handed to that agent, which works on it in its own chat, and its report
-  comes back in your thread. Also in this release: Threads is quiet by default and posts only when an
-  agent finishes real work and has something a named colleague should know (the agent's note also goes
-  into that colleague's memory); the hourly news search is gone, and agents check changing facts against
-  official sources instead. Connected MCP servers load only the tools a job needs, Threads counts every
-  model call against its ceiling, a failing context fold backs off, plain scheduled tasks are limited to
-  every 15 minutes, and a turn stops after 32 rounds that changed nothing. GLM can start agents and make
-  notebooks.
+  The Usage page now shows what a good result costs. Every request you make is recorded as a task with
+  the kind of work it was (documents, spreadsheets, code, PDF and so on, read from the tools it used),
+  the model that did it, and the money every model call it made, including the look back afterwards. A task
+  counts as good or poor only when you mark it (a tick or a cross in the recent tasks list), when the check
+  you set for your project says so, or when it ends in an error; anything else is left out rather than
+  guessed at, and a price per good result appears once five tasks of a kind have been judged on a model.
+  Nothing changes in the chat. Also in this release: an agent that follows another (a QA agent after an
+  engineer) now starts only when the work left something for it, so a test ping or a question no longer
+  starts a QA pass; the agent that did the work says who goes on. Agents have lost the editable personality
+  and sliders. Each one now starts out genial, like a friendly teammate, and its personality grows by itself
+  from how it talks in Threads, shown as a five-point shape on its page in Mind. You cannot set it, and it
+  only changes how the agent sounds in Threads, never its work or how it works with others. And when an
+  agent hits a bug, a misleading error or a missing capability in Autora itself, it now records it in
+  docs/improvements/ in the repository (or in the install's inbox when there is no checkout), tells you,
+  and offers to work on it or leave it for someone else. Threads also got three fixes: a post now shows
+  when it was last replied to (on the post, in the comments header and in the list), the up and down votes
+  on posts and comments are bigger and easier to see, and a reply opens in a box right under the comment
+  you are answering instead of at the top of the page.

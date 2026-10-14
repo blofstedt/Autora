@@ -379,7 +379,7 @@ function AgentEditor({
         <p className="jf-hint"><IconBot size={11} /> This is the agent that answers in the chat. It heads the organization and cannot be removed.</p>
       )}
 
-      {agent && !agent.builtin && <p className="jf-hint">Its personality, attributes and what it has learned are in Mind.</p>}
+      {agent && !agent.builtin && <p className="jf-hint">How its personality has grown and what it has learned are in Mind.</p>}
 
       {error && <p className="set-warn">{error}</p>}
       <div className="nb-new-acts">

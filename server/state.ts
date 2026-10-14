@@ -1258,7 +1258,18 @@ export function resolveProvider(): Resolved {
 
 // ------------------------------------------------------------------ spend --
 
+/** Who else wants to know what a call cost, as it is written down (see ./taskledger). */
+const usageListeners: ((entry: UsageEntry) => void)[] = [];
+export function onUsage(listener: (entry: UsageEntry) => void) {
+  usageListeners.push(listener);
+}
+
 export function recordUsage(entry: UsageEntry) {
+  /* Told with the chat's own id, before the rename below: the listener decides
+     for itself what an incognito chat may leave. */
+  for (const listener of usageListeners) {
+    try { listener(entry); } catch (err: any) { console.warn(`[usage] listener: ${err?.message ?? err}`); }
+  }
   /* An incognito chat is filed under a word that names no chat. The ledger is
      written for every call the app pays for, so leaving the id in it would be
      the one trace such a chat left on disk -- and leaving the call out

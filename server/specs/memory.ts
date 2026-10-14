@@ -175,4 +175,28 @@ export const memorySPECS: ToolSpec[] = [
       required: ["id"],
     },
   },
+  {
+    name: "improvements",
+    group: "memory",
+    description:
+      "Record something Autora itself should do better (a tool failing on a valid call, a misleading error, a missing capability) " +
+      "in docs/improvements/; never committed. Actions: record, list, status, file. Then tell the person.",
+    parameters: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["record", "list", "status", "file"] },
+        title: { type: "string" },
+        happened: { type: "string" },
+        evidence: { type: "string", description: "Exact error." },
+        suggestion: { type: "string" },
+        area: { type: "string", description: "tools, prompt, ui, server, agents, browser, files, models, docs, other." },
+        severity: { type: "string", description: "low, medium, high." },
+        id: { type: "string" },
+        status: { type: "string", description: "open, taking-it, done, wontfix (list: or all)." },
+        note: { type: "string" },
+        repo: { type: "string", description: "Path of an Autora clone." },
+      },
+      required: [],
+    },
+  },
 ];

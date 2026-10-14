@@ -623,6 +623,34 @@ Spectra's fetched renderer is most of what is on disk.
   `tests/*.test.ts` it finds (`tests/run.ts`), so a new file needs no wiring.
 - `docs/ARCHITECTURE.md`: why it is built this way.
 
+## Cost per task, the improvements log, hand-offs and personality
+
+- **Cost per task** (`server/taskledger.ts`, `routes/tasks.ts`, `src/components/TaskCosts.tsx` on the Usage page). One record per
+  turn in `tasks.json`: the model, the build (`VERSION`), the kind of work, the cost of every model call it made, and how it ended.
+  *Cost* is the spend ledger's own rows: `AsyncLocalStorage` carries the task through the turn's awaits and `recordUsage` tells
+  `onUsage` listeners, so the rounds, the voice, compaction, a sub-agent and the look back after the turn are billed to it and a
+  remark or a Threads post that merely overlaps is not. `tests/e2e-tasks.test.ts` checks the task's cost equals what the ledger
+  gained, on a priced model. *Kind* comes from the tools called (`kindOfCall`), never from a model. *Good or poor* is only the
+  person's mark, the project check (`noteCheck`, from `execCheck`) or an error ending the turn (`verdictOf`); a stopped turn or one
+  nothing speaks for is *unjudged* and left out of the price. The price of a good result is everything the judged tasks cost over
+  how many were good, shown from `MIN_JUDGED` (5) judged tasks. A task on an unpriced model is counted, never priced. An incognito
+  chat leaves no record. Traps: the hook is in `beginTurn` (`withTask` around both `runTurn` and the learning that follows it; a
+  `.then` registered outside it loses the task); a new place that calls a model needs nothing, it goes through `recordUsage`.
+- **Improvements** (`server/improvements.ts`, the `improvements` tool in `specs/memory.ts`, `docs/improvements/README.md`). An agent
+  records what Autora should do better as one file in `docs/improvements/` of a checkout (a git tree whose package.json is
+  Autora's: named by `repo`, `AUTORA_REPO`, the terminal's folder, or where the server started), or in the install's own
+  `improvements/` inbox when there is none; `file` moves the inbox into a checkout. It writes and never commits. A repeat of an open
+  finding adds a line to it (and its model and build) instead of a second file. Every field is scrubbed with `redactSecrets`. The
+  briefing (`MEMORY_GUIDE`) says when, and the error budget's note reminds an agent whose tool keeps failing.
+- **Hand-offs** (`handoffTargets`, `producedWork`, `withoutHandover` in `agents.ts`, used by `runAgentTask`). An agent's `next` list
+  is who *may* follow it. The agent says who does, on the last line of its report ("Hand over to: Reggie" or "nobody"); with no such
+  line the followers start only if the task made or changed something. A test ping, a question or a plan starts no QA pass.
+- **Personality** (`server/agentcharacter.ts`, `PersonalityShape.tsx`). Nobody sets it. Five points (warmth, humor, curiosity,
+  candor, boldness) start genial and move a little with every message the agent writes in Threads (`developed`, driven from the
+  `onThreadActivity` listener in `server.ts` through `developFromTalk`). It is told to the agent only when it speaks in Threads
+  (`threadsVoice`), never in a task's brief, so it cannot touch the work or cooperation (`tests/organization.test.ts` checks the
+  brief). Agents saved with the old personalities begin again once (`character: 2`), keeping their bonds and record.
+
 ## The agent's cursor and the few words beside it
 
 Every window that shows the agent working has a cursor that goes to a real element the way a hand does (`lib/humanPath.ts`

@@ -12,6 +12,7 @@ import { IconBrain, IconPlus, IconTrash } from "../Icons";
 import { AgentProfile } from "../AgentProfile";
 import { fetchAgents, type Agent } from "../../lib/organization";
 import { sure } from "../../lib/sure";
+import { every } from "../../lib/poll";
 
 type Draft = { title: string; body: string; tags: string; kind: Bucket };
 
@@ -66,8 +67,11 @@ export function MindPage({
   const [agents, setAgents] = useState<Agent[]>([]);
   useEffect(() => {
     let live = true;
-    fetchAgents().then((l) => { if (live) setAgents(l); }).catch(() => undefined);
-    return () => { live = false; };
+    const load = () => { fetchAgents().then((l) => { if (live) setAgents(l); }).catch(() => undefined); };
+    load();
+    /* An agent's personality grows while this is open: the shape is read again now and then. */
+    const stop = every(load, 20_000);
+    return () => { live = false; stop(); };
   }, []);
   const team = agents.filter((a) => !a.builtin);
   const who = whose ? team.find((a) => a.id === whose) ?? null : null;
@@ -252,7 +256,7 @@ export function MindPage({
             </div>
           )}
           {who ? (
-            <AgentProfile agent={who} agents={agents} onSaved={(a) => setAgents((l) => l.map((x) => (x.id === a.id ? a : x)))} />
+            <AgentProfile agent={who} agents={agents} />
           ) : (
           <>
           <div className="page-toolbar">

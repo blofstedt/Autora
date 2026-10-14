@@ -16,7 +16,7 @@
 import crypto from "node:crypto";
 import { readDoc, saveDoc } from "./store";
 import { dropMind, knowsAbout, mergeMind } from "./agentmind";
-import { BOND_START, characterLine, draftCharacter, grown, saneTraits, suggestName, type Traits } from "./agentcharacter";
+import { BOND_START, bornTraits, developed, grown, readTraits, suggestName, type Traits } from "./agentcharacter";
 
 interface Agent {
   id: string;
@@ -38,10 +38,11 @@ interface Agent {
   /** How much it has to say, 0.6 (reserved) to 1.4 (chatty): its own temper, drawn
       at random with its look. It scales how readily it speaks up in Threads. */
   social?: number;
-  /** A line or two on who it is: how it works and talks, drawn from its expertise (server/agentcharacter.ts). */
-  personality?: string;
-  /** Its attributes, 0..100: the person can set them; teamwork grows with the work. */
+  /** The shape of its personality, five points 0..100: genial when it is made, then grown by how it talks in Threads
+      (server/agentcharacter.ts). Nobody sets it, and it is told to the agent only when it speaks in Threads. */
   traits?: Traits;
+  /** Set once the agent has been through the move to a personality nobody can set: until then it is born again, genial. */
+  character?: 2;
   /** How well it works with each colleague, 0..100 by agent id; rises as work between them goes well. */
   bonds?: Record<string, number>;
   /** Tasks it has been started on, and how many of them it finished. */
@@ -92,7 +93,6 @@ const MAX_NAME = 60;
 const MAX_ROLE = 80;
 const MAX_TEXT = 8000;
 const MAX_WHEN = 1000;
-const MAX_PERSONALITY = 600;
 const MAX_NEXT = 12;
 
 const DOC = "agents";
@@ -130,11 +130,12 @@ function load(): Agent[] {
   for (const a of roster) {
     if (a.id === LEAD_ID) { delete a.look; a.social = 1; continue; }
     if (typeof a.social !== "number") { a.social = temper(); gave = true; }
-    // Agents made before they had a character get one drawn from their expertise, and keep it.
-    if (!a.personality || !a.traits) {
-      const drawn = draftCharacter(a.role, a.instructions);
-      a.personality = a.personality || drawn.personality;
-      a.traits = { ...drawn.traits, ...(a.traits ?? {}) };
+    /* Personalities used to be drawn from the role and edited by hand. Now nobody sets one: an agent made that way
+       begins again, genial, and develops from here. Its bonds and its record of tasks are its own and stay. */
+    if (a.character !== 2 || !readTraits(a.traits)) {
+      delete (a as { personality?: unknown }).personality;
+      a.traits = bornTraits();
+      a.character = 2;
       gave = true;
     }
     const ok = a.look && SIDES.includes(a.look.sides) && Number.isFinite(a.look.hue);
@@ -198,7 +199,7 @@ function saneNext(id: string, raw: unknown): string[] {
 
 export function createAgent(input: {
   name: unknown; role?: unknown; instructions?: unknown; when?: unknown;
-  reportsTo?: unknown; next?: unknown; enabled?: unknown; personality?: unknown; traits?: unknown;
+  reportsTo?: unknown; next?: unknown; enabled?: unknown;
 }): Agent {
   const name = clip(input.name, MAX_NAME);
   if (!name) throw new AgentError("An agent needs a name.");
@@ -213,10 +214,9 @@ export function createAgent(input: {
     look: pickLook(load().flatMap((o) => (o.look ? [o.look] : []))), social: temper(),
     bonds: {}, tasks: { done: 0, failed: 0 },
   };
-  /* A personality comes from whoever made the agent, or else from its expertise. */
-  const drawn = draftCharacter(agent.role, agent.instructions);
-  agent.personality = clip(input.personality, MAX_PERSONALITY) || drawn.personality;
-  agent.traits = { ...drawn.traits, ...saneTraits(input.traits) };
+  /* Born genial, whoever hires it: a personality is not something to ask for. */
+  agent.traits = bornTraits();
+  agent.character = 2;
   load().push(agent);
   agent.next = saneNext(id, input.next);
   persist();
@@ -225,7 +225,7 @@ export function createAgent(input: {
 
 export function updateAgent(id: string, patch: {
   name?: unknown; role?: unknown; instructions?: unknown; when?: unknown;
-  reportsTo?: unknown; next?: unknown; enabled?: unknown; personality?: unknown; traits?: unknown;
+  reportsTo?: unknown; next?: unknown; enabled?: unknown;
 }): Agent {
   const agent = getAgent(id);
   if (!agent) throw new AgentError(`There is no agent "${id}".`);
@@ -242,10 +242,6 @@ export function updateAgent(id: string, patch: {
   if (patch.reportsTo !== undefined && !agent.builtin) agent.reportsTo = sanePlace(id, patch.reportsTo);
   if (patch.next !== undefined) agent.next = saneNext(id, patch.next);
   if (patch.enabled !== undefined && !agent.builtin) agent.enabled = Boolean(patch.enabled);
-  if (!agent.builtin) {
-    if (patch.personality !== undefined) agent.personality = clip(patch.personality, MAX_PERSONALITY) || draftCharacter(agent.role, agent.instructions).personality;
-    if (patch.traits !== undefined) agent.traits = { ...(agent.traits ?? draftCharacter(agent.role, agent.instructions).traits), ...saneTraits(patch.traits) };
-  }
   persist(agent);
   return agent;
 }
@@ -360,7 +356,7 @@ export const HIRING =
   "coming up and that none of the agents covers), edit, merge (two agents that overlap become one), move (change who an " +
   "agent reports to, or its place in the order) and remove (an agent that is no longer needed). Prefer editing or " +
   "merging to hiring, give each agent a human first name that no one has (\"Sabrina\", not \"Legal Agent\") and a job title as its role (\"Family Lawyer\"), and one clear job and a 'call it when' that says when, and tell the person in a line " +
-  "what you changed and why. Give each hire a personality that fits its expertise (personality: a line or two on how it works and talks; traits: warmth, candor, rigor, curiosity, humor, initiative from 0 to 100) -- a lawyer careful and plain-spoken, a support agent warm and patient; if you leave it out one is drawn from the role. Personalities and relationships then grow with the work, so do not reset them. Every other agent has a mind of its own, kept apart from yours, so a specialist is not confused by " +
+  "what you changed and why. Every hire arrives genial and its personality grows by itself from how it talks in Threads; you cannot set it, and it never changes the work. Every other agent has a mind of its own, kept apart from yours, so a specialist is not confused by " +
   "what you know about everything else. As your own Mind grows, use agents domains to see where it clusters; when a body of " +
   "knowledge has become a subject of its own (a product, a site, a client, a field), hire an agent for it with knowledge (or " +
   "teach an existing one: agent, query) so that knowledge moves out of your Mind and into theirs, and from then on call that " +
@@ -390,20 +386,57 @@ export function agentBrief(agent: Agent, task: string, chain: string[]): string 
   const next = agent.next.map(getAgent).filter((a): a is Agent => !!a && a.enabled);
   return [
     `You are ${agent.name}${agent.role ? `, the ${agent.role}` : ""}, an agent in the person's organization.`,
-    characterLine(agent, (id) => getAgent(id)?.name ?? null),
     agent.instructions ? `Your instructions:\n${agent.instructions}` : "",
     chain.length ? `This was handed to you by ${chain.join(" -> ")}.` : "",
     `Your task:\n${task}`,
     "Finish the task and end with a short report: what you did, what you found, what is left. Your reply is passed on as it is.",
     "Anything that changes over time (versions, prices, rules, laws, standards) is checked against the official source before you rely on it, and your report says which source.",
     next.length
-      ? `After you, ${next.map((a) => a.name).join(", then ")} will take your report forward; write it so they can start from it.`
+      ? `After you, ${next.map((a) => `${a.name}${a.when ? ` (called when ${a.when.replace(/[.\s]+$/, "")})` : a.role ? ` (${a.role})` : ""}`).join(", then ")} can take your report forward -- ` +
+        "but only if your work left something for them to do. Do not hand over when you only answered a question, ran a check or a test, made a plan, " +
+        "or changed nothing. When you do, write the report so they can start from it. " +
+        `End your report with one last line: "Hand over to: ${next.map((a) => a.name).join(", ")}" naming only those it fits, or "Hand over to: nobody".`
       : "",
     "Threads (the thread tool) is not where this task is reported: while you are doing a task someone handed you, you may read it " +
     "(list, read) and no more -- posting, commenting and liking are refused in a session doing given work, because the report goes back where " +
     "the work came from. When you learn something worth " +
       "keeping -- how something works, what to avoid, what a colleague is good at -- keep it with the agents tool (action note), so you have it next time. Your mind is your own: it is recalled for you as you work, and nothing in it is shared with the other agents or Autora.",
   ].filter(Boolean).join("\n\n");
+}
+
+/** Tools that make or change something, whatever they are called on: a task that ran none of them left nothing for a follow-on agent. */
+const MAKES = /^(?:edit_file|image_generate|artifact_save|notebook_create|tool_create|office_(?:create|edit|convert|pdf)|pdf_(?:edit|compose|pages|replace_text|redact|compress)|video_(?:edit|import|style|export|project)|studio_(?:song|track|clip|notes|make|export)|game_(?:edit|import|template)|photo_(?:edit|export)|cad_.+)$/;
+
+/**
+ * Whether a task made or changed anything, from the calls it made. A command counts unless it only reads
+ * (`readOnly` says which); the tools that write count by name. What it did not do is as telling as what it did:
+ * a test ping, a question answered, a plan, a look around.
+ */
+export function producedWork(calls: readonly { name: string; args?: Record<string, any> }[], readOnly: (command: string) => boolean): boolean {
+  return calls.some((c) => (c.name === "terminal" ? !readOnly(String(c.args?.command ?? "")) : MAKES.test(c.name)));
+}
+
+const HANDOVER = /^[ \t>*_-]*hand[ -]?(?:over|off)[ -]to:?[*_ ]*(.*)$/gim;
+
+/**
+ * Who goes on after this agent, of those it could hand to. The agent that did the work decides, on the last line of
+ * its report ("Hand over to: Reggie", or "Hand over to: nobody"): it knows what it made, and each colleague's `when`
+ * is in its brief. Without that line -- an older agent, a model that forgot -- the follow-on agents go on only if the
+ * task made or changed something, so a test ping or a question never starts a QA pass.
+ */
+export function handoffTargets(agent: Agent, reply: string, made: boolean): Agent[] {
+  const candidates = agent.next.map(getAgent).filter((a): a is Agent => !!a && a.enabled);
+  const line = [...reply.matchAll(HANDOVER)].pop();
+  if (!line) return made ? candidates : [];
+  const said = line[1].replace(/[*_`.]/g, "").trim().toLowerCase();
+  if (!said || /^(?:nobody|no one|none|n\/a|nothing)\b/.test(said)) return [];
+  const names = said.split(/,|;|->|\band\b|\bthen\b/).map((n) => n.trim()).filter(Boolean);
+  return candidates.filter((c) => names.some((n) => n === c.name.toLowerCase() || n === c.id));
+}
+
+/** The report without its hand-over line: that line is for Autora, not for the person or the next agent to read. */
+export function withoutHandover(reply: string): string {
+  return reply.replace(HANDOVER, "").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 /** Test hook: forget what was loaded, so a new state directory is read. */
@@ -416,7 +449,7 @@ export function freshName(): string {
   return suggestName(load().map((a) => a.name));
 }
 
-/** An agent's task ended: its record, and a little experience for the teamwork it brings. */
+/** An agent's task ended: its record. */
 export function recordWork(id: string, ok: boolean): void {
   const a = getAgent(id);
   if (!a || a.builtin) return;
@@ -427,7 +460,7 @@ export function recordWork(id: string, ok: boolean): void {
 /**
  * Two agents worked together -- one handed work to the other, or they talked in
  * Threads -- and it went well or not. Each remembers the other a little better
- * (`bonds`), and each is a slightly better collaborator for it (`traits.teamwork`).
+ * (`bonds`).
  * `weight` is how much the occasion counts. The lead keeps no bonds.
  */
 export function recordCollab(aId: string, bId: string, ok: boolean, weight: number): void {
@@ -437,10 +470,21 @@ export function recordCollab(aId: string, bId: string, ok: boolean, weight: numb
     const a = getAgent(me);
     if (!a || a.builtin || !getAgent(other)) continue;
     a.bonds = { ...(a.bonds ?? {}), [other]: grown(a.bonds?.[other] ?? BOND_START, ok, weight) };
-    if (a.traits) a.traits = { ...a.traits, teamwork: grown(a.traits.teamwork, ok, weight / 4) };
     changed = true;
   }
   if (changed) persist();
+}
+
+/**
+ * An agent said something in Threads: its personality grows a little toward how it sounded. The agent's own words are
+ * the only thing that moves it. Not the lead, which keeps no personality, and it does not stamp the agent as changed
+ * (it happens on every message, and the person's page re-reads on a change).
+ */
+export function developFromTalk(id: string, text: string, kind: "post" | "comment"): void {
+  const a = getAgent(id);
+  if (!a || a.builtin || !a.traits) return;
+  a.traits = developed(a.traits, text, kind);
+  persist();
 }
 
 /** How much agent `id` warms to agent `other`, 0..100 (50 when they have not yet worked together). */

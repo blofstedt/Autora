@@ -49,7 +49,10 @@ import { GoogleGenAI } from "@google/genai";
 import { MANUAL_IDS, manualText, windowsOverview, type ManualId } from "./handbook";
 import { lookColors, readLook } from "../src/lib/agentlook";
 import { termAgentBegin, termAgentChunk, termAgentEnd, termCwd, termNews } from "./termdesk";
-import { mergeTools, save, state, allSecrets, keyFor, secretFor, redactSecrets as redactStored } from "./state";
+import { mergeTools, save, state, allSecrets, keyFor, secretFor, stateDir, redactSecrets as redactStored } from "./state";
+import {
+  STATUSES, checkoutFolder, findCheckout, listEntries, moveInto, recordFinding, setStatus, type Status,
+} from "./improvements";
 import { APP_GUIDE, BROWSING_GUIDE, MEMORY_GUIDE, OFFICE_GUIDE, TODO_GUIDE, VOICE_GUIDE, WINDOWS_GUIDE } from "./guides";
 import { credentialsBriefing, fillPlaceholders, hasPlaceholder, identityEnv, redactCredentials } from "./credentials";
 import type { ChatImage } from "./llm";
@@ -616,6 +619,8 @@ export interface ToolContext {
       teach: (agent: string, query: string, move: boolean) => { ok: boolean; summary: string };
     };
   };
+  /** Who is asking, on what model and build: what an improvement is filed under. */
+  origin?: { model: string; version: string };
   /** True once the turn has been interrupted; long tools should give up. */
   cancelled: () => boolean;
   /** Register a kill switch so an interrupt can stop a running command. */
@@ -1321,6 +1326,74 @@ const listOf = (raw: unknown): string[] =>
   Array.isArray(raw) ? raw.map((v) => String(v).trim()).filter(Boolean)
     : typeof raw === "string" && raw.trim() ? raw.split(",").map((v) => v.trim()).filter(Boolean) : [];
 
+/**
+ * The improvements log (server/improvements.ts): record what Autora should do better, list what is open, mark one taken or
+ * done, and file the ones waiting in this install's inbox into a checkout. Writes a file and nothing more.
+ */
+function runImprovements(args: Record<string, any>, ctx: ToolContext): ToolOutcome {
+  const action = String(args.action ?? "record");
+  const checkout = findCheckout([String(args.repo ?? ""), process.env.AUTORA_REPO, terminalDir(), process.cwd()]);
+  const inbox = path.join(stateDir(), "improvements");
+  const dir = checkout ? checkoutFolder(checkout) : inbox;
+  const by = ctx.agents?.self.name ?? "Autora";
+  const origin = { by, model: ctx.origin?.model ?? "", version: ctx.origin?.version ?? "" };
+  const where = checkout
+    ? `docs/improvements/ in the Autora checkout at ${checkout}`
+    : `this install's own inbox (${inbox}), because no checkout of the Autora repository was found`;
+  try {
+    if (action === "record") {
+      const done = recordFinding(dir, {
+        title: String(args.title ?? ""), happened: String(args.happened ?? ""), evidence: args.evidence === undefined ? undefined : String(args.evidence),
+        suggestion: String(args.suggestion ?? ""), area: args.area === undefined ? undefined : String(args.area),
+        severity: args.severity === undefined ? undefined : String(args.severity),
+      }, origin, redactStored);
+      const tell =
+        "Now tell the person, in a line or two and without jargon: what you recorded and why it matters, and that you can work on it " +
+        "now or leave it for someone else to pick up. Do not start on it unless they say to.";
+      if (done.result === "again") {
+        return { ok: true, summary: `This was already recorded (${done.file}); added this sighting, now seen ${done.seen} times. ${tell}`, preview: `seen again: ${done.file}` };
+      }
+      return {
+        ok: true,
+        summary: `Recorded in ${where} as ${done.file}. It is written, not committed.` +
+          (checkout ? "" : " It is not in the repository yet: when a checkout is known, improvements with action file moves it there, or pass repo with the checkout's path.") +
+          ` ${tell}`,
+        preview: `recorded ${done.file}`,
+      };
+    }
+    if (action === "list") {
+      const want = String(args.status ?? "open");
+      const rows = listEntries(dir).filter((e) => want === "all" || e.status === want);
+      if (!rows.length) return { ok: true, summary: `Nothing ${want === "all" ? "recorded" : want} in ${where}.` };
+      return {
+        ok: true,
+        summary: `${rows.length} ${want === "all" ? "" : `${want} `}in ${where}:\n` +
+          rows.slice(0, 40).map((e) => `- ${e.id} [${e.status}, ${e.severity}, ${e.area}, seen ${e.seen}x on ${e.models.join(" / ") || "?"}] ${e.title} (${e.file})`).join("\n"),
+      };
+    }
+    if (action === "status") {
+      const status = String(args.status ?? "");
+      if (!(STATUSES as readonly string[]).includes(status)) return { ok: false, summary: `status is one of ${STATUSES.join(", ")}.` };
+      const done = setStatus(dir, String(args.id ?? ""), status as Status, by, String(args.note ?? ""), redactStored);
+      if (!done) return { ok: false, summary: `There is no improvement "${args.id}" in ${where}. Use improvements list.` };
+      return { ok: true, summary: `${done.id} is now ${status}. The file is changed, not committed.`, preview: `${done.id}: ${status}` };
+    }
+    if (action === "file") {
+      if (!checkout) return { ok: false, summary: "No checkout of the Autora repository was found. Pass repo: the path of one (a clone with a .git folder)." };
+      const moved = moveInto(inbox, checkout);
+      return {
+        ok: true,
+        summary: moved.moved.length
+          ? `Moved ${moved.moved.length} from the inbox into docs/improvements/ in ${checkout}: ${moved.moved.join(", ")}. Written, not committed.${moved.kept.length ? ` Left in the inbox because the name is taken there: ${moved.kept.join(", ")}.` : ""}`
+          : "The inbox is empty: nothing to move.",
+      };
+    }
+    return { ok: false, summary: "action is record, list, status or file." };
+  } catch (err: any) {
+    return { ok: false, summary: `Could not do that: ${err?.message ?? err}` };
+  }
+}
+
 /** The lead shaping the organization: hire, edit, merge, remove, move. */
 function shapeOrganization(action: string, args: Record<string, any>, ctx: ToolContext): ToolOutcome {
   const agent = String(args.agent ?? "").trim();
@@ -1328,7 +1401,7 @@ function shapeOrganization(action: string, args: Record<string, any>, ctx: ToolC
   try {
     if (action === "hire") {
       const made = createAgent({
-        name: String(args.name ?? "").trim() || freshName(), role: args.role, personality: args.personality, traits: args.traits, instructions: args.instructions, when: args.when,
+        name: String(args.name ?? "").trim() || freshName(), role: args.role, instructions: args.instructions, when: args.when,
         reportsTo: args.reports_to, next,
       });
       welcomeToThreads(made);
@@ -1336,7 +1409,7 @@ function shapeOrganization(action: string, args: Record<string, any>, ctx: ToolC
       const taught = knowledge && ctx.agents ? ctx.agents.mind.teach(made.id, knowledge, args.move !== false) : null;
       return {
         ok: true,
-        summary: `Hired ${made.name} (${made.id}). ${agentLine(made)}${made.personality ? ` Personality: ${made.personality}` : ""}${taught ? `\n${taught.summary}` : ""}`,
+        summary: `Hired ${made.name} (${made.id}). ${agentLine(made)}${taught ? `\n${taught.summary}` : ""}`,
         preview: `hired ${made.name}`,
       };
     }
@@ -1345,11 +1418,11 @@ function shapeOrganization(action: string, args: Record<string, any>, ctx: ToolC
     if (!found) return { ok: false, summary: `There is no agent "${agent}". Use agents list to see who there is.` };
     if (action === "edit") {
       const patch: Record<string, unknown> = {};
-      for (const [from, to] of [["name", "name"], ["role", "role"], ["instructions", "instructions"], ["when", "when"], ["reports_to", "reportsTo"], ["enabled", "enabled"], ["personality", "personality"], ["traits", "traits"]]) {
+      for (const [from, to] of [["name", "name"], ["role", "role"], ["instructions", "instructions"], ["when", "when"], ["reports_to", "reportsTo"], ["enabled", "enabled"]]) {
         if (args[from] !== undefined) patch[to] = args[from];
       }
       if (next !== undefined) patch.next = next;
-      if (!Object.keys(patch).length) return { ok: false, summary: "Nothing to change: give name, role, personality, traits, instructions, when, reports_to, next or enabled." };
+      if (!Object.keys(patch).length) return { ok: false, summary: "Nothing to change: give name, role, instructions, when, reports_to, next or enabled." };
       const now = updateAgent(found.id, patch);
       return { ok: true, summary: `Updated ${now.name}. ${agentLine(now)}`, preview: `edited ${now.name}` };
     }
@@ -3145,6 +3218,9 @@ async function runToolUnredacted(
 
       case "agents":
         return await runAgents(args, ctx);
+
+      case "improvements":
+        return runImprovements(args, ctx);
 
       case "agent_run":
         return await runAgents({ ...args, action: "run" }, ctx);

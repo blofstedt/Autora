@@ -81,6 +81,8 @@ task is about the PDF editor's shim or overlay.
 | Working notes | `todos.ts`, `ledger.ts`, `requirements.ts` |
 | Sub-agent | `subagent.ts` (+ `researchFor` in `runTurn`) |
 | Memory | `memory.ts`, `mindrules.ts`, `site.ts`, `learning.ts` |
+| Improvements log | `improvements.ts` (`docs/improvements/`: what agents hit that Autora should do better; the `improvements` tool in `specs/memory.ts`) |
+| Cost per task | `taskledger.ts` (a record per turn: kind of work, cost of every call it made, how it went; `routes/tasks.ts`; the Usage page's `TaskCosts.tsx`) |
 | Browser | `browser.ts` (4.5k: `LiveBrowser`), `human.ts`, `captcha*.ts`, `pagedescribe.ts`, `browsedata.ts`, `extensions.ts`, `cookies.ts`, `signins.ts`, `liveview.ts` |
 | App window | `preview.ts`, `pick.ts`, `domdiff.ts`, `snapshots.ts` |
 | Code | `codediff.ts` (`Workspace`), `codesearch.ts`, `editfile.ts`, `merge3.ts`, `background.ts` (long jobs) |

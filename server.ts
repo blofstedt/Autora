@@ -67,7 +67,7 @@ import {
 import { notebookRoutes } from "./server/routes/notebooks";
 import { organizationRoutes } from "./server/routes/organization";
 import { ShareGate, SHARE_IDLE_MS, SHARE_MIN_CALLS, SHARE_SYSTEM, listFinished, parseShare, shareBody, shareNote, sharePrompt } from "./server/threadshare";
-import { agentBrief, findAgent, getAgent, LEAD_ID, listAgents, mentionedAgents, recordCollab, recordWork } from "./server/agents";
+import { agentBrief, developFromTalk, findAgent, getAgent, handoffTargets, LEAD_ID, listAgents, mentionedAgents, producedWork, recordCollab, recordWork, withoutHandover } from "./server/agents";
 import { agentMind, clusters, remember, teach } from "./server/agentmind";
 import {
   LifeGate, MAX_AGENT_RUN, MAX_WONDERS, PACE, isNamed, perHourFor, URGE_AT, addresseeOf, allowed as lifeAllowed, reactDelayMs, replyChance, answered, goneQuiet, knownText, lastActivity, quietFrom, unseenBy,
@@ -131,6 +131,8 @@ import { deskDocument, deskBriefing, deskHooks, deskRoutes, deskState, dropDesk,
 import { staticDir } from "./server/staticfiles";
 import { memoryRoutes } from "./server/routes/memory";
 import { healthRoutes } from "./server/routes/health";
+import { taskRoutes } from "./server/routes/tasks";
+import { closeTask, noteCall, noteCheck, openTask, withTask } from "./server/taskledger";
 import { browserRoutes } from "./server/routes/browser";
 import { previewRoutes } from "./server/routes/preview";
 import { settingsRoutes } from "./server/routes/settings";
@@ -2708,6 +2710,8 @@ const threadBuzz = new ThreadBuzz();
 onThreadActivity(({ post, comment }) => {
   const by = comment ? comment.by : post.by;
   if (by.kind !== "agent") return;
+  /* What an agent says in Threads is what its personality grows from (server/agentcharacter.ts). */
+  developFromTalk(by.id, comment ? comment.text : `${post.title}. ${post.body}`, comment ? "comment" : "post");
   const out = threadBuzz.note({
     title: comment ? `${by.name} replied in “${post.title}”` : `${by.name} posted in Threads`,
     body: comment ? comment.text : post.title,
@@ -3039,7 +3043,11 @@ async function runAgentTask(
       clearInterval(watching);
       signal?.removeEventListener("abort", stop);
     });
-    const said = (result.reply || result.error || "(it said nothing)").trim();
+    const handedOn = handoffTargets(agent, result.reply, producedWork(
+      child.events.filter((e) => e.kind === "tool.call").map((e) => ({ name: String(e.payload?.name ?? ""), args: e.payload?.args })),
+      readOnlyCommand,
+    ));
+    const said = (withoutHandover(result.reply) || result.error || "(it said nothing)").trim();
     /* It reports in the chat that called it, in its own name and mark: the agent joins the conversation rather than
        working out of sight and having Autora paraphrase it. */
     emitEvent(from, "agent.back", "agent", { id: child.id, ok: result.ok, reply: said.length > 1600 ? `${said.slice(0, 1597)}...` : said });
@@ -3053,8 +3061,10 @@ async function runAgentTask(
     if (!result.ok) ok = false;
     reports.push(`${agent.name} (${child.id})${result.ok ? "" : " did not finish"}:\n${said}`);
     if (!result.ok || result.stopped) return;
-    for (const nextId of agent.next) {
-      await go(nextId, `Continue from ${agent.name}'s report.\n\nThe original task: ${work}\n\n${agent.name}'s report:\n${said}`, [...chain, agent.id]);
+    /* Only those the work left something for (agentBrief asks the agent; handoffTargets decides): a ping, a question
+       or a plan does not start a QA pass. */
+    for (const next of handedOn) {
+      await go(next.id, `Continue from ${agent.name}'s report.\n\nThe original task: ${work}\n\n${agent.name}'s report:\n${said}`, [...chain, agent.id]);
     }
   };
   const start = findAgent(ref);
@@ -3721,6 +3731,8 @@ export interface TurnResult {
   error: string | null;
   /** The memories it was given. */
   recalled: string[];
+  /** The loop watch ended it: the agent was going round in circles. */
+  looped?: boolean;
 }
 
 /** Messages sent while a turn ran, to be told to it at its next step. */
@@ -3923,9 +3935,17 @@ function beginTurn(session: Session, text: string, attachments: AttachmentRef[] 
   running.set(session.id, { stopped: false, cancels: new Set([() => abort.abort()]), signal: abort.signal });
   broadcastLiveStatus(session);
   const began = Date.now();
-  const done = runTurn(session, text, opts);
-  void done
+  /* The task this turn is on the books as (server/taskledger.ts): every model call it makes, the look back
+     below included, is billed to it. Not opened when there is no model to call. */
+  const chosen = resolveProvider();
+  const taskId = chosen.provider && !chosen.problem
+    ? openTask({ session: session.id, provider: chosen.provider, model: chosen.model, version: VERSION, automated: Boolean(opts.automated) })
+    : null;
+  const done = withTask(taskId, () => runTurn(session, text, opts));
+  /* Registered inside the task, so the look back after the turn is billed to it too. */
+  void withTask(taskId, () => done
     .then(async (result) => {
+      closeTask(taskId, result.stopped ? "stopped" : result.error || result.looped ? "failed" : "finished", Date.now() - began);
       /* The turn changed code: save a version of the folder to go back to. */
       if (codeTouched.delete(session.id)) {
         void snapshotFolder(terminalDir(), text.slice(0, 120)).then((saved) => {
@@ -3946,7 +3966,10 @@ function beginTurn(session: Session, text: string, attachments: AttachmentRef[] 
       }
     })
     // Learning is a bonus: whatever goes wrong in it must not take the server down.
-    .catch((err) => console.warn(`[learning] ${session.id}: ${err?.message ?? err}`));
+    .catch((err) => {
+      closeTask(taskId, "failed", Date.now() - began);
+      console.warn(`[learning] ${session.id}: ${err?.message ?? err}`);
+    }));
   return done;
 }
 
@@ -4534,6 +4557,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
       };
 
       const contextFor = (span: string): ToolContext => ({
+        origin: { model: `${active.provider}/${active.model}`, version: VERSION },
         research: researchFor,
         /* A session doing work someone handed it -- an agent started on a task,
            or an automated run -- may read Threads and may not post to it: the
@@ -5033,6 +5057,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           command, exitCode: outcome.exitCode ?? null, ok: outcome.ok,
           output: context.ingest("terminal", outcome.summary, canReadVault),
         };
+        noteCheck(checked.ok);
         return checked;
       };
 
@@ -5645,6 +5670,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
           // What the person changed before this runs is theirs, not this command's.
           if (willWrite) await personEdits(null);
           const outcome = await runTool(spec, use.args, contextFor(span));
+          noteCall(spec.name, use.args);
           /* A command that failed because a path was not there: say what is near
              it, so the next call is right instead of another guess. */
           if (spec.name === "terminal" && !outcome.ok && !outcome.held) {
@@ -5864,6 +5890,7 @@ async function runTurn(session: Session, text: string, opts: TurnOptions = {}): 
         : loopReason ? { stopped: true, reason: loopReason } : {},
     );
     closed = true;
+    result.looped = loopReason !== null;
     result.ranSomething = ranSomething;
     result.stopped = Boolean(running.get(session.id)?.stopped);
     result.ok = connected && !result.error && !result.stopped;
@@ -6636,6 +6663,7 @@ async function startServer() {
   });
 
   healthRoutes(app, { sweep });
+  taskRoutes(app, { version: VERSION });
 
   settingsRoutes(app, {
     captchaVisionLabel,

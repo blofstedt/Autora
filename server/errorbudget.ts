@@ -108,7 +108,8 @@ export class ErrorBudget {
         stop:
           `Stopped: ${tool} failed with the same error across ${variations} different attempts ` +
           `(last: ${entry.tried.slice(-3).join("; ")}). ` +
-          "Tell it what to try instead, or ask it to explain what is blocking it.",
+          "Tell it what to try instead, or ask it to explain what is blocking it. " +
+          "If the cause looks like Autora and not the task, it can be recorded with the improvements tool.",
       };
     }
     if (variations >= this.warnAt) {
@@ -119,7 +120,9 @@ export class ErrorBudget {
           entry.tried.slice(-3).map((t) => `  - ${t}`).join("\n") +
           "\nThe arguments are not the problem. Discard this approach, step back, " +
           "and use a different tool or find the cause before another try. The " +
-          `turn will be stopped after ${this.stopAt - variations} more different attempt(s).`,
+          `turn will be stopped after ${this.stopAt - variations} more different attempt(s). ` +
+          "If the cause looks like Autora itself and not the task (a valid call that errors, a message that misleads), " +
+          "record it with the improvements tool and tell the person.",
         stop: null,
       };
     }
