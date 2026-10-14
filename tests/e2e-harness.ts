@@ -46,6 +46,8 @@ export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export interface App {
   base: string;
+  /** The scripted model's OpenAI-style root, for a test that points another provider at it. */
+  modelUrl: string;
   home: string;
   /** What the model was asked, in order. */
   seen: Seen[];
@@ -85,7 +87,7 @@ export async function startApp(opts: { env?: Record<string, string> } = {}): Pro
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "autora-e2e-"));
   const seen: Seen[] = [];
   const app: App = {
-    base: "", home, seen, script: [], decide: null,
+    base: "", modelUrl: "", home, seen, script: [], decide: null,
     api: async () => ({ status: 0, body: null }),
     newSession: async () => "", say: async () => undefined, events: async () => [],
     until: async () => [], turn: async () => [], stop: async () => undefined, restart: async () => undefined, log: () => "",
@@ -136,6 +138,7 @@ export async function startApp(opts: { env?: Record<string, string> } = {}): Pro
   });
   await new Promise<void>((r) => llm.listen(0, "127.0.0.1", r));
   const llmPort = (llm.address() as net.AddressInfo).port;
+  app.modelUrl = `http://127.0.0.1:${llmPort}/v1`;
 
   // ---- the app
   const port = await free();

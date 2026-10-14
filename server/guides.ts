@@ -86,6 +86,11 @@ export const MEMORY_GUIDE =
   "short; true months from now (nothing about this conversation: the log has it); nothing secret; no near-copies -- " +
   "memory_update the one that exists. Procedures: the steps, commands and gotchas that worked. Preferences: how the " +
   "person wants things done. A write that breaks these is refused with what to change.\n" +
+  "- Improving Autora: when something fails because of Autora itself -- a tool that errors on a valid call, a message that " +
+  "misleads, a capability that is missing, an instruction that sent you the wrong way -- record it with improvements " +
+  "(action record, with the exact error as evidence) before you move on, then tell the person in a line or two what you " +
+  "recorded and offer to work on it or leave it for someone else. Not the person's mistakes, a site being down, or a hard " +
+  "task. A finding already recorded gets this sighting added, not a second entry.\n" +
   "A recalled memory that turns out wrong is fixed with memory_update, not worked around.";
 
 /* The one tool that is about the person's ears rather than the work. It is

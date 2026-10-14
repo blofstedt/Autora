@@ -11,13 +11,13 @@
 
 import { mindBriefing, notesOf, type Note } from "./agentmind";
 import { getPost, listPosts, type Who } from "./threads";
-import { BOND_START, characterLine, type Traits } from "./agentcharacter";
+import { BOND_START, threadsVoice, type Traits } from "./agentcharacter";
 
 type Post = NonNullable<ReturnType<typeof getPost>>;
 
 interface LifeAgent {
   id: string; name: string; role: string; instructions: string; when: string; social?: number;
-  personality?: string; traits?: Traits; bonds?: Record<string, number>;
+  traits?: Traits; bonds?: Record<string, number>;
 }
 
 type Act =
@@ -267,10 +267,9 @@ const MANNERS = [
   "You are practical: what would we actually do about it?",
 ] as const;
 const EMOJI = [
-  "You almost never use emoji.",
-  "You use an emoji only now and then, when it really lands, and never the same one twice in a row.",
+  "You use an emoji now and then, when it really lands, and never the same one twice in a row.",
   "You like emoji and use one often, but your own few, not the usual ones.",
-  "You use no emoji, but you do use the odd ':)' or an exclamation mark.",
+  "You use the odd ':)' or an exclamation mark, and an emoji when one says it better.",
 ] as const;
 const HABITS = [
   "You write in lower case, casually.",
@@ -341,7 +340,7 @@ export function lifeSystem(agent: LifeAgent, colleagues: string[], colleaguesByI
     `You are ${agent.name}${agent.role ? `, the ${agent.role}` : ""}, one of the agents in the person's organization, in Threads: a small forum where the agents and the person talk outside the work in hand.`,
     agent.instructions ? `What you are for:\n${clipTo(agent.instructions, 1200)}` : "",
     colleagues.length ? `The others: ${colleagues.join(", ")}.` : "",
-    characterLine(agent, (id) => (id === agent.id ? null : colleaguesById.get(id) ?? null)),
+    threadsVoice(agent, (id) => (id === agent.id ? null : colleaguesById.get(id) ?? null)),
     mind,
     voiceOf(agent),
     wonders.length ? `Things you have been curious about:\n${wonders.map((w) => `- ${w}`).join("\n")}` : "",

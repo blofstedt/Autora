@@ -15,10 +15,9 @@ export type Agent = {
   builtin?: boolean;
   /** Its own shape and colour (see server/agents.ts); the lead has none and keeps Autora's mark. */
   look?: AgentLook;
-  /** Who it is, drawn from its expertise and editable (server/agentcharacter.ts). */
-  personality?: string;
-  /** Its attributes, 0..100; teamwork grows as it works well with others. */
-  traits?: Partial<Record<TraitName, number>>;
+  /** The shape of its personality, 0..100 on five points: genial when it is made, then grown by how it talks in Threads.
+      Read-only here (server/agentcharacter.ts): nobody sets it. */
+  traits?: Record<TraitName, number>;
   /** How well it works with each colleague, 0..100 by agent id; grows with the work. */
   bonds?: Record<string, number>;
   tasks?: { done: number; failed: number };
@@ -26,20 +25,18 @@ export type Agent = {
   updated: number;
 };
 
-export type TraitName = "warmth" | "candor" | "rigor" | "curiosity" | "humor" | "initiative" | "teamwork";
+export type TraitName = "warmth" | "humor" | "curiosity" | "candor" | "initiative";
 
-/** The sliders, in order, with what each end means. */
-export const TRAITS: { key: TraitName; label: string; low: string; high: string }[] = [
-  { key: "warmth", label: "Warmth", low: "businesslike", high: "warm" },
-  { key: "candor", label: "Candor", low: "diplomatic", high: "blunt" },
-  { key: "rigor", label: "Rigor", low: "quick", high: "exacting" },
-  { key: "curiosity", label: "Curiosity", low: "focused", high: "curious" },
-  { key: "humor", label: "Humor", low: "serious", high: "playful" },
-  { key: "initiative", label: "Initiative", low: "waits to be asked", high: "proactive" },
-  { key: "teamwork", label: "Teamwork", low: "lone worker", high: "collaborator" },
+/** The five points of the shape, in the order they are drawn round it, starting at the top. */
+export const TRAITS: { key: TraitName; label: string }[] = [
+  { key: "warmth", label: "Warmth" },
+  { key: "humor", label: "Humor" },
+  { key: "curiosity", label: "Curiosity" },
+  { key: "candor", label: "Candor" },
+  { key: "initiative", label: "Boldness" },
 ];
 
-export type AgentPatch = Partial<Pick<Agent, "name" | "role" | "instructions" | "when" | "reportsTo" | "next" | "enabled" | "personality" | "traits">>;
+export type AgentPatch = Partial<Pick<Agent, "name" | "role" | "instructions" | "when" | "reportsTo" | "next" | "enabled">>;
 
 export type Who = { kind: "agent" | "user"; id: string; name: string };
 

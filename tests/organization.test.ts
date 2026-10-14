@@ -17,12 +17,16 @@ async function test(name: string, fn: () => void | Promise<void>) {
 }
 
 const org = await import("../server/agents");
+const character = await import("../server/agentcharacter");
 const forum = await import("../server/threads");
 const { findTool, runTool } = await import("../server/tools");
 const modes = await import("../server/modes");
 const { FAMILIES } = await import("../server/toolload");
 
 const lead = org.getAgent(org.LEAD_ID)!;
+const { flushStore } = await import("../server/store");
+/** What a restart does to the roster: what was kept is read back from disk. */
+const restart = () => { org.updateAgent(org.LEAD_ID, {}); flushStore(); org.resetAgents(); };
 
 await test("the organization starts as the lead alone, and the lead cannot be removed or moved", () => {
   assert.equal(org.listAgents().length, 1);
@@ -39,46 +43,166 @@ const research = org.createAgent({ name: "Researcher", role: "Finds sources", wh
 const editor = org.createAgent({ name: "Editor", role: "Tightens prose", reportsTo: research.id, next: [] });
 const books = org.createAgent({ name: "Bookkeeper", next: "Researcher, Editor" });
 
-await test("an agent has a personality drawn from its expertise, which a hirer or the person can override", () => {
+await test("every agent is born genial, whatever its job, and nobody can set its personality", () => {
+  const { bornTraits } = character;
   const lawyer = org.createAgent({ name: "Sabrina", role: "Family Lawyer" });
-  assert.match(lawyer.personality!, /Careful and precise/);
-  assert.ok(lawyer.traits!.rigor >= 80 && lawyer.traits!.humor <= 45, "a lawyer is exacting and not a joker");
   const helper = org.createAgent({ name: "Joy", role: "Customer Support" });
-  assert.ok(helper.traits!.warmth >= 80, "support is warm");
-  const own = org.createAgent({ name: "Wren", role: "Family Lawyer", personality: "Gentle but firm.", traits: { warmth: 95, nonsense: 5, candor: 400 } });
-  assert.equal(own.personality, "Gentle but firm.");
-  assert.equal(own.traits!.warmth, 95);
-  assert.equal(own.traits!.candor, 100, "clamped");
-  assert.ok(!("nonsense" in own.traits!));
-  const edited = org.updateAgent(own.id, { traits: { humor: 80 } });
-  assert.equal(edited.traits!.humor, 80);
-  assert.equal(edited.traits!.warmth, 95, "the rest stay");
+  for (const a of [lawyer, helper]) {
+    const t = a.traits!;
+    assert.deepEqual(Object.keys(t).sort(), ["candor", "curiosity", "humor", "initiative", "warmth"], "five points, no rigor and no teamwork");
+    assert.ok(t.warmth >= 64 && t.humor >= 52 && t.curiosity >= 52, "genial");
+    assert.ok(Object.values(t).every((v) => v > 40 && v < 80), "an even, rounded shape");
+  }
+  /* A hirer or a person who tries to set one is ignored: the fields are not read at all. */
+  const asked = org.createAgent({ name: "Wren", role: "Family Lawyer", personality: "Cold.", traits: { warmth: 0, humor: 0 } } as never);
+  assert.ok(asked.traits!.warmth >= 64, "created genial regardless");
+  assert.equal((asked as { personality?: string }).personality, undefined);
+  const edited = org.updateAgent(asked.id, { traits: { warmth: 1 }, personality: "Cold." } as never);
+  assert.ok(edited.traits!.warmth >= 64, "an edit cannot set it");
+  assert.equal((edited as { personality?: string }).personality, undefined);
+  const a = bornTraits(() => 0), b = bornTraits(() => 1);
+  assert.ok(Object.keys(a).every((k) => Math.abs(a[k as keyof typeof a] - b[k as keyof typeof b]) <= 8), "newborns differ by a few points at most");
   assert.equal(org.freshName().length > 0, true);
-  assert.ok(!org.listAgents().some((a) => a.name === org.freshName()), "a free name");
-  assert.equal(research.personality ? true : false, true, "agents made without one are given one");
-  assert.match(org.agentBrief(lawyer, "Review the lease", []), /Your personality: Careful and precise/);
-  for (const a of [lawyer, helper, own]) org.deleteAgent(a.id);
+  assert.ok(!org.listAgents().some((x) => x.name === org.freshName()), "a free name");
+  for (const x of [lawyer, helper, asked]) org.deleteAgent(x.id);
+});
+
+await test("personality never reaches the brief for a task, so it cannot touch the work or how agents cooperate", () => {
+  const a = org.createAgent({ name: "Ana2", role: "Researcher", next: [] });
+  const b = org.createAgent({ name: "Ben2", role: "Editor" });
+  for (let i = 0; i < 40; i++) org.recordCollab(a.id, b.id, true, 6);
+  for (let i = 0; i < 30; i++) org.developFromTalk(a.id, "Haha, that is funny! 😂😂 Why though? Thanks!", "comment");
+  const brief = org.agentBrief(a, "Review the lease", []);
+  assert.doesNotMatch(brief, /personality|genial|warm|funny|joke|emoji|temperament|get on|work well with|trust/i, brief);
+  assert.doesNotMatch(org.orgBriefing() + org.HIRING, /Your personality|traits:|warmth, candor/i);
+  org.deleteAgent(a.id); org.deleteAgent(b.id);
+});
+
+await test("an agent develops from how it talks in Threads: the shape moves, slowly, within bounds, from its own words only", () => {
+  const { developed, bornTraits } = character;
+  const born = bornTraits(() => 0.5);
+  const joker = (n: number) => { let t = born; for (let i = 0; i < n; i++) t = developed(t, "Haha ok that one is a joke 😂 lol", "comment"); return t; };
+  const once = joker(1);
+  assert.ok(once.humor > born.humor && once.humor - born.humor <= 2.5, "one message moves it a little");
+  const lots = joker(200);
+  assert.ok(lots.humor > born.humor + 20, "a long habit of joking grows it");
+  assert.ok(lots.humor <= 94, "never an extreme");
+  const plain = (text: string) => { let t = born; for (let i = 0; i < 100; i++) t = developed(t, text, "comment"); return t; };
+  const typical = plain("I checked the numbers and they match the invoice.");
+  assert.ok(typical.humor < born.humor, "no jokes at all, humor settles lower");
+  assert.ok(plain("Why is that? What if we asked? I wonder how it works?").curiosity > born.curiosity + 15);
+  assert.ok(plain("I disagree, actually. That is a risk and a problem.").candor > born.candor + 15);
+  assert.ok(plain("Thanks! Glad to help 😊 Love it!").warmth > born.warmth);
+  let boldPosts = born;
+  for (let i = 0; i < 60; i++) boldPosts = developed(boldPosts, "Let me look into it. I'll post what I find. We should check.", "post");
+  assert.ok(boldPosts.initiative > born.initiative + 10);
+  assert.deepEqual(developed(born, "", "comment").warmth <= born.warmth, true, "silence is not warmth");
+  /* Through the roster: it moves, and is kept, without stamping the agent as changed. */
+  const x = org.createAgent({ name: "Xena", role: "Researcher" });
+  const stamped = x.updated;
+  const before = x.traits!.humor;
+  for (let i = 0; i < 20; i++) org.developFromTalk(x.id, "lol 😂 haha joke", "comment");
+  assert.ok(org.getAgent(x.id)!.traits!.humor > before);
+  assert.equal(org.getAgent(x.id)!.updated, stamped, "the page re-reads on a change; this is not one");
+  const lead2 = JSON.stringify(org.getAgent(org.LEAD_ID)!.traits ?? null);
+  org.developFromTalk(org.LEAD_ID, "lol 😂", "comment");
+  assert.equal(JSON.stringify(org.getAgent(org.LEAD_ID)!.traits ?? null), lead2, "the lead keeps none");
+  org.deleteAgent(x.id);
+});
+
+await test("only in Threads does the personality speak: genial by default, and what it has grown into once it has", () => {
+  const { threadsVoice, bornTraits } = character;
+  const none = (_: string) => null;
+  const newborn = threadsVoice({ traits: bornTraits(() => 0.5) }, none);
+  assert.match(newborn, /genial member of a friendly team/);
+  assert.match(newborn, /regular person/);
+  assert.match(newborn, /emoji/);
+  assert.match(newborn, /never changes the work you do/);
+  assert.doesNotMatch(newborn, /Over time/, "nothing has grown yet");
+  const grownUp = threadsVoice({ traits: { warmth: 50, humor: 90, curiosity: 50, candor: 20, initiative: 50 }, bonds: { a1: 80 } }, (id) => (id === "a1" ? "Ben" : null));
+  assert.match(grownUp, /Over time you joke around a lot; you soften bad news/);
+  assert.match(grownUp, /get on especially well with Ben/);
+});
+
+await test("agents saved with the old personalities begin again genial, once, and keep their record and bonds", () => {
+  const old = org.createAgent({ name: "Olga", role: "Family Lawyer" });
+  const colleague = org.createAgent({ name: "Olaf", role: "Editor" });
+  org.recordCollab(old.id, colleague.id, true, 6);
+  org.recordWork(old.id, true);
+  const bond = org.bondOf(old.id, colleague.id);
+  /* What an old install had on disk: a role-drawn personality, a cold lawyer, and the two extra attributes. */
+  const a = org.getAgent(old.id)! as unknown as Record<string, unknown>;
+  a.personality = "Careful and precise."; a.traits = { warmth: 5, candor: 90, rigor: 95, curiosity: 40, humor: 10, initiative: 50, teamwork: 80 }; delete a.character;
+  restart();
+  const now = org.getAgent(old.id)!;
+  assert.equal((now as unknown as { personality?: string }).personality, undefined, "the written personality is gone");
+  assert.ok(now.traits!.warmth >= 64, "genial again");
+  assert.deepEqual(Object.keys(now.traits!).sort(), ["candor", "curiosity", "humor", "initiative", "warmth"]);
+  assert.equal(org.bondOf(old.id, colleague.id), bond, "its bonds stay");
+  assert.deepEqual(now.tasks, { done: 1, failed: 0 }, "and its record");
+  for (let i = 0; i < 10; i++) org.developFromTalk(old.id, "lol haha 😂", "comment");
+  const grew = org.getAgent(old.id)!.traits!.humor;
+  restart();
+  assert.equal(org.getAgent(old.id)!.traits!.humor, grew, "what it has grown into survives a restart, and is not reset a second time");
+  org.deleteAgent(old.id); org.deleteAgent(colleague.id);
+});
+
+await test("a follow-on agent starts only when the work left something for it", () => {
+  const writer = org.createAgent({ name: "Sabrina2", role: "Engineer", when: "code is needed" });
+  const qa = org.createAgent({ name: "Reggie", role: "QA Engineer", when: "after code has been written or changed" });
+  const docs = org.createAgent({ name: "Dana", role: "Writer", when: "after a change that needs documenting" });
+  org.updateAgent(writer.id, { next: [qa.id, docs.id] });
+  const w = org.getAgent(writer.id)!;
+  const ids = (list: { id: string }[]) => list.map((x) => x.id);
+  const brief = org.agentBrief(w, "Add a retry", []);
+  assert.match(brief, /but only if your work left something for them to do/);
+  assert.match(brief, /Reggie \(called when after code has been written or changed\)/);
+  assert.match(brief, /Do not hand over when you only answered a question, ran a check or a test, made a plan/);
+  assert.match(brief, /Hand over to: Reggie, Dana/);
+  // The agent that did the work decides, on the last line of its report.
+  assert.deepEqual(ids(org.handoffTargets(w, "Ping received.\n\nHand over to: nobody", true)), [], "nobody, even though it made something");
+  assert.deepEqual(ids(org.handoffTargets(w, "Done.\nHand over to: Reggie", false)), [qa.id], "it names one, even if it made nothing itself");
+  assert.deepEqual(ids(org.handoffTargets(w, "Done.\n**Hand over to:** Reggie and Dana.", true)), [qa.id, docs.id], "in the order they come in the list");
+  assert.deepEqual(ids(org.handoffTargets(w, "Done.\nhand over to: dana, reggie", true)), [qa.id, docs.id], "case, order and commas do not matter");
+  assert.deepEqual(ids(org.handoffTargets(w, "Done.\nHand over to: Someone Else", true)), [], "a name that is not on its list starts nobody");
+  assert.deepEqual(ids(org.handoffTargets(w, "Done.\nHand over to: Reggie\nOn reflection:\nHand over to: nobody", true)), [], "the last line stands");
+  // With no line at all it comes down to whether anything was made.
+  assert.deepEqual(ids(org.handoffTargets(w, "Ping received. Nothing to change.", false)), [], "a test ping starts no QA");
+  assert.deepEqual(ids(org.handoffTargets(w, "Added the retry.", true)), [qa.id, docs.id], "something was made: both follow, as they always did");
+  org.updateAgent(qa.id, { enabled: false });
+  assert.deepEqual(ids(org.handoffTargets(w, "Added the retry.", true)), [docs.id], "a switched-off agent never");
+  // The line is for Autora, not for the person or the next agent.
+  assert.equal(org.withoutHandover("Added the retry.\n\nHand over to: Reggie"), "Added the retry.");
+  assert.equal(org.withoutHandover("Hand over to: nobody"), "");
+  assert.equal(org.withoutHandover("Handing over the keys is the next step."), "Handing over the keys is the next step.", "ordinary prose is left alone");
+  // What counts as having made something.
+  const reads = (c: string) => /^(ls|cat|git status)\b/.test(c);
+  assert.equal(org.producedWork([{ name: "terminal", args: { command: "ls -la" } }, { name: "read_file" }, { name: "code_search" }, { name: "agents" }], reads), false, "looking is not making");
+  assert.equal(org.producedWork([{ name: "terminal", args: { command: "npm test" } }], reads), true, "a command that is not read-only might");
+  assert.equal(org.producedWork([{ name: "edit_file" }], reads), true);
+  assert.equal(org.producedWork([{ name: "office_edit" }], reads), true);
+  assert.equal(org.producedWork([{ name: "office_read" }, { name: "pdf_read" }, { name: "memory_write" }], reads), false);
+  assert.equal(org.producedWork([], reads), false, "a pure conversation made nothing");
+  for (const x of [writer, qa, docs]) org.deleteAgent(x.id);
 });
 
 await test("agents get along better the more work between them goes well, and worse when it does not", () => {
   const a = org.createAgent({ name: "Ana", role: "Researcher" });
   const b = org.createAgent({ name: "Ben", role: "Editor" });
   assert.equal(org.bondOf(a.id, b.id), 50);
-  const team0 = a.traits!.teamwork;
   org.recordCollab(a.id, b.id, true, 6);
   const one = org.bondOf(a.id, b.id);
   assert.ok(one > 50 && org.bondOf(b.id, a.id) === one, "both remember it");
   for (let i = 0; i < 60; i++) org.recordCollab(a.id, b.id, true, 6);
   const many = org.bondOf(a.id, b.id);
   assert.ok(many > one && many < 100, "it keeps rising, with diminishing returns");
-  assert.ok(a.traits!.teamwork > team0, "and they become better collaborators");
   org.recordCollab(a.id, b.id, false, 6);
   assert.ok(org.bondOf(a.id, b.id) < many, "a bad time costs a little");
   org.recordCollab(org.LEAD_ID, a.id, true, 6);
   assert.equal(org.getAgent(org.LEAD_ID)!.bonds, undefined, "the lead keeps none");
   org.recordWork(a.id, true); org.recordWork(a.id, false);
   assert.deepEqual(a.tasks, { done: 1, failed: 1 });
-  assert.match(org.agentBrief(a, "x", []), /You work well with Ben/);
+  assert.doesNotMatch(org.agentBrief(a, "x", []), /work well with/, "a bond is for Threads, not for the work");
   org.deleteAgent(b.id);
   assert.equal(org.getAgent(a.id)!.bonds![b.id], undefined, "a bond goes with the colleague");
   org.deleteAgent(a.id);

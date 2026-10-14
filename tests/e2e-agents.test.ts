@@ -51,7 +51,7 @@ async function main() {
       app.seen.length = 0;
       app.decide = (req) => {
         if (req.last.includes("Continue from Editor")) return { text: "Books updated: figures match." };
-        if (req.last.includes("You are Editor")) return { text: "Tightened: cut 20%." };
+        if (req.last.includes("You are Editor")) return { text: "Tightened: cut 20%.\n\nHand over to: Bookkeeper" };
         if (req.last.includes("Books updated")) return { text: "Both agents finished." };
         if (req.last.includes("Review chapter 2")) return { tools: [{ name: "agents", args: { action: "run", agent: "Editor", task: "Tighten chapter 2" } }] };
         return { text: "ok" };
@@ -98,6 +98,40 @@ async function main() {
       assert.match(handed.last, /Tightened: cut 20%/, "the Bookkeeper was given the Editor's report");
       assert.match(handed.last, /handed to you by Autora -> Editor/);
       app.decide = null;
+    });
+
+    /* The person's screenshot: "@Sabrina this is just a test" and a QA agent started behind her, with nothing to check. */
+    const handoff = async (editorSays: (req: { last: string; system: string }) => { text?: string; tools?: { name: string; args?: Record<string, unknown> }[] }, ask: string) => {
+      app.seen.length = 0;
+      let bookkeeperStarted = false;
+      app.decide = (req) => {
+        if (/You check one action/.test(req.system)) return { text: '{"destructive": false, "requested": true}' };
+        if (req.last.includes("Continue from Editor")) { bookkeeperStarted = true; return { text: "Books updated." }; }
+        if (req.last.includes("You are Editor")) return editorSays(req);
+        if (req.last.includes(ask)) return { tools: [{ name: "agents", args: { action: "run", agent: "Editor", task: ask } }] };
+        return { text: "Done." };
+      };
+      const s = await app.newSession("handoff", "build");
+      await app.turn(s, ask, 60_000);
+      app.decide = null;
+      return bookkeeperStarted;
+    };
+
+    await test("an agent that says nobody is next does not start the next one", async () => {
+      assert.equal(await handoff(() => ({ text: "Ping received. Nothing to change.\n\nHand over to: nobody" }), "Run a test ping please"), false);
+    });
+
+    await test("with no hand-over line, an agent that made nothing does not start the next one", async () => {
+      assert.equal(await handoff(() => ({ text: "Ping received. Nothing to change." }), "Just a test ping"), false);
+    });
+
+    await test("with no hand-over line, an agent that made something does", async () => {
+      let step = 0;
+      const started = await handoff(() => {
+        step += 1;
+        return step === 1 ? { tools: [{ name: "terminal", args: { command: "echo tightened > chapter2.txt" } }] } : { text: "Tightened chapter 2." };
+      }, "Tighten the draft now");
+      assert.equal(started, true);
     });
 
     await test("a specialist works from its own mind and never sees Autora's; what it learns stays its own", async () => {

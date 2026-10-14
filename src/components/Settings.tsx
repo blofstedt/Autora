@@ -14,6 +14,7 @@ import { TimeZoneCard } from "./TimeZoneCard";
 import { NotifyCard } from "./NotifyCard";
 import { RelaySetup } from "./RelaySetup";
 import { Billing } from "./Billing";
+import { TaskCosts } from "./TaskCosts";
 import { SecretStore } from "./SecretStore";
 import { Credentials } from "./Credentials";
 import { useServerVersion, versions } from "./UpdateNotice";
@@ -708,6 +709,8 @@ export function Settings({
             topUpLabel={topUpLabel}
           />
         )}
+
+        {shows("analytics") && <TaskCosts />}
 
         {shows("config") && (
         <section className="set-card">
