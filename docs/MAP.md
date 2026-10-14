@@ -78,6 +78,7 @@ task is about the PDF editor's shim or overlay.
 | Tool execution | `tools.ts` `runTool` (the big switch), `argcheck.ts`, `guard.ts`, `modes.ts`, `toolload.ts` (which families are shown) |
 | Context | `context.ts` (compaction, vault), `pages.ts` (page re-reads), `readfile.ts`, `hints.ts` |
 | Loop safety | `loopwatch.ts`, `errorbudget.ts`, `budgetstore.ts`, `toolhealth.ts`, `resume.ts`, `verify.ts` |
+| Quick turns | `quick.ts` (`isSmallTalk`: a hello or thanks skips the plan and the thinking; `startTurn` sets `opts.quick`) |
 | Working notes | `todos.ts`, `ledger.ts`, `requirements.ts` |
 | Sub-agent | `subagent.ts` (+ `researchFor` in `runTurn`) |
 | Memory | `memory.ts`, `mindrules.ts`, `site.ts`, `learning.ts` |
