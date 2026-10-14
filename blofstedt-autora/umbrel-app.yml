@@ -192,3 +192,5 @@ releaseNotes: >-
   it, which was the thinking that kept going after the reply had already appeared. A greeting sent to an
   agent is also passed on to it as small talk, so the agent does not think it over either. A real task is
   unchanged: Agent mode still plans first, and if the agent you asked fails, the lead carries on and says so.
+  A model that insists on thinking (some OpenRouter ones, such as GLM flash) used to fail the quick reply with
+  "Reasoning is mandatory"; it is now asked again without the switch and answers, at its own pace.
