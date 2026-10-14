@@ -121,7 +121,7 @@ export function shortName(toolName: string): string {
   return server ? toolName.slice(`mcp__${server}__`.length) : toolName;
 }
 
-export interface McpBrief {
+interface McpBrief {
   name: string;
   description: string;
 }
@@ -156,7 +156,7 @@ function fit(tool: McpBrief, said: Set<string>): number {
 }
 
 /** The most tools one message brings in on its own. */
-export const PRELOAD_MAX = 12;
+const PRELOAD_MAX = 12;
 
 /**
  * Which of the tools not yet in the list the person's message is about, best first. A server the message names

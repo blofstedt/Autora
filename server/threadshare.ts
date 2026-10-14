@@ -17,7 +17,7 @@
  * call, the timers and the posting are in server.ts (`shareCheck`).
  */
 
-export interface ShareColleague {
+interface ShareColleague {
   id: string;
   name: string;
   role?: string;
@@ -25,7 +25,7 @@ export interface ShareColleague {
   when?: string;
 }
 
-export interface Share {
+interface Share {
   to: ShareColleague[];
   title: string;
   text: string;

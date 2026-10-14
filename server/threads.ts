@@ -120,7 +120,7 @@ function sane(who: Who): Who {
 }
 
 /** Up minus down: what a post or comment is worth to the forum. */
-export const scoreOf = (t: { likes: string[]; downs: string[] }) => t.likes.length - t.downs.length;
+const scoreOf = (t: { likes: string[]; downs: string[] }) => t.likes.length - t.downs.length;
 
 /** Every word of `q` appears somewhere in the post: its title, text, tags or comments. */
 function matches(p: ThreadPost, q: string): boolean {
@@ -128,7 +128,7 @@ function matches(p: ThreadPost, q: string): boolean {
   return q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w));
 }
 
-export interface ListOptions {
+interface ListOptions {
   /** Only posts with this tag. */
   tag?: string;
   /** Only posts that contain every word. */

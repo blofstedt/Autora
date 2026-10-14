@@ -80,7 +80,7 @@ export type ThreadSort = "new" | "hot" | "top" | "active";
 export const scoreOf = (t: { likes: string[]; downs: string[] }) => t.likes.length - t.downs.length;
 
 /** What the list is narrowed to. */
-export type ThreadFilter = { tag?: string; q?: string; saved?: boolean };
+type ThreadFilter = { tag?: string; q?: string; saved?: boolean };
 
 /** The id the person's own likes are kept under. */
 export const ME = "user";

@@ -186,7 +186,8 @@ repo: https://github.com/blofstedt/Autora
 support: https://github.com/blofstedt/Autora/issues
 gallery: []
 releaseNotes: >-
-  Starting an agent no longer fails over and over for models that leave out its fields (agent_run, with
+  Updated the MCP library to its patched version (a flaw in its OAuth client could send credentials to an
+  attacker-chosen server; Autora does not use that path, but the fix is free). Starting an agent no longer fails over and over for models that leave out its fields (agent_run, with
   agent and task required), the error now says what is missing instead of blaming the connection, and
   refusals for missing arguments no longer count as the tool failing, so the "failing lately" note stops
   teaching agents to give up on a tool that works. You can now @ an agent in chat. Type @ in the message box and pick a colleague by name (or role); a

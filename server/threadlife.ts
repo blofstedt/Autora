@@ -15,7 +15,7 @@ import { BOND_START, characterLine, type Traits } from "./agentcharacter";
 
 type Post = NonNullable<ReturnType<typeof getPost>>;
 
-export interface LifeAgent {
+interface LifeAgent {
   id: string; name: string; role: string; instructions: string; when: string; social?: number;
   personality?: string; traits?: Traits; bonds?: Record<string, number>;
 }
@@ -27,7 +27,7 @@ type Act =
   | { action: "like"; post: string; comment: string | null };
 
 /** What to do, plus the two things an agent decides for itself: a note worth keeping, and how long until it looks again. */
-export type LifeChoice = Act & { note?: string; again?: number; wonder?: string };
+type LifeChoice = Act & { note?: string; again?: number; wonder?: string };
 
 /** The most the forum may do in an hour and in a day, whoever starts it: the ceiling on what it can cost. */
 const PER_HOUR = 30;
@@ -304,7 +304,7 @@ function recentSayings(limit: number): { by: string; text: string; post: string 
 }
 
 /** What the forum has sounded like lately, so a new message does not repeat its shape. */
-export function variety(): string {
+function variety(): string {
   const recent = recentSayings(8).filter((x) => x.text);
   if (recent.length < 3) return "";
   const openers = [...new Set(recent.map((x) => openingOf(x.text)))].slice(-6);
@@ -494,7 +494,7 @@ type Comment = Post["comments"][number];
    --------------------------------------------------------------------------- */
 
 /** What a text says once case, punctuation and spacing stop making two tellings of it look different. */
-export function shapeOf(text: string): string {
+function shapeOf(text: string): string {
   return text
     .toLowerCase()
     .replace(/https?:\/\/\S+/g, " ")
@@ -529,9 +529,9 @@ function differed(a: string, b: string): number {
 }
 
 /** How much of a long comment may be shared with another before it reads as the same words said again. */
-export const REPEAT_SAME = 0.7;
+const REPEAT_SAME = 0.7;
 /** Comments shorter than this many words are repeats only when they are the same words: "fair", "ha", "+1" are replies, not echoes. */
-export const REPEAT_SHORT = 3;
+const REPEAT_SHORT = 3;
 /**
  * Two tellings sharing this much wording are the same thought said again - unless they are this few words apart, which
  * is not the same thought but a different one: a change of subject ("the docs" -> "the tools page"), a correction
@@ -539,7 +539,7 @@ export const REPEAT_SHORT = 3;
  * apart - "...before it is usable" and "...before anyone can use it" share no more than a subject swap does - so a
  * small edit is taken as what it is and only a telling that has been rewritten is refused.
  */
-export const REPEAT_EDIT = 3;
+const REPEAT_EDIT = 3;
 
 /**
  * Whether `text` is one of `others` said again, by the rule below: the same words however they are spaced or
@@ -562,17 +562,17 @@ function tellingAgain(text: string, others: readonly string[]): boolean {
  * Whether `text` would say what `agentId` has already said in this thread: its own words of it, judged by the rule
  * above. This is the one that matters - a thread is where the same handful of replies kept arriving.
  */
-export function repeated(post: Post, agentId: string, text: string): boolean {
+function repeated(post: Post, agentId: string, text: string): boolean {
   return tellingAgain(text, post.comments.filter((c) => c.by.id === agentId).map((c) => c.text));
 }
 
 /** Whether `agentId` has already spent its one comment straight on this post - the one with no reply_to. */
-export function commentedOnPost(post: Post, agentId: string): boolean {
+function commentedOnPost(post: Post, agentId: string): boolean {
   return post.comments.some((c) => c.by.id === agentId && !c.parent);
 }
 
 /** Whether `agentId` has already answered `commentId`. */
-export function answeredComment(post: Post, agentId: string, commentId: string): boolean {
+function answeredComment(post: Post, agentId: string, commentId: string): boolean {
   return post.comments.some((c) => c.by.id === agentId && c.parent === commentId);
 }
 
